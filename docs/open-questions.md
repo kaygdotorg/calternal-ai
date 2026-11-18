@@ -2,13 +2,14 @@
 
 Decisions waiting on kayg, most blocking first. Answer here or in chat; answered items
 move to the decision record they belong to and leave this list. Terms: see
-[glossary](glossary.md). Updated 2026-11-18 11:15 IST.
+[glossary](glossary.md). Updated 2026-11-18 12:45 IST.
 
 ## Waiting now
 
 | # | Question | Recommendation | Area |
 | --- | --- | --- | --- |
-| 25 | Composer chips: what each chip shows at each composer width (icon only, icon and text), and which chips exist | In the grill now | Composer |
+| 25 | Composer chips, one point left: is a chip always shown, or hidden while it is at its default value? (kayg's answer was cut off) | Always show | Composer |
+| 45 | Editing a message that was already sent: what happens to the rest of the thread (replaced, forked, kept as a branch) | To grill; options being written up | Threads |
 | 24 | Materials: how far the middle card separates from the sidebars, the readability floor for text over a wallpaper, and how much photo shows in light mode. Rebuilt from the calternal-ui plugin's defaults with a five-step Clear-to-Tinted slider | Review on the preview | Appearance |
 | 30 | Should the composer double as the command palette, or stay separate from Cmd-K? | Stay separate | Composer |
 | 31 | Thread rows: hover hides the time and state mark for the three actions; swipe right shows only Copy link; touch has no long-press menu, "More" sits in the swipe tray | Keep all three; try on a phone | Threads |
@@ -28,7 +29,10 @@ move to the decision record they belong to and leave this list. Terms: see
 ## Design rounds
 
 - **In progress: Settings and Appearance**: first eleven answers recorded in `settings.md`; second batch asked. Appearance (wordmark and its font, fonts, wallpaper, accent, themes and presets), agents (retry and snooze, streaming, default permission mode), shortcuts, machines, plugins, skills, automations.
-- **Machines and sandboxes from the UI** (kayg, 2026-11-18): the whole flow without a command line: enrolling a machine, making its sandbox, signing in to a provider inside it; every instance must have machines attached.
+- **Machines without a terminal**, partly decided 2026-11-18 (below); still to grill: pre-configuring machines at deploy time, the `curl | sh` installer at calternal.com/install for both a server and a machine, the macOS app that bundles the CLI, how a machine behind NAT stays reachable for people who know nothing about networking, and how a group's allowance of pool compute is configured and shown.
+- **Plans and compute**: what a group (a plan or role) is allowed on the pool, and how that is configured.
+- **Plans and compute, measure**: kayg is thinking CPUs and RAM; how they are enforced and shown (builds, especially Rust, use far more than an agent thinking).
+- **Re-authentication wording**: "Sign in again to keep going" sounds like the app itself is locked; a line that names the provider instead.
 - **Plugin-delivered interface**: how a plugin ships real UI, so the orchestrator can be split (shell, composer, a thread rail as `calternal-orchestrator-rail`).
 - **Upgrades with real data**: there is no migration code by rule; what an upgrade across a schema change does once calternal.cloud holds data.
 - Onboarding for developers versus everyone else: what changes.
@@ -43,6 +47,13 @@ move to the decision record they belong to and leave this list. Terms: see
 ## Recently decided (2026-11-17), now in the decision records
 
 - The composer and palette: see `composer.md`.
+- Thread files (2026-11-18): very readable, like the existing app's files: a `format:` tag in the frontmatter as the existing app does (`format: calternal-money`), a heading per message naming who or what wrote it (for an agent: harness, provider, model, reasoning level, time, duration), and machine state (IDs, provider session, counters) in a hidden companion file.
+- Wallpapers reuse the Unsplash key already in the production secrets file (2026-11-18).
+- Installer (2026-11-18): a hand-held, interactive, plain-text wizard (not a TUI) at calternal.com/install for both a server and a machine; it may install Podman and the microVM runtime with consent; the CLI comes first, the macOS app after; the server installer enrolls its own host as a machine by default.
+- Machines and sandboxes (2026-11-18): the first owner's onboarding walks through adding a machine unless one was pre-configured at deploy; someone using only the hosted instance never sees machines, their group decides their compute; adding a machine works by an agent over SSH and also by a printed script to run on any Linux or macOS machine; a machine always connects out to the server; one standard sandbox for everybody, its image changeable only by server admins; own machines are sandboxed by default with Direct as an explicit choice.
+- Provider sign-in (2026-11-18): done in the app, as items in the bar above the composer and an in-chat flow (a message with the link that turns into "Authentication done"); re-authentication is started automatically on expiry and, if it lapses, offered again when the person next starts typing ("these providers need signing in again", expandable); none of the flow is written to the thread file except one line that sign-in was attempted or done for a provider, with a time.
+- calternal.cloud is replaced by this product (kayg's instruction, 2026-11-18); the existing app is stopped and its data kept.
+- Composer chips (2026-11-18): Attach, Model, Permission, Runs on; the reasoning level lives in the model chip, which reads provider icon, model name, level; Runs on shows the machine name and a shield when sandboxed; no dots inside a chip. Chips drop to icon-only by the composer's width in the order Runs on, Permission, Model; on a phone all are icon-only except a non-default choice. Attachments sit in a sticky row above the text. Everywhere, rows of labelled controls go from icon and text to icon-only when width is short, through one shared primitive.
 - The composer's 8 ms budget applies to main-thread work per key, with zero missed frames required (2026-11-18).
 - An approval for an action that cannot be undone, or that widens access, is always single-use (2026-11-18).
 - Deleting an account that is a shared space's only Owner is refused until ownership is transferred (2026-11-18).
