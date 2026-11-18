@@ -8037,7 +8037,7 @@
   },
   {
     "risk": "irreversible",
-    "required_capability": "content.purge",
+    "required_capability": "space.settings",
     "id": "trash.purge",
     "description": "Permanently delete a note from Trash",
     "mutates": true,
@@ -8113,7 +8113,7 @@
   },
   {
     "risk": "read",
-    "required_capability": "content.purge",
+    "required_capability": "space.settings",
     "id": "trash.empty.preview",
     "description": "Count notes and retained version bytes before emptying Trash",
     "mutates": false,
@@ -8165,7 +8165,7 @@
   },
   {
     "risk": "irreversible",
-    "required_capability": "content.purge",
+    "required_capability": "space.settings",
     "id": "trash.empty",
     "description": "Start a resumable job to permanently purge the confirmed Trash selection",
     "mutates": true,
@@ -8241,7 +8241,7 @@
   },
   {
     "risk": "read",
-    "required_capability": "content.purge",
+    "required_capability": "space.settings",
     "id": "trash.empty.status",
     "description": "Read progress of an Empty Trash job",
     "mutates": false,

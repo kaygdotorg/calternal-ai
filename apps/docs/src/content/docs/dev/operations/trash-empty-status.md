@@ -8,14 +8,14 @@ title: "trash.empty.status"
 
 Read progress of an Empty Trash job
 
-Capability: content.purge.
+Capability: space.settings.
 
 ## Declaration
 
 ```json
 {
   "risk": "read",
-  "required_capability": "content.purge",
+  "required_capability": "space.settings",
   "id": "trash.empty.status",
   "description": "Read progress of an Empty Trash job",
   "mutates": false
