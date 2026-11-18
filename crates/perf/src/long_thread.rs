@@ -13,6 +13,7 @@ use std::{
 };
 
 const SIZE: usize = 16 * 1024 * 1024;
+const SMALL_APPEND: &str = "threads.small.append";
 const APPEND: &str = "threads.16mib.append";
 const TAIL: &str = "threads.16mib.tail";
 const EXACT: &str = "threads.16mib.exact";
@@ -38,7 +39,7 @@ pub(crate) fn run(a: &Args) -> Result<i32> {
             .ok_or("fixture thread missing")?
             .to_owned()
     };
-    let size = seed(&a.work, space, &id)?;
+    let size = seed(&a.work, space, &id, a.small_thread)?;
     let (_server, mut http, _) = start(a)?;
     http.cookie = fixture.cookie;
     let started = Instant::now();
@@ -51,11 +52,18 @@ pub(crate) fn run(a: &Args) -> Result<i32> {
             json!({"id":id,"message":"Append probe to a near-ceiling thread."}),
         )?;
         let job = result["job"]["id"].as_str().ok_or("fixture turn missing")?;
-        // Placement is outside the timed write. There is no provider client.
+        // Job cancellation is outside the timed request. There is no provider client.
         http.op("agent.stop", json!({"job_id":job}))?;
         if sample != 0 {
             appends.push(ms);
         }
+    }
+    if a.small_thread {
+        return report(
+            a,
+            size,
+            &[stats::summarize(SMALL_APPEND, appends, &budgets)],
+        );
     }
     let message = indexed(&mut http, space)?;
     let mut tails = Vec::new();
@@ -81,6 +89,10 @@ pub(crate) fn run(a: &Args) -> Result<i32> {
         stats::summarize(EXACT, exact, &budgets),
         stats::summarize(REBUILD, vec![rebuild], &budgets),
     ];
+    report(a, size, &measurements)
+}
+
+fn report(a: &Args, size: usize, measurements: &[stats::Summary]) -> Result<i32> {
     let breached = measurements.iter().any(|m| m.breached);
     let report = json!({"commit":a.commit,"physical_bytes_before_append":size,"measurements":measurements,"breached":breached});
     let out = a.work.join("long-thread.json");
@@ -120,14 +132,14 @@ fn indexed(http: &mut Http, space: &str) -> Result<String> {
     }
 }
 
-fn seed(root: &Path, space: &str, id: &str) -> Result<usize> {
+fn seed(root: &Path, space: &str, id: &str, small: bool) -> Result<usize> {
     let base = root.join("appdata/spaces").join(space);
     // Select an old-format snapshot within a small reserve for repeated writes.
     // Fixture creation is untimed and runs with the disposable server stopped.
     let threshold = SIZE - 48 * 1024;
     let identity = format!("---\ncalternal-id: {id}\n");
-    let mut low: usize = 1;
-    let mut high = 100_000;
+    let mut low: usize = if small { 8 } else { 1 };
+    let mut high = if small { low } else { 100_000 };
     while low < high {
         let mid = (low + high).div_ceil(2);
         let (_, markdown) = calternal_server::rebuild_probe::message_fixture(0, mid);
@@ -145,7 +157,7 @@ fn seed(root: &Path, space: &str, id: &str) -> Result<usize> {
             .strip_prefix("---\n")
             .ok_or("invalid fixture envelope")?
     );
-    if placed.len() < SIZE - 64 * 1024 {
+    if !small && placed.len() < SIZE - 64 * 1024 {
         return Err("fixture did not approach 16 MiB".into());
     }
     let mut db = Connection::open(base.join("content.db"))?;

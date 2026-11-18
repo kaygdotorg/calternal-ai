@@ -90,6 +90,9 @@ struct Args {
     /// Measure append and bounded or exact reads of one near-16 MiB thread.
     #[arg(long)]
     long_thread_only: bool,
+    /// Time the same HTTP append against a thread that starts at a few KiB.
+    #[arg(long, requires = "long_thread_only")]
+    small_thread: bool,
     /// Measure staged file-origin and actual first-use index rebuilding.
     #[arg(long)]
     rebuild_only: bool,
