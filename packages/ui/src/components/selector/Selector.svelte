@@ -226,7 +226,7 @@
     gap: 2px;
     padding: var(--pad);
     /* A pill within a pill: the track and the chosen option are both full pills, the option inset by the track's padding (concentric). */
-    border-radius: 999px;
+    border-radius: var(--r-pill);
     background: var(--selector-track, rgb(var(--ink-rgb) / 0.07));
     overflow-x: auto;
     scrollbar-width: none;
@@ -258,7 +258,7 @@
     bottom: var(--pad);
     left: 0;
     width: 0;
-    border-radius: 999px;
+    border-radius: var(--r-pill);
     background: var(--selector-capsule, var(--paper));
     box-shadow: var(--selector-capsule-shadow, 0 0 0 1px rgb(var(--ink-rgb) / 0.1), 0 1px 2px rgb(0 0 0 / 0.06));
     opacity: 0;
@@ -284,7 +284,7 @@
        without the group scrolling sideways. Wider, it's the usual size. */
     padding: 0 clamp(5px, 1.5vw, calc(var(--h) / 3));
     border: 0;
-    border-radius: 999px;
+    border-radius: var(--r-pill);
     background: none;
     font: inherit;
     font-size: min(var(--selector-font-size, var(--text-ui)), max(var(--text-label), 3.45vw));

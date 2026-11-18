@@ -174,7 +174,7 @@
   }
 </script>
 
-<Panel class="composer" data-narrow={sheet ? "" : undefined} radius="pane" data-ring-host bind:el={panelEl} data-collapsed={open ? undefined : ""} onfocusin={(e) => { if ((e.target as HTMLElement).matches(":focus-visible")) focused = true; }} onfocusout={(e) => { if (e.relatedTarget instanceof Node && panelEl?.contains(e.relatedTarget)) return; queueMicrotask(() => (focused = !!panelEl?.contains(document.activeElement))); }} onpointerdown={press}>
+<Panel class="composer" data-narrow={sheet ? "" : undefined} radius="card" data-ring-host bind:el={panelEl} data-collapsed={open ? undefined : ""} onfocusin={(e) => { if ((e.target as HTMLElement).matches(":focus-visible")) focused = true; }} onfocusout={(e) => { if (e.relatedTarget instanceof Node && panelEl?.contains(e.relatedTarget)) return; queueMicrotask(() => (focused = !!panelEl?.contains(document.activeElement))); }} onpointerdown={press}>
   <div class="ctx" data-fold aria-label="Context">
     {#if thread.workspace}<span class="cx"><Icon inline name="folder" /><span>{thread.workspace}</span></span>{/if}
     <ActiveChildren id={thread.id} />

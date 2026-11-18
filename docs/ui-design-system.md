@@ -35,8 +35,8 @@ its README lists what matches this system exactly, what differs because the plat
   only gap between surfaces and from the viewport's sides; `--dur-fast` 120, `--dur-base` 220, `--dur-slow` 300
   and the curves `--ease-out` and `--spring` (one spring, damping 0.9, response 0.42 s, run over `--dur-slow`).
   Heights: `--pill-h` (the one control tier: 38 on a desktop, 44 on touch, which is also the touch hit target),
-  `--row-h`, `--bar-h` (header band) and the phone's bottom capsule `--tier-cap`. Four radii: `--r-pill`, `--r-card` 14,
-  `--r-pane` 20, `--r-select` 8.
+  `--row-h`, `--bar-h` (header band) and the phone's bottom capsule `--tier-cap`. Radii: one concentric scale, see
+  "Corner radii" below.
 - **Reduced motion and transparency:** under `prefers-reduced-motion` every duration is 1 ms and every spring
   is linear; under `prefers-reduced-transparency` glass becomes near-opaque.
 
@@ -304,3 +304,19 @@ On the default wallpaper every surface above reports `--mat-a` 0.04 in both sche
 **Toasts** (`packages/ui` `toast/`): already the existing app's Sonner-style implementation (`notify`, `stack`, `bursts`, the capsule that opens from a dot and keeps being the same toast as its words change, `Roll` for counts, undoable and failed variants); only its in-the-bar variant (`inbar`) is not ported, because this shell has no bar for it.
 
 **What a plugin needs.** A plugin's UI is GenUI (portable) first: `Choice` already renders as the Selector. A toast needs a `Toast` action in the GenUI catalog (`packages/genui/src/catalog-data.json` next to `Send`, `Set`, `OpenUrl`, `Copy`) taking a message and an optional action, and the host mapping it to `toast()` / `undoable()`; and a plugin written in TypeScript against the plugin SDK would need `packages/plugin-sdk` to expose the shared UI surface (`@calternal/ui`) across the plugin boundary, which is a decision about what a plugin may import. Neither is built.
+
+
+## Corner radii (2026-11-18)
+
+One scale, in `packages/ui/tokens/tokens.json` (`r-*`, multiplied by `--ui-scale`), concentric: **a child's radius is its parent's minus the gap between their edges**. The card's value follows the reference (the current bb with the calternal-ui plugin, `bb-plugins/calternal-ui/frame/css.ts`: surfaces 14, cards 22 to 24, menus 14 = item 8 + padding 6, phones follow the screen's corner).
+
+| Token | px | What uses it | Why |
+| --- | --- | --- | --- |
+| `--r-pane` | 28 (was 20) | the middle card, a sheet (palette, dialogs, the right and bottom sheets), floating panels | the outermost shape on the screen |
+| `--r-card` | 20 (was 14) | what sits 8 inside a pane: the composer, request bar and notices in the card, windows, settings groups, code blocks, toasts, attention cards, side chat | 28 minus the 8 px inset (`--inset`) |
+| `--r-menu` | 14 (new) | menus, popovers (`Panel radius="menu"`) | a card inset 6, or an item (8) plus 6 of padding |
+| `--r-select` | 8 | rows, inputs, buttons, tags, keycaps in a field, tooltips (was 9) | the innermost shape |
+| `--r-pill` | 999 | pills, capsules, the switcher, the selector, the esc and clear buttons | half the height |
+| `50%` | circle | avatars, dots, round icon buttons | |
+
+Every radius that was in use before, and what it became: `--r-pane` 20 became 28; `--r-card` 14 became 20 (menus and popovers that used it moved to the new `--r-menu` 14); the composer, request bar and notices were `pane` (20) and are now `card` (20) so they stay concentric in the 28 card; `--r-select` 8 unchanged; tooltip 9px became `--r-select`; toast capsule 20px became `--r-card`; toast row, selector 999px became `--r-pill`; swipe action 8px became `--r-select`. Left as they are, with the reason: `50%` circles (15 uses); inline marks, the caret and keycaps (2 to 5 px, relative to the text, not to a surface); the preset gallery's 2 px skeleton bars; the tooltip's `0.45em` keycap. On a phone the card at rest is square and, with a sidebar open, takes `--r-pane`; the sheets' device-corner rule is in the inset sheet (next section).

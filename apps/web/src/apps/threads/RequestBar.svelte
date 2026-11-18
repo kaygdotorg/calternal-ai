@@ -41,7 +41,7 @@
 </script>
 
 {#if cur}
-  <Panel class="bar" radius="pane" dense role="region" aria-label="Waiting on you" data-kind={cur.kind}>
+  <Panel class="bar" radius="card" dense role="region" aria-label="Waiting on you" data-kind={cur.kind}>
     <div class="head">
       <span class="kind"><Icon name={ICON[cur.kind]} inline />{NAME[cur.kind]}</span>
       {#if requests.length > 1}

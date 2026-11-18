@@ -20,7 +20,7 @@
 .wt-surface {
   position: absolute;
   inset: 0;
-  border-radius: 9px; /* its glass is the shared material (styles/glass.css, the class on the element) */
+  border-radius: var(--r-select); /* its glass is the shared material (styles/glass.css, the class on the element) */
 }
 .wt-stage {
   position: absolute;

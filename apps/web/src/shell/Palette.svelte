@@ -137,7 +137,7 @@
   .two ul { max-height: none; overflow: visible; }
   .two .r { height: 44px; min-height: 0; gap: var(--s-5); }
   .right { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
-  .card { flex: 1; min-height: 0; margin: 0 var(--s-4) 0 var(--s-2); border-radius: var(--r-card); background: rgb(var(--ink-rgb) / 0.05); overflow: hidden; }
+  .card { flex: 1; min-height: 0; margin: 0 var(--s-4) 0 var(--s-2); border-radius: var(--r-card); /* inset 8 in a 28 panel */ background: rgb(var(--ink-rgb) / 0.05); overflow: hidden; }
   .hints { display: flex; justify-content: flex-end; gap: var(--s-6); align-items: center; min-height: 34px; padding: 0 var(--s-5); font-size: var(--text-label); color: var(--ink-2); }
   .hints kbd { margin-right: var(--s-3); color: var(--ink-3); box-shadow: inset 0 0 0 1px rgb(var(--ink-rgb) / 0.14); }
 </style>
