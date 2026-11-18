@@ -23,11 +23,19 @@ Bounded worker-v2 peer; effects and current authority remain in the trusted host
 ## Interfaces
 
 - [InvocationAuthority](/docs/dev/typescript/plugin-sdk/worker-v2/interfaces/invocationauthority/)
+- [PluginState](/docs/dev/typescript/plugin-sdk/worker-v2/interfaces/pluginstate/)
+- [ResourceAdmissionInput](/docs/dev/typescript/plugin-sdk/worker-v2/interfaces/resourceadmissioninput/)
+- [ResourceOwner](/docs/dev/typescript/plugin-sdk/worker-v2/interfaces/resourceowner/)
+- [RuntimeObservation](/docs/dev/typescript/plugin-sdk/worker-v2/interfaces/runtimeobservation/)
+- [RuntimeObservationPage](/docs/dev/typescript/plugin-sdk/worker-v2/interfaces/runtimeobservationpage/)
+- [RuntimeWindow](/docs/dev/typescript/plugin-sdk/worker-v2/interfaces/runtimewindow/)
+- [SpaceUsage](/docs/dev/typescript/plugin-sdk/worker-v2/interfaces/spaceusage/)
 - [WorkerContextV2](/docs/dev/typescript/plugin-sdk/worker-v2/interfaces/workercontextv2/)
 - [WorkerFrameV2](/docs/dev/typescript/plugin-sdk/worker-v2/interfaces/workerframev2/)
 
 ## Type Aliases
 
+- [ResourceAdmissionDecision](/docs/dev/typescript/plugin-sdk/worker-v2/type-aliases/resourceadmissiondecision/)
 - [WorkerHandlerV2](/docs/dev/typescript/plugin-sdk/worker-v2/type-aliases/workerhandlerv2/)
 - [WorkerMessageV2](/docs/dev/typescript/plugin-sdk/worker-v2/type-aliases/workermessagev2/)
 
@@ -38,7 +46,12 @@ Bounded worker-v2 peer; effects and current authority remain in the trusted host
 
 ## Functions
 
+- [compareAndSetPluginState](/docs/dev/typescript/plugin-sdk/worker-v2/functions/compareandsetpluginstate/)
 - [encodeWorkerFrameV2](/docs/dev/typescript/plugin-sdk/worker-v2/functions/encodeworkerframev2/)
 - [listItems](/docs/dev/typescript/plugin-sdk/worker-v2/functions/listitems/)
 - [parseWorkerFrameV2](/docs/dev/typescript/plugin-sdk/worker-v2/functions/parseworkerframev2/)
+- [readPluginState](/docs/dev/typescript/plugin-sdk/worker-v2/functions/readpluginstate/)
+- [readRuntimeObservations](/docs/dev/typescript/plugin-sdk/worker-v2/functions/readruntimeobservations/)
+- [readRuntimeWindow](/docs/dev/typescript/plugin-sdk/worker-v2/functions/readruntimewindow/)
 - [readSetting](/docs/dev/typescript/plugin-sdk/worker-v2/functions/readsetting/)
+- [readSpaceUsage](/docs/dev/typescript/plugin-sdk/worker-v2/functions/readspaceusage/)

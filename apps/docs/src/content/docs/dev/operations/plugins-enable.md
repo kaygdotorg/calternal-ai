@@ -82,6 +82,41 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
           "type": "string"
         },
         {
+          "description": "Read the authorized space's committed text and binary bytes.",
+          "enum": [
+            "read_space_usage_v1"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Read a bounded scope of cumulative guest runtime observations under an operator grant.",
+          "enum": [
+            "read_runtime_observations_v1"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Read confirmed runtime in a retained window within the granted scope.",
+          "enum": [
+            "read_runtime_window_v1"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Read a private versioned state key owned by the invoking package.",
+          "enum": [
+            "read_plugin_state_v1"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Replace a private state key with a durable compare-and-set receipt.",
+          "enum": [
+            "cas_plugin_state_v1"
+          ],
+          "type": "string"
+        },
+        {
           "description": "Write an authorized item.",
           "enum": [
             "write_item"

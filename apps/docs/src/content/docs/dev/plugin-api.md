@@ -146,6 +146,43 @@ Working record of what kayg has decided; the design itself is still being settle
   instructions and starred prompts are the same files in their personal space.
 
 
+## Hosted resource admission
+
+An operator uses `calternal resources set-hook` to bind one installed package
+and its complete review checksum to a space. The package declares one
+read-only `block` hook for `resources.admit` and remains enabled through the
+ordinary plugin registry. The host passes the sender, authorized space and
+resource owner, committed text and binary bytes, and the bounded memory and
+active-thread observations available for that sender. Resource data inside
+the hook comes from the host. A plug-in cannot select a different owner or
+change the caller, execution machine or rate.
+
+The hook returns `allow`, `queue` with a reason and retry delay, or
+`refuse` with a reason. An allow can declare an eligible memory profile.
+The existing scheduler still checks machine authorization, manual safety
+ceilings and available guest capacity. An allow is consumed by the same
+placement attempt that received it. A failed or revoked hook keeps its
+hosted request queued. Existing running work retains its lease.
+
+The package may declare `read_space_usage_v1` for one authorized space,
+and `read_runtime_window_v1` or `read_runtime_observations_v1` under its
+exact operator binding. Decimal strings preserve exact bytes and
+nanoseconds on JavaScript clients. Clock observations are cumulative by
+generation. The cursor returns later observations from the same bounded
+scope. A retention reset requires a fresh read and reconciliation. An
+unknown end retains its last proved duration.
+
+An ordinary enabled package with `space.settings` may declare
+`read_plugin_state_v1` and `cas_plugin_state_v1`. State keys are private
+to its package and space. A CAS requires a mutating outer operation and
+a valid host acknowledgment of the form `{"revision":"…"}`. Validate
+the package's positive format version before interpreting JSON. A state
+replacement and its retry receipt commit together. One key replacement
+per request is supported. Receipts follow the configured retention with
+a bounded capacity. A package can have up to 128 keys in a space and
+each value can hold up to 64 KiB. An optional operator-controlled state
+space supplies a read-only, scope-keyed record to an admission hook.
+
 ## Space plugin settings
 
 Declare a key in the manifest's `settings`, including its primitive type and
