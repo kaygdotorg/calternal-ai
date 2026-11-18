@@ -9,7 +9,7 @@
  *     layer: it is decided before pixels are read (the pre-blurred copy). With a box off, the others are raised until the target is met; with all of them
  *     off the surface is opaque paper.
  *   - A sidebar may flip its text between light and dark when that needs clearly less veil (as Craft's header does); the card never does.
- *   - The card starts much denser than a sidebar (tint 0.85 and dim 0.3 over the heavily blurred copy: the defaults of the calternal-ui plugin's chat surface, about 0.9 in all; a sidebar starts at 0.35 and 0.25), so the middle
+ *   - The card starts much denser than a sidebar (tint 0.85 and dim 0.3 over the heavily blurred copy: the defaults of the calternal-ui plugin's chat surface, about 0.9 in all; a sidebar at 0.35 and no dim, raised only as the floor needs), so the middle
  *     card reads as a calm sheet and the sidebars as the wallpaper seen through glass; the readability floor can only raise it. docs/ui-design-system.md has the numbers.
  *   - A sidebar flips from the light scheme to dark text over a very dark picture; in the dark scheme nothing flips (a light veil in dark mode is never right).
  * Cost: a sort of at most a few thousand numbers per probe, about 60 probes per surface; it runs when the wallpaper, scheme, boxes or window size change.
@@ -56,7 +56,7 @@ export const p01 = (xs: number[]): number => [...xs].sort((a, b) => a - b)[Math.
 /** The starting opacity of a surface's tint layer when `tint` is on (a sidebar's 0.35 is the plugin's sidebar default; the card's 0.85 its chat default); the solver raises Dim (or Tint when Dim is off) above the starting values only as far as the readability floor needs. The card's veil is computed, not started from here. */
 export const TINT_A: Record<Role, number> = { side: 0.35, card: 0.85 };
 /** The starting opacity of a sidebar's neutral dim layer when `dim` is on (see `TINT_A`). */
-export const DIM_A: Record<Role, number> = { side: 0.25, card: 0.3 };
+export const DIM_A: Record<Role, number> = { side: 0, card: 0.3 };
 const GAIN: Record<Scheme, number> = { light: 0.25, dark: 0.33 };
 const C_CAP = 0.05, A_MAX = 0.9, FLIP_GAIN = 0.12;
 /** Headroom over each target for what the model does not see: the grain, the JPEG, and pixels between the 48 by 48 samples. */
@@ -114,7 +114,9 @@ function smallest(ok: (t: number) => boolean): number {
 
 function solveOne(scheme: Scheme, role: Role, flags: Flags, px: RGB[], hue: { c: number; h: number }, T: Ink): Veil {
   const tintRgb = paperWithChroma(T.paper, Math.min(GAIN[scheme] * hue.c, C_CAP), hue.h);
-  const composite = (w: RGB, aT: number, aD: number): RGB => over(over(w, tintRgb, aT), T.paper, aD);
+  // The dim layer deepens a surface toward its scheme: black over a dark card, white over a light one (the plugin's rule); a sidebar's is the plain paper.
+  const dimRgb: RGB = role === "card" ? (scheme === "dark" ? [0, 0, 0] : [255, 255, 255]) : T.paper;
+  const composite = (w: RGB, aT: number, aD: number): RGB => over(over(w, tintRgb, aT), dimRgb, aD);
   const worst = (aT: number, aD: number): number => p01(px.map((w) => ratio(lum(composite(w, aT, aD)), lum(T.ink))));
   let aT: number, aD: number;
   if (!flags.tint && !flags.dim) {
@@ -136,7 +138,7 @@ function solveOne(scheme: Scheme, role: Role, flags: Flags, px: RGB[], hue: { c:
   const ground = px.map((w) => composite(w, aT, aD));
   const toward = (tok: RGB, target: number): RGB => mix(tok, T.ink, smallest((t) => p01(ground.map((g) => ratio(lum(g), lum(mix(tok, T.ink, t))))) >= target));
   return {
-    scheme, tint: { a: aT, rgb: tintRgb }, dim: { a: aD, rgb: T.paper },
+    scheme, tint: { a: aT, rgb: tintRgb }, dim: { a: aD, rgb: dimRgb },
     ink2: toward(T.ink2, TARGET.ink2 + HEAD), ink3: toward(T.ink3, TARGET.ink3 + HEAD),
     total: 1 - (1 - aT) * (1 - aD), ratio: worst(aT, aD),
   };

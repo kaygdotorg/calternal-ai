@@ -11,9 +11,16 @@ for (const scheme of ["dark", "light"]) {
   const page = await ctx.newPage();
   await page.goto(`${BASE}/threads/t-idle`); await page.waitForSelector("html[data-ready]");
   await page.waitForFunction(() => getComputedStyle(document.documentElement).getPropertyValue("--c-dim-a").trim() !== "", null, { timeout: 15000 }).catch(() => {});
+  await page.waitForTimeout(1500); // let the veil settle (it is solved again once the fonts are in) before painting over it
+  const plugin = process.env.PLUGIN ? (scheme === "dark"
+    ? { "--l-dim-a": "0", "--r-dim-a": "0", "--l-tint-a": "0.35", "--r-tint-a": "0.35", "--c-tint-a": "0.85", "--c-dim": "0 0 0", "--c-dim-a": "0.3" }
+    : { "--l-tint-a": "0.35", "--r-tint-a": "0.35", "--l-dim": "255 255 255", "--r-dim": "255 255 255", "--l-dim-a": "0.5", "--r-dim-a": "0.5", "--c-tint-a": "0.85", "--c-dim": "255 255 255", "--c-dim-a": "0.65" }) : {};
+  const vars = { ...plugin, ...(process.env.VARS ? JSON.parse(process.env.VARS) : {}) };
+  if (Object.keys(vars).length) await page.evaluate((v) => { for (const [k, x] of Object.entries(v)) document.documentElement.style.setProperty(k, x); }, vars);
   await page.addStyleTag({ content: "*, *::before:not(.keep), *::after:not(.keep) { color: transparent !important; border-color: transparent !important; box-shadow: none !important; text-shadow: none !important; } svg, img { visibility: hidden !important; } aside .row, aside button, .composer, .chips, header { visibility: hidden !important; }" });
   await page.waitForTimeout(800);
   const rects = await page.evaluate(() => { const r = (s) => { const e = document.querySelector(s); const b = e?.getBoundingClientRect(); return b ? { x: b.x, y: b.y, w: b.width, h: b.height } : null; }; return { left: r("aside.side"), card: r(".mid-card"), right: r("aside.right, .right") }; });
+  const veil = await page.evaluate(() => Object.fromEntries(["l", "c"].flatMap((k) => [[`${k}-tint-a`, getComputedStyle(document.documentElement).getPropertyValue(`--${k}-tint-a`)], [`${k}-dim-a`, getComputedStyle(document.documentElement).getPropertyValue(`--${k}-dim-a`)]])));
   const shot = (await page.screenshot()).toString("base64");
   const res = await page.evaluate(async ([png, rects]) => {
     const img = await createImageBitmap(await (await fetch(`data:image/png;base64,${png}`)).blob());
@@ -23,7 +30,7 @@ for (const scheme of ["dark", "light"]) {
     return { left: mean(rects.left), card: mean(rects.card), right: mean(rects.right) };
   }, [shot, rects]);
   const ratio = (a, c) => (Math.max(a, c) + 0.05) / (Math.min(a, c) + 0.05);
-  rows.push({ scheme, left: res.left?.rgb, card: res.card?.rgb, right: res.right?.rgb, cardVsLeft: res.left && res.card ? +ratio(res.left.L, res.card.L).toFixed(2) : null, cardVsRight: res.right && res.card ? +ratio(res.right.L, res.card.L).toFixed(2) : null });
+  rows.push({ scheme, veil, left: res.left?.rgb, card: res.card?.rgb, right: res.right?.rgb, cardVsLeft: res.left && res.card ? +ratio(res.left.L, res.card.L).toFixed(2) : null, cardVsRight: res.right && res.card ? +ratio(res.right.L, res.card.L).toFixed(2) : null });
   await ctx.close();
 }
 console.log(JSON.stringify(rows, null, 1));
