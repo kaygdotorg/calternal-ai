@@ -23,7 +23,7 @@ impl<D: Directory> Connection<D> {
                 let (room, membership) = unaddress(&address).ok_or_else(closed)?;
                 self.json(json!({"type":"too_large","room":room,"membership":membership}))
                     .await?;
-                return self.left(&address).await;
+                return self.left(&address, None).await;
             }
             Err(_) => return Err(Error::invalid_input("invalid room frame")),
         };
@@ -31,6 +31,9 @@ impl<D: Directory> Connection<D> {
         for message in MessageReader::new(&mut decoder) {
             let message = message.map_err(|_| Error::invalid_input("invalid room message"))?;
             if let Err(error) = self.apply_message(&packet.room, message).await {
+                if access_revoked(&error) {
+                    return self.left(&packet.room, Some(&error)).await;
+                }
                 let retry = matches!(error.code, ErrorCode::Unavailable | ErrorCode::Internal);
                 if let Some(member) = self.members.get_mut(&packet.room) {
                     member.resync = true;
@@ -53,7 +56,7 @@ impl<D: Directory> Connection<D> {
                         ErrorCode::Forbidden | ErrorCode::Unauthorized | ErrorCode::NotFound
                     )
                 {
-                    self.left(&packet.room).await?;
+                    self.left(&packet.room, None).await?;
                 }
                 break;
             }

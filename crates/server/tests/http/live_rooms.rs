@@ -1,5 +1,5 @@
 //! Initial sync, author and observer delivery, and restart on a disposable server.
-use super::{TempDir, create, start_full};
+use super::{TempDir, create, op, raw, start_full};
 use serde_json::{Value, json};
 use std::{
     net::TcpStream,
@@ -279,4 +279,56 @@ fn room_join_hides_foreign_items_like_missing_items() {
     let foreign = failure(private["id"].as_str().unwrap(), 1);
     let missing = failure(&uuid::Uuid::new_v4().to_string(), 2);
     assert_eq!(foreign, missing);
+}
+
+#[test]
+fn losing_view_ends_only_that_membership_and_requests_rescue() {
+    let data = TempDir::new("live-room-revoked");
+    let plugins = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../plugins");
+    let srv = start_full(&data.0, None, None, Some(&plugins));
+    let item = create(&srv, "revocation-room", &srv.shared, "original");
+    let room = format!("{}/notes/{}", srv.shared, item["id"].as_str().unwrap());
+    let mut guest = socket(srv.port, &srv.guest);
+    join(&mut guest, &room, None);
+    assert!(matches!(
+        recv(&mut guest, &format!("@1/{room}")),
+        Message::Awareness(_)
+    ));
+    let identity = raw(
+        srv.port,
+        "GET",
+        "/api/v1/describe",
+        &[("Authorization", &format!("Bearer {}", srv.guest))],
+        None,
+    )
+    .unwrap();
+    assert_eq!(identity.status, 200, "{}", identity.body);
+    let removed = op(
+        &srv,
+        &srv.owner,
+        "revoke-room-view",
+        "spaces.remove_member",
+        json!({"space_id":srv.shared,"account_id":identity.body["principal"]["id"]}),
+    );
+    assert_eq!(removed.status, 200, "{}", removed.body);
+    let saved = op(
+        &srv,
+        &srv.owner,
+        "revoked-room-write",
+        "notes.update",
+        json!({"id":item["id"],"base_revision":item["revision"],"markdown":"private edit"}),
+    );
+    assert_eq!(saved.status, 200, "{}", saved.body);
+    let Frame::Text(left) = guest.read().unwrap() else {
+        panic!("a revoked membership must not receive the edit");
+    };
+    assert_eq!(
+        serde_json::from_str::<Value>(&left).unwrap(),
+        json!({"type":"left","room":room,"membership":1,"reason":"access_revoked"})
+    );
+    guest.send(Frame::text(r#"{"type":"ping"}"#)).unwrap();
+    assert_eq!(
+        guest.read().unwrap().to_text().unwrap(),
+        r#"{"type":"pong"}"#
+    );
 }

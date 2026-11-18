@@ -52,13 +52,12 @@ fn space_capability<D: Directory>(
     required: Capability,
 ) -> Check {
     Box::pin(async move {
-        if authorization::capabilities(&host, account, key.space)
+        let caps = authorization::capabilities(&host, account, key.space)
             .await?
-            .is_some_and(|caps| caps.contains(Capability::SpaceRead) && caps.contains(required))
-        {
+            .filter(|caps| caps.contains(Capability::SpaceRead))
+            .ok_or_else(hidden)?;
+        if caps.contains(required) {
             Ok(())
-        } else if required == Capability::SpaceRead {
-            Err(hidden())
         } else {
             Err(Error::forbidden("room is read-only"))
         }
@@ -190,7 +189,7 @@ impl<D: Directory> Connection<D> {
             let deadline = Instant::now() + WAIT;
             loop {
                 if *kicked.borrow() {
-                    return Err(hidden());
+                    return Err(revoked(hidden()));
                 }
                 let item_epoch = host.store.live_rooms().item_authority_epoch();
                 let plugin_epoch = host.store.live_rooms().activation_epoch(key.space);
@@ -201,9 +200,22 @@ impl<D: Directory> Connection<D> {
                         return Err(Error::unauthorized("room session ended"));
                     }
                     if write {
-                        CurrentAuthority::edit(host.clone(), key.clone(), account).await?;
+                        CurrentAuthority::edit(host.clone(), key.clone(), account)
+                            .await
+                            .map_err(|error| {
+                                if error.code == ErrorCode::NotFound {
+                                    revoked(error)
+                                } else {
+                                    error
+                                }
+                            })?;
                     } else if !proof.has_view(item_epoch) {
-                        CurrentAuthority::view(host.clone(), key.clone(), account).await?;
+                        CurrentAuthority::view(host.clone(), key.clone(), account)
+                            .await
+                            .map_err(|error| match error.code {
+                                ErrorCode::Forbidden | ErrorCode::NotFound => revoked(error),
+                                _ => error,
+                            })?;
                     }
                     if proof.activation.load(Ordering::Relaxed) != plugin_epoch {
                         let (host, space, plugin) = (host.clone(), key.space, plugin.clone());
@@ -217,12 +229,14 @@ impl<D: Directory> Connection<D> {
                         })
                         .await?;
                     }
-                    if *kicked.borrow()
-                        || host
-                            .registry
-                            .snapshot()
-                            .get(&plugin.manifest.id)
-                            .is_none_or(|current| !Arc::ptr_eq(current, &plugin))
+                    if *kicked.borrow() {
+                        return Err(revoked(hidden()));
+                    }
+                    if host
+                        .registry
+                        .snapshot()
+                        .get(&plugin.manifest.id)
+                        .is_none_or(|current| !Arc::ptr_eq(current, &plugin))
                     {
                         return Err(hidden());
                     }
@@ -242,6 +256,10 @@ impl<D: Directory> Connection<D> {
             }
         }
     }
+}
+
+fn revoked(error: Error) -> Error {
+    error.with_details(json!({"reason":ACCESS_REVOKED}))
 }
 
 async fn wait_for_revision(deadline: Instant) -> Result<(), Error> {

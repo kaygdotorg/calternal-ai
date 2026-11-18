@@ -36,6 +36,7 @@ const MEMBERSHIPS: usize = 128;
 const CONTROL_BYTES: usize = 4096;
 const SAFE_INT: u64 = (1 << 53) - 1;
 const IO_TIMEOUT: Duration = Duration::from_secs(5);
+const ACCESS_REVOKED: &str = "access_revoked";
 
 pub(crate) async fn entry<D: Directory>(
     State(host): State<Shared<D>>,
@@ -309,7 +310,11 @@ impl<D: Directory> Connection<D> {
         );
         if let Err(error) = self.authorize_member(&self.members[&address], false).await {
             self.members.remove(&address);
-            return Err(error);
+            return Err(if access_revoked(&error) {
+                hidden()
+            } else {
+                error
+            });
         }
         self.json(json!({
             "type":"joined","room":room,"membership":membership,
@@ -341,7 +346,7 @@ impl<D: Directory> Connection<D> {
             }
         }
         for address in removed {
-            self.left(&address).await?;
+            self.left(&address, None).await?;
         }
         if let Some(key) = scan {
             let (content, account) = (self.content.clone(), self.account);
@@ -357,25 +362,30 @@ impl<D: Directory> Connection<D> {
 
     async fn event(&mut self, event: Event) -> Result<(), Error> {
         match event {
-            Event::Left(address) => self.left(&address).await,
+            Event::Left(address) => self.left(&address, None).await,
             Event::Packet { address, frame } => {
                 let Some(member) = self.members.get(&address) else {
                     return Ok(());
                 };
-                if *member.kicked.borrow() || self.authorize_member(member, false).await.is_err() {
-                    return self.left(&address).await;
+                if let Err(error) = self.authorize_member(member, false).await {
+                    return self.left(&address, Some(&error)).await;
                 }
                 self.send(&address, &frame.bytes).await
             }
         }
     }
 
-    async fn left(&mut self, address: &str) -> Result<(), Error> {
+    async fn left(&mut self, address: &str, error: Option<&Error>) -> Result<(), Error> {
         self.reassembly.discard(address);
-        if self.members.remove(address).is_some() {
+        if let Some(member) = self.members.remove(address) {
+            let revoked = *member.kicked.borrow() || error.is_some_and(access_revoked);
+            drop(member);
             let (room, membership) = unaddress(address).ok_or_else(closed)?;
-            self.json(json!({"type":"left","room":room,"membership":membership}))
-                .await?;
+            let mut control = json!({"type":"left","room":room,"membership":membership});
+            if revoked {
+                control["reason"] = json!(ACCESS_REVOKED);
+            }
+            self.json(control).await?;
         }
         Ok(())
     }
@@ -390,10 +400,11 @@ impl<D: Directory> Connection<D> {
                 hub.item_authority_epoch(),
                 hub.activation_epoch(member.key.space),
             );
-            if *member.kicked.borrow()
-                || (refresh && self.authorize_member(member, false).await.is_err())
-            {
-                return self.left(address).await;
+            if *member.kicked.borrow() {
+                return self.left(address, None).await;
+            }
+            if refresh && let Err(error) = self.authorize_member(member, false).await {
+                return self.left(address, Some(&error)).await;
             }
             self.frame(ws::Message::Binary(frame.into())).await?;
         }
@@ -424,4 +435,12 @@ fn unaddress(address: &str) -> Option<(&str, u64)> {
 
 fn hidden() -> Error {
     Error::not_found("live room not found")
+}
+
+fn access_revoked(error: &Error) -> bool {
+    error
+        .details
+        .as_ref()
+        .and_then(|details| details["reason"].as_str())
+        == Some(ACCESS_REVOKED)
 }

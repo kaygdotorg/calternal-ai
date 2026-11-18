@@ -61,25 +61,34 @@ Open a same-origin WebSocket at `/api/v1/live` with subprotocol
 space journal SSE query contract. Use one socket per page. Each room is
 `<space UUID>/<kind>/<item UUID>`. Use increasing positive safe-integer
 membership nonces across the socket. Join with type, room, membership,
-and the lineage of any persisted local copy. A joined control echoes
-room and membership with info.id, info.lineage and info.text set to md.
-A join_failed control includes the public error. Drop frames for old
-memberships. Leave with the same address and nonce.
+and the lineage of any persisted local copy. Accept `joined` only when
+`room` and `membership` match the pending join. Require `info.lineage`,
+verify `info.id` against the requested item UUID, and require
+`info.text === "md"` before binding. A `join_failed` control includes
+the public error. Drop frames for old memberships. Leave with the same
+address and nonce.
 
 Binary frames start with a lib0 var-string `@<membership>/<room>`,
 followed by a y-protocols message. Chunked frames use
 `+<zero-based sequence>/<total bytes>/@<membership>/<room>`. Each chunk
-names the total and the same membership. Keep each message or chunk
-below 1 MiB. There is one in-flight reassembly per socket, with 15 seconds
-between chunks and a 64 MiB wire cap. A message exceeding the item's
-content or state limits can still be refused inside that cap.
+names the total and the same membership. The server sends this
+continuation form for outbound payloads over 512 KiB, with at most
+512 KiB of payload per frame. Reassemble in order to the declared byte
+count before decoding, even for the initial sync step 2. Use one
+in-flight reassembly per socket, a 15-second gap limit and a 64 MiB wire
+cap in either direction. Each inbound WebSocket message, including its
+header, fits within 1 MiB. The item also has smaller content and state
+limits.
 
 After joined, apply the host's sync step 2 to an empty Y.Doc or to the
 persisted Y.Doc of the same lineage. Bind the editor to Y.Text md.
 Use y-protocols sync step 1, step 2 and update, and awareness tag 1
-with an owned client ID. Awareness carries the authenticated account
-ID and an optional cursor with Yjs relative anchor and head. The browser
-resolves the account display details and the anchors. Clear presence on
+with one client ID bound by the host to that membership. An awareness
+object uses `account_id` and `cursor`. A cursor object contains `anchor`
+and `head` as Yjs relative positions. The cursor may be null. The server
+stamps `account_id` from the authenticated participant, replacing any
+client-supplied identity. The browser resolves display details and the
+anchors. Clear presence on
 leave. Apply remote text after IME composition, preserve the original
 transaction origins, and use a Y.UndoManager that tracks only the local editor origin.
 
@@ -95,6 +104,17 @@ error.details.reason "lineage_changed" calls for recovering only the
 local diff from the last confirmed base. Retain the
 recovery intent when it cannot be applied safely. A transport rejoin
 or editor state alone must never clear the pending marker.
+
+When an established membership loses View, the server sends a JSON text
+control with `type: "left"`, the `room` and `membership`, and
+`reason: "access_revoked"`. Explicit eviction sends it immediately. A
+lazy authority refresh sends it before the next affected delivery or
+write. Discard that membership's incoming queue
+and stop retrying it. The socket can still serve other memberships.
+The Notes binding calls `sharing.rescue` with its own unreceipted changed
+blocks. If rescue fails, retain the local recovery intent. A generic
+`left` without this reason or a dropped connection follows ordinary
+reconnect handling.
 
 ## Item access
 
