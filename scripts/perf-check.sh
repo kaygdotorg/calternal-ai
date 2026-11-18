@@ -54,10 +54,20 @@ root="$HOME/calternal-ai-perf/$run"
 cd "$root"
 browser_status=2
 if chromium=$(command -v -- "$5") && podman=$(command -v -- "$6"); then
-  env -u CALTERNAL_PERF_WORKER_RUNNER CALTERNAL_PERF_PODMAN="$podman" \
-    node browser-worker.mjs "$root/bin/calternal" "$root/plugins" "$chromium" "$root/browser-worker.json"
+  browser_arm() {
+    local report="$root/$1" status
+    env -u CALTERNAL_PERF_WORKER_RUNNER CALTERNAL_PERF_PODMAN="$podman" \
+      node browser-worker.mjs "$root/bin/calternal" "$root/plugins" "$chromium" "$report"
+    status=$?
+    [[ -f "$report" ]] || return 2
+    return "$status"
+  }
+  browser_arm browser-worker.json
   browser_status=$?
-  [[ -f "$root/browser-worker.json" ]] || browser_status=2
+  if [[ "$browser_status" == 1 ]]; then
+    browser_arm browser-worker-repeat.json
+    browser_status=$?
+  fi
 else
   printf '%s\n' 'Browser worker gate needs Chromium and Podman on the perf VM.'
 fi

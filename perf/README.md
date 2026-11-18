@@ -8,6 +8,8 @@ The ceiling leaves headroom for the slower VM and catches even one
 reintroduced 20 ms batching wait.
 The gate's verdict calculation was checked against the archived perf-01
 vectors. The 5.2 ms fixed run passes and the 48.8 ms control fails.
+An independent fixed run on perf-02 measured 6.2 ms p50 and 16.7 ms p95,
+above the proposed ceiling.
 
 Stage the prebuilt development-mode server, built plugin bundles,
 Chromium headless shell, rootless Podman and its cached worker image
@@ -30,8 +32,10 @@ select a separately built runner. Leave it unset for qualification.
 
 The coordinator also runs this check in `scripts/perf-check.sh`. Use
 `PERF_CHROMIUM` and `PERF_PODMAN` to supply executable paths on the perf
-VM when they are absent from its PATH. A budget breach fails the suite.
-A missing runner or browser leaves qualification incomplete.
+VM when they are absent from its PATH. As with the wider gate, an initial
+breach triggers an independent repeat, and a reproduced breach fails the
+suite. Each run keeps its JSON evidence. A missing runner or browser
+leaves qualification incomplete.
 
 ## Wider backend gate
 
