@@ -94,8 +94,8 @@
       return;
     }
     // Taking hold of a card or panel that is still settling: freeze it where it is.
-    if (settling(midEl) && matrixX(midEl) >= 0) { mode = "card"; g0 = matrixX(midEl); dragMode = "card"; drag = g0; tgt = { side: "left", opening: g0 < travel() / 2 }; return; }
-    if (settling(midEl) && matrixX(midEl) < 0) { mode = "panel"; g0 = Math.min(-matrixX(midEl), panelWidth()); dragMode = "panel"; drag = g0; tgt = { side: "right", opening: g0 < panelWidth() / 2 }; return; }
+    if (settling(midEl) && matrixX(midEl) > 1) { mode = "card"; g0 = matrixX(midEl); dragMode = "card"; drag = g0; tgt = { side: "left", opening: g0 < travel() / 2 }; return; }
+    if (settling(midEl) && matrixX(midEl) < -1) { mode = "panel"; g0 = Math.min(-matrixX(midEl), panelWidth()); dragMode = "panel"; drag = g0; tgt = { side: "right", opening: g0 < panelWidth() / 2 }; return; }
   }
   let lastSide: Side | null = null, wpFrom = 0;
   function gmove(e: PointerEvent) {
@@ -184,8 +184,8 @@
   // A closed sidebar or side panel always has a way back: a button at the card's top corner on the same side, with the shortcut in its tooltip. (A phone has its own header button and the edge swipe.)
   // (A phone shows it for Settings only: Threads and Notes have their own header button, and the Settings page has no header.)
   const showLeft = $derived((!shell.narrow && !shell.sidebarOpen) || (shell.narrow && (app.kind === "settings" || !id) && !shell.sidebarOpen)); // a phone card with no header of its own (Settings, or an app with nothing open) still has a way to the list
-  // The side panel's button at the card's corner: on a wide screen when it is closed; on a phone (where the bottom bar is the apps) whenever there is something open to show panels for and nothing else is over the card.
-  const showRight = $derived(hasRight && !rightOpen && (!shell.narrow || (!!id && !shell.sidebarOpen)));
+  // The side panel's button at the card's corner: on a wide screen when it is closed. A phone has none (owner, 2026-11-18: it overlaid a window's top-right pills): the way in is "Open side panel" in the three-dot menu (`shell.openPanel()`) or the one-finger pull from the right edge.
+  const showRight = $derived(hasRight && !rightOpen && !shell.narrow);
 </script>
 
 <Backdrop />
@@ -194,7 +194,7 @@
   <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
   <aside class="side" class:pulled={wp?.side === "left"} style:--vis={wp?.side === "left" ? `${wp.vis}px` : undefined} style:--w={wp?.side === "left" ? `${wp.w}px` : undefined} bind:this={sideEl} onclick={choose} data-ink={surfaces.left ?? undefined} aria-label="{app.name} sidebar" inert={!shell.sidebarOpen}><Sidebar {app} /></aside>
 
-  <main class="mid" bind:this={midEl} style:--edge-l={showLeft && !shell.narrow ? "calc(var(--pill-h) + var(--s-3))" : undefined} style:--edge-r={showRight && !shell.narrow ? "calc(var(--pill-h) + var(--s-3))" : undefined} style:--panel-btn={showRight && shell.narrow ? "calc(var(--pill-h) + var(--s-3))" : undefined} class:dragging={drag !== null} style:transform={wp ? `translateX(${wp.side === "left" ? wp.vis - (wp.layoutOpen ? wp.w : 0) : -(wp.vis - (wp.layoutOpen ? wp.w : 0))}px)` : dragMode === "card" && drag !== null ? `translateX(${drag}px)` : undefined} style:scale={dragMode === "panel" && drag !== null ? 1 - 0.04 * (1 - drag / panelWidth()) : undefined} inert={shell.narrow && (shell.sidebarOpen || rightOpen)}>
+  <main class="mid" bind:this={midEl} style:--edge-l={showLeft && !shell.narrow ? "calc(var(--pill-h) + var(--s-3))" : undefined} style:--edge-r={showRight && !shell.narrow ? "calc(var(--pill-h) + var(--s-3))" : undefined} class:dragging={drag !== null} style:transform={wp ? `translateX(${wp.side === "left" ? wp.vis - (wp.layoutOpen ? wp.w : 0) : -(wp.vis - (wp.layoutOpen ? wp.w : 0))}px)` : dragMode === "card" && drag !== null ? `translateX(${drag}px)` : undefined} style:scale={dragMode === "panel" && drag !== null ? 1 - 0.04 * (1 - drag / panelWidth()) : undefined} inert={shell.narrow && (shell.sidebarOpen || rightOpen)}>
     {#if !shell.narrow && shell.sidebarOpen}<ResizeHandle side="left" />{/if}
     {#if !shell.narrow && hasRight && rightOpen}<ResizeHandle side="right" />{/if}
     {#if showLeft}<div class="edge l"><Pill icon="sidebar" label="Show the sidebar" aria-keyshortcuts={ariaKeys(shortcuts.chordFor("sidebar"))} onclick={() => shell.toggleSidebar()} /></div>{/if}
@@ -248,8 +248,6 @@
   .edge { position: absolute; z-index: 6; top: calc(var(--safe-top) + (var(--bar-h) - var(--pill-h)) / 2); }
   .edge.l { left: calc(var(--inset) + var(--s-4)); }
   .edge.r { right: calc(var(--inset) + var(--s-4)); }
-  /* On a phone the open thread's header has its actions pill at the right edge: the side panel's button sits beside it, not over it (the title leaves room: `--panel-btn`). */
-  .narrow .edge.r { right: calc(var(--pad-region) + var(--pill-h) + var(--s-3)); }
   .mid :global(.mid-card) { height: 100%; overflow: clip; }
   /* The card is the only thing on the background, and it casts nothing onto it: a shadow would be a second layer in the gap beside the card (the owner's seam). It is told apart by its own surface (docs/ui-design-system.md). On a phone it slides over the list, where it does cast one. */
   .shell:not(.narrow) .mid :global(.mid-card) { box-shadow: none; }

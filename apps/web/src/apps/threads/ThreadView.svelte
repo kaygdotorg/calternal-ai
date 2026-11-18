@@ -192,8 +192,7 @@
   header > :global(*) { pointer-events: auto; }
   /* In a canvas window the right pill (three buttons) floats over the header: the title pill leaves room for it and shortens with an ellipsis. */
   header.windowed { padding-right: calc(var(--pill-h) * 3 + var(--s-8)); }
-  /* --panel-btn: room for the shell's side-panel button, which sits beside the actions pill on a phone (shell/Shell.svelte); the title shrinks to leave it. */
-  .grow { flex: 1; min-width: var(--panel-btn, 0px); pointer-events: none; }
+  .grow { flex: 1; pointer-events: none; }
   .blank { position: absolute; inset: 0; display: grid; align-content: center; justify-items: start; gap: var(--s-4); max-width: 30rem; margin: 0 auto; padding: 0 var(--pad-region); }
   .blank h2 { font-size: var(--text-heading); font-weight: var(--strong-weight); }
   .blank p { color: var(--ink-2); font-size: var(--text-ui); }

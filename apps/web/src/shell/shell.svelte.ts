@@ -105,6 +105,8 @@ class Shell {
     this.rightOpen = !this.rightOpen;
     this.save();
   }
+  /** Opens the side panel if it is closed (nothing if it is open): the one action a three-dot menu calls for "Open side panel". On a phone this is the only button-like way in (there is no panel button on the card; the one-finger pull from the right edge also works), a history entry like the list. */
+  openPanel(): void { if (!this.rightOpen) this.toggleRight(); }
   /** Sets a sidebar open or closed on a wide screen (the end of a pull: absolute, where the toggles flip), and remembers it. */
   setOpen(side: Side, open: boolean): void {
     if (side === "left") this.sidebarOpen = open; else this.rightOpen = open;

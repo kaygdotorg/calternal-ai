@@ -11,7 +11,9 @@ const m = await page.evaluate(() => { const e = document.querySelector('[role=me
 ok(m.menu && !m.sheet && m.nearButton, "the three-dot menu is a dropdown at its button, not a sheet", JSON.stringify(m));
 await page.keyboard.press("Escape"); await page.waitForTimeout(300);
 const w = 390;
-await page.getByRole("button", { name: "Show the side panel" }).tap(); await page.waitForTimeout(600);
+ok((await page.locator(".edge.r").count()) === 0, "there is no side-panel button on a phone (it overlaid a window's top-right pills)");
+await page.evaluate(async () => { const el = document.elementFromPoint(386, 400); const fire = (t, x) => el.dispatchEvent(new PointerEvent(t, { bubbles: true, pointerType: "touch", pointerId: 5, clientX: x, clientY: 400, isPrimary: true })); fire("pointerdown", 386); for (let i = 1; i <= 8; i++) { await new Promise((r) => setTimeout(r, 16)); fire("pointermove", 386 - i * 30); } fire("pointerup", 146); });
+await page.waitForTimeout(700);
 const g = await page.evaluate(() => { const mid = new DOMMatrixReadOnly(getComputedStyle(document.querySelector("main.mid")).transform).m41; const rs = document.querySelector(".right > .rs").getBoundingClientRect(); return { mid, left: rs.left, right: rs.right, scrim: !!document.querySelector(".scrim") }; });
 ok(g.mid < -250 && g.right >= w - 1 && !g.scrim, "the side panel opens under the card, which slides left (no overlay, no scrim)", JSON.stringify(g));
 await b.close(); stop();
