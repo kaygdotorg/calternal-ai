@@ -17,6 +17,7 @@
   import { spaces } from "../shell/spaces.svelte";
   import { shell } from "../shell/shell.svelte";
   import { centring, edgeOf, leftOf, maxScroll, nearColumns, NARROW, nextPreset, PRESETS, proportionFor, proportionOf, scrollTo, stripWidth, widthsOf } from "./layout";
+  import type { Win } from "./layout";
   import { canvas } from "./model.svelte";
   import { canvasPrefs } from "./prefs.svelte";
   import { frostDensity } from "./frost";
@@ -277,6 +278,8 @@
 
   // ---- windows ----
   const iconOf = (kind: string): IconName => (appFor(kind)?.icon ?? "apps") as IconName;
+  /** Which of the windows with the same title this is (1 for the first, in reading order): their landmark labels differ. */
+  const nthOf = (w: Win) => canvas.all().filter((x) => titleOf(x.kind, x.item) === titleOf(w.kind, w.item)).findIndex((x) => x.id === w.id) + 1;
   const titleOf = (kind: string, item: string) => (kind === "threads" ? store.get(item)?.title : notes.list.find((n) => n.id === item)?.title) ?? appFor(kind)?.name ?? kind;
   /** The next thread or note that has no window yet. */
   function nextOf(kind: string): string | null {
@@ -400,7 +403,7 @@
             {#each c.wins as w, k (w.id)}
               {#if !maxed || w.id === canvas.max}
                 <div class="slot" style:flex="{mine ? 1 : w.weight} 1 0" style:min-height="0">
-                  <WindowFrame win={w} title={titleOf(w.kind, w.item)} icon={iconOf(w.kind)} ownTitle={false} focused={canvas.focus === w.id} maximised={mine} look={canvasPrefs.look}
+                  <WindowFrame win={w} title={titleOf(w.kind, w.item)} nth={nthOf(w)} wNow={Math.round(proportionOf(c, canvas.cols.length, vw) * 100)} hNow={Math.round((w.weight / c.wins.reduce((a, x) => a + x.weight, 0)) * 100)} icon={iconOf(w.kind)} ownTitle={false} focused={canvas.focus === w.id} maximised={mine} look={canvasPrefs.look}
                     canMax={canvas.all().length > 1 && !shell.narrow} paper={page.paper.join(" ")} {density} hasBelow={k < c.wins.length - 1} edge={i === 0 && i === canvas.cols.length - 1 ? "lr" : i === 0 ? "l" : i === canvas.cols.length - 1 ? "r" : ""} {kbd}
                     onfocus={() => focusWin(w.id)} onaction={(a, source, target) => act(w.id, a, source, target)}
                     onresizew={(dx) => resizeWidth(c.id, i, dx)} onresizeh={(dy) => canvas.dragBoundary(c.id, k, dy, el?.querySelector<HTMLElement>(`[data-col="${c.id}"]`)?.clientHeight ?? vh)}>

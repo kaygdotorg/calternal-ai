@@ -10,13 +10,17 @@
   import type { IconName } from "@calternal/ui";
   import type { Look, Win } from "./layout";
   export type WinAction = "max" | "share" | "menu" | "lock";
-  let { win, title, icon, ownTitle, focused, maximised, canMax, look, paper, density, hasBelow, edge, kbd, onfocus, onaction, onresizew, onresizeh, children }: {
-    win: Win; title: string; icon: IconName; /** The app draws its own title pill (Threads). */ ownTitle: boolean; focused: boolean; maximised: boolean; /** There is another window to be full screen among: a lone window is full already, so it has no full screen control. */ canMax: boolean; look: Look;
+  let { win, title, nth = 1, wNow, hNow, icon, ownTitle, focused, maximised, canMax, look, paper, density, hasBelow, edge, kbd, onfocus, onaction, onresizew, onresizeh, children }: {
+    win: Win; title: string; /** Which of several windows with this title this is (1 for the first): the landmark labels must differ. */ nth?: number; /** The column's width and the window's height share, in percent: the resize handles' current values. */ wNow: number; hNow: number; icon: IconName; /** The app draws its own title pill (Threads). */ ownTitle: boolean; focused: boolean; maximised: boolean; /** There is another window to be full screen among: a lone window is full already, so it has no full screen control. */ canMax: boolean; look: Look;
     /** The scheme's paper as `r g b` and the density of a transparent window (frost.ts). */ paper: string; density: number; hasBelow: boolean; /** Which edge of the area this window touches, for the shell's sidebar pills. */ edge: "l" | "r" | "lr" | "";
     kbd: Record<string, string>; onfocus: () => void; onaction: (a: WinAction, source: "pointer" | "key", el: HTMLElement) => void; onresizew: (dx: number) => void; onresizeh: (dy: number) => void; children: Snippet;
   } = $props();
   setContext("canvas-window", true);
+  /** Whether this is the focused window: the composer of the focused window alone carries the page's `composer-field` id (ids are unique; shortcuts and "Write a message" reach the window in use). */
+  setContext("canvas-focused", () => focused);
   const variant = $derived(maximised || look === "card" ? "pane" : look === "clear" ? "clear" : "solid");
+  /** The three-dot menu is named for what is in the window, the same name the single card's header gives it ("Thread actions"). */
+  const more = $derived(win.kind === "threads" ? "Thread actions" : win.kind === "notes" ? "Note actions" : "More");
   const act = (a: WinAction) => (e: MouseEvent) => onaction(a, e.detail === 0 ? "key" : "pointer", e.currentTarget as HTMLElement);
   /** The shared Grip reports pointer positions; a window wants the movement since the last one. */
   let last = 0;
@@ -29,7 +33,7 @@
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<Card label="{title} window" {variant} moving class={maximised ? "mid-card win maximised" : "mid-card win"} data-win={win.id} data-kind={win.kind} data-item={win.item} data-look={maximised ? "card" : look} data-edge={edge || undefined} data-focused={focused ? "" : undefined}
+<Card label="{title} window{nth > 1 ? ` ${nth}` : ''}" {variant} moving class={maximised ? "mid-card win maximised" : "mid-card win"} data-win={win.id} data-kind={win.kind} data-item={win.item} data-look={maximised ? "card" : look} data-edge={edge || undefined} data-focused={focused ? "" : undefined}
   data-locked={win.locked ? "" : undefined} data-near={near || win.locked ? "" : undefined} data-max={maximised ? "" : undefined} style={look === "clear" && !maximised ? `--fpaper: ${paper}; --fd: ${density};` : undefined} onpointerdowncapture={onfocus} onpointermove={nearTop} onpointerleave={() => (near = false)}>
   <button type="button" class="lock" aria-pressed={win.locked} aria-label={win.locked ? "Unlock input" : "Lock input"} use:tip={{ label: win.locked ? "Unlock input" : "Lock input", kbd: kbd.lock, side: "bottom" }} onclick={act("lock")}>
     <svg viewBox="0 0 24 24" aria-hidden="true"><path class="shackle" d="M8.5 11V8a3.5 3.5 0 0 1 7 0v3" /><rect x="5" y="11" width="14" height="9.5" rx="2.5" /></svg>
@@ -41,7 +45,7 @@
     <Panel radius="pill" class="wacts">
       {#if canMax || maximised}<button type="button" aria-label={maximised ? "Restore the window" : "Full screen"} aria-pressed={maximised} use:tip={{ label: maximised ? "Restore" : "Full screen", kbd: kbd.max, side: "bottom" }} onclick={act("max")}><Icon name={maximised ? "restore" : "expand"} /></button>{/if}
       <button type="button" aria-label="Share" aria-haspopup="menu" use:tip={{ label: "Share", side: "bottom" }} onclick={act("share")}><Icon name="share" /></button>
-      <button type="button" aria-label="More" aria-haspopup="menu" use:tip={{ label: "More", side: "bottom" }} onclick={act("menu")}><Icon name="more" /></button>
+      <button type="button" aria-label={more} aria-haspopup="menu" use:tip={{ label: more, side: "bottom" }} onclick={act("menu")}><Icon name="more" /></button>
     </Panel>
   </div>
   <div class="body">{@render children()}</div>
@@ -49,8 +53,8 @@
 </Card>
 {#if !maximised}
   <!-- The same handle the sidebars use (ui/Grip), in the gap to the right of the window and, when another window is stacked below, in the gap under it. -->
-  <Grip class="rz" label="Resize the window's width" style="right: calc(var(--s-7) / -2 - 4px)" onstart={startAt("x")} onmove={moveBy("x", onresizew)} onkey={keyBy("ArrowRight", "ArrowLeft", onresizew)} />
-  {#if hasBelow}<Grip class="rz" orientation="horizontal" label="Resize the window's height" style="bottom: calc(var(--s-7) / -2 - 4px)" onstart={startAt("y")} onmove={moveBy("y", onresizeh)} onkey={keyBy("ArrowDown", "ArrowUp", onresizeh)} />{/if}
+  <Grip class="rz" label="Resize the window's width" min={20} max={100} now={wNow} style="right: calc(var(--s-7) / -2 - 4px)" onstart={startAt("x")} onmove={moveBy("x", onresizew)} onkey={keyBy("ArrowRight", "ArrowLeft", onresizew)} />
+  {#if hasBelow}<Grip class="rz" orientation="horizontal" label="Resize the window's height" min={18} max={100} now={hNow} style="bottom: calc(var(--s-7) / -2 - 4px)" onstart={startAt("y")} onmove={moveBy("y", onresizeh)} onkey={keyBy("ArrowDown", "ArrowUp", onresizeh)} />{/if}
 {/if}
 
 <style>
