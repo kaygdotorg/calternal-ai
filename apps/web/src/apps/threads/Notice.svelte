@@ -5,7 +5,7 @@
   let { icon = "warning", title, children, actions = [] }: { icon?: IconName; title: string; children?: import("svelte").Snippet; actions?: { text: string; onclick: () => void; primary?: boolean }[] } = $props();
 </script>
 
-<Panel class="notice" radius="pane" dense role="status" aria-label={title}>
+<Panel class="notice" radius="card" dense role="status" aria-label={title}>
   <div class="in">
     <span class="ic"><Icon name={icon} /></span>
     <div class="tx">
