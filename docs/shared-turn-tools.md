@@ -44,3 +44,11 @@ tool output contains it, even on provider errors. Reject foreign and expired lea
 destinations and redirects. Close both
 sandboxes on revocation or restart. Then repeat the functional turn with a live,
 disposable, approved provider credential.
+
+**Dev-01 prototype.** Stock Claude Code completed one MCP tool call through a
+separate Podman executor. The tool could not open the reduced login file, see
+the broker process, find a leaked login descriptor or environment variable,
+or reach the broker. A synthetic file and environment positive control was
+detected. The broker opened the reduced login file without reading its bytes
+and injected a generated canary into both authenticated mock upstream calls.
+This tests the boundary and the gateway protocol against a mock upstream.
