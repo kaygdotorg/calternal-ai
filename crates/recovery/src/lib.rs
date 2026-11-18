@@ -473,6 +473,24 @@ impl Coordinator {
         let _guard = self.gate.lock().map_err(err)?;
         self.read_locked(Some(expected))
     }
+    /// Verify the resolved recovery log against the original auth database
+    /// without publishing a commit or repairing a tail. Used with both roles
+    /// stopped. Reuses the open log when its file stamps still match.
+    pub fn validate_against_witness(&self, conn: &Connection) -> Result<()> {
+        let mut cache = self.gate.lock().map_err(err)?;
+        let state = self.load_cached(&mut cache)?;
+        Self::validate_loaded(&state, None)?;
+        if !Self::matches(
+            &Self::witness(conn)?,
+            &state.image.head,
+            &state.image.proposal_digest,
+        ) {
+            return Err(invalid());
+        }
+        *cache = Some(state);
+        Ok(())
+    }
+
     /// Returns the resolved chain head for external durable retention. This crate
     /// supplies no external checkpoint store or acknowledgement integration.
     pub fn checkpoint(&self) -> Result<Checkpoint> {

@@ -194,6 +194,8 @@ impl Store {
             calternal_roots::prepare(roots, installation, create)
                 .map_err(|e| Error::unavailable(format!("storage roots refused: {e}")))?,
         );
+        crate::upgrades::check_start(&roots.appdata, installation)
+            .map_err(|error| Error::unavailable(error.to_string()))?;
         let root = roots.appdata.clone();
         calternal_fsio::private::directory(&root).map_err(|e| io_err("create data dir", e))?;
         let secrets = root.join("secrets");

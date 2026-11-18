@@ -6,6 +6,7 @@
 //! never held over SQL, I/O or awaits. One IMMEDIATE transaction
 //! owns each state change and its invalidation event; FULL commits provide durability.
 mod db;
+pub(crate) use db::UPGRADE_SCHEMA;
 mod dispatch;
 mod http;
 mod reader;

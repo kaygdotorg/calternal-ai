@@ -1,7 +1,7 @@
 //! Shared revision staging and indexed same-kind edits for a path change.
 use crate::{Content, FaultPoint, Item, Request, Result, db::Space, now_rfc3339, types::internal};
 use calternal_types::Error;
-use rusqlite::{Connection, Transaction, params};
+use rusqlite::{Transaction, params};
 use serde_json::{Value, json};
 use uuid::Uuid;
 
@@ -81,16 +81,11 @@ impl Staged {
     }
 }
 
-pub(crate) fn install(conn: &Connection) -> Result<()> {
-    conn.execute_batch(
-        "CREATE TABLE IF NOT EXISTS outbox_placement(
+pub(crate) const SCHEMA: &str = "CREATE TABLE IF NOT EXISTS outbox_placement(
             account TEXT NOT NULL, request TEXT NOT NULL, item TEXT NOT NULL REFERENCES items(id),
             PRIMARY KEY(account,request,item),
             FOREIGN KEY(account,request) REFERENCES outbox(account,request) ON DELETE CASCADE
-        ) WITHOUT ROWID, STRICT;",
-    )
-    .map_err(internal)
-}
+        ) WITHOUT ROWID, STRICT;";
 
 impl Space {
     pub(crate) fn stage_related(

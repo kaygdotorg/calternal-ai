@@ -21,7 +21,13 @@ use std::{
 const POLL: Duration = Duration::from_millis(50);
 const PAGE: usize = 128;
 const REQUESTS: usize = 128;
-const GENERATION: &str = concat!("3/", env!("CARGO_PKG_VERSION"));
+/// Schema version of the per-space search database and its file name.
+const VERSION: i64 = 2;
+const MIGRATIONS: calternal_store::migrations::Schema<'_> =
+    calternal_store::migrations::Schema::new("search projection", VERSION, &[SCHEMA], &[]);
+/// Projection generation. Bump it when what the rows mean changes, as generation 3
+/// did when thread bodies moved to the message index. A mismatch rebuilds the space.
+const GENERATION: &str = "3";
 
 pub(super) fn start(
     content: &Arc<Content>,
@@ -121,7 +127,7 @@ fn add(queue: &mut VecDeque<SpaceId>, marked: &mut HashSet<SpaceId>, space: Spac
 }
 
 pub(super) fn db_path(appdata: &std::path::Path, space: SpaceId) -> std::path::PathBuf {
-    crate::db::space_path(appdata, space).with_file_name("search-v2.db")
+    crate::db::space_path(appdata, space).with_file_name(format!("search-v{VERSION}.db"))
 }
 
 enum Progress {
@@ -226,7 +232,7 @@ fn open_writer(path: &std::path::Path) -> Result<Connection> {
         )
         .map_err(internal)?;
     register_functions(&index)?;
-    index.execute_batch(SCHEMA).map_err(internal)?;
+    calternal_store::migrations::migrate(&index, MIGRATIONS).map_err(internal)?;
     Ok(index)
 }
 

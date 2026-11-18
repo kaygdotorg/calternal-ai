@@ -28,6 +28,9 @@ pub trait KeyLifecycle: Send + Sync {
 mod key;
 mod lifecycle;
 mod local;
+
+/// Descriptor for each protected account or space secret database.
+pub const OWNER_SCHEMA: calternal_store::migrations::Schema<'_> = local::OWNER_SCHEMA;
 mod types;
 
 use calternal_types::Actor;

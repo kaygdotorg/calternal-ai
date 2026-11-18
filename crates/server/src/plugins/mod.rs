@@ -16,6 +16,7 @@
 
 pub mod agent_access;
 pub mod agent_settings;
+pub(crate) use agent_settings::UPGRADE_SCHEMA as AGENT_SETTINGS_SCHEMA;
 pub mod broker;
 pub mod job_api;
 pub mod job_sql;

@@ -2,7 +2,7 @@
 use std::{io, path::Path, time::Duration};
 
 use crate::identity::{Credentials, MachineKey};
-use crate::protocol::{LocalEnrollment, Owner};
+use crate::protocol::{LOCAL_ENROLLMENT_FORMAT, LocalEnrollment, Owner};
 use crate::{Error, Result};
 
 pub(crate) async fn wait(dir: &Path, handoff: &Path, server: &str) -> Result<()> {
@@ -51,7 +51,13 @@ fn advance(dir: &Path, handoff: &Path, server: &str) -> Result<bool> {
         creds
     };
     if confirmation.try_exists()? {
-        if std::fs::read_to_string(&confirmation)?.trim() != creds.machine_id.to_string() {
+        let text = std::fs::read_to_string(&confirmation)?;
+        let (format, id) = text.split_once('\n').unwrap_or_default();
+        calternal_fsio::format::require(
+            format.strip_prefix("format: ").unwrap_or_default(),
+            LOCAL_ENROLLMENT_FORMAT,
+        )?;
+        if id.trim() != creds.machine_id.to_string() {
             return Err(Error::Protocol(
                 "local enrollment confirmation did not match".into(),
             ));
@@ -66,6 +72,7 @@ fn advance(dir: &Path, handoff: &Path, server: &str) -> Result<bool> {
     }
     if !request.try_exists()? {
         let payload = serde_json::to_vec(&LocalEnrollment {
+            format: LOCAL_ENROLLMENT_FORMAT.into(),
             machine_id: creds.machine_id,
             public_key: creds.key.public_key_b64(),
             name: crate::enroll::host_name().chars().take(64).collect(),

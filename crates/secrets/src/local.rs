@@ -86,7 +86,7 @@ impl LocalStore {
         if !path.try_exists().map_err(|_| Error::Internal)? {
             return Ok(None);
         }
-        let c = open_db(&path, SCHEMA)?;
+        let c = open_db(&path)?;
         Ok(Some(step.hold(c)))
     }
 
@@ -100,7 +100,7 @@ impl LocalStore {
         let path = self.path(owner);
         calternal_fsio::private::directory(path.parent().ok_or(Error::Internal)?)
             .map_err(|_| Error::Internal)?;
-        open_db(&path, SCHEMA).map(|connection| step.hold(connection))
+        open_db(&path).map(|connection| step.hold(connection))
     }
 
     fn key(&self, owner: &Owner, c: &Connection, create: bool) -> Result<MasterKey> {
@@ -149,25 +149,21 @@ impl LocalStore {
     }
 }
 
+pub(crate) const OWNER_SCHEMA: calternal_store::migrations::Schema<'_> =
+    calternal_store::migrations::Schema::new("secrets.db", 1, &[SCHEMA], &[]);
+
 /// Open (creating with mode 0600 if needed) a database with FULL sync and
-/// overwrite-on-delete. The schema and WAL mode are applied once, when
-/// `user_version` is still 0; later opens only set per-connection pragmas.
-pub(crate) fn open_db(path: &Path, schema: &str) -> Result<Connection> {
+/// overwrite-on-delete. Existing current databases need one schema version read.
+pub(crate) fn open_db(path: &Path) -> Result<Connection> {
     calternal_fsio::private::file(path).map_err(|_| Error::Internal)?;
     let c = Connection::open(path).map_err(|_| Error::Internal)?;
     c.busy_timeout(Duration::from_secs(5))
         .map_err(|_| Error::Internal)?;
     c.execute_batch("PRAGMA synchronous=FULL; PRAGMA secure_delete=ON;")
         .map_err(|_| Error::Internal)?;
-    let version: i64 = c
-        .pragma_query_value(None, "user_version", |r| r.get(0))
+    calternal_store::migrations::migrate(&c, OWNER_SCHEMA).map_err(|_| Error::Internal)?;
+    c.pragma_update(None, "journal_mode", "WAL")
         .map_err(|_| Error::Internal)?;
-    if version == 0 {
-        c.execute_batch(&format!(
-            "PRAGMA journal_mode=WAL; BEGIN IMMEDIATE; {schema} PRAGMA user_version=1; COMMIT;"
-        ))
-        .map_err(|_| Error::Internal)?;
-    }
     Ok(c)
 }
 
