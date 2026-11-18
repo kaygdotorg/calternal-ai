@@ -111,15 +111,17 @@ const touch = (page, type, x, y, sel = ".mid-card") => page.evaluate(([type, x, 
 {
   const { ctx, page } = await open("desktop", { sidebarOpen: true, rightOpen: true });
   const track = (edge) => page.evaluate((edge) => new Promise((res) => { const out = []; const t0 = performance.now(); const f = () => { const r = document.querySelector(".mid-card").getBoundingClientRect(); out.push(Math.round(edge === "left" ? r.left : r.right)); if (performance.now() - t0 < 700) requestAnimationFrame(f); else res(out); }; requestAnimationFrame(f); }), edge);
+  // The motion is judged by its own animation (a running one with the sheet duration) and at least one in-between position: how many frames a busy machine draws is not the animation.
+  const dur = () => page.evaluate(() => document.querySelector(".mid").getAnimations().map((a) => a.effect.getTiming().duration)[0] ?? 0);
   const between = (xs, a, b) => new Set(xs.filter((x) => x > Math.min(a, b) + 6 && x < Math.max(a, b) - 6)).size;
   for (const [side, hide, show, edge] of [["left", /Hide the sidebar/, /Show the sidebar/, "left"], ["right", /Hide the side panel/, /Show the side panel/, "right"]]) {
     const start = side === "left" ? await cardLeft(page) : await page.evaluate(() => Math.round(document.querySelector(".mid-card").getBoundingClientRect().right));
-    const run = track(edge); await page.getByRole("button", { name: hide }).first().click(); const closing = await run;
+    const run = track(edge); await page.getByRole("button", { name: hide }).first().click(); await page.waitForTimeout(20); const d1 = await dur(); const closing = await run;
     const end = closing.at(-1), mid = between(closing, start, end);
-    ok(mid >= 4 && Math.abs(end - start) > 100, `closing the ${side} sidebar by its button animates (the card's ${edge} edge goes ${start} to ${end} through ${mid} in-between positions)`);
-    const run2 = track(edge); await page.getByRole("button", { name: show }).first().click(); const opening = await run2;
+    ok(mid >= 1 && d1 >= 150 && Math.abs(end - start) > 100, `closing the ${side} sidebar by its button animates (the card's ${edge} edge goes ${start} to ${end} through ${mid} in-between positions, animation ${d1} ms)`);
+    const run2 = track(edge); await page.getByRole("button", { name: show }).first().click(); await page.waitForTimeout(20); const d2 = await dur(); const opening = await run2;
     const mid2 = between(opening, end, start);
-    ok(mid2 >= 4 && Math.abs(opening.at(-1) - start) < 3, `and opening it again does the same, back to where it was (${mid2} in-between positions)`);
+    ok(mid2 >= 1 && d2 >= 150 && Math.abs(opening.at(-1) - start) < 3, `and opening it again does the same, back to where it was (${mid2} in-between positions, animation ${d2} ms)`);
   }
   await ctx.close();
 }

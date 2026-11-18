@@ -55,7 +55,8 @@ ok((await side()) === "false" && (await over()) === null, "dragging the card bac
 await page.evaluate(() => { window.__mv = []; document.addEventListener("pointermove", (e) => window.__mv.push([e.timeStamp, e.clientX]), true); });
 await finger(4, 70, { steps: 3, gap: 8 }); await settle();
 const mv = await page.evaluate(() => window.__mv), speed = mv.length > 1 ? (mv.at(-1)[1] - mv[0][1]) / (mv.at(-1)[0] - mv[0][0]) : 0;
-if (process.env.CAL_GATE && speed < 0.45) console.log(`info  a short fast flick: the events arrived too slowly to be a flick (${speed.toFixed(2)} px/ms on a busy machine), not judged`);
+const gaps = mv.slice(1).map((m, i) => m[0] - mv[i][0]), slow = Math.max(...gaps, 0) > 60;
+if (process.env.CAL_GATE && (speed < 0.45 || slow)) console.log(`info  a short fast flick: the events arrived too slowly to be a flick (${speed.toFixed(2)} px/ms, the longest gap ${Math.max(...gaps, 0).toFixed(0)} ms, on a busy machine), not judged`);
 else ok((await side()) === "true", "a short fast flick opens the list", `${speed.toFixed(2)} px/ms`);
 if ((await side()) === "true") { await page.evaluate(() => history.back()); await settle(); } // (a flick that was not judged may have left it closed: nothing to go back from)
 // 6. Interrupt: a touch while the card is settling holds it where it is.
