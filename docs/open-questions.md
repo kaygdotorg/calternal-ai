@@ -2,7 +2,7 @@
 
 Decisions waiting on kayg, most blocking first. Answer here or in chat; answered items
 move to the decision record they belong to and leave this list. Terms: see
-[glossary](glossary.md). Updated 2026-11-19 06:20 IST.
+[glossary](glossary.md). Updated 2026-11-19 11:40 IST.
 
 ## Waiting now
 
@@ -11,7 +11,6 @@ move to the decision record they belong to and leave this list. Terms: see
 | 53 | A request receipt is kept past the 7-day retention while its request is still unfinished on disk (the fix for a duplicated append after a crash); a stuck request can pin it with no fixed bound | Accept, with the stuck state shown in health | Storage |
 | 31 | Thread rows: hover hides the time and state mark for the three actions; swipe right shows only Copy link; touch has no long-press menu, "More" sits in the swipe tray | Keep all three; try on a phone | Threads |
 | 35 | People: can a group hold a server role; what happens when a space's only Owner is disabled | Port the existing app's answer | People |
-| 36 | Notes: purging the whole Trash at once, reusing a file name after delete, renames that touch many links | To grill | Notes |
 | 40 | Performance: the slow start at 1,000 spaces (320 to 860 ms against 300 ms), the cold save tail and the draft-save tail. No profile yet says where the time goes | Profile first, then ask | Performance |
 | 10 | Native font: system or Google Sans Flex | Decide after seeing both on a Mac and an iPhone | Native apps |
 
@@ -22,7 +21,7 @@ Decided 2026-11-18: a person never signs in twice and no API key is used. The ti
 ## Design rounds
 
 - **Settings and Appearance**: second batch answered 2026-11-18 (see Recently decided). Left: the readability floor and light mode on the preview (#24).
-- **Machines without a terminal**, partly decided 2026-11-18 (below); still to grill: pre-configuring machines at deploy time, the `curl | sh` installer at calternal.com/install for both a server and a machine, the macOS app that bundles the CLI, how a machine behind NAT stays reachable for people who know nothing about networking, and how a group's allowance of pool compute is configured and shown.
+- **Machines and installer**: decided 2026-11-19 (see Recently decided); no lane yet.
 - **Pricing**: plans are listed at calternal.com/pricing; storage is bought separately; what the sizes, hours and storage steps are.
 - **Upgrades with real data**: decided 2026-11-18 that updates are automatic and a failed one rolls back without the person or admin noticing; the index rebuild is made faster first (search is unavailable for 67 to 80 s at 100,000 notes today), then migrations are written for the small core (accounts, spaces, roles, secrets), which cannot be rebuilt from files.
 - **MicroVMs**: one per person with a container per thread; sizes decided; the lane posts its build plan on issue #51 for review.
@@ -31,12 +30,16 @@ Decided 2026-11-18: a person never signs in twice and no API key is used. The ti
 
 ## Queued, no decision needed
 
+- Production bugs from kayg's first sign-up (2026-11-19): onboarding was skipped after the passkey step, and the server's own machine never connected because the host cannot reach its own public address. Both being fixed; production is then wiped and installed fresh again.
+- Open with kayg: sandbox hours per plan (researching what comparable products include), how to keep plans and billing out of the open source, the receipt retention sign-off (#53).
+
 - An incompatible update cannot be applied yet: the full restore point refuses symbolic links, which every coding workspace contains. Additive updates are unaffected. Fix: store links as links in the restore point (a format change, to review first).
 - Update downtime is measured only for the server process (about 180 ms); the full path through the container restart and the proxy is unmeasured.
 - The plugin-worker sandbox probe test times out when the whole workspace suite runs in parallel on a loaded machine (twice so far) and passes alone; make the container tests serial or give the probe a load-aware wait.
 - Production runs sandboxes in containers; the per-person microVM backend is merged and opt-in, and needs the operator network set-up on the production VM before it is switched on.
 
-- Codex reached its usage limit on 2026-11-19 (resets 2026-11-24). Backend lanes fall back to Claude per the standing rule: upgrades and plugins restarted; performance, search and microVM follow-ups parked until the first deploy is out.
+- Codex is available again (kayg, 2026-11-19): five backend lanes run on it (performance, search and Notes choices, upgrades follow-ups, threads backend, fonts backend); the plugins lane finishes its current piece on Claude.
+- Production (calternal.cloud) was installed fresh on 2026-11-19 from dev c880862, the first schema baseline; it runs sandboxes in containers. kayg has not signed up yet.
 - Parked performance work: the cost of the smaller security-log compaction threshold (warm start 328 to 120 ms), the perf VM's own fsync tail against the 40 ms save budget at 100,000 notes, a health reason for a receipt pinned past retention.
 - Parked search work: account for the message index being 168 MB per million against 117 in the probe.
 
@@ -47,6 +50,9 @@ Decided 2026-11-18: a person never signs in twice and no API key is used. The ti
 
 ## Recently decided (2026-11-17), now in the decision records
 
+- More decisions (2026-11-19): the server pins a tested version of each harness and offers updates in Admin after a smoke test; running turns finish on the old version; Calternal manages the harnesses in Direct mode too. Sandbox sizes are 2, 4 and 8 GiB of memory (kayg will enlarge the VM). Storage is sold in two kinds, text and binary (photos, video, documents). Production moves to a microVM per person. A thread file's limit rises from 2 MiB to 16 MiB, with speed and indexing proven at that size. Notifications are web push, native apps later. Claude Code and Codex are both plugins; Codex support is next.
+- Notes (#36, 2026-11-19): a trashed item is purged after 30 days; Empty Trash is one confirmed, irreversible background job; Editors delete and restore, only Managers and the Owner purge for good. Renames and name reuse follow the existing app (ADR 0015, 0023).
+- Machines and installer (2026-11-19): something running on a machine (a dev server preview) is reached through the server over the connection the machine already holds; the machine program updates itself to match the server between turns, and updating the harnesses (Claude Code, Codex and others) is also done from the interface; calternal.com/install shows what it will do and verifies a signed binary; a per-user service with no root, root only for Podman or the microVM runtime; on a Mac the same one-line installer sets up a background service now and the full app that bundles the CLI comes later; a hosted instance lists its pool machines in an operator file at deploy and can add more in Admin.
 - Plugin network access (2026-11-19): four kinds, each its own permission. Named connections: a Manager approves the plugin's envelope once and people add their own hosts inside it; built-in mail handling plus generic TCP to an approved host and port. Content fetch (images in mail, previews): any plugin may declare it, shown at install, always anonymous, restricted and proxied by the server. Open internet: one broad permission approved by the space's Owner or a Manager. Private network: a separate grant that can name hosts, ranges and the space's machines. It must stay wide enough that people's own plugins can do a lot.
 - Interface details (kayg, 2026-11-18 night): every segmented choice uses the existing app's Selector, ported (an outer pill with the selected item as a pill inside it), including Inbox and All Threads; no search button beside those tabs; the full-screen control is hidden when a window is already full; window width and look leave the three-dot menu and their defaults live in Settings, Appearance; Settings shows nested sections as a split inside the card when there is width (the same primitive a mail plugin would use); no setting appears twice.
 - Production is not deployed again until data survives upgrades (kayg, 2026-11-18): migrations for everything that cannot be rebuilt, a version on every format, and a tested rollback come first; kayg signs up after that. The scaling measurement for message search (10 million, 100 million, 1 billion if the disk allows; many threads and few long ones) is accepted as enough.
