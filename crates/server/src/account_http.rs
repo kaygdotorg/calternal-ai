@@ -40,6 +40,17 @@ impl HttpAuth {
             oidc: std::sync::Arc::new(oidc::Flows::new()),
         }
     }
+
+    pub(crate) fn configure_oidc_trust(&mut self) -> std::io::Result<()> {
+        if self.config.oidc_enabled
+            && let Some(path) = std::env::var_os("CALTERNAL_OIDC_CA_FILE")
+        {
+            let pem = std::fs::read(path)
+                .map_err(|_| std::io::Error::other("could not read CALTERNAL_OIDC_CA_FILE"))?;
+            self.oidc = std::sync::Arc::new(oidc::Flows::with_ca(&pem)?);
+        }
+        Ok(())
+    }
 }
 const HOST_COOKIE_NAME: &str = "__Host-calternal_session";
 type Reply = Result<Response, Response>;
@@ -204,15 +215,14 @@ async fn body<T: serde::de::DeserializeOwned>(
     serde_json::from_slice(&bytes)
         .map_err(|_| failure(400, "invalid_input", "Check the JSON request."))
 }
-fn cookies(headers: &HeaderMap) -> Vec<(&str, &str)> {
+fn cookies<'a>(headers: &'a HeaderMap, name: &'static str) -> impl Iterator<Item = &'a str> {
     headers
         .get_all(COOKIE)
         .iter()
         .filter_map(|h| h.to_str().ok())
         .flat_map(|h| h.split(';'))
         .filter_map(|p| p.trim().split_once('='))
-        .filter(|(n, _)| *n == HOST_COOKIE_NAME)
-        .collect()
+        .filter_map(move |(key, value)| (key == name).then_some(value))
 }
 fn bearer(headers: &HeaderMap) -> Option<&str> {
     headers
@@ -232,14 +242,12 @@ pub async fn identify(
         if foreign(service, headers) {
             return None;
         }
-        let c: Vec<_> = cookies(headers)
-            .into_iter()
-            .filter(|(n, _)| *n == HOST_COOKIE_NAME)
-            .collect();
-        if c.len() != 1 {
+        let mut cookies = cookies(headers, HOST_COOKIE_NAME);
+        let token = cookies.next()?;
+        if cookies.next().is_some() {
             return None;
         }
-        c[0].1
+        token
     };
     service.auth.identify(token).await
 }
@@ -268,9 +276,8 @@ pub async fn cookie_middleware(
     next: Next,
 ) -> Response {
     let api = req.uri().path() == "/api" || req.uri().path().starts_with("/api/");
-    let c = cookies(req.headers());
     let browser = bearer(req.headers()).is_none() && !foreign(&service, req.headers());
-    let ambiguous = browser && c.iter().filter(|(n, _)| *n == HOST_COOKIE_NAME).count() > 1;
+    let ambiguous = browser && cookies(req.headers(), HOST_COOKIE_NAME).nth(1).is_some();
     let mut response = if ambiguous {
         unauthorized()
     } else {
@@ -280,7 +287,7 @@ pub async fn cookie_middleware(
         || (api
             && response
                 .extensions()
-                .get::<crate::api::wallpapers::ImageResponse>()
+                .get::<crate::api::assets::CacheResponse>()
                 .is_none())
     {
         response

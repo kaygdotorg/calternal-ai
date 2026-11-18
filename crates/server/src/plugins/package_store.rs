@@ -6,6 +6,7 @@ use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 use serde::{Deserialize, Serialize};
 use std::{fs, io::Read, path::Path, time::Duration};
 
+mod bundled_notes;
 mod worker_cache;
 
 const MAX_WORKER: usize = calternal_machine::sandbox::worker::MAX_SOURCE_BYTES;
@@ -213,7 +214,24 @@ pub fn installed_manifest(appdata: &Path, id: &str) -> Result<Option<ManifestV1>
 /// Check whether an update requires the space manager to approve it again.
 /// Cost: bounded declaration comparisons, with no code execution or I/O.
 pub fn authority_changed(old: &ManifestV1, new: &ManifestV1) -> bool {
-    new.host_calls
+    let old_content = old
+        .network
+        .as_ref()
+        .and_then(|network| network.content_fetch.as_ref());
+    let new_content = new
+        .network
+        .as_ref()
+        .and_then(|network| network.content_fetch.as_ref());
+    new_content.is_some_and(|new| {
+        old_content.is_none_or(|old| {
+            new.profile != old.profile
+                || new
+                    .sources
+                    .iter()
+                    .any(|source| !old.sources.contains(source))
+        })
+    }) || new
+        .host_calls
         .iter()
         .any(|call| !old.host_calls.contains(call))
         || new
@@ -571,7 +589,7 @@ pub(crate) const UPGRADE_SCHEMA: calternal_store::migrations::Schema<'_> =
         "installed-plugins.sqlite3",
         1,
         &[PACKAGE_SCHEMA],
-        &[],
+        &[bundled_notes::LIVE_EDITING],
     );
 
 #[cfg(test)]

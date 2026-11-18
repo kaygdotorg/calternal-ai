@@ -305,25 +305,83 @@ impl<D: Directory> SpaceHost<D> {
         Ok(item_json(&item))
     }
 
+    fn prepare_content(&self, input: &Value) -> Result<Value, Error> {
+        let request: calternal_core::ContentPrepareInput =
+            serde_json::from_value(input.clone()).map_err(|_| Error::Invalid)?;
+        if !self.has(Capability::SpaceRead)
+            || !self.has(Capability::PluginsUse)
+            || self.kind_actor(&request.kind, false).is_none()
+        {
+            return Err(Error::Refused);
+        }
+        let content = super::network::prepare(
+            &self.state.store,
+            self.identity.id,
+            self.session.clone(),
+            self.space,
+            &self.plugin,
+            self.generation,
+            request,
+        )
+        .map_err(|_| Error::Refused)?;
+        serde_json::to_value(content).map_err(|_| Error::Invalid)
+    }
+
     fn write_item(&self, input: &Value) -> Result<Value, Error> {
         let object = exact(
             input,
-            &["kind", "item_id", "base_revision", "metadata", "text"],
+            &[
+                "kind",
+                "item_id",
+                "base_revision",
+                "metadata",
+                "text",
+                "edit",
+            ],
         )?;
         let kind = str_field(object, "kind")?.ok_or(Error::Invalid)?;
         let actor = self.kind_actor(kind, true).ok_or(Error::Refused)?;
-        let text = object
-            .get("text")
-            .and_then(Value::as_str)
-            .ok_or(Error::Invalid)?;
         let id = str_field(object, "item_id")?
             .map(|s| Uuid::parse_str(s).map_err(|_| Error::Invalid))
             .transpose()?;
         let base = str_field(object, "base_revision")?;
-        let metadata = match object.get("metadata") {
-            None => json!({}),
-            Some(m @ Value::Object(_)) => m.clone(),
-            Some(_) => return Err(Error::Invalid),
+        #[derive(serde::Deserialize)]
+        #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+        enum Edit {
+            Append {
+                text: String,
+            },
+            Patch {
+                changes: Vec<calternal_content::LiveTextEdit>,
+            },
+        }
+        use crate::store::PluginItemWrite;
+        let edit = object
+            .get("edit")
+            .map(|value| serde_json::from_value::<Edit>(value.clone()).map_err(|_| Error::Invalid))
+            .transpose()?;
+        let body = match edit.as_ref() {
+            Some(_) if object.contains_key("text") || object.contains_key("metadata") => {
+                return Err(Error::Invalid);
+            }
+            Some(Edit::Append { text }) => {
+                PluginItemWrite::Edit(calternal_content::LiveEdit::Append(text))
+            }
+            Some(Edit::Patch { changes }) => {
+                PluginItemWrite::Edit(calternal_content::LiveEdit::Patch(changes))
+            }
+            None => {
+                let text = object
+                    .get("text")
+                    .and_then(Value::as_str)
+                    .ok_or(Error::Invalid)?;
+                let metadata = match object.get("metadata") {
+                    None => json!({}),
+                    Some(m @ Value::Object(_)) => m.clone(),
+                    Some(_) => return Err(Error::Invalid),
+                };
+                PluginItemWrite::Replace { metadata, text }
+            }
         };
         // A plugin writes only its own kinds, and only with current write authority.
         if !self.plugin.declares_kind(kind) || !self.has(Capability::ContentWrite) {
@@ -355,8 +413,7 @@ impl<D: Directory> SpaceHost<D> {
                 kind,
                 id,
                 base,
-                metadata,
-                text,
+                body,
             )
             .map_err(|_| Error::Refused)?;
         // WorkerSession runs callbacks serially. Slot zero remains available
@@ -423,14 +480,33 @@ impl<D: Directory> InvocationHost for SpaceHost<D> {
                     serde_json::from_value(input.clone()).map_err(|_| Error::Invalid)?;
                 let setting = super::settings::declaration(&self.plugin, &request.key)
                     .map_err(|_| Error::Refused)?;
-                let record = self
-                    .state
-                    .store
-                    .content()
-                    .plugin_setting(self.space, &self.plugin.manifest.id, &request.key)
-                    .map_err(|_| Error::Refused)?;
+                let record =
+                    if setting.scope == Some(calternal_core::ManifestSettingScope::Personal) {
+                        let value = self
+                            .state
+                            .inputs
+                            .plugin_value(
+                                self.identity.id,
+                                self.space,
+                                &self.plugin.manifest.id,
+                                &request.key,
+                            )
+                            .map_err(|_| Error::Refused)?;
+                        calternal_content::SettingRecord {
+                            value,
+                            alternatives: Vec::new(),
+                            repair: None,
+                        }
+                    } else {
+                        self.state
+                            .store
+                            .content()
+                            .plugin_setting(self.space, &self.plugin.manifest.id, &request.key)
+                            .map_err(|_| Error::Refused)?
+                    };
                 Ok(super::settings::effective(setting, record).effective)
             }
+            HostCallKind::ContentPrepareV1 => self.prepare_content(input),
             HostCallKind::WriteItem => self.write_item(input),
             HostCallKind::StartJob => self.start_job(input),
             HostCallKind::CheckpointJob => self.checkpoint_job(input),

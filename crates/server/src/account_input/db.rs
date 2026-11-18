@@ -302,11 +302,14 @@ impl Inputs {
         let tx = c
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(internal)?;
-        if tx
-            .execute("DELETE FROM inputs WHERE space=?1", [space.to_string()])
-            .map_err(internal)?
-            > 0
-        {
+        for table in ["inputs", "plugin_settings", "plugin_setting_receipts"] {
+            tx.execute(
+                &format!("DELETE FROM {table} WHERE space=?1"),
+                [space.to_string()],
+            )
+            .map_err(internal)?;
+        }
+        if tx.total_changes() > before {
             self.change(&tx)?;
         }
         let changed = tx.total_changes() > before;
@@ -366,7 +369,7 @@ impl Inputs {
 
 // Inputs derive their space and item from their authoritative payload. A draft
 // has one identity, and a pending send's key is qualified by its space.
-const SCHEMA: &str = "
+pub(super) const SCHEMA: &str = "
 CREATE TABLE binding(account TEXT PRIMARY KEY,epoch TEXT NOT NULL);
 CREATE TABLE inputs(kind TEXT NOT NULL CHECK(kind IN ('draft','pending')),id TEXT NOT NULL,body TEXT NOT NULL,draft_revision TEXT,space TEXT GENERATED ALWAYS AS (json_extract(body,'$.space_id')) STORED NOT NULL,item TEXT GENERATED ALWAYS AS (json_extract(body,'$.item_id')) STORED NOT NULL,payload_bytes INTEGER GENERATED ALWAYS AS (length(CAST(coalesce(json_extract(body,'$.text'),json_extract(body,'$.request')) AS BLOB))) STORED);
 CREATE UNIQUE INDEX inputs_key ON inputs(kind,space,id);
@@ -378,4 +381,9 @@ CREATE TABLE events(seq INTEGER PRIMARY KEY AUTOINCREMENT,token TEXT NOT NULL UN
 ";
 
 pub(crate) const UPGRADE_SCHEMA: calternal_store::migrations::Schema<'_> =
-    calternal_store::migrations::Schema::new("input.db", 2, &[SCHEMA], &[]);
+    calternal_store::migrations::Schema::new(
+        "input.db",
+        2,
+        &[SCHEMA],
+        &[super::plugin_settings::SCHEMA],
+    );

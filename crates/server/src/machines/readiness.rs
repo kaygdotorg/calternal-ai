@@ -265,6 +265,26 @@ impl MachineService {
             .ok_or_else(|| Error::not_found("machine not found"))
     }
 
+    /// Select a currently connected eligible automation target. An explicit target
+    /// belongs to the creator, and the default uses an entitled pool sandbox.
+    /// Cost is one registry lock and the caller's indexed candidate set.
+    pub(crate) fn automation_target(
+        &self,
+        account: AccountId,
+        target: Option<Uuid>,
+    ) -> Result<Option<Uuid>, Error> {
+        let st = self.lock()?;
+        Ok(st
+            .eligible(account, target)
+            .filter(|m| match target {
+                Some(_) => m.row.owner == (Owner::Account { id: account }),
+                None => m.row.owner == Owner::Pool,
+            })
+            .filter(|m| connected(m, &self.settings) && st.free_for(m, account) > 0)
+            .map(|m| m.row.id)
+            .min())
+    }
+
     /// Authorize one exact target for verification, independent of pool entitlement.
     /// Cost is one registry lookup. Returns whether it is a pool diagnostic.
     pub(crate) fn verify_target(

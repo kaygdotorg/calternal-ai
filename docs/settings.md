@@ -49,15 +49,21 @@ One model everywhere, nothing more complex:
 ## Appearance
 
 - Personal by default; a space can set defaults that members may override.
+- Color scheme, UI size, app order, chat width and backdrop clarity are
+  local to the device. The shell overlays these on the account's wallpaper,
+  materials, palette, accent, preset, fonts, wordmark, motion and streaming
+  preferences.
 - Wallpaper is per person, the same in every space.
 - A preset sets everything at once; each part stays adjustable afterwards.
 - First run shows a short gallery of presets, then goes straight in.
-- Fonts: interface, chat and code. One **UI size** slider scales the whole interface.
+- Fonts: interface, chat, code, terminal and wordmark. See the [font and account appearance contract](fonts.md). One **UI size** slider scales the whole interface.
 - Materials are three checkboxes: **Blur**, **Dim**, **Tint**. No sliders. The values are
   chosen automatically from the contrast of the selected background so everything stays
   readable in light and dark.
 - Motion follows the system's reduce-motion setting, plus an off switch.
 - The accent is inferred from the wallpaper; the wordmark and its font are set here.
+
+The [Skills and Automations operations](automations.md) cover portable skill bundles and scheduled turn admission.
 
 ## Agents
 

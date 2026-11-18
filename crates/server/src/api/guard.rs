@@ -23,6 +23,7 @@ pub(super) async fn guard<D: Directory>(
     #[cfg(feature = "perf-timings")]
     let entry_ns = (path == "/api/v1/operations").then(calternal_types::perf_monotonic_ns);
     let api = is_api(&path);
+    let guest_read = path.starts_with("/s/") && matches!(*req.method(), Method::GET | Method::HEAD);
     let deny = |e: Error| -> Response {
         if api {
             failure(None, e)
@@ -45,7 +46,9 @@ pub(super) async fn guard<D: Directory>(
         }
         // Machine protocol routes authenticate the machine themselves.
         let account_route = path.starts_with("/api/v1/auth/")
-            || path.starts_with(calternal_machine::protocol::PATH_PREFIX);
+            || path.starts_with(calternal_machine::protocol::PATH_PREFIX)
+            || (*req.method() == axum::http::Method::POST
+                && path.starts_with(crate::plugins::signals::PREFIX));
         if api
             && !account_route
             && bearer(req.headers()).is_none()
@@ -58,7 +61,10 @@ pub(super) async fn guard<D: Directory>(
             break 'resp deny(Error::unauthorized("missing or invalid session"));
         }
 
-        if !account_route && let Some(origin) = req.headers().get(header::ORIGIN) {
+        if !account_route
+            && !guest_read
+            && let Some(origin) = req.headers().get(header::ORIGIN)
+        {
             let expected = if bearer(req.headers())
                 .and_then(|t| state.directory.authenticate(t))
                 .is_some()
@@ -92,6 +98,7 @@ pub(super) async fn guard<D: Directory>(
             .and_then(|v| v.to_str().ok())
             == Some("cross-site")
             && !provider_callback
+            && !guest_read
         {
             break 'resp deny(Error::forbidden("cross-site request denied"));
         }
@@ -185,7 +192,7 @@ pub(super) async fn guard<D: Directory>(
             && (response.status().is_success()
                 || response
                     .extensions()
-                    .get::<super::wallpapers::ImageResponse>()
+                    .get::<super::assets::CacheResponse>()
                     .is_some())
             && !(agent_admitted.is_some()
                 && response
@@ -231,15 +238,24 @@ pub(super) async fn guard<D: Directory>(
         response
     };
     let mut resp = resp;
-    let cacheable_image = resp
+    let cacheable_asset = resp
         .extensions()
-        .get::<super::wallpapers::ImageResponse>()
+        .get::<super::assets::CacheResponse>()
         .is_some();
+    let sealed = resp
+        .extensions()
+        .get::<crate::plugins::network::http::SealedFrame>()
+        .map(|frame| frame.0.clone());
+    let is_sealed = sealed.is_some();
     let h = resp.headers_mut();
-    h.insert(
-        header::CONTENT_SECURITY_POLICY,
-        HeaderValue::from_static(CSP),
-    );
+    if let Some(sealed) = sealed {
+        h.insert(header::CONTENT_SECURITY_POLICY, sealed);
+    } else if !h.contains_key(header::CONTENT_SECURITY_POLICY) {
+        h.insert(
+            header::CONTENT_SECURITY_POLICY,
+            HeaderValue::from_static(CSP),
+        );
+    }
     h.insert(
         header::X_CONTENT_TYPE_OPTIONS,
         HeaderValue::from_static("nosniff"),
@@ -248,8 +264,11 @@ pub(super) async fn guard<D: Directory>(
         header::REFERRER_POLICY,
         HeaderValue::from_static("no-referrer"),
     );
-    h.insert(header::X_FRAME_OPTIONS, HeaderValue::from_static("DENY"));
-    if api && !cacheable_image {
+    h.insert(
+        header::X_FRAME_OPTIONS,
+        HeaderValue::from_static(if is_sealed { "SAMEORIGIN" } else { "DENY" }),
+    );
+    if api && !cacheable_asset {
         h.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
     }
     resp

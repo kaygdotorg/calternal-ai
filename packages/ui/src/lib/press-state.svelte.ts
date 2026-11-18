@@ -28,5 +28,10 @@ export interface PressOpen {
 }
 
 /** Not deeply reactive (`$state.raw`): the press holds DOM nodes and callbacks, which must keep their identity. */
-class PressState { cur = $state.raw<PressOpen | null>(null); }
+class PressState {
+  /** The open press. */
+  cur = $state.raw<PressOpen | null>(null);
+  /** A press being held that has not opened yet: the surface builds and measures its card now, unseen, so opening is only transforms and fades. */
+  stage = $state.raw<{ row: HTMLElement; bag: PressBag; copy?: HTMLElement } | null>(null);
+}
 export const pressState = new PressState();

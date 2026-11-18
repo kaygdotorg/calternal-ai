@@ -30,6 +30,8 @@ pub mod people;
 mod secret_keys;
 mod session;
 mod setup;
+/// Protected item sharing and link authorization.
+pub mod sharing;
 pub mod spaces;
 use calternal_types::{AccountId, InstallationId, SpaceId};
 pub mod token;

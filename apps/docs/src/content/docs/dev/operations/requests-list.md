@@ -96,6 +96,13 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
           "description": "Stable request UUID.",
           "type": "string"
         },
+        "job_id": {
+          "description": "Job UUID for a plugin wait addressed to this person.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "space_id": {
           "description": "Addressed space UUID, absent for personal secret requests.",
           "type": [
