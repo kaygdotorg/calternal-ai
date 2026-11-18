@@ -353,3 +353,4 @@ for an existing live item. Use `{"type":"append","text":"…"}` with no
 with a `base_revision`. A patch accepts at most 256 non-overlapping changes.
 Positions and lengths are UTF-16 units on grapheme boundaries in the base.
 Both operations preserve the current metadata and use the normal write receipt.
+See [Live editing service](live-rooms.md) for wire and authority details.

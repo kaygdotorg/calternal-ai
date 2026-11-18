@@ -62,25 +62,28 @@ impl<D: Directory> Connection<D> {
     }
 
     async fn apply_message(&mut self, address: &str, message: Message) -> Result<(), Error> {
+        let message = match message {
+            Message::Sync(SyncMessage::SyncStep2(bytes)) => {
+                return self.update(address, bytes, true).await;
+            }
+            Message::Sync(SyncMessage::Update(bytes)) => {
+                return self.update(address, bytes, false).await;
+            }
+            Message::Custom(100, data) => return self.check(address, &data).await,
+            message => message,
+        };
         let member = self.members.get(address).ok_or_else(closed)?;
-        self.authorize(&member.key, &member.plugin, member.generation, false)
-            .await?;
-        if *member.kicked.borrow() {
-            return Err(hidden());
-        }
+        self.authorize_member(member, false).await?;
         match message {
             Message::Sync(SyncMessage::SyncStep1(vector)) => {
                 self.send(address, &self.members[address].lease.state(Some(&vector))?)
                     .await
             }
-            Message::Sync(SyncMessage::SyncStep2(bytes)) => self.update(address, bytes, true).await,
-            Message::Sync(SyncMessage::Update(bytes)) => self.update(address, bytes, false).await,
             Message::Awareness(update) => member.lease.awareness(update),
             Message::AwarenessQuery => {
                 self.send(address, &self.members[address].lease.presence_snapshot())
                     .await
             }
-            Message::Custom(100, data) => self.check(address, &data).await,
             _ => Ok(()),
         }
     }
@@ -91,8 +94,7 @@ impl<D: Directory> Connection<D> {
             return Ok(());
         }
         if bytes != [0, 0] {
-            self.authorize(&member.key, &member.plugin, member.generation, true)
-                .await?;
+            self.authorize_member(member, true).await?;
             if *member.kicked.borrow() {
                 return Err(hidden());
             }
@@ -204,14 +206,11 @@ impl<D: Directory> Connection<D> {
 
     async fn saved(&mut self, address: &str, id: u64) -> Result<(), Error> {
         let member = self.members.get(address).ok_or_else(closed)?;
-        self.authorize(&member.key, &member.plugin, member.generation, false)
-            .await?;
         member.lease.wait_durable().await?;
         if *member.kicked.borrow() {
             return Err(hidden());
         }
-        self.authorize(&member.key, &member.plugin, member.generation, false)
-            .await?;
+        self.authorize_member(member, false).await?;
         use yrs::encoding::write::Write;
         let mut bytes = Vec::new();
         bytes.write_var(id);

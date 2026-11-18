@@ -83,6 +83,29 @@ recovering only the local diff from the last confirmed base. Retain the
 recovery intent when it cannot be applied safely. A transport rejoin
 or editor state alone must never clear the pending marker.
 
+## Item access
+
+The sharing adapter supplies a process-wide atomic authority revision.
+A membership reuses its View only while the revision remains the same
+even value it observed before and after a successful check. An odd value
+pauses delivery. The next packet on that membership revalidates View
+after an epoch change, with no eager scan of other memberships. Join
+checks View and writes check Edit. The post-commit eviction hook cuts
+off queued frames for recipients who lost their last grant.
+
+On a stable epoch with the sharing adapter, a production peer frame
+uses one current session statement, zero item or grant statements, and
+zero plugin activation statements. A View refresh adds three reads for
+Notes. A changed plugin activation epoch adds its own indexed read.
+The interim space-grant adapter provides no revision, so its stable path
+uses a current space capability statement in addition to the session
+statement. These are path counts, measured latency is still required.
+
+The additional sharing qualification uses 32 rooms with 32 participants
+each and one unrelated grant mutation per second. Start timing at each
+keystroke and stop after the peer applies it. The p95 ceiling remains 10 ms.
+The fixture must use the real matching sharing revision source.
+
 ## Qualification
 
 The two-client protocol benchmark is the room mode of calternal-perf.

@@ -517,6 +517,7 @@ impl Store {
             operation,
             fingerprint,
         };
+        let _room_activation_edit = self.live_rooms.begin_activation_edit(space_id);
         self.content
             .set_control(space_id, request, &plugin_key(plugin_id), |current| {
                 let current = current.map(plugin_row).transpose()?.unwrap_or(default);

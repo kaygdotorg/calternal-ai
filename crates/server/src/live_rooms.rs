@@ -4,6 +4,7 @@ mod hub;
 mod update;
 mod wire;
 
+use access::Proof;
 pub(crate) use hub::Hub;
 use hub::{Key, Lease, closed, disk};
 
@@ -117,6 +118,7 @@ struct Member {
     key: Key,
     plugin: Arc<Plugin>,
     generation: u32,
+    proof: Arc<Proof>,
     lineage: String,
     lease: Lease,
     resync: bool,
@@ -258,35 +260,14 @@ impl<D: Directory> Connection<D> {
         if self.members.values().any(|existing| existing.key == key) {
             return Err(invalid());
         }
-        self.capabilities(&key, false).await?;
         let plugin = self.catalog(&key).ok_or_else(hidden)?;
-        let (pinned, resolved) = (plugin.clone(), key.clone());
-        let host = self.host.clone();
-        let generation = disk(move || {
-            if host
-                .store
-                .locate(&resolved.kind, &resolved.item.to_string())?
-                != Some(resolved.space)
-            {
-                return Err(hidden());
-            }
-            let row = activation(&host.store, resolved.space, &pinned)?;
-            if !row.enabled {
-                return Err(hidden());
-            }
-            host.store
-                .content()
-                .enable_live_editing(resolved.space, &resolved.kind)?;
-            Ok(row.generation)
-        })
-        .await?;
+        let (proof, generation) = self.admit(&key, &plugin).await?;
         let joined = self
             .host
             .store
             .live_rooms()
             .join(self.content.clone(), key.clone(), self.account, lineage)
             .await?;
-        self.authorize(&key, &plugin, generation, false).await?;
         let address = address(room, membership);
         let bind = address.clone();
         let tx = self.event_tx.clone();
@@ -316,6 +297,7 @@ impl<D: Directory> Connection<D> {
                 key,
                 plugin,
                 generation,
+                proof,
                 lineage: lineage.clone(),
                 lease: joined.lease,
                 resync: false,
@@ -325,6 +307,10 @@ impl<D: Directory> Connection<D> {
                 kicked,
             },
         );
+        if let Err(error) = self.authorize_member(&self.members[&address], false).await {
+            self.members.remove(&address);
+            return Err(error);
+        }
         self.json(json!({
             "type":"joined","room":room,"membership":membership,
             "info":{"id":self.members[&address].key.item,"lineage":lineage,"text":"md"},
@@ -343,19 +329,11 @@ impl<D: Directory> Connection<D> {
         let mut removed = Vec::new();
         let mut scan = None;
         for (address, member) in &self.members {
-            if *member.kicked.borrow()
-                || self
-                    .authorize(&member.key, &member.plugin, member.generation, false)
-                    .await
-                    .is_err()
-            {
+            if *member.kicked.borrow() {
                 removed.push(address.clone());
             } else if scan.is_none()
                 && member.lease.file_scan_due()
-                && self
-                    .authorize(&member.key, &member.plugin, member.generation, true)
-                    .await
-                    .is_ok()
+                && self.authorize_member(member, true).await.is_ok()
                 && !*member.kicked.borrow()
                 && member.lease.claim_file_scan()
             {
@@ -384,12 +362,7 @@ impl<D: Directory> Connection<D> {
                 let Some(member) = self.members.get(&address) else {
                     return Ok(());
                 };
-                if *member.kicked.borrow()
-                    || self
-                        .authorize(&member.key, &member.plugin, member.generation, false)
-                        .await
-                        .is_err()
-                {
+                if *member.kicked.borrow() || self.authorize_member(member, false).await.is_err() {
                     return self.left(&address).await;
                 }
                 self.send(&address, &frame.bytes).await
@@ -409,10 +382,16 @@ impl<D: Directory> Connection<D> {
 
     async fn send(&mut self, address: &str, bytes: &[u8]) -> Result<(), Error> {
         for frame in wire::frames(address, bytes) {
-            if self
-                .members
-                .get(address)
-                .is_some_and(|member| *member.kicked.borrow())
+            let Some(member) = self.members.get(address) else {
+                return Ok(());
+            };
+            let hub = self.host.store.live_rooms();
+            let refresh = member.proof.refresh_needed(
+                hub.item_authority_epoch(),
+                hub.activation_epoch(member.key.space),
+            );
+            if *member.kicked.borrow()
+                || (refresh && self.authorize_member(member, false).await.is_err())
             {
                 return self.left(address).await;
             }

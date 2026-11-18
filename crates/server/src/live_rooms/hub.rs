@@ -5,7 +5,10 @@ use calternal_types::{AccountId, Error, SpaceId};
 use std::{
     cell::Cell,
     collections::{BTreeSet, HashMap},
-    sync::{Arc, Mutex, MutexGuard, Weak},
+    sync::{
+        Arc, Mutex, MutexGuard, OnceLock, Weak,
+        atomic::{AtomicU64, Ordering},
+    },
     time::Duration,
 };
 use tokio::{
@@ -26,7 +29,7 @@ const SHARDS: usize = 64;
 const ROOMS_PER_SPACE: usize = 32;
 const PARTICIPANTS: usize = 32;
 const MEMORY: usize = 512 * 1024 * 1024;
-const CACHE_RESERVATION: u32 = 24 * 1024 * 1024;
+const CACHE_RESERVATION: u32 = 4 * 1024 * 1024;
 const FRAMES: usize = 64;
 const IDLE: Duration = Duration::from_secs(60);
 const SCAN_INTERVAL: Duration = Duration::from_secs(5);
@@ -66,6 +69,8 @@ type SpaceRooms = HashMap<(String, Uuid), Arc<Room>>;
 struct Inner {
     rooms: [Mutex<HashMap<SpaceId, SpaceRooms>>; SHARDS],
     memory: Arc<Semaphore>,
+    activation_epochs: [AtomicU64; SHARDS],
+    item_revision: OnceLock<Arc<AtomicU64>>,
 }
 
 impl Default for Hub {
@@ -73,6 +78,8 @@ impl Default for Hub {
         Self(Arc::new(Inner {
             rooms: std::array::from_fn(|_| Mutex::new(HashMap::new())),
             memory: Arc::new(Semaphore::new(MEMORY)),
+            activation_epochs: std::array::from_fn(|_| AtomicU64::new(0)),
+            item_revision: OnceLock::new(),
         }))
     }
 }
@@ -80,6 +87,7 @@ impl Default for Hub {
 struct Cache {
     lineage: String,
     state: Vec<u8>,
+    _memory: OwnedSemaphorePermit,
 }
 
 struct Participant {
@@ -188,9 +196,48 @@ pub(super) struct Joined {
     pub(super) kicked: watch::Receiver<bool>,
     pub(super) frames: broadcast::Receiver<Arc<Frame>>,
     pub(super) initial: Vec<Vec<u8>>,
+    _initial_memory: OwnedSemaphorePermit,
+}
+
+pub(crate) struct ActivationEdit<'a>(&'a AtomicU64);
+
+impl Drop for ActivationEdit<'_> {
+    fn drop(&mut self) {
+        // Low bits count overlapping updates to a stripe. The high bits
+        // change at each completion, including rollback, invalidating readers.
+        self.0.fetch_add((1 << 16) - 1, Ordering::AcqRel);
+    }
 }
 
 impl Hub {
+    pub(crate) fn begin_activation_edit(&self, space: SpaceId) -> ActivationEdit<'_> {
+        let epoch = &self.0.activation_epochs[shard(space)];
+        epoch.fetch_add(1, Ordering::AcqRel);
+        ActivationEdit(epoch)
+    }
+
+    pub(super) fn retain_item_revision(&self, revision: Arc<AtomicU64>) -> Result<(), Error> {
+        let retained = self.0.item_revision.get_or_init(|| revision.clone());
+        if Arc::ptr_eq(retained, &revision) {
+            Ok(())
+        } else {
+            Err(Error::unavailable(
+                "room item authority revision changed identity",
+            ))
+        }
+    }
+
+    pub(super) fn item_authority_epoch(&self) -> Option<u64> {
+        self.0
+            .item_revision
+            .get()
+            .map(|revision| revision.load(Ordering::Acquire))
+    }
+
+    pub(super) fn activation_epoch(&self, space: SpaceId) -> u64 {
+        self.0.activation_epochs[shard(space)].load(Ordering::Acquire)
+    }
+
     pub(super) fn memory(&self) -> &Arc<Semaphore> {
         &self.0.memory
     }
@@ -282,7 +329,8 @@ impl Hub {
                     Ok((snapshot, (journal, receiver)))
                 })
                 .await?;
-                let (cache, initial) = watch::channel(Some(Arc::new(Cache::from(snapshot))));
+                let cache = Cache::new(snapshot, &room.memory)?;
+                let (cache, initial) = watch::channel(Some(Arc::new(cache)));
                 tokio::spawn(
                     room.clone()
                         .follow(Arc::downgrade(&self.0), content, cache, journal),
@@ -302,6 +350,13 @@ impl Hub {
             return Err(Error::conflict("room lineage changed")
                 .with_details(serde_json::json!({"reason":"lineage_changed"})));
         }
+        let initial_memory = room
+            .memory
+            .clone()
+            .try_acquire_many_owned(
+                cache.state.len().saturating_mul(2).saturating_add(16_384) as u32
+            )
+            .map_err(|_| Error::unavailable("live room initial state capacity is busy"))?;
         let initial = vec![
             Message::Sync(SyncMessage::SyncStep1(state_vector(&cache.state)?)).encode_v1(),
             Message::Sync(SyncMessage::SyncStep2(cache.state.clone())).encode_v1(),
@@ -313,6 +368,7 @@ impl Hub {
             kicked,
             frames,
             initial,
+            _initial_memory: initial_memory,
         })
     }
 
@@ -339,10 +395,13 @@ impl Hub {
     }
 }
 
+fn shard(space: SpaceId) -> usize {
+    usize::from(space.as_uuid().as_bytes()[15]) % SHARDS
+}
+
 impl Inner {
     fn spaces(&self, space: SpaceId) -> MutexGuard<'_, HashMap<SpaceId, SpaceRooms>> {
-        let shard = usize::from(space.as_uuid().as_bytes()[15]) % SHARDS;
-        self.rooms[shard].lock().unwrap()
+        self.rooms[shard(space)].lock().unwrap()
     }
 
     fn evict_empty(&self, room: &Room) -> bool {
@@ -480,8 +539,9 @@ impl Room {
                     let old = cache.borrow().clone().expect("active cache");
                     if old.lineage != snapshot.lineage { break; }
                     if old.state == snapshot.update { continue; }
-                    let Ok(update) = update_since(&snapshot.update, &old.state) else { break };
-                    cache.send_replace(Some(Arc::new(Cache::from(snapshot))));
+                    let Ok(next) = Cache::new(snapshot, &self.memory) else { break };
+                    let Ok(update) = update_since(&next.state, &old.state) else { break };
+                    cache.send_replace(Some(Arc::new(next)));
                     if self.send(update).is_err() { break; }
                 }
             }
@@ -514,12 +574,19 @@ impl Inner {
     }
 }
 
-impl From<RoomSnapshot> for Cache {
-    fn from(snapshot: RoomSnapshot) -> Self {
-        Self {
+impl Cache {
+    fn new(snapshot: RoomSnapshot, memory: &Arc<Semaphore>) -> Result<Self, Error> {
+        // Budget both the saved frame and temporary decoder working space.
+        let bytes = snapshot.update.len().saturating_mul(8) as u32;
+        let permit = memory
+            .clone()
+            .try_acquire_many_owned(bytes)
+            .map_err(|_| Error::unavailable("live room state capacity is busy"))?;
+        Ok(Self {
             lineage: snapshot.lineage,
             state: snapshot.update,
-        }
+            _memory: permit,
+        })
     }
 }
 
@@ -558,6 +625,34 @@ pub(super) async fn disk<T: Send + 'static>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_space_admits_32_rooms_with_32_participants_each() {
+        let hub = Hub::default();
+        let space = SpaceId::new();
+        let account = AccountId::new();
+        let mut retained = Vec::new();
+        for _ in 0..ROOMS_PER_SPACE {
+            let key = Key {
+                space,
+                kind: "documents".into(),
+                item: Uuid::new_v4(),
+            };
+            for _ in 0..PARTICIPANTS {
+                retained.push(hub.room(&key, account).unwrap().0);
+            }
+            assert!(hub.room(&key, account).is_err());
+        }
+        let extra = Key {
+            space,
+            kind: "documents".into(),
+            item: Uuid::new_v4(),
+        };
+        assert!(hub.room(&extra, account).is_err());
+        assert_eq!(retained.len(), 1_024);
+        drop(retained);
+        assert!(hub.room(&extra, account).is_ok());
+    }
 
     #[tokio::test]
     async fn last_grant_eviction_fences_preview_for_just_the_affected_account() {
