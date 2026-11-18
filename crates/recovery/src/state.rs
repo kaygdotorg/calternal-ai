@@ -7,6 +7,14 @@ use uuid::Uuid;
 /// Canonical key for schema inventory, fixed policy, unbound enrollment tokens
 /// and pool machine authority (account-owned tables with no account).
 pub(crate) const GLOBAL: &str = "000000000000000000000000000000000";
+// A live principal and its erasure record have different recovery keys.
+pub(crate) const OWNER_TABLES: &[(char, &str)] = &[
+    ('1', "users"),
+    ('2', "spaces"),
+    ('3', "groups"),
+    ('4', "invites"),
+    ('5', "owner_erasures"),
+];
 // A closed inventory of every auth.db table: adding a table requires an explicit
 // owner mapping here, or recovery configuration refuses the database.
 const SPECS: &[(&str, char, &str)] = &[
@@ -29,6 +37,7 @@ const SPECS: &[(&str, char, &str)] = &[
     ("invites", '4', "id"),
     ("invite_groups", '4', "invite_id"),
     ("owner_secret_keys", '0', ""),
+    ("owner_erasures", '5', "id"),
     ("roles", '0', ""),
     ("role_capabilities", '0', ""),
     ("space_roles", '0', ""),
@@ -124,12 +133,7 @@ pub(crate) fn initialize(c: &Connection) -> Result<()> {
             [GLOBAL],
         )
         .map_err(err)?;
-        for (table, kind) in [
-            ("users", '1'),
-            ("spaces", '2'),
-            ("groups", '3'),
-            ("invites", '4'),
-        ] {
+        for &(kind, table) in OWNER_TABLES {
             tx.execute(&format!("INSERT OR IGNORE INTO security_recovery_dirty SELECT '{kind}'||replace(lower(id),'-','') FROM {}",quote(table)),[]).map_err(err)?;
         }
     }
@@ -160,13 +164,10 @@ pub(crate) fn capture_record(
     let kind = key.as_bytes()[0] as char;
     let id = Uuid::parse_str(&key[1..]).map_err(err)?.to_string();
     if kind != '0' {
-        let table = match kind {
-            '1' => "users",
-            '2' => "spaces",
-            '3' => "groups",
-            '4' => "invites",
-            _ => return Err(invalid()),
-        };
+        let table = OWNER_TABLES
+            .iter()
+            .find_map(|&(key, table)| (key == kind).then_some(table))
+            .ok_or_else(invalid)?;
         if !c
             .query_row(
                 &format!("SELECT EXISTS(SELECT 1 FROM {table} WHERE id=?1)"),
@@ -352,12 +353,7 @@ pub(crate) fn validate(snapshot: &Snapshot, installation: Uuid) -> Result<()> {
 #[cfg(test)]
 pub(crate) fn capture(c: &Connection, installation: Uuid, sequence: u64) -> Result<Snapshot> {
     let mut keys = vec![GLOBAL.into()];
-    for (table, kind) in [
-        ("users", '1'),
-        ("spaces", '2'),
-        ("groups", '3'),
-        ("invites", '4'),
-    ] {
+    for &(kind, table) in OWNER_TABLES {
         keys.extend(
             c.prepare(&format!(
                 "SELECT '{kind}'||replace(lower(id),'-','') FROM {table}"

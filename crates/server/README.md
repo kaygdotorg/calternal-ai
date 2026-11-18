@@ -73,6 +73,10 @@ personal space and Owner membership in one protected authority transaction.
 Passkey recovery attaches a credential to the existing account and space.
 The preview has no invite-redemption route.
 
+Account and space erasure use the same protected authority cutover and
+owner-local lifecycle. The storage and HTTP contract is in
+[Owner erasure](../../docs/owner-erasure.md).
+
 ## HTTP
 
 Trusted account endpoints use `/api/v1/auth/` and bare JSON results:

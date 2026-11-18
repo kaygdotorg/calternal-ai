@@ -86,6 +86,7 @@ uses them. Human invite output shows expiry in the local time zone.
 | `people set-role --space SPACE (--account ID or --group ID) --role ROLE` | Change a direct grant's role. | Save confirmation. | empty object |
 | `people remove --space SPACE (--account ID or --group ID)` | Remove a direct grant. | Removal confirmation. | empty object |
 | `people transfer --space SPACE ACCOUNT` | Transfer space ownership to a current member. | Transfer confirmation. | empty object |
+| `people delete [--account ACCOUNT_UUID]` | Permanently erase your account or delete another as a server administrator. | Account UUID and deletion status. | `account_id`, `deleted` |
 | `people roles` | Show role definitions for a space. | Role labels and capability tables. | `roles` |
 | `people set-profile NAME` | Update your own display name. | Account ID and name. | `account_id`, `name` |
 | `people list [--cursor CURSOR]` | List server accounts with the people administration capability. | ID, name, role, state. | `people` |

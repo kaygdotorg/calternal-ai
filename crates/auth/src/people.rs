@@ -25,12 +25,26 @@ pub(crate) fn require_active(c: &Connection, account: AccountId) -> Result<()> {
     }
 }
 
-fn has(c: &Connection, actor: AccountId, capability: Capability) -> Result<bool> {
+pub(crate) fn has(c: &Connection, actor: AccountId, capability: Capability) -> Result<bool> {
     c.query_row(
         "SELECT EXISTS(SELECT 1 FROM users u JOIN role_capabilities r ON u.role=r.role
           WHERE u.id=?1 AND u.disabled_at IS NULL AND r.capability=?2)",
         params![actor.to_string(), capability.name()],
         |r| r.get(0),
+    )
+    .map_err(sql)
+}
+
+/// Protect the last active people manager during removal or disablement.
+pub(crate) fn last_people_manager(c: &Connection, account: AccountId) -> Result<bool> {
+    if !has(c, account, Capability::PeopleManage)? {
+        return Ok(false);
+    }
+    c.query_row(
+        "SELECT NOT EXISTS(SELECT 1 FROM users u JOIN role_capabilities r ON u.role=r.role
+          WHERE u.id<>?1 AND u.disabled_at IS NULL AND r.capability=?2)",
+        params![account.to_string(), Capability::PeopleManage.name()],
+        |row| row.get(0),
     )
     .map_err(sql)
 }
@@ -400,15 +414,8 @@ impl Auth {
             require(tx, actor, PeopleOperation::DisablePerson.capability())?;
             Ok(move |tx: &rusqlite::Transaction<'_>| {
                 require_active(tx, target)?;
-                if has(tx, target, Capability::PeopleManage)? {
-                    let another: bool = tx.query_row(
-                        "SELECT EXISTS(SELECT 1 FROM users u JOIN role_capabilities r ON u.role=r.role
-                         WHERE u.id<>?1 AND u.disabled_at IS NULL AND r.capability=?2)",
-                        params![target.to_string(), Capability::PeopleManage.name()], |r| r.get(0),
-                    ).map_err(sql)?;
-                    if !another {
-                        return Err(Error::new(ErrorCode::Forbidden, "the last people manager cannot be disabled"));
-                    }
+                if last_people_manager(tx, target)? {
+                    return Err(Error::new(ErrorCode::Forbidden, "the last people manager cannot be disabled"));
                 }
                 let now = now_ms();
                 let id = target.to_string();

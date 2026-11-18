@@ -12,7 +12,7 @@ pub(super) const OPERATIONS: &[&str] = &[
 ];
 
 pub(super) struct Machine {
-    id: uuid::Uuid,
+    pub(super) id: uuid::Uuid,
     key: MachineKey,
     boot: uuid::Uuid,
     token: String,

@@ -29,6 +29,7 @@ mod threads_cases;
 
 mod cursor_cases;
 mod drafts_cases;
+mod erasure_cases;
 #[path = "live_cases.rs"]
 mod live_cases;
 mod notes_cases;
@@ -39,6 +40,7 @@ mod worker_cases;
 const ORIGIN: &str = "http://localhost:18080";
 const AUTH_ROUTES: &[(&str, &str)] = &[
     ("GET", "status"),
+    ("POST", "account/delete"),
     ("POST", "setup/start"),
     ("POST", "setup/finish"),
     ("POST", "login/start"),
@@ -1129,6 +1131,10 @@ async fn account_routes_reject_foreign_resources_and_bad_sessions() {
     }
     for origin in [None, Some("https://evil.invalid"), Some("null")] {
         for (method, name) in AUTH_ROUTES {
+            // A valid deletion is covered by the dedicated erasure fixtures.
+            if *name == "account/delete" && origin.is_none() {
+                continue;
+            }
             let chosen = if *name == "logout" { &old } else { &second };
             let r = f
                 .req(
@@ -2310,6 +2316,14 @@ async fn anonymous_sessions_are_refused_on_every_protected_route_and_operation()
                 .and_then(|s| s.split('"').next())
         })
         .collect();
+    let erasure = include_str!("../../crates/core/src/lib.rs")
+        .lines()
+        .find_map(|line| {
+            line.strip_prefix("pub const ACCOUNT_ERASURE_PATH: &str = \"/api/v1/auth/")
+        })
+        .and_then(|line| line.split('"').next())
+        .unwrap();
+    registered.push(erasure);
     let mut covered: Vec<_> = AUTH_ROUTES.iter().map(|(_, name)| *name).collect();
     registered.sort_unstable();
     covered.sort_unstable();

@@ -40,25 +40,37 @@ impl Jobs {
         } else {
             "running"
         };
-        let job = self.tx(space, |tx| {
-            let n = tx
-                .execute(
-                    "UPDATE jobs SET state=?5,runs=runs+1 WHERE id=?1 AND state='admitted' AND (?2 IS NULL OR operation=?2) AND (?3 IS NULL OR plugin=?3) AND (?4 IS NULL OR account=?4)",
-                    params![id,operation,plugin,account.map(|a|a.to_string()),claimed_state],
+        let space_id = calternal_types::SpaceId::parse(space)?;
+        let _space = self.lifecycle.step(space_id.as_uuid())?;
+        let claimed = self.tx(space, |tx| {
+            let job = tx
+                .query_row(
+                    &format!(
+                        "UPDATE jobs SET state=?5,runs=runs+1 WHERE id=?1 AND state='admitted'
+                     AND (?2 IS NULL OR operation=?2) AND (?3 IS NULL OR plugin=?3)
+                     AND (?4 IS NULL OR account=?4) RETURNING {COLUMNS}"
+                    ),
+                    params![
+                        id,
+                        operation,
+                        plugin,
+                        account.map(|a| a.to_string()),
+                        claimed_state
+                    ],
+                    |r| row(space, r),
                 )
+                .optional()
                 .map_err(db_err)?;
-            if n == 0 {
-                return Ok(None);
-            }
-            tx.query_row(
-                &format!("SELECT {COLUMNS} FROM jobs WHERE id=?1"),
-                [id],
-                |r| row(space, r),
-            )
-            .optional()
-            .map_err(db_err)
+            job.map(|job| {
+                let step = self.lifecycle.step(job.account.as_uuid())?;
+                Ok((job, step))
+            })
+            .transpose()
         })?;
-        let Some(job) = job else { return Ok(None) };
+        let Some(claimed) = claimed else {
+            return Ok(None);
+        };
+        let (job, _actor) = claimed;
         let live = self.live(id);
         let cancel = CancelFlag::new();
         {

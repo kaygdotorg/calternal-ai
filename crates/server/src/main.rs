@@ -317,17 +317,18 @@ async fn serve(
     })
     .await
     .map_err(|e| boot(1, "failed", e.to_string(), DATA_HINT))??;
-    {
-        let keys = store.secrets();
+    let (store, pending_erasure) = {
         let spaces = directory.spaces.clone();
         let root = data_dir.clone();
         tokio::task::spawn_blocking(move || {
-            calternal_server::secrets::configure_keys(&keys, spaces, &root)
+            let pending = calternal_server::erasure::restore_fence(&store, &spaces)?;
+            calternal_server::secrets::configure_keys(&store.secrets(), spaces, &root)?;
+            Ok::<_, calternal_types::Error>((store, pending))
         })
         .await
         .map_err(|e| boot(1, "failed", e.to_string(), DATA_HINT))?
-        .map_err(|e| boot(1, "failed", e.message, DATA_HINT))?;
-    }
+        .map_err(|e| boot(1, "failed", e.message, DATA_HINT))?
+    };
     // Machine authority shares auth.db and its recovery barrier.
     let machines = {
         let dir = data_dir.clone();
@@ -356,6 +357,8 @@ async fn serve(
             }
         }
     };
+    machines.bind_lifecycle(store.content().lifecycle());
+    store.bind_machines(&machines);
     let _sweeper = machines.spawn_sweeper();
     // Operator commands reach this server here instead of writing behind it.
     let admin_root = data_dir.clone();
@@ -405,13 +408,16 @@ async fn serve(
         }
     }
     let jobs_root = data_dir.clone();
-    let jobs = tokio::task::spawn_blocking(move || plugins::Jobs::open(&jobs_root))
-        .await
-        .map_err(|e| boot(1, "failed", e.to_string(), DATA_HINT))?
-        .map_err(|e| boot(1, "failed", e.message, DATA_HINT))?
-        .with_security(directory.spaces.agents())
-        .with_receipt_retention(store.content().receipt_retention())
-        .with_thread_events(store.shared_content());
+    let lifecycle = store.content().lifecycle();
+    let jobs = tokio::task::spawn_blocking(move || {
+        plugins::Jobs::open_with_lifecycle(&jobs_root, lifecycle)
+    })
+    .await
+    .map_err(|e| boot(1, "failed", e.to_string(), DATA_HINT))?
+    .map_err(|e| boot(1, "failed", e.message, DATA_HINT))?
+    .with_security(directory.spaces.agents())
+    .with_receipt_retention(store.content().receipt_retention())
+    .with_thread_events(store.shared_content());
     let token_files = directory.files.clone();
     let state = Arc::new(AppState {
         inputs: calternal_server::account_input::Inputs::new(
@@ -431,6 +437,18 @@ async fn serve(
         jobs,
         allowed_hosts: hosts,
     });
+    let erasing = state.clone();
+    tokio::task::spawn_blocking(move || {
+        calternal_server::erasure::replay(
+            &erasing.store,
+            &erasing.jobs,
+            &erasing.directory.spaces,
+            pending_erasure,
+        )
+    })
+    .await
+    .map_err(|e| boot(1, "failed", e.to_string(), DATA_HINT))?
+    .map_err(|e| boot(1, "failed", e.message, DATA_HINT))?;
     match plugins::runner::recover(&state).await {
         Ok(0) => {}
         Ok(n) => tracing::info!(jobs = n, "resuming plugin jobs"),

@@ -108,6 +108,16 @@ impl Inputs {
         self.content = Some(content);
         self
     }
+    fn step(
+        &self,
+        account: calternal_types::AccountId,
+    ) -> Result<Option<calternal_types::OwnerStep>, Error> {
+        self.content
+            .as_ref()
+            .map(|content| content.lifecycle().step(account.as_uuid()))
+            .transpose()
+    }
+
     /// Immutable startup ceilings, borrowed without I/O or allocation.
     pub fn limits(&self) -> &Limits {
         &self.limits

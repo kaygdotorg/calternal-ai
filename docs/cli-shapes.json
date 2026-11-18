@@ -13,6 +13,7 @@
     "calternal people add": {},
     "calternal people set-role": {},
     "calternal people remove": {},
+    "calternal people delete": {"account_id": "string", "deleted": "bool"},
     "calternal people transfer": {},
     "calternal people disable": {"account_id": "string", "disabled": "bool"},
     "calternal groups list": {"groups": [{"group_id": "string", "name": "string", "source": "string", "members": ["string"], "members_next_cursor?": "string"}], "next_cursor?": "string"},

@@ -34,6 +34,19 @@ fn new_token() -> Result<(String, [u8; 32]), Error> {
 }
 
 impl MachineService {
+    fn owner_step(&self, owner: Owner) -> Result<Option<calternal_types::OwnerStep>, Error> {
+        let Some(lifecycle) = self.lifecycle.get() else {
+            return Ok(None);
+        };
+        match owner {
+            Owner::Pool => Ok(None),
+            Owner::Account { id } => lifecycle
+                .step(id.as_uuid())
+                .map(Some)
+                .map_err(|_| Error::forbidden("machine owner revoked")),
+        }
+    }
+
     /// Redeem a code for a new machine bound to the presented public key.
     /// Blocks (one protected authority commit). Unknown, used and expired codes
     /// look the same.
@@ -80,7 +93,9 @@ impl MachineService {
         match st.machines.get(&machine_id) {
             None => return Err(Error::not_found("unknown machine")),
             Some(m) if m.row.revoked => return Err(Error::forbidden("machine revoked")),
-            Some(_) => {}
+            Some(m) => {
+                self.owner_step(m.row.owner)?;
+            }
         }
         let now = Instant::now();
         st.challenges
@@ -114,6 +129,7 @@ impl MachineService {
         if machine.row.revoked {
             return Err(Error::forbidden("machine revoked"));
         }
+        let _step = self.owner_step(machine.row.owner)?;
         let sig = B64.decode(&f.signature).map_err(|_| denied())?;
         ring::signature::UnparsedPublicKey::new(&ring::signature::ED25519, &machine.row.public_key)
             .verify(&session_message(f.machine_id, &f.challenge), &sig)
@@ -191,9 +207,12 @@ impl MachineService {
             .sessions
             .get(&hash32(token))
             .ok_or_else(|| Error::unauthorized("unknown machine session"))?;
-        if st.machines.get(&id).is_none_or(|m| m.row.revoked) {
-            return Err(Error::forbidden("machine revoked"));
-        }
+        let machine = st
+            .machines
+            .get(&id)
+            .filter(|machine| !machine.row.revoked)
+            .ok_or_else(|| Error::forbidden("machine revoked"))?;
+        self.owner_step(machine.row.owner)?;
         Ok(id)
     }
 
@@ -239,6 +258,11 @@ impl MachineService {
     ) -> Result<Arc<Notify>, Error> {
         let mut st = self.lock()?;
         let st = &mut *st;
+        let _step = st
+            .machines
+            .get(&machine_id)
+            .map(|m| self.owner_step(m.row.owner))
+            .transpose()?;
         live_mut(st.machines.get_mut(&machine_id), session)?;
         st.finish_discards(machine_id, &req.discards)?;
         let live = live_mut(st.machines.get_mut(&machine_id), session)?;
@@ -289,6 +313,14 @@ impl MachineService {
         {
             return Err(fenced());
         }
+        let _account = self.owner_step(Owner::Account {
+            id: lease.row.account,
+        })?;
+        let _space = self
+            .lifecycle
+            .get()
+            .map(|l| l.step(lease.row.space.as_uuid()))
+            .transpose()?;
         let account = lease.row.account;
         let first = post.chunks.first().map_or(1, |c| c.seq);
         let exec = st.execs.entry(post.exec_id).or_insert_with(|| {

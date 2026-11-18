@@ -14,6 +14,14 @@ pub enum FaultPoint {
     AfterPlacement,
     /// All handler work finished, before the transport sends its reply.
     BeforeReply,
+    /// SQLite witnessed the erasure, before the recovery marker is published.
+    ErasureAuthorityCommitted,
+    /// Owner authority and pending erasure are durably published.
+    ErasureRecorded,
+    /// In-flight owner writes have drained and the key was erased.
+    ErasureKeyRemoved,
+    /// All owner paths were removed before the cleanup receipt.
+    ErasureStorageRemoved,
 }
 
 impl FaultPoint {
@@ -25,6 +33,10 @@ impl FaultPoint {
             Self::BeforePlacement => "before_placement",
             Self::AfterPlacement => "after_placement",
             Self::BeforeReply => "before_reply",
+            Self::ErasureRecorded => "erasure_recorded",
+            Self::ErasureAuthorityCommitted => "erasure_authority_committed",
+            Self::ErasureKeyRemoved => "erasure_key_removed",
+            Self::ErasureStorageRemoved => "erasure_storage_removed",
         }
     }
 }

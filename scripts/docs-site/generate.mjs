@@ -52,6 +52,7 @@ function section(text, heading) {
 const copies = {
   'dev/plugin-api': ['Plugin API decisions', 'docs/plugin-api.md'],
   'user/people': ['People and access', 'docs/people.md'],
+  'user/owner-erasure': ['Owner erasure', 'docs/owner-erasure.md'],
   'dev/addresses': ['Addresses', 'docs/addresses.md'],
   'dev/notes-operations': ['Notes operations', 'docs/notes-operations.md'],
   'dev/agent-instructions': ['Agent instructions', 'docs/agent-instructions.md'],
@@ -200,7 +201,7 @@ for (const pkg of ['plugin-sdk', 'genui']) {
 }
 await rm(scratch, { recursive: true, force: true });
 for (const [id, title, body] of [
-  ['user/index', 'Using Calternal', '- [Spaces and roles](./spaces-and-roles/)\n- [People and access](./people/)\n- [Threads](./threads/)\n- [Permission modes](./permissions-modes/)'],
+  ['user/index', 'Using Calternal', '- [Spaces and roles](./spaces-and-roles/)\n- [People and access](./people/)\n- [Owner erasure](./owner-erasure/)\n- [Threads](./threads/)\n- [Permission modes](./permissions-modes/)'],
   ['admin/index', 'Administration', '- [CLI conventions](./cli/)\n- [Commands](./commands/)\n- [Storage](./storage/)\n- [Machines](./machines/)\n- [Secrets](./secrets/)\n- [Recovery and backups](./recovery/)'],
   ['dev/index', 'Developer reference', '- [Operations](./operations/)\n- [Notes operations](./notes-operations/)\n- [Manifest schema](./manifest/)\n- [Plugin SDK](./typescript/plugin-sdk/)\n- [GenUI API](./typescript/genui/)\n- [Rust crates](./crates/)\n- [Plugin decisions](./plugin-api/)\n- [Addresses](./addresses/)\n- [Agent instructions](./agent-instructions/)\n- [Composer](./composer/)\n- [Glossary](./glossary/)'],
   ['index', 'Calternal documentation', `[User guide](${base}user/) · [Administration](${base}admin/) · [Developer reference](${base}dev/)\n\nGenerated from repository contracts, command fixtures and API comments. Each page includes a source-file comment. Append \`.md\` to a page address for its Markdown source (both \`page.md\` and \`page/.md\` are emitted).\n\n[LLM index](${base}llms.txt) · [Complete Markdown documentation](${base}llms-full.txt)`],

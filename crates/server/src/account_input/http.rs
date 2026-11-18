@@ -72,6 +72,7 @@ pub(crate) async fn events<D: Directory>(
     let st = state.clone();
     let identity = p.clone();
     let head = tokio::task::spawn_blocking(move || {
+        let _step = st.inputs.step(identity.id)?;
         let mut c = st.inputs.open(identity.id)?;
         st.inputs.clean(&mut c, &st.directory, &identity)?;
         let head = Inputs::head(&c)?;

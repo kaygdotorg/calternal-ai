@@ -71,6 +71,7 @@ pub(crate) async fn dispatch<D: Directory>(
     ))
     .await?;
     tokio::task::spawn_blocking(move || {
+        let _step = state.inputs.step(p.id)?;
         let mut c = state.inputs.open(p.id)?;
         let before = c.total_changes();
         let tx = c
@@ -111,6 +112,7 @@ fn prepare<D: Directory>(
     input: AccountInput,
 ) -> Result<Value, Error> {
     let service = &st.inputs;
+    let _step = service.step(identity.id)?;
     let mut c = service.open(identity.id)?;
     service.clean(&mut c, &st.directory, &identity)?;
     let before = c.total_changes();

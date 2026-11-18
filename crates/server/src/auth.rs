@@ -53,6 +53,12 @@ pub trait Directory: Send + Sync + 'static {
     /// Build the discovery snapshot; these grants are informational, not authority.
     /// Allocation is confined to discovery, outside the operation check path.
     fn describe(&self, principal: &Identity) -> Principal;
+    /// Protected stored authority, when this directory owns a SQLite directory.
+    /// An in-memory fixture may omit it. Borrow only, no I/O.
+    fn protected_spaces(&self) -> Option<&Spaces> {
+        None
+    }
+
     /// Execute a stored-directory operation on a blocking host thread.
     /// Implementations without a stored directory fail closed.
     fn space_operation(
@@ -151,7 +157,7 @@ fn on_startup_thread<T: Send + 'static>(
         .map_err(|_| std::io::Error::other("directory startup failed"))?
         .map_err(std::io::Error::other)
 }
-fn auth_error(e: calternal_auth::Error) -> Error {
+pub(crate) fn auth_error(e: calternal_auth::Error) -> Error {
     match e.code() {
         calternal_auth::ErrorCode::InvalidInput => Error::invalid_input("invalid space operation"),
         calternal_auth::ErrorCode::NotFound => Error::not_found("directory entry not found"),
@@ -191,6 +197,10 @@ impl Directory for StoredDirectory {
                 .collect(),
         }
     }
+    fn protected_spaces(&self) -> Option<&Spaces> {
+        Some(&self.spaces)
+    }
+
     fn space_operation(
         &self,
         principal: &Identity,

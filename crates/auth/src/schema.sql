@@ -1,4 +1,4 @@
--- auth.db, version 8: the current schema in one definition (no migration chain).
+-- auth.db, version 9: the current schema in one definition (no migration chain).
 -- Accounts and their credentials, server roles, groups and invites (existing app
 -- ADR 0058-0060), and spaces with their memberships and directory receipts.
 -- Disposable preview data only: an auth.db at any other version is refused.
@@ -98,6 +98,7 @@ CREATE TABLE invites (
 CREATE INDEX invites_live ON invites(space_id, expires_at)
  WHERE used_at IS NULL AND revoked_at IS NULL;
 CREATE INDEX invites_page ON invites(space_id, id);
+CREATE INDEX invites_creator ON invites(created_by);
 CREATE INDEX invites_terminal ON invites(
  min(expires_at, coalesce(used_at, expires_at), coalesce(revoked_at, expires_at))
 );
@@ -130,6 +131,7 @@ CREATE TABLE spaces(
  personal_for TEXT UNIQUE REFERENCES users(id),
  FOREIGN KEY(id,owner_account) REFERENCES space_memberships(space_id,account_id) DEFERRABLE INITIALLY DEFERRED
 ) STRICT;
+CREATE INDEX spaces_owner ON spaces(owner_account);
 CREATE TABLE space_memberships(
  space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
  account_id TEXT NOT NULL REFERENCES users(id),
@@ -170,6 +172,7 @@ CREATE TABLE space_receipts(
  PRIMARY KEY(actor,scope,request_id)
 ) STRICT;
 CREATE INDEX space_receipts_age ON space_receipts(actor,at_ms);
+CREATE INDEX space_receipts_scope ON space_receipts(scope);
 -- Machine authority: who may run code where. A NULL owner is the operator's
 -- pool. Codes store only their hash; expired codes are pruned after a day.
 CREATE TABLE machine_codes(
@@ -216,10 +219,30 @@ CREATE TABLE owner_secret_keys(
  erasing INTEGER NOT NULL CHECK(erasing IN (0,1)),
  PRIMARY KEY(kind,owner_id)
 ) STRICT;
+-- Permanent erased UUIDs and pending physical cleanup, even for an owner
+-- that never stored a key. Records deliberately carry no profile or space data.
+CREATE TABLE owner_erasures(
+ kind TEXT NOT NULL CHECK(kind IN ('account','space')),
+ id TEXT NOT NULL UNIQUE,
+ pending INTEGER NOT NULL CHECK(pending IN (0,1)),
+ PRIMARY KEY(kind,id)
+) STRICT;
 CREATE TRIGGER erase_space_secret_key AFTER DELETE ON spaces
-BEGIN UPDATE owner_secret_keys SET erasing=1 WHERE kind='space' AND owner_id=OLD.id; END;
+BEGIN
+ UPDATE owner_secret_keys SET erasing=1 WHERE kind='space' AND owner_id=OLD.id;
+ INSERT INTO owner_erasures VALUES('space',OLD.id,1);
+END;
 CREATE TRIGGER erase_account_secret_key AFTER DELETE ON users
-BEGIN UPDATE owner_secret_keys SET erasing=1 WHERE kind='account' AND owner_id=OLD.id; END;
+BEGIN
+ UPDATE owner_secret_keys SET erasing=1 WHERE kind='account' AND owner_id=OLD.id;
+ INSERT INTO owner_erasures VALUES('account',OLD.id,1);
+END;
+CREATE TRIGGER prohibit_erased_space_id BEFORE INSERT ON spaces
+WHEN EXISTS(SELECT 1 FROM owner_erasures WHERE id=NEW.id)
+BEGIN SELECT RAISE(ABORT,'space UUID was erased'); END;
+CREATE TRIGGER prohibit_erased_account_id BEFORE INSERT ON users
+WHEN EXISTS(SELECT 1 FROM owner_erasures WHERE id=NEW.id)
+BEGIN SELECT RAISE(ABORT,'account UUID was erased'); END;
 -- Bounded per-turn authority; no raw credential or provider login is stored.
 CREATE TABLE agent_access(
  thread TEXT NOT NULL, job TEXT NOT NULL UNIQUE,

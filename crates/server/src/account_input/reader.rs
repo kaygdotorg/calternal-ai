@@ -44,6 +44,7 @@ impl<D: Directory> Reader<D> {
         after: &str,
         maintenance: bool,
     ) -> Result<Option<Vec<String>>, Error> {
+        let _step = self.state.inputs.step(identity.id)?;
         let connection = self.connection.as_mut().expect("live account connection");
         if maintenance {
             self.state

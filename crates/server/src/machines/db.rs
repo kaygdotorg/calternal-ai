@@ -46,6 +46,8 @@ CREATE TABLE IF NOT EXISTS workspace_discards(
  state TEXT NOT NULL,updated_ms INTEGER NOT NULL,PRIMARY KEY(lease,machine)
 ) STRICT;
 CREATE INDEX IF NOT EXISTS workspace_discards_pending ON workspace_discards(machine,state);
+CREATE INDEX IF NOT EXISTS workspace_discards_account ON workspace_discards(account);
+CREATE INDEX IF NOT EXISTS leases_space ON leases(space);
 CREATE INDEX IF NOT EXISTS leases_thread_history ON leases(account,thread,created_ms DESC);
 CREATE UNIQUE INDEX IF NOT EXISTS leases_active_thread ON leases(thread) WHERE state != 'ended';
 ";

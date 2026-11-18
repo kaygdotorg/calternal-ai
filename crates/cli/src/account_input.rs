@@ -174,12 +174,27 @@ pub fn run(
     let token = std::fs::read_to_string(token_file)
         .map_err(|_| CliError::usage("cannot read token file"))?;
     let client = Client::new(&connection.base_url, token.trim()).map_err(error)?;
-    let pending = Client::pending(operation, &input, connection.request_id).map_err(error)?;
+
     let rt = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(2)
         .enable_all()
         .build()
         .expect("runtime");
+    if operation == calternal_core::ACCOUNT_ERASURE_ACTION {
+        let data = rt.block_on(client.erase_account(input["account_id"].as_str())).map_err(|failure| {
+            let api = failure.api_error();
+            let code = serde_json::to_value(api.code).unwrap();
+            let mut error = CliError::new(code.as_str().unwrap_or("failed"), api.message)
+                .hint("Refresh your passkey proof or transfer the listed shared spaces before retrying.");
+            if let Some(details) = api.details { error = error.details(json!(details)); }
+            error
+        })?;
+        let account = data["account_id"].as_str().unwrap_or_default().to_owned();
+        return Ok(
+            Reply::new(data).fields([("Account", account), ("Status", "Deleted".to_owned())])
+        );
+    }
+    let pending = Client::pending(operation, &input, connection.request_id).map_err(error)?;
     let data: Value = rt
         .block_on(client.execute_cancellable(pending.request(), &CancellationToken::new()))
         .map_err(error)?;

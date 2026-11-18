@@ -303,6 +303,10 @@ pub(super) async fn run_admitted_operation<D: Directory>(
                 .and_then(Value::as_str)
                 .map(space_of)
                 .transpose()?;
+            if operation == "spaces.delete" {
+                let space = space.ok_or_else(|| Error::invalid_input("space ID required"))?;
+                return crate::erasure::space(&st, actor, space, &rid, &input, removed);
+            }
             let change = || st.directory.space_operation(&p, &rid, &operation, &input);
             let result = match space {
                 // A write in a space is admitted through that space's receipts, the
@@ -330,12 +334,6 @@ pub(super) async fn run_admitted_operation<D: Directory>(
             if result.is_ok()
                 && let Some(space) = space
             {
-                if operation == "spaces.delete" {
-                    st.store
-                        .secrets()
-                        .erase_owner(&calternal_secrets::Owner::Space(space))
-                        .map_err(|e| Error::unavailable(e.to_string()))?;
-                }
                 for account in removed {
                     if st
                         .directory

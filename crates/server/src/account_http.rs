@@ -1,4 +1,5 @@
 //! Trusted account HTTP endpoints ported from the original auth transport.
+pub(crate) mod erasure;
 
 use axum::{
     Json, Router,
