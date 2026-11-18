@@ -74,6 +74,13 @@ directories with `cargo clean --target-dir target`,
 `cargo clean --target-dir tests/conformance/target`, and
 `cargo clean --target-dir reference-docs/rust`.
 
+The final lane merge at `acdd98e` also includes `origin/dev` at
+`2a08bb8`. That merge changed the UI and its documentation. A path-scoped
+`git diff --exit-code b7fd7ff acdd98e` confirmed identical Rust workspace,
+plugins, conformance inputs, build scripts, contract and thread-format docs.
+The UI lane still needs to adopt the structured transcript. Its current
+reader expects the previous comment pairs.
+
 ## Review gate
 
 | Item | Evidence |
