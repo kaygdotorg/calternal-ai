@@ -1,0 +1,190 @@
+{
+  "host": "calternal-perf-01-backup01",
+  "qualification": "Dev-01 release artifacts, SHA-256 verified on transfer. Each arm ran under perf-lock.sh. Traced timings are excluded from the latency percentiles.",
+  "append_budget_p95_ms": 40,
+  "accepted": false,
+  "arms": {
+    "before-small": {
+      "commit": "161f2d92ffa0ba1aee4e9d7f376557fcefee9214",
+      "physical_bytes_before_append": 2612,
+      "measurements": [
+        {
+          "metric": "threads.small.append",
+          "p50": 77.32995199999999,
+          "p95": 103.77054600000001,
+          "p99": 105.669185,
+          "max": 105.669185,
+          "samples": 30,
+          "breached": false
+        }
+      ],
+      "breached": false
+    },
+    "before-large": {
+      "commit": "161f2d92ffa0ba1aee4e9d7f376557fcefee9214",
+      "physical_bytes_before_append": 16727978,
+      "measurements": [
+        {
+          "metric": "threads.16mib.append",
+          "p50": 76.088222,
+          "p95": 102.70097,
+          "p99": 105.664576,
+          "max": 105.664576,
+          "samples": 30,
+          "breached": true
+        },
+        {
+          "metric": "threads.16mib.tail",
+          "p50": 4.129690999999999,
+          "p95": 5.241706,
+          "p99": 5.694045,
+          "max": 5.694045,
+          "samples": 30,
+          "breached": false
+        },
+        {
+          "metric": "threads.16mib.exact",
+          "p50": 3.454545,
+          "p95": 3.837694,
+          "p99": 4.855482,
+          "max": 4.855482,
+          "samples": 30,
+          "breached": false
+        },
+        {
+          "metric": "threads.16mib.message_index_rebuild",
+          "p50": 1050.3242189999999,
+          "p95": 1050.3242189999999,
+          "p99": 1050.3242189999999,
+          "max": 1050.3242189999999,
+          "samples": 1,
+          "breached": false
+        }
+      ],
+      "breached": true
+    },
+    "after-small": {
+      "commit": "e3748ef0e660e58edf5df03319d8ff1ce3befec0",
+      "physical_bytes_before_append": 2612,
+      "measurements": [
+        {
+          "metric": "threads.small.append",
+          "p50": 60.998947,
+          "p95": 88.62500700000001,
+          "p99": 90.164064,
+          "max": 90.164064,
+          "samples": 30,
+          "breached": false
+        }
+      ],
+      "breached": false
+    },
+    "after-large": {
+      "commit": "e3748ef0e660e58edf5df03319d8ff1ce3befec0",
+      "physical_bytes_before_append": 16727978,
+      "measurements": [
+        {
+          "metric": "threads.16mib.append",
+          "p50": 61.143271,
+          "p95": 90.757161,
+          "p99": 107.82805099999999,
+          "max": 107.82805099999999,
+          "samples": 30,
+          "breached": true
+        },
+        {
+          "metric": "threads.16mib.tail",
+          "p50": 4.236357,
+          "p95": 4.892688,
+          "p99": 5.452207,
+          "max": 5.452207,
+          "samples": 30,
+          "breached": false
+        },
+        {
+          "metric": "threads.16mib.exact",
+          "p50": 3.5701270000000003,
+          "p95": 4.04641,
+          "p99": 4.192464,
+          "max": 4.192464,
+          "samples": 30,
+          "breached": false
+        },
+        {
+          "metric": "threads.16mib.message_index_rebuild",
+          "p50": 1067.0166539999998,
+          "p95": 1067.0166539999998,
+          "p99": 1067.0166539999998,
+          "max": 1067.0166539999998,
+          "samples": 1,
+          "breached": false
+        }
+      ],
+      "breached": true
+    },
+    "dev-small": {
+      "commit": "9e217db6c36c8ff08d6e43e9075264d9364040cf",
+      "physical_bytes_before_append": 2612,
+      "measurements": [
+        {
+          "metric": "threads.small.append",
+          "p50": 84.394181,
+          "p95": 146.425048,
+          "p99": 161.366411,
+          "max": 161.366411,
+          "samples": 30,
+          "breached": false
+        }
+      ],
+      "breached": false
+    }
+  },
+  "isolated_4kib_fsync_control": {
+    "overwrite": {
+      "samples": 100,
+      "bytes": 4096,
+      "p50_ms": 6.638502,
+      "p95_ms": 8.314532,
+      "max_ms": 10.747804
+    },
+    "append": {
+      "samples": 100,
+      "bytes": 4096,
+      "p50_ms": 6.591946,
+      "p95_ms": 6.855258,
+      "max_ms": 9.454409
+    }
+  },
+  "append_trace": {
+    "before_request_path_syncs": 6,
+    "before_trace_tree": "030349539da2793e8a2fcc58647fff444f0e5b04",
+    "after_commit": "e3748ef0e660e58edf5df03319d8ff1ce3befec0",
+    "after_request_path_syncs": 5,
+    "after_warm_windows": 20,
+    "after_windows_without_overlapping_syncs_from_other_work": 17,
+    "markdown_writes_per_append": 1,
+    "markdown_bytes_per_smoke_append": 164,
+    "request_path": [
+      {
+        "store": "content.db-wal",
+        "reason": "Commit the patch and recovery intent before placing its bytes."
+      },
+      {
+        "store": "thread Markdown",
+        "reason": "Make the append durable before the placement intent can retire."
+      },
+      {
+        "store": "index.db-wal",
+        "reason": "Publish the change and its replay receipt in one transaction."
+      },
+      {
+        "store": "content.db-wal",
+        "reason": "Retire the outbox durably before its receipt pin can disappear."
+      },
+      {
+        "store": "jobs.db-wal",
+        "reason": "Admit the turn and retain the admission receipt together."
+      }
+    ]
+  }
+}
