@@ -3,7 +3,7 @@
   // trapped, Escape and the scrim close it, and focus returns to where it came from. The scrim dims the page; the sheet is glass.
   import type { Snippet } from "svelte";
   import Panel from "./Panel.svelte";
-  let { open, label, onclose, side = "bottom", children }: { open: boolean; label: string; onclose: () => void; side?: "bottom" | "right" | "top" | "center"; children: Snippet } = $props();
+  let { open, label, onclose, side = "bottom", wide = false, children }: { open: boolean; label: string; onclose: () => void; side?: "bottom" | "right" | "top" | "center"; /** A top sheet as wide as the two-column palette (up to 1120 px), set lower on the screen. */ wide?: boolean; children: Snippet } = $props();
   let box = $state<HTMLElement>();
   // Drawn at the end of <body>, outside every stacking context of the app (a card with a transform would otherwise trap the sheet beneath the bottom bar).
   const portal = (node: HTMLElement) => {
@@ -54,7 +54,7 @@
 {#if open}
   <div class="layer" use:portal>
     <div class="scrim" role="presentation" onclick={onclose}></div>
-    <Panel bind:el={box} floating dense radius="pane" class="sheet {side}" role="dialog" aria-modal="true" aria-label={label} tabindex={-1} onkeydown={onkey}>
+    <Panel bind:el={box} floating dense radius="pane" class="sheet {side}" data-wide={wide || undefined} role="dialog" aria-modal="true" aria-label={label} tabindex={-1} onkeydown={onkey}>
       {#if side === "bottom"}<div class="grab" role="presentation" onpointerdown={gdown} onpointermove={gmove} onpointerup={gup} onpointercancel={gup}><i></i></div>{/if}
       {@render children()}
     </Panel>
@@ -76,6 +76,7 @@
   /* Centred: a window-level dialog that sits over the whole app, not in a sidebar. */
   :global(.sheet.center) { top: 50%; left: 50%; width: min(40rem, calc(100vw - 2 * var(--inset))); border-radius: var(--r-pane); --origin: center; translate: -50% -50%; max-height: 88dvh; }
   :global(.sheet.center[data-surface]:not([data-ready])) { translate: -50% calc(-50% + var(--s-8)); }
+  :global(.sheet.top[data-wide]) { top: calc(12dvh + var(--safe-top)); width: min(1120px, calc(100vw - 3rem)); max-height: calc(100dvh - 12dvh - var(--safe-top) - var(--inset)); }
   :global(.sheet.top[data-surface]:not([data-ready])) { translate: -50% calc(var(--s-8) * -1); }
   :global(.sheet[data-surface]:not([data-ready])) { translate: 0 var(--s-8); }
   :global(.sheet.right[data-surface]:not([data-ready])) { translate: var(--s-8) 0; }
