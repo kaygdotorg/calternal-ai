@@ -281,7 +281,7 @@ export function updateVeil(want: Flags): void {
     const top = px(copies?.card, { x0: 0, y0: 0, x1: 1, y1: 0.04 });
     const m = top.reduce((a, p) => [a[0] + p[0], a[1] + p[1], a[2] + p[2]], [0, 0, 0]).map((v) => v / Math.max(1, top.length)) as RGB;
     const c = over(over(m, edge.tint.rgb, edge.tint.a), edge.dim.rgb, edge.dim.a);
-    setThemeColor(`rgb(${Math.round(c[0])} ${Math.round(c[1])} ${Math.round(c[2])})`);
+    setThemeColor("#" + c.map((v) => Math.round(v).toString(16).padStart(2, "0")).join(""));
   }
   lastVeilL = out.l;
   const flip = (v: Veil | undefined) => (v && v.scheme !== scheme ? v.scheme : null);
