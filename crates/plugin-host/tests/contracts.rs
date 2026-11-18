@@ -410,16 +410,21 @@ fn schemas_and_typed_identity_are_enforced_without_external_retrieval() {
     m.operations[0].input_schema = json!({"$ref":"https://example.invalid/schema"});
     assert_eq!(validate_manifest(&m), Err(Error::Invalid));
     let (mut s, mut h) = session();
-    assert_eq!(
-        s.invoke(
+    let error = s
+        .invoke(
             "bad".into(),
             "notes-insights.summarize".into(),
-            json!({"extra":true}),
+            json!({"id": 42}),
             authority(),
-            &mut h
-        ),
-        Err(Error::Invalid)
-    );
+            &mut h,
+        )
+        .unwrap_err();
+    let InvokeError::Input(error) = error else {
+        panic!("{error}");
+    };
+    assert_eq!(error.details.unwrap()["path"], "/id");
+    assert!(error.message.contains("expected string"));
+    assert!(!error.message.contains("42"));
     invoke(&mut s, &mut h, "inv-1");
     s.next_outgoing(&mut h).unwrap();
     assert_eq!(
@@ -632,7 +637,7 @@ fn required_capability_is_checked_before_admission() {
             authority(),
             &mut h
         ),
-        Err(Error::Refused)
+        Err(InvokeError::Protocol(Error::Refused))
     );
     assert!(s.next_outgoing(&mut h).unwrap().is_none());
 }

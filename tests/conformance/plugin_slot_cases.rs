@@ -73,6 +73,34 @@ async fn guide_operations_observe_space_isolation_and_activation() {
     )
     .await
     .ok();
+    let missing_space = f
+        .op(
+            1,
+            "calternal-plugin-guide.explain",
+            json!({"topic":"reference"}),
+        )
+        .await;
+    assert_eq!(missing_space.status, 400);
+    assert_eq!(missing_space.body["error"]["details"]["path"], "/space_id");
+    let wrong_name = f
+        .op(
+            1,
+            "calternal-plugin-guide.scaffold",
+            json!({"space_id":space,"name":42}),
+        )
+        .await;
+    assert_eq!(wrong_name.status, 400);
+    assert_eq!(wrong_name.body["error"]["details"]["path"], "/name");
+    assert_eq!(
+        wrong_name.body["error"]["details"]["expected"],
+        "expected string"
+    );
+    assert!(
+        !wrong_name.body["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("42")
+    );
     let published = f
         .op(
             1,

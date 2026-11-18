@@ -1,6 +1,6 @@
 //! Local TypeScript author commands. Author scripts run as the invoking user.
 use calternal_cli::output::{CliError, Reply};
-use calternal_plugin_host::{CompiledSchemas, MAX_MANIFEST_BYTES};
+use calternal_plugin_host::MAX_MANIFEST_BYTES;
 use calternal_server::plugins::{
     live_catalog::{self, Change},
     package_store::{self, Package},
@@ -356,7 +356,7 @@ fn check(dir: &Path) -> Result<Reply, CliError> {
         CliError::new("invalid_input", format!("manifest.json: {error}"))
             .hint("Compare the field with the plugin API reference.")
     })?;
-    CompiledSchemas::compile(&manifest).map_err(|problem| {
+    calternal_plugin_host::validate_manifest_detailed(&manifest).map_err(|problem| {
         CliError::new("invalid_input", format!("manifest.json: {problem}"))
             .hint("Check IDs, schemas, operation capabilities and risks against the plugin API reference.")
     })?;
@@ -410,18 +410,47 @@ fn check(dir: &Path) -> Result<Reply, CliError> {
 }
 
 fn npm(dir: &Path, args: &[&str]) -> Result<Vec<u8>, CliError> {
+    let tool_hint = "Source the development env in this shell, or put Node.js and npm on PATH.";
     let output = Command::new("npm")
         .args(args)
         .current_dir(dir)
         .output()
-        .map_err(local)?;
+        .map_err(|error| {
+            if error.kind() == std::io::ErrorKind::NotFound {
+                CliError::new("plugin_tool_missing", "npm was not found on PATH.").hint(tool_hint)
+            } else {
+                local(error)
+            }
+        })?;
     if !output.status.success() {
-        let diagnostic = [output.stdout.as_slice(), output.stderr.as_slice()].concat();
+        // Node's test reporter places fixture failures on stdout; compilers and
+        // subprocesses can also use stderr. Keep both within the local CLI budget.
+        let stdout = String::from_utf8_lossy(&output.stdout[..output.stdout.len().min(4096)]);
+        let stderr = String::from_utf8_lossy(&output.stderr[..output.stderr.len().min(4096)]);
+        let diagnostic = format!("{stdout}{stderr}");
+        let hint = if diagnostic.contains("node: not found")
+            || diagnostic.contains("env: ‘node’: No such file")
+        {
+            tool_hint
+        } else if diagnostic.contains("ERR_MODULE_NOT_FOUND")
+            && diagnostic.contains("Cannot find package")
+        {
+            "Run `npm install` in the plugin directory. Check that the missing package is declared in package.json."
+        } else if diagnostic.contains("fixture worker") || args.first() == Some(&"test") {
+            "Check the failing test and the worker diagnostic above. Rebuild with `npm run build` if the worker bundle is missing."
+        } else {
+            "Fix the first diagnostic above and rerun the plugin command."
+        };
         return Err(CliError::new(
             "plugin_script_failed",
-            String::from_utf8_lossy(&diagnostic[..diagnostic.len().min(8192)]).into_owned(),
+            format!(
+                "npm {} ({})\n{}",
+                args.join(" "),
+                output.status,
+                diagnostic.trim_end()
+            ),
         )
-        .hint("Install the plugin's dependencies with `npm install` and check the diagnostic."));
+        .hint(hint));
     }
     Ok(output.stdout)
 }
@@ -489,10 +518,12 @@ fn scaffold(name: &str, root: &Path) -> Result<Reply, CliError> {
     .map_err(local)?;
     fs::write(dir.join("README.md"), format!("# {name}\n\n`{operation}` returns a generated status view.\nAn optional `reads` flag exercises three read calls against the fixture.\n\nRun `npm install` and `calternal plugin test` in this directory.\n")).map_err(local)?;
     Ok(
-        Reply::new(json!({"id":name,"directory":name,"operation":operation}))
+        Reply::new(json!({"id":name,"directory":name,"operation":operation,
+                "entry":"worker.ts","test":"worker.test.mjs",
+                "next_commands":[format!("cd {name}"),"npm install","calternal plugin check .","calternal plugin test ."]}))
             .fields([("New plugin", name.to_owned()), ("Operation", operation)])
-            .hint(format!(
-                "Run `cd {name} && npm install && calternal plugin test`."
-            )),
+            .fields([("Worker", "worker.ts"), ("Test", "worker.test.mjs")])
+            .line(format!("Next: cd {name} && npm install && calternal plugin check . && calternal plugin test ."))
+            .hint("Source the development env in this shell before running the commands if Node.js or npm is missing."),
     )
 }

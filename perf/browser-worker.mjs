@@ -59,29 +59,79 @@ function cli(args, env = {}) {
   });
   const { data, error } = JSON.parse(result.stdout || "{}");
   if (result.status !== 0 || !data) {
-    throw new Error(`Fixture ${args.slice(0, 2).join(" ")} failed: ${error?.code || result.error?.code || "unknown"}`);
+    const detail = args[0] === "plugin" ? ` (${error?.message || "no details"})` : "";
+    throw new Error(`Fixture ${args.slice(0, 2).join(" ")} failed: ${error?.code || result.error?.code || "unknown"}${detail}`);
   }
   return data;
 }
 
-async function measure(token, operation, id) {
+async function measure(token, operation, input, expected) {
   const samples = [];
   for (let sample = 0; sample < 110; sample++) {
     const start = performance.now();
     const response = await fetch("/api/v1/operations", {
       method: "POST",
       headers: { authorization: "Bearer " + token, "content-type": "application/json" },
-      body: JSON.stringify({ request_id: crypto.randomUUID(), operation, input: { id } }),
+      body: JSON.stringify({ request_id: crypto.randomUUID(), operation, input }),
       signal: AbortSignal.timeout(6000),
     });
     const result = await response.json();
     const elapsed = performance.now() - start;
-    if (!response.ok || result.data?.stats?.words !== 3 || !result.data.view) {
-      throw new Error("Expected a three-word result and generated view: " + response.status);
+    if (!response.ok || result.data?.view?.source !== expected) {
+      throw new Error("Expected the fixture's generated view: " + response.status);
     }
     if (sample >= 10) samples.push(elapsed);
   }
   return { browser: navigator.userAgent, samples };
+}
+
+async function measureSettingsFeed(base, token, address, invoke) {
+  const controller = new AbortController();
+  const url = new URL("/api/v1/live", base);
+  url.searchParams.set("subscriptions", JSON.stringify([{ space_id: address.space_id, bookmark: null }]));
+  const response = await fetch(url, {
+    headers: { authorization: "Bearer " + token, origin: new URL(base).origin },
+    signal: AbortSignal.any([controller.signal, AbortSignal.timeout(30_000)]),
+  });
+  if (!response.ok) throw new Error("Setting feed unavailable: " + response.status);
+  const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
+  let buffer = "";
+  async function next() {
+    while (true) {
+      const index = buffer.indexOf("\n\n");
+      if (index >= 0) {
+        const data = buffer.slice(0, index).split("\n").find(line => line.startsWith("data: "));
+        buffer = buffer.slice(index + 2);
+        if (data) return JSON.parse(data.slice(6));
+      } else {
+        const { done, value } = await reader.read();
+        if (done) throw new Error("Setting feed ended before invalidation");
+        buffer += value;
+      }
+    }
+  }
+  try {
+    if ((await next()).type !== "ready") throw new Error("Expected the setting feed ready frame");
+    const samples = [];
+    let previous = null;
+    for (let i = 0; i < 35; i++) {
+      const value = "Timing label " + i;
+      const started = performance.now();
+      const write = invoke("plugins.settings.set", { ...address, base: previous, value });
+      while (true) {
+        const frame = await next();
+        if (frame.entry?.kind === "plugins.settings.set"
+          && frame.entry.data.plugin_id === address.plugin_id && frame.entry.data.key === address.key) break;
+      }
+      const elapsed = performance.now() - started;
+      if ((await write).data?.conflicted !== false) throw new Error("Setting write did not commit");
+      if (i >= 5) samples.push(elapsed);
+      previous = value;
+    }
+    return samples;
+  } finally {
+    controller.abort();
+  }
 }
 
 let socket;
@@ -172,30 +222,53 @@ try {
     space_id: space.id, title: "Latency fixture", markdown: "one two three\n",
   })).data?.note;
   if (!note?.id) throw new Error("Fixture note creation failed");
-  const activation = await invoke("plugins.enable", {
+  const notesActivation = await invoke("plugins.enable", {
     plugin_id: "calternal-notes-insights", space_id: space.id,
   });
-  if (!activation.data) throw new Error("Fixture plugin enable failed: " + activation.error?.code);
-
-  const operation = "notes-insights.summarize";
-  await waitFor("enrolled worker warming", async () => {
-    const { data } = await invoke(operation, { id: note.id });
-    return data?.stats?.words === 3 && data.view;
+  if (!notesActivation.data) throw new Error("Fixture plugin enable failed: " + notesActivation.error?.code);
+  let operation = "notes-insights.summarize";
+  let input = { id: note.id };
+  let expected = 'Row([Metric("Words", "3"), Metric("Characters", "14"), Metric("Lines", "1")])';
+  const warm = () => waitFor("enrolled worker warming", async () => {
+    const { data } = await invoke(operation, input);
+    return data?.view?.source === expected;
   });
-  const measured = await evaluate(`(${measure.toString()})(...${JSON.stringify([token, operation, note.id])})`);
+  await warm();
+
+  const settings = process.env.CALTERNAL_PERF_SETTINGS_FIXTURE;
+  let invalidation;
+  if (settings) {
+    const source = resolve(settings);
+    const review = cli(["plugin", "review", source]);
+    cli(["plugin", "install", source, "--appdata", join(root, "appdata"),
+      "--approve", review.checksum, "--space", space.id, "--account", space.owner]);
+    const activation = await invoke("plugins.enable", { plugin_id: "composer-settings", space_id: space.id });
+    if (!activation.data) throw new Error("Composer fixture enable failed: " + activation.error?.code);
+    const address = { space_id: space.id, plugin_id: "composer-settings", key: "label" };
+    invalidation = await measureSettingsFeed(startup.base_url, token, address, invoke);
+    operation = "composer-settings.label";
+    input = { space_id: space.id };
+    expected = 'Badge("Timing label 34")';
+    await warm();
+  }
+  const measured = await evaluate(`(${measure.toString()})(...${JSON.stringify([token, operation, input, expected])})`);
   const sorted = [...measured.samples].sort((a, b) => a - b);
   if (sorted.length !== 100 || sorted.some(value => !Number.isFinite(value) || value < 0)) {
     throw new Error("Expected 100 valid browser samples");
   }
   const p95 = sorted[94];
-  const passed = p95 <= limit.budget;
+  const passed = settings ? undefined : p95 <= limit.budget;
+  const orderedInvalidation = invalidation?.toSorted((a, b) => a - b);
   const report = {
-    metric, operation, browser: measured.browser, n: sorted.length,
-    p50: sorted[49], p95, budget: limit.budget, unit: limit.unit, passed,
+    metric: settings ? "plugin.warm_composer_settings" : metric,
+    operation, browser: measured.browser, n: sorted.length,
+    p50: sorted[49], p95, budget: settings ? undefined : limit.budget, unit: limit.unit, passed,
+    invalidation: orderedInvalidation && { n: orderedInvalidation.length,
+      p50: orderedInvalidation[14], p95: orderedInvalidation[28] },
   };
-  writeFileSync(reportPath, JSON.stringify({ ...report, samples: measured.samples }, null, 2) + "\n");
+  writeFileSync(reportPath, JSON.stringify({ ...report, samples: measured.samples, invalidationSamples: invalidation }, null, 2) + "\n");
   console.log(JSON.stringify(report));
-  if (!passed) process.exitCode = 1;
+  if (passed === false) process.exitCode = 1;
 } catch (error) {
   for (const [name, log] of logs) {
     const safe = log.split("\n").filter(line => !/token|code=|bearer/i.test(line));

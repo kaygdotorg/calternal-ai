@@ -16,7 +16,7 @@ calternal-roots.workspace = true
 calternal-store.workspace = true
 rusqlite = { workspace = true, features = ["blob", "functions"] }
 serde.workspace = true
-serde_json.workspace = true
+serde_json = { workspace = true, features = ["raw_value"] }
 uuid = { workspace = true, features = ["v7"] }
 tokio = { workspace = true, features = ["sync"] }
 blake3.workspace = true

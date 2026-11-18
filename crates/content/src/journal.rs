@@ -153,12 +153,16 @@ impl Journals {
             let projection = match operation {
                 "threads.checkpoint" => Some("append"),
                 "threads.provider_sign_in" => Some("notice"),
+                "plugins.settings.set" => Some("plugin_id"),
                 _ => None,
             };
             if let Some(key) = projection
                 && let Some(value) = result.get(key)
             {
                 data[key] = value.clone();
+                if operation == "plugins.settings.set" {
+                    data["key"] = result["key"].clone();
+                }
             }
             store
                 .commit(Commit {

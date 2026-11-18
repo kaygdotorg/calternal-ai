@@ -29,7 +29,7 @@
     {
       "id": "jobs-demo.write",
       "input_schema": { "type": "object", "properties": { "text": { "type": "string", "maxLength": 1024 } }, "required": ["text"], "additionalProperties": false },
-      "output_schema": { "type": "object" },
+      "output_schema": { "type": "object", "properties": { "id": { "type": "string" } }, "required": ["id"], "additionalProperties": false },
       "required_capability": "content.write",
       "mutates": true,
       "idempotency": "request_id", "risk": "reversible"

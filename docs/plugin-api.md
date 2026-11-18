@@ -140,6 +140,52 @@ Input: `docs/reviews/plugin-and-client-map-sol.md`.
   and the space's instructions at `AI/AGENTS.md`. A person's own skills, automations,
   instructions and starred prompts are the same files in their personal space.
 
+
+## Space plugin settings
+
+Declare a key in the manifest's `settings`, including its primitive type and
+default. A Manager uses `plugins.settings.get` and `plugins.settings.set` with a
+space UUID, package ID and key. For a write, echo the last read `value` as
+`base` and send the new `value`. Null clears the override. Concurrent edits
+to one key keep the current value and retain up to eight alternatives. To
+resolve them, include the observed alternatives in `resolve` with the
+chosen value. Use one request ID per edit and reuse it for network retries.
+
+A worker declares `read_setting_v1` and calls `readSetting(context, "label")`.
+The host supplies the invocation's package and space. A worker gets only
+the effective setting value. The authorized space feed publishes a setting
+invalidation with its package ID and key, without including the value.
+The shell can use this to re-invoke a generated slot view.
+
+Space userdata stores these overrides in `.calternal/settings.json` under
+the `calternal-plugin-settings/v1` tag. An individual value is limited to
+4 KiB and a settings document to 1 MiB. One durable pending edit is allowed
+per space. On first settings access after a crash, the host finishes the
+file exchange, publishes the feed entry and receipt, and removes the
+intent. Syntax damage returns defaults with a file-and-line repair hint.
+Once the file is valid, recovery reapplies the pending key and keeps other
+edits. A competing edit to the same key becomes a conflict. Unrelated
+operations stay available during repair.
+
+## Author diagnostics
+
+`calternal plugin new` creates a directory under the current directory and
+prints the root worker, fixture test and next commands. Source the local
+development env before using `calternal`, Node.js or npm. `calternal plugin dev`
+accepts `APPDATA`, `SPACE_ID` and `ACCOUNT_ID` as defaults for its flags.
+
+An invocation that fails a plugin input schema check returns a bounded JSON
+pointer and the expected type or constraint. The request values stay out of
+the diagnostic. The space selector is required in the CLI input for a
+space-targeted plugin operation. Host job lookups accept a job UUID only.
+The CLI points to discovery when input is invalid. A busy worker means the
+host reached a live admission bound. Retry durable writes with the same
+request ID when an invocation slot is free.
+
+The SDK fixture captures a subprocess's exit status or signal and up to
+4 KiB of its stderr. Fixture diagnostics are local to the author. The live
+worker protocol still treats a failed handler as a failed invocation.
+
 ## Open
 
 - Composer and chat experience (mentions, commands): needs its own design round.
@@ -223,6 +269,21 @@ supported fixed targets are declaration metadata pending the asset and
 frame isolation contracts. Owned mounts accept only operation-backed
 contributions. Web and Swift mounting belong to the client renderers.
 See the [interface proposal](plugin-interface-proposal.md).
+
+## Content write results and retries
+
+An interactive mutating operation validates its input before the broker can
+write. Each `write_item` validates its arguments and authorization before
+commit and returns an item UUID and opaque string revision. The normal
+operation response must match the declared output schema and, for generated
+views, the GenUI contract.
+
+If the worker cannot deliver a valid response after committing a content
+write, the host returns `data.committed_write` with the first saved item's
+`id` and `revision`. This host acknowledgment confirms that write. It
+does not describe later callbacks or carry a generated view. A retry with the
+same request ID and input replays the durable result. Changed input conflicts.
+The usual receipt retention and authorization checks apply.
 
 ## Page a plugin's own kinds
 

@@ -205,6 +205,24 @@ macro_rules! operation {
 /// Static policy rows, ordered by the public operation catalog.
 pub const REQUEST_OPERATIONS: &[RequestOperation] = &[
     operation!(
+        "plugins.settings.get",
+        "Read a declared space plugin setting",
+        Space,
+        SpaceSettings,
+        Read,
+        crate::PluginSettingAddress,
+        crate::PluginSettingValue
+    ),
+    operation!(
+        "plugins.settings.set",
+        "Edit a declared space plugin setting",
+        Space,
+        SpaceSettings,
+        Reversible,
+        crate::PluginSettingEdit,
+        crate::PluginSettingChange
+    ),
+    operation!(
         "provider.sign_in.start",
         "Start a private provider sign-in",
         Account,

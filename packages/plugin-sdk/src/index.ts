@@ -287,6 +287,8 @@ export { WorkerContextV2 } from "./worker-v2.js";
 
 /** List one indexed page of a kind owned by the invoking worker. */
 export { listItems } from "./worker-v2.js";
+/** Read the effective value of a setting declared in this package. */
+export { readSetting } from "./worker-v2.js";
 
 /** Worker v2: WorkerHandlerV2; bounded transport and host-authorized effects. */
 export { WorkerHandlerV2 } from "./worker-v2.js";

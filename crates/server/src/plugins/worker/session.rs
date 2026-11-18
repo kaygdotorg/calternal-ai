@@ -192,15 +192,24 @@ impl Thread {
                 }
             }
             Ok(()) => self.flush(&id),
-            Err(calternal_plugin_host::Error::Invalid) => self.finish(&id, Outcome::InvalidInput),
-            Err(calternal_plugin_host::Error::Refused) => self.finish(&id, Outcome::Refused),
-            Err(_) => self.finish(
-                &id,
-                Outcome::Failed(
-                    Error::unavailable("extension worker is busy; retry shortly")
-                        .with_details(serde_json::json!({ "reason": "worker_capacity" })),
-                ),
-            ),
+            Err(calternal_plugin_host::InvokeError::Input(error)) => {
+                self.finish(&id, Outcome::InvalidInput(error));
+            }
+            Err(calternal_plugin_host::InvokeError::Protocol(error)) => {
+                use calternal_plugin_host::Error as Protocol;
+                let outcome = match error {
+                    Protocol::Refused => Outcome::Refused,
+                    Protocol::BackPressure => Outcome::Failed(super::busy()),
+                    Protocol::TooLarge => Outcome::Failed(Error::new(
+                        calternal_types::ErrorCode::TooLarge,
+                        "plugin input exceeds the worker frame limit",
+                    )),
+                    _ => Outcome::Failed(Error::unavailable(
+                        "plugin worker could not admit the invocation",
+                    )),
+                };
+                self.finish(&id, outcome);
+            }
         }
     }
 

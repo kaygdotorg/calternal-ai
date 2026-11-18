@@ -267,9 +267,7 @@ impl WorkerPool {
                     })
                     .is_err()
                 {
-                    return Outcome::Failed(Error::unavailable(
-                        "extension worker is busy; retry shortly",
-                    ));
+                    return Outcome::Failed(super::busy());
                 }
                 self.in_flight.fetch_add(1, Ordering::AcqRel);
                 if let Some(cancel) = &request.call.cancel {

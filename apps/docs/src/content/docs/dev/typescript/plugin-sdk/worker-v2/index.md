@@ -41,3 +41,4 @@ Bounded worker-v2 peer; effects and current authority remain in the trusted host
 - [encodeWorkerFrameV2](/docs/dev/typescript/plugin-sdk/worker-v2/functions/encodeworkerframev2/)
 - [listItems](/docs/dev/typescript/plugin-sdk/worker-v2/functions/listitems/)
 - [parseWorkerFrameV2](/docs/dev/typescript/plugin-sdk/worker-v2/functions/parseworkerframev2/)
+- [readSetting](/docs/dev/typescript/plugin-sdk/worker-v2/functions/readsetting/)

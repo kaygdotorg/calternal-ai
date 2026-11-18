@@ -23,6 +23,7 @@
         "type": "object",
         "properties": {
           "topic": {
+            "type": "string",
             "enum": [
               "reference",
               "walkthrough",

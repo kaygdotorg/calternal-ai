@@ -36,7 +36,8 @@ fn cli(args: &[&str]) -> std::process::Output {
         .unwrap()
 }
 
-fn install(f: &Fixture, path: &Path, space: &str) {
+/// Review and install one ordinary package into a running fixture space.
+pub(super) fn install(f: &Fixture, path: &Path, space: &str) {
     let source = path.to_str().unwrap();
     let review = cli(&["plugin", "review", source]);
     assert!(review.status.success(), "{review:?}");

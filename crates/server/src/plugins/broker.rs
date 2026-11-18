@@ -74,6 +74,7 @@ pub struct SpaceHost<D: Directory> {
     generation: u32,
     request_id: String,
     writes: AtomicU32,
+    request_fingerprint: Option<String>,
     starts: AtomicU32,
     run: Option<Run>,
 }
@@ -119,9 +120,18 @@ impl<D: Directory> SpaceHost<D> {
             generation,
             request_id,
             writes: AtomicU32::new(0),
+            request_fingerprint: None,
             starts: AtomicU32::new(0),
             run: None,
         }
+    }
+
+    /// Bind an interactive mutation to its outer request digest. Its first
+    /// durable content write can then acknowledge that request even if no
+    /// worker result survives. Cost: moves the precomputed digest.
+    pub(crate) fn for_request(mut self, fingerprint: String) -> Self {
+        self.request_fingerprint = Some(fingerprint);
+        self
     }
 
     /// Bind this broker to a job's run invocation. Cost: none.
@@ -321,10 +331,20 @@ impl<D: Directory> SpaceHost<D> {
         }
         // Deterministic per-invocation receipt IDs make a retried request replay
         // its earlier writes instead of duplicating them.
-        let n = self.writes.fetch_add(1, Ordering::Relaxed);
-        let receipt = format!("plugin/{}/{}/{n}", self.plugin.manifest.id, self.scope());
-        let fingerprint = sha256_hex(input.to_string().as_bytes());
-        let item = self
+        let n = self.writes.load(Ordering::Relaxed);
+        let child_digest = sha256_hex(input.to_string().as_bytes());
+        let (receipt, fingerprint) = if let Some(parent) = &self.request_fingerprint {
+            (
+                write_receipt_key(&self.request_id, n),
+                format!("{parent}:{child_digest}"),
+            )
+        } else {
+            (
+                format!("plugin/{}/{}/{n}", self.plugin.manifest.id, self.scope()),
+                child_digest,
+            )
+        };
+        let result = self
             .state
             .store
             .write_item(
@@ -339,8 +359,19 @@ impl<D: Directory> SpaceHost<D> {
                 text,
             )
             .map_err(|_| Error::Refused)?;
-        Ok(json!({"id": item.id, "revision": item.revision}))
+        // WorkerSession runs callbacks serially. Slot zero remains available
+        // until the first successful write, including after a refused callback.
+        self.writes.fetch_add(1, Ordering::Relaxed);
+        Ok(result)
     }
+}
+
+/// The journal already scopes a receipt by account and space. Reserve more than
+/// 128 ASCII characters so this key cannot overlap a public request ID; the
+/// digest also bounds the key when the public ID contains multibyte characters.
+pub(crate) fn write_receipt_key(request_id: &str, position: u32) -> String {
+    let digest = sha256_hex(request_id.as_bytes());
+    format!("plugin/write/{digest:0>128}/{position}")
 }
 
 impl<D: Directory> InvocationHost for SpaceHost<D> {
@@ -387,6 +418,19 @@ impl<D: Directory> InvocationHost for SpaceHost<D> {
         match method {
             HostCallKind::ReadItem => self.read_item(input),
             HostCallKind::ListItemsV1 => self.list_items(input),
+            HostCallKind::ReadSettingV1 => {
+                let request: calternal_core::WorkerSettingInput =
+                    serde_json::from_value(input.clone()).map_err(|_| Error::Invalid)?;
+                let setting = super::settings::declaration(&self.plugin, &request.key)
+                    .map_err(|_| Error::Refused)?;
+                let record = self
+                    .state
+                    .store
+                    .content()
+                    .plugin_setting(self.space, &self.plugin.manifest.id, &request.key)
+                    .map_err(|_| Error::Refused)?;
+                Ok(super::settings::effective(setting, record).effective)
+            }
             HostCallKind::WriteItem => self.write_item(input),
             HostCallKind::StartJob => self.start_job(input),
             HostCallKind::CheckpointJob => self.checkpoint_job(input),
