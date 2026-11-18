@@ -219,15 +219,20 @@ const storagePage: Page = {
   ],
 };
 
+/** The Skills page of the current space: the list and the guided way to write one. */
+const skillsPage = (): Page => ({ id: "skills", name: "Skills", icon: "spark", blurb: "What agents in this space know how to do: each skill is a SKILL.md file.", groups: [lazy("space.skills", "Skills", () => import("./SkillsPanel.svelte"))] });
+/** The Automations page of the current space: the list and the guided way to make one. */
+const automationsPage = (): Page => ({ id: "automations", name: "Automations", icon: "clock", blurb: "Prompts that run on a schedule, each run its own thread.", groups: [lazy("space.automations", "Automations", () => import("./AutomationsPanel.svelte"))] });
+const lazy = (id: string, label: string, load: () => Promise<{ default: Component<any> }>, help?: string): Group => ({ settings: [{ id, label, help, control: { type: "custom", load } }] });
+
 /** The sidebar's groups, in order (docs/ui-craft-and-settings-study.md 11.1). */
 export const SECTIONS: Section[] = [
   { id: "user", name: "User", pages: [appearancePage, agentsPage, keyboardPage, machinesPage, pluginsPage, accountPage] },
   // Admin is the server (for its operator); the third section is the current space, whose name it shows (decided 2026-11-18).
   { id: "server", name: "Admin", pages: [plansPage, poolPage, storagePage] },
-  { id: "space", get name() { return `Space: ${spaces.current.name}`; }, pages: [membersPage, invitesPage, secretsPage, instructionsPage, spacePluginsPage] },
+  { id: "space", get name() { return `Space: ${spaces.current.name}`; }, pages: [membersPage, invitesPage, secretsPage, instructionsPage, skillsPage(), automationsPage(), spacePluginsPage] },
 ];
 
-const lazy = (id: string, label: string, load: () => Promise<{ default: Component<any> }>, help?: string): Group => ({ settings: [{ id, label, help, control: { type: "custom", load } }] });
 const deleteSpace = (): void => {
   if (!confirm(`Delete the space "${spaces.current.name}"? Its records are removed.`)) return;
   void import("../../server/client").then(({ server }) => server.operate("spaces.delete", { space_id: spaces.current.id })).then(() => location.replace(import.meta.env.BASE_URL), (e: Error) => alert(e.message));
@@ -257,7 +262,7 @@ function serverSections(): Section[] {
   return [
     { id: "user", name: "User", pages: [appearancePage, keyboardPage, machines, account] },
     ...(admin.length ? [{ id: "server" as const, name: "Admin", pages: admin }] : []),
-    { id: "space", get name() { return `Space: ${spaces.current.name}`; }, pages: [members, roles, ...(mayManage ? [invites] : []), secrets, plugins, manage] },
+    { id: "space", get name() { return `Space: ${spaces.current.name}`; }, pages: [members, roles, ...(mayManage ? [invites] : []), secrets, skillsPage(), automationsPage(), plugins, manage] },
   ];
 }
 

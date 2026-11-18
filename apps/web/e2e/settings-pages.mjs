@@ -27,6 +27,6 @@ ok((await page.getByText("Show the steps of a turn").count()) === 1, "…a plugi
 await page.locator("li[data-setting='plugins.calternal-calendar']").getByRole("button", { name: "Install" }).click(); await page.waitForTimeout(200);
 ok((await page.locator("li[data-setting='plugins.calternal-calendar']").getByRole("switch").count()) === 1 || (await page.getByRole("switch", { name: "Calendar" }).count()) === 1, "…and Install moves a plugin to Installed");
 const pages = await page.evaluate(() => [...document.querySelectorAll("aside.side nav a")].map((a) => a.textContent.trim()));
-ok(!pages.some((p) => /Skills|Automations/.test(p)), "Skills and automations are not in Settings (waiting on a design round)", pages.join(", "));
+ok(pages.some((p) => /Skills/.test(p)) && pages.some((p) => /Automations/.test(p)), "Skills and Automations are pages of the space's Settings", pages.join(", "));
 await b.close(); stop();
 console.log(bad ? `${bad} FAIL` : "all pass"); process.exit(bad ? 1 : 0);
