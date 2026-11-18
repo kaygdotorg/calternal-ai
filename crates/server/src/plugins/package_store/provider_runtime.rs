@@ -7,7 +7,7 @@ use std::path::Path;
 // Preserve the distribution's existing sign-in during the package-store
 // upgrade. Package bytes, activation approvals and existing revisions are
 // deliberately untouched so the preceding release can still read them.
-pub(super) const V2: &str = "
+pub(super) const V3: &str = "
 CREATE TABLE provider_runtime (
     id TEXT PRIMARY KEY,
     login_command TEXT NOT NULL,

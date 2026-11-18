@@ -11,6 +11,7 @@ use std::{
     time::Duration,
 };
 
+mod bundled_notes;
 pub(crate) mod provider_runtime;
 mod worker_cache;
 
@@ -666,7 +667,7 @@ pub(crate) const UPGRADE_SCHEMA: calternal_store::migrations::Schema<'_> =
         "installed-plugins.sqlite3",
         1,
         &[PACKAGE_SCHEMA],
-        &[provider_runtime::V2],
+        &[bundled_notes::LIVE_EDITING, provider_runtime::V3],
     );
 
 #[cfg(test)]

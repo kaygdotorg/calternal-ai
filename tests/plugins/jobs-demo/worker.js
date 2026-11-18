@@ -39,7 +39,24 @@ const ops = {
     return { id: saved.id };
   },
   'jobs-demo.start': async (id, input) => ({ job_id: (await call(id, 'start_job', { operation: 'jobs-demo.run', input })).job_id }),
-  'jobs-demo.run': async (id, { job_id, input, checkpoint, children }) => {
+  'jobs-demo.run': async (id, { job_id, input, checkpoint, children, signal }) => {
+    if (input.wait) {
+      if (signal) return { status: 'done', result: { checkpoint, signal } };
+      const source = { kind: input.wait };
+      if (input.wait === 'question') {
+        source.form = { genui_version: 2, source: '$text=""\nForm([Input($text,"Which release?")], "Release selection")' };
+        source.schema_operation = 'jobs-demo.write';
+      }
+      if (input.wait === 'webhook') {
+        await call(id, 'request_secret_handle', { name: 'delivery' }).catch(() => {});
+        source.route = 'delivery';
+        source.correlation = input.correlation;
+      }
+      return { status: 'parked', wait: {
+        checkpoint: { saved: 'before-signal' }, reason: 'Waiting for a release',
+        deadline_ms: input.deadline_ms, source,
+      } };
+    }
     const wanted = input.children || 0;
     if (wanted > 0) {
       if (!checkpoint) {

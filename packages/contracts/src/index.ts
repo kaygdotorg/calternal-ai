@@ -383,6 +383,10 @@ space_id: string | null,
  */
 thread_id: string | null,
 /**
+ * Job UUID for a plugin wait addressed to this person.
+ */
+job_id?: string,
+/**
  * Question, approval or trusted secret prompt.
  */
 detail: RequestDetail, };
@@ -692,7 +696,7 @@ cursor?: string,
  */
 limit?: number, };
 /**
- * Read one manifest-declared setting as a Manager of the addressed space.
+ * Address one manifest-declared setting in an accessible space.
  */
 
 export type PluginSettingAddress = {
@@ -737,6 +741,86 @@ value: unknown,
  * Explicit conflict resolution echoes every alternative the caller saw.
  */
 resolve?: Array<unknown>, };
+/**
+ * Last observed state of an installed package in one space.
+ */
+
+export type PluginReadiness = "disabled" | "unavailable" | "not_started" | "ready" | "failed";
+/**
+ * One caller-safe runtime failure from this space.
+ */
+
+export type PluginRuntimeFailure = {
+/**
+ * Operation attempted, when the failure belongs to an invocation.
+ */
+operation: string | null,
+/**
+ * Stable reason code without private input or output values.
+ */
+reason: string,
+/**
+ * When the host observed the failure, in Unix milliseconds.
+ */
+at_ms: number, };
+/**
+ * Installed-package diagnostics exposed to authorized space managers.
+ */
+
+export type PluginDiagnostics = {
+/**
+ * Explicit space UUID.
+ */
+space_id: string,
+/**
+ * Installed package ID.
+ */
+plugin_id: string,
+/**
+ * Revision inspected by this read.
+ */
+revision: number,
+/**
+ * Last observed readiness in this space.
+ */
+readiness: PluginReadiness,
+/**
+ * Caller-safe reason when the package is unavailable or failed.
+ */
+reason: string | null,
+/**
+ * Up to eight recent failures, newest first.
+ */
+recent_errors: Array<PluginRuntimeFailure>,
+/**
+ * Up to 4 KiB from the last failed worker's own stderr in this space.
+ */
+stderr_tail: string | null, };
+/**
+ * Replace the caller's override if their observed value still matches.
+ */
+
+export type PluginPersonalSettingEdit = {
+/**
+ * Space UUID.
+ */
+space_id: string,
+/**
+ * Installed package ID.
+ */
+plugin_id: string,
+/**
+ * Personal setting key in that package's manifest.
+ */
+key: string,
+/**
+ * Last observed override. Null means no override.
+ */
+base: unknown,
+/**
+ * New override. Null restores the manifest default.
+ */
+value: unknown, };
 /**
  * Current values for a setting. The worker receives only its effective value.
  */
@@ -842,6 +926,11 @@ export type ManifestHookMode = "watch" | "block";
  */
 
 export type ManifestSettingType = "string" | "boolean" | "number";
+/**
+ * Owner of an override for a declared plugin setting.
+ */
+
+export type ManifestSettingScope = "personal" | "space";
 /**
  * Placement inside a space userdata tree; hidden files belong to the declaring plugin.
  */
@@ -1023,7 +1112,19 @@ name: string,
 /**
  * One-line description declared in the file.
  */
-description: string, };
+description: string,
+/**
+ * Harness labels selecting the skill. Empty means all eligible agents.
+ */
+agents: Array<string>,
+/**
+ * Path to SKILL.md relative to the space.
+ */
+path: string,
+/**
+ * Stable content item for an application-managed skill.
+ */
+id?: string, };
 /**
  * Bounded skill matches for the selected space.
  */
@@ -1033,6 +1134,397 @@ export type SkillsResult = {
  * Skill descriptors, ordered by name.
  */
 skills: Array<SkillMatch>, };
+/**
+ * An operation selecting the named skill in a space.
+ */
+
+export type SkillTarget = {
+/**
+ * Owning space UUID.
+ */
+space_id: string,
+/**
+ * Name of the bundle directory.
+ */
+name: string, };
+/**
+ * The entire portable SKILL.md document to write.
+ */
+
+export type SkillWrite = {
+/**
+ * Owning space UUID.
+ */
+space_id: string,
+/**
+ * Name of the bundle directory.
+ */
+name: string,
+/**
+ * Standard YAML frontmatter followed by Markdown instructions.
+ */
+markdown: string,
+/**
+ * Required for update and omitted for create.
+ */
+base_revision?: string, };
+/**
+ * A conditional removal of a skill bundle.
+ */
+
+export type SkillRemove = {
+/**
+ * Owning space UUID.
+ */
+space_id: string,
+/**
+ * Name of the bundle directory.
+ */
+name: string,
+/**
+ * Revision returned by the read operation.
+ */
+base_revision: string, };
+/**
+ * Descriptor and exact Markdown for one skill.
+ */
+
+export type SkillDocument = {
+/**
+ * Standard portable Markdown contents.
+ */
+markdown: string,
+/**
+ * Opaque version to send on update or remove.
+ */
+revision: string,
+/**
+ * Skill directory name.
+ */
+name: string,
+/**
+ * One-line description declared in the file.
+ */
+description: string,
+/**
+ * Harness labels selecting the skill. Empty means all eligible agents.
+ */
+agents: Array<string>,
+/**
+ * Path to SKILL.md relative to the space.
+ */
+path: string,
+/**
+ * Stable content item for an application-managed skill.
+ */
+id?: string, };
+/**
+ * A single skill read or mutation result.
+ */
+
+export type SkillResult = {
+/**
+ * Current skill contents.
+ */
+skill: SkillDocument, };
+/**
+ * Read-only schedule preview input.
+ */
+
+export type AutomationPreview = {
+/**
+ * Owning space UUID.
+ */
+space_id: string,
+/**
+ * Original words as entered by the creator.
+ */
+schedule_text: string, };
+/**
+ * Normalized schedule and the exact details to confirm when saving.
+ */
+
+export type AutomationSchedule = {
+/**
+ * Original schedule phrase, including its original spelling and whitespace.
+ */
+schedule_text: string,
+/**
+ * Canonical calendar expression generated by the server.
+ */
+schedule: string,
+/**
+ * Normalized schedule in plain words.
+ */
+human: string,
+/**
+ * IANA zone used to compute the next instant.
+ */
+timezone: string,
+/**
+ * Next instant in UTC epoch milliseconds, when scheduled.
+ */
+next_run_ms: number | null, };
+/**
+ * Space and existing automation identity.
+ */
+
+export type AutomationTarget = {
+/**
+ * Owning space UUID.
+ */
+space_id: string,
+/**
+ * Stable automation UUID.
+ */
+id: string, };
+/**
+ * A conditional pause, enable or removal.
+ */
+
+export type AutomationRevision = {
+/**
+ * Owning space UUID.
+ */
+space_id: string,
+/**
+ * Stable automation UUID.
+ */
+id: string,
+/**
+ * Opaque definition revision.
+ */
+base_revision: string, };
+/**
+ * Create an automation using the schedule approved in the preview.
+ */
+
+export type AutomationCreate = {
+/**
+ * Owning space UUID.
+ */
+space_id: string,
+/**
+ * Readable title and filename stem.
+ */
+name: string,
+/**
+ * Markdown prompt submitted as the initial turn.
+ */
+prompt: string,
+/**
+ * Original schedule phrase.
+ */
+schedule_text: string,
+/**
+ * Canonical expression shown by the preview.
+ */
+schedule: string,
+/**
+ * Account zone confirmed in the preview.
+ */
+timezone: string,
+/**
+ * Permission mode for new turns.
+ */
+mode?: AgentMode | null,
+/**
+ * Creator-owned machine or the creator's authorized sandbox when omitted.
+ */
+machine_id?: string | null, };
+/**
+ * Change selected fields, sending all three preview fields to change the schedule.
+ */
+
+export type AutomationUpdate = {
+/**
+ * Owning space UUID.
+ */
+space_id: string,
+/**
+ * Stable automation UUID.
+ */
+id: string,
+/**
+ * Opaque current definition revision.
+ */
+base_revision: string,
+/**
+ * New display title.
+ */
+name?: string | null,
+/**
+ * New Markdown prompt.
+ */
+prompt?: string | null,
+/**
+ * Original words for a changed or reconfirmed schedule.
+ */
+schedule_text?: string | null,
+/**
+ * Canonical expression for the same schedule preview.
+ */
+schedule?: string | null,
+/**
+ * Account zone confirmed by that preview.
+ */
+timezone?: string | null,
+/**
+ * Mode to apply to subsequent runs.
+ */
+mode?: AgentMode | null,
+/**
+ * Machine UUID, or an empty string to select the authorized sandbox.
+ */
+machine_id?: string | null, };
+/**
+ * One scheduling outcome, with a thread when a turn was admitted.
+ */
+
+export type AutomationOutcome = {
+/**
+ * Stable run lifecycle status.
+ */
+status: string,
+/**
+ * Scheduled instant in UTC epoch milliseconds, absent for manual runs.
+ */
+scheduled_at_ms: number | null,
+/**
+ * Time this outcome was recorded, in UTC epoch milliseconds.
+ */
+at_ms: number,
+/**
+ * Admitted thread UUID, if any.
+ */
+thread_id: string | null,
+/**
+ * Caller-safe explanation for an exceptional outcome.
+ */
+reason: string | null, };
+/**
+ * An automation's status and saved definition metadata.
+ */
+
+export type AutomationRecord = {
+/**
+ * Stable automation UUID.
+ */
+id: string,
+/**
+ * Display title.
+ */
+name: string,
+/**
+ * Opaque current definition revision.
+ */
+revision: string,
+/**
+ * Relative Markdown path in the owning space.
+ */
+path: string,
+/**
+ * Whether scheduled execution is enabled.
+ */
+enabled: boolean,
+/**
+ * Permission mode for subsequent runs.
+ */
+mode: AgentMode,
+/**
+ * Most recent recorded outcome, absent before the first occurrence.
+ */
+last: AutomationOutcome | null,
+/**
+ * Last stop reason, if automatic execution was revoked.
+ */
+stop_reason?: string,
+/**
+ * Creator's new account zone, when a schedule move requires confirmation.
+ */
+account_timezone?: string,
+/**
+ * Explicit machine when visible to the creator.
+ */
+machine_id?: string,
+/**
+ * Exact prompt supplied with individual reads and definition edits.
+ */
+prompt?: string,
+/**
+ * Original schedule phrase, including its original spelling and whitespace.
+ */
+schedule_text: string,
+/**
+ * Canonical calendar expression generated by the server.
+ */
+schedule: string,
+/**
+ * Normalized schedule in plain words.
+ */
+human: string,
+/**
+ * IANA zone used to compute the next instant.
+ */
+timezone: string,
+/**
+ * Next instant in UTC epoch milliseconds, when scheduled.
+ */
+next_run_ms: number | null, };
+/**
+ * A space's bounded list of automation definitions.
+ */
+
+export type AutomationList = {
+/**
+ * Definitions and their scheduling status.
+ */
+automations: Array<AutomationRecord>, };
+/**
+ * A single automation definition.
+ */
+
+export type AutomationResult = {
+/**
+ * Definition and latest scheduling status.
+ */
+automation: AutomationRecord, };
+/**
+ * Next scheduled instant for an automation.
+ */
+
+export type AutomationNext = {
+/**
+ * UTC epoch milliseconds, or null when paused or stopped.
+ */
+next_run_ms: number | null, };
+/**
+ * Latest recorded run or skip.
+ */
+
+export type AutomationLast = {
+/**
+ * Null before the first outcome.
+ */
+last: AutomationOutcome | null, };
+/**
+ * Admitted thread for a manual run.
+ */
+
+export type AutomationThread = {
+/**
+ * Stable UUID of the new thread.
+ */
+thread_id: string, };
+/**
+ * Acknowledgement of a successful removal into Trash.
+ */
+
+export type RemovalResult = {
+/**
+ * True after the committed removal.
+ */
+ok: true, };
 /**
  * One palette command, in the web palette's command shape.
  */
@@ -1255,10 +1747,14 @@ id: string,
  */
 operation: string, };
 /**
- * Typed space setting; secrets use separate handles.
+ * Typed plugin setting; secrets use separate handles.
  */
 
 export type ManifestSetting = {
+/**
+ * Override owner. Omission selects the shared space setting.
+ */
+scope?: ManifestSettingScope,
 /**
  * Stable setting identifier.
  */
@@ -1503,6 +1999,27 @@ generation: number,
  * Validated declaration; it conveys no authority to dispatch or mount code.
  */
 contribution: PluginSlotContribution, };
+/**
+ * Latest authorized projection for one package-owned slot on its live stream.
+ */
+
+export type OwnedSlotUpdate = {
+/**
+ * Space UUID whose slot is being followed.
+ */
+space_id: string,
+/**
+ * Package-qualified slot requested when opening the stream.
+ */
+target: OwnedPluginSlotId,
+/**
+ * Whether the recipient can still use the declared slot.
+ */
+active: boolean,
+/**
+ * Current visible contributions in declaration priority order.
+ */
+contributions: Array<ResolvedPluginSlot>, };
 /**
  * Worker request to sanitize an exact stored content revision. Authority
  * comes from invocation admission and the plugin's content declaration.
@@ -2087,6 +2604,19 @@ export type JobInput = {
  */
 job_id: string, };
 /**
+ * Public summary of a parked plugin job with no signal payload or credentials.
+ */
+
+export type JobWait = {
+/**
+ * Why the job is waiting, supplied by the worker at the checkpoint.
+ */
+reason: string,
+/**
+ * Unix milliseconds when the wait ends if no signal arrives.
+ */
+deadline_ms: number, };
+/**
  * What a client may see of a job: its durable record, never its stream.
  */
 
@@ -2112,6 +2642,10 @@ state: JobState,
  */
 parent_id?: string,
 /**
+ * Public summary while a plugin job waits for a signal.
+ */
+wait?: JobWait,
+/**
  * Last durable checkpoint written by the plugin, or null.
  */
 checkpoint: unknown,
@@ -2120,7 +2654,7 @@ checkpoint: unknown,
  */
 checkpoint_seq: bigint,
 /**
- * Final result of a `done` job, or null.
+ * Final result, a caller-safe wait rejection, or null.
  */
 result: unknown, };
 /**

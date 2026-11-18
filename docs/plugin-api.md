@@ -142,6 +142,54 @@ Input: `docs/reviews/plugin-and-client-map-sol.md`.
   instructions and starred prompts are the same files in their personal space.
 
 
+## Durable job waits
+
+The [author reference](../plugins/calternal-plugin-guide/reference.md)
+shows how a replayable job run returns a checkpoint and waits for an
+Inbox answer, an approval, a webhook delivery or its deadline. The
+worker invocation ends while the job waits. Interactive operations
+return a job ID from the existing `start_job` broker call to use waits.
+
+Park, cancellation and delivery use the same jobs.db connection and
+state fence. The first signal commits with the transition to admitted
+and, for Inbox decisions and webhooks, with the replay receipt.
+Duplicate deliveries cannot win the same wait again. The normal job
+scheduler rechecks the original sign-in, capability, package revision
+and activation. Once admitted, ordinary job restart and effect-receipt
+rules apply. After a later checkpoint the signal is no longer included.
+Signal payloads are limited to 16 KiB and are retained with the owning
+job. Job retention and account erasure also remove their waits.
+
+### Signed webhook delivery
+
+Declare a webhook `id` and schema `operation` in `webhooks`, and include
+the same `id` in `secrets`. Configure at least 32 random key bytes for the
+package's space secret of that name through the trusted secret flow. The
+host uses the declared operation's cached input schema for the delivery.
+It hands the payload to the resumed run.
+
+Park with `{kind: "webhook", route, correlation}` using a fresh UUID for
+each wait. The sender posts JSON to
+`/api/v1/plugin-webhooks/<space>/<package>/<route>/<job>/<correlation>`.
+Set `X-Calternal-Timestamp` to Unix seconds and `X-Calternal-Signature`
+to the hexadecimal HMAC-SHA256 of the timestamp, LF, `POST`, LF,
+exact path, LF and raw body bytes. Requests accept a five-minute clock
+skew and up to 16 KiB of body bytes. Verification has a short body
+timeout and a 60 attempts/minute budget per cached space. A 202
+acknowledges the first accepted delivery or an identical replay.
+Keep signing keys out of worker state and logs.
+
+## Personal plugin settings
+
+A package may declare `scope: "personal"` on a typed setting. A signed-in
+space member can read and edit only their own override through
+`plugins.personal_settings.get` and `plugins.personal_settings.set`.
+Address the space UUID, package and key. For edits submit the last stored
+`base`, the next `value` and a request ID. Null restores the manifest
+default. A stale base conflicts and an identical retry replays its receipt.
+The worker’s existing setting broker resolves the authenticated person's
+value. An edit wakes that person's account feed without publishing the value.
+
 ## Space plugin settings
 
 Declare a key in the manifest's `settings`, including its primitive type and
@@ -167,6 +215,20 @@ intent. Syntax damage returns defaults with a file-and-line repair hint.
 Once the file is valid, recovery reapplies the pending key and keeps other
 edits. A competing edit to the same key becomes a conflict. Unrelated
 operations stay available during repair.
+
+## Installed plugin diagnostics
+
+A space Owner or Manager can call `plugins.diagnostics` with the space UUID
+and an installed package ID. The response reports the selected revision,
+its last observed readiness, recent reason codes, and up to 4 KiB of the
+last failed worker’s stderr from that space. Readiness is observed when the
+worker starts and stops. The endpoint does not start a worker.
+
+Diagnostics retain up to eight failures and one stderr tail per space and
+up to 64 spaces per package revision. Records expire after an hour and
+are cleared when the server restarts. The host never records operation
+inputs or outputs in the error history. Worker stderr is private to the
+space's managers. Authors should keep secrets and personal data out of it.
 
 ## Author diagnostics
 
@@ -269,8 +331,12 @@ the selected space. The caller needs both declared capabilities. Admission,
 approval, item and space checks still run when a rendered action invokes the
 operation. Where a slot fills, the first eligible contributions in package ID
 and local contribution ID order win. A disable or removal is reflected by the
-next listing. The planned scoped reactive values feed will deliver that change
-to the slot owner. The existing `plugins` array remains a manifest and
+next listing. The owner can open
+`GET /api/v1/plugin-slots/live?space_id=…&plugin_id=…&slot_id=…` with the
+person's normal sign-in. Each SSE data frame is an `OwnedSlotUpdate`
+containing the full current grant-filtered projection. An inactive update
+clears the mount. Reconnect for the latest snapshot. This stream shares
+the space journal's listener budget. The existing `plugins` array remains a manifest and
 activation inventory.
 
 Fixed host targets retain their string names. Sealed renderer paths at
@@ -311,7 +377,7 @@ Before any revision loads, the state is `failed`. The server keeps one failed
 candidate per package in the development space, for at most 16 packages, and
 clears it on the next successful publication. Nothing in diagnostics is
 written to disk, so it follows no database or file format and needs no
-migration. A restart drops it. A production server has no diagnostics view.
+migration. A restart drops it. Installed packages use the separate manager operation described above.
 
 ## Page a plugin's own kinds
 
@@ -354,6 +420,26 @@ from the current catalog snapshot. Live install, update, disable and removal
 take effect on the next request.
 See [Search and palette lookups](search.md).
 
+
+## Live editing
+
+A Markdown kind can opt in by declaring `"x-calternal-live-editing": true`
+in its root kind schema. The annotation is compatible with older manifest
+readers. The host registers the opt-in when the kind is provisioned for a
+space. It owns merge and persistence for the kind. A replacement must name
+the opaque revision it was based on. The host merges against that base while
+it remains retained in the current lineage. An unavailable base returns a
+conflict before any write. Retrying with the same request ID follows the
+existing receipt contract.
+
+
+Instead of `text` and `metadata`, `write_item` can pass an `edit` object
+for an existing live item. Use `{"type":"append","text":"…"}` with no
+`base_revision`, or `{"type":"patch","changes":[{"at":0,"delete":0,"insert":"…"}]}`
+with a `base_revision`. A patch accepts at most 256 non-overlapping changes.
+Positions and lengths are UTF-16 units on grapheme boundaries in the base.
+Both operations preserve the current metadata and use the normal write receipt.
+See [Live editing service](live-rooms.md) for wire and authority details.
 
 ## Sealed plugin content
 

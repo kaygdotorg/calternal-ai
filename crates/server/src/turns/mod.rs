@@ -617,7 +617,7 @@ async fn stop_machine(machines: &Arc<MachineService>, job: &Job) -> Result<(), E
     Ok(())
 }
 
-pub(super) async fn enabled_generation<D: Directory>(
+pub(crate) async fn enabled_generation<D: Directory>(
     state: &Shared<D>,
     space: &str,
     plugin: &str,

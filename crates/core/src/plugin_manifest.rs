@@ -222,6 +222,19 @@ pub struct ManifestKind {
     /// JSON Schema for the kind content; no executable code.
     pub schema: serde_json::Value,
 }
+impl ManifestKind {
+    /// Root schema annotation that enables the host's live editing service.
+    /// Older hosts can read this annotation as ordinary JSON Schema metadata.
+    pub const LIVE_EDITING: &str = "x-calternal-live-editing";
+
+    /// Whether this Markdown kind requests live editing. Cost: one schema lookup.
+    pub fn live_editing(&self) -> bool {
+        self.schema
+            .get(Self::LIVE_EDITING)
+            .and_then(serde_json::Value::as_bool)
+            == Some(true)
+    }
+}
 /// The single item an operation acts on. The host reads the item ID from the named
 /// input field, resolves its owning space with the existence-hiding resolver and
 /// authorizes the caller in that space before any plugin code runs.
@@ -289,10 +302,24 @@ pub struct ManifestAttention {
     /// Declared operation providing candidates.
     pub operation: String,
 }
-/// Typed space setting; secrets use separate handles.
+/// Owner of an override for a declared plugin setting.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum ManifestSettingScope {
+    /// Each person in the space can have their own value.
+    Personal,
+    /// Space managers can change the shared value.
+    Space,
+}
+
+/// Typed plugin setting; secrets use separate handles.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[serde(deny_unknown_fields)]
 pub struct ManifestSetting {
+    /// Override owner. Omission selects the shared space setting.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub scope: Option<ManifestSettingScope>,
     /// Stable setting identifier.
     pub id: String,
     /// Primitive type of the default and stored values.

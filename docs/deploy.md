@@ -84,6 +84,62 @@ from the host and name `MACHINE_CONNECT` if TCP cannot connect. Inspect
 `journalctl --user -u calternal-ai-machine.service` on the target for the
 machine's connection failure.
 
+## Enable account email
+
+Run these steps as the deployment's `calternal` user. Use the SMTP
+provider's host, port, TLS mode, login and verified sender. Calternal
+supports implicit TLS (`implicit`, usually port 465) and required
+STARTTLS (`starttls`, usually port 587). A server without SMTP can use
+passkeys, recovery codes and operator recovery with email optional.
+
+Enter the SMTP password at the hidden prompt. The shell pipeline
+below hands it to the rootless Podman secret store over standard input.
+The credential stays out of the repository, deployment environment
+files, command arguments and logs.
+
+```bash
+(
+  set +x
+  IFS= read -r -s -p 'SMTP password: ' smtp_password || exit 1
+  printf '\n' >&2
+  test -n "$smtp_password" || exit 1
+  printf '%s' "$smtp_password" | podman secret create --replace calternal-ai-smtp-password -
+)
+```
+
+Create
+`~/.config/containers/systemd/calternal-ai.container.d/90-account-mail.conf`
+with the following lines, substituting your provider's settings. Quadlet
+injects the password as the server container's `CALTERNAL_SMTP_PASSWORD`
+at runtime. Each server instance needs its own drop-in and secret name.
+
+```ini
+[Container]
+Environment=CALTERNAL_SMTP_HOST=smtp.example.org
+Environment=CALTERNAL_SMTP_PORT=587
+Environment=CALTERNAL_SMTP_TLS=starttls
+Environment=CALTERNAL_SMTP_USERNAME=calternal
+Environment=CALTERNAL_SMTP_FROM=security@example.org
+Secret=calternal-ai-smtp-password,type=env,target=CALTERNAL_SMTP_PASSWORD
+```
+
+```sh
+systemctl --user daemon-reload
+systemctl --user restart calternal-ai.service
+podman exec calternal-ai /usr/local/bin/calternal mail-test you@example.org --appdata /data/appdata
+```
+
+The command reports SMTP acceptance. Check the mailbox for the message
+before enabling the hosted email requirement. To enable it, add
+`Environment=CALTERNAL_ACCOUNT_EMAIL_REQUIRED=1` to the same `[Container]`
+section and reload and restart again. Existing accounts can sign in and are
+asked to provide and verify an address. Remove the drop-in to return to
+optional email with no SMTP. When rotating the secret, restart the unit
+to recreate the container with the new value.
+
+[Podman secret provisioning](https://docs.podman.io/en/latest/markdown/podman-secret-create.1.html)
+· [Quadlet configuration](https://docs.podman.io/en/latest/markdown/podman-systemd.unit.5.html)
+
 ## Choose the machine sandbox backend
 
 Use `podman` on Linux machines without usable KVM and for the current provider

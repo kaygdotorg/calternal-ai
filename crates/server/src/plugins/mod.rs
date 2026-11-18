@@ -21,6 +21,7 @@ pub mod broker;
 #[cfg(feature = "dev-plugin-drafts")]
 mod draft_diagnostics;
 pub(crate) mod harness_admin;
+pub(crate) mod installed_diagnostics;
 pub mod job_api;
 pub mod job_sql;
 mod job_streams;
@@ -35,6 +36,7 @@ pub(crate) use requests::OnceAdmission;
 pub mod runner;
 pub mod session;
 pub(crate) mod settings;
+pub(crate) mod signals;
 mod slots;
 pub mod worker;
 
@@ -106,6 +108,8 @@ pub struct Plugin {
     pub schemas: Arc<host::CompiledSchemas>,
     revision: u32,
     activation_approval: u32,
+    /// In-memory readiness and worker failures, scoped per space.
+    pub(crate) installed_diagnostics: installed_diagnostics::RuntimeDiagnostics,
     #[cfg(feature = "dev-plugin-drafts")]
     draft_space: Option<SpaceId>,
     #[cfg(feature = "dev-plugin-drafts")]
@@ -163,6 +167,7 @@ impl Plugin {
             unavailable: None,
             schemas,
             revision: 0,
+            installed_diagnostics: Default::default(),
             activation_approval: 0,
             #[cfg(feature = "dev-plugin-drafts")]
             draft_space: None,
@@ -206,8 +211,9 @@ impl Plugin {
     /// Visible kinds become top-level folders; hidden kinds live under
     /// `.calternal/<plugin-id>/<kind>/`. Claimed text is stored as Markdown; any other
     /// kind is stored unparsed under its declared extension (manifest validation
-    /// guarantees one). Cost: O(kinds) small allocations.
-    pub fn kind_registrations(&self) -> Vec<(String, Placement, FileFormat)> {
+    /// guarantees one). The last tuple field carries the live-editing opt-in. Cost: O(kinds)
+    /// small allocations.
+    pub fn kind_registrations(&self) -> Vec<(String, Placement, FileFormat, bool)> {
         self.manifest
             .kinds
             .iter()
@@ -233,7 +239,7 @@ impl Plugin {
                     },
                     _ => FileFormat::Markdown,
                 };
-                (kind.id.clone(), placement, format)
+                (kind.id.clone(), placement, format, kind.live_editing())
             })
             .collect()
     }
@@ -247,10 +253,12 @@ impl Plugin {
 
 /// Atomically published plugin catalog. Reader snapshots never lock the catalog writer.
 #[derive(Debug, Default)]
-pub struct Registry(
-    arc_swap::ArcSwap<Catalog>,
-    #[cfg(feature = "dev-plugin-drafts")] draft_diagnostics::FailedCandidates,
-);
+pub struct Registry {
+    catalog: arc_swap::ArcSwap<Catalog>,
+    changes: tokio::sync::watch::Sender<u64>,
+    #[cfg(feature = "dev-plugin-drafts")]
+    failed_candidates: draft_diagnostics::FailedCandidates,
+}
 
 /// Immutable installed plugins and their derived operation policy.
 #[derive(Clone, Debug, Default)]
@@ -303,29 +311,38 @@ pub fn host_capability(capability: ManifestCapability) -> Option<Capability> {
 impl Registry {
     /// Pin the catalog for one admission or lookup. Cost: one atomic reference load.
     pub fn snapshot(&self) -> Arc<Catalog> {
-        self.0.load_full()
+        self.catalog.load_full()
     }
 
     /// Publish a fully validated snapshot. Existing references stay valid for admitted work.
     fn publish(&self, catalog: Catalog) {
-        self.0.store(Arc::new(catalog));
+        self.catalog.store(Arc::new(catalog));
+        self.changes
+            .send_modify(|value| *value = value.wrapping_add(1));
     }
 
     /// Build the initial catalog from known packages. Cost: validates the supplied declarations.
     pub fn from_plugins(plugins: Vec<Plugin>) -> Self {
-        Self(
-            arc_swap::ArcSwap::from_pointee(Catalog::from_plugins(
+        Self {
+            catalog: arc_swap::ArcSwap::from_pointee(Catalog::from_plugins(
                 plugins.into_iter().map(Arc::new).collect(),
             )),
+            changes: Default::default(),
             #[cfg(feature = "dev-plugin-drafts")]
-            Default::default(),
-        )
+            failed_candidates: Default::default(),
+        }
     }
 
     /// Failed development candidates, kept in memory for author inspection.
     #[cfg(feature = "dev-plugin-drafts")]
     pub(crate) fn failed_drafts(&self) -> &draft_diagnostics::FailedCandidates {
-        &self.1
+        &self.failed_candidates
+    }
+
+    /// Subscribe to content-free catalog changes for an already admitted live feed.
+    /// Cost: one shared watch receiver. A wake requires a new authorized projection.
+    pub(crate) fn changes(&self) -> tokio::sync::watch::Receiver<u64> {
+        self.changes.subscribe()
     }
 
     /// An empty registry: no plugin operations exist. Cost: none.
