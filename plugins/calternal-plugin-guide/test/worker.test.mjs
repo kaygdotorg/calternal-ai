@@ -18,6 +18,13 @@ test("scaffolds, checks and explains a plugin and publishes its documentation", 
     assert.equal((await invoke("check", { manifest: scaffold.manifest })).valid, true);
     assert.equal((await invoke("check", { manifest: {} })).valid, false);
     assert.match((await invoke("explain", { topic: "skill" })).markdown, /^---/);
+    for (const topic of ["jobs", "waits"]) {
+      const { markdown } = await invoke("explain", { topic });
+      assert.match(markdown, /Form\(\[Input\(\$text/);
+      assert.match(markdown, /signal\.value\.text/);
+      assert.match(markdown, /deadline_ms/);
+      assert.match(markdown, /### manifest\.json/);
+    }
     assert.equal((await invoke("publish", {})).item.id, "fixture-document");
   } finally {
     await worker.close();

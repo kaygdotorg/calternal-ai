@@ -6,9 +6,26 @@ import skill from "../skills/plugin-authoring/SKILL.md";
 import manifest from "../manifest.json" with { type: "json" };
 import starter from "../../../packages/plugin-sdk/templates/manifest.json" with { type: "json" };
 
+import questionManifest from "../../../packages/plugin-sdk/templates/question.manifest.json" with { type: "json" };
+import questionForm from "../../../packages/plugin-sdk/templates/question.form.json" with { type: "json" };
+import questionWorker from "../../../packages/plugin-sdk/templates/question.worker.txt";
+
 const starterJson = JSON.stringify(starter);
 
-const content = new Map([["reference", reference], ["walkthrough", walkthrough], ["skill", skill]]);
+const waitHeading = "### Wait for a signal";
+const jobsHeading = "## Durable jobs and progress";
+const questionExample = [
+  ["manifest.json", "json", JSON.stringify(questionManifest, null, 2)],
+  ["question.form.json", "json", JSON.stringify(questionForm, null, 2)],
+  ["worker.ts", "ts", questionWorker],
+].map(([file, language, source]) =>
+  `### ${file}\n\n\`\`\`${language}\n${source.trimEnd().replaceAll("__PLUGIN__", "question-job")}\n\`\`\``,
+).join("\n\n");
+const jobsWithExample = (heading: string) => `${reference.slice(reference.indexOf(heading)).trimEnd()}\n\n${questionExample}\n`;
+const content = new Map([
+  ["reference", reference], ["walkthrough", walkthrough], ["skill", skill],
+  ["jobs", jobsWithExample(jobsHeading)], ["waits", jobsWithExample(waitHeading)],
+]);
 
 function field(input: unknown, key: string): unknown {
   return input && typeof input === "object" && Object.hasOwn(input, key)

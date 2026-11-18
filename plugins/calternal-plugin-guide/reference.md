@@ -154,8 +154,7 @@ there is no next page.
 ## Durable jobs and progress
 
 Use a mutating start operation with a request ID. Declare `start_job` in
-`host_calls`, then call it with
-`{operation: "package.run", input: { /* payload */ }}`. The reply has
+`host_calls`, then use the SDK helper `startJob(context, {operation: "package.run", input})`. The reply has
 `job_id`. The named run operation must be declared by the same plugin
 and have no item target. The broker admits the durable job and starts a
 separate run invocation. Returning the admission result does not run it
@@ -216,6 +215,93 @@ function run(input: {
   });
 }
 ```
+
+#### A job with one text answer
+
+Scaffold the complete example, including its manifest, handler, form, README
+and fixture test.
+
+```sh
+calternal plugin new question-job --template question
+cd question-job
+npm install
+calternal plugin check .
+calternal plugin test .
+```
+
+The public `waits` topic prints the complete example files. The `jobs` topic
+includes admission and progress as well.
+
+```sh
+calternal invoke calternal-plugin-guide.explain --input "{\"space_id\":\"$SPACE_ID\",\"topic\":\"waits\"}"
+```
+
+The example keeps the form in `question.form.json`. Import this file as the
+form in the job's parked output so `plugin check` can validate the same form
+that the worker sends. The JSON's `source` is GenUI source. Form arguments are
+the controls and the label in that order. `Input` takes a bound string and a
+label. Here `$text` creates the submitted field named `text`.
+
+```json
+{
+  "genui_version": 2,
+  "source": "$text=\"\"\nForm([Input($text, \"What should the job use?\")], \"Job question\")"
+}
+```
+
+The start operation uses `plugins.use` and declares the `start_job` host call.
+Use the SDK's `startJob` to get a typed `{ job_id }` reply. `content.write`
+is for editing content, and `space.read` is for reads. After adding or
+renaming an operation, document its full ID under the title in `README.md`.
+
+The run's manifest uses `oneOf` on its optional `signal` field and a
+`const` on each branch's `kind`. This lets `typedHandlers` infer
+`signal.value.text` after checking for `"answer"`. Park the first run with
+a saved checkpoint and a future deadline in Unix milliseconds. Return the
+answer or a timeout result on the next run.
+
+```ts
+"question-job.run": async ({ signal }) => {
+  if (signal?.kind === "answer") {
+    return { status: "done", result: { answer: signal.value.text } };
+  }
+  if (signal?.kind === "deadline") {
+    return { status: "done", result: { timed_out: true } };
+  }
+  return parkJob({
+    checkpoint: { phase: "asked" },
+    reason: "Waiting for a text answer",
+    deadline_ms: Date.now() + 20_000,
+    source: { kind: "question", form, schema_operation: "question-job.answer" },
+  });
+},
+```
+
+With the development environment sourced, load the draft and start a job.
+
+```sh
+calternal plugin dev . --once
+calternal invoke question-job.start --json --input "{\"space_id\":\"$SPACE_ID\"}"
+calternal invoke requests.list --json --input '{}'
+```
+
+In the Inbox output, find the row whose `job_id` matches the start reply.
+Use that row's `id` for `REQUEST_ID` below, and use the ID from the start
+reply for `JOB_ID`. Answer before the 20-second deadline.
+
+```sh
+calternal invoke requests.answer --json --input '{"id":"REQUEST_ID","answer":{"text":"Blue"}}'
+calternal invoke jobs.get --json --input '{"job_id":"JOB_ID"}'
+```
+
+The job finishes with `{"answer":"Blue"}`. Start a second job, leave it
+unanswered, and check for `{"timed_out":true}` after the deadline.
+
+If an emitted question is malformed, `jobs.get` returns
+`result.diagnostics` with the path and source position, what was expected
+and what was found. `calternal plugin test` applies the same GenUI validator
+when a fixture invocation returns a parked question. Exercise at least the
+first run in the fixture to verify a form constructed by the handler.
 
 Use `{kind: "question", form, schema_operation}` to ask the job's starter
 a question in the existing Inbox. `form` is a GenUI view containing one

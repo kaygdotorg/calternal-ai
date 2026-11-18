@@ -308,6 +308,6 @@ export { serveWorker } from "./stdio-worker.js";
 export { typedHandlers } from "./typed-handlers.js";
 
 /** Durably park a replayable job on a typed signal or deadline. */
-export { parkJob } from "./job-waits.js";
+export { parkJob, startJob } from "./job-waits.js";
 /** Signal and checkpoint contracts used by durable job handlers. */
 export type { JobPark, JobSignal, JobWaitSource, ParkedJob } from "./job-waits.js";
