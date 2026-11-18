@@ -153,6 +153,16 @@ pub struct SkillMatch {
     pub name: String,
     /// One-line description declared in the file.
     pub description: String,
+    /// Harness labels selecting the skill. Empty means all eligible agents.
+    #[serde(default)]
+    pub agents: Vec<String>,
+    /// Path to SKILL.md relative to the space.
+    #[serde(default)]
+    pub path: String,
+    /// Stable content item for an application-managed skill.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub id: Option<String>,
 }
 
 /// Bounded skill matches for the selected space.

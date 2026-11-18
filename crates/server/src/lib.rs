@@ -10,6 +10,7 @@ pub mod api;
 mod asset_cache;
 pub mod auth;
 pub mod authz;
+mod automations;
 pub mod blocking;
 pub mod erasure;
 pub mod fault;

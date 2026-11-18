@@ -45,7 +45,7 @@ mod plugin_slots;
 mod plugins;
 mod request;
 mod search;
-mod search_skills;
+pub(crate) mod search_skills;
 mod sharing;
 
 pub(crate) mod appearance;
@@ -112,6 +112,11 @@ pub fn configure_search<D: Directory>(
         .store
         .shared_content()
         .configure_search(source, crate::threads::search::decode)
+}
+
+/// Start one bounded background automation scheduler after turn recovery.
+pub fn configure_automations<D: Directory>(state: &Shared<D>) {
+    crate::automations::scheduling::start(state);
 }
 
 /// Construct the exact loopback hostnames accepted for a bound listener port.

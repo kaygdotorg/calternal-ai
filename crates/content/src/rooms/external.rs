@@ -60,6 +60,8 @@ impl Content {
             |item| json!({"id":item.id,"revision":item.revision}),
             Destination::Current,
             None,
+            None,
+            None,
             || Ok(()),
             |_| Ok(()),
         )?;
