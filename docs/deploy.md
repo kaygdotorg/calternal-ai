@@ -66,8 +66,8 @@ The production upgrade gate and durable inventory are tracked in
 [Data-preserving upgrades](upgrades.md).
 
 From the durable baseline, ordinary updates require `--compatibility-proof FILE`
-from the release gate for the exact current and candidate images. Use
-`--allow-incompatible` only with the owner's approval. The latter stages a full
+from `scripts/verify-additive-upgrade.sh PREVIOUS_IMAGE CANDIDATE_IMAGE PROOF_OUTPUT`
+for the exact current and candidate images. Use `--allow-incompatible` only with the owner's approval. The latter stages a full
 restore point before changing data. An incomplete preparation fences server
 startup. A deployment retry, rollback, or the server unit's recovery hook can
 restore the staged bytes before either release starts. After the cutover marker,

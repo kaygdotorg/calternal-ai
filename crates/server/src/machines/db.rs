@@ -80,7 +80,7 @@ pub fn open(path: &Path) -> rusqlite::Result<Connection> {
     c.busy_timeout(std::time::Duration::from_secs(5))?;
     c.pragma_update(None, "synchronous", "FULL")?;
     c.pragma_update(None, "foreign_keys", "ON")?;
-    calternal_store::migrations::migrate(&c, UPGRADE_SCHEMA)?;
+    calternal_store::migrations::migrate(&c, upgrade_schema())?;
     c.pragma_update(None, "journal_mode", "WAL")?;
     Ok(c)
 }
@@ -316,5 +316,16 @@ pub(crate) fn last_thread_machine(
     Ok(id.and_then(|s| Uuid::parse_str(&s).ok()))
 }
 
-pub(crate) const UPGRADE_SCHEMA: calternal_store::migrations::Schema<'_> =
-    calternal_store::migrations::Schema::new("machines.db", 5, &[SCHEMA], &[]);
+/// Return the machine registry schema shared by normal startup and upgrade admission.
+pub(crate) fn upgrade_schema() -> calternal_store::migrations::Schema<'static> {
+    #[cfg(feature = "test-plugins")]
+    if option_env!("CALTERNAL_RELEASE_TEST_MIGRATION") == Some("v6") {
+        return calternal_store::migrations::Schema::new(
+            "machines.db",
+            5,
+            &[SCHEMA],
+            &["CREATE TABLE upgrade_fixture (id INTEGER PRIMARY KEY) STRICT;"],
+        );
+    }
+    calternal_store::migrations::Schema::new("machines.db", 5, &[SCHEMA], &[])
+}

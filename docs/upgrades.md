@@ -72,10 +72,33 @@ its data through the deployment rollback path. Afterwards, a compatible N
 can resume on live data, including any new acknowledgements. An incompatible
 downgrade refuses newer data. Retain one restore point during handoff and one
 prior release. The deployment script and the server unit share the local
-recovery command. The cross-release evidence gate lands in stage 3.
+recovery command. A full restore point copies regular files and refuses a
+nonregular entry, such as a workspace symlink, before any migration.
+
+## Release gate
+
+On dev-01, run `scripts/verify-additive-upgrade.sh PREVIOUS_IMAGE CANDIDATE_IMAGE PROOF_OUTPUT`
+before handing an additive release pair to deploy. The script extracts each
+image's executable and plugins, starts release N on disposable roots, and
+populates them through the authenticated API and operator CLI. N+1 migrates and
+starts on those roots. Each release reads a write acknowledged by the other.
+The proof file binds those image digests and is published only after the test
+passes. Review each change for compatibility with the previous writer as well.
+
+The [retained fixture](../tests/conformance/fixtures/upgrades/README.md) records
+the seed revision. Its debug upgrade exercises a forward schema change, nine
+crash points, and refusal of a downgrade without additive approval. The
+fixture uses disposable data and keys.
 
 The working budget is five seconds of unavailable writes for an ordinary
-additive update. Measure it on the locked perf VM before publishing a service
-budget. During a reconnect, the client retains queued sends and delivers them
-after the server is reachable again. Requests that already received a durable
+additive update. On the locked perf-01 VM, ten prebuilt-binary handoffs on the
+small fixture measured 164.9–200.0 ms from the last old acknowledgement to the
+first new acknowledgement, with a 178.7 ms median. This includes graceful
+process stop, snapshot, migration, verification, commit, and process startup.
+The measurement covers the server process and storage. Measuring Quadlet,
+machine drain, Podman, and proxy overhead remains part of qualifying the
+full deployment budget.
+
+During a reconnect, the client retains queued sends and delivers them after
+the server is reachable again. Requests that already received a durable
 receipt replay using the same request ID.

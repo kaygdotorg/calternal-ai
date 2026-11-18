@@ -1,0 +1,17 @@
+{
+  "format": "calternal-upgrade-fixture/v1",
+  "machine": "07f0636e-ba2e-4313-adcb-b3db5220f13c",
+  "note": "01a1ef21-4c40-707c-b636-bcbd81577a60",
+  "note_input": {
+    "markdown": "# Upgrade fixture\n\nSaved before the service handoff.\n",
+    "space_id": "01a1ef21-4c2e-7383-b0f6-c9e236f80bd0",
+    "title": "Upgrade fixture"
+  },
+  "owner": "01a1ef21-4bd3-7387-ae75-b2fd3f620f18",
+  "reader": "01a1ef21-4c72-76fc-9c41-3c6f37c6d46b",
+  "revision": "a196592430de7a1d069fcaccb3ad4a521d66b44c",
+  "space": "01a1ef21-4c2e-7383-b0f6-c9e236f80bd0",
+  "thread": "01a1ef21-4c94-7029-b26c-c8a776975268",
+  "trashed": "01a1ef21-4c53-773a-aeed-f3ac50bde5b5",
+  "workspace": "sandboxes/accounts/01a1ef21-4bd3-7387-ae75-b2fd3f620f18/threads/01a1ef21-4c94-7029-b26c-c8a776975268/work/Saved.md"
+}

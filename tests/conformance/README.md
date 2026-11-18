@@ -67,3 +67,17 @@ logging out closes an idle subscription.
 `wallpaper_cases.rs` checks the built-in catalog and the six anonymous sign-in
 renditions with real passkey sessions, an unconfigured server, and synthetic
 images in a disposable cache. It uses no Unsplash network access.
+
+## Release-to-release conformance
+
+Run `scripts/verify-additive-upgrade.sh PREVIOUS_IMAGE CANDIDATE_IMAGE PROOF_OUTPUT`
+inside the dev-01 Nix shell with both exact product images in local Podman. The
+gate extracts the shipped executables, writes a sample through release N's
+authenticated API and CLI, and starts N+1 on those roots. It restarts N on the
+migrated roots and checks that both releases can write and read each other's
+acknowledged writes. The resulting proof binds the two image IDs for deployment.
+
+The opt-in `release-upgrade` cases also exercise process loss at the intent,
+snapshot, version check, migration, verification, restore, and commit
+boundaries using debug binaries. The retained sample and generation commands
+are in [the fixture directory](fixtures/upgrades/README.md).
