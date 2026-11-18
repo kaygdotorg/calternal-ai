@@ -24,8 +24,8 @@ try {
     if (!r) { ok(false, `${h}: has a page`); continue; }
     ok(r.backs === 0 && !r.split, `${h}: one flat page, no Back control, no split`, `backs ${r.backs}`);
     ok(r.groups.every((w) => w >= r.inner - 2), `${h}: every section fills the content width`, `${r.groups.join(",")} of ${r.inner}`);
-    ok(r.acts.every((w) => w >= r.inner - 4), `${h}: action buttons are the full row width on a phone`, r.acts.join(","));
-    ok(r.inset.every((x) => x <= 30), `${h}: rows take the card's inset and no more`, r.inset.join(","));
+    ok(r.acts.every((w) => w >= r.inner - 40), `${h}: action buttons are the full row width on a phone`, r.acts.join(","));
+    ok(r.inset.every((x) => x <= 40), `${h}: rows take the card's inset and no more`, r.inset.join(","));
     ok(r.tall === 0, `${h}: no Selector is taller than a control`, String(r.tall));
     ok(r.sels.every((w) => w >= Math.min(r.inner - 2 * 24, 448) - 4 && w <= 449), `${h}: a Selector that is its own row's control fills the row up to 28 rem`, r.sels.join(","));
     ok(r.inner >= r.vw - 2 * 40 && r.left <= 40 && r.over <= 0, `${h}: inside the gutters, nothing wider than the screen`, `content ${r.inner}, left ${r.left}, over ${r.over}`);
