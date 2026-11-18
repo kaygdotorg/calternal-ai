@@ -258,7 +258,7 @@ describe("ServerThreads", () => {
     const ev: ThreadEvents = { onMessage: (m, i) => got.push(`message ${i} ${m.role}`), onStreamStart: () => got.push("start"), onDelta: (t) => got.push(`delta ${t}`), onStep: (s) => got.push(`step ${s.title} ${s.status}`), onSummary: () => {}, onStreamEnd: () => got.push("end") };
     await d.client.getThread(T1);
     const off = d.client.watch(T1, ev);
-    await until(() => d.ops("threads.get").length >= 2, "the thread's first read");
+    await until(() => d.hasFeed(), "the space feed"); // the header's read is the one the open starts from
     await d.client.setPermission(T1, "full");
     await d.client.setProvider(T1, "claude", "sonnet-5-5");
     await d.client.send(T1, "Inspect this workspace.", "req-1");
@@ -374,11 +374,11 @@ describe("checkpoint additions", () => {
     const first = parseMessages(open);
     // a new agent message at the end of the body
     const start = `\n<!-- message:${M2} role:agent time:2026-11-17T12:04:00.000Z turn:${JOB} actor:y -->\nPart one`;
-    const r1 = applyAppend(b, first, b.bytes.length, start, 0, 0)!;
+    const r1 = applyAppend(b, first, b.len, start, 0, 0)!;
     expect(r1.messages.map((m) => m.id)).toEqual([M1, M2]);
     expect((r1.messages[1]!.blocks[0] as { text: string }).text).toBe("Part one");
     // then text inside that message, before its (not yet written) end
-    const r2 = applyAppend(r1.body, r1.messages, r1.body.bytes.length, " and two.\n<!-- /message -->\n", 0, 0)!;
+    const r2 = applyAppend(r1.body, r1.messages, r1.body.len, " and two.\n<!-- /message -->\n", 0, 0)!;
     expect((r2.messages[1]!.blocks[0] as { text: string }).text).toBe("Part one and two.");
     expect((r2.messages[0]!.blocks[0] as { text: string }).text).toBe("héllo 🌏");
     // the same file read whole gives the same messages

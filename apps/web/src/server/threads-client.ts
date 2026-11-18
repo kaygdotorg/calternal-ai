@@ -29,8 +29,8 @@ const trace = (...a: unknown[]) => { if (TRACE) console.debug(`[threads +${Date.
 
 const PROVIDERS: ProviderOption[] = [{ id: "claude", name: "Claude Code", models: [{ id: "default", name: "Default" }] }];
 
-/** One thread held in memory: the last read (its revision), its parsed messages, its summary, and, once a checkpoint addition has been applied, the Markdown as `Body` (so the next one can be spliced in). */
-interface Open { thread: WireThread; messages: Message[]; summary: ThreadSummary; body?: Body; at: number }
+/** One thread held in memory: the last read (its revision), its parsed messages, its summary and the Markdown as `Body` (bytes, so the next addition can be spliced in; the string is not kept). */
+interface Open { thread: WireThread; messages: Message[]; summary: ThreadSummary; body: Body; at: number }
 /** A checkpoint journal entry's `data`: the revision it reached and the addition (`threads.checkpoint`, docs/threads.md). */
 interface CheckpointData { revision: string; append: { base_revision: string; offset: number; start: number; length: number } }
 /** The answer to `threads.get` with `since`: the bytes to insert at `offset` of the body, taking `base_revision` to `revision`. */
@@ -192,11 +192,10 @@ export class ServerThreads implements ThreadsClient {
     let delta: WireDelta | undefined;
     try { delta = (await this.server.operate<{ delta?: WireDelta }>("threads.get", { id, space_id: this.space(), since: data })).delta; } catch { /* conflict, or the server is away: the whole read below */ }
     if (!delta || delta.base_revision !== have.thread.revision || this.opened.get(id) !== have) return this.pull(id, true);
-    have.body ??= bodyOf(have.thread.markdown ?? "");
     const next = applyAppend(have.body, have.messages, delta.offset, delta.markdown, have.summary.updatedAt, have.summary.updatedAt);
     if (!next) return this.pull(id, true);
     have.body = next.body; have.messages = next.messages;
-    have.thread = { ...have.thread, revision: delta.revision, markdown: "" };
+    have.thread = { ...have.thread, revision: delta.revision };
     have.summary = { ...have.summary, messageCount: next.messages.length };
     trace("delta", id.slice(0, 8), "rev", delta.revision.slice(0, 8), "bytes", delta.markdown.length, "messages", next.messages.length);
     this.publish(id, have);
@@ -219,7 +218,7 @@ export class ServerThreads implements ThreadsClient {
     if (have && have.thread.revision === thread.revision && !force) { have.at = Date.now(); have.summary = { ...base, messageCount: have.messages.length }; return have; }
     const updatedAt = updatedAtOf(thread.markdown ?? "", base.updatedAt);
     const messages = parseMessages(thread.markdown ?? "", base.updatedAt, updatedAt);
-    const open: Open = { at: Date.now(), thread, messages, summary: { ...base, updatedAt: Math.max(base.updatedAt, updatedAt), messageCount: messages.length } };
+    const open: Open = { at: Date.now(), thread: { ...thread, markdown: undefined }, body: bodyOf(thread.markdown ?? ""), messages, summary: { ...base, updatedAt: Math.max(base.updatedAt, updatedAt), messageCount: messages.length } };
     this.opened.set(id, open);
     return open;
   }
