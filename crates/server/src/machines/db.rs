@@ -339,11 +339,7 @@ fn lease_from(r: &rusqlite::Row<'_>) -> rusqlite::Result<LeaseRow> {
                     rusqlite::types::Type::Text,
                     Box::new(error),
                 )
-                shared_sponsor: r
-            .get::<_, Option<String>>(15)?
-            .map(|id| typed(15, id))
-            .transpose()?,
-    })?,
+            })?,
         shared_sponsor: r
             .get::<_, Option<String>>(15)?
             .map(|id| typed(15, id))

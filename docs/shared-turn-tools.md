@@ -40,7 +40,7 @@ verify a tool call completes and its workspace change persists. Use random
 canaries and a failing positive control to test file reads, process state,
 environment, inherited descriptors and broker reachability from the tool.
 Confirm a mock upstream receives the provider header and neither harness nor
-tool output contains it, even on provider errors. Reject foreign, expired and
-replayed lease credentials, dynamic destinations and redirects. Close both
+tool output contains it, even on provider errors. Reject foreign and expired lease credentials, request replays, dynamic
+destinations and redirects. Close both
 sandboxes on revocation or restart. Then repeat the functional turn with a live,
 disposable, approved provider credential.
