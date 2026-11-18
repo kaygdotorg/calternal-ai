@@ -38,7 +38,9 @@ impl MachineService {
         if !st.authority.revoke(machine).map_err(authority_error)? {
             return Ok(false);
         }
-        st.apply_revocation(machine, &self.settings);
+        let result = st.apply_revocation(machine, &self.settings);
+        self.worker_changes.notify_waiters();
+        result?;
         Ok(true)
     }
 

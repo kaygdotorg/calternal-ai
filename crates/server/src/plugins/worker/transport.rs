@@ -7,7 +7,7 @@ pub(super) async fn spawn(
     permit: tokio::sync::OwnedSemaphorePermit,
     key_permit: tokio::sync::OwnedSemaphorePermit,
     key: Arc<StartKey>,
-    backend: Arc<dyn calternal_machine::sandbox::Backend>,
+    backend: WorkerBackend,
     runtime: tokio::runtime::Handle,
     account: AccountId,
     plugin: &Arc<Plugin>,
@@ -45,30 +45,31 @@ pub(super) async fn spawn(
     .map_err(|_| Error::internal("plugin verification task failed"))??;
     let session = WorkerSession::new(plugin.manifest.clone(), plugin.schemas.clone(), space)
         .map_err(|_| Error::unavailable("plugin manifest rejected by worker session"))?;
-    let sandbox = backend
-        .start(&SandboxSpec {
-            space_id: Some(space),
-            provider_login: false,
-            // Operator-installed packages always start from the private copy of
-            // verified bytes. Explicit in-memory fixtures can supply test assets.
-            code_directory: (plugin.revision == 0 && backend.name() != "machine")
-                .then(|| bundle.parent().unwrap_or(Path::new("/")).to_path_buf()),
-            account_id: account.as_uuid(),
-            thread_id: uuid::Uuid::new_v4(),
-            image: Some(worker::IMAGE.into()),
-            limits: worker::LIMITS,
-            worker: Some(PluginWorker {
-                space_id: space,
-                source,
-            }),
-        })
-        .await
-        .map_err(|error| {
+    let spec = SandboxSpec {
+        space_id: Some(space),
+        provider_login: false,
+        // Operator-installed packages always start from the private copy of
+        // verified bytes. Explicit in-memory fixtures can supply test assets.
+        code_directory: (plugin.revision == 0 && backend.name() != "machine")
+            .then(|| bundle.parent().unwrap_or(Path::new("/")).to_path_buf()),
+        account_id: account.as_uuid(),
+        thread_id: uuid::Uuid::new_v4(),
+        image: Some(worker::IMAGE.into()),
+        limits: worker::LIMITS,
+        worker: Some(PluginWorker {
+            space_id: space,
+            source,
+        }),
+    };
+    let sandbox = match &backend {
+        WorkerBackend::Enrolled(service) => {
+            super::super::machine_worker::start(service.clone(), spec).await?
+        }
+        WorkerBackend::Local(local) => local.start(&spec).await.map_err(|error| {
             tracing::warn!(%error, "worker sandbox transport unavailable");
-            Error::unavailable(
-                "plugin worker sandbox unavailable; check the enrolled machine runtime",
-            )
-        })?;
+            Error::unavailable("plugin worker sandbox unavailable; check the local runtime")
+        })?,
+    };
     let process = Process {
         permits: Some((permit, key_permit, key)),
         sandbox,
