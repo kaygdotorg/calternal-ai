@@ -19,6 +19,8 @@ title: "plugin-sdk: testing/functions/fixtureWorker"
 Exercise operations using a disposable worker and local callback fixtures.
 Runs one invocation at a time. Only the worker receives the dummy authority.
 Unhandled callbacks fail closed. The deadline bounds fixture waits.
+A child that exits before answering reports its exit status or signal and
+the last 4 KiB of stderr. Spawn with piped stdin, stdout and stderr.
 
 ## Parameters
 

@@ -160,7 +160,10 @@ pub(crate) async fn call(
             )
         }),
         operation: operation.into(),
-        input: serde_json::from_value(input).map_err(|_| error("Input must be a JSON object."))?,
+        input: serde_json::from_value(input).map_err(|_| {
+            CliError::new("invalid_input", "Input /: expected a JSON object.")
+                .hint("Pass an object with the fields listed by `calternal describe --json`.")
+        })?,
     };
     client
         .execute_cancellable::<Value>(&request, &CancellationToken::new())
@@ -171,11 +174,42 @@ pub(crate) async fn call(
                 .ok()
                 .and_then(|v| v.as_str().map(str::to_owned))
                 .unwrap_or_else(|| "internal".into());
-            let hint = if operation == MACHINES_VERIFY {
+            let reason = api.details.as_ref().and_then(|d| d.get("reason")).and_then(Value::as_str);
+            let space_not_found = api.code == calternal_types::ErrorCode::NotFound
+                && api.message == "space not found";
+            let hint = if space_not_found {
+                "Check the space shown by plugin dev or spaces.list. In SSH, expand SPACE_ID in the shell where you sourced the env file."
+            } else if api.code == calternal_types::ErrorCode::InvalidInput {
+                "Correct the field shown above. Check the plugin manifest or run `calternal describe --json` for host operation schemas."
+            } else if reason == Some("worker_busy") {
+                "Retry when the current invocations finish. For a write, repeat with the same request ID."
+            } else if operation == MACHINES_VERIFY {
                 "Use a person token and check the machine UUID and connection before retrying."
-            } else {
+            } else if operation.starts_with("agent.") {
                 "Check current access and inspect the turn before retrying."
+            } else {
+                "Check that the operation is available in the selected space and that your account can use it."
             };
+            if space_not_found {
+                if let Some(space) = request.input.get("space_id").and_then(Value::as_str) {
+                    let source = if std::env::var("SPACE_ID").as_deref() == Ok(space) {
+                        "--input (matches the SPACE_ID environment variable)"
+                    } else {
+                        "--input"
+                    };
+                    let selected = if space.is_empty() {
+                        "empty space ID".to_owned()
+                    } else if let Ok(id) = calternal_types::SpaceId::parse(space) {
+                        format!("space {id}")
+                    } else {
+                        "invalid space ID".to_owned()
+                    };
+                    return CliError::new(code, format!("Space not found for {selected} from {source}."))
+                        .request_id(request.request_id.clone())
+                        .details(json!({"space_id":space, "space_source":source}))
+                        .hint(hint);
+                }
+            }
             let mut failure = CliError::new(code, api.message)
                 .request_id(request.request_id.clone())
                 .hint(hint);
@@ -371,7 +405,17 @@ pub fn invoke(
             call(
                 &client,
                 op,
-                serde_json::from_str(&input).map_err(|_| error("Input must be JSON."))?,
+                serde_json::from_str(&input).map_err(|error| {
+                    CliError::new(
+                        "invalid_input",
+                        format!(
+                            "Invalid JSON in --input at line {}, column {}.",
+                            error.line(),
+                            error.column()
+                        ),
+                    )
+                    .hint("Pass a JSON object and quote it as one shell argument.")
+                })?,
                 connection.request_id,
             )
             .await?

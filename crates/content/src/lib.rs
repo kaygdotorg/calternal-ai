@@ -33,6 +33,8 @@ mod discovery;
 pub use discovery::ItemOrder;
 mod files;
 mod instructions;
+mod settings;
+pub use settings::{SettingEdit, SettingRecord};
 mod journal;
 mod lifecycle;
 mod linked_write;

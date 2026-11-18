@@ -11,12 +11,12 @@ const site = join(here, "..");
 const root = join(site, "../..");
 const tokens = JSON.parse(readFileSync(join(root, "packages/ui/tokens/tokens.json"), "utf8"));
 
-// 1. Fonts: the web app's step copies them (Google Sans Flex, its dark-ink family, Maple Mono) into apps/web/public/fonts.
+// 1. Fonts: the web app's step copies them (Google Sans Flex, its dark-ink family, Cascadia Code) into apps/web/public/fonts.
 const r = spawnSync("node", ["scripts/fonts.mjs"], { cwd: join(root, "apps/web"), stdio: "inherit" });
 if (r.status !== 0) throw new Error("the web app's font step failed");
 const out = join(site, "public/fonts");
 mkdirSync(out, { recursive: true });
-for (const f of ["google-sans-flex-latin-opsz-normal.woff2", "google-sans-flex-latin-ext-opsz-normal.woff2", "google-sans-flex-latin-opsz-grad-normal.woff2", "google-sans-flex-latin-ext-opsz-grad-normal.woff2", "maple-mono-latin-400-normal.woff2", "maple-mono-latin-500-normal.woff2"]) {
+for (const f of ["google-sans-flex-latin-opsz-normal.woff2", "google-sans-flex-latin-ext-opsz-normal.woff2", "google-sans-flex-latin-opsz-grad-normal.woff2", "google-sans-flex-latin-ext-opsz-grad-normal.woff2", "cascadia-code-latin-wght-normal.woff2"]) {
   copyFileSync(join(root, "apps/web/public/fonts", f), join(out, f));
 }
 
@@ -42,4 +42,4 @@ writeFileSync(join(site, "src/styles/tokens.generated.css"), css);
 const { PRESETS } = await import(join(root, "apps/web/src/appearance/presets.ts"));
 const presets = [{ id: "calternal", name: "Calternal", light: null, dark: null }, ...PRESETS.filter((p) => p.theme).map((p) => ({ id: p.id, name: p.name, light: { paper: p.theme.light.paper, ink: p.theme.light.ink, accent: p.theme.light.accent }, dark: { paper: p.theme.dark.paper, ink: p.theme.dark.ink, accent: p.theme.dark.accent } }))];
 writeFileSync(join(site, "src/presets.generated.json"), JSON.stringify(presets));
-console.log(`docs theme: tokens, ${presets.length} presets, 6 font files`);
+console.log(`docs theme: tokens, ${presets.length} presets, 5 font files`);

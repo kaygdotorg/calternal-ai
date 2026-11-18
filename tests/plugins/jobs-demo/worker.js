@@ -32,7 +32,12 @@ function chunk(id, job_id, data) {
 
 const ops = {
   'jobs-demo.list': async (id, input) => call(id, 'list_items_v1', input),
-  'jobs-demo.write': async (id, input) => ({ id: (await call(id, 'write_item', { kind: 'demo-notes', text: input.text })).id }),
+  'jobs-demo.write': async (id, input) => {
+    const saved = await call(id, 'write_item', { kind: 'demo-notes', text: input.text });
+    if (input.text === 'bad-output-after-write') return { id: 42 };
+    if (input.text === 'pause-after-write') await new Promise(() => {});
+    return { id: saved.id };
+  },
   'jobs-demo.start': async (id, input) => ({ job_id: (await call(id, 'start_job', { operation: 'jobs-demo.run', input })).job_id }),
   'jobs-demo.run': async (id, { job_id, input, checkpoint, children }) => {
     const wanted = input.children || 0;

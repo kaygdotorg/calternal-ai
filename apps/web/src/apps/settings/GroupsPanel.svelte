@@ -14,7 +14,7 @@
 
 <div class="sp">
   <div class="r"><span class="n"><label class="t" for="g-new">Make a group</label><input id="g-new" class="field" bind:value={name} placeholder="Name, for example Design" autocomplete="off" /></span>
-    <Button text="Make it" variant="primary" disabled={busy || !name.trim()} onclick={() => act(async () => { await people.createGroup(name.trim()); name = ""; })} /></div>
+    <Button class="settings-action" text="Make it" variant="primary" disabled={busy || !name.trim()} onclick={() => act(async () => { await people.createGroup(name.trim()); name = ""; })} /></div>
   {#each list as x (x.group_id)}
     <div class="r" data-setting="server.group.{x.group_id}"><span class="n"><span class="t">{x.name}</span><span class="h">{x.source === "local" ? "Local" : x.source} · {x.members.length} {x.members.length === 1 ? "person" : "people"}{x.members_next_cursor ? "+" : ""}</span></span>
       <span class="a"><Button text={open === x.group_id ? "Done" : "People"} variant="quiet" onclick={() => (open = open === x.group_id ? null : x.group_id)} />{#if x.source === "local"}<Button text="Rename" variant="quiet" onclick={() => rename(x)} /><Button text="Delete" variant="quiet" disabled={busy} onclick={() => confirm(`Delete the group "${x.name}"? Every grant it held is removed.`) && act(() => people.deleteGroup(x.group_id))} />{/if}</span></div>

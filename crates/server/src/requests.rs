@@ -96,6 +96,9 @@ pub(crate) async fn dispatch<D: Directory>(
                     status: "pending".into()
                 })
             }
+            "plugins.settings.get" | "plugins.settings.set" => {
+                crate::plugins::settings::dispatch(&st, person.id, &rid, row.id, input)?
+            }
             "space.instructions" => {
                 let fp = fingerprint(row.id, &input);
                 let i: SpaceInstructionsInput = decode(input)?;
@@ -222,7 +225,8 @@ fn value_is_approval(status: &str) -> bool {
     matches!(status, "once" | "this_thread")
 }
 
-fn authorize<D: Directory>(
+/// Check a live capability in the caller-selected UUID space and hide foreign spaces.
+pub(crate) fn authorize<D: Directory>(
     state: &Shared<D>,
     account: AccountId,
     space: &str,

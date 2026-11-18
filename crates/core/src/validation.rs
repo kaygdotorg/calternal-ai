@@ -262,8 +262,18 @@ pub fn validate_operation_input(operation: &str, input: &JsonObject) -> Result<(
             resource("", &i.id)
         }
         "jobs.get" | "jobs.cancel" => {
-            let i: JobInput = decode(input)?;
-            resource("", &i.job_id)
+            if let Some(field) = input.keys().find(|key| key.as_str() != "job_id") {
+                return Err(Error::input_field(
+                    &format!("/{field}"),
+                    "field is not accepted here, send only /job_id as a UUID string",
+                ));
+            }
+            let job = input
+                .get("job_id")
+                .and_then(Value::as_str)
+                .ok_or_else(|| Error::input_field("/job_id", "expected a job UUID string"))?;
+            validate_resource_id(job)
+                .map_err(|_| Error::input_field("/job_id", "expected a job UUID string"))
         }
         "notes.get" | "notes-insights.summarize" => {
             let i: NotesGetInput = decode(input)?;

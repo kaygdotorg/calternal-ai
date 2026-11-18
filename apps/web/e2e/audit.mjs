@@ -44,7 +44,7 @@ try {
       for (const s of r.small) seen.small.push(`${path} ${scheme} ${s}`);
       await ctx.close();
     }
-    const allowedFonts = new Set(["Google Sans Flex", "Google Sans Flex Dark", "Google Sans Flex Rounded", "Maple Mono"]);
+    const allowedFonts = new Set(["Google Sans Flex", "Google Sans Flex Dark", "Google Sans Flex Rounded", "Cascadia Code"]);
     const wrongFonts = [...seen.fonts].filter((f) => !allowedFonts.has(f));
     const off = [...seen.spacing].filter(([v]) => !seen.scale.some((s) => Math.abs(s - v) < 0.01)).sort((a, b) => b[1] - a[1]);
     console.log(`\n== ${device}`);

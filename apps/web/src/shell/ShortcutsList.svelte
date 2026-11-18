@@ -20,10 +20,11 @@
           <ul>
             {#each cs as c (c.id)}
               <li>
-                <span class="tx"><span>{c.label}</span><small>{c.where}</small></span>
-                <kbd class:wait={S.capturing === c.id}>{S.capturing === c.id ? "Press the keys…" : show(S.chordFor(c.id))}</kbd>
-                <Button variant="quiet" text={S.capturing === c.id ? "Cancel" : "Change"} onclick={() => { S.problem = ""; S.capturing = S.capturing === c.id ? null : c.id; }} />
-                {#if c.id in S.overrides}<Button variant="quiet" text="Reset" onclick={() => S.reset(c.id)} />{/if}
+                <span class="tx"><span class="lb">{c.label}</span><small>{c.where}</small><kbd class:wait={S.capturing === c.id}>{S.capturing === c.id ? "Press the keys…" : show(S.chordFor(c.id))}</kbd></span>
+                <span class="ctl">
+                  <Button class="chg" variant="quiet" text={S.capturing === c.id ? "Cancel" : "Change"} onclick={() => { S.problem = ""; S.capturing = S.capturing === c.id ? null : c.id; }} />
+                  {#if c.id in S.overrides}<Button class="chg" variant="quiet" text="Reset" onclick={() => S.reset(c.id)} />{/if}
+                </span>
               </li>
             {/each}
           </ul>
@@ -32,7 +33,7 @@
     {/each}
     <section aria-labelledby="sc-fixed">
       <h2 id="sc-fixed">Fixed</h2>
-      <ul>{#each FIXED as [label, keys]}<li><span class="tx"><span>{label}</span></span><kbd>{keys}</kbd></li>{/each}</ul>
+      <ul>{#each FIXED as [label, keys]}<li><span class="tx"><span class="lb">{label}</span><kbd>{keys}</kbd></span></li>{/each}</ul>
     </section>
     {#if file}
       <section aria-labelledby="sc-file">
@@ -49,9 +50,13 @@
   .act { display: flex; gap: var(--s-3); margin-top: var(--s-3); }
   h2 { font-size: var(--text-label); font-weight: var(--strong-weight); color: var(--ink-3); margin-bottom: var(--s-2); }
   ul { display: grid; gap: var(--s-1); }
-  @media (max-width: 600px) { li { flex-wrap: wrap; } .tx { flex-basis: 100%; } }
-  li { display: flex; align-items: center; gap: var(--s-3); min-height: var(--row-h-settings); padding: 0 var(--s-2) 0 var(--s-4); border-radius: var(--r-select); }
-  .tx { flex: 1; min-width: 0; display: grid; }
+  /* The title, where it applies and the current keys on one side; the quiet change control on the other; on a narrow card the control goes under them. */
+  li { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--s-2) var(--s-3); min-height: var(--row-h-settings); padding: var(--s-2) var(--s-2) var(--s-2) var(--s-4); border-radius: var(--r-select); }
+  @media (max-width: 600px) { li { grid-template-columns: minmax(0, 1fr); } }
+  .tx { min-width: 0; display: grid; justify-items: start; gap: var(--s-1); }
+  .lb { font-weight: var(--strong-weight); }
+  .ctl { display: inline-flex; gap: var(--s-2); }
+  .ctl :global(.chg) { min-height: calc(var(--pill-h) - var(--s-2)); padding: 0 var(--s-4); font-size: var(--text-label); font-weight: normal; color: var(--ink-2); }
   small { font-size: var(--text-label); color: var(--ink-3); }
   kbd { font-family: var(--font-ui); font-size: var(--text-label); padding: var(--s-1) var(--s-4); border-radius: var(--r-select); background: rgb(var(--ink-rgb) / 0.08); white-space: nowrap; }
   kbd.wait { background: var(--accent-soft); color: var(--accent); }

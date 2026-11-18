@@ -13,7 +13,7 @@ try {
   }));
   check("deep link renders the thread", info.title === "Split store.rs by concern", info.title);
   check("Google Sans Flex loaded", info.fonts.includes("Google Sans Flex"), info.fonts.join(","));
-  check("Maple Mono loaded", info.fonts.includes("Maple Mono"));
+  check("Cascadia Code loaded", info.fonts.includes("Cascadia Code"));
   const link = page.getByRole("link", { name: /Expired invite test/ });
   const href = await link.getAttribute("href");
   check("links carry the base path", href.startsWith(new URL(BASE).pathname.replace(/\/$/, "") + "/threads/"), href);

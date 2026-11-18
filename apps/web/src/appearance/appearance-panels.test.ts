@@ -32,7 +32,7 @@ describe("appearance: wallpaper and fonts sections", () => {
     expect(within(group).getByRole("radio", { name: /Automatic/ }).getAttribute("aria-checked")).toBe("true");
     await userEvent.click(within(group).getByRole("radio", { name: "Storm" }));
     expect(appearance.prefs.wallpaperId).toBe("storm-sea");
-    await userEvent.click(within(group).getByRole("radio", { name: "No wallpaper" }));
+    await userEvent.click(within(group).getByRole("radio", { name: /^None/ }));
     expect(appearance.prefs.wallpaperId).toBeNull();
   });
 
@@ -62,9 +62,9 @@ describe("appearance: wallpaper and fonts sections", () => {
 
   it("code fonts list monospaced families only", async () => {
     render(FontsPanel);
-    await userEvent.click(screen.getByRole("button", { name: /Code/ }));
+    await userEvent.click(screen.getByRole("button", { name: /^Code/ }));
     const list = await screen.findByRole("radiogroup", { name: "Code font" });
-    await within(list).findByRole("radio", { name: /Maple Mono/ });
+    await within(list).findByRole("radio", { name: /Cascadia Code/ });
     await userEvent.click(screen.getByRole("tab", { name: "Google" }));
     await within(await screen.findByRole("radiogroup", { name: "Code font" })).findByRole("radio", { name: /JetBrains Mono/ });
     expect(within(list).queryByRole("radio", { name: /Lora/ })).toBeNull();

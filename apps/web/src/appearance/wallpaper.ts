@@ -172,6 +172,17 @@ function colours(img: HTMLImageElement): WallpaperColours {
   };
 }
 
+/** The colours of the picture at `src` (an address the page may read: a thumbnail or a blob), read the way the wallpaper's own are, so a preview can show the accent a wallpaper would give. Cost: one image load and a 48 by 48 read. */
+export function coloursOfImage(src: string): Promise<WallpaperColours> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => resolve(colours(img));
+    img.onerror = () => reject(new Error("image failed to load"));
+    img.src = src;
+  });
+}
+
 /** The brightness grid of a blurred copy: each cell's relative luminance. */
 function fieldOf(c: HTMLCanvasElement): Field {
   const g = document.createElement("canvas");

@@ -77,3 +77,7 @@ input, textarea, [contenteditable], .selectable, .selectable * { -webkit-user-se
 /* The canvas behind the page is what Safari 26+ tints its status bar and toolbar with (it ignores `theme-color`, and the page's layout viewport starts below the status bar): the solved top colour of the wallpaper under its veil (shell/chrome.ts), so the app runs edge to edge. */
 :root:root { background-color: var(--bars, var(--paper)); }
 .sel-inline { width: 18rem; max-width: 100%; min-width: 0; } @media (max-width: 600px) { .sel-inline { width: 100%; } } /* A Selector beside a name in a list row: 18 rem there, the whole row where the row stacks on a phone (docs/ui-design-system.md, "Selectors fill their row"). Sized by width, never flex-basis: in a stacked (column) row that would be its height. */
+
+/* One rule for buttons in Settings (docs/ui-design-system.md, "Buttons in Settings"): a row's or page's action button is its natural width at the start edge, and the full row width when the card is narrow (the container is Settings' scroller, `settings-page`; 40 rem is the width below which a page is one flat column). */
+.settings-action { width: auto; align-self: flex-start; justify-self: start; }
+@container settings-page (max-width: 40rem) { .settings-action { width: 100%; align-self: stretch; justify-self: stretch; } }

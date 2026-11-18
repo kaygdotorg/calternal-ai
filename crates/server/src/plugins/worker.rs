@@ -170,11 +170,16 @@ pub enum Outcome {
     /// requested an undeclared or forbidden host call. Nothing further is delivered.
     Refused,
     /// The input did not match the declared input schema.
-    InvalidInput,
+    InvalidInput(Error),
     /// The worker failed, broke protocol, timed out or could not run.
     Failed(Error),
     /// The invocation was cancelled through its [`CancelFlag`].
     Cancelled,
+}
+
+fn busy() -> Error {
+    Error::unavailable("The plugin worker is handling its maximum concurrent invocations. Wait for one to finish before retrying.")
+        .with_details(serde_json::json!({"reason":"worker_busy"}))
 }
 
 /// Input to a worker's session thread.

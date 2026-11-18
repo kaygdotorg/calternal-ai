@@ -16,7 +16,7 @@
   async function run(f: () => Promise<void>) {
     busy = true; error = "";
     try { await f(); done(); }
-    catch (e) { error = say(e, needsSetup ? "set up" : joining ? "join" : "sign in"); }
+    catch (e) { error = say(e, needsSetup ? "set up" : joining ? "join" : "sign in", { firstOwner: needsSetup }); }
     finally { busy = false; }
   }
 </script>

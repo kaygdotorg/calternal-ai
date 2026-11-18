@@ -78,7 +78,10 @@ async fn every_registered_operation_has_an_independent_matrix_row() {
     );
     // Request isolation and the instructions role matrix use real passkey
     // sessions in conformance/requests_cases.rs.
+    // Package setting access uses the real sessions in plugin_settings_cases.rs.
     for (id, required) in [
+        ("plugins.settings.get", Capability::SpaceSettings),
+        ("plugins.settings.set", Capability::SpaceSettings),
         ("provider.sign_in.start", Capability::PluginsUse),
         ("provider.sign_in.answer", Capability::PluginsUse),
         ("provider.sign_in.status", Capability::PluginsUse),
