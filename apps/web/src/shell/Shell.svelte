@@ -234,6 +234,8 @@
   .shell:not(.narrow) .mid { touch-action: pan-y; }
   /* An iPhone home-screen app is laid out shorter than its screen (shell/chrome.ts): the shell is as tall as the probe measured. The keyboard lifts it (`--kb`). */
   :global(html[data-home-screen]) .shell { bottom: auto; height: calc(var(--vh, 100%) - var(--kb, 0px)); }
+  /* A phone lays the card and the two sidebars out as fixed boxes of their own: on a home-screen app they are as tall as the screen too (the layout viewport is a status bar short there), not just the shell. */
+  :global(html[data-home-screen]) .narrow .mid, :global(html[data-home-screen]) .narrow .side, :global(html[data-home-screen]) .narrow .right { bottom: auto; height: calc(var(--vh, 100%) - var(--kb, 0px)); }
   .shell[data-sidebar="false"] { --sw: 0px; }
   .shell[data-right="false"] { --rw: 0px; }
   /* Each surface carries its own secondary inks, solved from the pixels under it (appearance/veil.ts). */
