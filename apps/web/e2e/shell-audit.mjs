@@ -71,7 +71,7 @@ const wallpapers = JSON.parse(readFileSync("wallpapers.json", "utf8"));
   await page.keyboard.press("Control+k"); await page.waitForSelector(".pal-input"); await page.locator(".pal-input").fill("slow after restart"); await page.waitForTimeout(500);
   const pr = await page.locator(".r").allInnerTexts(); ok(pr.some((t) => /Journal replay is slow/.test(t) && /Personal/.test(t)), "The palette still searches every space (a thread of Personal found from Infra, with its space named)", pr[0]?.replace(/\n/g, " | "));
   await page.keyboard.press("Enter"); await page.waitForTimeout(600);
-  ok(page.url().includes("/threads/t-") && (await page.locator("aside.side footer [aria-label='Spaces'] [aria-checked=true]").getAttribute("aria-label")) === "Personal", "Opening an item of another space makes that space current (the address is the item's, not the space's)");
+  ok(page.url().includes("/threads/t-") && (await (async () => { await page.getByRole("button", { name: /Account, spaces and settings/ }).click(); const c = await page.getByRole("menuitemradio", { checked: true }).innerText(); await page.keyboard.press("Escape"); return c.trim(); })()) === "Personal", "Opening an item of another space makes that space current (the address is the item's, not the space's)");
   await ctx.close();
 }
 // ---------- desktop, Notes ----------
