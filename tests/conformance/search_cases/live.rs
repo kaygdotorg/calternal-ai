@@ -23,15 +23,6 @@ async fn live_search_tracks_opt_in_and_removal_without_restarting() {
     let archive = path.to_str().unwrap();
     let appdata = f.appdata();
     let root = appdata.to_str().unwrap();
-    let cli = |args: &[&str]| {
-        let output = Command::new(std::env::var_os("CALTERNAL_SERVER_BIN").unwrap())
-            .args(args)
-            .arg("--json")
-            .output()
-            .unwrap();
-        assert!(output.status.success(), "{output:?}");
-        serde_json::from_slice::<Value>(&output.stdout).unwrap()
-    };
     let publish = |version: &str, searchable: bool| {
         let mut manifest: Value = serde_json::from_str(include_str!(
             "../../../plugins/calternal-notes/manifest.json"
@@ -44,8 +35,8 @@ async fn live_search_tracks_opt_in_and_removal_without_restarting() {
             json!({"manifest":manifest,"worker":null}).to_string(),
         )
         .unwrap();
-        let review = cli(&["plugin", "review", archive]);
-        cli(&[
+        let review = package_cli(&["plugin", "review", archive]);
+        package_cli(&[
             "plugin",
             "update",
             archive,
@@ -64,6 +55,6 @@ async fn live_search_tracks_opt_in_and_removal_without_restarting() {
     assert_eq!(hits[0]["space_id"], *shared);
     assert_eq!(hits[0]["excerpt"][0]["text"], "Registry");
 
-    cli(&["plugin", "remove", "calternal-notes", "--appdata", root]);
+    package_cli(&["plugin", "remove", "calternal-notes", "--appdata", root]);
     assert_eq!(search().await, json!([]));
 }
