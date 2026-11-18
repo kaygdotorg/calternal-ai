@@ -4,7 +4,7 @@
   // them: the sidebar is underneath and the middle card slides aside to reveal it (and visibly floats above it); the right card slides
   // over the middle card from the right; the app and its panels are the bottom bar.
   import { untrack } from "svelte";
-  import { Card, HeaderPill, Pill, tokenEase, tokenMs } from "@calternal/ui";
+  import { Card, chromeHeader, HeaderPill, Pill, tokenEase, tokenMs } from "@calternal/ui";
   import { ariaKeys, shortcuts } from "../lib/shortcuts.svelte";
   import type { AppDef } from "../apps/registry";
   import { appearance } from "../appearance/prefs.svelte";
@@ -198,7 +198,7 @@
     {#if !shell.narrow && shell.sidebarOpen}<ResizeHandle side="left" />{/if}
     {#if !shell.narrow && hasRight && rightOpen}<ResizeHandle side="right" />{/if}
     {#if showLeft}<div class="edge l">{#if shell.narrow}<Pill icon="sidebar" label="Show the sidebar" aria-keyshortcuts={ariaKeys(shortcuts.chordFor("sidebar"))} onclick={() => shell.toggleSidebar()} />{:else}<CollapsedPill {app} />{/if}</div>{/if}
-    {#if !canvasEnabled}<div class="edge hl" style:--hl-off={showLeft ? (shell.narrow ? "calc(var(--pill-h) + var(--s-3))" : "calc(var(--pill-h) * 2 + var(--s-3) * 2)") : "0px"}><HeaderPill /></div>{/if}
+    {#if !canvasEnabled}<div class="edge hl" style:--hl-off={showLeft || (shell.narrow && !!chromeHeader.pinned) ? (shell.narrow ? "calc(var(--pill-h) + var(--s-3))" : "calc(var(--pill-h) * 2 + var(--s-3) * 2)") : "0px"}><HeaderPill /></div>{/if}
     {#if canvasEnabled}
       <!-- The canvas experiment (canvas/Canvas.svelte): no card round it; the area between the sidebars is the canvas and each window is a middle card. The app switcher is in the sidebar's footer. -->
       <div class="area" role="region" aria-label={app.name}>
