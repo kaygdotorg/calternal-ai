@@ -467,28 +467,42 @@ async fn memory_admission_matches_the_four_and_eight_gib_guest_sizes() {
         pool.connect_sized(&f, "microvm", Some((gib * 1024) as u32))
             .await;
         let required = gib << 30;
-        let (report, lease) = tokio::join!(
-            pool.try_sync_with_memory(&f, json!([]), 10, Some(required - 1)),
-            run(&f, 1, 0)
-        );
-        assert!(
-            !report
-                .unwrap()
-                .iter()
-                .any(|frame| frame["type"] == "assign")
-        );
-        let view = f
-            .req(
-                "GET",
-                &format!("/api/v1/machines/runs/{lease}"),
-                Some(&f.cookies[1]),
-                json!({}),
-                Some(ORIGIN),
-            )
-            .await;
-        view.ok();
-        assert_eq!(view.body["state"], "waiting");
-        assert!(view.body["reason"].as_str().unwrap().contains("memory"));
+        let lease = run(&f, 1, 0).await;
+        let wait_for_reason = async {
+            let deadline = Instant::now() + Duration::from_secs(10);
+            loop {
+                let view = f
+                    .req(
+                        "GET",
+                        &format!("/api/v1/machines/runs/{lease}"),
+                        Some(&f.cookies[1]),
+                        json!({}),
+                        Some(ORIGIN),
+                    )
+                    .await;
+                view.ok();
+                assert_eq!(view.body["state"], "waiting");
+                if view.body["reason"]
+                    .as_str()
+                    .is_some_and(|reason| reason.contains("memory"))
+                {
+                    break;
+                }
+                assert!(
+                    Instant::now() < deadline,
+                    "low-memory report was not processed"
+                );
+                tokio::time::sleep(Duration::from_millis(25)).await;
+            }
+        };
+        // Cancel the long poll once we have proof the low-memory report was
+        // processed, rather than waiting for the server's empty-poll deadline.
+        tokio::select! {
+            report = pool.try_sync_with_memory(&f, json!([]), 10, Some(required - 1)) => {
+                assert!(!report.unwrap().iter().any(|frame| frame["type"] == "assign"));
+            }
+            () = wait_for_reason => {}
+        }
         let report = pool
             .try_sync_with_memory(&f, json!([]), 10, Some(required))
             .await
