@@ -130,6 +130,8 @@ Generated operation schemas. Capability and risk are shown only when the catalog
 - [requests.approve](./requests-approve/): Approve with a fresh verified passkey
 - [requests.deny](./requests-deny/): Decline a pending approval
 - [space.instructions](./space-instructions/): Read or replace standing space instructions
+- [space.machine.get](./space-machine-get/): Read the execution setting for a space
+- [space.machine.set](./space-machine-set/): Set the shared execution machine for a space
 - [machines.install](./machines-install/): Create a single-use personal machine enrollment script
 - [machines.onboarding](./machines-onboarding/): Check whether the installation has an enrolled, available machine
 - [machines.verify](./machines-verify/): Verify a selected machine and provider sign-in
