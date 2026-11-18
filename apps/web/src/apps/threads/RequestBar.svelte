@@ -8,6 +8,7 @@
   import { Badge, Button, Icon, IconButton, Panel } from "@calternal/ui";
   import type { Value } from "@calternal/genui";
   import type { Answer, Request } from "./model";
+  import SignIn from "./SignIn.svelte";
 
   let { requests, onanswer, now = () => Date.now() }: { requests: Request[]; onanswer: (id: string, a: Answer) => void; now?: () => number } = $props();
   // The generated-UI renderer is its own chunk, fetched when the first question form is about to be drawn.
@@ -30,8 +31,8 @@
   const left = $derived(cur?.kind === "secret" ? Math.max(0, cur.expiresAt - tick) : 0);
   const clock = $derived(`${Math.floor(left / 60000)}:${String(Math.floor((left % 60000) / 1000)).padStart(2, "0")}`);
   const expired = $derived(cur?.kind === "secret" && left === 0);
-  const ICON = { question: "question", approval: "shield", secret: "key" } as const;
-  const NAME = { question: "Question", approval: "Approval needed", secret: "Secret needed" } as const;
+  const ICON = { question: "question", approval: "shield", secret: "key", signin: "key" } as const;
+  const NAME = { question: "Question", approval: "Approval needed", secret: "Secret needed", signin: "Sign in needed" } as const;
   function answer(a: Answer) {
     if (!cur) return;
     onanswer(cur.id, a);
@@ -75,6 +76,8 @@
             {#if cur.lifetimes.includes("thread")}<Button text="Allow for this thread" onclick={() => answer({ kind: "approval", decision: "thread" })} />{/if}
             <Button variant="primary" text="Allow once" onclick={() => answer({ kind: "approval", decision: "once" })} />
           </div>
+        {:else if cur.kind === "signin"}
+          {#key cur.id}<SignIn request={cur} onanswer={(code) => answer({ kind: "signin", code })} />{/key}
         {:else}
           <div class="trusted"><Icon name="lock" inline /> Drawn by Calternal. The agent gets a handle, never the value.</div>
           <h2>{cur.label}</h2>
@@ -100,7 +103,7 @@
 
 <style>
   :global(.bar) { color: var(--ink); max-height: min(26rem, 52dvh); overflow: auto; flex: 0 1 auto; }
-  :global(.bar[data-kind="approval"]), :global(.bar[data-kind="secret"]) { box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--accent-base) 38%, transparent); }
+  :global(.bar[data-kind="approval"]), :global(.bar[data-kind="secret"]), :global(.bar[data-kind="signin"]) { box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--accent-base) 38%, transparent); }
   .head { display: flex; align-items: center; gap: var(--s-4); padding: var(--s-2) var(--s-2) 0 var(--s-6); }
   .kind { flex: 1; display: inline-flex; align-items: center; gap: var(--s-3); font-size: var(--text-label); font-weight: var(--strong-weight); color: var(--ink-2); }
   .pager { display: inline-flex; align-items: center; font-size: var(--text-label); color: var(--ink-3); font-variant-numeric: tabular-nums; }

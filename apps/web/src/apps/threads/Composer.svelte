@@ -37,6 +37,7 @@
     onrunson,
     onreasoning,
     onattach,
+    ontype,
   }: {
     thread: ThreadSummary;
     providers: ProviderOption[];
@@ -48,7 +49,12 @@
     onrunson: (r: RunsOn) => void;
     onreasoning: (level: string | null) => void;
     onattach: (file: File, progress: (fraction: number) => void) => Promise<void>;
+    /** The person started typing: called once per focus of the box (the server may then offer a provider sign-in the thread will need). */
+    ontype?: () => void;
   } = $props();
+  let typed = false;
+  // The box lost focus: the next typing is a new one (once per focus).
+  $effect(() => { if (!focused) typed = false; });
 
   const drafts = new Map<string, string>();
   let text = $state("");
@@ -118,7 +124,7 @@
     queueMicrotask(() => { field?.focus(); field?.setSelectionRange(at, at); });
   }
   // The picker's keys are the shared ones (Up and Down wrap, Enter and Tab choose, Escape closes).
-  const onkey = (e: KeyboardEvent) => pickerKey(e, { count: flat.length, index: sel, set: (i) => (sel = i), choose: () => choose(flat[sel]!), dismiss: () => (dismissed = trig?.from ?? null) });
+  const onkey = (e: KeyboardEvent) => { if (!typed && e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) { typed = true; ontype?.(); } return pickerKey(e, { count: flat.length, index: sel, set: (i) => (sel = i), choose: () => choose(flat[sel]!), dismiss: () => (dismissed = trig?.from ?? null) }); };
   // What is open, as chips above the field: the workspace the thread works in, and each @mention in the text (removable).
   const mentions = $derived(marks.filter((m) => m.kind === "mention" || m.kind === "person").map((m) => ({ ...m, label: text.slice(m.start + 1, m.end).replace(/^\[|\]$/g, "") })));
   const dropMention = (m: { start: number; end: number }) => { text = (text.slice(0, m.start) + text.slice(m.end)).replace(/ {2,}/g, " ").replace(/^ /, ""); queueMicrotask(() => field?.focus()); };

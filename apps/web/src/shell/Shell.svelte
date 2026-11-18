@@ -12,6 +12,8 @@
   import { surfaces } from "../appearance/surfaces.svelte";
   import AppSwitcher from "./AppSwitcher.svelte";
   import Backdrop from "./Backdrop.svelte";
+  import Canvas from "../canvas/Canvas.svelte";
+  import { canvasEnabled } from "../canvas/model.svelte";
   import RightSidebar from "./RightSidebar.svelte";
   import ResizeHandle from "./ResizeHandle.svelte";
   import Sidebar from "./Sidebar.svelte";
@@ -190,8 +192,8 @@
     {#if showLeft}<div class="edge l"><Pill icon="sidebar" label="Show the sidebar" aria-keyshortcuts={ariaKeys(shortcuts.chordFor("sidebar"))} onclick={() => shell.toggleSidebar()} /></div>{/if}
     {#if showRight}<div class="edge r"><Pill icon="sidebar-right" label="Show the side panel" aria-keyshortcuts={ariaKeys(shortcuts.chordFor("panel"))} onclick={() => shell.toggleRight()} /></div>{/if}
     <Card label={app.name} class="mid-card">
-      <div class="col">
-        <div class="app"><app.Main {id} /></div>
+      <div class="col" class:cv={canvasEnabled}>
+        <div class="app">{#if canvasEnabled}<Canvas />{:else}<app.Main {id} />{/if}</div>
         {#if !shell.narrow}<div class="appbar"><AppSwitcher {app} placement="card" /></div>{/if}
       </div>
     </Card>
@@ -244,6 +246,10 @@
   .col { position: relative; height: 100%; display: flex; flex-direction: column; }
   .app { flex: 1; min-height: 0; position: relative; }
   .appbar { flex: none; padding: var(--s-3) var(--s-6) var(--s-4); }
+  /* The canvas experiment: the canvas runs to the card's bottom edge and the capsule floats over it (no band behind it); the windows stop above it (`--canvas-bottom`). */
+  .col.cv { --canvas-bottom: calc(var(--s-3) + var(--pill-h) + var(--s-4) + var(--s-5)); }
+  .col.cv > .appbar { position: absolute; z-index: 4; left: 0; right: 0; bottom: 0; pointer-events: none; }
+  .col.cv > .appbar > :global(*) { pointer-events: auto; }
   .right { min-width: 0; overflow: hidden; }
   .right > :global(.rs) { width: var(--right-w); }
 
