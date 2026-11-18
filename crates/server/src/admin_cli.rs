@@ -131,6 +131,43 @@ fn unexpected() -> CliError {
     CliError::new("internal", "the server gave an unexpected answer")
 }
 
+/// Request a fresh code from the live admin socket. One round trip. The
+/// command never opens the installation's database or prints an old code.
+pub fn setup_code(appdata: &Path, installation_id: &str) -> Result<Reply, CliError> {
+    let id = uuid::Uuid::parse_str(installation_id).map_err(|_| bad_uuid("installation"))?;
+    let next = "Run the command as the server's user with its appdata path and installation ID.";
+    match admin::ask_server(appdata, id, Request::SetupCode)
+        .map_err(|e| CliError::new("failed", e.message).hint(next))?
+    {
+        Some(Response::SetupCode {
+            code,
+            expires_ms,
+            url,
+        }) => {
+            let expiry = Output::iso_ms(expires_ms);
+            Ok(
+                Reply::new(json!({"code":code,"expires_at":expiry,"url":url}))
+                    .line("First-owner setup code")
+                    .fields([("code", code), ("expires at", expiry), ("open", url)])
+                    .hint("Open the address and paste the code to register the first owner."),
+            )
+        }
+        Some(Response::SetupComplete { url }) => Err(CliError::new(
+            "setup_complete",
+            "First-owner setup is already complete.",
+        )
+        .hint(format!("Open {url} and sign in with your passkey."))),
+        None => Err(CliError::new(
+            "server_unavailable",
+            "The server's local admin socket is unavailable.",
+        )
+        .hint(
+            "Start the server, then run this command as the server's user with the same --appdata.",
+        )),
+        _ => Err(unexpected()),
+    }
+}
+
 /// Run one `machines` subcommand. Cost: see [`run`].
 pub fn machines(cmd: MachinesCmd, out: &Output) -> Result<Reply, CliError> {
     let account = |s: &str| calternal_types::AccountId::parse(s).map_err(|_| bad_uuid("account"));

@@ -26,7 +26,7 @@ const time = async (page, start, ready) => {
   return ms;
 };
 for (const [name, act, ready, back] of [
-  ["spaceSwitch", (p) => p.getByRole("radio", { name: "Infra" }).click(), "aside.side .slide:not([data-x])", async (p) => p.getByRole("radio", { name: "Personal" }).click()],
+  ["spaceSwitch", async (p) => { await p.getByRole("button", { name: /Account, spaces and settings/ }).click(); await p.getByRole("menuitemradio", { name: "Infra" }).click(); }, "aside.side .slide:not([data-x])", async (p) => p.getByRole("radio", { name: "Personal" }).click()],
   ["appSwitch", (p) => p.getByRole("tab", { name: "Notes" }).click(), 'nav[aria-label="Notes"] a.row', async (p) => p.getByRole("tab", { name: "Threads" }).click()],
   ["settingsOpen", (p) => p.getByRole("button", { name: /Account and settings/ }).click(), ".page h1", async (p) => p.getByRole("tab", { name: "Threads" }).click()],
 ]) {

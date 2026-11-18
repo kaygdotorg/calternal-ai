@@ -17,8 +17,16 @@ export const FIXTURE_SPACES: SpaceInfo[] = [
   { id: "0197f3a2-5c1e-7b4d-9a60-3d2e8f1c4b22", name: "Infra" },
 ];
 
+/** The fixture spaces; `?spaces=N` (fixtures only) shows exactly N, generating "Space k" beyond the two named ones, for checking the account menu's space list at 1, 3, 4 and 50. */
+function fixtureSpaces(): SpaceInfo[] {
+  const n = typeof location === "undefined" || serverMode() ? NaN : Number(new URLSearchParams(location.search).get("spaces"));
+  if (!Number.isFinite(n) || n < 1) return FIXTURE_SPACES;
+  const extra = Array.from({ length: Math.max(0, Math.floor(n) - FIXTURE_SPACES.length) }, (_, i) => ({ id: `0197f3a2-5c1e-7b4d-9a60-3d2e8f1c${String(i + 100).padStart(4, "0")}`, name: `Space ${i + 3}` }));
+  return [...FIXTURE_SPACES, ...extra].slice(0, Math.min(200, Math.floor(n)));
+}
+
 class Spaces {
-  list = $state<SpaceInfo[]>(FIXTURE_SPACES);
+  list = $state<SpaceInfo[]>(fixtureSpaces());
   currentId = $state(read());
   /** The current space (the first when the remembered one is gone). */
   get current(): SpaceInfo { return this.list.find((s) => s.id === this.currentId) ?? this.list[0]!; }

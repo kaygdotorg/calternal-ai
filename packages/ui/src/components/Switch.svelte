@@ -16,6 +16,8 @@
   let lastOn = checked, mounted = false, raf = 0, last = 0, target = 0, travel = 0, peak = 1;
   let grip: { id: number; grab: number | null; moved: boolean; startX: number; onAtPress: boolean; slop: number } | null = null;
   let dragging = $state(false), skipClick = false;
+  /** The pointer whose drag Escape cancelled: its physical release still comes (and then a click), and must toggle nothing. (The click used to arrive after the one-tick `skipClick` window had closed, so releasing after Escape sometimes flipped the switch again.) */
+  let cancelledId: number | null = null;
   const reduced = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
   const measure = () => { if (track && thumb) travel = track.offsetWidth - thumb.offsetWidth - 2 * thumb.offsetLeft; return travel; };
   // The speed is taken as if the travel were the original's 38 px (our knob travels about a third of that), so the squish is as visible on a small switch.
@@ -78,10 +80,11 @@
   }
   const paintDragOnly = () => { if (thumb) thumb.style.transform = `translateX(${x.value}px)`; };
   function up(e: PointerEvent, cancelled: boolean) {
+    if (!cancelled && cancelledId === e.pointerId) { cancelledId = null; skipClick = true; setTimeout(() => (skipClick = false), 0); return; }
     if (!grip || grip.id !== e.pointerId) return;
     const g = grip; grip = null;
     try { button!.releasePointerCapture(e.pointerId); } catch { /* released already */ }
-    if (cancelled) commit(g.onAtPress);
+    if (cancelled) { commit(g.onAtPress); cancelledId = g.id; }
     else if (!g.moved) commit(!checked);
     skipClick = true; setTimeout(() => (skipClick = false), 0);
     const wasDragging = dragging; dragging = false;

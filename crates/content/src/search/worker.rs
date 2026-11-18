@@ -221,10 +221,10 @@ fn advance(
             .userdata_ssd
             .join("spaces")
             .join(space.to_string());
-        let mut heads = source::scan(&source, &config.kinds, after, PAGE)?;
-        for document in &mut heads {
-            document.recover_file(&root);
-        }
+        let folder = calternal_fsio::beneath::Folder::open(&root).ok();
+        let snapshot = source.transaction().map_err(internal)?;
+        let heads = source::scan(&snapshot, folder.as_ref(), &config.kinds, after, PAGE)?;
+        snapshot.commit().map_err(internal)?;
         current.scan_after = if heads.len() == PAGE {
             heads.last().map(|document| document.slot)
         } else {

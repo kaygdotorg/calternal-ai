@@ -35,6 +35,8 @@ const IO_TIMEOUT: Duration = Duration::from_secs(30);
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Request {
+    /// Rotate the first-owner code through the running server.
+    SetupCode,
     /// Issue a one-time enrolment code for `owner`, valid for `minutes`.
     Code {
         /// Who the enrolled machine will belong to.
@@ -92,6 +94,20 @@ pub struct MachineErasureSummary {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Response {
+    /// A fresh one-time code, its expiry and the public setup address.
+    SetupCode {
+        /// Display this code only to the operator.
+        code: String,
+        /// Expiry in Unix milliseconds.
+        expires_ms: i64,
+        /// Public origin for registration.
+        url: String,
+    },
+    /// Registration has already been completed.
+    SetupComplete {
+        /// Public origin for signing in.
+        url: String,
+    },
     /// A new code and its expiry in Unix milliseconds.
     Code {
         /// The one-time code; shown once.
@@ -134,6 +150,11 @@ struct Reply {
 /// commit; call on a blocking thread.
 pub fn execute(svc: &MachineService, request: Request) -> Result<Response, Error> {
     Ok(match request {
+        Request::SetupCode => {
+            return Err(Error::unavailable(
+                "start this server before requesting a setup code",
+            ));
+        }
         Request::Code { owner, minutes } => {
             let ttl = Duration::from_secs(minutes.saturating_mul(60));
             let (code, expires_ms) = svc.issue_code_for(owner, ttl)?;
@@ -282,6 +303,7 @@ pub fn serve_socket(
     appdata: &Path,
     installation: Uuid,
     svc: Arc<MachineService>,
+    owner_setup: Option<Arc<crate::owner_setup::OwnerSetup>>,
 ) -> std::io::Result<tokio::task::JoinHandle<()>> {
     use std::os::unix::fs::PermissionsExt;
     let path = socket_path(appdata);
@@ -306,8 +328,9 @@ pub fn serve_socket(
                 continue;
             }
             let svc = svc.clone();
+            let owner_setup = owner_setup.clone();
             tokio::spawn(async move {
-                if let Err(e) = answer(stream, installation, svc).await {
+                if let Err(e) = answer(stream, installation, svc, owner_setup).await {
                     tracing::warn!(error = %e, "admin socket request failed");
                 }
             });
@@ -319,6 +342,7 @@ async fn answer(
     stream: tokio::net::UnixStream,
     installation: Uuid,
     svc: Arc<MachineService>,
+    owner_setup: Option<Arc<crate::owner_setup::OwnerSetup>>,
 ) -> std::io::Result<()> {
     use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt};
     let (read, mut write) = stream.into_split();
@@ -334,6 +358,22 @@ async fn answer(
         Ok(e) if e.installation != installation => Err(Error::invalid_input(
             "this server runs a different installation; check --installation-id",
         )),
+        Ok(e) if matches!(e.request, Request::SetupCode) => match owner_setup {
+            Some(setup) => setup.issue(true).await.map(|grant| {
+                let url = setup.url().to_owned();
+                match grant {
+                    Some(grant) => Response::SetupCode {
+                        code: grant.code,
+                        expires_ms: grant.expires_ms,
+                        url,
+                    },
+                    None => Response::SetupComplete { url },
+                }
+            }),
+            None => Err(Error::unavailable(
+                "passkey onboarding is unavailable on this server",
+            )),
+        },
         Ok(e) => crate::blocking::spawn(move || execute(&svc, e.request))
             .await
             .unwrap_or_else(|_| Err(Error::internal("admin task failed"))),
