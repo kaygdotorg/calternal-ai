@@ -136,8 +136,7 @@ impl Content {
                     witness.as_bytes(),digest.as_bytes(),full],
             ).map_err(internal)?;
             staged.outbox(&tx, request, &receipt(&revision))?;
-            tx.execute("INSERT INTO outbox_placement VALUES(?1,?2,?3)",
-                params![request.account.to_string(),request.id,id.to_string()]).map_err(internal)?;
+            staged.require_placement(&tx, request)?;
             tx.commit().map_err(internal)?;
             s.pending_since.get_or_insert_with(Instant::now);
             s.append_recovering = true;
