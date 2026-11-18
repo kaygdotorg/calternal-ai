@@ -79,14 +79,14 @@ const SPACE_INITIAL: &[&str] = &[
     crate::linked_write::SCHEMA,
     crate::trash::SCHEMA,
 ];
-const SPACE_CHANGES: &[&str] = &[
-    THREAD_SNOOZE,
-    COLLECTION_MEMBERS,
-    crate::rooms::SCHEMA,
-    crate::trash_job::SCHEMA,
-    crate::rename_job::SCHEMA,
-    crate::storage_usage::MIGRATION,
-    crate::plugin_state::MIGRATION,
+const SPACE_CHANGES: &[(i64, &str)] = &[
+    (4, THREAD_SNOOZE),
+    (5, COLLECTION_MEMBERS),
+    (6, crate::rooms::SCHEMA),
+    (7, crate::trash_job::SCHEMA),
+    (8, crate::rename_job::SCHEMA),
+    (9, crate::storage_usage::MIGRATION),
+    (10, crate::plugin_state::MIGRATION),
 ];
 pub(crate) const SPACE_SCHEMA: calternal_store::migrations::Schema<'_> =
     calternal_store::migrations::Schema::new("space content.db", 3, SPACE_INITIAL, SPACE_CHANGES);
@@ -263,7 +263,7 @@ mod tests {
 
     const BASELINE: Schema<'_> = Schema::new("space content.db", 3, SPACE_INITIAL, &[]);
     const SNOOZE_RELEASE: Schema<'_> =
-        Schema::new("space content.db", 3, SPACE_INITIAL, &[THREAD_SNOOZE]);
+        Schema::new("space content.db", 3, SPACE_INITIAL, &[(4, THREAD_SNOOZE)]);
 
     fn through(version: usize) -> Schema<'static> {
         Schema::new(

@@ -443,36 +443,43 @@ pub(crate) fn last_thread_machine(
 const ADD_HARNESS: &str =
     "ALTER TABLE leases ADD COLUMN harness TEXT CHECK (harness IS NULL OR json_valid(harness));";
 
-const MACHINE_CHANGES: &[&str] = &[
-    TITLE_LEASES,
-    ADD_HARNESS,
-    super::compute::MIGRATION,
-    super::runtime::MIGRATION,
-    super::resource_hooks::MIGRATION,
-    super::group_storage::MIGRATION,
+const MACHINE_CHANGES: &[(i64, &str)] = &[
+    (7, TITLE_LEASES),
+    (8, ADD_HARNESS),
+    (9, super::compute::MIGRATION),
+    (10, super::runtime::MIGRATION),
+    (11, super::resource_hooks::MIGRATION),
+    (12, super::group_storage::MIGRATION),
 ];
 
 /// Return the machine registry schema shared by normal startup and upgrade admission.
 /// Baseline 6 is the first production schema, including durable erased-worker stops.
 pub(crate) fn upgrade_schema() -> calternal_store::migrations::Schema<'static> {
+    use calternal_store::migrations::Schema;
+
+    const CURRENT: Schema<'static> = Schema::new("machines.db", 6, &[SCHEMA], MACHINE_CHANGES);
     #[cfg(feature = "test-plugins")]
     if option_env!("CALTERNAL_RELEASE_TEST_MIGRATION") == Some("v7") {
-        return calternal_store::migrations::Schema::new(
+        const FIXTURE: Schema<'static> = Schema::new(
             "machines.db",
             6,
             &[SCHEMA],
             &[
-                TITLE_LEASES,
-                ADD_HARNESS,
-                super::compute::MIGRATION,
-                super::runtime::MIGRATION,
-                super::resource_hooks::MIGRATION,
-                super::group_storage::MIGRATION,
-                "CREATE TABLE upgrade_fixture (id INTEGER PRIMARY KEY) STRICT;",
+                MACHINE_CHANGES[0],
+                MACHINE_CHANGES[1],
+                MACHINE_CHANGES[2],
+                MACHINE_CHANGES[3],
+                MACHINE_CHANGES[4],
+                MACHINE_CHANGES[5],
+                (
+                    13,
+                    "CREATE TABLE upgrade_fixture (id INTEGER PRIMARY KEY) STRICT;",
+                ),
             ],
         );
+        return FIXTURE;
     }
-    calternal_store::migrations::Schema::new("machines.db", 6, &[SCHEMA], MACHINE_CHANGES)
+    CURRENT
 }
 
 #[cfg(test)]
@@ -609,7 +616,7 @@ mod tests {
         use calternal_machine::protocol::{HarnessSandbox, ProviderLoginScope};
 
         let conn = Connection::open_in_memory().unwrap();
-        let previous = Schema::new("machines.db", 6, &[SCHEMA], &[TITLE_LEASES]);
+        let previous = Schema::new("machines.db", 6, &[SCHEMA], &[(7, TITLE_LEASES)]);
         migrate_release(&conn, previous, false).unwrap();
         let (id, space, account, thread) = (
             Uuid::new_v4(),

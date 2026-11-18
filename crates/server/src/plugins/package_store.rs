@@ -670,7 +670,7 @@ pub(crate) const UPGRADE_SCHEMA: calternal_store::migrations::Schema<'_> =
         "installed-plugins.sqlite3",
         1,
         &[PACKAGE_SCHEMA],
-        &[bundled_notes::LIVE_EDITING, provider_runtime::V3],
+        &[(2, bundled_notes::LIVE_EDITING), (3, provider_runtime::V3)],
     );
 
 #[cfg(test)]
