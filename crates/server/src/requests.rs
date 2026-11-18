@@ -51,7 +51,7 @@ pub(crate) async fn dispatch<D: Directory>(
     let rid = rid.to_owned();
     let scheduler = machines.clone();
     let st = state.clone();
-    let (result, resume) = tokio::task::spawn_blocking(move || {
+    let (result, resume) = crate::blocking::spawn(move || {
         let mut resume = None;
         let result = match row.id {
             "requests.list" => {

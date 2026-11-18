@@ -21,7 +21,7 @@ pub(super) async fn spawn(
     };
     let path = bundle.to_path_buf();
     let digest = plugin.entry.worker_sha256.clone();
-    let source = tokio::task::spawn_blocking(move || {
+    let source = crate::blocking::spawn(move || {
         use std::io::Read;
         let mut source = String::new();
         std::fs::File::open(path)
@@ -98,7 +98,7 @@ pub(super) async fn spawn(
         .input
         .take()
         .ok_or_else(|| Error::unavailable("worker stdin unavailable"))?;
-    tokio::task::spawn_blocking(move || {
+    crate::blocking::spawn(move || {
         let (events, rx) = mpsc::sync_channel(64);
         let (frames, frames_rx) = mpsc::sync_channel::<Vec<u8>>(MAX_QUEUE);
         let reader_events = events.clone();

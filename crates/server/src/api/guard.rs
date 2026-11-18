@@ -100,7 +100,7 @@ pub(super) async fn guard<D: Directory>(
                     ));
                 }
                 let (st, token) = (state.clone(), raw.to_owned());
-                tokio::task::spawn_blocking(move || {
+                crate::blocking::spawn(move || {
                     st.jobs
                         .agent_authenticate(&token)
                         .map(|a| a.map(|a| (a, calternal_auth::token::hash32(&token).to_vec())))
@@ -172,7 +172,7 @@ pub(super) async fn guard<D: Directory>(
                     .unwrap_or("")
                     .to_owned();
                 let st = state.clone();
-                tokio::task::spawn_blocking(move || st.jobs.agent_authenticate(&token))
+                crate::blocking::spawn(move || st.jobs.agent_authenticate(&token))
                     .await
                     .ok()
                     .and_then(Result::ok)

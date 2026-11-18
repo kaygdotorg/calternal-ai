@@ -71,7 +71,7 @@ pub(crate) async fn events<D: Directory>(
         .flatten();
     let st = state.clone();
     let identity = p.clone();
-    let head = tokio::task::spawn_blocking(move || {
+    let head = crate::blocking::spawn(move || {
         let mut c = st.inputs.open(identity.id)?;
         st.inputs.clean(&mut c, &st.directory, &identity)?;
         let head = Inputs::head(&c)?;
@@ -148,7 +148,7 @@ pub(crate) async fn events<D: Directory>(
                 }
             }
             let mut reader = f.reader.take()?;
-            let (reader, page) = tokio::task::spawn_blocking(move || {
+            let (reader, page) = crate::blocking::spawn(move || {
                 let page = reader.page(&p, &after, maintenance);
                 (reader, page)
             })

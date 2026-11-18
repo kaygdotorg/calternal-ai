@@ -57,6 +57,9 @@ pub const CSP: &str = "default-src 'self'; script-src 'self'; style-src 'self' '
 /// The default preserves fixture integrations; stored directories plug in without
 /// changing operation handlers or caching membership in authenticated identities.
 pub struct AppState<D: Directory = StoredDirectory> {
+    /// Six bounded mutation slots, isolated from the listener's two read slots.
+    /// Operation declarations select scheduling; no security decision is cached.
+    pub blocking: crate::blocking::RequestWorkers,
     /// Per-account input databases (drafts, pending submissions, the account feed).
     pub inputs: crate::account_input::Inputs,
     /// Durable preview store, shared without an outer lock. Content, plugin state
@@ -183,7 +186,7 @@ async fn describe<D: Directory>(State(state): State<Shared<D>>, req: Request) ->
         .get::<crate::turns::access::Authority>()
         .cloned();
     let scoped = agent.is_some();
-    let (principal, operations) = match tokio::task::spawn_blocking(move || {
+    let (principal, operations) = match crate::blocking::spawn(move || {
         let mut principal = st.directory.describe(&p);
         let mut operations = calternal_core::cached_operation_catalog().to_vec();
         if let Some(a) = agent {
@@ -238,6 +241,18 @@ fn operation_catalog_json() -> &'static serde_json::value::RawValue {
     CATALOG.get_or_init(|| {
         serde_json::value::to_raw_value(&operation_catalog()).expect("catalog serializes")
     })
+}
+
+/// Scheduling derives from the same immutable operation declarations as policy.
+/// Unknown operations get writer scheduling until normal admission rejects them.
+fn operation_mutates<D: Directory>(state: &Shared<D>, op: &str) -> bool {
+    state
+        .registry
+        .owner_of_operation(op)
+        .and_then(|p| p.operation(op))
+        .map(|p| p.mutates)
+        .or_else(|| calternal_core::cached_operation(op).map(|p| p.mutates))
+        .unwrap_or(true)
 }
 
 async fn operations<D: Directory>(State(state): State<Shared<D>>, req: Request) -> Response {
@@ -303,42 +318,57 @@ async fn operations<D: Directory>(State(state): State<Shared<D>>, req: Request) 
     let thread_account = p.id;
     let state_for_threads = state.clone();
     let thread_scheduler = machines.clone();
-    let mut result = if let Some(row) = calternal_core::request_operation(&request.operation) {
-        crate::requests::dispatch(state, machines, p, session, agent, &rid, row, request.input)
-            .await
-    } else if calternal_core::AGENT_OPERATIONS
-        .iter()
-        .any(|(id, _, _)| *id == request.operation)
-    {
-        match machines {
-            Some(m) => {
-                crate::turns::dispatch(
+    let workers = state.blocking.clone();
+    let mutates = operation_mutates(&state, &request.operation);
+    let mut result = workers
+        .scope(mutates, async {
+            if let Some(row) = calternal_core::request_operation(&request.operation) {
+                crate::requests::dispatch(
                     state,
-                    m,
+                    machines,
                     p,
                     session,
                     agent,
-                    &request.request_id,
-                    &request.operation,
+                    &rid,
+                    row,
                     request.input,
                 )
                 .await
+            } else if calternal_core::AGENT_OPERATIONS
+                .iter()
+                .any(|(id, _, _)| *id == request.operation)
+            {
+                match machines {
+                    Some(m) => {
+                        crate::turns::dispatch(
+                            state,
+                            m,
+                            p,
+                            session,
+                            agent,
+                            &request.request_id,
+                            &request.operation,
+                            request.input,
+                        )
+                        .await
+                    }
+                    None => Err(Error::unavailable("machines are not enabled")),
+                }
+            } else {
+                dispatch_scoped(
+                    state,
+                    p,
+                    session,
+                    &request.request_id,
+                    &request.operation,
+                    request.input,
+                    agent,
+                    machines,
+                )
+                .await
             }
-            None => Err(Error::unavailable("machines are not enabled")),
-        }
-    } else {
-        dispatch_scoped(
-            state,
-            p,
-            session,
-            &request.request_id,
-            &request.operation,
-            request.input,
-            agent,
-            machines,
-        )
-        .await
-    };
+        })
+        .await;
     if request.operation == "threads.stop" {
         if let (Some(machines), Ok(value)) = (&thread_scheduler, &result) {
             if let Err(error) =

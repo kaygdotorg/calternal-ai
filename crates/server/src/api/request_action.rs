@@ -38,7 +38,7 @@ pub(super) async fn once<D: Directory>(
     );
     let space = space_of(&a.space)?;
     let account = p.id;
-    let (admission, saved, receipt_key, fp) = tokio::task::spawn_blocking(move || {
+    let (admission, saved, receipt_key, fp) = crate::blocking::spawn(move || {
         if st.jobs.agent_current(&a2.space, &a2.job, &h)?.is_none() {
             return Err(Error::forbidden("thread credential has ended"));
         }

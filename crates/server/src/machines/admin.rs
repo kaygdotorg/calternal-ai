@@ -320,7 +320,7 @@ async fn answer(
         Ok(e) if e.installation != installation => Err(Error::invalid_input(
             "this server runs a different installation; check --installation-id",
         )),
-        Ok(e) => tokio::task::spawn_blocking(move || execute(&svc, e.request))
+        Ok(e) => crate::blocking::spawn(move || execute(&svc, e.request))
             .await
             .unwrap_or_else(|_| Err(Error::internal("admin task failed"))),
     };

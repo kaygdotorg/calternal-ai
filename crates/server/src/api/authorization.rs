@@ -89,6 +89,7 @@ mod tests {
             .unwrap()
             .id;
         let state = Arc::new(AppState {
+            blocking: crate::blocking::RequestWorkers::new().unwrap(),
             inputs: store.account_inputs(),
             store,
             directory,

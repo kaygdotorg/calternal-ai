@@ -35,7 +35,7 @@ use uuid::Uuid;
 pub(super) async fn blocking<T: Send + 'static>(
     f: impl FnOnce() -> Result<T, Error> + Send + 'static,
 ) -> Result<T, Error> {
-    tokio::task::spawn_blocking(f)
+    crate::blocking::spawn(f)
         .await
         .map_err(|_| Error::internal("turn task failed"))?
 }

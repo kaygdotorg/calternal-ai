@@ -31,7 +31,7 @@ pub(crate) async fn resolve_for<D: Directory>(
     let st = state.clone();
     let route_kind = kind.to_owned();
     let route_id = id.to_owned();
-    let space = tokio::task::spawn_blocking(move || st.store.locate(&route_kind, &route_id))
+    let space = crate::blocking::spawn(move || st.store.locate(&route_kind, &route_id))
         .await
         .map_err(|_| Error::internal("resolver task failed"))??
         .ok_or_else(missing)?;

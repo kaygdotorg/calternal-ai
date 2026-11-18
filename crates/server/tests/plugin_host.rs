@@ -96,6 +96,7 @@ async fn fixture(tag: &str, plugins: Vec<Plugin>, pool: Option<usize>) -> Fixtur
         worker_root,
     );
     let state = Arc::new(AppState {
+        blocking: calternal_server::blocking::RequestWorkers::new().unwrap(),
         inputs: store.account_inputs(),
         store,
         directory: StoredDirectory::load_or_create(&data).unwrap(),

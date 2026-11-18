@@ -37,12 +37,11 @@ impl Backend for MachineBackend {
                 .ok_or_else(|| SandboxError("worker source missing".into()))?;
             let account = AccountId::from_uuid(spec.account_id).map_err(SandboxError::new)?;
             let thread = spec.thread_id;
-            let run = tokio::task::spawn_blocking(move || {
-                service.request_worker(account, thread, worker)
-            })
-            .await
-            .map_err(SandboxError::new)?
-            .map_err(|e| SandboxError(e.message))?;
+            let run =
+                crate::blocking::spawn(move || service.request_worker(account, thread, worker))
+                    .await
+                    .map_err(SandboxError::new)?
+                    .map_err(|e| SandboxError(e.message))?;
             Ok(Arc::new(MachineSandbox {
                 service: self.0.clone(),
                 account,
@@ -61,20 +60,25 @@ impl Sandbox for MachineSandbox {
     fn exec(&self, request: ExecRequest) -> BoxFuture<'_, SandboxResult<Exec>> {
         Box::pin(async move {
             let (service, account, lease) = (self.service.clone(), self.account, self.lease);
-            let id = tokio::task::spawn_blocking(move || {
-                service.worker_exec(account, lease, request.argv)
-            })
-            .await
-            .map_err(SandboxError::new)?
-            .map_err(|e| SandboxError(e.message))?;
+            let id =
+                crate::blocking::spawn(move || service.worker_exec(account, lease, request.argv))
+                    .await
+                    .map_err(SandboxError::new)?
+                    .map_err(|e| SandboxError(e.message))?;
             let (input, mut writes) = tokio::sync::mpsc::channel::<Vec<u8>>(16);
             let service = self.service.clone();
             tokio::spawn(async move {
                 while let Some(data) = writes.recv().await {
                     let service = service.clone();
-                    if !matches!(tokio::task::spawn_blocking(move || service.worker_input(account, id, data)).await, Ok(Ok(()))) { break; }
+                    if !matches!(
+                        crate::blocking::spawn(move || service.worker_input(account, id, data))
+                            .await,
+                        Ok(Ok(()))
+                    ) {
+                        break;
+                    }
                 }
-                let _ = tokio::task::spawn_blocking(move || service.stop_run(account, lease)).await;
+                let _ = crate::blocking::spawn(move || service.stop_run(account, lease)).await;
             });
             let (events, rx) = tokio::sync::mpsc::channel(16);
             let service = self.service.clone();
@@ -133,7 +137,7 @@ impl Sandbox for MachineSandbox {
         let (service, account, lease) = (self.service.clone(), self.account, self.lease);
         Box::pin(async move {
             let stop = service.clone();
-            tokio::task::spawn_blocking(move || stop.stop_run(account, lease))
+            crate::blocking::spawn(move || stop.stop_run(account, lease))
                 .await
                 .map_err(SandboxError::new)?
                 .map_err(|e| SandboxError(e.message))?;

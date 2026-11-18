@@ -17,7 +17,7 @@ pub(super) async fn blocking<D: Directory, T: Send + 'static>(
     f: impl FnOnce(&Store) -> Result<T, Error> + Send + 'static,
 ) -> Result<T, Error> {
     let state = state.clone();
-    tokio::task::spawn_blocking(move || f(&state.store))
+    crate::blocking::spawn(move || f(&state.store))
         .await
         .map_err(|_| Error::internal("storage task failed"))?
 }
@@ -50,6 +50,26 @@ pub async fn dispatch<D: Directory>(
 }
 
 pub(super) async fn dispatch_scoped<D: Directory>(
+    state: Shared<D>,
+    p: Identity,
+    session: Session,
+    request_id: &str,
+    op: &str,
+    input: JsonObject,
+    agent: Option<crate::turns::access::Authority>,
+    machines: Option<std::sync::Arc<crate::machines::MachineService>>,
+) -> Result<Value, Error> {
+    let workers = state.blocking.clone();
+    let mutates = super::operation_mutates(&state, op);
+    workers
+        .scope(
+            mutates,
+            dispatch_scoped_inner(state, p, session, request_id, op, input, agent, machines),
+        )
+        .await
+}
+
+pub(super) async fn dispatch_scoped_inner<D: Directory>(
     state: Shared<D>,
     p: Identity,
     session: Session,
@@ -114,7 +134,7 @@ pub(super) async fn dispatch_scoped<D: Directory>(
             crate::resolve::resolve_for(&state, &p, &kind, &id, op_required).await?;
         if op == "resolve" && kind == "notes" {
             let st = state.clone();
-            resolved = tokio::task::spawn_blocking(move || {
+            resolved = crate::blocking::spawn(move || {
                 resolved.state = Some(crate::notes::state(&st.store, &resolved)?);
                 Ok::<_, Error>(resolved)
             })
@@ -171,7 +191,7 @@ pub(super) async fn dispatch_scoped<D: Directory>(
         let request = request_id.to_owned();
         // Debug diagnostics may write stderr; keep that I/O off the async task.
         // Awaiting bounds diagnostic work by the existing admitted requests.
-        tokio::task::spawn_blocking(move || {
+        crate::blocking::spawn(move || {
             calternal_store::timings::emit("admission", &request, Some(elapsed));
         })
         .await
@@ -198,7 +218,7 @@ pub(super) async fn dispatch_scoped<D: Directory>(
             op.to_owned(),
             request_id.to_owned(),
         );
-        let verdict = tokio::task::spawn_blocking(move || {
+        let verdict = crate::blocking::spawn(move || {
             scope.check_operation(&operation, &checked, &retry_id, mutates, risk)
         })
         .await
@@ -223,7 +243,7 @@ pub(super) async fn dispatch_scoped<D: Directory>(
                 input.clone(),
                 request_id.to_owned(),
             );
-            let approval = tokio::task::spawn_blocking(move || {
+            let approval = crate::blocking::spawn(move || {
                 let create = || {
                     st.jobs
                         .agent_action_request(&a, &op, &input, &rid, risk, mutates)
@@ -278,7 +298,7 @@ pub(super) async fn admitted_operation<D: Directory>(
         let st = state.clone();
         let rid = request_id.to_owned();
         let operation = op.to_owned();
-        return tokio::task::spawn_blocking(move || {
+        return crate::blocking::spawn(move || {
             // Accounts this change removes lose their private input for the space.
             let removed =
                 crate::account_input::revoked_targets(&st.directory, &p, &operation, &input)?;

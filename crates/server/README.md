@@ -276,3 +276,16 @@ Item resolution offloads only its catalog lookup before awaiting the same curren
 query. There is no cross-request capability cache: each check observes the existing
 auth-worker publication barrier, including removals, role edits and account disable.
 Synchronous test directories use the blocking adapter.
+
+Foreground operation callbacks use the operation catalog/manifest's `mutates`
+flag to select scheduling. The listener reserves two blocking threads for reads
+and unscoped startup/background adapters; a lazy current-thread Tokio driver
+supplies six blocking mutation threads. This retains eight foreground slots in
+all, rather than raising the limit. Writer admission permits at most 64 running
+or queued callbacks; other callers await permits on the async executor. A caller
+that disconnects before admission drops its waiter; a started durable callback
+finishes as before. No per-space state is stored in the scheduler. Async spawned
+background tasks do not inherit request scope. They retain their existing
+adapters and can contend with the listener's background/read work; foreground
+writers cannot consume those reserved slots. These scheduling reservations do
+not bypass a space's locks or the auth worker's mandatory publication barrier.

@@ -15,7 +15,7 @@ pub(super) async fn dispatch<D: Directory>(
     request_id: String,
     input: JsonObject,
 ) -> Result<Value, Error> {
-    tokio::task::spawn_blocking(move || {
+    crate::blocking::spawn(move || {
         let op = operation.id();
         calternal_core::validate_operation_input(op, &input)?;
         let auth = &state
