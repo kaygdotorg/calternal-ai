@@ -139,3 +139,44 @@ async fn live_replays_after_server_and_client_restart_and_stops_on_logout() {
         "revoked session must close while idle"
     );
 }
+
+#[tokio::test]
+async fn sigterm_finishes_with_open_streams_and_keeps_the_resume_bookmark() {
+    let mut f = Fixture::new().await;
+    let space = f.spaces[0].clone();
+    let mut live = Live::open(&f, 1, json!([{"space_id":space,"bookmark":null}]))
+        .await
+        .unwrap_or_else(|error| panic!("space stream: {error:?}"));
+    let ready = live.next().await.expect("live ready frame");
+    let mut account = crate::drafts_cases::account_live(&f, 1, None).await;
+    assert_eq!(account.status(), 200);
+    assert!(account.chunk().await.unwrap().is_some());
+
+    let saved = f.note(1, &space).await;
+    let pid = f.child.as_ref().unwrap().id();
+    let deadline = Instant::now() + Duration::from_secs(2);
+    assert!(Command::new("kill")
+        .args(["-TERM", &pid.to_string()])
+        .status()
+        .unwrap()
+        .success());
+    loop {
+        if let Some(status) = f.child.as_mut().unwrap().try_wait().unwrap() {
+            assert!(status.success(), "server exited with {status}");
+            break;
+        }
+        assert!(Instant::now() < deadline, "server still running two seconds after SIGTERM with SSE open");
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    f.child.take();
+    drop(live);
+    drop(account);
+    f.start().await;
+    let mut resumed = Live::open(&f, 1, json!([{"space_id":space,"bookmark":ready["bookmark"]}]))
+        .await
+        .unwrap_or_else(|error| panic!("resuming space stream: {error:?}"));
+    let frame = resumed.next().await.expect("replayed entry");
+    assert_eq!(frame["type"], "entry");
+    assert_eq!(resumed.next().await.expect("resumed ready frame")["type"], "ready");
+    f.op(1, "notes.get", json!({"id":saved["id"]})).await.ok();
+}
