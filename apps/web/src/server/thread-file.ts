@@ -77,6 +77,7 @@ export function reasonNotice(r: WireReason | null | undefined): ThreadNotice | n
     case "provider_signed_out": return { kind: "provider-signin", provider: r.provider ?? "The provider", command: r.sign_in_command };
     case "retrying": return { kind: "retrying", rule: r.rule === "api_availability" || r.rule === "subscription_reset" ? r.rule : "provider_backoff", attempt: r.attempt, of: 5, nextAt: r.next_attempt_ms };
     case "failed": return { kind: "failed", failure: r.class === "usage_limit" || r.class === "permanent" ? r.class : "transient", resetAtMs: r.reset_at_ms };
+    case "thread_full": return { kind: "thread-full" };
     case "interrupted": return { kind: "interrupted", resumable: r.resumable !== false, why: r.why, sinceMs: r.since_ms };
     default: return null;
   }

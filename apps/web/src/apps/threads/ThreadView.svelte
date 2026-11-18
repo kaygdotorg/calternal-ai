@@ -7,7 +7,7 @@
   import { appearance } from "../../appearance/prefs.svelte";
   import { hazards } from "../../lib/hazard";
   import VirtualList from "../../lib/VirtualList.svelte";
-  import { href } from "../../lib/route.svelte";
+  import { href, navigate } from "../../lib/route.svelte";
   import { shell } from "../../shell/shell.svelte";
   import { bridge } from "./compose.svelte";
   import { Conversation } from "./conversation.svelte";
@@ -18,7 +18,7 @@
   import MessageRow from "./MessageRow.svelte";
   import ThreadNotices from "./ThreadNotices.svelte";
   import RequestBar from "./RequestBar.svelte";
-  import { client, store } from "./store.svelte";
+  import { client, store, startThread } from "./store.svelte";
 
   let { id }: { id: string } = $props();
   let conv = $state<Conversation>();
@@ -124,7 +124,7 @@
   {#if summary}
     <div class="bottom" bind:this={bottomEl}>
       <div class="inner">
-        <ThreadNotices thread={summary} onresume={() => client.resume(id).catch((e: Error) => toast(`Could not resume: ${e.message}`))} oncheck={() => client.check(id).then(() => toast("Checked"), (e: Error) => toast(`Could not check: ${e.message}`))} />
+        <ThreadNotices thread={summary} onnew={() => void startThread().then((t) => navigate(`/threads/${t.id}`), (e: Error) => toast(`Could not start a thread: ${e.message}`))} onresume={() => client.resume(id).catch((e: Error) => toast(`Could not resume: ${e.message}`))} oncheck={() => client.check(id).then(() => toast("Checked"), (e: Error) => toast(`Could not check: ${e.message}`))} />
         <RequestBar requests={reqs} onanswer={(rid, a) => client.answer(rid, a).catch((e: Error) => toast(`Not sent: ${e.message}`))} />
         <Composer thread={summary} providers={store.providers} machines={store.machines} onpermission={(p) => client.setPermission(id, p)} onrunson={(r) => client.setRunsOn(id, r)} onsend={(t) => client.send(id, t, crypto.randomUUID()).catch((e: Error) => { toast(`Not sent: ${e.message}`); throw e; })} onstop={() => client.stop(id).catch((e: Error) => toast(`Could not stop: ${e.message}`))} onprovider={(p, m) => client.setProvider(id, p, m)} />
       </div>
