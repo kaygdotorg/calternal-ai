@@ -15,7 +15,7 @@ for (const scheme of ["light", "dark"]) {
   check("a context menu", await surface("menu", '[role="menu"], .pop [role=menu]'));
   await page.keyboard.press("Escape"); await page.waitForTimeout(300);
   // a picker over the card
-  await expandComposer(page); await page.locator(".composer .chips .pill").first().click(); await page.waitForTimeout(600);
+  await expandComposer(page); await page.locator(".composer .chip[data-chip=model] .pill").click(); await page.waitForTimeout(600);
   check("a picker (popover)", await surface("popover", '[role="dialog"].pop, .pop[data-radius]'));
   await page.keyboard.press("Escape"); await page.waitForTimeout(300);
   // the palette sheet

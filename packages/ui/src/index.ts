@@ -2,6 +2,8 @@
 export { default as Icon } from "./components/Icon.svelte";
 export { default as Glass } from "./components/Glass.svelte";
 export { default as Pill } from "./components/Pill.svelte";
+export { default as PillRow } from "./components/PillRow.svelte";
+export { collapse, type PillWidths } from "./lib/fit";
 export { default as Capsule } from "./components/Capsule.svelte";
 export type { CapsuleItem } from "./components/Capsule.svelte";
 export { default as Toolbar } from "./components/Toolbar.svelte";

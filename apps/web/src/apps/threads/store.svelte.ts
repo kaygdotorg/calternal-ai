@@ -2,6 +2,7 @@
  * Reactive state for the Threads app: the thread list, the open requests and the provider list, kept current by watching the client.
  * One instance per page. The client is the only thing that changes when the real operations arrive.
  */
+import { inboxOf, type InboxItem } from "./inbox";
 import type { ThreadsClient } from "./client";
 import { FixtureClient } from "./fixtures";
 import { server, serverMode } from "../../server/client";
@@ -50,14 +51,9 @@ class ThreadsStore {
     for (const t of this.threads) if (!t.parentId) (by.get(t.workspace) ?? by.set(t.workspace, []).get(t.workspace)!).push(t);
     return [...by].map(([workspace, threads]) => ({ workspace, threads: threads.sort((a, b) => b.updatedAt - a.updatedAt) }));
   }
-  /**
-   * Threads with something waiting on the person, newest request first, with what they are waiting on. The attention card shows the first three; the
-   * thread list leaves those out so a thread is never shown twice.
-   */
-  get attention(): { thread: ThreadSummary; kinds: Request["kind"][] }[] {
-    const by = new Map<string, Request["kind"][]>();
-    for (const r of this.requests) (by.get(r.threadId) ?? by.set(r.threadId, []).get(r.threadId)!).push(r.kind);
-    return [...by].flatMap(([id, kinds]) => { const thread = this.get(id); return thread ? [{ thread, kinds }] : []; });
+  /** The Inbox: the threads that need you, and why (inbox.ts). */
+  get inbox(): InboxItem[] {
+    return inboxOf(this.threads, this.requests);
   }
   /** Open requests for one thread (a parent also sees its children's). */
   requestsFor(id: string): Request[] {

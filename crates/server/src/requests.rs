@@ -48,6 +48,11 @@ pub(crate) async fn dispatch<D: Directory>(
     if !matches!(session, Session::Agent { .. }) && !session.is_live(&state.directory).await {
         return Err(Error::unauthorized("sign in again first"));
     }
+    if row.id.starts_with("provider.sign_in.") {
+        let machines = machines.ok_or_else(|| Error::unavailable("machines are not enabled"))?;
+        return crate::provider_sign_in::dispatch(state, machines, person, session, row.id, input)
+            .await;
+    }
     let rid = rid.to_owned();
     let scheduler = machines.clone();
     let st = state.clone();
@@ -275,6 +280,7 @@ fn list<D: Directory>(state: &Shared<D>, person: &Identity) -> Result<RequestsLi
             collect(Owner::Space(id), Some(space.id))?;
         }
     }
+    requests.extend(crate::provider_sign_in::list(state, person.id)?);
     requests.sort_unstable_by(|a, b| a.id.cmp(&b.id));
     Ok(RequestsListResult { requests })
 }

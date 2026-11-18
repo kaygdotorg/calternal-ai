@@ -1,6 +1,6 @@
 <script lang="ts">
   // The message field on its own glass. Enter sends, Shift+Enter is a new line; while a turn runs the same field steers it and the send button
-  // becomes Stop. Under the field, one row of three chips: provider and model, permission mode, where it runs. They never wrap; as the composer
+  // becomes Stop. Under the field, one row of four chips: attach, model (with its reasoning level), permission mode, where it runs; the row gives up words by priority as the box narrows (PillRow). They never wrap; as the composer
   // narrows their labels shorten in steps (container queries on the composer's own width) and stay meaningful:
   //   wide      "Claude Code · Sonnet 5.5"  "Approve for me"  "calternal-dev-02-std · Sandboxed"
   //   medium    "Sonnet 5.5"                "Approve for me"  machine + a mode icon
@@ -9,7 +9,8 @@
   // The permission mode's own name is the last label to go. Every chip keeps its full name as its accessible name and tooltip.
   // The provider control changes nothing visible in the thread (the handover is internal), and never creates a thread.
   import { motionAllowed, snapshot, play, type FoldSnap } from "./fold";
-  import { Button, Icon, IconButton, InlineEditor, Menu, Panel, Pill, Popover, Sheet, currentForm, type IconName, type MenuItem } from "@calternal/ui";
+  import { Button, Icon, IconButton, InlineEditor, Menu, Panel, Pill, PillRow, Popover, Sheet, currentForm, type IconName, type MenuItem } from "@calternal/ui";
+  import type { Attachment } from "./model";
   import type { FieldEditor, FieldTrigger } from "../../../../../packages/editor/src/index";
   import { marksOf } from "../../palette/engine";
   import { fixtureItems } from "../../palette/fixtures";
@@ -18,6 +19,7 @@
   import { store } from "./store.svelte";
   import RunsOnPicker from "./RunsOnPicker.svelte";
   import ActiveChildren from "./ActiveChildren.svelte";
+  import LevelMark from "./LevelMark.svelte";
   import MentionPicker from "../../palette/MentionPicker.svelte";
   import { bridge } from "./compose.svelte";
   import { shell } from "../../shell/shell.svelte";
@@ -33,15 +35,19 @@
     onprovider,
     onpermission,
     onrunson,
+    onreasoning,
+    onattach,
   }: {
     thread: ThreadSummary;
     providers: ProviderOption[];
     machines: string[];
-    onsend: (text: string) => void | Promise<void>;
+    onsend: (text: string, attachments: Attachment[]) => void | Promise<void>;
     onstop: () => void;
     onprovider: (p: ThreadSummary["provider"], model: string) => void;
     onpermission: (p: Permission) => void;
     onrunson: (r: RunsOn) => void;
+    onreasoning: (level: string | null) => void;
+    onattach: (file: File, progress: (fraction: number) => void) => Promise<void>;
   } = $props();
 
   const drafts = new Map<string, string>();
@@ -154,7 +160,32 @@
   const parked = $derived(thread.state === "waiting" && !thread.notice);
   const provider = $derived(providers.find((p) => p.id === thread.provider));
   const modelName = $derived(provider?.models.find((m) => m.id === thread.model)?.name ?? thread.model);
-  const items = $derived<MenuItem[]>(providers.flatMap((p) => p.models.map((m) => ({ id: `${p.id}:${m.id}`, label: m.name, sub: p.listed === false ? `${p.name} · models are not listed yet` : p.name, icon: p.id === "codex" ? "codex" : "spark", checked: p.id === thread.provider && m.id === thread.model }))));
+  // The model menu: the models, then (for a model that accepts levels) its reasoning levels, in one list: the level is part of the model chip (docs/composer.md).
+  const modelOpt = $derived(provider?.models.find((m) => m.id === thread.model));
+  const levelsOf = $derived(modelOpt?.levels ?? []);
+  const cap = (l: string) => l.charAt(0).toUpperCase() + l.slice(1);
+  const items = $derived<MenuItem[]>([
+    ...providers.flatMap((p) => p.models.map((m) => ({ id: `${p.id}:${m.id}`, label: m.name, sub: p.listed === false ? `${p.name} · models are not listed yet` : p.name, icon: (p.id === "codex" ? "codex" : "spark") as IconName, checked: p.id === thread.provider && m.id === thread.model }))),
+    ...levelsOf.map((l) => ({ id: `level:${l}`, label: `${cap(l)} reasoning`, checked: thread.reasoning === l })),
+  ]);
+  function pickModel(id: string) {
+    if (id.startsWith("level:")) return onreasoning(id.slice(6) || null);
+    const [p, m] = id.split(":") as [ThreadSummary["provider"], string];
+    onprovider(p, m);
+    // A level the new model does not accept is dropped (the provider's own default then applies).
+    const next = providers.find((x) => x.id === p)?.models.find((x) => x.id === m)?.levels ?? [];
+    if (thread.reasoning && !next.includes(thread.reasoning)) onreasoning(null);
+  }
+  type Chip = "attach" | "model" | "perm" | "where";
+  const CHIPS: Chip[] = ["attach", "model", "perm", "where"];
+  /** The model chip's full name, for its tooltip and accessible name when it shows only its icon: a second fact is a comma away, never a dot. */
+  const modelFull = $derived([provider?.name, modelName, thread.reasoning ? `${thread.reasoning} reasoning` : ""].filter(Boolean).join(", "));
+  // A chip holding a choice the person made keeps its words longest (docs/composer.md, decision 6): a model other than the provider's first, a reasoning level, a permission other than Approve for me, a machine other than Automatic.
+  const keepWords = $derived<Chip[]>([
+    ...((thread.reasoning || (provider && !modelOpt?.default && thread.model !== "default")) ? ["model" as const] : []),
+    ...(thread.permission !== "approve" ? ["perm" as const] : []),
+    ...(thread.runsOn.machine !== "Automatic" ? ["where" as const] : []),
+  ]);
   // A search that finds nothing says why when the cause is the missing list, not the words: the server has no list of this provider's models yet (it sends with its default).
   const empty = $derived(providers.some((p) => p.listed === false) ? "This provider's models are not listed yet. It uses its default model." : "Nothing matches.");
   const providerIcon = $derived(thread.provider === "codex" ? "codex" : "spark");
@@ -163,10 +194,46 @@
   const sheet = $derived(shell.narrow || currentForm() === "touch");
   const PERM_ICON = $derived(PERMISSIONS.find((p) => p.id === thread.permission)!.icon);
 
+  // ---- attachments: a sticky row above the text (see docs/threads-ui.md, "Attachments") ----
+  // Pictures and files come from the + chip's menu (a file picker), from a paste and from a drop. Each is uploaded at once (`onattach`), shows its progress, and can be removed; the message is sent with the ones
+  // that are ready, and sending waits for uploads still running. The row is its own part of the box: it stays when the composer folds, and the list above follows the box's height.
+  let attachments = $state<Attachment[]>([]);
+  let attachOpen = $state(false);
+  let attachTrigger = $state<HTMLButtonElement>();
+  let picker = $state<HTMLInputElement>();
+  let dropping = $state(false);
+  let seq = 0;
+  const attachItems: MenuItem[] = [{ id: "photos", label: "Photos", icon: "image" }, { id: "files", label: "Files", icon: "file" }];
+  function pickAttach(id: string) { attachOpen = false; if (picker) { picker.accept = id === "photos" ? "image/*" : ""; picker.click(); } }
+  function addFiles(files: Iterable<File>) {
+    for (const f of files) {
+      const a: Attachment = { id: `a${++seq}`, kind: f.type.startsWith("image/") ? "image" : "file", name: f.name || "pasted file", size: f.size, url: f.type.startsWith("image/") ? URL.createObjectURL(f) : undefined, progress: 0, status: "uploading" };
+      attachments = [...attachments, a];
+      const set = (patch: Partial<Attachment>) => (attachments = attachments.map((x) => (x.id === a.id ? { ...x, ...patch } : x)));
+      onattach(f, (p) => set({ progress: p })).then(() => set({ status: "ready", progress: 1 }), (e: Error) => set({ status: "failed", error: e.message }));
+    }
+    queueMicrotask(() => field?.focus());
+  }
+  function removeAttachment(id: string) {
+    const a = attachments.find((x) => x.id === id);
+    if (a?.url) URL.revokeObjectURL(a.url);
+    attachments = attachments.filter((x) => x.id !== id);
+  }
+  const uploading = $derived(attachments.some((a) => a.status === "uploading"));
+  const ready = $derived(attachments.filter((a) => a.status === "ready"));
+  const canSend = $derived(!uploading && (!!text.trim() || ready.length > 0));
+  const size = (n: number) => (n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : n >= 1024 ? `${Math.round(n / 1024)} KB` : `${n} B`);
+  const filesOf = (dt: DataTransfer | null) => [...(dt?.files ?? [])];
+  function onpaste(e: ClipboardEvent) { const f = filesOf(e.clipboardData); if (f.length) { e.preventDefault(); addFiles(f); } }
+  function ondrop(e: DragEvent) { dropping = false; const f = filesOf(e.dataTransfer); if (f.length) { e.preventDefault(); addFiles(f); } }
+  function ondragover(e: DragEvent) { if (e.dataTransfer?.types.includes("Files")) { e.preventDefault(); dropping = true; } }
+
   function send() {
     const v = text.trim();
-    if (!v) return;
-    const sent = onsend(v);
+    if (!canSend) return;
+    const sent = onsend(v, ready);
+    for (const a of ready) if (a.url) URL.revokeObjectURL(a.url);
+    attachments = attachments.filter((a) => a.status === "failed");
     text = "";
     drafts.delete(thread.id);
     // A send the server refused gives the words back (unless the person has already typed something else).
@@ -174,41 +241,66 @@
   }
 </script>
 
-<Panel class="composer" data-narrow={sheet ? "" : undefined} radius="card" data-ring-host bind:el={panelEl} data-collapsed={open ? undefined : ""} onfocusin={(e) => { if ((e.target as HTMLElement).matches(":focus-visible")) focused = true; }} onfocusout={(e) => { if (e.relatedTarget instanceof Node && panelEl?.contains(e.relatedTarget)) return; queueMicrotask(() => (focused = !!panelEl?.contains(document.activeElement))); }} onpointerdown={press}>
+<Panel class="composer" data-narrow={sheet ? "" : undefined} radius="pane" data-ring-host bind:el={panelEl} data-collapsed={open ? undefined : ""} onfocusin={(e) => { if ((e.target as HTMLElement).matches(":focus-visible")) focused = true; }} onfocusout={(e) => { if (e.relatedTarget instanceof Node && panelEl?.contains(e.relatedTarget)) return; queueMicrotask(() => (focused = !!panelEl?.contains(document.activeElement))); }} onpointerdown={press} {onpaste} {ondrop} {ondragover} ondragleave={() => (dropping = false)} data-dropping={dropping ? "" : undefined}>
   <div class="ctx" data-fold aria-label="Context">
     {#if thread.workspace}<span class="cx"><Icon inline name="folder" /><span>{thread.workspace}</span></span>{/if}
     <ActiveChildren id={thread.id} />
     {#each mentions as m}<span class="cx on"><Icon inline name={m.label === provider?.name || pool.find((p) => p.label === m.label)?.kind === "agent" ? "spark" : pool.find((p) => p.label === m.label)?.kind === "thread" ? "threads" : pool.find((p) => p.label === m.label)?.kind === "item" ? "notes" : "user"} /><span>{m.label}</span><button type="button" class="x" aria-label="Remove {m.label}" onclick={() => dropMention(m)}><Icon inline name="close" /></button></span>{/each}
   </div>
+  {#if attachments.length}
+    <div class="atts" role="list" aria-label="Attachments">
+      {#each attachments as a (a.id)}
+        <div class="att" role="listitem" class:file={a.kind === "file"} class:failed={a.status === "failed"} title={a.status === "failed" ? `${a.name}: ${a.error ?? "not uploaded"}` : `${a.name}, ${size(a.size)}`}>
+          {#if a.url}<img src={a.url} alt="" />{:else}<span class="ico"><Icon name="file" /></span><span class="nm">{a.name}</span><span class="sz">{size(a.size)}</span>{/if}
+          {#if a.status === "uploading"}<span class="prog" role="progressbar" aria-label="Uploading {a.name}" aria-valuemin="0" aria-valuemax="100" aria-valuenow={Math.round(a.progress * 100)} style:--p={a.progress}></span>{/if}
+          {#if a.status === "failed"}<span class="bad" role="status"><Icon name="warning" inline />{a.error ?? "Not uploaded"}</span>{/if}
+          <button type="button" class="rm" aria-label="Remove {a.name}" onclick={() => removeAttachment(a.id)}><Icon name="close" inline /></button>
+        </div>
+      {/each}
+    </div>
+  {/if}
+  <input bind:this={picker} type="file" multiple hidden onchange={(e) => { addFiles([...(e.currentTarget.files ?? [])]); e.currentTarget.value = ""; }} />
   <div class="field" data-fold-row bind:this={fieldBox}>
     <InlineEditor id="composer-field" class="field-input" multiline label="Message" bind:el={field} bind:editor bind:value={text} {marks} triggers={{ kinds: ["mention", "skill"], on: (t) => (trig = t) }} onkeydown={onkey} onsubmit={() => send()} placeholder={running ? "Steer the running turn…" : `Message ${provider?.name ?? "the agent"}…`} />
     {#if (running || parked) && !text.trim()}
       <IconButton icon="stop" label="Stop the turn" tone="tint" onclick={onstop} />
     {:else}
-      <IconButton icon="send" label={running ? "Steer the turn" : "Send message"} tone="accent" disabled={!text.trim()} onclick={send} />
+      <IconButton icon="send" label={running ? "Steer the turn" : "Send message"} tone="accent" disabled={!canSend} onclick={send} />
     {/if}
   </div>
+  <!-- The four chips (docs/composer.md, "Chips and adaptive rows"): the row measures its own room and gives up words in the stated order; every chip is icon and text or icon only, never two facts joined by a dot. -->
   <div class="chips" data-fold>
-    <span class="chip prov">
-      <Pill label="{provider?.name ?? ''} · {modelName}" icon={providerIcon} showLabel glass={false} aria-haspopup="menu" aria-expanded={menuOpen} bind:el={trigger} onclick={() => (menuOpen = !menuOpen)}>
-        <span class="pl">{provider?.name} · {modelName}</span><span class="pm">{modelName}</span>
-      </Pill>
-      <Menu open={menuOpen} {items} {empty} search compact morph label="Provider and model" trigger={trigger} onclose={() => (menuOpen = false)} onpick={(id) => { const [p, m] = id.split(":") as [ThreadSummary["provider"], string]; onprovider(p, m); }} />
-    </span>
-    <span class="chip permc">
-      <Pill label={running ? `${permissionLabel(thread.permission)}, applies to the next turn` : permissionLabel(thread.permission)} icon={PERM_ICON} showLabel glass={false} aria-haspopup="menu" aria-expanded={permOpen} bind:el={permTrigger} onclick={() => (permOpen = !permOpen)}>
-        <span class="perm">{permissionLabel(thread.permission)}</span>
-      </Pill>
-      <Menu open={permOpen} items={permItems} morph label={running ? "Permission mode for the next turn" : "Permission mode"} trigger={permTrigger} onclose={() => (permOpen = false)} onpick={(id) => onpermission(id as Permission)} />
-    </span>
-    <span class="chip where">
-      <Pill label={runsOnLabel(thread.runsOn)} icon="terminal" showLabel glass={false} aria-haspopup="dialog" aria-expanded={whereOpen} bind:el={whereTrigger} onclick={() => (whereOpen = !whereOpen)}>
-        <span class="rl">{thread.runsOn.machine} · {thread.runsOn.mode === "sandboxed" ? "Sandboxed" : "Direct"}</span><span class="rm">{thread.runsOn.machine}</span><span class="mode"><Icon inline name={thread.runsOn.mode === "sandboxed" ? "shield" : "folder"} /></span>
-      </Pill>
-      {#if !sheet}
-        <Popover open={whereOpen} anchor={whereTrigger} morph label="Where it runs" trigger={whereTrigger} onclose={() => (whereOpen = false)}><RunsOnPicker {machines} value={thread.runsOn} onchange={onrunson} /></Popover>
-      {/if}
-    </span>
+    <PillRow ids={CHIPS} drop={["where", "perm", "model"]} keep={keepWords} floor={400} label="Message options">
+      {#snippet pill(id, compact, probe)}
+        {#if probe}
+          <!-- Only measured, never seen or used: no bindings, menus or handlers (the real pill below owns those). -->
+          {#if id === "attach"}<span class="chip"><Pill label="Add photos and files" icon="plus" glass={false} /></span>
+          {:else if id === "model"}<span class="chip"><Pill label={modelFull} icon={providerIcon} showLabel={!compact} glass={false}><span class="lbl">{modelName}</span>{#if thread.reasoning && levelsOf.length}<LevelMark level={thread.reasoning} levels={levelsOf} />{/if}</Pill></span>
+          {:else if id === "perm"}<span class="chip"><Pill label={permissionLabel(thread.permission)} icon={PERM_ICON} showLabel={!compact} glass={false}><span class="lbl">{permissionLabel(thread.permission)}</span></Pill></span>
+          {:else}<span class="chip"><Pill label={runsOnLabel(thread.runsOn)} icon="terminal" showLabel={!compact} glass={false}><span class="lbl">{thread.runsOn.machine}</span>{#if thread.runsOn.mode === "sandboxed"}<Icon inline name="shield" />{/if}</Pill></span>{/if}
+        {:else}
+        {#if id === "attach"}
+          <span class="chip" data-chip="attach"><Pill label="Add photos and files" icon="plus" glass={false} aria-haspopup="menu" aria-expanded={attachOpen} bind:el={attachTrigger} onclick={() => { attachOpen = !attachOpen; }} />
+            <Menu open={attachOpen} items={attachItems} morph label="Add to the message" trigger={attachTrigger} onclose={() => (attachOpen = false)} onpick={pickAttach} /></span>
+        {:else if id === "model"}
+          <span class="chip" data-chip="model"><Pill label={modelFull} icon={providerIcon} showLabel={!compact} glass={false} aria-haspopup="menu" aria-expanded={menuOpen} bind:el={trigger} onclick={() => { menuOpen = !menuOpen; }}>
+            <span class="lbl">{modelName}</span>{#if thread.reasoning && levelsOf.length}<LevelMark level={thread.reasoning} levels={levelsOf} />{/if}
+          </Pill>
+            <Menu open={menuOpen} {items} {empty} search compact morph label="Provider, model and reasoning" trigger={trigger} onclose={() => (menuOpen = false)} onpick={pickModel} /></span>
+        {:else if id === "perm"}
+          <span class="chip" data-chip="perm" class:warn={thread.permission === "full"}><Pill label={running ? `${permissionLabel(thread.permission)}, applies to the next turn` : permissionLabel(thread.permission)} icon={PERM_ICON} showLabel={!compact} glass={false} aria-haspopup="menu" aria-expanded={permOpen} bind:el={permTrigger} onclick={() => { permOpen = !permOpen; }}>
+            <span class="lbl">{permissionLabel(thread.permission)}</span>
+          </Pill>
+            <Menu open={permOpen} items={permItems} morph label={running ? "Permission mode for the next turn" : "Permission mode"} trigger={permTrigger} onclose={() => (permOpen = false)} onpick={(pid) => onpermission(pid as Permission)} /></span>
+        {:else}
+          <span class="chip" data-chip="where"><Pill label={runsOnLabel(thread.runsOn)} icon="terminal" showLabel={!compact} glass={false} aria-haspopup="dialog" aria-expanded={whereOpen} bind:el={whereTrigger} onclick={() => { whereOpen = !whereOpen; }}>
+            <span class="lbl">{thread.runsOn.machine}</span>{#if thread.runsOn.mode === "sandboxed"}<Icon inline name="shield" />{/if}
+          </Pill>
+            {#if !sheet}<Popover open={whereOpen} anchor={whereTrigger} morph label="Where it runs" trigger={whereTrigger} onclose={() => (whereOpen = false)}><RunsOnPicker {machines} value={thread.runsOn} onchange={onrunson} /></Popover>{/if}</span>
+        {/if}
+        {/if}
+      {/snippet}
+    </PillRow>
   </div>
 </Panel>
 
@@ -235,15 +327,27 @@
   /* The caret, the placeholder and the typed text are one box: same font, same line height, same inset, so the caret sits exactly on the text's baseline.
      The height is a whole number of lines plus the vertical padding, never a fixed pixel height that leaves the text off centre. */
   :global(.field-input) { flex: 1; padding: var(--s-3) 0; overflow-y: auto; scrollbar-width: none; font-size: var(--text-ui); min-height: max(calc(1lh + 2 * var(--s-3)), var(--pill-h)); max-height: 9.5rem; }
-    .chips { display: flex; flex-wrap: nowrap; gap: var(--s-2); min-width: 0; padding-right: var(--s-3); padding-top: var(--s-1); }
-  .chip { position: relative; flex: 0 1 auto; min-width: var(--pill-h); }
-  .chip :global(.pill) { max-width: 100%; overflow: hidden; }
-  .pl, .pm, .perm, .rl, .rm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .pm, .rm, .mode { display: none; }
-  .where { flex-shrink: 1; }
-  @container cmp (max-width: 700px) { .pl, .rl { display: none; } .pm, .rm { display: inline; } .mode { display: inline-grid; } }
-  @container cmp (max-width: 500px) { .pm { display: none; } .prov :global(.pill) { padding: 0; } }
-  @container cmp (max-width: 420px) { .rm, .mode { display: none; } .where :global(.pill) { padding: 0; } }
-  @container cmp (max-width: 290px) { .perm { display: none; } .permc :global(.pill) { padding: 0; } }
+    /* The chips row takes the composer's width; `PillRow` measures it. A chip is a quiet pill; Full access wears a warning tint so it is never hidden or mistaken. */
+  .chips { min-width: 0; padding-right: var(--s-3); padding-top: var(--s-1); }
+  .chip { position: relative; flex: none; display: inline-flex; }
+  .chip :global(.pill) { max-width: 100%; }
+  .lbl { white-space: nowrap; }
+  .chip.warn :global(.pill) { color: var(--danger); background: color-mix(in oklab, var(--danger) 14%, transparent); }
+  /* The attachments row: above the text, horizontally scrollable, each item a tile (a picture, or a file's icon and name) with a round remove button at its corner and a progress ring while it uploads. It opens by growing and its tiles fade in after it (the box first, the content a beat later, as in the apps this follows). */
+  .atts { display: flex; gap: var(--s-4); overflow-x: auto; scrollbar-width: none; padding: var(--s-1) var(--s-4) var(--s-3) 0; animation: atts-in var(--dur-base) var(--ease-out); }
+  @keyframes atts-in { from { opacity: 0; translate: 0 var(--s-3); } }
+  .att { position: relative; flex: none; display: grid; grid-auto-flow: column; align-items: center; gap: var(--s-3); height: 64px; min-width: 64px; max-width: 220px; border-radius: var(--r-card); overflow: hidden; background: rgb(var(--ink-rgb) / 0.07); animation: att-in var(--dur-fast) var(--ease-out) var(--dur-base) both; }
+  @keyframes att-in { from { opacity: 0; scale: 0.92; } }
+  .att img { width: 64px; height: 64px; object-fit: cover; display: block; }
+  .att.file { padding: 0 var(--s-9) 0 var(--s-5); color: var(--ink-2); font-size: var(--text-label); }
+  .att .ico { display: grid; color: var(--ink-3); }
+  .att .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 110px; }
+  .att .sz { color: var(--ink-3); font-variant-numeric: tabular-nums; }
+  .att.failed { outline: 1px solid color-mix(in oklab, var(--danger) 60%, transparent); outline-offset: -1px; }
+  .bad { position: absolute; inset: auto 0 0 0; padding: var(--s-1) var(--s-3); font-size: var(--text-section); color: var(--danger); background: color-mix(in oklab, var(--paper) 80%, transparent); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .prog { position: absolute; inset: 0; display: grid; place-items: center; background: rgb(0 0 0 / 0.35); }
+  .prog::before { content: ""; width: 28px; height: 28px; border-radius: 50%; background: conic-gradient(#fff calc(var(--p) * 360deg), rgb(255 255 255 / 0.3) 0); -webkit-mask: radial-gradient(circle, transparent 9px, #000 10px); mask: radial-gradient(circle, transparent 9px, #000 10px); }
+  .rm { position: absolute; top: var(--s-2); right: var(--s-2); display: grid; place-items: center; width: var(--s-8); height: var(--s-8); border-radius: 50%; color: #fff; background: rgb(0 0 0 / 0.55); }
+  :global(.composer[data-dropping]) { outline: 2px dashed var(--accent); outline-offset: -2px; }
   .done { display: flex; justify-content: flex-end; padding: 0 var(--s-5) var(--s-5); }
 </style>

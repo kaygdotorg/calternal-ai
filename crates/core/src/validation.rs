@@ -132,7 +132,8 @@ pub fn is_known_operation(operation: &str) -> bool {
         || request_operation(operation).is_some()
         || matches!(
             operation,
-            "spaces.list"
+            WALLPAPERS_LIST
+                | "spaces.list"
                 | "spaces.create"
                 | "spaces.leave"
                 | "spaces.delete"
@@ -186,6 +187,13 @@ pub fn parse_request(bytes: &[u8]) -> Result<OperationRequest, Error> {
 /// # Errors
 /// Returns invalid input for schema/value violations, too large for oversized Markdown, or not found for unknown operations.
 pub fn validate_operation_input(operation: &str, input: &JsonObject) -> Result<(), Error> {
+    if matches!(
+        operation,
+        crate::MACHINES_ONBOARDING | crate::MACHINES_INSTALL
+    ) {
+        let _: crate::MachineOnboardingInput = decode(input)?;
+        return Ok(());
+    }
     if operation == crate::MACHINES_VERIFY {
         let i: crate::MachineVerifyInput = decode(input)?;
         space(&i.space_id)?;
@@ -228,6 +236,10 @@ pub fn validate_operation_input(operation: &str, input: &JsonObject) -> Result<(
         )?;
     }
     match operation {
+        WALLPAPERS_LIST => {
+            let _: WallpapersListInput = decode(input)?;
+            Ok(())
+        }
         "spaces.list" => {
             let _: SpacesListInput = decode(input)?;
             Ok(())
@@ -424,6 +436,11 @@ pub fn operation_catalog() -> Vec<OperationDescription> {
         }
     }
     let mut catalog = vec![
+        entry::<WallpapersListInput, WallpapersListResult>(
+            WALLPAPERS_LIST,
+            "List built-in wallpapers with Unsplash attribution",
+            false,
+        ),
         entry::<SpacesListInput, SpacesListResult>(
             "spaces.list",
             "List current account memberships",
@@ -509,7 +526,13 @@ pub fn operation_catalog() -> Vec<OperationDescription> {
     catalog.extend(account_input_catalog());
     catalog.extend(REQUEST_OPERATIONS.iter().map(RequestOperation::description));
     catalog.extend(crate::AGENT_OPERATIONS.iter().map(|(id, text, mutates)| {
-        if *id == crate::MACHINES_VERIFY {
+        if *id == crate::MACHINES_INSTALL {
+            entry::<crate::MachineOnboardingInput, crate::MachineInstallResult>(id, text, *mutates)
+        } else if *id == crate::MACHINES_ONBOARDING {
+            entry::<crate::MachineOnboardingInput, crate::MachineOnboardingResult>(
+                id, text, *mutates,
+            )
+        } else if *id == crate::MACHINES_VERIFY {
             entry::<crate::MachineVerifyInput, crate::MachineVerifyResult>(id, text, *mutates)
         } else if *id == crate::AGENT_READINESS {
             entry::<crate::ReadinessInput, crate::ReadinessResult>(id, text, *mutates)

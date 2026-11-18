@@ -396,3 +396,43 @@ describe("checkpoint additions", () => {
     expect((m[3] as { steps: { status: string }[] }).steps[0]!.status).toBe("running");
   });
 });
+
+describe("models, phases and reasoning (docs/threads.md, \"Models, phases and turn history\")", () => {
+  test("the picker's providers come from threads.models: models, the levels each accepts, the default; a server without it says so", async () => {
+    const d = double({ "threads.models": () => ({ providers: [{ id: "calternal-claude-code", name: "Claude Code", default_model: "claude-sonnet-5-5", models: [{ id: "claude-opus-5-5", name: "Opus 5.5", reasoning_levels: ["low", "high"] }, { id: "claude-sonnet-5-5", name: "Sonnet 5.5", reasoning_levels: ["low", "medium", "high"] }, { id: "claude-haiku-5-5", name: "Haiku 5.5" }] }, { id: "some-other-plugin", name: "?", default_model: "x", models: [] }] }) });
+    const p = await d.client.providers();
+    expect(d.ops("threads.models")[0]!.input).toEqual({ space_id: SPACE });
+    expect(p).toHaveLength(1);
+    expect(p[0]).toMatchObject({ id: "claude", name: "Claude Code", listed: true });
+    expect(p[0]!.models.map((m) => [m.id, m.levels ?? null, !!m.default])).toEqual([["claude-opus-5-5", ["low", "high"], false], ["claude-sonnet-5-5", ["low", "medium", "high"], true], ["claude-haiku-5-5", null, false]]);
+    const old = await double({}).client.providers();
+    expect(old[0]).toMatchObject({ listed: false });
+  });
+  test("a send carries the chosen model and reasoning level", async () => {
+    const d = double({ "threads.get": () => thread(md(), "r1"), "threads.send": () => ({ ...thread(md(), "r2"), job: { id: JOB, state: "queued" } }) });
+    d.setEvents(sse([], 20));
+    await d.client.setProvider(T1, "claude", "claude-sonnet-5-5"); await d.client.setReasoning(T1, "high");
+    await d.client.send(T1, "hi", "req");
+    expect(d.ops("threads.send")[0]!.input).toMatchObject({ model: "claude-sonnet-5-5", reasoning: "high" });
+  });
+  test("the job stream's turn phases and reasoning events reach the working row", async () => {
+    const d = double({ "threads.get": () => thread(md(), "r1"), "threads.send": () => ({ ...thread(md(), "r2"), job: { id: JOB, state: "queued" } }) });
+    d.setEvents(sse([
+      ["chunk", { seq: 0, data: { type: "turn_phase", phase: "queued", at_ms: 1 } }],
+      ["chunk", { seq: 1, data: { type: "turn_phase", phase: "starting_sandbox", at_ms: 2 } }],
+      ["chunk", { seq: 2, data: { type: "turn_phase", phase: "thinking", at_ms: 3 } }],
+      ["chunk", { seq: 3, data: { version: 1, seq: 1, event: { type: "reasoning_started" } } }],
+      ["chunk", { seq: 4, data: { version: 1, seq: 2, event: { type: "reasoning_delta", text: "plan " } } }],
+      ["chunk", { seq: 5, data: { version: 1, seq: 3, event: { type: "reasoning_finished", duration_ms: 4200 } } }],
+    ], 100));
+    const got: string[] = [];
+    const ev: ThreadEvents = { onMessage() {}, onStreamStart() {}, onDelta() {}, onStep() {}, onSummary() {}, onPhase: (p) => got.push(`phase ${p}`), onThought: (t) => got.push(`thought ${t.text}${t.done ? ` done ${t.ms}` : ""}`) };
+    await d.client.getThread(T1);
+    d.client.watch(T1, ev);
+    await until(() => d.hasFeed(), "the feed");
+    await d.client.send(T1, "hi", "req");
+    await until(() => got.some((x) => x.includes("done")), "the reasoning to finish");
+    expect(got.filter((x) => x.startsWith("phase")).slice(0, 4)).toEqual(["phase Waiting to start", "phase Waiting to start", "phase Starting the machine", "phase Thinking"]);
+    expect(got.filter((x) => x.startsWith("thought"))).toEqual(["thought ", "thought plan ", "thought  done 4200"]);
+  });
+});

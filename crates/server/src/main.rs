@@ -362,6 +362,8 @@ async fn serve(
     };
     machines.bind_lifecycle(store.content().lifecycle());
     store.bind_machines(&machines);
+    let colocated = std::env::var_os("CALTERNAL_COLOCATED_HANDOFF")
+        .map(|path| calternal_server::machines::colocated::start(machines.clone(), path.into()));
     let mut invite_tasks = tokio::task::JoinSet::new();
     if let Some(service) = calternal_server::auth::Directory::http_auth(&directory) {
         let auth = service.auth.clone();
@@ -477,7 +479,12 @@ async fn serve(
             "Check the Notes Trash retention setting.",
         )
     })?;
-    let app = api::router(state.clone(), web_dir.clone()).layer(axum::Extension(machines.clone()));
+    let wallpapers = api::wallpapers::Wallpapers::from_env(&data_dir)
+        .await
+        .map_err(|e| boot(1, "failed", e.message, DATA_HINT))?;
+    let app = api::router(state.clone(), web_dir.clone())
+        .layer(axum::Extension(machines.clone()))
+        .layer(axum::Extension(wallpapers));
 
     let base_url = if development {
         format!("http://127.0.0.1:{port}")
@@ -530,6 +537,9 @@ async fn serve(
     )
     .with_graceful_shutdown(async move {
         shutdown_signal().await;
+        if let Some(task) = colocated {
+            task.abort();
+        }
         let interrupt = tokio::task::spawn_blocking(move || machines.interrupt_on_shutdown());
         state.workers.shutdown().await;
         if !matches!(interrupt.await, Ok(Ok(()))) {

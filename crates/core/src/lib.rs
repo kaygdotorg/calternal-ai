@@ -12,6 +12,8 @@ mod plugin_wire;
 pub use plugin_wire::*;
 mod spaces;
 pub use spaces::*;
+mod wallpapers;
+pub use wallpapers::*;
 mod secrets;
 pub use secrets::*;
 mod validation;
@@ -39,6 +41,8 @@ pub use account_input::*;
 mod people;
 pub use people::*;
 
+mod provider_sign_in;
+pub use provider_sign_in::*;
 mod requests;
 pub use requests::*;
 

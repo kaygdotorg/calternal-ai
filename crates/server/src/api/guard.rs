@@ -76,7 +76,8 @@ pub(super) async fn guard<D: Directory>(
         {
             break 'resp deny(Error::forbidden("cross-site request denied"));
         }
-        if api && !account_route {
+        let sign_in_wallpaper = super::wallpapers::is_sign_in_request(req.method(), &path);
+        if api && !account_route && !sign_in_wallpaper {
             // The installation travels with the request so plugin work can recheck it.
             let session = if let Some(service) = state.directory.http_auth() {
                 crate::account_http::identify(service, req.headers())
@@ -152,7 +153,12 @@ pub(super) async fn guard<D: Directory>(
         let response = next.run(req).await;
         if api
             && !account_route
-            && response.status().is_success()
+            && !sign_in_wallpaper
+            && (response.status().is_success()
+                || response
+                    .extensions()
+                    .get::<super::wallpapers::ImageResponse>()
+                    .is_some())
             && !(agent_admitted.is_some()
                 && response
                     .extensions()
@@ -197,6 +203,10 @@ pub(super) async fn guard<D: Directory>(
         response
     };
     let mut resp = resp;
+    let cacheable_image = resp
+        .extensions()
+        .get::<super::wallpapers::ImageResponse>()
+        .is_some();
     let h = resp.headers_mut();
     h.insert(
         header::CONTENT_SECURITY_POLICY,
@@ -211,7 +221,7 @@ pub(super) async fn guard<D: Directory>(
         HeaderValue::from_static("no-referrer"),
     );
     h.insert(header::X_FRAME_OPTIONS, HeaderValue::from_static("DENY"));
-    if api {
+    if api && !cacheable_image {
         h.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
     }
     resp

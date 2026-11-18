@@ -144,6 +144,41 @@ bookmark: string, } } | { "Ready": {
  */
 bookmark: string, } } | "ReadinessChanged" | "Reset";
 /**
+ * The enrollment script and the deadline for redeeming its one-time code.
+ */
+
+export type MachineInstallResult = {
+/**
+ * Readable shell script containing the private enrollment code.
+ */
+script: string,
+/**
+ * Unix milliseconds when the code expires if unused.
+ */
+expires_ms: number, };
+/**
+ * No caller-controlled scope or target for machine onboarding and enrollment.
+ */
+
+export type MachineOnboardingInput = Record<string, never>;
+/**
+ * Enrollment and current placement availability for first-owner setup.
+ */
+
+export type MachineOnboardingResult = {
+/**
+ * An active enrollment exists on this installation.
+ */
+attached: boolean,
+/**
+ * The selected machine is connected and can accept a sandbox placement.
+ */
+ready: boolean,
+/**
+ * The selected machine UUID for the owner's explicit verification.
+ */
+machine_id: string | null, };
+/**
  * Select the space for the diagnostic job and the exact enrolled machine.
  */
 
@@ -326,6 +361,79 @@ thread_id: string | null,
  */
 detail: RequestDetail, };
 /**
+ * Select the sandbox and official provider for sign-in.
+ */
+
+export type ProviderSignInStart = {
+/**
+ * Space UUID in which the caller may use this provider.
+ */
+space_id: string,
+/**
+ * Optional saved thread UUID for the private prompt and final notice.
+ */
+thread_id: string | null,
+/**
+ * Installed provider plugin ID.
+ */
+provider_id: string,
+/**
+ * Explicitly selected personal machine UUID.
+ */
+machine_id: string | null,
+/**
+ * Use an entitled anonymous pool machine. Mutually exclusive with machine_id.
+ */
+pool: boolean, };
+/**
+ * Supply a browser authorization code to the original official process.
+ */
+
+export type ProviderSignInAnswer = {
+/**
+ * Account-private request UUID.
+ */
+id: string,
+/**
+ * The short-lived code. Never saved in a request receipt.
+ */
+code: string, };
+/**
+ * Look up one account-private, volatile sign-in request.
+ */
+
+export type ProviderSignInStatus = {
+/**
+ * Account-private request UUID.
+ */
+id: string, };
+/**
+ * Report that the person began composing in a saved thread.
+ */
+
+export type ProviderSignInTyping = {
+/**
+ * Authorized space UUID.
+ */
+space_id: string,
+/**
+ * Saved thread UUID.
+ */
+thread_id: string, };
+/**
+ * A sign-in result never includes the challenge or the browser's answer.
+ */
+
+export type ProviderSignInResult = {
+/**
+ * Account-private request UUID.
+ */
+id: string,
+/**
+ * Pending, done or failed.
+ */
+status: string, };
+/**
  * The information needed to render each pending request.
  */
 
@@ -353,7 +461,31 @@ lifetimes: Array<ApprovalLifetime>,
 /**
  * Exact operation details when raised by an automatic approval check.
  */
-action: JsonObject, } | { "kind": "secret",
+action: JsonObject, } | { "kind": "provider_sign_in",
+/**
+ * Installed provider plugin ID.
+ */
+provider_id: string,
+/**
+ * Provider prompt shown privately to the signed-in person.
+ */
+label: string,
+/**
+ * Provider-owned HTTPS authorization page.
+ */
+url: string | null,
+/**
+ * Code to enter on the provider page for a device flow.
+ */
+display_code: string | null,
+/**
+ * The official command expects an authorization code from the user.
+ */
+needs_code: boolean,
+/**
+ * Unix milliseconds when the pending challenge expires.
+ */
+expires_at_ms: number, } | { "kind": "secret",
 /**
  * Secret name, never the value.
  */
@@ -776,6 +908,10 @@ protocol_version: number,
  * Basename resolved inside the sandbox's PATH; no shell, path or arguments.
  */
 executable: string,
+/**
+ * Whether the executable implements the private `--sign-in` mode.
+ */
+sign_in: boolean,
 /**
  * Default installed-CLI model identifier, at most 128 UTF-8 bytes.
  */
@@ -1828,6 +1964,45 @@ genui_version: 2,
  * Program source, at most 64 KiB of UTF-8.
  */
 source: string, };
+/**
+ * Empty input for the built-in catalog.
+ */
+
+export type WallpapersListInput = Record<string, never>;
+/**
+ * Photo and photographer attribution with Unsplash referral parameters.
+ */
+
+export type WallpaperCredit = {
+/**
+ * Unsplash photo ID used in the same-origin rendition route.
+ */
+id: string,
+/**
+ * Photographer's display name.
+ */
+author: string,
+/**
+ * Photographer's Unsplash profile URL for the credit tooltip.
+ */
+author_url: string,
+/**
+ * Photo's Unsplash page URL for attribution to Unsplash.
+ */
+link: string, };
+/**
+ * Fixed photo catalog returned without contacting the image service.
+ */
+
+export type WallpapersListResult = {
+/**
+ * Photo used when no wallpaper was chosen.
+ */
+default_id: string,
+/**
+ * All eight built-in photos in picker order.
+ */
+wallpapers: Array<WallpaperCredit>, };
 /**
  * Empty input for account-scoped space listing.
  */
