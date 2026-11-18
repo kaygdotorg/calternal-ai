@@ -41,6 +41,7 @@ mod guard;
 mod note_pages;
 mod notes;
 pub(crate) mod people;
+mod plugin_slots;
 mod plugins;
 mod request;
 mod request_action;

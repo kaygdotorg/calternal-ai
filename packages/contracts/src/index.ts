@@ -802,6 +802,66 @@ name: string,
  */
 reasoning_levels: Array<string>, };
 /**
+ * Host-defined mount point for an activated plugin contribution.
+ */
+
+export type PluginSlot = "sidebar_section" | "card_window" | "composer_row" | "message_decoration" | "thread_edge" | "settings_section" | "palette_commands" | "toasts";
+/**
+ * A portable operation-backed contribution or a reference to a sealed web bundle.
+ */
+
+export type PluginSlotRenderer = { "Generated": {
+/**
+ * Plugin-local operation declaration to dispatch with current authority.
+ */
+operation: string, } } | { "Sealed": {
+/**
+ * Relative HTML asset path. The prototype does not serve or mount this asset.
+ */
+asset: string, } } | { "Command": {
+/**
+ * Operation to dispatch with current authority and normal approval checks.
+ */
+operation: string, } };
+/**
+ * One plugin-owned contribution that the host can resolve without running code.
+ */
+
+export type PluginSlotContribution = {
+/**
+ * Stable identifier unique within this manifest.
+ */
+id: string,
+/**
+ * Accessible name and visible label, bounded to 128 UTF-8 bytes.
+ */
+label: string,
+/**
+ * Host mount point, independent of renderer implementation.
+ */
+slot: PluginSlot,
+/**
+ * Renderer or command to resolve.
+ */
+renderer: PluginSlotRenderer, };
+/**
+ * An available contribution resolved for the caller and selected space.
+ */
+
+export type ResolvedPluginSlot = {
+/**
+ * Owning package identifier; pair with the local contribution ID.
+ */
+plugin_id: string,
+/**
+ * Space activation generation to invalidate stale mounts.
+ */
+generation: number,
+/**
+ * Validated declaration; it conveys no authority to dispatch or mount code.
+ */
+contribution: PluginSlotContribution, };
+/**
  * Plugin menu read without running plugin code. Every top-level field is required;
  * only the documented optional fields inside declarations may be omitted.
  */
@@ -811,6 +871,10 @@ export type ManifestV1 = {
  * Machine-side provider adapter; omitted by plugins that offer no provider.
  */
 provider?: ManifestProvider,
+/**
+ * Optional contributions to host slots, validated without running code.
+ */
+slots?: Array<PluginSlotContribution>,
 /**
  * Stable plugin identifier.
  */
@@ -1759,7 +1823,11 @@ export type PluginsListResult = {
 /**
  * Registered plugins and their space-scoped activation state.
  */
-plugins: Array<PluginState>, };
+plugins: Array<PluginState>,
+/**
+ * Available contributions in slot, package ID and local ID order.
+ */
+slots?: Array<ResolvedPluginSlot>, };
 /**
  * Result for `plugins.enable` and `plugins.disable` after the state transition.
  */

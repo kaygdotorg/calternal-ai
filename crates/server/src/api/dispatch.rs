@@ -370,7 +370,8 @@ pub(super) async fn dispatch_checked<D: Directory>(
                     .collect::<Result<Vec<_>, _>>()
             })
             .await?;
-            to_value(PluginsListResult { plugins })
+            let slots = super::plugin_slots::resolve(&state, p.id, space, &plugins).await?;
+            to_value(PluginsListResult { plugins, slots })
         }
         "plugins.enable" | "plugins.disable" => {
             let (fp, input) = super::request::fingerprint(op, input).await?;

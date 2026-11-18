@@ -172,11 +172,19 @@ async fn every_registered_operation_has_an_independent_matrix_row() {
         ("threads.unarchive", Capability::ContentWrite),
         ("threads.delete", Capability::ContentWrite),
     ];
+    // The guide's real session and activation matrix is in conformance/plugin_slot_cases.rs.
+    let guide = [
+        ("calternal-plugin-guide.explain", Capability::SpaceRead),
+        ("calternal-plugin-guide.scaffold", Capability::SpaceRead),
+        ("calternal-plugin-guide.check", Capability::SpaceRead),
+        ("calternal-plugin-guide.publish", Capability::ContentWrite),
+    ];
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../plugins");
     let registry = Registry::load(&root);
     for plugin in registry.plugins() {
         for op in &plugin.manifest.operations {
-            if let Some((_, capability)) = threads.iter().find(|(id, _)| *id == op.id) {
+            if let Some((_, capability)) = threads.iter().chain(&guide).find(|(id, _)| *id == op.id)
+            {
                 assert_eq!(
                     registry.policy(&op.id).unwrap().required,
                     *capability,

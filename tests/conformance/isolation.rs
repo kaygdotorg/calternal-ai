@@ -35,6 +35,7 @@ mod erasure_cases;
 mod live_cases;
 mod notes_cases;
 mod perf_cases;
+mod plugin_slot_cases;
 mod simplify_review_cases;
 mod worker_cases;
 

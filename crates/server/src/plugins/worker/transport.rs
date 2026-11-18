@@ -46,8 +46,8 @@ pub(super) async fn spawn(
         .map_err(|_| Error::unavailable("plugin manifest rejected by worker session"))?;
     let sandbox = backend
         .start(&SandboxSpec {
-            code_directory: (backend.name() != "machine")
-                .then(|| bundle.parent().unwrap_or(Path::new("/")).to_path_buf()),
+            // All backends start from the private copy of the verified bytes.
+            code_directory: None,
             account_id: account.as_uuid(),
             thread_id: uuid::Uuid::new_v4(),
             image: Some(worker::IMAGE.into()),
