@@ -98,8 +98,8 @@ impl<D: Directory> Connection<D> {
         }
         if bytes != [0, 0] {
             self.authorize_member(member, true).await?;
-            if *member.kicked.borrow() {
-                return Err(hidden());
+            if let Some(end) = *member.termination.borrow() {
+                return Err(end.error());
             }
             let (key, lineage, content, account) = (
                 member.key.clone(),
@@ -210,8 +210,8 @@ impl<D: Directory> Connection<D> {
     async fn saved(&mut self, address: &str, id: u64) -> Result<(), Error> {
         let member = self.members.get(address).ok_or_else(closed)?;
         member.lease.wait_durable().await?;
-        if *member.kicked.borrow() {
-            return Err(hidden());
+        if let Some(end) = *member.termination.borrow() {
+            return Err(end.error());
         }
         self.authorize_member(member, false).await?;
         use yrs::encoding::write::Write;

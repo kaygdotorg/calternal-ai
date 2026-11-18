@@ -1,5 +1,8 @@
 //! Per-item room admission, subscriber lifetimes and journal fan-out.
+mod cache;
 mod presence;
+#[cfg(test)]
+mod tests;
 use calternal_content::{Content, RoomSnapshot};
 use calternal_types::{AccountId, Error, SpaceId};
 use std::{
@@ -92,8 +95,25 @@ struct Cache {
 
 struct Participant {
     account: AccountId,
-    kicked: watch::Sender<bool>,
+    termination: watch::Sender<Option<Termination>>,
     presence: Option<(ClientID, AwarenessUpdateEntry)>,
+}
+
+/// Distinguish a revoked grant from a room that can be reopened.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Termination {
+    Closed,
+    AccessRevoked,
+}
+
+impl Termination {
+    /// Map connection termination to its caller-safe reason without I/O.
+    pub(super) fn error(self) -> Error {
+        match self {
+            Self::Closed => closed(),
+            Self::AccessRevoked => super::revoked(super::hidden()),
+        }
+    }
 }
 
 pub(super) struct Room {
@@ -124,11 +144,9 @@ pub(super) struct Preview {
 impl Preview {
     pub(super) fn publish(&self, update: &[u8]) -> Result<(), Error> {
         let participants = self.room.members.lock().unwrap();
-        if participants
-            .get(&self.member)
-            .is_none_or(|member| *member.kicked.borrow())
-        {
-            return Err(Error::forbidden("room access was revoked"));
+        let participant = participants.get(&self.member).ok_or_else(closed)?;
+        if let Some(end) = *participant.termination.borrow() {
+            return Err(end.error());
         }
         self.room.durability.send_modify(|state| {
             state.last += 1;
@@ -193,7 +211,7 @@ impl Drop for Lease {
 pub(super) struct Joined {
     pub(super) lease: Lease,
     pub(super) lineage: String,
-    pub(super) kicked: watch::Receiver<bool>,
+    pub(super) termination: watch::Receiver<Option<Termination>>,
     pub(super) frames: broadcast::Receiver<Arc<Frame>>,
     pub(super) initial: Vec<Vec<u8>>,
     _initial_memory: OwnedSemaphorePermit,
@@ -242,7 +260,11 @@ impl Hub {
         &self.0.memory
     }
 
-    fn room(&self, key: &Key, account: AccountId) -> Result<(Lease, watch::Receiver<bool>), Error> {
+    fn room(
+        &self,
+        key: &Key,
+        account: AccountId,
+    ) -> Result<(Lease, watch::Receiver<Option<Termination>>), Error> {
         let busy = || Error::unavailable("live room capacity is busy; retry shortly");
         let mut rooms = self.0.spaces(key.space);
         let key_in_space = (key.kind.clone(), key.item);
@@ -287,12 +309,12 @@ impl Hub {
             return Err(busy());
         }
         let id = Uuid::new_v4();
-        let (kick, kicked) = watch::channel(false);
+        let (end, termination) = watch::channel(None);
         members.insert(
             id,
             Participant {
                 account,
-                kicked: kick,
+                termination: end,
                 presence: None,
             },
         );
@@ -304,7 +326,7 @@ impl Hub {
                 hub: Arc::downgrade(&self.0),
                 id,
             },
-            kicked,
+            termination,
         ))
     }
 
@@ -315,7 +337,7 @@ impl Hub {
         account: AccountId,
         lineage: Option<&str>,
     ) -> Result<Joined, Error> {
-        let (lease, kicked) = self.room(&key, account)?;
+        let (lease, termination) = self.room(&key, account)?;
         let room = lease.room.clone();
         let frames = room.frames.subscribe();
         let started = room
@@ -365,7 +387,7 @@ impl Hub {
         Ok(Joined {
             lease,
             lineage: cache.lineage.clone(),
-            kicked,
+            termination,
             frames,
             initial,
             _initial_memory: initial_memory,
@@ -388,7 +410,9 @@ impl Hub {
         if let Some(room) = room {
             for member in room.members.lock().unwrap().values() {
                 if member.account == account {
-                    member.kicked.send_replace(true);
+                    member
+                        .termination
+                        .send_replace(Some(Termination::AccessRevoked));
                 }
             }
         }
@@ -502,58 +526,6 @@ impl Room {
         }));
         Ok(())
     }
-
-    async fn follow(
-        self: Arc<Self>,
-        hub: Weak<Inner>,
-        content: Arc<Content>,
-        cache: watch::Sender<Option<Arc<Cache>>>,
-        (_journal, mut events): (
-            calternal_store::SpaceStore,
-            broadcast::Receiver<Arc<calternal_store::JournalEntry>>,
-        ),
-    ) {
-        let mut idle = Instant::now() + IDLE;
-        let mut durability = self.durability.subscribe();
-        loop {
-            if durability.borrow_and_update().failed {
-                break;
-            }
-            let vacant = self.members.lock().unwrap().is_empty();
-            tokio::select! {
-                _ = durability.changed() => {}
-                _ = self.activity.notified() => { idle = Instant::now() + IDLE; }
-                _ = tokio::time::sleep_until(idle), if vacant => {
-                    if hub.upgrade().is_none_or(|hub| hub.evict_empty(&self)) { break; }
-                    idle = Instant::now() + IDLE;
-                }
-                entry = events.recv() => {
-                    match entry {
-                        Ok(entry) if entry.item != self.key.item.to_string() => continue,
-                        Err(broadcast::error::RecvError::Closed) => break,
-                        _ => {}
-                    }
-                    let content = content.clone();
-                    let key = self.key.clone();
-                    let Ok(snapshot) = disk(move || content.room_snapshot(key.space, &key.kind, key.item)).await else { break };
-                    let old = cache.borrow().clone().expect("active cache");
-                    if old.lineage != snapshot.lineage { break; }
-                    if old.state == snapshot.update { continue; }
-                    let Ok(next) = Cache::new(snapshot, &self.memory) else { break };
-                    let Ok(update) = update_since(&next.state, &old.state) else { break };
-                    cache.send_replace(Some(Arc::new(next)));
-                    if self.send(update).is_err() { break; }
-                }
-            }
-        }
-        cache.send_replace(None);
-        for member in self.members.lock().unwrap().values() {
-            member.kicked.send_replace(true);
-        }
-        if let Some(hub) = hub.upgrade() {
-            hub.remove_closed(&self);
-        }
-    }
 }
 
 impl Inner {
@@ -620,59 +592,4 @@ pub(super) async fn disk<T: Send + 'static>(
     crate::blocking::spawn(operation)
         .await
         .map_err(|_| closed())?
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn a_space_admits_32_rooms_with_32_participants_each() {
-        let hub = Hub::default();
-        let space = SpaceId::new();
-        let account = AccountId::new();
-        let mut retained = Vec::new();
-        for _ in 0..ROOMS_PER_SPACE {
-            let key = Key {
-                space,
-                kind: "documents".into(),
-                item: Uuid::new_v4(),
-            };
-            for _ in 0..PARTICIPANTS {
-                retained.push(hub.room(&key, account).unwrap().0);
-            }
-            assert!(hub.room(&key, account).is_err());
-        }
-        let extra = Key {
-            space,
-            kind: "documents".into(),
-            item: Uuid::new_v4(),
-        };
-        assert!(hub.room(&extra, account).is_err());
-        assert_eq!(retained.len(), 1_024);
-        drop(retained);
-        assert!(hub.room(&extra, account).is_ok());
-    }
-
-    #[tokio::test]
-    async fn last_grant_eviction_fences_preview_for_just_the_affected_account() {
-        let hub = Hub::default();
-        let alice = AccountId::new();
-        let bob = AccountId::new();
-        let key = Key {
-            space: SpaceId::new(),
-            kind: "documents".into(),
-            item: Uuid::new_v4(),
-        };
-        let (alice, mut cut) = {
-            let (lease, kicked) = hub.room(&key, alice).unwrap();
-            hub.evict_item_account(key.space, &key.kind, key.item, alice);
-            (lease, kicked)
-        };
-        let (_bob, other) = hub.room(&key, bob).unwrap();
-        cut.changed().await.unwrap();
-        assert!(*cut.borrow());
-        assert!(!*other.borrow());
-        assert!(alice.preview().publish(&[0, 0]).is_err());
-    }
 }

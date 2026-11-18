@@ -6,7 +6,7 @@ mod wire;
 
 use access::Proof;
 pub(crate) use hub::Hub;
-use hub::{Key, Lease, closed, disk};
+use hub::{Key, Lease, Termination, closed, disk};
 
 use crate::{
     api::Shared,
@@ -126,7 +126,7 @@ struct Member {
     held: Option<u64>,
     check: u64,
     relay: JoinHandle<()>,
-    kicked: watch::Receiver<bool>,
+    termination: watch::Receiver<Option<Termination>>,
 }
 
 impl Drop for Member {
@@ -272,13 +272,13 @@ impl<D: Directory> Connection<D> {
         let address = address(room, membership);
         let bind = address.clone();
         let tx = self.event_tx.clone();
-        let kicked = joined.kicked.clone();
-        let (mut recv, mut kick) = (joined.frames, joined.kicked);
+        let termination = joined.termination.clone();
+        let (mut recv, mut ended) = (joined.frames, joined.termination);
         let relay = tokio::spawn(async move {
             loop {
                 tokio::select! {
                     biased;
-                    _ = kick.changed() => break,
+                    _ = ended.changed() => break,
                     event = recv.recv() => match event {
                         Ok(frame) => {
                             if tx.try_send(Event::Packet { address: bind.clone(), frame }).is_err() {
@@ -305,7 +305,7 @@ impl<D: Directory> Connection<D> {
                 held: None,
                 check: 0,
                 relay,
-                kicked,
+                termination,
             },
         );
         if let Err(error) = self.authorize_member(&self.members[&address], false).await {
@@ -334,12 +334,12 @@ impl<D: Directory> Connection<D> {
         let mut removed = Vec::new();
         let mut scan = None;
         for (address, member) in &self.members {
-            if *member.kicked.borrow() {
+            if member.termination.borrow().is_some() {
                 removed.push(address.clone());
             } else if scan.is_none()
                 && member.lease.file_scan_due()
                 && self.authorize_member(member, true).await.is_ok()
-                && !*member.kicked.borrow()
+                && member.termination.borrow().is_none()
                 && member.lease.claim_file_scan()
             {
                 scan = Some(member.key.clone());
@@ -378,7 +378,8 @@ impl<D: Directory> Connection<D> {
     async fn left(&mut self, address: &str, error: Option<&Error>) -> Result<(), Error> {
         self.reassembly.discard(address);
         if let Some(member) = self.members.remove(address) {
-            let revoked = *member.kicked.borrow() || error.is_some_and(access_revoked);
+            let revoked = *member.termination.borrow() == Some(Termination::AccessRevoked)
+                || error.is_some_and(access_revoked);
             drop(member);
             let (room, membership) = unaddress(address).ok_or_else(closed)?;
             let mut control = json!({"type":"left","room":room,"membership":membership});
@@ -400,7 +401,7 @@ impl<D: Directory> Connection<D> {
                 hub.item_authority_epoch(),
                 hub.activation_epoch(member.key.space),
             );
-            if *member.kicked.borrow() {
+            if member.termination.borrow().is_some() {
                 return self.left(address, None).await;
             }
             if refresh && let Err(error) = self.authorize_member(member, false).await {
@@ -443,4 +444,8 @@ fn access_revoked(error: &Error) -> bool {
         .as_ref()
         .and_then(|details| details["reason"].as_str())
         == Some(ACCESS_REVOKED)
+}
+
+fn revoked(error: Error) -> Error {
+    error.with_details(json!({"reason":ACCESS_REVOKED}))
 }

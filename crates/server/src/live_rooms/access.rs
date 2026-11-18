@@ -178,18 +178,18 @@ impl<D: Directory> Connection<D> {
         write: bool,
     ) -> impl Future<Output = Result<(), Error>> + use<D> {
         let (host, session, account) = (self.host.clone(), self.session.clone(), self.account);
-        let (key, plugin, generation, proof, kicked) = (
+        let (key, plugin, generation, proof, termination) = (
             member.key.clone(),
             member.plugin.clone(),
             member.generation,
             member.proof.clone(),
-            member.kicked.clone(),
+            member.termination.clone(),
         );
         async move {
             let deadline = Instant::now() + WAIT;
             loop {
-                if *kicked.borrow() {
-                    return Err(revoked(hidden()));
+                if let Some(end) = *termination.borrow() {
+                    return Err(end.error());
                 }
                 let item_epoch = host.store.live_rooms().item_authority_epoch();
                 let plugin_epoch = host.store.live_rooms().activation_epoch(key.space);
@@ -199,7 +199,7 @@ impl<D: Directory> Connection<D> {
                     if !session.is_live(&host.directory).await {
                         return Err(Error::unauthorized("room session ended"));
                     }
-                    if write {
+                    let access = if write {
                         CurrentAuthority::edit(host.clone(), key.clone(), account)
                             .await
                             .map_err(|error| {
@@ -208,14 +208,23 @@ impl<D: Directory> Connection<D> {
                                 } else {
                                     error
                                 }
-                            })?;
+                            })
                     } else if !proof.has_view(item_epoch) {
                         CurrentAuthority::view(host.clone(), key.clone(), account)
                             .await
                             .map_err(|error| match error.code {
                                 ErrorCode::Forbidden | ErrorCode::NotFound => revoked(error),
                                 _ => error,
-                            })?;
+                            })
+                    } else {
+                        Ok(())
+                    };
+                    if let Err(error) = access {
+                        if host.store.live_rooms().item_authority_epoch() != item_epoch {
+                            wait_for_revision(deadline).await?;
+                            continue;
+                        }
+                        return Err(error);
                     }
                     if proof.activation.load(Ordering::Relaxed) != plugin_epoch {
                         let (host, space, plugin) = (host.clone(), key.space, plugin.clone());
@@ -229,8 +238,8 @@ impl<D: Directory> Connection<D> {
                         })
                         .await?;
                     }
-                    if *kicked.borrow() {
-                        return Err(revoked(hidden()));
+                    if let Some(end) = *termination.borrow() {
+                        return Err(end.error());
                     }
                     if host
                         .registry
@@ -256,10 +265,6 @@ impl<D: Directory> Connection<D> {
             }
         }
     }
-}
-
-fn revoked(error: Error) -> Error {
-    error.with_details(json!({"reason":ACCESS_REVOKED}))
 }
 
 async fn wait_for_revision(deadline: Instant) -> Result<(), Error> {
