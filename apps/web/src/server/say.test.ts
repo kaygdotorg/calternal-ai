@@ -11,8 +11,8 @@ describe("say: failures in plain words with the next step", () => {
     expect(say(new ServerError("unavailable", "x"))).toMatch(/keeps trying/);
   });
   test("sign-in failures: wrong or used code, closed prompt, unknown passkey", () => {
-    expect(say(new ServerError("setup_token_invalid", "x"))).toMatch(/wrong or already used/);
-    expect(say(new ServerError("invite_invalid", "x"))).toMatch(/wrong or already used/);
+    expect(say(new ServerError("setup_token_invalid", "x"))).toMatch(/wrong or has expired.*setup\.token file.*each time the server starts/);
+    expect(say(new ServerError("invite_invalid", "x"))).toMatch(/Ask whoever invited you/);
     expect(say(new ServerError("cancelled", "x"))).toMatch(/closed or timed out/);
     expect(say(new ServerError("passkey_failed", "x"))).toMatch(/not recognised/);
   });

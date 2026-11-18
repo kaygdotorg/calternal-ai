@@ -30,10 +30,12 @@ for (const scheme of ["light", "dark"]) {
 { // desktop shell
   const { ctx, page } = await fresh(DEVICES.desktop);
   await page.waitForSelector("html[data-ready]"); await page.waitForTimeout(1200);
-  const caps = await page.locator('[aria-label="Apps"] [role="tab"], [aria-label="Apps"] button').allInnerTexts();
-  ok(caps.map((t) => t.trim()).join(",") === "Threads,Notes,Settings", "the app switcher is a capsule of three labels under the card", caps.join(","));
-  const box = await page.evaluate(() => { const c = document.querySelector('[aria-label="Apps"]').getBoundingClientRect(), m = document.querySelector(".mid-card").getBoundingClientRect(); return c.bottom <= m.bottom + 1 && c.top > m.top + m.height / 2; });
-  ok(box, "it is at the bottom of the middle card");
+  const caps = await page.locator('aside.side footer nav[aria-label="Apps"] a').evaluateAll((l) => l.map((e) => e.getAttribute("aria-label")));
+  ok(caps.join(",") === "Threads,Notes,Settings", "the app switcher is an icon-only capsule of the apps in the sidebar's footer", caps.join(","));
+  ok((await page.locator('aside.side footer nav[aria-label="Apps"]').innerText()).trim() === "", "…with icons only, no words");
+  const order = await page.evaluate(() => [...document.querySelectorAll("aside.side footer > *")].map((e) => e.matches(".avatar") ? "avatar" : e.querySelector('nav[aria-label="Apps"]') ? "apps" : "search"));
+  ok(order.join(",") === "avatar,apps,search", "footer order: account picture, app capsule, search", order.join(","));
+  ok((await page.locator('.mid-card nav[aria-label="Apps"]').count()) === 0, "there is no capsule under the middle card");
   await page.getByRole("button", { name: "Hide the sidebar" }).click(); await page.waitForTimeout(400);
   ok(await page.getByRole("button", { name: "Show the sidebar" }).isVisible(), "with the sidebar closed there is a button to show it");
   await page.keyboard.press("Control+Backslash"); await page.waitForTimeout(400);
@@ -43,8 +45,10 @@ for (const scheme of ["light", "dark"]) {
   await page.getByRole("button", { name: "Thread actions" }).click();
   ok(await page.getByRole("menuitem", { name: "Show side panel" }).isVisible(), "the way back is Show side panel in the three-dot menu");
   await page.getByRole("menuitem", { name: "Show side panel" }).click(); await page.waitForTimeout(300);
-  await page.getByRole("button", { name: /Account and settings/ }).click(); await page.waitForTimeout(500);
-  ok(page.url().includes("/settings/") && (await page.locator('[role="dialog"]').count()) === 0, "the account picture opens the Settings app, not a sheet", page.url());
+  await page.getByRole("button", { name: /Account, spaces and settings/ }).click(); await page.waitForTimeout(400);
+  ok((await page.getByRole("menuitemradio", { name: "Infra" }).count()) === 1 && (await page.getByRole("menuitem", { name: "Settings" }).count()) === 1, "the account picture opens a menu with the spaces and Settings");
+  await page.getByRole("menuitem", { name: "Settings" }).click(); await page.waitForTimeout(500);
+  ok(page.url().includes("/settings/") && (await page.locator('[role="dialog"]').count()) === 0, "…and Settings opens the Settings app, not a sheet", page.url());
   await page.goto(BASE + "/settings/appearance?sheet=1&firstrun=0"); await page.waitForSelector("html[data-ready]"); await page.waitForTimeout(800);
   ok((await page.locator('[role="dialog"]').count()) === 0 && (await page.getByText("Wallpaper and fonts").count()) > 0, "wallpaper and fonts are a page of the Settings app on a desktop, not a sheet");
   await ctx.close();

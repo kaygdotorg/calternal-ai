@@ -40,7 +40,7 @@ try {
   // A wrong setup code is refused in plain words and the form stays.
   await page.fill('input[name="token"]', "not-the-code"); await page.fill('input[name="name"]', "Test Owner");
   await page.getByRole("button", { name: "Create passkey" }).click();
-  await page.getByText(/wrong or already used/).waitFor({ timeout: 8000 });
+  await page.getByText(/wrong or has expired.*setup\.token/).waitFor({ timeout: 8000 });
   check(true, "wrong setup code: plain words and the form stays");
   await page.fill('input[name="token"]', setupToken);
   await page.fill('input[name="name"]', "Test Owner");

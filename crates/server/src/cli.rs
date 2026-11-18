@@ -142,6 +142,15 @@ pub(super) enum Cmd {
         )]
         bookmarks: Option<PathBuf>,
     },
+    /// Issue a fresh first-owner code through the running server.
+    SetupCode {
+        /// The running server's appdata directory.
+        #[arg(long)]
+        appdata: PathBuf,
+        /// The installation UUID configured for the running server.
+        #[arg(long, env = "CALTERNAL_INSTALLATION_ID")]
+        installation_id: String,
+    },
     /// Serve Calternal. Listens on loopback by default.
     #[command(
         about = "Start the development-preview server",

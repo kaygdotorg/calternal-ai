@@ -14,6 +14,7 @@ pub mod erasure;
 pub mod fault;
 pub mod machines;
 mod notes;
+pub mod owner_setup;
 pub mod plugins;
 #[cfg(feature = "rebuild-probe")]
 pub mod rebuild_probe;
