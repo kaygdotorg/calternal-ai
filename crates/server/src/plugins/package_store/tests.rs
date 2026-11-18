@@ -81,3 +81,73 @@ fn startup_reuses_verified_current_and_retained_workers_and_prunes_stale_files()
     );
     assert_eq!(fs::read_to_string(outside).unwrap(), expected);
 }
+
+#[test]
+fn provider_registration_migrates_without_changing_installed_package() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("installed-plugins.sqlite3");
+    let db = Connection::open(path).unwrap();
+    let baseline = calternal_store::migrations::Schema::new(
+        "installed-plugins.sqlite3",
+        1,
+        &[PACKAGE_SCHEMA],
+        &[],
+    );
+    calternal_store::migrations::migrate(&db, baseline).unwrap();
+    let package = Package {
+        manifest: host::parse_manifest(include_bytes!(
+            "../../../../../plugins/calternal-claude-code/manifest.json"
+        ))
+        .unwrap(),
+        worker: None,
+    };
+    let archive = package.archive().unwrap();
+    let checksum = package.checksum().unwrap();
+    db.execute(
+        "INSERT INTO installed_plugins VALUES (7, ?1, ?2, ?3, 1, 4)",
+        params![package.manifest.id, &archive, &checksum],
+    )
+    .unwrap();
+    calternal_store::migrations::migrate_release(&db, UPGRADE_SCHEMA, true).unwrap();
+
+    let registration: (String, String) = db
+        .query_row(
+            "SELECT id, login_command FROM provider_runtime",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(
+        registration,
+        (package.manifest.id, "claude auth login".into())
+    );
+    let policy = provider_runtime::SignInPolicy::read(dir.path(), &registration.0)
+        .unwrap()
+        .unwrap();
+    assert!(policy.allows("https://claude.ai/oauth/authorize?state=fixture", true));
+    assert!(!policy.allows("https://claude.ai/oauth/authorize?state=fixture", false));
+    assert!(!policy.allows("http://claude.ai/oauth/authorize", true));
+    assert!(!policy.allows("https://claude.ai.example.org/oauth/authorize", true));
+    assert!(!policy.allows("https://claude.ai/oauth/authorize/other", true));
+
+    let installed: (i64, Vec<u8>, String, bool, i64) = db
+        .query_row(
+            "SELECT revision, archive, checksum, default_enabled, approval FROM installed_plugins",
+            [],
+            |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                ))
+            },
+        )
+        .unwrap();
+    assert_eq!(installed, (7, archive, checksum, true, 4));
+    assert_eq!(
+        calternal_store::migrations::inspect(&db, baseline).unwrap(),
+        2
+    );
+}

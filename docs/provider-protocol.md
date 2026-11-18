@@ -79,7 +79,10 @@ machine. `requests.list` carries the private `provider_sign_in` challenge.
 `provider.sign_in.answer` supplies a code, `provider.sign_in.status` reads the
 result, and `provider.sign_in.typing` offers sign-in again when a failed turn's
 owner resumes composing. A pending request expires after 10 minutes. The
-private machine process has its own timeout. The server keeps challenge data
+private machine process has its own timeout. The host validates the HTTPS
+origin and path against the installed provider's operator-approved registration.
+A device challenge sets `needs_code: false` and supplies the display code
+for the user to enter on the provider's page. The server keeps challenge data
 in memory and exposes only the current person's requests.
 
 Normal execution uses a home per space and account. The Claude Code adapter

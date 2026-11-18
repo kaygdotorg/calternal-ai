@@ -6,6 +6,7 @@ use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 use serde::{Deserialize, Serialize};
 use std::{fs, io::Read, path::Path, time::Duration};
 
+pub(crate) mod provider_runtime;
 mod worker_cache;
 
 const MAX_WORKER: usize = calternal_machine::sandbox::worker::MAX_SOURCE_BYTES;
@@ -571,7 +572,7 @@ pub(crate) const UPGRADE_SCHEMA: calternal_store::migrations::Schema<'_> =
         "installed-plugins.sqlite3",
         1,
         &[PACKAGE_SCHEMA],
-        &[],
+        &[provider_runtime::V2],
     );
 
 #[cfg(test)]

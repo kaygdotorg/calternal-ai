@@ -20,6 +20,7 @@ pub(super) struct Target {
     pub machine: Uuid,
     pub provider: String,
     pub label: String,
+    pub policy: crate::plugins::package_store::provider_runtime::SignInPolicy,
     pub retry: bool,
 }
 

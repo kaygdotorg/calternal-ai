@@ -159,7 +159,7 @@ async fn relay<D: Directory>(
                         if frame.len() + bytes.len() > PROMPT_BYTES { return Err(failed()); }
                         frame.extend(bytes);
                         if frame.ends_with(b"\n") {
-                            let prompt = parse(&frame)?;
+                            let prompt = parse(&frame, &target.policy)?;
                             frame.clear();
                             prompted = true;
                             state.inputs.sign_ins.access(account, |entries| {
@@ -175,8 +175,9 @@ async fn relay<D: Directory>(
                     if exit.code != Some(0) || !frame.is_empty() { return Err(failed()); }
                     let svc = machines.clone();
                     let (machine, provider) = (target.machine, target.provider.clone());
+                    let sign_in_command = target.policy.command.clone();
                     return blocking(move || svc.record_check(account, lease, machine, provider, ProviderCheck{
-                        installed:true, signed_in:true, sign_in_command: "claude auth login".into(),
+                        installed:true, signed_in:true, sign_in_command,
                     })).await;
                 }
             }
@@ -184,24 +185,15 @@ async fn relay<D: Directory>(
     }
 }
 
-fn parse(bytes: &[u8]) -> Result<Prompt, Error> {
+fn parse(
+    bytes: &[u8],
+    policy: &crate::plugins::package_store::provider_runtime::SignInPolicy,
+) -> Result<Prompt, Error> {
     let prompt: Prompt = serde_json::from_slice(bytes).map_err(|_| failed())?;
-    let valid_url = |raw: &str| {
-        raw.parse::<axum::http::Uri>().is_ok_and(|url| {
-            url.scheme_str() == Some("https")
-                && matches!(
-                    url.authority().map(|a| a.as_str()),
-                    Some(
-                        "claude.ai"
-                            | "claude.com"
-                            | "platform.claude.com"
-                            | "console.anthropic.com"
-                    )
-                )
-                && url.path() == "/oauth/authorize"
-        })
-    };
-    if !prompt.url.as_deref().is_some_and(valid_url)
+    if !prompt
+        .url
+        .as_deref()
+        .is_some_and(|url| policy.allows(url, prompt.needs_code))
         || prompt.display_code.as_deref().is_some_and(|code| {
             code.len() > 64 || !code.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
         })
