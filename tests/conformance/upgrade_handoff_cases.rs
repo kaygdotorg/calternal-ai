@@ -28,6 +28,7 @@ fn upgrade_command(f: &Fixture, args: &[&str]) -> Command {
     command
 }
 
+#[track_caller]
 fn ok(output: std::process::Output) -> Value {
     assert!(
         output.status.success(),
@@ -225,6 +226,10 @@ async fn full_intent_replays_both_sides_of_cutover_through_the_pinned_binary() {
     assert_eq!(ok(upgrade(&f, &["status"]))["phase"], "copying");
     ok(upgrade(&f, &["recover"]));
     assert_eq!(ok(upgrade(&f, &["status"]))["phase"], "none");
+    assert_eq!(
+        std::fs::read_link(&path).unwrap(),
+        std::path::Path::new(target)
+    );
 
     crash(&prepare, "upgrade_intent");
     assert_eq!(ok(upgrade(&f, &["status"]))["phase"], "preparing");

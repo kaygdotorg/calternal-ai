@@ -175,24 +175,28 @@ impl Deployment {
         let Some(mut intent) = self.read()? else {
             return Ok(None);
         };
-        if intent.phase == Phase::Committed {
-            return Err(io::Error::other(
-                "the committed upgrade cannot restore old bytes",
-            ));
+        match intent.phase {
+            Phase::Committed => {
+                return Err(io::Error::other(
+                    "the committed upgrade cannot restore old bytes",
+                ));
+            }
+            Phase::Preparing => {
+                if let Some(entries) = &intent.entries {
+                    full::restore(self, entries)?;
+                    intent.make_full();
+                } else {
+                    self.restore_files(&intent)?;
+                    intent.files.clear();
+                }
+                hit(FaultPoint::UpgradeRestored);
+                intent.phase = Phase::Copying;
+                self.publish(&mut intent)?;
+            }
+            // Copying has no complete manifest. Only private backup bytes
+            // can be discarded, including after an interrupted restore cleanup.
+            Phase::Copying => {}
         }
-        let full = intent.entries.is_some();
-        if let Some(entries) = &intent.entries {
-            full::restore(self, entries)?;
-        } else {
-            self.restore_files(&intent)?;
-        }
-        hit(FaultPoint::UpgradeRestored);
-        intent.phase = Phase::Copying;
-        intent.files.clear();
-        if full {
-            intent.make_full();
-        }
-        self.publish(&mut intent)?;
         full::discard(self)?;
         let path = self.roots.appdata.join(INTENT);
         intent::remove(&path)?;

@@ -106,6 +106,37 @@ fn committed_upgrade_keeps_new_acknowledgements() {
 
 #[cfg(target_os = "linux")]
 #[test]
+fn recovering_an_incomplete_full_copy_keeps_the_live_roots() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path();
+    let deployment = TestDeployment::new(root);
+    put(root, "appdata/system/auth.db", b"live authority");
+    put(root, "ssd/work/file", b"live workspace");
+    put(root, "ssd/.calternal-upgrade/0", b"partial backup");
+
+    let mut intent = Intent::copying(
+        deployment.0.installation,
+        "previous".into(),
+        "candidate".into(),
+    );
+    intent.make_full();
+    deployment.0.publish(&mut intent).unwrap();
+
+    assert_eq!(deployment.restore().unwrap().as_deref(), Some("previous"));
+    assert_eq!(
+        std::fs::read(root.join("appdata/system/auth.db")).unwrap(),
+        b"live authority"
+    );
+    assert_eq!(
+        std::fs::read(root.join("ssd/work/file")).unwrap(),
+        b"live workspace"
+    );
+    assert!(!root.join("ssd").join(COPY_DIR).exists());
+    assert!(deployment.0.read().unwrap().is_none());
+}
+
+#[cfg(target_os = "linux")]
+#[test]
 fn full_restore_preserves_link_bytes_and_never_writes_through_a_link() {
     use std::os::unix::ffi::OsStrExt;
     use std::os::unix::fs::{MetadataExt, symlink};
