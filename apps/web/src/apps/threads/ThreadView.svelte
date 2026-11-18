@@ -27,15 +27,38 @@
   let bottomEl = $state<HTMLElement>();
   let bottomH = $state(160);
   let barH = $state(52);
-  // The list's insets follow the floating bars: the header's height token and the composer's measured height (it grows as the field does).
+  // The list's bottom inset follows the height of what floats under it (the composer, with its notices and the request bar), as measured: that is where the last message ends. A list that was at the bottom
+  // stays at the bottom when that height changes (the composer growing a line, a bar appearing, the composer expanding): the content moves up with it, as in ChatGPT's and Claude's apps (the owner's
+  // recordings), not a gap left behind. When the composer expands or collapses (`cmp-fold`, composer's morph) the content also slides by the difference over the same time and curve, as a transform of the
+  // list's content: the scroll position changes once, the transform brings the content from where it was to where it is, and nothing is laid out per frame.
   $effect(() => {
     if (!bottomEl) return;
-    // The list reserves the composer's expanded height whatever state it is in: the rows that are folded away (`data-fold`) still count at their natural height, so focusing or leaving the composer
-    // never moves the messages. Read after layout, once per frame of the morph; the number does not change, so nothing re-renders.
-    const folded = () => { let n = 0; for (const e of bottomEl!.querySelectorAll<HTMLElement>("[data-fold] > *")) n += Math.max(0, e.scrollHeight - e.getBoundingClientRect().height); return n; };
-    const ro = new ResizeObserver(() => { const h = Math.ceil(bottomEl!.getBoundingClientRect().height + folded()); if (h !== bottomH) bottomH = h; });
-    ro.observe(bottomEl);
-    return () => ro.disconnect();
+    const el = bottomEl;
+    const feed = () => listEl?.querySelector<HTMLElement>("[role=feed]") ?? null;
+    const settle = (h: number, morph?: { ms: number; easing: string }) => {
+      const f = feed(); const d = h - bottomH;
+      if (d === 0) return;
+      const pinned = !!f && f.scrollHeight - f.scrollTop - f.clientHeight < 24;
+      bottomH = h;
+      if (!f || !pinned) return;
+      // After the list has taken the new inset (its state flush is a microtask scheduled by the line above).
+      queueMicrotask(() => {
+        f.scrollTop = f.scrollHeight;
+        if (morph && Math.abs(d) > 1) f.querySelector(".sizer")?.animate([{ transform: `translateY(${d}px)` }, { transform: "none" }], { duration: morph.ms, easing: morph.easing });
+      });
+    };
+    const ro = new ResizeObserver(() => settle(Math.ceil(el.getBoundingClientRect().height)));
+    const onfold = (e: Event) => {
+      const d = (e as CustomEvent<{ animate: boolean; ms: number; easing: string }>).detail;
+      const h = Math.ceil(el.getBoundingClientRect().height);
+      const moved = h - bottomH;
+      // What sits above the composer (the request bar, the notices) moves by the same amount in the one layout; it is played from where it was, so a press that began on it still lands on it.
+      if (d.animate && Math.abs(moved) > 1) for (const n of el.querySelectorAll<HTMLElement>(".inner > :not(.composer)")) n.animate([{ transform: `translateY(${moved}px)` }, { transform: "none" }], { duration: d.ms, easing: d.easing });
+      settle(h, d.animate ? d : undefined);
+    };
+    ro.observe(el);
+    el.addEventListener("cmp-fold", onfold);
+    return () => { ro.disconnect(); el.removeEventListener("cmp-fold", onfold); };
   });
   $effect(() => {
     const read = () => (barH = Math.round(cssPx("--bar-h", 52) + cssPx("--safe-top", 0)));
