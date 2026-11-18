@@ -20,6 +20,22 @@ async fn linked_rename_batches_are_undoable_by_job_id() {
     for i in 0..12 {
         sources.push(create(&format!("Source {i}"), "[authored](<Target.md#^anchor>)").await);
     }
+    let stale = restored_revision(&f, &root).await;
+    f.op(
+        2,
+        "notes.update",
+        json!({"space_id":space,"id":root,"base_revision":stale,"markdown":"# Target\n\nUpdated original"}),
+    )
+    .await
+    .ok();
+    let rejected = f
+        .op(
+            2,
+            "notes.rename",
+            json!({"id":root,"base_revision":stale,"title":"Retitled"}),
+        )
+        .await;
+    assert_eq!(rejected.status, 409);
     let rename =
         json!({"id":root,"base_revision":restored_revision(&f, &root).await,"title":"Retitled"});
     let job = data(f.op(2, "notes.rename", rename).await);
@@ -39,13 +55,11 @@ async fn linked_rename_batches_are_undoable_by_job_id() {
         assert_eq!(note["note"]["markdown"], "[authored](<Target.md#^anchor>)");
     }
     let note = data(f.op(2, "notes.get", json!({"id":root})).await);
-    assert_eq!(note["note"]["markdown"], "# Target\n\nOriginal");
+    assert_eq!(note["note"]["markdown"], "# Target\n\nUpdated original");
     let content = f.appdata().join("spaces").join(space).join("content.db");
-    let db = rusqlite::Connection::open_with_flags(
-        content,
-        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
-    )
-    .unwrap();
+    let db =
+        rusqlite::Connection::open_with_flags(content, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .unwrap();
     let current_checkpoints: i64 = db
         .query_row(
             "SELECT count(*) FROM room_checkpoints JOIN items ON item=id AND room_checkpoints.seq=items.seq

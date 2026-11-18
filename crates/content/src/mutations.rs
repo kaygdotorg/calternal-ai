@@ -591,7 +591,8 @@ impl Content {
                 if head.kind != kind || head.state == "purged" || head.state == "purging" {
                     return Err(missing());
                 }
-                let merge_stale = live && destination == Destination::Current
+                // Undo needs the exact pre-rename revision, including any room writes.
+                let merge_stale = live && destination == Destination::Current && retarget.is_none()
                     && (base.is_some() || matches!(body, Body::Live(LiveEdit::Append(_)) | Body::Wire { .. }));
                 if !merge_stale && base != Some(head.revision.as_str()) {
                     return Err(Error {code:ErrorCode::Conflict,message:"item has a newer revision".into(),details:Some(serde_json::json!({"reason":"stale_revision","current_revision":head.revision}))});
