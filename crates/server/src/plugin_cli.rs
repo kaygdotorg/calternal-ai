@@ -1,7 +1,10 @@
 //! Local TypeScript author commands. Author scripts run as the invoking user.
 use calternal_cli::output::{CliError, Reply};
 use calternal_plugin_host::{CompiledSchemas, MAX_MANIFEST_BYTES};
-use calternal_server::plugins::package_store::{self, Package};
+use calternal_server::plugins::{
+    live_catalog::{self, Change},
+    package_store::{self, Package},
+};
 use clap::Subcommand;
 use serde_json::{Value, json};
 use std::{
@@ -10,6 +13,9 @@ use std::{
     path::{Path, PathBuf},
     process::Command,
 };
+
+#[cfg(feature = "dev-plugin-drafts")]
+mod dev;
 
 #[derive(Subcommand)]
 pub(super) enum PluginCommand {
@@ -28,7 +34,7 @@ pub(super) enum PluginCommand {
         /// New archive path, usually ending in .calplugin.
         archive: PathBuf,
     },
-    /// Install the exact reviewed package for the next server start.
+    /// Install the exact reviewed package on the running server.
     Install {
         #[command(flatten)]
         args: InstallArgs,
@@ -38,7 +44,7 @@ pub(super) enum PluginCommand {
         #[command(flatten)]
         args: InstallArgs,
     },
-    /// Uninstall a package at the next server start.
+    /// Uninstall a package from the running server.
     Remove {
         /// Installed plugin ID.
         id: String,
@@ -63,6 +69,12 @@ pub(super) enum PluginCommand {
         /// Calternal source checkout with a built TypeScript SDK.
         #[arg(long, env = "CALTERNAL_SDK_ROOT", default_value = ".")]
         sdk_root: PathBuf,
+    },
+    /// Build and reload a plugin while its development server stays running.
+    #[cfg(feature = "dev-plugin-drafts")]
+    Dev {
+        #[command(flatten)]
+        args: dev::Args,
     },
     /// Validate a plugin manifest and its package documentation.
     Check {
@@ -94,6 +106,12 @@ pub(super) struct InstallArgs {
     /// Full checksum from calternal plugin review.
     #[arg(long)]
     approve: String,
+    /// Space in which the candidate worker performs its data-free readiness check.
+    #[arg(long, requires = "account")]
+    space: Option<calternal_types::SpaceId>,
+    /// Account with plugin-management access and an available enrolled machine.
+    #[arg(long, requires = "space")]
+    account: Option<calternal_types::AccountId>,
 }
 
 #[derive(clap::Args)]
@@ -111,6 +129,8 @@ pub(super) fn main(command: PluginCommand, out: &calternal_cli::output::Output) 
     match command {
         PluginCommand::Enable { args } => activate(args, "plugins.enable", out),
         PluginCommand::Disable { args } => activate(args, "plugins.disable", out),
+        #[cfg(feature = "dev-plugin-drafts")]
+        PluginCommand::Dev { args } => dev::run(args, out),
         local_command => out.finish(run(local_command)),
     }
 }
@@ -140,13 +160,16 @@ fn run(command: PluginCommand) -> Result<Reply, CliError> {
         PluginCommand::Install { args } => install(args, false),
         PluginCommand::Update { args } => install(args, true),
         PluginCommand::Remove { id, appdata } => {
-            package_store::remove(&appdata, &id).map_err(package_error)?;
-            Ok(staged(&id, "Removal staged"))
+            live_catalog::request(&appdata, Change::Remove { id: id.clone() })
+                .map_err(package_error)?;
+            Ok(applied(&id, "Removed"))
         }
         PluginCommand::Enable { .. } | PluginCommand::Disable { .. } => {
             unreachable!("handled before local commands")
         }
         PluginCommand::New { name, sdk_root } => scaffold(&name, &sdk_root),
+        #[cfg(feature = "dev-plugin-drafts")]
+        PluginCommand::Dev { .. } => unreachable!("handled before local commands"),
         PluginCommand::Check { dir } => check(&dir),
         PluginCommand::Test { dir } => {
             check(&dir)?;
@@ -194,24 +217,27 @@ fn package_error(message: String) -> CliError {
     )
 }
 
-fn staged(id: &str, message: &str) -> Reply {
-    Reply::new(json!({"id":id,"activation":"next_start","status":message}))
+fn applied(id: &str, message: &str) -> Reply {
+    Reply::new(json!({"id":id,"activation":"live","status":message}))
         .fields([("Plugin", id), ("Status", message)])
-        .hint("Restart the server to load the new catalog. Use `calternal plugin enable` to activate a newly installed package in a space.")
+        .hint("Use `calternal plugin enable` to approve an installed package in a space.")
 }
 
 fn install(args: InstallArgs, update: bool) -> Result<Reply, CliError> {
     let package = Package::read(&args.source).map_err(package_error)?;
-    package_store::install(&args.appdata, &package, &args.approve, update)
-        .map_err(package_error)?;
-    Ok(staged(
-        &package.manifest.id,
-        if update {
-            "Update staged"
-        } else {
-            "Installation staged"
+    let id = package.manifest.id.clone();
+    live_catalog::request(
+        &args.appdata,
+        Change::Install {
+            package,
+            approval: args.approve,
+            update,
+            space: args.space,
+            account: args.account,
         },
-    ))
+    )
+    .map_err(package_error)?;
+    Ok(applied(&id, if update { "Updated" } else { "Installed" }))
 }
 
 fn review(source: &Path, appdata: Option<&Path>) -> Result<Reply, CliError> {
@@ -429,7 +455,7 @@ fn scaffold(name: &str, root: &Path) -> Result<Reply, CliError> {
     .expect("checked starter manifest template");
     let dependencies = json!({
         "name":name,"version":"0.1.0","private":true,
-        "scripts":{"build":"node build.mjs","test":"npm run --silent build && node --test worker.test.mjs",
+        "scripts":{"build":"node build.mjs","calternal:dev":"node build.mjs --draft","test":"npm run --silent build && node --test worker.test.mjs",
             "bench":"npm run --silent build && node bench.mjs"},
         "dependencies":{
             "@calternal/contracts":format!("file:{}",root.join("packages/contracts").display()),

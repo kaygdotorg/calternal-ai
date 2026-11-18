@@ -347,8 +347,9 @@ impl<D: Directory> InvocationHost for SpaceHost<D> {
         {
             return false;
         }
-        activation(&self.state.store, self.space, &self.plugin)
-            .is_ok_and(|row| row.enabled && row.generation == self.generation)
+        self.state.registry.snapshot().authorizes(&self.plugin)
+            && activation(&self.state.store, self.space, &self.plugin)
+                .is_ok_and(|row| row.enabled && row.generation == self.generation)
     }
 
     /// Cost: `read_item` is one pooled catalog route read and one item read under

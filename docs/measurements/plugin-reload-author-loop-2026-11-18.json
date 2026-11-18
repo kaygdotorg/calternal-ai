@@ -1,0 +1,446 @@
+{
+  "stop_before_first_invocation": {
+    "activation_p95_ms": 489.94704,
+    "build_p95_ms": 176.195767,
+    "edit_to_ready_p95_ms": 691.581857,
+    "mode": "remote",
+    "p50_ms": 1030.6657420000001,
+    "p95_ms": 1084.054053,
+    "p99_ms": 1086.2550259999998,
+    "ready_to_result_p95_ms": 419.094829,
+    "samples": [
+      {
+        "activation_ms": 481.098403,
+        "build_ms": 158.961673,
+        "edit_to_ready_ms": 679.077689,
+        "edit_to_result_ms": 1084.054053,
+        "ready_to_result_ms": 404.9763640000001
+      },
+      {
+        "activation_ms": 460.417324,
+        "build_ms": 159.69658,
+        "edit_to_ready_ms": 657.236325,
+        "edit_to_result_ms": 1029.2118349999998,
+        "ready_to_result_ms": 371.9755099999999
+      },
+      {
+        "activation_ms": 496.803694,
+        "build_ms": 169.29347,
+        "edit_to_ready_ms": 695.5731109999999,
+        "edit_to_result_ms": 1073.1184819999999,
+        "ready_to_result_ms": 377.54537099999993
+      },
+      {
+        "activation_ms": 457.870731,
+        "build_ms": 160.04447199999998,
+        "edit_to_ready_ms": 641.826738,
+        "edit_to_result_ms": 1053.257852,
+        "ready_to_result_ms": 411.431114
+      },
+      {
+        "activation_ms": 451.023545,
+        "build_ms": 157.702851,
+        "edit_to_ready_ms": 638.811463,
+        "edit_to_result_ms": 1005.846703,
+        "ready_to_result_ms": 367.03524000000004
+      },
+      {
+        "activation_ms": 489.94704,
+        "build_ms": 167.144712,
+        "edit_to_ready_ms": 691.581857,
+        "edit_to_result_ms": 1069.366827,
+        "ready_to_result_ms": 377.78497000000004
+      },
+      {
+        "activation_ms": 451.033692,
+        "build_ms": 159.772461,
+        "edit_to_ready_ms": 634.2603310000001,
+        "edit_to_result_ms": 1053.35516,
+        "ready_to_result_ms": 419.094829
+      },
+      {
+        "activation_ms": 474.57351,
+        "build_ms": 163.612561,
+        "edit_to_ready_ms": 661.6132580000001,
+        "edit_to_result_ms": 1017.4925130000001,
+        "ready_to_result_ms": 355.87925500000006
+      },
+      {
+        "activation_ms": 432.281169,
+        "build_ms": 159.043776,
+        "edit_to_ready_ms": 596.566621,
+        "edit_to_result_ms": 986.135259,
+        "ready_to_result_ms": 389.56863799999996
+      },
+      {
+        "activation_ms": 447.371557,
+        "build_ms": 164.313384,
+        "edit_to_ready_ms": 623.365438,
+        "edit_to_result_ms": 1010.8471649999999,
+        "ready_to_result_ms": 387.48172699999986
+      },
+      {
+        "activation_ms": 467.822935,
+        "build_ms": 156.658705,
+        "edit_to_ready_ms": 638.22379,
+        "edit_to_result_ms": 1004.3925629999999,
+        "ready_to_result_ms": 366.1687729999999
+      },
+      {
+        "activation_ms": 437.3651190000001,
+        "build_ms": 163.534413,
+        "edit_to_ready_ms": 636.7273839999999,
+        "edit_to_result_ms": 1027.767051,
+        "ready_to_result_ms": 391.0396670000001
+      },
+      {
+        "activation_ms": 456.941095,
+        "build_ms": 159.12084900000002,
+        "edit_to_ready_ms": 626.257538,
+        "edit_to_result_ms": 1007.9601010000001,
+        "ready_to_result_ms": 381.70256300000017
+      },
+      {
+        "activation_ms": 414.888875,
+        "build_ms": 163.12268999999998,
+        "edit_to_ready_ms": 597.469831,
+        "edit_to_result_ms": 980.209618,
+        "ready_to_result_ms": 382.739787
+      },
+      {
+        "activation_ms": 466.012351,
+        "build_ms": 160.406298,
+        "edit_to_ready_ms": 644.8008480000001,
+        "edit_to_result_ms": 1030.6657420000001,
+        "ready_to_result_ms": 385.86489400000005
+      },
+      {
+        "activation_ms": 465.810021,
+        "build_ms": 176.195767,
+        "edit_to_ready_ms": 657.621794,
+        "edit_to_result_ms": 1017.0283989999999,
+        "ready_to_result_ms": 359.4066049999999
+      },
+      {
+        "activation_ms": 453.904874,
+        "build_ms": 182.766004,
+        "edit_to_ready_ms": 638.2622690000001,
+        "edit_to_result_ms": 1031.11314,
+        "ready_to_result_ms": 392.85087099999987
+      },
+      {
+        "activation_ms": 444.172769,
+        "build_ms": 162.299418,
+        "edit_to_ready_ms": 615.3093819999999,
+        "edit_to_result_ms": 982.474282,
+        "ready_to_result_ms": 367.1649000000001
+      },
+      {
+        "activation_ms": 473.669854,
+        "build_ms": 158.049841,
+        "edit_to_ready_ms": 665.732085,
+        "edit_to_result_ms": 1067.1799099999998,
+        "ready_to_result_ms": 401.44782499999985
+      },
+      {
+        "activation_ms": 469.44311,
+        "build_ms": 163.21686799999998,
+        "edit_to_ready_ms": 672.787311,
+        "edit_to_result_ms": 1038.249757,
+        "ready_to_result_ms": 365.462446
+      },
+      {
+        "activation_ms": 467.338835,
+        "build_ms": 166.424501,
+        "edit_to_ready_ms": 669.475732,
+        "edit_to_result_ms": 1035.7280010000002,
+        "ready_to_result_ms": 366.2522690000002
+      },
+      {
+        "activation_ms": 456.551372,
+        "build_ms": 162.84759400000002,
+        "edit_to_ready_ms": 654.342181,
+        "edit_to_result_ms": 1086.2550259999998,
+        "ready_to_result_ms": 431.91284499999983
+      },
+      {
+        "activation_ms": 471.336368,
+        "build_ms": 165.240821,
+        "edit_to_ready_ms": 645.9228390000001,
+        "edit_to_result_ms": 1022.656936,
+        "ready_to_result_ms": 376.7340969999999
+      },
+      {
+        "activation_ms": 462.720006,
+        "build_ms": 161.493205,
+        "edit_to_ready_ms": 648.680017,
+        "edit_to_result_ms": 1062.7805910000002,
+        "ready_to_result_ms": 414.10057400000017
+      },
+      {
+        "activation_ms": 481.650062,
+        "build_ms": 174.096843,
+        "edit_to_ready_ms": 683.123435,
+        "edit_to_result_ms": 1060.109704,
+        "ready_to_result_ms": 376.986269
+      },
+      {
+        "activation_ms": 448.856897,
+        "build_ms": 161.800993,
+        "edit_to_ready_ms": 634.9790119999999,
+        "edit_to_result_ms": 1008.278781,
+        "ready_to_result_ms": 373.2997690000001
+      },
+      {
+        "activation_ms": 469.119501,
+        "build_ms": 163.431258,
+        "edit_to_ready_ms": 661.008186,
+        "edit_to_result_ms": 1037.268774,
+        "ready_to_result_ms": 376.26058799999987
+      },
+      {
+        "activation_ms": 482.944038,
+        "build_ms": 163.632526,
+        "edit_to_ready_ms": 671.490146,
+        "edit_to_result_ms": 1040.4070379999998,
+        "ready_to_result_ms": 368.91689199999985
+      },
+      {
+        "activation_ms": 435.744806,
+        "build_ms": 165.470201,
+        "edit_to_ready_ms": 633.460585,
+        "edit_to_result_ms": 1039.059441,
+        "ready_to_result_ms": 405.59885600000007
+      },
+      {
+        "activation_ms": 435.503294,
+        "build_ms": 163.283061,
+        "edit_to_ready_ms": 634.6494329999999,
+        "edit_to_result_ms": 995.328852,
+        "ready_to_result_ms": 360.67941900000005
+      }
+    ]
+  },
+  "stop_after_first_result": {
+    "activation_p95_ms": 641.989581,
+    "build_p95_ms": 190.504345,
+    "edit_to_ready_p95_ms": 855.064814,
+    "mode": "remote",
+    "p50_ms": 860.984584,
+    "p95_ms": 903.0053399999999,
+    "p99_ms": 915.884497,
+    "ready_to_result_p95_ms": 50.33752500000003,
+    "samples": [
+      {
+        "activation_ms": 559.935421,
+        "build_ms": 176.613518,
+        "edit_to_ready_ms": 769.589714,
+        "edit_to_result_ms": 817.799041,
+        "ready_to_result_ms": 48.20932700000003
+      },
+      {
+        "activation_ms": 628.893952,
+        "build_ms": 190.392252,
+        "edit_to_ready_ms": 851.364829,
+        "edit_to_result_ms": 900.320536,
+        "ready_to_result_ms": 48.95570699999996
+      },
+      {
+        "activation_ms": 588.500681,
+        "build_ms": 182.292932,
+        "edit_to_ready_ms": 802.199014,
+        "edit_to_result_ms": 850.905739,
+        "ready_to_result_ms": 48.706725000000006
+      },
+      {
+        "activation_ms": 595.499023,
+        "build_ms": 171.78764099999998,
+        "edit_to_ready_ms": 798.894502,
+        "edit_to_result_ms": 847.481895,
+        "ready_to_result_ms": 48.58739300000002
+      },
+      {
+        "activation_ms": 594.350383,
+        "build_ms": 187.138723,
+        "edit_to_ready_ms": 813.167688,
+        "edit_to_result_ms": 861.433223,
+        "ready_to_result_ms": 48.265535
+      },
+      {
+        "activation_ms": 607.7735739999999,
+        "build_ms": 178.291821,
+        "edit_to_ready_ms": 818.0720769999999,
+        "edit_to_result_ms": 868.409602,
+        "ready_to_result_ms": 50.33752500000003
+      },
+      {
+        "activation_ms": 610.351769,
+        "build_ms": 173.89959299999998,
+        "edit_to_ready_ms": 814.23185,
+        "edit_to_result_ms": 862.9065780000001,
+        "ready_to_result_ms": 48.67472800000007
+      },
+      {
+        "activation_ms": 550.0777479999999,
+        "build_ms": 184.269157,
+        "edit_to_ready_ms": 765.9782590000001,
+        "edit_to_result_ms": 814.938881,
+        "ready_to_result_ms": 48.960621999999944
+      },
+      {
+        "activation_ms": 606.841951,
+        "build_ms": 182.276409,
+        "edit_to_ready_ms": 820.481035,
+        "edit_to_result_ms": 869.0688739999999,
+        "ready_to_result_ms": 48.58783899999992
+      },
+      {
+        "activation_ms": 664.940515,
+        "build_ms": 169.902566,
+        "edit_to_ready_ms": 866.52481,
+        "edit_to_result_ms": 915.884497,
+        "ready_to_result_ms": 49.35968700000001
+      },
+      {
+        "activation_ms": 600.507903,
+        "build_ms": 185.206674,
+        "edit_to_ready_ms": 816.6239800000001,
+        "edit_to_result_ms": 865.822687,
+        "ready_to_result_ms": 49.1987069999999
+      },
+      {
+        "activation_ms": 598.739048,
+        "build_ms": 190.504345,
+        "edit_to_ready_ms": 820.3773130000001,
+        "edit_to_result_ms": 868.668632,
+        "ready_to_result_ms": 48.29131899999993
+      },
+      {
+        "activation_ms": 590.653388,
+        "build_ms": 178.148745,
+        "edit_to_ready_ms": 800.777331,
+        "edit_to_result_ms": 848.864459,
+        "ready_to_result_ms": 48.08712800000001
+      },
+      {
+        "activation_ms": 641.989581,
+        "build_ms": 180.89311,
+        "edit_to_ready_ms": 855.064814,
+        "edit_to_result_ms": 903.0053399999999,
+        "ready_to_result_ms": 47.94052599999998
+      },
+      {
+        "activation_ms": 583.593301,
+        "build_ms": 172.707424,
+        "edit_to_ready_ms": 788.646144,
+        "edit_to_result_ms": 836.660098,
+        "ready_to_result_ms": 48.0139539999999
+      },
+      {
+        "activation_ms": 604.999603,
+        "build_ms": 187.318882,
+        "edit_to_ready_ms": 824.5712120000001,
+        "edit_to_result_ms": 872.7222529999999,
+        "ready_to_result_ms": 48.15104099999985
+      },
+      {
+        "activation_ms": 605.20747,
+        "build_ms": 176.040068,
+        "edit_to_ready_ms": 813.420506,
+        "edit_to_result_ms": 860.984584,
+        "ready_to_result_ms": 47.564077999999995
+      },
+      {
+        "activation_ms": 577.7410050000001,
+        "build_ms": 172.426169,
+        "edit_to_ready_ms": 782.856135,
+        "edit_to_result_ms": 831.72797,
+        "ready_to_result_ms": 48.87183500000003
+      },
+      {
+        "activation_ms": 556.3991080000001,
+        "build_ms": 190.133617,
+        "edit_to_ready_ms": 777.966278,
+        "edit_to_result_ms": 826.4770609999999,
+        "ready_to_result_ms": 48.51078299999995
+      },
+      {
+        "activation_ms": 589.100112,
+        "build_ms": 183.784924,
+        "edit_to_ready_ms": 804.6493059999999,
+        "edit_to_result_ms": 855.150307,
+        "ready_to_result_ms": 50.50100100000009
+      },
+      {
+        "activation_ms": 629.730098,
+        "build_ms": 178.218288,
+        "edit_to_ready_ms": 837.70732,
+        "edit_to_result_ms": 885.7828930000001,
+        "ready_to_result_ms": 48.07557300000008
+      },
+      {
+        "activation_ms": 621.733172,
+        "build_ms": 171.452918,
+        "edit_to_ready_ms": 825.379089,
+        "edit_to_result_ms": 873.785851,
+        "ready_to_result_ms": 48.40676199999996
+      },
+      {
+        "activation_ms": 605.925328,
+        "build_ms": 168.721392,
+        "edit_to_ready_ms": 806.5185580000001,
+        "edit_to_result_ms": 855.4971350000001,
+        "ready_to_result_ms": 48.97857699999997
+      },
+      {
+        "activation_ms": 593.105816,
+        "build_ms": 174.250604,
+        "edit_to_ready_ms": 798.606774,
+        "edit_to_result_ms": 847.652847,
+        "ready_to_result_ms": 49.04607299999998
+      },
+      {
+        "activation_ms": 585.706741,
+        "build_ms": 177.411577,
+        "edit_to_ready_ms": 794.344787,
+        "edit_to_result_ms": 842.486376,
+        "ready_to_result_ms": 48.141588999999954
+      },
+      {
+        "activation_ms": 581.119293,
+        "build_ms": 175.281521,
+        "edit_to_ready_ms": 788.563608,
+        "edit_to_result_ms": 838.527875,
+        "ready_to_result_ms": 49.96426699999995
+      },
+      {
+        "activation_ms": 610.325561,
+        "build_ms": 193.491717,
+        "edit_to_ready_ms": 834.0903629999999,
+        "edit_to_result_ms": 882.709994,
+        "ready_to_result_ms": 48.61963100000014
+      },
+      {
+        "activation_ms": 636.1568319999999,
+        "build_ms": 176.1037,
+        "edit_to_ready_ms": 843.9466679999999,
+        "edit_to_result_ms": 892.395002,
+        "ready_to_result_ms": 48.448334000000045
+      },
+      {
+        "activation_ms": 598.3230040000001,
+        "build_ms": 183.588394,
+        "edit_to_ready_ms": 813.6694799999999,
+        "edit_to_result_ms": 862.150395,
+        "ready_to_result_ms": 48.480915000000095
+      },
+      {
+        "activation_ms": 596.960146,
+        "build_ms": 176.561004,
+        "edit_to_ready_ms": 805.2768179999999,
+        "edit_to_result_ms": 853.660132,
+        "ready_to_result_ms": 48.38331400000004
+      }
+    ]
+  }
+}

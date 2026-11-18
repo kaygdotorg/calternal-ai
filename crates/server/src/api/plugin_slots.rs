@@ -1,53 +1,42 @@
-//! Resolve bounded slot declarations against live space authority and activation.
+//! Resolve package activation and indexed slot declarations in the selected space.
 use super::*;
-use calternal_core::{PluginSlotRenderer, ResolvedPluginSlot};
+use calternal_types::AccountId;
 
-/// Resolve only enabled contributions whose operation is visible to the caller.
-/// Cost: at most one extra authority lookup, no content reads or durable writes,
-/// and one bounded scan of each enabled manifest with contributions.
-pub(super) async fn resolve<D: Directory>(
+/// List registered manifests and caller-visible contributions. Read one indexed
+/// activation row per visible package, with one authority lookup for slot
+/// resolution. No content reads, worker invocations or durable writes.
+pub(super) async fn list<D: Directory>(
     state: &Shared<D>,
-    account: calternal_types::AccountId,
+    account: AccountId,
     space: SpaceId,
-    plugins: &[PluginState],
-) -> Result<Option<Vec<ResolvedPluginSlot>>, Error> {
-    let enabled = plugins
-        .iter()
-        .filter(|plugin| plugin.enabled && plugin.manifest.slots.is_some());
-    if enabled.clone().next().is_none() {
-        return Ok(None);
-    }
-    let authority = super::authorization::capabilities(state, account, space).await?;
-    authz::policy("plugins.list")
-        .expect("plugin listing policy")
-        .check(authority)?;
-    let mut slots = Vec::new();
-    for plugin in enabled {
-        for contribution in plugin.manifest.slots.iter().flatten() {
-            let operation = match &contribution.renderer {
-                PluginSlotRenderer::Generated { operation }
-                | PluginSlotRenderer::Command { operation } => operation,
-                PluginSlotRenderer::Sealed { .. } => continue,
-            };
-            let reachable = state
-                .registry
-                .policy(operation)
-                .is_some_and(|policy| policy.check(authority).is_ok());
-            if reachable {
-                slots.push(ResolvedPluginSlot {
-                    contribution: contribution.clone(),
-                    plugin_id: plugin.manifest.id.clone(),
-                    generation: plugin.generation,
-                });
-            }
-        }
-    }
-    slots.sort_unstable_by(|a, b| {
-        (a.contribution.slot, &a.plugin_id, &a.contribution.id).cmp(&(
-            b.contribution.slot,
-            &b.plugin_id,
-            &b.contribution.id,
-        ))
-    });
-    Ok(Some(slots))
+) -> Result<Value, Error> {
+    let catalog = state.registry.snapshot();
+    let declarations = catalog.clone();
+    let plugins = blocking(state, move |store| {
+        declarations
+            .plugins()
+            .iter()
+            .map(|plugin| {
+                plugin
+                    .available_in(space)
+                    .then(|| plugin_state(store, space, plugin))
+                    .transpose()
+            })
+            .collect::<Result<Vec<_>, _>>()
+    })
+    .await?;
+    let (slots, owned_slots) = if catalog.has_slots() {
+        let authority = super::authorization::capabilities(state, account, space).await?;
+        authz::policy("plugins.list")
+            .expect("listing policy")
+            .check(authority)?;
+        catalog.resolve_slots(&plugins, authority.unwrap_or_default())
+    } else {
+        (Vec::new(), Vec::new())
+    };
+    to_value(calternal_core::PluginsListResult {
+        plugins: plugins.into_iter().flatten().collect(),
+        slots: (!slots.is_empty()).then_some(slots),
+        owned_slots: (!owned_slots.is_empty()).then_some(owned_slots),
+    })
 }

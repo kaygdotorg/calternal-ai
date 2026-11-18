@@ -7,7 +7,7 @@ import { FIXTURE_SPACES } from "../../shell/spaces.svelte";
 import type { ThreadEvents, ThreadsClient } from "./client";
 import { messageAt } from "./generate";
 import { permissionLabel, runsOnLabel } from "./permissions";
-import type { Answer, Attachment, Change, Message, Permission, Step, ProviderOption, Request, RunInfo, RunsOn, ThreadNotice, ThreadState, ThreadSummary } from "./model";
+import type { Answer, Attachment, Change, Message, MessageHit, Permission, Step, ProviderOption, Request, RunInfo, RunsOn, ThreadNotice, ThreadState, ThreadSummary } from "./model";
 
 const BASE = Date.UTC(2026, 10, 17, 6, 0, 0);
 const MIN = 60_000;
@@ -151,6 +151,38 @@ export class FixtureClient implements ThreadsClient {
     const out: Message[] = [];
     for (let i = from; i < Math.min(to, t.messageCount); i++) out.push(i < generated ? messageAt(threadId, seed, i, BASE) : base[i - generated]!);
     return out;
+  }
+
+  /** Fixture search: the first 400 messages of each thread of the space are scanned (generated on the fly, deterministic), newest first. Instant: nothing is awaited. */
+  async searchMessages(query: string, limit = 100): Promise<MessageHit[]> {
+    const q = query.trim().toLowerCase();
+    if (!q) return [];
+    const hits: MessageHit[] = [];
+    for (const t of this.threadList) {
+      const seed = [...t.id].reduce((a, c) => a + c.charCodeAt(0), 0);
+      const base = this.extra.get(t.id) ?? [];
+      const generated = t.messageCount - base.length;
+      for (let i = 0; i < Math.min(t.messageCount, 400); i++) {
+        const m = i < generated ? messageAt(t.id, seed, i, BASE) : base[i - generated]!;
+        for (const b of m.blocks) {
+          if (b.type !== "text") continue;
+          const line = b.text.split("\n").find((l) => l.toLowerCase().includes(q));
+          if (!line) continue;
+          const start = line.toLowerCase().indexOf(q);
+          hits.push({ messageId: m.id, threadId: t.id, threadTitle: t.title, at: m.at, line: line.trim().slice(0, 160), start: Math.max(0, start - (line.length - line.trimStart().length)), end: Math.max(0, start - (line.length - line.trimStart().length)) + q.length });
+          break;
+        }
+      }
+    }
+    return hits.sort((a, b) => b.at - a.at).slice(0, limit);
+  }
+  async messageIndex(threadId: string, messageId: string): Promise<number | undefined> {
+    const t = this.threadList.find((x) => x.id === threadId);
+    const m = /-m(\d+)$/.exec(messageId);
+    if (m && t && Number(m[1]) < t.messageCount) return Number(m[1]);
+    const base = this.extra.get(threadId) ?? [];
+    const k = base.findIndex((x) => x.id === messageId);
+    return k >= 0 && t ? t.messageCount - base.length + k : undefined;
   }
 
   watch(threadId: string, events: ThreadEvents): () => void {

@@ -68,8 +68,8 @@ pub fn next(
 pub(super) fn manifest_defaults<D: Directory>(
     state: &Shared<D>,
 ) -> Result<AgentRetrySettings, Error> {
-    let plugin = state
-        .registry
+    let catalog = state.registry.snapshot();
+    let plugin = catalog
         .get("calternal-orchestrator")
         .ok_or_else(|| Error::unavailable("orchestrator plugin is not installed"))?;
     let boolean = |id: &str| {

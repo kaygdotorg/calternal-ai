@@ -14,6 +14,8 @@ export async function serveWorker(
   const runtime = new WorkerRuntimeV2(manifest, handlers, frame => write(encodeWorkerFrameV2(frame)));
   const buffer = new Uint8Array(MAX_V2_FRAME_BYTES);
   let used = 0;
+  let first = true;
+  const decoder = new TextDecoder("utf-8", { fatal: true });
   for await (const chunk of input) {
     let start = 0;
     while (start < chunk.length) {
@@ -24,7 +26,20 @@ export async function serveWorker(
       buffer.set(part, used);
       used += part.length;
       if (newline < 0) break;
-      await runtime.receive(parseWorkerFrameV2(buffer.subarray(0, used)));
+      const frame = buffer.subarray(0, used);
+      if (first && used <= 128) {
+        const line = decoder.decode(frame);
+        if (/^\{"type":"ready","protocol_version":2,"nonce":"[0-9a-f-]{36}"\}$/.test(line)) {
+          runtime.assertReady();
+          first = false;
+          used = 0;
+          await write(line + "\n");
+          start = end + 1;
+          continue;
+        }
+      }
+      first = false;
+      await runtime.receive(parseWorkerFrameV2(frame));
       used = 0;
       start = end + 1;
     }

@@ -40,8 +40,8 @@ pub(crate) fn checkpoint<D: Directory>(
     {
         return Err(Error::not_found("item not found"));
     }
-    let plugin = state
-        .registry
+    let catalog = state.registry.snapshot();
+    let plugin = catalog
         .get("calternal-orchestrator")
         .ok_or_else(|| Error::not_found("item not found"))?;
     let activation = crate::plugins::activation(&state.store, space, plugin)?;

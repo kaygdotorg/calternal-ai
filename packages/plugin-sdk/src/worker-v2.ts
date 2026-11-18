@@ -159,6 +159,14 @@ export class WorkerRuntimeV2 {
   constructor(manifest: unknown, private handlers: Record<string, WorkerHandlerV2>, private send: (frame: WorkerFrameV2) => Promise<void>) {
     this.manifest = validateManifestV1(manifest);
   }
+  /** Verify that every declared operation has a handler before activation. Cost: O(operations). */
+  assertReady(): void {
+    for (const { id } of this.manifest.operations) {
+      if (!Object.hasOwn(this.handlers, id) || typeof this.handlers[id] !== "function") {
+        throw new Error(`Missing worker handler for ${id}`);
+      }
+    }
+  }
   private async emit(frame: WorkerFrameV2): Promise<void> {
     if (this.sending >= MAX_V2_PENDING) throw new Error("worker back pressure");
     this.sending++; try { await this.send(frame); } finally { this.sending--; }

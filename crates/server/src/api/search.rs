@@ -30,7 +30,7 @@ pub(super) async fn dispatch<D: Directory>(
             let st = state.clone();
             let manifests = blocking(state, move |store| {
                 let mut manifests = Vec::new();
-                for plugin in st.registry.plugins() {
+                for plugin in st.registry.snapshot().plugins() {
                     if let Some(menu) = &plugin.palette
                         && activation(store, space, plugin)?.enabled
                     {

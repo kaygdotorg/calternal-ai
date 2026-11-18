@@ -288,3 +288,6 @@ async fn remote_worker_keeps_broker_authority_and_restarts_after_container_death
         json!({"foreign_missing_equal":true,"container_replaced":true,"hung_worker_replaced":true,"protocol_version":2}),
     );
 }
+
+#[path = "reload_measurement.rs"]
+mod reload_measurement;
