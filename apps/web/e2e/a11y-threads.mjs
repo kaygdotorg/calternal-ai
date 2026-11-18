@@ -34,7 +34,7 @@ const jobs = []; for (const device of ["desktop", "phone"]) for (const scheme of
 const lines = new Array(jobs.length);
 // A page the machine could not keep alive (a renderer killed under memory pressure) says so with "closed"/"crashed": that state is run again, once, in a fresh context; a real finding never is.
 async function one(j, i) {
-  try { return await attempt(j, i); } catch (e) { if (!/closed|crash/i.test(String(e.message))) throw e; return attempt(j, i); }
+  try { return await attempt(j, i); } catch (e) { if (!/closed|crash/i.test(String(e.message))) throw e; console.log(`retry ${j.device} ${j.scheme} ${j.name}: ${String(e.message).split("\n")[0]}`); return attempt(j, i); }
 }
 async function attempt(j, i) {
   const { page, ctx } = await open(browser, j.device, j.scheme, j.path);
