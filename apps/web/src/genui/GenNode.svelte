@@ -2,7 +2,7 @@
   // One node of a generated description. The catalog has 67 components; the web client draws the ones the shell needs first (question
   // forms, cards, tables, status) and shows a plain fallback line for the rest, so a description never breaks the page.
   import type { UiNode, Value } from "@calternal/genui";
-  import { Badge, Button } from "@calternal/ui";
+  import { Badge, Button, Switch } from "@calternal/ui";
   import Md from "../lib/Md.svelte";
   import type { Action, Host } from "./actions";
   import GenNode from "./GenNode.svelte";
@@ -74,7 +74,7 @@
     <div class="radios">{#each p.options as o}{@const x = opt(o)}<button type="button" role="radio" aria-checked={String(bind?.value) === x.value} onclick={() => host.set(bind!.name, x.value)}><b>{x.label}</b>{#if x.detail}<small>{x.detail}</small>{/if}</button>{/each}</div>
   </div>
 {:else if type === "Toggle"}
-  <button type="button" class="toggle" role="switch" aria-checked={!!bind?.value} onclick={() => host.set(bind!.name, !bind!.value)}><span>{p.label}</span><i class="track"><b></b></i></button>
+  <Switch label={String(p.label ?? "")} checked={!!bind?.value} onchange={(v) => host.set(bind!.name, v)} />
 {:else if type === "Checklist"}
   <fieldset class="field"><legend>{p.label}</legend>
     {#each p.options as o}{@const x = opt(o)}{@const on = ((bind?.value as string[]) ?? []).includes(x.value)}
@@ -116,11 +116,6 @@
   .choice button, .radios button { min-height: var(--pill-h); padding: 0 var(--s-5); border-radius: var(--r-pill); background: rgb(var(--ink-rgb) / 0.07); color: var(--ink); font-size: var(--text-ui); font-weight: var(--ui-weight); }
   .choice button[aria-checked="true"], .radios button[aria-checked="true"] { background: var(--accent-soft); color: var(--accent); font-weight: var(--strong-weight); }
   .radios { display: grid; gap: var(--s-2); } .radios button { display: grid; text-align: start; border-radius: var(--r-select); padding: var(--s-3) var(--s-5); } small { font-weight: var(--ui-weight); color: var(--ink-3); }
-  .toggle { display: flex; align-items: center; justify-content: space-between; gap: var(--s-5); width: 100%; min-height: var(--pill-h); font-size: var(--text-ui); text-align: start; }
-  .track { position: relative; flex: none; width: calc(var(--s-9) + var(--s-4)); height: calc(var(--s-8) + var(--s-1) * 2); border-radius: var(--r-pill); background: rgb(var(--ink-rgb) / 0.18); transition: background-color var(--dur-fast) var(--ease-out); }
-  .track b { position: absolute; top: var(--s-1); left: var(--s-1); width: var(--s-8); height: var(--s-8); border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgb(0 0 0 / 0.3); transition: translate var(--dur-base) var(--spring); }
-  .toggle[aria-checked="true"] .track { background: var(--accent-base); }
-  .toggle[aria-checked="true"] .track b { translate: calc(var(--s-9) + var(--s-4) - var(--s-8) - var(--s-1) * 2) 0; }
   .check { display: flex; align-items: center; gap: var(--s-4); min-height: var(--pill-h); font-weight: var(--ui-weight); color: var(--ink); font-size: var(--text-ui); }
   .check input { width: var(--s-7); height: var(--s-7); accent-color: var(--accent-base); }
 </style>

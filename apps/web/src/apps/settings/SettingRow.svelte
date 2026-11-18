@@ -33,10 +33,7 @@
     <StepSlider label={s.label} steps={c.steps} value={Number(value)} onchange={(i) => s.set?.(i)} hint={s.help} />
   </div>
 {:else if c.type === "checkbox"}
-  <label class="row chk" class:hl={highlighted} data-setting={s.id}>
-    <span class="l"><span class="t">{s.label}</span>{#if s.help}<span class="h">{s.help}</span>{/if}</span>
-    <input type="checkbox" checked={!!value} onchange={(e) => s.set?.(e.currentTarget.checked)} />
-  </label>
+  <div class="row" class:hl={highlighted} data-setting={s.id}><Switch label={s.label} hint={s.help} checked={!!value} onchange={(v) => s.set?.(v)} /></div>
 {:else}
   <div class="row" class:hl={highlighted} data-setting={s.id}>
     <span class="l"><span class="t">{s.label}</span>{#if s.help}<span class="h">{s.help}</span>{/if}</span>
@@ -69,8 +66,6 @@
   .row.col { display: grid; gap: var(--s-3); justify-content: stretch; padding-block: var(--s-5); }
   .row.col:has(> :global(ul)) { padding: 0; }
   .row.hl { background: var(--accent-soft); }
-  .chk { cursor: pointer; }
-  .chk input { width: 1.15em; height: 1.15em; accent-color: var(--accent); flex: none; }
   .l { display: grid; min-width: 0; gap: var(--s-1); }
   .t { font-size: var(--text-ui); font-weight: var(--strong-weight); }
   .h { font-size: var(--text-label); color: var(--ink-3); max-width: 38rem; }
