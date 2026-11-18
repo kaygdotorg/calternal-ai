@@ -60,7 +60,7 @@ const STREAM_TEXT =
 
 /**
  * Fixture scenarios for the screens that only show when something is wrong or missing, picked with `?scenario=` (fixtures only; tests and review): `empty` (a fresh account with no thread and no
- * request), `quiet` (threads, but none waiting on the person), `no-machine`, `offline`, `signin`, `failed`, `usage-limit`, `permanent`, `queued`, `retrying`, `retrying-api`, `retrying-plan`, `interrupted`, `interrupted-unsure` and `full` (a thread at the size limit; the thread `t-idle` carries that notice).
+ * request), `quiet` (threads, but none waiting on the person), `signin-request` (a provider that needs a sign-in with a link, a code and a field for the code) and `signin-link` (a link only: it ends by itself a few seconds after it is shown), `no-machine`, `offline`, `signin`, `failed`, `usage-limit`, `permanent`, `queued`, `retrying`, `retrying-api`, `retrying-plan`, `interrupted`, `interrupted-unsure` and `full` (a thread at the size limit; the thread `t-idle` carries that notice).
  */
 function applyScenario(threads: ThreadSummary[], requests: Request[]): void {
   let s: string | null = null;
@@ -70,6 +70,10 @@ function applyScenario(threads: ThreadSummary[], requests: Request[]): void {
   if (s === "quiet") { requests.length = 0; for (const x of threads) { x.notice = undefined; if (x.state === "failed" || x.state === "waiting") x.state = "idle"; } return; }
   const t = threads.find((x) => x.id === "t-idle");
   if (!t) return;
+  if (s === "signin-request" || s === "signin-link") {
+    requests.push({ id: "si-1", kind: "signin", threadId: t.id, providerId: "claude", label: "Claude needs you to sign in again", url: "https://example.com/sign-in", displayCode: "WXYZ-1234", needsCode: s === "signin-request", expiresAt: Date.now() + 15 * 60_000 });
+    return;
+  }
   const machine = t.runsOn.machine;
   const notices: Record<string, ThreadNotice> = {
     "no-machine": { kind: "no-machine" },
@@ -284,8 +288,21 @@ export class FixtureClient implements ThreadsClient {
     this.requestWatchers.add(cb);
     return () => this.requestWatchers.delete(cb);
   }
+  /** Fixture sign-ins: answered ones are `done`; a link-only one is `done` seven seconds after the page loaded. */
+  private signedIn = new Set<string>();
+  private readonly loadedAt = Date.now();
+  async signInStatus(id: string): Promise<"pending" | "done" | "failed" | "gone"> {
+    if (this.signedIn.has(id)) return "done";
+    const r = this.requestList.find((x) => x.id === id);
+    if (!r) return "gone";
+    if (r.kind === "signin" && !r.needsCode && Date.now() - this.loadedAt > 7000) { this.signedIn.add(id); this.requestList = this.requestList.filter((x) => x.id !== id); return "done"; }
+    return "pending";
+  }
+  /** The fixtures have nothing to offer; the call is counted on `window.__typing` so a test can see it is made once per focus. */
+  async signInTyping(_threadId: string): Promise<void> { const w = window as unknown as { __typing?: number }; w.__typing = (w.__typing ?? 0) + 1; }
   async answer(requestId: string, _answer: Answer): Promise<void> {
     const r = this.requestList.find((x) => x.id === requestId);
+    if (r?.kind === "signin") this.signedIn.add(requestId);
     this.requestList = this.requestList.filter((x) => x.id !== requestId);
     for (const w of this.requestWatchers) w(this.requestList);
     if (r && !this.requestList.some((x) => x.threadId === r.threadId)) this.patch(r.threadId, { state: "running" });

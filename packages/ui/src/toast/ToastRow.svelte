@@ -126,7 +126,7 @@
     height: 28px;
     padding: 0 12px;
     border: 0;
-    border-radius: 999px;
+    border-radius: var(--r-pill);
     font: inherit;
     font-weight: 600;
     color: var(--toast-action-ink, var(--accent-ink, #fff));

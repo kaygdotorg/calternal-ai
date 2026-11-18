@@ -9,6 +9,8 @@
 //! An owner of `None` is the operator's pool. Every call runs one job on the auth
 //! worker; callers must be on a blocking thread, never an async worker.
 
+mod colocated;
+
 use crate::spaces::commit;
 use crate::token::{hash32, new_setup_token, normalize_setup_token};
 use crate::{Error, Result};

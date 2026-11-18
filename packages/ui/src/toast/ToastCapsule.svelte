@@ -147,7 +147,7 @@
     z-index: 0;
     width: 12px;
     height: 12px;
-    border-radius: 20px;
+    border-radius: var(--r-card);
     /* Its fill, blur, shade and edge are the shared floating glass (`float-glass`, #319). */
     /* Opening: the dot pops in first. */
     animation: seed 180ms cubic-bezier(0.2, 0.9, 0.3, 1.3) both;

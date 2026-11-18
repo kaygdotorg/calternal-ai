@@ -1,10 +1,12 @@
 //! Bounded, derived full-text projection of each space's current Markdown heads.
 mod fuzzy;
 mod readers;
+mod source;
+mod worker;
 use crate::{Content, Result, discovery::prefix_end, types::internal};
 use calternal_types::{Error, SpaceId};
 pub use fuzzy::typo_expression;
-pub(super) use readers::Readers;
+pub(super) use readers::{Readers, Writers};
 use rusqlite::{Connection, functions::FunctionFlags, params};
 use serde::{Deserialize, Serialize};
 
@@ -71,34 +73,6 @@ pub(super) fn register_functions(conn: &Connection) -> Result<()> {
     fuzzy::install(conn)
 }
 
-pub(super) fn install(conn: &Connection, config: &SearchConfig) -> Result<()> {
-    let existed: bool = conn.query_row(
-        "SELECT count(*)=3 FROM sqlite_schema WHERE type='table' AND name IN ('search_docs','search_text','search_title_grams')",
-        [], |r| r.get(0),
-    ).map_err(internal)?;
-    let tx = conn.unchecked_transaction().map_err(internal)?;
-    tx.execute_batch(SCHEMA).map_err(internal)?;
-    let changed = tx
-        .execute(
-            "INSERT INTO search_configuration VALUES (1,?1)
-         ON CONFLICT(id) DO UPDATE SET kinds=excluded.kinds WHERE kinds<>excluded.kinds",
-            [&config.kinds],
-        )
-        .map_err(internal)?;
-    if changed != 0 || !existed {
-        tx.execute_batch(
-            "DELETE FROM search_docs;
-             DELETE FROM search_text;
-             DELETE FROM search_title_grams;
-             INSERT INTO search_docs SELECT * FROM search_heads;
-             INSERT INTO search_text(rowid,title,body) SELECT * FROM search_texts;
-             INSERT INTO search_title_grams(rowid,grams) SELECT rowid,search_grams(title_key) FROM search_docs;",
-        )
-        .map_err(internal)?;
-    }
-    tx.commit().map_err(internal)
-}
-
 /// Stable search key: match tier, folded title (prefix lookup only), item UUID.
 #[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 pub struct SearchKey(i64, String, String);
@@ -143,7 +117,6 @@ pub struct IndexedPage {
     pub hits: Vec<IndexedHit>,
     /// True once this content space exceeds the indexed head slot ceiling.
     pub partial: bool,
-    pending: bool,
 }
 
 /// Validated and compiled once per request for all selected spaces.
@@ -182,11 +155,7 @@ pub struct SearchProbe<'a> {
 // Pass the same activation check to all index reads. A missing control uses the
 // registry default. An invalid stored override contributes no results.
 const CTE: &str = "WITH allowed(kind) AS (
-    SELECT j.value->>'kind' FROM json_each(?1) j
-    LEFT JOIN controls c ON c.key=j.value->>'control'
-    WHERE CASE WHEN c.key IS NULL THEN j.value->>'default_enabled'
-               ELSE c.value->>'enabled' END = 1
-      AND (json_array_length(?2)=0 OR j.value->>'kind' IN (SELECT value FROM json_each(?2)))
+    SELECT value FROM json_each(?1) WHERE json_array_length(?2)>=0
 )";
 const PREFIX: &str = "SELECT 0,d.title_key,d.id,d.kind,d.title,'' FROM search_docs d
     WHERE d.kind IN allowed AND (d.title_key,d.id)>(?3,?4) AND d.title_key>=?5
@@ -222,9 +191,7 @@ fn statements() -> &'static [String; 4] {
         [PREFIX, &tail, MATCH, FUZZY].map(|query| {
             format!(
                 "{CTE}, matches AS MATERIALIZED ({query})
-             SELECT matches.*, EXISTS(SELECT 1 FROM items WHERE rowid>250000 AND kind IN allowed),
-                    EXISTS(SELECT 1 FROM outbox)
-             FROM (SELECT 1) LEFT JOIN matches ON 1 ORDER BY 1,2,3"
+             SELECT * FROM matches ORDER BY 1,2,3"
             )
         })
     })
@@ -240,8 +207,6 @@ fn search(conn: &Connection, filters: &str, probe: &SearchProbe<'_>) -> Result<I
         let mut cursor = stmt.query(params).map_err(internal)?;
         let mut page = IndexedPage::empty();
         while let Some(r) = cursor.next().map_err(internal)? {
-            page.partial = r.get(6).map_err(internal)?;
-            page.pending = r.get(7).map_err(internal)?;
             if let Some(id) = r.get::<_, Option<String>>(2).map_err(internal)? {
                 page.hits.push(IndexedHit {
                     key: SearchKey(
@@ -286,46 +251,86 @@ impl IndexedPage {
         Self {
             hits: Vec::new(),
             partial: false,
-            pending: false,
         }
     }
 }
 
 impl Content {
-    /// Fix the manifest opt-ins before serving requests. Uses immutable data for
-    /// subsequent lazy opens. Tests and tooling without a catalogue index nothing.
-    pub fn configure_search(&self, config: SearchConfig) {
-        let _ = self.search.set(config);
+    /// Start the manifest-scoped worker before requests. Opening the service
+    /// does no scan or filesystem I/O here. A configured host retains one
+    /// background thread which advances lazy, independently stored indexes.
+    pub fn configure_search(self: &std::sync::Arc<Self>, config: SearchConfig) -> Result<()> {
+        let enabled = config.kinds != "[]";
+        if self.search.set(config).is_ok() && enabled {
+            let _ = self.search_worker.set(worker::start(self)?);
+        }
+        Ok(())
     }
 
-    /// Query one authorized index on a read-only handle. Warm probes perform
-    /// one indexed statement and no userdata reads or writes. A cold probe can
-    /// initialize an older index using the writer. If the read observes an
-    /// unpublished intent it waits for the existing space write path, so no
-    /// address becomes visible before its durable route and journal publication.
+    /// Query an authorized space's projection. Cold and lagging indexes set
+    /// partial and enqueue a bounded background wake. This path never opens
+    /// the content writer or runs a rebuild.
     pub fn search_page(&self, space: SpaceId, probe: &SearchProbe<'_>) -> Result<IndexedPage> {
-        use readers::Reader;
         let Some(config) = self.search.get() else {
             return Ok(IndexedPage::empty());
         };
         let _step = self.lifecycle.step(space.as_uuid())?;
-        match self
-            .search_readers
-            .take(space, &self.roots.appdata, config)?
-        {
-            Reader::Empty => return Ok(IndexedPage::empty()),
-            Reader::Ready(conn) => {
-                let page = search(&conn, &config.filters, probe)?;
-                self.search_readers.keep(space, conn);
-                if !page.pending {
-                    return Ok(page);
+        let path = crate::db::space_path(&self.roots.appdata, space);
+        if !path.is_file() || config.kinds == "[]" {
+            return Ok(IndexedPage::empty());
+        }
+        let pair = self.search_readers.take(space, &self.roots.appdata)?;
+        let (source, index, journal) = &pair;
+        let result = (|| {
+            let (allowed, capped) = source::allowed(source, &config.filters, probe.kinds)?;
+            if allowed == "[]" {
+                return Ok(IndexedPage::empty());
+            }
+            if source::pending(source)? {
+                if let Some(worker) = self.search_worker.get() {
+                    let _ = worker.try_send(space);
+                }
+                return Ok(IndexedPage {
+                    partial: true,
+                    ..IndexedPage::empty()
+                });
+            }
+            let head = journal
+                .as_ref()
+                .map(|reader| reader.head())
+                .transpose()
+                .map_err(internal)?;
+            let snapshot = index
+                .as_ref()
+                .map(|conn| readers::while_available(|| conn.unchecked_transaction()))
+                .transpose()?
+                .flatten();
+            let ready = snapshot
+                .as_deref()
+                .map(|conn| readers::while_available(|| worker::state(conn)))
+                .transpose()?
+                .flatten()
+                .flatten();
+            let matches = head
+                .as_ref()
+                .zip(ready.as_ref())
+                .filter(|(head, ready)| ready.ready && ready.matches(config, space, head));
+            if matches.is_none_or(|(head, ready)| head.seq != ready.watermark) {
+                if let Some(worker) = self.search_worker.get() {
+                    let _ = worker.try_send(space);
                 }
             }
-            Reader::Initialize => {}
-        }
-        self.with_space(space, |s| {
-            self.publish_pending(s)?;
-            search(&s.conn, &config.filters, probe)
-        })
+            let Some((head, ready)) = matches else {
+                return Ok(IndexedPage {
+                    partial: true,
+                    ..IndexedPage::empty()
+                });
+            };
+            let mut page = search(snapshot.as_deref().expect("ready index"), &allowed, probe)?;
+            page.partial = capped || head.seq != ready.watermark;
+            Ok(page)
+        })();
+        self.search_readers.keep(space, pair);
+        result
     }
 }

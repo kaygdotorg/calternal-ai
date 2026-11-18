@@ -12,6 +12,7 @@ mod materialization;
 mod rebuild;
 mod report;
 mod search;
+mod search_stage;
 mod server;
 mod stats;
 mod timings;
@@ -67,6 +68,13 @@ struct Args {
     /// Client wave sizes; each client owns a separate space (maximum 128).
     #[arg(long, default_value = "8,32,128")]
     clients: String,
+    /// Keep the save matrix and add online search probes. Both arms use the
+    /// same binary. The baseline manifest must disable the Notes index.
+    #[arg(long, requires = "baseline_plugins")]
+    paired_search: bool,
+    /// Queue zero, one or two online rebuilds and probe healthy-space requests.
+    #[arg(long, requires = "paired_search")]
+    search_queue: bool,
     /// Measure authorized first-page search and same-space note saves.
     #[arg(long)]
     search_only: bool,
@@ -107,6 +115,9 @@ fn run(a: &Args) -> Result<i32> {
     if std::env::var("CALTERNAL_PERF_HELD").as_deref() != Ok("1") {
         return Err("run under /usr/local/bin/perf-lock.sh on the perf VM".into());
     }
+    if a.paired_search && a.bin != a.baseline {
+        return Err("paired search requires the same binary in both arms".into());
+    }
     if a.samples > 10_000 || a.pairs > 20 || a.cold_pairs > 5 {
         return Err("limit samples to 10000, warm pairs to 20 and cold pairs to 5".into());
     }
@@ -118,6 +129,7 @@ fn run(a: &Args) -> Result<i32> {
         a.startup_only,
         a.concurrency_only,
         a.search_only,
+        a.search_queue,
         a.rebuild_only,
     ]
     .into_iter()
@@ -149,6 +161,9 @@ fn run(a: &Args) -> Result<i32> {
     }
     if a.rebuild_only {
         return rebuild::run(a);
+    }
+    if a.search_queue {
+        return search_stage::queue::run(a);
     }
     if a.search_only {
         return search::run(a);
@@ -367,6 +382,9 @@ fn scenario(
     if a.startup_only {
         return Ok(samples);
     }
+    if a.paired_search {
+        search_stage::first_use(&server, &mut h, root, &space, &mut first, &mut samples)?;
+    }
     let mut live = live::Live::open(
         &h,
         "/api/v1/live",
@@ -451,6 +469,9 @@ fn scenario(
             .entry("account.draft_write_to_feed".into())
             .or_default()
             .push(t.elapsed().as_secs_f64() * 1000.);
+    }
+    if a.paired_search {
+        search_stage::lag(&mut h, &placement, &space, &mut first, &mut samples)?;
     }
     timings::collect(&root.join("server.log"), &deliveries, &mut samples)?;
     drop(live);

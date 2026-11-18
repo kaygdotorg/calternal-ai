@@ -355,7 +355,9 @@ pub fn agent_policies() -> &'static [Policy] {
             .iter()
             .map(|(id, _, _)| Policy {
                 operation: Cow::Borrowed(*id),
-                required: if *id == "agent.events" {
+                required: if *id == calternal_core::MACHINES_ONBOARDING {
+                    Capability::ServerSettings
+                } else if *id == "agent.events" {
                     Capability::SpaceRead
                 } else {
                     Capability::PluginsUse

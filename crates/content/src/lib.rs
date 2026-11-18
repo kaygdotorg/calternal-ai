@@ -74,6 +74,8 @@ pub struct Content {
     roots: Roots,
     search: std::sync::OnceLock<SearchConfig>,
     search_readers: search::Readers,
+    search_writers: search::Writers,
+    search_worker: std::sync::OnceLock<std::sync::mpsc::SyncSender<SpaceId>>,
     lifecycle: calternal_types::OwnerLifecycle,
     index: Mutex<Connection>,
     catalog: ReadPool,
@@ -169,6 +171,8 @@ impl Content {
         let content = Self {
             search: std::sync::OnceLock::new(),
             search_readers: search::Readers::default(),
+            search_writers: search::Writers::default(),
+            search_worker: std::sync::OnceLock::new(),
             roots,
             lifecycle,
             index: Mutex::new(index),
@@ -220,10 +224,6 @@ impl Content {
             let journal = self.journals.open_store(id, self.lifecycle.clone())?;
             let mut opened =
                 Space::open(&self.roots.appdata, &self.roots.userdata_ssd, id, journal)?;
-            search::register_functions(&opened.conn)?;
-            if let Some(config) = self.search.get() {
-                search::install(&opened.conn, config)?;
-            };
             self.recover_space(&mut opened)?;
             *held = Some(opened);
         }
@@ -256,6 +256,7 @@ impl Content {
     pub fn retire_space(&self, space: SpaceId) {
         self.lifecycle.drain(space.as_uuid());
         self.search_readers.forget(space);
+        self.search_writers.forget(space);
         let slot = lock(&self.spaces).remove(&space);
         drop(slot);
     }

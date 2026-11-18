@@ -27,6 +27,7 @@ impl MachineService {
             Some(source),
             None,
             false,
+            false,
         )
     }
 
@@ -63,10 +64,35 @@ impl MachineService {
         lease: Uuid,
         argv: Vec<String>,
     ) -> Result<Uuid, Error> {
+        self.internal_exec(account, lease, argv, false)
+    }
+
+    /// Start the private provider adapter inside a host-owned sign-in sandbox.
+    /// Holds the same in-memory registry lock as worker exec admission.
+    pub(crate) fn sign_in_exec(
+        &self,
+        account: AccountId,
+        lease: Uuid,
+        argv: Vec<String>,
+    ) -> Result<Uuid, Error> {
+        self.internal_exec(account, lease, argv, true)
+    }
+
+    fn internal_exec(
+        &self,
+        account: AccountId,
+        lease: Uuid,
+        argv: Vec<String>,
+        sign_in: bool,
+    ) -> Result<Uuid, Error> {
         let mut st = self.lock()?;
         if !st.leases.get(&lease).is_some_and(|l| {
             l.row.account == account
-                && l.row.worker
+                && (if sign_in {
+                    l.provider_login
+                } else {
+                    l.row.worker
+                })
                 && matches!(l.state, LeaseState::Assigned | LeaseState::Running)
         }) {
             return Err(Error::unavailable(
@@ -85,7 +111,7 @@ impl MachineService {
     /// Queue one frame in the authenticated machine outbox, preserving order.
     /// One existing registry lock, no disk I/O. Refuses stale/foreign execs and
     /// limits outstanding input to 16 frames per exec (at most 4 MiB).
-    pub(crate) fn worker_input(
+    pub(crate) fn interactive_input(
         &self,
         account: AccountId,
         exec: Uuid,

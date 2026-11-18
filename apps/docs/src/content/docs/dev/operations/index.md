@@ -72,12 +72,18 @@ Generated operation schemas. Capability and risk are shown only when the catalog
 - [pending.cancel](./pending-cancel/): pending cancel
 - [pending.confirm](./pending-confirm/): pending confirm
 - [pending.submit](./pending-submit/): pending submit
+- [provider.sign_in.start](./provider-sign-in-start/): Start a private provider sign-in
+- [provider.sign_in.answer](./provider-sign-in-answer/): Supply a code to the official provider login
+- [provider.sign_in.status](./provider-sign-in-status/): Read a private provider sign-in result
+- [provider.sign_in.typing](./provider-sign-in-typing/): Offer provider re-authentication while composing
 - [requests.list](./requests-list/): List requests waiting on the signed-in account
 - [requests.ask](./requests-ask/): Ask the person a question from the current turn
 - [requests.answer](./requests-answer/): Answer a pending question
 - [requests.approve](./requests-approve/): Approve with a fresh verified passkey
 - [requests.deny](./requests-deny/): Decline a pending approval
 - [space.instructions](./space-instructions/): Read or replace standing space instructions
+- [machines.install](./machines-install/): Create a single-use personal machine enrollment script
+- [machines.onboarding](./machines-onboarding/): Check whether the installation has an enrolled, available machine
 - [machines.verify](./machines-verify/): Verify a selected machine and provider sign-in
 - [agent.readiness](./agent-readiness/): Read your machine and provider readiness in a space
 - [agent.settings](./agent-settings/): Read or set your account defaults or thread retry settings

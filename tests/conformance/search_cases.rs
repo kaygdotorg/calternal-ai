@@ -28,6 +28,20 @@ async fn note(f: &Fixture, who: usize, space: &str, title: &str, markdown: &str)
         .clone()
 }
 
+async fn ready_search(f: &Fixture, who: usize, op: &str, input: Value) -> Value {
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let page = data(f.op(who, op, input.clone()).await);
+            if page["partial"] == false {
+                return page;
+            }
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+    })
+    .await
+    .unwrap_or_else(|_| panic!("search projection should catch up for {op}: {input}"))
+}
+
 #[tokio::test]
 async fn palette_results_and_picker_operations_hide_other_spaces() {
     let f = Fixture::new().await;
@@ -43,22 +57,6 @@ async fn palette_results_and_picker_operations_hide_other_spaces() {
     )
     .await;
     let visible = note(&f, 1, shared, "Project Needle", "Shared overview").await;
-    let thread = data(
-        f.op(
-            1,
-            "threads.create",
-            json!({"space_id":shared,"title":"Project Needle thread"}),
-        )
-        .await,
-    );
-    let _ = data(
-        f.op(
-            1,
-            "threads.create",
-            json!({"space_id":private,"title":"Project Needle private thread"}),
-        )
-        .await,
-    );
     let path = f
         .dir
         .path()
@@ -79,31 +77,16 @@ async fn palette_results_and_picker_operations_hide_other_spaces() {
         ("threads.lookup", "prefix", "Project"),
     ] {
         let mut query = json!({(field):text});
-        let available = data(f.op(2, op, query.clone()).await);
-        let expected = if op == "threads.lookup" { 1 } else { 2 };
-        assert_eq!(available["hits"].as_array().unwrap().len(), expected);
-        assert!(
-            available["hits"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .all(|hit| hit["space_id"] == *shared)
-        );
-        assert!(
-            available["hits"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .any(|hit| hit["address"] == thread["thread"]["address"])
-        );
-        if op != "threads.lookup" {
-            assert!(
-                available["hits"]
-                    .as_array()
-                    .unwrap()
-                    .iter()
-                    .any(|hit| hit["address"]
-                        == format!("/notes/{}", visible["id"].as_str().unwrap()))
+        let available = ready_search(&f, 2, op, query.clone()).await;
+        let hits = available["hits"].as_array().unwrap();
+        if op == "threads.lookup" {
+            assert!(hits.is_empty());
+        } else {
+            assert_eq!(hits.len(), 1);
+            assert_eq!(hits[0]["space_id"], *shared);
+            assert_eq!(
+                hits[0]["address"],
+                format!("/notes/{}", visible["id"].as_str().unwrap())
             );
         }
 
@@ -214,10 +197,7 @@ async fn palette_results_and_picker_operations_hide_other_spaces() {
         .await,
     );
     let _ = note(&f, 0, group_space, "Inherited grant probe", "").await;
-    let visible = data(
-        f.op(2, "search.query", json!({"query":"inherited grant"}))
-            .await,
-    );
+    let visible = ready_search(&f, 2, "search.query", json!({"query":"inherited grant"})).await;
     assert_eq!(visible["hits"][0]["space_id"], group_space);
     let groups = data(
         f.op(
@@ -262,7 +242,7 @@ async fn search_orders_titles_first_then_bodies_and_rebuilds_identically_after_a
     .await;
     let title = note(&f, 1, &space, "Meeting agenda", "prepare").await;
     let input = json!({"space_id":space,"query":"meeti","limit":1});
-    let first = data(f.op(2, "search.query", input.clone()).await);
+    let first = ready_search(&f, 2, "search.query", input.clone()).await;
     assert_eq!(
         first["hits"][0]["address"],
         format!("/notes/{}", title["id"].as_str().unwrap())
@@ -331,27 +311,119 @@ async fn search_orders_titles_first_then_bodies_and_rebuilds_identically_after_a
     std::fs::remove_file(fault).unwrap();
     f.start().await;
     let query = json!({"space_id":space,"query":"bodytoken"});
-    let incremental = data(f.op(2, "search.query", query.clone()).await);
+    let incremental = ready_search(&f, 2, "search.query", query.clone()).await;
     assert_eq!(
         incremental["hits"][0]["address"],
         second["hits"][0]["address"]
     );
     data(f.op_id(1, "notes.update", input, "search-crash").await);
     f.stop();
-    let conn =
-        Connection::open(f.appdata().join("spaces").join(&space).join("content.db")).unwrap();
-    conn.execute_batch("DELETE FROM search_configuration; DROP TABLE search_docs; DROP TABLE search_text; DROP TABLE search_title_grams;").unwrap();
-    drop(conn);
+    let root = f.appdata().join("spaces").join(&space);
+    let source = Connection::open(root.join("content.db")).unwrap();
+    let inline_search: i64 = source
+        .query_row(
+            "SELECT count(*) FROM sqlite_schema WHERE name='search_docs'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(inline_search, 0);
+    drop(source);
+    let index_path = root.join("search-v2.db");
+    let locked = Connection::open(&index_path).unwrap();
+    locked
+        .execute(
+            "UPDATE search_configuration SET generation='older-release'",
+            [],
+        )
+        .unwrap();
+    locked.execute_batch("BEGIN IMMEDIATE").unwrap();
     f.start().await;
+    data(f.op(2, "notes.list", json!({"space_id":space})).await);
+    data(f.op(2, "notes.get", json!({"id":body["id"]})).await);
+    data(
+        f.op(
+            1,
+            "notes.update",
+            json!({"id":title["id"],"base_revision":title["revision"],"markdown":"saved during rebuild"}),
+        )
+        .await,
+    );
+    let pending = data(f.op(2, "search.query", query.clone()).await);
+    assert_eq!(pending, json!({"hits":[],"partial":true}));
+    locked.execute_batch("ROLLBACK").unwrap();
+    drop(locked);
     assert_eq!(
         incremental,
-        data(f.op(2, "search.query", query.clone()).await)
+        ready_search(&f, 2, "search.query", query.clone()).await
     );
     data(f.op(1, "notes.delete", json!({"id":body["id"]})).await);
     assert_eq!(
-        data(f.op(2, "search.query", query.clone()).await)["hits"],
+        ready_search(&f, 2, "search.query", query.clone()).await["hits"],
         json!([])
     );
     data(f.op(1, "notes.restore", json!({"id":body["id"]})).await);
-    assert_eq!(incremental, data(f.op(2, "search.query", query).await));
+    assert_eq!(
+        incremental,
+        ready_search(&f, 2, "search.query", query).await
+    );
+
+    let before = data(f.op(1, "notes.get", json!({"id":body["id"]})).await);
+    let locked = Connection::open(&index_path).unwrap();
+    locked.busy_timeout(Duration::from_secs(2)).unwrap();
+    locked.execute_batch("BEGIN IMMEDIATE").unwrap();
+    data(
+        f.op(
+            1,
+            "notes.update",
+            json!({"id":body["id"],"base_revision":before["note"]["revision"],"markdown":"afterackcrash"}),
+        )
+        .await,
+    );
+    let q = json!({"space_id":space,"query":"afterackcrash"});
+    assert_eq!(
+        data(f.op(2, "search.query", q.clone()).await)["partial"],
+        true
+    );
+    f.stop();
+    locked.execute_batch("ROLLBACK").unwrap();
+    drop(locked);
+    f.start().await;
+    assert_eq!(
+        ready_search(&f, 2, "search.query", q).await["hits"][0]["address"],
+        incremental["hits"][0]["address"]
+    );
+}
+
+#[tokio::test]
+async fn first_search_returns_partial_when_the_index_cannot_open() {
+    let mut f = Fixture::new().await;
+    let space = f.spaces[2].clone();
+    let saved = note(&f, 1, &space, "Raceprobe", "raw body").await;
+    let query = json!({"space_id":space,"query":"Raceprobe"});
+    ready_search(&f, 2, "search.query", query.clone()).await;
+    f.stop();
+
+    let root = f.appdata().join("spaces").join(&space);
+    for file in ["search-v2.db", "search-v2.db-wal", "search-v2.db-shm"] {
+        match std::fs::remove_file(root.join(file)) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => panic!("could not reset the derived fixture: {error}"),
+        }
+    }
+    let locked = Connection::open(root.join("search-v2.db")).unwrap();
+    locked.execute_batch("BEGIN EXCLUSIVE").unwrap();
+    f.start().await;
+    assert_eq!(
+        data(f.op(2, "search.query", query.clone()).await),
+        json!({"hits":[],"partial":true})
+    );
+    data(f.op(2, "notes.get", json!({"id":saved["id"]})).await);
+    locked.execute_batch("ROLLBACK").unwrap();
+    drop(locked);
+    assert_eq!(
+        ready_search(&f, 2, "search.query", query).await["hits"][0]["address"],
+        format!("/notes/{}", saved["id"].as_str().unwrap())
+    );
 }

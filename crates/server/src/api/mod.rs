@@ -48,10 +48,7 @@ mod search_skills;
 
 /// Configure immutable manifest search projections before any content space is opened.
 pub fn configure_search(store: &Store, registry: &Registry) -> Result<(), Error> {
-    store
-        .content()
-        .configure_search(search::configuration(registry)?);
-    Ok(())
+    store.configure_search(search::configuration(registry)?)
 }
 mod request_action;
 mod spaces;

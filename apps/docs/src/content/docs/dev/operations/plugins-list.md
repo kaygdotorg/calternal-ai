@@ -509,6 +509,10 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
           "format": "uint32",
           "minimum": 0,
           "type": "integer"
+        },
+        "sign_in": {
+          "description": "Whether the executable implements the private `--sign-in` mode.",
+          "type": "boolean"
         }
       },
       "required": [

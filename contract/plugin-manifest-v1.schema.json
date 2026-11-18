@@ -617,6 +617,10 @@
           "type": "integer",
           "format": "uint32",
           "minimum": 0.0
+        },
+        "sign_in": {
+          "description": "Whether the executable implements the private `--sign-in` mode.",
+          "type": "boolean"
         }
       },
       "additionalProperties": false

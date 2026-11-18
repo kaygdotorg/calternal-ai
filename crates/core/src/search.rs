@@ -116,7 +116,7 @@ pub struct SearchResult {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub next_cursor: Option<String>,
-    /// A readable selected index reached its coverage limit.
+    /// A readable selected index is catching up, rebuilding, or has reached its coverage limit.
     pub partial: bool,
 }
 

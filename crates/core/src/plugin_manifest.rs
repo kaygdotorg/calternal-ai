@@ -352,6 +352,9 @@ pub struct ManifestProvider {
     pub protocol_version: u32,
     /// Basename resolved inside the sandbox's PATH; no shell, path or arguments.
     pub executable: String,
+    /// Whether the executable implements the private `--sign-in` mode.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub sign_in: bool,
     /// Default installed-CLI model identifier, at most 128 UTF-8 bytes.
     pub default_model: String,
     /// Models offered by this adapter, validated and cached with the manifest.

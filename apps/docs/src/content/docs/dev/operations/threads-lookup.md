@@ -145,7 +145,7 @@ Capability: space.read.
       ]
     },
     "partial": {
-      "description": "A readable selected index reached its coverage limit.",
+      "description": "A readable selected index is catching up, rebuilding, or has reached its coverage limit.",
       "type": "boolean"
     }
   },

@@ -34,7 +34,6 @@
   "kinds": [
     {
       "id": "threads",
-      "searchable": true,
       "storage": {
         "folder": "AI",
         "subdirectories": [

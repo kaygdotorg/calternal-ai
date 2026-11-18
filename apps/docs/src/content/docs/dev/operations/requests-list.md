@@ -189,6 +189,56 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
           "type": "object"
         },
         {
+          "description": "An expiring challenge from an official machine-side login program.",
+          "properties": {
+            "display_code": {
+              "description": "Code to enter on the provider page for a device flow.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "expires_at_ms": {
+              "description": "Unix milliseconds when the pending challenge expires.",
+              "format": "int64",
+              "type": "integer"
+            },
+            "kind": {
+              "enum": [
+                "provider_sign_in"
+              ],
+              "type": "string"
+            },
+            "label": {
+              "description": "Provider prompt shown privately to the signed-in person.",
+              "type": "string"
+            },
+            "needs_code": {
+              "description": "The official command expects an authorization code from the user.",
+              "type": "boolean"
+            },
+            "provider_id": {
+              "description": "Installed provider plugin ID.",
+              "type": "string"
+            },
+            "url": {
+              "description": "Provider-owned HTTPS authorization page.",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "expires_at_ms",
+            "kind",
+            "label",
+            "needs_code",
+            "provider_id"
+          ],
+          "type": "object"
+        },
+        {
           "description": "Trusted, fixed form describing the existing secret request.",
           "properties": {
             "expires_at_ms": {

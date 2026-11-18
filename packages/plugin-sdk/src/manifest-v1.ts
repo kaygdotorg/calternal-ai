@@ -37,7 +37,8 @@ export function validateManifestV1(value: unknown): ManifestV1 {
   if (new TextEncoder().encode(JSON.stringify(value)).length > 256 * 1024) fail();
   const m = record(value, ["id", "name", "icon", "version", "api_version", "kinds", "operations", "collections", "views", "attention", "settings", "schedules", "webhooks", "secrets", "hooks", "themes", "host_calls"], ["provider", "palette"]);
   if (m.provider !== undefined) {
-    const p = record(m.provider, ["protocol_version", "executable", "default_model", "models"]);
+    const p = record(m.provider, ["protocol_version", "executable", "default_model", "models", "sign_in"]);
+    if (p.sign_in !== undefined && typeof p.sign_in !== "boolean") throw new Error("invalid provider sign_in");
     if (p.protocol_version !== 1 || typeof p.executable !== "string" || !/^[a-z0-9][a-z0-9_-]{0,79}$/.test(p.executable)) fail();
     const modelId = /^[a-zA-Z0-9][a-zA-Z0-9._:@/-]{0,127}$/;
     const ids = new Set<string>();

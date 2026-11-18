@@ -13,7 +13,7 @@ export interface InboxItem {
 }
 
 const ORDER = ["Question", "Approval", "Secret", "Sign in", "Failed", "Interrupted"];
-const OF_REQUEST: Record<Request["kind"], string> = { question: "Question", approval: "Approval", secret: "Secret" };
+const OF_REQUEST: Record<Request["kind"], string> = { question: "Question", approval: "Approval", secret: "Secret", signin: "Sign in" };
 
 /** The Inbox for these threads and their open requests. Cost: one pass over each. */
 export function inboxOf(threads: readonly ThreadSummary[], requests: readonly Request[]): InboxItem[] {

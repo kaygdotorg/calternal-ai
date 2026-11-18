@@ -109,8 +109,13 @@ def smoke(data_dir, spawn):
         assert cl('notes', 'get', note_id)['data']['note'] == first
         listed = cl('notes', 'list', '--space', private)['data']['notes']
         assert any(note['id'] == note_id for note in listed)
-        search = account_cli('search', 'query', 'CLI conformance', '--space', private)
-        assert any(hit['address'] == f'/notes/{note_id}' for hit in search['hits'])
+        deadline = time.monotonic() + 5
+        while True:
+            search = account_cli('search', 'query', 'CLI conformance', '--space', private)
+            if any(hit['address'] == f'/notes/{note_id}' for hit in search['hits']):
+                break
+            assert search['partial'] and time.monotonic() < deadline, 'search did not index the saved note'
+            time.sleep(0.025)
         items = account_cli('search', 'items', 'CLI', '--space', private)
         assert any(hit['address'] == f'/notes/{note_id}' for hit in items['hits'])
         menus = account_cli('search', 'manifests', '--space', private)

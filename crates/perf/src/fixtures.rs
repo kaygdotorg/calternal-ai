@@ -11,7 +11,11 @@ pub(crate) fn build(a: &Args, root: &Path, notes: usize, spaces: usize) -> Resul
     let (_server, mut h, _) = Server::start(
         &a.bin,
         root,
-        &a.plugins,
+        if a.paired_search {
+            a.baseline_plugins.as_deref().unwrap_or(&a.plugins)
+        } else {
+            &a.plugins
+        },
         a.test_plugin_root.as_deref(),
         a.startup_timeout_seconds,
     )?;

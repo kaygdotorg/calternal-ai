@@ -36,31 +36,44 @@ operation.
 
 ## Index
 
-A manifest opts a Markdown kind in with `searchable: true`. Notes and
-Threads opt in. The space's effective plugin activation determines which
-kinds appear. The index uses the existing per-space `content.db`, current
-revision and transaction. Search fields come from the saved heading metadata
-and a bounded slice of the already-validated Markdown bytes after frontmatter.
-Search uses SQLite FTS5 and title character pairs, adapted from the original
-Calternal search in ADR 0031. Prefix lookups use a B-tree range. Up to 128 read-only connections are
-retained for active space queries, with a 256 KiB SQLite page-cache target per
-reader. Read-only queries use one SQL statement per selected space in the
-ordinary case. A query may need a writer round trip to recover an unretired
-intent or build a missing projection.
+A manifest opts a Markdown kind in with `searchable: true`. Notes opt in
+during this stage. Message search follows the byte-counted thread producer
+in #46. Effective plugin activation is read from the space's current controls
+on every probe. Disabled kinds and unreadable spaces contribute zero hits and
+zero coverage information.
 
-The bound is 250,000 content head slots per space, with a title of at most
-256 Unicode scalars and the first 8,192 body scalars per searchable document.
-The frontmatter delimiter must be in the first 64 KiB. `partial` is true
-if an enabled selected kind has a head above the space's slot ceiling. This
-does not change which documents can be saved. SQLite pages and WAL remain subject
-to the space's database and checkpoint lifecycle.
+The derived per-space `search-v2.db` opens lazily. A separate maintenance
+thread scans at most 128 heads per turn and cycles through spaces. It runs
+outside foreground read and write admission. Its four warm writer handles
+and 128 idle reader sets are bounded. Prefix lookups use a B-tree range.
+Notes text and typo matching use SQLite FTS5 and title character pairs,
+ported from ADR 0031. The chronological message postings experiment is
+separate from the Notes read path.
 
-Saving a revision updates the index in the same SQL transaction. A save adds
-bounded text projection and index page writes, with zero extra userdata reads,
-Markdown parses, SQL transactions or durability flushes. A crash after commit
-preserves both the revision and its projection. Dropping the derived index
-tables offline causes the next lazy open to reconstruct them from the current
-stored revisions. Userdata remains the source of the saved Markdown.
+A save performs zero search SQL statements, userdata reads, parses, or
+flushes. The worker tails the durable journal position, uses the saved
+title and validated Markdown bytes from the already staged version, and
+commits the projection with its watermark in one transaction. The worker
+tokenizes text for search. A worker crash replays from the surviving
+watermark. The healthy lag target is one second with work admitted and
+storage responsive. Readers see the previous published generation while
+the watermark is behind and receive `partial: true`. A missing or invalid
+generation or an unpublished authoritative intent yields an empty partial page
+until recovery catches up.
+
+On first use, a fresh generation scans retained UUID heads and the guarded
+Markdown files. Pending placement, a missing file or an external edit
+uses the last durable version. The journal catches changes during the
+scan before the worker publishes readiness. The release version, schema generation, kind configuration and journal
+epoch invalidate a projection on change.
+Foreground Notes list, ID reads and saves keep using existing head metadata
+and the journal during rebuild. This covers the Notes search projection.
+Other indexes use their existing lifecycle.
+
+Each space has at most 250,000 indexed head slots. Titles cap at 256 Unicode
+scalars, bodies at 8,192 scalars, and the worker reads only the first 64 KiB
+of each staged body for keyword indexing. The frontmatter delimiter must be
+within those bytes. A space beyond the slot ceiling sets `partial: true`.
 
 ## Pending product decisions
 
