@@ -28,7 +28,10 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 /// Protocol version spoken by this build; the server refuses other versions.
-pub const PROTOCOL_VERSION: u32 = 7;
+pub const PROTOCOL_VERSION: u32 = 8;
+
+/// First machine protocol that supports a broker and distinct tool sandbox.
+pub const SHARED_TOOLS_PROTOCOL_VERSION: u32 = 8;
 
 /// First machine protocol that supports an isolated shared Claude login directory.
 pub const SHARED_PROVIDER_PROTOCOL_VERSION: u32 = 7;
@@ -306,6 +309,25 @@ pub struct Limits {
     pub pids: Option<u32>,
 }
 
+/// Fixed provider routes supported by the machine-local inference broker.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SharedToolsProvider {
+    /// Anthropic Messages API.
+    Claude,
+    /// OpenAI Responses API.
+    Codex,
+}
+
+/// Scope of one turn's tool executor. The machine resolves the credential locally.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SharedTools {
+    /// Fixed upstream protocol.
+    pub provider: SharedToolsProvider,
+    /// Keep the member's workspace read-only outside explicitly full access.
+    pub workspace_read_only: bool,
+}
+
 /// What to start for a thread.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SandboxSpec {
@@ -322,6 +344,9 @@ pub struct SandboxSpec {
     /// The Owner of the isolated space login directory, when using a shared login.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shared_provider_sponsor: Option<AccountId>,
+    /// Opt-in isolated tools for a shared turn.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shared_tools: Option<SharedTools>,
     /// Account owning the persistent shared login; validated UUID from the server.
     pub account_id: Uuid,
     /// The thread; one sandbox per thread, reused across leases.

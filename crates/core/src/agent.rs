@@ -90,6 +90,9 @@ pub struct SpaceMachineGet {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS)]
 #[serde(deny_unknown_fields)]
 pub struct SpaceMachineSet {
+    /// Enable isolated tools on this machine. Only the space Owner may enable them.
+    #[serde(default)]
+    pub tools_enabled: Option<bool>,
     /// Shared space UUID.
     pub space_id: String,
     /// Owner's sandbox machine UUID or null to clear the setting.
@@ -101,6 +104,8 @@ pub struct SpaceMachineSet {
 /// Current space execution setting and the notice shown during setup.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS)]
 pub struct SpaceMachineResult {
+    /// Whether the Owner enabled isolated tools for this binding.
+    pub tools_enabled: bool,
     /// Whether a shared machine is configured.
     pub configured: bool,
     /// Selected machine UUID, visible only with permission to change it.

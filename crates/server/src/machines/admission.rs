@@ -121,19 +121,20 @@ impl MachineService {
         thread: Uuid,
         target: SpaceExecution,
         sign_in: bool,
+        sandbox: Option<(Option<String>, calternal_machine::protocol::SharedTools)>,
     ) -> Result<RunView, Error> {
         self.request_work(
             space,
             actor,
             thread,
-            None,
+            sandbox.as_ref().and_then(|(image, _)| image.clone()),
             None,
             Some(target.machine),
             false,
             sign_in,
             false,
             None,
-            Some(target),
+            Some((target, sandbox.map(|(_, tools)| tools))),
         )
     }
 
@@ -180,7 +181,7 @@ impl MachineService {
         provider_login: bool,
         background_title: bool,
         harness: Option<calternal_machine::protocol::HarnessSandbox>,
-        shared: Option<SpaceExecution>,
+        shared: Option<(SpaceExecution, Option<calternal_machine::protocol::SharedTools>)>,
     ) -> Result<RunView, Error> {
         let _account = self
             .lifecycle
@@ -193,6 +194,7 @@ impl MachineService {
             .map(|l| l.step(space.as_uuid()))
             .transpose()?;
         let _sponsor = shared
+            .map(|(target, _)| target)
             .filter(|target| target.sponsor != account)
             .and_then(|target| {
                 self.lifecycle
@@ -202,10 +204,12 @@ impl MachineService {
             .transpose()?;
         let mut st = self.lock()?;
         let st = &mut *st;
-        if let Some(target) = shared {
+        if let Some((mut target, tools)) = shared {
+            target.tools_enabled = tools.is_some();
             st.require_execution(space, target)?;
         }
-        let shared_sponsor = shared.map(|target| target.sponsor);
+        let shared_sponsor = shared.map(|(target, _)| target.sponsor);
+        let shared_tools = shared.and_then(|(_, tools)| tools);
         if background_title
             && !pinned_machine
                 .and_then(|id| st.machines.get(&id))
@@ -234,6 +238,7 @@ impl MachineService {
                 || l.row.space != space
                 || l.row.pinned_machine != pinned_machine
                 || l.row.shared_sponsor != shared_sponsor
+                || l.row.shared_tools != shared_tools
                 || l.row.harness != harness
                 || l.row.image != image
             {
@@ -251,6 +256,7 @@ impl MachineService {
             space,
             account,
             shared_sponsor,
+            shared_tools,
             thread,
             image,
             harness,

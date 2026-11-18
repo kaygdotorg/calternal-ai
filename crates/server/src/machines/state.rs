@@ -23,6 +23,7 @@ pub(super) struct Live {
     pub direct: bool,
     pub harness_protocol: bool,
     pub shared_provider: bool,
+    pub shared_tools: bool,
     pub kvm_fallback: bool,
     pub thread_limit: Option<usize>,
     pub outbox: VecDeque<Envelope>,
@@ -232,7 +233,8 @@ impl State {
                 .machines
                 .get(&machine)
                 .and_then(|m| m.live.as_ref())
-                .is_some_and(|live| live.shared_provider)
+                .is_some_and(|live| live.shared_provider
+                    && (l.row.shared_tools.is_none() || live.shared_tools))
         {
             return;
         }
@@ -244,6 +246,7 @@ impl State {
             space_id: Some(space_id),
             provider_login: l.provider_login,
             shared_provider_sponsor: l.row.shared_sponsor,
+            shared_tools: l.row.shared_tools,
             code_directory: None,
             worker: self.workers.get(&lease).cloned(),
             account_id: account_id.as_uuid(),
@@ -490,6 +493,7 @@ impl State {
                         |(sponsor, machine)| super::space_execution::SpaceExecution {
                             sponsor,
                             machine,
+                            tools_enabled: l.row.shared_tools.is_some(),
                         },
                     );
             if let Some(target) = shared

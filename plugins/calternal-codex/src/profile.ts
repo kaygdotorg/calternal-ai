@@ -48,9 +48,12 @@ async function sameLink(target: string, path: string) {
 export async function prepareProfile(workspace: string, mode: AgentMode, withBroker = false): Promise<Profile> {
   const login = process.env.CALTERNAL_PROVIDER_LOGIN_DIR;
   const home = process.env.HOME;
-  if (!login || !home || !isAbsolute(login) || !isAbsolute(home)) throw new Error('isolated provider profile is unavailable');
-  const loginStat = await lstat(login);
-  if (!loginStat.isDirectory() || (loginStat.mode & 0o077) !== 0) throw new Error('provider login directory is not private');
+  const gateway = process.env.CALTERNAL_GATEWAY_URL;
+  if (!home || !isAbsolute(home) || (!gateway && (!login || !isAbsolute(login)))) throw new Error('isolated provider profile is unavailable');
+  if (!gateway && login) {
+    const loginStat = await lstat(login);
+    if (!loginStat.isDirectory() || (loginStat.mode & 0o077) !== 0) throw new Error('provider login directory is not private');
+  }
   const codexHome = join(home, '.codex');
   try {
     await mkdir(codexHome, { mode: 0o700 });
@@ -59,7 +62,7 @@ export async function prepareProfile(workspace: string, mode: AgentMode, withBro
   }
   const homeStat = await lstat(codexHome);
   if (!homeStat.isDirectory() || (homeStat.mode & 0o077) !== 0) throw new Error('unsafe Codex home');
-  for (const name of ['auth.json', 'auth.lock']) {
+  if (!gateway && login) for (const name of ['auth.json', 'auth.lock']) {
     await sameLink(join(login, name), join(codexHome, name));
   }
   const binary = process.env.CALTERNAL_CODEX_BINARY ?? '/usr/local/bin/codex';
@@ -70,7 +73,7 @@ export async function prepareProfile(workspace: string, mode: AgentMode, withBro
   const files = [
     '":minimal" = "read"',
     `${quote(cwd)} = "${mode === 'least_access' ? 'read' : 'write'}"`,
-    `${quote(login)} = "deny"`,
+    `${quote(gateway ? '/run/calternal-broker' : login)} = "deny"`,
     `${quote(codexHome)} = "deny"`,
     '"/usr/local/bin/calternal" = "read"',
     '"/nix/store" = "read"',
@@ -90,7 +93,22 @@ export async function prepareProfile(workspace: string, mode: AgentMode, withBro
     `permissions.${permissions}.network.mode="full"`,
     `permissions.${permissions}.network.domains={${quote(broker.hostname)}="allow"}`,
   ] : [];
+  if (gateway) env.CALTERNAL_GATEWAY_TOKEN = process.env.CALTERNAL_GATEWAY_TOKEN;
+  const gatewayArgs = gateway ? [
+    'model_provider="calternal_shared"',
+    'model_providers.calternal_shared.name="Calternal shared gateway"',
+    `model_providers.calternal_shared.base_url=${quote(gateway + '/v1')}`,
+    'model_providers.calternal_shared.env_key="CALTERNAL_GATEWAY_TOKEN"',
+    'model_providers.calternal_shared.wire_api="responses"',
+    'features.shell_tool=false',
+    'mcp_servers.workspace.command="/usr/local/bin/node"',
+    'mcp_servers.workspace.args=["/run/calternal-broker/client.mjs","mcp"]',
+    'mcp_servers.workspace.enabled_tools=["workspace_command"]',
+    'mcp_servers.workspace.env_vars=["CALTERNAL_GATEWAY_TOKEN"]',
+    'mcp_servers.workspace.required=true',
+  ] : [];
   const args = [
+    ...gatewayArgs,
     'cli_auth_credentials_store="file"',
     `default_permissions="${permissions}"`,
     `permissions.${permissions}.filesystem={${files.join(',')}}`,

@@ -33,6 +33,7 @@ pub(super) async fn dispatch<D: Directory>(
     let policy = crate::authz::policy(op)
         .ok_or_else(|| Error::internal("space execution policy missing"))?;
     let set = op == SPACE_MACHINE_SET;
+    let tools_enabled = input.get("tools_enabled").and_then(Value::as_bool);
     blocking(move || {
         let lifecycle = state.store.content().lifecycle();
         let _space = lifecycle.step(space.as_uuid())?;
@@ -42,12 +43,21 @@ pub(super) async fn dispatch<D: Directory>(
         if set {
             let sponsor = owner(&state, space)?
                 .ok_or_else(|| Error::invalid_input("only shared spaces have a shared machine"))?;
-            machines.set_space_execution(space, sponsor, machine)?;
+            if tools_enabled == Some(true) {
+                if who.id != sponsor {
+                    return Err(Error::forbidden("only the space Owner can enable shared tools"));
+                }
+                if machine.is_none() {
+                    return Err(Error::invalid_input("choose a shared machine before enabling tools"));
+                }
+            }
+            machines.set_space_execution(space, sponsor, machine, tools_enabled)?;
         }
         let binding = machines.space_execution(space)?;
         let show = grants.is_some_and(|caps| caps.contains(Capability::SpaceSettings));
         Ok(json!(SpaceMachineResult {
             configured: binding.is_some(),
+            tools_enabled: binding.is_some_and(|binding| binding.tools_enabled),
             machine_id: binding
                 .filter(|_| show)
                 .map(|binding| binding.machine.to_string()),

@@ -208,6 +208,8 @@ impl MachineService {
             session: hash,
             direct: backend == "direct",
             harness_protocol: f.protocol >= HARNESS_PROTOCOL_VERSION,
+            shared_tools: f.protocol >= calternal_machine::protocol::SHARED_TOOLS_PROTOCOL_VERSION
+                && backend == "podman",
             shared_provider: f.protocol
                 >= calternal_machine::protocol::SHARED_PROVIDER_PROTOCOL_VERSION
                 && backend == "podman",
@@ -234,7 +236,9 @@ impl MachineService {
             .collect();
         for lease in held {
             if st.leases[&lease].row.shared_sponsor.is_some()
-                && (f.protocol < calternal_machine::protocol::SHARED_PROVIDER_PROTOCOL_VERSION
+                && ((st.leases[&lease].row.shared_tools.is_some()
+                    && f.protocol < calternal_machine::protocol::SHARED_TOOLS_PROTOCOL_VERSION)
+                    || f.protocol < calternal_machine::protocol::SHARED_PROVIDER_PROTOCOL_VERSION
                     || backend != "podman")
             {
                 st.end_with_files(

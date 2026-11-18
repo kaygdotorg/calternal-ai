@@ -15,6 +15,7 @@ serde_json.workspace = true
 uuid.workspace = true
 thiserror.workspace = true
 reqwest.workspace = true
+axum = { version = "0.8", default-features = false, features = ["http1", "tokio"] }
 clap.workspace = true
 tokio = { workspace = true, features = ["process", "sync", "signal", "fs", "net"] }
 ring.workspace = true

@@ -23,6 +23,7 @@ use uuid::Uuid;
 
 use super::{Backend, BoxFuture, Exec, ExecRequest, Sandbox, SandboxError, SandboxResult};
 use crate::protocol::{Limits, SandboxSpec};
+use super::shared_broker::{Broker, ToolSandbox};
 
 mod ownership;
 
@@ -225,12 +226,21 @@ impl PodmanBackend {
                 } else {
                     account.join("threads").join(spec.thread_id.to_string())
                 };
-                let (home, login) = match harness {
+                if spec.shared_tools.is_some()
+                    && (self.guest || self.kvm_fallback || spec.provider_login
+                        || spec.shared_provider_sponsor.is_none() || spec.worker.is_some()
+                        || harness.is_some())
+                {
+                    return Err(SandboxError("shared tools require a dedicated Podman harness".into()));
+                }
+                let (home, login) = if spec.shared_tools.is_some() {
+                    (PathBuf::new(), PathBuf::new())
+                } else { match harness {
                     Some(harness) => super::provider_home::prepare_harness(
                         account, &dir, spec, harness,
                     ).await?,
                     None => super::provider_home::prepare(account, &dir, spec).await?,
-                };
+                }};
                 let work = dir.join("work");
                 tokio::fs::create_dir_all(&work).await.map_err(|e| {
                     SandboxError(format!("cannot create work directory: {}", e.kind()))
@@ -273,19 +283,36 @@ impl PodmanBackend {
                     &memory,
                     "--pids-limit",
                     &pids,
-                    "--volume",
-                    &mount,
-                    "--volume",
-                    &home_mount,
-                    "--workdir",
-                    "/work",
-                    "--env",
-                    "HOME=/home/agent",
                 ]
                 .iter()
                 .map(|s| s.to_string())
                 .collect();
-                if spec.worker.is_none() {
+                let broker = if let Some(tools) = spec.shared_tools {
+                    let space = spec.space_id.ok_or_else(|| SandboxError("missing sandbox space".into()))?;
+                    let broker = Broker::start(&root, &dir, space, tools.provider, ToolSandbox {
+                        podman: self.podman.clone(),
+                        image: image.clone(),
+                        root_label: ownership::root_label(&root),
+                        work: work.clone(),
+                        writable: !tools.workspace_read_only,
+                    }).await?;
+                    args.extend([
+                        "--pull=never".into(), "--network=none".into(), "--read-only".into(),
+                        "--pid=private".into(), "--ipc=private".into(), "--cap-drop=all".into(),
+                        "--security-opt=no-new-privileges".into(), "--http-proxy=false".into(),
+                        "--log-driver=none".into(), "--tmpfs".into(), "/home/agent:mode=0700".into(),
+                        "--volume".into(), format!("{}:/run/calternal-broker:ro", broker.directory.display()),
+                        "--env".into(), "HOME=/home/agent".into(),
+                    ]);
+                    Some(broker)
+                } else {
+                    args.extend([
+                        "--volume".into(), mount, "--volume".into(), home_mount,
+                        "--workdir".into(), "/work".into(), "--env".into(), "HOME=/home/agent".into(),
+                    ]);
+                    None
+                };
+                if spec.worker.is_none() && broker.is_none() {
                     let login_env = if harness.is_some() {
                         "CALTERNAL_PROVIDER_LOGIN_DIR=/run/calternal-provider-login"
                     } else {
@@ -365,6 +392,7 @@ impl PodmanBackend {
                 #[cfg(target_os = "linux")]
                 if !self.guest
                     && spec.worker.is_none()
+                    && broker.is_none()
                     && let Some(exe) = super::cli_program().await
                 {
                     args.extend([
@@ -414,6 +442,7 @@ impl PodmanBackend {
                     dir,
                     clients: Mutex::new(HashSet::new()),
                     worker: spec.worker.is_some(),
+                    broker,
                 }) as Arc<dyn Sandbox>)
             }
             .await;
@@ -433,6 +462,7 @@ pub struct PodmanSandbox {
     /// Process groups of local `podman exec` clients, killed on release.
     clients: Mutex<HashSet<i32>>,
     worker: bool,
+    broker: Option<Broker>,
 }
 
 impl Sandbox for PodmanSandbox {
@@ -447,12 +477,16 @@ impl Sandbox for PodmanSandbox {
                 "exec",
                 "-i",
                 "--workdir",
-                if self.worker { "/plugin" } else { "/work" },
+                if self.worker { "/plugin" } else if self.broker.is_some() { "/home/agent" } else { "/work" },
             ]);
             for (k, v) in &request.env {
                 // Podman resolves a name-only --env from its own environment.
                 // Values, especially thread credentials, never enter host argv.
                 cmd.arg("--env").arg(k).env(k, v);
+            }
+            if let Some(broker) = &self.broker {
+                cmd.args(["--env", "CALTERNAL_GATEWAY_TOKEN"])
+                    .env("CALTERNAL_GATEWAY_TOKEN", &broker.access);
             }
             cmd.arg(&self.container);
             if self.worker {
@@ -508,6 +542,10 @@ impl Sandbox for PodmanSandbox {
 
     fn release(&self) -> BoxFuture<'_, SandboxResult<()>> {
         Box::pin(async move {
+            if let Some(broker) = &self.broker {
+                broker.close();
+                let _ = tokio::fs::remove_dir_all(&broker.directory).await;
+            }
             ownership::remove(&self.podman, &[&self.container]).await?;
             for &g in self.clients.lock().expect("clients").iter() {
                 if let Some(pid) = Pid::from_raw(g) {
@@ -540,6 +578,7 @@ mod argv_tests {
             dir: dir.path().join("work"),
             clients: Mutex::new(HashSet::new()),
             worker: false,
+            broker: None,
         };
         let mut exec = sandbox
             .exec(ExecRequest {

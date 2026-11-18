@@ -10,26 +10,29 @@ pub(crate) struct SpaceExecution {
     pub sponsor: AccountId,
     /// Required enrolled sandbox machine.
     pub machine: Uuid,
+    /// Whether the current Owner enabled isolated tools on this binding.
+    pub tools_enabled: bool,
 }
 
 impl State {
     /// Resolve one space binding under the registry lock.
     fn space_execution(&self, space: SpaceId) -> Result<Option<SpaceExecution>, Error> {
-        let row: Option<(String, String)> = self
+        let row: Option<(String, String, bool)> = self
             .db
             .query_row(
-                "SELECT sponsor,machine FROM space_execution WHERE space=?1",
+                "SELECT sponsor,machine,tools_enabled FROM space_execution WHERE space=?1",
                 [space.to_string()],
-                |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
             )
             .optional()
             .map_err(sql)?;
-        row.map(|(sponsor, machine)| {
+        row.map(|(sponsor, machine, tools_enabled)| {
             Ok(SpaceExecution {
                 sponsor: AccountId::parse(&sponsor)
                     .map_err(|_| Error::internal("invalid stored execution sponsor"))?,
                 machine: Uuid::parse_str(&machine)
                     .map_err(|_| Error::internal("invalid stored execution machine"))?,
+                tools_enabled,
             })
         })
         .transpose()
@@ -44,7 +47,8 @@ impl State {
                 && machine
                     .live
                     .as_ref()
-                    .is_none_or(|session| session.shared_provider)
+                    .is_none_or(|session| session.shared_provider
+                        && (!target.tools_enabled || session.shared_tools))
         })
     }
 
@@ -55,7 +59,10 @@ impl State {
         space: SpaceId,
         target: SpaceExecution,
     ) -> Result<(), Error> {
-        if self.space_execution(space)? != Some(target) || !self.shared_eligible(target) {
+        if !self.space_execution(space)?.is_some_and(|current| {
+            current.machine == target.machine && current.sponsor == target.sponsor
+                && (!target.tools_enabled || current.tools_enabled)
+        }) || !self.shared_eligible(target) {
             return Err(Error::unavailable("shared space machine is unavailable"));
         }
         Ok(())
@@ -76,24 +83,28 @@ impl MachineService {
         space: SpaceId,
         sponsor: AccountId,
         machine: Option<Uuid>,
+        tools_enabled: Option<bool>,
     ) -> Result<(), Error> {
-        let st = self.lock()?;
+        let mut st = self.lock()?;
         let db = &st.db;
         let previous = st.space_execution(space)?;
         if let Some(machine) = machine {
-            let target = SpaceExecution { sponsor, machine };
+            let tools_enabled = tools_enabled.unwrap_or_else(|| {
+                previous.is_some_and(|old| old.sponsor == sponsor && old.machine == machine && old.tools_enabled)
+            });
+            let target = SpaceExecution { sponsor, machine, tools_enabled };
             if !st.shared_eligible(target) {
                 return Err(Error::not_found("sandbox machine not found"));
             }
             if previous.is_none() {
                 db.execute(
-                    "INSERT INTO space_execution (space,sponsor,machine) VALUES (?1,?2,?3)",
-                    params![space.to_string(), sponsor.to_string(), machine.to_string()],
+                    "INSERT INTO space_execution (space,sponsor,machine,tools_enabled) VALUES (?1,?2,?3,?4)",
+                    params![space.to_string(), sponsor.to_string(), machine.to_string(), tools_enabled],
                 )
             } else {
                 db.execute(
-                    "UPDATE space_execution SET sponsor=?2,machine=?3 WHERE space=?1",
-                    params![space.to_string(), sponsor.to_string(), machine.to_string()],
+                    "UPDATE space_execution SET sponsor=?2,machine=?3,tools_enabled=?4 WHERE space=?1",
+                    params![space.to_string(), sponsor.to_string(), machine.to_string(), tools_enabled],
                 )
             }
         } else {
@@ -103,6 +114,20 @@ impl MachineService {
             )
         }
         .map_err(sql)?;
+        if previous.is_some_and(|old| old.tools_enabled)
+            && !st.space_execution(space)?.is_some_and(|current| Some(current.machine) == machine
+                && current.tools_enabled && previous.is_some_and(|old| old.machine == current.machine
+                    && old.sponsor == current.sponsor))
+        {
+            let affected: Vec<_> = st.leases.values()
+                .filter(|lease| lease.row.space == space && lease.row.shared_tools.is_some()
+                    && lease.state != LeaseState::Ended)
+                .map(|lease| lease.row.id)
+                .collect();
+            for lease in affected {
+                st.end_with_files(lease, "shared tool access was withdrawn", &self.settings, true);
+            }
+        }
         Ok(())
     }
 }
