@@ -954,6 +954,53 @@
       "$schema": "http://json-schema.org/draft-07/schema#",
       "additionalProperties": false,
       "definitions": {
+        "ContentFetchField": {
+          "description": "Stored source fields supported by the content proxy.",
+          "oneOf": [
+            {
+              "description": "The item's UTF-8 text body.",
+              "enum": [
+                "text"
+              ],
+              "type": "string"
+            }
+          ]
+        },
+        "ContentFetchProfile": {
+          "description": "Host-owned remote media policy. Each additional profile requires review.",
+          "oneOf": [
+            {
+              "description": "Anonymous HTTPS GET for allowed image and font formats, excluding SVG.",
+              "enum": [
+                "images_fonts"
+              ],
+              "type": "string"
+            }
+          ]
+        },
+        "ContentFetchSource": {
+          "additionalProperties": false,
+          "description": "A stored field the broker may read to derive proxy references.",
+          "properties": {
+            "field": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/ContentFetchField"
+                }
+              ],
+              "description": "The source field interpreted as HTML."
+            },
+            "kind": {
+              "description": "The declaring package's own text kind.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "field",
+            "kind"
+          ],
+          "type": "object"
+        },
         "HostCallKind": {
           "description": "The only broker methods a worker may request.",
           "oneOf": [
@@ -975,6 +1022,13 @@
               "description": "Read the effective value of a setting declared by the calling package.",
               "enum": [
                 "read_setting_v1"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Prepare remote asset references from a declared, stored content revision.",
+              "enum": [
+                "content_prepare_v1"
               ],
               "type": "string"
             },
@@ -1154,6 +1208,34 @@
           ],
           "type": "object"
         },
+        "ManifestContentFetch": {
+          "additionalProperties": false,
+          "description": "Anonymous content proxy scope shown during trusted installation review.",
+          "properties": {
+            "profile": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/ContentFetchProfile"
+                }
+              ],
+              "description": "Host-enforced media and transport policy."
+            },
+            "sources": {
+              "description": "Up to 32 distinct text sources owned by the declaring package.",
+              "items": {
+                "$ref": "#/definitions/ContentFetchSource"
+              },
+              "maxItems": 32,
+              "minItems": 1,
+              "type": "array"
+            }
+          },
+          "required": [
+            "profile",
+            "sources"
+          ],
+          "type": "object"
+        },
         "ManifestHook": {
           "additionalProperties": false,
           "description": "Space-scoped hook enabled by a Manager; never a global interceptor.",
@@ -1279,6 +1361,24 @@
             "schema",
             "storage"
           ],
+          "type": "object"
+        },
+        "ManifestNetwork": {
+          "additionalProperties": false,
+          "description": "Network authority requested by a package. Each declaration has its own approval meaning and is subject to the live space activation.",
+          "properties": {
+            "content_fetch": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/ManifestContentFetch"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Anonymous remote assets from stored content. Omit for no proxy access."
+            }
+          },
           "type": "object"
         },
         "ManifestOperation": {
@@ -1586,7 +1686,7 @@
         },
         "ManifestV1": {
           "additionalProperties": false,
-          "description": "Plugin menu read without running plugin code. Every top-level field is required; only the documented optional fields inside declarations may be omitted.",
+          "description": "Plugin menu read without running plugin code. Only documented optional fields may be omitted.",
           "properties": {
             "api_version": {
               "description": "Manifest API version, currently 1.",
@@ -1641,6 +1741,17 @@
             "name": {
               "description": "Human-readable plugin name.",
               "type": "string"
+            },
+            "network": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/ManifestNetwork"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional outbound network declarations. Omit for no network access."
             },
             "operations": {
               "description": "Public operation schemas and policy.",
@@ -2394,6 +2505,53 @@
       "$schema": "http://json-schema.org/draft-07/schema#",
       "additionalProperties": false,
       "definitions": {
+        "ContentFetchField": {
+          "description": "Stored source fields supported by the content proxy.",
+          "oneOf": [
+            {
+              "description": "The item's UTF-8 text body.",
+              "enum": [
+                "text"
+              ],
+              "type": "string"
+            }
+          ]
+        },
+        "ContentFetchProfile": {
+          "description": "Host-owned remote media policy. Each additional profile requires review.",
+          "oneOf": [
+            {
+              "description": "Anonymous HTTPS GET for allowed image and font formats, excluding SVG.",
+              "enum": [
+                "images_fonts"
+              ],
+              "type": "string"
+            }
+          ]
+        },
+        "ContentFetchSource": {
+          "additionalProperties": false,
+          "description": "A stored field the broker may read to derive proxy references.",
+          "properties": {
+            "field": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/ContentFetchField"
+                }
+              ],
+              "description": "The source field interpreted as HTML."
+            },
+            "kind": {
+              "description": "The declaring package's own text kind.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "field",
+            "kind"
+          ],
+          "type": "object"
+        },
         "HostCallKind": {
           "description": "The only broker methods a worker may request.",
           "oneOf": [
@@ -2415,6 +2573,13 @@
               "description": "Read the effective value of a setting declared by the calling package.",
               "enum": [
                 "read_setting_v1"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Prepare remote asset references from a declared, stored content revision.",
+              "enum": [
+                "content_prepare_v1"
               ],
               "type": "string"
             },
@@ -2594,6 +2759,34 @@
           ],
           "type": "object"
         },
+        "ManifestContentFetch": {
+          "additionalProperties": false,
+          "description": "Anonymous content proxy scope shown during trusted installation review.",
+          "properties": {
+            "profile": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/ContentFetchProfile"
+                }
+              ],
+              "description": "Host-enforced media and transport policy."
+            },
+            "sources": {
+              "description": "Up to 32 distinct text sources owned by the declaring package.",
+              "items": {
+                "$ref": "#/definitions/ContentFetchSource"
+              },
+              "maxItems": 32,
+              "minItems": 1,
+              "type": "array"
+            }
+          },
+          "required": [
+            "profile",
+            "sources"
+          ],
+          "type": "object"
+        },
         "ManifestHook": {
           "additionalProperties": false,
           "description": "Space-scoped hook enabled by a Manager; never a global interceptor.",
@@ -2719,6 +2912,24 @@
             "schema",
             "storage"
           ],
+          "type": "object"
+        },
+        "ManifestNetwork": {
+          "additionalProperties": false,
+          "description": "Network authority requested by a package. Each declaration has its own approval meaning and is subject to the live space activation.",
+          "properties": {
+            "content_fetch": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/ManifestContentFetch"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Anonymous remote assets from stored content. Omit for no proxy access."
+            }
+          },
           "type": "object"
         },
         "ManifestOperation": {
@@ -3026,7 +3237,7 @@
         },
         "ManifestV1": {
           "additionalProperties": false,
-          "description": "Plugin menu read without running plugin code. Every top-level field is required; only the documented optional fields inside declarations may be omitted.",
+          "description": "Plugin menu read without running plugin code. Only documented optional fields may be omitted.",
           "properties": {
             "api_version": {
               "description": "Manifest API version, currently 1.",
@@ -3081,6 +3292,17 @@
             "name": {
               "description": "Human-readable plugin name.",
               "type": "string"
+            },
+            "network": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/ManifestNetwork"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional outbound network declarations. Omit for no network access."
             },
             "operations": {
               "description": "Public operation schemas and policy.",
@@ -3755,6 +3977,53 @@
       "$schema": "http://json-schema.org/draft-07/schema#",
       "additionalProperties": false,
       "definitions": {
+        "ContentFetchField": {
+          "description": "Stored source fields supported by the content proxy.",
+          "oneOf": [
+            {
+              "description": "The item's UTF-8 text body.",
+              "enum": [
+                "text"
+              ],
+              "type": "string"
+            }
+          ]
+        },
+        "ContentFetchProfile": {
+          "description": "Host-owned remote media policy. Each additional profile requires review.",
+          "oneOf": [
+            {
+              "description": "Anonymous HTTPS GET for allowed image and font formats, excluding SVG.",
+              "enum": [
+                "images_fonts"
+              ],
+              "type": "string"
+            }
+          ]
+        },
+        "ContentFetchSource": {
+          "additionalProperties": false,
+          "description": "A stored field the broker may read to derive proxy references.",
+          "properties": {
+            "field": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/ContentFetchField"
+                }
+              ],
+              "description": "The source field interpreted as HTML."
+            },
+            "kind": {
+              "description": "The declaring package's own text kind.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "field",
+            "kind"
+          ],
+          "type": "object"
+        },
         "HostCallKind": {
           "description": "The only broker methods a worker may request.",
           "oneOf": [
@@ -3776,6 +4045,13 @@
               "description": "Read the effective value of a setting declared by the calling package.",
               "enum": [
                 "read_setting_v1"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Prepare remote asset references from a declared, stored content revision.",
+              "enum": [
+                "content_prepare_v1"
               ],
               "type": "string"
             },
@@ -3955,6 +4231,34 @@
           ],
           "type": "object"
         },
+        "ManifestContentFetch": {
+          "additionalProperties": false,
+          "description": "Anonymous content proxy scope shown during trusted installation review.",
+          "properties": {
+            "profile": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/ContentFetchProfile"
+                }
+              ],
+              "description": "Host-enforced media and transport policy."
+            },
+            "sources": {
+              "description": "Up to 32 distinct text sources owned by the declaring package.",
+              "items": {
+                "$ref": "#/definitions/ContentFetchSource"
+              },
+              "maxItems": 32,
+              "minItems": 1,
+              "type": "array"
+            }
+          },
+          "required": [
+            "profile",
+            "sources"
+          ],
+          "type": "object"
+        },
         "ManifestHook": {
           "additionalProperties": false,
           "description": "Space-scoped hook enabled by a Manager; never a global interceptor.",
@@ -4080,6 +4384,24 @@
             "schema",
             "storage"
           ],
+          "type": "object"
+        },
+        "ManifestNetwork": {
+          "additionalProperties": false,
+          "description": "Network authority requested by a package. Each declaration has its own approval meaning and is subject to the live space activation.",
+          "properties": {
+            "content_fetch": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/ManifestContentFetch"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Anonymous remote assets from stored content. Omit for no proxy access."
+            }
+          },
           "type": "object"
         },
         "ManifestOperation": {
@@ -4387,7 +4709,7 @@
         },
         "ManifestV1": {
           "additionalProperties": false,
-          "description": "Plugin menu read without running plugin code. Every top-level field is required; only the documented optional fields inside declarations may be omitted.",
+          "description": "Plugin menu read without running plugin code. Only documented optional fields may be omitted.",
           "properties": {
             "api_version": {
               "description": "Manifest API version, currently 1.",
@@ -4442,6 +4764,17 @@
             "name": {
               "description": "Human-readable plugin name.",
               "type": "string"
+            },
+            "network": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/ManifestNetwork"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional outbound network declarations. Omit for no network access."
             },
             "operations": {
               "description": "Public operation schemas and policy.",
@@ -8699,6 +9032,793 @@
     }
   },
   {
+    "risk": "read",
+    "id": "collections.get",
+    "description": "Open a saved notes collection",
+    "mutates": false,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Read one saved Notes collection.",
+      "properties": {
+        "id": {
+          "description": "The saved collection UUID.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "CollectionGetInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": true,
+      "title": "Map_of_AnyValue",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "reversible",
+    "id": "collections.create",
+    "description": "Save an explicit set of notes in one space",
+    "mutates": true,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Create a saved set of notes in one space.",
+      "properties": {
+        "members": {
+          "description": "Explicit same-space note UUIDs.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "space_id": {
+          "description": "Owning space UUID.",
+          "type": "string"
+        },
+        "title": {
+          "description": "Display title.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "members",
+        "space_id",
+        "title"
+      ],
+      "title": "CollectionCreateInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": true,
+      "title": "Map_of_AnyValue",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "widens_access",
+    "id": "collections.set_members",
+    "description": "Replace a saved collection's explicit notes",
+    "mutates": true,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Replace a saved collection's explicit note list.",
+      "properties": {
+        "base_revision": {
+          "description": "Expected current collection revision.",
+          "type": "string"
+        },
+        "id": {
+          "description": "Target collection UUID.",
+          "type": "string"
+        },
+        "members": {
+          "description": "Explicit same-space note UUIDs.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "base_revision",
+        "id",
+        "members"
+      ],
+      "title": "CollectionMembersInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": true,
+      "title": "Map_of_AnyValue",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "reversible",
+    "id": "sharing.mark_seen",
+    "description": "Mark a received item share as seen",
+    "mutates": true,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "definitions": {
+        "SharedItemRef": {
+          "additionalProperties": false,
+          "description": "A recognized kind and stable item UUID.",
+          "properties": {
+            "id": {
+              "description": "The stable UUID of the item.",
+              "type": "string"
+            },
+            "kind": {
+              "description": "The item kind, either notes or collections in this slice.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "kind"
+          ],
+          "type": "object"
+        }
+      },
+      "description": "An explicit acknowledgement that the recipient has seen a share.",
+      "properties": {
+        "item": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/SharedItemRef"
+            }
+          ],
+          "description": "The received item reference."
+        }
+      },
+      "required": [
+        "item"
+      ],
+      "title": "ShareSeenInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": true,
+      "title": "Map_of_AnyValue",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "reversible",
+    "id": "sharing.rescue",
+    "description": "Save the caller's blocked offline edits as a private note",
+    "mutates": true,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Locally authored edits the server could no longer save to a shared note.",
+      "properties": {
+        "changed_blocks": {
+          "description": "Only the caller's locally changed Markdown blocks, in document order.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "title": {
+          "description": "The former note title, from the caller's local copy.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "changed_blocks",
+        "title"
+      ],
+      "title": "ShareRescueInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": true,
+      "title": "Map_of_AnyValue",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "read",
+    "id": "sharing.list",
+    "description": "List sharing controls and grants for an item",
+    "mutates": false,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "definitions": {
+        "SharedItemRef": {
+          "additionalProperties": false,
+          "description": "A recognized kind and stable item UUID.",
+          "properties": {
+            "id": {
+              "description": "The stable UUID of the item.",
+              "type": "string"
+            },
+            "kind": {
+              "description": "The item kind, either notes or collections in this slice.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "kind"
+          ],
+          "type": "object"
+        }
+      },
+      "description": "Read one page of sharing metadata.",
+      "properties": {
+        "cursor": {
+          "description": "An optional continuation issued for this operation and scope.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "item": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/SharedItemRef"
+            }
+          ],
+          "description": "The target item reference."
+        }
+      },
+      "required": [
+        "item"
+      ],
+      "title": "ShareListInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": true,
+      "title": "Map_of_AnyValue",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "read",
+    "id": "sharing.audiences",
+    "description": "Find visible people or groups to share an item with",
+    "mutates": false,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "definitions": {
+        "SharedItemRef": {
+          "additionalProperties": false,
+          "description": "A recognized kind and stable item UUID.",
+          "properties": {
+            "id": {
+              "description": "The stable UUID of the item.",
+              "type": "string"
+            },
+            "kind": {
+              "description": "The item kind, either notes or collections in this slice.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "kind"
+          ],
+          "type": "object"
+        }
+      },
+      "description": "Search the currently visible directory for audience choices.",
+      "properties": {
+        "cursor": {
+          "description": "An optional continuation issued for this operation and scope.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "item": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/SharedItemRef"
+            }
+          ],
+          "description": "The target item reference."
+        },
+        "query": {
+          "description": "A display-name search prefix or substring, or empty.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "item",
+        "query"
+      ],
+      "title": "ShareAudiencesInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": true,
+      "title": "Map_of_AnyValue",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "read",
+    "id": "sharing.shared_with_me",
+    "description": "List items shared with the signed-in account",
+    "mutates": false,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "List current received shares for an app or collection kind.",
+      "properties": {
+        "cursor": {
+          "description": "An optional continuation issued for this operation and scope.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "kind": {
+          "description": "The item kind, either notes or collections in this slice.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "title": "SharesReceivedInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": true,
+      "title": "Map_of_AnyValue",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "widens_access",
+    "id": "sharing.grant",
+    "description": "Set view or edit access for one named audience",
+    "mutates": true,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "definitions": {
+        "ShareAccountAudience": {
+          "additionalProperties": false,
+          "description": "A named account audience.",
+          "properties": {
+            "account_id": {
+              "description": "The active recipient account UUID.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "account_id"
+          ],
+          "type": "object"
+        },
+        "ShareAudience": {
+          "anyOf": [
+            {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/ShareAccountAudience"
+                }
+              ],
+              "description": "A named account."
+            },
+            {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/ShareGroupAudience"
+                }
+              ],
+              "description": "A group with current membership."
+            }
+          ],
+          "description": "Exactly one identified account or server group."
+        },
+        "ShareGroupAudience": {
+          "additionalProperties": false,
+          "description": "A live group audience.",
+          "properties": {
+            "group_id": {
+              "description": "The recipient group UUID.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "group_id"
+          ],
+          "type": "object"
+        },
+        "SharePermission": {
+          "description": "Current operations allowed on the shared item.",
+          "oneOf": [
+            {
+              "description": "Read the live item.",
+              "enum": [
+                "view"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Read and edit the live item.",
+              "enum": [
+                "edit"
+              ],
+              "type": "string"
+            }
+          ]
+        },
+        "SharedItemRef": {
+          "additionalProperties": false,
+          "description": "A recognized kind and stable item UUID.",
+          "properties": {
+            "id": {
+              "description": "The stable UUID of the item.",
+              "type": "string"
+            },
+            "kind": {
+              "description": "The item kind, either notes or collections in this slice.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "kind"
+          ],
+          "type": "object"
+        }
+      },
+      "description": "Create or replace a named grant.",
+      "properties": {
+        "audience": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/ShareAudience"
+            }
+          ],
+          "description": "The named person or group receiving access."
+        },
+        "item": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/SharedItemRef"
+            }
+          ],
+          "description": "The target item reference."
+        },
+        "permission": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/SharePermission"
+            }
+          ],
+          "description": "The permission to grant."
+        }
+      },
+      "required": [
+        "audience",
+        "item",
+        "permission"
+      ],
+      "title": "ShareGrantInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": true,
+      "title": "Map_of_AnyValue",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "reversible",
+    "id": "sharing.revoke",
+    "description": "Remove one item grant",
+    "mutates": true,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "definitions": {
+        "SharedItemRef": {
+          "additionalProperties": false,
+          "description": "A recognized kind and stable item UUID.",
+          "properties": {
+            "id": {
+              "description": "The stable UUID of the item.",
+              "type": "string"
+            },
+            "kind": {
+              "description": "The item kind, either notes or collections in this slice.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "kind"
+          ],
+          "type": "object"
+        }
+      },
+      "description": "Bind a grant UUID to its item.",
+      "properties": {
+        "grant_id": {
+          "description": "The independently manageable grant UUID.",
+          "type": "string"
+        },
+        "item": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/SharedItemRef"
+            }
+          ],
+          "description": "The target item reference."
+        }
+      },
+      "required": [
+        "grant_id",
+        "item"
+      ],
+      "title": "ShareGrantTarget",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": true,
+      "title": "Map_of_AnyValue",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "widens_access",
+    "id": "sharing.link_create",
+    "description": "Issue a read-only public link",
+    "mutates": true,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "definitions": {
+        "SharedItemRef": {
+          "additionalProperties": false,
+          "description": "A recognized kind and stable item UUID.",
+          "properties": {
+            "id": {
+              "description": "The stable UUID of the item.",
+              "type": "string"
+            },
+            "kind": {
+              "description": "The item kind, either notes or collections in this slice.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "kind"
+          ],
+          "type": "object"
+        }
+      },
+      "description": "Create a labeled public view link.",
+      "properties": {
+        "expires_at": {
+          "description": "Unix milliseconds. A null value means Never.",
+          "format": "int64",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "item": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/SharedItemRef"
+            }
+          ],
+          "description": "The target item reference."
+        },
+        "label": {
+          "description": "The display name in the Share sheet.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "item",
+        "label"
+      ],
+      "title": "ShareLinkCreateInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": true,
+      "title": "Map_of_AnyValue",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "widens_access",
+    "id": "sharing.link_update",
+    "description": "Change a public link's label or expiry",
+    "mutates": true,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "definitions": {
+        "SharedItemRef": {
+          "additionalProperties": false,
+          "description": "A recognized kind and stable item UUID.",
+          "properties": {
+            "id": {
+              "description": "The stable UUID of the item.",
+              "type": "string"
+            },
+            "kind": {
+              "description": "The item kind, either notes or collections in this slice.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "kind"
+          ],
+          "type": "object"
+        }
+      },
+      "description": "Update metadata on an existing public link.",
+      "properties": {
+        "expires_at": {
+          "default": null,
+          "description": "Unix milliseconds. A null value means Never.",
+          "format": "int64",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "grant_id": {
+          "description": "The independently manageable grant UUID.",
+          "type": "string"
+        },
+        "item": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/SharedItemRef"
+            }
+          ],
+          "description": "The target item reference."
+        },
+        "label": {
+          "description": "The display name in the Share sheet.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "grant_id",
+        "item"
+      ],
+      "title": "ShareLinkUpdateInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": true,
+      "title": "Map_of_AnyValue",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "read",
+    "id": "sharing.link_copy",
+    "description": "Retrieve an authorized public link URL",
+    "mutates": false,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "definitions": {
+        "SharedItemRef": {
+          "additionalProperties": false,
+          "description": "A recognized kind and stable item UUID.",
+          "properties": {
+            "id": {
+              "description": "The stable UUID of the item.",
+              "type": "string"
+            },
+            "kind": {
+              "description": "The item kind, either notes or collections in this slice.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "kind"
+          ],
+          "type": "object"
+        }
+      },
+      "description": "Bind a grant UUID to its item.",
+      "properties": {
+        "grant_id": {
+          "description": "The independently manageable grant UUID.",
+          "type": "string"
+        },
+        "item": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/SharedItemRef"
+            }
+          ],
+          "description": "The target item reference."
+        }
+      },
+      "required": [
+        "grant_id",
+        "item"
+      ],
+      "title": "ShareGrantTarget",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": true,
+      "title": "Map_of_AnyValue",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "widens_access",
+    "id": "sharing.set_link_policy",
+    "description": "Set the authority needed to manage public links",
+    "mutates": true,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Set who can manage item links in a space.",
+      "properties": {
+        "editors_can_manage_links": {
+          "description": "Whether the space Editor capability can manage links.",
+          "type": "boolean"
+        },
+        "space_id": {
+          "description": "The space whose link policy changes.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "editors_can_manage_links",
+        "space_id"
+      ],
+      "title": "ShareLinkPolicyInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": true,
+      "title": "Map_of_AnyValue",
+      "type": "object"
+    }
+  },
+  {
     "risk": "reversible",
     "id": "drafts.save",
     "description": "drafts save",
@@ -10113,6 +11233,1913 @@
       },
       "title": "AccountInputResult",
       "type": "object"
+    }
+  },
+  {
+    "risk": "read",
+    "id": "appearance.get",
+    "description": "Read this person's appearance preferences",
+    "mutates": false,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Empty input for an account-bound read.",
+      "title": "AppearanceGetInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "definitions": {
+        "AppearanceAccent": {
+          "description": "Where the accent color is obtained.",
+          "oneOf": [
+            {
+              "description": "Derive it from the wallpaper.",
+              "enum": [
+                "wallpaper"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Use the person's custom hex color.",
+              "enum": [
+                "custom"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Use the selected preset's palette.",
+              "enum": [
+                "theme"
+              ],
+              "type": "string"
+            }
+          ]
+        },
+        "AppearanceFonts": {
+          "additionalProperties": false,
+          "description": "The account's five font selections.",
+          "properties": {
+            "brand": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/FontChoice"
+                }
+              ],
+              "description": "Wordmark typeface."
+            },
+            "chat": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/FontChoice"
+                }
+              ],
+              "description": "Conversation typeface."
+            },
+            "code": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/FontChoice"
+                }
+              ],
+              "description": "Code typeface."
+            },
+            "terminal": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/FontChoice"
+                }
+              ],
+              "description": "Terminal typeface."
+            },
+            "ui": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/FontChoice"
+                }
+              ],
+              "description": "Interface typeface."
+            }
+          },
+          "required": [
+            "brand",
+            "chat",
+            "code",
+            "terminal",
+            "ui"
+          ],
+          "type": "object"
+        },
+        "AppearanceMaterials": {
+          "additionalProperties": false,
+          "description": "The account's material effects.",
+          "properties": {
+            "blur": {
+              "description": "Blur backgrounds.",
+              "type": "boolean"
+            },
+            "dim": {
+              "description": "Dim backgrounds.",
+              "type": "boolean"
+            },
+            "tint": {
+              "description": "Tint backgrounds.",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "blur",
+            "dim",
+            "tint"
+          ],
+          "type": "object"
+        },
+        "FontChoice": {
+          "additionalProperties": false,
+          "description": "A role's selected typeface. Bundled and System faces omit the library ID.",
+          "properties": {
+            "family": {
+              "description": "Display family name.",
+              "type": "string"
+            },
+            "id": {
+              "description": "Opaque library ID returned by catalogue or list.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "source": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/FontSource"
+                }
+              ],
+              "description": "Catalogue, upload or device source."
+            }
+          },
+          "required": [
+            "family",
+            "source"
+          ],
+          "type": "object"
+        },
+        "FontSource": {
+          "description": "Available catalogue and local font sources.",
+          "oneOf": [
+            {
+              "description": "Google Fonts.",
+              "enum": [
+                "google"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Fontsource.",
+              "enum": [
+                "fontsource"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Fontshare.",
+              "enum": [
+                "fontshare"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "An account's own file.",
+              "enum": [
+                "upload"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "The device's system typeface.",
+              "enum": [
+                "system"
+              ],
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "description": "The saved account appearance. A client overlays its local device settings for first paint.",
+      "properties": {
+        "accent": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/AppearanceAccent"
+            }
+          ],
+          "description": "Accent color policy."
+        },
+        "accentColor": {
+          "description": "Custom accent color in #rrggbb form.",
+          "type": "string"
+        },
+        "brand": {
+          "description": "Sidebar wordmark text.",
+          "type": "string"
+        },
+        "fonts": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/AppearanceFonts"
+            }
+          ],
+          "description": "Typeface selection per role."
+        },
+        "materials": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/AppearanceMaterials"
+            }
+          ],
+          "description": "Material effects."
+        },
+        "motion": {
+          "description": "Enable motion when the device permits it.",
+          "type": "boolean"
+        },
+        "presetId": {
+          "description": "Last applied look, or null.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "streamText": {
+          "description": "Show streamed conversation text.",
+          "type": "boolean"
+        },
+        "themeId": {
+          "description": "Palette preset, or null for the built-in palette.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "wallpaperId": {
+          "description": "Wallpaper library ID, auto for the default, or null for none.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "accent",
+        "accentColor",
+        "brand",
+        "fonts",
+        "materials",
+        "motion",
+        "streamText"
+      ],
+      "title": "AppearancePreferences",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "reversible",
+    "id": "appearance.patch",
+    "description": "Patch this person's appearance preferences",
+    "mutates": true,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "definitions": {
+        "AppearanceAccent": {
+          "description": "Where the accent color is obtained.",
+          "oneOf": [
+            {
+              "description": "Derive it from the wallpaper.",
+              "enum": [
+                "wallpaper"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Use the person's custom hex color.",
+              "enum": [
+                "custom"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Use the selected preset's palette.",
+              "enum": [
+                "theme"
+              ],
+              "type": "string"
+            }
+          ]
+        },
+        "AppearanceFontsPatch": {
+          "additionalProperties": false,
+          "description": "Partial update of role selections.",
+          "properties": {
+            "brand": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/FontChoice"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Wordmark typeface."
+            },
+            "chat": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/FontChoice"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Conversation typeface."
+            },
+            "code": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/FontChoice"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Code typeface."
+            },
+            "terminal": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/FontChoice"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Terminal typeface."
+            },
+            "ui": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/FontChoice"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Interface typeface."
+            }
+          },
+          "type": "object"
+        },
+        "AppearanceMaterialsPatch": {
+          "additionalProperties": false,
+          "description": "Partial update of material switches.",
+          "properties": {
+            "blur": {
+              "description": "Blur backgrounds.",
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "dim": {
+              "description": "Dim backgrounds.",
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "tint": {
+              "description": "Tint backgrounds.",
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
+          },
+          "type": "object"
+        },
+        "FontChoice": {
+          "additionalProperties": false,
+          "description": "A role's selected typeface. Bundled and System faces omit the library ID.",
+          "properties": {
+            "family": {
+              "description": "Display family name.",
+              "type": "string"
+            },
+            "id": {
+              "description": "Opaque library ID returned by catalogue or list.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "source": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/FontSource"
+                }
+              ],
+              "description": "Catalogue, upload or device source."
+            }
+          },
+          "required": [
+            "family",
+            "source"
+          ],
+          "type": "object"
+        },
+        "FontSource": {
+          "description": "Available catalogue and local font sources.",
+          "oneOf": [
+            {
+              "description": "Google Fonts.",
+              "enum": [
+                "google"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Fontsource.",
+              "enum": [
+                "fontsource"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Fontshare.",
+              "enum": [
+                "fontshare"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "An account's own file.",
+              "enum": [
+                "upload"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "The device's system typeface.",
+              "enum": [
+                "system"
+              ],
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "description": "Apply only supplied fields. Explicit null clears nullable fields.",
+      "properties": {
+        "accent": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/AppearanceAccent"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Accent color policy."
+        },
+        "accentColor": {
+          "description": "Custom accent color in #rrggbb form.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "brand": {
+          "description": "Sidebar wordmark text.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "fonts": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/AppearanceFontsPatch"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Typeface selection per role."
+        },
+        "materials": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/AppearanceMaterialsPatch"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Material effects."
+        },
+        "motion": {
+          "description": "Enable motion when the device permits it.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "presetId": {
+          "description": "Last applied look, or null.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "streamText": {
+          "description": "Show streamed conversation text.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "themeId": {
+          "description": "Palette preset, or null for the built-in palette.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "wallpaperId": {
+          "description": "Wallpaper library ID, auto for the default, or null for none.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "title": "AppearancePatch",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "definitions": {
+        "AppearanceAccent": {
+          "description": "Where the accent color is obtained.",
+          "oneOf": [
+            {
+              "description": "Derive it from the wallpaper.",
+              "enum": [
+                "wallpaper"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Use the person's custom hex color.",
+              "enum": [
+                "custom"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Use the selected preset's palette.",
+              "enum": [
+                "theme"
+              ],
+              "type": "string"
+            }
+          ]
+        },
+        "AppearanceFonts": {
+          "additionalProperties": false,
+          "description": "The account's five font selections.",
+          "properties": {
+            "brand": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/FontChoice"
+                }
+              ],
+              "description": "Wordmark typeface."
+            },
+            "chat": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/FontChoice"
+                }
+              ],
+              "description": "Conversation typeface."
+            },
+            "code": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/FontChoice"
+                }
+              ],
+              "description": "Code typeface."
+            },
+            "terminal": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/FontChoice"
+                }
+              ],
+              "description": "Terminal typeface."
+            },
+            "ui": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/FontChoice"
+                }
+              ],
+              "description": "Interface typeface."
+            }
+          },
+          "required": [
+            "brand",
+            "chat",
+            "code",
+            "terminal",
+            "ui"
+          ],
+          "type": "object"
+        },
+        "AppearanceMaterials": {
+          "additionalProperties": false,
+          "description": "The account's material effects.",
+          "properties": {
+            "blur": {
+              "description": "Blur backgrounds.",
+              "type": "boolean"
+            },
+            "dim": {
+              "description": "Dim backgrounds.",
+              "type": "boolean"
+            },
+            "tint": {
+              "description": "Tint backgrounds.",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "blur",
+            "dim",
+            "tint"
+          ],
+          "type": "object"
+        },
+        "FontChoice": {
+          "additionalProperties": false,
+          "description": "A role's selected typeface. Bundled and System faces omit the library ID.",
+          "properties": {
+            "family": {
+              "description": "Display family name.",
+              "type": "string"
+            },
+            "id": {
+              "description": "Opaque library ID returned by catalogue or list.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "source": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/FontSource"
+                }
+              ],
+              "description": "Catalogue, upload or device source."
+            }
+          },
+          "required": [
+            "family",
+            "source"
+          ],
+          "type": "object"
+        },
+        "FontSource": {
+          "description": "Available catalogue and local font sources.",
+          "oneOf": [
+            {
+              "description": "Google Fonts.",
+              "enum": [
+                "google"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Fontsource.",
+              "enum": [
+                "fontsource"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Fontshare.",
+              "enum": [
+                "fontshare"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "An account's own file.",
+              "enum": [
+                "upload"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "The device's system typeface.",
+              "enum": [
+                "system"
+              ],
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "description": "The saved account appearance. A client overlays its local device settings for first paint.",
+      "properties": {
+        "accent": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/AppearanceAccent"
+            }
+          ],
+          "description": "Accent color policy."
+        },
+        "accentColor": {
+          "description": "Custom accent color in #rrggbb form.",
+          "type": "string"
+        },
+        "brand": {
+          "description": "Sidebar wordmark text.",
+          "type": "string"
+        },
+        "fonts": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/AppearanceFonts"
+            }
+          ],
+          "description": "Typeface selection per role."
+        },
+        "materials": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/AppearanceMaterials"
+            }
+          ],
+          "description": "Material effects."
+        },
+        "motion": {
+          "description": "Enable motion when the device permits it.",
+          "type": "boolean"
+        },
+        "presetId": {
+          "description": "Last applied look, or null.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "streamText": {
+          "description": "Show streamed conversation text.",
+          "type": "boolean"
+        },
+        "themeId": {
+          "description": "Palette preset, or null for the built-in palette.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "wallpaperId": {
+          "description": "Wallpaper library ID, auto for the default, or null for none.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "accent",
+        "accentColor",
+        "brand",
+        "fonts",
+        "materials",
+        "motion",
+        "streamText"
+      ],
+      "title": "AppearancePreferences",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "read",
+    "id": "fonts.catalogue",
+    "description": "Search the bounded shared catalogue",
+    "mutates": false,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "definitions": {
+        "FontSource": {
+          "description": "Available catalogue and local font sources.",
+          "oneOf": [
+            {
+              "description": "Google Fonts.",
+              "enum": [
+                "google"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Fontsource.",
+              "enum": [
+                "fontsource"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Fontshare.",
+              "enum": [
+                "fontshare"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "An account's own file.",
+              "enum": [
+                "upload"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "The device's system typeface.",
+              "enum": [
+                "system"
+              ],
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "description": "Fetch a page of remote families using local search.",
+      "properties": {
+        "cursor": {
+          "description": "Opaque next cursor from the same filters and cached snapshot.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "limit": {
+          "description": "Page size from 1 to 100. Defaults to 30.",
+          "format": "uint16",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "mono": {
+          "description": "Optionally filter by monospace classification.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "query": {
+          "description": "Case-insensitive substring, at most 120 characters.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "source": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/FontSource"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Optionally filter by a remote provider."
+        }
+      },
+      "title": "FontCatalogueInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "definitions": {
+        "FontCatalogueFamily": {
+          "description": "A merged catalogue row.",
+          "properties": {
+            "category": {
+              "description": "Source category normalized by the server.",
+              "type": "string"
+            },
+            "family": {
+              "description": "Display family name.",
+              "type": "string"
+            },
+            "id": {
+              "description": "Stable ID for installation.",
+              "type": "string"
+            },
+            "mono": {
+              "description": "Whether the provider classifies this as monospaced.",
+              "type": "boolean"
+            },
+            "source": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/FontSource"
+                }
+              ],
+              "description": "Provider."
+            }
+          },
+          "required": [
+            "category",
+            "family",
+            "id",
+            "mono",
+            "source"
+          ],
+          "type": "object"
+        },
+        "FontSource": {
+          "description": "Available catalogue and local font sources.",
+          "oneOf": [
+            {
+              "description": "Google Fonts.",
+              "enum": [
+                "google"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Fontsource.",
+              "enum": [
+                "fontsource"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Fontshare.",
+              "enum": [
+                "fontshare"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "An account's own file.",
+              "enum": [
+                "upload"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "The device's system typeface.",
+              "enum": [
+                "system"
+              ],
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "description": "A page of remote catalogue families.",
+      "properties": {
+        "families": {
+          "description": "Matching families in deterministic order.",
+          "items": {
+            "$ref": "#/definitions/FontCatalogueFamily"
+          },
+          "type": "array"
+        },
+        "next_cursor": {
+          "description": "Cursor for the next page, or null at the end.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "partial": {
+          "description": "Whether a source is unreachable, stale or disabled.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "families",
+        "partial"
+      ],
+      "title": "FontCatalogueResult",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "reversible",
+    "id": "fonts.install",
+    "description": "Install a catalogue family for this installation",
+    "mutates": true,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Opaque family identifier, resolved against the caller's permitted library.",
+      "properties": {
+        "id": {
+          "description": "Family ID returned by the catalogue, list or upload reply.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "FontIdInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "definitions": {
+        "FontInstallState": {
+          "description": "Availability of one family at this installation.",
+          "oneOf": [
+            {
+              "description": "No published family or active fill.",
+              "enum": [
+                "missing"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "A shared fill is in progress.",
+              "enum": [
+                "installing"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "The requested local family is available.",
+              "enum": [
+                "ready"
+              ],
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "description": "Local install state and the installation's download policy.",
+      "properties": {
+        "downloads_enabled": {
+          "description": "Whether remote requests are enabled.",
+          "type": "boolean"
+        },
+        "state": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/FontInstallState"
+            }
+          ],
+          "description": "Family state."
+        }
+      },
+      "required": [
+        "downloads_enabled",
+        "state"
+      ],
+      "title": "FontStatusResult",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "read",
+    "id": "fonts.status",
+    "description": "Check a family's local availability",
+    "mutates": false,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Opaque family identifier, resolved against the caller's permitted library.",
+      "properties": {
+        "id": {
+          "description": "Family ID returned by the catalogue, list or upload reply.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "FontIdInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "definitions": {
+        "FontInstallState": {
+          "description": "Availability of one family at this installation.",
+          "oneOf": [
+            {
+              "description": "No published family or active fill.",
+              "enum": [
+                "missing"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "A shared fill is in progress.",
+              "enum": [
+                "installing"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "The requested local family is available.",
+              "enum": [
+                "ready"
+              ],
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "description": "Local install state and the installation's download policy.",
+      "properties": {
+        "downloads_enabled": {
+          "description": "Whether remote requests are enabled.",
+          "type": "boolean"
+        },
+        "state": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/FontInstallState"
+            }
+          ],
+          "description": "Family state."
+        }
+      },
+      "required": [
+        "downloads_enabled",
+        "state"
+      ],
+      "title": "FontStatusResult",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "read",
+    "id": "fonts.faces",
+    "description": "Generate same-origin face rules",
+    "mutates": false,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Generate CSS for the account's roles, or inspect one family for a preview.",
+      "properties": {
+        "id": {
+          "description": "Optional ID of a local family to preview.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "title": "FontFacesInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "description": "Local CSS with typeface aliases for clients' font stacks.",
+      "properties": {
+        "css": {
+          "description": "Generated rules with same-origin URLs.",
+          "type": "string"
+        },
+        "families": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Library ID to generated CSS family alias.",
+          "type": "object"
+        }
+      },
+      "required": [
+        "css",
+        "families"
+      ],
+      "title": "FontFacesResult",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "read",
+    "id": "fonts.list",
+    "description": "List shared and caller-owned fonts",
+    "mutates": false,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Page of installed families and the authenticated account's own uploads.",
+      "properties": {
+        "cursor": {
+          "description": "Opaque next cursor from a preceding page.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "limit": {
+          "description": "Page size from 1 to 100. Defaults to 30.",
+          "format": "uint16",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "title": "FontListInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "definitions": {
+        "FontRole": {
+          "description": "Each independent typography role in the shell.",
+          "oneOf": [
+            {
+              "description": "Interface labels and controls.",
+              "enum": [
+                "ui"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Conversation text.",
+              "enum": [
+                "chat"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Code.",
+              "enum": [
+                "code"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Terminal.",
+              "enum": [
+                "terminal"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Wordmark.",
+              "enum": [
+                "brand"
+              ],
+              "type": "string"
+            }
+          ]
+        },
+        "FontSource": {
+          "description": "Available catalogue and local font sources.",
+          "oneOf": [
+            {
+              "description": "Google Fonts.",
+              "enum": [
+                "google"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Fontsource.",
+              "enum": [
+                "fontsource"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Fontshare.",
+              "enum": [
+                "fontshare"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "An account's own file.",
+              "enum": [
+                "upload"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "The device's system typeface.",
+              "enum": [
+                "system"
+              ],
+              "type": "string"
+            }
+          ]
+        },
+        "FontStoredFamily": {
+          "description": "Metadata for one locally usable family.",
+          "properties": {
+            "bytes": {
+              "description": "Byte count of stored files.",
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "family": {
+              "description": "Display family name.",
+              "type": "string"
+            },
+            "id": {
+              "description": "Stable library ID.",
+              "type": "string"
+            },
+            "source": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/FontSource"
+                }
+              ],
+              "description": "Provider or Upload."
+            },
+            "used_by": {
+              "description": "Roles in which the authenticated account uses this family.",
+              "items": {
+                "$ref": "#/definitions/FontRole"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "bytes",
+            "family",
+            "id",
+            "source",
+            "used_by"
+          ],
+          "type": "object"
+        }
+      },
+      "description": "The user's visible local font storage.",
+      "properties": {
+        "families": {
+          "description": "Current page of installed or owned families.",
+          "items": {
+            "$ref": "#/definitions/FontStoredFamily"
+          },
+          "type": "array"
+        },
+        "next_cursor": {
+          "description": "Next cursor or null.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "families"
+      ],
+      "title": "FontListResult",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "reversible",
+    "id": "fonts.remove",
+    "description": "Remove a caller-owned family",
+    "mutates": true,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Opaque family identifier, resolved against the caller's permitted library.",
+      "properties": {
+        "id": {
+          "description": "Family ID returned by the catalogue, list or upload reply.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "FontIdInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "definitions": {
+        "AppearanceAccent": {
+          "description": "Where the accent color is obtained.",
+          "oneOf": [
+            {
+              "description": "Derive it from the wallpaper.",
+              "enum": [
+                "wallpaper"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Use the person's custom hex color.",
+              "enum": [
+                "custom"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Use the selected preset's palette.",
+              "enum": [
+                "theme"
+              ],
+              "type": "string"
+            }
+          ]
+        },
+        "AppearanceFonts": {
+          "additionalProperties": false,
+          "description": "The account's five font selections.",
+          "properties": {
+            "brand": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/FontChoice"
+                }
+              ],
+              "description": "Wordmark typeface."
+            },
+            "chat": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/FontChoice"
+                }
+              ],
+              "description": "Conversation typeface."
+            },
+            "code": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/FontChoice"
+                }
+              ],
+              "description": "Code typeface."
+            },
+            "terminal": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/FontChoice"
+                }
+              ],
+              "description": "Terminal typeface."
+            },
+            "ui": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/FontChoice"
+                }
+              ],
+              "description": "Interface typeface."
+            }
+          },
+          "required": [
+            "brand",
+            "chat",
+            "code",
+            "terminal",
+            "ui"
+          ],
+          "type": "object"
+        },
+        "AppearanceMaterials": {
+          "additionalProperties": false,
+          "description": "The account's material effects.",
+          "properties": {
+            "blur": {
+              "description": "Blur backgrounds.",
+              "type": "boolean"
+            },
+            "dim": {
+              "description": "Dim backgrounds.",
+              "type": "boolean"
+            },
+            "tint": {
+              "description": "Tint backgrounds.",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "blur",
+            "dim",
+            "tint"
+          ],
+          "type": "object"
+        },
+        "AppearancePreferences": {
+          "additionalProperties": false,
+          "description": "The saved account appearance. A client overlays its local device settings for first paint.",
+          "properties": {
+            "accent": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/AppearanceAccent"
+                }
+              ],
+              "description": "Accent color policy."
+            },
+            "accentColor": {
+              "description": "Custom accent color in #rrggbb form.",
+              "type": "string"
+            },
+            "brand": {
+              "description": "Sidebar wordmark text.",
+              "type": "string"
+            },
+            "fonts": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/AppearanceFonts"
+                }
+              ],
+              "description": "Typeface selection per role."
+            },
+            "materials": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/AppearanceMaterials"
+                }
+              ],
+              "description": "Material effects."
+            },
+            "motion": {
+              "description": "Enable motion when the device permits it.",
+              "type": "boolean"
+            },
+            "presetId": {
+              "description": "Last applied look, or null.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "streamText": {
+              "description": "Show streamed conversation text.",
+              "type": "boolean"
+            },
+            "themeId": {
+              "description": "Palette preset, or null for the built-in palette.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "wallpaperId": {
+              "description": "Wallpaper library ID, auto for the default, or null for none.",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "accent",
+            "accentColor",
+            "brand",
+            "fonts",
+            "materials",
+            "motion",
+            "streamText"
+          ],
+          "type": "object"
+        },
+        "FontChoice": {
+          "additionalProperties": false,
+          "description": "A role's selected typeface. Bundled and System faces omit the library ID.",
+          "properties": {
+            "family": {
+              "description": "Display family name.",
+              "type": "string"
+            },
+            "id": {
+              "description": "Opaque library ID returned by catalogue or list.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "source": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/FontSource"
+                }
+              ],
+              "description": "Catalogue, upload or device source."
+            }
+          },
+          "required": [
+            "family",
+            "source"
+          ],
+          "type": "object"
+        },
+        "FontSource": {
+          "description": "Available catalogue and local font sources.",
+          "oneOf": [
+            {
+              "description": "Google Fonts.",
+              "enum": [
+                "google"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Fontsource.",
+              "enum": [
+                "fontsource"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Fontshare.",
+              "enum": [
+                "fontshare"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "An account's own file.",
+              "enum": [
+                "upload"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "The device's system typeface.",
+              "enum": [
+                "system"
+              ],
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "description": "Successful removal of an uploaded family from the caller's library.",
+      "properties": {
+        "appearance": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/AppearancePreferences"
+            }
+          ],
+          "description": "Saved preferences after resetting the affected roles."
+        }
+      },
+      "required": [
+        "appearance"
+      ],
+      "title": "FontRemoveResult",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "read",
+    "id": "plugins.network.content.get",
+    "description": "Get a prepared sealed content frame",
+    "mutates": false,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Read a prepared sealed frame as the person it was created for.",
+      "properties": {
+        "frame_id": {
+          "description": "Short-lived frame ID from content preparation.",
+          "type": "string"
+        },
+        "space_id": {
+          "description": "Space UUID.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "frame_id",
+        "space_id"
+      ],
+      "title": "ContentFrameAddress",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "definitions": {
+        "ContentFetchPreference": {
+          "description": "One person's policy for remote images and fonts in a space.",
+          "oneOf": [
+            {
+              "description": "Request an explicit decision before downloading remote assets.",
+              "enum": [
+                "ask"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Fetch eligible assets at ingest, with the older-content fallback.",
+              "enum": [
+                "always"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Show placeholders for remote assets.",
+              "enum": [
+                "never"
+              ],
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "description": "Trusted client data for mounting a sealed frame and for external navigation.",
+      "properties": {
+        "frame_url": {
+          "description": "Relative trusted frame URL. Mount with an empty iframe sandbox.",
+          "type": "string"
+        },
+        "links": {
+          "description": "External targets in the order of the frame's navigation references. Open only through the host's explicit navigation action.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "preference": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/ContentFetchPreference"
+            }
+          ],
+          "description": "Current remote-content preference for the viewer."
+        }
+      },
+      "required": [
+        "frame_url",
+        "links",
+        "preference"
+      ],
+      "title": "ContentFrameView",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "read",
+    "id": "plugins.network.content.preference.get",
+    "description": "Read your remote content preference",
+    "mutates": false,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Read the viewer's remote content policy in one space.",
+      "properties": {
+        "space_id": {
+          "description": "Space UUID. The authenticated caller supplies the account identity.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "space_id"
+      ],
+      "title": "ContentFetchPreferenceAddress",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "description": "One person's policy for remote images and fonts in a space.",
+      "oneOf": [
+        {
+          "description": "Request an explicit decision before downloading remote assets.",
+          "enum": [
+            "ask"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Fetch eligible assets at ingest, with the older-content fallback.",
+          "enum": [
+            "always"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Show placeholders for remote assets.",
+          "enum": [
+            "never"
+          ],
+          "type": "string"
+        }
+      ],
+      "title": "ContentFetchPreference"
+    }
+  },
+  {
+    "risk": "reversible",
+    "id": "plugins.network.content.preference.set",
+    "description": "Set your remote content preference",
+    "mutates": true,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "definitions": {
+        "ContentFetchPreference": {
+          "description": "One person's policy for remote images and fonts in a space.",
+          "oneOf": [
+            {
+              "description": "Request an explicit decision before downloading remote assets.",
+              "enum": [
+                "ask"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Fetch eligible assets at ingest, with the older-content fallback.",
+              "enum": [
+                "always"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Show placeholders for remote assets.",
+              "enum": [
+                "never"
+              ],
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "description": "Set the caller's own remote content policy in one space.",
+      "properties": {
+        "preference": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/ContentFetchPreference"
+            }
+          ],
+          "description": "New choice applied at the next fetch and asset delivery."
+        },
+        "space_id": {
+          "description": "Space UUID. The authenticated caller supplies the account identity.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "preference",
+        "space_id"
+      ],
+      "title": "ContentFetchPreferenceEdit",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "description": "One person's policy for remote images and fonts in a space.",
+      "oneOf": [
+        {
+          "description": "Request an explicit decision before downloading remote assets.",
+          "enum": [
+            "ask"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Fetch eligible assets at ingest, with the older-content fallback.",
+          "enum": [
+            "always"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Show placeholders for remote assets.",
+          "enum": [
+            "never"
+          ],
+          "type": "string"
+        }
+      ],
+      "title": "ContentFetchPreference"
     }
   },
   {

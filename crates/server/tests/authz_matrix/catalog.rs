@@ -81,6 +81,21 @@ async fn every_registered_operation_has_an_independent_matrix_row() {
         "trash.list",
         "trash.purge",
         "resolve", // dedicated address matrix in resolver.rs
+        // Dedicated item sharing fixtures in resolver.rs.
+        "collections.get",
+        "collections.create",
+        "collections.set_members",
+        "sharing.list",
+        "sharing.mark_seen",
+        "sharing.rescue",
+        "sharing.audiences",
+        "sharing.shared_with_me",
+        "sharing.grant",
+        "sharing.revoke",
+        "sharing.link_create",
+        "sharing.link_update",
+        "sharing.link_copy",
+        "sharing.set_link_policy",
         "spaces.list",
         "wallpapers.list", // signed-in installation catalog in conformance/wallpaper_cases.rs
         "spaces.create",
@@ -158,6 +173,15 @@ async fn every_registered_operation_has_an_independent_matrix_row() {
     // sessions in conformance/requests_cases.rs.
     // Package setting access uses the real sessions in plugin_settings_cases.rs.
     for (id, required) in [
+        ("plugins.network.content.get", Capability::PluginsUse),
+        (
+            "plugins.network.content.preference.get",
+            Capability::PluginsUse,
+        ),
+        (
+            "plugins.network.content.preference.set",
+            Capability::PluginsUse,
+        ),
         ("plugins.settings.get", Capability::SpaceSettings),
         ("plugins.settings.set", Capability::SpaceSettings),
         ("provider.sign_in.start", Capability::PluginsUse),
@@ -205,6 +229,29 @@ async fn every_registered_operation_has_an_independent_matrix_row() {
             "{id}"
         );
         assert!(!declaration.mutates, "{id}");
+    }
+    // These handlers use a dedicated person-session dispatcher. Their
+    // authorization and account isolation are covered in font_cases.rs.
+    let appearance = [
+        "appearance.get",
+        "appearance.patch",
+        "fonts.catalogue",
+        "fonts.install",
+        "fonts.status",
+        "fonts.faces",
+        "fonts.list",
+        "fonts.remove",
+    ];
+    for id in appearance {
+        assert!(calternal_core::is_appearance_operation(id), "{id}");
+        assert!(
+            fixture.state.registry.snapshot().policy(id).is_none(),
+            "{id}"
+        );
+        assert!(
+            stored_rows.insert(id),
+            "duplicate appearance operation {id}"
+        );
     }
     let rows: BTreeSet<_> = rows.union(&stored_rows).copied().collect();
     assert_eq!(
@@ -260,6 +307,12 @@ async fn every_registered_operation_has_an_independent_matrix_row() {
                 .iter()
                 .map(|op| op.id().to_owned()),
         )
+        .chain(
+            calternal_server::authz::sharing_policies()
+                .iter()
+                .map(|p| p.operation.to_string()),
+        )
+        .chain(appearance.into_iter().map(str::to_owned))
         .chain(plugin_rows.iter().map(|p| (*p).to_owned()))
         .collect();
     assert_eq!(
@@ -276,6 +329,8 @@ async fn every_registered_operation_has_an_independent_matrix_row() {
             + calternal_server::authz::people_policies().len()
             + calternal_core::NOTE_OPERATIONS.len()
             + calternal_core::SearchOperation::ALL.len()
+            + calternal_server::authz::sharing_policies().len()
+            + appearance.len()
             + plugin_rows.len(),
         MATRIX.len() + stored_rows.len(),
         "duplicate policy"

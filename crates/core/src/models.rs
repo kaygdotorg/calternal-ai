@@ -268,6 +268,34 @@ pub struct Contract {
     pub wallpapers_list_input: crate::WallpapersListInput,
     /// Schema representative for the built-in wallpaper catalog.
     pub wallpapers_list_result: crate::WallpapersListResult,
+    /// Schema representative for appearance get input.
+    pub appearance_get_input: crate::AppearanceGetInput,
+    /// Schema representative for appearance patch.
+    pub appearance_patch: crate::AppearancePatch,
+    /// Schema representative for appearance preferences.
+    pub appearance_preferences: crate::AppearancePreferences,
+    /// Schema representative for the appearance overlay kept on each device.
+    pub device_appearance_preferences: crate::DeviceAppearancePreferences,
+    /// Schema representative for font id input.
+    pub font_id_input: crate::FontIdInput,
+    /// Schema representative for font catalogue input.
+    pub font_catalogue_input: crate::FontCatalogueInput,
+    /// Schema representative for font catalogue result.
+    pub font_catalogue_result: crate::FontCatalogueResult,
+    /// Schema representative for font status result.
+    pub font_status_result: crate::FontStatusResult,
+    /// Schema representative for font faces input.
+    pub font_faces_input: crate::FontFacesInput,
+    /// Schema representative for font faces result.
+    pub font_faces_result: crate::FontFacesResult,
+    /// Schema representative for font list input.
+    pub font_list_input: crate::FontListInput,
+    /// Schema representative for font list result.
+    pub font_list_result: crate::FontListResult,
+    /// Schema representative for font remove result.
+    pub font_remove_result: crate::FontRemoveResult,
+    /// Schema representative for font stored family.
+    pub font_stored_family: crate::FontStoredFamily,
     /// Common address resolution input.
     pub resolve_input: ResolveInput,
     /// Current visible address resolution.

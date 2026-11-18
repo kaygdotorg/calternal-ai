@@ -13,15 +13,18 @@ database until checkpointed. SQLite SHM, locks and sockets are runtime state.
 | Root and relative paths | Class | Writer and baseline marker |
 | --- | --- | --- |
 | Appdata `system/auth.db` | Authority | Auth, SQLite 11. Accounts, passkeys, sessions, roles, memberships, invites, approvals, machine identity and grants, erasures, key fingerprints and protected receipts. |
-| Appdata `system/machines.db` | Authority | Machine placement, SQLite 8. Leases, fences, drain, work locations, discard and erase delivery, and the durable stop record that keeps an erased worker's machine slot reserved until its stop completes. |
+| Appdata `system/appearance.db` | Mixed | Appearance, new SQLite 1 baseline through the shared runner. Account preferences and original private uploads are authoritative. Shared manifests and eviction pins coordinate with the cache. The production baseline has no appearance database. |
+| Appdata `fonts-cache-v1/` | Derived | Version 1 directories of immutable WOFF2 bytes by family and digest. Startup verifies the published manifest and retires incomplete or orphan fills. |
+| Appdata `system/machines.db` | Authority | Machine placement, production SQLite 6. The shared runner installs title leases in v7 and scoped harness leases in v8. Leases, fences, drain, work locations, discard and erase delivery, and the durable stop record that keeps an erased worker's machine slot reserved until its stop completes are authoritative. |
 | Appdata `spaces/<id>/content.db` | Mixed | Content, SQLite 3. Item identity, revisions, pending placement, trash and tombstones, kinds, plugin controls. Listing, labels and links are derived. |
 | Appdata `spaces/<id>/index.db`, `secrets/spaces/<id>/head` | Authority | Space journal, SQLite 2 and binary CHW2. Journal, epoch, receipts and independent head witness. Receipts are pruned after the operator's retention (7 days by default) only on content's command, with every receipt of a surviving outbox intent pinned. The fence adds no stored state. |
+| Appdata `spaces/<id>/network.db` | Authority | Plugin network, SQLite 1. Per-person remote content preferences and bounded outbound audit metadata. Absent databases use the default and are initialized by the shared runner on the first saved preference. |
 | Appdata `spaces/<id>/jobs.db` | Authority | Jobs, SQLite 2. Admission, retry and in-flight state, checkpoints, event outbox and retention. |
 | Appdata `accounts/<id>/input.db`, `content.db`, `agent-settings.db` | Authority | Account input, content and jobs. SQLite 2 for drafts and pending input, 1 for protected collections and 1 for retry settings. |
 | Appdata `accounts/<id>/onboarding.db` | Authority | Account onboarding, new SQLite 1 baseline through the shared runner. The production baseline has no marker. Missing files read as unfinished. The completion marker rides with account settings and is removed by account erasure. |
 | Appdata `accounts/<id>/secrets.db`, `spaces/<id>/secrets.db` | Authority | Secrets, SQLite 1. Sealed values, pending prompts, audit and key state. |
 | Appdata `system/invite.key`, account and space `secret.key` | Authority | Auth and secrets. Fixed 32-byte payloads with v1 key derivation and ciphertext binding. Preserve bytes, ownership and mode with their database. |
-| Appdata `installed-plugins.sqlite3` and `installed-plugin-workers/` | Mixed | Package store, SQLite 2. Installed and retained archives, digests, approvals, revision counters and reviewed provider runtime metadata are authoritative. The v1 upgrade adds the shipped provider's sign-in registration while preserving existing archives, checksums and approval revisions. Manifest API version 1 describes the package contract. Extracted worker copies are a cache reused across restarts only when they match the archive bytes, so they carry no version. Development drafts are disposable. |
+| Appdata `installed-plugins.sqlite3` and `installed-plugin-workers/` | Mixed | Package store, production SQLite 1. Version 2 adds reviewed provider runtime metadata and the shipped provider's sign-in registration, preserving installed and retained archives, checksums, activation approvals and revisions. Manifest API version 1 describes the package contract. Extracted worker copies are a cache reused across restarts only when they match the archive bytes, so they carry no version. Development drafts are disposable. |
 | Appdata `system/content-index.db`, `spaces/<id>/search-v2.db`, `spaces/<id>/search-messages-v1.all.db`, `wallpapers/` | Derived | Content routing, SQLite 1. Retain the exact route catalogue across upgrades. Item search is SQLite 2 at generation 3. Message search, with its postings and thread-location index, is SQLite 1 at generation 1. Wallpaper cache follows its rendition catalogue. |
 | SSD space `Notes/`, `AI/Chats/`, Trash, registered visible and hidden content | Authority | Content writes `calternal-id` and a `calternal-note/v1` envelope for Markdown without its own format tag. Thread writers use `calternal-thread/v1`. Space Collections use `calternal-collection/v1` JSON for their structured membership. Other provider or plugin formats and opaque bytes follow their own contracts. |
 | SSD space `AI/AGENTS.md`, `AI/Skills/*/SKILL.md` | Authority | Space instructions and the person write raw Markdown. Skill descriptors use the external Agent Skills format and may be provisioned on disk. These formats pass through byte-for-byte. |
@@ -98,6 +101,14 @@ The lease migration adds nullable harness confinement and login-scope metadata; 
    below and check reads, acknowledged writes, and rollback against that data.
    The test-only `upgrade_schema()` step in `machines/db.rs` shows the shape of
    a real step and how the fixture tests drive it.
+
+### Item sharing
+
+The fresh production baseline at `c98705d7` includes dormant sharing authority
+(`auth.db` 14) and the derived collection membership index (space
+`content.db` 5). The sharing feature uses these shipped schemas. The existing
+`system/invite.key` backup also protects public link credentials through
+independently derived keys.
 
 ## Release handoff
 
