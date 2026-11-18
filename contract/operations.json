@@ -1371,6 +1371,10 @@
             "sign_in": {
               "description": "Whether the executable implements the private `--sign-in` mode.",
               "type": "boolean"
+            },
+            "title_generation": {
+              "description": "Whether the adapter implements the private, stateless `--title` command.",
+              "type": "boolean"
             }
           },
           "required": [
@@ -2807,6 +2811,10 @@
             "sign_in": {
               "description": "Whether the executable implements the private `--sign-in` mode.",
               "type": "boolean"
+            },
+            "title_generation": {
+              "description": "Whether the adapter implements the private, stateless `--title` command.",
+              "type": "boolean"
             }
           },
           "required": [
@@ -4163,6 +4171,10 @@
             },
             "sign_in": {
               "description": "Whether the executable implements the private `--sign-in` mode.",
+              "type": "boolean"
+            },
+            "title_generation": {
+              "description": "Whether the adapter implements the private, stateless `--title` command.",
               "type": "boolean"
             }
           },
@@ -11327,6 +11339,13 @@
             "ready": {
               "description": "The machine has capacity and the enabled provider reports a login.",
               "type": "boolean"
+            },
+            "title_blocked": {
+              "description": "Safe reason an automatic title was skipped on this machine, when observed.",
+              "type": [
+                "string",
+                "null"
+              ]
             }
           },
           "required": [

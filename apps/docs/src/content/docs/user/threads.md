@@ -45,6 +45,7 @@ whose `kind` is one of these values.
 | --- | --- |
 | Created | `threads.create` |
 | Renamed | `threads.rename` |
+| Manual snooze changed | `threads.snooze` with `data.snoozed_until_ms` |
 | Archived or unarchived | `threads.archive`, `threads.unarchive` |
 | Person message or agent text checkpoint saved | `threads.send`, `threads.checkpoint` |
 | A provider sign-in was attempted or completed | `threads.provider_sign_in` with `data.notice` |
@@ -219,6 +220,61 @@ plugin path, the native manifest is available from the binary if the working
 directory lacks `plugins/calternal-orchestrator/manifest.json`. Deployments
 using `--plugin-root` provide their own trusted plugin tree. An authorized
 fresh space lists zero threads before any conversation is created.
+
+## Snoozing the Inbox
+
+Call `threads.snooze` with `space_id`, `id`, and a future Unix timestamp
+`until_ms`. Use `null` to clear a manual snooze. The operation requires
+`content.write` and returns the thread UUID and committed manual deadline as
+`snoozed_until_ms`. A retry with the same request ID returns that decision.
+
+The manual deadline is shared by all members. Content schema 4 enables it in
+the durable revision metadata. The Markdown transcript uses its existing format.
+The top-level `snoozed_until_ms` on list and detail responses is the latest
+future deadline from the manual setting and any `subscription_reset` retry.
+The retry entry in the feed carries its existing `turn_reason.next_attempt_ms`.
+Clients re-evaluate the Inbox when the deadline passes. The server computes
+expiry on reads, so no timer write, extra journal entry or cleanup is needed
+after restart. Clearing a manual snooze leaves the subscription retry intact.
+
+```sh
+calternal threads snooze <thread-id> --until-ms <unix-ms>
+calternal threads snooze <thread-id> --clear
+```
+
+## Automatic thread title
+
+Omit `title` when creating a thread to start it as “New thread” and allow
+automatic naming. A supplied title and any manual rename establish a manual
+title, including when the title is “New thread”. Existing threads keep their
+titles. After a completed turn leaves at least five messages, the server can
+submit the first five texts to Claude
+Haiku 5.5 (`claude-haiku-5-5`) at low effort. Each text contributes at most
+3,000 UTF-8 bytes. The sandbox runs on the last turn's personal machine, uses
+the existing Claude subscription, and receives no Calternal agent credential.
+Codex automatic titles are disabled.
+
+The title runs in the background with up to eight admitted tasks per server
+and one active title sandbox per machine. A full queue drops the submission.
+A foreground turn takes priority over a title lease. Each thread can start
+one attempt and one retry. Each provider attempt costs one short turn. No
+foreground request awaits title output. Saving a title uses `threads.rename`
+and keeps the UUID and its stable address. The thread metadata records the
+automatic source. The content revision guard preserves a manual rename made
+as the title arrives.
+
+Claude Code uses safe mode, no built-in tools, no slash commands and no session
+persistence. The adapter checks for local managed policy before starting
+Claude and requires a verified personal Pro or Max subscription. Organization
+subscriptions can receive server-managed hooks and are skipped. Read
+`providers[provider_id].title_blocked` on the caller's machine in
+`agent.readiness` for `managed_policy` or `subscription_unverified` when
+observed. The thread shows no error. Menu regeneration remains pending.
+
+
+
+A plan's compute entitlement is a sandbox size in CPUs and RAM plus hours
+per month.
 
 ## Accepted design
 

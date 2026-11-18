@@ -125,6 +125,7 @@ pub(super) fn public_metadata(mut metadata: Value) -> Value {
             super::provider_session::KEY,
             "output",
             "pending",
+            "title_attempts",
             super::provider_notice::KEY,
         ] {
             fields.remove(key);

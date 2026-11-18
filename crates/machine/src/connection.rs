@@ -16,11 +16,12 @@ use std::time::{Duration, Instant};
 use uuid::Uuid;
 
 use crate::identity::Credentials;
-use crate::link::Link;
+use crate::link::{ConnectAddress, Link};
 use crate::protocol::{
     PROTOCOL_VERSION, SessionChallenge, SessionFinish, SessionGranted, SessionStart, SyncRequest,
     SyncResponse,
 };
+use crate::ready::Ready;
 use crate::runner::Runner;
 use crate::sandbox::Backend;
 use crate::{Error, Result};
@@ -38,6 +39,15 @@ pub struct Config {
 /// Run the machine role until `shutdown` completes (orderly exit, `Ok`) or the
 /// machine is revoked ([`Error::Revoked`], after stopping every sandbox).
 pub async fn run(config: Config, shutdown: impl std::future::Future<Output = ()>) -> Result<()> {
+    run_at(config, None, &Ready::default(), shutdown).await
+}
+
+pub(crate) async fn run_at(
+    config: Config,
+    address: Option<&ConnectAddress>,
+    ready: &Ready,
+    shutdown: impl std::future::Future<Output = ()>,
+) -> Result<()> {
     let _ownership = crate::ownership::lock(&config.dir).await?;
     let path = config.dir.clone();
     let creds = tokio::task::spawn_blocking(move || Credentials::load(&path))
@@ -48,7 +58,7 @@ pub async fn run(config: Config, shutdown: impl std::future::Future<Output = ()>
         .initialize()
         .await
         .map_err(|e| Error::Protocol(e.0))?;
-    let link = Arc::new(Link::new(&creds.server)?);
+    let link = Arc::new(Link::with_connect_address(&creds.server, address)?);
     let runner = Arc::new(Runner::new(
         config.backend.clone(),
         link.clone(),
@@ -57,7 +67,7 @@ pub async fn run(config: Config, shutdown: impl std::future::Future<Output = ()>
     let boot_id = Uuid::new_v4();
     tracing::info!(machine = %creds.machine_id, server = %creds.server, "machine role starting");
     let result = tokio::select! {
-        r = session_loop(&creds, &link, &runner, boot_id) => r,
+        r = session_loop(&creds, &link, &runner, boot_id, ready) => r,
         () = shutdown => Ok(()),
     };
     let closed = runner.release_all().await;
@@ -79,6 +89,7 @@ async fn session_loop(
     link: &Link,
     runner: &Arc<Runner>,
     boot_id: Uuid,
+    ready: &Ready,
 ) -> Result<()> {
     let mut backoff = Backoff::default();
     let mut last_ok = Instant::now();
@@ -100,6 +111,12 @@ async fn session_loop(
         let hold = Duration::from_millis(granted.poll_hold_ms);
         link.set_token(Some(granted.token.into()));
         tracing::info!("session open");
+        if let Err(error) = ready.report("Machine session opened") {
+            if ready.pending() {
+                return Err(error.into());
+            }
+            tracing::warn!(%error, "could not update the machine service status");
+        }
         let mut ack = 0u64;
         loop {
             let req = SyncRequest {
@@ -155,7 +172,14 @@ async fn expire_locally(runner: &Runner, last_ok: Instant, ttl: Duration) {
 
 /// Query durable owner erasures for this identity without opening a session.
 pub async fn erasure_status(creds: &Credentials) -> Result<crate::protocol::ErasureStatus> {
-    let link = Link::new(&creds.server)?;
+    erasure_status_at(creds, None).await
+}
+
+pub(crate) async fn erasure_status_at(
+    creds: &Credentials,
+    address: Option<&ConnectAddress>,
+) -> Result<crate::protocol::ErasureStatus> {
+    let link = Link::with_connect_address(&creds.server, address)?;
     let timeout = Duration::from_secs(3);
     let SessionChallenge { challenge } = link
         .post(

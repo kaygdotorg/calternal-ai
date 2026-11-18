@@ -78,6 +78,7 @@ fn schedule_checked<D: Directory>(
         let (s, sp, jid, run) = (st.clone(), space, id.clone(), claimed.job.runs);
         let waiting = matches!(end, RunEnd::RetryWaiting);
         let failed = matches!(end, RunEnd::Failed);
+        let done = matches!(&end, RunEnd::Done(_));
         if !waiting {
             if let Ok(latest) = super::load(&st, &id).await
                 && latest.runs == claimed.job.runs
@@ -103,6 +104,12 @@ fn schedule_checked<D: Directory>(
             && let Ok(job) = super::load(&st, &id).await
         {
             let _ = crate::provider_sign_in::offer_failed(st, svc, job.session.clone(), &job).await;
+        } else if done
+            && !verify
+            && finished.is_ok()
+            && claimed.job.input.get("thread_request").is_some()
+        {
+            crate::threads::title::schedule(st, svc, claimed.job);
         }
     });
 }
