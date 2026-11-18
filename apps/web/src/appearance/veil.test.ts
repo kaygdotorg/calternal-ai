@@ -27,7 +27,7 @@ describe("the solver reaches its targets on the worst 1 % of the pixels", () => 
   test("an easy wallpaper keeps the default layers and leaves the secondary inks alone", () => {
     const v = solve("light", "side", ALL, bright, LIGHT);
     expect(v.tint.a).toBeCloseTo(0.35, 2);
-    expect(v.dim.a).toBeCloseTo(0.25, 2);
+    expect(v.dim.a).toBeCloseTo(0, 2); // a sidebar's Dim starts at nothing and is raised only as far as the floor needs
     expect(v.ink3).toEqual(LIGHT.ink3);
   });
 });
@@ -53,7 +53,7 @@ describe("the card", () => {
     const mid = field(() => [120, 110, 100] as RGB);
     const card = solve("dark", "card", ALL, mid, DARK), side = solve("dark", "side", ALL, mid, DARK);
     expect(card.tint.a).toBeGreaterThanOrEqual(0.85);
-    expect(card.dim.a).toBeGreaterThanOrEqual(0.3);
+    expect(card.dim.a).toBeGreaterThanOrEqual(0.45);
     expect(card.total).toBeGreaterThan(side.total + 0.25);
     const hard = solve("light", "card", ALL, dark, LIGHT);
     expect(contrastOn(dark, LIGHT.ink, hard).p01).toBeGreaterThanOrEqual(TARGET.ink - 0.05);

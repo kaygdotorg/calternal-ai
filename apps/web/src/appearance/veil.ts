@@ -57,6 +57,8 @@ export const p01 = (xs: number[]): number => [...xs].sort((a, b) => a - b)[Math.
 export const TINT_A: Record<Role, number> = { side: 0.35, card: 0.85 };
 /** The starting opacity of a sidebar's neutral dim layer when `dim` is on (see `TINT_A`). */
 export const DIM_A: Record<Role, number> = { side: 0, card: 0.3 };
+/** The card's Dim in the dark scheme: deeper than the plugin's 0.3, so the card stays clearly darker than the sidebars (which the readability floor keeps dim over the default photograph); docs/ui-design-system.md has the measurement. */
+export const CARD_DIM_DARK = 0.45;
 const GAIN: Record<Scheme, number> = { light: 0.25, dark: 0.33 };
 const C_CAP = 0.05, A_MAX = 0.9, FLIP_GAIN = 0.12;
 /** Headroom over each target for what the model does not see: the grain, the JPEG, and pixels between the 48 by 48 samples. */
@@ -124,7 +126,7 @@ function solveOne(scheme: Scheme, role: Role, flags: Flags, px: RGB[], hue: { c:
     aT = 0; aD = 1;
   } else {
     aT = flags.tint ? TINT_A[role] : 0;
-    aD = flags.dim ? DIM_A[role] : 0;
+    aD = flags.dim ? (role === "card" && scheme === "dark" ? CARD_DIM_DARK : DIM_A[role]) : 0;
     if (worst(aT, aD) < TARGET.ink + HEAD) {
       // The readability floor: raise Dim (or Tint, when Dim is off) until the target is met, never above A_MAX.
       const raiseDim = flags.dim || !flags.tint;
