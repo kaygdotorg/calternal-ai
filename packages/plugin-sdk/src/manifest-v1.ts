@@ -35,7 +35,7 @@ function schema(v: unknown): void { if (typeof v !== "boolean" && (!v || typeof 
  */
 export function validateManifestV1(value: unknown): ManifestV1 {
   if (new TextEncoder().encode(JSON.stringify(value)).length > 256 * 1024) fail();
-  const m = record(value, ["id", "name", "icon", "version", "api_version", "kinds", "operations", "collections", "views", "attention", "settings", "schedules", "webhooks", "secrets", "hooks", "themes", "host_calls"], ["provider", "palette"]);
+  const m = record(value, ["id", "name", "icon", "version", "api_version", "kinds", "operations", "collections", "views", "attention", "settings", "schedules", "webhooks", "secrets", "hooks", "themes", "host_calls"], ["provider", "slots", "palette"]);
   if (m.provider !== undefined) {
     const p = record(m.provider, ["protocol_version", "executable", "default_model", "models", "sign_in"]);
     if (p.sign_in !== undefined && typeof p.sign_in !== "boolean") throw new Error("invalid provider sign_in");
@@ -99,7 +99,7 @@ export function validateManifestV1(value: unknown): ManifestV1 {
       return identifier(row.id);
     });
   }
-  const operations = new Set<string>();
+  const operations = new Map<string, Record<string, unknown>>();
   rows("kinds", ["id", "schema", "storage", "claimed_text"], r => {
     schema(r.schema); if (typeof r.claimed_text !== "boolean") fail();
     if (r.searchable !== undefined && (typeof r.searchable !== "boolean" || (r.searchable && !r.claimed_text))) fail();
@@ -123,13 +123,36 @@ export function validateManifestV1(value: unknown): ManifestV1 {
   }, ["extension", "searchable"]);
   rows("operations", ["id", "input_schema", "output_schema", "required_capability", "mutates", "idempotency", "risk"], r => {
     if (!["read", "reversible", "irreversible", "external", "widens_access"].includes(String(r.risk)) || (r.risk === "read") === r.mutates) fail();
-    operations.add(identifier(r.id)); schema(r.input_schema); schema(r.output_schema);
+    operations.set(identifier(r.id), r); schema(r.input_schema); schema(r.output_schema);
     if (!capabilities.has(String(r.required_capability)) || typeof r.mutates !== "boolean" || !["read_only", "request_id", "never"].includes(String(r.idempotency)) || r.mutates === (r.idempotency === "read_only") || (r.mutates && r.required_capability === "space.read")) fail();
     target(r.target, r.input_schema);
   }, ["target"]);
   const op = (r: Record<string, unknown>): void => { if (!operations.has(String(r.operation))) fail(); };
   rows("collections", ["id", "kind", "name"], r => { identifier(r.kind); text(r.name); });
   rows("views", ["id", "region", "component"], r => { identifier(r.component); if (!["sidebar", "main", "right_card"].includes(String(r.region))) fail(); });
+  if (m.slots != null) {
+    if (!Array.isArray(m.slots) || m.slots.length > 32) fail();
+    rows("slots", ["id", "label", "slot", "renderer"], row => {
+      if (/\p{Cc}/u.test(text(row.label, 128))) fail();
+      const slot = row.slot;
+      if (!["sidebar_section", "card_window", "composer_row", "message_decoration", "thread_edge", "settings_section", "palette_commands", "toasts"].includes(String(slot))) fail();
+      const type = (row.renderer as { type?: unknown } | null)?.type;
+      if (type === "sealed") {
+        const renderer = record(row.renderer, ["type", "asset"]);
+        const path = text(renderer.asset, 256);
+        if (["palette_commands", "message_decoration", "toasts"].includes(String(slot)) || !path.endsWith(".html") || !path.split("/").every(part => id.test(part))) fail();
+      } else {
+        const renderer = record(row.renderer, ["type", "operation"]);
+        const operation = operations.get(identifier(renderer.operation));
+        if (!operation) fail();
+        if (type === "command" && slot === "palette_commands") return;
+        if (type !== "generated" || slot === "palette_commands" || operation.mutates) fail();
+        const output = operation.output_schema as { properties?: { view?: unknown }; required?: unknown } | null;
+        const view = output?.properties?.view;
+        if (!view || typeof view !== "object" || Array.isArray(view) || !Array.isArray(output?.required) || !output.required.includes("view")) fail();
+      }
+    });
+  }
   rows("attention", ["id", "operation"], op);
   rows("settings", ["id", "value_type", "default"], r => { if (!["string", "boolean", "number"].includes(String(r.value_type)) || typeof r.default !== r.value_type || (typeof r.default === "number" && !Number.isFinite(r.default))) fail(); });
   rows("schedules", ["id", "operation", "expression"], r => { op(r); text(r.expression); });

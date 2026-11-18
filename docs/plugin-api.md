@@ -161,6 +161,21 @@ model catalog with display names and accepted reasoning levels. See
 server never launches or signs in to a provider. The first provider is
 `calternal-claude-code`.
 
+
+## Authoring and interface prototype
+
+The [author workflow](plugin-authoring.md) documents the SDK scaffold, fixture
+host, local operator package review and per-space activation.
+
+Optional manifest `slots` declare a bounded set of local IDs, accessible
+labels, host slot IDs and renderer references. A generated renderer refers to
+a read operation declared by the same plugin whose output schema requires
+a `view`. Palette commands refer to declared operations. Sealed renderer
+paths are validated as metadata. The prototype omits them from the resolved
+listing pending the asset and frame isolation contracts. `plugins.list`
+returns resolved slots for active plugins whose operations the caller can
+invoke in the selected space. See the [interface proposal](plugin-interface-proposal.md).
+
 ## Palette discovery
 
 A Markdown kind can declare `searchable: true` to index its title and body.

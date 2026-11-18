@@ -21,6 +21,8 @@ pub struct SearchKind {
     pub control: String,
     /// Effective value if there is no override.
     pub default_enabled: bool,
+    /// Current package approval stamp, required for a stored override.
+    pub approval: u32,
 }
 
 /// Precompiled search configuration shared by all stores.

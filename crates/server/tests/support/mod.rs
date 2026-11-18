@@ -12,7 +12,12 @@ use serde_json::json;
 pub fn insights_manifest() -> ManifestV1 {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../plugins/calternal-notes-insights/manifest.json");
-    calternal_plugin_host::parse_manifest(&std::fs::read(path).unwrap()).unwrap()
+    let mut manifest =
+        calternal_plugin_host::parse_manifest(&std::fs::read(path).unwrap()).unwrap();
+    // Most worker fixtures replace the operation declaration. View discovery has
+    // its own conformance cases against the unmodified distributed package.
+    manifest.slots = None;
+    manifest
 }
 
 /// A manifest from inline JSON with every list defaulted to empty.

@@ -99,7 +99,10 @@ pub(super) fn allowed(conn: &Connection, filters: &str, kinds: &str) -> Result<(
             SELECT j.value->>'kind' FROM json_each(?1) j
             LEFT JOIN controls c ON c.key=j.value->>'control'
             WHERE CASE WHEN c.key IS NULL THEN j.value->>'default_enabled'
-                       ELSE c.value->>'enabled' END = 1
+                       ELSE c.value->>'enabled'=1
+                            AND json_type(c.value,'$.generation')='integer'
+                            AND (CAST(c.value->>'generation' AS INTEGER) >> 32)=j.value->>'approval'
+                  END = 1
               AND (json_array_length(?2)=0 OR j.value->>'kind' IN (SELECT value FROM json_each(?2)))
          )
          SELECT (SELECT json_group_array(kind) FROM allowed),

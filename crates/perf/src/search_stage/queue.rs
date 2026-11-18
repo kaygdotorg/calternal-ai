@@ -17,6 +17,7 @@ pub(crate) fn run(args: &Args) -> Result<i32> {
     for count in 0..=2 {
         let root = args.work.join(format!("pending-{count}"));
         fixtures::copy(fixture_root.path(), &root)?;
+        fixtures::reset_search_catalog(&root)?;
         if !std::process::Command::new("sync").status()?.success() {
             return Err("could not settle the copied fixture".into());
         }

@@ -4,6 +4,7 @@ use std::sync::Arc;
 mod admin_cli;
 mod cli;
 mod people_maintenance;
+mod plugin_cli;
 mod startup_io;
 mod transport;
 use calternal_cli::output::{CliError, Output, Reply};
@@ -107,6 +108,7 @@ fn main() {
                 calternal_client::CancellationToken::new(),
             )))
         }
+        Cmd::Plugin { command } => plugin_cli::main(command, &out),
         Cmd::PluginDigest { plugin_root } => out.success(&admin_cli::plugin_digest(&plugin_root)),
         Cmd::Machine { cmd } => calternal_machine::cli::main(cmd, &out),
         Cmd::Machines { cmd } => out.finish(admin_cli::machines(cmd, &out)),

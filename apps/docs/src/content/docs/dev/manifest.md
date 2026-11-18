@@ -25,6 +25,7 @@ Plugin menu read without running plugin code. Every top-level field is required;
 | `schedules` | yes | array | Schedule declarations. |
 | `secrets` | yes | array | Requested secret names only; no values. |
 | `settings` | yes | array | Typed space settings. |
+| `slots` | no | array, null | Optional contributions to host slots, validated without running code. |
 | `themes` | yes | array | Packaged theme declarations. |
 | `version` | yes | string | Exact package version. |
 | `views` | yes | array | Shell region component references. |
@@ -1112,6 +1113,208 @@ A discoverable Settings section.
     }
   },
   "additionalProperties": false
+}
+```
+
+## PluginSlot
+
+Host-defined mount point for an activated plugin contribution.
+
+| Field | Required | Type / reference | Description |
+| --- | --- | --- | --- |
+
+
+```json
+{
+  "description": "Host-defined mount point for an activated plugin contribution.",
+  "oneOf": [
+    {
+      "description": "A section in the single navigation sidebar.",
+      "type": "string",
+      "enum": [
+        "sidebar_section"
+      ]
+    },
+    {
+      "description": "Content within a host-managed card or window.",
+      "type": "string",
+      "enum": [
+        "card_window"
+      ]
+    },
+    {
+      "description": "Accessory row beside the host-owned composer.",
+      "type": "string",
+      "enum": [
+        "composer_row"
+      ]
+    },
+    {
+      "description": "Generated decoration within a message row.",
+      "type": "string",
+      "enum": [
+        "message_decoration"
+      ]
+    },
+    {
+      "description": "Bounded panel along a thread edge.",
+      "type": "string",
+      "enum": [
+        "thread_edge"
+      ]
+    },
+    {
+      "description": "Section outside protected account controls.",
+      "type": "string",
+      "enum": [
+        "settings_section"
+      ]
+    },
+    {
+      "description": "Command discoverable in the host action palette.",
+      "type": "string",
+      "enum": [
+        "palette_commands"
+      ]
+    },
+    {
+      "description": "Host-timed notification content.",
+      "type": "string",
+      "enum": [
+        "toasts"
+      ]
+    }
+  ]
+}
+```
+
+## PluginSlotContribution
+
+One plugin-owned contribution that the host can resolve without running code.
+
+| Field | Required | Type / reference | Description |
+| --- | --- | --- | --- |
+| `id` | yes | string | Stable identifier unique within this manifest. |
+| `label` | yes | string | Accessible name and visible label, bounded to 128 UTF-8 bytes. |
+| `renderer` | yes | #/definitions/PluginSlotRenderer | Renderer or command to resolve. |
+| `slot` | yes | #/definitions/PluginSlot | Host mount point, independent of renderer implementation. |
+
+```json
+{
+  "description": "One plugin-owned contribution that the host can resolve without running code.",
+  "type": "object",
+  "required": [
+    "id",
+    "label",
+    "renderer",
+    "slot"
+  ],
+  "properties": {
+    "id": {
+      "description": "Stable identifier unique within this manifest.",
+      "type": "string"
+    },
+    "label": {
+      "description": "Accessible name and visible label, bounded to 128 UTF-8 bytes.",
+      "type": "string"
+    },
+    "renderer": {
+      "description": "Renderer or command to resolve.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/PluginSlotRenderer"
+        }
+      ]
+    },
+    "slot": {
+      "description": "Host mount point, independent of renderer implementation.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/PluginSlot"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false
+}
+```
+
+## PluginSlotRenderer
+
+A portable operation-backed contribution or a reference to a sealed web bundle.
+
+| Field | Required | Type / reference | Description |
+| --- | --- | --- | --- |
+
+
+```json
+{
+  "description": "A portable operation-backed contribution or a reference to a sealed web bundle.",
+  "oneOf": [
+    {
+      "description": "Resolve through a declared read-only operation returning a generated view.",
+      "type": "object",
+      "required": [
+        "operation",
+        "type"
+      ],
+      "properties": {
+        "operation": {
+          "description": "Plugin-local operation declaration to dispatch with current authority.",
+          "type": "string"
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "generated"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "description": "Advertise a packaged entry point for a sealed web renderer.",
+      "type": "object",
+      "required": [
+        "asset",
+        "type"
+      ],
+      "properties": {
+        "asset": {
+          "description": "Relative HTML asset path. The prototype does not serve or mount this asset.",
+          "type": "string"
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "sealed"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "description": "Register a named palette action targeting a declared operation.",
+      "type": "object",
+      "required": [
+        "operation",
+        "type"
+      ],
+      "properties": {
+        "operation": {
+          "description": "Operation to dispatch with current authority and normal approval checks.",
+          "type": "string"
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "command"
+          ]
+        }
+      },
+      "additionalProperties": false
+    }
+  ]
 }
 ```
 

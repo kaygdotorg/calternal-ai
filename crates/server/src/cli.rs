@@ -28,6 +28,11 @@ pub(super) struct Cli {
 #[derive(Subcommand)]
 /// Supported commands; handlers enforce current authority and durable storage.
 pub(super) enum Cmd {
+    /// Create, check, test and benchmark TypeScript plugins.
+    Plugin {
+        #[command(subcommand)]
+        command: crate::plugin_cli::PluginCommand,
+    },
     /// Create, read, send to, stop, archive and delete saved conversations.
     Threads {
         #[command(flatten)]

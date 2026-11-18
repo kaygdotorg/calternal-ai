@@ -29,6 +29,7 @@ pub(crate) fn run(a: &Args) -> Result<i32> {
         a.startup_timeout_seconds,
     )?;
     http.cookie = fixture.cookie;
+    crate::search_stage::wait_ready(&mut http, None)?;
     let budgets = stats::Budgets {
         entries: Vec::new(),
     };
@@ -54,6 +55,8 @@ pub(crate) fn run(a: &Args) -> Result<i32> {
             "observations_ms":stats::summarize(name,samples,&budgets),
         }));
     }
+    let space = fixture.spaces[0].as_str().ok_or("invalid fixture space")?;
+    let placement = crate::materialization::Probe::open(&a.work, space)?;
     let mut revision = fixture.first["revision"].clone();
     let mut samples = Vec::new();
     for i in 0..a.samples {
@@ -66,6 +69,7 @@ pub(crate) fn run(a: &Args) -> Result<i32> {
         )?;
         revision = result["note"]["revision"].clone();
         samples.push(elapsed);
+        placement.wait(&result["note"])?;
     }
     let report = json!({
         "spaces":spaces,"notes_per_space":sizes,

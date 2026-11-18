@@ -113,3 +113,19 @@ pub(crate) fn prepare(a: &Args) -> Result<i32> {
     crate::report::print(a, &report, &a.work);
     Ok(0)
 }
+
+/// Reset the stopped fixture's package catalog so startup seeds the chosen
+/// on/off manifest. The copied authority, journal and note files remain intact.
+pub(crate) fn reset_search_catalog(root: &Path) -> Result<()> {
+    for suffix in ["", "-wal", "-shm", "-journal"] {
+        let path = root
+            .join("appdata")
+            .join(format!("installed-plugins.sqlite3{suffix}"));
+        match std::fs::remove_file(path) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error.into()),
+        }
+    }
+    Ok(())
+}

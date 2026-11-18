@@ -167,6 +167,13 @@ fn content_path(root: &Path, space: &str) -> PathBuf {
 }
 
 fn reset(path: &Path) -> Result<()> {
+    for file in ["search-v2.db", "search-v2.db-wal", "search-v2.db-shm"] {
+        match std::fs::remove_file(path.with_file_name(file)) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error.into()),
+        }
+    }
     Connection::open(path)?.execute_batch(
         "DROP TRIGGER IF EXISTS search_version;
          DROP TRIGGER IF EXISTS item_terms_insert;
@@ -240,6 +247,9 @@ fn measure_open(http: &mut Http, space: &str, first: &str) -> Result<Value> {
     if threads["threads"].as_array().map(Vec::len) != Some(THREADS) {
         return Err("rebuilt thread listing missed fixture threads".into());
     }
+    let search_started = Instant::now();
+    crate::search_stage::wait_ready(http, Some(&json!(space)))?;
+    let search_ready_ms = search_started.elapsed().as_secs_f64() * 1000.;
     let (search, search_ms) = http.op(
         "search.query",
         json!({"space_id":space,"query":"deterministic"}),
@@ -250,7 +260,7 @@ fn measure_open(http: &mut Http, space: &str, first: &str) -> Result<Value> {
     Ok(json!({
         "notes_list_ms":list_ms,"same_space_open_by_id_ms_started_5ms_later":get_ms,
         "initialized_tags_list_ms":tags_ms,"first_threads_list_ms":threads_ms,
-        "initialized_search_ms":search_ms,
+        "initialized_search_ms":search_ms,"search_ready_ms":search_ready_ms,
     }))
 }
 

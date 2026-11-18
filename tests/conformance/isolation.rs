@@ -36,6 +36,8 @@ mod erasure_cases;
 mod live_cases;
 mod notes_cases;
 mod perf_cases;
+mod plugin_slot_cases;
+
 mod search_cases;
 mod simplify_review_cases;
 mod wallpaper_cases;
@@ -1459,6 +1461,7 @@ async fn filesystem_modes_and_complete_sql_inventory() {
         space_db.as_str(),
         "system/content-index.db",
         "system/auth.db",
+        "installed-plugins.sqlite3",
     ] {
         let c = Connection::open_with_flags(
             f.appdata().join(db),

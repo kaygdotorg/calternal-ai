@@ -247,6 +247,9 @@ fn run(a: &Args) -> Result<i32> {
                     return Err(format!("refusing reused roots: {}", root.display()).into());
                 }
                 fixtures::copy(&seed_root, &root)?;
+                if a.paired_search {
+                    fixtures::reset_search_catalog(&root)?;
+                }
                 if pair < a.cold_pairs
                     && !std::process::Command::new("sudo")
                         .args(["-n", "/usr/local/sbin/perf-drop-caches"])
@@ -384,6 +387,10 @@ fn scenario(
     }
     if a.paired_search {
         search_stage::first_use(&server, &mut h, root, &space, &mut first, &mut samples)?;
+        let enabled = samples["search.rebuild.index_on"][0] == 1.0;
+        if enabled != (plugins == a.plugins) {
+            return Err("search opt-in did not match the paired arm".into());
+        }
     }
     let mut live = live::Live::open(
         &h,

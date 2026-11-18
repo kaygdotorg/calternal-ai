@@ -153,17 +153,20 @@ impl<D: Directory> SpaceHost<D> {
         let id = self
             .state
             .jobs
-            .admit(Admission {
-                space: self.space.to_string(),
-                plugin: self.plugin.manifest.id.clone(),
-                account: self.identity.id,
-                session: self.session.clone(),
-                operation: operation.to_owned(),
-                input: run_input,
-                parent,
-                generation: self.generation,
-                request_key: format!("{}/{}/{n}", self.identity.id, self.scope()),
-            })
+            .admit_package(
+                Admission {
+                    space: self.space.to_string(),
+                    plugin: self.plugin.manifest.id.clone(),
+                    account: self.identity.id,
+                    session: self.session.clone(),
+                    operation: operation.to_owned(),
+                    input: run_input,
+                    parent,
+                    generation: self.generation,
+                    request_key: format!("{}/{}/{n}", self.identity.id, self.scope()),
+                },
+                self.plugin.job_revision(),
+            )
             .map_err(|_| Error::Refused)?;
         let _guard = self.runtime.enter();
         runner::schedule(&self.state, self.space.to_string(), id.clone());

@@ -87,7 +87,8 @@ pub(super) fn configuration(registry: &Registry) -> Result<SearchConfig, Error> 
                     .map(move |k| SearchKind {
                         kind: k.id.clone(),
                         control: crate::store::plugin_key(&p.manifest.id),
-                        default_enabled: p.entry.default_enabled,
+                        default_enabled: crate::plugins::default_row(p).enabled,
+                        approval: crate::plugins::default_row(p).approval,
                     })
             })
             .collect(),

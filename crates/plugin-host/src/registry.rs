@@ -25,7 +25,7 @@ fn selector(value: &str, limit: usize) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || b"._-:@/".contains(&b))
 }
 
-fn unique<'a>(ids: impl Iterator<Item = &'a str>) -> bool {
+pub(crate) fn unique<'a>(ids: impl Iterator<Item = &'a str>) -> bool {
     let mut seen = BTreeSet::new();
     ids.into_iter().all(|id| identifier(id) && seen.insert(id))
 }
@@ -184,6 +184,9 @@ pub fn validate_manifest(m: &ManifestV1) -> Result<(), Error> {
         {
             return Err(Error::Invalid);
         }
+    }
+    if !crate::slots::valid(m) {
+        return Err(Error::Invalid);
     }
     let op = |id: &str| m.operations.iter().any(|x| x.id == id);
     if m.kinds.iter().any(|x| {

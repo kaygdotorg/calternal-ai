@@ -24,6 +24,24 @@ fn query(http: &mut Http, space: &Value, text: &str) -> Result<Value> {
     Ok(page)
 }
 
+/// Wait for a fresh index using an empty-result term, outside timing samples.
+pub(crate) fn wait_ready(http: &mut Http, space: Option<&Value>) -> Result<()> {
+    let mut input = json!({"query":"searchprojectionreadysentinel","kinds":["notes"]});
+    if let Some(space) = space {
+        input["space_id"] = space.clone();
+    }
+    let deadline = Instant::now() + Duration::from_secs(240);
+    loop {
+        if http.op("search.query", input.clone())?.0["partial"] == false {
+            return Ok(());
+        }
+        if Instant::now() >= deadline {
+            return Err("search projection did not become ready".into());
+        }
+        std::thread::sleep(Duration::from_millis(25));
+    }
+}
+
 fn elapsed(at: Instant) -> f64 {
     at.elapsed().as_secs_f64() * 1000.0
 }
