@@ -28,7 +28,7 @@ try {
   await cdp.send("WebAuthn.enable"); await cdp.send("WebAuthn.addVirtualAuthenticator", { options: { protocol: "ctap2", transport: "internal", hasResidentKey: true, hasUserVerification: true, isUserVerified: true, automaticPresenceSimulation: true } });
   await p.goto(`${url}/?server=1`); await p.waitForSelector("html[data-ready]");
   await p.fill('input[name="token"]', token); await p.fill('input[name="name"]', "Req Owner"); await p.getByRole("button", { name: "Create passkey" }).click();
-  await p.waitForTimeout(2500); await p.evaluate(() => localStorage.removeItem("cal.onboarding")); /* the first owner lands in the onboarding (shell lane): the account exists, leave the wizard */ await p.waitForSelector("html[data-ready]"); await p.waitForTimeout(1200);
+  await p.waitForTimeout(2500); /* the first owner lands in the onboarding wizard: the account exists; leave it (below) */ await p.waitForSelector("html[data-ready]"); await p.waitForTimeout(1200);
   const go = async (page, path) => { await page.evaluate((x) => { history.pushState(null, "", x); dispatchEvent(new PopStateEvent("popstate")); }, path); await page.waitForTimeout(600); };
   await p.evaluate(() => localStorage.removeItem("cal.onboarding")); await p.goto(`${url}/settings/machines?server=1`); await p.waitForSelector("html[data-ready]");
   await p.getByRole("button", { name: "Make a code" }).click();

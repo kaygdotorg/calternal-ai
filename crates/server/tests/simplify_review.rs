@@ -422,6 +422,7 @@ fn held_plugin_toggle_does_not_block_another_space() {
                 PluginRow {
                     enabled: false,
                     generation: 0,
+                    approval: 0,
                 },
                 true,
                 |_| {
@@ -445,6 +446,7 @@ fn held_plugin_toggle_does_not_block_another_space() {
                 PluginRow {
                     enabled: false,
                     generation: 0,
+                    approval: 0,
                 },
                 true,
                 |_| {

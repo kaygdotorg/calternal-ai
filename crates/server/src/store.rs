@@ -39,12 +39,14 @@ pub struct Store {
 /// The HTTP replay boundary checks current authority and permanent-deletion state.
 pub use calternal_content::Receipt;
 /// Persisted plugin enablement and asynchronous-result invalidation generation.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct PluginRow {
     /// Whether the plugin is enabled in its owning space.
     pub enabled: bool,
     /// Monotonic generation checked before asynchronous delivery.
     pub generation: u32,
+    /// Package authority revision approved by the space when it set this state.
+    pub approval: u32,
 }
 /// Current UTC commit timestamp. Cost: clock read and string allocation; no I/O or locks.
 pub fn now_rfc3339() -> String {
@@ -72,14 +74,17 @@ pub(crate) fn plugin_key(plugin_id: &str) -> String {
 }
 /// Decodes a stored enablement value; anything unreadable is a storage error.
 pub(crate) fn plugin_row(value: serde_json::Value) -> Result<PluginRow, Error> {
+    // One control field carries both counters. The low bits identify the space
+    // toggle and the high bits identify the approved package authority.
+    let stamp = value["generation"]
+        .as_u64()
+        .ok_or_else(|| Error::internal("corrupt plugin state"))?;
     Ok(PluginRow {
         enabled: value["enabled"]
             .as_bool()
             .ok_or_else(|| Error::internal("corrupt plugin state"))?,
-        generation: value["generation"]
-            .as_u64()
-            .and_then(|g| u32::try_from(g).ok())
-            .ok_or_else(|| Error::internal("corrupt plugin state"))?,
+        generation: stamp as u32,
+        approval: (stamp >> 32) as u32,
     })
 }
 /// Parse a note identifier, mapping malformed IDs to the ordinary absence error.
@@ -565,17 +570,21 @@ impl Store {
         self.content
             .set_control(space_id, request, &plugin_key(plugin_id), |current| {
                 let current = current.map(plugin_row).transpose()?.unwrap_or(default);
-                let next = if current.enabled == enabled {
+                let next = if current.enabled == enabled && current.approval == default.approval {
                     current
                 } else {
                     PluginRow {
                         enabled,
-                        generation: current.generation + 1,
+                        generation: current.generation.checked_add(1).ok_or_else(|| {
+                            Error::internal("plugin activation generation exhausted")
+                        })?,
+                        approval: default.approval,
                     }
                 };
                 let response = result(&next);
                 Ok((
-                    serde_json::json!({"enabled": next.enabled, "generation": next.generation}),
+                    serde_json::json!({"enabled": next.enabled, "generation":
+                        (u64::from(next.approval) << 32) | u64::from(next.generation)}),
                     response,
                 ))
             })

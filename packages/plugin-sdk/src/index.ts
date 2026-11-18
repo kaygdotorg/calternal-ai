@@ -295,3 +295,9 @@ export { WorkerRuntimeV2 } from "./worker-v2.js";
 export type { ProviderContext, ProviderCommand, ProviderRequest, ProviderEvent, ProviderEventKind } from '@calternal/contracts';
 /** Stable provider failure and billing categories for durable retry decisions. */
 export type { ProviderFailureClass, ProviderBilling } from '@calternal/contracts';
+
+/** Drive the worker-v2 runtime over bounded streams, for subprocesses and fixtures. */
+export { serveWorker } from "./stdio-worker.js";
+
+/** Bind operation handlers to identifiers and input types from a literal manifest. */
+export { typedHandlers } from "./typed-handlers.js";

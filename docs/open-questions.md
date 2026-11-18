@@ -2,7 +2,7 @@
 
 Decisions waiting on kayg, most blocking first. Answer here or in chat; answered items
 move to the decision record they belong to and leave this list. Terms: see
-[glossary](glossary.md). Updated 2026-11-18 16:20 IST.
+[glossary](glossary.md). Updated 2026-11-18 17:30 IST.
 
 ## Waiting now
 
@@ -32,7 +32,7 @@ move to the decision record they belong to and leave this list. Terms: see
 - **Pricing**: plans are listed at calternal.com/pricing; storage is bought separately; what the sizes, hours and storage steps are.
 - **Upgrades with real data**: decided 2026-11-18 that updates are automatic and a failed one rolls back without the person or admin noticing. Open: how data moves across a schema change (kayg asked for the options to be explained again).
 - **MicroVMs**: one per person with a container per thread is decided and not built; all our VMs are Proxmox VMs, so nested virtualisation is available. Starts when a backend lane frees up.
-- **The canvas experiment**: windows inside the middle card, niri-style (kayg, 2026-11-18); being tried in the fixtures behind `?canvas=1`.
+- **The canvas experiment** (kayg, 2026-11-18; still an experiment behind `?canvas=1`): no outer card; the area between the sidebars is the canvas and each window is a middle card, so one window looks exactly like the app today and a second animates as a split; structured columns as in niri; windows touch the top; one continuous veiled background behind them, as under the sidebars; windows opaque or transparent with no blur of their own; both sidebars follow the focused window's app; on a phone one window at a time. Open: where the app switcher belongs (bottom centre for now, auto-hide available and off by default, never hidden on a phone).
 
 ## Queued, no decision needed
 

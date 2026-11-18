@@ -86,11 +86,12 @@ async fn visible<D: Directory>(
     let Ok(space) = SpaceId::parse(&job.space) else {
         return false;
     };
-    let (st, account, plugin, generation) = (
+    let (st, account, plugin, generation, revision) = (
         state.clone(),
         identity.id,
         job.plugin.clone(),
         job.generation,
+        job.package_revision,
     );
     blocking(move || {
         let caps = st.directory.capabilities(account, space);
@@ -100,7 +101,8 @@ async fn visible<D: Directory>(
         let row = activation(&st.store, space, plugin)?;
         Ok(caps.is_some_and(|c| c.contains(required))
             && row.enabled
-            && row.generation == generation)
+            && row.generation == generation
+            && plugin.job_revision() == revision)
     })
     .await
     .unwrap_or(false)

@@ -150,10 +150,13 @@ async fn execute<D: Directory>(
             return Err(refused());
         }
         let row = activation(&st.store, space, &p2)?;
-        Ok(((row.enabled, row.generation), st.jobs.children(&sp, &jid)?))
+        Ok((row, st.jobs.children(&sp, &jid)?))
     })
     .await?;
-    if generation != (true, job.generation) {
+    if !generation.enabled
+        || generation.generation != job.generation
+        || plugin.job_revision() != job.package_revision
+    {
         return Err(refused());
     }
     let host = SpaceHost::new(
@@ -162,7 +165,7 @@ async fn execute<D: Directory>(
         job.session.clone(),
         space,
         plugin.clone(),
-        job.generation,
+        generation.generation,
         format!("job/{}", job.id),
     )
     .for_run(Run {
