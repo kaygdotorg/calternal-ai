@@ -193,6 +193,7 @@ pub async fn events<D: Directory>(
     Path(id): Path<String>,
     req: Request,
 ) -> Response {
+    let read_workers = state.blocking.clone();
     let identity = req.extensions().get::<Identity>().cloned();
     let session = req.extensions().get::<Session>().cloned();
     let (Some(identity), Some(session)) = (identity, session) else {
@@ -226,10 +227,13 @@ pub async fn events<D: Directory>(
         done: false,
         last_state: Value::Null,
     };
-    let body = Body::from_stream(futures_util::stream::unfold(stream, |mut s| async move {
-        let frame = s.next_frame().await?;
-        Some((Ok::<_, std::convert::Infallible>(frame), s))
-    }));
+    let body = Body::from_stream(read_workers.read_stream(futures_util::stream::unfold(
+        stream,
+        |mut s| async move {
+            let frame = s.next_frame().await?;
+            Some((Ok::<_, std::convert::Infallible>(frame), s))
+        },
+    )));
     let mut r = (StatusCode::OK, body).into_response();
     let h = r.headers_mut();
     h.insert(

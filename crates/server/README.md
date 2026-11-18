@@ -290,7 +290,10 @@ batch width, the 64-space cache and retention are unchanged.
 
 A caller that disconnects before admission drops its waiter; a started durable
 callback finishes as before. No per-space state is stored in the scheduler.
-Async spawned background tasks do not inherit request scope. Non-operation HTTP
+SSE bodies retain read scheduling on every body poll after the HTTP handler
+returns, using one pinned stream wrapper per connection and the existing
+listener/page limits. Async spawned background tasks do not inherit request
+scope. Non-operation HTTP
 mutations also use writer scheduling; operation requests derive their class
 from their declaration after parsing. Authentication runs before that scope.
 These scheduling reservations do not bypass a space's locks or the auth

@@ -48,6 +48,23 @@ impl RequestWorkers {
             writes: Lane::new(32, "request-write")?,
         })))
     }
+    /// Retain read scheduling while an HTTP stream body is polled after its
+    /// handler returns. Cost: one pinned box per connection and an Arc clone per
+    /// poll; items/errors pass through unchanged without another replay buffer.
+    /// Dropping the body drops the stream and its existing listener bounds.
+    pub(crate) fn read_stream<S>(
+        &self,
+        stream: S,
+    ) -> impl futures_util::Stream<Item = S::Item> + Send + 'static
+    where
+        S: futures_util::Stream + Send + 'static,
+    {
+        let workers = self.clone();
+        let mut stream = Box::pin(stream);
+        futures_util::stream::poll_fn(move |cx| {
+            REQUEST.sync_scope((workers.clone(), false), || stream.as_mut().poll_next(cx))
+        })
+    }
     /// Run an operation with its declared mutation class. Read scopes clear any
     /// outer writer context. No I/O, grants or results are cached by the scope.
     pub(crate) async fn scope<F: Future>(&self, mutates: bool, future: F) -> F::Output {
@@ -96,7 +113,7 @@ where
 mod tests {
     use super::*;
     #[test]
-    fn readers_run_when_writer_and_background_slots_are_occupied() {
+    fn streaming_read_runs_when_writer_and_background_slots_are_occupied() {
         let runtime = tokio::runtime::Builder::new_current_thread()
             .max_blocking_threads(2)
             .enable_all()
@@ -138,11 +155,12 @@ mod tests {
                 }));
                 ready.await.unwrap();
             }
-            let read = tokio::time::timeout(
-                std::time::Duration::from_secs(1),
-                workers.scope(false, spawn(|| 42)),
-            )
-            .await;
+            use futures_util::StreamExt;
+            // Axum polls a response body after the handler's task-local scope
+            // has returned; the stream must retain its own read scheduling.
+            let stream = workers.read_stream(futures_util::stream::once(spawn(|| 42)));
+            tokio::pin!(stream);
+            let read = tokio::time::timeout(std::time::Duration::from_secs(1), stream.next()).await;
             for release in releases {
                 release.send(()).unwrap();
             }
@@ -150,7 +168,7 @@ mod tests {
                 job.await.unwrap();
             }
             assert_eq!(
-                read.ok().and_then(Result::ok),
+                read.ok().flatten().and_then(Result::ok),
                 Some(42),
                 "read queued behind writer or background work"
             );
