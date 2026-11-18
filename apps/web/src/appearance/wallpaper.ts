@@ -199,8 +199,16 @@ function rects(): { left: Frac; right: Frac; card: Frac } {
 }
 
 const SAMPLE = 48; // at most 48 by 48 pixels per surface
-/** The pixels of a copy inside a rectangle (fractions of the viewport), as encoded RGB. */
+/** What was read from each blurred copy, by rectangle: a copy never changes once made, so the pixels behind a rectangle are read once (a canvas read-back is the expensive part of solving a veil, and a step of Clear to tinted solves again for every surface on the page). A new copy is a new key; the cache is dropped whole when it grows past a few hundred rectangles (a window resize makes new ones). */
+const read = new WeakMap<HTMLCanvasElement, Map<string, RGB[]>>();
+/** The pixels of a copy inside a rectangle (fractions of the viewport), as encoded RGB. Cached per copy and rectangle. */
 function sample(c: HTMLCanvasElement, r: Frac): RGB[] {
+  let m = read.get(c);
+  if (!m) read.set(c, (m = new Map()));
+  if (m.size > 400) m.clear();
+  const key = `${r.x0.toFixed(4)},${r.y0.toFixed(4)},${r.x1.toFixed(4)},${r.y1.toFixed(4)}`;
+  const hit = m.get(key);
+  if (hit) return hit;
   const cv = document.createElement("canvas");
   cv.width = cv.height = SAMPLE;
   const ctx = cv.getContext("2d", { willReadFrequently: true })!;
@@ -209,6 +217,7 @@ function sample(c: HTMLCanvasElement, r: Frac): RGB[] {
   const d = ctx.getImageData(0, 0, SAMPLE, SAMPLE).data;
   const out: RGB[] = [];
   for (let i = 0; i < d.length; i += 4) out.push([d[i]!, d[i + 1]!, d[i + 2]!]);
+  m.set(key, out);
   return out;
 }
 
