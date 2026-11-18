@@ -6,6 +6,8 @@ title: "Command reference"
 
 > **Preview: the app is not released.** This site describes a development preview and accepted designs; it does not establish production readiness.
 
+- [calternal-onboarding-state](./calternal-onboarding-state/)
+- [calternal-onboarding-finish](./calternal-onboarding-finish/)
 - [calternal-search-query](./calternal-search-query/)
 - [calternal-search-items](./calternal-search-items/)
 - [calternal-search-threads](./calternal-search-threads/)

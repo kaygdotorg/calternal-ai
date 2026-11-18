@@ -35,6 +35,8 @@ async fn every_registered_operation_has_an_independent_matrix_row() {
         "trash.purge",
         "resolve", // dedicated address matrix in resolver.rs
         "spaces.list",
+        "onboarding.state", // account isolation in conformance/onboarding_cases.rs
+        "onboarding.finish",
         "wallpapers.list", // signed-in installation catalog in conformance/wallpaper_cases.rs
         "spaces.create",
         "spaces.members",

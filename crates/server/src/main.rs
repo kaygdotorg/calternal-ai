@@ -62,6 +62,12 @@ fn main() {
         Cmd::Describe { connection } => {
             calternal_cli::agent::invoke(connection, None, "{}".into(), &out)
         }
+        Cmd::Onboarding { connection, cmd } => out.finish(calternal_cli::account_input::run(
+            connection,
+            cmd.operation(),
+            serde_json::json!({}),
+            &out,
+        )),
         Cmd::Drafts { connection, cmd } => {
             let (op, input) = cmd.operation();
             out.finish(calternal_cli::account_input::run(

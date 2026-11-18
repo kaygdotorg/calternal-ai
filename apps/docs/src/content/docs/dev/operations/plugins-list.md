@@ -725,7 +725,8 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
           "type": "string"
         },
         "kinds": {
-          "description": "Kinds offered by this plugin.",
+          "default": [],
+          "description": "Kinds offered by this plugin. An omitted list declares no kinds.",
           "items": {
             "$ref": "#/definitions/ManifestKind"
           },
@@ -840,7 +841,6 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
         "host_calls",
         "icon",
         "id",
-        "kinds",
         "name",
         "operations",
         "schedules",
