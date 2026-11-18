@@ -17,5 +17,6 @@
 
 <style>
   nav { display: grid; padding-bottom: var(--section-above); }
+  .grp:first-child h2 { margin-top: 0; }
   ul { display: grid; gap: var(--s-1); }
 </style>

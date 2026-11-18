@@ -1,7 +1,7 @@
 /* Shared rows of the panels that show real server data in Settings (Account, Members, Secrets, Machines, Plugins). */
 .sp { display: grid; }
 .sp h2 { margin: var(--section-above) 0 var(--section-below); padding: 0 var(--s-6); min-height: var(--section-h); display: flex; align-items: center; font-size: var(--text-label); font-weight: var(--strong-weight); line-height: 1.25; color: var(--ink-3); }
-.sp h2:first-child { margin-top: 0; }
+.sp > h2:first-child { margin-top: 0; }
 .sp .r { display: flex; align-items: center; justify-content: space-between; gap: var(--s-5); min-height: var(--row-h-settings); padding: var(--s-3) var(--s-6); }
 .sp .n { display: grid; flex: 1; min-width: 0; gap: var(--s-1); }
 .sp .t { font-size: var(--text-ui); font-weight: var(--strong-weight); overflow: hidden; text-overflow: ellipsis; }

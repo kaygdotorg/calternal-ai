@@ -14,10 +14,10 @@ const measure = (sel) => page.evaluate((sel) => {
   const out = [];
   for (const h of document.querySelectorAll(sel)) {
     const r = document.createRange(); r.selectNodeContents(h.querySelector(".nm") ?? h); const t = r.getBoundingClientRect();
-    const prev = h.previousElementSibling ?? h.parentElement.previousElementSibling, next = h.nextElementSibling;
+    const prev = h.previousElementSibling ?? h.parentElement.previousElementSibling, next = h.nextElementSibling, first = h.classList.contains("first") || (h.parentElement.matches(".grp") && !h.parentElement.previousElementSibling);
     const bottom = (e) => { let m = 0; const q = e.querySelectorAll("a.row, .row, li"); const els = q.length ? [...q] : [e]; for (const x of els) m = Math.max(m, x.getBoundingClientRect().bottom); return m; };
     const top = (e) => { const f = e.querySelector("a.row, .row, li") ?? e; return f.getBoundingClientRect().top; };
-    out.push({ text: h.textContent.trim().slice(0, 20), above: prev ? Math.round((t.top - bottom(prev)) * 10) / 10 : null, below: next ? Math.round((top(next) - t.bottom) * 10) / 10 : null });
+    out.push({ text: h.textContent.trim().slice(0, 20), above: prev && !first ? Math.round((t.top - bottom(prev)) * 10) / 10 : null, below: next ? Math.round((top(next) - t.bottom) * 10) / 10 : null });
   }
   return out;
 }, sel);
@@ -31,7 +31,7 @@ await page.goto(`${BASE}/notes/n-1`); await page.waitForSelector("html[data-read
 const notes = await measure("aside.side .section-heading");
 if (dir) await page.locator("aside.side").screenshot({ path: `${dir}/notes-sidebar.png` });
 console.log("settings", JSON.stringify(settings)); console.log("threads", JSON.stringify(threads)); console.log("notes", JSON.stringify(notes));
-const belows = [...settings, ...threads, ...notes].map((x) => x.below).filter((v) => v !== null), aboves = [...settings.slice(1), ...threads, ...notes.slice(1)].map((x) => x.above).filter((v) => v !== null);
+const belows = [...settings, ...threads, ...notes].map((x) => x.below).filter((v) => v !== null), aboves = [...settings, ...threads, ...notes].map((x) => x.above).filter((v) => v !== null);
 const spread = (xs) => (xs.length ? Math.max(...xs) - Math.min(...xs) : 0);
 ok(belows.length >= 4 && spread(belows) <= 2.5, "heading text to first item: the same distance everywhere", `${Math.min(...belows)} to ${Math.max(...belows)} px over ${belows.length} headings`);
 ok(aboves.length >= 3 && spread(aboves) <= 2.5, "last item to heading text: the same distance everywhere", `${Math.min(...aboves)} to ${Math.max(...aboves)} px over ${aboves.length} headings`);

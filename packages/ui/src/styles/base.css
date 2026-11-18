@@ -67,4 +67,4 @@ input, textarea, [contenteditable], .selectable, .selectable * { -webkit-user-se
    its text and the neighbouring items by taking the extra height out of its margins (`--section-pad`). */
 :root { --section-pad: calc((var(--row-h) - var(--section-h)) / 2); }
 .section-heading { box-sizing: border-box; min-height: var(--section-h); margin: var(--section-above) 0 var(--section-below); padding: 0 var(--s-5); display: flex; align-items: center; font-size: var(--text-label); font-weight: var(--strong-weight); line-height: 1.25; color: var(--ink-3); }
-.section-heading:first-child { margin-top: 0; }
+.section-heading.first { margin-top: 0; }

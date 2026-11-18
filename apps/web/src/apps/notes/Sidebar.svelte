@@ -33,7 +33,7 @@
 </script>
 
 <nav aria-label="Notes">
-  {#if notes.space}<p class="section-heading">{notes.space.name}</p>{/if}
+  {#if notes.space}<p class="section-heading first">{notes.space.name}</p>{/if}
   {#if notes.tags.length}
     <div class="tags" role="group" aria-label="Filter by tag">
       <button type="button" class="tg" aria-pressed={!notes.tag} onclick={() => notes.filter(null)}>All</button>
@@ -79,6 +79,8 @@
 
 <style>
   nav { display: grid; gap: var(--s-2); }
+  /* The nav's own gap sits between the heading and what follows, so the heading's margin gives that much back (the shared distances, base.css `.section-heading`). */
+  .section-heading { margin-bottom: calc(var(--section-below) - var(--s-2)); }
   ul { display: grid; gap: var(--s-1); }
   .li { padding-bottom: var(--s-1); }
   .retry { text-decoration: underline; color: var(--ink-2); }
