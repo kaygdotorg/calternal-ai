@@ -18,6 +18,8 @@ pub mod agent_access;
 pub mod agent_settings;
 pub(crate) use agent_settings::UPGRADE_SCHEMA as AGENT_SETTINGS_SCHEMA;
 pub mod broker;
+#[cfg(feature = "dev-plugin-drafts")]
+mod draft_diagnostics;
 pub mod job_api;
 pub mod job_sql;
 mod job_streams;
@@ -107,6 +109,8 @@ pub struct Plugin {
     activation_approval: u32,
     #[cfg(feature = "dev-plugin-drafts")]
     draft_space: Option<SpaceId>,
+    #[cfg(feature = "dev-plugin-drafts")]
+    diagnostics: draft_diagnostics::DraftDiagnostics,
 }
 
 impl Plugin {
@@ -164,6 +168,8 @@ impl Plugin {
             activation_approval: 0,
             #[cfg(feature = "dev-plugin-drafts")]
             draft_space: None,
+            #[cfg(feature = "dev-plugin-drafts")]
+            diagnostics: Default::default(),
         })
     }
 
@@ -243,7 +249,10 @@ impl Plugin {
 
 /// Atomically published plugin catalog. Reader snapshots never lock the catalog writer.
 #[derive(Debug, Default)]
-pub struct Registry(arc_swap::ArcSwap<Catalog>);
+pub struct Registry(
+    arc_swap::ArcSwap<Catalog>,
+    #[cfg(feature = "dev-plugin-drafts")] draft_diagnostics::FailedCandidates,
+);
 
 /// Immutable installed plugins and their derived operation policy.
 #[derive(Clone, Debug, Default)]
@@ -305,9 +314,19 @@ impl Registry {
 
     /// Build the initial catalog from known packages. Cost: validates the supplied declarations.
     pub fn from_plugins(plugins: Vec<Plugin>) -> Self {
-        Self(arc_swap::ArcSwap::from_pointee(Catalog::from_plugins(
-            plugins.into_iter().map(Arc::new).collect(),
-        )))
+        Self(
+            arc_swap::ArcSwap::from_pointee(Catalog::from_plugins(
+                plugins.into_iter().map(Arc::new).collect(),
+            )),
+            #[cfg(feature = "dev-plugin-drafts")]
+            Default::default(),
+        )
+    }
+
+    /// Failed development candidates, kept in memory for author inspection.
+    #[cfg(feature = "dev-plugin-drafts")]
+    pub(crate) fn failed_drafts(&self) -> &draft_diagnostics::FailedCandidates {
+        &self.1
     }
 
     /// An empty registry: no plugin operations exist. Cost: none.

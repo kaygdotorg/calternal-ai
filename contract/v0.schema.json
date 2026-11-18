@@ -35,6 +35,8 @@
     "notes_list_input",
     "notes_list_result",
     "notes_update_input",
+    "onboarding_input",
+    "onboarding_state",
     "people_result",
     "person_input",
     "plugin_input",
@@ -320,6 +322,22 @@
       "allOf": [
         {
           "$ref": "#/definitions/NotesUpdateInput"
+        }
+      ]
+    },
+    "onboarding_input": {
+      "description": "Schema representative for empty account onboarding input.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/OnboardingInput"
+        }
+      ]
+    },
+    "onboarding_state": {
+      "description": "Schema representative for account onboarding completion.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/OnboardingState"
         }
       ]
     },
@@ -2632,6 +2650,25 @@
         "title": {
           "description": "Optional replacement title: nonblank, at most 256 Unicode scalars, no controls; omission preserves the title and null is rejected.",
           "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "OnboardingInput": {
+      "description": "Both operations derive their account from the authenticated session.",
+      "type": "object",
+      "additionalProperties": false
+    },
+    "OnboardingState": {
+      "description": "Durable completion status. Accounts without a completion record start unfinished.",
+      "type": "object",
+      "required": [
+        "finished"
+      ],
+      "properties": {
+        "finished": {
+          "description": "True once this account has finished onboarding.",
+          "type": "boolean"
         }
       },
       "additionalProperties": false

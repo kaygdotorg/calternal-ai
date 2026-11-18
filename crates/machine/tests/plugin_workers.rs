@@ -11,6 +11,10 @@ use calternal_types::SpaceId;
 use std::sync::Arc;
 use uuid::Uuid;
 
+// The pressure probe fills its CPU and process quotas. Let it finish and tear
+// down before another worker probe starts under the same Podman account.
+static CONTAINER_TEST: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 async fn backend(root: &std::path::Path) -> Option<PodmanBackend> {
     if !PodmanBackend::available(std::path::Path::new("podman")).await {
         eprintln!("SKIP plugin worker container isolation: Podman is unavailable");
@@ -80,6 +84,7 @@ async fn run(sb: &Arc<dyn Sandbox>, script: &str) -> (String, Option<i32>) {
 
 #[tokio::test]
 async fn container_denies_sockets_host_files_foreign_space_and_code_writes() {
+    let _serial = CONTAINER_TEST.lock().await;
     let root = tempfile::tempdir().unwrap();
     let Some(backend) = backend(root.path()).await else {
         return;
@@ -120,6 +125,7 @@ async fn container_denies_sockets_host_files_foreign_space_and_code_writes() {
 
 #[tokio::test]
 async fn container_enforces_memory_cpu_pids_and_streams_ordered_stdin() {
+    let _serial = CONTAINER_TEST.lock().await;
     let root = tempfile::tempdir().unwrap();
     let Some(backend) = backend(root.path()).await else {
         return;
@@ -284,6 +290,7 @@ async fn development_worker_measurements() {
         );
         return;
     }
+    let _serial = CONTAINER_TEST.lock().await;
     let root = tempfile::tempdir().unwrap();
     let Some(podman) = backend(root.path()).await else {
         return;
@@ -399,6 +406,7 @@ async fn exchange(exec: &mut calternal_machine::sandbox::Exec, id: usize) -> ser
 
 #[tokio::test]
 async fn machine_restart_removes_only_its_own_ephemeral_workers() {
+    let _serial = CONTAINER_TEST.lock().await;
     let root = tempfile::tempdir().unwrap();
     let other = tempfile::tempdir().unwrap();
     let Some(backend) = backend(root.path()).await else {

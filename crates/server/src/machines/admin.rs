@@ -1,4 +1,5 @@
-//! Operator machine administration, behind `calternal machines …`.
+//! Private operator socket for machine administration, first-owner setup and
+//! receipt-pruning diagnostics.
 //!
 //! Machine authority commits through the recovery barrier, and one installation's
 //! recovery log has one writer: the process holding the root locks. So an
@@ -18,7 +19,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use calternal_content::{Content, StorageLimits, StorageUsage};
+use calternal_content::{Content, ReceiptPruningIssue, StorageLimits, StorageUsage};
 use calternal_machine::protocol::Owner;
 use calternal_types::{AccountId, Error, GroupId, SpaceId};
 use serde::{Deserialize, Serialize};
@@ -38,6 +39,11 @@ const IO_TIMEOUT: Duration = Duration::from_secs(30);
 pub enum Request {
     /// Rotate the first-owner code through the running server.
     SetupCode,
+    /// Inspect receipt pruning in a single space through the running server.
+    ReceiptStatus {
+        /// Space UUID to inspect, including dormant spaces.
+        space: SpaceId,
+    },
     /// Issue a one-time enrolment code for `owner`, valid for `minutes`.
     Code {
         /// Who the enrolled machine will belong to.
@@ -147,6 +153,11 @@ pub enum Response {
         /// Public origin for signing in.
         url: String,
     },
+    /// Receipt-pruning health for the requested space.
+    ReceiptStatus {
+        /// Reason for impaired pruning, if observed.
+        issue: Option<ReceiptPruningIssue>,
+    },
     /// A new code and its expiry in Unix milliseconds.
     Code {
         /// The one-time code; shown once.
@@ -216,6 +227,11 @@ pub fn execute(
         Request::SetupCode => {
             return Err(Error::unavailable(
                 "start this server before requesting a setup code",
+            ));
+        }
+        Request::ReceiptStatus { .. } => {
+            return Err(Error::unavailable(
+                "start this server before inspecting receipt pruning",
             ));
         }
         Request::Code { owner, minutes } => {
@@ -386,6 +402,7 @@ pub fn ask_server(
 /// recovery are set up; a stale socket file is replaced (the guard proves no other
 /// server owns this appdata). Each connection: peer UID check, one bounded line
 /// read with a timeout, [`execute`] on a blocking task, one line written.
+/// Receipt status uses the live content service for a read-only inspection.
 ///
 /// # Errors
 /// I/O errors binding the socket or setting its mode.
@@ -393,8 +410,8 @@ pub fn serve_socket(
     appdata: &Path,
     installation: Uuid,
     svc: Arc<MachineService>,
-    content: Arc<Content>,
     owner_setup: Option<Arc<crate::owner_setup::OwnerSetup>>,
+    content: Arc<Content>,
 ) -> std::io::Result<tokio::task::JoinHandle<()>> {
     use std::os::unix::fs::PermissionsExt;
     let path = socket_path(appdata);
@@ -419,10 +436,10 @@ pub fn serve_socket(
                 continue;
             }
             let svc = svc.clone();
-            let content = content.clone();
             let owner_setup = owner_setup.clone();
+            let content = content.clone();
             tokio::spawn(async move {
-                if let Err(e) = answer(stream, installation, svc, content, owner_setup).await {
+                if let Err(e) = answer(stream, installation, svc, owner_setup, content).await {
                     tracing::warn!(error = %e, "admin socket request failed");
                 }
             });
@@ -434,8 +451,8 @@ async fn answer(
     stream: tokio::net::UnixStream,
     installation: Uuid,
     svc: Arc<MachineService>,
-    content: Arc<Content>,
     owner_setup: Option<Arc<crate::owner_setup::OwnerSetup>>,
+    content: Arc<Content>,
 ) -> std::io::Result<()> {
     use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt};
     let (read, mut write) = stream.into_split();
@@ -467,9 +484,14 @@ async fn answer(
                 "passkey onboarding is unavailable on this server",
             )),
         },
-        Ok(e) => crate::blocking::spawn(move || execute(&svc, &content, e.request))
-            .await
-            .unwrap_or_else(|_| Err(Error::internal("admin task failed"))),
+        Ok(e) => crate::blocking::spawn(move || match e.request {
+            Request::ReceiptStatus { space } => content
+                .receipt_pruning_issue(space)
+                .map(|issue| Response::ReceiptStatus { issue }),
+            request => execute(&svc, &content, request),
+        })
+        .await
+        .unwrap_or_else(|_| Err(Error::internal("admin task failed"))),
     };
     let reply = match result {
         Ok(data) => Reply {

@@ -62,6 +62,12 @@ fn main() {
         Cmd::Describe { connection } => {
             calternal_cli::agent::invoke(connection, None, "{}".into(), &out)
         }
+        Cmd::Onboarding { connection, cmd } => out.finish(calternal_cli::account_input::run(
+            connection,
+            cmd.operation(),
+            serde_json::json!({}),
+            &out,
+        )),
         Cmd::Drafts { connection, cmd } => {
             let (op, input) = cmd.operation();
             out.finish(calternal_cli::account_input::run(
@@ -119,6 +125,15 @@ fn main() {
             appdata,
             installation_id,
         } => out.finish(admin_cli::setup_code(&appdata, &installation_id)),
+        Cmd::ReceiptStatus {
+            appdata,
+            installation_id,
+            space,
+        } => out.finish(admin_cli::receipt_status(
+            &appdata,
+            &installation_id,
+            &space,
+        )),
         Cmd::Serve {
             appdata,
             userdata_ssd,
@@ -478,8 +493,8 @@ async fn serve(
             &admin_root,
             installation,
             admin_machines,
-            admin_content,
             owner_setup,
+            admin_content,
         )
     })
     .await

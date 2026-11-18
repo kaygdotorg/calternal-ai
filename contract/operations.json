@@ -1,6 +1,64 @@
 [
   {
     "risk": "read",
+    "id": "onboarding.state",
+    "description": "Read your onboarding status",
+    "mutates": false,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Both operations derive their account from the authenticated session.",
+      "title": "OnboardingInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Durable completion status. Accounts without a completion record start unfinished.",
+      "properties": {
+        "finished": {
+          "description": "True once this account has finished onboarding.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "finished"
+      ],
+      "title": "OnboardingState",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "reversible",
+    "id": "onboarding.finish",
+    "description": "Mark your onboarding finished",
+    "mutates": true,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Both operations derive their account from the authenticated session.",
+      "title": "OnboardingInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Durable completion status. Accounts without a completion record start unfinished.",
+      "properties": {
+        "finished": {
+          "description": "True once this account has finished onboarding.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "finished"
+      ],
+      "title": "OnboardingState",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "read",
     "id": "wallpapers.list",
     "description": "List built-in wallpapers with Unsplash attribution",
     "mutates": false,

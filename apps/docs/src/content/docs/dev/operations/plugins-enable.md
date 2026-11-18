@@ -532,6 +532,10 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
         "sign_in": {
           "description": "Whether the executable implements the private `--sign-in` mode.",
           "type": "boolean"
+        },
+        "title_generation": {
+          "description": "Whether the adapter implements the private, stateless `--title` command.",
+          "type": "boolean"
         }
       },
       "required": [
@@ -730,7 +734,8 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
           "type": "string"
         },
         "kinds": {
-          "description": "Kinds offered by this plugin.",
+          "default": [],
+          "description": "Kinds offered by this plugin. An omitted list declares no kinds.",
           "items": {
             "$ref": "#/definitions/ManifestKind"
           },
@@ -845,7 +850,6 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
         "host_calls",
         "icon",
         "id",
-        "kinds",
         "name",
         "operations",
         "schedules",
