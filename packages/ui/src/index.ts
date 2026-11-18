@@ -39,3 +39,4 @@ export type { MenuItem } from "./components/Menu.svelte";
 export { initInputModality, modality, type Modality } from "./lib/input";
 export { Toasts, toast, undoable, undoLatest, failed, notify, track, dismiss, type UndoToken } from "./toast";
 export { textField, type TextFieldOptions } from "./lib/textfield";
+export { scrollCue } from "./lib/scroll-cue";
