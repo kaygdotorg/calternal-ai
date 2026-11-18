@@ -2,7 +2,10 @@
   // The note: the block editor in a narrow centred column with no inner card, and a thin rail at the card's left edge that expands into a small contents card (hover, focus or press;
   // Escape folds it). The document is the note's Markdown (the fixture's or the server's); every edit is kept as the note's private draft after a short pause and saved after a longer one.
   import { getContext } from "svelte";
-  import { Button, IconButton, Menu, Panel, Pill } from "@calternal/ui";
+  import { Avatar, Button, IconButton, Menu, Panel, Pill, tip } from "@calternal/ui";
+  import ShareHost from "./share/ShareHost.svelte";
+  import { openShare } from "./share/share.svelte";
+  import { incoming } from "./share/incoming.svelte";
   import { shell } from "../../shell/shell.svelte";
   import NoteEditor from "./NoteEditor.svelte";
   import TrashView from "./TrashView.svelte";
@@ -18,10 +21,13 @@
   let { id }: { id?: string } = $props();
   let moreOpen = $state(false);
   let moreEl = $state<HTMLButtonElement>();
+  let shareEl = $state<HTMLButtonElement>();
+  /** How the open note reached the person, when someone else owns it: their avatar then sits where Share is, and opens the same sheet. */
+  const sharedBy = $derived(incoming.of(notes.note?.id));
   /** In a canvas window the window's own pill (three buttons) floats at the top right: the save state leaves room for it and the sidebar's way back is the shell's. */
   const windowed = getContext<boolean | undefined>("canvas-window") === true;
   // Leaving a note saves what is pending first (against that note), then the next one opens.
-  $effect(() => { void notes.open(id); return () => { clearTimeout(saveTimer); if (latest) void flush(); latest = ""; }; });
+  $effect(() => { void notes.open(id); incoming.read(id ?? ""); return () => { clearTimeout(saveTimer); if (latest) void flush(); latest = ""; }; });
   // The editor was given new text (a note opened, changed elsewhere, or the other version taken): what was typed before no longer applies.
   $effect(() => { void notes.view.seq; latest = ""; });
   let heads = $state<{ level: number; text: string; from: number }[]>([]);
@@ -74,6 +80,13 @@
     {#if shell.narrow && !windowed}<IconButton icon="sidebar" label="Show notes" onclick={() => shell.toggleSidebar()} />{/if}
     <span class="grow"></span>
     {#if notes.note}<span class="state" role="status" aria-live="polite" data-state={notes.saveState}>{STATE[notes.saveState]}</span>{/if}
+    {#if !windowed && notes.note}
+      {#if sharedBy}
+        <button type="button" class="owner" bind:this={shareEl} aria-label="Shared by {sharedBy.shared_by}. Who can see this" aria-haspopup="dialog" use:tip={{ label: `Shared by ${sharedBy.shared_by}`, side: "bottom" }} onclick={() => openShare({ kind: "notes", id: notes.note!.id }, notes.note!.title, shareEl ?? null)}><Avatar name={sharedBy.shared_by} size="md" /></button>
+      {:else}
+        <Pill icon="share" label="Share" aria-haspopup="dialog" bind:el={shareEl} onclick={() => openShare({ kind: "notes", id: notes.note!.id }, notes.note!.title, shareEl ?? null)} />
+      {/if}
+    {/if}
     <!-- The side panel's only button is an item of this menu (a window in the canvas has the same item in its own three-dot menu). -->
     {#if !windowed}
       <Pill icon="more" label="Note actions" aria-haspopup="menu" aria-expanded={moreOpen} bind:el={moreEl} onclick={() => (moreOpen = !moreOpen)} />
@@ -81,12 +94,14 @@
     {/if}
   </header>
 
+  {#if notes.note}<ShareHost item={{ kind: "notes", id: notes.note.id }} />{/if}
+
   <article class="nc-article">
     {#if notes.note}
       {#if notes.draft}
         <p class="draft" role="status">You have an unsent draft of this note. <Button variant="quiet" text="Restore" onclick={() => { editor?.setText(notes.draft!.text); edited(notes.draft!.text); }} /> <Button variant="quiet" text="Discard" onclick={async () => { await notes.input.dropDraft(notes.note!.spaceId, notes.note!.id); await notes.reloadInput(); }} /></p>
       {/if}
-      <NoteEditor bind:this={editor} id={notes.view.id} text={notes.view.text} onedit={edited} onheadings={(h) => (heads = h)} label={notes.note.title} notes={notes.list} threads={threadStore.threads.map((t) => ({ id: t.id, title: t.title }))} agents={threadStore.providers.map((p) => p.name)} tags={TAGS} />
+      <NoteEditor bind:this={editor} id={notes.view.id} text={notes.view.text} onedit={edited} onheadings={(h) => (heads = h)} label={notes.note.title} readOnly={sharedBy?.permission === "view"} notes={notes.list} threads={threadStore.threads.map((t) => ({ id: t.id, title: t.title }))} agents={threadStore.providers.map((p) => p.name)} tags={TAGS} />
       {#if notes.conflict}
         <p class="draft" role="alert">Someone changed this note while you were editing it. Your text is kept here. <Button variant="primary" text="Keep mine" onclick={() => notes.keepMine(titleOf(editor?.current() ?? latest), editor?.current() ?? latest)} /> <Button variant="quiet" text="Use theirs" onclick={() => notes.takeTheirs()} /></p>
       {/if}
@@ -106,6 +121,8 @@
   .note { position: absolute; inset: 0; }
   .scroll { position: absolute; inset: 0; overflow-y: auto; }
   .grow { flex: 1; }
+  .owner { flex: none; display: inline-grid; border-radius: 50%; transition: scale var(--dur-fast) var(--ease-out); }
+  .owner:active { scale: var(--press-scale); }
   .draft { padding: var(--s-3) var(--s-5); border-radius: var(--r-card); background: var(--accent-soft); font-size: var(--text-label); display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); }
   .state { font-size: var(--text-label); color: var(--ink-3); }
   .nc-head.windowed { padding-right: calc(var(--pill-h) * 3 + var(--s-8)); }

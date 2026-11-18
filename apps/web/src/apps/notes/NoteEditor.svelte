@@ -10,7 +10,7 @@
   import { serverMode } from "../../server/client";
   import { notes as store } from "./store.svelte";
   import type { BlockEditor, Block, Trigger } from "../../../../../packages/editor/src/block/index";
-  let { id, text, onedit, onheadings, label = "Note", notes = [], threads = [], agents = [], tags = [] }: { id: string; text: string; onedit: (text: string) => void; onheadings?: (h: { level: number; text: string; from: number }[]) => void; label?: string; notes?: { id: string; title: string }[]; threads?: { id: string; title: string }[]; agents?: string[]; tags?: string[] } = $props();
+  let { id, text, onedit, onheadings, label = "Note", readOnly = false, notes = [], threads = [], agents = [], tags = [] }: { id: string; text: string; onedit: (text: string) => void; onheadings?: (h: { level: number; text: string; from: number }[]) => void; label?: string; /** No typing: someone who can only view the note, or a guest. */ readOnly?: boolean; notes?: { id: string; title: string }[]; threads?: { id: string; title: string }[]; agents?: string[]; tags?: string[] } = $props();
   let host = $state<HTMLElement>();
   let ed: BlockEditor | undefined;
   let openedId = "";
@@ -70,7 +70,7 @@
       await m.prepare(text); // the lazy pieces this note needs (frontmatter, block IDs, tables, code grammars), so its first draw is right
       if (dead || !host) return;
       ed = createBlockEditor({
-        parent: host, text, label,
+        parent: host, text, label, readOnly,
         // A task is a list item that starts with a box: the host says so, the editor package has no such kind.
         kinds: (b, s) => (b.kind === "item" && /^\s*[-*+] \[[ xX]\]/.test(s.doc.sliceString(b.from, Math.min(b.to, b.from + 8))) ? "task" : null),
         onchange: (t, origin) => { if (origin !== "remote") onedit(t); heads(); },

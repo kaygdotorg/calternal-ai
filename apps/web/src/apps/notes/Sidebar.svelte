@@ -6,6 +6,9 @@
   import { notes } from "./store.svelte";
   import { reach } from "../../lib/reach";
   import { shell } from "../../shell/shell.svelte";
+  import { incoming } from "./share/incoming.svelte";
+  // What others have shared with the person, read once (the live stream refreshes it when the sharing lane publishes it).
+  $effect(() => { void incoming.pages.refresh().catch(() => {}); });
   // The list follows the space the shell is showing.
   $effect(() => { void notes.useSpace(spaces.current.id); });
   const current = $derived(segments()[0] === "notes" ? segments()[1] : undefined);
@@ -60,6 +63,16 @@
   {:else}<ul><li class="none">{notes.error || "No notes yet."}{#if notes.error} <button type="button" class="retry" onclick={() => notes.retry()}>Try again</button>{/if}</li></ul>{/if}
   {/if}
   {#if !hits}{#if notes.notePages.error}<p class="cap" role="alert">{notes.notePages.error} <button type="button" class="retry" onclick={() => notes.notePages.retry()}>Try again</button></p>{/if}{/if}
+  {#if !hits && incoming.items.length}
+    <div role="group" aria-label="Shared with me">
+      <p class="section-heading">Shared with me</p>
+      <ul>
+        {#each incoming.items as s (s.item.id)}
+          <li><Row title={s.title} icon="notes" href={href(`/notes/${s.item.id}`)} selected={current === s.item.id}>{#snippet trailing()}{#if s.unread}<span class="dot" role="img" aria-label="Changed since you last looked"></span>{/if}{/snippet}</Row></li>
+        {/each}
+      </ul>
+    </div>
+  {/if}
   <button type="button" class="new" onclick={create}>New note</button>
   <a class="new trash" href={href("/notes?view=trash")} aria-current={route.query.get("view") === "trash" ? "page" : undefined}>Trash</a>
   {#if notes.waiting.length}
@@ -89,6 +102,7 @@
   .tg { padding: var(--s-1) var(--s-4); border-radius: var(--r-pill); background: rgb(var(--ink-rgb) / 0.06); font-size: var(--text-label); color: var(--ink-2); }
   .tg[aria-pressed="true"] { background: var(--accent-soft); color: var(--ink); font-weight: var(--strong-weight); }
   .ct { color: var(--ink-3); }
+  .dot { width: var(--s-3); height: var(--s-3); border-radius: 50%; background: var(--accent); }
   .trash { display: flex; align-items: center; }
   .find { margin: 0 var(--s-5) var(--s-2); min-height: var(--row-h); padding: 0 var(--s-4); border: 0; border-radius: var(--r-pill); background: rgb(var(--ink-rgb) / 0.06); color: var(--ink); font-size: var(--text-label); }
   .end { height: 1px; flex-basis: 100%; }
