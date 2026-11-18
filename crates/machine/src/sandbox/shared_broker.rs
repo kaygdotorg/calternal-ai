@@ -327,7 +327,9 @@ fn isolate_request(body: &[u8], provider: SharedToolsProvider) -> Option<Vec<u8>
     let contents = body.as_object_mut()?;
     if let Some(tools) = contents.get_mut("tools") {
         tools.as_array_mut()?.retain_mut(|tool| match provider {
-            SharedToolsProvider::Claude => tool["name"] == TOOL && tool.get("type").is_none_or(|kind| kind == "custom"),
+            SharedToolsProvider::Claude => {
+                tool["name"] == TOOL && tool.get("type").is_none_or(|kind| kind == "custom")
+            }
             SharedToolsProvider::Codex => {
                 if tool["type"] == "function" && tool["name"] == TOOL {
                     return true;

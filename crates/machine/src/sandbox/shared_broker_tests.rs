@@ -13,7 +13,8 @@ use tokio::{
 fn inference_exposes_only_the_fixed_tool_and_rejects_other_calls() {
     let input = br#"{"tools":[{"type":"namespace","name":"mcp__workspace","tools":[{"type":"function","name":"workspace_command"},{"type":"function","name":"hidden"}]},{"type":"function","name":"shell"},{"type":"web_search"}]}"#;
     let output: serde_json::Value =
-        serde_json::from_slice(&isolate_request(input, SharedToolsProvider::Codex).unwrap()).unwrap();
+        serde_json::from_slice(&isolate_request(input, SharedToolsProvider::Codex).unwrap())
+            .unwrap();
     assert_eq!(
         output,
         serde_json::json!({"tools":[{"name":"mcp__workspace","tools":[{"name":"workspace_command","type":"function"}],"type":"namespace"}]})
@@ -46,14 +47,58 @@ async fn unix_request(broker: &Broker, path: &str, token: &str, payload: &str) -
     body
 }
 
+async fn mcp_tool(broker: &Broker, command: &str) -> serde_json::Value {
+    let fixture = broker.directory.join("test-client.mjs");
+    let source = include_str!("shared_broker_client.mjs").replace(
+        "/run/calternal-broker/gateway.sock",
+        broker.directory.join("gateway.sock").to_str().unwrap(),
+    );
+    std::fs::write(&fixture, source).unwrap();
+    let mut child = Command::new("node")
+        .arg(fixture)
+        .arg("mcp")
+        .env("CALTERNAL_GATEWAY_TOKEN", &broker.access)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()
+        .unwrap();
+    let invocation = serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/call",
+        "params": {"name": CODEX_METHOD, "arguments": {"command": command}},
+    });
+    let mut input = child.stdin.take().unwrap();
+    input
+        .write_all(format!("{invocation}\n").as_bytes())
+        .await
+        .unwrap();
+    drop(input);
+    let output = child.wait_with_output().await.unwrap();
+    assert!(output.status.success());
+    serde_json::from_slice(&output.stdout).unwrap()
+}
+
 #[tokio::test]
 async fn shared_broker_keeps_claude_and_codex_credentials_out_of_tools() {
-    let Some(image) = std::env::var_os("CALTERNAL_TEST_SHARED_BROKER_IMAGE") else {
-        eprintln!(
-            "Set CALTERNAL_TEST_SHARED_BROKER_IMAGE to a local Podman Node image to exercise the isolation boundary."
+    let supplied = std::env::var("CALTERNAL_TEST_SHARED_BROKER_IMAGE").ok();
+    let image = supplied
+        .as_deref()
+        .unwrap_or("docker.io/library/node:22-bookworm-slim");
+    let present = Command::new("podman")
+        .args(["image", "exists", image])
+        .status()
+        .await
+        .is_ok_and(|status| status.success());
+    if !present {
+        assert!(
+            supplied.is_none(),
+            "the requested Podman fixture is unavailable"
         );
+        eprintln!("SKIPPED: the local Podman Node image is unavailable");
         return;
-    };
+    }
     for provider in [SharedToolsProvider::Claude, SharedToolsProvider::Codex] {
         let dir = tempfile::tempdir().unwrap();
         let space = SpaceId::new();
@@ -135,7 +180,7 @@ async fn shared_broker_keeps_claude_and_codex_credentials_out_of_tools() {
                 tool_slot: Semaphore::new(1),
                 tool: ToolSandbox {
                     podman: "podman".into(),
-                    image: image.to_string_lossy().into_owned(),
+                    image: image.into(),
                     root_label: format!("org.calternal.test-broker={space}"),
                     work: work.clone(),
                     writable: true,
@@ -174,13 +219,9 @@ JS
             login = login.to_string_lossy(),
             host_pid = std::process::id(),
         );
-        let reply = unix_request(
-            &broker,
-            "/tool",
-            &broker.access,
-            &serde_json::json!({"command": probe}).to_string(),
-        )
-        .await;
+        let tool = mcp_tool(&broker, &probe).await;
+        let reply = tool["result"]["content"][0]["text"].as_str().unwrap();
+        assert_eq!(tool["result"]["isError"], false);
         assert!(
             reply.contains("Exit 0") && reply.contains("boundary intact"),
             "isolated tool did not complete: {reply:?}"
