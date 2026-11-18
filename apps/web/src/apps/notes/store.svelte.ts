@@ -1,6 +1,6 @@
 /**
- * Reactive state for the Notes app: the spaces, the current space's note list, the open note, kept current by the backend's change feed. The backend is the
- * fixture by default and the real server in server mode (`?server=1`, development token; server/client.ts).
+ * Reactive state for the Notes app: the current space's note list (the newest page, a tag filter), the open note and its save state (saved, saving, conflict, offline), the Trash, and the private draft, kept current by
+ * the backend's change feed. The backend is the fixture by default and the real server in server mode (server/client.ts). A save never touches what the editor shows (`view`), so typing is never overwritten.
  */
 import { spaces as shellSpaces } from "../../shell/spaces.svelte";
 import { server, serverMode } from "../../server/client";

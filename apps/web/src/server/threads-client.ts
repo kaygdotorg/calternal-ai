@@ -32,6 +32,7 @@ interface Open { thread: WireThread; messages: Message[]; summary: ThreadSummary
 /** The composer's choices for the next send, kept per thread on this page. */
 type Choices = Partial<Pick<ThreadSummary, "provider" | "model" | "permission" | "runsOn">>;
 
+/** The real server behind the threads interface (one thread is a Markdown file in the space plus jobs): list, open, send, steer, stop, archive, provider choice and readiness. Failures are `ServerError`; reads are cached per revision and the live feeds keep them current. */
 export class ServerThreads implements ThreadsClient {
   private choices = new Map<string, Choices>();
   /** The turn state each thread is in, from the list, the thread and the journal (a single source for the sidebar and the open thread). */

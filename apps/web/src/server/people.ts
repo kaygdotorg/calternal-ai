@@ -40,6 +40,27 @@ async function all<K extends string, T>(key: K, name: string, input: Record<stri
   return out;
 }
 
+/** A cursor-paged list read one page at a time, on demand: `next()` returns the next page (empty when there is none), `done` says there is no more. */
+export interface Pager<T> { next(): Promise<T[]>; readonly done: boolean }
+function pager<K extends string, T>(key: K, name: string, input: Record<string, unknown>, extra?: (page: Record<string, unknown>) => void): Pager<T> {
+  let cursor: string | null | undefined;
+  return {
+    get done() { return cursor === null; },
+    async next() {
+      if (cursor === null) return [];
+      const page: Record<string, unknown> & Page<K, T> = await op(name, { ...input, ...(cursor ? { cursor } : {}) });
+      cursor = page.next_cursor ?? null; extra?.(page);
+      return page[key];
+    },
+  };
+}
+/** Pages of a space's people (and, on each, its groups: the latest page's copy is given to `onGroups`). */
+export const memberPager = (space_id: string, onGroups: (g: GroupGrant[]) => void): Pager<Member> => pager<"members", Member>("members", "spaces.members", { space_id }, (p) => onGroups(p.groups as GroupGrant[]));
+/** Pages of a space's invitations. */
+export const invitePager = (space_id: string): Pager<Invite> => pager<"invites", Invite>("invites", "invites.list", { space_id });
+/** Pages of the server's accounts. */
+export const peoplePager = (): Pager<Person> => pager<"people", Person>("people", "people.list", {});
+
 /** The space's people and groups with their roles. */
 export async function grants(space_id: string): Promise<SpaceGrants> {
   const out: SpaceGrants = { members: [], groups: [] };

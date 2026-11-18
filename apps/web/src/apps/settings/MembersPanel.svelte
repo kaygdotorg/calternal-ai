@@ -6,6 +6,8 @@
   import * as people from "../../server/people";
   import { say } from "../../server/say";
   import { spaces } from "../../shell/spaces.svelte";
+  import { reach } from "./reach";
+  import { capitalise } from "../../lib/format";
   import "./panel.css";
   let g = $state<people.SpaceGrants>({ members: [], groups: [] }), me = $state(""), error = $state(""), busy = $state(false), loaded = $state(false);
   let adding = $state<"person" | "group" | null>(null), pool = $state<{ id: string; name: string }[]>([]), role = $state<people.GrantRole>("editor"), find = $state("");
@@ -13,10 +15,20 @@
   const mine = $derived(g.members.find((m) => m.account_id === me)?.role);
   const canManage = $derived(mine === "owner" || mine === "manager");
   const ROLES = [{ id: "reader", label: "Reader" }, { id: "editor", label: "Editor" }, { id: "manager", label: "Manager" }];
-  const label = (r: string) => r[0]!.toUpperCase() + r.slice(1);
+  // The first page, then the next as the person scrolls toward the end (a server page is 50).
+  let pg = $state<people.Pager<people.Member> | null>(null), loading = false;
   async function load() {
-    try { [g, me] = await Promise.all([people.grants(space), account.me().then((m) => m.user.id)]); error = ""; loaded = true; }
-    catch (e) { error = say(e, "load the members"); }
+    try {
+      const fresh = people.memberPager(space, (groups) => (g.groups = groups));
+      const [first, who] = await Promise.all([fresh.next(), account.me().then((m) => m.user.id)]);
+      g.members = first; me = who; pg = fresh; error = ""; loaded = true;
+    } catch (e) { error = say(e, "load the members"); }
+  }
+  async function more() {
+    if (!pg || pg.done || loading) return;
+    loading = true;
+    try { g.members = [...g.members, ...(await pg.next())]; } catch (e) { error = say(e, "load more people"); }
+    loading = false;
   }
   async function act(f: () => Promise<unknown>) { busy = true; error = ""; try { await f(); } catch (e) { error = say(e); } await load(); busy = false; }
   async function open(kind: "person" | "group") {
@@ -34,7 +46,7 @@
 <div class="sp">
   {#each g.members as m (m.account_id)}
     <div class="r" class:col={canManage && m.role !== "owner" && m.account_id !== me} data-setting="space.member.{m.account_id}">
-      <span class="n"><span class="t">{m.account_id === me ? `${m.name} (you)` : m.name}</span><span class="h">{label(m.role)}</span></span>
+      <span class="n"><span class="t">{m.account_id === me ? `${m.name} (you)` : m.name}</span><span class="h">{capitalise(m.role)}</span></span>
       {#if canManage && m.role !== "owner" && m.account_id !== me}
         <span class="a">
           <Capsule label="Role of {m.name}" kind="radio" glass={false} items={mine === "owner" ? ROLES : ROLES.slice(0, 2)} value={m.role} onchange={(v) => act(() => people.setRole(space, m.account_id, v as people.GrantRole))} />
@@ -44,9 +56,10 @@
       {/if}
     </div>
   {/each}
+  {#if pg && !pg.done}<div class="r" use:reach={more}><span class="h">Loading more people…</span></div>{/if}
   {#if g.groups.length}<h2>Groups</h2>{/if}
   {#each g.groups as x (x.group_id)}
-    <div class="r" data-setting="space.group.{x.group_id}"><span class="n"><span class="t">{x.name}</span><span class="h">{label(x.role)} · {x.member_count} {x.member_count === 1 ? "person" : "people"}</span></span></div>
+    <div class="r" data-setting="space.group.{x.group_id}"><span class="n"><span class="t">{x.name}</span><span class="h">{capitalise(x.role)} · {x.member_count} {x.member_count === 1 ? "person" : "people"}</span></span></div>
   {/each}
   {#if loaded && g.members.length === 1 && !error}<p class="e" style="color: var(--ink-3)">Only you are in this space. Add a person who has an account here, a group, or send an invitation from the Invites page.</p>{/if}
   {#if canManage}

@@ -1,9 +1,9 @@
 <script lang="ts">
-  import { FieldEditor, type FieldTrigger, type TextKind, type TriggerKind } from "../../../editor/src/index";
   // The one text-input surface for typing inline: the composer, side chat, rename fields. It is a thin contract (value, submit, cancel, focus)
   // over a native field so that the Notes block editor's input can replace it by changing this file alone; callers never touch the DOM node
   // except through `focus()`. Enter submits (Shift+Enter is a new line in `multiline`), Escape cancels, IME composition is never interrupted.
   // Cost: one `input` handler, one layout read per keystroke for auto-grow (multiline only), no re-render of siblings.
+  import { FieldEditor, type FieldTrigger, type TextKind, type TriggerKind } from "../../../editor/src/index";
   let {
     value = $bindable(""),
     multiline = false,

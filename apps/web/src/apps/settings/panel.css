@@ -5,13 +5,13 @@
 .sp .n { display: grid; flex: 1; min-width: 0; gap: var(--s-1); }
 .sp .t { font-size: var(--text-ui); font-weight: var(--strong-weight); overflow: hidden; text-overflow: ellipsis; }
 .sp .h { font-size: var(--text-label); color: var(--ink-3); }
-.sp .e { padding: var(--s-3) var(--s-6); font-size: var(--text-label); color: var(--danger, #c0392b); }
+.sp .e { padding: var(--s-3) var(--s-6); font-size: var(--text-label); color: var(--danger); }
 .sp .a { display: flex; gap: var(--s-3); align-items: center; }
 .sp input.field { min-height: var(--pill-h); padding: 0 var(--s-5); border: 0; border-radius: var(--r-pill); background: rgb(var(--ink-rgb) / 0.07); color: var(--ink); font-size: var(--text-ui); }
 /* A phone: a row's text takes the full width and its controls go under it (a side-by-side squeeze broke a command into single letters). */
 @media (max-width: 600px) { .sp .r { flex-direction: column; align-items: stretch; } .sp .a { flex-wrap: wrap; } .sp .n { flex: none; }  }
-.sp .cmd { display: block; margin-top: var(--s-3); padding: var(--s-3) var(--s-5); border-radius: var(--r-select); background: rgb(var(--ink-rgb) / 0.07); font-family: var(--font-mono, monospace); font-size: var(--text-label); overflow-wrap: anywhere; user-select: all; }
-.sp .r.sub { padding-left: var(--s-9, 40px); min-height: 0; }
+.sp .cmd { display: block; margin-top: var(--s-3); padding: var(--s-3) var(--s-5); border-radius: var(--r-select); background: rgb(var(--ink-rgb) / 0.07); font-family: var(--font-mono); font-size: var(--text-label); overflow-wrap: anywhere; user-select: all; }
+.sp .r.sub { padding-left: var(--s-9); min-height: 0; }
 /* A row with several controls: the text on top, the controls under it, so neither is squeezed (a name cut to "Gu…" and a role to "Mana…" beside three buttons). */
 .sp .r.col { flex-direction: column; align-items: stretch; gap: var(--s-3); }
 .sp .r.col .n { flex: none; }

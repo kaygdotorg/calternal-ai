@@ -28,6 +28,8 @@ move to the decision record they belong to and leave this list. Terms: see
 | 36 | Notes: paging of long lists, purging the whole Trash at once, reusing a file name after delete, renames that touch many links | To grill | Notes |
 | 37 | Readiness: should one refresh probe every machine in the pool, and should provider sign-in be re-checked while a machine sits idle (today: cached five minutes, refreshed on demand) | On demand only | Agents |
 | 38 | The bottom band and edge kayg saw beside the right sidebar could not be reproduced in a real GPU Chrome at 1500x970: which window size and zoom, and does it still show on the current preview | kayg to look again | Shell |
+| 39 | With many spaces the dots overflow the sidebar footer: at 50 spaces about 7 show and the rest are reachable only through the palette. Options and screenshots on issue #15 | To grill with the dots design | Shell |
+| 40 | Performance decisions left by the fix lane: how to shorten security-log replay at start (1,000 spaces still start in 320 to 860 ms against 300 ms), whether to keep an inherited root-layout check, how to close the cold save tail (one arm at 49.9 ms against 40 ms), how to cut the draft-save tail; and what the 10 ms "write reaches a subscribed client" ceiling measures, since it includes the durable save itself | See the lane report; decide the measure first | Performance gate |
 
 ## Design rounds
 

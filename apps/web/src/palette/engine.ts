@@ -12,12 +12,17 @@ import { MENTION_RE, SKILL_RE } from "./mentions";
 export interface Action { go?: string; op?: string; ask?: string; text?: string }
 /** One row of the list. */
 export interface Row {
+  /** Stable id of the thing or command the row stands for. */
   id: string;
+  /** What the row does: open something, run a command, ask the agent, make a task, or make something new. */
   kind: "open" | "command" | "ask" | "task" | "new";
+  /** The row's text (the title of what it opens). */
   label: string;
+  /** A second line saying what kind of thing it is. */
   sub?: string;
   /** The space, when it is not the current one. */
   space?: string;
+  /** What Enter does for this row. */
   action: Action;
 }
 /** The whole answer for one line. */
