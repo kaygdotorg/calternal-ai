@@ -162,7 +162,7 @@ One preboot took 4,824.01 ms from role initialization, and one warm pickup
 took 169.81 ms. One wake after the idle sweep took 1,010.36 ms. The harness
 advanced the account's idle timestamp to trigger the production sweep and
 then timed the restart from the persisted disk. Warm pickup met the 2 s
-target in this observation. Wake exceeded the 1 s target by 10.36 ms.
+target in this observation.
 
 With 3,661.95 MiB initially available, the 8 GB host admitted 17 idle
 accounts before the configured 1 GiB host reserve plus one 512 MiB guest
@@ -187,12 +187,68 @@ idle interval nor the sweep's wait. The test completed in 265.83 seconds.
 | ---: | ---: | ---: | ---: | ---: | ---: |
 | 10 | 950.12 ms | 998.47 ms | 1,009.82 ms | 1,019.26 ms | 5 |
 
+The idle-wake budget is **about one second, p90 under 1.1 s**. The locked
+512 MiB benchmark enforces the p90 limit across ten wakes.
+
 Samples in run order, in milliseconds: 1,019.26, 986.41, 993.02, 963.38,
 1,009.82, 1,006.17, 1,002.73, 950.12, 994.21, and 1,006.10. Percentiles
 use nearest rank, so p95 is the maximum at this sample count. The same
 locked command above used `./calternal-microvm-bench-wakes` as its binary.
 Raw output is in
 `~/calternal-ai-microvm-51/stage5/perf-512-ten-wakes.log`.
+
+The executable p90 gate passed on a separate locked perf-02 run. Ten
+wakes measured a median of 1,000.86 ms, p90 of 1,004.61 ms and a range
+of 957.14–1,008.21 ms. The locked command used the dev-built
+`./calternal-microvm-bench-wake-gate` binary and completed in 267.03 seconds.
+Raw output is in
+`~/calternal-ai-microvm-51/stage5/perf-512-wake-gate.log`.
+
+### 1,024 MiB concurrent Claude Code turns on dev-01
+
+The development-host run used a fresh 1,024 MiB Firecracker guest for each
+trial, two vCPUs, a 4 GiB disk, the pinned guest image and the installed
+TAP policy. It reused the earlier 24-module coding fixture. All threads
+in each trial started together. A completed turn required successful CLI
+exit, four or more file-read calls, the expected test command and a passing
+independent Node test rerun. The table combines three separate trials at
+each concurrency. Turn time runs from Claude Code launch to exit inside
+the thread container. Validation runs afterward. The dev host also built
+the static wake benchmark during the early trials. The conformance build
+started after the last trial.
+
+| Active threads | Completed | Median turn | p90 turn | Median vs one thread | Peak VM PSS range | Settled VM PSS range | Per-container peak / settled ranges |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | 3/3 | 14.85 s | 15.51 s | Reference | 494.20–498.23 MiB | 494.19–498.23 MiB | 339.98–342.39 / 177.71–178.79 MiB |
+| 2 | 6/6 | 14.68 s | 15.49 s | −1.18% | 667.97–688.22 MiB | 667.97–688.21 MiB | 245.33–264.54 / 85.68–106.19 MiB |
+| 3 | 9/9 | 16.43 s | 19.77 s | +10.64% | 835.17–850.54 MiB | 835.17–850.53 MiB | 218.38–242.52 / 62.34–79.53 MiB |
+| 4 | 12/12 | 18.82 s | 21.99 s | +26.72% | 974.60–982.26 MiB | 974.60–982.24 MiB | 179.74–230.07 / 23.58–70.69 MiB |
+| 5 | 15/15 | 24.69 s | 27.14 s | +66.28% | 980.15–986.64 MiB | 980.15–986.64 MiB | 177.27–225.65 / 17.85–52.48 MiB |
+
+All 45 turns completed with zero observed guest or container OOM kills and
+zero swap activity. The harness's literal `return total;` marker matched
+41 turns. The other four used the edit tool and passed the same independent
+test rerun. Two is the highest tested count within a 10% median
+latency increase over this run's one-thread reference. Three completed
+every turn and measured 10.64% above the reference. Four and five
+completed with higher latency and peak VM PSS above 974 MiB. These
+observations support a cap of two if the earlier 10% criterion applies.
+The production profile is unchanged pending the owner's cap decision.
+The dev-01 harness and sanitized raw metrics are in
+`~/Developer/lanes/microvm/cap1024/`.
+
+### Conformance with the Notes directory-mode fix
+
+The lane merged search commit `1ddd88a` before the dev-01 rerun. The
+focused `filesystem_modes_and_complete_sql_inventory` case passed.
+The ordinary serial suite passed all 122 cases in 212.55 seconds, with
+a visible skip inside the hardware fixture for the unset guest config.
+Both the Podman and Firecracker leak checks passed. The rerun uses the
+backend commands below and the absolute test-plugin server path.
+With the absolute guest config, all three filtered live microVM cases
+passed in 10.89 seconds and both leak checks passed again. Workspace,
+integration, plugin, GenUI, contract, docs, publication and formatting
+checks also passed.
 
 ## Backend gate commands
 
