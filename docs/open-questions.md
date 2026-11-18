@@ -2,7 +2,7 @@
 
 Decisions waiting on kayg, most blocking first. Answer here or in chat; answered items
 move to the decision record they belong to and leave this list. Terms: see
-[glossary](glossary.md). Updated 2026-11-19 10:30 IST.
+[glossary](glossary.md). Updated 2026-11-19 11:40 IST.
 
 ## Waiting now
 
@@ -30,6 +30,9 @@ Decided 2026-11-18: a person never signs in twice and no API key is used. The ti
 
 ## Queued, no decision needed
 
+- Production bugs from kayg's first sign-up (2026-11-19): onboarding was skipped after the passkey step, and the server's own machine never connected because the host cannot reach its own public address. Both being fixed; production is then wiped and installed fresh again.
+- Open with kayg: sandbox hours per plan (researching what comparable products include), how to keep plans and billing out of the open source, the receipt retention sign-off (#53).
+
 - An incompatible update cannot be applied yet: the full restore point refuses symbolic links, which every coding workspace contains. Additive updates are unaffected. Fix: store links as links in the restore point (a format change, to review first).
 - Update downtime is measured only for the server process (about 180 ms); the full path through the container restart and the proxy is unmeasured.
 - The plugin-worker sandbox probe test times out when the whole workspace suite runs in parallel on a loaded machine (twice so far) and passes alone; make the container tests serial or give the probe a load-aware wait.
@@ -47,6 +50,7 @@ Decided 2026-11-18: a person never signs in twice and no API key is used. The ti
 
 ## Recently decided (2026-11-17), now in the decision records
 
+- More decisions (2026-11-19): the server pins a tested version of each harness and offers updates in Admin after a smoke test; running turns finish on the old version; Calternal manages the harnesses in Direct mode too. Sandbox sizes are 2, 4 and 8 GiB of memory (kayg will enlarge the VM). Storage is sold in two kinds, text and binary (photos, video, documents). Production moves to a microVM per person. A thread file's limit rises from 2 MiB to 16 MiB, with speed and indexing proven at that size. Notifications are web push, native apps later. Claude Code and Codex are both plugins; Codex support is next.
 - Notes (#36, 2026-11-19): a trashed item is purged after 30 days; Empty Trash is one confirmed, irreversible background job; Editors delete and restore, only Managers and the Owner purge for good. Renames and name reuse follow the existing app (ADR 0015, 0023).
 - Machines and installer (2026-11-19): something running on a machine (a dev server preview) is reached through the server over the connection the machine already holds; the machine program updates itself to match the server between turns, and updating the harnesses (Claude Code, Codex and others) is also done from the interface; calternal.com/install shows what it will do and verifies a signed binary; a per-user service with no root, root only for Podman or the microVM runtime; on a Mac the same one-line installer sets up a background service now and the full app that bundles the CLI comes later; a hosted instance lists its pool machines in an operator file at deploy and can add more in Admin.
 - Plugin network access (2026-11-19): four kinds, each its own permission. Named connections: a Manager approves the plugin's envelope once and people add their own hosts inside it; built-in mail handling plus generic TCP to an approved host and port. Content fetch (images in mail, previews): any plugin may declare it, shown at install, always anonymous, restricted and proxied by the server. Open internet: one broad permission approved by the space's Owner or a Manager. Private network: a separate grant that can name hosts, ranges and the space's machines. It must stay wide enough that people's own plugins can do a lot.
