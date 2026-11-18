@@ -19,7 +19,7 @@
   const ago = (at: number | undefined) => at === undefined ? "" : new Date(at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
   $effect(() => {
     if (!messageSearch.open) return;
-    text = ""; sel = 0; hits = [];
+    text = untrack(() => messageSearch.text); messageSearch.text = ""; sel = 0; hits = [];
     // (read untracked: following a result changes the address, and this effect must not run again and clear the typed text)
     untrack(() => { const qs = route.query.toString(); from = route.path + (qs ? `?${qs}` : ""); });
     const f = () => document.querySelector<HTMLElement>(".msg-search-input");

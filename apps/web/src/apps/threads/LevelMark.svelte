@@ -5,12 +5,12 @@
   const filled = $derived(levels.length <= 1 ? 3 : Math.max(1, Math.round(((Math.max(0, levels.indexOf(level)) + 1) / levels.length) * 3)));
 </script>
 
-<svg class="lvl" viewBox="0 0 12 12" width="12" height="12" aria-hidden="true">
+<svg class="lvl" viewBox="0 0 12 12" aria-hidden="true">
   {#each [0, 1, 2] as i}<rect x={1 + i * 4} y={9 - i * 3 - 1} width="2.5" height={3 + i * 3 + 1} rx="1" class:on={i < filled} />{/each}
 </svg>
 
 <style>
-  .lvl { flex: none; }
+  .lvl { flex: none; width: var(--glyph-inline); height: var(--glyph-inline); }
   rect { fill: currentColor; opacity: 0.28; }
   rect.on { opacity: 1; }
 </style>

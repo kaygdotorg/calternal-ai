@@ -7,7 +7,7 @@
   // A row: the provider's mark at the left, the title, then the state (only when it means something). Pointing at a row (or focusing into it) swaps the state for exactly three actions: copy link,
   // archive and a three-dot button that opens the very menu right-click opens (`ctxItems`, one definition, two triggers). On touch, and on a trackpad, the row swipes (lib/swipe, the existing app's
   // engine): right shows Copy link; left shows Archive (a long swipe runs it) and More (the same menu). The shell's edge swipes (24 px at each screen edge) and dragging between sections are never started by it.
-  import { Button, Icon, IconButton, InlineEditor, Menu, Row, toast, undoable, type MenuItem } from "@calternal/ui";
+  import { Button, Icon, IconButton, InlineEditor, Menu, Row, Selector, toast, undoable, type MenuItem } from "@calternal/ui";
   import { href, navigate, segments } from "../../lib/route.svelte";
   import { layout, type Container } from "./layout.svelte";
   import { archiveThread, containerName, containersOf, copyThreadLink, runThreadItem, snoozeItems, threadItems, topLevelIds } from "./thread-menu";
@@ -20,7 +20,6 @@
   import { spaces } from "../../shell/spaces.svelte";
   import TopEntries from "./TopEntries.svelte";
   import ReasonMark from "./ReasonMark.svelte";
-  import { messageSearch } from "./search.svelte";
 
   // A fresh account: nothing listed, no section made, and the list has loaded (so it is not just still arriving).
   const empty = $derived(store.ready && store.threads.length === 0 && layout.sections.length === 0);
@@ -48,13 +47,8 @@
     return () => clearTimeout(h);
   });
   const returns = (s: { until: number; auto: boolean }) => (s.auto ? `Back when the limit resets, ${new Date(s.until).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}` : backLabel(s.until, store.now));
+  const TABS = [{ value: "inbox" as const, label: "Inbox" }, { value: "all" as const, label: "All Threads" }];
   const tab = $derived(chosen ?? (items.length ? "inbox" : "all"));
-  const tabKey = (e: KeyboardEvent) => {
-    if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
-    e.preventDefault();
-    chosen = tab === "inbox" ? "all" : "inbox";
-    queueMicrotask(() => document.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')?.focus());
-  };
 
   // ---- renaming in place ----
   let editing = $state<{ kind: "thread" | "section"; id: string } | null>(null);
@@ -206,12 +200,10 @@
       <Button variant="primary" text="Start a thread" onclick={() => void startThread().then((t) => navigate(`/threads/${t.id}`)).catch((e: Error) => toast(`Could not start a thread: ${e.message}`))} />
     </div>
   {:else}
-  <div class="tabrow"><div class="tabs" role="tablist" aria-label="Which threads" tabindex="-1" onkeydown={tabKey}>
-    <button type="button" role="tab" id="tab-inbox" aria-selected={tab === "inbox"} tabindex={tab === "inbox" ? 0 : -1} onclick={() => (chosen = "inbox")}>Inbox{#if items.length}<span class="n">{items.length}</span>{/if}</button>
-    <button type="button" role="tab" id="tab-all" aria-selected={tab === "all"} tabindex={tab === "all" ? 0 : -1} onclick={() => (chosen = "all")}>All Threads</button>
-  </div><IconButton icon="search" label="Search messages" onclick={() => (messageSearch.open = true)} /></div>
+  <!-- The shared Selector (ui/Selector, the old app's state switch): an outer pill with the chosen item as a pill inside it that glides to the new choice; arrow keys, Home and End move and choose. -->
+  <div class="tabs"><Selector label="Which threads" options={TABS} value={tab} onchange={(v) => (chosen = v)}>{#snippet optionContent(o)}{@const n = o.value === "inbox" ? items.length : 0}<span class="tl"><span class="w">{o.label}{#if n}<span class="n">{n}</span>{/if}</span><span class="w twin" aria-hidden="true">{o.label}{#if n}<span class="n">{n}</span>{/if}</span></span>{/snippet}</Selector></div>
   {#if tab === "inbox"}
-    <div role="tabpanel" aria-labelledby="tab-inbox">
+    <div role="tabpanel" aria-label="Inbox">
       {#if items.length}
         <ul class="threads" aria-label="Waiting for you">
           {#each items as it (it.thread.id)}
@@ -253,7 +245,7 @@
       {/if}
     </div>
   {:else}
-  <div role="tabpanel" aria-labelledby="tab-all">
+  <div role="tabpanel" aria-label="All Threads">
   <div class="sec first" role="group" aria-label={layout.looseName}>
     <div class="sh" class:over={over?.c === null && !ids0.length} role="presentation" ondragover={(e) => { if (dragId) { e.preventDefault(); over = { c: null, index: ids0.length }; } }} ondrop={(e) => { e.preventDefault(); dropHere(null, ids0.length); }} oncontextmenu={(e) => openCtx(e, { section: LOOSE })}>
       {#if editing?.kind === "section" && editing.id === LOOSE}
@@ -311,13 +303,13 @@
     .rw:hover :global(.row), .rw:focus-within :global(.row) { padding-right: calc(var(--s-2) * 2 + 3 * var(--ib-small) + 2 * var(--s-1)); }
   }
   /* The two tabs split the sidebar's width in halves; the selected one's capsule spans its half (no empty space at the right). */
-  .tabrow { display: flex; align-items: center; gap: var(--s-1); margin: var(--s-3) 0 var(--s-2); padding-right: var(--s-2); }
-  .tabrow .tabs { flex: 1; margin: 0; }
-  .tabs { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s-1); margin: var(--s-3) 0 var(--s-2); padding: 0 var(--s-2); }
-  .tabs button { display: inline-flex; align-items: center; justify-content: center; gap: var(--s-2); min-height: var(--row-h); padding: 0 var(--s-4); border-radius: var(--r-pill); font-size: var(--text-label); font-weight: var(--strong-weight); color: var(--ink-3); }
-  .tabs button[aria-selected="true"] { background: rgb(var(--ink-rgb) / 0.1); color: var(--ink); }
-  .tabs .n { font-variant-numeric: tabular-nums; color: var(--accent); }
-  @media (hover: hover) and (pointer: fine) { .tabs button:hover { color: var(--ink); } }
+  /* The Selector's track is the sidebar's tone and its capsule the page's paper (as in the old app's side tabs), so the chosen tab reads like a small card on the flat sidebar. */
+  .tabs { margin: var(--s-3) 0 var(--s-2); padding: 0 var(--s-2); --selector-track: color-mix(in oklab, var(--ink) 7%, transparent); --selector-capsule: color-mix(in oklab, var(--paper) 92%, transparent); --selector-capsule-shadow: 0 0 0 1px color-mix(in oklab, var(--ink) 6%, transparent), 0 1px 3px rgb(var(--shadow-rgb, 0 0 0) / 0.12); }
+  /* The label with its count; the bold twin (a hidden copy in bold, as the Selector's own labels do) reserves the bold width, so choosing a tab never moves its neighbour. */
+  .tl { display: inline-grid; justify-items: center; }
+  .tl .w { display: inline-flex; align-items: center; gap: var(--s-2); }
+  .tl .twin { font-weight: 600; visibility: hidden; height: 0; overflow: hidden; user-select: none; pointer-events: none; }
+  .tl .n { font-variant-numeric: tabular-nums; color: var(--accent); }
   .none { padding: var(--s-4) var(--s-5); color: var(--ink-3); font-size: var(--text-label); }
   .empty { display: grid; gap: var(--s-4); justify-items: start; padding: var(--s-6) var(--s-5); }
   .empty h2 { font-size: var(--text-heading); font-weight: var(--strong-weight); }
