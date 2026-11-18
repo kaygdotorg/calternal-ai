@@ -1,3 +1,4 @@
+import { signUp } from "./lib.mjs";
 // People in server mode against a server built from this tree: account name, Admin people and groups, an invitation made, opened by a second person (join page, passkey,
 // lands in their own space), listed with a name, role changed, removed. Env: CAL_BIN, CAL_DIST.
 import { spawn } from "node:child_process";
@@ -22,7 +23,7 @@ try {
 const go = async (p, path) => { await p.evaluate((x) => { history.pushState(null, "", x); dispatchEvent(new PopStateEvent("popstate")); }, path); await p.waitForTimeout(700); const sc = await scrolled(p); if (sc) console.log("   sidebar scrolled after", path, sc); };
   const { p } = await mk();
   await p.goto(`${url}/?server=1`); await p.waitForSelector("html[data-ready]");
-  await p.fill('input[name="token"]', token); await p.fill('input[name="name"]', "Olive"); await p.getByRole("button", { name: "Create passkey" }).click();
+  await signUp(p, token, "Olive");
   await p.waitForFunction(() => !document.querySelector("h1")?.textContent?.includes("Set up"), null, { timeout: 15000 }); await p.waitForSelector("html[data-ready]"); await p.waitForTimeout(1500);
 
   // Account: change the name.
@@ -48,7 +49,7 @@ const go = async (p, path) => { await p.evaluate((x) => { history.pushState(null
   const local = new URL(link); await g.p.goto(`${url}${local.pathname}`); await g.p.waitForSelector("html[data-ready]");
   await g.p.getByRole("heading", { name: "Join Calternal" }).waitFor({ timeout: 8000 }).catch(async () => { console.log("   guest page:", g.p.url().slice(0, 60), JSON.stringify((await g.p.evaluate(() => document.body.innerText)).slice(0, 200))); throw new Error("no join page"); });
   ok(true, "the invitation page asks for a name and a passkey");
-  await g.p.fill('input[name="name"]', "Guest Gus"); await g.p.getByRole("button", { name: "Create passkey and join" }).click();
+  await signUp(g.p, "", "Guest Gus");
   await g.p.waitForFunction(() => !document.querySelector("h1")?.textContent?.includes("Join"), null, { timeout: 15000 }); await g.p.waitForSelector("html[data-ready]"); await g.p.waitForTimeout(1500);
   ok(await g.p.locator("aside.side").isVisible(), "the invited person lands in the app");
   await go(g.p, "/settings/members"); await g.p.getByText("Guest Gus (you)").waitFor({ timeout: 8000 });

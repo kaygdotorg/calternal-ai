@@ -1,3 +1,4 @@
+import { signUp } from "./lib.mjs";
 // The request bar end to end against a real server of this tree: fresh roots, a virtual authenticator for setup, a direct-mode machine whose provider is the stand-in
 // `claude` (e2e/fixtures/fake-claude-requests.mjs) that raises a question, an approval and a secret prompt with the turn's own credential.
 // Checks: question answered from the bar, approval once / for this thread / denied, a secret provided, a request dropped when its turn is stopped, a second device
@@ -27,7 +28,7 @@ try {
   const p = await ctx.newPage(); const cdp = await ctx.newCDPSession(p);
   await cdp.send("WebAuthn.enable"); await cdp.send("WebAuthn.addVirtualAuthenticator", { options: { protocol: "ctap2", transport: "internal", hasResidentKey: true, hasUserVerification: true, isUserVerified: true, automaticPresenceSimulation: true } });
   await p.goto(`${url}/?server=1`); await p.waitForSelector("html[data-ready]");
-  await p.fill('input[name="token"]', token); await p.fill('input[name="name"]', "Req Owner"); await p.getByRole("button", { name: "Create passkey" }).click();
+  await signUp(p, token, "Req Owner");
   await p.waitForTimeout(2500); /* the first owner lands in the onboarding wizard: the account exists; leave it (below) */ await p.waitForSelector("html[data-ready]"); await p.waitForTimeout(1200);
   const go = async (page, path) => { await page.evaluate((x) => { history.pushState(null, "", x); dispatchEvent(new PopStateEvent("popstate")); }, path); await page.waitForTimeout(600); };
   await p.evaluate(() => localStorage.removeItem("cal.onboarding")); await p.goto(`${url}/settings/machines?server=1`); await p.waitForSelector("html[data-ready]");
