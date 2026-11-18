@@ -4,6 +4,7 @@
   import { navigate } from "../../lib/route.svelte";
   import { shell } from "../../shell/shell.svelte";
   import { notes } from "./store.svelte";
+  import { reach } from "../../lib/reach";
   import "./column.css";
   import { shortDateTime } from "../../lib/format";
   import { IconButton } from "@calternal/ui";
@@ -21,6 +22,7 @@
     {:else}
       {#if !notes.error}<p class="lede">The Trash is empty. A note you delete from the list waits here first.</p>{/if}
     {/each}
+    {#if notes.trashPages.error}<p class="err" role="alert">{notes.trashPages.error} <Button text="Try again" variant="quiet" onclick={() => notes.trashPages.retry()} /></p>{:else if notes.trashPages.more}<div aria-hidden="true" style="height: 1px" use:reach={() => notes.trashPages.next()}></div>{/if}
     {#if notes.error}<p class="err" role="alert">{notes.error}</p>{/if}
     <p><Button text="Back to the notes" variant="quiet" onclick={() => navigate("/notes")} /></p>
   </article>

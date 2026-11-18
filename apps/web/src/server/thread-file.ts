@@ -9,7 +9,7 @@
  *   - `markdown`: a small frontmatter, then messages: `<!-- message:<uuid> role:person|agent time:<rfc3339> [turn:<job>] [actor:<..>] -->` text `<!-- /message -->`.
  * Message text is untrusted display text: nothing here reads access, roles or instructions from it.
  */
-import type { Message, Permission, ProviderId, ThreadNotice, ThreadState, ThreadSummary } from "../apps/threads/model";
+import type { Block, Message, Permission, ProviderId, Step, StepKind, ThreadNotice, ThreadState, ThreadSummary } from "../apps/threads/model";
 
 /** The thread metadata the server keeps (the fields this client reads). */
 export interface WireMetadata {
@@ -118,6 +118,37 @@ export function summaryOf(id: string, spaceId: string, md: WireMetadata, turn: s
 const OPEN = /<!-- message:([0-9a-fA-F-]{36}) role:(person|agent)([^>]*?) -->\n/g;
 const CLOSE = "\n<!-- /message -->";
 
+/** Which icon a tool's step gets, from the tool's name (the provider's own: Bash, Read, Edit, …); anything unknown is a plain run. */
+const KIND: Record<string, StepKind> = { Bash: "run", Read: "read", Edit: "edit", MultiEdit: "edit", Write: "edit", NotebookEdit: "edit", Grep: "search", Glob: "search", WebSearch: "search", WebFetch: "search", Task: "spawn" };
+/** One saved tool line: `> Tool <name> · <what it did> (started | finished | failed | <n> bytes of tool output)`. */
+const TOOL = /^> Tool (\S+) · (.*) \((started|finished|failed|(\d+) bytes of tool output)\)$/;
+
+/**
+ * The blocks of one agent message: its text, with the saved tool lines (a step's start, output size and end, one blockquote line each) folded into one `steps` group where the first of them was.
+ * Text without a tool line is one text block, found with a single `includes`; cost is linear in the message.
+ */
+export function blocksOf(id: string, text: string): Block[] {
+  if (!text.includes("\n> Tool ") && !text.startsWith("> Tool ")) return [{ type: "text", text }];
+  let steps: Step[] = []; const out: Block[] = []; const prose: string[] = []; let open = false;
+  const flush = () => { const t = prose.join("\n").replace(/\n{3,}/g, "\n\n").trim(); prose.length = 0; if (t) out.push({ type: "text", text: t }); };
+  for (const line of text.split("\n")) {
+    const m = TOOL.exec(line);
+    if (!m) { prose.push(line); continue; }
+    // Words between two steps end the group: the next step opens a new one after them.
+    if (open && prose.some((l) => l.trim())) { flush(); open = false; }
+    if (!open) { flush(); steps = []; out.push({ type: "steps", steps, ms: 0 }); open = true; }
+    prose.length = 0;
+    const [, name, what, state, bytes] = m as unknown as [string, string, string, string, string | undefined];
+    let step = [...steps].reverse().find((x) => x.detail === name && x.title === what && x.status === "running");
+    if (state === "started" || !step) { step = { id: `${id}-s${out.length}-${steps.length}`, kind: KIND[name] ?? "run", title: what, detail: name, status: "running", ms: 0 }; steps.push(step); }
+    if (bytes) step.output = `${Number(bytes).toLocaleString("en")} bytes of output`;
+    else if (state === "finished") step.status = "ok";
+    else if (state === "failed") step.status = "failed";
+  }
+  flush();
+  return out;
+}
+
 /** The messages of a thread's Markdown, oldest first, each with the time its marker records (an older file with none: the thread's creation time, the last one its update time). A message with no closing marker (still being written) runs to the next marker or the end. */
 export function parseMessages(markdown: string, createdAt = 0, updatedAt = createdAt): Message[] {
   const body = markdown.startsWith("---\n") ? (markdown.split("\n---\n").slice(1).join("\n---\n")) : markdown;
@@ -128,7 +159,7 @@ export function parseMessages(markdown: string, createdAt = 0, updatedAt = creat
     let text = body.slice(m.start, next);
     const close = text.lastIndexOf(CLOSE);
     if (close >= 0) text = text.slice(0, close);
-    return { id: m.id, role: m.role, at: Number.isFinite(m.time) ? m.time : i === at.length - 1 ? updatedAt : createdAt, blocks: [{ type: "text" as const, text: text.replace(/\n$/, "") }] };
+    return { id: m.id, role: m.role, at: Number.isFinite(m.time) ? m.time : i === at.length - 1 ? updatedAt : createdAt, blocks: blocksOf(m.id, text.replace(/\n$/, "")) };
   });
 }
 
