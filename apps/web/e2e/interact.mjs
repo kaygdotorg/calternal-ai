@@ -1,12 +1,12 @@
 // Behaviour checks for the owner's list: one-line rows, one state signal, tooltip, title rename, archive + undo toast, pill press.
 import { chromium } from "playwright";
-import { serve, open, expandComposer } from "./lib.mjs";
+import { serve, allThreads, open, expandComposer } from "./lib.mjs";
 const stop = await serve();
 const browser = await chromium.launch();
 const out = [];
 const ok = (name, pass, note = "") => { out.push({ name, pass }); console.log(`${pass ? "PASS" : "FAIL"}  ${name}${note ? "  " + note : ""}`); };
-const { page, ctx } = await open(browser, "desktop", "light", "/threads");
-const rows = page.locator("a.row");
+const { page, ctx } = await open(browser, "desktop", "light", "/threads"); await allThreads(page);
+const rows = page.locator("[data-thread] a.row");
 const n = await rows.count();
 const hs = await rows.evaluateAll((els) => els.map((e) => e.getBoundingClientRect().height));
 ok("rows are one line (all the same height as a row token)", n > 0 && hs.every((h) => Math.abs(h - hs[0]) < 1) && hs[0] <= 34, `n=${n} h=${hs[0]}`);

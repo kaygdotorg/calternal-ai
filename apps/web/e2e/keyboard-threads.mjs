@@ -1,6 +1,6 @@
 // A keyboard-only walk through the Threads app, then reduced motion and 200% zoom. Every step uses the keyboard only (Tab, Shift+Tab, arrows, Enter, Escape, the context-menu key, F2).
 import { chromium } from "playwright";
-import { serve, open, DEVICES, BASE, expandComposer } from "./lib.mjs";
+import { serve, allThreads, open, DEVICES, BASE, expandComposer } from "./lib.mjs";
 const stop = await serve(); const b = await chromium.launch();
 let bad = 0;
 const ok = (n, p, note = "") => { console.log(`${p ? "PASS" : "FAIL"}  ${n}${note ? "  " + note : ""}`); if (!p) bad++; };
@@ -8,7 +8,7 @@ const active = (p) => p.evaluate(() => { const e = document.activeElement; retur
 /** Tab until `test` is true of the active element (at most `max` presses). */
 async function tabTo(p, test, max = 60) { for (let i = 0; i < max; i++) { if (await p.evaluate(test)) return true; await p.keyboard.press("Tab"); } return false; }
 {
-  const { page, ctx } = await open(b, "desktop", "light", "/threads/t-idle");
+  const { page, ctx } = await open(b, "desktop", "light", "/threads/t-idle"); await allThreads(page);
   // Send
   await page.locator("#composer-field").focus();
   await page.keyboard.type("hello from the keyboard"); await page.keyboard.press("Enter"); await page.waitForTimeout(500);

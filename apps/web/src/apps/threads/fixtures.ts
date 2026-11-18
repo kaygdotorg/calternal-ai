@@ -60,13 +60,14 @@ const STREAM_TEXT =
 
 /**
  * Fixture scenarios for the screens that only show when something is wrong or missing, picked with `?scenario=` (fixtures only; tests and review): `empty` (a fresh account with no thread and no
- * request), `no-machine`, `offline`, `signin`, `failed`, `usage-limit`, `permanent`, `queued`, `retrying`, `retrying-api`, `retrying-plan`, `interrupted`, `interrupted-unsure` and `full` (a thread at the size limit; the thread `t-idle` carries that notice).
+ * request), `quiet` (threads, but none waiting on the person), `no-machine`, `offline`, `signin`, `failed`, `usage-limit`, `permanent`, `queued`, `retrying`, `retrying-api`, `retrying-plan`, `interrupted`, `interrupted-unsure` and `full` (a thread at the size limit; the thread `t-idle` carries that notice).
  */
 function applyScenario(threads: ThreadSummary[], requests: Request[]): void {
   let s: string | null = null;
   try { s = new URLSearchParams(location.search).get("scenario"); } catch { /* not in a page */ }
   if (!s) return;
   if (s === "empty") { threads.length = 0; requests.length = 0; return; }
+  if (s === "quiet") { requests.length = 0; for (const x of threads) { x.notice = undefined; if (x.state === "failed" || x.state === "waiting") x.state = "idle"; } return; }
   const t = threads.find((x) => x.id === "t-idle");
   if (!t) return;
   const machine = t.runsOn.machine;
