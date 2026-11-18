@@ -65,7 +65,7 @@ function load(src: string): Promise<HTMLImageElement> {
 }
 
 /** Whether this browser's canvas honours `filter` (Chrome and Firefox do; Safari ignores it, so the blur is done by hand there). */
-const canvasFilter = ((): boolean => { const c = document.createElement("canvas").getContext("2d"); if (!c || !("filter" in c)) return false; c.filter = "blur(2px)"; return c.filter === "blur(2px)"; })();
+const canvasFilter = ((): boolean => { if ((globalThis as { __noCanvasFilter?: boolean }).__noCanvasFilter) return false; /* a test turns it off to exercise the by-hand blur anywhere */ const c = document.createElement("canvas").getContext("2d"); if (!c || !("filter" in c)) return false; c.filter = "blur(2px)"; return c.filter === "blur(2px)"; })();
 /** Device pixels a pixel of the copy covers at most: the copy is a blur, so it can be coarse, but a browser that scales it up without smoothing (Safari did) must not show blocks, and at 4 device pixels they are too small to see. */
 const COARSE = 4;
 
