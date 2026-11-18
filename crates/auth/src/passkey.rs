@@ -36,21 +36,20 @@ pub(crate) async fn start_registration(
     r: Redeemable,
 ) -> Result<(String, Value)> {
     let existing = existing_cred_ids(inner, r.user).await?;
-    let username = crate::setup::username_for(&r.name);
+    let username = r
+        .signup
+        .as_ref()
+        .map(|s| s.username.clone())
+        .unwrap_or_else(|| crate::setup::username_for(&r.name));
     let (ccr, state) = inner
         .webauthn
         .start_passkey_registration(r.user.as_uuid(), &username, &r.name, Some(existing))
         .map_err(Error::internal)?;
     let mut options = serde_json::to_value(&ccr).map_err(Error::internal)?;
     require_discoverable(&mut options);
-    let id = inner.ceremonies.insert(Pending::Setup {
-        state,
-        token_hash: r.token_hash,
-        user: r.user,
-        name: r.name,
-        first_owner: r.first_owner,
-        invite: r.invite,
-    })?;
+    let id = inner
+        .ceremonies
+        .insert(Pending::Setup { state, request: r })?;
     Ok((id, options))
 }
 
@@ -74,15 +73,29 @@ pub(crate) async fn finish_registration(
     ceremony: &str,
     credential: Value,
     device: String,
-) -> Result<(AccountId, InstallationId, String)> {
-    let Pending::Setup {
-        state,
-        token_hash,
-        user,
-        name,
-        first_owner,
-        invite,
-    } = inner.ceremonies.take_setup(ceremony, account)?
+) -> Result<(AccountId, InstallationId, String, Vec<String>)> {
+    if inner.ceremonies.setup_account(ceremony)? != account {
+        return Err(failed("prompt belongs to a different account"));
+    }
+    let (r, credential_id, passkey_json) = verify_registration(inner, ceremony, credential, false)?;
+    let user = r.user;
+    let (installation, token, codes) =
+        crate::setup::redeem(inner, r, credential_id, passkey_json, device).await?;
+    Ok((user, installation, token, codes))
+}
+
+/// Consumes a prompt only for the intended enrollment endpoint.
+pub(crate) fn verify_registration(
+    inner: &Arc<Inner>,
+    ceremony: &str,
+    credential: Value,
+    replacement: bool,
+) -> Result<(Redeemable, Vec<u8>, String)> {
+    let account = inner.ceremonies.setup_account(ceremony)?;
+    let Pending::Setup { state, request } =
+        inner
+            .ceremonies
+            .take_setup_for(ceremony, account, replacement)?
     else {
         return Err(failed("prompt was not a registration"));
     };
@@ -93,15 +106,7 @@ pub(crate) async fn finish_registration(
         .map_err(failed)?;
     let cred_id = passkey.cred_id().as_ref().to_vec();
     let json = serde_json::to_string(&passkey).map_err(Error::internal)?;
-    let r = Redeemable {
-        token_hash,
-        user,
-        name,
-        first_owner,
-        invite,
-    };
-    let (installation, token) = crate::setup::redeem(inner, r, cred_id, json, device).await?;
-    Ok((user, installation, token))
+    Ok((request, cred_id, json))
 }
 
 /// Starts a sign-in with any passkey for this host.
@@ -149,6 +154,7 @@ pub(crate) async fn finish_login(
         purpose,
     )
     .await
+    .map(|(a, i, t, _)| (a, i, t))
 }
 
 /// Verifies a bound or discoverable login and commits credential/session authority
@@ -160,7 +166,7 @@ pub(crate) async fn finish_login_inner(
     device: String,
     expected_user: Option<AccountId>,
     purpose: crate::LoginPurpose,
-) -> Result<(AccountId, InstallationId, String)> {
+) -> Result<(AccountId, InstallationId, String, Vec<String>)> {
     let Pending::Login { state, .. } =
         inner
             .ceremonies
@@ -214,14 +220,14 @@ pub(crate) async fn finish_login_inner(
         .transpose()
         .map_err(Error::internal)?;
     let ttl = inner.config.session_ttl.as_millis() as i64;
-    let (installation, token) = inner
-        .db
+    let inner = Arc::clone(inner);
+    let (installation, token, codes) = inner.db.clone()
         .run(move |c| {
             let tx = c
                 .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
                 .map_err(sql)?;
             let now = now_ms();
-            match json {
+            let updated = match json {
                 Some(j) => tx.execute(
                     "UPDATE passkeys SET passkey = ?2, last_used_at = ?3 WHERE cred_id = ?1",
                     params![cred_id, j, now],
@@ -232,12 +238,21 @@ pub(crate) async fn finish_login_inner(
                 ),
             }
             .map_err(sql)?;
+            if updated != 1 {
+                return Err(failed("credential revoked during sign-in"));
+            }
             let out = session::create(&tx, user, InstallationKind::Browser, &device, ttl, true)?;
+            let mut codes = Vec::new();
+            if purpose == crate::LoginPurpose::SignIn
+                && tx.execute("UPDATE account_details SET replacement_pending=0 WHERE user_id=?1 AND replacement_pending=1", [user.to_string()]).map_err(sql)? == 1
+            {
+                codes = crate::account_details::rotate_codes(&tx, &inner.invite_key,user)?;
+            }
             crate::spaces::commit(tx)?;
-            Ok(out)
+            Ok((out.0,out.1,codes))
         })
         .await?;
-    Ok((user, installation, token))
+    Ok((user, installation, token, codes))
 }
 
 async fn user_passkeys(inner: &Arc<Inner>, user: AccountId) -> Result<Vec<Passkey>> {

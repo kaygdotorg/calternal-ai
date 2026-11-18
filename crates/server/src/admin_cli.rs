@@ -168,6 +168,45 @@ pub fn setup_code(appdata: &Path, installation_id: &str) -> Result<Reply, CliErr
     }
 }
 
+/// Ask the local server for an enrollment grant after operator identity verification.
+pub fn account_recover(
+    appdata: &Path,
+    installation_id: &str,
+    account: &str,
+    reason: &str,
+    verified: bool,
+) -> Result<Reply, CliError> {
+    use std::io::IsTerminal;
+    if !verified || !std::io::stdout().is_terminal() {
+        return Err(CliError::new(
+            "invalid_input",
+            "Verify the person's identity and run the command in a private terminal.",
+        ));
+    }
+    let id = uuid::Uuid::parse_str(installation_id).map_err(|_| bad_uuid("installation"))?;
+    let account = calternal_types::AccountId::parse(account).map_err(|_| bad_uuid("account"))?;
+    let request = Request::AccountRecover {
+        account,
+        reason: reason.to_owned(),
+    };
+    match admin::ask_server(appdata, id, request).map_err(|e| CliError::new("failed", e.message))? {
+        Some(Response::AccountRecovery {
+            enrollment_grant,
+            url,
+        }) => Ok(Reply::new(json!({
+            "enrollment_grant":enrollment_grant,"url":url,"valid_for_seconds":900
+        }))
+        .line("Account recovery grant")
+        .fields([("code", enrollment_grant), ("open", url)])
+        .hint("Use this code within 15 minutes to enroll a replacement passkey.")),
+        None => Err(CliError::new(
+            "server_unavailable",
+            "Start the server and run as the server's user.",
+        )),
+        _ => Err(unexpected()),
+    }
+}
+
 /// Run one `machines` subcommand. Cost: see [`run`].
 pub fn machines(cmd: MachinesCmd, out: &Output) -> Result<Reply, CliError> {
     let account = |s: &str| calternal_types::AccountId::parse(s).map_err(|_| bad_uuid("account"));

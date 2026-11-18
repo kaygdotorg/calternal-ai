@@ -1,5 +1,9 @@
 //! Trusted account HTTP endpoints ported from the original auth transport.
 pub(crate) mod erasure;
+pub(crate) mod mail;
+mod oidc;
+mod onboarding;
+pub(crate) use oidc::PATH as OIDC_CALLBACK_PATH;
 
 use axum::{
     Json, Router,
@@ -23,6 +27,19 @@ pub struct HttpAuth {
     pub auth: Auth,
     /// Origin, lifetime and explicit proxy trust configuration used to open `auth`.
     pub config: AuthConfig,
+    pub(crate) mail: Option<mail::Mailer>,
+    oidc: std::sync::Arc<oidc::Flows>,
+}
+impl HttpAuth {
+    /// Binds the protected service and transport configuration without mail.
+    pub fn new(auth: Auth, config: AuthConfig) -> Self {
+        Self {
+            auth,
+            config,
+            mail: None,
+            oidc: std::sync::Arc::new(oidc::Flows::new()),
+        }
+    }
 }
 const HOST_COOKIE_NAME: &str = "__Host-calternal_session";
 type Reply = Result<Response, Response>;
@@ -46,6 +63,15 @@ fn failure(status: u16, code: &str, _diagnostic: &str) -> Response {
             false,
         ),
         "too_large" => ("That's too big to send.", false),
+        "invite_required" => ("You need an invitation to create an account.", false),
+        "provider_failed" => (
+            "The provider sign-in could not be verified. Try again.",
+            true,
+        ),
+        "email_delivery_failed" => (
+            "Email could not be sent. Try again or use a different address.",
+            true,
+        ),
         "conflict" => (
             "That request key was already used for a different change.",
             false,
@@ -116,7 +142,7 @@ fn unauthorized() -> Response {
 
 /// Builds trusted account endpoints; merge before the API fallback.
 pub fn routes<S: Clone + Send + Sync + 'static>(service: HttpAuth) -> Router<S> {
-    Router::new()
+    oidc::routes(onboarding::routes(Router::new()))
         .route("/api/v1/auth/status", get(status))
         .route("/api/v1/auth/setup/start", post(setup_start))
         .route("/api/v1/auth/setup/finish", post(setup_finish))
@@ -217,8 +243,8 @@ async fn session(
 ) -> Result<(AccountId, InstallationId), Response> {
     identify(service, headers).await.ok_or_else(unauthorized)
 }
-fn signed_in(service: &HttpAuth, account: AccountId, token: &str) -> Response {
-    let mut response = Json(json!({"user":{"id":account}})).into_response();
+fn signed_in(service: &HttpAuth, token: &str, payload: Value) -> Response {
+    let mut response = onboarding::private(payload);
     response.headers_mut().insert(
         SET_COOKIE,
         HeaderValue::from_str(&format!(
@@ -304,6 +330,9 @@ struct SetupStart {
     token: String,
     #[serde(default)]
     name: String,
+    username: Option<String>,
+    email: Option<String>,
+    verification_id: Option<String>,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -338,14 +367,26 @@ struct Revoke {
     installation: InstallationId,
 }
 async fn status(State(s): State<HttpAuth>, req: Request) -> Reply {
-    Ok(Json(json!({"setup":s.auth.setup_needed().await.map_err(error)?,"signed_in":identify(&s,req.headers()).await.is_some()})).into_response())
+    Ok(onboarding::private(
+        json!({"setup":s.auth.setup_needed().await.map_err(error)?,
+        "signed_in":identify(&s,req.headers()).await.is_some(),
+        "email_required":s.config.email_required,"mail_available":s.mail.is_some()}),
+    ))
 }
 async fn setup_start(State(s): State<HttpAuth>, req: Request) -> Reply {
     let source = source_key(&s, &req);
     let i: SetupStart = body(&s, req).await?;
     let (_, ceremony, options) = s
         .auth
-        .start_setup(&i.token, &i.name, &source)
+        .start_setup_profile(
+            &i.token,
+            &i.name,
+            i.username.as_deref(),
+            i.email.as_deref(),
+            i.verification_id.as_deref(),
+            s.config.email_required,
+            &source,
+        )
         .await
         .map_err(|e| {
             if e.code() == ErrorCode::SetupTokenInvalid {
@@ -358,18 +399,32 @@ async fn setup_start(State(s): State<HttpAuth>, req: Request) -> Reply {
 }
 async fn setup_finish(State(s): State<HttpAuth>, req: Request) -> Reply {
     let i: Finish = body(&s, req).await?;
-    let (a, _, t) = s
+    let (a, _, t, codes) = s
         .auth
         .finish_http_setup(&i.ceremony, i.credential, &i.device)
         .await
         .map_err(error)?;
-    Ok(signed_in(&s, a, &t))
+    let security = s.auth.account_security_status(a).await.map_err(error)?;
+    Ok(signed_in(
+        &s,
+        &t,
+        json!({"user":{"id":a},"recovery_codes":codes,
+        "second_passkey_prompt":security["second_passkey_prompt"]}),
+    ))
 }
 async fn start(s: HttpAuth, req: Request, reverify: bool) -> Reply {
     let source = source_key(&s, &req);
     s.auth.admit_http_login(&source).map_err(error)?;
     let expected = if reverify {
-        Some(session(&s, req.headers()).await?.0)
+        let caller = session(&s, req.headers()).await?;
+        if s.auth.oidc_session(caller).await.map_err(error)?.is_some() {
+            return Err(failure(
+                403,
+                "forbidden",
+                "use the provider for a fresh check",
+            ));
+        }
+        Some(caller.0)
     } else {
         None
     };
@@ -393,17 +448,30 @@ async fn reverify_start(State(s): State<HttpAuth>, req: Request) -> Reply {
 }
 async fn finish(s: HttpAuth, req: Request, reverify: bool) -> Reply {
     let expected = if reverify {
-        Some(session(&s, req.headers()).await?.0)
+        let caller = session(&s, req.headers()).await?;
+        if s.auth.oidc_session(caller).await.map_err(error)?.is_some() {
+            return Err(failure(
+                403,
+                "forbidden",
+                "use the provider for a fresh check",
+            ));
+        }
+        Some(caller.0)
     } else {
         None
     };
     let i: Finish = body(&s, req).await?;
-    let (a, _, t) = s
+    let (a, _, t, codes) = s
         .auth
         .finish_http_login(expected, &i.ceremony, i.credential, &i.device)
         .await
         .map_err(error)?;
-    Ok(signed_in(&s, a, &t))
+    let payload = if codes.is_empty() {
+        json!({"user":{"id":a}})
+    } else {
+        json!({"user":{"id":a},"recovery_codes":codes,"second_passkey_prompt":true})
+    };
+    Ok(signed_in(&s, &t, payload))
 }
 async fn login_finish(State(s): State<HttpAuth>, req: Request) -> Reply {
     finish(s, req, false).await
@@ -424,10 +492,19 @@ async fn logout(State(s): State<HttpAuth>, req: Request) -> Reply {
 }
 async fn me(State(s): State<HttpAuth>, req: Request) -> Reply {
     let (a, i) = session(&s, req.headers()).await?;
-    Ok(
-        Json(json!({"user":s.auth.account_profile(a).await.map_err(error)?,"installation":i}))
-            .into_response(),
-    )
+    let mut security = s.auth.account_security_status(a).await.map_err(error)?;
+    security["user"] = s.auth.account_profile(a).await.map_err(error)?;
+    security["installation"] = json!(i);
+    security["mail_available"] = json!(s.mail.is_some());
+    security["provider_links"] = json!(s.auth.oidc_links(a).await.map_err(error)?);
+    security["sign_in_provider"] = json!(
+        s.auth
+            .oidc_session((a, i))
+            .await
+            .map_err(error)?
+            .map(|s| s.provider)
+    );
+    Ok(onboarding::private(security))
 }
 async fn installations(State(s): State<HttpAuth>, req: Request) -> Reply {
     let (a, current) = session(&s, req.headers()).await?;
@@ -469,6 +546,15 @@ async fn add_finish(State(s): State<HttpAuth>, req: Request) -> Reply {
         .finish_add_passkey(a, install, &i.ceremony, i.credential, &i.name)
         .await
         .map_err(error)?;
+    if let Some(mail) = &s.mail {
+        if let Ok(Some(to)) = s.auth.security_email(a).await {
+            mail.notice(calternal_auth::AccountMail {
+                to,
+                subject: "A passkey was added to your Calternal account",
+                code: None,
+            });
+        }
+    }
     Ok(Json(json!({"passkey":row})).into_response())
 }
 async fn rename(State(s): State<HttpAuth>, req: Request) -> Reply {

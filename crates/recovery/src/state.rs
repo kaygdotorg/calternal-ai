@@ -19,6 +19,15 @@ pub(crate) const OWNER_TABLES: &[(char, &str)] = &[
 // owner mapping here, or recovery configuration refuses the database.
 const SPECS: &[(&str, char, &str)] = &[
     ("users", '1', "id"),
+    ("oidc_providers", '0', ""),
+    ("oidc_links", '1', "user_id"),
+    ("oidc_sessions", '1', "user_id"),
+    ("account_details", '1', "user_id"),
+    ("account_recovery_codes", '1', "user_id"),
+    ("account_email_challenges", '1', "user_id"),
+    ("account_recovery_flows", '1', "user_id"),
+    ("account_recovery_grants", '1', "user_id"),
+    ("account_security_events", '1', "user_id"),
     ("passkeys", '1', "user_id"),
     ("setup_tokens", '1', "user_id"),
     ("installations", '1', "user_id"),
