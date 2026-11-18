@@ -199,6 +199,7 @@ async fn compare_microvm_and_podman_under_perf_lock() {
     backend.shutdown().await.unwrap();
 
     if desired_pool > 0 {
+        let gate_idle_wake = config.memory_mib == 512;
         config.warm_guests = desired_pool;
         let pool = MicrovmBackend::new(root.path().join("pool"), config);
         let time = Instant::now();
@@ -247,15 +248,24 @@ async fn compare_microvm_and_podman_under_perf_lock() {
             restarted.release().await.unwrap();
             drop(restarted);
         }
+        let mut ranked_wakes_ms = idle_wakes_ms.clone();
+        ranked_wakes_ms.sort_by(f64::total_cmp);
+        // Nearest-rank p90 for ten samples is the ninth observation.
+        let idle_wake_p90_ms = ranked_wakes_ms[8];
         println!(
             "{}",
             json!({
                 "backend":"microvm",
                 "warm_pickup_ms":warm_pickup_ms,
-                "idle_wakes_ms":idle_wakes_ms
+                "idle_wakes_ms":idle_wakes_ms,
+                "idle_wake_p90_ms":idle_wake_p90_ms
             })
         );
         pool.erase(spec.account_id, None).await.unwrap();
         pool.shutdown().await.unwrap();
+        assert!(
+            !gate_idle_wake || idle_wake_p90_ms < 1100.0,
+            "idle wake p90 must be under 1.1 s, observed {idle_wake_p90_ms:.2} ms"
+        );
     }
 }

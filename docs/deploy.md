@@ -203,6 +203,8 @@ two prebooted guests with blank account data, within the configured VMM cap.
 A new account can take one of them. An existing account cold boots from its
 own disk. After the last container lease releases its guest reference, a sweep
 can stop the guest after ten idle minutes, with a 15-second sweep interval.
+The 512 MiB performance budget for resuming a stopped guest is about one
+second, p90 under 1.1 s, through completion of the first command.
 CPU and RAM are configured per guest. The writable disk is sparse and capped
 by its logical size at creation. Reserve host disk capacity for all retained
 account disks. Changing disk size affects new disks. The plan decision bills elapsed sandbox running time. Monthly accounting
