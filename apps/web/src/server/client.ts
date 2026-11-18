@@ -16,6 +16,13 @@ import { link } from "./link.svelte";
 
 /** Operations that only read (by their last word, as in `contract/operations.json`): they are answered only for a live session, so they may go before the session is confirmed. Everything else is held (default deny). */
 const READS = /(?:^|\.)(?:list|get|history|members|lookup|preview|events|summarize|resolve)$/;
+/**
+ * Reads the last word does not tell (the contract's `mutates: false`). They must be here: a read held behind the session check can deadlock the start-up that waits for it (`onboarding.state`, read by `boot.ts` before the
+ * check settles, was held by it and nothing then sent). `reads.test.ts` compares this list with the contract in both directions, so a new read is caught when it is added.
+ */
+const READ_OPS = new Set(["onboarding.state", "search.query", "plugins.manifests", "sharing.audiences", "sharing.shared_with_me", "sharing.link_copy", "fonts.catalogue", "fonts.status", "fonts.faces", "provider.sign_in.status", "machines.onboarding", "agent.readiness"]);
+/** Whether an operation only reads, so it may go before the session is confirmed. */
+export const isRead = (operation: string): boolean => READ_OPS.has(operation) || READS.test(operation);
 
 /** A failure the server reported (`code` is its stable category) or a transport failure (`code` is "unavailable"). */
 export class ServerError extends Error {
