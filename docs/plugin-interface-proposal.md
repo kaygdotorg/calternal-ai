@@ -41,6 +41,32 @@ scoped reactive values contract must publish removals and updated resolved
 contributions to the owner under the same space and capability checks.
 See the [manifest contract](plugin-api.md#authoring-and-interface-prototype).
 
+### App switcher entries
+
+Put app declarations in a dedicated manifest section. An app introduces a
+navigation identity and owns a route prefix. Slot contributions render
+inside the selected app, and may come from other enabled packages. Each
+app declares an ID, a required display name, an icon, and an internal route
+prefix. The host uses the name as the accessible label in the icon-only
+switcher. It normalizes local prefixes, rejects external or ambiguous
+addresses and refuses overlaps with other apps or protected host routes.
+A prefix grants no operation or data access.
+[Addresses](addresses.md)
+
+The host accepts an icon name from its own catalogue or the data for one
+SVG path. Parse its path commands and numeric operands, including the
+required initial move and the grammar for arc flags. Reject markup, extra
+attributes, invalid command arity, non-finite or out-of-range coordinates,
+and paths that exceed bounded input length or segment count.
+The host draws the validated path in its own fixed view box and controls
+color and sizing. CSS, scripts and resource references have no place in
+the declaration. Set the exact validation bounds with the web and Swift
+renderers before freezing the manifest shape.
+
+The switcher appends enabled plugin apps after its built-in entries in
+the current space. Every package uses the same declaration, visibility
+and routing checks, regardless of publisher. If the active plugin's entry
+is removed, the host falls back to Threads.
 
 ## Sealed components
 
@@ -246,10 +272,8 @@ the pool enrollment steps. Keep machine identifiers and other accounts'
 grants out of the caller's error. [Operator pool enrollment](../crates/server/README.md#machines)
 
 Replace the enrolled-machine path's fixed eight-worker limit with the sum
-of the effective sandbox capacities of eligible enrolled pool machines.
-Under the reported-ceiling option, the bound is the sum of the
-authenticated `max_sandboxes` values. Under the operator-clamp option, sum
-the smaller of the reported and operator-configured limit at each machine.
+of the authenticated `max_sandboxes` ceilings of eligible enrolled pool
+machines. The runner's configured ceiling is the per-machine bound.
 Use checked arithmetic. At each machine, subtract the greater of the
 server's reservation count and the runner's authenticated occupied count.
 Server reservations include other sandbox leases and stopping workers
@@ -347,7 +371,6 @@ shipping.
 
 | Choice | Options and costs |
 | --- | --- |
-| Machine ceiling | Use each authenticated runner's configured sandbox ceiling, or clamp it with an operator-controlled per-machine maximum. The clamp adds configuration and limits the effect of a misconfigured report. |
 | Container readiness | Reuse the negotiated backend and the first start result, or require a cached positive container-engine check tied to the machine session. A check adds readiness traffic and makes a missing engine distinguishable before a plugin times out. |
 | Destination breadth | Start with exact host grants and approval for each new destination, or explicitly allow bounded domain patterns. Exact hosts incur review when providers add endpoints. Patterns grant access to more endpoints and need clear ownership and redirect rules. |
 | Setting approvals and credential scope | A Manager can approve each exact destination, or can delegate approval within a manifest's reviewed protocol and port envelope. Delegation reduces mail setup friction and increases authority. Decide with it which endpoints and credentials are private to the person and which are shared in the space. |
