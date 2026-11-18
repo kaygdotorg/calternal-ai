@@ -532,6 +532,10 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
         "sign_in": {
           "description": "Whether the executable implements the private `--sign-in` mode.",
           "type": "boolean"
+        },
+        "title_generation": {
+          "description": "Whether the adapter implements the private, stateless `--title` command.",
+          "type": "boolean"
         }
       },
       "required": [
