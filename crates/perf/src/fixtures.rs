@@ -67,8 +67,16 @@ pub(crate) fn build(a: &Args, root: &Path, notes: usize, spaces: usize) -> Resul
         first,
     })
 }
+/// Prepare a fresh, owner-only directory for a disposable perf run.
+pub(crate) fn private_work(path: &Path) -> Result<()> {
+    if path.symlink_metadata().is_ok() {
+        return Err("use a fresh --work directory".into());
+    }
+    Ok(calternal_fsio::private::directory(path)?)
+}
+
 pub(crate) fn copy(source: &Path, dest: &Path) -> Result<()> {
-    std::fs::create_dir_all(dest)?;
+    calternal_fsio::private::directory(dest)?;
     for d in ["appdata", "userdata-ssd", "userdata-hdd"] {
         if !std::process::Command::new("cp")
             .args(["-a", "--reflink=auto"])

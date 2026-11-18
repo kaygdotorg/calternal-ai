@@ -52,6 +52,13 @@ The only broker methods a worker may request.
       ]
     },
     {
+      "description": "List a bounded page of live items from the calling plugin's own kind.",
+      "type": "string",
+      "enum": [
+        "list_items_v1"
+      ]
+    },
+    {
       "description": "Write an authorized item.",
       "type": "string",
       "enum": [

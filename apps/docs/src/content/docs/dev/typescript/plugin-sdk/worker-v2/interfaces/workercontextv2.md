@@ -35,7 +35,7 @@ Call a declared broker method; the host rechecks live authority and targets.
 
 | Parameter | Type |
 | ------ | ------ |
-| `method` | [`HostCallKind`](/docs/dev/typescript/plugin-sdk/manifest-v1/type-aliases/hostcallkind/) |
+| `method` | [`HostCallKind`](/docs/dev/typescript/plugin-sdk/module-index/type-aliases/hostcallkind/) |
 | `input` | `unknown` |
 
 #### Returns
@@ -55,7 +55,7 @@ Costs one existing wire round trip per call. Limited to MAX_V2_PENDING entries.
 
 | Parameter | Type |
 | ------ | ------ |
-| `calls` | readonly (readonly \[[`HostCallKind`](/docs/dev/typescript/plugin-sdk/manifest-v1/type-aliases/hostcallkind/), `unknown`\])[] |
+| `calls` | readonly (readonly \[[`HostCallKind`](/docs/dev/typescript/plugin-sdk/module-index/type-aliases/hostcallkind/), `unknown`\])[] |
 
 #### Returns
 

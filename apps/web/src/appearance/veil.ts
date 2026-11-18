@@ -41,8 +41,12 @@ export interface Veil {
   ratio: number;
 }
 
-const lin = (v: number): number => ((v /= 255) <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
+/** sRGB to linear light: a table for whole channel values (the blends that are measured are rounded to them), the formula between. */
+const LIN = new Float64Array(256).map((_, i) => { const v = i / 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; });
+const lin = (v: number): number => (Number.isInteger(v) && v >= 0 && v <= 255 ? LIN[v]! : (v /= 255) <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
 const delin = (l: number): number => Math.round(255 * (l <= 0.0031308 ? 12.92 * l : 1.055 * l ** (1 / 2.4) - 0.055));
+/** WCAG relative luminance of a colour given as three whole channel values (0 to 255): no allocation, for the loops that measure many pixels. */
+export const lumInt = (r: number, g: number, b: number): number => 0.2126 * LIN[r]! + 0.7152 * LIN[g]! + 0.0722 * LIN[b]!;
 /** WCAG relative luminance of an encoded colour. */
 export const lum = ([r, g, b]: RGB): number => 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
 /** WCAG contrast ratio of two luminances. */
@@ -50,8 +54,17 @@ export const ratio = (a: number, b: number): number => (Math.max(a, b) + 0.05) /
 /** `a` of `v` over `w`, in encoded sRGB. */
 export const over = (w: RGB, v: RGB, a: number): RGB => [(1 - a) * w[0] + a * v[0], (1 - a) * w[1] + a * v[1], (1 - a) * w[2] + a * v[2]];
 const mix = (x: RGB, y: RGB, t: number): RGB => over(x, y, t);
-/** The 1st percentile of a list. */
-export const p01 = (xs: number[]): number => [...xs].sort((a, b) => a - b)[Math.floor(0.01 * (xs.length - 1))]!;
+/** The 1st percentile of a list: the element a full sort would put at index `floor(0.01 * (n - 1))`, found by selection (linear time; the sort it replaces was most of the cost of solving a veil, repeated for every surface on the page). */
+export function p01(xs: number[]): number {
+  const k = Math.floor(0.01 * (xs.length - 1)), a = Float64Array.from(xs);
+  let lo = 0, hi = a.length - 1;
+  while (lo < hi) {
+    const pivot = a[(lo + hi) >> 1]!; let i = lo, j = hi;
+    while (i <= j) { while (a[i]! < pivot) i++; while (a[j]! > pivot) j--; if (i <= j) { const t = a[i]!; a[i] = a[j]!; a[j] = t; i++; j--; } }
+    if (k <= j) hi = j; else if (k >= i) lo = i; else break;
+  }
+  return a[k]!;
+}
 
 /** The starting opacity of a surface's tint layer when `tint` is on (a sidebar's 0.35 is the plugin's sidebar default; the card's 0.85 its chat default); the solver raises Dim (or Tint when Dim is off) above the starting values only as far as the readability floor needs. The card's veil is computed, not started from here. */
 export const TINT_A: Record<Role, number> = { side: 0.35, card: 0.85 };
@@ -63,12 +76,8 @@ const GAIN: Record<Scheme, number> = { light: 0.25, dark: 0.33 };
 const C_CAP = 0.05, A_MAX = 0.9, FLIP_GAIN = 0.12;
 /** Headroom over each target for what the model does not see: the grain, the JPEG, and pixels between the 48 by 48 samples. */
 const HEAD = 0.35;
-/** The contrast ratios the veil is solved to for ink, secondary and tertiary text. Mutated by `setFloor`; read by every solve, so a change needs a re-solve (the wallpaper module schedules it). */
-export const TARGET: { ink: number; ink2: number; ink3: number } = { ink: 7, ink2: 5.5, ink3: 4.5 };
-/** The readability floors the veil is solved to: `current` (7, 5.5, 4.5) or `low` (4.5, 4, 3), which shows more of the picture. `low` exists for the owner's side-by-side comparison only (Settings, Appearance, Compare). */
-const FLOORS = { current: { ink: 7, ink2: 5.5, ink3: 4.5 }, low: { ink: 4.5, ink2: 4, ink3: 3 } } as const;
-/** Switches the readability floor between `current` and `low` (the owner's side-by-side comparison; nothing else should call it). Takes effect at the next solve. */
-export function setFloor(f: keyof typeof FLOORS): void { Object.assign(TARGET, FLOORS[f]); }
+/** The contrast ratios the veil is solved to for ink, secondary and tertiary text: the one readability floor (7:1, with text that flips between light and dark where it must; the owner's decision, 2026-11-18). */
+export const TARGET: { readonly ink: number; readonly ink2: number; readonly ink3: number } = { ink: 7, ink2: 5.5, ink3: 4.5 };
 
 // ---- OKLCH, for the veil's hue ----
 const toOk = ([r, g, b]: RGB): { L: number; c: number; h: number } => {

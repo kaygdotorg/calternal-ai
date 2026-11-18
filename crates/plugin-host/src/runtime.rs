@@ -158,6 +158,17 @@ pub trait HostBroker {
     /// Recheck current session, installation, membership, plugin activation and attenuated grants.
     /// Called for every callback and worker delivery, including chunks and completion.
     fn authorize(&mut self, authority: &Authority, required: ManifestCapability) -> bool;
+    /// Check an already-admitted invocation during internal routing. Adapters
+    /// may reuse their pinned activation here. Effects and disclosure use a
+    /// fresh check.
+    fn authorize_pinned(&mut self, authority: &Authority, required: ManifestCapability) -> bool {
+        self.authorize(authority, required)
+    }
+    /// Check a worker result before handing it to the adapter. An adapter may
+    /// defer the activation read to its final caller-facing delivery boundary.
+    fn authorize_delivery(&mut self, authority: &Authority, required: ManifestCapability) -> bool {
+        self.authorize(authority, required)
+    }
     /// Cost: adapter-defined validation, I/O and durability; exactly one broker call per callback.
     /// Validate method input/target and apply the effect under current authority atomically.
     /// Secret requests return only `{ "handle": "opaque-id" }`; malformed responses are redacted.
@@ -297,7 +308,7 @@ impl WorkerSession {
             .find(|op| op.id == operation)
             .ok_or(Error::Invalid)?
             .required_capability;
-        if !broker.authorize(&authority, required) {
+        if !broker.authorize_pinned(&authority, required) {
             return Err(Error::Refused);
         }
         self.seen.insert(id.clone());
@@ -386,7 +397,7 @@ impl WorkerSession {
                     Ok(data) => (true, data),
                     Err(_) => (false, Value::Null),
                 };
-                if !broker.authorize(authority, invocation.required) {
+                if !broker.authorize_pinned(authority, invocation.required) {
                     ok = false;
                     data = Value::Null;
                 }
@@ -441,7 +452,7 @@ impl WorkerSession {
                 if *sequence != invocation.sequence || !invocation.jobs.contains(job_id) {
                     return Err(Error::Invalid);
                 }
-                if !broker.authorize(&invocation.authority, invocation.required) {
+                if !broker.authorize_pinned(&invocation.authority, invocation.required) {
                     return Err(Error::Refused);
                 }
                 invocation.sequence = invocation.sequence.checked_add(1).ok_or(Error::Invalid)?;
@@ -455,7 +466,7 @@ impl WorkerSession {
                 if self.deliveries.len() >= MAX_QUEUE {
                     return Err(Error::BackPressure);
                 }
-                if !broker.authorize(&invocation.authority, invocation.required) {
+                if !broker.authorize_pinned(&invocation.authority, invocation.required) {
                     return Err(Error::Refused);
                 }
                 if let Message::Complete { data } = &frame.message {
@@ -498,7 +509,8 @@ impl WorkerSession {
         });
         Ok(())
     }
-    /// Drain one host frame after checking current authority; cancelled messages bypass that check.
+    /// Drain one host frame. Reuse admission for the invocation and check live
+    /// authority before disclosing a host reply. Cancel frames carry no payload.
     /// Revoked or completed invocation payloads are discarded before transport delivery.
     /// Cost: O(1) plus one broker authorization check, no allocation or library I/O/locks.
     pub fn next_outgoing(&mut self, broker: &mut impl HostBroker) -> Result<Option<Frame>, Error> {
@@ -510,17 +522,25 @@ impl WorkerSession {
                 .active
                 .get(&frame.invocation_id)
                 .ok_or(Error::Invocation)?;
-            if !broker.authorize(&invocation.authority, invocation.required) {
+            let authorized = if matches!(frame.message, Message::Invoke { .. }) {
+                broker.authorize_pinned(&invocation.authority, invocation.required)
+            } else {
+                broker.authorize(&invocation.authority, invocation.required)
+            };
+            if !authorized {
                 return Err(Error::Refused);
             }
         }
         Ok(Some(frame))
     }
-    /// Drain one result after a fresh authority check; revoked payloads are discarded.
+    /// Drain one result through the adapter's delivery authorization. Adapters
+    /// that guard delivery themselves can defer the live activation check to that edge.
     /// Cost: O(1) queue removal plus one broker authorization check, no library I/O.
     pub fn next_delivery(&mut self, broker: &mut impl HostBroker) -> Result<Option<Frame>, Error> {
         match self.deliveries.pop_front() {
-            Some((frame, authority, required)) if broker.authorize(&authority, required) => {
+            Some((frame, authority, required))
+                if broker.authorize_delivery(&authority, required) =>
+            {
                 Ok(Some(frame))
             }
             Some(_) => Err(Error::Refused),

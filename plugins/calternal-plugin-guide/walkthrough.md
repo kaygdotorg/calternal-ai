@@ -15,3 +15,21 @@
 7. Run `calternal plugin bench` to compare fixture transport paths.
 8. Show the manifest, operation risks and host calls to the administrator
    who will review and activate the package.
+
+For a reading-list plugin, declare the `reading-items` kind and the
+`list_items_v1` host call. In its read operation, pass the declared kind
+and the optional incoming cursor to the SDK:
+
+```ts
+import { listItems } from "@calternal/plugin-sdk";
+
+const page = await listItems(context, {
+  kind: "reading-items",
+  limit: 25,
+  cursor: input.cursor,
+});
+```
+
+Use `page.items` to populate the generated list and return
+`page.next_cursor` in the declared result. Declare the read operation
+with `space.read`, `read_only` idempotency and `read` risk.

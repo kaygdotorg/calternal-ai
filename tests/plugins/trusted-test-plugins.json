@@ -5,7 +5,7 @@
       "version": "0.1.0",
       "manifest": "jobs-demo/manifest.json",
       "worker": "jobs-demo/worker.js",
-      "worker_sha256": "6856503cf880d91e1c314a62a37a5d2034e120088bc6f3563d4dc2753ef81197",
+      "worker_sha256": "88628ec2775248a3b57849f4ec62b2d9347b4e9e1919fcdcd235719b7d0a1459",
       "default_enabled": false
     }
   ]

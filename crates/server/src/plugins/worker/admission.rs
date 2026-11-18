@@ -92,7 +92,10 @@ impl WorkerPool {
             if let Some(gate) = starts.get(&key).and_then(std::sync::Weak::upgrade) {
                 gate
             } else {
-                if starts.len() >= self.max_workers.saturating_mul(2) {
+                if self
+                    .fixture_limit
+                    .is_some_and(|limit| starts.len() >= limit.saturating_mul(2))
+                {
                     return Outcome::Failed(
                         Error::unavailable("worker admission capacity exhausted")
                             .with_details(serde_json::json!({"reason":"worker_capacity"})),
@@ -324,6 +327,9 @@ impl WorkerPool {
     /// Evict one idle worker if the pool is full; refuse when every worker is busy.
     fn make_room(&self, workers: &mut HashMap<WorkerKey, Worker>) -> Result<(), Error> {
         workers.retain(|_, w| w.usable());
+        let Some(fixture_limit) = self.fixture_limit else {
+            return Ok(());
+        };
         if self.permits.available_permits() > 0 {
             return Ok(());
         }
@@ -337,7 +343,7 @@ impl WorkerPool {
                 workers.remove(&key); // dropping the handle stops it
                 Ok(())
             }
-            None if workers.len() < self.max_workers => Ok(()),
+            None if workers.len() < fixture_limit => Ok(()),
             None => Err(
                 Error::unavailable("extension workers are busy; retry shortly")
                     .with_details(serde_json::json!({ "reason": "worker_capacity" })),
