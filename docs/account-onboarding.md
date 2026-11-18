@@ -13,7 +13,7 @@ receipt pipeline. Times are Unix milliseconds.
 | POST /email/confirm | `{challenge_id, code, token?}` | `{verification_id?, email_status}` |
 | POST /setup/start | `{token, name, username, email?, verification_id?}` | `{ceremony, options}` |
 | POST /setup/finish | `{ceremony, credential, device?}` | Session cookie and `{user, recovery_codes, second_passkey_prompt}` |
-| GET /me | Session cookie | Existing `{user, installation}` with username on user, plus `{email, email_status, mail_available, second_passkey_prompt, recovery_codes_configured, email_recovery_pending}` |
+| GET /me | Session cookie | Existing `{user, installation}` with username on user, plus `{email, email_status, mail_available, second_passkey_prompt, recovery_codes_configured, email_recovery_pending, email_setup_required}` |
 | POST /username/change | `{username}` | `{username}` |
 | POST /recovery/codes/regenerate | `{}` | `{recovery_codes}` |
 | POST /passkeys/prompt/dismiss | `{}` | `{second_passkey_prompt: false}` |
@@ -31,6 +31,15 @@ and requires recent passkey proof. An email installation can be configured to
 require verification at signup. On a server without SMTP, email is optional and
 the account can save an unverified address during setup or address change.
 A previously verified address is kept until mail can verify its replacement.
+
+After enabling the email policy, existing accounts can still sign in. The
+passkey `/login/finish` response and `/me` include `email_setup_required`
+when policy requires verification and the account has no verified address.
+Use it to offer the email step after accepting the session. With no mail
+configured, `mail_available: false` lets Account show “Email cannot be
+verified because this server has no mail configured.” The policy switch
+changes configuration only.
+
 
 Recovery uses `code` or `email` as the method. On the email path the first
 proof starts the hold. Status reports `proof`, `waiting` or `claim`. The first

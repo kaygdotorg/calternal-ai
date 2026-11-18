@@ -472,11 +472,17 @@ async fn finish(s: HttpAuth, req: Request, reverify: bool) -> Reply {
         .finish_http_login(expected, &i.ceremony, i.credential, &i.device)
         .await
         .map_err(error)?;
-    let payload = if codes.is_empty() {
-        json!({"user":{"id":a}})
+    let email_setup_required = if s.config.email_required {
+        let security = s.auth.account_security_status(a).await.map_err(error)?;
+        security["email_status"] != "verified"
     } else {
-        json!({"user":{"id":a},"recovery_codes":codes,"second_passkey_prompt":true})
+        false
     };
+    let mut payload = json!({"user":{"id":a},"email_setup_required":email_setup_required});
+    if !codes.is_empty() {
+        payload["recovery_codes"] = json!(codes);
+        payload["second_passkey_prompt"] = json!(true);
+    }
     Ok(signed_in(&s, &t, payload))
 }
 async fn login_finish(State(s): State<HttpAuth>, req: Request) -> Reply {
@@ -502,6 +508,8 @@ async fn me(State(s): State<HttpAuth>, req: Request) -> Reply {
     security["user"] = s.auth.account_profile(a).await.map_err(error)?;
     security["installation"] = json!(i);
     security["mail_available"] = json!(s.mail.is_some());
+    security["email_setup_required"] =
+        json!(s.config.email_required && security["email_status"] != "verified");
     security["provider_links"] = json!(s.auth.oidc_links(a).await.map_err(error)?);
     security["sign_in_provider"] = json!(
         s.auth
