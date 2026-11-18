@@ -11808,7 +11808,7 @@
   {
     "risk": "read",
     "id": "collections.get",
-    "description": "Open a saved notes collection",
+    "description": "Read a saved notes collection and its current revision",
     "mutates": false,
     "input_schema": {
       "$schema": "http://json-schema.org/draft-07/schema#",
@@ -11828,8 +11828,153 @@
     },
     "output_schema": {
       "$schema": "http://json-schema.org/draft-07/schema#",
-      "additionalProperties": true,
-      "title": "Map_of_AnyValue",
+      "definitions": {
+        "CollectionMember": {
+          "description": "A visible note in a saved collection.",
+          "properties": {
+            "id": {
+              "description": "Canonical note UUID.",
+              "type": "string"
+            },
+            "title": {
+              "description": "Current display title.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "title"
+          ],
+          "type": "object"
+        }
+      },
+      "description": "A saved Notes collection and its current visible members.",
+      "properties": {
+        "can_edit": {
+          "description": "Whether the caller may replace collection membership.",
+          "type": "boolean"
+        },
+        "id": {
+          "description": "Stable collection UUID.",
+          "type": "string"
+        },
+        "members": {
+          "description": "Same-space live notes in collection order.",
+          "items": {
+            "$ref": "#/definitions/CollectionMember"
+          },
+          "type": "array"
+        },
+        "revision": {
+          "description": "Current opaque content revision.",
+          "type": "string"
+        },
+        "title": {
+          "description": "Current display title.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "can_edit",
+        "id",
+        "members",
+        "revision",
+        "title"
+      ],
+      "title": "CollectionGetResult",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "read",
+    "id": "collections.list",
+    "description": "List saved notes collections in a space",
+    "mutates": false,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "List saved Notes collections in a space the caller can read.",
+      "properties": {
+        "cursor": {
+          "description": "Opaque continuation from this space and account.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "limit": {
+          "description": "Page size, clamped to 1–50. Defaults to 50.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "space_id": {
+          "description": "Owning space UUID.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "space_id"
+      ],
+      "title": "CollectionListInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "definitions": {
+        "CollectionSummary": {
+          "description": "A saved Notes collection as shown in its space's list.",
+          "properties": {
+            "can_edit": {
+              "description": "Whether the caller may replace collection membership.",
+              "type": "boolean"
+            },
+            "id": {
+              "description": "Stable collection UUID.",
+              "type": "string"
+            },
+            "revision": {
+              "description": "Current opaque content revision.",
+              "type": "string"
+            },
+            "title": {
+              "description": "Current display title.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "can_edit",
+            "id",
+            "revision",
+            "title"
+          ],
+          "type": "object"
+        }
+      },
+      "description": "A continuation page of saved Notes collections.",
+      "properties": {
+        "items": {
+          "description": "Saved Notes collections in this page.",
+          "items": {
+            "$ref": "#/definitions/CollectionSummary"
+          },
+          "type": "array"
+        },
+        "next_cursor": {
+          "description": "Opaque continuation when another page may exist.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "items"
+      ],
+      "title": "CollectionPage",
       "type": "object"
     }
   },
@@ -12132,7 +12277,7 @@
   {
     "risk": "read",
     "id": "sharing.shared_with_me",
-    "description": "List items shared with the signed-in account",
+    "description": "List items shared with the signed-in account, including membership edit access for collections",
     "mutates": false,
     "input_schema": {
       "$schema": "http://json-schema.org/draft-07/schema#",
@@ -12306,7 +12451,7 @@
   {
     "risk": "reversible",
     "id": "sharing.revoke",
-    "description": "Remove one item grant",
+    "description": "Revoke one item grant, including while the item is in Trash",
     "mutates": true,
     "input_schema": {
       "$schema": "http://json-schema.org/draft-07/schema#",
@@ -15692,6 +15837,224 @@
     }
   },
   {
+    "risk": "reversible",
+    "id": "push.subscribe",
+    "description": "Register this browser for thread notifications",
+    "mutates": true,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Register or renew the signed-in installation's browser subscription.",
+      "properties": {
+        "auth": {
+          "description": "Unpadded base64url-encoded 16-byte browser authentication secret.",
+          "type": "string"
+        },
+        "endpoint": {
+          "description": "Browser PushSubscription endpoint, restricted to supported HTTPS providers.",
+          "type": "string"
+        },
+        "p256dh": {
+          "description": "Unpadded base64url-encoded uncompressed P-256 public key.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "auth",
+        "endpoint",
+        "p256dh"
+      ],
+      "title": "PushSubscribeInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "definitions": {
+        "PushDevice": {
+          "description": "One active subscription, with no endpoint or browser key material.",
+          "properties": {
+            "current": {
+              "description": "Whether the current credential belongs to this installation.",
+              "type": "boolean"
+            },
+            "device_id": {
+              "description": "Revocable installation UUID.",
+              "type": "string"
+            },
+            "expires_at_ms": {
+              "description": "Server-enforced expiry in Unix milliseconds.",
+              "format": "int64",
+              "type": "integer"
+            },
+            "name": {
+              "description": "Display name from the installation directory.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "current",
+            "device_id",
+            "expires_at_ms",
+            "name"
+          ],
+          "type": "object"
+        }
+      },
+      "description": "Subscription inventory and the public browser application server key.",
+      "properties": {
+        "application_server_key": {
+          "description": "Unpadded base64url VAPID public key for PushManager.subscribe.",
+          "type": "string"
+        },
+        "devices": {
+          "description": "The signed-in account's live subscriptions.",
+          "items": {
+            "$ref": "#/definitions/PushDevice"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "application_server_key",
+        "devices"
+      ],
+      "title": "PushDevices",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "reversible",
+    "id": "push.unsubscribe",
+    "description": "Remove one of your push subscriptions",
+    "mutates": true,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Remove an installation belonging to the signed-in account.",
+      "properties": {
+        "device_id": {
+          "description": "Installation UUID returned by push.devices.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "device_id"
+      ],
+      "title": "PushUnsubscribeInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "description": "Outcome of an idempotent subscription removal.",
+      "properties": {
+        "removed": {
+          "description": "True when a stored subscription was removed.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "removed"
+      ],
+      "title": "PushRemoved",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "read",
+    "id": "push.devices",
+    "description": "List your registered push devices and the public VAPID key",
+    "mutates": false,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Account-private list input. No caller-supplied account is accepted.",
+      "title": "AccountInputList",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "definitions": {
+        "PushDevice": {
+          "description": "One active subscription, with no endpoint or browser key material.",
+          "properties": {
+            "current": {
+              "description": "Whether the current credential belongs to this installation.",
+              "type": "boolean"
+            },
+            "device_id": {
+              "description": "Revocable installation UUID.",
+              "type": "string"
+            },
+            "expires_at_ms": {
+              "description": "Server-enforced expiry in Unix milliseconds.",
+              "format": "int64",
+              "type": "integer"
+            },
+            "name": {
+              "description": "Display name from the installation directory.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "current",
+            "device_id",
+            "expires_at_ms",
+            "name"
+          ],
+          "type": "object"
+        }
+      },
+      "description": "Subscription inventory and the public browser application server key.",
+      "properties": {
+        "application_server_key": {
+          "description": "Unpadded base64url VAPID public key for PushManager.subscribe.",
+          "type": "string"
+        },
+        "devices": {
+          "description": "The signed-in account's live subscriptions.",
+          "items": {
+            "$ref": "#/definitions/PushDevice"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "application_server_key",
+        "devices"
+      ],
+      "title": "PushDevices",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "external",
+    "id": "push.test",
+    "description": "Queue a test push to this browser",
+    "mutates": true,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Account-private list input. No caller-supplied account is accepted.",
+      "title": "AccountInputList",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "description": "Best-effort admission of a test notification for the current installation.",
+      "properties": {
+        "queued": {
+          "description": "True when the background worker accepted the test.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "queued"
+      ],
+      "title": "PushQueued",
+      "type": "object"
+    }
+  },
+  {
     "risk": "read",
     "id": "plugins.diagnostics",
     "description": "Inspect an installed plugin's readiness and recent worker failures",
@@ -16354,6 +16717,412 @@
         "plugin_id"
       ],
       "title": "PluginSettingChange",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "read",
+    "id": "harnesses.list",
+    "description": "List installed harnesses and their tested updates",
+    "mutates": false,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Account-private list input. No caller-supplied account is accepted.",
+      "title": "AccountInputList",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "definitions": {
+        "HarnessPin": {
+          "additionalProperties": false,
+          "description": "Immutable artifacts for an operator-reviewed provider runtime. The binaries run on the enrolled machine, inside the thread's sandbox.",
+          "properties": {
+            "guest_image_digest": {
+              "description": "Verified guest-image manifest digest, when a MicroVM image is staged.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "image": {
+              "description": "Full local OCI image ID, including its sha256 prefix.",
+              "type": "string"
+            },
+            "interactive": {
+              "description": "The adapter accepts stop, steer and approval responses during a turn.",
+              "type": "boolean"
+            },
+            "package_sha256": {
+              "description": "Integrity digest of the CLI artifact for this deployment.",
+              "type": "string"
+            },
+            "version": {
+              "description": "Exact official CLI version reported by the adapter.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "image",
+            "package_sha256",
+            "version"
+          ],
+          "type": "object"
+        },
+        "HarnessStatus": {
+          "description": "One installation-level runtime and its available changes.",
+          "properties": {
+            "active": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/HarnessPin"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Current immutable runtime pin, if one was activated."
+            },
+            "bundled": {
+              "description": "Whether the package has a bundled legacy runtime.",
+              "type": "boolean"
+            },
+            "id": {
+              "description": "Installed provider package identifier.",
+              "type": "string"
+            },
+            "name": {
+              "description": "Human-readable provider name.",
+              "type": "string"
+            },
+            "previous": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/HarnessPin"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Prior pin offered for rollback."
+            },
+            "tested": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/HarnessPin"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Candidate offered for activation after a successful smoke test."
+            }
+          },
+          "required": [
+            "bundled",
+            "id",
+            "name"
+          ],
+          "type": "object"
+        }
+      },
+      "description": "Catalog of installed harnesses visible to the installation administrator.",
+      "properties": {
+        "harnesses": {
+          "description": "Installed provider packages and their runtime status.",
+          "items": {
+            "$ref": "#/definitions/HarnessStatus"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "harnesses"
+      ],
+      "title": "HarnessList",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "reversible",
+    "id": "harnesses.stage",
+    "description": "Smoke-test a candidate harness runtime in a disposable sandbox",
+    "mutates": true,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "definitions": {
+        "HarnessOffer": {
+          "additionalProperties": false,
+          "description": "Public authentication instructions and deployment artifacts approved by the operator. The enrollment flow owns any credential bytes separately.",
+          "properties": {
+            "login_command": {
+              "description": "Display-only command for manual authentication in the sandbox.",
+              "type": "string"
+            },
+            "login_locations": {
+              "description": "Exact HTTPS origins and paths emitted by the adapter, without queries.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "pin": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/HarnessPin"
+                }
+              ],
+              "description": "Exact candidate the smoke test will run."
+            }
+          },
+          "required": [
+            "login_command",
+            "login_locations",
+            "pin"
+          ],
+          "type": "object"
+        },
+        "HarnessPin": {
+          "additionalProperties": false,
+          "description": "Immutable artifacts for an operator-reviewed provider runtime. The binaries run on the enrolled machine, inside the thread's sandbox.",
+          "properties": {
+            "guest_image_digest": {
+              "description": "Verified guest-image manifest digest, when a MicroVM image is staged.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "image": {
+              "description": "Full local OCI image ID, including its sha256 prefix.",
+              "type": "string"
+            },
+            "interactive": {
+              "description": "The adapter accepts stop, steer and approval responses during a turn.",
+              "type": "boolean"
+            },
+            "package_sha256": {
+              "description": "Integrity digest of the CLI artifact for this deployment.",
+              "type": "string"
+            },
+            "version": {
+              "description": "Exact official CLI version reported by the adapter.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "image",
+            "package_sha256",
+            "version"
+          ],
+          "type": "object"
+        }
+      },
+      "description": "Smoke-test a candidate package runtime on a selected enrolled machine.",
+      "properties": {
+        "guest_machine_id": {
+          "default": null,
+          "description": "MicroVM machine to qualify when the candidate includes a guest digest.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "description": "Installed provider package to load.",
+          "type": "string"
+        },
+        "machine_id": {
+          "description": "Enrolled machine authorized for private diagnostics.",
+          "type": "string"
+        },
+        "offer": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/HarnessOffer"
+            }
+          ],
+          "description": "Operator-approved candidate and public authentication information."
+        },
+        "space_id": {
+          "description": "Accessible space used to acquire a disposable lease.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "machine_id",
+        "offer",
+        "space_id"
+      ],
+      "title": "HarnessStage",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Immutable artifacts for an operator-reviewed provider runtime. The binaries run on the enrolled machine, inside the thread's sandbox.",
+      "properties": {
+        "guest_image_digest": {
+          "description": "Verified guest-image manifest digest, when a MicroVM image is staged.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "image": {
+          "description": "Full local OCI image ID, including its sha256 prefix.",
+          "type": "string"
+        },
+        "interactive": {
+          "description": "The adapter accepts stop, steer and approval responses during a turn.",
+          "type": "boolean"
+        },
+        "package_sha256": {
+          "description": "Integrity digest of the CLI artifact for this deployment.",
+          "type": "string"
+        },
+        "version": {
+          "description": "Exact official CLI version reported by the adapter.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "image",
+        "package_sha256",
+        "version"
+      ],
+      "title": "HarnessPin",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "reversible",
+    "id": "harnesses.activate",
+    "description": "Select an exact smoke-tested harness runtime for new work",
+    "mutates": true,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Select a tested runtime or restore the previous active runtime.",
+      "properties": {
+        "id": {
+          "description": "Installed provider package identifier.",
+          "type": "string"
+        },
+        "image": {
+          "description": "Exact immutable image ID observed in the list.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "image"
+      ],
+      "title": "HarnessSelect",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Immutable artifacts for an operator-reviewed provider runtime. The binaries run on the enrolled machine, inside the thread's sandbox.",
+      "properties": {
+        "guest_image_digest": {
+          "description": "Verified guest-image manifest digest, when a MicroVM image is staged.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "image": {
+          "description": "Full local OCI image ID, including its sha256 prefix.",
+          "type": "string"
+        },
+        "interactive": {
+          "description": "The adapter accepts stop, steer and approval responses during a turn.",
+          "type": "boolean"
+        },
+        "package_sha256": {
+          "description": "Integrity digest of the CLI artifact for this deployment.",
+          "type": "string"
+        },
+        "version": {
+          "description": "Exact official CLI version reported by the adapter.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "image",
+        "package_sha256",
+        "version"
+      ],
+      "title": "HarnessPin",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "reversible",
+    "id": "harnesses.rollback",
+    "description": "Restore a previously tested harness runtime",
+    "mutates": true,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Select a tested runtime or restore the previous active runtime.",
+      "properties": {
+        "id": {
+          "description": "Installed provider package identifier.",
+          "type": "string"
+        },
+        "image": {
+          "description": "Exact immutable image ID observed in the list.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "image"
+      ],
+      "title": "HarnessSelect",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Immutable artifacts for an operator-reviewed provider runtime. The binaries run on the enrolled machine, inside the thread's sandbox.",
+      "properties": {
+        "guest_image_digest": {
+          "description": "Verified guest-image manifest digest, when a MicroVM image is staged.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "image": {
+          "description": "Full local OCI image ID, including its sha256 prefix.",
+          "type": "string"
+        },
+        "interactive": {
+          "description": "The adapter accepts stop, steer and approval responses during a turn.",
+          "type": "boolean"
+        },
+        "package_sha256": {
+          "description": "Integrity digest of the CLI artifact for this deployment.",
+          "type": "string"
+        },
+        "version": {
+          "description": "Exact official CLI version reported by the adapter.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "image",
+        "package_sha256",
+        "version"
+      ],
+      "title": "HarnessPin",
       "type": "object"
     }
   },
@@ -17219,7 +17988,7 @@
         },
         "provider_id": {
           "default": "",
-          "description": "Optional provider plugin. An empty or absent value checks Claude Code.",
+          "description": "Optional provider plugin. An empty or absent value checks the installation's default provider.",
           "type": "string"
         },
         "space_id": {
@@ -17459,6 +18228,60 @@
           ],
           "type": "object"
         },
+        "ProviderBlocked": {
+          "description": "Why the caller cannot currently start a provider turn on one machine.",
+          "oneOf": [
+            {
+              "description": "The plugin is disabled or unavailable in this space.",
+              "enum": [
+                "disabled"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "The machine needs to reconnect.",
+              "enum": [
+                "machine_offline"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "The machine has no free sandbox slot for the caller.",
+              "enum": [
+                "machine_busy"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "The current provider has no observed status on this machine.",
+              "enum": [
+                "check_required"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "The provider observation expired. Run another check.",
+              "enum": [
+                "check_stale"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "The sandbox could not use the expected provider executable.",
+              "enum": [
+                "runtime_unavailable"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "The user's provider login is missing or expired.",
+              "enum": [
+                "sign_in_required"
+              ],
+              "type": "string"
+            }
+          ]
+        },
         "ProviderCheck": {
           "additionalProperties": false,
           "description": "A bounded observation of the official provider program's own check.",
@@ -17487,6 +18310,17 @@
           "additionalProperties": false,
           "description": "A machine's readiness for one provider in this space.",
           "properties": {
+            "blocked": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/ProviderBlocked"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The first unmet readiness condition. A fresh verified provider omits it."
+            },
             "check": {
               "anyOf": [
                 {
@@ -17653,6 +18487,16 @@
           "description": "Requested app prefix for an access request.",
           "type": "string"
         },
+        "approval_id": {
+          "default": "",
+          "description": "Native provider approval received from this active run.",
+          "type": "string"
+        },
+        "approve": {
+          "default": false,
+          "description": "Allow the named native approval for this run.",
+          "type": "boolean"
+        },
         "context": {
           "default": [],
           "description": "Labelled context contributions, bounded by the provider command budget.",
@@ -17718,7 +18562,7 @@
         },
         "provider_id": {
           "default": "",
-          "description": "Enabled provider plugin; empty selects calternal-claude-code.",
+          "description": "Enabled provider plugin; empty selects the installation's default provider.",
           "type": "string"
         },
         "retry_failed": {
@@ -17857,6 +18701,16 @@
           "description": "Requested app prefix for an access request.",
           "type": "string"
         },
+        "approval_id": {
+          "default": "",
+          "description": "Native provider approval received from this active run.",
+          "type": "string"
+        },
+        "approve": {
+          "default": false,
+          "description": "Allow the named native approval for this run.",
+          "type": "boolean"
+        },
         "context": {
           "default": [],
           "description": "Labelled context contributions, bounded by the provider command budget.",
@@ -17922,7 +18776,7 @@
         },
         "provider_id": {
           "default": "",
-          "description": "Enabled provider plugin; empty selects calternal-claude-code.",
+          "description": "Enabled provider plugin; empty selects the installation's default provider.",
           "type": "string"
         },
         "retry_failed": {
@@ -18061,6 +18915,16 @@
           "description": "Requested app prefix for an access request.",
           "type": "string"
         },
+        "approval_id": {
+          "default": "",
+          "description": "Native provider approval received from this active run.",
+          "type": "string"
+        },
+        "approve": {
+          "default": false,
+          "description": "Allow the named native approval for this run.",
+          "type": "boolean"
+        },
         "context": {
           "default": [],
           "description": "Labelled context contributions, bounded by the provider command budget.",
@@ -18126,7 +18990,7 @@
         },
         "provider_id": {
           "default": "",
-          "description": "Enabled provider plugin; empty selects calternal-claude-code.",
+          "description": "Enabled provider plugin; empty selects the installation's default provider.",
           "type": "string"
         },
         "retry_failed": {
@@ -18265,6 +19129,16 @@
           "description": "Requested app prefix for an access request.",
           "type": "string"
         },
+        "approval_id": {
+          "default": "",
+          "description": "Native provider approval received from this active run.",
+          "type": "string"
+        },
+        "approve": {
+          "default": false,
+          "description": "Allow the named native approval for this run.",
+          "type": "boolean"
+        },
         "context": {
           "default": [],
           "description": "Labelled context contributions, bounded by the provider command budget.",
@@ -18330,7 +19204,7 @@
         },
         "provider_id": {
           "default": "",
-          "description": "Enabled provider plugin; empty selects calternal-claude-code.",
+          "description": "Enabled provider plugin; empty selects the installation's default provider.",
           "type": "string"
         },
         "retry_failed": {
@@ -18469,6 +19343,16 @@
           "description": "Requested app prefix for an access request.",
           "type": "string"
         },
+        "approval_id": {
+          "default": "",
+          "description": "Native provider approval received from this active run.",
+          "type": "string"
+        },
+        "approve": {
+          "default": false,
+          "description": "Allow the named native approval for this run.",
+          "type": "boolean"
+        },
         "context": {
           "default": [],
           "description": "Labelled context contributions, bounded by the provider command budget.",
@@ -18534,7 +19418,7 @@
         },
         "provider_id": {
           "default": "",
-          "description": "Enabled provider plugin; empty selects calternal-claude-code.",
+          "description": "Enabled provider plugin; empty selects the installation's default provider.",
           "type": "string"
         },
         "retry_failed": {
@@ -18673,6 +19557,16 @@
           "description": "Requested app prefix for an access request.",
           "type": "string"
         },
+        "approval_id": {
+          "default": "",
+          "description": "Native provider approval received from this active run.",
+          "type": "string"
+        },
+        "approve": {
+          "default": false,
+          "description": "Allow the named native approval for this run.",
+          "type": "boolean"
+        },
         "context": {
           "default": [],
           "description": "Labelled context contributions, bounded by the provider command budget.",
@@ -18738,7 +19632,7 @@
         },
         "provider_id": {
           "default": "",
-          "description": "Enabled provider plugin; empty selects calternal-claude-code.",
+          "description": "Enabled provider plugin; empty selects the installation's default provider.",
           "type": "string"
         },
         "retry_failed": {
@@ -18877,6 +19771,16 @@
           "description": "Requested app prefix for an access request.",
           "type": "string"
         },
+        "approval_id": {
+          "default": "",
+          "description": "Native provider approval received from this active run.",
+          "type": "string"
+        },
+        "approve": {
+          "default": false,
+          "description": "Allow the named native approval for this run.",
+          "type": "boolean"
+        },
         "context": {
           "default": [],
           "description": "Labelled context contributions, bounded by the provider command budget.",
@@ -18942,7 +19846,435 @@
         },
         "provider_id": {
           "default": "",
-          "description": "Enabled provider plugin; empty selects calternal-claude-code.",
+          "description": "Enabled provider plugin; empty selects the installation's default provider.",
+          "type": "string"
+        },
+        "retry_failed": {
+          "default": false,
+          "description": "Explicit retry of a failed workspace discard; never implied by status polling.",
+          "type": "boolean"
+        },
+        "retry_settings": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/AgentRetrySettings"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Per-thread recovery override; absent uses the account defaults."
+        },
+        "source_app": {
+          "default": "",
+          "description": "Originating app operation prefix; empty grants no originating-app access.",
+          "type": "string"
+        },
+        "space_id": {
+          "default": "",
+          "description": "Owning space UUID, required for check/run, otherwise derived from the job.",
+          "type": "string"
+        },
+        "thread_id": {
+          "default": "",
+          "description": "Thread UUID for check/run; no thread file is created in step one.",
+          "type": "string"
+        },
+        "write": {
+          "default": false,
+          "description": "Whether the requested grant allows mutations as well as reads.",
+          "type": "boolean"
+        }
+      },
+      "title": "AgentInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": true,
+      "title": "Map_of_AnyValue",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "reversible",
+    "id": "agent.steer",
+    "description": "Add input to the current interactive provider turn",
+    "mutates": true,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "definitions": {
+        "AgentMode": {
+          "description": "Thread permission mode; every change revokes the previous thread token.",
+          "oneOf": [
+            {
+              "description": "Thread, workspace and originating app only; other scopes require approval.",
+              "enum": [
+                "least_access"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Current space access, reviewed by rules; high-risk classes require approval.",
+              "enum": [
+                "approve_for_me"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Current space access without approvals, independently of sandboxing.",
+              "enum": [
+                "full_access"
+              ],
+              "type": "string"
+            }
+          ]
+        },
+        "AgentRetrySettings": {
+          "additionalProperties": false,
+          "description": "Typed automatic provider recovery settings; manifest defaults apply per account and a manual turn may override them. Neither permits machine re-placement.",
+          "properties": {
+            "provider_errors": {
+              "description": "Retry explicit transient provider errors, with no pending tool effect.",
+              "type": "boolean"
+            },
+            "subscription_limits": {
+              "description": "Resume subscription usage limits at the reset reported by the provider.",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "provider_errors",
+            "subscription_limits"
+          ],
+          "type": "object"
+        },
+        "ProviderContext": {
+          "additionalProperties": false,
+          "description": "A labelled contribution; data, never authority or system instructions.",
+          "properties": {
+            "source": {
+              "description": "Plugin or attachment label, at most 128 UTF-8 bytes.",
+              "type": "string"
+            },
+            "text": {
+              "description": "Contribution text; included in the command's total bound.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "source",
+            "text"
+          ],
+          "type": "object"
+        }
+      },
+      "description": "Input union for manual-turn operations. Each operation rejects irrelevant fields. UUIDs are full resource identifiers; model work never starts without a space check.",
+      "properties": {
+        "after": {
+          "default": 0,
+          "description": "Next job sequence requested; zero on first read.",
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "app": {
+          "default": "",
+          "description": "Requested app prefix for an access request.",
+          "type": "string"
+        },
+        "approval_id": {
+          "default": "",
+          "description": "Native provider approval received from this active run.",
+          "type": "string"
+        },
+        "approve": {
+          "default": false,
+          "description": "Allow the named native approval for this run.",
+          "type": "boolean"
+        },
+        "context": {
+          "default": [],
+          "description": "Labelled context contributions, bounded by the provider command budget.",
+          "items": {
+            "$ref": "#/definitions/ProviderContext"
+          },
+          "type": "array"
+        },
+        "direct": {
+          "default": false,
+          "description": "Whether an account-owned machine runs directly; pool machines refuse this.",
+          "type": "boolean"
+        },
+        "epoch": {
+          "default": "",
+          "description": "Stream epoch last seen, empty on first read.",
+          "type": "string"
+        },
+        "job_id": {
+          "default": "",
+          "description": "Job UUID for job operations. A thread credential can omit it for access.request.",
+          "type": "string"
+        },
+        "lease_id": {
+          "default": "",
+          "description": "Fenced lease UUID for explicit machine-level resumption.",
+          "type": "string"
+        },
+        "machine_id": {
+          "default": "",
+          "description": "Machine UUID for owner-controlled execution settings.",
+          "type": "string"
+        },
+        "mode": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/AgentMode"
+            }
+          ],
+          "default": "approve_for_me",
+          "description": "Permission mode; defaults to Approve for me."
+        },
+        "model": {
+          "default": "",
+          "description": "Official CLI model; empty uses the selected provider manifest default.",
+          "type": "string"
+        },
+        "options": {
+          "additionalProperties": true,
+          "default": {},
+          "description": "Options declared by the selected provider, bounded by the command budget.",
+          "type": "object"
+        },
+        "pool": {
+          "default": false,
+          "description": "Check an entitled pool machine without exposing its identity.",
+          "type": "boolean"
+        },
+        "prompt": {
+          "default": "",
+          "description": "Person's prompt; at most 16 KiB, required for run.",
+          "type": "string"
+        },
+        "provider_id": {
+          "default": "",
+          "description": "Enabled provider plugin; empty selects the installation's default provider.",
+          "type": "string"
+        },
+        "retry_failed": {
+          "default": false,
+          "description": "Explicit retry of a failed workspace discard; never implied by status polling.",
+          "type": "boolean"
+        },
+        "retry_settings": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/AgentRetrySettings"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Per-thread recovery override; absent uses the account defaults."
+        },
+        "source_app": {
+          "default": "",
+          "description": "Originating app operation prefix; empty grants no originating-app access.",
+          "type": "string"
+        },
+        "space_id": {
+          "default": "",
+          "description": "Owning space UUID, required for check/run, otherwise derived from the job.",
+          "type": "string"
+        },
+        "thread_id": {
+          "default": "",
+          "description": "Thread UUID for check/run; no thread file is created in step one.",
+          "type": "string"
+        },
+        "write": {
+          "default": false,
+          "description": "Whether the requested grant allows mutations as well as reads.",
+          "type": "boolean"
+        }
+      },
+      "title": "AgentInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": true,
+      "title": "Map_of_AnyValue",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "reversible",
+    "id": "agent.approval",
+    "description": "Resolve an approval from the current interactive provider turn",
+    "mutates": true,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "definitions": {
+        "AgentMode": {
+          "description": "Thread permission mode; every change revokes the previous thread token.",
+          "oneOf": [
+            {
+              "description": "Thread, workspace and originating app only; other scopes require approval.",
+              "enum": [
+                "least_access"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Current space access, reviewed by rules; high-risk classes require approval.",
+              "enum": [
+                "approve_for_me"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Current space access without approvals, independently of sandboxing.",
+              "enum": [
+                "full_access"
+              ],
+              "type": "string"
+            }
+          ]
+        },
+        "AgentRetrySettings": {
+          "additionalProperties": false,
+          "description": "Typed automatic provider recovery settings; manifest defaults apply per account and a manual turn may override them. Neither permits machine re-placement.",
+          "properties": {
+            "provider_errors": {
+              "description": "Retry explicit transient provider errors, with no pending tool effect.",
+              "type": "boolean"
+            },
+            "subscription_limits": {
+              "description": "Resume subscription usage limits at the reset reported by the provider.",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "provider_errors",
+            "subscription_limits"
+          ],
+          "type": "object"
+        },
+        "ProviderContext": {
+          "additionalProperties": false,
+          "description": "A labelled contribution; data, never authority or system instructions.",
+          "properties": {
+            "source": {
+              "description": "Plugin or attachment label, at most 128 UTF-8 bytes.",
+              "type": "string"
+            },
+            "text": {
+              "description": "Contribution text; included in the command's total bound.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "source",
+            "text"
+          ],
+          "type": "object"
+        }
+      },
+      "description": "Input union for manual-turn operations. Each operation rejects irrelevant fields. UUIDs are full resource identifiers; model work never starts without a space check.",
+      "properties": {
+        "after": {
+          "default": 0,
+          "description": "Next job sequence requested; zero on first read.",
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "app": {
+          "default": "",
+          "description": "Requested app prefix for an access request.",
+          "type": "string"
+        },
+        "approval_id": {
+          "default": "",
+          "description": "Native provider approval received from this active run.",
+          "type": "string"
+        },
+        "approve": {
+          "default": false,
+          "description": "Allow the named native approval for this run.",
+          "type": "boolean"
+        },
+        "context": {
+          "default": [],
+          "description": "Labelled context contributions, bounded by the provider command budget.",
+          "items": {
+            "$ref": "#/definitions/ProviderContext"
+          },
+          "type": "array"
+        },
+        "direct": {
+          "default": false,
+          "description": "Whether an account-owned machine runs directly; pool machines refuse this.",
+          "type": "boolean"
+        },
+        "epoch": {
+          "default": "",
+          "description": "Stream epoch last seen, empty on first read.",
+          "type": "string"
+        },
+        "job_id": {
+          "default": "",
+          "description": "Job UUID for job operations. A thread credential can omit it for access.request.",
+          "type": "string"
+        },
+        "lease_id": {
+          "default": "",
+          "description": "Fenced lease UUID for explicit machine-level resumption.",
+          "type": "string"
+        },
+        "machine_id": {
+          "default": "",
+          "description": "Machine UUID for owner-controlled execution settings.",
+          "type": "string"
+        },
+        "mode": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/AgentMode"
+            }
+          ],
+          "default": "approve_for_me",
+          "description": "Permission mode; defaults to Approve for me."
+        },
+        "model": {
+          "default": "",
+          "description": "Official CLI model; empty uses the selected provider manifest default.",
+          "type": "string"
+        },
+        "options": {
+          "additionalProperties": true,
+          "default": {},
+          "description": "Options declared by the selected provider, bounded by the command budget.",
+          "type": "object"
+        },
+        "pool": {
+          "default": false,
+          "description": "Check an entitled pool machine without exposing its identity.",
+          "type": "boolean"
+        },
+        "prompt": {
+          "default": "",
+          "description": "Person's prompt; at most 16 KiB, required for run.",
+          "type": "string"
+        },
+        "provider_id": {
+          "default": "",
+          "description": "Enabled provider plugin; empty selects the installation's default provider.",
           "type": "string"
         },
         "retry_failed": {
@@ -19081,6 +20413,16 @@
           "description": "Requested app prefix for an access request.",
           "type": "string"
         },
+        "approval_id": {
+          "default": "",
+          "description": "Native provider approval received from this active run.",
+          "type": "string"
+        },
+        "approve": {
+          "default": false,
+          "description": "Allow the named native approval for this run.",
+          "type": "boolean"
+        },
         "context": {
           "default": [],
           "description": "Labelled context contributions, bounded by the provider command budget.",
@@ -19146,7 +20488,7 @@
         },
         "provider_id": {
           "default": "",
-          "description": "Enabled provider plugin; empty selects calternal-claude-code.",
+          "description": "Enabled provider plugin; empty selects the installation's default provider.",
           "type": "string"
         },
         "retry_failed": {
@@ -19285,6 +20627,16 @@
           "description": "Requested app prefix for an access request.",
           "type": "string"
         },
+        "approval_id": {
+          "default": "",
+          "description": "Native provider approval received from this active run.",
+          "type": "string"
+        },
+        "approve": {
+          "default": false,
+          "description": "Allow the named native approval for this run.",
+          "type": "boolean"
+        },
         "context": {
           "default": [],
           "description": "Labelled context contributions, bounded by the provider command budget.",
@@ -19350,7 +20702,7 @@
         },
         "provider_id": {
           "default": "",
-          "description": "Enabled provider plugin; empty selects calternal-claude-code.",
+          "description": "Enabled provider plugin; empty selects the installation's default provider.",
           "type": "string"
         },
         "retry_failed": {
@@ -19489,6 +20841,16 @@
           "description": "Requested app prefix for an access request.",
           "type": "string"
         },
+        "approval_id": {
+          "default": "",
+          "description": "Native provider approval received from this active run.",
+          "type": "string"
+        },
+        "approve": {
+          "default": false,
+          "description": "Allow the named native approval for this run.",
+          "type": "boolean"
+        },
         "context": {
           "default": [],
           "description": "Labelled context contributions, bounded by the provider command budget.",
@@ -19554,7 +20916,7 @@
         },
         "provider_id": {
           "default": "",
-          "description": "Enabled provider plugin; empty selects calternal-claude-code.",
+          "description": "Enabled provider plugin; empty selects the installation's default provider.",
           "type": "string"
         },
         "retry_failed": {
@@ -19693,6 +21055,16 @@
           "description": "Requested app prefix for an access request.",
           "type": "string"
         },
+        "approval_id": {
+          "default": "",
+          "description": "Native provider approval received from this active run.",
+          "type": "string"
+        },
+        "approve": {
+          "default": false,
+          "description": "Allow the named native approval for this run.",
+          "type": "boolean"
+        },
         "context": {
           "default": [],
           "description": "Labelled context contributions, bounded by the provider command budget.",
@@ -19758,7 +21130,7 @@
         },
         "provider_id": {
           "default": "",
-          "description": "Enabled provider plugin; empty selects calternal-claude-code.",
+          "description": "Enabled provider plugin; empty selects the installation's default provider.",
           "type": "string"
         },
         "retry_failed": {

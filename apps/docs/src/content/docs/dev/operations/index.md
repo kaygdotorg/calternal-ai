@@ -85,16 +85,17 @@ Generated operation schemas. Capability and risk are shown only when the catalog
 - [automations.run_now](./automations-run-now/): Start a thread for your automation
 - [automations.next_run](./automations-next-run/): Read the next scheduled run
 - [automations.last_run](./automations-last-run/): Read the latest automation outcome
-- [collections.get](./collections-get/): Open a saved notes collection
+- [collections.get](./collections-get/): Read a saved notes collection and its current revision
+- [collections.list](./collections-list/): List saved notes collections in a space
 - [collections.create](./collections-create/): Save an explicit set of notes in one space
 - [collections.set_members](./collections-set-members/): Replace a saved collection's explicit notes
 - [sharing.mark_seen](./sharing-mark-seen/): Mark a received item share as seen
 - [sharing.rescue](./sharing-rescue/): Save the caller's blocked offline edits as a private note
 - [sharing.list](./sharing-list/): List sharing controls and grants for an item
 - [sharing.audiences](./sharing-audiences/): Find visible people or groups to share an item with
-- [sharing.shared_with_me](./sharing-shared-with-me/): List items shared with the signed-in account
+- [sharing.shared_with_me](./sharing-shared-with-me/): List items shared with the signed-in account, including membership edit access for collections
 - [sharing.grant](./sharing-grant/): Set view or edit access for one named audience
-- [sharing.revoke](./sharing-revoke/): Remove one item grant
+- [sharing.revoke](./sharing-revoke/): Revoke one item grant, including while the item is in Trash
 - [sharing.link_create](./sharing-link-create/): Issue a read-only public link
 - [sharing.link_update](./sharing-link-update/): Change a public link's label or expiry
 - [sharing.link_copy](./sharing-link-copy/): Retrieve an authorized public link URL
@@ -117,6 +118,10 @@ Generated operation schemas. Capability and risk are shown only when the catalog
 - [fonts.faces](./fonts-faces/): Generate same-origin face rules
 - [fonts.list](./fonts-list/): List shared and caller-owned fonts
 - [fonts.remove](./fonts-remove/): Remove a caller-owned family
+- [push.subscribe](./push-subscribe/): Register this browser for thread notifications
+- [push.unsubscribe](./push-unsubscribe/): Remove one of your push subscriptions
+- [push.devices](./push-devices/): List your registered push devices and the public VAPID key
+- [push.test](./push-test/): Queue a test push to this browser
 - [plugins.diagnostics](./plugins-diagnostics/): Inspect an installed plugin's readiness and recent worker failures
 - [plugins.network.content.get](./plugins-network-content-get/): Get a prepared sealed content frame
 - [plugins.network.content.preference.get](./plugins-network-content-preference-get/): Read your remote content preference
@@ -125,6 +130,10 @@ Generated operation schemas. Capability and risk are shown only when the catalog
 - [plugins.personal_settings.set](./plugins-personal-settings-set/): Edit your own declared plugin setting
 - [plugins.settings.get](./plugins-settings-get/): Read a declared space plugin setting
 - [plugins.settings.set](./plugins-settings-set/): Edit a declared space plugin setting
+- [harnesses.list](./harnesses-list/): List installed harnesses and their tested updates
+- [harnesses.stage](./harnesses-stage/): Smoke-test a candidate harness runtime in a disposable sandbox
+- [harnesses.activate](./harnesses-activate/): Select an exact smoke-tested harness runtime for new work
+- [harnesses.rollback](./harnesses-rollback/): Restore a previously tested harness runtime
 - [provider.sign_in.start](./provider-sign-in-start/): Start a private provider sign-in
 - [provider.sign_in.answer](./provider-sign-in-answer/): Supply a code to the official provider login
 - [provider.sign_in.status](./provider-sign-in-status/): Read a private provider sign-in result
@@ -146,6 +155,8 @@ Generated operation schemas. Capability and risk are shown only when the catalog
 - [agent.run](./agent-run/): Send a prompt to the selected provider in a machine sandbox
 - [agent.events](./agent-events/): Read ordered live turn events and the durable checkpoint
 - [agent.discard](./agent-discard/): Explicitly discard a stopped turn workspace, retaining its account home
+- [agent.steer](./agent-steer/): Add input to the current interactive provider turn
+- [agent.approval](./agent-approval/): Resolve an approval from the current interactive provider turn
 - [agent.stop](./agent-stop/): Cancel your turn, or a turn you can manage
 - [agent.resume](./agent-resume/): Explicitly resume an interrupted turn from its checkpoint
 - [agent.mode](./agent-mode/): Change a thread permission mode and rotate its token

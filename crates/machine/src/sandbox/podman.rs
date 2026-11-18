@@ -191,6 +191,24 @@ impl Backend for PodmanBackend {
         &'a self,
         spec: &'a SandboxSpec,
     ) -> BoxFuture<'a, SandboxResult<Arc<dyn Sandbox>>> {
+        self.start_container(spec, None)
+    }
+
+    fn start_harness<'a>(
+        &'a self,
+        spec: &'a SandboxSpec,
+        harness: &'a crate::protocol::HarnessSandbox,
+    ) -> BoxFuture<'a, SandboxResult<Arc<dyn Sandbox>>> {
+        self.start_container(spec, Some(harness))
+    }
+}
+
+impl PodmanBackend {
+    fn start_container<'a>(
+        &'a self,
+        spec: &'a SandboxSpec,
+        harness: Option<&'a crate::protocol::HarnessSandbox>,
+    ) -> BoxFuture<'a, SandboxResult<Arc<dyn Sandbox>>> {
         Box::pin(async move {
             let root = self.canonical_root().await?;
             let name = Self::container_name(spec.account_id, spec.thread_id);
@@ -207,7 +225,12 @@ impl Backend for PodmanBackend {
                 } else {
                     account.join("threads").join(spec.thread_id.to_string())
                 };
-                let (home, login) = super::provider_home::prepare(account, &dir, spec).await?;
+                let (home, login) = match harness {
+                    Some(harness) => super::provider_home::prepare_harness(
+                        account, &dir, spec, harness,
+                    ).await?,
+                    None => super::provider_home::prepare(account, &dir, spec).await?,
+                };
                 let work = dir.join("work");
                 tokio::fs::create_dir_all(&work).await.map_err(|e| {
                     SandboxError(format!("cannot create work directory: {}", e.kind()))
@@ -231,7 +254,11 @@ impl Backend for PodmanBackend {
                 };
                 let label = format!("org.calternal.thread={}", spec.thread_id);
                 let home_mount = format!("{}:/home/agent", home.display());
-                let mount = format!("{}:/work", work.display());
+                let mount = if harness.is_some_and(|harness| harness.workspace_read_only) {
+                    format!("{}:/work:ro", work.display())
+                } else {
+                    format!("{}:/work", work.display())
+                };
                 let memory = memory_bytes.unwrap_or(DEFAULT_MEMORY_BYTES).to_string();
                 let pids = pids.unwrap_or(DEFAULT_PIDS).to_string();
                 let mut args: Vec<String> = [
@@ -259,13 +286,21 @@ impl Backend for PodmanBackend {
                 .map(|s| s.to_string())
                 .collect();
                 if spec.worker.is_none() {
-                    let mode = if spec.provider_login { "rw" } else { "ro" };
+                    let login_env = if harness.is_some() {
+                        "CALTERNAL_PROVIDER_LOGIN_DIR=/run/calternal-provider-login"
+                    } else {
+                        "CALTERNAL_CLAUDE_LOGIN_DIR=/run/calternal-provider-login"
+                    };
+                    let mode = if harness.is_some_and(|harness| !harness.legacy_profile) || spec.provider_login { "rw" } else { "ro" };
                     args.extend([
                         "--volume".into(),
                         format!("{}:/run/calternal-provider-login:{mode}", login.display()),
                         "--env".into(),
-                        "CALTERNAL_CLAUDE_LOGIN_DIR=/run/calternal-provider-login".into(),
+                        login_env.into(),
                     ]);
+                    if harness.is_some() && !self.guest {
+                        args.push("--pull=never".into());
+                    }
                     if spec.provider_login {
                         args.extend(["--env".into(), "CALTERNAL_PROVIDER_LOGIN=1".into()]);
                     }

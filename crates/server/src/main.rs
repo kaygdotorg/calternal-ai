@@ -14,7 +14,7 @@ use calternal_server::auth::StoredDirectory;
 use calternal_server::machines::MachineService;
 use calternal_server::plugins;
 use cli::{Cli, Cmd};
-use startup_io::{DATA_HINT, write_private_atomic};
+use startup_io::{DATA_HINT, StartupTimings, write_private_atomic};
 
 fn main() {
     tracing_subscriber::fmt()
@@ -171,6 +171,7 @@ fn main() {
             machine_poll_hold_ms,
             machine_sandbox_cpu_millis,
             test_plugin_root,
+            upgrade_probe,
         } => {
             let mut machines = calternal_server::machines::Settings {
                 lease_ttl: std::time::Duration::from_millis(machine_lease_ttl_ms),
@@ -211,6 +212,7 @@ fn main() {
                     origin,
                     trusted_proxies,
                     test_plugin_root,
+                    upgrade_probe,
                     machines,
                     &out,
                 ))
@@ -243,9 +245,18 @@ async fn serve(
     origin: Option<String>,
     trusted_proxies: String,
     test_plugin_root: Option<PathBuf>,
+    upgrade_probe: Option<String>,
     machine_settings: calternal_server::machines::Settings,
     out: &Output,
 ) -> Result<(), CliError> {
+    let mut timings = StartupTimings::new();
+    let probing = upgrade_probe.is_some();
+    if probing && !bind.ip().is_loopback() {
+        return Err(CliError::new(
+            "invalid_input",
+            "The upgrade probe requires loopback binding.",
+        ));
+    }
     // The roots guard runs first: a missing, swapped or foreign root is refused
     // before any directory, lock or database is created.
     const PIN_HINT: &str = "Put this installation's UUID in the server configuration as \
@@ -279,10 +290,13 @@ async fn serve(
             receipt_retention,
             plugin_root,
             test_plugin_root,
+            upgrade_probe,
+            development,
         )
     })
     .await
     .map_err(|e| boot(1, "failed", e.to_string(), DATA_HINT))??;
+    timings.mark("storage_open");
     let local_test_workers = cfg!(feature = "test-plugins")
         && has_test_root
         && std::env::var_os("CALTERNAL_WORKER_TEST_BACKEND").is_some();
@@ -316,6 +330,7 @@ async fn serve(
     .await
     .map_err(|e| boot(1, "failed", e.to_string(), DATA_HINT))?;
 
+    timings.mark("runtime_setup");
     let listener = match tokio::net::TcpListener::bind(bind).await {
         Ok(l) => l,
         Err(e) => {
@@ -327,6 +342,7 @@ async fn serve(
             ));
         }
     };
+    timings.mark("listener_bind");
     let port = listener.local_addr().expect("bound").port();
     let public_origin = origin.unwrap_or_else(|| format!("http://localhost:{port}"));
     let mut config = match calternal_auth::AuthConfig::new(&public_origin) {
@@ -397,6 +413,7 @@ async fn serve(
     directory
         .configure_account_mail()
         .map_err(|e| boot(1, "invalid_input", e.to_string(), DATA_HINT))?;
+    timings.mark("authority_open");
     let (store, pending_erasure) = {
         let spaces = directory.spaces.clone();
         let root = data_dir.clone();
@@ -487,6 +504,7 @@ async fn serve(
             hosts.push(authority);
         }
     }
+    timings.mark("account_and_machine_setup");
     let jobs_root = data_dir.clone();
     let lifecycle = store.content().lifecycle();
     let jobs = tokio::task::spawn_blocking(move || {
@@ -498,6 +516,7 @@ async fn serve(
     .with_security(directory.spaces.agents())
     .with_receipt_retention(store.content().receipt_retention())
     .with_thread_events(store.shared_content());
+    timings.mark("jobs_open");
     let token_files = directory.files.clone();
     let state = Arc::new(AppState {
         blocking: calternal_server::blocking::RequestWorkers::new()
@@ -523,6 +542,9 @@ async fn serve(
         calternal_server::api::configure_search(&state)
             .map_err(|e| boot(1, "failed", e.message, DATA_HINT))?,
     );
+    calternal_server::api::configure_web_push(&state)
+        .await
+        .map_err(|e| boot(1, "failed", e.message, DATA_HINT))?;
     let erasing = state.clone();
     tokio::task::spawn_blocking(move || {
         calternal_server::erasure::replay(
@@ -570,6 +592,7 @@ async fn serve(
         .await
         .map_err(|e| boot(1, "failed", e.message, DATA_HINT))?;
     api::configure_automations(&state);
+    timings.mark("recovery_setup");
     let _notes_retention = state.store.start_notes_retention().map_err(|e| {
         boot(
             2,
@@ -581,9 +604,20 @@ async fn serve(
     let wallpapers = api::wallpapers::Wallpapers::from_env(&data_dir)
         .await
         .map_err(|e| boot(1, "failed", e.message, DATA_HINT))?;
+    if probing {
+        let health = axum::Router::new().route(
+            "/api/v1/auth/status",
+            axum::routing::get(|| async { axum::http::StatusCode::OK }),
+        );
+        return axum::serve(listener, health)
+            .with_graceful_shutdown(shutdown_signal())
+            .await
+            .map_err(|error| boot(1, "io", error.to_string(), DATA_HINT));
+    }
     let app = api::router(state.clone(), web_dir.clone())
         .layer(axum::Extension(machines.clone()))
         .layer(axum::Extension(wallpapers));
+    timings.mark("router_setup");
 
     let base_url = if development {
         format!("http://127.0.0.1:{port}")
@@ -603,7 +637,9 @@ async fn serve(
         "web_dir": web_dir,
     });
     let startup_path = data_dir.join("startup.json");
-    write_private_atomic(&startup_path, &serde_json::to_vec_pretty(&startup).unwrap())
+    let startup_bytes = serde_json::to_vec_pretty(&startup).unwrap();
+    timings.mark("startup_document");
+    write_private_atomic(&startup_path, &startup_bytes)
         .await
         .map_err(|e| {
             boot(
@@ -613,6 +649,8 @@ async fn serve(
                 DATA_HINT,
             )
         })?;
+    timings.mark("startup_publish");
+    timings.emit().await;
     let mut fields = vec![("url".to_owned(), base_url.clone())];
     fields.extend(
         token_files

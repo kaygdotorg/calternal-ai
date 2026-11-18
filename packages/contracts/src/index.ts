@@ -32,6 +32,110 @@ item_id: string,
  */
 text: string, };
 /**
+ * Register or renew the signed-in installation's browser subscription.
+ */
+
+export type PushSubscribeInput = {
+/**
+ * Browser PushSubscription endpoint, restricted to supported HTTPS providers.
+ */
+endpoint: string,
+/**
+ * Unpadded base64url-encoded uncompressed P-256 public key.
+ */
+p256dh: string,
+/**
+ * Unpadded base64url-encoded 16-byte browser authentication secret.
+ */
+auth: string, };
+/**
+ * Remove an installation belonging to the signed-in account.
+ */
+
+export type PushUnsubscribeInput = {
+/**
+ * Installation UUID returned by push.devices.
+ */
+device_id: string, };
+/**
+ * One active subscription, with no endpoint or browser key material.
+ */
+
+export type PushDevice = {
+/**
+ * Revocable installation UUID.
+ */
+device_id: string,
+/**
+ * Display name from the installation directory.
+ */
+name: string,
+/**
+ * Whether the current credential belongs to this installation.
+ */
+current: boolean,
+/**
+ * Server-enforced expiry in Unix milliseconds.
+ */
+expires_at_ms: bigint, };
+/**
+ * Subscription inventory and the public browser application server key.
+ */
+
+export type PushDevices = {
+/**
+ * Unpadded base64url VAPID public key for PushManager.subscribe.
+ */
+application_server_key: string,
+/**
+ * The signed-in account's live subscriptions.
+ */
+devices: Array<PushDevice>, };
+/**
+ * Outcome of an idempotent subscription removal.
+ */
+
+export type PushRemoved = {
+/**
+ * True when a stored subscription was removed.
+ */
+removed: boolean, };
+/**
+ * Best-effort admission of a test notification for the current installation.
+ */
+
+export type PushQueued = {
+/**
+ * True when the background worker accepted the test.
+ */
+queued: boolean, };
+/**
+ * The only status values delivered to a browser push receiver.
+ */
+
+export type PushStatus = "needs_you" | "finished" | "test";
+/**
+ * Browser notification payload, encrypted before the relay receives it.
+ */
+
+export type PushPayload = {
+/**
+ * Current thread title, or a fixed application title for a test.
+ */
+title: string,
+/**
+ * Notification label. No message, tool output, or request text.
+ */
+status: PushStatus,
+/**
+ * Owning space UUID for click routing. Absent for a test push.
+ */
+space_id?: string,
+/**
+ * Thread UUID for click routing. Absent for a test push.
+ */
+thread_id?: string, };
+/**
  * Account-private list input. No caller-supplied account is accepted.
  */
 
@@ -192,7 +296,7 @@ space_id: string,
  */
 machine_id: string,
 /**
- * Optional provider plugin. An empty or absent value checks Claude Code.
+ * Optional provider plugin. An empty or absent value checks the installation's default provider.
  */
 provider_id: string, };
 /**
@@ -336,6 +440,11 @@ signed_in: boolean,
  */
 sign_in_command: string, };
 /**
+ * Why the caller cannot currently start a provider turn on one machine.
+ */
+
+export type ProviderBlocked = "disabled" | "machine_offline" | "machine_busy" | "check_required" | "check_stale" | "runtime_unavailable" | "sign_in_required";
+/**
  * A machine's readiness for one provider in this space.
  */
 
@@ -352,6 +461,10 @@ check: ProviderCheck | null,
  * The machine has capacity and the enabled provider reports a login.
  */
 ready: boolean,
+/**
+ * The first unmet readiness condition. A fresh verified provider omits it.
+ */
+blocked?: ProviderBlocked,
 /**
  * Safe reason an automatic title was skipped on this machine, when observed.
  */
@@ -2305,7 +2418,7 @@ model: string,
  */
 options: { [key in string]?: unknown },
 /**
- * Enabled provider plugin; empty selects calternal-claude-code.
+ * Enabled provider plugin; empty selects the installation's default provider.
  */
 provider_id: string,
 /**
@@ -2316,6 +2429,14 @@ mode: AgentMode,
  * Per-thread recovery override; absent uses the account defaults.
  */
 retry_settings: AgentRetrySettings | null,
+/**
+ * Native provider approval received from this active run.
+ */
+approval_id: string,
+/**
+ * Allow the named native approval for this run.
+ */
+approve: boolean,
 /**
  * Originating app operation prefix; empty grants no originating-app access.
  */
@@ -2410,7 +2531,15 @@ context: Array<ProviderContext>, } | { "type": "steer",
 /**
  * New message, bounded by the command budget.
  */
-prompt: string, } | { "type": "stop" };
+prompt: string, } | { "type": "approve",
+/**
+ * Opaque ID emitted by this run's adapter.
+ */
+request_id: string,
+/**
+ * Authorize this request within the existing sandbox boundary.
+ */
+approved: boolean, } | { "type": "stop" };
 /**
  * A command envelope. `seq` starts at one and increases exactly once per command.
  */
@@ -2501,6 +2630,14 @@ detail: string, } | { "type": "question",
  * Short question, at most 4 KiB.
  */
 text: string, } | { "type": "approval_request",
+/**
+ * ID of an interactive, run-scoped approval. Legacy notices omit it.
+ */
+request_id?: string,
+/**
+ * Whether an interactive confirmation can proceed within the tool sandbox.
+ */
+can_approve?: boolean,
 /**
  * Short action description, at most 4 KiB.
  */

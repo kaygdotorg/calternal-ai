@@ -1,5 +1,61 @@
 //! Durable startup files use blocking workers rather than the async root task.
 use std::path::Path;
+use std::time::Instant;
+
+/// Optional process-local startup timings. With diagnostics disabled, there are
+/// no clock reads, allocations, or writes.
+pub(super) struct StartupTimings(Option<Timing>);
+
+struct Timing {
+    start: Instant,
+    last: Instant,
+    phases: Vec<(&'static str, u128)>,
+}
+
+impl StartupTimings {
+    /// Enable timing only on a perf build with explicit runtime opt-in.
+    pub(super) fn new() -> Self {
+        Self(
+            (cfg!(feature = "perf-timings")
+                && std::env::var_os("CALTERNAL_STARTUP_TIMINGS").is_some_and(|value| value == "1"))
+            .then(|| {
+                let start = Instant::now();
+                Timing {
+                    start,
+                    last: start,
+                    phases: Vec::new(),
+                }
+            }),
+        )
+    }
+
+    /// Record elapsed microseconds since the previous startup phase.
+    pub(super) fn mark(&mut self, phase: &'static str) {
+        if let Some(timing) = &mut self.0 {
+            let now = Instant::now();
+            timing
+                .phases
+                .push((phase, now.duration_since(timing.last).as_micros()));
+            timing.last = now;
+        }
+    }
+
+    /// Emit the buffered marks on a blocking worker before readiness is announced.
+    pub(super) async fn emit(self) {
+        if let Some(timing) = self.0 {
+            let _ = tokio::task::spawn_blocking(move || {
+                use std::io::Write;
+                let mut stderr = std::io::stderr().lock();
+                for (phase, micros) in timing.phases {
+                    let _ = writeln!(stderr, "STARTUP {phase}_us {micros}");
+                }
+                let total = timing.last.duration_since(timing.start).as_micros();
+                let _ = writeln!(stderr, "STARTUP pre_announce_total_us {total}");
+            })
+            .await;
+        }
+    }
+}
 
 /// Publish an owner-only startup file durably on a blocking worker. Returns I/O
 /// and worker failures; costs one byte copy, one task and file/directory syncs.
@@ -24,6 +80,8 @@ pub(super) fn open_stores(
     receipt_retention: std::time::Duration,
     plugin_root: Option<std::path::PathBuf>,
     test_plugin_root: Option<std::path::PathBuf>,
+    upgrade_probe: Option<String>,
+    development: bool,
 ) -> Result<
     (
         calternal_server::store::Store,
@@ -35,7 +93,13 @@ pub(super) fn open_stores(
 > {
     use super::boot;
     use calternal_server::{plugins::package_store, store::Store};
-    let store = Store::open(&roots, installation, create, receipt_retention).map_err(|e| {
+    let store = match upgrade_probe {
+        Some(candidate) => {
+            Store::open_upgrade_probe(&roots, installation, receipt_retention, &candidate)
+        }
+        None => Store::open(&roots, installation, create, receipt_retention),
+    }
+    .map_err(|e| {
         boot(
             1,
             "failed",
@@ -57,14 +121,19 @@ pub(super) fn open_stores(
         )
     })?;
     let test_root = test_plugin_root.map(|r| std::fs::canonicalize(&r).unwrap_or(r));
-    let registry = package_store::load(&data_dir, plugin_root.as_deref(), test_root.as_deref())
-        .map_err(|why| {
-            boot(
-                1,
-                "plugin_store",
-                why,
-                "Check the installation's plugin packages and appdata.",
-            )
-        })?;
+    let registry = package_store::load(
+        &data_dir,
+        plugin_root.as_deref(),
+        test_root.as_deref(),
+        development,
+    )
+    .map_err(|why| {
+        boot(
+            1,
+            "plugin_store",
+            why,
+            "Check the installation's plugin packages and appdata.",
+        )
+    })?;
     Ok((store, data_dir, recovery, registry))
 }

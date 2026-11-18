@@ -66,10 +66,20 @@ Claude adapter emits a Check result from its existing official status call
 before a regular turn. The server keeps that result private to the requesting
 account and excludes it from the shared turn stream.
 
-A Codex adapter reuses this entire protocol, machine stdin/exec transport, job
-streams/checkpoints, access tokens, instructions, risk policy, retry scheduler and
-CLI. Its own plugin would supply an executable and model metadata; only official
-Codex process control and event normalization differ.
+The Codex plugin reuses this protocol, machine transport, job checkpoints,
+access tokens, and risk policy. Its adapter drives the official App Server over
+stdio. It maps the selected model and effort to native turn parameters, forwards
+steer and interrupt to the current native turn, and persists the opaque native
+session ID for a later resume.
+A failed Codex account query is a private `provider_check_failed` error. It
+leaves the last login observation unchanged.
+
+In Least access, the host mounts the workspace read-only and the adapter selects
+a nested read-only policy with approvals disabled. In Approve for me, the host
+allows workspace writes and Codex uses on-request approval. In Full access,
+Codex allows workspace writes without native prompts. Both writable policies
+still protect the provider login and stay within the Calternal sandbox. Podman
+enforces the outer workspace mount directly or inside the MicroVM guest.
 
 ## App sign-in
 
@@ -85,7 +95,10 @@ machine. `requests.list` carries the private `provider_sign_in` challenge.
 `provider.sign_in.answer` supplies a code, `provider.sign_in.status` reads the
 result, and `provider.sign_in.typing` offers sign-in again when a failed turn's
 owner resumes composing. A pending request expires after 10 minutes. The
-private machine process has its own timeout. The server keeps challenge data
+private machine process has its own timeout. The host validates the HTTPS
+origin and path against the installed provider's operator-approved registration.
+A device challenge sets `needs_code: false` and supplies the display code
+for the user to enter on the provider's page. The server keeps challenge data
 in memory and exposes only the current person's requests.
 
 Normal execution uses a home per space and account. The Claude Code adapter
@@ -94,3 +107,34 @@ directory. Podman mounts the shared directory read-only during a turn. Direct
 uses distinct homes under the same Unix account and retains its documented
 host filesystem access. Existing Linux homes import the Claude OAuth record
 alone. Other state stays in its original directory.
+
+## Installed harness runtimes
+
+Install the provider manifest through the ordinary package review, installation
+and space activation commands. A fresh packaged server installs its initial
+catalog from the operator-owned distribution file. An existing installation
+keeps its approved archives and space activation. The runtime image is a separate immutable,
+operator-installed artifact. A newly installed provider needs an active tested
+runtime. The package store's migration preserves the bundled provider's existing
+image selection and private login layout.
+
+Install both release candidates with the same lifecycle commands on their manifest
+executable. `--harness-version` reports the installed official CLI version,
+`--harness-update` describes the exact package release and public sign-in metadata,
+and `--harness-smoke-test VERSION` checks the candidate in a scratch sandbox.
+The host requires the expected version and a bounded successful result before
+offering an update. The installation administrator calls `harnesses.list`,
+`harnesses.stage`, `harnesses.activate`, and `harnesses.rollback` to query and
+change the runtime pin. Routes work through the standard operation endpoint.
+
+Managed leases carry a provider ID and an explicit login scope. The sign-in
+recipient is the person who initiated the request. Account scope is supported by
+the current placement code. A future space login needs owner/manager settings,
+an authorized space-scoped placement and profile volume, per-member override,
+revocation and erasure, scoped readiness and session-binding checks. The current
+machine rejects unsupported space-scoped assignments before mounting any profile.
+
+Interactive runtimes accept `agent.steer`, `agent.approval`, and a bounded graceful
+`agent.stop`. Approvals expire and apply only to the pending request in its current
+run. An approval request with `can_approve: false` allows dismissal only. The
+host rejects approval when the requested escalation would bypass the sandbox.

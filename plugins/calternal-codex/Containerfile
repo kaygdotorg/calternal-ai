@@ -1,0 +1,6 @@
+FROM docker.io/library/node:22-bookworm-slim
+COPY plugins/calternal-codex/dist /opt/calternal-provider/dist
+COPY plugins/calternal-codex/bin /opt/calternal-provider/bin
+ENV PATH="/opt/calternal-provider/bin:/usr/local/bin:/usr/bin:/bin"
+WORKDIR /work
+CMD ["sleep", "2147483647"]

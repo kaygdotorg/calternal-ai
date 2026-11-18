@@ -90,6 +90,18 @@ impl Backend for ConfiguredBackend {
             }
         })
     }
+    fn start_harness<'a>(
+        &'a self,
+        spec: &'a SandboxSpec,
+        harness: &'a crate::protocol::HarnessSandbox,
+    ) -> BoxFuture<'a, SandboxResult<Arc<dyn Sandbox>>> {
+        if self.name() == "podman" {
+            self.podman.start_harness(spec, harness)
+        } else {
+            self.direct.start_harness(spec, harness)
+        }
+    }
+
     fn start<'a>(
         &'a self,
         spec: &'a SandboxSpec,
