@@ -14,7 +14,7 @@ title: "plugin-sdk: worker-v2/type-aliases/WorkerMessageV2"
 
 # Type Alias: WorkerMessageV2
 
-> **WorkerMessageV2** = \{ `authority`: [`InvocationAuthority`](/docs/dev/typescript/plugin-sdk/worker-v2/interfaces/invocationauthority/); `input`: `unknown`; `operation`: `string`; `type`: `"invoke"`; \} \| \{ `authority`: [`InvocationAuthority`](/docs/dev/typescript/plugin-sdk/worker-v2/interfaces/invocationauthority/); `call_id`: `string`; `input`: `unknown`; `method`: [`HostCallKind`](/docs/dev/typescript/plugin-sdk/manifest-v1/type-aliases/hostcallkind/); `type`: `"host_call"`; \} \| \{ `call_id`: `string`; `data`: `unknown`; `ok`: `boolean`; `type`: `"host_reply"`; \} \| \{ `data`: `unknown`; `job_id`: `string`; `sequence`: `number`; `type`: `"chunk"`; \} \| \{ `data`: `unknown`; `type`: `"complete"`; \} \| \{ `type`: `"failed"`; \} \| \{ `type`: `"cancel"`; \}
+> **WorkerMessageV2** = \{ `authority`: [`InvocationAuthority`](/docs/dev/typescript/plugin-sdk/worker-v2/interfaces/invocationauthority/); `input`: `unknown`; `operation`: `string`; `type`: `"invoke"`; \} \| \{ `authority`: [`InvocationAuthority`](/docs/dev/typescript/plugin-sdk/worker-v2/interfaces/invocationauthority/); `call_id`: `string`; `input`: `unknown`; `method`: [`HostCallKind`](/docs/dev/typescript/plugin-sdk/module-index/type-aliases/hostcallkind/); `type`: `"host_call"`; \} \| \{ `call_id`: `string`; `data`: `unknown`; `ok`: `boolean`; `type`: `"host_reply"`; \} \| \{ `data`: `unknown`; `job_id`: `string`; `sequence`: `number`; `type`: `"chunk"`; \} \| \{ `data`: `unknown`; `type`: `"complete"`; \} \| \{ `type`: `"failed"`; \} \| \{ `type`: `"cancel"`; \}
 
 Strict bidirectional worker-v2 messages.
 
@@ -52,7 +52,7 @@ Host operation dispatch.
 
 ### Type Literal
 
-\{ `authority`: [`InvocationAuthority`](/docs/dev/typescript/plugin-sdk/worker-v2/interfaces/invocationauthority/); `call_id`: `string`; `input`: `unknown`; `method`: [`HostCallKind`](/docs/dev/typescript/plugin-sdk/manifest-v1/type-aliases/hostcallkind/); `type`: `"host_call"`; \}
+\{ `authority`: [`InvocationAuthority`](/docs/dev/typescript/plugin-sdk/worker-v2/interfaces/invocationauthority/); `call_id`: `string`; `input`: `unknown`; `method`: [`HostCallKind`](/docs/dev/typescript/plugin-sdk/module-index/type-aliases/hostcallkind/); `type`: `"host_call"`; \}
 
 #### authority
 
@@ -74,7 +74,7 @@ Broker input.
 
 #### method
 
-> **method**: [`HostCallKind`](/docs/dev/typescript/plugin-sdk/manifest-v1/type-aliases/hostcallkind/)
+> **method**: [`HostCallKind`](/docs/dev/typescript/plugin-sdk/module-index/type-aliases/hostcallkind/)
 
 Declared method.
 

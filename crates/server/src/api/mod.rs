@@ -35,7 +35,7 @@ use crate::store::{Store, sha256_hex};
 use calternal_types::{AccountId, Error, SpaceId};
 
 pub(crate) mod authorization;
-mod cursors;
+pub(crate) mod cursors;
 mod dispatch;
 mod guard;
 mod note_pages;

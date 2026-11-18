@@ -8,9 +8,14 @@ use crate::{
 use calternal_core::*;
 use calternal_types::Error;
 use calternal_types::{Capability, SpaceId};
-use rusqlite::{TransactionBehavior, params};
+use rusqlite::{TransactionBehavior, config::DbConfig, params};
 use serde_json::{Value, json};
 use uuid::Uuid;
+
+/// Draft saves alone commit to SQLite WAL without a per-transaction FULL sync.
+/// An acknowledged unsent edit survives an application crash. A power loss
+/// or system crash may discard the most recent unsent edits.
+const DRAFT_SAVE_SYNCHRONOUS: &str = "NORMAL";
 
 /// The caller may read `space` (a validated UUID text). Returns the typed ID.
 /// Cost: one capability lookup.
@@ -117,6 +122,14 @@ fn prepare<D: Directory>(
     let _step = service.step(identity.id)?;
     let mut c = service.open(identity.id)?;
     service.clean(&mut c, &st.directory, &identity)?;
+    if matches!(&input, AccountInput::Save(_)) {
+        c.pragma_update(None, "synchronous", DRAFT_SAVE_SYNCHRONOUS)
+            .map_err(internal)?;
+        // A standalone drafting client must also avoid a checkpoint on every
+        // connection close. Keep SQLite's normal WAL autocheckpoint threshold.
+        c.set_db_config(DbConfig::SQLITE_DBCONFIG_NO_CKPT_ON_CLOSE, true)
+            .map_err(internal)?;
+    }
     let before = c.total_changes();
     let tx = c
         .transaction_with_behavior(TransactionBehavior::Immediate)

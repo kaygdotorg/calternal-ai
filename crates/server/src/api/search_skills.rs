@@ -14,7 +14,7 @@ pub(super) fn list(
     space: SpaceId,
     prefix: &str,
 ) -> Result<Value, Error> {
-    let root = Folder::open(&store.content().userdata_root()).map_err(storage)?;
+    let root = Folder::open_existing(&store.content().userdata_root()).map_err(storage)?;
     let directory = match root
         .child("spaces", false)
         .and_then(|spaces| spaces.child(&space.to_string(), false))

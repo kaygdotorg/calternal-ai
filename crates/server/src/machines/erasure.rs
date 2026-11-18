@@ -52,7 +52,7 @@ impl MachineService {
                 .map(|m| m.row.id)
                 .collect();
             for machine in &machines {
-                st.apply_revocation(*machine, &self.settings);
+                st.apply_revocation(*machine, &self.settings)?;
             }
             st.pool_grants.remove(&id);
             for m in st.machines.values_mut() {
@@ -115,7 +115,6 @@ impl MachineService {
             .collect();
         for lease in &orphaned {
             st.worker_stops.remove(lease);
-            st.recovery_stops.remove(lease);
         }
         if !orphaned.is_empty() {
             self.worker_changes.notify_waiters();

@@ -37,6 +37,13 @@ are outside the worker contract. A job has a durable checkpoint and may publish
 bounded chunks through `context.chunk`. The caller's current access determines
 which operations and results it can see.
 
+To list an ordinary kind, add `list_items_v1` to `host_calls` and call
+`listItems(context, { kind, limit })` from the SDK. The kind must be
+declared by this package. The host takes the space from the invocation.
+The result includes item IDs, revisions, timestamps, optional titles
+and a `next_cursor`. Pass that cursor on the next call with the same
+kind and optional exact label. A null cursor marks the end.
+
 Hooks and context contributions are scoped to the enabling space. Context is
 labelled evidence bounded by a deadline. It cannot rewrite the person's prompt.
 The plugin and host apply the operation, risk and scope rules at every boundary.

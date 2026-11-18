@@ -68,6 +68,13 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
           "type": "string"
         },
         {
+          "description": "List a bounded page of live items from the calling plugin's own kind.",
+          "enum": [
+            "list_items_v1"
+          ],
+          "type": "string"
+        },
+        {
           "description": "Write an authorized item.",
           "enum": [
             "write_item"

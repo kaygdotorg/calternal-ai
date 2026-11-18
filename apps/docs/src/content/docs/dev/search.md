@@ -32,6 +32,11 @@ An empty query returns no hits.
 | `skills.list` | Current `space_id` and optional skill-name `prefix`. Returns up to 50 names and one-line descriptions from `AI/Skills/<name>/SKILL.md`. |
 | `plugins.manifests` | Current `space_id`. Returns enabled contributions as `manifests: [{plugin, version, commands, settings_sections}]`. Commands supply the web palette's `id`, `label`, `group`, optional `words` and either `go` or `op`. Settings sections also appear as navigation commands in the Settings group. |
 
+`threads.lookup` reads current titles from the existing content-head index.
+Each enabled readable space takes a plugin activation read and one indexed
+title range query, with no thread body reads. The picker includes renamed
+titles as soon as their heads are committed.
+
 Skill directories can be placed in userdata. The server reads up to 8 KiB
 of each candidate for the frontmatter name and single-line description and
 skips symlinks. The declared name must match the directory as specified by
@@ -84,6 +89,8 @@ from the same bounded read snapshot. The journal catches changes during the
 scan before the worker publishes readiness. A change to the release version,
 schema generation, searchable kinds, or journal epoch invalidates the
 projection.
+The scan opens existing userdata directories only. The content writer
+provisions missing directories with fsio's owner-only mode.
 Foreground Notes list, ID reads and saves keep using existing head metadata
 and the journal during rebuild. This covers the Notes search projection.
 Other indexes use their existing lifecycle.
@@ -92,6 +99,12 @@ Each space has at most 250,000 indexed head slots. Titles cap at 256 Unicode
 scalars, bodies at 8,192 scalars, and the worker reads only the first 64 KiB
 of each staged body for keyword indexing. The frontmatter delimiter must be
 within those bytes. A space beyond the slot ceiling sets `partial: true`.
+
+The live search writer caps its WAL at 64 MiB per space. At 48 MiB the
+background worker attempts a truncated checkpoint before another turn. A
+reader that pins the WAL can delay search catch-up. Foreground notes and
+journal writes keep their existing admission and durability. An oversized
+uncommitted index write fails and leaves the watermark unchanged.
 
 ## Pending product decisions
 

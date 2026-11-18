@@ -21,6 +21,7 @@ mod agent_cases;
 /// Plugin job cases: streams, restart, cancellation, sign-out and space isolation.
 #[path = "jobs_cases.rs"]
 mod jobs_cases;
+mod kind_page_cases;
 mod people_cases;
 
 mod provider_sign_in_cases;
@@ -45,6 +46,7 @@ mod setup_code_cases;
 mod simplify_review_cases;
 mod wallpaper_cases;
 mod worker_cases;
+mod worker_delivery_cases;
 
 const ORIGIN: &str = "http://localhost:18080";
 const AUTH_ROUTES: &[(&str, &str)] = &[
