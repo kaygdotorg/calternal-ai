@@ -24,6 +24,7 @@ pub(crate) fn sample(http: &mut Http, space: &str, first: &str) -> Result<Vec<f6
     let item = json!({"kind":"notes","id":note["note"]["id"]});
     let (group, _) = http.op("groups.create", json!({"name":"Unrelated grant target"}))?;
     let group = group["group_id"].as_str().ok_or("missing grant audience")?;
+    grant(http, &item, group, "edit")?;
     let mut rooms = Vec::with_capacity(ROOMS);
     // Reuse the base sample's room, which can still occupy one of the 32
     // slots while the idle retirement timer runs.
@@ -55,6 +56,7 @@ pub(crate) fn sample(http: &mut Http, space: &str, first: &str) -> Result<Vec<f6
         .collect::<Result<Vec<_>>>()?;
     let (mut writer, authored) = open_replica()?;
     let starts: Vec<_> = (0..SECONDS * ROOMS).map(|_| AtomicU64::new(0)).collect();
+    let mut mutations = http.peer();
     std::thread::scope(|scope| -> Result<Vec<f64>> {
         let peers = peers
             .into_iter()
@@ -65,21 +67,25 @@ pub(crate) fn sample(http: &mut Http, space: &str, first: &str) -> Result<Vec<f6
                 })
             })
             .collect::<Vec<_>>();
-        let mut tick = Instant::now();
-        for cycle in 0..SECONDS {
-            std::thread::sleep(tick.saturating_duration_since(Instant::now()));
-            let permission = if cycle % 2 == 0 { "view" } else { "edit" };
-            let (grant, _) = http.op(
-                "sharing.grant",
-                json!({"item":item,"audience":{"group_id":group},"permission":permission}),
-            )?;
-            if grant["permission"] != permission {
-                return Err("the unrelated grant did not change".into());
+        let onset = Instant::now() + Duration::from_millis(100);
+        let changes = scope.spawn(move || -> std::result::Result<(), String> {
+            for cycle in 0..SECONDS {
+                let tick = onset + INTERVAL * cycle as u32;
+                std::thread::sleep(tick.saturating_duration_since(Instant::now()));
+                let permission = if cycle % 2 == 0 { "view" } else { "edit" };
+                grant(&mut mutations, &item, group, permission)
+                    .map_err(|error| error.to_string())?;
+                if Instant::now() >= tick + INTERVAL {
+                    return Err("the unrelated grant missed its one-second window".into());
+                }
             }
-            tick += INTERVAL;
-            let interval = tick.saturating_duration_since(Instant::now()) / ROOMS as u32;
+            Ok(())
+        });
+        let spacing = INTERVAL / ROOMS as u32;
+        for cycle in 0..SECONDS {
+            let tick = onset + INTERVAL * cycle as u32;
             for (room, (address, doc)) in addresses.iter().zip(&authored).enumerate() {
-                let deadline = tick - interval * (ROOMS - room) as u32;
+                let deadline = tick + spacing * room as u32;
                 std::thread::sleep(deadline.saturating_duration_since(Instant::now()));
                 let text = doc.get_or_insert_text("md");
                 let update = {
@@ -96,12 +102,24 @@ pub(crate) fn sample(http: &mut Http, space: &str, first: &str) -> Result<Vec<f6
                 )?;
             }
         }
+        changes.join().map_err(|_| "grant mutator panicked")??;
         let mut samples = Vec::with_capacity(SAMPLES);
         for peer in peers {
             samples.extend(peer.join().map_err(|_| "room storm peer panicked")??);
         }
         Ok(samples)
     })
+}
+
+fn grant(http: &mut Http, item: &Value, group: &str, permission: &str) -> Result<()> {
+    let (row, _) = http.op(
+        "sharing.grant",
+        json!({"item":item,"audience":{"group_id":group},"permission":permission}),
+    )?;
+    if row["permission"] != permission {
+        return Err("the unrelated grant did not change".into());
+    }
+    Ok(())
 }
 
 fn observe(

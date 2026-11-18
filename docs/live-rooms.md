@@ -137,8 +137,9 @@ statement. These are path counts, measured latency is still required.
 For the additional sharing qualification, pass
 `--rooms-only --room-access-storm`. The fixture opens 32 rooms with 32
 participants each and changes a grant in a separate space once per second.
-Each of the five changes is followed by one edit in each room, with each
-of the 31 observers timed through peer apply for 4,960 samples per arm.
+Each of five one-second windows has one grant mutation and one edit per
+room. The grant mutator runs independently of the writer. Each of the 31
+observers is timed through peer apply for 4,960 samples per arm.
 Participants reuse the authenticated fixture session. The p95 ceiling is
 10 ms. The candidate must use the real sharing revision source.
 
