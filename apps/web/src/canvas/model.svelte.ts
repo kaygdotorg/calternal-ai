@@ -15,14 +15,18 @@ export function canvasOn(live: boolean): boolean {
   if (live) return false;
   try {
     const q = new URLSearchParams(location.search).get("canvas");
-    if (q === "1") sessionStorage.setItem(KEY + ".on", "1");
-    if (q === "0") sessionStorage.removeItem(KEY + ".on");
+    if (q === "1") { sessionStorage.setItem(KEY + ".on", "1"); sessionStorage.setItem(KEY + ".seed", "1"); }
+    if (q === "0") { sessionStorage.removeItem(KEY + ".on"); sessionStorage.removeItem(KEY + ".seed"); }
     return sessionStorage.getItem(KEY + ".on") === "1";
   } catch { return false; }
 }
 
 /** Read once when the page loads, while the address still carries `?canvas=1` (the first navigation drops the query). */
 export const canvasEnabled = canvasOn(serverMode());
+
+/** Whether to fill a first visit with a second thread and a note to arrange: only for the explicit `?canvas=1` demonstration. A canvas that is simply on (a setting, a build default, a test) opens what the person opened and nothing else: two or three windows nobody asked for are a defect in daily use. */
+export const canvasSeedWanted = (() => { try { return sessionStorage.getItem(KEY + ".seed") === "1"; } catch { return false; } })();
+
 
 let n = 0;
 const uid = (p: string) => `${p}${Date.now().toString(36)}${(n++).toString(36)}`;

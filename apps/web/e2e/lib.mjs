@@ -65,7 +65,7 @@ export const launch = () => chromium.launch();
 /** Focuses the composer and waits until it has expanded and its morph has finished (the context and chips rows are in the layout and fully drawn): unfocused, the composer is collapsed and its chips are not there to click. Waits for the state, not for a time. */
 export async function expandComposer(page) {
   await page.locator("#composer-field").click();
-  await page.waitForFunction(() => { const c = document.querySelector(".composer"); const r = c?.querySelector(".chips"); return !!c && !c.hasAttribute("data-collapsed") && !!r && getComputedStyle(r).display !== "none" && !c.getAnimations({ subtree: true }).some((a) => a.playState === "running" && a.effect?.getComputedTiming().iterations !== Infinity); });
+  await page.waitForFunction(() => { const c = (document.querySelector("[data-win][data-focused]") ?? document).querySelector(".composer"); const r = c?.querySelector(".chips"); return !!c && !c.hasAttribute("data-collapsed") && !!r && getComputedStyle(r).display !== "none" && !c.getAnimations({ subtree: true }).some((a) => a.playState === "running" && a.effect?.getComputedTiming().iterations !== Infinity); });
 }
 
 /** The Threads sidebar opens on its Inbox when something waits on the person; suites that work on the whole list switch to All Threads first (a no-op when that tab is already showing or there are no tabs). */
@@ -91,3 +91,9 @@ export function busyNow() {
 }
 /** True when timing checks must be judged: the quiet list (`CAL_QUIET=1`) or a machine that is not busy. */
 export const judgeTimings = () => process.env.CAL_QUIET === "1" || !busyNow().busy;
+
+/**
+ * The window a suite is looking at: the focused canvas window when the canvas is on, the middle card when it is not. A canvas can hold several windows (each with its own composer, header and
+ * headings), so a suite scopes `.composer`, `h1`, the header and the list to this, never to the page. (The composer's field keeps the id `composer-field` in the focused window alone.)
+ */
+export const win = (page) => page.locator("[data-win][data-focused], .mid-card:not([data-win])").first();

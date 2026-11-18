@@ -6,9 +6,9 @@
   // canvas; a horizontal wheel over the focused window pans the canvas when nothing under it can scroll that way. While a window holds the input lock the canvas never moves. Touch: two fingers pan the canvas, one finger scrolls the window under it and a horizontal
   // swipe is the shell's sidebar pull. Pointer-initiated adds, closes, width presets and maximise animate on the motion tokens, interruptibly, by FLIP (transform only); the same actions from the keyboard are instant.
   import { onMount, tick, untrack } from "svelte";
-  import { currentScheme, Menu, onScheme, toast, tokenEase, tokenMs, type MenuItem } from "@calternal/ui";
+  import { Card, currentScheme, Menu, onScheme, toast, tokenEase, tokenMs, type MenuItem } from "@calternal/ui";
   import { appFor } from "../apps/registry";
-  import { store } from "../apps/threads/store.svelte";
+  import { client as threadClient, store } from "../apps/threads/store.svelte";
   import { notes } from "../apps/notes/store.svelte";
   import { runThreadItem, threadItems } from "../apps/threads/thread-menu";
   import { href, navigate, route, segments } from "../lib/route.svelte";
@@ -18,7 +18,7 @@
   import { shell } from "../shell/shell.svelte";
   import { centring, edgeOf, leftOf, maxScroll, nearColumns, NARROW, nextPreset, PRESETS, proportionFor, proportionOf, scrollTo, stripWidth, widthsOf } from "./layout";
   import type { Win } from "./layout";
-  import { canvas } from "./model.svelte";
+  import { canvas, canvasSeedWanted } from "./model.svelte";
   import { canvasPrefs } from "./prefs.svelte";
   import { frostDensity } from "./frost";
   import NotePreview from "./NotePreview.svelte";
@@ -197,8 +197,8 @@
   // The app behind a window starts when its first window opens (Notes loads its list and space); the canvas needs a note to seed, so it starts Notes at once.
   $effect(() => { for (const k of new Set(canvas.all().map((w) => w.kind))) void appFor(k)?.start?.(); });
   onMount(() => { void appFor("notes")?.start?.(); });
-  // First visit: a thread, a second thread beside it and a note below that, so there is something to arrange (the person's own arrangement is kept after that).
-  let seeded = (() => { try { return localStorage.getItem("cal.canvas.seeded.2") === "1"; } catch { return true; } })();
+  // The `?canvas=1` demonstration, first visit: a thread, a second thread beside it and a note below that, so there is something to arrange (the person's own arrangement is kept after that). Never in daily use (model.svelte.ts `canvasSeedWanted`).
+  let seeded = !canvasSeedWanted || (() => { try { return localStorage.getItem("cal.canvas.seeded.2") === "1"; } catch { return true; } })();
   $effect(() => {
     if (seeded) return;
     const open = untrack(() => new Set(canvas.all().map((w) => `${w.kind}/${w.item}`)));
@@ -280,6 +280,13 @@
   const iconOf = (kind: string): IconName => (appFor(kind)?.icon ?? "apps") as IconName;
   /** Which of the windows with the same title this is (1 for the first, in reading order): their landmark labels differ. */
   const nthOf = (w: Win) => canvas.all().filter((x) => titleOf(x.kind, x.item) === titleOf(w.kind, w.item)).findIndex((x) => x.id === w.id) + 1;
+  /** The window whose title pill is an editor (the menu's Rename); the pill commits on Enter or blur and cancels on Escape. */
+  let renamingWin = $state<string | null>(null);
+  function renameWin(w: Win, to: string): void {
+    renamingWin = null;
+    const t = to.trim(), cur = store.get(w.item);
+    if (t && cur && t !== cur.title) void threadClient.rename(cur.id, t).catch((e: Error) => toast(`Not renamed: ${e.message}`));
+  }
   const titleOf = (kind: string, item: string) => (kind === "threads" ? store.get(item)?.title : notes.list.find((n) => n.id === item)?.title) ?? appFor(kind)?.name ?? kind;
   /** The next thread or note that has no window yet. */
   function nextOf(kind: string): string | null {
@@ -361,7 +368,7 @@
     else if (item === "lock") canvas.toggleLock(w.id);
     else if (item === "panel") shell.toggleRight();
     else if (item === "close") closeWin(w.id, source);
-    else if (item.startsWith("t:")) { const t = store.get(w.item); if (t) runThreadItem(item.slice(2), t, () => toast("Rename it from the sidebar: double-click its row")); }
+    else if (item.startsWith("t:")) { const t = store.get(w.item); if (t) runThreadItem(item.slice(2), t, () => { renamingWin = w.id; }); }
   }
   /** Focus follows the press; a column not fully in view slides into view. */
   const focusWin = (id: string) => { if (canvas.focus !== id) { canvas.setFocus(id); if (!locked()) reveal(id, true); } };
@@ -403,7 +410,7 @@
             {#each c.wins as w, k (w.id)}
               {#if !maxed || w.id === canvas.max}
                 <div class="slot" style:flex="{mine ? 1 : w.weight} 1 0" style:min-height="0">
-                  <WindowFrame win={w} title={titleOf(w.kind, w.item)} nth={nthOf(w)} wNow={Math.round(proportionOf(c, canvas.cols.length, vw) * 100)} hNow={Math.round((w.weight / c.wins.reduce((a, x) => a + x.weight, 0)) * 100)} icon={iconOf(w.kind)} ownTitle={false} focused={canvas.focus === w.id} maximised={mine} look={canvasPrefs.look}
+                  <WindowFrame win={w} title={titleOf(w.kind, w.item)} nth={nthOf(w)} renaming={renamingWin === w.id} onrename={(to) => renameWin(w, to)} oncancelrename={() => (renamingWin = null)} wNow={Math.round(proportionOf(c, canvas.cols.length, vw) * 100)} hNow={Math.round((w.weight / c.wins.reduce((a, x) => a + x.weight, 0)) * 100)} icon={iconOf(w.kind)} ownTitle={false} focused={canvas.focus === w.id} maximised={mine} look={canvasPrefs.look}
                     canMax={canvas.all().length > 1 && !shell.narrow} paper={page.paper.join(" ")} {density} hasBelow={k < c.wins.length - 1} edge={i === 0 && i === canvas.cols.length - 1 ? "lr" : i === 0 ? "l" : i === canvas.cols.length - 1 ? "r" : ""} {kbd}
                     onfocus={() => focusWin(w.id)} onaction={(a, source, target) => act(w.id, a, source, target)}
                     onresizew={(dx) => resizeWidth(c.id, i, dx)} onresizeh={(dy) => canvas.dragBoundary(c.id, k, dy, el?.querySelector<HTMLElement>(`[data-col="${c.id}"]`)?.clientHeight ?? vh)}>
@@ -418,7 +425,11 @@
       {/each}
     </div>
   </div>
-  {#if canvas.cols.length === 0}<p class="none">Open a thread or a note from the sidebar.</p>{/if}
+  <!-- No window is open: the app of the address shows its own front page in a card, the one the single card shows (an empty account says what a thread is and offers "Start a thread"), never a bare line of text. -->
+  {#if canvas.cols.length === 0}
+    {@const RA = appFor(segments()[0] ?? "threads")}
+    {#if RA}<div class="empty"><Card label="{RA.name} home" class="mid-card"><div class="front"><RA.Main id="" /></div></Card></div>{:else}<p class="none">Open a thread or a note from the sidebar.</p>{/if}
+  {/if}
 </div>
 
 <Menu open={!!menu} items={menuItems} label={menu?.kind === "share" ? "Share" : "Window menu"} anchor={menu ? { left: menu.x, top: menu.y, right: menu.x, bottom: menu.y } : null} placement="bottom" onclose={() => (menu = null)} onpick={pick} />
@@ -433,5 +444,6 @@
   .col.max { top: 0; bottom: 0; }
   .col.hidden { display: none; }
   .slot { position: relative; min-height: 0; }
+  .empty { position: absolute; inset: 0; z-index: 1; display: flex; padding: 0 var(--edge-pad, 0px); } .empty > :global(.card) { flex: 1; min-width: 0; } .front { height: 100%; min-height: 0; display: flex; flex-direction: column; }
   .none { position: absolute; inset: 0; z-index: 1; display: grid; place-items: center; color: var(--ink-2); font-size: var(--text-ui); }
 </style>

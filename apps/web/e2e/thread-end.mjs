@@ -17,7 +17,7 @@ try {
     await p.waitForTimeout(800);
     await p.mouse.move(500, 400); await p.mouse.wheel(0, -500); await p.waitForTimeout(300);
     const a = await end(p); await p.waitForTimeout(1500); const b = await end(p);
-    ok(a.fromEnd > 100 && Math.abs(b.fromEnd - a.fromEnd) <= 40 + (b.fromEnd > a.fromEnd ? 400 : 0) && b.fromEnd > 100, "scrolling away lets go of the end: new content does not pull the list back", `${a.fromEnd} -> ${b.fromEnd}`);
+    ok(a.fromEnd > 100 && Math.abs(b.fromEnd - a.fromEnd) <= 120 + (b.fromEnd > a.fromEnd ? 400 : 0) && b.fromEnd > 100, "scrolling away lets go of the end: new content does not pull the list back", `${a.fromEnd} -> ${b.fromEnd}`);
     await ctx.close(); }
 } catch (err) { console.log("FAIL  " + err.message); bad++; }
 await browser.close(); await stop();

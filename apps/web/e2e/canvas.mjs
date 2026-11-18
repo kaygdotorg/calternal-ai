@@ -40,7 +40,7 @@ async function seam(p) {
 }
 const key = async (p, chord) => { await p.keyboard.press(chord); await p.waitForTimeout(150); };
 try {
-  { const { page, ctx } = await open(browser, "desktop", "dark", "/threads/t-idle"); ok((await page.locator("[data-canvas]").count()) === 0, "without ?canvas=1 nothing changes (no canvas)"); await ctx.close(); }
+  { const { page, ctx } = await open(browser, "desktop", "dark", "/threads/t-idle"); if (process.env.CAL_CANVAS !== "1") ok((await page.locator("[data-canvas]").count()) === 0, "without ?canvas=1 nothing changes (no canvas)"); else console.log("SKIP  without ?canvas=1 nothing changes: card-only, the canvas is forced on by CAL_CANVAS"); await ctx.close(); }
   for (const scheme of ["dark", "light"]) {
     console.log(`-- ${scheme}`);
     const { page: p, ctx } = await open(browser, "desktop", scheme, "/threads?canvas=1");

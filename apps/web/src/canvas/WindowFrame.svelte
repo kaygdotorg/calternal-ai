@@ -6,12 +6,13 @@
   // frame line at its middle (infraternal D177). The right edge and the boundary below it resize between neighbours. Every control has the warm tooltip with its shortcut. Focus follows the press. The window that is not focused is dimmed by a neutral veil and its controls recede; the
   // focused one has no ring (both changes ease on the motion tokens and can be interrupted).
   import { setContext, type Snippet } from "svelte";
-  import { Card, Grip, Icon, Panel, tip } from "@calternal/ui";
+  import { Card, Grip, Icon, InlineEditor, Panel, Pill, tip } from "@calternal/ui";
+  import { shell } from "../shell/shell.svelte";
   import type { IconName } from "@calternal/ui";
   import type { Look, Win } from "./layout";
   export type WinAction = "max" | "share" | "menu" | "lock";
-  let { win, title, nth = 1, wNow, hNow, icon, ownTitle, focused, maximised, canMax, look, paper, density, hasBelow, edge, kbd, onfocus, onaction, onresizew, onresizeh, children }: {
-    win: Win; title: string; /** Which of several windows with this title this is (1 for the first): the landmark labels must differ. */ nth?: number; /** The column's width and the window's height share, in percent: the resize handles' current values. */ wNow: number; hNow: number; icon: IconName; /** The app draws its own title pill (Threads). */ ownTitle: boolean; focused: boolean; maximised: boolean; /** There is another window to be full screen among: a lone window is full already, so it has no full screen control. */ canMax: boolean; look: Look;
+  let { win, title, nth = 1, renaming = false, onrename, oncancelrename, wNow, hNow, icon, ownTitle, focused, maximised, canMax, look, paper, density, hasBelow, edge, kbd, onfocus, onaction, onresizew, onresizeh, children }: {
+    win: Win; title: string; /** The title pill is an editor (Rename in the window's menu). */ renaming?: boolean; onrename?: (to: string) => void; oncancelrename?: () => void; /** Which of several windows with this title this is (1 for the first): the landmark labels must differ. */ nth?: number; /** The column's width and the window's height share, in percent: the resize handles' current values. */ wNow: number; hNow: number; icon: IconName; /** The app draws its own title pill (Threads). */ ownTitle: boolean; focused: boolean; maximised: boolean; /** There is another window to be full screen among: a lone window is full already, so it has no full screen control. */ canMax: boolean; look: Look;
     /** The scheme's paper as `r g b` and the density of a transparent window (frost.ts). */ paper: string; density: number; hasBelow: boolean; /** Which edge of the area this window touches, for the shell's sidebar pills. */ edge: "l" | "r" | "lr" | "";
     kbd: Record<string, string>; onfocus: () => void; onaction: (a: WinAction, source: "pointer" | "key", el: HTMLElement) => void; onresizew: (dx: number) => void; onresizeh: (dy: number) => void; children: Snippet;
   } = $props();
@@ -27,6 +28,8 @@
   const startAt = (axis: "x" | "y") => (e: PointerEvent) => { last = axis === "x" ? e.clientX : e.clientY; };
   const moveBy = (axis: "x" | "y", report: (d: number) => void) => (e: PointerEvent) => { const p = axis === "x" ? e.clientX : e.clientY; report(p - last); last = p; };
   const keyBy = (grow: string, shrink: string, report: (d: number) => void) => (e: KeyboardEvent) => { const step = e.shiftKey ? 64 : 16; if (e.key === grow) report(step); else if (e.key === shrink) report(-step); else return; e.preventDefault(); };
+  let draft = $state("");
+  $effect(() => { if (renaming) draft = title; });
   /** The padlock appears near the top edge (the frame's 44 px hit area around its middle). */
   let near = $state(false);
   const nearTop = (e: PointerEvent) => { const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); near = e.clientY - r.top < 44 && Math.abs(e.clientX - (r.left + r.width / 2)) < 90; };
@@ -39,7 +42,7 @@
     <svg viewBox="0 0 24 24" aria-hidden="true"><path class="shackle" d="M8.5 11V8a3.5 3.5 0 0 1 7 0v3" /><rect x="5" y="11" width="14" height="9.5" rx="2.5" /></svg>
   </button>
   {#if !ownTitle}
-    <div class="tl"><Panel radius="pill" class="wt"><Icon name={icon} inline /><span class="nm">{title}</span></Panel></div>
+    <div class="tl">{#if shell.narrow}<Pill icon="sidebar" label="Show {win.kind}" onclick={() => shell.toggleSidebar()} />{/if}<Panel radius="pill" class="wt"><Icon name={icon} inline />{#if renaming}<InlineEditor class="title-edit" label="Rename thread" bind:value={draft} autoselect onsubmit={() => onrename?.(draft)} oncancel={() => oncancelrename?.()} onblur={() => onrename?.(draft)} />{:else}<span class="nm">{title}</span>{/if}</Panel></div>
   {/if}
   <div class="tr">
     <Panel radius="pill" class="wacts">
@@ -71,7 +74,7 @@
   :global(.card.win:not([data-focused])) :is(.tl, .tr) { opacity: 0.6; }
   /* Where the app's own header keeps its pills (a bar-high row under the safe area, `--pad-region` from the sides), so the window's controls line up with the title pill the Threads view draws. */
   .tl, .tr { position: absolute; z-index: 5; top: calc(var(--safe-top) + (var(--bar-h) - var(--pill-h)) / 2); display: flex; }
-  .tl { left: var(--pad-region); }
+  .tl { left: var(--pad-region); gap: var(--s-3); }
   .tr { right: var(--pad-region); }
   :global(.card.win[data-edge~="l"]) .tl, :global(.card.win[data-edge="lr"]) .tl { margin-left: var(--edge-l, 0px); }
   :global(.wt) { display: inline-flex; align-items: center; gap: var(--s-3); height: var(--pill-h); max-width: 100%; padding: 0 var(--s-5); font-size: var(--text-ui); font-weight: var(--strong-weight); }
@@ -90,4 +93,5 @@
   @media (hover: hover) and (pointer: fine) { :global(.win) .lock:hover { opacity: 0.8; } }
   /* Touch has no hover, and on a phone the title pill is at the top middle where the padlock hangs: the padlock shows there only while locked (the window menu has Lock input). */
   @media (pointer: coarse) { :global(.win[data-locked]) .lock { opacity: 0.9; } }
+  .tl :global(.title-edit) { min-width: 8rem; color: var(--ink); font: inherit; }
 </style>
