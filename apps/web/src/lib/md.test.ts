@@ -27,3 +27,10 @@ describe("parseMore", () => {
     expect(parseMore(a, "Other.\n\nText").blocks).toEqual(parse("Other.\n\nText"));
   });
 });
+
+describe("html comments", () => {
+  test("a line that is only a comment (the server's markers) is not drawn, inside a paragraph or between blocks", () => {
+    expect(parse("Hello\n<!-- turn-timing duration-ms:130 -->\n\nWorld")).toEqual(parse("Hello\n\nWorld"));
+    expect(parse("<!-- x -->")).toEqual([]);
+  });
+});
