@@ -2,7 +2,7 @@
 
 Decisions waiting on kayg, most blocking first. Answer here or in chat; answered items
 move to the decision record they belong to and leave this list. Terms: see
-[glossary](glossary.md). Updated 2026-11-18 19:40 IST.
+[glossary](glossary.md). Updated 2026-11-18 20:10 IST.
 
 ## Waiting now
 
@@ -27,7 +27,7 @@ Decided 2026-11-18: a person never signs in twice and no API key is used. The ti
 - **Pricing**: plans are listed at calternal.com/pricing; storage is bought separately; what the sizes, hours and storage steps are.
 - **Upgrades with real data**: decided 2026-11-18 that updates are automatic and a failed one rolls back without the person or admin noticing; the index rebuild is made faster first (search is unavailable for 67 to 80 s at 100,000 notes today), then migrations are written for the small core (accounts, spaces, roles, secrets), which cannot be rebuilt from files.
 - **MicroVMs**: one per person with a container per thread; sizes decided; the lane posts its build plan on issue #51 for review.
-- **Next to write up** (kayg, 2026-11-18): plugin workers (#33), performance measures (#40), requests (#34).
+- **Next to write up** (kayg, 2026-11-18): sharing (#52), then Settings and Appearance.
 - **The canvas experiment** (kayg, 2026-11-18; still an experiment behind `?canvas=1`): no outer card; the area between the sidebars is the canvas and each window is a middle card, so one window looks exactly like the app today and a second animates as a split; structured columns as in niri; windows touch the top; one continuous veiled background behind them, as under the sidebars; windows opaque or transparent with no blur of their own; both sidebars follow the focused window's app; on a phone one window at a time. The app switcher is no longer part of the canvas (it moved to the left sidebar's footer). Feedback 2026-11-18 17:00, being fixed by the Threads lane: one window must match the app without the canvas exactly (fonts, spacing, animations); no fade on a half-scrolled window; windows are neutral dark or light, never tinted by the wallpaper's accent; no accent border on the selected window (inactive windows dim instead, to be judged); the fullscreen icon is two diagonal chevrons and the link icon becomes a real share menu.
 
 ## Queued, no decision needed
@@ -37,6 +37,7 @@ Decided 2026-11-18: a person never signs in twice and no API key is used. The ti
 
 ## Recently decided (2026-11-17), now in the decision records
 
+- Fonts (2026-11-18): Google Sans Flex is the default for the interface and for chat, each separately configurable; Cascadia Code for monospace and a future terminal (a terminal would come from a plugin).
 - Shell footer (2026-11-18 evening, replaces the space dots and the capsule under the card): spaces sit behind the account picture on desktop and phone; the app switcher is an icon-only capsule of three apps at the bottom centre of the left sidebar, scrolling sideways. This also settles where the switcher sits in the canvas.
 - MicroVM sizes (2026-11-18): the smallest is 512 MiB with at most two active threads, then 1,024 MiB; measured on real turns (issue #51).
 - Plugin network access is refused for private addresses by default, with an explicit grant approved by a server admin or the machine's owner; only cloud metadata addresses are always refused. Design to be written up.
