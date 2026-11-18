@@ -46,15 +46,22 @@ class CanvasModel {
   all(): Win[] { return this.cols.flatMap((c) => c.wins); }
   win(id: string | null): Win | undefined { return id ? this.all().find((w) => w.id === id) : undefined; }
   colIndexOf(id: string | null): number { return this.cols.findIndex((c) => c.wins.some((w) => w.id === id)); }
+  /** The window of each app that had focus last (so choosing an app in the capsule, which has no item, goes back to where the person was in it). */
+  private lastByKind: Record<string, string> = {};
+  /** Remembers that this window now has focus. */
+  noteFocus(id: string | null): void { const w = this.win(id); if (w) this.lastByKind[w.kind] = w.id; }
+  /** The window of `kind` that had focus last, if it is still open. */
+  lastOfKind(kind: string): Win | undefined { return this.win(this.lastByKind[kind] ?? null) ?? this.all().find((w) => w.kind === kind); }
   find(kind: string, item: string): Win | undefined { return this.all().find((w) => w.kind === kind && w.item === item); }
-  address(w: Win): string { return `/${w.kind}/${w.item}`; }
+  address(w: Win): string { return w.item ? `/${w.kind}/${w.item}` : `/${w.kind}`; }
 
   private make(kind: string, item: string): Win { return { id: uid("w"), kind, item, weight: 1, look: "card", locked: false }; }
 
   /** Opens an address: its window gets focus, or a new column opens right of the focused one. Returns the window. One window per address. */
   show(kind: string, item: string): Win {
-    const have = this.find(kind, item);
-    if (have) { this.focus = have.id; this.save(); return have; }
+    // Settings is one window: moving to another settings page changes what it shows (its address is `/settings/<page>`), it never opens a second Settings window.
+    const have = kind === "settings" ? this.all().find((w) => w.kind === "settings") : this.find(kind, item);
+    if (have) { if (kind === "settings") have.item = item; this.focus = have.id; this.save(); return have; }
     return this.addRight(kind, item);
   }
   /** A new column immediately right of the focused one (or at the end) holding one window; it gets focus (niri: a new window opens next to the focused column). */
