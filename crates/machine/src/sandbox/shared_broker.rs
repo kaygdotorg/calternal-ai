@@ -10,7 +10,7 @@ use std::{
 
 use axum::{
     Router,
-    body::{Body, to_bytes},
+    body::{Body, Bytes, to_bytes},
     extract::{Request, State},
     http::{HeaderValue, Method, StatusCode, header},
     response::{IntoResponse, Response},
@@ -191,9 +191,9 @@ async fn dispatch(State(state): State<Arc<Gateway>>, request: Request) -> Respon
     let Some((url, auth)) = state.upstream(path) else {
         return StatusCode::NOT_FOUND.into_response();
     };
-    if path != "/v1/messages/count_tokens" && !uses_isolated_tools(&body) {
-        return (StatusCode::BAD_REQUEST, "unapproved harness tool list").into_response();
-    }
+    let Some(body) = isolate_request(&body) else {
+        return (StatusCode::BAD_REQUEST, "invalid harness request").into_response();
+    };
     #[cfg(test)]
     let mock_url = state.mock_base.as_ref().map(|base| format!("{base}{path}"));
     #[cfg(test)]
@@ -219,18 +219,105 @@ async fn dispatch(State(state): State<Arc<Gateway>>, request: Request) -> Respon
     }
     let content_type = reply.headers().get(header::CONTENT_TYPE).cloned()
         .unwrap_or_else(|| HeaderValue::from_static("application/json"));
-    ([(header::CONTENT_TYPE, content_type)], Body::from_stream(reply.bytes_stream())).into_response()
+    let streaming = content_type.as_bytes().starts_with(b"text/event-stream");
+    let guard = if streaming {
+        Body::from_stream(futures_util::stream::try_unfold(
+            (reply, Vec::new()),
+            |(mut response, mut buffer)| async move {
+                loop {
+                    if let Some(end) = event_end(&buffer) {
+                        let remainder = buffer.split_off(end);
+                        check_event(&buffer)?;
+                        return Ok::<_, std::io::Error>(Some((Bytes::from(buffer), (response, remainder))));
+                    }
+                    let Some(chunk) = response.chunk().await.map_err(std::io::Error::other)? else {
+                        return if buffer.is_empty() { Ok(None) } else { Err(rejected_event()) };
+                    };
+                    if buffer.len().saturating_add(chunk.len()) > BODY_LIMIT {
+                        return Err(rejected_event());
+                    }
+                    buffer.extend_from_slice(&chunk);
+                }
+            },
+        ))
+    } else {
+        let mut reply = reply;
+        let mut bytes = Vec::new();
+        loop {
+            match reply.chunk().await {
+                Ok(Some(chunk)) if bytes.len().saturating_add(chunk.len()) <= BODY_LIMIT =>
+                    bytes.extend_from_slice(&chunk),
+                Ok(None) => break,
+                _ => return StatusCode::BAD_GATEWAY.into_response(),
+            }
+        }
+        if !valid_reply(&bytes) {
+            return StatusCode::BAD_GATEWAY.into_response();
+        }
+        Body::from(bytes)
+    };
+    ([(header::CONTENT_TYPE, content_type)], guard).into_response()
 }
 
-fn uses_isolated_tools(body: &[u8]) -> bool {
-    let Ok(body) = serde_json::from_slice::<serde_json::Value>(body) else { return false };
-    body.get("tools").is_none_or(|tools| {
-        tools.as_array().is_some_and(|tools| tools.iter().all(|tool| {
-            matches!(tool.get("name").and_then(|name| name.as_str()),
-                Some("mcp__workspace__workspace_command"))
-                && tool.get("type").is_none_or(|kind| kind == "function" || kind == "custom")
-        }))
-    })
+const TOOL: &str = "mcp__workspace__workspace_command";
+
+fn isolate_request(body: &[u8]) -> Option<Vec<u8>> {
+    let mut body: serde_json::Value = serde_json::from_slice(body).ok()?;
+    let contents = body.as_object_mut()?;
+    if let Some(tools) = contents.get_mut("tools") {
+        tools.as_array_mut()?.retain(|tool| tool["name"].as_str() == Some(TOOL)
+            && tool.get("type").is_none_or(|kind| kind == "function" || kind == "custom"));
+    }
+    if let Some(choice) = contents.get("tool_choice")
+        && choice.is_object() && choice["name"].as_str().is_some_and(|name| name != TOOL)
+    {
+        return None;
+    }
+    serde_json::to_vec(&body).ok()
+}
+
+fn event_end(buffer: &[u8]) -> Option<usize> {
+    let lf = buffer.windows(2).position(|bytes| bytes == b"\n\n").map(|at| at + 2);
+    let crlf = buffer.windows(4).position(|bytes| bytes == b"\r\n\r\n").map(|at| at + 4);
+    lf.into_iter().chain(crlf).min()
+}
+
+fn check_event(frame: &[u8]) -> std::io::Result<()> {
+    let mut data = Vec::new();
+    for line in frame.split(|byte| *byte == b'\n') {
+        if let Some(value) = line.strip_prefix(b"data:") {
+            if !data.is_empty() { data.push(b'\n'); }
+            data.extend_from_slice(value.strip_prefix(b" ").unwrap_or(value));
+        }
+    }
+    if data.is_empty() || data == b"[DONE]" || valid_reply(&data) {
+        Ok(())
+    } else {
+        Err(rejected_event())
+    }
+}
+
+fn rejected_event() -> std::io::Error {
+    std::io::Error::other("unapproved or invalid provider response")
+}
+
+fn valid_reply(body: &[u8]) -> bool {
+    fn allowed(node: &serde_json::Value) -> bool {
+        match node {
+            serde_json::Value::Object(fields) => {
+                let kind = fields.get("type").and_then(|kind| kind.as_str());
+                if matches!(kind, Some("tool_use" | "function_call" | "custom_tool_call"))
+                    && fields.get("name").and_then(|name| name.as_str()) != Some(TOOL)
+                {
+                    return false;
+                }
+                fields.values().all(allowed)
+            }
+            serde_json::Value::Array(items) => items.iter().all(allowed),
+            _ => true,
+        }
+    }
+    serde_json::from_slice(body).ok().is_some_and(|value| allowed(&value))
 }
 
 #[derive(Deserialize)]

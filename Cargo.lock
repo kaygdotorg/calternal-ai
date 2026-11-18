@@ -685,6 +685,7 @@ dependencies = [
  "calternal-fsio",
  "calternal-types",
  "clap",
+ "futures-util",
  "reqwest",
  "ring",
  "rustix",

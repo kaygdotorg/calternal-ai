@@ -4,12 +4,15 @@ use std::{sync::atomic::{AtomicU32, Ordering}, time::Instant};
 use tokio::{io::AsyncWriteExt, net::{TcpListener, UnixStream}};
 
 #[test]
-fn inference_only_accepts_the_fixed_tool() {
-    assert!(uses_isolated_tools(br#"{"tools":[{"name":"mcp__workspace__workspace_command"}]}"#));
-    assert!(uses_isolated_tools(br#"{"tools":[{"type":"function","name":"mcp__workspace__workspace_command"}]}"#));
-    assert!(!uses_isolated_tools(br#"{"tools":[{"type":"function","name":"shell"}]}"#));
-    assert!(!uses_isolated_tools(br#"{"tools":[{"type":"web_search"}]}"#));
-    assert!(!uses_isolated_tools(br#"{"tools":"invalid"}"#));
+fn inference_exposes_only_the_fixed_tool_and_rejects_other_calls() {
+    let input = br#"{"tools":[{"type":"function","name":"mcp__workspace__workspace_command"},{"type":"function","name":"shell"},{"type":"web_search"}]}"#;
+    let output = String::from_utf8(isolate_request(input).unwrap()).unwrap();
+    assert!(output.contains("mcp__workspace__workspace_command"));
+    assert!(!output.contains("shell") && !output.contains("web_search"));
+    assert!(isolate_request(br#"{"tools":"invalid"}"#).is_none());
+    assert!(valid_reply(br#"{"item":{"type":"function_call","name":"mcp__workspace__workspace_command"}}"#));
+    assert!(!valid_reply(br#"{"item":{"type":"function_call","name":"apply_patch"}}"#));
+    assert!(check_event(b"data: {\"content_block\":{\"type\":\"tool_use\",\"name\":\"Bash\"}}\n\n").is_err());
 }
 
 async fn unix_request(broker: &Broker, path: &str, token: &str, payload: &str) -> String {
@@ -64,7 +67,7 @@ async fn shared_broker_keeps_claude_and_codex_credentials_out_of_tools() {
                         .and_then(|value| value.to_str().ok()) == Some(expected.as_str())
                     {
                         observed.fetch_add(1, Ordering::Relaxed);
-                        (StatusCode::OK, "mock-provider-reply")
+                        (StatusCode::OK, r#"{"text":"mock-provider-reply"}"#)
                     } else {
                         // A real upstream can echo what it received on denial.
                         (StatusCode::UNAUTHORIZED, "mock-credential-details")
@@ -137,7 +140,7 @@ JS
             let direct = client.post(&mock_url).header(header_name, if provider == SharedToolsProvider::Claude { key.clone() } else { format!("Bearer {key}") })
                 .header(header::CONNECTION, "close").body(payload).send().await.unwrap();
             assert!(direct.status().is_success());
-            assert_eq!(direct.text().await.unwrap(), "mock-provider-reply");
+            assert_eq!(direct.text().await.unwrap(), r#"{"text":"mock-provider-reply"}"#);
             let direct = start.elapsed();
             let start = Instant::now();
             let relayed = unix_request(&broker, path, &broker.access, payload).await;

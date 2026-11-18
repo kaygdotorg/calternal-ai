@@ -291,7 +291,7 @@ impl PodmanBackend {
                     let space = spec.space_id.ok_or_else(|| SandboxError("missing sandbox space".into()))?;
                     let broker = Broker::start(&root, &dir, space, tools.provider, ToolSandbox {
                         podman: self.podman.clone(),
-                        image: image.clone(),
+                        image: image.to_owned(),
                         root_label: ownership::root_label(&root),
                         work: work.clone(),
                         writable: !tools.workspace_read_only,
