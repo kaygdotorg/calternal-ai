@@ -9,6 +9,7 @@
 mod bounded;
 mod registry;
 mod runtime;
+mod slots;
 pub use registry::*;
 pub use runtime::*;
 

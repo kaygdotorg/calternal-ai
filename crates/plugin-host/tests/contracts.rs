@@ -5,6 +5,12 @@ use calternal_types::{AccountId, SpaceId};
 use serde_json::{Value, json};
 
 fn manifest() -> ManifestV1 {
+    let mut manifest = manifest_with_slots();
+    manifest.slots = None;
+    manifest
+}
+
+fn manifest_with_slots() -> ManifestV1 {
     parse_manifest(include_bytes!(
         "../../../plugins/calternal-notes-insights/manifest.json"
     ))
@@ -71,7 +77,7 @@ fn call(id: &str, method: HostCallKind) -> Frame {
 
 #[test]
 fn manifest_validation_vectors() {
-    let m = manifest();
+    let m = manifest_with_slots();
     let valid = serde_json::to_value(&m).unwrap();
     assert_eq!(
         parse_manifest(&serde_json::to_vec(&valid).unwrap()).unwrap(),
@@ -93,6 +99,13 @@ fn manifest_validation_vectors() {
         ("/operations/0/mutates", json!(true)),
         ("/operations/0/idempotency", json!("never")),
         ("/operations/0/id", json!("")),
+        ("/slots/0/renderer/operation", json!("foreign.render")),
+        ("/slots/0/slot", json!("palette_commands")),
+        ("/slots/0/label", json!("")),
+        (
+            "/slots/0/renderer",
+            json!({"type":"sealed","asset":"../escape.html"}),
+        ),
         // A target must name a required string property of the input schema.
         (
             "/operations/0/target",

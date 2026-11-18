@@ -33,12 +33,27 @@ pub struct PluginState {
     /// Activation generation used to reject results from superseded plugin state.
     pub generation: u32,
 }
+/// An available contribution resolved for the caller and selected space.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(deny_unknown_fields)]
+pub struct ResolvedPluginSlot {
+    /// Owning package identifier; pair with the local contribution ID.
+    pub plugin_id: String,
+    /// Space activation generation to invalidate stale mounts.
+    pub generation: u32,
+    /// Validated declaration; it conveys no authority to dispatch or mount code.
+    pub contribution: PluginSlotContribution,
+}
 /// Result for `plugins.list`, including registered manifests and activation state.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[serde(deny_unknown_fields)]
 pub struct PluginsListResult {
     /// Registered plugins and their space-scoped activation state.
     pub plugins: Vec<PluginState>,
+    /// Available contributions in slot, package ID and local ID order.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub slots: Option<Vec<ResolvedPluginSlot>>,
 }
 /// Result for `plugins.enable` and `plugins.disable` after the state transition.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, TS)]

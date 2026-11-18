@@ -34,7 +34,7 @@ pub(super) fn open_stores(
     calternal_cli::output::CliError,
 > {
     use super::boot;
-    use calternal_server::{plugins::Registry, store::Store};
+    use calternal_server::{plugins::package_store, store::Store};
     let store = Store::open(&roots, installation, create, receipt_retention).map_err(|e| {
         boot(
             1,
@@ -57,11 +57,14 @@ pub(super) fn open_stores(
         )
     })?;
     let test_root = test_plugin_root.map(|r| std::fs::canonicalize(&r).unwrap_or(r));
-    let registry = if let Some(root) = plugin_root {
-        let root = std::fs::canonicalize(&root).unwrap_or(root);
-        Registry::load_with_tests(&root, test_root.as_deref())
-    } else {
-        Registry::load_server_defaults(test_root.as_deref())
-    };
+    let registry = package_store::load(&data_dir, plugin_root.as_deref(), test_root.as_deref())
+        .map_err(|why| {
+            boot(
+                1,
+                "plugin_store",
+                why,
+                "Check the installation's plugin packages and appdata.",
+            )
+        })?;
     Ok((store, data_dir, recovery, registry))
 }

@@ -9,6 +9,13 @@ exit: 0
         "sha256": null,
         "state": "unreadable: worker: No such file or directory (os error 2)",
         "worker": "calternal-notes-insights/dist/worker.js"
+      },
+      {
+        "id": "calternal-plugin-guide",
+        "pinned": false,
+        "sha256": null,
+        "state": "unreadable: worker: No such file or directory (os error 2)",
+        "worker": "calternal-plugin-guide/dist/worker.js"
       }
     ]
   },
