@@ -25,10 +25,10 @@ await page.keyboard.press("Escape").catch(() => {});
 await page.getByRole("button", { name: /Close the sidebar/ }).click({ force: true, timeout: 1500 }).catch(() => {});
 await page.waitForTimeout(500);
 const touch = (type, x, y, sel = "body") => page.evaluate(([t, x, y, sel]) => { const el = document.elementFromPoint(x, y) ?? document.querySelector(sel); el.dispatchEvent(new PointerEvent(t, { bubbles: true, pointerType: "touch", pointerId: 9, clientX: x, clientY: y })); }, [type, x, y, sel]);
-await touch("pointerdown", 6, 400); await touch("pointermove", 60, 402); await touch("pointermove", 150, 405);
+await touch("pointerdown", 6, 400); await touch("pointermove", 60, 402); await touch("pointermove", 220, 405); // well past half the way, so the release does not depend on how fast the events arrive (a busy machine delivers them late)
 const follow = await page.locator(".mid").evaluate((e) => new DOMMatrix(getComputedStyle(e).transform).m41);
-ok("the card follows the finger while swiping from the edge", follow > 100, `card at ${follow.toFixed(0)}`);
-await touch("pointerup", 160, 405);
+ok("the card follows the finger while swiping from the edge", follow > 150, `card at ${follow.toFixed(0)}`);
+await touch("pointerup", 230, 405);
 await page.waitForTimeout(500);
 ok("a swipe from the left edge opens the sidebar", (await page.locator(".shell").getAttribute("data-sidebar")) === "true");
 // (From the strip of card that stays visible: a finger that starts on a thread row swipes that row instead.)

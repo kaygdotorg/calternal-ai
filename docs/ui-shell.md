@@ -192,3 +192,29 @@ A horizontal swipe anywhere over the middle card brings a closed sidebar into vi
 - On a narrow window a trackpad does nothing (touch pulls; a narrow desktop window is rare and its sidebars have buttons).
 
 A trackpad swipe starts at the first horizontal `wheel` event after a quiet moment (120 ms) and ends after the next quiet moment; the inertia after the fingers lift is part of the swipe and keeps moving the sidebar, then the release rule applies.
+
+## Safe areas (2026-11-18)
+
+Ported from the existing app (`lib/home-screen.ts`, `page-chrome.ts`, `index.html` on origin/dev, read with git) and fitted to the shell: apps and plugins get safe-area padding from the shell and never read `env()` themselves.
+
+**Page.** `viewport-fit=cover` (the page is drawn under the status bar, the notch and the home indicator), `interactive-widget=resizes-content`, `color-scheme`, and Apple's home-screen tags (`apple-mobile-web-app-capable`, `status-bar-style=black-translucent`, title, touch icon) plus a web manifest (`display: standalone`, icons in `public/icons`, made by `scripts/icons.mjs`; the manifest uses relative addresses so it works under `/` and `/ai/`).
+
+**Tokens.** `--safe-top`, `--safe-bottom`, `--safe-left`, `--safe-right` (`env(safe-area-inset-*)`, 0 where there is none).
+
+**Who applies what.**
+- The shell (`Shell.svelte`): the grid is padded left and right by the side insets, so the sidebars, the card and the side panel sit between the notches; the backdrop (`Backdrop.svelte`) and its washes are not padded, so the wallpaper and the veils are painted under everything (the sidebar's wash grows by the inset). The shell sits above the keyboard (`--kb`, below) and, on an iPhone home-screen app, is as tall as `--vh`.
+- Floating bars at the top and bottom of a card or sidebar (a header, a composer, the phone's bottom bar) use `--safe-top` and `--safe-bottom` themselves, because they float over content that scrolls under them and fades; the shell cannot pad that content from outside. An app places such a bar at `top: var(--safe-top)` and its scroller's fade starts below it (`--fade-t`); nothing else needs to know.
+
+**The browser's own bars.** Safari tints its toolbar and the status bar from `theme-color`. `appearance/wallpaper.ts` sets it to the colour at the top of the page (the card's top strip of the wallpaper copy under its veil) whenever the veil is solved, through `shell/chrome.ts` `setThemeColor`, which writes only when the value changes (some browsers repaint their chrome on every write and it flickers). So in a Safari tab the bars are the wallpaper's colour instead of black; installed as a home-screen app the status bar is translucent and the picture shows through.
+
+**iPhone home-screen app (iOS 26 and 27).** The page is laid out one status bar shorter than the screen (`100dvh`, `innerHeight` and `position: fixed` boxes stop about 62 px above the bottom; WebKit bugs 301994 and 301108), leaving a flat strip. `chrome.ts` (`startChrome`) marks the root `data-home-screen` and sets `--vh` to the tallest of: a zero-width fixed probe's height (the layout viewport) and, when the page runs under the status bar or sideways, the screen's own size. The shell and the backdrop are as tall as `--vh`. Only for an installed iPhone or iPad web app, never a Safari tab, Android or a desktop browser (a test turns it on anywhere with `globalThis.__homeScreen = true`).
+
+**Keyboard.** iOS keeps the layout viewport under the keyboard, so a field at the bottom is hidden. While a text field has focus on a coarse pointer, the part of the screen the keyboard covers (`innerHeight - visualViewport.height - offsetTop`, ignored under 80 px) goes to `--kb` and the shell and the phone's bottom bar lift by it. Android Chrome resizes the page itself, so the difference is zero and nothing happens.
+
+Checked by `e2e/safe-areas.mjs` (in the gate) with fake insets in portrait (47 top, 34 bottom) and landscape (47 each side, 21 bottom), light and dark: the backdrop fills the screen, the shell pads by the side insets, the card stays between the notches, the header sits below the status bar, `theme-color` is the page's colour, a home-screen app is sized by the probe and the keyboard lifts the shell.
+
+## The background (2026-11-18)
+
+There is exactly one continuous background layer: the wallpaper (`.backdrop`, the 12 px copy) under ONE veil (`.wash`, full window) that `appearance/wallpaper.ts` solves once from the pixels under both sidebars together, so the ink reads on the worse of them. Both sidebars are drawn on it and the middle card is the only thing on top of it. Nothing else paints in the gap beside the card or behind its rounded corners: no veil per sidebar (there used to be one for each, ending at the card's edge, which left the corner squares bare and a step beside the card; the owner reported it three times), no card backdrop, no clip rectangle, and no shadow (a wide card casts none; on a phone it slides over the list and does).
+
+`e2e/seam.mjs` (in the gate) measures it on real pixels: text, icons and the sidebars' content hidden, the rings 3, 12 and 21 px outside the card's rounded corners and gap columns (5 x 5 pixel means, so the grain does not count): the inner ring must lie on the straight line the other two give, each against a control (the same measure well inside a sidebar); a step more than 3 levels of 255 above the control is a seam. It runs both schemes at 1x and 2x on the default wallpaper and a second one in the gate; `SEAM_FULL=1` runs all eight wallpapers at 1x and 2x. On the build before the fix (705fb6c) it fails (up to 50 levels above the control, at the bottom-left corner in light and the top-left in dark); on the fixed build the excess is 0.

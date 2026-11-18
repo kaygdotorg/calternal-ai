@@ -3,6 +3,7 @@
   // bottom of the viewport; the right card holds the app's panels. Wide screens put them side by side. Narrow screens (< 760 px) stack
   // them: the sidebar is underneath and the middle card slides aside to reveal it (and visibly floats above it); the right card slides
   // over the middle card from the right; the app and its panels are the bottom bar.
+  import { untrack } from "svelte";
   import { Card, Pill } from "@calternal/ui";
   import { ariaKeys, shortcuts } from "../lib/shortcuts.svelte";
   import type { AppDef } from "../apps/registry";
@@ -16,7 +17,7 @@
   import ResizeHandle from "./ResizeHandle.svelte";
   import Sidebar from "./Sidebar.svelte";
   import { shell } from "./shell.svelte";
-  import { leavesAlone, pickTarget, settleOpen, visible, WheelSwipe, type Side, type Target } from "./pull";
+  import { leavesAlone, parseMs, pickTarget, settleOpen, visible, WheelSwipe, type Side, type Target } from "./pull";
   let { app, id }: { app: AppDef; id?: string } = $props();
   // `?switcher=card|sidebar` picks where the app switcher lives (and is remembered), so both layouts can be compared live; Appearance has the same choice.
   $effect(() => {
@@ -47,7 +48,7 @@
   const openness = () => ({ leftOpen: shell.sidebarOpen, rightOpen, hasRight });
   const moving = (el: Element | undefined) => !!el?.getAnimations().some((a) => a.playState === "running" && (a as Animation & { id: string }).id === "pull");
   /** The sheet motion tokens as an animation's timing. */
-  const sheet = () => { const cs = getComputedStyle(document.documentElement); const ms = parseFloat(cs.getPropertyValue("--dur-sheet")); return { duration: Number.isFinite(ms) ? ms : 340, easing: cs.getPropertyValue("--ease-sheet").trim() || "ease-out", id: "pull" }; };
+  const sheet = () => { const cs = getComputedStyle(document.documentElement); return { duration: parseMs(cs.getPropertyValue("--dur-sheet"), 340), easing: cs.getPropertyValue("--ease-sheet").trim() || "ease-out", id: "pull" }; };
   /** Where a swipe's first move decides what it is: the target by direction, then the geometry that goes with it. False when the swipe is not a pull. */
   function begin(dx: number, dy: number): boolean {
     if (Math.abs(dx) < 10 || Math.abs(dx) < Math.abs(dy) * 1.5) return false; // not yet a horizontal gesture
@@ -127,26 +128,47 @@
   function finishWide(vAlong: number) {
     const p = wp!;
     const open = settleOpen(p.vis, p.w, vAlong);
-    const from = p.vis;
     lastSide = p.side;
-    const changed = open !== p.layoutOpen;
-    if (changed) shell.setOpen(p.side, open);
-    const newOpen = open;
+    if (open !== p.layoutOpen) shell.setOpen(p.side, open);
+    settleWide(p.side, p.w, p.vis, open);
+  }
+  /**
+   * The one animation of a sidebar going to `open` (its layout is already in the new state) from `from` px showing: the card and the sidebar's content ease from where they are to rest on the sheet tokens, `transform` and
+   * `translate` only. A pull ends in it, and so do the button, the shortcut and the menu: opening and closing are the same motion in either direction, whatever started it. While it runs the sidebar stays drawn
+   * (fixed at its edge) so a closing one slides away instead of vanishing; a new gesture takes hold of it where it is.
+   */
+  function settleWide(side: Side, w: number, from: number, open: boolean) {
     // The card's offset from where its layout now puts it, so the screen position is unchanged at this instant.
-    const cardFrom = p.side === "left" ? from - (newOpen ? p.w : 0) : -(from - (newOpen ? p.w : 0));
+    const cardFrom = side === "left" ? from - (open ? w : 0) : -(from - (open ? w : 0));
     const timing = sheet();
+    lastSide = side;
     requestAnimationFrame(() => {
       midEl?.animate([{ transform: `translateX(${cardFrom}px)` }, { transform: "translateX(0px)" }], timing);
-      const inner = (p.side === "left" ? sideEl : rightEl)?.firstElementChild as HTMLElement | undefined;
-      const sideFrom = p.side === "left" ? from - p.w : p.w - from;
-      const sideTo = newOpen ? 0 : p.side === "left" ? -p.w : p.w;
+      const inner = (side === "left" ? sideEl : rightEl)?.firstElementChild as HTMLElement | undefined;
+      const sideFrom = side === "left" ? from - w : w - from;
+      const sideTo = open ? 0 : side === "left" ? -w : w;
       const a = inner?.animate([{ translate: `${sideFrom}px 0`, opacity: 1 }, { translate: `${sideTo}px 0`, opacity: 1 }], timing);
-      if (newOpen || !a) wp = null;
+      if (open || !a) wp = null;
       else a.onfinish = a.oncancel = () => { if (wp?.settling) wp = null; };
     });
-    // Until the next frame the pieces stay where the finger left them, now laid out for the new state (the screen does not move at this instant).
-    wp = { ...p, vis: from, layoutOpen: open, settling: true };
+    // Until the next frame the pieces stay where they were, now laid out for the new state (the screen does not move at this instant).
+    wp = { side, vis: from, w, layoutOpen: open, settling: true };
   }
+  // A sidebar opened or closed by anything but a pull (a button, a shortcut, a menu, the palette) goes through the same motion, from fully closed to fully open or back, or from wherever a running one had got to.
+  let seenLeft = shell.sidebarOpen, seenRight = false, seenInit = false;
+  $effect(() => {
+    const l = shell.sidebarOpen, r = rightOpen;
+    untrack(() => {
+      if (!seenInit) { seenInit = true; seenLeft = l; seenRight = r; return; }
+      const changedSide: Side | null = l !== seenLeft ? "left" : r !== seenRight ? "right" : null;
+      seenLeft = l; seenRight = r;
+      if (!changedSide || shell.narrow || wp) return; // a phone has its own CSS motion; a pull already runs this
+      const open = changedSide === "left" ? l : r;
+      const w = sideWidth(changedSide);
+      if (!w) return;
+      settleWide(changedSide, w, moving(midEl) ? grabWide(changedSide) : open ? 0 : w, open);
+    });
+  });
   // A trackpad's horizontal two-finger swipe over the app: the same pull, fed by `wheel` events (./pull.ts WheelSwipe). Only on a wide screen; the events are consumed (so the browser does not take
   // the swipe as Back) only while a pull owns them.
   const ws = new WheelSwipe();
@@ -214,7 +236,7 @@
   @media (min-width: 760px) { :global(html[data-chat-wide]) { --msg-w: 100%; --msg-inner: none; --msg-pad-l: 3.25rem; --msg-pad-r: 1.5rem; } }
   .shell {
     --sw: var(--side-w); --rw: var(--right-w);
-    position: fixed; inset: 0; z-index: 1; display: grid; grid-template-columns: var(--sw) minmax(0, 1fr) var(--rw); grid-template-rows: minmax(0, 1fr); /* one row exactly the window's height: a page taller than the window scrolls inside the card and never stretches the sidebars (their footer stays in view in every app) */
+    position: fixed; inset: 0 0 var(--kb, 0px) 0; box-sizing: border-box; padding-left: var(--safe-left); padding-right: var(--safe-right); z-index: 1; display: grid; grid-template-columns: var(--sw) minmax(0, 1fr) var(--rw); grid-template-rows: minmax(0, 1fr); /* one row exactly the window's height: a page taller than the window scrolls inside the card and never stretches the sidebars (their footer stays in view in every app) */
   }
   .shell:not(.narrow) > .side { grid-column: 1; } .shell:not(.narrow) > .mid { grid-column: 2; } .shell:not(.narrow) > .right { grid-column: 3; }
   /* A sidebar being pulled into view (or out): out of the columns, fixed at its edge at full width, its content `--vis` px into view; the card is moved by the same amount (inline transform). The rules are in ./pull.ts. */
@@ -223,6 +245,8 @@
   .side.pulled > :global(.side) { opacity: 1 !important; translate: calc(var(--vis) - var(--w)) 0 !important; transition: none !important; }
   .right.pulled > :global(.rs) { opacity: 1 !important; translate: calc(var(--w) - var(--vis)) 0 !important; transition: none !important; }
   .shell:not(.narrow) .mid { touch-action: pan-y; }
+  /* An iPhone home-screen app is laid out shorter than its screen (shell/chrome.ts): the shell is as tall as the probe measured. The keyboard lifts it (`--kb`). */
+  :global(html[data-home-screen]) .shell { bottom: auto; height: calc(var(--vh, 100%) - var(--kb, 0px)); }
   .shell[data-sidebar="false"] { --sw: 0px; }
   .shell[data-right="false"] { --rw: 0px; }
   /* Each surface carries its own secondary inks, solved from the pixels under it (appearance/veil.ts). */
@@ -242,6 +266,8 @@
   .edge.l { left: calc(var(--inset) + var(--s-4)); }
   .edge.r { right: calc(var(--inset) + var(--s-4)); }
   .mid :global(.mid-card) { height: 100%; overflow: clip; }
+  /* The card is the only thing on the background, and it casts nothing onto it: a shadow would be a second layer in the gap beside the card (the owner's seam). It is told apart by its own surface (docs/ui-design-system.md). On a phone it slides over the list, where it does cast one. */
+  .shell:not(.narrow) .mid :global(.mid-card) { box-shadow: none; }
   .col { position: relative; height: 100%; display: flex; flex-direction: column; }
   .app { flex: 1; min-height: 0; position: relative; }
   .appbar { flex: none; padding: var(--s-3) var(--s-6) var(--s-4); }

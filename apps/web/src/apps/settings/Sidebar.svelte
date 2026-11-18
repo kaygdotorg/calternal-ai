@@ -9,14 +9,14 @@
 <nav aria-label="Settings">
   {#each visibleSections() as g (g.id)}
     <div class="grp" role="group" aria-labelledby="g-{g.id}">
-      <h2 id="g-{g.id}">{g.name}</h2>
+      <h2 class="section-heading" id="g-{g.id}">{g.name}</h2>
       <ul>{#each g.pages as p (p.id)}<li><Row title={p.name} icon={p.icon} href={href(`/settings/${p.id}`)} selected={current === p.id} /></li>{/each}</ul>
     </div>
   {/each}
 </nav>
 
 <style>
-  nav { display: grid; gap: var(--s-5); padding-bottom: var(--s-6); }
-  h2 { padding: 0 var(--s-5); font-size: var(--text-label); font-weight: var(--strong-weight); color: var(--ink-3); }
+  nav { display: grid; padding-bottom: var(--section-above); }
+  .grp:first-child h2 { margin-top: 0; }
   ul { display: grid; gap: var(--s-1); }
 </style>

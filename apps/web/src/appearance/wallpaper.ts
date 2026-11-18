@@ -14,7 +14,8 @@ import { cssPx, luminance, scheduleMaterial, setBackdropField, currentScheme, ty
 import tokens from "../../../../packages/ui/tokens/tokens.json" with { type: "json" };
 import { surfaces } from "./surfaces.svelte";
 import { blurRgba, saturateRgba } from "./blur";
-import { scaled, solve, type Flags, type Ink, type RGB, type Role, type Scheme, type Veil } from "./veil";
+import { setThemeColor } from "../shell/chrome";
+import { over, scaled, solve, type Flags, type Ink, type RGB, type Role, type Scheme, type Veil } from "./veil";
 
 type Layer = "side" | "card";
 const SATURATE: Record<Layer, number> = { side: 120, card: 140 };
@@ -223,9 +224,11 @@ export function updateVeil(want: Flags): void {
   const r = rects();
   const flat = (): RGB[] => [resolved("--backdrop", inkOf(scheme).paper)];
   const px = (c: HTMLCanvasElement | undefined, f: Frac): RGB[] => (source && c ? sample(c, f) : flat());
-  const jobs: [string, Role, RGB[]][] = [["l", "side", px(copies?.side, r.left)], ["r", "side", px(copies?.side, r.right)], ["c", "card", px(copies?.card, r.card)]];
+  // ONE veil for everything that is not the card: the wallpaper and a single veil span the whole window and both sidebars are drawn on them (docs/ui-shell.md "The background"), so the veil is solved once, from the
+  // pixels under both sidebars together (the ink must read on the worse of the two), and written under both names (`--l-*` and `--r-*` stay, equal, for what reads them). The card has its own, on top.
+  const jobs: [string[], Role, RGB[]][] = [[["l", "r"], "side", [...px(copies?.side, r.left), ...px(copies?.side, r.right)]], [["c"], "card", px(copies?.card, r.card)]];
   const out: Record<string, Veil> = {};
-  for (const [k, role, pixels] of jobs) {
+  for (const [keys, role, pixels] of jobs) for (const k of keys) {
     const v: Veil = craftLight && scheme === "light" ? { scheme: "light", tint: { a: 0.92, rgb: [255, 255, 255] }, dim: { a: 0, rgb: [0, 0, 0] }, ink2: T.ink2, ink3: T.ink3, total: 0.92, ratio: 99 } : solve(scheme, role, flags, pixels, T, other);
     const w: Veil = craftLight && scheme === "light" ? v : scaled(v, veilScale);
     out[k] = w;
@@ -237,6 +240,14 @@ export function updateVeil(want: Flags): void {
     root().setProperty(`--${k}-ink2`, `rgb(${rgbCss(ink2)})`);
     root().setProperty(`--${k}-ink3`, `rgb(${rgbCss(ink3)})`);
     root().setProperty(`--veil-${k}`, `linear-gradient(rgb(var(--${k}-dim) / var(--${k}-dim-a)) 0 0), linear-gradient(rgb(var(--${k}-tint) / var(--${k}-tint-a)) 0 0)`);
+  }
+  // The browser's own bars (Safari's toolbar and status bar) take the colour at the top of the page: the card's top strip under its veil (shell/chrome.ts).
+  const edge = out.c;
+  if (edge) {
+    const top = px(copies?.card, { x0: 0, y0: 0, x1: 1, y1: 0.04 });
+    const m = top.reduce((a, p) => [a[0] + p[0], a[1] + p[1], a[2] + p[2]], [0, 0, 0]).map((v) => v / Math.max(1, top.length)) as RGB;
+    const c = over(over(m, edge.tint.rgb, edge.tint.a), edge.dim.rgb, edge.dim.a);
+    setThemeColor(`rgb(${Math.round(c[0])} ${Math.round(c[1])} ${Math.round(c[2])})`);
   }
   const flip = (v: Veil | undefined) => (v && v.scheme !== scheme ? v.scheme : null);
   surfaces.left = flip(out.l);
