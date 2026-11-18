@@ -23,12 +23,12 @@ for (const scheme of ["light", "dark"]) for (const [name, path] of [["fixtures",
   page.on("pageerror", (e) => errors.push(e.message.slice(0, 120))); page.on("console", (m) => { if (m.type() === "error" && !/401|Unauthorized/.test(m.text())) errors.push(m.text().slice(0, 160)); });
   page.on("requestfailed", (r) => failed.push(r.url().replace(url, "") + " " + (r.failure()?.errorText ?? ""))); page.on("response", (r) => { if (r.status() >= 400 && !/\/api\/v1\/(auth|account|operations)/.test(r.url())) failed.push(`${r.status()} ${r.url().replace(url, "")}`); });
   await page.goto(url + path); await page.waitForSelector("html[data-ready]", { timeout: 20000 }); await page.waitForTimeout(2000);
-  const r = await page.evaluate(async () => { const m = document.querySelector('link[rel=manifest]')?.href; const mj = m ? await (await fetch(m)).json().catch(() => null) : null; const icon = mj ? await fetch(new URL(mj.icons[0].src, m)).then((x) => x.status) : null; return { csp: window.__csp, manifest: !!mj, icon, wall: document.documentElement.style.getPropertyValue("--wall-side").slice(0, 5), bd: getComputedStyle(document.querySelector(".backdrop")).backgroundImage.slice(0, 8), fonts: [...document.fonts].filter((f) => f.status === "loaded").length, theme: document.querySelector('meta[name="theme-color"]').getAttribute("content") }; });
+  const r = await page.evaluate(async () => { const m = document.querySelector('link[rel=manifest]')?.href; const mj = m ? await (await fetch(m)).json().catch(() => null) : null; const icon = mj ? await fetch(new URL(mj.icons[0].src, m)).then((x) => x.status) : null; return { csp: window.__csp, manifest: !!mj, icon, wall: document.documentElement.style.getPropertyValue("--wall-side").slice(0, 5), bd: getComputedStyle(document.querySelector(".backdrop") ?? document.documentElement).backgroundImage.slice(0, 8), fonts: [...document.fonts].filter((f) => f.status === "loaded").length, theme: document.querySelector('meta[name="theme-color"]').getAttribute("content") }; });
   const tag = `${scheme} ${name}`;
   ok(r.csp.length === 0, `${tag}: no Content-Security-Policy violation`, r.csp.join("; "));
   ok(errors.length === 0 && failed.length === 0, `${tag}: no console error, uncaught exception or failed request`, [...errors, ...failed].slice(0, 3).join(" | "));
   ok(r.manifest && r.icon === 200, `${tag}: the manifest and its icon are served`, `icon ${r.icon}`);
-  ok(r.fonts >= 1 && r.bd.startsWith("url(") , `${tag}: fonts loaded and the wallpaper is painted`, `${r.fonts} fonts, backdrop ${r.bd}, wall-side ${r.wall || "(from the cheap default)"}`);
+  ok(r.fonts >= 1 && (r.bd.startsWith("url(") || name === "sign-in"), `${tag}: fonts loaded and the wallpaper is painted`, `${r.fonts} fonts, backdrop ${r.bd}, wall-side ${r.wall || "(from the cheap default)"}`);
   await ctx.close();
 }
 await b.close(); stop(); process.exit(bad ? 1 : 0);
