@@ -3,7 +3,7 @@
  * generated operations (`threads.list`, `threads.send` and the rest of `contract/operations.json`), plugs in here and no component changes.
  * Every call is async because the real one crosses the network. Reads are bounded: a thread is read in message ranges, never whole.
  */
-import type { Answer, Change, Message, Permission, Step, ProviderOption, Request, RunInfo, RunsOn, ThreadSummary } from "./model";
+import type { Answer, Attachment, Change, Message, Permission, Step, ProviderOption, Request, RunInfo, RunsOn, ThreadSummary } from "./model";
 
 /** What a watcher is told about a thread while it is open. */
 export interface ThreadEvents {
@@ -29,6 +29,8 @@ export interface ThreadEvents {
 export interface ChoicesClient {
   /** The providers and models offered. */
   providers(): Promise<ProviderOption[]>;
+  /** The reasoning level for the next message (one of the model's levels), or null for the provider's default. */
+  setReasoning(threadId: string, level: string | null): Promise<void>;
   /** Changes the provider and model for the next message. Nothing visible happens in the thread. */
   setProvider(threadId: string, provider: ThreadSummary["provider"], model: string): Promise<void>;
   /** How much the agent may do without asking, for the next message. */
@@ -76,7 +78,9 @@ export interface ThreadsClient extends ChoicesClient, RequestsClient, PanelsClie
   /** Follows a thread while it is open. Returns the unsubscribe. */
   watch(threadId: string, events: ThreadEvents): () => void;
   /** Sends a message (steers a running turn). `requestId` makes a retry safe. */
-  send(threadId: string, text: string, requestId: string): Promise<void>;
+  send(threadId: string, text: string, requestId: string, attachments?: Attachment[]): Promise<void>;
+  /** Uploads one attached file for the next message, reporting progress (0 to 1). Rejects with the reason in plain words when this server cannot take it. */
+  upload(threadId: string, file: File, progress: (fraction: number) => void): Promise<void>;
   /** Stops the running turn. */
   stop(threadId: string): Promise<void>;
   /** Tries the last turn again (after a failure) or continues it from its last saved step (after an interruption). */

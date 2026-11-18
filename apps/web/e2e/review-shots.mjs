@@ -22,7 +22,7 @@ try {
   await shot("phone-dark", "phone", "dark", "/threads/t-run");
   await shot("sidebar-sections", "desktop", "light", "/threads/t-run", sections);
   await shot("context-menu", "desktop", "light", "/threads/t-run", async (p) => { await sections(p); await p.locator("a.row").first().click({ button: "right" }); });
-  await shot("model-picker", "desktop", "light", "/threads/t-run", async (p) => { await p.locator(".chip.prov button").click(); });
+  await shot("model-picker", "desktop", "light", "/threads/t-run", async (p) => { await p.locator(".chip[data-chip=model] button").click(); });
   await shot("toast-archive-undo", "desktop", "light", "/threads", async (p) => { await p.locator("a.row").first().click({ button: "right" }); await p.getByRole("menuitem", { name: "Archive" }).click(); await p.waitForTimeout(500); });
   await shot("request-bar", "desktop", "light", "/threads/t-wait?panel=run");
   await shot("shortcuts-sheet", "desktop", "light", "/threads/t-run", async (p) => { await p.keyboard.press("Control+/"); });
