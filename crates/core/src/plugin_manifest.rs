@@ -222,6 +222,19 @@ pub struct ManifestKind {
     /// JSON Schema for the kind content; no executable code.
     pub schema: serde_json::Value,
 }
+impl ManifestKind {
+    /// Root schema annotation that enables the host's live editing service.
+    /// Older hosts can read this annotation as ordinary JSON Schema metadata.
+    pub const LIVE_EDITING: &str = "x-calternal-live-editing";
+
+    /// Whether this Markdown kind requests live editing. Cost: one schema lookup.
+    pub fn live_editing(&self) -> bool {
+        self.schema
+            .get(Self::LIVE_EDITING)
+            .and_then(serde_json::Value::as_bool)
+            == Some(true)
+    }
+}
 /// The single item an operation acts on. The host reads the item ID from the named
 /// input field, resolves its owning space with the existence-hiding resolver and
 /// authorizes the caller in that space before any plugin code runs.

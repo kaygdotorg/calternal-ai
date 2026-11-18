@@ -41,11 +41,6 @@ pub trait Directory: Send + Sync + 'static {
     fn changes(&self) -> Vec<tokio::sync::watch::Receiver<u64>> {
         Vec::new()
     }
-    /// Room eviction on committed loss of item read access. The default is a
-    /// no-op until the live rooms service supplies its implementation.
-    fn room_eviction(&self) -> &dyn crate::room_eviction::RoomEviction {
-        &crate::room_eviction::NoRooms
-    }
     /// Optional protected account HTTP service; absent for synthetic test directories.
     fn http_auth(&self) -> Option<&crate::account_http::HttpAuth> {
         None
