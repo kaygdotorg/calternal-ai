@@ -5,6 +5,10 @@
 import { serverMode } from "../../../server/client";
 import { account } from "../../../server/auth";
 import { grants } from "../../../server/people";
+import { say } from "../../../server/say";
+import { sharing } from "../share/sharing";
+import { changedBlocks, rescueLine, textKey } from "../share/rescue";
+import { notes } from "../store.svelte";
 import type { NoteSession } from "../../../../../../packages/editor/src/note";
 import type { Person } from "../../../../../../packages/editor/src/live/extension";
 
@@ -36,6 +40,10 @@ class LiveNotes {
   private names = new Map<string, string>(Object.entries(FIXTURE_NAMES));
   private stops: (() => void)[] = [];
   private bindStops: (() => void)[] = [];
+  /** One line for the person when the room ended because they lost access: where their edits went. */
+  notice = $state("");
+  /** The text the room last confirmed (what a rescue is measured against). */
+  private base = "";
   private id = "";
   private socket: import("../../../../../../packages/editor/src/sync/live").LiveSocket | null = null;
 
@@ -55,6 +63,7 @@ class LiveNotes {
       id: noteId,
       offline: true, // a copy of the note is kept on this device (IndexedDB): edits made with the room unreachable, or before a reload, are replayed to the room when it is back
       awareness: (doc) => new Awareness(doc),
+      onAccessRevoked: () => void this.revoked(noteId),
       transport: (lineage, onLineage) => {
         if (fixture) return fixture.fixtureTransport(noteId, text, lineage, onLineage);
         this.socket ??= new live.LiveSocket(() => { const u = new URL("/api/v1/live", location.href); u.protocol = u.protocol === "https:" ? "wss:" : "ws:"; return u.href; }, "calternal-live-rooms.v1");
@@ -85,7 +94,23 @@ class LiveNotes {
     this.stops.push(() => clearTimeout(wait));
     session.connect();
     this.stops.push(session.onReplaced(() => { this.bindStops.splice(0).forEach((f) => f()); bind(); }));
-    this.stops.push(session.status.subscribe((s) => (this.save = live.describeStatus(s))));
+    this.base = session.text.toString();
+    this.stops.push(session.status.subscribe((s) => { this.save = live.describeStatus(s); if (s.state === "saved") this.base = session.text.toString(); }));
+  }
+
+  /**
+   * The room ended because access was taken away: the session is frozen, and only the blocks the person changed since the last receipt go to `sharing.rescue` (a note in their personal space, "Your edits to <title>"), with a stable
+   * request id for the same text. One line says where they went; if the rescue fails the line says so and the text is still here.
+   */
+  private async revoked(noteId: string): Promise<void> {
+    const session = this.session;
+    if (!session || noteId !== this.id) return;
+    const title = notes.note?.title ?? "this note";
+    const text = session.text.toString();
+    const blocks = changedBlocks(this.base, text);
+    if (!blocks.length) { this.notice = `You can no longer open “${title}”. You had changed nothing in it.`; return; }
+    try { this.notice = rescueLine(title, (await sharing.rescue(title, blocks, `${noteId}:${textKey(text)}`)).note.title); }
+    catch (e) { this.notice = `${say(e, "keep your edits")} Your text is still here.`; }
   }
 
   private async loadNames(spaceId: string): Promise<void> {
@@ -97,7 +122,7 @@ class LiveNotes {
     this.stops.splice(0).forEach((f) => f());
     this.bindStops.splice(0).forEach((f) => f());
     this.session?.destroy();
-    this.session = null; this.binding = null; this.here = []; this.save = "";
+    this.session = null; this.binding = null; this.here = []; this.save = ""; this.notice = ""; this.base = "";
   }
 }
 

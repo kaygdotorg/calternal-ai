@@ -26,6 +26,7 @@ import * as Y from 'yjs'
 import type { ImeGate } from './gate'
 import {
   CLOSE_LINEAGE,
+  CLOSE_REVOKED,
   MAX_ROOM_MESSAGE,
   decodeMessage,
   encodeAwareness,
@@ -88,6 +89,10 @@ export interface SyncOptions {
   onConfirmed?: () => void
   onSynced?: () => void
   onLineageMismatch?: (serverLineage: string) => void
+  /**
+   * The room ended this membership because the person lost access to the note. The client stops for good (no reconnect); the host keeps what the person wrote that is not yet receipted (`sharing.rescue`) and says so.
+   */
+  onAccessRevoked?: () => void
   /**
    * Presence in this room (y-protocols awareness, tag 1): the local state is sent on every join and whenever it changes, other people's are applied, and everyone but this client is dropped when the
    * connection does. Cleared (`setLocalState(null)`) on `destroy`, so others see this person leave.
@@ -562,6 +567,12 @@ export class SyncClient {
     if (a) awarenessProtocol.removeAwarenessStates(a, [...a.getStates().keys()].filter((id) => id !== this.doc.clientID), 'remote')
     this.publish()
     if (code === CLOSE_LINEAGE && !this.destroyed) this.opts.onLineageMismatch?.(reason)
+    if (code === CLOSE_REVOKED && !this.destroyed) {
+      this.wanted = false
+      if (this.retryTimer) clearTimeout(this.retryTimer)
+      this.retryTimer = null
+      this.opts.onAccessRevoked?.()
+    }
   }
   private onMessage = (data: Uint8Array) => {
     const msg = decodeMessage(data)

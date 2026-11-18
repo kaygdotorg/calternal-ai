@@ -82,6 +82,8 @@ export function liveExtension(session: NoteSession, resolve: (account: string) =
       // The editor's own history is not used here: Yjs owns undo, for this author only.
       yCollab(ytext, presence as unknown as Awareness | null, { undoManager: undo }),
       EditorState.transactionExtender.of((tr) => (tr.annotation(ySyncAnnotation) != null ? { annotations: origin.of('remote') } : null)),
+      // Once the room has ended for lack of access, nothing more is typed into the note (what was written is kept by the host).
+      EditorState.transactionFilter.of((tr) => (session.readOnly && tr.docChanged && tr.annotation(ySyncAnnotation) == null ? [] : tr)),
       composition(session),
       theme,
     ],

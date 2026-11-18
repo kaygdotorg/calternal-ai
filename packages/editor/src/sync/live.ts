@@ -22,10 +22,12 @@
 
 import * as decoding from 'lib0/decoding'
 import * as encoding from 'lib0/encoding'
-import { CLOSE_LINEAGE } from './protocol'
+import { CLOSE_LINEAGE, CLOSE_REVOKED, MAX_ROOM_MESSAGE } from './protocol'
 
 /** Room message bytes per socket message, safely under the server's 1 MiB. */
 const PIECE = 512 * 1024
+/** The longest a reassembly waits for its next piece. */
+const PIECE_GAP_MS = 15_000
 import type { Transport } from './transport'
 
 /** A JSON message on the live socket. */
@@ -120,6 +122,46 @@ export class LiveSocket {
     if (this.rooms.get(name) === t) this.rooms.delete(name)
   }
 
+  /** Hands one whole room message to its room: `wire` is `@<membership>/<room>`. */
+  private deliver(wire: string, bytes: Uint8Array) {
+    const slash = wire.indexOf('/')
+    if (!wire.startsWith('@') || slash < 2) return
+    const membership = Number(wire.slice(1, slash))
+    if (!Number.isSafeInteger(membership) || membership <= 0) return
+    this.rooms.get(wire.slice(slash + 1))?.frame(bytes, membership)
+  }
+
+  /** The one message being reassembled from `+<sequence>/<total bytes>/@<membership>/<room>` pieces (the server splits payloads over `PIECE`), if any. */
+  private assembly: { wire: string; total: number; next: number; parts: Uint8Array[]; have: number; timer: ReturnType<typeof setTimeout> } | null = null
+
+  /** One continuation piece. A message is delivered only when all `total` bytes have arrived, in order, for the same membership and room; anything out of order, over the cap, over a piece, or silent for 15 s is dropped whole. */
+  private piece(header: string, bytes: Uint8Array) {
+    const m = /^\+(\d+)\/(\d+)\/(@\d+\/.+)$/.exec(header)
+    if (!m || bytes.length > PIECE) return this.dropAssembly()
+    const seq = Number(m[1]), total = Number(m[2]), wire = m[3]!
+    let a = this.assembly
+    if (seq === 0) {
+      if (a || total > MAX_ROOM_MESSAGE || total <= PIECE) return this.dropAssembly()
+      a = this.assembly = { wire, total, next: 0, parts: [], have: 0, timer: 0 as never }
+    } else if (!a || seq !== a.next || wire !== a.wire || total !== a.total) return this.dropAssembly()
+    clearTimeout(a.timer)
+    a.parts.push(bytes)
+    a.have += bytes.length
+    a.next++
+    if (a.have > a.total) return this.dropAssembly()
+    if (a.have < a.total) { a.timer = setTimeout(() => this.dropAssembly(), PIECE_GAP_MS); return }
+    const whole = new Uint8Array(a.total)
+    let at = 0
+    for (const p of a.parts) { whole.set(p, at); at += p.length }
+    this.assembly = null
+    this.deliver(a.wire, whole)
+  }
+
+  private dropAssembly() {
+    if (this.assembly) clearTimeout(this.assembly.timer)
+    this.assembly = null
+  }
+
   private dial() {
     this.timer = null
     if (!this.wanted) return
@@ -146,17 +188,15 @@ export class LiveSocket {
       } else if (ev.data instanceof ArrayBuffer) {
         const d = decoding.createDecoder(new Uint8Array(ev.data))
         const wire = decoding.readVarString(d)
-        const slash = wire.indexOf('/')
-        if (!wire.startsWith('@') || slash < 2) return
-        const membership = Number(wire.slice(1, slash))
-        if (!Number.isSafeInteger(membership) || membership <= 0) return
         const rest = decoding.readTailAsUint8Array(d)
-        this.rooms.get(wire.slice(slash + 1))?.frame(rest, membership)
+        if (wire.startsWith('+')) return this.piece(wire, rest)
+        this.deliver(wire, rest)
       }
     }
     ws.onclose = () => {
       if (this.ws !== ws) return
       this.ws = null
+      this.dropAssembly()
       this.rooms.forEach((r) => r.socketClosed())
       this.closeFns.forEach((f) => f())
       if (this.wanted && !this.timer) {
@@ -259,9 +299,15 @@ class RoomTransport implements Transport {
           this.socket.send({ type: 'leave', room: this.name, membership: this.membership })
           return
         }
-        // Check the lineage here too, before a single frame is applied.
+        // The room's answer must be for this item, in the shape the contract promises, before a single frame is applied: a lineage, the item's id, and the text kind `md`.
+        const info = msg.info as { id?: unknown; lineage?: unknown; text?: unknown } | undefined
+        if (typeof info?.lineage !== 'string' || !info.lineage || info.id !== this.name.slice(this.name.lastIndexOf('/') + 1) || info.text !== 'md') {
+          this.socket.send({ type: 'leave', room: this.name, membership: this.membership })
+          this.errors.forEach((f) => f('invalid_join'))
+          return this.refused(CLOSE_REFUSED, 'invalid_join')
+        }
         const mine = this.options.lineage?.() ?? null
-        const theirs = (msg.info as { lineage?: string } | undefined)?.lineage ?? null
+        const theirs = info.lineage
         if (mine && theirs && mine !== theirs) {
           this.socket.send({ type: 'leave', room: this.name, membership: this.membership })
           return this.refused(CLOSE_LINEAGE, theirs)
@@ -295,6 +341,8 @@ class RoomTransport implements Transport {
       }
       case 'left':
         this.joining = false
+        // Access was taken away: the membership is over for good (the socket stays), and the host keeps what the person wrote (`CLOSE_REVOKED`).
+        if (msg.reason === 'access_revoked') return this.refused(CLOSE_REVOKED, 'access_revoked')
         if (!this.joined) return
         this.joined = false
         this.closes.forEach((f) => f(CLOSE_DROPPED, ''))

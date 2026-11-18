@@ -50,6 +50,9 @@ export const MAX_ROOM_MESSAGE = 64 * 1024 * 1024
  */
 export const CLOSE_LINEAGE = 4409
 
+/** Close code a transport reports when the room ended the membership because the person lost access (`left` with reason `access_revoked`). */
+export const CLOSE_REVOKED = 4403
+
 /** A sync message, already decoded far enough to decide what to do. */
 export type Incoming =
   | { kind: 'step1'; stateVector: Uint8Array }

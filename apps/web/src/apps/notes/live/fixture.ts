@@ -30,8 +30,8 @@ function roomFor(noteId: string, text: string): Room {
   return room;
 }
 
-/** `?test=1`: the network, for the e2e checks: `cut()` drops the connection and keeps it down, `restore()` lets it come back. */
-interface Net { cut(): void; restore(): void }
+/** `?test=1`: the network, for the e2e checks: `cut()` drops the connection and keeps it down, `restore()` lets it come back, `revoke()` ends the membership as the room does when access is lost. */
+interface Net { cut(): void; restore(): void; revoke(): void }
 
 /** The transport for a note's fixture room, made (with its scripted collaborator) the first time it is asked for. */
 export function fixtureTransport(noteId: string, text: string, lineage: () => string | null, onLineage: (l: string) => void): Transport {
@@ -41,8 +41,11 @@ export function fixtureTransport(noteId: string, text: string, lineage: () => st
   const t = memoryTransport(() => r, lineage, onLineage);
   let down = false;
   const connect = t.connect.bind(t);
+  const closes: Array<(code: number, reason: string) => void> = [];
+  const onClose = t.onClose.bind(t);
+  t.onClose = (f) => { closes.push(f); onClose(f); };
   t.connect = () => { if (!down) connect(); };
-  if (new URLSearchParams(location.search).has("test")) (globalThis as unknown as { __net: Net }).__net = { cut() { down = true; t.drop(); }, restore() { down = false; t.connect(); } };
+  if (new URLSearchParams(location.search).has("test")) (globalThis as unknown as { __net: Net }).__net = { cut() { down = true; t.drop(); }, restore() { down = false; t.connect(); }, revoke() { down = true; closes.forEach((f) => f(4403, "access_revoked")); } };
   return t;
 }
 

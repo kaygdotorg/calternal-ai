@@ -47,6 +47,17 @@ try {
     await p.waitForFunction(() => document.querySelector(".cm-content")?.textContent.includes("typed while cut off"), null, { timeout: 12000 });
     ok(true, "offline: a second reload still has it (the room kept it)");
     await ctx.close(); }
+  // Access taken away while writing: the membership ends, the edits are kept as a note in the personal space, and the person is told in one line.
+  { const { page: p, ctx } = await open(browser, "desktop", "light", "/notes/n-2?firstrun=0&live=1&peer=0&test=1");
+    await p.locator(".cm-content").waitFor({ timeout: 15000 });
+    await p.getByText("Saved", { exact: true }).waitFor({ timeout: 8000 });
+    await p.locator(".cm-content").click(); await p.keyboard.press("Control+End"); await p.keyboard.type("\n\nWritten as access ended.");
+    await p.evaluate(() => window.__net.revoke());
+    await p.getByText(/Your edits were kept as “Your edits to Storage layout” in your personal space/).waitFor({ timeout: 8000 });
+    ok(true, "revoked: the person is told in one line where their edits went");
+    await p.keyboard.type(" more");
+    ok(!(await p.locator(".cm-content").innerText()).includes(" more"), "revoked: nothing more can be typed into the note");
+    await ctx.close(); }
 } catch (e) { console.log("FAIL  " + e.message); bad++; }
 await browser.close(); await stop();
 process.exit(bad ? 1 : 0);

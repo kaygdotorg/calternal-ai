@@ -38,6 +38,8 @@ export interface OpenNoteOptions {
   checkDelayMs?: number
   /** Presence for this note's room: made for each document the session holds (a replaced document gets a new one). */
   awareness?: (doc: Y.Doc) => Awareness
+  /** The room ended the membership because access was lost: the session is frozen (no more edits) and this is told once, so the host can keep what was written. */
+  onAccessRevoked?: () => void
 }
 
 /** Every open note editor in this page (shared-copy.ts reads it). */
@@ -349,6 +351,7 @@ export class NoteSession {
     this.client = new SyncClient({
       doc,
       awareness: this.awareness ?? undefined,
+      onAccessRevoked: () => { if (this.destroyed) return; this.freezeForShareEnd(); this.opts.onAccessRevoked?.() },
       transport: this.opts.transport(
         () => this.lineage,
         (l) => this.learnLineage(l),
