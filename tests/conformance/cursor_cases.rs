@@ -177,3 +177,80 @@ async fn note_index_cursors_continue_and_bind_to_the_authorized_query() {
         f.op(1, "notes.history", history_input).await.signature()
     );
 }
+
+#[tokio::test]
+async fn thread_pages_bind_space_account_and_filters_and_find_archived_children() {
+    let f = Fixture::new().await;
+    let space = &f.spaces[3];
+    let other_space = &f.spaces[2];
+    let created = f
+        .op(
+            1,
+            "threads.create",
+            json!({"space_id":space,"title":"Parent"}),
+        )
+        .await;
+    created.ok();
+    let parent = &created.body["data"]["thread"]["id"];
+    for (title, archive) in [("One", false), ("Two", true), ("Three", false)] {
+        let entry = f
+            .op(
+                1,
+                "threads.create",
+                json!({"space_id":space,"title":title,"parent_thread":parent}),
+            )
+            .await;
+        entry.ok();
+        if archive {
+            f.op(
+                1,
+                "threads.archive",
+                json!({"id":entry.body["data"]["thread"]["id"]}),
+            )
+            .await
+            .ok();
+        }
+    }
+    let first = f
+        .op(
+            1,
+            "threads.list",
+            json!({"space_id":space,"parent_thread":parent,"limit":1}),
+        )
+        .await;
+    first.ok();
+    let data = &first.body["data"];
+    let cursor = &data["next_cursor"];
+    assert!(cursor.is_string(), "{data}");
+    let next = f
+        .op(
+            1,
+            "threads.list",
+            json!({"space_id":space,"parent_thread":parent,"limit":2,"cursor":cursor}),
+        )
+        .await;
+    next.ok();
+    let rows = next.body["data"]["threads"].as_array().unwrap();
+    assert_eq!(rows.len(), 2);
+    assert!(next.body["data"]["next_cursor"].is_null());
+    assert!(rows.iter().all(|row| row["id"] != data["threads"][0]["id"]));
+    assert!(
+        rows.iter().any(|row| row["metadata"]["archived"] == true)
+            || data["threads"][0]["metadata"]["archived"] == true
+    );
+    for (who, input) in [
+        (
+            2,
+            json!({"space_id":space,"parent_thread":parent,"cursor":cursor}),
+        ),
+        (
+            1,
+            json!({"space_id":other_space,"parent_thread":parent,"cursor":cursor}),
+        ),
+        (1, json!({"space_id":space,"archived":true,"cursor":cursor})),
+    ] {
+        let refused = f.op(who, "threads.list", input).await;
+        assert_eq!(refused.status, 400, "{}", refused.body);
+        assert_eq!(refused.body["error"]["message"], "invalid page cursor");
+    }
+}

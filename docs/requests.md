@@ -79,3 +79,12 @@ content placement and writes. The replacement accepts up to 16 KiB of Markdown
 and declares irreversible risk for replacement. It uses the per-space content
 lock, durable outbox, descriptor-relative replacement and journal receipt. The journal event and receipt omit the text.
 The previous filename is ignored.
+
+Requests that supply a secret value or approve access require a fresh passkey
+proof. A stale proof returns HTTP 403 with `passkey_reverification_required`.
+Verify with a passkey and retry the action.
+
+For `secrets.request`, choose a name from 1 to 96 ASCII bytes. Start with a
+lowercase letter or digit, then use lowercase letters, digits, dots, underscores,
+hyphens or colons. Use a name such as `service-token` and retry if the server
+refuses the name.

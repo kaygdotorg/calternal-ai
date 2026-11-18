@@ -13,25 +13,8 @@ pub struct Space {
     #[arg(long)]
     space: String,
     /// Fetch the next page of up to 100 rows. Pass - to read the cursor from stdin.
-    #[arg(long, value_parser = parse_cursor)]
+    #[arg(long, value_parser = crate::parse_cursor)]
     cursor: Option<String>,
-}
-
-fn parse_cursor(argument: &str) -> Result<String, String> {
-    use std::io::Read;
-
-    if argument != "-" {
-        calternal_core::validate_page_cursor(argument).map_err(|error| error.message)?;
-        return Ok(argument.to_owned());
-    }
-    let mut token = String::new();
-    std::io::stdin()
-        .take(calternal_core::MAX_PAGE_CURSOR_BYTES as u64 + 2)
-        .read_to_string(&mut token)
-        .map_err(|_| "cannot read a cursor from stdin")?;
-    let token = token.trim_end_matches(['\r', '\n']);
-    calternal_core::validate_page_cursor(token).map_err(|error| error.message)?;
-    Ok(token.to_owned())
 }
 
 impl Space {

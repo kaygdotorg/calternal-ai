@@ -728,6 +728,32 @@ fn contains_canary(dir: &Path) -> Vec<PathBuf> {
 }
 
 #[tokio::test]
+async fn secret_request_names_explain_the_lowercase_rule() {
+    let f = Fixture::new().await;
+    let bad_name = f
+        .op(
+            1,
+            "secrets.request",
+            json!({"name":"Uppercase","label":"Fixture","reason":"Check the rule"}),
+        )
+        .await;
+    assert_eq!(bad_name.status, 400);
+    assert!(
+        bad_name.body["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("lowercase ASCII")
+    );
+    f.op(
+        1,
+        "secrets.request",
+        json!({"name":"service-token","label":"Fixture","reason":"Check the rule"}),
+    )
+    .await
+    .ok();
+}
+
+#[tokio::test]
 async fn secrets_are_owner_private_and_provide_needs_a_fresh_session() {
     let mut f = Fixture::new().await;
     let provide = "secrets/provide";
@@ -846,6 +872,10 @@ async fn secrets_are_owner_private_and_provide_needs_a_fresh_session() {
         )
         .await;
     assert_eq!(stale.status, 403, "{}", stale.body);
+    assert_eq!(
+        stale.body["error"]["code"],
+        "passkey_reverification_required"
+    );
     let list = f.op(1, "secrets.list", json!({})).await;
     list.ok();
     assert_eq!(list.body["data"]["secrets"], json!([]));

@@ -230,6 +230,8 @@ impl Auth {
     /// Checks recent browser/native proof for this account-owned live installation.
     /// `registration_ok` permits a recent setup/recovery registration; false
     /// requires an actual sign-in assertion. Uses the configured freshness window.
+    /// Insufficient proof returns `PasskeyReverificationRequired`. A revoked
+    /// installation still fails the session check.
     pub async fn require_fresh(
         &self,
         account: AccountId,

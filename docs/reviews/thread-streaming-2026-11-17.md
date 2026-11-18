@@ -99,6 +99,34 @@ Retaining artifacts with the conversation keeps links durable and can grow
 storage separately. Quotas or expiry bound that growth and need an expired
 link state. See [morning decisions](../morning-decisions.md#long-tool-output-issue-41).
 
+## Requests and list follow-ups
+
+The follow-up started from `b52c314` and incorporates `2a4ee87`, which
+contains the accepted streaming lane and a web-only change. Stale passkey
+approval, token-bound access
+request mismatches, secret names and missing thread continuations each
+reproduced in conformance before the fixes. The five focused conformance cases
+and the thread list query-plan test then passed.
+
+The shared wire error code now covers passkey re-verification at the account,
+approval, mode and secret-provision surfaces. An agent's access request binds
+to its token before any job lookup. Secret names retain their existing
+validator with a clearer caller error and retry instruction.
+
+Thread lists reuse the signed cursor and CLI cursor parser. A warm page takes
+one indexed metadata query and zero body reads or flushes. Sparse filters can
+visit extra keys in that index before finding the page. The query looks up
+the latest job state only for the delivered rows and one lookahead.
+
+Dev-01 reran the workspace and conformance commands above with dev and test
+debug info disabled. Workspace passed 573 tests with one opt-in ignored.
+Conformance passed all 81. Plugin build, integration, plugin tests, contract,
+docs, formatting and CLI help checks passed. The CLI help checks ran
+`calternal invoke --help`, `cl invoke --help` and `calternal threads list --help`.
+The optional whole-site snapshot check still reports three inherited pages
+for Machines and Recovery. Follow-up Podman leak checks passed. The fixture
+image and lane target directories were removed.
+
 ## Simplification opportunities
 
 A structured content outbox projection could carry bounded event-specific
