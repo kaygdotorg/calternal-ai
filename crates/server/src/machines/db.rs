@@ -19,7 +19,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 use uuid::Uuid;
 
 /// Current schema version (`PRAGMA user_version`).
-pub const SCHEMA_VERSION: i64 = 4;
+pub const SCHEMA_VERSION: i64 = 5;
 
 const SCHEMA: &str = "
 CREATE TABLE IF NOT EXISTS draining (
@@ -45,6 +45,22 @@ CREATE TABLE IF NOT EXISTS workspace_discards(
  lease TEXT NOT NULL,machine TEXT NOT NULL,request_id TEXT NOT NULL UNIQUE,account TEXT NOT NULL,thread TEXT NOT NULL,
  state TEXT NOT NULL,updated_ms INTEGER NOT NULL,PRIMARY KEY(lease,machine)
 ) STRICT;
+-- Placement provenance lives beyond lease retention. Space erase consumes
+-- workspace locations, while account homes survive until account erase.
+CREATE TABLE IF NOT EXISTS workspace_locations(
+ space TEXT NOT NULL, account TEXT NOT NULL, thread TEXT NOT NULL, machine TEXT NOT NULL,
+ PRIMARY KEY(space,account,thread,machine)
+) STRICT, WITHOUT ROWID;
+CREATE INDEX IF NOT EXISTS workspace_locations_account ON workspace_locations(account);
+CREATE TABLE IF NOT EXISTS account_home_locations(
+ account TEXT NOT NULL, machine TEXT NOT NULL, PRIMARY KEY(account,machine)
+) STRICT, WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS machine_erasures(
+ machine TEXT NOT NULL, account TEXT NOT NULL, thread TEXT NOT NULL,
+ request_id TEXT NOT NULL UNIQUE, retry_after_ms INTEGER NOT NULL DEFAULT 0,
+ PRIMARY KEY(machine,account,thread)
+) STRICT, WITHOUT ROWID;
+CREATE INDEX IF NOT EXISTS machine_erasure_delivery ON machine_erasures(machine,retry_after_ms,request_id);
 CREATE INDEX IF NOT EXISTS workspace_discards_pending ON workspace_discards(machine,state);
 CREATE INDEX IF NOT EXISTS workspace_discards_account ON workspace_discards(account);
 CREATE INDEX IF NOT EXISTS leases_space ON leases(space);
@@ -222,6 +238,31 @@ pub fn put_lease(c: &Connection, l: &LeaseRow) -> rusqlite::Result<()> {
         ],
     )?;
     Ok(())
+}
+
+/// Commit placement and both erasure locations before sending an assignment.
+/// The location rows outlive timed lease pruning. One FULL transaction.
+pub(super) fn put_assignment(c: &mut Connection, row: &LeaseRow) -> rusqlite::Result<()> {
+    let tx = c.transaction()?;
+    put_lease(&tx, row)?;
+    if let Some(machine) = row.machine.filter(|_| !row.worker) {
+        let machine = machine.to_string();
+        let account = row.account.to_string();
+        tx.execute(
+            "INSERT OR IGNORE INTO workspace_locations VALUES(?1,?2,?3,?4)",
+            params![
+                row.space.to_string(),
+                account,
+                row.thread.to_string(),
+                machine
+            ],
+        )?;
+        tx.execute(
+            "INSERT OR IGNORE INTO account_home_locations VALUES(?1,?2)",
+            params![account, machine],
+        )?;
+    }
+    tx.commit()
 }
 
 /// A stored typed ID; an unparsable one fails the row instead of becoming a default.

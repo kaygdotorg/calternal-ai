@@ -22,7 +22,6 @@ pub(super) struct Machine {
 
 impl Machine {
     pub(super) async fn enroll(f: &Fixture) -> Self {
-        let key = MachineKey::generate().unwrap();
         let code = f
             .req(
                 "POST",
@@ -33,12 +32,17 @@ impl Machine {
             )
             .await;
         code.ok();
+        Self::enroll_with_code(f, code.body["code"].as_str().unwrap()).await
+    }
+
+    pub(super) async fn enroll_with_code(f: &Fixture, code: &str) -> Self {
+        let key = MachineKey::generate().unwrap();
         let machine = f
             .machine(
                 "/api/v1/machine/enroll",
                 None,
                 json!({
-                    "code":code.body["code"], "public_key":key.public_key_b64(),
+                    "code":code, "public_key":key.public_key_b64(),
                     "name":"request conformance", "os":"linux", "arch":"x86_64", "direct":false
                 }),
             )
@@ -56,7 +60,7 @@ impl Machine {
         m
     }
 
-    async fn connect(&mut self, f: &Fixture) {
+    pub(super) async fn connect(&mut self, f: &Fixture) {
         let challenge = f
             .machine(
                 "/api/v1/machine/session/start",
@@ -76,6 +80,51 @@ impl Machine {
         self.leases.clear();
     }
 
+    pub(super) async fn sync(&mut self, f: &Fixture, discards: Value) -> Vec<Value> {
+        let r = f.machine("/api/v1/machine/sync",Some(&self.token),json!({
+            "ack":self.ack,"capacity":{"cpus":1,"memory_bytes":0,"max_sandboxes":2,"running_sandboxes":0},
+            "draining":false,"leases":self.leases,"discards":discards,
+        })).await;
+        r.ok();
+        let mut messages = Vec::new();
+        for envelope in r.body["messages"].as_array().unwrap() {
+            self.ack = envelope["seq"].as_u64().unwrap();
+            let data = &envelope["message"];
+            match data["type"].as_str().unwrap() {
+                "assign" => self.leases.push(json!({"lease_id":data["lease_id"],"fence":data["fence"],"sandbox":{"state":"running"}})),
+                "stop" => self.leases.retain(|lease| lease["lease_id"] != data["lease_id"]),
+                _ => (),
+            }
+            messages.push(data.clone());
+        }
+        messages
+    }
+
+    pub(super) async fn erasure_status(&self, f: &Fixture, valid: bool) -> Answer {
+        let challenge = f
+            .machine(
+                "/api/v1/machine/session/start",
+                None,
+                json!({"machine_id":self.id}),
+            )
+            .await;
+        challenge.ok();
+        let challenge = challenge.body["challenge"].as_str().unwrap();
+        let signature = if valid {
+            self.key.sign_erasure_status(self.id, challenge)
+        } else {
+            self.key.sign_session(self.id, challenge)
+        };
+        f.machine(
+            "/api/v1/machine/status",
+            None,
+            json!({
+                "machine_id":self.id,"challenge":challenge,"signature":signature,
+            }),
+        )
+        .await
+    }
+
     pub(super) async fn next_token(&mut self, f: &Fixture) -> String {
         let deadline = Instant::now() + Duration::from_secs(20);
         loop {
@@ -83,24 +132,16 @@ impl Machine {
                 Instant::now() < deadline,
                 "machine never received provider exec"
             );
-            let r = f.machine("/api/v1/machine/sync",Some(&self.token),json!({
-                "ack":self.ack,"capacity":{"cpus":1,"memory_bytes":0,"max_sandboxes":2,"running_sandboxes":0},
-                "draining":false,"leases":self.leases,
-            })).await;
-            r.ok();
-            let mut token = None;
-            for message in r.body["messages"].as_array().unwrap() {
-                self.ack = message["seq"].as_u64().unwrap();
-                let data = &message["message"];
-                match data["type"].as_str().unwrap() {
-                    "assign" => self.leases.push(json!({"lease_id":data["lease_id"],"fence":data["fence"],"sandbox":{"state":"running"}})),
-                    "stop" => self.leases.retain(|lease| lease["lease_id"] != data["lease_id"]),
-                    "exec" => token = data["env"].as_array().unwrap().iter()
-                        .find(|env| env[0] == "CALTERNAL_AGENT_TOKEN")
-                        .and_then(|env| env[1].as_str()).map(str::to_owned),
-                    _ => (),
-                }
-            }
+            let token = self
+                .sync(f, json!([]))
+                .await
+                .iter()
+                .filter(|data| data["type"] == "exec")
+                .filter_map(|data| data["env"].as_array())
+                .flatten()
+                .find(|env| env[0] == "CALTERNAL_AGENT_TOKEN")
+                .and_then(|env| env[1].as_str())
+                .map(str::to_owned);
             if let Some(token) = token {
                 return token;
             }

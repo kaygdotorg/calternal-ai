@@ -48,6 +48,17 @@ pub(super) async fn remove_named(engine: &Path, root: &Path, name: &str) -> Sand
     Ok(())
 }
 
+/// Remove account containers owned by this machine's canonical sandbox root.
+pub(super) async fn remove_account(
+    engine: &Path,
+    root: &Path,
+    account: uuid::Uuid,
+) -> SandboxResult<()> {
+    let filter = format!("name=^calternal-account-{account}-thread-");
+    let ids = labelled(engine, &root_label(root), Some(&filter)).await?;
+    remove(engine, &ids.split_whitespace().collect::<Vec<_>>()).await
+}
+
 /// Reclaim machine-owned containers on startup. The caller holds the root lock.
 /// Lists engine labels and inspects mount sources in batches for older artifacts.
 pub(super) async fn sweep(engine: &Path, root: &Path) -> SandboxResult<()> {

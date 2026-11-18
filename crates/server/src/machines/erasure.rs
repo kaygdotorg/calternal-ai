@@ -40,8 +40,10 @@ impl MachineService {
             .map(|l| l.row.id)
             .collect();
         for lease in &leases {
-            st.end_lease(*lease, "owner erased", &self.settings);
+            let keep_files = !st.leases[lease].row.worker;
+            st.end_with_files(*lease, "owner erased", &self.settings, keep_files);
         }
+        let pending;
         if let ErasedOwner::Account(id) = owner {
             let machines: Vec<_> = st
                 .machines
@@ -64,6 +66,7 @@ impl MachineService {
                 )
                 .map_err(sql)?;
             }
+            pending = super::erasure_queue::queue(&tx, owner, &machines)?;
             tx.execute(
                 "DELETE FROM workspace_discards WHERE account=?1",
                 [id.to_string()],
@@ -78,11 +81,20 @@ impl MachineService {
             st.execs.retain(|_, exec| exec.account != id);
         } else if let ErasedOwner::Space(id) = owner {
             let tx = st.db.transaction().map_err(sql)?;
+            pending = super::erasure_queue::queue(&tx, owner, &[])?;
             tx.execute("DELETE FROM workspace_discards WHERE lease IN (SELECT id FROM leases WHERE space=?1)", [id.to_string()]).map_err(sql)?;
             tx.execute("DELETE FROM leases WHERE space=?1", [id.to_string()])
                 .map_err(sql)?;
             tx.commit().map_err(sql)?;
             st.execs.retain(|_, exec| !leases.contains(&exec.lease));
+        } else {
+            unreachable!("all storage owner types handled");
+        }
+        st.pending_erasure_machines.extend(pending.iter().copied());
+        for machine in pending {
+            if let Some(live) = st.machines.get(&machine).and_then(|m| m.live.as_ref()) {
+                live.notify.notify_one();
+            }
         }
         for lease in leases {
             if let Some(placement) = st.leases.remove(&lease) {

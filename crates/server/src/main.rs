@@ -359,16 +359,6 @@ async fn serve(
     };
     machines.bind_lifecycle(store.content().lifecycle());
     store.bind_machines(&machines);
-    let _sweeper = machines.spawn_sweeper();
-    // Operator commands reach this server here instead of writing behind it.
-    let admin_root = data_dir.clone();
-    let admin_machines = machines.clone();
-    let _admin = tokio::task::spawn_blocking(move || {
-        calternal_server::machines::admin::serve_socket(&admin_root, installation, admin_machines)
-    })
-    .await
-    .map_err(|e| boot(1, "failed", e.to_string(), DATA_HINT))?
-    .map_err(|e| boot(1, "io", format!("admin socket: {e}"), DATA_HINT))?;
     let mut invite_tasks = tokio::task::JoinSet::new();
     if let Some(service) = calternal_server::auth::Directory::http_auth(&directory) {
         let auth = service.auth.clone();
@@ -449,6 +439,16 @@ async fn serve(
     .await
     .map_err(|e| boot(1, "failed", e.to_string(), DATA_HINT))?
     .map_err(|e| boot(1, "failed", e.message, DATA_HINT))?;
+    let _sweeper = machines.spawn_sweeper();
+    // Operator commands reach this server here instead of writing behind it.
+    let admin_root = data_dir.clone();
+    let admin_machines = machines.clone();
+    let _admin = tokio::task::spawn_blocking(move || {
+        calternal_server::machines::admin::serve_socket(&admin_root, installation, admin_machines)
+    })
+    .await
+    .map_err(|e| boot(1, "failed", e.to_string(), DATA_HINT))?
+    .map_err(|e| boot(1, "io", format!("admin socket: {e}"), DATA_HINT))?;
     match plugins::runner::recover(&state).await {
         Ok(0) => {}
         Ok(n) => tracing::info!(jobs = n, "resuming plugin jobs"),

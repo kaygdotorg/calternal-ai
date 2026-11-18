@@ -69,7 +69,7 @@ Global options on every command: `--json`, `--no-hints`.
 | `agent readiness --space-id UUID [--thread-id UUID]` | Read cached placement capacity and provider sign-in for the caller. | Adaptive machine and provider table, with the official sign-in command. | `machines[]`, `pool[]`, `check_ttl_ms` |
 | `plugin-digest [--plugin-root DIR]` | Hash each trusted worker bundle and say whether `trusted-plugins.json` pins it. | Table `PLUGIN WORKER SHA-256 STATE` (`pinned`, `NOT PINNED`, `unreadable: …`), or a friendly empty result. | `workers[]`: `id`, `worker`, `sha256` (or null), `pinned`, `state` |
 | `machine enroll --server URL --code CODE [--dir DIR] [--name LABEL]` | Exchange a one-time code for a machine identity; saves credentials (0600). `--code` also reads `CALTERNAL_ENROLL_CODE`. | `machine`, `owner`, `server`, `credentials` (path). | `machine_id`, `owner`, `server`, `credentials_file` |
-| `machine status [--dir DIR]` | Show this machine's identity and server. | Same block as `enroll`. Not enrolled: `not_found`. | as `enroll` |
+| `machine status [--dir DIR]` | Show this machine's identity, server, and erasure status. | Identity plus pending erasures or an operator-wipe indication. Not enrolled: `not_found`. | as `enroll`, plus `erasure_status` and the pending count when available |
 | `machine verify MACHINE_UUID --space-id SPACE_UUID [--provider ID] [--token-file FILE]` | Run one provider diagnostic on your machine or a pool machine you administer. | Sandbox status, provider installation and sign-in, and the provider's sign-in command. | `sandbox_started`, `provider` |
 | `machine run [--dir DIR] [--backend podman\|process] [--image REF] [--podman PATH] [--max-sandboxes N]` | Connect to the server and run assigned threads until stopped (SIGINT/SIGTERM). Logs to stderr. | On clean stop: `Machine stopped.` Revoked: error `revoked`, exit 3. | `stopped` |
 
@@ -182,6 +182,11 @@ $ calternal machines revoke dddddddd-dddd-4ddd-8ddd-dddddddddddd --appdata /srv/
   "ok": false
 }
 ```
+
+The operator's machine list includes pending erasures and identifies revoked
+machines that require an operator wipe. `calternal machine status` queries
+the enrolled machine's pending count without opening a work session.
+
 
 ## `cl`
 

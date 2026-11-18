@@ -257,9 +257,15 @@ impl<D: Directory> Stream<D> {
                     ));
                 }
                 follow.after = entry.seq;
+                let authored_by_deleted_account =
+                    follow.content.lifecycle().is_closed(entry.author.as_uuid());
+                let mut entry = serde_json::to_value(entry).ok()?;
+                if authored_by_deleted_account {
+                    entry["author_label"] = serde_json::Value::String("a deleted account".into());
+                }
                 return Some(encode(LiveFrame::Entry {
                     space_id: follow.space.clone(),
-                    entry: serde_json::to_value(entry).ok()?,
+                    entry,
                 }));
             }
             // Discard stale hints before indexed replay, so an already replayed

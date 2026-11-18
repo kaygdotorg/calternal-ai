@@ -62,6 +62,7 @@ pub(crate) fn finish(
             }
         }
     }
+    fault::hit(FaultPoint::ErasureMachinesQueued);
     for owner in &owners {
         if let (Owner::Account(account), Some(jobs)) = (owner, jobs) {
             jobs.retire_account(*account)?;

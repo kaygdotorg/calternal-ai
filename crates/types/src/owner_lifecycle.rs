@@ -68,6 +68,15 @@ impl OwnerLifecycle {
         self.bucket(id).lock().entry(id).or_default().erasing = true;
     }
 
+    /// Check a retired UUID for historical display. One short memory lookup.
+    /// Use `step` instead when admitting new durable work.
+    pub fn is_closed(&self, id: Uuid) -> bool {
+        self.bucket(id)
+            .lock()
+            .get(&id)
+            .is_some_and(|owner| owner.erasing)
+    }
+
     /// Wait for already admitted durable steps to return, after closing
     /// admission. Call on a blocking worker outside any authority transaction.
     pub fn drain(&self, id: Uuid) {

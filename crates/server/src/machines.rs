@@ -49,6 +49,7 @@ mod admission;
 pub mod db;
 mod discards;
 mod erasure;
+mod erasure_queue;
 mod execs;
 pub mod http;
 mod owners;
@@ -212,7 +213,7 @@ pub struct MachineService {
     state: Mutex<State>,
     settings: Settings,
     worker_changes: tokio::sync::Notify,
-    pub(super) lifecycle: std::sync::OnceLock<calternal_types::OwnerLifecycle>,
+    pub(super) lifecycle: Arc<std::sync::OnceLock<calternal_types::OwnerLifecycle>>,
 }
 
 const EXEC_RETENTION: Duration = Duration::from_secs(600);
@@ -274,7 +275,10 @@ impl MachineService {
             })
             .collect();
         erasure::clear_orphan_drains(&mut db, &machines, draining)?;
+        let lifecycle = Arc::new(std::sync::OnceLock::new());
         let mut st = State {
+            lifecycle: lifecycle.clone(),
+            pending_erasure_machines: erasure_queue::pending_machines(&db)?,
             readiness: readiness::Readiness::default(),
             pool_grants: authority
                 .pool_grants()
@@ -339,7 +343,7 @@ impl MachineService {
             state: Mutex::new(st),
             settings,
             worker_changes: tokio::sync::Notify::new(),
-            lifecycle: std::sync::OnceLock::new(),
+            lifecycle,
         }))
     }
 

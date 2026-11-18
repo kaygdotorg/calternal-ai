@@ -136,6 +136,21 @@ impl Backend for PodmanBackend {
                 .await
         })
     }
+    fn erase(&self, account: Uuid, thread: Option<Uuid>) -> BoxFuture<'_, SandboxResult<()>> {
+        Box::pin(async move {
+            let root = self.canonical_root().await?;
+            match thread {
+                Some(thread) => {
+                    let name = Self::container_name(account, thread);
+                    ownership::remove_named(&self.podman, &root, &name).await?;
+                }
+                None => ownership::remove_account(&self.podman, &root, account).await?,
+            }
+            super::direct::DirectBackend::new(root)
+                .erase(account, thread)
+                .await
+        })
+    }
     fn start<'a>(
         &'a self,
         spec: &'a SandboxSpec,

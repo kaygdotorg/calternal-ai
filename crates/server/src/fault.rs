@@ -18,6 +18,8 @@ pub enum FaultPoint {
     ErasureAuthorityCommitted,
     /// Owner authority and pending erasure are durably published.
     ErasureRecorded,
+    /// Machine erasures are durably queued, before removing the host key or trees.
+    ErasureMachinesQueued,
     /// In-flight owner writes have drained and the key was erased.
     ErasureKeyRemoved,
     /// All owner paths were removed before the cleanup receipt.
@@ -34,6 +36,7 @@ impl FaultPoint {
             Self::AfterPlacement => "after_placement",
             Self::BeforeReply => "before_reply",
             Self::ErasureRecorded => "erasure_recorded",
+            Self::ErasureMachinesQueued => "erasure_machines_queued",
             Self::ErasureAuthorityCommitted => "erasure_authority_committed",
             Self::ErasureKeyRemoved => "erasure_key_removed",
             Self::ErasureStorageRemoved => "erasure_storage_removed",

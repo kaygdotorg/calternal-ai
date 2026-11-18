@@ -10,8 +10,8 @@ use base64::Engine;
 use base64::engine::general_purpose::STANDARD as B64;
 use calternal_auth::token::{hash32, normalize_setup_token, random32};
 use calternal_machine::protocol::{
-    Capacity, ChunkEvent, EnrolRequest, EnrolResponse, Envelope, OutputAck, OutputPost, Owner,
-    PROTOCOL_VERSION, SessionFinish, SessionGranted, SyncRequest, session_message,
+    Capacity, ChunkEvent, Down, EnrolRequest, EnrolResponse, Envelope, OutputAck, OutputPost,
+    Owner, PROTOCOL_VERSION, SessionFinish, SessionGranted, SyncRequest, session_message,
 };
 use tokio::sync::Notify;
 use uuid::Uuid;
@@ -74,6 +74,9 @@ impl MachineService {
             )
             .map_err(super::authority_error)?
             .ok_or_else(invalid)?;
+        if let Some(account) = record.owner {
+            super::erasure_queue::remember_account_machine(&st.db, account, record.id)?;
+        }
         let row = db::MachineRow::new(record, false);
         let resp = EnrolResponse {
             machine_id: row.id,
@@ -106,6 +109,38 @@ impl MachineService {
         let (challenge, _) = new_token()?;
         st.challenges.insert(challenge.clone(), (machine_id, now));
         Ok(challenge)
+    }
+
+    /// Read this machine's outstanding erasures without replacing its session.
+    /// A single-use challenge binds the proof to the enrolled key.
+    pub fn erasure_status(
+        &self,
+        request: &calternal_machine::protocol::ErasureStatusRequest,
+    ) -> Result<calternal_machine::protocol::ErasureStatus, Error> {
+        let mut st = self.lock()?;
+        let denied = || Error::unauthorized("bad machine status proof");
+        match st.challenges.remove(&request.challenge) {
+            Some((id, time)) if id == request.machine_id && time.elapsed() < CHALLENGE_TTL => (),
+            _ => return Err(denied()),
+        }
+        let machine = st.machines.get(&request.machine_id).ok_or_else(denied)?;
+        if machine.row.revoked {
+            return Err(Error::forbidden("machine revoked"));
+        }
+        let _owner = self.owner_step(machine.row.owner)?;
+        let signature = B64.decode(&request.signature).map_err(|_| denied())?;
+        ring::signature::UnparsedPublicKey::new(&ring::signature::ED25519, &machine.row.public_key)
+            .verify(
+                &calternal_machine::protocol::erasure_status_message(
+                    request.machine_id,
+                    &request.challenge,
+                ),
+                &signature,
+            )
+            .map_err(|_| denied())?;
+        Ok(calternal_machine::protocol::ErasureStatus {
+            pending_erasures: super::erasure_queue::count(&st.db, request.machine_id)?,
+        })
     }
 
     /// Verify the signed challenge and open a session, replacing any earlier one.
@@ -228,6 +263,7 @@ impl MachineService {
         req: SyncRequest,
     ) -> Result<Vec<Envelope>, Error> {
         let session = hash32(token);
+        let reports = !req.discards.is_empty();
         let svc = self.clone();
         let notify = blocking(move || svc.sync_begin(machine_id, &session, &req)).await?;
         let _guard = PollGuard {
@@ -238,7 +274,7 @@ impl MachineService {
         loop {
             let svc = self.clone();
             let pending = blocking(move || svc.outbox(machine_id, &session)).await?;
-            if !pending.is_empty() {
+            if reports || !pending.is_empty() {
                 return Ok(pending);
             }
             if tokio::time::timeout_at(deadline, notify.notified())
@@ -292,8 +328,38 @@ impl MachineService {
 
     fn outbox(&self, machine_id: Uuid, session: &[u8; 32]) -> Result<Vec<Envelope>, Error> {
         let mut st = self.lock()?;
+        let owner = st
+            .machines
+            .get(&machine_id)
+            .ok_or_else(|| Error::forbidden("machine revoked"))?
+            .row
+            .owner;
+        let _owner = self.owner_step(owner)?;
+        live_mut(st.machines.get_mut(&machine_id), session)?;
+        st.deliver_erasures(machine_id)?;
         let live = live_mut(st.machines.get_mut(&machine_id), session)?;
-        Ok(live.outbox.iter().cloned().collect())
+        let queued = std::mem::take(&mut live.outbox);
+        let mut deliver = Vec::with_capacity(queued.len());
+        let mut keep = VecDeque::new();
+        for envelope in queued {
+            let lease = match &envelope.message {
+                Down::Assign { lease_id, .. }
+                | Down::Exec { lease_id, .. }
+                | Down::Input { lease_id, .. } => Some(lease_id),
+                _ => None,
+            };
+            let _steps = match lease {
+                Some(id) => match st.leases.get(id).and_then(|l| st.lease_steps(&l.row).ok()) {
+                    Some(steps) => steps,
+                    None => continue,
+                },
+                None => None,
+            };
+            deliver.push(envelope.clone());
+            keep.push_back(envelope);
+        }
+        live_mut(st.machines.get_mut(&machine_id), session)?.outbox = keep;
+        Ok(deliver)
     }
 
     /// Accept exec output from the machine holding the lease at this fence.

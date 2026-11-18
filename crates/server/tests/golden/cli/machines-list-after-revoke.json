@@ -19,7 +19,8 @@ exit: 0
         "owner": "account:cccccccc-cccc-7ccc-8ccc-cccccccccccc",
         "state": "enrolled"
       }
-    ]
+    ],
+    "pending_erasures": []
   },
   "ok": true
 }

@@ -53,6 +53,17 @@ impl MachineKey {
         B64.encode(self.pair.public_key().as_ref())
     }
 
+    /// Sign a read-only erasure status challenge.
+    pub fn sign_erasure_status(&self, machine_id: Uuid, challenge: &str) -> String {
+        B64.encode(
+            self.pair
+                .sign(&crate::protocol::erasure_status_message(
+                    machine_id, challenge,
+                ))
+                .as_ref(),
+        )
+    }
+
     /// Sign a session challenge for `machine_id`; returns base64.
     pub fn sign_session(&self, machine_id: Uuid, challenge: &str) -> String {
         B64.encode(

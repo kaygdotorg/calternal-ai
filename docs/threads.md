@@ -192,7 +192,9 @@ its attribution in `data.actor`. That record has `account` and `via`.
 agent, including saved turn checkpoints. A plugin invocation carries
 `{"Plugin":{"plugin":"PLUGIN_ID"}}`. The server derives this from admitted
 authority. A retry or replay of an unpublished journal entry keeps the first
-writer's attribution.
+writer's attribution. Live entries from an erased author carry
+`author_label: "a deleted account"` alongside the historical ID. Human
+journal output uses the label.
 
 A `threads.checkpoint` entry carries the target `data.revision` and
 `data.append` with `base_revision`, `offset`, `start` and `length`.
