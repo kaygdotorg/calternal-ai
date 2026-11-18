@@ -19,7 +19,7 @@ try {
       const vw = innerWidth, cs = getComputedStyle(page), inner = page.getBoundingClientRect().width - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
       const backs = [...page.querySelectorAll("button, a")].filter((b) => /^\s*(back|<)/i.test(b.textContent ?? "") || (b.getAttribute("aria-label") ?? "").toLowerCase() === "back").length;
       const groups = [...page.querySelectorAll("section.g")].map((g) => Math.round(g.getBoundingClientRect().width));
-      return { vw, inner: Math.round(inner), backs, split: page.classList.contains("split") || !!document.querySelector(".split"), groups, over: document.documentElement.scrollWidth - vw, left: Math.round(page.getBoundingClientRect().left + parseFloat(cs.paddingLeft)) };
+      return { sels: [...page.querySelectorAll(".row-selector")].map((e) => Math.round(e.getBoundingClientRect().width)), vw, inner: Math.round(inner), backs, split: page.classList.contains("split") || !!document.querySelector(".split"), groups, over: document.documentElement.scrollWidth - vw, left: Math.round(page.getBoundingClientRect().left + parseFloat(cs.paddingLeft)) };
     });
     if (!r) { ok(false, `${h}: has a page`); continue; }
     ok(r.backs === 0 && !r.split, `${h}: one flat page, no Back control, no split`, `backs ${r.backs}`);
