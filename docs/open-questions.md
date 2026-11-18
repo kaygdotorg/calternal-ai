@@ -2,7 +2,7 @@
 
 Decisions waiting on kayg, most blocking first. Answer here or in chat; answered items
 move to the decision record they belong to and leave this list. Terms: see
-[glossary](glossary.md). Updated 2026-11-18 09:15 IST.
+[glossary](glossary.md). Updated 2026-11-18 11:00 IST.
 
 ## Waiting now
 
@@ -33,6 +33,9 @@ move to the decision record they belong to and leave this list. Terms: see
 ## Design rounds
 
 - **In progress: Settings and Appearance**: first eleven answers recorded in `settings.md`; second batch asked. Appearance (wordmark and its font, fonts, wallpaper, accent, themes and presets), agents (retry and snooze, streaming, default permission mode), shortcuts, machines, plugins, skills, automations.
+- **Machines and sandboxes from the UI** (kayg, 2026-11-18): the whole flow without a command line: enrolling a machine, making its sandbox, signing in to a provider inside it; every instance must have machines attached.
+- **Plugin-delivered interface**: how a plugin ships real UI, so the orchestrator can be split (shell, composer, a thread rail as `calternal-orchestrator-rail`).
+- **Upgrades with real data**: there is no migration code by rule; what an upgrade across a schema change does once calternal.cloud holds data.
 - Onboarding for developers versus everyone else: what changes.
 - Skills and automations management screens.
 - The app shell on narrow screens, and the app switcher's exact form.
