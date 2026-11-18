@@ -4,6 +4,10 @@
   var d = document.documentElement, s = "light";
   try { var v = localStorage.getItem("cal.scheme"); s = v === "dark" || v === "light" ? v : matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"; } catch (e) {}
   d.dataset.scheme = s;
+  // The bars (Safari's status bar and toolbar) take the page's edge colour when the page loads and do not look again, so the colour solved last time for this scheme is in place before the first paint (shell/chrome.ts stores it).
+  try { var bars = JSON.parse(localStorage.getItem("cal.bars") || "null"); if (bars && /^#[0-9a-f]{6}$/.test(bars[s])) d.style.setProperty("--bars", bars[s]); } catch (e) {}
+  // The very first visit (nothing stored): the default wallpaper's own top colour under its veil, solved once on a laptop and written down here.
+  if (!d.style.getPropertyValue("--bars")) d.style.setProperty("--bars", s === "dark" ? "#17120e" : "#f3f0ec");
   // A visit with no stored wallpaper choice (or the default chosen) paints the cheap, pre-blurred default straight away; its two addresses are on <html> (vite.config.ts `cheapWallpaper`).
   try {
     var a = JSON.parse(localStorage.getItem("cal.appearance") || "null"), w = d.dataset.wallLight && (s === "dark" ? d.dataset.wallDark : d.dataset.wallLight);

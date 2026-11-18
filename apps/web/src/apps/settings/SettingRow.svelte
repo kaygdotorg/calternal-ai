@@ -48,13 +48,13 @@
 {:else if c.type === "checkbox"}
   <div class="row" class:hl={highlighted} data-setting={s.id}><Switch label={s.label} hint={s.help} checked={!!value} onchange={(v) => s.set?.(v)} /></div>
 {:else}
-  <div class="row" class:hl={highlighted} data-setting={s.id}>
+  <div class="row" class:col={c.type === "scheme" || c.type === "segmented"} class:hl={highlighted} data-setting={s.id}>
     <span class="l"><span class="t">{s.label}</span>{#if s.help}<span class="h">{s.help}</span>{/if}</span>
     <span class="ctl">
       {#if c.type === "scheme"}
-        <Selector label={s.label} fill={false} options={[{ value: "system", label: "Auto" }, { value: "light", label: "Light" }, { value: "dark", label: "Dark" }]} value={String(value)} onchange={(v) => s.set?.(v)} />
+        <Selector class="row-selector" label={s.label} options={[{ value: "system", label: "Auto" }, { value: "light", label: "Light" }, { value: "dark", label: "Dark" }]} value={String(value)} onchange={(v) => s.set?.(v)} />
       {:else if c.type === "segmented"}
-        <Selector label={s.label} fill={false} options={c.options.map((o) => ({ value: o.id, label: o.label }))} value={String(value)} onchange={(v) => s.set?.(v)} />
+        <Selector class="row-selector" label={s.label} options={c.options.map((o) => ({ value: o.id, label: o.label }))} value={String(value)} onchange={(v) => s.set?.(v)} />
       {:else if c.type === "popup"}
         <Pill label={s.label} showLabel glass={false} aria-haspopup="menu" aria-expanded={menu} bind:el={trigger} onclick={() => (menu = !menu)}><span>{c.options.find((o) => o.id === value)?.label ?? String(value)}</span><Icon inline name="chevron" /></Pill>
         <Menu open={menu} items={c.options.map((o) => ({ id: o.id, label: o.label, checked: o.id === value }))} label={s.label} {trigger} onclose={() => (menu = false)} onpick={(id) => s.set?.(id)} />
@@ -82,6 +82,8 @@
   .l { display: grid; min-width: 0; gap: var(--s-1); }
   .t { font-size: var(--text-ui); font-weight: var(--strong-weight); }
   .h { font-size: var(--text-label); color: var(--ink-3); max-width: 38rem; }
+  /* A segmented choice is the control of its own row: it fills the row (a Selector's default), up to a readable maximum, below the label (docs/ui-design-system.md, "Selectors fill their row"). */
+  .row.col > .ctl { display: block; min-width: 0; width: 100%; }
   .ctl { flex: none; display: inline-flex; align-items: center; justify-content: flex-end; min-width: 10rem; }
   /* A phone: the control goes under the words and takes the row's width, so nothing runs past the card (found in real Safari). */
   @media (max-width: 600px) {

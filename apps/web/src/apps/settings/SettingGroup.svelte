@@ -5,7 +5,7 @@
 </script>
 
 <section class="g" class:danger>
-  {#if title}<h2>{title}</h2>{/if}
+  {#if title}<h2 data-chrome-heading>{title}</h2>{/if}
   <div class="sg">{@render children()}</div>
 </section>
 

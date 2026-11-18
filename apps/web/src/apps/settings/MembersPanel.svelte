@@ -71,7 +71,7 @@
     <div class="r"><span class="n">
       <label class="t" for="m-find">{adding === "person" ? "Choose a person" : "Choose a group"}</label>
       <input id="m-find" class="field" placeholder="Search" bind:value={find} autocomplete="off" />
-      <Selector label="Role to give" fill={false} options={(mine === "owner" ? ROLES : ROLES.slice(0, 2)).map((r) => ({ value: r.id, label: r.label }))} value={role} onchange={(v) => (role = v as people.GrantRole)} />
+      <Selector class="row-selector" label="Role to give" options={(mine === "owner" ? ROLES : ROLES.slice(0, 2)).map((r) => ({ value: r.id, label: r.label }))} value={role} onchange={(v) => (role = v as people.GrantRole)} />
     </span></div>
     {#each shown.slice(0, 8) as p (p.id)}<div class="r"><span class="t">{p.name}</span><Button text="Add as {role}" variant="quiet" disabled={busy} onclick={() => add(p.id)} /></div>{:else}<div class="r"><span class="h">{pool.length ? "Nobody matches." : adding === "person" ? "Everyone on this server is already here." : "No other groups."}</span></div>{/each}
     <div class="r"><Button text="Cancel" variant="quiet" onclick={() => (adding = null)} /></div>
