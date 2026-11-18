@@ -228,7 +228,9 @@ try {
     const started = performance.now();
     try {
       while (!deployResult || !samples.at(-1).note) {
-        assert.ok(performance.now() - started < 120_000, "deploy and first new write timed out");
+        // Allow the configured stop deadline plus staging and machine startup
+        // on a shared development host. The five-second budget is measured separately.
+        assert.ok(performance.now() - started < 240_000, "deploy and first new write timed out");
         await sleep(40);
         await write();
         if (deployError) throw deployError;
