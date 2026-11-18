@@ -6,7 +6,7 @@
   // frame line at its middle (infraternal D177). The right edge and the boundary below it resize between neighbours. Every control has the warm tooltip with its shortcut. Focus follows the press. The window that is not focused is dimmed by a neutral veil and its controls recede; the
   // focused one has no ring (both changes ease on the motion tokens and can be interrupted).
   import { setContext, type Snippet } from "svelte";
-  import { Card, Grip, Icon, InlineEditor, Panel, Pill, tip } from "@calternal/ui";
+  import { Card, Grip, HeaderPill, Icon, InlineEditor, Panel, Pill, tip } from "@calternal/ui";
   import { shell } from "../shell/shell.svelte";
   import type { IconName } from "@calternal/ui";
   import type { Look, Win } from "./layout";
@@ -42,7 +42,7 @@
     <svg viewBox="0 0 24 24" aria-hidden="true"><path class="shackle" d="M8.5 11V8a3.5 3.5 0 0 1 7 0v3" /><rect x="5" y="11" width="14" height="9.5" rx="2.5" /></svg>
   </button>
   {#if !ownTitle}
-    <div class="tl">{#if shell.narrow}<Pill icon="sidebar" label="Show {win.kind}" onclick={() => shell.toggleSidebar()} />{/if}<Panel radius="pill" class="wt"><Icon name={icon} inline />{#if renaming}<InlineEditor class="title-edit" label="Rename thread" bind:value={draft} autoselect onsubmit={() => onrename?.(draft)} oncancel={() => oncancelrename?.()} onblur={() => onrename?.(draft)} />{:else}<span class="nm">{title}</span>{/if}</Panel></div>
+    <div class="tl">{#if shell.narrow}<Pill icon="sidebar" label="Show {win.kind}" onclick={() => shell.toggleSidebar()} />{/if}<Panel radius="pill" class="wt"><Icon name={icon} inline />{#if renaming}<InlineEditor class="title-edit" label="Rename thread" bind:value={draft} autoselect onsubmit={() => onrename?.(draft)} oncancel={() => oncancelrename?.()} onblur={() => onrename?.(draft)} />{:else}<span class="nm">{title}</span>{/if}</Panel>{#if win.kind === "settings" && focused}<HeaderPill />{/if}</div>
   {/if}
   <div class="tr">
     <Panel radius="pill" class="wacts">
