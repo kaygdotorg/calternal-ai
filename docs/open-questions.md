@@ -2,54 +2,33 @@
 
 Decisions waiting on kayg, most blocking first. Answer here or in chat; answered items
 move to the decision record they belong to and leave this list. Terms: see
-[glossary](glossary.md). Updated 2026-11-19 14:40 IST.
+[glossary](glossary.md). Updated 2026-11-19 15:40 IST.
 
 ## Waiting now
 
 | # | Question | Recommendation | Area |
 | --- | --- | --- | --- |
-| 31 | Thread rows: hover hides the time and state mark for the three actions; swipe right shows only Copy link; touch has no long-press menu, "More" sits in the swipe tray | Keep all three; try on a phone | Threads |
-| 35 | People: can a group hold a server role; what happens when a space's only Owner is disabled | Port the existing app's answer | People |
-| 40 | Performance: the slow start at 1,000 spaces (320 to 860 ms against 300 ms), the cold save tail and the draft-save tail. No profile yet says where the time goes | Profile first, then ask | Performance |
+| 59 | Hosted accounts have passkeys and no email: how someone gets back in after losing every passkey | Recovery codes shown once at sign-up, plus a prompt to add a second passkey | Accounts |
+| 60 | How people join the hosted service: open sign-up with a plan, invitation only, or a waiting list | Invitation only until billing exists | Hosted |
+| 61 | What a push notification shows on a lock screen | Thread title and "needs you", never message text | Notifications |
+| 62 | Crash and usage reporting | Crash reports to our own server, opt-out; no usage analytics | Privacy |
+| 63 | Who reviews plugins before they appear in the gallery | Automated checks plus kayg's approval at first | Plugins |
+| 64 | Agent memory across threads | A memory plugin later, Honcho-compatible; nothing built in | Agents |
+| 31 | Thread rows on touch: what a long press does, now that rows are one line | The same menu as the three dots | Threads |
 | 10 | Native font: system or Google Sans Flex | Decide after seeing both on a Mac and an iPhone | Native apps |
 
-## Automatic thread title
+## In progress, no decision needed
 
-Decided 2026-11-18: a person never signs in twice and no API key is used. The title turn runs on the person's existing provider login; the per-turn lane is finding how to run it with no tools, hooks or saved session, and proves it before any code.
-
-## Design rounds
-
-- **Settings and Appearance**: second batch answered 2026-11-18 (see Recently decided). Left: the readability floor and light mode on the preview (#24).
-- **Machines and installer**: decided 2026-11-19 (see Recently decided); no lane yet.
-- **Pricing**: plans are listed at calternal.com/pricing; storage is bought separately; what the sizes, hours and storage steps are.
-- **Upgrades with real data**: decided 2026-11-18 that updates are automatic and a failed one rolls back without the person or admin noticing; the index rebuild is made faster first (search is unavailable for 67 to 80 s at 100,000 notes today), then migrations are written for the small core (accounts, spaces, roles, secrets), which cannot be rebuilt from files.
-- **MicroVMs**: one per person with a container per thread; sizes decided; the lane posts its build plan on issue #51 for review.
-- **Next to write up** (kayg, 2026-11-18): sharing (#52), then Settings and Appearance.
-- **The canvas** (default from 2026-11-19; was an experiment behind `?canvas=1`): no outer card; the area between the sidebars is the canvas and each window is a middle card, so one window looks exactly like the app today and a second animates as a split; structured columns as in niri; windows touch the top; one continuous veiled background behind them, as under the sidebars; windows opaque or transparent with no blur of their own; both sidebars follow the focused window's app; on a phone one window at a time. The app switcher is no longer part of the canvas (it moved to the left sidebar's footer). Feedback 2026-11-18 17:00, being fixed by the Threads lane: one window must match the app without the canvas exactly (fonts, spacing, animations); no fade on a half-scrolled window; windows are neutral dark or light, never tinted by the wallpaper's accent; no accent border on the selected window (inactive windows dim instead, to be judged); the fullscreen icon is two diagonal chevrons and the link icon becomes a real share menu.
-
-## Queued, no decision needed
-
-- Production bugs from kayg's first sign-up (2026-11-19): onboarding was skipped after the passkey step, and the server's own machine never connected because the host cannot reach its own public address. Both being fixed; production is then wiped and installed fresh again.
-- Open with kayg: sandbox hours per plan (researching what comparable products include), how to keep plans and billing out of the open source, the receipt retention sign-off (#53).
-
-- An incompatible update cannot be applied yet: the full restore point refuses symbolic links, which every coding workspace contains. Additive updates are unaffected. Fix: store links as links in the restore point (a format change, to review first).
-- Update downtime is measured only for the server process (about 180 ms); the full path through the container restart and the proxy is unmeasured.
-- The plugin-worker sandbox probe test times out when the whole workspace suite runs in parallel on a loaded machine (twice so far) and passes alone; make the container tests serial or give the probe a load-aware wait.
-- Production runs sandboxes in containers; the per-person microVM backend is merged and opt-in, and needs the operator network set-up on the production VM before it is switched on.
-
-- Codex is available again (kayg, 2026-11-19): five backend lanes run on it (performance, search and Notes choices, upgrades follow-ups, threads backend, fonts backend); the plugins lane finishes its current piece on Claude.
-- Production (calternal.cloud) was installed fresh on 2026-11-19 from dev c880862, the first schema baseline; it runs sandboxes in containers. kayg has not signed up yet.
-- Parked performance work: the cost of the smaller security-log compaction threshold (warm start 328 to 120 ms), the perf VM's own fsync tail against the 40 ms save budget at 100,000 notes, a health reason for a receipt pinned past retention.
-- Parked search work: account for the message index being 168 MB per million against 117 in the probe.
-
-- A long thread: a thread file stops at 2 MiB today (`thread_full`), so a thread cannot hold 100,000 messages; how a thread continues past the limit needs a design.
-
-- Rewrite git history to drop old images at the next quiet point.
-- Try phone navigation (swipe back, dragging the card) on a real phone: it is merged but not counted as done until checked on a device.
+- Production: the 2026-11-19 install is being replaced by a fresh one with the two fixes from kayg's first sign-up (the server's own machine could not reach the server: hairpin, fixed by connecting through the proxy's address; onboarding was skipped because the old app's service worker still answered at that address, fixed with a kill-switch and onboarding tied to the account). Then the microVM backend is switched on, which needs one root step on the VM.
+- Lanes (no fixed limit; gates on dev-01 queue behind one lock): upgrades (links in restore points, measured update downtime, the update runbook), threads backend (titles and snooze done; 16 MiB threads by appended patches; edit-as-fork as calternal-thread/v2), Codex harness plugin, plans and billing (private repository), plugin network access, automations and skills, fonts and account preferences on the server (plus the onboarding-finished mark), search (smaller message index; Trash purge and Empty Trash), performance, plugins (readiness and logs for authors), and the two UI lanes (canvas as the default, Appearance live preview, keyboard module, inline provider mark, side chat on a phone).
+- Performance: commit to client 1 to 4 ms against 10; warm start at 1,000 spaces about 305 ms against 300 and cold start over budget everywhere; saves at 100,000 notes warm observed at 75 ms p95 against the 40 ms gate, traced to the virtual disk's flush. Shrinking the security log (receipt deltas) is designed and reviewed but is an incompatible log format change, so it waits for restore points that hold links and kayg's go.
+- Not started: shared-space machine and provider login (decided 2026-11-19, below), thread admission by free memory, web push, the installer and machine relay, sharing, live rooms for notes, Notes and Threads as ordinary plugins, the mail plugin (after plugin network access), voice (after the plugin API is stable; live voice through the ChatGPT subscription as kayg's Hermes projects do, transcription route to be checked).
+- Try on a real phone: swipe back and dragging the card. Rewrite git history to drop old images at a quiet point.
 
 ## Recently decided (2026-11-17), now in the decision records
 
-- 2026-11-19 afternoon: plans are $20 (2 GiB, 150 h), $50 (4 GiB, 400 h), $100 (4 GiB, 750 h) and $200 (8 GiB, 1,500 h); the canvas becomes the default, kept behind a clean boundary so it can become a shell plugin, with a switch back in Settings; no separate limit on subagents beyond a person's compute; native apps after the web app is solid, iPhone first; mail starts with reading; voice input (speech to text and live voice) comes first once the plugin API is stable; in shared spaces the machine and provider login are configured per space, not per person (details open).
+- Shared spaces (2026-11-19): the Owner or a Manager sets up a shared space's machine and signs in once, and every member's turns there use it; any login the Owner chooses is allowed, with a plain notice that a personal subscription is licensed to one person; a turn uses the Owner's plan hours; a member may switch their own turns to their own machine and login. Personal spaces stay per person. Threads and subagents start freely while the sandbox has memory to spare and wait when it is short, with no fixed count. Live voice uses the ChatGPT subscription, not an API key.
+- 2026-11-19 afternoon: plans are $20 (2 GiB, 150 h), $50 (4 GiB, 400 h), $100 (4 GiB, 750 h) and $200 (8 GiB, 1,500 h); the canvas becomes the default, kept behind a clean boundary so it can become a shell plugin, with a switch back in Settings; no separate limit on subagents beyond a person's compute; native apps after the web app is solid, iPhone first; mail starts with reading; voice input (speech to text and live voice) comes first once the plugin API is stable; in shared spaces the machine and provider login are configured per space, not per person.
 - Automations (2026-11-19): a run uses the authority of the person who made the automation, on their machine or sandbox; a run missed because the machine was off happens once when it is back if it is still the same day, otherwise it is skipped and says so; its permission mode is what the person configured, Approve for me by default.
 - Also 2026-11-19: four plans at 20, 50, 100 and 200 US dollars a month; no free cloud hours on the hosted service; the existing app's notes are brought over by moving the files, no importer; mail is the first app plugin after Notes and Threads; backups stay external (the production VM is backed up nightly), a per-person backup plugin comes later; an hour is counted plainly; the receipt kept until its request finishes is accepted (#53); an agent message is not indented for the provider mark, the mark is part of its first line; there is no fixed limit on lanes.
 - Plans (2026-11-19): 150, 750 and 1,500 sandbox hours a month on the 2, 4 and 8 GiB sizes; when hours run out new work queues, running turns finish and a pay-as-you-go top-up is offered. Plans, billing and the hour meter are closed source in a separate private repository; the open core keeps only limits an admin sets by hand.
