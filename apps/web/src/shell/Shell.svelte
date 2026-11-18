@@ -4,7 +4,7 @@
   // them: the sidebar is underneath and the middle card slides aside to reveal it (and visibly floats above it); the right card slides
   // over the middle card from the right; the app and its panels are the bottom bar.
   import { untrack } from "svelte";
-  import { Card, HeaderPill, Pill, tokenEase, tokenMs } from "@calternal/ui";
+  import { Card, chromeHeader, HeaderPill, Pill, tokenEase, tokenMs } from "@calternal/ui";
   import { ariaKeys, shortcuts } from "../lib/shortcuts.svelte";
   import type { AppDef } from "../apps/registry";
   import { appearance } from "../appearance/prefs.svelte";
@@ -198,7 +198,7 @@
     {#if !shell.narrow && shell.sidebarOpen}<ResizeHandle side="left" />{/if}
     {#if !shell.narrow && hasRight && rightOpen}<ResizeHandle side="right" />{/if}
     {#if showLeft}<div class="edge l">{#if shell.narrow}<Pill icon="sidebar" label="Show the sidebar" aria-keyshortcuts={ariaKeys(shortcuts.chordFor("sidebar"))} onclick={() => shell.toggleSidebar()} />{:else}<CollapsedPill {app} />{/if}</div>{/if}
-    {#if !canvasEnabled}<div class="edge hl" style:--hl-off={showLeft ? (shell.narrow ? "calc(var(--pill-h) + var(--s-3))" : "calc(var(--pill-h) * 2 + var(--s-3) * 2)") : "0px"}><HeaderPill /></div>{/if}
+    {#if !canvasEnabled}<div class="edge hl" style:--hl-off={showLeft || (shell.narrow && !!chromeHeader.pinned) ? (shell.narrow ? "calc(var(--pill-h) + var(--s-3))" : "calc(var(--pill-h) * 2 + var(--s-3) * 2)") : "0px"}><HeaderPill /></div>{/if}
     {#if canvasEnabled}
       <!-- The canvas experiment (canvas/Canvas.svelte): no card round it; the area between the sidebars is the canvas and each window is a middle card. The app switcher is in the sidebar's footer. -->
       <div class="area" role="region" aria-label={app.name}>
@@ -223,7 +223,7 @@
   @media (min-width: 760px) { :global(html[data-chat-wide]) { --msg-w: 100%; --msg-inner: none; --msg-pad-l: 3.25rem; --msg-pad-r: 1.5rem; } }
   .shell {
     --sw: var(--side-w); --rw: var(--right-w);
-    position: fixed; inset: 0 0 var(--kb, 0px) 0; box-sizing: border-box; padding-left: var(--safe-left); padding-right: var(--safe-right); z-index: 1; display: grid; grid-template-columns: var(--sw) minmax(0, 1fr) var(--rw); grid-template-rows: minmax(0, 1fr); /* one row exactly the window's height: a page taller than the window scrolls inside the card and never stretches the sidebars (their footer stays in view in every app) */
+    position: fixed; inset: 0 0 var(--kb, 0px) 0; transition: bottom var(--dur-base) var(--ease-out); box-sizing: border-box; padding-left: var(--safe-left); padding-right: var(--safe-right); z-index: 1; display: grid; grid-template-columns: var(--sw) minmax(0, 1fr) var(--rw); grid-template-rows: minmax(0, 1fr); /* one row exactly the window's height: a page taller than the window scrolls inside the card and never stretches the sidebars (their footer stays in view in every app) */
   }
   .shell:not(.narrow) > .side { grid-column: 1; } .shell:not(.narrow) > .mid { grid-column: 2; } .shell:not(.narrow) > .right { grid-column: 3; }
   /* A sidebar being pulled into view (or out): out of the columns, fixed at its edge at full width, its content `--vis` px into view; the card is moved by the same amount (inline transform). The rules are in ./pull.ts. */
@@ -234,6 +234,8 @@
   .shell:not(.narrow) .mid { touch-action: pan-y; }
   /* An iPhone home-screen app is laid out shorter than its screen (shell/chrome.ts): the shell is as tall as the probe measured. The keyboard lifts it (`--kb`). */
   :global(html[data-home-screen]) .shell { bottom: auto; height: calc(var(--vh, 100%) - var(--kb, 0px)); }
+  /* A phone lays the card and the two sidebars out as fixed boxes of their own: on a home-screen app they are as tall as the screen too (the layout viewport is a status bar short there), not just the shell. */
+  :global(html[data-home-screen]) .narrow .mid, :global(html[data-home-screen]) .narrow .side, :global(html[data-home-screen]) .narrow .right { bottom: auto; height: calc(var(--vh, 100%) - var(--kb, 0px)); }
   .shell[data-sidebar="false"] { --sw: 0px; }
   .shell[data-right="false"] { --rw: 0px; }
   /* Each surface carries its own secondary inks, solved from the pixels under it (appearance/veil.ts). */
@@ -267,7 +269,7 @@
 
   /* Narrow: layers. */
   .shell.narrow { --peek: calc(var(--s-10) + var(--s-4)); display: block; --bottom-inset: calc(var(--tier-cap) + var(--cap-offset) + var(--s-4)); }
-  .narrow .side { position: fixed; inset: 0; width: 100%; z-index: 1; padding-top: var(--safe-top); visibility: visible; }
+  .narrow .side { position: fixed; inset: 0 var(--safe-right) 0 var(--safe-left); width: auto; z-index: 1; padding-top: var(--safe-top); visibility: visible; }
   .narrow .side > :global(.side) { width: calc(100% - var(--peek)); }
   .narrow[data-sidebar="false"] .side { visibility: hidden; transition: visibility 0s var(--dur-sheet); }
   .narrow[data-npull="left"] .side { visibility: visible; transition: none; }
@@ -278,7 +280,7 @@
   .narrow .mid { touch-action: pan-y; }
   .narrow .mid.dragging { transition: none; }
   .narrow:has(.mid.dragging) .mid :global(.mid-card) { border-radius: var(--r-pane); }
-  .narrow .mid { position: fixed; inset: 0; z-index: 2; padding: 0; transition: transform var(--dur-sheet) var(--ease-sheet), scale var(--dur-sheet) var(--ease-sheet); transform-origin: left center; }
+  .narrow .mid { position: fixed; inset: 0 var(--safe-right) 0 var(--safe-left); z-index: 2; padding: 0; transition: transform var(--dur-sheet) var(--ease-sheet), scale var(--dur-sheet) var(--ease-sheet); transform-origin: left center; }
   .narrow[data-sidebar="true"] .mid { transform: translateX(calc(100% - var(--peek))); }
   .narrow[data-right="true"] .mid { transform: translateX(calc(var(--peek) - 100%)); }
   .narrow .mid :global(.mid-card) { border-radius: 0; transition: border-radius var(--dur-sheet) var(--ease-sheet); }
@@ -286,7 +288,7 @@
   .peek { position: fixed; z-index: 3; top: 0; bottom: 0; right: 0; width: var(--peek); touch-action: pan-y; }
   .peek.l { right: auto; left: 0; }
   /* The side panel is the list's mirror: underneath the card at the right, uncovered as the card slides left (one finger from the right edge, the button, Back). */
-  .narrow .right { position: fixed; inset: 0; width: 100%; z-index: 1; padding-top: var(--safe-top); visibility: visible; display: flex; justify-content: flex-end; overflow: clip; touch-action: pan-y; }
+  .narrow .right { position: fixed; inset: 0 var(--safe-right) 0 var(--safe-left); width: auto; z-index: 1; padding-top: var(--safe-top); visibility: visible; display: flex; justify-content: flex-end; overflow: clip; touch-action: pan-y; }
   .narrow .right > :global(.rs) { width: calc(100% - var(--peek)); }
   .narrow[data-right="false"] .right { visibility: hidden; transition: visibility 0s var(--dur-sheet); }
   .narrow[data-npull="right"] .right { visibility: visible; transition: none; }

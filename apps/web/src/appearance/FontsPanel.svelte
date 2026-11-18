@@ -2,10 +2,12 @@
   // Fonts, as a section of Settings, Appearance: a family per role (interface, chat, code, and the wordmark) from Google Fonts, Fontsource, Fontshare, the person's own files or the system.
   // The roles are rows in the page at every width; a row opens its picker (a search and a long list), as a sheet on touch and as a dropdown beside the row otherwise: no nested page, no Back.
   // Everything goes through the adapters in fonts.ts, so the real server plugs in without changes here.
-  import { Button, Icon, Popover, Row, Selector, Sheet, currentForm, textField } from "@calternal/ui";
+  import { Button, Icon, Popover, Selector, Sheet, currentForm, textField } from "@calternal/ui";
   import { serverMode } from "../server/client";
-  import { ROLES, SOURCE_LABEL, type FontInfo, type FontRole, type FontSource } from "./fonts";
+  import { ROLES, SOURCE_LABEL, systemStack, type FontInfo, type FontRole, type FontSource } from "./fonts";
   import { appearance as A } from "./prefs.svelte";
+  /** The roles this panel lists (Settings shows the text roles under Text and the wordmark with its name). */
+  let { roles = ROLES.map((r) => r.role) }: { roles?: FontRole[] } = $props();
   let error = $state("");
   let source = $state<FontSource>("google");
   let fq = $state("");
@@ -46,7 +48,8 @@
       error = (err as Error).message;
     }
   }
-  const label = (r: FontRole) => `${A.prefs.fonts[r].family} · ${SOURCE_LABEL[A.prefs.fonts[r].source]}`;
+  /** The role's family as CSS, so its row is its own preview. */
+  const sample = (r: FontRole) => { const c = A.prefs.fonts[r]; return c.source === "system" ? systemStack(mono(r)) : `"${c.family}"`; };
   function choose(r: FontRole | null, from?: HTMLElement) { anchor = from; view = r; error = ""; fq = ""; if (r) source = A.prefs.fonts[r].source; }
 </script>
 
@@ -83,10 +86,14 @@
     {/snippet}
 
 <div class="fp">
-  {#each ROLES as { role: r } (r)}
-    <Row tall title={ROLE[r]} sub={label(r)} selected={view === r} onclick={(e) => choose(r, e.currentTarget as HTMLElement)}>{#snippet trailing()}<Icon name="chevron" inline />{/snippet}</Row>
+  {#each roles as r (r)}
+    <button type="button" class="role" aria-haspopup="dialog" aria-label="{ROLE[r]} font: {A.prefs.fonts[r].family}" aria-current={view === r ? "true" : undefined} onclick={(e) => choose(r, e.currentTarget as HTMLElement)}>
+      <span class="rn">{ROLE[r]}</span>
+      <span class="rf" style:font-family={sample(r)}>{A.prefs.fonts[r].family}</span>
+      <Icon name="chevron" inline />
+    </button>
   {/each}
-  <p class="note">Google Sans Flex and Cascadia Code are the defaults (Maple Mono is there to choose). A font from a catalogue is downloaded and stored by the server once, so pages never load from those sites.</p>
+  {#if !serverMode()}<p class="note">A font from a catalogue is downloaded and stored by the server once, so pages never load from those sites.</p>{/if}
   {#if view}
     {#if currentForm() === "touch"}
       <Sheet open label="{ROLE[view]} font" onclose={() => choose(null)}><div class="sh">{@render picker()}</div></Sheet>
@@ -97,7 +104,14 @@
 </div>
 
 <style>
-  .fp { display: grid; gap: var(--s-1); }
+  .fp { display: grid; }
+  /* A role is a row like the other rows of a Settings card: the card's own inset (the row has no padding of its own around it), the role on the left, the family set in itself on the right. */
+  .role { display: flex; align-items: center; gap: var(--s-4); min-height: var(--row-h-settings); padding: var(--s-3) var(--s-6); text-align: start; }
+  .role[aria-current="true"] { background: var(--accent-soft); }
+  @media (hover: hover) and (pointer: fine) { .role:hover { background: var(--hover); } }
+  .rn { font-size: var(--text-ui); font-weight: var(--strong-weight); }
+  .rf { flex: 1; min-width: 0; text-align: end; font-size: var(--text-ui); color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .note { padding: var(--s-3) var(--s-6); }
   .sh { padding: var(--s-5); width: min(28rem, 100vw); box-sizing: border-box; max-height: min(70dvh, 34rem); overflow-y: auto; }
   h2 { font-size: var(--text-heading); font-weight: var(--strong-weight); margin-bottom: var(--s-4); }
   .note { font-size: var(--text-label); color: var(--ink-3); margin-top: var(--s-3); }

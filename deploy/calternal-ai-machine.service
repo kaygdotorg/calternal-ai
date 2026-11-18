@@ -4,9 +4,11 @@ After=@NAME@.service
 
 [Service]
 UnsetEnvironment=CONTAINER_HOST CONTAINER_CONNECTION DOCKER_HOST
-Type=exec
+Type=notify
+NotifyAccess=main
+TimeoutStartSec=35
 UMask=0077
-ExecStart=@ROOT@/releases/current/calternal machine run --dir @ROOT@/machine --backend podman --podman @PODMAN@ --image @SANDBOX_IMAGE@ --max-sandboxes 2 --bootstrap-handoff @ROOT@/machine-handoff --bootstrap-server @ORIGIN@
+ExecStart=@ROOT@/releases/current/calternal machine run --dir @ROOT@/machine --backend podman --podman @PODMAN@ --image @SANDBOX_IMAGE@ --max-sandboxes 2 --bootstrap-handoff @ROOT@/machine-handoff --bootstrap-server @ORIGIN@@MACHINE_CONNECT@
 Restart=on-failure
 RestartPreventExitStatus=3
 RestartSec=5s

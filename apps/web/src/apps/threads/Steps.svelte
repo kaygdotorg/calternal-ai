@@ -4,6 +4,7 @@
   import { untrack } from "svelte";
   import { Icon, type IconName } from "@calternal/ui";
   import LogView from "./LogView.svelte";
+  import "./block-head.css";
   import type { Step, StepKind } from "./model";
   let { steps, ms, running = false }: { steps: Step[]; ms: number; running?: boolean } = $props();
   const ICON: Record<StepKind, IconName> = { read: "file", edit: "code", run: "terminal", search: "search", spawn: "branch" };
@@ -18,7 +19,7 @@
 </script>
 
 <div class="steps" class:open>
-  <button type="button" class="head" aria-expanded={open} aria-controls="{uid}-list" onclick={() => (open = !open)}>
+  <button type="button" class="head block-head" aria-expanded={open} aria-controls="{uid}-list" onclick={() => (open = !open)}>
     <!-- The deck: the tools' icons (or the pictures' thumbnails) overlap in a small stack; pointing at the row fans them out (pointer only, on the motion tokens); a press opens the block. -->
     <span class="chips" class:thumbs={thumbs.length > 0} aria-hidden="true">{#if thumbs.length}{#each thumbs as f, i}<span class="chip pic" style:--i={i}><img src={f.url} alt="" loading="lazy" /></span>{/each}{:else}{#each kinds as k, i}<span class="chip" style:--i={i}><Icon name={ICON[k]} inline /></span>{/each}{/if}</span>
     <span class="sum">{running ? "" : ms > 0 ? `Worked for ${worked} · ` : "Worked · "}{steps.length} {steps.length === 1 ? "tool" : "tools"}</span>
@@ -51,7 +52,6 @@
 
 <style>
   .steps { display: grid; border-radius: var(--r-card); background: rgb(var(--ink-rgb) / 0.05); overflow: clip; }
-  .head { border-radius: var(--r-select); display: flex; align-items: center; gap: var(--s-4); width: 100%; min-height: calc(var(--row-h) + var(--s-3)); padding: 0 var(--s-5) 0 var(--s-4); color: var(--ink-3); font-size: var(--text-label); font-weight: var(--strong-weight); text-align: start; }
   .chips { display: flex; }
   .chip { transition: margin-left var(--dur-base) var(--ease-out); }
   .chip.pic { overflow: hidden; border-radius: var(--r-select); }
@@ -64,7 +64,8 @@
   .list { display: grid; grid-template-rows: 0fr; transition: grid-template-rows var(--dur-base) var(--ease-out); }
   .open .list { grid-template-rows: 1fr; padding-bottom: var(--s-2); }
   ol { min-height: 0; overflow: clip; display: grid; }
-  .step { display: flex; align-items: center; gap: var(--s-4); width: 100%; min-height: var(--row-h); padding: 0 var(--s-5) 0 var(--s-4); text-align: start; font-size: var(--text-label); color: var(--ink-2); }
+  @media (pointer: coarse) { .step::after { content: ""; position: absolute; inset: -6px 0; } } /* a 44 px target without a taller row (block-head.css) */
+  .step { position: relative; display: flex; align-items: center; gap: var(--s-4); width: 100%; min-height: var(--s-9); padding: 0 var(--s-5) 0 var(--s-4); text-align: start; font-size: var(--text-label); color: var(--ink-2); }
   .ic { display: grid; width: var(--s-7); place-items: center; color: var(--ink-3); }
   .t { font-weight: var(--strong-weight); flex: none; }
   code { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-3); }

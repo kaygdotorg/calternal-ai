@@ -2,16 +2,18 @@
 use std::{io, path::Path, time::Duration};
 
 use crate::identity::{Credentials, MachineKey};
+use crate::link::Link;
 use crate::protocol::{LOCAL_ENROLLMENT_FORMAT, LocalEnrollment, Owner};
+use crate::ready::Ready;
 use crate::{Error, Result};
 
-pub(crate) async fn wait(dir: &Path, handoff: &Path, server: &str) -> Result<()> {
+pub(crate) async fn wait(dir: &Path, handoff: &Path, link: &Link, ready: &Ready) -> Result<()> {
     let root = dir.to_owned();
     tokio::task::spawn_blocking(move || calternal_fsio::private::directory(&root))
         .await
         .map_err(|_| Error::Protocol("could not prepare the machine directory".into()))??;
     let _ownership = crate::ownership::lock(dir).await?;
-    let (dir, handoff, server) = (dir.to_owned(), handoff.to_owned(), server.to_owned());
+    let (dir, handoff, server) = (dir.to_owned(), handoff.to_owned(), link.base().to_owned());
     loop {
         let (dir, handoff, server) = (dir.clone(), handoff.clone(), server.clone());
         if tokio::task::spawn_blocking(move || advance(&dir, &handoff, &server))
@@ -19,6 +21,15 @@ pub(crate) async fn wait(dir: &Path, handoff: &Path, server: &str) -> Result<()>
             .map_err(|_| Error::Protocol("local enrollment task failed".into()))??
         {
             return Ok(());
+        }
+        if ready.pending() {
+            match link.needs_first_owner().await {
+                Ok(true) => ready.report("Server reachable; waiting for first-owner handoff")?,
+                Ok(false) => {}
+                Err(error) => {
+                    tracing::warn!(%error, "cannot reach the server for first-owner handoff")
+                }
+            }
         }
         tokio::time::sleep(Duration::from_secs(2)).await;
     }
@@ -42,7 +53,7 @@ fn advance(dir: &Path, handoff: &Path, server: &str) -> Result<bool> {
         Credentials::load(&pending)?
     } else {
         let creds = Credentials {
-            server: crate::link::Link::new(server)?.base().to_owned(),
+            server: server.to_owned(),
             machine_id: uuid::Uuid::new_v4(),
             owner: Owner::Pool,
             key: MachineKey::generate()?,
