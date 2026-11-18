@@ -81,7 +81,7 @@
   {/if}
   <div bind:this={list} class="menu" role={search ? "menu" : "presentation"} aria-label={search ? label : undefined} use:roving={{ selector: "[role^=menuitem]", axis: "y" }}>
     {#each shown as it (it.id)}
-      <button type="button" class="it" class:compact class:danger={it.danger} disabled={it.disabled} role={radio ? "menuitemradio" : "menuitem"} aria-checked={radio ? !!it.checked : undefined} tabindex="-1" onclick={() => { onpick(it.id); close(); }}>
+      <button type="button" class="it" class:compact class:danger={it.danger} disabled={it.disabled} role={it.checked !== undefined ? "menuitemradio" : "menuitem"} aria-checked={it.checked !== undefined ? !!it.checked : undefined} tabindex="-1" onclick={() => { onpick(it.id); close(); }}>
         {#if it.icon}<Icon name={it.icon} />{/if}
         <span class="tx"><span>{it.label}</span>{#if it.sub}<small>{it.sub}</small>{/if}</span>
         {#if it.checked}<Icon inline name="check" />{/if}

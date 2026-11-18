@@ -1,7 +1,7 @@
 <script lang="ts">
   // THE app switcher: an icon-only capsule at the bottom centre of the left sidebar (footer order: account picture, this, search), three icons at a time, the rest reached by scrolling it sideways; a click or tap
   // switches app. It is a `nav` of real links (Enter opens, "Threads, link, current page" is announced, the address is right-clickable); every icon has its name as its accessible name and as a tooltip (hover,
-  // keyboard focus, long press). One tab stop (the current app); Left, Right, Home and End move focus and bring that icon to the middle. The current app is always in view: centred on mount and whenever the app changes by
+  // keyboard focus, long press). One tab stop (the current app); Left, Right, Home and End move focus and bring that icon to the middle. The current app is always in view: centred when it can be (at the ends the strip rests flush), on mount and whenever the app changes by
   // any route. The strip shows exactly three whole icons; when more apps exist on a side, the outer icon on that side is smaller and fainter (the page-indicator pattern, no clipped icon, no gradient); with three or fewer
   // all are full size and nothing scrolls. Scrolling snaps one icon at a time. Motion (tokens): the current marker and the outer icons' scale and opacity over `--dur-base` on `--ease-out`; press `--press-scale`; centring after a
   // key or an outside change is an animation of `scrollLeft` over `--dur-base` on `--ease-out`, cancelled by the next touch, wheel or key (interruptible), instant under reduced motion.
@@ -10,9 +10,10 @@
   import { letterOf, switcherApps, type SwitcherApp } from "./switcherApps.svelte";
   let { current }: { current: string } = $props();
   const apps = $derived(switcherApps());
-  let track = $state<HTMLElement>(), at = $state(0); // `at`: the index of the icon nearest the middle
+  let track = $state<HTMLElement>(), at = $state(1); // `at`: the index of the icon in the middle slot (the three in view are at-1, at, at+1)
   const slot = () => (track && track.children[0] ? (track.children[0] as HTMLElement).offsetWidth : 40);
-  const middleOf = (i: number) => i * slot(); // scrollLeft that puts icon i in the middle slot (the track is padded by one slot at each end)
+  /** The scrollLeft that puts icon `i` in the middle slot, held inside the strip: the first and last icons cannot be centred, so at the ends the strip rests flush and the current app sits at that end. */
+  const middleOf = (i: number) => Math.max(0, Math.min((apps.length - 3) * slot(), (i - 1) * slot()));
   const reduced = () => matchMedia("(prefers-reduced-motion: reduce)").matches || document.documentElement.dataset.input === "key";
   let glideId = 0;
   /** Animates the track to `left` over the base duration on the out curve; cancelled by any later gesture. */
@@ -36,7 +37,7 @@
     const i = indexOfCurrent();
     queueMicrotask(() => { if (!track) return; if (first) { track.scrollLeft = middleOf(i); first = false; } else glide(middleOf(i)); measure(); });
   });
-  function measure() { if (!track) return; at = Math.max(0, Math.min(apps.length - 1, Math.round(track.scrollLeft / slot()))); }
+  function measure() { if (!track) return; at = Math.max(1, Math.min(apps.length - 2, Math.round(track.scrollLeft / slot()) + 1)); }
   // A side has more apps when the icon beyond the visible three exists on it; the outer visible icon on that side is then drawn smaller and fainter.
   const outer = (i: number): boolean => apps.length > 3 && ((i === at - 1 && at - 1 > 0) || (i === at + 1 && at + 1 < apps.length - 1));
   function key(e: KeyboardEvent) {
@@ -62,10 +63,10 @@
 </nav>
 
 <style>
-  /* Three slots wide; the track is padded by one slot at each end so the first and last icons can be centred too. */
+  /* Three slots wide; the first and last icons cannot be centred, so at the ends the strip rests flush. */
   .switcher { --slot: var(--pill-h); min-width: 0; display: flex; justify-content: center; }
-  .track { display: flex; width: calc(var(--slot) * 3); max-width: 100%; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; overscroll-behavior-x: contain; padding-inline: var(--slot); box-sizing: border-box; border-radius: var(--r-pill); background: rgb(var(--ink-rgb) / 0.07); }
-  .switcher[data-count="1"] .track, .switcher[data-count="2"] .track, .switcher[data-count="3"] .track { overflow-x: visible; padding-inline: 0; width: auto; justify-content: center; scroll-snap-type: none; }
+  .track { display: flex; width: calc(var(--slot) * 3); max-width: 100%; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; overscroll-behavior-x: contain; box-sizing: border-box; border-radius: var(--r-pill); background: rgb(var(--ink-rgb) / 0.07); }
+  .switcher[data-count="1"] .track, .switcher[data-count="2"] .track, .switcher[data-count="3"] .track { overflow-x: visible; width: auto; justify-content: center; scroll-snap-type: none; }
   .track::-webkit-scrollbar { display: none; }
   .app { flex: none; width: var(--slot); height: var(--slot); display: grid; place-items: center; scroll-snap-align: center; border-radius: var(--r-pill); color: var(--ink-2); position: relative; isolation: isolate; transition: scale var(--dur-base) var(--ease-out), opacity var(--dur-base) var(--ease-out), color var(--dur-base) var(--ease-out); }
   /* The marker behind the current icon fades and scales in on the tokens. */
