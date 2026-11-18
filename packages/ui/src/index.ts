@@ -45,3 +45,4 @@ export { initInputModality, modality, type Modality } from "./lib/input";
 export { Toasts, toast, undoable, undoLatest, failed, notify, track, dismiss, type UndoToken } from "./toast";
 export { textField, type TextFieldOptions } from "./lib/textfield";
 export { scrollCue } from "./lib/scroll-cue";
+export { pressRow, pressRows, openPress, registerPreview, previewOf, LIFT_MS, MENU_MS, STILL, PRIME_MS, type PressBag } from "./lib/press";
