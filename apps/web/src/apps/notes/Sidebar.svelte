@@ -1,6 +1,6 @@
 <script lang="ts">
   // Notes sidebar: the current space's notes (the fixture's, or the server's in server mode), newest first, and a way to make a new one.
-  import { Button, Icon, IconButton, Menu, Panel, Row, VirtualList, failed, type MenuItem } from "@calternal/ui";
+  import { Button, Icon, IconButton, Menu, Panel, Row, SearchField, VirtualList, failed, type MenuItem } from "@calternal/ui";
   import { say } from "../../server/say";
   import { href, navigate, route, segments } from "../../lib/route.svelte";
   import { spaces } from "../../shell/spaces.svelte";
@@ -100,7 +100,7 @@
       <Button variant="quiet" text="Done" onclick={endSelect} />
     </Panel>
   {/if}
-  <input class="find" type="search" aria-label="Find a note by title" placeholder="Find a note" bind:value={q} autocomplete="off" />
+  <SearchField class="find" bind:value={q} label="Find a note by title" placeholder="Find a note" />
   {#if hits}
     <ul>{#each hits as n (n.id)}<li><Row title={n.title} icon="notes" href={href(`/notes/${n.id}`)} selected={current === n.id} /></li>{:else}<li class="none">No note starts with “{q.trim()}”.</li>{/each}</ul>
   {:else}
@@ -167,7 +167,8 @@
   .li[data-picked] :global(.row) { background: var(--accent-soft); }
   .dot { width: var(--s-3); height: var(--s-3); border-radius: 50%; background: var(--accent); }
   .trash { display: flex; align-items: center; }
-  .find { margin: 0 var(--s-5) var(--s-2); min-height: var(--row-h); padding: 0 var(--s-4); border: 0; border-radius: var(--r-pill); background: rgb(var(--ink-rgb) / 0.06); color: var(--ink); font-size: var(--text-label); }
+  /* The shared search field (its text is the touch body size, 17 pt: a smaller one makes iOS Safari zoom the page when it is focused). */
+  nav :global(.find) { margin: 0 var(--s-5) var(--s-2); }
   .end { height: 1px; flex-basis: 100%; }
   .cap { padding: var(--s-2) var(--s-5); font-size: var(--text-label); color: var(--ink-3); }
   .none { padding: var(--s-4) var(--s-5); color: var(--ink-3); font-size: var(--text-label); }
