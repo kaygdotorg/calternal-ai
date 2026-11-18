@@ -17,7 +17,7 @@ title: "plugin-sdk: typed-handlers/functions/typedHandlers"
 > **typedHandlers**\<`O`\>(`manifest`, `handlers`): `Record`\<`string`, [`WorkerHandlerV2`](/docs/dev/typescript/plugin-sdk/worker-v2/type-aliases/workerhandlerv2/)\>
 
 Bind each declared operation to one handler. Literal manifest declarations infer
-basic input and output properties and require matching handler keys. Runtime validation
+basic properties and discriminated unions of object schemas, and require matching handler keys. Runtime validation
 still comes from the host's compiled schemas. Cost: return the map unchanged.
 
 ## Type Parameters

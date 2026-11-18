@@ -125,6 +125,12 @@ Re-exports [serveWorker](/docs/dev/typescript/plugin-sdk/stdio-worker/functions/
 
 ***
 
+### startJob
+
+Re-exports [startJob](/docs/dev/typescript/plugin-sdk/job-waits/functions/startjob/)
+
+***
+
 ### typedHandlers
 
 Re-exports [typedHandlers](/docs/dev/typescript/plugin-sdk/typed-handlers/functions/typedhandlers/)

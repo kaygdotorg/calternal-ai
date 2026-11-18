@@ -233,7 +233,7 @@ async fn execute<D: Directory>(
                 Ok(()) => None,
                 Err(error) => {
                     tracing::warn!(job = %job.id, reason = %error.message, "job wait refused");
-                    Some(RunEnd::WaitRejected(error.message))
+                    Some(RunEnd::WaitRejected(error))
                 }
             }
         }

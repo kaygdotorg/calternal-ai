@@ -81,10 +81,15 @@ impl Jobs {
             RunEnd::RetryWaiting => (JobState::RetryWaiting, "null".into()),
             RunEnd::Interrupted => (JobState::Interrupted, "null".into()),
             RunEnd::OutcomeUnknown => (JobState::OutcomeUnknown, "null".into()),
-            RunEnd::WaitRejected(message) => (
-                JobState::Failed,
-                serde_json::json!({"wait_error": message}).to_string(),
-            ),
+            RunEnd::WaitRejected(error) => {
+                let mut result = serde_json::json!({"wait_error": error.message});
+                if let Some(diagnostics) = error.details.and_then(|mut details| {
+                    details.get_mut("diagnostics").map(serde_json::Value::take)
+                }) {
+                    result["diagnostics"] = diagnostics;
+                }
+                (JobState::Failed, result.to_string())
+            }
             RunEnd::Failed => (JobState::Failed, "null".into()),
         };
         let finished = self.tx(space, |tx| {
