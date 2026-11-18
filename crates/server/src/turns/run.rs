@@ -185,11 +185,12 @@ async fn execute<D: Directory>(
     } else {
         None
     };
-    let previous_shared_machine = &job.checkpoint["shared_machine"];
-    let route_changed = !previous_shared_machine.is_null()
-        && !shared.is_some_and(|target| {
-            *previous_shared_machine == json!(target.machine)
-                && job.checkpoint["shared_sponsor"] == json!(target.sponsor)
+    let route_changed = job
+        .checkpoint
+        .get("shared_machine")
+        .is_some_and(|previous| {
+            *previous != json!(shared.map(|target| target.machine))
+                || job.checkpoint["shared_sponsor"] != json!(shared.map(|target| target.sponsor))
         });
     if route_changed || (shared.is_some() && provider_id != "calternal-claude-code") {
         let message = if route_changed {

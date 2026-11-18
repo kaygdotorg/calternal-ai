@@ -31,7 +31,10 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
   "properties": {
     "machine_id": {
       "description": "Owner's sandbox machine UUID or null to clear the setting.",
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "space_id": {
       "description": "Shared space UUID.",

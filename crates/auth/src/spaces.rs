@@ -471,7 +471,8 @@ impl Spaces {
         self.db.read_blocking(move |c| {
             let owner = c
                 .query_row(
-                    "SELECT owner_account FROM spaces WHERE id=?1 AND personal_for IS NULL",
+                    "SELECT s.owner_account FROM spaces s JOIN users u ON u.id=s.owner_account
+                        WHERE s.id=?1 AND s.personal_for IS NULL AND u.disabled_at IS NULL",
                     [space.to_string()],
                     |row| row.get::<_, String>(0),
                 )
