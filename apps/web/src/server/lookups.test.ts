@@ -15,6 +15,12 @@ describe("message search over search.query", () => {
     expect(h.messageId).toBeUndefined();
     expect(h.at).toBeUndefined();
   });
+  it("carries the message id and time of a message hit, and the partial flag of the page", async () => {
+    const hit = { address: "/threads/t-1", kind: "threads", space_id: "s", title: "T", excerpt: [{ text: "read", matched: true }], message_id: "0194-aaaa", message_at: "2026-11-18T12:00:00+05:30" };
+    expect(hitOf(hit as never)).toMatchObject({ messageId: "0194-aaaa", at: Date.parse("2026-11-18T12:00:00+05:30") });
+    vi.spyOn(server, "operate").mockResolvedValue({ hits: [hit], partial: true } as never);
+    expect(await lookups(() => "s").searchMessages("read")).toMatchObject({ partial: true, hits: [{ messageId: "0194-aaaa" }] });
+  });
   it("asks for threads only, at most 50, and passes nothing else", async () => {
     const op = vi.spyOn(server, "operate").mockResolvedValue({ hits: [] } as never);
     await lookups(() => "space-1").searchMessages("journal", 500);

@@ -44,6 +44,39 @@ agent turns and plugin workers. Each agent sandbox has 1 CPU, 1 GiB memory and
 256 PIDs. Each plugin worker has 1 CPU, 256 MiB memory and 64 PIDs, with
 networking disabled. Operate the deployment with sandboxed machine mode.
 
+### Route the co-located machine through Traefik
+
+Run the following checks on the deployment host as `calternal`. The
+`-v` output shows whether the TCP connection opens before TLS starts. If
+the host reaches other public addresses but gets no TCP answer from its own
+public address, and the second request succeeds, the route has a hairpin
+failure. Use the verified internal Traefik address in the target file. The
+production VM's Proxmox SDN path supports 1,450-byte packets. The observed
+timeout occurs at TCP connect, before TLS or HTTP exchanges begin.
+
+```sh
+curl -fv --noproxy '*' --connect-timeout 5 --max-time 8 https://calternal.cloud/api/v1/auth/status
+curl -fv --noproxy '*' --connect-timeout 5 --max-time 8 \
+  --resolve calternal.cloud:443:10.70.3.101 https://calternal.cloud/api/v1/auth/status
+```
+
+`deploy/cloud.conf` sets `MACHINE_CONNECT=calternal.cloud:443=10.70.3.101`.
+Deploy passes it as `--connect-address HOST:PORT=IP` to the machine unit.
+The public URL, HTTP Host header, TLS server name and certificate checks use
+`calternal.cloud`. Leave the setting empty on targets that can reach their
+configured origin normally. A separately managed machine can pass the same
+flag to both `calternal machine enroll` and `calternal machine run`. Keep
+the override in its service command so reconnects use the same route.
+
+Deploy and rollback wait for the machine to open an authenticated session.
+On a fresh installation the readiness condition is a reachable server
+reporting that first-owner setup is needed, with the machine waiting for its
+handoff. A machine readiness failure fails deployment even if the web
+health probe passed. On failure, deploy and rollback try the public origin
+from the host and name `MACHINE_CONNECT` if TCP cannot connect. Inspect
+`journalctl --user -u calternal-ai-machine.service` on the target for the
+machine's connection failure.
+
 ## Choose the machine sandbox backend
 
 Use `podman` on Linux machines without usable KVM and for the current provider
@@ -224,8 +257,8 @@ one machine identity's storage across backend types.
 From the dev-01 build checkout run `deploy/deploy.sh --target deploy/cloud.conf`.
 It builds and sends the image via SSH, stages the units and matching machine
 binary, stops both services, and promotes the image to `:current`. It verifies
-HTTP readiness on the published address and runs the container probe. If
-the new release fails those checks, it restarts the previous release. A
+HTTP readiness on the published address, runs the container probe and
+waits for machine readiness. If the new release fails those checks, it restarts the previous release. A
 successful deploy retains one previous release under `:rollback`.
 `deploy/rollback.sh --target deploy/cloud.conf` swaps the releases and checks
 health. Add `--dry-run` to see the SSH calls before running either script.

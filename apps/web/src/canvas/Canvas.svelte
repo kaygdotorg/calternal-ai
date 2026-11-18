@@ -400,7 +400,7 @@
             {#each c.wins as w, k (w.id)}
               {#if !maxed || w.id === canvas.max}
                 <div class="slot" style:flex="{mine ? 1 : w.weight} 1 0" style:min-height="0">
-                  <WindowFrame win={w} title={titleOf(w.kind, w.item)} icon={iconOf(w.kind)} ownTitle={w.kind === "threads"} focused={canvas.focus === w.id} maximised={mine} look={canvasPrefs.look}
+                  <WindowFrame win={w} title={titleOf(w.kind, w.item)} icon={iconOf(w.kind)} ownTitle={false} focused={canvas.focus === w.id} maximised={mine} look={canvasPrefs.look}
                     canMax={canvas.all().length > 1 && !shell.narrow} paper={page.paper.join(" ")} {density} hasBelow={k < c.wins.length - 1} edge={i === 0 && i === canvas.cols.length - 1 ? "lr" : i === 0 ? "l" : i === canvas.cols.length - 1 ? "r" : ""} {kbd}
                     onfocus={() => focusWin(w.id)} onaction={(a, source, target) => act(w.id, a, source, target)}
                     onresizew={(dx) => resizeWidth(c.id, i, dx)} onresizeh={(dy) => canvas.dragBoundary(c.id, k, dy, el?.querySelector<HTMLElement>(`[data-col="${c.id}"]`)?.clientHeight ?? vh)}>

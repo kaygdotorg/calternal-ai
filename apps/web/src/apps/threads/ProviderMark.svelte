@@ -7,7 +7,7 @@
   import ModelCard from "./ModelCard.svelte";
   import { serverMode } from "../../server/client";
   import type { MessageBy, ProviderId } from "./model";
-  let { by, provider, providers }: { by?: MessageBy; provider: ProviderId; providers: { id: ProviderId; name: string; models: { id: string; name: string; levels?: string[] }[] }[] } = $props();
+  let { by, provider, providers, row = false }: { /** The mark sits beside a block row (a thought, tool steps, the working row) rather than a line of text: it is centred on that row, not on the first text line. */ row?: boolean; by?: MessageBy; provider: ProviderId; providers: { id: ProviderId; name: string; models: { id: string; name: string; levels?: string[] }[] }[] } = $props();
   const id = $derived(by?.provider ?? provider);
   const p = $derived(providers.find((x) => x.id === id));
   const model = $derived(by?.model ? p?.models.find((m) => m.id === by.model)?.name ?? by.model : "");
@@ -48,7 +48,7 @@
   });
 </script>
 
-<button type="button" class="mark" aria-label={label} aria-describedby={open ? `mc-${by?.model ?? id}` : undefined} bind:this={btn}
+<button type="button" class="mark" class:row aria-label={label} aria-describedby={open ? `mc-${by?.model ?? id}` : undefined} bind:this={btn}
   onpointerenter={(e) => { stuck = false; if (e.pointerType !== "touch") show(); }} onpointerleave={() => hide(120)}
   onfocus={(e) => { if ((e.currentTarget as HTMLElement).matches(":focus-visible")) show(true); }} onblur={() => hide()}
   onclick={(e) => { const ev = e as unknown as PointerEvent; if (ev.pointerType === "touch" || ev.detail === 0) { open ? hide() : show(true); } }}><Icon name={icon} inline /></button>
@@ -61,6 +61,7 @@
 
 <style>
   /* An inline mark, aligned to the first line's x-height centre by the line box (`vertical-align: middle` puts its centre at the baseline plus half the parent's x-height), never by a pixel nudge; the margin makes the box one line tall, so it never pushes the line's baseline off the text beside it. */
+  .mark.row { margin-block: 0; vertical-align: top; }
   .mark { display: inline-grid; place-items: center; vertical-align: middle; width: var(--s-8); height: var(--s-8); margin-block: calc((1lh - var(--s-8)) / 2); color: var(--ink-2); border-radius: 50%; }
   @media (hover: hover) and (pointer: fine) { .mark:hover { background: var(--hover); color: var(--ink); } }
   .host { position: fixed; inset: 0 auto auto 0; z-index: 60; pointer-events: none; }

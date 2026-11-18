@@ -221,6 +221,8 @@ pub struct MachineService {
     state: Mutex<State>,
     settings: Settings,
     worker_changes: tokio::sync::Notify,
+    /// Bounded opportunistic title tasks, independent of foreground execution.
+    pub(crate) title_slots: Arc<tokio::sync::Semaphore>,
     pub(super) lifecycle: Arc<std::sync::OnceLock<calternal_types::OwnerLifecycle>>,
 }
 
@@ -312,6 +314,22 @@ impl MachineService {
         st.restore_erased_worker_stops()?;
         db::prune_ended(&st.db, settings.ended_lease_retention).map_err(sql)?;
         for mut row in db::active_leases(&st.db).map_err(sql)? {
+            if row.background_title {
+                row.fence += 1;
+                row.state = "ended".into();
+                db::put_lease(&st.db, &row).map_err(sql)?;
+                st.leases.insert(
+                    row.id,
+                    Lease {
+                        row,
+                        state: LeaseState::Ended,
+                        order: 0,
+                        pool_diagnostic: false,
+                        provider_login: false,
+                    },
+                );
+                continue;
+            }
             if row.worker {
                 row.fence += 1;
                 row.reason = Some("plugin workers ended by server restart".into());
@@ -360,6 +378,7 @@ impl MachineService {
             state: Mutex::new(st),
             settings,
             worker_changes: tokio::sync::Notify::new(),
+            title_slots: Arc::new(tokio::sync::Semaphore::new(8)),
             lifecycle,
         }))
     }
@@ -479,10 +498,11 @@ impl MachineService {
     pub fn run_space(&self, lease: Uuid) -> Result<Option<SpaceId>, Error> {
         let st = self.lock()?;
         Ok(match st.leases.get(&lease) {
-            Some(l) => (!l.row.worker && !l.provider_login).then_some(l.row.space),
+            Some(l) => (!l.row.worker && !l.provider_login && !l.row.background_title)
+                .then_some(l.row.space),
             None => db::lease(&st.db, lease)
                 .map_err(sql)?
-                .filter(|r| !r.worker)
+                .filter(|r| !r.worker && !r.background_title)
                 .map(|r| r.space),
         })
     }
@@ -495,7 +515,7 @@ impl MachineService {
             .execs
             .get(&exec)
             .and_then(|e| st.leases.get(&e.lease))
-            .filter(|l| !l.row.worker && !l.provider_login)
+            .filter(|l| !l.row.worker && !l.provider_login && !l.row.background_title)
             .map(|l| l.row.space))
     }
 

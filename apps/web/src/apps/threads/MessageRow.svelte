@@ -39,6 +39,8 @@
     const next = v.n + (e.code === "BracketRight" ? 1 : -1);
     if (next >= 1 && next <= v.of) { e.preventDefault(); version(next); }
   }
+  // The mark sits on the first text line's centre for a text message and on the row's centre when the message starts with a block row (a thought, tool steps).
+  const rowFirst = $derived(message.role === "agent" && (message.blocks[0]?.type === "thought" || message.blocks[0]?.type === "steps"));
   // Message actions are created on first hover or focus (touch has no hover: they are there from the start).
   let armed = $state(typeof matchMedia === "function" && matchMedia("(hover: none)").matches);
 </script>
@@ -55,7 +57,7 @@
       <MessageActions {message} {armed} onedit={canEdit && !editing ? edit : undefined} onversion={version} />
     </div>
   {:else}
-    <div class="lead"><ProviderMark by={message.by} {provider} {providers} /></div>
+    <div class="lead" class:row={rowFirst}><ProviderMark by={message.by} {provider} {providers} row={rowFirst} /></div>
     <div class="agent" id={message.id}>
       {#each message.blocks as b}
         {#if b.type === "text"}<Md text={clip(b.text)} />
@@ -83,6 +85,7 @@
   .msg { width: 100%; max-width: var(--msg-w); margin: 0 auto; padding: var(--s-4) var(--msg-pad-r, var(--pad-region)) var(--s-4) var(--msg-pad-l, var(--pad-region)); display: flex; }
   .msg.agent-row { display: grid; grid-template-columns: var(--s-8) minmax(0, 1fr); column-gap: var(--s-4); }
   /* The mark sits in a line of the message's own font and line height, so its centre is the first line's x-height centre at every text size and zoom (ProviderMark.svelte). */
+  .lead.row { display: grid; align-items: center; height: calc(var(--s-9) + var(--s-3)); line-height: 1; }
   .lead { font-size: var(--text-ui); line-height: 1.55; font-weight: var(--body-weight); }
   .user { justify-content: flex-end; }
   .bubble { position: relative; max-width: 82%; padding: var(--s-4) var(--s-6); border-radius: var(--r-pane); background: rgb(var(--ink-rgb) / 0.07); }
