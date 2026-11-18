@@ -5,6 +5,7 @@
  */
 import { buildIndex, search, type Item } from "./search";
 
+/** What a picker row stands for; decides its group, its heading and what it inserts. */
 export type MentionKind = "person" | "agent" | "thread" | "item" | "skill" | "tag" | "block";
 /** One pickable thing. `insert` is the text that replaces what was typed; `caret` is where the caret goes inside it (default: after it). */
 export interface Mention { id: string; kind: MentionKind; label: string; sub?: string; insert: string; caret?: number }
@@ -34,6 +35,7 @@ export function mentionPool(agents: string[], threads: { id: string; title: stri
 }
 /** Every skill `/` can list. */
 const SKILL_POOL: Mention[] = SKILLS.map(([id, name]): Mention => ({ id: `s:${id}`, kind: "skill", label: name, sub: `/${id}`, insert: `/${id} ` }));
+/** The skills `/` offers at the start of a line. One shared array, so the search index over it is built once. */
 export const skillPool = (): Mention[] => SKILL_POOL; // one array, so its search index is built once
 
 const indexes = new WeakMap<Mention[], { byId: Map<string, Mention>; ix: ReturnType<typeof buildIndex> }>();
@@ -78,4 +80,5 @@ const BLOCK_POOL: Mention[] = [
   { id: "b:table", kind: "block", label: "Table", sub: "|", insert: "| Column | Column |\n| --- | --- |\n|  |  |", caret: 2 },
   { id: "b:rule", kind: "block", label: "Divider", sub: "---", insert: "---\n" },
 ];
+/** The blocks `/` offers inside a note (headings, lists, a task, a quote, code, a table, a divider). One shared array, so its search index is built once. */
 export const blockPool = (): Mention[] => BLOCK_POOL;

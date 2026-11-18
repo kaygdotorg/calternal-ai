@@ -29,6 +29,7 @@ function start(id: string, c: Clock) {
   c.timer = setTimeout(() => stackPresenter.dismiss(id), Math.max(0, c.left));
 }
 
+/** The default toast presenter: a stack with a pausing clock per toast (it stops while hovered or focused and resumes with what was left). Costs one timer per visible toast. */
 export const stackPresenter: Presenter = {
   show(id, duration) {
     let c = clocks.get(id);

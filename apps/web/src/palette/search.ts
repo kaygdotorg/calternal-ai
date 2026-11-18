@@ -6,13 +6,17 @@
 
 /** Something the palette can find. */
 export interface Item {
+  /** Stable id of the item. */
   id: string;
+  /** What the item is; decides its label under the title and how it opens. */
   kind: "thread" | "note" | "command";
+  /** The text the search matches (typo tolerant, ranked). */
   title: string;
   /** The space it is in (shown when it is not the current one). */
   space: string;
   /** Where choosing it goes. */
   go?: string;
+  /** A named host operation to run when chosen (instead of `go`). */
   op?: string;
   /** A small label: the app or section. */
   group?: string;

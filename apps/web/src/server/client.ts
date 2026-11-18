@@ -1,11 +1,11 @@
 /**
- * The real server's client, for what the server on origin/dev already offers: `describe`, spaces, notes, plugins, the live space stream (SSE) and the
- * jobs stream (SSE). Types come from `packages/contracts` (generated from the Rust contract). Same origin: in development the Vite server proxies `/api` to
- * the server on 127.0.0.1 (vite.config.ts, `CAL_SERVER`), which is also how its Host and Origin checks are satisfied.
+ * The real server's client: operations (`POST /api/v1/operations`, one call each with a fresh `request_id` that a retry keeps), the routes that are not operations (`json`: account, passkeys, machines), and the event
+ * streams (`live`, `accountLive`, `jobEvents`). Types come from `packages/contracts` (generated from the Rust contract). Same origin: the page is served by the server (or its proxy), and in development the Vite
+ * server proxies `/api` to the server on 127.0.0.1 (vite.config.ts, `CAL_SERVER`).
  *
- * Sign-in is not wired for browsers yet (passkeys exist on the server; the web flow does not). Until it is, this uses the DEVELOPMENT TOKEN MODE: a bearer token
- * from `calternal serve --development` (written to `<data>/dev-tokens/<principal>.token`), given once as `?token=` and kept in localStorage; it is never printed.
- * Every call is one `POST /api/v1/operations` with a fresh `request_id` (kept on retry), and a failure is thrown as `ServerError` with the server's safe code.
+ * A signed-in browser has the server's Secure, HttpOnly session cookie, which this code never sees; the DEVELOPMENT TOKEN MODE (a bearer token from `calternal serve --development`, given once as `?token=`, kept in
+ * localStorage, never printed) is for tests and tools. Every failure is a `ServerError` with the server's stable code (or `unavailable` when it cannot be reached), and every call reports to the link state
+ * (link.svelte.ts: reconnecting, session ended). Until the session is confirmed at start-up a change is held, never sent (see `link.holdWrites`).
  */
 import type {
   AccountFrame, AccountInputListResult, AccountInputResult, ApiError, DescribeResult, LiveFrame, LiveSubscription, NoteResult, NotesCreateInput, NotesHistoryResult, NotesListResult, NotesUpdateInput, OperationResponse,
@@ -26,6 +26,7 @@ export class ServerError extends Error {
 /** The failure category of a response that carried no error body of its own. */
 const codeOfStatus = (s: number): string => (s === 401 ? "unauthorized" : s === 403 ? "forbidden" : s === 404 ? "not_found" : s === 409 ? "conflict" : s === 413 ? "too_large" : s === 429 ? "too_many_requests" : s < 500 ? "invalid_input" : "internal");
 
+/** How to build a `ServerClient`: `base` (default: same origin), `token` (the development bearer, or null for a cookie session) and an optional `fetch` (tests). */
 export interface ServerOptions { base?: string; token: () => string | null; fetch?: typeof fetch }
 
 /** The server's client. */

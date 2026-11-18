@@ -3,8 +3,10 @@ import { syntaxTree } from "@codemirror/language";
 import { IterMode } from "@lezer/common";
 import type { EditorState } from "@codemirror/state";
 
+/** One heading of the document: its level (1 to 6), its text and where it starts, for the contents rail. */
 export interface Heading { level: number; text: string; from: number }
 
+/** The headings of the document in order, from the syntax tree already parsed (no re-parse). Cost: one walk of the tree, so the host debounces it. */
 export function headingsOf(state: EditorState): Heading[] {
   const out: Heading[] = [];
   syntaxTree(state).iterate({

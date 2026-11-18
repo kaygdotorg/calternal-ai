@@ -7,11 +7,13 @@
 // A burst ends when its toast goes away, when its Undo starts, or after a quiet gap: the next
 // event then starts again at 1.
 
+/** `result` (something done, maybe undoable), `error` (something failed, maybe retryable) or `loading` (something being waited for). */
 export type Severity = "result" | "error" | "loading";
 
 /** What one event can do if you take it back. Returns true if it was undone. */
 export type UndoToken = () => boolean | Promise<boolean>;
 
+/** One thing that happened and may need a toast: what (`op`, `context`), how it went (`severity`), the words, and the follow-up (a real `undo`, or an `action` like Retry). */
 export type ToastEvent = {
   /** The operation, e.g. "block.delete". */
   op: string;
@@ -28,6 +30,7 @@ export type ToastEvent = {
   action?: { label: string; run: () => void };
 };
 
+/** Events that share an identity (`burstKey`) and arrived close together, shown as one toast with a count ("Block deleted ×12") and one Undo that runs every token, newest first. */
 export type Burst = {
   id: string;
   key: string;
@@ -44,6 +47,7 @@ export function burstKey(e: ToastEvent): string {
   return [e.op, e.context ?? "", e.severity, follow].join("|");
 }
 
+/** The grouping rule for toasts: events with the same key within the burst window join one burst; a bulk Undo blocks later toasts until it finishes. Pure state, no timers of its own; the caller supplies the clock. */
 export class Bursts {
   private open = new Map<string, Burst>(); // by key: bursts that can still grow
   private seq = 0;
@@ -79,6 +83,7 @@ export class Bursts {
   }
 }
 
+/** What running a burst's Undo did: how many of its tokens undid, how many there were, and the tokens left (those that failed) so a retry can run them again. */
 export type UndoOutcome = { undone: number; total: number; left: UndoToken[] };
 
 /**

@@ -6,8 +6,10 @@ import { EditorView, ViewPlugin, type ViewUpdate } from "@codemirror/view";
 import { blockAt, blocksIn, moveBlock, type Block, type Kinds } from "./blocks";
 import { origin } from "./origin";
 
+/** The block handle's options: how to name a kind the host knows more about (a task), what pressing the handle does (`onMenu`), and the accessible label. */
 export interface ChromeOptions { kinds?: Kinds; onMenu?: (b: Block, rect: DOMRect) => void; label?: string }
 
+/** The extension that shows one handle in the left margin beside the block under the pointer: press it for the block's menu, drag it to move the block. Cost: a single element moved on pointer movement, so note length does not matter. */
 export function blockChrome(o: ChromeOptions = {}) {
   return ViewPlugin.fromClass(class {
     handle = document.createElement("button");

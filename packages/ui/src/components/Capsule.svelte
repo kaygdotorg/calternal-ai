@@ -1,8 +1,11 @@
 <script lang="ts" module>
   /** One choice in a Capsule. `label` is the accessible name even when only the icon shows. */
   export interface CapsuleItem {
+    /** Stable id returned when the item is chosen. */
     id: string;
+    /** The visible word; also the accessible name unless the item is shown as an icon only. */
     label: string;
+    /** An optional icon shown with the word. */
     icon?: import("../icons").IconName;
     /** A small count or dot shown on the item (a waiting request). */
     badge?: number;

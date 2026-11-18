@@ -65,7 +65,7 @@
 </main>
 
 <style>
-  .wrap { min-height: 100dvh; display: grid; place-content: center; justify-items: center; gap: var(--s-6); padding: var(--s-6); background: linear-gradient(rgb(var(--tint, 247 247 247) / 0.55) 0 0), var(--wall-cheap, none) center / cover no-repeat; }
+  .wrap { min-height: 100dvh; display: grid; place-content: center; justify-items: center; gap: var(--s-6); padding: var(--s-6); background: linear-gradient(rgb(var(--tint) / 0.55) 0 0), var(--wall-cheap, none) center / cover no-repeat; }
   .mark { font-family: var(--font-brand, inherit); font-size: var(--text-title); font-weight: var(--strong-weight); color: var(--ink); }
   .wrap :global(.card) { width: min(26rem, 100%); }
   .in { display: grid; gap: var(--s-5); padding: var(--s-7); }
@@ -74,6 +74,6 @@
   label { display: grid; gap: var(--s-2); font-size: var(--text-label); color: var(--ink-3); }
   input { border: 0; min-height: var(--pill-h); padding: 0 var(--s-5); border-radius: var(--r-pill); background: rgb(var(--ink-rgb) / 0.07); color: var(--ink); font-size: var(--text-ui); }
   .link { text-decoration: underline; color: var(--ink-2); font-size: var(--text-label); }
-  .error { font-size: var(--text-label); color: var(--danger, #c0392b); }
+  .error { font-size: var(--text-label); color: var(--danger); }
   .go { display: flex; align-items: center; gap: var(--s-4); }
 </style>

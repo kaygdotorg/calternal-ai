@@ -8,8 +8,11 @@ import { clockNow, type Now } from "./dates";
 
 /** What the line is. "open" is plain words that match something (Enter opens it); "note" is plain words that don't. */
 export type Kind = "task" | "note" | "open" | "contact";
+/** What a recognised stretch of the line is, for highlighting behind the text. */
 export type SpanType = "date" | "time" | "repeat" | "deadline" | "priority" | "tag" | "person" | "email" | "phone" | "company" | "title";
+/** A recognised stretch of the line: `[start, end)` in the typed text, and what it is. */
 export type Span = { start: number; end: number; type: SpanType };
+/** A repeat ("every 2 weeks", "every monday", "every weekday"): the interval in `unit`s, and optionally the weekday or the weekdays-only rule. */
 export type Repeat = { every: number; unit: "day" | "week" | "month"; /** Weekday (0 = Sunday) for "every monday". */ on?: number; /** "every weekday": Monday to Friday. */ weekdays?: boolean };
 /** 0 none, 1 low, 2 medium, 3 high, 4 urgent. */
 export type Priority = 0 | 1 | 2 | 3 | 4;
@@ -28,6 +31,7 @@ export type Slots = {
   people: string[];
 };
 
+/** The whole reading of one line: what it is (`kind`), the slots the phrases filled, the title that is left, and the spans to highlight. */
 export type Parsed = Slots & {
   kind: Kind;
   /** What is left of the words once the recognised ones are taken out. */
@@ -61,6 +65,7 @@ export type Reader = {
 /** Where the phrase is being typed: context only ever breaks a tie (C19). */
 export type Here = "tasks" | "daily" | "note" | "list" | "other";
 
+/** One app's understanding of plain words (registered with `registerPhrases`): `read` claims words and fills slots; `vote` may say what the line is. Plugins never see each other's words. */
 export type Phrases = {
   id: string;
   /** Claims words and fills slots. */
@@ -78,6 +83,7 @@ export function registerPhrases(p: Phrases): void {
   else plugins.push(p);
 }
 
+/** How to read a line: forced kind, the clock (`now`), where it is typed (`here`), words to keep as text, and whether it is a checkbox in a note. */
 export type Options = {
   /** Forced by the user (the kind picker). */
   forced?: Kind;
@@ -94,6 +100,7 @@ const emptySlots = (): Slots => ({ when: null, time: null, endTime: null, deadli
 // Text in quotes or backticks is never read: the quickest way to say "keep this as text".
 const QUOTED = /"[^"\n]*"|`[^`\n]*`|“[^”\n]*”/g;
 
+/** Reads one line of plain words on the device: no model, no network. Pure for a given `now`; cost is a few passes over the text per keystroke. Anything it cannot read stays in the title, so a failure is "not recognised", never an error. */
 export function recognise(text: string, opts: Options = {}): Parsed {
   const now = opts.now ?? clockNow();
   const taken: boolean[] = new Array(text.length).fill(false);

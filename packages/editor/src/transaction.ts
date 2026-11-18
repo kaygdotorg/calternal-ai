@@ -4,7 +4,9 @@
  */
 import type { Origin } from "./origins";
 
+/** Replace `[from, to)` with `insert`, positions in UTF-16 code units (the server's unit). */
 export interface Change { from: number; to: number; insert: string }
+/** A `Change` that knows where it came from (typing, a command, remote, replay), which decides whether it joins an undo step or waits while composing. */
 export interface Transaction extends Change { origin: Origin }
 
 const isLow = (c: number) => c >= 0xdc00 && c <= 0xdfff;

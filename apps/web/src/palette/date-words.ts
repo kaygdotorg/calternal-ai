@@ -3,13 +3,16 @@
 // phrases-tasks.ts; this is only the part a language changes.
 import { addDays, followingWeek, nextWeekday } from "./dates";
 
+/** A word that names a day: from today's ISO day to the ISO day it means. */
 export type DayWord = (today: string) => string;
 
 const words = new Map<string, DayWord>();
 let version = 0;
 
 const WD = "(?:mon(?:day)?|tue(?:s|sday)?|wed(?:nesday)?|thu(?:r|rs|rsday)?|fri(?:day)?|sat(?:urday)?|sun(?:day)?)";
+/** The regular-expression source that matches a weekday name or its common short forms, for phrases that build on it. */
 export const WEEKDAY = WD;
+/** The weekday number (0 = Sunday) of a name or short form, or -1 if it is not one. */
 export const wdIndex = (s: string) => ["sun", "mon", "tue", "wed", "thu", "fri", "sat"].indexOf(s.slice(0, 3).toLowerCase());
 
 /** Teaches the recogniser a day word. Lower case; may hold spaces ("agle hafte"). */
@@ -47,4 +50,5 @@ export function dayWordAlt(): string {
   cached = { v: version, alt };
   return alt;
 }
+/** Changes whenever a day word is added, so a cached pattern built from the registry knows to rebuild. */
 export const dayWordsVersion = () => version;
