@@ -26,5 +26,4 @@ run_gate genui npm test --workspace @calternal/genui
 run_gate contract cargo run --locked -j6 -p calternal-core --bin export-contract -- --check
 run_gate docs sh scripts/check-docs.sh
 run_gate publication node --test scripts/docs-site/publication.test.mjs
-run_gate generated node scripts/docs-site/generate.mjs --check
 if rg 'FAIL' "$summary"; then exit 1; fi

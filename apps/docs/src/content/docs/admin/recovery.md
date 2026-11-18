@@ -141,3 +141,22 @@ Admission/full validation and compaction cost O(current inventory + segment byte
 memory retains the current record map. A single large delta can exceed the
 threshold before compaction. These are counted durability costs, not benchmarks or
 physical power-cut qualification.
+
+Startup validation cost
+-----------------------
+
+Opening the coordinator validates the snapshot and segment once and retains the
+result in its existing private-file stamp cache. Authority reconciliation reuses
+that result only when the snapshot/segment stamps still match, resolves pending
+work against the original SQLite witness, establishes required durability, and
+validates the complete current record map before admitting requests. No authority
+check is deferred to first space use. Independent standalone recovery reads still
+reread and validate the complete chain. A replaced snapshot or segment between
+open and reconciliation invalidates startup reuse and must pass fresh validation.
+
+A pending proposal retains its canonical frame digest with the decoded entry.
+Chain linkage, deterministic resolution and application reuse that one digest;
+reading a segment no longer serializes and hashes the same proposal repeatedly.
+The digest is derived from the same canonical frame function as publication, so
+the persisted format and witness values are unchanged. The extra cache is one
+64-character digest for the single pending proposal, not a history cache.
