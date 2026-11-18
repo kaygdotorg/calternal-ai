@@ -354,6 +354,35 @@ startup. A deployment retry, rollback, or the server unit's recovery hook can
 restore the staged bytes before either release starts. After the cutover marker,
 rollback keeps live data and the older build must pass its version check.
 
+### Update after a refused release-pair proof
+
+The proof from production image revision `4735733eeb09` to `86306143`
+refused rollback on `jobs.db` version 3. This pair requires an incompatible
+handoff even if nobody has created an account. Use an approved candidate
+that contains the v2 restore point and its matching deployment scripts.
+Revision `86306143` itself only has the v1 restore point.
+
+Confirm the actual running image ID and make a coordinated backup of
+appdata, SSD, HDD and the machine root. Record both image IDs. With the
+owner's explicit approval, use the clean-checkout and revision setup from
+step 2 below. Under the release-build lock, run its
+`nix develop .#deploy -c deploy/build-image.sh "$candidate"` command.
+Preview and run the incompatible deploy during the maintenance window.
+
+```bash
+deploy/deploy.sh --target deploy/cloud.conf --image "$revision" \
+  --allow-incompatible --dry-run
+deploy/deploy.sh --target deploy/cloud.conf --image "$revision" \
+  --allow-incompatible
+```
+
+Check the installed image ID, both units, HTTP and machine readiness as
+in step 4 below. An install without an owner should still report
+`setup: true`. Before commit, the pinned recovery executable can restore
+the staged bytes. After commit, the previous binary may refuse the live
+stores. A return to the old release at that point requires the separately
+verified backup and an owner decision about writes accepted after cutover.
+
 ### First ordinary update from the production baseline
 
 Run the build and gate on x86_64 dev-01 from the clean, approved candidate
