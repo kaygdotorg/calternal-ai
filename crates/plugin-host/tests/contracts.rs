@@ -297,28 +297,34 @@ fn protocol_roundtrip_callback_refusal_and_live_revocation() {
         s.next_outgoing(&mut h).unwrap().unwrap().message,
         Message::HostReply { ok: true, .. }
     ));
-    assert_eq!(s.receive(c, &mut h), Err(Error::Refused));
+    assert_eq!(
+        s.receive(c, &mut h),
+        Err(ReceiveError::Protocol(Error::Refused))
+    );
     assert_eq!(
         s.receive(call("c2", HostCallKind::WriteItem), &mut h),
-        Err(Error::Refused)
+        Err(ReceiveError::Protocol(Error::Refused))
     );
     assert_eq!(h.calls, 1);
     let mut forged = call("c3", HostCallKind::ReadItem);
     if let Message::HostCall { authority, .. } = &mut forged.message {
         authority.grant = "forged".into();
     }
-    assert_eq!(s.receive(forged, &mut h), Err(Error::Refused));
+    assert_eq!(
+        s.receive(forged, &mut h),
+        Err(ReceiveError::Protocol(Error::Refused))
+    );
     h.revoked = true;
     assert_eq!(
         s.receive(call("c4", HostCallKind::ReadItem), &mut h),
-        Err(Error::Refused)
+        Err(ReceiveError::Protocol(Error::Refused))
     );
     assert_eq!(
         s.receive(
             frame("inv-1", Message::Complete { data: json!({}) }),
             &mut h
         ),
-        Err(Error::Refused)
+        Err(ReceiveError::Protocol(Error::Refused))
     );
 }
 #[test]
@@ -329,20 +335,20 @@ fn back_pressure_does_not_execute_or_advance_and_cancel_rejects_late_work() {
     }
     assert_eq!(
         s.receive(call("blocked", HostCallKind::ReadItem), &mut h),
-        Err(Error::BackPressure)
+        Err(ReceiveError::Protocol(Error::BackPressure))
     );
     assert_eq!(h.calls, 0);
     s.cancel("inv-1").unwrap();
     assert_eq!(
         s.receive(call("late", HostCallKind::ReadItem), &mut h),
-        Err(Error::Invocation)
+        Err(ReceiveError::Protocol(Error::Invocation))
     );
     assert_eq!(
         s.receive(
             frame("inv-1", Message::Complete { data: json!(null) }),
             &mut h
         ),
-        Err(Error::Invocation)
+        Err(ReceiveError::Protocol(Error::Invocation))
     );
 }
 #[test]
@@ -363,17 +369,23 @@ fn streams_are_ordered_bounded_and_require_admitted_jobs() {
             },
         )
     };
-    assert_eq!(s.receive(chunk(0), &mut h), Err(Error::Invalid));
+    assert_eq!(
+        s.receive(chunk(0), &mut h),
+        Err(ReceiveError::Protocol(Error::Invalid))
+    );
     s.receive(call("job", HostCallKind::StartJob), &mut h)
         .unwrap();
     s.next_outgoing(&mut h).unwrap();
-    assert_eq!(s.receive(chunk(1), &mut h), Err(Error::Invalid));
+    assert_eq!(
+        s.receive(chunk(1), &mut h),
+        Err(ReceiveError::Protocol(Error::Invalid))
+    );
     for n in 0..MAX_QUEUE {
         s.receive(chunk(n as u32), &mut h).unwrap();
     }
     assert_eq!(
         s.receive(chunk(MAX_QUEUE as u32), &mut h),
-        Err(Error::BackPressure)
+        Err(ReceiveError::Protocol(Error::BackPressure))
     );
     s.next_delivery(&mut h).unwrap();
     s.receive(chunk(MAX_QUEUE as u32), &mut h).unwrap();
@@ -432,12 +444,14 @@ fn schemas_and_typed_identity_are_enforced_without_external_retrieval() {
             frame(
                 "inv-1",
                 Message::Complete {
-                    data: json!({"wrong":true})
+                    data: json!({"stats":false,"view":{}})
                 }
             ),
             &mut h
         ),
-        Err(Error::Invalid)
+        Err(ReceiveError::Output {
+            path: "/properties/stats/type".into()
+        })
     );
     s.receive(
         frame(
@@ -575,7 +589,7 @@ fn callbacks_enforce_declared_secret_names_and_operation_mutability() {
     s.next_outgoing(&mut h).unwrap();
     assert_eq!(
         s.receive(call("write", HostCallKind::WriteItem), &mut h),
-        Err(Error::Refused)
+        Err(ReceiveError::Protocol(Error::Refused))
     );
     let secret = |name| {
         frame(
@@ -588,7 +602,10 @@ fn callbacks_enforce_declared_secret_names_and_operation_mutability() {
             },
         )
     };
-    assert_eq!(s.receive(secret("undeclared"), &mut h), Err(Error::Refused));
+    assert_eq!(
+        s.receive(secret("undeclared"), &mut h),
+        Err(ReceiveError::Protocol(Error::Refused))
+    );
     assert_eq!(h.calls, 0);
     s.receive(secret("provider-key"), &mut h).unwrap();
     assert_eq!(h.calls, 1);
@@ -676,7 +693,7 @@ fn oversized_callback_output_is_redacted_without_repeating_the_effect() {
     ));
     assert_eq!(
         s.receive(call("large", HostCallKind::ReadItem), &mut h),
-        Err(Error::Refused)
+        Err(ReceiveError::Protocol(Error::Refused))
     );
     assert_eq!(h.0, 1);
     assert_eq!(
@@ -753,7 +770,7 @@ fn a_full_unrelated_output_queue_cannot_keep_cancelled_authority_alive() {
     assert_eq!(s.cancel("inv-1"), Err(Error::BackPressure));
     assert_eq!(
         s.receive(call("late", HostCallKind::ReadItem), &mut h),
-        Err(Error::Invocation)
+        Err(ReceiveError::Protocol(Error::Invocation))
     );
     assert_eq!(h.calls, MAX_QUEUE);
 }

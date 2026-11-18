@@ -1,6 +1,5 @@
 //! Guarded adapters for Google Fonts, Fontsource and Fontshare.
 use super::{
-    assets,
     db::{FAMILY_BYTES, RemoteInstall},
     face::{Face, Format, unicode_range},
 };
@@ -53,13 +52,20 @@ pub(super) fn client() -> Result<Client, Error> {
 }
 
 async fn get(client: &Client, url: Url, cap: usize) -> Result<Vec<u8>, Error> {
-    assets::get(
-        client.get(url).header(reqwest::header::USER_AGENT, BROWSER),
-        cap,
-        None,
-        unavailable,
+    let response = crate::netguard::get_with_redirects(
+        url,
+        0,
+        async |_| Ok(()),
+        |url| client.get(url).header(reqwest::header::USER_AGENT, BROWSER),
     )
     .await
+    .map_err(|_| unavailable())?;
+    if response.status() != reqwest::StatusCode::OK {
+        return Err(unavailable());
+    }
+    crate::netguard::read_bounded(response, cap)
+        .await
+        .map_err(|_| unavailable())
 }
 
 fn fixed_url(text: &str) -> Url {
@@ -346,9 +352,9 @@ fn specification(first: u16, last: u16, italic: bool, unicode_range: Option<Stri
 
 fn asset_url(value: &str, host: &str) -> Option<Url> {
     if value.starts_with("//") {
-        assets::checked_url(&format!("https:{value}"), &[host])
+        crate::netguard::checked_url(&format!("https:{value}"), &[host])
     } else {
-        assets::checked_url(value, &[host])
+        crate::netguard::checked_url(value, &[host])
     }
 }
 

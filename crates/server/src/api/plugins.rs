@@ -62,6 +62,7 @@ pub(super) fn check_view(plugin: &Plugin, value: &Value) -> Result<(), Error> {
     let rejected = || {
         tracing::warn!(plugin = %plugin.manifest.id, "worker view rejected");
         Error::unavailable("extension returned an invalid view")
+            .with_details(serde_json::json!({"reason":"view_schema","path":"/view"}))
     };
     let view: calternal_core::GenUiView =
         serde_json::from_value(view.clone()).map_err(|_| rejected())?;
@@ -155,6 +156,8 @@ pub(super) async fn invoke_plugin<D: Directory>(
     } else {
         host
     };
+    #[cfg(feature = "dev-plugin-drafts")]
+    let invocation_started = std::time::Instant::now();
     let outcome = state
         .workers
         .invoke(
@@ -192,6 +195,10 @@ pub(super) async fn invoke_plugin<D: Directory>(
         check_view(&plugin, &value)?;
         Ok(value)
     });
+    #[cfg(feature = "dev-plugin-drafts")]
+    if let Err(error) = &value {
+        plugin.record_draft_error(space, p.id, op, error, invocation_started.elapsed());
+    }
     if !mutates {
         return value;
     }

@@ -1,6 +1,6 @@
 //! SQLite authority for account preferences, uploads, and shared cache manifests.
 use super::{
-    assets, db_error,
+    db_error,
     face::{Face, Format},
     missing, prefs,
 };
@@ -227,7 +227,7 @@ impl Storage {
             .ok_or_else(missing)?;
         let cap = cap as usize;
         let path = self.blob_path(id, digest)?;
-        let bytes = assets::read(&path, cap.min(FAMILY_BYTES))
+        let bytes = crate::asset_cache::read(&path, cap.min(FAMILY_BYTES))
             .map_err(db_error)?
             .ok_or_else(missing)?;
         if bytes.len() != cap
@@ -259,7 +259,7 @@ impl Storage {
             }
             fs::create_dir(&incoming).map_err(db_error)?;
             for (key, data) in &install.files {
-                assets::write(&incoming.join(key), data).map_err(db_error)?;
+                crate::asset_cache::write(&incoming.join(key), data).map_err(db_error)?;
             }
             let placed = self.cache.join(id);
             remove(&placed).map_err(db_error)?;

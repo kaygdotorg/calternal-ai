@@ -725,6 +725,7 @@ async fn all_operations_hide_foreign_ids() {
     covered.extend(["spaces.list", "spaces.create", "wallpapers.list"]);
     covered.extend(agent_cases::OPERATIONS.iter().copied());
     covered.extend(deploy_cases::OPERATIONS.iter().copied());
+    covered.extend(onboarding_cases::OPERATIONS.iter().copied());
     covered.extend(people_cases::ADDITIONAL_OPERATIONS.iter().copied());
 
     covered.extend(requests_cases::OPERATIONS.iter().copied());

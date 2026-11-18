@@ -102,11 +102,25 @@ export async function signIn(): Promise<void> {
   login.stdout.on('data', observe);
   login.stderr.on('data', observe);
   login.stdin.on('error', () => {});
+  let relayed = false;
   input.on('line', code => {
     if (prompted && code.length > 0 && code.length <= 2048 && !/[\x00-\x1f\x7f]/.test(code)) {
+      relayed = true;
       login.stdin.write(code + '\n');
     }
   });
+  // The machine closing our stdin ends the exchange. Without a relayed code the
+  // login can never finish, so stop it now; after one, allow a bounded grace.
+  // This keeps a vanished parent from leaving the official login running until
+  // the nine-minute limit below.
+  input.on('close', () => {
+    const grace = relayed ? 30_000 : 0;
+    setTimeout(() => login.kill('SIGKILL'), grace).unref();
+  });
+  const stop = () => { login.kill('SIGKILL'); process.exit(1); };
+  process.once('SIGTERM', stop);
+  process.once('SIGHUP', stop);
+  process.once('exit', () => { login.kill('SIGKILL'); });
   try {
     if (await ended !== 0) throw new Error('official login failed');
     const status = spawn(binary, ['auth', 'status'], { env, stdio: 'ignore' });

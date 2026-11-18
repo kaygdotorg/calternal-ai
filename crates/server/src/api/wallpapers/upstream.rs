@@ -2,7 +2,7 @@
 //! API host. All failures leaving this module use fixed caller-safe messages.
 
 use super::catalog::Rendition;
-use crate::api::assets;
+use crate::{api::assets, netguard};
 use calternal_types::Error;
 use reqwest::{Url, header};
 use serde::Deserialize;
@@ -120,37 +120,59 @@ impl Upstream {
         {
             return Err(Error::unavailable("wallpaper fetch limit reached"));
         }
-        let api = url.host_str() == Some(API);
-        #[cfg(test)]
-        let (url, client) = if let Some(origin) = &self.stand_in {
-            let mut local = origin.clone();
-            local.set_path(url.path());
-            local.set_query(url.query());
-            (
-                local,
-                reqwest::Client::builder()
-                    .no_proxy()
-                    .redirect(reqwest::redirect::Policy::none())
-                    .build()
-                    .expect("stand-in client"),
-            )
-        } else {
-            (url, self.client.clone())
-        };
-        #[cfg(not(test))]
-        let client = &self.client;
-        let mut request = client.get(url);
-        if api {
-            request = request
-                .header(header::AUTHORIZATION, self.authorization.clone())
-                .header("Accept-Version", "v1");
+        let reply = netguard::get_with_redirects(
+            url,
+            0,
+            async |_| Ok(()),
+            |url| {
+                let api = url.host_str() == Some(API);
+                #[cfg(test)]
+                let (url, client) = if let Some(origin) = &self.stand_in {
+                    let mut local = origin.clone();
+                    local.set_path(url.path());
+                    local.set_query(url.query());
+                    (
+                        local,
+                        reqwest::Client::builder()
+                            .no_proxy()
+                            .redirect(reqwest::redirect::Policy::none())
+                            .build()
+                            .expect("stand-in client"),
+                    )
+                } else {
+                    (url, self.client.clone())
+                };
+                #[cfg(not(test))]
+                let client = &self.client;
+                let mut request = client.get(url);
+                if api {
+                    request = request
+                        .header(header::AUTHORIZATION, self.authorization.clone())
+                        .header("Accept-Version", "v1");
+                }
+                request
+            },
+        )
+        .await
+        .map_err(|_| unavailable())?;
+        if reply.status() != reqwest::StatusCode::OK
+            || (jpeg
+                && reply
+                    .headers()
+                    .get(header::CONTENT_TYPE)
+                    .and_then(|h| h.to_str().ok())
+                    != Some("image/jpeg"))
+        {
+            return Err(unavailable());
         }
-        assets::get(request, cap, jpeg.then_some("image/jpeg"), unavailable).await
+        netguard::read_bounded(reply, cap)
+            .await
+            .map_err(|_| unavailable())
     }
 }
 
 fn checked_url(text: &str, host: &str) -> Result<Url, Error> {
-    assets::checked_url(text, &[host]).ok_or_else(unavailable)
+    netguard::checked_url(text, &[host]).ok_or_else(unavailable)
 }
 
 /// JPEG marker check for trusted image-service output. We serve only a fixed

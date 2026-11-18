@@ -2,10 +2,10 @@
 //! evicts obsolete slots and abandoned staging files left by interrupted writes.
 
 use super::{catalog, upstream};
-use crate::api::assets::{self, io_job};
+use crate::asset_cache;
 use calternal_types::Error;
 use std::{
-    fs,
+    fs, io,
     path::{Path, PathBuf},
 };
 
@@ -56,7 +56,7 @@ fn max_bytes(name: &str) -> usize {
 
 pub(super) async fn read(path: PathBuf, cap: usize) -> Result<Option<Image>, Error> {
     io_job(move || {
-        Ok(assets::read(&path, cap)?
+        Ok(asset_cache::read(&path, cap)?
             .filter(|bytes| upstream::jpeg(bytes))
             .map(Image::new))
     })
@@ -65,7 +65,7 @@ pub(super) async fn read(path: PathBuf, cap: usize) -> Result<Option<Image>, Err
 
 pub(super) async fn put(path: PathBuf, bytes: Vec<u8>) -> Result<Image, Error> {
     io_job(move || {
-        assets::write(&path, &bytes)?;
+        asset_cache::write(&path, &bytes)?;
         Ok(Image::new(bytes))
     })
     .await
@@ -74,9 +74,18 @@ pub(super) async fn put(path: PathBuf, bytes: Vec<u8>) -> Result<Image, Error> {
 const TRACKED: &[u8] = b"tracked: true\n";
 
 pub(super) async fn tracked(path: PathBuf) -> Result<bool, Error> {
-    io_job(move || Ok(assets::read(&path, TRACKED.len())?.as_deref() == Some(TRACKED))).await
+    io_job(move || Ok(asset_cache::read(&path, TRACKED.len())?.as_deref() == Some(TRACKED))).await
 }
 
 pub(super) async fn mark_tracked(path: PathBuf) -> Result<(), Error> {
-    io_job(move || assets::write(&path, TRACKED)).await
+    io_job(move || asset_cache::write(&path, TRACKED)).await
+}
+
+async fn io_job<T: Send + 'static>(
+    f: impl FnOnce() -> io::Result<T> + Send + 'static,
+) -> Result<T, Error> {
+    tokio::task::spawn_blocking(f)
+        .await
+        .map_err(|_| Error::internal("wallpaper cache task stopped"))?
+        .map_err(|_| Error::internal("wallpaper cache could not be accessed"))
 }
