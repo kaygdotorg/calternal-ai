@@ -10,6 +10,8 @@
   import { Button, Icon, IconButton, InlineEditor, Menu, Row, Selector, toast, undoable, type MenuItem } from "@calternal/ui";
   import { href, navigate, segments } from "../../lib/route.svelte";
   import { layout, type Container } from "./layout.svelte";
+  import { pressRow, pressRows, registerPreview, type PressBag } from "@calternal/ui";
+  import ThreadPreview from "./ThreadPreview.svelte";
   import { archiveThread, containerName, containersOf, copyThreadLink, runThreadItem, snoozeItems, threadItems, topLevelIds } from "./thread-menu";
   import { backLabel, backShort } from "./snooze";
   import { snoozeAvailable } from "./snooze.svelte";
@@ -80,6 +82,9 @@
   const copyLink = copyThreadLink;
   /** The three-dot button and the swipe's More open the same menu as right-click, under the control that asked. */
   const menuFrom = (el: HTMLElement | undefined, t: ThreadSummary, snooze = false) => { const r = el?.getBoundingClientRect(); ctx = { x: r?.right ?? 0, y: r?.bottom ?? 0, thread: t, snooze }; };
+  registerPreview<string>("thread", ThreadPreview);
+  /** What a held or right-clicked row says to the shared press (ui/lib/press.ts): the same menu as the three dots, and a preview of its last messages. */
+  const bagOf = (t: ThreadSummary): PressBag => ({ label: `Thread: ${t.title}`, items: () => threadItems(t), onpick: (id) => runThreadItem(id, t, () => edit("thread", t.id, t.title)), preview: { kind: "thread", item: t.id } });
   /** The swipe buttons of a row: right shows the first list, left the second (slot 0 is the outer edge; a long swipe runs it). */
   const swipeOf = (t: ThreadSummary): { lead: SwipeAction[]; trail: SwipeAction[] } => ({
     lead: [{ id: "copy", label: "Copy link", icon: "link", tone: "plain", run: () => copyLink(t) }],
@@ -122,7 +127,6 @@
   let said = $state("");
   function keyRow(e: KeyboardEvent, t: ThreadSummary, c: Container, i: number, n: number) {
     if (e.key === "F2") { e.preventDefault(); return edit("thread", t.id, t.title); }
-    if (e.key === "ContextMenu" || (e.shiftKey && e.key === "F10")) { const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); e.preventDefault(); ctx = { x: r.left + 24, y: r.bottom, thread: t }; return; }
     if (!e.altKey || (e.key !== "ArrowUp" && e.key !== "ArrowDown")) return;
     e.preventDefault();
     const up = e.key === "ArrowUp";
@@ -175,7 +179,7 @@
       ondragend={() => { dragId = null; over = null; }}
       ondragover={(e) => dragOverRow(e, c, i)}
       ondrop={(e) => { e.preventDefault(); if (over) dropHere(over.c, over.index); }}
-      oncontextmenu={(e) => openCtx(e, { thread: t })}
+      use:pressRow={() => bagOf(t)}
       ondblclick={(e) => { e.preventDefault(); edit("thread", t.id, t.title); }}
       onkeydown={(e) => keyRow(e, t, c, i, n)}
     >
@@ -193,7 +197,7 @@
 {/snippet}
 
 {#if !empty}<TopEntries />{/if}
-<nav aria-label="Threads" use:swipeRows>
+<nav aria-label="Threads" use:swipeRows use:pressRows>
   {#if empty}
     <div class="empty">
       <h2>No threads yet</h2>
@@ -208,7 +212,7 @@
       {#if items.length}
         <ul class="threads" aria-label="Waiting for you">
           {#each items as it (it.thread.id)}
-            <li data-thread={it.thread.id}>
+            <li data-thread={it.thread.id} use:pressRow={() => bagOf(it.thread)}>
               <SwipeRow lead={[]} trail={snoozeAvailable() ? [{ id: "snooze", label: "Snooze", icon: "clock", tone: "plain", run: (el) => menuFrom(el, it.thread, true) }] : []}>
                 <div class="rw">
                   <Row title={it.thread.title} href={href(`/threads/${it.thread.id}`)} selected={current === it.thread.id}>
