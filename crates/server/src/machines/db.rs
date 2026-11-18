@@ -436,6 +436,58 @@ mod tests {
     use calternal_store::migrations::{Schema, migrate_release};
 
     #[test]
+    fn harness_lease_migration_preserves_existing_fences_and_writes_scoped_profiles() {
+        use calternal_machine::protocol::{HarnessSandbox, ProviderLoginScope};
+
+        let conn = Connection::open_in_memory().unwrap();
+        let previous = Schema::new("machines.db", 6, &[SCHEMA], &[TITLE_LEASES]);
+        migrate_release(&conn, previous, false).unwrap();
+        let (id, space, account, thread) = (
+            Uuid::new_v4(),
+            SpaceId::new(),
+            AccountId::new(),
+            Uuid::new_v4(),
+        );
+        conn.execute(
+            "INSERT INTO leases
+             (id, space, account, thread, image, worker, fence, state, created_ms, updated_ms)
+             VALUES (?1, ?2, ?3, ?4, 'fixture-image', 0, 11, 'running', 1, 1)",
+            params![
+                id.to_string(),
+                space.to_string(),
+                account.to_string(),
+                thread.to_string(),
+            ],
+        )
+        .unwrap();
+
+        migrate_release(&conn, upgrade_schema(), true).unwrap();
+        let prior = lease(&conn, id).unwrap().unwrap();
+        assert_eq!(prior.fence, 11);
+        assert_eq!(prior.image.as_deref(), Some("fixture-image"));
+        assert_eq!(prior.harness, None);
+        let harness = HarnessSandbox {
+            provider_id: "fixture-harness".into(),
+            login_scope: ProviderLoginScope::Space(space),
+            workspace_read_only: true,
+            disposable_profile: false,
+            legacy_profile: false,
+            guest_image_digest: None,
+        };
+        let managed = LeaseRow {
+            id: Uuid::new_v4(),
+            thread: Uuid::new_v4(),
+            harness: Some(harness.clone()),
+            ..prior
+        };
+        put_lease(&conn, &managed).unwrap();
+        assert_eq!(
+            lease(&conn, managed.id).unwrap().unwrap().harness,
+            Some(harness)
+        );
+    }
+
+    #[test]
     fn title_leases_migrate_with_durable_classification_for_both_writers() {
         let mut conn = Connection::open_in_memory().unwrap();
         let previous = Schema::new("machines.db", 6, &[SCHEMA], &[]);
