@@ -32,7 +32,7 @@ database until checkpointed. SQLite SHM, locks and sockets are runtime state.
 | SSD space `Notes/`, `AI/Chats/`, Trash, registered visible and hidden content | Authority | Content writes `calternal-id` and a `calternal-note/v1` envelope for Markdown without its own format tag. Thread writers use `calternal-thread/v1`. Automations use `calternal-automation/v1`. Portable skill entry points use the standard Agent Skills format inventoried here and carry standard frontmatter. Space Collections use `calternal-collection/v1` JSON for their structured membership. Other provider or plugin formats and opaque bytes follow their own contracts. |
 | SSD space `AI/AGENTS.md`, `AI/Skills/*/SKILL.md` | Authority | Space instructions and the person write raw Markdown. Skill descriptors use the external Agent Skills format and may be provisioned on disk. These formats pass through byte-for-byte. |
 | SSD `spaces/<id>/.calternal/settings.json` | Authority | The plugin settings adapter writes `calternal-plugin-settings/v1`. JSON preserves typed nested values, including unknown settings during an older writer’s update. |
-| SSD automation definitions, account shortcuts, themes and other settings files | Authority when introduced | No durable server writer in this lane. Use `calternal-shortcuts/v1` for account shortcuts and `calternal-theme/v1` for themes. Automation definitions, custom components and starred prompts need their own versioned formats when their writers land. |
+| SSD account shortcuts, themes and other settings files | Authority when introduced | Use `calternal-shortcuts/v1` for account shortcuts and `calternal-theme/v1` for themes. Custom components and starred prompts need their own versioned formats when their writers land. |
 | SSD `.calternal/recovery/snapshot.json` and `log-*.bin` | Authority | Recovery coordinator writes v3 snapshots and checksummed frames, paired with the auth DB witness. |
 | HDD originals and each root's `.calternal-install-id` | Authority | HDD originals are opaque. There is no general HDD placement writer today. Roots writes `calternal-install-root/v1` with installation UUID and role. |
 | Machine `credentials`, `pending-enrollment/credentials`, and `machine-handoff/{request.json,enrolled}` | Authority during use | Machine enrollment writes `calternal-machine-credentials/v1`. Both roles use `calternal-machine-enrollment/v1` for the handoff. Protected files stay on the machine. |
@@ -239,6 +239,21 @@ the last old-release note write acknowledgement to the first candidate
 acknowledgement. The run also checks that a refused proof leaves the original
 container and session reachable, and that an untimed rollback retains the
 candidate's acknowledged write.
+
+On November 18, 2026, the dev-01 rehearsal used the `c98705d7` baseline
+and the `1ab70e7d` upgrades image. The ten gaps in seconds were 95.203,
+92.416, 93.954, 92.821, 92.851, 93.872, 94.903, 94.536, 94.334 and 93.926.
+The median was 93.940 seconds and zero runs met the five-second budget.
+All ten retained the candidate's write across rollback. The first attempt
+at run seven passed the refusal check but reached the harness watchdog
+before recording a complete handoff. Run seven and the remaining trials
+used the same images with a longer harness deadline.
+
+The proxy returned HTTP 502 during the write gaps. Some probes received no
+HTTP response. The page stayed signed in and the reconnect banner never
+appeared. The test sends its writes through the browser's API context. In
+Notes, a failed save can display **Not saved** because the client treats a
+non-JSON gateway response as a failed operation.
 
 Podman waited for the configured 90-second stop deadline with the signed-in
 tab open, then sent SIGKILL to the old server. The server's graceful
