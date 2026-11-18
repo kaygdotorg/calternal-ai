@@ -116,6 +116,7 @@ export class FixtureSharing implements SharingClient {
   private incoming: Incoming[] = [
     { item: { kind: "notes", id: "n-4" }, title: "Release checklist", shared_by: "Maya Okafor", permission: "edit", unread: true },
     { item: { kind: "notes", id: "n-3" }, title: "Invite flow", shared_by: "Theo Lindqvist", permission: "view", unread: false },
+    { item: { kind: "collections", id: "c-demo" }, title: "Launch notes", shared_by: "Maya Okafor", permission: "edit", unread: true },
   ];
   async list(item: ItemRef): Promise<ShareList> {
     const as = this.as;
@@ -155,7 +156,7 @@ export class FixtureSharing implements SharingClient {
     return { url: `${location.origin}/s/${s}` };
   }
   async revoke(item: ItemRef, grant_id: string): Promise<void> { this.grants.set(this.key(item), this.of(item).filter((g) => g.grant_id !== grant_id)); }
-  async shared_with_me(_kind: ItemRef["kind"]) { return { items: this.incoming }; }
+  async shared_with_me(kind: ItemRef["kind"]) { return { items: this.incoming.filter((i) => i.item.kind === kind) }; }
   async set_link_policy(): Promise<void> {}
   /** `?test=1`: `localStorage["cal.fixture.rescue-down"]` makes the rescue fail as an unreachable server would, and `cal.fixture.rescued` lists the notes made (once per request id) for the e2e. */
   async rescue(title: string, blocks: string[], request_id: string) {
