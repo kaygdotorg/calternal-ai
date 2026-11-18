@@ -56,6 +56,7 @@ pub(crate) async fn dispatch<D: Directory>(
     let rid = rid.to_owned();
     let scheduler = machines.clone();
     let st = state.clone();
+    let runtime = tokio::runtime::Handle::current();
     let (result, resume) = crate::blocking::spawn(move || {
         let mut resume = None;
         let result = match row.id {
@@ -125,6 +126,7 @@ pub(crate) async fn dispatch<D: Directory>(
                 json!(SpaceInstructionsResult { markdown })
             }
             _ => {
+                let decision_fingerprint = fingerprint(row.id, &input);
                 let (id, status, value) = match row.id {
                     "requests.answer" => {
                         let i: RequestAnswerInput = decode(input)?;
@@ -144,6 +146,11 @@ pub(crate) async fn dispatch<D: Directory>(
                     }
                     _ => return Err(Error::not_found("operation not found")),
                 };
+                if let Some(result) = crate::plugins::signals::inbox(
+                    &st, &person, &id, row.required, &rid, &decision_fingerprint, status, value.as_ref(), &runtime,
+                )? {
+                    return Ok((json!(result), None));
+                }
                 let (space, job_id) =
                     st.jobs
                         .agent_decide(person.id, &id, &rid, status, value, |space| {
@@ -189,7 +196,8 @@ pub(crate) async fn dispatch<D: Directory>(
     Ok(result)
 }
 
-fn question_label(form: &calternal_core::GenUiView) -> Result<String, Error> {
+/// Validate the Inbox's action-free question form and return its display label.
+pub(crate) fn question_label(form: &calternal_core::GenUiView) -> Result<String, Error> {
     calternal_core::validate_genui(form)?;
     let limits = calternal_genui::Budgets::default();
     let program = calternal_genui::compile(&form.source, limits)
@@ -280,6 +288,9 @@ fn list<D: Directory>(state: &Shared<D>, person: &Identity) -> Result<RequestsLi
     };
     collect(Owner::Account(person.id), None)?;
     for space in state.directory.describe(person).spaces {
+        if authorize(state, person.id, &space.id, Capability::SpaceRead).is_ok() {
+            requests.extend(state.jobs.wait_requests(&space.id, person.id)?);
+        }
         if let Ok(id) = authorize(state, person.id, &space.id, Capability::SecretsManage) {
             collect(Owner::Space(id), Some(space.id))?;
         }

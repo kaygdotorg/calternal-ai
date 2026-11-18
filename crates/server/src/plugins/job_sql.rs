@@ -45,7 +45,7 @@ pub(crate) fn parse_state(name: &str) -> JobState {
         "running" => JobState::Running,
         "retry_waiting" => JobState::RetryWaiting,
         "interrupted" => JobState::Interrupted,
-        "waiting" => JobState::Waiting,
+        "waiting" | "signal_waiting" => JobState::Waiting,
         "done" => JobState::Done,
         "cancelled" => JobState::Cancelled,
         "outcome_unknown" => JobState::OutcomeUnknown,
@@ -54,11 +54,13 @@ pub(crate) fn parse_state(name: &str) -> JobState {
 }
 
 pub(super) const ACTIVE: &str =
-    "('admitted','placing','running','waiting','interrupted','retry_waiting')";
+    "('admitted','placing','running','waiting','signal_waiting','interrupted','retry_waiting')";
 
 pub(crate) use calternal_types::now_ms;
 
-pub(super) const COLUMNS: &str = "id,plugin,account,session,operation,input,parent,state,checkpoint,checkpoint_seq,checkpoints,result,runs,generation";
+pub(super) const COLUMNS: &str = "id,plugin,account,session,operation,input,parent,state,checkpoint,checkpoint_seq,checkpoints,result,runs,generation,
+    CASE WHEN state='signal_waiting' THEN (SELECT json_object('reason',json_extract(detail,'$.reason'),'deadline_ms',deadline_ms)
+       FROM plugin_waits WHERE job=jobs.id AND outcome IS NULL) END";
 
 pub(super) fn row(space: &str, r: &rusqlite::Row<'_>) -> rusqlite::Result<Job> {
     let json = |i: usize| -> rusqlite::Result<Value> {
@@ -90,6 +92,7 @@ pub(super) fn row(space: &str, r: &rusqlite::Row<'_>) -> rusqlite::Result<Job> {
         runs: r.get(12)?,
         generation: (generation & i64::from(u32::MAX)) as u32,
         package_revision: (generation >> 32) as u32,
+        wait: r.get::<_, Option<String>>(14)?.and_then(|text| serde_json::from_str(&text).ok()),
     })
 }
 

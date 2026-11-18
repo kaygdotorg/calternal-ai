@@ -135,6 +135,7 @@ pub fn router<D: Directory>(state: Shared<D>, web_dir: Option<PathBuf>) -> Route
             "/api/v1/jobs/{id}/events",
             get(crate::plugins::job_api::events::<D>),
         )
+        .route(crate::plugins::signals::PATH, post(crate::plugins::signals::webhook::<D>))
         .merge(crate::machines::http::routes::<D>())
         .route(wallpapers::ROUTE, get(wallpapers::image))
         .route("/api", any(api_not_found))

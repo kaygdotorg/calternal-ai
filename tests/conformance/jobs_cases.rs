@@ -283,3 +283,72 @@ async fn plugin_write_after_sign_out_does_not_land() {
         "a plugin write landed after sign-out"
     );
 }
+
+fn wait_input(wait: &str, delay_ms: u64) -> Value {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as u64;
+    json!({"steps":0,"delay_ms":0,"every":1,"wait":wait,"deadline_ms":now+delay_ms})
+}
+
+async fn question_id(f: &Fixture, who: usize) -> String {
+    let r = f.op(who, "requests.list", json!({})).await;
+    r.ok();
+    r.body["data"]["requests"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|p| p["detail"]["label"] == "Release selection")
+        .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_owned()
+}
+
+#[tokio::test]
+async fn plugin_question_wait_survives_restart_and_replays_only_the_first_answer() {
+    let mut f = Fixture::new().await;
+    let space = f.spaces[0].clone();
+    let id = start_job(&f, 1, &space, wait_input("question", 60_000)).await;
+    let parked = until(&f, 1, &id, |j| j["state"] == "waiting").await;
+    assert_eq!(parked["wait"]["reason"], "Waiting for a release");
+    assert_eq!(parked["checkpoint"], json!({"saved":"before-signal"}));
+    let request = question_id(&f, 1).await;
+
+    f.stop();
+    f.start().await;
+    assert_eq!(question_id(&f, 1).await, request);
+    assert_eq!(job(&f, 1, &id).await.body["data"]["job"]["state"], "waiting");
+    let invalid = f.op(1, "requests.answer", json!({"id":request,"answer":{"text":7}})).await;
+    assert_eq!(invalid.status, 400, "{}", invalid.body);
+
+    let answer = json!({"id":request,"answer":{"text":"go"}});
+    let foreign = f.op_id(2, "requests.answer", answer.clone(), "resolve").await;
+    assert_eq!(foreign.status, 404, "{}", foreign.body);
+    f.op_id(1, "requests.answer", answer.clone(), "resolve").await.ok();
+    f.op_id(1, "requests.answer", answer, "resolve").await.ok();
+    let changed = f.op_id(1, "requests.answer", json!({"id":request,"answer":{"text":"stop"}}), "resolve").await;
+    assert_eq!(changed.status, 409, "{}", changed.body);
+    let done = until(&f, 1, &id, |j| j["state"] == "done").await;
+    assert_eq!(done["result"], json!({
+        "checkpoint":{"saved":"before-signal"}, "signal":{"kind":"answer","value":{"text":"go"}}
+    }));
+}
+
+#[tokio::test]
+async fn plugin_deadline_resumes_after_restart_and_cancel_wins_once() {
+    let mut f = Fixture::new().await;
+    let space = f.spaces[0].clone();
+    let id = start_job(&f, 1, &space, wait_input("deadline", 4_000)).await;
+    until(&f, 1, &id, |j| j["state"] == "waiting").await;
+    let other = start_job(&f, 1, &space, wait_input("deadline", 4_000)).await;
+    until(&f, 1, &other, |j| j["state"] == "waiting").await;
+    f.op(1, "jobs.cancel", json!({"job_id":other})).await.ok();
+
+    f.stop();
+    f.start().await;
+    let done = until(&f, 1, &id, |j| j["state"] == "done").await;
+    assert_eq!(done["result"]["signal"], json!({"kind":"deadline"}));
+    assert_eq!(job(&f, 1, &other).await.body["data"]["job"]["state"], "cancelled");
+}

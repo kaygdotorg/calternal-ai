@@ -12,7 +12,7 @@ pub enum JobState {
     Admitted,
     /// A run invocation is executing in the plugin's worker.
     Running,
-    /// Parked without a process until its child jobs report or its person request is resolved.
+    /// Parked without a process until its child jobs report, a signal arrives or a deadline passes.
     Waiting,
     /// Machine or server went silent; only explicit resume may restart this turn.
     Interrupted,
@@ -47,6 +47,17 @@ pub struct JobInput {
     pub job_id: String,
 }
 
+/// Public summary of a parked plugin job with no signal payload or credentials.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(deny_unknown_fields)]
+pub struct JobWait {
+    /// Why the job is waiting, supplied by the worker at the checkpoint.
+    pub reason: String,
+    /// Unix milliseconds when the wait ends if no signal arrives.
+    #[ts(type = "number")]
+    pub deadline_ms: i64,
+}
+
 /// What a client may see of a job: its durable record, never its stream.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[serde(deny_unknown_fields)]
@@ -63,6 +74,10 @@ pub struct JobView {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub parent_id: Option<String>,
+    /// Public summary while a plugin job waits for a signal.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub wait: Option<JobWait>,
     /// Last durable checkpoint written by the plugin, or null.
     pub checkpoint: serde_json::Value,
     /// Stream sequence number of the first chunk after that checkpoint.

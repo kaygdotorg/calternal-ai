@@ -34,6 +34,7 @@ pub mod runner;
 pub mod session;
 pub(crate) mod settings;
 mod slots;
+pub(crate) mod signals;
 pub mod worker;
 
 use std::borrow::Cow;

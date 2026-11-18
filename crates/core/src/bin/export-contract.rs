@@ -137,6 +137,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ProviderEvent,
         JobState,
         JobInput,
+        JobWait,
         JobView,
         JobResult,
         OperationRequest,

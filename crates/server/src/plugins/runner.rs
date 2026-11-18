@@ -21,6 +21,8 @@ use std::time::Duration;
 use calternal_core::{ManifestIdempotency, ManifestV1};
 use serde_json::{Value, json};
 
+mod waits;
+
 use super::broker::{Run, SpaceHost};
 use super::jobs::RunEnd;
 use super::worker::Outcome;
@@ -77,6 +79,10 @@ pub async fn recover<D: Directory>(state: &Shared<D>) -> Result<usize, Error> {
     })
     .await
     .map_err(|_| Error::internal("job recovery task failed"))??;
+    let st = state.clone();
+    for timer in blocking(move || st.jobs.wait_timers()).await? {
+        waits::schedule_deadline(state, timer);
+    }
     let n = woken.len();
     for (space, job) in woken {
         schedule(state, space, job);
@@ -150,7 +156,8 @@ async fn execute<D: Directory>(
         job.id.clone(),
         job.space.clone(),
     );
-    let (generation, children) = blocking(move || {
+    let continuation_job = job.clone();
+    let (generation, children, continuation) = blocking(move || {
         if !st
             .directory
             .capabilities(account, space)
@@ -159,7 +166,7 @@ async fn execute<D: Directory>(
             return Err(refused());
         }
         let row = activation(&st.store, space, &p2)?;
-        Ok((row, st.jobs.children(&sp, &jid)?))
+        Ok((row, st.jobs.children(&sp, &jid)?, st.jobs.continuation(&continuation_job)?))
     })
     .await?;
     if !generation.enabled
@@ -183,12 +190,15 @@ async fn execute<D: Directory>(
         live: live.clone(),
         checkpoints: AtomicU32::new(job.checkpoints),
     });
-    let input = json!({
+    let mut input = json!({
         "job_id": job.id,
         "input": job.input,
         "checkpoint": job.checkpoint,
         "children": children,
     });
+    if let Some(continuation) = continuation {
+        input["signal"] = continuation;
+    }
     let outcome = state
         .workers
         .invoke(
@@ -207,6 +217,15 @@ async fn execute<D: Directory>(
         .await;
     Ok(match outcome {
         Outcome::Cancelled => None,
+        Outcome::Complete(value) if value["status"] == "parked" => {
+            match waits::park(state, job, live, &plugin, value).await {
+                Ok(()) => None,
+                Err(error) => {
+                    tracing::warn!(job = %job.id, reason = %error.message, "job wait refused");
+                    Some(RunEnd::WaitRejected(error.message))
+                }
+            }
+        }
         Outcome::Complete(value) => Some(end_of(value)),
         Outcome::InvalidInput(error) => {
             tracing::warn!(plugin = %job.plugin, operation = %job.operation, reason = %error.message, "job run input rejected");
