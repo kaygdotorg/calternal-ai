@@ -284,7 +284,10 @@ mod tests {
         let mut paths = Paths::new();
         let error = disk_files(dir.path(), Path::new(""), Root::Machine, &mut paths).unwrap_err();
         let message = error.to_string();
-        assert!(message.contains("sandboxes/accounts/a/threads/t/work/link"), "{message}");
+        assert!(
+            message.contains("sandboxes/accounts/a/threads/t/work/link"),
+            "{message}"
+        );
         assert!(work.join("link").is_symlink());
     }
 }
