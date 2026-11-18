@@ -12,7 +12,7 @@
   async function go(e: SubmitEvent) {
     e.preventDefault(); busy = true; error = "";
     try { if (demo) await new Promise((r) => setTimeout(r, 700)); else await setup(token, name); ondone(); }
-    catch (x) { error = say(x, who === "owner" ? "set up" : "join"); }
+    catch (x) { error = say(x, who === "owner" ? "set up" : "join", { firstOwner: who === "owner" }); }
     finally { busy = false; }
   }
 </script>

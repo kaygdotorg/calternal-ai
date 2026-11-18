@@ -11,7 +11,10 @@ describe("say: failures in plain words with the next step", () => {
     expect(say(new ServerError("unavailable", "x"))).toMatch(/keeps trying/);
   });
   test("sign-in failures: wrong or used code, closed prompt, unknown passkey", () => {
-    expect(say(new ServerError("setup_token_invalid", "x"))).toMatch(/wrong or has expired.*setup\.token file.*each time the server starts/);
+    expect(say(new ServerError("setup_token_invalid", "x"))).toMatch(/wrong or has expired.*calternal setup-code --appdata \/data\/appdata.*24 hours/);
+    // While setup is pending a well-formed unknown code comes back as invite_invalid: it still gets the first owner's message, never the invitation one.
+    expect(say(new ServerError("invite_invalid", "x"), "set up", { firstOwner: true })).toMatch(/setup-code/);
+    expect(say(new ServerError("invite_invalid", "x"), "join", { firstOwner: false })).toMatch(/Ask whoever invited you/);
     expect(say(new ServerError("invite_invalid", "x"))).toMatch(/Ask whoever invited you/);
     expect(say(new ServerError("cancelled", "x"))).toMatch(/closed or timed out/);
     expect(say(new ServerError("passkey_failed", "x"))).toMatch(/not recognised/);

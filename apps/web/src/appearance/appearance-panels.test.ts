@@ -62,7 +62,7 @@ describe("appearance: wallpaper and fonts sections", () => {
 
   it("code fonts list monospaced families only", async () => {
     render(FontsPanel);
-    await userEvent.click(screen.getByRole("button", { name: /Code/ }));
+    await userEvent.click(screen.getByRole("button", { name: /^Code/ }));
     const list = await screen.findByRole("radiogroup", { name: "Code font" });
     await within(list).findByRole("radio", { name: /Cascadia Code/ });
     await userEvent.click(screen.getByRole("tab", { name: "Google" }));
