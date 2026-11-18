@@ -51,8 +51,12 @@ const w = await page.evaluate(() => innerWidth);
 await finger(w - 20, w - 300); await settle();
 ok((await side()) === "false" && (await over()) === null, "dragging the card back closes the list through history");
 // 5. A flick: short and fast commits.
+// The flick's speed is what decides, so the page records the events' own timestamps: on a machine so busy that the events arrive late the finger was not fast, and the check says so instead of failing.
+await page.evaluate(() => { window.__mv = []; document.addEventListener("pointermove", (e) => window.__mv.push([e.timeStamp, e.clientX]), true); });
 await finger(4, 70, { steps: 3, gap: 8 }); await settle();
-ok((await side()) === "true", "a short fast flick opens the list");
+const mv = await page.evaluate(() => window.__mv), speed = mv.length > 1 ? (mv.at(-1)[1] - mv[0][1]) / (mv.at(-1)[0] - mv[0][0]) : 0;
+if (process.env.CAL_GATE && speed < 0.45) console.log(`info  a short fast flick: the events arrived too slowly to be a flick (${speed.toFixed(2)} px/ms on a busy machine), not judged`);
+else ok((await side()) === "true", "a short fast flick opens the list", `${speed.toFixed(2)} px/ms`);
 await page.evaluate(() => history.back()); await settle();
 // 6. Interrupt: a touch while the card is settling holds it where it is.
 await page.getByRole("button", { name: "Show notes" }).click();
