@@ -15,7 +15,7 @@ for (const scheme of ["light", "dark"]) {
   const sheet = await page.evaluate(async ([png, g]) => {
     const img = await createImageBitmap(await (await fetch(`data:image/png;base64,${png}`)).blob());
     const S = 64, Z = 6, d = 2, out = document.createElement("canvas"); out.width = S * Z * 2 + 8; out.height = S * Z * 2 + 8; const x = out.getContext("2d"); x.imageSmoothingEnabled = false; x.fillStyle = "#f0f"; x.fillRect(0, 0, out.width, out.height);
-    [[g.x0, g.y0], [g.x1, g.y0], [g.x0, g.y1], [g.x1, g.y1]].forEach(([cx, cy], k) => x.drawImage(img, (cx - S / 2) * d, (cy - S / 2) * d, S * d, S * d, (k % 2) * (S * Z + 8), Math.floor(k / 2) * (S * Z + 8), S * Z, S * Z));
+    [[g.x0, g.y0], [g.x1, g.y0], [g.x0, g.y1], [g.x1, g.y1]].forEach(([cx, cy], k) => { const sx = Math.min(img.width - S * d, Math.max(0, (cx - S / 2) * d)), sy = Math.min(img.height - S * d, Math.max(0, (cy - S / 2) * d)); x.drawImage(img, sx, sy, S * d, S * d, (k % 2) * (S * Z + 8), Math.floor(k / 2) * (S * Z + 8), S * Z, S * Z); });
     return out.toDataURL("image/png").split(",")[1];
   }, [shot, g]);
   (await import("node:fs")).writeFileSync(`${dir}/corners-${scheme}.png`, Buffer.from(sheet, "base64"));
