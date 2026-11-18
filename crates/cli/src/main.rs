@@ -105,7 +105,7 @@ enum Command {
     },
     #[command(
         about = "Call an operation by its stable operation id",
-        after_help = "Examples:\n  cl invoke notes.list --input '{\"space_id\":\"SPACE_UUID\"}'\n\nSee also: cl describe, cl notes --help."
+        after_help = "Examples:\n  cl invoke notes.list --input '{\"space_id\":\"SPACE_UUID\"}'\n\nWith a thread credential, access.request gets its job ID from the credential. People must supply job_id.\n\nSee also: cl describe, cl notes --help."
     )]
     Invoke {
         /// Stable operation id from `cl describe`.

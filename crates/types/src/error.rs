@@ -15,6 +15,8 @@ pub enum ErrorCode {
     Unauthorized,
     /// Current authority does not permit the operation (HTTP 403).
     Forbidden,
+    /// An authenticated action needs a fresh passkey proof (HTTP 403).
+    PasskeyReverificationRequired,
     /// The requested resource or operation is unavailable (HTTP 404).
     NotFound,
     /// The expected revision or durable retry input conflicts (HTTP 409).
@@ -34,7 +36,7 @@ impl ErrorCode {
     pub fn http_status(self) -> u16 {
         match self {
             Self::Unauthorized => 401,
-            Self::Forbidden => 403,
+            Self::Forbidden | Self::PasskeyReverificationRequired => 403,
             Self::NotFound => 404,
             Self::Conflict => 409,
             Self::InvalidInput => 400,
@@ -84,6 +86,13 @@ impl Error {
     /// An authenticated caller without sufficient authority.
     pub fn forbidden(message: impl Into<String>) -> Self {
         Self::new(ErrorCode::Forbidden, message)
+    }
+    /// Require the caller to reverify with a passkey before retrying.
+    pub fn passkey_reverification_required() -> Self {
+        Self::new(
+            ErrorCode::PasskeyReverificationRequired,
+            "Verify with your passkey to continue.",
+        )
     }
     /// An absent resource, or one the caller may not know exists.
     pub fn not_found(message: impl Into<String>) -> Self {

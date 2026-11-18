@@ -44,7 +44,6 @@ fn failure(status: u16, code: &str, _diagnostic: &str) -> Response {
             "That's your only passkey. Add another one before removing it.",
             false,
         ),
-        "passkey_reverification_required" => ("Verify with your passkey to continue.", false),
         "too_large" => ("That's too big to send.", false),
         "conflict" => (
             "That request key was already used for a different change.",
@@ -55,6 +54,15 @@ fn failure(status: u16, code: &str, _diagnostic: &str) -> Response {
             true,
         ),
     };
+    classified_failure(status, code, message, retryable)
+}
+
+fn classified_failure(
+    status: u16,
+    code: impl serde::Serialize,
+    message: &str,
+    retryable: bool,
+) -> Response {
     (StatusCode::from_u16(status).unwrap(),Json(json!({"error":{"code":code,"message":message,"retryable":retryable,"request_id":uuid::Uuid::now_v7().to_string()}}))).into_response()
 }
 
@@ -76,11 +84,10 @@ fn error(e: Error) -> Response {
             "Revoke an outstanding invite before creating another.",
         ),
         ErrorCode::LastPasskey => (409, "last_passkey", "Keep at least one passkey."),
-        ErrorCode::PasskeyReverificationRequired => (
-            403,
-            "passkey_reverification_required",
-            "Verify your passkey again.",
-        ),
+        ErrorCode::PasskeyReverificationRequired => {
+            let error = calternal_types::Error::passkey_reverification_required();
+            return classified_failure(error.code.http_status(), error.code, &error.message, false);
+        }
         ErrorCode::Conflict => (
             409,
             "conflict",
@@ -89,6 +96,18 @@ fn error(e: Error) -> Response {
         ErrorCode::Internal => (500, "internal", "Something went wrong. Try again."),
     };
     failure(status, code, message)
+}
+/// Translate a fresh-proof check without misreporting a revoked session or storage failure.
+pub(crate) fn fresh_error(error: Error) -> calternal_types::Error {
+    match error.code() {
+        ErrorCode::PasskeyReverificationRequired => {
+            calternal_types::Error::passkey_reverification_required()
+        }
+        ErrorCode::Forbidden => {
+            calternal_types::Error::forbidden("A current person session is required.")
+        }
+        _ => calternal_types::Error::internal("Could not verify passkey freshness."),
+    }
 }
 fn unauthorized() -> Response {
     failure(401, "unauthorized", "Sign in to continue.")

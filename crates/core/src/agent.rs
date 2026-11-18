@@ -36,7 +36,7 @@ pub struct AgentInput {
     pub pool: bool,
     /// Thread UUID for check/run; no thread file is created in step one.
     pub thread_id: String,
-    /// Job UUID for events/stop/resume/mode/access operations.
+    /// Job UUID for job operations. A thread credential can omit it for access.request.
     pub job_id: String,
     /// Person's prompt; at most 16 KiB, required for run.
     pub prompt: String,

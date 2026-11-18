@@ -127,7 +127,7 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
     },
     "job_id": {
       "default": "",
-      "description": "Job UUID for events/stop/resume/mode/access operations.",
+      "description": "Job UUID for job operations. A thread credential can omit it for access.request.",
       "type": "string"
     },
     "lease_id": {
