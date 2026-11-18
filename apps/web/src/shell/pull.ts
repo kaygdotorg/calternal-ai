@@ -2,7 +2,7 @@
  * The rules of the sidebar pull: a horizontal swipe over the middle card brings a closed sidebar into view, following the finger one to one, and the opposite swipe closes it. One set of rules for a phone
  * (the card slides aside), a touch screen of any width and a trackpad (a horizontal two-finger swipe, `wheel` events). Pure: no DOM state is kept here; the shell moves the pieces.
  *
- * What a swipe never takes (docs/ui-motion.md, "Sidebar pull"):
+ * What a swipe never takes (docs/ui-shell.md, "Sidebar pull"):
  *  - a swipe that starts on something that scrolls sideways and can still scroll that way (a code block, a table, a text field wider than its box): that element keeps it, for the whole swipe;
  *  - a swipe that starts on a row's own swipe actions (`.ra`), a dialog or sheet, or anything marked `data-no-pull`;
  *  - a touch while text is selected (the handles drag the selection, not the card);

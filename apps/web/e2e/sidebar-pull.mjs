@@ -1,4 +1,4 @@
-// The sidebar pull (docs/ui-motion.md "Sidebar pull", rules in src/shell/pull.ts): a horizontal swipe over the middle card brings a closed sidebar into view, following the finger one to one; release by
+// The sidebar pull (docs/ui-shell.md "Sidebar pull", rules in src/shell/pull.ts): a horizontal swipe over the middle card brings a closed sidebar into view, following the finger one to one; release by
 // speed or half way; the opposite swipe closes it; and it leaves alone a swipe that starts on something that scrolls sideways. Desktop trackpad (wheel events) and touch (pointer events), and the phone.
 import { chromium } from "playwright";
 import { serve, BASE } from "./lib.mjs";

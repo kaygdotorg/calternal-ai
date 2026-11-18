@@ -23,7 +23,7 @@
     const q = route.query.get("switcher");
     if ((q === "card" || q === "sidebar") && appearance.prefs.switcher !== q) appearance.change((x) => (x.switcher = q));
   });
-  // The sidebar pull (docs/ui-motion.md "Sidebar pull"; the rules are in ./pull.ts): a horizontal swipe anywhere over the middle card brings a closed sidebar into view, following the finger one to
+  // The sidebar pull (docs/ui-shell.md "Sidebar pull"; the rules are in ./pull.ts): a horizontal swipe anywhere over the middle card brings a closed sidebar into view, following the finger one to
   // one, and the opposite swipe closes it. One recogniser for every width. On a phone the card slides aside (the sidebar is underneath; the side panel slides over); on a wide screen the sidebar
   // slides in over the card's edge and the card moves with it, and a trackpad's horizontal two-finger swipe does the same through `wheel` events. On release the result goes through `shell.over` (a
   // history entry on a phone: Back, Forward and the platform's own back gesture do the same thing) or `shell.setOpen` (a wide screen, remembered). It settles on the sheet motion tokens

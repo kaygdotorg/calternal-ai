@@ -169,3 +169,26 @@ first app built, so that development can move onto it.
   `docs/ui-design-system.md` (no pixel is read; brightness comes from the background's own colour mesh).
 
 Implementation and status: `docs/ui-shell-status.md`.
+
+## Sidebar pull (2026-11-18)
+
+A horizontal swipe anywhere over the middle card brings a closed sidebar into view, following the finger one to one: the sidebar's visible width is the distance the finger (or the trackpad's two fingers) has travelled, clamped to the sidebar's width. The opposite swipe closes it. One recogniser (`apps/web/src/shell/Shell.svelte`, rules and helpers in `shell/pull.ts`, tested in `pull.test.ts` and `e2e/sidebar-pull.mjs`) serves the phone, a touch screen of any width and a trackpad; the phone's edge swipe is the same gesture started at the edge.
+
+**What a swipe does.** Finger right: closes the right sidebar if it is open, else opens the left one. Finger left: closes the left sidebar if it is open, else opens the right one (when the app has one). Otherwise nothing (swiping toward a sidebar that is already open does nothing).
+
+**What moves.** Phone: the card slides aside over the sidebar underneath (the list), or the side panel slides over the card; both follow the finger. Wide screens: the sidebar's content slides in over the card's edge (`translate` only) and the card moves by the same amount (`transform` only); the columns do not change during the pull, so nothing is laid out per frame. At release the sidebar's state changes (the layout switches once) and the pieces ease from where the finger left them to rest.
+
+**Release.** Speed over the last 80 ms decides when it is a flick (0.4 px/ms or more): that way. Otherwise more than half showing opens it. Motion: the sheet tokens, `--dur-sheet` on `--ease-sheet` (Web Animations API on a wide screen, CSS transitions on the phone), no spring. On a phone the result goes through `shell.over`, so it is a history entry (Back, Forward and the platform's back gesture do what the swipe did); on a wide screen through `shell.setOpen`, which remembers it.
+
+**Interruptible.** A touch or a swipe while the card or sidebar is still settling takes hold of it where it is (its current offset gives how much of the sidebar shows) and carries on from there.
+
+**Rules: what a swipe does not take.**
+- A swipe that starts on something that scrolls sideways and can still scroll that way (a code block, a table, a wide text field, the CodeMirror scroller) belongs to that element for the whole swipe; at its end the next swipe is the pull's.
+- A swipe that starts on a thread row's own swipe actions (`.ra`), in a dialog or sheet, or on anything marked `data-no-pull`.
+- A touch while text is selected (the selection handles drag the selection).
+- Movement that is not clearly sideways: it must be 10 px across and 1.5 times more across than down before it is a pull; a vertical scroll is never one.
+- A mouse. Only touch and the trackpad's `wheel` pull; a mouse drag keeps selecting text.
+- The browser's Back gesture: a trackpad swipe the pull consumes has its default cancelled (non-passive `wheel` listener), so the browser does not also take it as history navigation; one the pull does not take (vertical, or over a sideways scroller) is left to the browser. On a phone in the browser, the system's own back swipe from the very edge still wins on iOS Safari (it cannot be intercepted); installed as a home-screen app there is none, and the edge swipe is ours.
+- On a narrow window a trackpad does nothing (touch pulls; a narrow desktop window is rare and its sidebars have buttons).
+
+A trackpad swipe starts at the first horizontal `wheel` event after a quiet moment (120 ms) and ends after the next quiet moment; the inertia after the fingers lift is part of the swipe and keeps moving the sidebar, then the release rule applies.
