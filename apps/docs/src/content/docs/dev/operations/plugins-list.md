@@ -341,6 +341,13 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
         "schema": {
           "description": "JSON Schema for the kind content; no executable code."
         },
+        "searchable": {
+          "description": "Opt in to indexing the title and Markdown body for space search.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
         "storage": {
           "allOf": [
             {
@@ -717,6 +724,17 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
           },
           "type": "array"
         },
+        "palette": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PaletteDeclaration"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Optional commands, extra phrases and Settings sections for the palette."
+        },
         "provider": {
           "anyOf": [
             {
@@ -882,6 +900,100 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
           "type": "string"
         }
       ]
+    },
+    "PaletteCommand": {
+      "additionalProperties": false,
+      "description": "One palette command, in the web palette's command shape.",
+      "properties": {
+        "go": {
+          "description": "Navigation address, if this command navigates.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "group": {
+          "description": "Display group.",
+          "type": "string"
+        },
+        "id": {
+          "description": "Stable, globally unique command identifier.",
+          "type": "string"
+        },
+        "label": {
+          "description": "Searchable command label.",
+          "type": "string"
+        },
+        "op": {
+          "description": "Named host action, if the command invokes one.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "words": {
+          "description": "Extra phrases that match this command.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "group",
+        "id",
+        "label"
+      ],
+      "type": "object"
+    },
+    "PaletteDeclaration": {
+      "additionalProperties": false,
+      "description": "Optional palette declarations in a plugin manifest.",
+      "properties": {
+        "commands": {
+          "description": "Commands with their extra search phrases.",
+          "items": {
+            "$ref": "#/definitions/PaletteCommand"
+          },
+          "type": "array"
+        },
+        "settings_sections": {
+          "description": "Settings sections that the plugin contributes.",
+          "items": {
+            "$ref": "#/definitions/PaletteSettingsSection"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "commands",
+        "settings_sections"
+      ],
+      "type": "object"
+    },
+    "PaletteSettingsSection": {
+      "additionalProperties": false,
+      "description": "A discoverable Settings section.",
+      "properties": {
+        "go": {
+          "description": "Settings address.",
+          "type": "string"
+        },
+        "id": {
+          "description": "Stable section identifier.",
+          "type": "string"
+        },
+        "label": {
+          "description": "Section label.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "go",
+        "id",
+        "label"
+      ],
+      "type": "object"
     },
     "PluginState": {
       "additionalProperties": false,

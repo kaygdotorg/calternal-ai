@@ -160,3 +160,13 @@ model catalog with display names and accepted reasoning levels. See
 [provider protocol](provider-protocol.md). This is machine-side metadata; the
 server never launches or signs in to a provider. The first provider is
 `calternal-claude-code`.
+
+## Palette discovery
+
+A Markdown kind can declare `searchable: true` to index its title and body.
+A plugin can declare `palette.commands` for commands with optional matching
+phrases in `words`, and `palette.settings_sections` for Settings links. The
+host projects these declarations once per loaded manifest version. Settings
+sections enter the command list as navigation commands in the Settings group.
+`plugins.manifests` presents the enabled contributions in the selected space
+without executing plugin code. See [Search and palette lookups](search.md).

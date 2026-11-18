@@ -20,6 +20,7 @@ Plugin menu read without running plugin code. Every top-level field is required;
 | `kinds` | yes | array | Kinds offered by this plugin. |
 | `name` | yes | string | Human-readable plugin name. |
 | `operations` | yes | array | Public operation schemas and policy. |
+| `palette` | no | schema | Optional commands, extra phrases and Settings sections for the palette. |
 | `provider` | no | schema | Machine-side provider adapter; omitted by plugins that offer no provider. |
 | `schedules` | yes | array | Schedule declarations. |
 | `secrets` | yes | array | Requested secret names only; no values. |
@@ -389,6 +390,7 @@ Kind identity remains independent of plugin identity.
 | `extension` | no | string, null | Lowercase ASCII file extension without the dot (1 to 16 letters or digits). Claimed-text kinds are Markdown: absent or `md`. Other kinds must declare one; the host stores their bytes unparsed under it. |
 | `id` | yes | string | Stable kind name used in item addresses. |
 | `schema` | yes | schema | JSON Schema for the kind content; no executable code. |
+| `searchable` | no | boolean, null | Opt in to indexing the title and Markdown body for space search. |
 | `storage` | yes | #/definitions/ManifestPlacement | Placement within the selected per-space userdata tree; never an appdata database path. |
 
 ```json
@@ -419,6 +421,13 @@ Kind identity remains independent of plugin identity.
     },
     "schema": {
       "description": "JSON Schema for the kind content; no executable code."
+    },
+    "searchable": {
+      "description": "Opt in to indexing the title and Markdown body for space search.",
+      "type": [
+        "boolean",
+        "null"
+      ]
     },
     "storage": {
       "description": "Placement within the selected per-space userdata tree; never an appdata database path.",
@@ -963,6 +972,141 @@ Declared risk class, evaluated in addition to capabilities and token scope.
       ]
     }
   ]
+}
+```
+
+## PaletteCommand
+
+One palette command, in the web palette's command shape.
+
+| Field | Required | Type / reference | Description |
+| --- | --- | --- | --- |
+| `go` | no | string, null | Navigation address, if this command navigates. |
+| `group` | yes | string | Display group. |
+| `id` | yes | string | Stable, globally unique command identifier. |
+| `label` | yes | string | Searchable command label. |
+| `op` | no | string, null | Named host action, if the command invokes one. |
+| `words` | no | array | Extra phrases that match this command. |
+
+```json
+{
+  "description": "One palette command, in the web palette's command shape.",
+  "type": "object",
+  "required": [
+    "group",
+    "id",
+    "label"
+  ],
+  "properties": {
+    "go": {
+      "description": "Navigation address, if this command navigates.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "group": {
+      "description": "Display group.",
+      "type": "string"
+    },
+    "id": {
+      "description": "Stable, globally unique command identifier.",
+      "type": "string"
+    },
+    "label": {
+      "description": "Searchable command label.",
+      "type": "string"
+    },
+    "op": {
+      "description": "Named host action, if the command invokes one.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "words": {
+      "description": "Extra phrases that match this command.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "additionalProperties": false
+}
+```
+
+## PaletteDeclaration
+
+Optional palette declarations in a plugin manifest.
+
+| Field | Required | Type / reference | Description |
+| --- | --- | --- | --- |
+| `commands` | yes | array | Commands with their extra search phrases. |
+| `settings_sections` | yes | array | Settings sections that the plugin contributes. |
+
+```json
+{
+  "description": "Optional palette declarations in a plugin manifest.",
+  "type": "object",
+  "required": [
+    "commands",
+    "settings_sections"
+  ],
+  "properties": {
+    "commands": {
+      "description": "Commands with their extra search phrases.",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/PaletteCommand"
+      }
+    },
+    "settings_sections": {
+      "description": "Settings sections that the plugin contributes.",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/PaletteSettingsSection"
+      }
+    }
+  },
+  "additionalProperties": false
+}
+```
+
+## PaletteSettingsSection
+
+A discoverable Settings section.
+
+| Field | Required | Type / reference | Description |
+| --- | --- | --- | --- |
+| `go` | yes | string | Settings address. |
+| `id` | yes | string | Stable section identifier. |
+| `label` | yes | string | Section label. |
+
+```json
+{
+  "description": "A discoverable Settings section.",
+  "type": "object",
+  "required": [
+    "go",
+    "id",
+    "label"
+  ],
+  "properties": {
+    "go": {
+      "description": "Settings address.",
+      "type": "string"
+    },
+    "id": {
+      "description": "Stable section identifier.",
+      "type": "string"
+    },
+    "label": {
+      "description": "Section label.",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false
 }
 ```
 

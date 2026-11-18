@@ -30,6 +30,15 @@ fn main() {
     let out = Output::detect_with_options(cli.json, cli.no_hints);
     let code = match cli.cmd {
         Cmd::Threads { args } => calternal_cli::threads::main(args, &out),
+        Cmd::Search { connection, cmd } => {
+            let (op, input) = cmd.operation();
+            let connection = calternal_cli::agent::Connection {
+                base_url: connection.base_url,
+                token_file: connection.token_file,
+                request_id: connection.request_id,
+            };
+            calternal_cli::agent::invoke(connection, Some(op.id().into()), input.to_string(), &out)
+        }
         Cmd::Notes { connection, cmd } => {
             let (op, input) = cmd.operation();
             calternal_cli::notes::run(connection, op, input, &out)

@@ -1,4 +1,24 @@
 {
+  "palette": {
+    "commands": [
+      {
+        "id": "notes.open",
+        "label": "Open Notes",
+        "group": "Notes",
+        "go": "/notes"
+      },
+      {
+        "id": "notes.new",
+        "label": "New note",
+        "group": "Notes",
+        "op": "note.new",
+        "words": [
+          "create note"
+        ]
+      }
+    ],
+    "settings_sections": []
+  },
   "id": "calternal-notes",
   "name": "Notes",
   "icon": "note",
@@ -7,6 +27,7 @@
   "kinds": [
     {
       "id": "notes",
+      "searchable": true,
       "storage": { "folder": "Notes" },
       "claimed_text": true,
       "schema": { "type": "object" }

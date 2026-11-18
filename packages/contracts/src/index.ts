@@ -554,10 +554,265 @@ folder: string, } | {
  */
 hidden: boolean, };
 /**
+ * Search visible items by title and body. An omitted space searches all readable spaces.
+ */
+
+export type SearchInput = {
+/**
+ * Text typed into the palette.
+ */
+query: string,
+/**
+ * Optional space UUID.
+ */
+space_id?: string,
+/**
+ * Kind filter. An empty list selects all opted-in kinds.
+ */
+kinds?: Array<string>,
+/**
+ * Maximum rows to return, from 1 to 50. Defaults to 20.
+ */
+limit?: number,
+/**
+ * Opaque continuation from this operation and filter set.
+ */
+cursor?: string, };
+/**
+ * Picker filter for cross-space item and thread lookups.
+ */
+
+export type LookupInput = {
+/**
+ * Literal title prefix.
+ */
+prefix: string,
+/**
+ * Optional space UUID.
+ */
+space_id?: string,
+/**
+ * Maximum rows, from 1 to 50. Defaults to 20.
+ */
+limit?: number,
+/**
+ * Opaque continuation from the same lookup and filters.
+ */
+cursor?: string, };
+/**
+ * Picker filter within one space.
+ */
+
+export type SpaceLookupInput = {
+/**
+ * Selected space UUID.
+ */
+space_id: string,
+/**
+ * Literal display-name prefix. Omit to browse.
+ */
+prefix?: string, };
+/**
+ * One plain-text excerpt segment. Render its text literally.
+ */
+
+export type SearchSegment = {
+/**
+ * Literal display text.
+ */
+text: string,
+/**
+ * Whether the segment matches the search.
+ */
+matched: boolean, };
+/**
+ * One indexed item in its visible space.
+ */
+
+export type SearchHit = {
+/**
+ * Stable item address.
+ */
+address: string,
+/**
+ * Manifest kind identifier.
+ */
+kind: string,
+/**
+ * Owning space UUID.
+ */
+space_id: string,
+/**
+ * Display title.
+ */
+title: string,
+/**
+ * Short title or body excerpt with structured highlights.
+ */
+excerpt: Array<SearchSegment>, };
+/**
+ * Visible results in deterministic order.
+ */
+
+export type SearchResult = {
+/**
+ * The current page.
+ */
+hits: Array<SearchHit>,
+/**
+ * Opaque continuation, omitted at the end.
+ */
+next_cursor?: string,
+/**
+ * A readable selected index reached its coverage limit.
+ */
+partial: boolean, };
+/**
+ * A named account or group directly granted access to the selected space.
+ */
+
+export type PersonMatch = {
+/**
+ * Account or group UUID.
+ */
+id: string,
+/**
+ * Display name.
+ */
+name: string,
+/**
+ * Subject type, either account or group.
+ */
+kind: string, };
+/**
+ * The first page of matching mention subjects.
+ */
+
+export type PeopleLookupResult = {
+/**
+ * Matching direct accounts and groups.
+ */
+people: Array<PersonMatch>, };
+/**
+ * One externally placed space skill.
+ */
+
+export type SkillMatch = {
+/**
+ * Skill directory name.
+ */
+name: string,
+/**
+ * One-line description declared in the file.
+ */
+description: string, };
+/**
+ * Bounded skill matches for the selected space.
+ */
+
+export type SkillsResult = {
+/**
+ * Skill descriptors, ordered by name.
+ */
+skills: Array<SkillMatch>, };
+/**
+ * One palette command, in the web palette's command shape.
+ */
+
+export type PaletteCommand = {
+/**
+ * Stable, globally unique command identifier.
+ */
+id: string,
+/**
+ * Searchable command label.
+ */
+label: string,
+/**
+ * Display group.
+ */
+group: string,
+/**
+ * Extra phrases that match this command.
+ */
+words?: Array<string>,
+/**
+ * Navigation address, if this command navigates.
+ */
+go?: string,
+/**
+ * Named host action, if the command invokes one.
+ */
+op?: string, };
+/**
+ * A discoverable Settings section.
+ */
+
+export type PaletteSettingsSection = {
+/**
+ * Stable section identifier.
+ */
+id: string,
+/**
+ * Section label.
+ */
+label: string,
+/**
+ * Settings address.
+ */
+go: string, };
+/**
+ * Optional palette declarations in a plugin manifest.
+ */
+
+export type PaletteDeclaration = {
+/**
+ * Commands with their extra search phrases.
+ */
+commands: Array<PaletteCommand>,
+/**
+ * Settings sections that the plugin contributes.
+ */
+settings_sections: Array<PaletteSettingsSection>, };
+/**
+ * A registered palette contribution in the web palette's manifest shape.
+ */
+
+export type PaletteManifest = {
+/**
+ * Owning plugin identifier.
+ */
+plugin: string,
+/**
+ * Exact package version.
+ */
+version: string,
+/**
+ * Commands with their extra search phrases.
+ */
+commands: Array<PaletteCommand>,
+/**
+ * Settings sections provided by this plugin.
+ */
+settings_sections: Array<PaletteSettingsSection>, };
+/**
+ * Palette declarations visible in the selected space.
+ */
+
+export type PaletteResult = {
+/**
+ * Enabled plugins with palette contributions.
+ */
+manifests: Array<PaletteManifest>, };
+/**
  * Kind identity remains independent of plugin identity.
  */
 
 export type ManifestKind = {
+/**
+ * Opt in to indexing the title and Markdown body for space search.
+ */
+searchable?: boolean,
 /**
  * Placement within the selected per-space userdata tree; never an appdata database path.
  */
@@ -807,6 +1062,10 @@ reasoning_levels: Array<string>, };
  */
 
 export type ManifestV1 = {
+/**
+ * Optional commands, extra phrases and Settings sections for the palette.
+ */
+palette?: PaletteDeclaration,
 /**
  * Machine-side provider adapter; omitted by plugins that offer no provider.
  */

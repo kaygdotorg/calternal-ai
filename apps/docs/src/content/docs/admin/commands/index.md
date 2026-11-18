@@ -6,6 +6,12 @@ title: "Command reference"
 
 > **Preview: the app is not released.** This site describes a development preview and accepted designs; it does not establish production readiness.
 
+- [calternal-search-query](./calternal-search-query/)
+- [calternal-search-items](./calternal-search-items/)
+- [calternal-search-threads](./calternal-search-threads/)
+- [calternal-search-people](./calternal-search-people/)
+- [calternal-search-skills](./calternal-search-skills/)
+- [calternal-search-manifests](./calternal-search-manifests/)
 - [calternal-people-members](./calternal-people-members/)
 - [calternal-people-roles](./calternal-people-roles/)
 - [calternal-people-list](./calternal-people-list/)

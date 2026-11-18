@@ -63,5 +63,7 @@ pub(super) fn open_stores(
     } else {
         Registry::load_server_defaults(test_root.as_deref())
     };
+    calternal_server::api::configure_search(&store, &registry)
+        .map_err(|e| boot(1, "failed", e.message, DATA_HINT))?;
     Ok((store, data_dir, recovery, registry))
 }

@@ -8,6 +8,7 @@ title: "Developer reference"
 
 - [Operations](./operations/)
 - [Notes operations](./notes-operations/)
+- [Search and palette lookups](./search/)
 - [Manifest schema](./manifest/)
 - [Provider adapter protocol](./provider-protocol/)
 - [Plugin SDK](./typescript/plugin-sdk/)

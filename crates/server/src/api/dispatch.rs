@@ -323,6 +323,14 @@ pub(super) async fn run_admitted_operation<D: Directory>(
     if policy.constraint == Constraint::PluginInvocation {
         return invoke_plugin(state, p, session, actor, request_id, op, policy, input).await;
     }
+    if let Some(operation) = calternal_core::SearchOperation::from_id(op) {
+        let delivery_space = policy.scope_space(&input)?;
+        let value = super::search::dispatch(&state, &p, operation, input).await?;
+        if let Some(space) = delivery_space {
+            policy.check(super::authorization::capabilities(&state, p.id, space).await?)?;
+        }
+        return Ok(value);
+    }
     let delivery_space = input
         .get("space_id")
         .and_then(Value::as_str)

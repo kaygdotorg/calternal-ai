@@ -1,0 +1,12 @@
+{
+  "data": {
+    "skills": [
+      {
+        "description": "Review a draft.",
+        "name": "review"
+      }
+    ]
+  },
+  "ok": true,
+  "request_id": "req-search"
+}

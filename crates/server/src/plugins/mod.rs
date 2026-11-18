@@ -90,6 +90,8 @@ pub struct Plugin {
     pub entry: TrustedEntry,
     /// Validated manifest v1; immutable for the server's lifetime.
     pub manifest: ManifestV1,
+    /// Palette data projected once from this immutable manifest version.
+    pub(crate) palette: Option<calternal_core::PaletteManifest>,
     /// Canonical absolute worker path, when the plugin has a built worker.
     pub worker: Option<PathBuf>,
     /// Why the plugin cannot execute or be enabled, if it cannot (digest mismatch etc).
@@ -118,9 +120,33 @@ impl Plugin {
                 manifest.id, manifest.version, entry.id, entry.version
             ));
         }
+        let palette = manifest
+            .palette
+            .as_ref()
+            .map(|menu| calternal_core::PaletteManifest {
+                plugin: manifest.id.clone(),
+                version: manifest.version.clone(),
+                commands: menu
+                    .commands
+                    .iter()
+                    .cloned()
+                    .chain(menu.settings_sections.iter().map(|section| {
+                        calternal_core::PaletteCommand {
+                            id: section.id.clone(),
+                            label: section.label.clone(),
+                            group: "Settings".into(),
+                            words: Vec::new(),
+                            go: Some(section.go.clone()),
+                            op: None,
+                        }
+                    }))
+                    .collect(),
+                settings_sections: menu.settings_sections.clone(),
+            });
         Ok(Self {
             entry,
             manifest,
+            palette,
             worker,
             unavailable: None,
             schemas,
@@ -264,7 +290,7 @@ impl Registry {
         Self::load_at(plugin_root, test_root, false)
     }
 
-    /// Load ./plugins and use the shipped native Threads manifest when that
+    /// Load ./plugins and use shipped native Notes and Threads manifests when that
     /// default directory lacks its copy. Explicit roots use `load_with_tests`.
     /// Cost: normal startup registry reads and one embedded manifest parse on miss.
     pub fn load_server_defaults(test_root: Option<&Path>) -> Self {
@@ -278,10 +304,21 @@ impl Registry {
         for (root, entry) in
             all.flat_map(|(root, entries)| entries.into_iter().map(move |e| (root, e)))
         {
-            let fallback = (defaults && entry.id == "calternal-orchestrator").then_some(
-                include_bytes!("../../../../plugins/calternal-orchestrator/manifest.json")
-                    .as_slice(),
-            );
+            let fallback = if defaults {
+                match entry.id.as_str() {
+                    "calternal-orchestrator" => Some(
+                        include_bytes!("../../../../plugins/calternal-orchestrator/manifest.json")
+                            .as_slice(),
+                    ),
+                    "calternal-notes" => Some(
+                        include_bytes!("../../../../plugins/calternal-notes/manifest.json")
+                            .as_slice(),
+                    ),
+                    _ => None,
+                }
+            } else {
+                None
+            };
             match load_one(root, &entry, fallback) {
                 Ok(p) => plugins.push(p),
                 Err(why) => {

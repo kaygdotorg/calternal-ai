@@ -6,6 +6,104 @@
     "request_id?": "string"
   },
   "commands": {
+    "calternal search query": {
+      "hits": [
+        {
+          "address": "string",
+          "kind": "string",
+          "space_id": "string",
+          "title": "string",
+          "excerpt": [
+            {
+              "text": "string",
+              "matched": "bool"
+            }
+          ]
+        }
+      ],
+      "partial": "bool",
+      "next_cursor?": "string"
+    },
+    "calternal search items": {
+      "hits": [
+        {
+          "address": "string",
+          "kind": "string",
+          "space_id": "string",
+          "title": "string",
+          "excerpt": [
+            {
+              "text": "string",
+              "matched": "bool"
+            }
+          ]
+        }
+      ],
+      "partial": "bool",
+      "next_cursor?": "string"
+    },
+    "calternal search threads": {
+      "hits": [
+        {
+          "address": "string",
+          "kind": "string",
+          "space_id": "string",
+          "title": "string",
+          "excerpt": [
+            {
+              "text": "string",
+              "matched": "bool"
+            }
+          ]
+        }
+      ],
+      "partial": "bool",
+      "next_cursor?": "string"
+    },
+    "calternal search people": {
+      "people": [
+        {
+          "id": "string",
+          "name": "string",
+          "kind": "string"
+        }
+      ]
+    },
+    "calternal search skills": {
+      "skills": [
+        {
+          "name": "string",
+          "description": "string"
+        }
+      ]
+    },
+    "calternal search manifests": {
+      "manifests": [
+        {
+          "plugin": "string",
+          "version": "string",
+          "commands": [
+            {
+              "id": "string",
+              "label": "string",
+              "group": "string",
+              "words?": [
+                "string"
+              ],
+              "op?": "string",
+              "go?": "string"
+            }
+          ],
+          "settings_sections": [
+            {
+              "id": "string",
+              "label": "string",
+              "go": "string"
+            }
+          ]
+        }
+      ]
+    },
     "calternal people members": {"members": [{"account_id": "string", "name": "string", "role": "string"}], "groups": [{"group_id": "string", "name": "string", "role": "string", "member_count": "integer"}], "next_cursor?": "string"},
     "calternal people roles": {"roles": [{"name": "string", "capabilities": ["string"]}]},
     "calternal people list": {"people": [{"account_id": "string", "name": "string", "role": "string", "disabled": "bool"}], "next_cursor?": "string"},

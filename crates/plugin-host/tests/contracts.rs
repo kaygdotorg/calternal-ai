@@ -236,6 +236,7 @@ fn collisions_are_atomic_and_policy_is_data_only() {
     for kind in ["plugin", "kind", "operation", "collection"] {
         let mut a = manifest();
         a.kinds.push(ManifestKind {
+            searchable: None,
             storage: ManifestPlacement::Hidden { hidden: true },
             claimed_text: true,
             extension: None,
@@ -487,6 +488,7 @@ fn shared_worker_wire_vectors_match_the_sdk() {
 fn storage_placement_names_and_cross_plugin_folder_claims() {
     let mut m = manifest();
     m.kinds.push(ManifestKind {
+        searchable: None,
         id: "notes".into(),
         schema: json!(true),
         storage: ManifestPlacement::Visible {
@@ -581,6 +583,7 @@ fn failed_registration_does_not_reserve_other_names() {
     let mut collision = manifest();
     collision.id = "other".into();
     collision.kinds.push(ManifestKind {
+        searchable: None,
         id: "tasks".into(),
         schema: json!(true),
         storage: ManifestPlacement::Visible {

@@ -35,7 +35,7 @@ function schema(v: unknown): void { if (typeof v !== "boolean" && (!v || typeof 
  */
 export function validateManifestV1(value: unknown): ManifestV1 {
   if (new TextEncoder().encode(JSON.stringify(value)).length > 256 * 1024) fail();
-  const m = record(value, ["id", "name", "icon", "version", "api_version", "kinds", "operations", "collections", "views", "attention", "settings", "schedules", "webhooks", "secrets", "hooks", "themes", "host_calls"], ["provider"]);
+  const m = record(value, ["id", "name", "icon", "version", "api_version", "kinds", "operations", "collections", "views", "attention", "settings", "schedules", "webhooks", "secrets", "hooks", "themes", "host_calls"], ["provider", "palette"]);
   if (m.provider !== undefined) {
     const p = record(m.provider, ["protocol_version", "executable", "default_model", "models"]);
     if (p.protocol_version !== 1 || typeof p.executable !== "string" || !/^[a-z0-9][a-z0-9_-]{0,79}$/.test(p.executable)) fail();
@@ -61,9 +61,47 @@ export function validateManifestV1(value: unknown): ManifestV1 {
     const seen = new Set<string>();
     for (const v of list) { const r = record(v, keys, optional); const key = identifier(r.id); if (seen.has(key)) fail(); seen.add(key); visit(r); }
   }
+  if (m.palette !== undefined) {
+    const palette = record(m.palette, ["commands", "settings_sections"]);
+    const ids = new Set<string>();
+    const checkRows = (value: unknown, check: (v: unknown) => string): void => {
+      if (!Array.isArray(value) || value.length > 128) fail();
+      for (const row of value) {
+        const id = check(row);
+        if (ids.has(id)) fail();
+        ids.add(id);
+      }
+    };
+    const label = (value: unknown): string => {
+      const valueText = text(value);
+      if (/\p{Cc}/u.test(valueText)) fail();
+      return valueText;
+    };
+    const address = (value: unknown): void => {
+      if (!/^\/(?!\/)[^\\]*$/.test(label(value))) fail();
+    };
+    checkRows(palette.commands, value => {
+      const row = record(value, ["id", "label", "group"], ["words", "go", "op"]);
+      label(row.label); label(row.group);
+      if ((row.go === undefined) === (row.op === undefined)) fail();
+      if (row.go !== undefined) address(row.go);
+      if (row.op !== undefined) identifier(row.op);
+      if (row.words !== undefined) {
+        if (!Array.isArray(row.words) || row.words.length > 32) fail();
+        row.words.forEach(label);
+      }
+      return identifier(row.id);
+    });
+    checkRows(palette.settings_sections, value => {
+      const row = record(value, ["id", "label", "go"]);
+      label(row.label); address(row.go);
+      return identifier(row.id);
+    });
+  }
   const operations = new Set<string>();
   rows("kinds", ["id", "schema", "storage", "claimed_text"], r => {
     schema(r.schema); if (typeof r.claimed_text !== "boolean") fail();
+    if (r.searchable !== undefined && (typeof r.searchable !== "boolean" || (r.searchable && !r.claimed_text))) fail();
     // Claimed text is Markdown; other kinds name a safe lowercase extension.
     if (r.extension === undefined ? !r.claimed_text : typeof r.extension !== "string" || !/^[a-z0-9]{1,16}$/.test(r.extension) || (r.claimed_text && r.extension !== "md")) fail();
     if (!r.storage || typeof r.storage !== "object" || Array.isArray(r.storage)) fail();
@@ -81,7 +119,7 @@ export function validateManifestV1(value: unknown): ManifestV1 {
         }
       }
     } else { record(placement, ["hidden"]); if (placement.hidden !== true) fail(); }
-  }, ["extension"]);
+  }, ["extension", "searchable"]);
   rows("operations", ["id", "input_schema", "output_schema", "required_capability", "mutates", "idempotency", "risk"], r => {
     if (!["read", "reversible", "irreversible", "external", "widens_access"].includes(String(r.risk)) || (r.risk === "read") === r.mutates) fail();
     operations.add(identifier(r.id)); schema(r.input_schema); schema(r.output_schema);
