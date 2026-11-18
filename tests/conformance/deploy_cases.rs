@@ -191,6 +191,7 @@ async fn personal_machine_installer_uses_a_private_one_time_code() {
     );
     let script = data["script"].as_str().unwrap();
     assert!(script.starts_with("#!/bin/sh\n"));
+    assert!(script.contains("# Enrollment code expires at "));
     assert!(script.contains("launchctl bootstrap"));
     assert!(script.contains("systemctl --user restart"));
     let code = script

@@ -35,14 +35,16 @@ pub(crate) async fn script<D: Directory>(
     blocking(move || {
         let (code, expires_ms) = machines.issue_code_for(Owner::Account { id: account }, TTL)?;
         let quote = |value: &str| format!("'{}'", value.replace('\'', "'\\''"));
-        let script = INSTALLER.replace(
+        let deadline = calternal_cli::output::Output::iso_ms(expires_ms);
+        let script = INSTALLER.replacen(
             "server= code= image=",
             &format!(
-                "server={} code={} image={}",
+                "# Enrollment code expires at {deadline}.\nserver={} code={} image={}",
                 quote(&server),
                 quote(&code),
                 quote(&image)
             ),
+            1,
         );
         Ok(json!(MachineInstallResult { script, expires_ms }))
     })

@@ -6,7 +6,8 @@ set -eu
 umask 077
 
 die() { printf '%s\n' "$*" >&2; exit 1; }
-server= code= image= binary= backend=podman max=10
+# The server defaults to sandboxing and can later honor an explicit owner choice.
+server= code= image= binary= backend=auto max=10
 while [ "$#" -gt 0 ]; do
   [ "$#" -ge 2 ] || die "This option needs a value: $1"
   case $1 in
