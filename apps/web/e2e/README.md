@@ -6,6 +6,8 @@
 
 first-visit, shell-audit, flat-sidebars, resize, sidebar-scroll, a11y, text-parity, palette, palette-focus (12 opens), interact, phone-nav, settings-pages, focus-ring, swipe-rows, morph, states, new-thread. Each exits non-zero on a failed check. When a decided behaviour changes on purpose, change the suite in the same merge.
 
+The gate sets `CAL_GATE=1`: a suite then reports a timing measurement as `info` instead of failing on it (`palette`'s keystroke cost at 6x CPU slowdown depends on the machine: it failed on dev-01 and passed on dev-02 with the same code). Measure on the perf VMs.
+
 ## Left out, and why
 
 - **Performance and profiling scripts** (`perf*`, `shell-perf`, `paint-*`, `profile-*`, `trace-*`, `editor-perf`, `ab-*`, `bench-page`, `first-paint`, `first-load`): they measure; timings on a shared dev VM are not a pass or fail. Measure on the perf VMs.

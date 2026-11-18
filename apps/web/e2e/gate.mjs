@@ -31,7 +31,7 @@ for (let i = 0; i < 120; i++) { try { if ((await fetch(url)).ok) break; } catch 
 function run(s) {
   return new Promise((resolve) => {
     const t0 = Date.now();
-    const p = spawn("node", [`e2e/${s.name}.mjs`, ...s.args], { env: { ...process.env, CAL_URL: url }, detached: true });
+    const p = spawn("node", [`e2e/${s.name}.mjs`, ...s.args], { env: { ...process.env, CAL_URL: url, CAL_GATE: "1" }, detached: true });
     let out = "";
     p.stdout.on("data", (d) => { out += d; }); p.stderr.on("data", (d) => { out += d; });
     let timedOut = false;
