@@ -1,0 +1,486 @@
+//! Linux Firecracker guests, one persistent data disk per machine and account.
+//! Only the dedicated control port is attached. The guest runs each thread via
+//! the same rootless Podman backend used on hosts without KVM.
+
+mod guest;
+mod image;
+#[cfg(test)]
+mod measure;
+mod vmm;
+mod wire;
+
+pub use guest::run_agent;
+
+use std::collections::HashMap;
+use std::fs::File;
+use std::io;
+use std::os::unix::fs::OpenOptionsExt;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex, Weak};
+use std::time::{Duration, Instant};
+
+use serde::Deserialize;
+use tokio::process::Command;
+use tokio::sync::{Mutex as AsyncMutex, Notify, OnceCell};
+use uuid::Uuid;
+
+use super::{Backend, BoxFuture, Sandbox, SandboxError, SandboxResult};
+use crate::protocol::SandboxSpec;
+use vmm::Guest;
+use wire::Request;
+
+#[cfg(test)]
+mod tests;
+mod thread;
+use thread::Thread;
+
+const IDLE: Duration = Duration::from_secs(300);
+const SWEEP: Duration = Duration::from_secs(15);
+
+/// Operator-owned configuration read once when starting the machine role.
+/// CPU and memory apply to a whole account guest. The disk size applies to
+/// newly created account disks and is stored in the disk itself.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Config {
+    /// Absolute executable path for the Firecracker release build.
+    pub firecracker: PathBuf,
+    /// Absolute path of the verified immutable guest image directory.
+    pub image_directory: PathBuf,
+    /// SHA-256 of the image's fixed-order digest manifest, in lowercase hex.
+    pub image_digest: String,
+    /// Path to the ext4 filesystem formatter on the host.
+    pub mkfs_ext4: PathBuf,
+    /// Virtual CPUs per account, between 1 and 32.
+    pub vcpus: u8,
+    /// Guest RAM in MiB, between 512 and 16384.
+    pub memory_mib: u32,
+    /// Logical data disk ceiling per account in MiB, between 1024 and 65536.
+    pub disk_mib: u32,
+    /// Prebooted guests without user data, between 0 and 2.
+    pub warm_guests: usize,
+    /// Maximum VMMs, including idle and unassigned guests, between 1 and 64.
+    pub max_guests: usize,
+}
+
+impl Config {
+    /// Read and validate the small operator configuration on a blocking task.
+    /// Disk and VM resources are untouched until backend initialization.
+    pub async fn load(path: &Path) -> SandboxResult<Self> {
+        let file = tokio::fs::read(path).await.map_err(SandboxError::new)?;
+        let config: Self = serde_json::from_slice(&file).map_err(SandboxError::new)?;
+        if !config.firecracker.is_absolute()
+            || !config.image_directory.is_absolute()
+            || !config.mkfs_ext4.is_absolute()
+            || !(1..=32).contains(&config.vcpus)
+            || !(512..=16384).contains(&config.memory_mib)
+            || !(1024..=65536).contains(&config.disk_mib)
+            || !(1..=64).contains(&config.max_guests)
+            || config.warm_guests > 2
+            || config.warm_guests >= config.max_guests
+        {
+            return Err(SandboxError(
+                "invalid microVM paths or resource limits".into(),
+            ));
+        }
+        Ok(config)
+    }
+}
+
+struct Account {
+    vm: Option<Guest>,
+    last_used: Instant,
+}
+
+/// Same-account gate for binding a disk to a VM, guest teardown, and erasure.
+/// Held across vsock and disk flushes so a concurrent lease cannot reopen the
+/// disk until teardown is durable. Other accounts never wait on this guard.
+type AccountSlot = Arc<AsyncMutex<Account>>;
+
+struct State {
+    config: Config,
+    root: PathBuf,
+    owned: OnceCell<Arc<File>>,
+    accounts: Mutex<HashMap<Uuid, AccountSlot>>,
+    warm: AsyncMutex<Vec<Guest>>,
+    capacity: Arc<tokio::sync::Semaphore>,
+    stop: Notify,
+    maintenance: Mutex<Option<tokio::task::JoinHandle<()>>>,
+}
+
+/// Starts one Firecracker guest per account in the machine role's private root.
+/// Account disks survive lease release, idle shutdown and machine restart.
+pub struct MicrovmBackend(Arc<State>);
+
+impl MicrovmBackend {
+    /// Assemble a backend with no processes or disk I/O. The machine role
+    /// calls initialization under its existing administrative ownership lock.
+    pub fn new(root: PathBuf, config: Config) -> Self {
+        let capacity = Arc::new(tokio::sync::Semaphore::new(config.max_guests));
+        Self(Arc::new(State {
+            config,
+            root: root.join("microvm"),
+            owned: OnceCell::new(),
+            accounts: Mutex::new(HashMap::new()),
+            warm: AsyncMutex::new(Vec::new()),
+            capacity,
+            stop: Notify::new(),
+            maintenance: Mutex::new(None),
+        }))
+    }
+}
+
+impl Backend for MicrovmBackend {
+    fn name(&self) -> &'static str {
+        "microvm"
+    }
+
+    fn initialize(&self) -> BoxFuture<'_, SandboxResult<()>> {
+        Box::pin(async {
+            self.0.initialize().await?;
+            let task = tokio::spawn(maintain(Arc::downgrade(&self.0)));
+            *self.0.maintenance.lock().expect("maintenance") = Some(task);
+            Ok(())
+        })
+    }
+
+    fn shutdown(&self) -> BoxFuture<'_, SandboxResult<()>> {
+        Box::pin(async {
+            self.0.stop.notify_one();
+            let task = self.0.maintenance.lock().expect("maintenance").take();
+            if let Some(task) = task {
+                task.await.map_err(SandboxError::new)?;
+            }
+            let mut failed = false;
+            for slot in self.0.slots() {
+                if let Some(vm) = slot.lock().await.vm.take() {
+                    failed |= vm.stop().await.is_err();
+                }
+            }
+            for vm in std::mem::take(&mut *self.0.warm.lock().await) {
+                failed |= vm.stop().await.is_err();
+            }
+            if failed {
+                return Err(SandboxError("microVM teardown incomplete".into()));
+            }
+            tokio::fs::remove_dir_all(self.0.root.join("run"))
+                .await
+                .map_err(SandboxError::new)
+        })
+    }
+
+    fn start<'a>(
+        &'a self,
+        spec: &'a SandboxSpec,
+    ) -> BoxFuture<'a, SandboxResult<Arc<dyn Sandbox>>> {
+        Box::pin(async {
+            let slot = self.0.account(spec.account_id);
+            let mut account = slot.lock().await;
+            let vm = self.0.ensure_guest(spec.account_id, &mut account).await?;
+            vm.control(&Request::Start(spec.clone())).await?;
+            let thread = Thread::new(
+                slot.clone(),
+                vm.socket.clone(),
+                vm.key.clone(),
+                spec.thread_id,
+                spec.worker.is_some(),
+            );
+            Ok(Arc::new(thread) as Arc<dyn Sandbox>)
+        })
+    }
+
+    fn discard(&self, account: Uuid, thread: Uuid) -> BoxFuture<'_, SandboxResult<()>> {
+        self.erase(account, Some(thread))
+    }
+
+    fn erase(&self, id: Uuid, thread: Option<Uuid>) -> BoxFuture<'_, SandboxResult<()>> {
+        Box::pin(async move {
+            let slot = self.0.account(id);
+            let mut account = slot.lock().await;
+            let disk = self.0.disk(id);
+            if let Some(thread) = thread {
+                if !tokio::fs::try_exists(&disk)
+                    .await
+                    .map_err(SandboxError::new)?
+                {
+                    return Ok(());
+                }
+                return self
+                    .0
+                    .ensure_guest(id, &mut account)
+                    .await?
+                    .control(&Request::Discard(id, thread))
+                    .await;
+            }
+            if let Some(vm) = account.vm.take() {
+                vm.stop().await?;
+            }
+            tokio::task::spawn_blocking(move || {
+                match std::fs::remove_file(&disk) {
+                    Err(e) if e.kind() != io::ErrorKind::NotFound => return Err(e),
+                    _ => {}
+                }
+                calternal_fsio::sync_dir(disk.parent().expect("data directory"))
+            })
+            .await
+            .map_err(SandboxError::new)?
+            .map_err(SandboxError::new)
+        })
+    }
+}
+
+impl State {
+    fn disk(&self, account: Uuid) -> PathBuf {
+        self.root.join("accounts").join(format!("{account}.ext4"))
+    }
+
+    fn account(&self, id: Uuid) -> AccountSlot {
+        self.accounts
+            .lock()
+            .expect("microVM slots")
+            .entry(id)
+            .or_insert_with(|| {
+                Arc::new(AsyncMutex::new(Account {
+                    vm: None,
+                    last_used: Instant::now(),
+                }))
+            })
+            .clone()
+    }
+
+    fn slots(&self) -> Vec<AccountSlot> {
+        self.accounts
+            .lock()
+            .expect("microVM slots")
+            .values()
+            .cloned()
+            .collect()
+    }
+
+    async fn initialize(&self) -> SandboxResult<()> {
+        tokio::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open("/dev/kvm")
+            .await
+            .map_err(|e| SandboxError(format!("opening /dev/kvm failed: {e}")))?;
+        image::check(&self.config).await?;
+        let root = self.root.clone();
+        let lock = tokio::task::spawn_blocking(move || {
+            std::fs::create_dir_all(&root)?;
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o700))?;
+            let lock = std::fs::OpenOptions::new()
+                .read(true)
+                .write(true)
+                .create(true)
+                .truncate(false)
+                .mode(0o600)
+                .open(root.join("vmm.lock"))?;
+            lock.try_lock().map_err(|_| {
+                io::Error::other("previous Firecracker processes still hold the sandbox root")
+            })?;
+            // The VMM inherits this lock. Startup clears the abandoned runtime
+            // files only after every process from the old role closed it.
+            let run = root.join("run");
+            match std::fs::remove_dir_all(&run) {
+                Err(e) if e.kind() != io::ErrorKind::NotFound => return Err(e),
+                _ => {}
+            }
+            std::fs::create_dir(&run)?;
+            calternal_fsio::create_dir_all_durable(&root.join("accounts"))?;
+            Ok::<_, io::Error>(lock)
+        })
+        .await
+        .map_err(SandboxError::new)?
+        .map_err(SandboxError::new)?;
+        self.owned
+            .set(Arc::new(lock))
+            .map_err(|_| SandboxError("microVM backend already initialized".into()))
+    }
+
+    async fn ensure_guest<'a>(
+        &self,
+        id: Uuid,
+        account: &'a mut Account,
+    ) -> SandboxResult<&'a Guest> {
+        account.last_used = Instant::now();
+        if account.vm.as_mut().is_some_and(Guest::alive) {
+            return Ok(account.vm.as_ref().expect("live guest"));
+        }
+        if let Some(vm) = account.vm.take() {
+            vm.stop().await?;
+        }
+        let disk = self.disk(id);
+        let fresh = !tokio::fs::try_exists(&disk)
+            .await
+            .map_err(SandboxError::new)?;
+        if fresh {
+            let warm_guest = self.warm.lock().await.pop();
+            if let Some(mut vm) = warm_guest {
+                if vm.alive() {
+                    if let Err(error) = persist_disk(vm.disk.clone(), disk.clone()).await {
+                        self.remove_warm(vm).await?;
+                        return Err(error);
+                    }
+                    vm.disk = disk;
+                    account.vm = Some(vm);
+                    return Ok(account.vm.as_ref().expect("bound warm guest"));
+                }
+                self.remove_warm(vm).await?;
+            }
+            let staged = self.new_disk().await?;
+            persist_disk(staged, disk.clone()).await?;
+        }
+        if self.capacity.available_permits() == 0 {
+            let unused = self.warm.lock().await.pop();
+            if let Some(vm) = unused {
+                self.remove_warm(vm).await?;
+            }
+        }
+        account.vm = Some(self.boot(disk).await?);
+        Ok(account.vm.as_ref().expect("booted guest"))
+    }
+
+    async fn remove_warm(&self, vm: Guest) -> SandboxResult<()> {
+        let disk = vm.disk.clone();
+        vm.stop().await?;
+        match tokio::fs::remove_file(disk).await {
+            Err(e) if e.kind() != io::ErrorKind::NotFound => Err(SandboxError::new(e)),
+            _ => Ok(()),
+        }
+    }
+
+    async fn boot(&self, disk: PathBuf) -> SandboxResult<Guest> {
+        let owned = self
+            .owned
+            .get()
+            .ok_or_else(|| SandboxError("microVM backend not initialized".into()))?;
+        let permit = self
+            .capacity
+            .clone()
+            .try_acquire_owned()
+            .map_err(|_| SandboxError("microVM guest capacity is full".into()))?;
+        Guest::boot(
+            &self.config,
+            &self.root.join("run"),
+            disk,
+            owned.clone(),
+            permit,
+        )
+        .await
+    }
+
+    async fn new_disk(&self) -> SandboxResult<PathBuf> {
+        let path = self
+            .root
+            .join("run")
+            .join(format!("{}.ext4", Uuid::new_v4()));
+        let file = tokio::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(&path)
+            .await
+            .map_err(SandboxError::new)?;
+        let created = async {
+            file.set_len(u64::from(self.config.disk_mib) << 20)
+                .await
+                .map_err(SandboxError::new)?;
+            let status = Command::new(&self.config.mkfs_ext4)
+                .args(["-q", "-F", "-E", "lazy_itable_init=0,lazy_journal_init=0"])
+                .arg(&path)
+                .kill_on_drop(true)
+                .status()
+                .await
+                .map_err(SandboxError::new)?;
+            if !status.success() {
+                return Err(SandboxError("cannot format microVM data disk".into()));
+            }
+            file.sync_all().await.map_err(SandboxError::new)
+        }
+        .await;
+        if created.is_err() {
+            let _ = tokio::fs::remove_file(&path).await;
+        }
+        created.map(|()| path)
+    }
+}
+
+async fn persist_disk(source: PathBuf, target: PathBuf) -> SandboxResult<()> {
+    tokio::task::spawn_blocking(move || calternal_fsio::rename_safely(&source, &target))
+        .await
+        .map_err(SandboxError::new)?
+        .map_err(SandboxError::new)
+}
+
+async fn maintain(backend: Weak<State>) {
+    loop {
+        let Some(state) = backend.upgrade() else {
+            return;
+        };
+        let slots = state.slots();
+        for slot in slots {
+            // The registry and this iteration each own one reference. An active
+            // sandbox or pending start pins the guest. No map lock spans I/O.
+            if let Ok(mut account) = slot.try_lock() {
+                if Arc::strong_count(&slot) == 2
+                    && account.last_used.elapsed() >= IDLE
+                    && let Some(vm) = account.vm.take()
+                    && let Err(error) = vm.stop().await
+                {
+                    tracing::warn!(%error, "cannot stop idle microVM");
+                }
+            }
+        }
+        state
+            .accounts
+            .lock()
+            .expect("microVM slots")
+            .retain(|_, slot| {
+                Arc::strong_count(slot) > 1
+                    || slot.try_lock().map_or(true, |account| account.vm.is_some())
+            });
+        let (warm, dead) = {
+            let mut warm = state.warm.lock().await;
+            let mut dead = Vec::new();
+            let mut index = 0;
+            while index < warm.len() {
+                if warm[index].alive() {
+                    index += 1;
+                } else {
+                    dead.push(warm.swap_remove(index));
+                }
+            }
+            (warm.len(), dead)
+        };
+        for vm in dead {
+            if let Err(error) = state.remove_warm(vm).await {
+                tracing::warn!(%error, "cannot remove exited warm microVM");
+            }
+        }
+        if warm < state.config.warm_guests && state.capacity.available_permits() > 1 {
+            let started = async {
+                let disk = state.new_disk().await?;
+                match state.boot(disk.clone()).await {
+                    Ok(vm) => {
+                        state.warm.lock().await.push(vm);
+                        Ok(())
+                    }
+                    Err(error) => {
+                        let _ = tokio::fs::remove_file(disk).await;
+                        Err(error)
+                    }
+                }
+            }
+            .await;
+            if let Err(error) = started {
+                tracing::warn!(%error, "cannot preboot microVM");
+            }
+        }
+        tokio::select! {
+            () = state.stop.notified() => return,
+            () = tokio::time::sleep(SWEEP) => {}
+        }
+    }
+}

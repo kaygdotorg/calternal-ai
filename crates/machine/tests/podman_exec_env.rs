@@ -29,6 +29,7 @@ async fn podman_exec_keeps_environment_values_out_of_host_argv() {
     let backend = PodmanBackend::new(&fake, dir.path().join("root"), "unused:image");
     let sandbox = backend
         .start(&SandboxSpec {
+            space_id: calternal_types::SpaceId::new(),
             code_directory: None,
             worker: None,
             account_id: Uuid::new_v4(),

@@ -36,6 +36,7 @@ pub struct PodmanBackend {
     podman: PathBuf,
     root: PathBuf,
     default_image: String,
+    guest: bool,
 }
 
 impl PodmanBackend {
@@ -50,7 +51,16 @@ impl PodmanBackend {
             podman: podman.into(),
             root: root.into(),
             default_image: default_image.into(),
+            guest: false,
         }
+    }
+
+    /// Reuse rootless Podman inside a guest with the packaged image and no container networking.
+    #[cfg(target_os = "linux")]
+    pub(super) fn in_microvm(root: PathBuf, image: String) -> Self {
+        let mut backend = Self::new("podman", root, image);
+        backend.guest = true;
+        backend
     }
 
     /// Whether `podman version` runs. One process spawn, about 50 ms.
@@ -158,11 +168,24 @@ impl Backend for PodmanBackend {
         Box::pin(async move {
             let root = self.canonical_root().await?;
             let name = Self::container_name(spec.account_id, spec.thread_id);
+            let worker_dir = if self.guest {
+                PathBuf::from("/run/agent/workers")
+            } else {
+                root.join("workers")
+            }
+            .join(spec.thread_id.to_string());
             let result = async {
                 let account = root.join("accounts").join(spec.account_id.to_string());
-                let home = account.join("home");
+                let home = if self.guest {
+                    account
+                        .join("spaces")
+                        .join(spec.space_id.to_string())
+                        .join("home")
+                } else {
+                    account.join("home")
+                };
                 let dir = if spec.worker.is_some() {
-                    root.join("workers").join(spec.thread_id.to_string())
+                    worker_dir.clone()
                 } else {
                     account.join("threads").join(spec.thread_id.to_string())
                 };
@@ -193,7 +216,11 @@ impl Backend for PodmanBackend {
                 } else {
                     spec.limits
                 };
-                let image = spec.image.as_deref().unwrap_or(&self.default_image);
+                let image = if self.guest {
+                    &self.default_image
+                } else {
+                    spec.image.as_deref().unwrap_or(&self.default_image)
+                };
                 let label = format!("org.calternal.thread={}", spec.thread_id);
                 let home_mount = format!("{}:/home/agent", home.display());
                 let mount = format!("{}:/work", work.display());
@@ -261,11 +288,24 @@ impl Backend for PodmanBackend {
                     .map(|s| s.to_string())
                     .collect();
                 }
+                if self.guest {
+                    args.extend(["--cgroup-parent".into(), "/agent/ctr".into()]);
+                    if spec.worker.is_none() {
+                        args.extend([
+                            "--pull=never".into(),
+                            "--network=none".into(),
+                            "--log-driver=none".into(),
+                            "--volume".into(),
+                            "/opt/calternal:/usr/local/bin/calternal:ro".into(),
+                        ]);
+                    }
+                }
                 // Linux hosts supply the matching operation CLI read-only. Other
                 // host platforms must put a Linux CLI in the container image.
                 // Nix builds retain immutable store references for their libraries.
                 #[cfg(target_os = "linux")]
-                if spec.worker.is_none()
+                if !self.guest
+                    && spec.worker.is_none()
                     && let Some(exe) = super::cli_program().await
                 {
                     args.extend([
@@ -311,10 +351,7 @@ impl Backend for PodmanBackend {
             }
             .await;
             if result.is_err() && spec.worker.is_some() {
-                let _ = tokio::fs::remove_dir_all(
-                    root.join("workers").join(spec.thread_id.to_string()),
-                )
-                .await;
+                let _ = tokio::fs::remove_dir_all(&worker_dir).await;
             }
             result
         })

@@ -28,7 +28,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 /// Protocol version spoken by this build; the server refuses other versions.
-pub const PROTOCOL_VERSION: u32 = 4;
+pub const PROTOCOL_VERSION: u32 = 5;
 
 /// Path prefix of every machine-facing endpoint. The server's account guard
 /// skips it: these endpoints authenticate the machine themselves.
@@ -125,7 +125,7 @@ pub struct SessionFinish {
 /// An open session. Opening another session for the same machine ends this one.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionGranted {
-    /// Actual backend authorized for this session: podman or direct.
+    /// Actual backend authorized for this session: podman, direct or microvm.
     pub backend: String,
     /// Bearer token for `sync` and `output`; held in memory only, on both sides.
     pub token: String,
@@ -160,6 +160,8 @@ pub enum SandboxState {
     Running,
     /// A paused sandbox.
     Frozen,
+    /// A running guest exited. Provider leases may resume from their last checkpoint.
+    Lost,
     /// Could not start, or was closed locally; the server reconciles the lease.
     Failed {
         /// Short, path-free description.
@@ -265,6 +267,8 @@ pub struct Limits {
 /// What to start for a thread.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SandboxSpec {
+    /// Space UUID governing the persistent home for an agent thread.
+    pub space_id: SpaceId,
     /// Local development fixture code directory, mounted read-only by the same
     /// backend. Never serialized: a remote assignment can carry source only.
     #[serde(skip)]
@@ -319,8 +323,6 @@ pub enum Down {
         lease_id: Uuid,
         /// Fencing token; output with an older fence is refused.
         fence: u64,
-        /// Space the work belongs to.
-        space_id: SpaceId,
         /// Account the work runs for.
         account_id: AccountId,
         /// Sandbox to start.
@@ -378,6 +380,10 @@ pub enum Stream {
     /// Standard error.
     Stderr,
 }
+
+/// Machine-generated exit status for a disappearing guest. The registry must
+/// fence the lease and preserve its checkpoint before returning the exit.
+pub const GUEST_LOST: &str = "the sandbox guest stopped";
 
 /// How an exec ended.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]

@@ -164,6 +164,7 @@ impl Runner {
                         Some(Err(reason)) => SandboxState::Failed {
                             reason: reason.clone(),
                         },
+                        Some(Ok(sandbox)) if !sandbox.available() => SandboxState::Lost,
                         Some(Ok(_)) => SandboxState::Running,
                     }
                 },

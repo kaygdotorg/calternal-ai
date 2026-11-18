@@ -52,6 +52,7 @@ mod erasure;
 mod erasure_queue;
 mod execs;
 pub mod http;
+mod microvm;
 mod owners;
 pub mod provider;
 pub(crate) mod readiness;

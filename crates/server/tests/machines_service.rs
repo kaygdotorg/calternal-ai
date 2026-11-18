@@ -301,6 +301,7 @@ async fn automatic_backend_selection_follows_owner_consent_and_pool_cannot_be_di
     tokio::task::block_in_place(|| svc.set_direct(owner, id, false)).unwrap();
     assert_eq!(handshake("auto").unwrap().backend, "podman");
     assert_eq!(handshake("direct").unwrap_err().code, ErrorCode::Forbidden);
+    assert_eq!(handshake("microvm").unwrap_err().code, ErrorCode::Forbidden);
     let (code, _) = tokio::task::block_in_place(|| svc.issue_code(Owner::Pool)).unwrap();
     let pool_key = MachineKey::generate().unwrap();
     let pool = tokio::task::block_in_place(|| {
@@ -315,18 +316,75 @@ async fn automatic_backend_selection_follows_owner_consent_and_pool_cannot_be_di
     })
     .unwrap()
     .machine_id;
-    let challenge = svc.session_start(pool).unwrap();
-    let grant = svc
-        .session_finish(&SessionFinish {
+    let pool_session = |backend: &str| {
+        let challenge = svc.session_start(pool).unwrap();
+        svc.session_finish(&SessionFinish {
             machine_id: pool,
             signature: pool_key.sign_session(pool, &challenge),
             challenge,
             boot_id: Uuid::new_v4(),
             protocol: calternal_machine::protocol::PROTOCOL_VERSION,
-            backend: "auto".into(),
+            backend: backend.into(),
         })
+        .unwrap()
+    };
+    assert_eq!(pool_session("auto").backend, "podman");
+    let grant = pool_session("microvm");
+    assert_eq!(grant.backend, "microvm");
+    tokio::task::block_in_place(|| svc.set_pool_grant(owner, true)).unwrap();
+    let machine = M {
+        id: pool,
+        key: pool_key,
+        token: grant.token,
+    };
+    sync(&svc, &machine, Vec::new()).await;
+    let run = svc
+        .request_run(SpaceId::new(), owner, Uuid::new_v4(), None)
         .unwrap();
-    assert_eq!(grant.backend, "podman");
+    let exec = svc
+        .exec(owner, run.lease_id, vec!["true".into()], vec![])
+        .unwrap();
+    let commands = sync(&svc, &machine, Vec::new()).await;
+    let fence = commands
+        .iter()
+        .find_map(|command| match command {
+            Down::Assign {
+                lease_id, fence, ..
+            } if *lease_id == run.lease_id => Some(*fence),
+            _ => None,
+        })
+        .expect("the entitled account was placed on the pool");
+    let post = OutputPost {
+        lease_id: run.lease_id,
+        fence,
+        exec_id: exec,
+        chunks: vec![Chunk {
+            seq: 1,
+            event: ChunkEvent::Exit(ExitInfo {
+                error: Some(calternal_machine::protocol::GUEST_LOST.into()),
+                ..ExitInfo::default()
+            }),
+        }],
+    };
+    assert_eq!(
+        svc.output(pool, post.clone()).unwrap_err().code,
+        ErrorCode::Conflict
+    );
+    assert_eq!(
+        svc.run(owner, run.lease_id).unwrap().state,
+        calternal_server::machines::LeaseState::Interrupted
+    );
+    assert_eq!(
+        svc.resume_run(AccountId::new(), run.lease_id)
+            .unwrap_err()
+            .code,
+        ErrorCode::NotFound
+    );
+    svc.resume_run(owner, run.lease_id).unwrap();
+    assert_eq!(
+        svc.output(pool, post).unwrap_err().code,
+        ErrorCode::Conflict
+    );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

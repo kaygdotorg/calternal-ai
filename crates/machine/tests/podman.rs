@@ -39,6 +39,7 @@ async fn backend(root: &std::path::Path) -> Option<PodmanBackend> {
 
 fn spec(limits: Limits) -> SandboxSpec {
     SandboxSpec {
+        space_id: calternal_types::SpaceId::new(),
         code_directory: None,
         worker: None,
         account_id: Uuid::new_v4(),
@@ -283,10 +284,10 @@ async fn parking_a_lease_removes_its_container_and_restart_reuses_its_mount() {
     let lease_id = Uuid::new_v4();
     let mut sandbox = spec(Limits::default());
     sandbox.account_id = account_id.as_uuid();
+    sandbox.space_id = space_id;
     let assign = || Down::Assign {
         lease_id,
         fence: 1,
-        space_id,
         account_id,
         spec: sandbox.clone(),
     };

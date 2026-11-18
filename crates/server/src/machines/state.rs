@@ -217,9 +217,9 @@ impl State {
         let msg = Down::Assign {
             lease_id: lease,
             fence: l.row.fence,
-            space_id: l.row.space,
             account_id: l.row.account,
             spec: SandboxSpec {
+                space_id: l.row.space,
                 code_directory: None,
                 worker: self.workers.get(&lease).cloned(),
                 account_id: l.row.account.as_uuid(),
@@ -527,6 +527,9 @@ impl State {
                     {
                         l.state = LeaseState::Running;
                         self.persist(r.lease_id);
+                    }
+                    SandboxState::Lost => {
+                        super::microvm::lost(self, machine, r.lease_id, settings, keep_files)
                     }
                     SandboxState::Failed { reason } => {
                         let why = format!("sandbox failed: {reason}");

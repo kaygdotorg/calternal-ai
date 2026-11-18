@@ -50,7 +50,7 @@ pub async fn run(config: Config, shutdown: impl std::future::Future<Output = ()>
         .map_err(|e| Error::Protocol(e.0))?;
     let link = Arc::new(Link::new(&creds.server)?);
     let runner = Arc::new(Runner::new(
-        config.backend,
+        config.backend.clone(),
         link.clone(),
         config.max_sandboxes,
     ));
@@ -61,12 +61,13 @@ pub async fn run(config: Config, shutdown: impl std::future::Future<Output = ()>
         () = shutdown => Ok(()),
     };
     let closed = runner.release_all().await;
+    let backend_closed = config.backend.shutdown().await;
     result.and_then(|()| {
         if closed {
-            Ok(())
+            backend_closed.map_err(|e| Error::Protocol(e.0))
         } else {
             Err(Error::Protocol(
-                "sandbox teardown incomplete; restart the machine role to sweep its containers"
+                "sandbox teardown incomplete; restart the machine role to sweep its sandboxes"
                     .into(),
             ))
         }

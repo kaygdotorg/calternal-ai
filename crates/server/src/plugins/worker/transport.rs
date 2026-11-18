@@ -46,6 +46,7 @@ pub(super) async fn spawn(
         .map_err(|_| Error::unavailable("plugin manifest rejected by worker session"))?;
     let sandbox = backend
         .start(&SandboxSpec {
+            space_id: space,
             code_directory: (backend.name() != "machine")
                 .then(|| bundle.parent().unwrap_or(Path::new("/")).to_path_buf()),
             account_id: account.as_uuid(),

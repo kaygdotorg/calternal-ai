@@ -13,9 +13,7 @@
 //!   Direct processes as the machine user; owner consent is required.
 //!   It provides no filesystem, network or resource isolation.
 //!
-//! A future microVM backend (a VM per thread, containers inside) fits the same
-//! trait: `start` boots or adopts the VM, `exec` runs through its agent, `freeze`
-//! and `resume` map to the VM pause API, `release` leaves the VM running.
+//! The Linux microVM backend runs thread containers inside an account guest.
 //!
 //! Output back-pressure: each exec has a bounded channel of [`OUTPUT_CHANNEL`]
 //! chunks of at most [`CHUNK_BYTES`]. When the consumer stops reading, the reader
@@ -23,6 +21,8 @@
 
 pub mod configured;
 pub mod direct;
+#[cfg(target_os = "linux")]
+pub mod microvm;
 pub mod podman;
 pub mod worker;
 
@@ -59,7 +59,7 @@ impl SandboxError {
 pub type SandboxResult<T> = std::result::Result<T, SandboxError>;
 
 /// A command to run inside a sandbox.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct ExecRequest {
     /// Program and arguments; no shell is implied.
     pub argv: Vec<String>,
@@ -115,6 +115,11 @@ pub trait Backend: Send + Sync + 'static {
     fn initialize(&self) -> BoxFuture<'_, SandboxResult<()>> {
         Box::pin(async { Ok(()) })
     }
+    /// Reap backend-owned runtime processes before dropping machine ownership.
+    /// Stateless backends finish when the runner releases their leases.
+    fn shutdown(&self) -> BoxFuture<'_, SandboxResult<()>> {
+        Box::pin(async { Ok(()) })
+    }
     /// Short name for logs and capacity reports.
     fn name(&self) -> &'static str;
     /// Backend request in the machine handshake. `auto` follows the owner's stored setting.
@@ -151,6 +156,12 @@ pub trait Backend: Send + Sync + 'static {
 
 /// One thread's sandbox.
 pub trait Sandbox: Send + Sync {
+    /// Whether the backing guest is still alive. Cheap and synchronous for
+    /// reporting to the machine registry. Native sandboxes rely on exec exits.
+    fn available(&self) -> bool {
+        true
+    }
+
     /// Run a command in the work directory and stream its output.
     fn exec(&self, request: ExecRequest) -> BoxFuture<'_, SandboxResult<Exec>>;
     /// Pause every process; memory stays resident.

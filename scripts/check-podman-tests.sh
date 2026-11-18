@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run one test command with a private TMPDIR. Fail if its Podman artifacts survive.
+# Run one test command with a private TMPDIR. Fail on orphan containers or VMMs.
 set -euo pipefail
 if (($# == 0)); then
   echo 'Usage: check-podman-tests.sh COMMAND [ARG ...]' >&2
@@ -29,4 +29,31 @@ if [[ -n $leaked ]]; then
   exit 1
 fi
 printf '%s\n' 'Podman leak check passed.'
+if [[ -d /proc ]]; then
+  python3 - "$test_root" <<'PYTHON'
+import os
+from pathlib import Path
+import sys
+
+root = Path(sys.argv[1])
+leaked = []
+for proc in Path("/proc").iterdir():
+    if not proc.name.isdecimal():
+        continue
+    try:
+        if proc.stat().st_uid != os.geteuid():
+            continue
+        argv = (proc / "cmdline").read_bytes().rstrip(b"\0").split(b"\0")
+        if not argv or Path(os.fsdecode(argv[0])).name != "firecracker":
+            continue
+        config = Path(os.fsdecode(argv[argv.index(b"--config-file") + 1]))
+        if config.is_relative_to(root):
+            leaked.append(proc.name)
+    except (OSError, ValueError, IndexError):
+        continue
+if leaked:
+    sys.exit(f"Test command left Firecracker processes in {root}: {', '.join(leaked)}")
+print("Firecracker leak check passed.")
+PYTHON
+fi
 exit "$status"

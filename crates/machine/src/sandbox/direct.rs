@@ -262,6 +262,7 @@ mod tests {
 
     fn spec() -> SandboxSpec {
         SandboxSpec {
+            space_id: calternal_types::SpaceId::new(),
             code_directory: None,
             worker: None,
             account_id: Uuid::new_v4(),
