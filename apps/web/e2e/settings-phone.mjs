@@ -19,11 +19,12 @@ try {
       const vw = innerWidth, cs = getComputedStyle(page), inner = page.getBoundingClientRect().width - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
       const backs = [...page.querySelectorAll("button, a")].filter((b) => /^\s*(back|<)/i.test(b.textContent ?? "") || (b.getAttribute("aria-label") ?? "").toLowerCase() === "back").length;
       const groups = [...page.querySelectorAll("section.g")].map((g) => Math.round(g.getBoundingClientRect().width));
-      return { sels: [...page.querySelectorAll(".row-selector")].map((e) => Math.round(e.getBoundingClientRect().width)), vw, inner: Math.round(inner), backs, split: page.classList.contains("split") || !!document.querySelector(".split"), groups, over: document.documentElement.scrollWidth - vw, left: Math.round(page.getBoundingClientRect().left + parseFloat(cs.paddingLeft)) };
+      return { tall: [...page.querySelectorAll(".selector")].filter((e) => e.getBoundingClientRect().height > 90).length, sels: [...page.querySelectorAll(".row-selector")].map((e) => Math.round(e.getBoundingClientRect().width)), vw, inner: Math.round(inner), backs, split: page.classList.contains("split") || !!document.querySelector(".split"), groups, over: document.documentElement.scrollWidth - vw, left: Math.round(page.getBoundingClientRect().left + parseFloat(cs.paddingLeft)) };
     });
     if (!r) { ok(false, `${h}: has a page`); continue; }
     ok(r.backs === 0 && !r.split, `${h}: one flat page, no Back control, no split`, `backs ${r.backs}`);
     ok(r.groups.every((w) => w >= r.inner - 2), `${h}: every section fills the content width`, `${r.groups.join(",")} of ${r.inner}`);
+    ok(r.tall === 0, `${h}: no Selector is taller than a control`, String(r.tall));
     ok(r.sels.every((w) => w >= Math.min(r.inner - 2 * 24, 448) - 4 && w <= 449), `${h}: a Selector that is its own row's control fills the row up to 28 rem`, r.sels.join(","));
     ok(r.inner >= r.vw - 2 * 40 && r.left <= 40 && r.over <= 0, `${h}: inside the gutters, nothing wider than the screen`, `content ${r.inner}, left ${r.left}, over ${r.over}`);
   }
