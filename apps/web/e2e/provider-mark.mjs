@@ -57,6 +57,32 @@ try {
   await p.keyboard.press("Escape"); await p.waitForTimeout(300);
   ok((await p.locator("[role=tooltip] .card").count()) === 0, "Escape closes it");
   await ctx.close();
+  // No hanging indent (owner, 2026-11-18): the mark is part of the first line; later lines start at the message's own left edge, on a desktop and a phone.
+  for (const device of ["desktop", "phone"]) {
+    const { page: q, ctx: c2 } = await open(browser, device, "dark", "/threads/t-run");
+    await q.waitForTimeout(900);
+    const g = await q.evaluate(() => {
+      const out = {}; for (const m of document.querySelectorAll(".msg.agent-row")) m.style.maxWidth = "22rem"; // narrow, so a paragraph runs to several lines on a desktop too
+      for (const kind of ["lead-text", "lead-row"]) {
+        const all = [...document.querySelectorAll(".agent." + kind)]; out.classes = [...document.querySelectorAll(".msg.agent-row .agent")].map((e) => e.className).slice(0, 6); const agent = kind === "lead-text" ? all.find((e) => { const r = document.createRange(); const pe = e.querySelector(".md > p"); if (!pe) return false; r.selectNodeContents(pe); return r.getClientRects().length > 1; }) ?? all[0] : all[0]; if (!agent) { out[kind] = null; continue; }
+        const mark = agent.querySelector("button.mark").getBoundingClientRect(); const a = agent.getBoundingClientRect();
+        if (kind === "lead-text") {
+          const pEl = agent.querySelector(".md > p"); const r = document.createRange(); r.selectNodeContents(pEl);
+          const lines = []; for (const x of r.getClientRects()) { if (!lines.some((l) => Math.abs(l.top - x.top) < 4)) lines.push({ top: x.top, left: x.left }); else { const l = lines.find((l) => Math.abs(l.top - x.top) < 4); l.left = Math.min(l.left, x.left); } }
+          out[kind] = { markRight: mark.right, markLeft: mark.left, agentLeft: a.left, first: lines[0].left, rest: lines.slice(1).map((l) => l.left), n: lines.length, markTop: mark.top, firstTop: lines[0].top };
+        } else {
+          const head = agent.querySelector(".block-head").getBoundingClientRect(); const lab = agent.querySelector(".block-head .sum").getBoundingClientRect();
+          out[kind] = { markLeft: mark.left, markRight: mark.right, headLeft: head.left, headRight: head.right, labelLeft: lab.left, markMid: mark.top + mark.height / 2, headMid: head.top + head.height / 2 };
+        }
+      }
+      return out;
+    });
+    const t = g["lead-text"], r = g["lead-row"];
+    ok(!!t && t.markLeft >= t.agentLeft - 0.5 && t.markRight <= t.first + 0.5, `${device}: the mark is inline at the start of the first line (the text begins after it)`, JSON.stringify(t));
+    ok(!!t && t.n >= 2 && t.rest.every((x) => Math.abs(x - t.agentLeft) <= 1), `${device}: no hanging indent, every later line starts at the message's left edge`, t ? t.rest.join(",") : "");
+    ok(!!r && r.markLeft >= r.headLeft && r.markRight <= r.labelLeft && Math.abs(r.markMid - r.headMid) <= 1.5, `${device}: a message that starts with a row has the mark inside the row, before its label, on its centre`, JSON.stringify(r) + JSON.stringify(g.classes));
+    await c2.close();
+  }
 } catch (err) { console.log("FAIL  " + err.message); bad++; }
 await browser.close(); await stop();
 process.exit(bad ? 1 : 0);

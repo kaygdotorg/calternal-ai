@@ -19,6 +19,15 @@ pub(crate) const OWNER_TABLES: &[(char, &str)] = &[
 // owner mapping here, or recovery configuration refuses the database.
 const SPECS: &[(&str, char, &str)] = &[
     ("users", '1', "id"),
+    ("oidc_providers", '0', ""),
+    ("oidc_links", '1', "user_id"),
+    ("oidc_sessions", '1', "user_id"),
+    ("account_details", '1', "user_id"),
+    ("account_recovery_codes", '1', "user_id"),
+    ("account_email_challenges", '1', "user_id"),
+    ("account_recovery_flows", '1', "user_id"),
+    ("account_recovery_grants", '1', "user_id"),
+    ("account_security_events", '1', "user_id"),
     ("passkeys", '1', "user_id"),
     ("setup_tokens", '1', "user_id"),
     ("installations", '1', "user_id"),
@@ -31,6 +40,9 @@ const SPECS: &[(&str, char, &str)] = &[
     ("machines", '1', "owner_account"),
     ("machine_pool_grants", '1', "account"),
     ("spaces", '2', "id"),
+    ("item_grants", '2', "space_id"),
+    ("item_link_policies", '2', "space_id"),
+    ("item_share_seen", '1', "account_id"),
     ("space_group_memberships", '2', "space_id"),
     ("space_memberships", '2', "space_id"),
     ("groups", '3', "id"),
@@ -44,10 +56,10 @@ const SPECS: &[(&str, char, &str)] = &[
     ("space_role_capabilities", '0', ""),
     ("development_directory", '0', ""),
 ];
-/// Comparable format-three owner record for delta capture; never exposed to tenants.
+/// Comparable private owner record used for delta capture and migration.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub(crate) struct Record {
-    /// Recovery record format (three), independent of SQLite migration numbers.
+    /// Recovery record version, independent of SQLite migration numbers.
     pub version: u32,
     /// Externally pinned installation UUID.
     pub installation: Uuid,
@@ -68,7 +80,8 @@ fn key_expr(kind: char, owner: &str, prefix: &str) -> String {
         "CASE WHEN {value} IS NULL THEN '{GLOBAL}' ELSE '{kind}'||replace(lower({value}),'-','') END"
     )
 }
-/// Installs format-three chain witnesses and dirty-owner triggers; seeds initial log publication.
+/// Installs the chain witness and the selected format's change triggers.
+/// Marks the existing rows for the first protected publication.
 pub(crate) fn initialize(c: &Connection, version: u32) -> Result<()> {
     let tx = rusqlite::Transaction::new_unchecked(c, rusqlite::TransactionBehavior::Immediate)
         .map_err(err)?;

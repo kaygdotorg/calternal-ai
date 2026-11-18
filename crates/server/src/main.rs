@@ -124,6 +124,19 @@ fn main() {
             appdata,
             installation_id,
         } => out.finish(admin_cli::setup_code(&appdata, &installation_id)),
+        Cmd::AccountRecover {
+            account,
+            reason,
+            identity_verified,
+            appdata,
+            installation_id,
+        } => out.finish(admin_cli::account_recover(
+            &appdata,
+            &installation_id,
+            &account,
+            &reason,
+            identity_verified,
+        )),
         Cmd::ReceiptStatus {
             appdata,
             installation_id,
@@ -326,6 +339,18 @@ async fn serve(
             ));
         }
     };
+    config.email_required = match std::env::var("CALTERNAL_ACCOUNT_EMAIL_REQUIRED").as_deref() {
+        Ok("1" | "true") => true,
+        Ok("0" | "false") | Err(std::env::VarError::NotPresent) => false,
+        _ => {
+            return Err(boot(
+                1,
+                "invalid_input",
+                "invalid account email policy",
+                DATA_HINT,
+            ));
+        }
+    };
     // Directory receipts follow the same retention as space receipts.
     config.receipt_retention = receipt_retention;
     config.invite_retention = invite_retention;
@@ -340,7 +365,7 @@ async fn serve(
     let directory_root = data_dir.clone();
     #[cfg(feature = "perf-timings")]
     startup_phases.mark("runtime");
-    let directory = tokio::task::spawn_blocking(move || {
+    let mut directory = tokio::task::spawn_blocking(move || {
         let data_dir = directory_root;
         let directory =
             match StoredDirectory::open(&data_dir, config, development, Some(Arc::new(recovery))) {
@@ -360,6 +385,11 @@ async fn serve(
     .map_err(|e| boot(1, "failed", e.to_string(), DATA_HINT))??;
     #[cfg(feature = "perf-timings")]
     startup_phases.mark("authority");
+    directory
+        .configure_account_mail()
+        .map_err(|e| boot(1, "invalid_input", e.to_string(), DATA_HINT))?;
+    #[cfg(feature = "perf-timings")]
+    startup_phases.mark("account_mail");
     directory.spaces.maintain_receipts().await.map_err(|e| {
         boot(
             1,
@@ -422,14 +452,18 @@ async fn serve(
             .purge_invites()
             .await
             .map_err(|e| boot(1, "failed", format!("invite cleanup: {e}"), DATA_HINT))?;
+        invite_tasks.spawn(people_maintenance::sweep_account_security(auth.clone()));
         invite_tasks.spawn(people_maintenance::sweep_invites(auth, backlog));
     }
     let owner_setup = calternal_server::auth::Directory::http_auth(&directory).map(|service| {
-        Arc::new(calternal_server::owner_setup::OwnerSetup::new(
-            service.auth.clone(),
-            &data_dir,
-            &public_origin,
-        ))
+        Arc::new(
+            calternal_server::owner_setup::OwnerSetup::new(
+                service.auth.clone(),
+                &data_dir,
+                &public_origin,
+            )
+            .with_account_mail(&service),
+        )
     });
     let setup_file = if let Some(setup) = &owner_setup {
         setup

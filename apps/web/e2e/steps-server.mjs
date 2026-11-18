@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { chromium } from "playwright";
 import { checkMessageActions } from "./actions-check.mjs";
-import { expandComposer } from "./lib.mjs";
+import { expandComposer, signUp } from "./lib.mjs";
 
 const PORT = Number(process.env.CAL_STEPS_PORT ?? 3413);
 const BIN = process.env.CAL_BIN ?? `${process.env.HOME}/Developer/lanes/ui-threads/target/debug/calternal`;
@@ -26,7 +26,7 @@ try {
   const p = await ctx.newPage(); const cdp = await ctx.newCDPSession(p);
   await cdp.send("WebAuthn.enable"); await cdp.send("WebAuthn.addVirtualAuthenticator", { options: { protocol: "ctap2", transport: "internal", hasResidentKey: true, hasUserVerification: true, isUserVerified: true, automaticPresenceSimulation: true } });
   await p.goto(`${url}/?server=1`); await p.waitForSelector("html[data-ready]");
-  await p.fill('input[name="token"]', token); await p.fill('input[name="name"]', "Steps Owner"); await p.getByRole("button", { name: "Create passkey" }).click();
+  await signUp(p, token, "Steps Owner");
   await p.waitForTimeout(2500); await p.evaluate(() => localStorage.removeItem("cal.onboarding")); /* the first owner lands in the onboarding (shell lane): the account exists, leave the wizard */ await p.waitForSelector("html[data-ready]"); await p.waitForTimeout(1200);
   const space = (await op(p, "spaces.list", {})).data.spaces.find((s) => s.personal).id;
   for (const id of ["calternal-claude-code", "calternal-orchestrator"]) await op(p, "plugins.enable", { space_id: space, plugin_id: id });
