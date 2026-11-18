@@ -19,17 +19,27 @@ const meta = (id) => ({ title: files[id].title, provider: "calternal-claude-code
 const state = { turn: { thread: null, job: null, timer: null } }; // one streaming turn at a time
 const feeds = new Set();
 const sendFeed = (kind, item, data = {}) => { for (const r of feeds) r.write(`data: ${JSON.stringify({ type: "entry", space_id: SPACE, entry: { kind, item, data } })}\n\n`); };
-const view = (id) => ({ thread: { id, space_id: SPACE, address: `/threads/${id}`, revision: `v${files[id].md.length}`, turn_state: state.turn.thread === id ? "running" : "idle", metadata: meta(id), markdown: files[id].md }, ...(state.turn.thread === id ? { job: { id: state.turn.job, state: "running" } } : {}) });
+const view = (id) => ({ thread: { id, space_id: SPACE, address: `/threads/${id}`, revision: revOf(id), turn_state: state.turn.thread === id ? "running" : "idle", metadata: meta(id), markdown: files[id].md }, ...(state.turn.thread === id ? { job: { id: state.turn.job, state: "running" } } : {}) });
+// Revisions and checkpoint additions as the real server keeps them (docs/threads.md, "Read one checkpoint addition"): every save has a revision; `deltas` answers `since` for the save that reached it.
+let rev = 0; const revs = {}; const deltas = new Map();
+const revOf = (id) => (revs[id] ??= `r${++rev}`);
+const bodyBytes = (id) => Buffer.byteLength(files[id].md) - Buffer.byteLength(files[id].md.slice(0, files[id].md.indexOf("\n---\n") + 5));
+/** One checkpoint: `text` is appended at the end of the body; the journal entry carries the range, the revision it reached and the revision it started from. */
+function save(id, text) {
+  const f = files[id]; const base = revOf(id); const offset = bodyBytes(id); const start = Buffer.byteLength(f.md) ; f.md += text; revs[id] = `r${++rev}`;
+  deltas.set(revs[id], { id, base_revision: base, revision: revs[id], offset, markdown: text });
+  sendFeed("threads.checkpoint", id, { revision: revs[id], append: { base_revision: base, offset, start, length: Buffer.byteLength(text) } });
+}
 function startTurn(id, seconds) {
   const job = `job-${Date.now()}`; state.turn = { thread: id, job, timer: null };
   const mid = uuid(900000 + Math.floor(Math.random() * 1e5));
-  const f = files[id]; f.md += `<!-- message:${mid} role:agent time:${new Date().toISOString()} turn:${job} -->\n`;
-  let n = 0; const begin = Date.now();
   sendFeed("threads.turn_state_changed", id, { job_id: job, state: "running", job_state: "running" });
+  save(id, `<!-- message:${mid} role:agent time:${new Date().toISOString()} turn:${job} -->\n`);
+  let n = 0, pend = ""; const begin = Date.now();
   state.turn.timer = setInterval(() => {
-    n++; f.md = f.md.replace(/\n?(<!-- \/message -->\n)?$/, "") + (n === 1 ? "" : " ") + `streamed words number ${n} for the person to read as it arrives`;
-    if (n % 5 === 0) sendFeed("threads.checkpoint", id, { revision: `v${f.md.length}` });
-    if (Date.now() - begin > seconds * 1000) { clearInterval(state.turn.timer); f.md += "\n<!-- /message -->\n"; sendFeed("threads.checkpoint", id, {}); sendFeed("threads.turn_state_changed", id, { job_id: job, state: "idle", job_state: "done" }); state.turn.thread = null; }
+    n++; pend += (n === 1 ? "" : " ") + `streamed words number ${n} for the person to read as it arrives`;
+    if (n % 5 === 0) { save(id, pend); pend = ""; }
+    if (Date.now() - begin > seconds * 1000) { clearInterval(state.turn.timer); save(id, pend + "\n<!-- /message -->\n"); sendFeed("threads.turn_state_changed", id, { job_id: job, state: "idle", job_state: "done" }); state.turn = { thread: null, job: null, timer: null }; }
   }, 100);
   return job;
 }
@@ -46,8 +56,8 @@ http.createServer((req, res) => {
       const { operation, input } = JSON.parse(body); const ok = (data) => json(res, { request_id: "r", ok: true, data });
       if (operation === "spaces.list") return ok({ spaces: [{ id: SPACE, name: "Personal" }] });
       if (operation === "threads.list") return ok({ threads: (process.env.EMPTY ? [] : [T10K, T5MB]).map((id) => ({ id, address: `/threads/${id}`, revision: "r", turn_state: state.turn.thread === id ? "running" : "idle", metadata: meta(id) })) });
-      if (operation === "threads.get") return ok(view(input.id));
-      if (operation === "threads.send") { files[input.id].md += msg(20000, "person", input.message); const job = startTurn(input.id, +(process.env.TURN_SECONDS ?? 20)); return ok({ ...view(input.id), job: { id: job, state: "queued" } }); }
+      if (operation === "threads.get") { if (input.since) { const d = deltas.get(input.since.revision); return d && d.base_revision === input.since.append.base_revision ? ok({ delta: d }) : json(res, { request_id: "r", ok: false, error: { code: "conflict", message: "checkpoint delta unavailable", details: { reason: "checkpoint_unavailable" } } }, 409); } return ok(view(input.id)); }
+      if (operation === "threads.send") { files[input.id].md += msg(20000, "person", input.message); revs[input.id] = `r${++rev}`; sendFeed("threads.send", input.id, {}); const job = startTurn(input.id, +(process.env.TURN_SECONDS ?? 20)); return ok({ ...view(input.id), job: { id: job, state: "queued" } }); }
       return json(res, { request_id: "r", ok: false, error: { code: "not_found", message: "unknown operation" } }, 404);
     }); return;
   }
