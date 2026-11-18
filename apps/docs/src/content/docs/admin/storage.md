@@ -98,8 +98,8 @@ lifecycle worker wakes after commit, fsyncs the current file and directory, then
 marks placement with NORMAL bookkeeping. Lost bookkeeping is replayed from durable
 intents and file hashes. Pending heads pin their existing cache slots; no second
 cache, queue, per-write thread or unbounded task list is added. The worker pins the
-host's root locks while doing I/O. It does not poll while idle: the inherited
-30-second retirement deadline remains; failed placement retries after 50 ms.
+host's root locks while doing I/O. The inherited 30-second idle sweep remains.
+A failed placement or a busy slot schedules another pass after 50 ms.
 ADR 0062's materialization maximum is one second after acknowledgement. The oldest
 pending age never extends when newer edits arrive. A missed deadline refuses new
 writes in that space until placement succeeds; failed/outside-changed files remain
