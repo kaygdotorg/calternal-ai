@@ -23,7 +23,7 @@ const sample = (page, name, ms) => page.evaluate(([name, ms]) => new Promise((re
   await sw.scrollIntoViewIfNeeded();
   const bb = await knob(page, /Animations/).boundingBox();
   await page.mouse.move(bb.x + bb.width / 2, bb.y + bb.height / 2); await page.mouse.down();
-  await page.mouse.move(bb.x + bb.width / 2 - 10, bb.y + bb.height / 2, { steps: 3 }); await page.mouse.move(bb.x + bb.width / 2 - travel + 4, bb.y + bb.height / 2, { steps: 6 });
+  await page.mouse.move(bb.x + bb.width / 2 - 10, bb.y + bb.height / 2, { steps: 3 }); await page.mouse.move(bb.x + bb.width / 2 - travel - 12, bb.y + bb.height / 2, { steps: 6 });
   ok((await sw.getAttribute("aria-checked")) === "false", "dragging the knob past the middle flips it before release");
   await page.keyboard.press("Escape"); await page.mouse.up(); await page.waitForTimeout(700);
   ok((await sw.getAttribute("aria-checked")) === "true", "Escape during a drag puts it back to how it was");
