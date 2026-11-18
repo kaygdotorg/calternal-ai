@@ -5,6 +5,7 @@ impl RecoverySink for Coordinator {
         &self.serial
     }
     fn reconcile(&self, c: &Connection) -> calternal_auth::Result<()> {
+        let _revision = calternal_types::begin_item_access_change();
         let run = || -> Result<()> {
             if !c.is_autocommit() {
                 return Err(invalid());

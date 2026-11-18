@@ -74,6 +74,7 @@ impl OwnerLifecycle {
     /// Refuse new admission for the owner. This does not wait for admitted I/O,
     /// so it can run in the authority commit's in-memory revocation callback.
     pub fn close(&self, id: Uuid) {
+        let _revision = crate::begin_item_access_change();
         self.bucket(id).lock().entry(id).or_default().erasing = true;
     }
 

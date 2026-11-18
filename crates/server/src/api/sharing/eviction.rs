@@ -16,14 +16,25 @@ pub(super) async fn after_revoke<D: Directory>(
         item: Uuid,
         account: AccountId,
     ) -> Result<(), Error> {
-        let (caps, _) =
-            crate::resolve::item_capabilities(state, account, space, kind, item).await?;
-        if !caps.is_some_and(|c| c.contains(calternal_types::Capability::SpaceRead)) {
-            state
-                .directory
-                .room_eviction()
-                .evict_item_account(space, kind, item, account)
-                .await;
+        match crate::resolve::authorize_item_access(
+            state,
+            space,
+            kind,
+            item,
+            account,
+            calternal_core::SharePermission::View,
+        )
+        .await
+        {
+            Ok(()) => (),
+            Err(error) if error.code == ErrorCode::NotFound => {
+                state
+                    .directory
+                    .room_eviction()
+                    .evict_item_account(space, kind, item, account)
+                    .await;
+            }
+            Err(error) => return Err(error),
         }
         Ok(())
     }

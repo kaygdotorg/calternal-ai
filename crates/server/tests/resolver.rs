@@ -542,3 +542,71 @@ async fn saved_collection_shares_its_explicit_members_and_follows_owner_edits() 
         .unwrap_err();
     assert_eq!(error.code, calternal_core::ErrorCode::NotFound);
 }
+
+#[tokio::test]
+async fn room_authority_is_item_scoped_and_revocation_advances_the_shared_revision() {
+    use calternal_core::SharePermission;
+    use calternal_server::resolve::{authorize_item_access, item_access_revision};
+    use std::sync::atomic::Ordering;
+    use uuid::Uuid;
+
+    let f = Fixture::new();
+    let note = f.create(f.dev.personal).await;
+    let id = Uuid::parse_str(note["id"].as_str().unwrap()).unwrap();
+    let item = json!({"kind":"notes","id":id});
+    let grant = f
+        .run(
+            &f.owner,
+            "room-grant",
+            "sharing.grant",
+            json!({
+                "item":item,"audience":{"account_id":f.guest.id},"permission":"view"
+            }),
+        )
+        .await
+        .unwrap();
+    let read = |space| {
+        authorize_item_access(
+            &f.state,
+            space,
+            "notes",
+            id,
+            f.guest.id,
+            SharePermission::View,
+        )
+    };
+    read(f.dev.personal).await.unwrap();
+    assert_eq!(
+        read(f.dev.shared).await.unwrap_err().code,
+        calternal_core::ErrorCode::NotFound
+    );
+    let write = authorize_item_access(
+        &f.state,
+        f.dev.personal,
+        "notes",
+        id,
+        f.guest.id,
+        SharePermission::Edit,
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(write.code, calternal_core::ErrorCode::Forbidden);
+
+    let revision = item_access_revision(&f.state, f.dev.personal, "notes", id, f.guest.id).unwrap();
+    let before = revision.load(Ordering::Acquire);
+    f.run(
+        &f.owner,
+        "room-revoke",
+        "sharing.revoke",
+        json!({
+            "item":item,"grant_id":grant["grant_id"]
+        }),
+    )
+    .await
+    .unwrap();
+    assert_ne!(before, revision.load(Ordering::Acquire));
+    assert_eq!(
+        read(f.dev.personal).await.unwrap_err().code,
+        calternal_core::ErrorCode::NotFound
+    );
+}

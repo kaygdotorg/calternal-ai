@@ -115,3 +115,66 @@ pub(crate) async fn item_capabilities<D: Directory>(
     }
     Ok((Some(scoped), item_only))
 }
+
+/// Authorize one live item for a room join, write or delivery refresh. The
+/// caller authenticates the account and supplies the known space and kind.
+/// Missing, trashed and invisible items share one refusal.
+///
+/// A stored Notes check makes one live-head lookup, one indexed reverse
+/// collection lookup and one protected auth statement. It does not read the
+/// global route, load a body or flush. The space lock holds lifecycle and
+/// membership stable through the worker's authority check.
+pub async fn authorize_item_access<D: Directory>(
+    state: &Shared<D>,
+    space: SpaceId,
+    kind: &str,
+    item: Uuid,
+    account: AccountId,
+    permission: calternal_core::SharePermission,
+) -> Result<(), Error> {
+    let state = state.clone();
+    let kind = kind.to_owned();
+    crate::blocking::spawn(move || {
+        state
+            .store
+            .content()
+            .with_live_share_scope(space, &kind, item, |collections| {
+                let (caps, granted) = if let Some(directory) = state.directory.protected_spaces() {
+                    directory
+                        .item_authority_blocking(account, space, item, collections)
+                        .map_err(crate::auth::auth_error)?
+                } else {
+                    (state.directory.capabilities(account, space), 0)
+                };
+                let can_view =
+                    granted != 0 || caps.is_some_and(|caps| caps.contains(Capability::SpaceRead));
+                let can_edit = granted == 2
+                    || caps.is_some_and(|caps| caps.contains(Capability::ContentWrite));
+                match permission {
+                    calternal_core::SharePermission::View if can_view => Ok(()),
+                    calternal_core::SharePermission::Edit if can_edit => Ok(()),
+                    calternal_core::SharePermission::Edit if can_view => {
+                        Err(Error::forbidden("item is read-only"))
+                    }
+                    _ => Err(Error::not_found("item not found")),
+                }
+            })
+    })
+    .await
+    .map_err(|_| Error::internal("item authorization task failed"))?
+}
+
+/// Get the room cache invalidator for an item. All items share one process-
+/// local atomic, so changes to group or recovery state need no room scan.
+/// Getting or sampling the handle costs zero database reads. The handle
+/// authorizes nothing. Check its unchanged even value around full authority
+/// checks, using Acquire, and pause delivery while it is dirty or changed.
+pub fn item_access_revision<D: Directory>(
+    _state: &Shared<D>,
+    _space: SpaceId,
+    _kind: &str,
+    _item: Uuid,
+    _account: AccountId,
+) -> Result<std::sync::Arc<std::sync::atomic::AtomicU64>, Error> {
+    Ok(calternal_types::item_access_revision_handle())
+}

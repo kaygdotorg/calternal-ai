@@ -62,6 +62,38 @@ impl Content {
         })
     }
 
+    /// Verify a known space and item kind, and read its inherited grant roots
+    /// under one space lock. The callback may use the auth worker and must not
+    /// re-enter content. This keeps lifecycle and collection membership stable
+    /// through authorization. Cost: one indexed live-head lookup, plus one
+    /// reverse membership lookup for Notes, with zero body reads or flushes.
+    pub fn with_live_share_scope<T>(
+        &self,
+        space: SpaceId,
+        kind: &str,
+        item: Uuid,
+        run: impl FnOnce(Vec<Uuid>) -> Result<T>,
+    ) -> Result<T> {
+        self.with_space(space, |s| {
+            s.conn
+                .prepare_cached(
+                    "SELECT 1 FROM items WHERE id=?1 AND kind=?2
+                 AND mat_state NOT IN ('purged','purging') AND substr(path,1,7) <> '.trash/'",
+                )
+                .map_err(internal)?
+                .query_row(params![item.to_string(), kind], |_| Ok(()))
+                .optional()
+                .map_err(internal)?
+                .ok_or_else(missing)?;
+            let collections = if kind == "notes" {
+                s.sharing_collections(item)?
+            } else {
+                Vec::new()
+            };
+            run(collections)
+        })
+    }
+
     /// Read an item's state after authorization. The permanent identity remains
     /// routable after purge. Cost: one indexed head lookup without loading bytes.
     pub fn item_state(&self, space: SpaceId, item: Uuid) -> Result<&'static str> {
@@ -208,6 +240,7 @@ impl Content {
             ));
         }
         s.place(id, self.fault)?;
+        let _revision = calternal_types::begin_item_access_change();
         let response = json!({"id":id, "state":"deleted"});
         let tx = s
             .conn

@@ -450,6 +450,12 @@ impl Content {
             };
             #[cfg(feature = "perf-timings")]
             filename.finish();
+            // Body-only writes leave room delivery caches valid. Lifecycle,
+            // membership and path changes can invalidate existing handles.
+            let _revision = (kind == "collections"
+                || destination != Destination::Current
+                || old_path.as_ref().is_some_and(|old| *old != path))
+                .then(calternal_types::begin_item_access_change);
             let item=Item {id,space,kind:kind.into(),metadata,bytes:bytes.to_vec(),revision:Staged::version(seq),updated_at:now_rfc3339()};
             let mut root = Staged {item,seq,path,expected};
             let related = if let (Some(edit), Some(old)) = (retarget, old_path.as_deref()) {

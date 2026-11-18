@@ -83,6 +83,20 @@ impl Spaces {
             .await
     }
 
+    /// Read the same current union as item_authority from an existing
+    /// blocking admission callback. Collection IDs must come from the
+    /// live index held under the item's space lock. One auth statement.
+    pub fn item_authority_blocking(
+        &self,
+        actor: AccountId,
+        space: SpaceId,
+        id: Uuid,
+        collections: Vec<Uuid>,
+    ) -> Result<(Option<CapabilitySet>, u8)> {
+        self.db
+            .read_blocking(move |c| item_authority_in(c, actor, space, id, &collections))
+    }
+
     /// Check the write capability under the caller's item lock immediately
     /// before staging a received edit. Reuses the one protected authority query.
     pub fn can_edit_shared_item(
@@ -92,10 +106,8 @@ impl Spaces {
         id: Uuid,
         collections: Vec<Uuid>,
     ) -> Result<bool> {
-        self.db.read_blocking(move |c| {
-            let (caps, permission) = item_authority_in(c, actor, space, id, &collections)?;
-            Ok(permission == 2 || caps.is_some_and(|caps| caps.contains(Capability::ContentWrite)))
-        })
+        let (caps, permission) = self.item_authority_blocking(actor, space, id, collections)?;
+        Ok(permission == 2 || caps.is_some_and(|caps| caps.contains(Capability::ContentWrite)))
     }
 
     /// Assign a visible account or group one stable item grant. A protected
