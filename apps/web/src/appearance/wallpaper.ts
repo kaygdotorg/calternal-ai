@@ -235,6 +235,10 @@ const inkOf = (s: Scheme): Ink => ({ ink: hex(tokens[s].ink), ink2: hex(tokens[s
 const rgbCss = (c: RGB): string => `${Math.round(c[0])} ${Math.round(c[1])} ${Math.round(c[2])}`;
 
 let copies: { side: HTMLCanvasElement; card: HTMLCanvasElement } | null = null;
+/** Changes whenever the blurred copies are replaced or dropped. */
+let copiesId = 0;
+/** The last solve and what it was for. Clear to tinted scales a solved veil and does not change it, so a step of the slider (nothing else changed) reuses these and only scales them. */
+let solved: { key: string; veils: Record<string, Veil> } | null = null;
 /**
  * Solves the veil of each surface from the pixels under it and writes the result as CSS variables: for each of `l` (left sidebar), `r` (right sidebar) and
  * `c` (the card) the tint and dim layers (`--l-tint`, `--l-tint-a`, `--l-dim`, `--l-dim-a`), the surface's own secondary inks (`--l-ink2`, `--l-ink3`) and the
@@ -254,8 +258,11 @@ export function updateVeil(want: Flags): void {
   // pixels under both sidebars together (the ink must read on the worse of the two), and written under both names (`--l-*` and `--r-*` stay, equal, for what reads them). The card has its own, on top.
   const jobs: [string[], Role, RGB[]][] = [[["l", "r"], "side", [...px(copies?.side, r.left), ...px(copies?.side, r.right)]], [["c"], "card", px(copies?.card, r.card)]];
   const out: Record<string, Veil> = {};
+  const key = [scheme, flags.blur, flags.dim, flags.tint, copiesId, source ?? "", JSON.stringify(r, (_, x) => (typeof x === "number" ? Math.round(x * 1e4) / 1e4 : x)), T.ink, T.ink2, T.ink3, T.paper].join("|");
+  const reuse = solved?.key === key ? solved.veils : null, fresh: Record<string, Veil> = {};
   for (const [keys, role, pixels] of jobs) for (const k of keys) {
-    const v: Veil = solve(scheme, role, flags, pixels, T, other);
+    const v: Veil = reuse?.[k] ?? solve(scheme, role, flags, pixels, T, other);
+    fresh[k] = v;
     const w: Veil = scaled(v, veilScale);
     out[k] = w;
     const ink2 = w.ink2, ink3 = w.ink3;
@@ -267,6 +274,7 @@ export function updateVeil(want: Flags): void {
     root().setProperty(`--${k}-ink3`, `rgb(${rgbCss(ink3)})`);
     root().setProperty(`--veil-${k}`, `linear-gradient(rgb(var(--${k}-dim) / var(--${k}-dim-a)) 0 0), linear-gradient(rgb(var(--${k}-tint) / var(--${k}-tint-a)) 0 0)`);
   }
+  solved = { key, veils: fresh };
   // The browser's own bars (Safari's toolbar and status bar) take the colour at the top of the page: the card's top strip under its veil (shell/chrome.ts).
   const edge = out.c;
   if (edge) {
@@ -318,7 +326,7 @@ function clear(): void {
     if (urls[l]) URL.revokeObjectURL(urls[l]!);
     delete urls[l];
   }
-  copies = null;
+  copies = null; copiesId++;
   setBackdropField(null);
   updateVeil(flagsNow);
   for (const fn of listeners) fn(null);
@@ -344,7 +352,7 @@ async function update(): Promise<void> {
       root().setProperty(`--wall-${l}`, `url("${u}")`);
       if (old) URL.revokeObjectURL(old);
     }
-    copies = { side, card };
+    copies = { side, card }; copiesId++;
     setBackdropField(fieldOf(side));
     updateVeil(flagsNow);
     const c = colours(img);
