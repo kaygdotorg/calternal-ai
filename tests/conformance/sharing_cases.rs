@@ -141,6 +141,23 @@ async fn collection_lists_are_space_scoped_and_membership_editing_is_owner_only(
         .await;
     assert_eq!(wrong_scope.status, 400);
 
+    let group = data(
+        f.op(
+            0,
+            "groups.create",
+            json!({"name":"Collection test recipients"}),
+        )
+        .await,
+    );
+    for account in [&f.ids[1], &f.ids[2]] {
+        f.op(
+            0,
+            "groups.add_member",
+            json!({"group_id":group["group_id"],"account_id":account}),
+        )
+        .await
+        .ok();
+    }
     let id = &first["id"];
     f.op(
         1,
