@@ -477,7 +477,12 @@ async fn serve(
             "Check the Notes Trash retention setting.",
         )
     })?;
-    let app = api::router(state.clone(), web_dir.clone()).layer(axum::Extension(machines.clone()));
+    let wallpapers = api::wallpapers::Wallpapers::from_env(&data_dir)
+        .await
+        .map_err(|e| boot(1, "failed", e.message, DATA_HINT))?;
+    let app = api::router(state.clone(), web_dir.clone())
+        .layer(axum::Extension(machines.clone()))
+        .layer(axum::Extension(wallpapers));
 
     let base_url = if development {
         format!("http://127.0.0.1:{port}")
