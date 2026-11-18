@@ -1,5 +1,5 @@
 ---
-title: "plugin-sdk: manifest-v1/type-aliases/HostCallKind"
+title: "plugin-sdk: manifest-v1/functions/isHostCallKind"
 ---
 
 <!-- Generated from: packages/plugin-sdk/src/index.ts, packages/plugin-sdk/src/manifest-v1.ts, packages/plugin-sdk/src/space-paths.ts, packages/plugin-sdk/src/stdio-worker.ts, packages/plugin-sdk/src/testing.ts, packages/plugin-sdk/src/typed-handlers.ts, packages/plugin-sdk/src/worker-v2.ts. Rebuild: npm run docs:site -->
@@ -10,10 +10,20 @@ title: "plugin-sdk: manifest-v1/type-aliases/HostCallKind"
 
 ***
 
-[@calternal/plugin-sdk](/docs/dev/typescript/plugin-sdk/) / [manifest-v1](/docs/dev/typescript/plugin-sdk/manifest-v1/) / HostCallKind
+[@calternal/plugin-sdk](/docs/dev/typescript/plugin-sdk/) / [manifest-v1](/docs/dev/typescript/plugin-sdk/manifest-v1/) / isHostCallKind
 
-# Type Alias: HostCallKind
+# Function: isHostCallKind()
 
-> **HostCallKind** = `"read_item"` \| `"write_item"` \| `"list_collection"` \| `"emit_event"` \| `"start_job"` \| `"checkpoint_job"` \| `"request_secret_handle"`
+> **isHostCallKind**(`value`): `value is HostCallKind`
 
-Closed broker method vocabulary; declaration never grants permission.
+Check a manifest or frame's method against the same closed vocabulary. No I/O.
+
+## Parameters
+
+| Parameter | Type |
+| ------ | ------ |
+| `value` | `unknown` |
+
+## Returns
+
+`value is HostCallKind`

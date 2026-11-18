@@ -643,7 +643,62 @@ export type ManifestCapability = "space.read" | "content.write" | "plugins.use" 
  * The only broker methods a worker may request.
  */
 
-export type HostCallKind = "read_item" | "write_item" | "list_collection" | "emit_event" | "start_job" | "checkpoint_job" | "request_secret_handle";
+export type HostCallKind = "read_item" | "list_items_v1" | "write_item" | "list_collection" | "emit_event" | "start_job" | "checkpoint_job" | "request_secret_handle";
+/**
+ * Version-one worker request for an indexed page of its own kind.
+ */
+
+export type PluginItemPageInput = {
+/**
+ * Kind declared by the calling plugin. The invocation supplies the space.
+ */
+kind: string,
+/**
+ * Exact label filter, using the indexed label key.
+ */
+label?: string,
+/**
+ * Opaque continuation returned by this call. Omit it for the first page.
+ */
+cursor?: string,
+/**
+ * Number of items, from 1 to 100. Defaults to 100.
+ */
+limit?: number, };
+/**
+ * Indexed fields available without loading the item's body or copying metadata.
+ */
+
+export type PluginItemSummary = {
+/**
+ * Item UUID in the selected kind and space.
+ */
+id: string,
+/**
+ * Current opaque revision.
+ */
+revision: string,
+/**
+ * UTC commit timestamp.
+ */
+updated_at: string,
+/**
+ * Optional title, limited to 256 Unicode scalars.
+ */
+title: string | null, };
+/**
+ * Page of live items in descending update order, then stable item ID order.
+ */
+
+export type PluginItemPageResult = {
+/**
+ * Bounded summaries in index order.
+ */
+items: Array<PluginItemSummary>,
+/**
+ * Continuation for the same account, space, package, kind and filter.
+ */
+next_cursor: string | null, };
 /**
  * Retry behavior declared by an operation.
  */

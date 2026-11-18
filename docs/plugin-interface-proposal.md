@@ -41,6 +41,32 @@ scoped reactive values contract must publish removals and updated resolved
 contributions to the owner under the same space and capability checks.
 See the [manifest contract](plugin-api.md#authoring-and-interface-prototype).
 
+### App switcher entries
+
+Put app declarations in a dedicated manifest section. An app introduces a
+navigation identity and owns a route prefix. Slot contributions render
+inside the selected app, and may come from other enabled packages. Each
+app declares an ID, a required display name, an icon, and an internal route
+prefix. The host uses the name as the accessible label in the icon-only
+switcher. It normalizes local prefixes, rejects external or ambiguous
+addresses and refuses overlaps with other apps or protected host routes.
+A prefix grants no operation or data access.
+[Addresses](addresses.md)
+
+The host accepts an icon name from its own catalogue or the data for one
+SVG path. Parse its path commands and numeric operands, including the
+required initial move and the grammar for arc flags. Reject markup, extra
+attributes, invalid command arity, non-finite or out-of-range coordinates,
+and paths that exceed bounded input length or segment count.
+The host draws the validated path in its own fixed view box and controls
+color and sizing. CSS, scripts and resource references have no place in
+the declaration. Set the exact validation bounds with the web and Swift
+renderers before freezing the manifest shape.
+
+The switcher appends enabled plugin apps after its built-in entries in
+the current space. Every package uses the same declaration, visibility
+and routing checks, regardless of publisher. If the active plugin's entry
+is removed, the host falls back to Threads.
 
 ## Sealed components
 
@@ -212,6 +238,184 @@ insertion stayed within the frame cadence. These dev-VM observations guide
 the protocol. The locked Node results above measure transport only.
 [Transport benchmark](../scripts/bench-plugin-view-transport.mjs) · [Browser benchmark](https://git.kayg.org/kayg/calternal-ai/src/commit/1e61298/docs/ui-host-catalogue.md#3-what-a-tree-update-costs-in-the-browser-measured)
 
+### Warm browser-to-worker operation
+
+On locked `calternal-perf-01-backup01`, headless Chromium 153.0.8010.12 called
+`notes-insights.summarize` through the server and an enrolled operator
+pool runner using rootless Podman. The browser, server and runner were
+colocated. The operation reads a three-word note through the real
+broker and returns a generated view. Timing begins before the browser
+builds the request and ends after it parses the response. Ten browser
+calls warmed the path before 100 serial measured calls. The prebuilt
+binary was from the live-reload checkpoint (`95e3865`).
+
+| Warm path | Samples | p50 | p95 |
+| --- | ---: | ---: | ---: |
+| Browser to server to enrolled worker and back | 100 | 49.1 ms | 50.1 ms |
+| SDK fixture invocation | 500 | 0.135 ms | 0.199 ms |
+
+The fixture baseline measures the SDK transport without HTTP, a machine
+link or a real broker read. The browser measurement excludes page
+rendering and uses loopback links, so it measures the application path
+before adding network latency between machines.
+[SDK fixture benchmark](reviews/plugin-dx-2026-11-18.md)
+
+The follow-up on locked `calternal-perf-02-backup01` used the same operation
+and colocated setup. A loopback HTTP relay timed both machine exchanges.
+A pipe relay recorded when the runner delivered and received worker frames.
+Both relays used the host's monotonic clock. Each column represents 100
+serial calls after warm-up. Browser-edge measurements include the relay
+overhead. Percentiles for individual hops do not add to the end-to-end percentile.
+
+| Hop with tracing | Before p50 / p95 | After p50 / p95 |
+| --- | ---: | ---: |
+| Browser sends request | 0.59 / 1.26 ms | 0.56 / 1.29 ms |
+| Server dispatch and sync hand-off | 1.67 / 6.26 ms | 1.60 / 3.39 ms |
+| Runner delivers invocation to worker | 0.35 / 0.82 ms | 0.34 / 1.07 ms |
+| Worker emits host call | 0.71 / 1.36 ms | 0.70 / 1.95 ms |
+| Runner uploads host call | 21.54 / 22.94 ms | 0.21 / 0.50 ms |
+| Server broker read and sync hand-off | 1.68 / 6.24 ms | 1.40 / 3.34 ms |
+| Runner delivers broker reply to worker | 0.30 / 0.94 ms | 0.29 / 0.60 ms |
+| Worker completes operation | 0.67 / 1.46 ms | 0.59 / 2.09 ms |
+| Runner uploads result | 21.55 / 22.13 ms | 0.20 / 0.58 ms |
+| Server rechecks authority and responds | 1.80 / 5.48 ms | 1.43 / 4.98 ms |
+| Browser receives and parses response | 1.25 / 2.24 ms | 1.22 / 2.38 ms |
+| End to end with tracing | 52.2 / 71.3 ms | 8.6 / 22.9 ms |
+| End to end without relays | 49.3 / 63.6 ms | 5.6 / 10.1 ms |
+
+The matched, untraced rerun on locked perf-01 measured 47.8 / 48.8 ms
+before the change and 4.8 / 5.2 ms afterward.
+
+The runner waited 20 ms before uploading each burst of exec output. The
+worker pauses for the host reply, so the runner paid the timer twice per
+operation. Together the uploads took 43.07 ms p50 before the change and
+0.42 ms after it. Worker output uploads now start immediately and drain
+already-queued frames in the same bounded post. Ordinary command output
+keeps its timed batching. The comparison reused the checkpoint server
+and plugin and changed only the runner's batching condition.
+
+## Plugin worker placement and network access
+
+The operator's pool runs shared-space plugin workers. Member-owned machines
+are ineligible. Use the existing pool grant and fenced machine leases.
+When the caller has no eligible container-capable pool machine, return a
+caller-safe `unavailable` reason with the hint “Ask an operator to add a
+container-capable pool machine.” Distinguish missing capacity from a busy
+pool or a machine that needs to reconnect. The UI can point operators to
+the pool enrollment steps. Keep machine identifiers and other accounts'
+grants out of the caller's error. [Operator pool enrollment](../crates/server/README.md#machines)
+
+Replace the enrolled-machine path's fixed eight-worker limit with the sum
+of the authenticated `max_sandboxes` ceilings of eligible enrolled pool
+machines. The runner's configured ceiling is the per-machine bound.
+Use checked arithmetic. At each machine, subtract the greater of the
+server's reservation count and the runner's authenticated occupied count.
+Server reservations include other sandbox leases and stopping workers
+without teardown proof. Clamp free slots at zero. Disconnection
+or a lower report can suspend new admissions while existing reservations
+remain fenced and accounted for. Release a stopping reservation on
+authenticated teardown proof or durable revocation of its machine. A
+revocation fences the session, executions and broker calls, removes the
+machine's capacity from admission and releases its server reservations,
+including stopping leases. Revocation does not attest that a disconnected
+machine physically stopped its containers. Restart must reconcile these
+states before reusing capacity.
+
+### Brokered outbound connections
+
+Workers have no direct network access. Every revision declares the
+outbound access it needs in the manifest. A Manager reviews that access
+when enabling the plugin in a space. The server brokers outbound I/O and
+checks the live space grant and revision's declaration before opening a
+connection or forwarding more data. An update that widens access requires
+approval. Revocation fences the session and closes active handles.
+Official and community packages use the same policy and transport.
+
+| Need | What a plugin declares and how the broker authorizes it |
+| --- | --- |
+| Fixed endpoints for banks, brokers or workout services | Declare the purpose, protocol, hostname and port. Display those in the enabling review. Broker HTTPS with per-hop checks for redirects. Reference credentials through protected host handles where available. Permission to connect does not authorize a trade or other privileged action. |
+| Mail and other provider endpoints a person enters | Declare a setting that can supply a destination and constrain the allowed protocols and ports. Review the exact destination at that point, before it becomes usable. Bind the grant to the space, plugin and declared setting. A change of hostname, protocol or port requires a new approval. |
+| IMAP, SMTP and other non-HTTP services | Use a broker-owned TCP connection to the approved host and port. Expose an expiring, bounded handle scoped to the invocation or job. The broker owns address validation, connect and teardown. Typed TLS and STARTTLS adapters can enforce protocol behavior. A generic byte stream can carry proxy commands to an approved server, so its review must reflect the broader authority. |
+| Orchestrator and shell | Orchestrator operations use the same per-space grants and audit records as any other package. Shell contributions use host components and plugin operations. A mount point grants no network or browser session access. |
+
+### Private destinations and execution origin
+
+Public egress originates at the server by default. Private destinations
+require a separate grant in addition to the Manager's per-space plugin
+approval. The grant identifies the origin, plugin, space, protocol, ports
+and destination scope. The approver sees the originating server or named
+machine, the exact destination scope and whether access is read-only or
+can change the external system. The latter distinction should come from
+host-enforced operations where available.
+
+| Origin | Private-network authority |
+| --- | --- |
+| Server | A server administrator approves access from the server because it exposes the operator's network. |
+| Explicitly chosen enrolled machine | The machine's owner approves access from their machine. An operator approves for a pool machine. The server authorizes each request and sends it to a broker on that machine, which applies the same dialing policy locally. The plugin worker still has no network. |
+
+A grant can name hosts, CIDRs, or the machines enrolled and authorized for
+that space. Named-host grants must carry an approved address scope,
+including explicit treatment of private addresses obtained through DNS.
+CIDRs remain bounded by protocol and port. A space-machines selector
+authorizes only endpoints mapped by the host to current eligible
+enrollments. A removed machine stops matching immediately. A private
+route is bound to its approved origin, with no automatic fallback to a
+different network. A member-owned machine acting as an egress broker does
+not become eligible to run shared-space workers. Before any forwarding,
+verify that the invocation can share the data being sent with that
+machine and apply the existing space and machine permissions.
+
+Reuse the existing app's ADR 0071 `netguard` resolution and dialing
+contract. Normalize and validate the destination before resolving it.
+Resolve once per connection attempt, reject any disallowed address in
+the answer set and dial a checked address using the original hostname
+for TLS identity and HTTP routing. Apply the check to HTTP redirects,
+protocol discovery and reconnects. Refuse private networks by default
+and permit only destinations covered by the separate grant at the chosen
+origin. Normalize literal addresses before checking CIDRs. Always refuse
+cloud metadata endpoints, including metadata hostnames, aliases and
+IPv4-mapped forms, even when a grant's scope would otherwise cover them.
+Keep certificate validation mandatory. [Calternal ADR 0071](https://git.kayg.org/kayg/calternal/src/commit/ea57b84b9/docs/adr/0071-mail-architecture.md)
+
+Apply per-space concurrency, request and connection rates, byte limits,
+timeouts and stream backpressure. Count idle open streams against capacity
+until closed. Keep a bounded audit log of space, actor, package revision,
+approval, execution origin, destination hostname and port, protocol,
+outcome, duration and byte counts. Record creation, widening and
+revocation of private grants and distinguish their traffic in the audit
+view. Display the approved scope to the Manager and origin owner. Exclude
+credentials, headers, URL paths and queries, payloads and response
+content. Authorization failures should surface a safe reason and the
+next action.
+
+### Integration walkthroughs
+
+| Plugin shape | How the design handles it |
+| --- | --- |
+| Mail | Public IMAP and SMTP use exact hosts entered in settings. An internal mail server needs a private grant from the selected origin. Broker TLS and authentication without giving the worker the person's credentials. |
+| Money | Public bank and broker APIs use approved HTTPS endpoints, with protected credential handles. Account reads and transactions remain separate permissions. |
+| VPN manager | Public NetBird or Tailscale control APIs use HTTPS grants. An overlay management endpoint needs an explicit private grant from a server or chosen machine already on that network. Installing a VPN or changing the origin machine's own configuration would need a separate host service. |
+| Home automation bridge | Select an enrolled machine on the LAN and approve the controller's hostname or network scope and port. The same host policy applies to every new connection. Discovery and multicast would need their own reviewed broker contract. |
+| Webhook receiver | Register an inbound host route with its own signature verification, rate limits and declared operation. The receiver does not give the worker a listening socket. Installation-specific callback registration or replies to an external service use the outbound rules above. |
+
+These are design walkthroughs. Each requires its own fixture before
+shipping.
+
+### Open choices
+
+| Choice | Options and costs |
+| --- | --- |
+| Container readiness | Reuse the negotiated backend and the first start result, or require a cached positive container-engine check tied to the machine session. A check adds readiness traffic and makes a missing engine distinguishable before a plugin times out. |
+| Destination breadth | Start with exact host grants and approval for each new destination, or explicitly allow bounded domain patterns. Exact hosts incur review when providers add endpoints. Patterns grant access to more endpoints and need clear ownership and redirect rules. |
+| Setting approvals and credential scope | A Manager can approve each exact destination, or can delegate approval within a manifest's reviewed protocol and port envelope. Delegation reduces mail setup friction and increases authority. Decide with it which endpoints and credentials are private to the person and which are shared in the space. |
+| Non-HTTP scope | Start with typed mail adapters, or also expose generic bounded TCP behind explicit approval. Typed adapters cost engineering per protocol and can own TLS and STARTTLS. Generic TCP serves more integrations and cannot enforce the semantics of traffic at the approved endpoint. |
+| Private route scope | Start with named hosts and explicit address ranges, or also offer the space-machines selector. A selector avoids repeated approval when enrolled hosts change and requires a host-maintained endpoint mapping and visible membership changes. Decide which plugin input and payload scopes may be sent through a member-owned origin. |
+| Budgets and visibility | Set per-space quotas, retention and audit visibility after measuring realistic mail sync, finance polling and interactive loads. Test hard ceilings, backpressure and revocation on long-lived streams. Long-lived streams can crowd out interactive calls without separate concurrency budgets. |
+
+`netguard` should remain the common address and dialing layer. Exact
+hosts, explicit per-setting approval and typed mail adapters are the
+recommended first network contract. Network support is a design proposal.
+
 ## Swift clients
 
 Use the same contribution and operation identifiers, address and token
@@ -231,7 +435,7 @@ the existing Calternal engines before exposing a new primitive.
 
 | Missing public contract | Existing code to reuse | Estimated size |
 | --- | --- | --- |
-| Cursor-based kind listing, revision reads, lifecycle transitions and collection placement | Notes listing, history, Trash and file-store paths | 3–5 engineer-days including paging and isolation fixtures |
+| Revision reads, lifecycle transitions and collection placement | Own-kind indexed listing now uses `list_items_v1`. Notes history, Trash and placement still use host paths. | 3–5 engineer-days including isolation fixtures for the remaining calls |
 | Conditional patch and block-identity merge, revision conflicts and links/tags | Notes revision, merge and indexing paths | 4–7 days including recovery tests |
 | Invalidation and incremental indexing, including search-provider registration | Space journal and Notes index | 2–4 days |
 | Typed thread events, atomic append/checkpoint, paging and overflow attachments | Thread document, deltas, persistence and saved transcript | 4–7 days including crash/retry tests |
@@ -266,7 +470,7 @@ exceptions become API requirements.
 | --- | --- |
 | The server matches the orchestrator ID to native thread operations and native turn jobs | A public engine service selection contract with thread append/checkpoint and turn admission, lease, retry and request operations |
 | The seed sets some packages enabled by default | A deployment profile selects default packages and activation policy by the same manifest rules available to any installed package |
-| Notes calls its Rust store and lifecycle handlers directly | Public kind listing, lifecycle and data mutation contracts over the existing engine, with the same isolation and receipts |
+| Notes calls its Rust store and lifecycle handlers directly | Public own-kind listing is available. Notes still needs lifecycle and data mutation contracts over the existing engine, with the same isolation and receipts. |
 | The orchestrator's core skill is embedded by path and reused at startup as a named fallback | Declare packaged instruction and skill sources and distribute defaults through the package seed; keep host security instructions in the protected core |
 | Server, CLI and browser recognize a provider package ID when resolving defaults and thread files | Resolve an enabled provider by configuration or service selection and carry provider metadata through the thread protocol |
 | Browser defaults and palette entries name particular apps | Discover enabled apps and contributions from the manifest and active service slots |

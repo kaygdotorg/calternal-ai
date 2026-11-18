@@ -10,7 +10,8 @@
   import { Button, Icon, IconButton, InlineEditor, Menu, Row, toast, undoable, type MenuItem } from "@calternal/ui";
   import { href, navigate, segments } from "../../lib/route.svelte";
   import { layout, type Container } from "./layout.svelte";
-  import { archiveThread, containerName, containersOf, copyThreadLink, runThreadItem, threadItems, topLevelIds } from "./thread-menu";
+  import { archiveThread, containerName, containersOf, copyThreadLink, runThreadItem, snoozeItems, threadItems, topLevelIds } from "./thread-menu";
+  import { backLabel, backShort } from "./snooze";
   import StateMark from "./StateMark.svelte";
   import SwipeRow, { type SwipeAction } from "../../lib/swipe/SwipeRow.svelte";
   import { swipeRows } from "../../lib/swipe/rows";
@@ -18,8 +19,8 @@
   import { client, startThread, store } from "./store.svelte";
   import { spaces } from "../../shell/spaces.svelte";
   import TopEntries from "./TopEntries.svelte";
+  import ReasonMark from "./ReasonMark.svelte";
   import { messageSearch } from "./search.svelte";
-  import { reasonLine } from "./inbox";
 
   // A fresh account: nothing listed, no section made, and the list has loaded (so it is not just still arriving).
   const empty = $derived(store.ready && store.threads.length === 0 && layout.sections.length === 0);
@@ -37,6 +38,16 @@
   // Two tabs under the shortcuts. The Inbox lists only the threads waiting on the person (inbox.ts); it is the page the list opens on when it is not empty. An explicit choice of tab is kept for the visit.
   let chosen = $state<"inbox" | "all" | null>(null);
   const items = $derived(store.inbox.filter((i) => i.thread.spaceId === spaces.current.id));
+  // Snoozed: the threads that left the Inbox until a time (the person's snooze, or a subscription limit waiting to reset). Collapsed by default; the section and its count are always there when there is one. The clock moves to the next return, so a thread comes back by itself.
+  const snoozedHere = $derived(store.snoozed.filter((s) => s.thread.spaceId === spaces.current.id));
+  let snoozedOpen = $state(false);
+  $effect(() => {
+    const next = Math.min(...store.snoozed.map((s) => s.until));
+    if (!Number.isFinite(next)) return;
+    const h = setTimeout(() => (store.now = Date.now()), Math.max(50, next - Date.now() + 50));
+    return () => clearTimeout(h);
+  });
+  const returns = (s: { until: number; auto: boolean }) => (s.auto ? `Back when the limit resets, ${new Date(s.until).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}` : backLabel(s.until, store.now));
   const tab = $derived(chosen ?? (items.length ? "inbox" : "all"));
   const tabKey = (e: KeyboardEvent) => {
     if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
@@ -60,10 +71,10 @@
   }
 
   // ---- context menus ----
-  let ctx = $state<{ x: number; y: number; thread?: ThreadSummary; section?: string } | null>(null);
+  let ctx = $state<{ x: number; y: number; thread?: ThreadSummary; section?: string; snooze?: boolean } | null>(null);
   const ctxItems = $derived<MenuItem[]>(
     ctx?.thread
-      ? threadItems(ctx.thread)
+      ? ctx.snooze ? snoozeItems(ctx.thread) : threadItems(ctx.thread)
       : ctx?.section
         ? ctx.section === LOOSE
         ? [{ id: "srename", label: "Rename section" }]
@@ -73,7 +84,7 @@
   const archive = (t: ThreadSummary) => archiveThread(t);
   const copyLink = copyThreadLink;
   /** The three-dot button and the swipe's More open the same menu as right-click, under the control that asked. */
-  const menuFrom = (el: HTMLElement | undefined, t: ThreadSummary) => { const r = el?.getBoundingClientRect(); ctx = { x: r?.right ?? 0, y: r?.bottom ?? 0, thread: t }; };
+  const menuFrom = (el: HTMLElement | undefined, t: ThreadSummary, snooze = false) => { const r = el?.getBoundingClientRect(); ctx = { x: r?.right ?? 0, y: r?.bottom ?? 0, thread: t, snooze }; };
   /** The swipe buttons of a row: right shows the first list, left the second (slot 0 is the outer edge; a long swipe runs it). */
   const swipeOf = (t: ThreadSummary): { lead: SwipeAction[]; trail: SwipeAction[] } => ({
     lead: [{ id: "copy", label: "Copy link", icon: "link", tone: "plain", run: () => copyLink(t) }],
@@ -205,14 +216,40 @@
         <ul class="threads" aria-label="Waiting for you">
           {#each items as it (it.thread.id)}
             <li data-thread={it.thread.id}>
-              <Row title={it.thread.title} sub={reasonLine(it.reasons)} href={href(`/threads/${it.thread.id}`)} selected={current === it.thread.id}>
-                {#snippet leading()}<span class="mark"><Icon inline name={it.thread.provider} /></span>{/snippet}
-              </Row>
+              <SwipeRow lead={[]} trail={snoozeItems(it.thread).length ? [{ id: "snooze", label: "Snooze", icon: "clock", tone: "plain", run: (el) => menuFrom(el, it.thread, true) }] : []}>
+                <div class="rw">
+                  <Row title={it.thread.title} href={href(`/threads/${it.thread.id}`)} selected={current === it.thread.id}>
+                    {#snippet leading()}<span class="mark"><Icon inline name={it.thread.provider} /></span>{/snippet}
+                    {#snippet trailing()}<span class="tail"><ReasonMark reasons={it.reasons} /></span>{/snippet}
+                  </Row>
+                  {#if snoozeItems(it.thread).length}<span class="acts"><IconButton small icon="clock" label="Snooze" aria-haspopup="menu" onclick={(e) => menuFrom(e.currentTarget as HTMLElement, it.thread, true)} /></span>{/if}
+                </div>
+              </SwipeRow>
             </li>
           {/each}
         </ul>
       {:else}
         <p class="none" role="status">Nothing is waiting for you. A thread shows up here when it asks a question, needs an approval or a sign-in, or fails.</p>
+      {/if}
+      {#if snoozedHere.length}
+        <div class="snz" role="group" aria-label="Snoozed">
+          <button type="button" class="sg" aria-expanded={snoozedOpen} onclick={() => (snoozedOpen = !snoozedOpen)}><Icon inline name="clock" />Snoozed <span class="n">{snoozedHere.length}</span></button>
+          {#if snoozedOpen}
+            <ul class="threads" aria-label="Snoozed threads">
+              {#each snoozedHere as s (s.thread.id)}
+                <li data-thread={s.thread.id} data-snoozed={s.auto ? "auto" : "manual"}>
+                  <div class="rw">
+                    <Row title={s.thread.title} href={href(`/threads/${s.thread.id}`)} selected={current === s.thread.id}>
+                      {#snippet leading()}<span class="mark"><Icon inline name={s.thread.provider} /></span>{/snippet}
+                      {#snippet trailing()}<span class="tail" title={returns(s)}>{s.auto ? "Resets " : ""}{backShort(s.until, store.now)}</span>{/snippet}
+                    </Row>
+                    {#if !s.auto}<span class="acts"><IconButton small icon="close" label="Unsnooze now" onclick={() => runThreadItem("snooze:off", s.thread, () => {})} /></span>{/if}
+                  </div>
+                </li>
+              {/each}
+            </ul>
+          {/if}
+        </div>
       {/if}
     </div>
   {:else}
@@ -260,6 +297,10 @@
 <style>
   /* A row: the provider's mark leads; the state sits at the right; pointing at the row swaps the state for the three actions. */
   .rw { position: relative; }
+  .snz { margin-top: var(--s-3); }
+  .sg { display: flex; align-items: center; gap: var(--s-3); min-height: var(--row-h); padding: 0 var(--s-4); border-radius: var(--r-select); font-size: var(--text-label); font-weight: var(--strong-weight); color: var(--ink-3); }
+  .sg .n { font-variant-numeric: tabular-nums; }
+  @media (hover: hover) and (pointer: fine) { .sg:hover { color: var(--ink); } }
   .mark { flex: none; display: grid; color: var(--ink-2); }
   .tail { display: inline-flex; align-items: center; gap: var(--s-3); color: var(--ink-3); }
   .acts { position: absolute; right: var(--s-2); top: 50%; translate: 0 -50%; display: inline-flex; gap: var(--s-1); opacity: 0; pointer-events: none; transition: opacity var(--dur-fast) var(--ease-out); }

@@ -7,7 +7,7 @@ import { chromium } from "playwright";
 import { serve, BASE } from "./lib.mjs";
 const dir = process.argv[2] ?? "/tmp/canvas-audit"; mkdirSync(dir, { recursive: true });
 const stop = await serve(); const browser = await chromium.launch();
-const PROPS = ["fontFamily", "fontSize", "fontWeight", "lineHeight", "letterSpacing", "fontVariationSettings", "color", "paddingTop", "paddingRight", "paddingBottom", "paddingLeft", "marginTop", "marginRight", "marginBottom", "marginLeft", "borderRadius", "gap", "backgroundColor", "boxShadow", "opacity", "transitionProperty", "transitionDuration", "animationName"];
+const PROPS = ["backdropFilter", "backgroundImage", "boxShadow", "opacity", "fontFamily", "fontSize", "fontWeight", "lineHeight", "letterSpacing", "fontVariationSettings", "color", "paddingTop", "paddingRight", "paddingBottom", "paddingLeft", "marginTop", "marginRight", "marginBottom", "marginLeft", "borderRadius", "gap", "backgroundColor", "boxShadow", "opacity", "transitionProperty", "transitionDuration", "animationName"];
 async function grab(canvas, scheme) {
   const ctx = await browser.newContext({ viewport: { width: 1500, height: 970 }, deviceScaleFactor: 2, colorScheme: scheme });
   await ctx.addInitScript(() => { try { localStorage.setItem("cal.firstrun", "1"); sessionStorage.clear(); localStorage.setItem("cal.canvas.seeded.2", "1"); localStorage.setItem("cal.canvas", JSON.stringify({ cols: [{ p: 1, wins: [{ id: "w1", kind: "threads", item: "t-idle", weight: 1, look: "card", locked: false }] }], focus: "w1", x: 0 })); } catch { /* none */ } });

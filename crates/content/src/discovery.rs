@@ -133,12 +133,14 @@ fn title_queries() -> &'static [String; 2] {
             format!(
                 "SELECT id,metadata,revision,updated_at,path,{TITLE_KEY} FROM items
          WHERE kind=?1 AND substr(path,1,7) <> '.trash/'
+         AND json_extract(metadata,'$.deleted') IS NOT 1
          AND {TITLE_KEY}>=?2 AND ({TITLE_KEY},id)>(?2,?3) AND {TITLE_KEY}<?4
          ORDER BY {TITLE_KEY},id LIMIT ?5"
             ),
             format!(
                 "SELECT id,metadata,revision,updated_at,path,{TITLE_KEY} FROM items
          WHERE kind=?1 AND substr(path,1,7) <> '.trash/'
+         AND json_extract(metadata,'$.deleted') IS NOT 1
          AND {TITLE_KEY}>=?2 AND ({TITLE_KEY},id)>(?2,?3) AND ?4 IS NULL
          ORDER BY {TITLE_KEY},id LIMIT ?5"
             ),

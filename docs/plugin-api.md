@@ -63,9 +63,12 @@ Input: `docs/reviews/plugin-and-client-map-sol.md`.
 - Userdata layout: each space has a hidden `.trash/` folder of its own. Collections, space
   and plugin settings, skills, automations, themes and custom components are files in the
   space's userdata (shape in `docs/storage-layout.md` once agreed), not database-only.
-- File formats follow the existing app: settings are `.calternal/settings.json` (plain
-  key/value; Markdown would add nothing, so this is the recorded JSON exception);
-  collections and saved views are Markdown, as in ADR 0066 ("Views are Collections"): one
+- File formats follow the existing app. Settings use versioned
+  `.calternal/settings.json`. JSON is the ADR 0055 exception because it
+  preserves typed nested values, including unknown values that an older
+  reader must keep when writing one setting. An unreadable or newer file
+  must remain untouched. Collections and saved views are Markdown, as in
+  ADR 0066 ("Views are Collections"): one
   human-readable Views file with a `## Name` section per view and `key: value` lines
   (including the view's `id`); unknown keys are kept. Skills and automations live hidden
   under `.calternal/`.
@@ -220,6 +223,32 @@ supported fixed targets are declaration metadata pending the asset and
 frame isolation contracts. Owned mounts accept only operation-backed
 contributions. Web and Swift mounting belong to the client renderers.
 See the [interface proposal](plugin-interface-proposal.md).
+
+## Page a plugin's own kinds
+
+Declare `list_items_v1` in `host_calls`. In a worker handler, call
+`listItems(context, { kind, limit, label, cursor })` from the SDK.
+Only `kind` is required. It must be declared by this package, and the
+caller needs current read access to the invocation's space and kind.
+The host takes the space from the invocation.
+
+Each page contains item IDs, revisions, update timestamps and optional
+titles. It uses descending update time and then ascending item ID.
+`limit` defaults to 100 and accepts 1 through 100. `label` is an optional
+exact indexed key of at most 256 bytes. Titles carry up to 256 Unicode
+scalars with control characters removed. A warm page reads the index
+without loading bodies or flushing content.
+
+Continue with the returned `next_cursor` and the same kind and label.
+Each token is authenticated for that account, space, package, kind and
+filter. A null cursor marks the final page. The existing worker broker
+rechecks session, activation and grants before and after the read.
+
+An enrolled worker uses only initialized operator pool containers.
+A cold call can return `unavailable` with `details.reason` set to
+`worker_machine_required`, `worker_machine_offline` or `worker_capacity`.
+The message gives the caller a next step without exposing machine
+identifiers or other accounts' grants.
 
 ## Palette discovery
 

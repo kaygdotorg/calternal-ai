@@ -34,10 +34,12 @@ returns `{ "job_id": "host-issued-id" }`; only jobs admitted for this invocation
 may emit chunks, whose sequence starts at zero across that invocation. These are
 ephemeral chunks; the server's job service (`crates/server/src/plugins/jobs.rs`) owns
 durable admission, checkpoints and replay, and attaches a host-started run invocation
-to its job with `attach_job`. `next_delivery` rechecks current authority before returning queued data.
-`next_outgoing` also rechecks current authority before releasing an invocation or
-callback reply to the transport. Adapters must deliver immediately after draining,
-and keep their final storage/network checks atomic with protected effects.
+to its job with `attach_job`. Internal routing may reuse the activation already
+admitted by the adapter. `next_outgoing` checks live authority before releasing
+a callback reply. `next_delivery` delegates the final caller-facing check to the
+adapter, which may perform it as part of guarded response delivery. Adapters must
+deliver immediately after that check and keep their final storage/network checks
+atomic with protected effects.
 
 Cancellation invalidates local invocation state and drops queued results before
 queuing `cancel`. If other invocations still fill the outgoing queue, `cancel`

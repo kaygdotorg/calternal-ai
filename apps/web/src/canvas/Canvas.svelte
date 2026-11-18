@@ -176,11 +176,18 @@
 
   // ---- addresses: the focused window is the address ----
   $effect(() => {
-    const [k, item] = segments();
-    if (!k || !item || !appFor(k) || k === "settings") return;
+    const [k, rest] = segments();
+    const item = k === "settings" ? rest ?? "" : rest; // Settings is a window like the others (its address may be just `/settings`: the start page)
+    if (!k || !appFor(k)) return;
+    if (item === undefined || (item === "" && k !== "settings")) {
+      // An app chosen in the capsule has no item in its address: go back to the window of that app that had focus last (nothing to do when it has none: the app's sidebar opens, the person picks an item).
+      untrack(() => { const w = canvas.lastOfKind(k); if (w && canvas.focus !== w.id) { canvas.show(w.kind, w.item); queueMicrotask(() => reveal(w.id, animates("pointer"))); } });
+      return;
+    }
     const spaceKey = spaces.current.id; void spaceKey;
     untrack(() => { const had = !!canvas.find(k, item); const run = () => { const w = canvas.show(k, item); queueMicrotask(() => reveal(w.id, animates("pointer"))); }; if (had) run(); else void transact(run, animates("pointer")); });
   });
+  $effect(() => { canvas.noteFocus(canvas.focus); });
   $effect(() => {
     const w = canvas.win(canvas.focus);
     if (!w) return;
@@ -301,7 +308,7 @@
       ...(c && c.wins.length > 1 ? [{ id: "equal", label: "Equal heights" }] : []),
       ...(["card", "clear", "solid"] as Look[]).map((l) => ({ id: `look:${l}`, label: `Look: ${l === "card" ? "Card" : l === "clear" ? "Transparent" : "Solid"}`, checked: w.look === l })),
       { id: "lock", label: w.locked ? "Unlock input" : "Lock input", icon: "lock" },
-      ...((appFor(w.kind)?.panels.length ?? 0) > 0 ? [{ id: "panel", label: "Open side panel", icon: "sidebar-right" as IconName }] : []),
+      ...((appFor(w.kind)?.panels.length ?? 0) > 0 ? [{ id: "panel", label: shell.rightOpen ? "Hide side panel" : "Show side panel", icon: "sidebar-right" as IconName }] : []),
     ];
     const thread: MenuItem[] = w.kind === "threads" && store.get(w.item) ? threadItems(store.get(w.item)!).map((i) => ({ ...i, id: `t:${i.id}` })) : [];
     return [...open, ...widthsList, ...rest, ...thread, { id: "close", label: "Close window", icon: "close", danger: true }];
@@ -355,7 +362,7 @@
     else if (item === "equal") canvas.equalHeights(canvas.cols[canvas.colIndexOf(w.id)]!.id);
     else if (item.startsWith("look:")) canvas.setLook(w.id, item.slice(5) as Look);
     else if (item === "lock") canvas.toggleLock(w.id);
-    else if (item === "panel") shell.openPanel();
+    else if (item === "panel") shell.toggleRight();
     else if (item === "close") closeWin(w.id, source);
     else if (item.startsWith("t:")) { const t = store.get(w.item); if (t) runThreadItem(item.slice(2), t, () => toast("Rename it from the sidebar: double-click its row")); }
   }

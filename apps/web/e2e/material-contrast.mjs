@@ -7,7 +7,7 @@ const rows = [];
 for (const scheme of ["dark", "light"]) {
   const ctx = await b.newContext({ viewport: { width: 1500, height: 970 }, colorScheme: scheme, deviceScaleFactor: 1 });
   await ctx.addInitScript(() => { try { localStorage.setItem("cal.firstrun", "1"); } catch {} });
-  if (process.env.CLARITY) await ctx.addInitScript((i) => { const k = "cal.appearance"; const o = JSON.parse(localStorage.getItem(k) ?? "{}"); o.compare = { ...(o.compare ?? {}), clarity: Number(i) / 4 }; localStorage.setItem(k, JSON.stringify(o)); }, process.env.CLARITY);
+  if (process.env.CLARITY) await ctx.addInitScript((i) => { const k = "cal.appearance"; const o = JSON.parse(localStorage.getItem(k) ?? "{}"); o.clarity = Number(i) / 4; localStorage.setItem(k, JSON.stringify(o)); }, process.env.CLARITY);
   if (process.env.WALL) await ctx.addInitScript((w) => localStorage.setItem("cal.appearance", JSON.stringify({ wallpaperId: w })), process.env.WALL);
   const page = await ctx.newPage();
   await page.goto(`${BASE}/threads/t-idle`); await page.waitForSelector("html[data-ready]");

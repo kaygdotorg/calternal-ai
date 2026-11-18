@@ -33,6 +33,12 @@ impl Folder {
     /// like a space. Only call this with trusted paths.
     pub fn open(path: &Path) -> io::Result<Self> {
         std::fs::create_dir_all(path)?;
+        Self::open_existing(path)
+    }
+
+    /// Open a trusted directory without provisioning it or its parents.
+    /// Returns an error for a missing path. Cost: one directory open, no sync.
+    pub fn open_existing(path: &Path) -> io::Result<Self> {
         let fd = rustix::fs::open(
             path,
             OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC,

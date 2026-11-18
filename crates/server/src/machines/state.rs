@@ -66,7 +66,8 @@ pub(super) struct Lease {
 }
 
 impl Lease {
-    /// A lease holds a placement slot from assignment through running.
+    /// A live assignment's machine. Stopping worker reservations are in
+    /// `worker_stops` until teardown proof or revocation.
     pub(super) fn assigned_machine(&self) -> Option<Uuid> {
         self.row
             .machine
@@ -162,7 +163,6 @@ pub(super) struct State {
     pub execs: HashMap<Uuid, Exec>,
     pub workers: HashMap<Uuid, calternal_machine::protocol::PluginWorker>,
     pub worker_stops: HashMap<Uuid, (Uuid, [u8; 32], u64)>,
-    pub recovery_stops: HashSet<Uuid>,
     pub next_order: u64,
 }
 
@@ -293,8 +293,9 @@ impl State {
         self.persist(lease);
     }
 
-    /// End a lease, fence it, fail its execs and tell its machine to stop the
-    /// sandbox. One commit, plus any placements it frees capacity for.
+    /// End a lease, fence its execs and tell its machine to stop the sandbox.
+    /// One commit, plus placements when a slot was freed. Stopping workers
+    /// hold their reservation until the scheduler receives proof.
     pub fn end_lease(&mut self, lease: Uuid, why: &str, settings: &Settings) {
         self.end_with_files(lease, why, settings, false)
     }
@@ -315,8 +316,10 @@ impl State {
         let machine = l.row.machine;
         let assigned = l.assigned_machine();
         let worker = l.row.worker;
+        let stopping = worker
+            && machine.is_some_and(|id| self.machines.get(&id).is_some_and(|m| !m.row.revoked));
         l.row.fence += 1;
-        l.state = if worker && machine.is_some() {
+        l.state = if stopping {
             LeaseState::Stopping
         } else {
             LeaseState::Ended
@@ -325,7 +328,9 @@ impl State {
         let thread = l.row.thread;
         self.threads.remove(&thread);
         self.workers.remove(&lease);
-        self.release_slot(assigned);
+        if !stopping {
+            self.release_slot(assigned);
+        }
         self.persist(lease);
         for e in self.execs.values_mut() {
             if e.lease == lease && e.state != ExecState::Done {
@@ -333,7 +338,7 @@ impl State {
             }
         }
         if let Some(m) = machine {
-            if worker {
+            if stopping {
                 let (session, seq) = self
                     .machines
                     .get(&m)
@@ -353,10 +358,11 @@ impl State {
         self.place_waiting(settings);
     }
 
-    /// Drop the machine's session at once and end every lease it holds.
-    pub fn apply_revocation(&mut self, machine: Uuid, settings: &Settings) {
+    /// Fence the revoked session and release its reservations, including
+    /// stopping workers. The caller has durably revoked the machine first.
+    pub fn apply_revocation(&mut self, machine: Uuid, settings: &Settings) -> Result<(), Error> {
         let Some(m) = self.machines.get_mut(&machine) else {
-            return;
+            return Ok(());
         };
         m.row.revoked = true;
         if let Some(live) = m.live.take() {
@@ -366,6 +372,14 @@ impl State {
         let owner = m.row.owner;
         m.checks.clear();
         self.readiness_changed(owner);
+        let stopping: Vec<_> = self
+            .worker_stops
+            .iter()
+            .filter_map(|(lease, (assigned, _, _))| (*assigned == machine).then_some(*lease))
+            .collect();
+        for lease in stopping {
+            self.finish_worker_stop(lease)?;
+        }
         let held: Vec<Uuid> = self
             .leases
             .values()
@@ -375,6 +389,7 @@ impl State {
         for lease in held {
             self.end_lease(lease, "the machine was revoked", settings);
         }
+        Ok(())
     }
 
     pub(super) fn may_use(&self, m: &Machine, account: AccountId) -> bool {
@@ -397,7 +412,8 @@ impl State {
         }
     }
 
-    fn release_slot(&mut self, machine: Option<Uuid>) {
+    /// Release one accounted reservation and invalidate readiness in memory.
+    pub(super) fn release_slot(&mut self, machine: Option<Uuid>) {
         if let Some(m) = machine.and_then(|id| self.machines.get_mut(&id)) {
             m.assigned = m.assigned.saturating_sub(1);
             let owner = m.row.owner;
@@ -433,11 +449,8 @@ impl State {
             let best = self
                 .machines
                 .values()
-                // Shared-space workers must not send another member's data to
-                // a participant-owned host after that host's owner is revoked.
-                // Until placement has a space-owned trust contract, use only
-                // operator-enrolled pool machines and the existing pool grant.
-                .filter(|m| !l.row.worker || m.row.owner == Owner::Pool)
+                // Shared-space workers use initialized operator containers.
+                .filter(|m| !l.row.worker || Self::worker_machine(m, settings))
                 .filter(|m| l.row.pinned_machine.is_none_or(|id| id == m.row.id))
                 .filter(|m| {
                     self.may_use(m, l.row.account)

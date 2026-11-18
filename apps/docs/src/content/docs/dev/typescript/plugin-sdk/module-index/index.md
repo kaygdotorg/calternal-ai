@@ -20,6 +20,7 @@ title: "plugin-sdk: index/README"
 
 ## Type Aliases
 
+- [HostCallKind](/docs/dev/typescript/plugin-sdk/module-index/type-aliases/hostcallkind/)
 - [ProviderBilling](/docs/dev/typescript/plugin-sdk/module-index/type-aliases/providerbilling/)
 - [ProviderCommand](/docs/dev/typescript/plugin-sdk/module-index/type-aliases/providercommand/)
 - [ProviderContext](/docs/dev/typescript/plugin-sdk/module-index/type-aliases/providercontext/)
@@ -52,15 +53,15 @@ Re-exports [encodeWorkerFrameV2](/docs/dev/typescript/plugin-sdk/worker-v2/funct
 
 ***
 
-### HostCallKind
-
-Re-exports [HostCallKind](/docs/dev/typescript/plugin-sdk/manifest-v1/type-aliases/hostcallkind/)
-
-***
-
 ### InvocationAuthority
 
 Re-exports [InvocationAuthority](/docs/dev/typescript/plugin-sdk/worker-v2/interfaces/invocationauthority/)
+
+***
+
+### listItems
+
+Re-exports [listItems](/docs/dev/typescript/plugin-sdk/worker-v2/functions/listitems/)
 
 ***
 

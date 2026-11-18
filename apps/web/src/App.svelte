@@ -16,6 +16,7 @@
   import { client, store } from "./apps/threads/store.svelte";
   import ThreadSearch from "./apps/threads/ThreadSearch.svelte";
   import { messageSearch } from "./apps/threads/search.svelte";
+  import SnoozePicker from "./apps/threads/SnoozePicker.svelte";
 
   const NONE: AppDef = { kind: "", name: "Calternal", icon: "apps", Sidebar: Unknown, Main: Unknown, panels: [{ id: "none", label: "Nothing", icon: "info", component: Unknown }] };
   const seg = $derived(segments());
@@ -70,6 +71,7 @@
 {#if route.path !== "/"}<Shell {app} id={seg[1]} />{/if}
 <LinkBanner />
 <ThreadSearch />
+<SnoozePicker />
 <Toasts bottom={shell.narrow ? "calc(var(--bar-h) + env(safe-area-inset-bottom) + 12px)" : 24} />
 <SettingsSheet open={settings && shell.narrow} onclose={() => navigate("/settings/appearance")} />
 <ShortcutsSheet open={shell.helpOpen} onclose={() => (shell.helpOpen = false)} />
