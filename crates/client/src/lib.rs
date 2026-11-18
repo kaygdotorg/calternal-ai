@@ -203,6 +203,63 @@ impl Client {
         .await
     }
 
+    /// Delete the selected account using this installation. An absent selection
+    /// deletes the signed-in account and requires a recent browser or app
+    /// passkey assertion. One bounded HTTP request, with no automatic retry.
+    pub async fn erase_account(
+        &self,
+        account_id: Option<&str>,
+    ) -> Result<serde_json::Value, ClientError> {
+        let response = self
+            .http
+            .post(
+                self.base
+                    .join(calternal_core::ACCOUNT_ERASURE_PATH)
+                    .expect("account route"),
+            )
+            .json(&serde_json::json!({"account_id":account_id}))
+            .send()
+            .await
+            .map_err(|_| ClientError::Transport)?;
+        let (status, body) = Self::body(response).await?;
+        let value: serde_json::Value = serde_json::from_slice(&body)
+            .map_err(|_| ClientError::Protocol("invalid account erasure result"))?;
+        if (200..300).contains(&status)
+            && value["deleted"] == true
+            && value["account_id"].is_string()
+        {
+            return Ok(value);
+        }
+        if status == 401 {
+            return Err(ClientError::ReauthenticationRequired);
+        }
+        let data = &value["error"];
+        let code: ErrorCode = serde_json::from_value(data["code"].clone())
+            .map_err(|_| ClientError::Protocol("invalid account erasure error code"))?;
+        if status != code.http_status() {
+            return Err(ClientError::Protocol("HTTP/error code mismatch"));
+        }
+        let message = data["message"]
+            .as_str()
+            .ok_or(ClientError::Protocol(
+                "missing account erasure error message",
+            ))?
+            .to_owned();
+        let details = data
+            .get("details")
+            .and_then(serde_json::Value::as_object)
+            .map(|map| map.iter().map(|(k, v)| (k.clone(), v.clone())).collect());
+        Err(ClientError::Api {
+            status,
+            error: ApiError {
+                code,
+                message,
+                details,
+            },
+            request_id: None,
+        })
+    }
+
     async fn body(response: reqwest::Response) -> Result<(u16, Vec<u8>), ClientError> {
         let status = response.status().as_u16();
         let json = response

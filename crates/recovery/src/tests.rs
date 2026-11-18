@@ -1038,6 +1038,7 @@ fn every_change_kind_has_two_file_fsyncs_and_no_directory_fsyncs() {
             "new-account",
             "create",
             "delete",
+            "delete-account",
             "both",
             "noop",
         ] {
@@ -1109,6 +1110,10 @@ fn every_change_kind_has_two_file_fsyncs_and_no_directory_fsyncs() {
                     tx.execute("DELETE FROM spaces WHERE id=?1", [f.space.to_string()])
                         .unwrap();
                 }
+                "delete-account" => {
+                    tx.execute("DELETE FROM users WHERE id=?1", [f.outsider.to_string()])
+                        .unwrap();
+                }
                 "both" => {
                     f.mutate(&tx, "revoke");
                     f.mutate(&tx, "passkey");
@@ -1126,7 +1131,11 @@ fn every_change_kind_has_two_file_fsyncs_and_no_directory_fsyncs() {
                 };
                 assert_eq!(
                     delta.len(),
-                    if mutation == "both" { 2 } else { 1 },
+                    if matches!(mutation, "both" | "delete" | "delete-account") {
+                        2
+                    } else {
+                        1
+                    },
                     "{mutation}, unrelated={extra}"
                 );
             } else {
@@ -1146,6 +1155,32 @@ fn every_change_kind_has_two_file_fsyncs_and_no_directory_fsyncs() {
                 c.validate_and_read().unwrap().tables,
                 capture(&db, f.install, 1).unwrap().tables
             );
+            if matches!(mutation, "delete" | "delete-account") {
+                let kind = if mutation == "delete" {
+                    "space"
+                } else {
+                    "account"
+                };
+                let owner = if mutation == "delete" {
+                    f.space.as_uuid()
+                } else {
+                    f.outsider.as_uuid()
+                };
+                c.compact_erasure(&db).unwrap();
+                let recovered = f.coordinator().validate_and_read().unwrap();
+                assert_eq!(
+                    ids(&recovered, "owner_erasures", "id").unwrap(),
+                    vec![owner]
+                );
+                assert_eq!(
+                    recovered.tables["owner_erasures"].rows,
+                    vec![vec![
+                        Cell::Text(kind.into()),
+                        Cell::Text(owner.to_string()),
+                        Cell::Integer(1)
+                    ]],
+                );
+            }
         }
     }
 }

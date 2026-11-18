@@ -10,17 +10,26 @@ pub(super) async fn dispatch<D: Directory>(
     op: &str,
     input: JsonObject,
 ) -> Result<Value, Error> {
-    let st = state.clone();
+    let lifecycle = state.store.content().lifecycle();
+    let space = input
+        .get("space_id")
+        .and_then(Value::as_str)
+        .map(space_of)
+        .transpose()?;
+    lifecycle.check(actor.account.as_uuid())?;
+    if let Some(space) = space {
+        lifecycle.check(space.as_uuid())?;
+    }
     let rid = request_id.to_owned();
     let operation = op.to_owned();
     crate::blocking::spawn(move || {
+        let st = state;
         // Accounts this change removes lose their private input for the space.
         let removed = crate::account_input::revoked_targets(&st.directory, &p, &operation, &input)?;
-        let space = input
-            .get("space_id")
-            .and_then(Value::as_str)
-            .map(space_of)
-            .transpose()?;
+        if operation == "spaces.delete" {
+            let space = space.ok_or_else(|| Error::invalid_input("space ID required"))?;
+            return crate::erasure::space(&st, actor, space, &rid, &input, removed);
+        }
         let change = || st.directory.space_operation(&p, &rid, &operation, &input);
         let result = match space {
             // A write in a space is admitted through that space's receipts, the
@@ -43,17 +52,15 @@ pub(super) async fn dispatch<D: Directory>(
             }
             // Reads, and account-level writes (spaces.create), whose receipt
             // scope is the acting account.
+            None if operation == "spaces.create" => {
+                let _step = lifecycle.step(actor.account.as_uuid())?;
+                change()
+            }
             _ => change(),
         };
         if result.is_ok()
             && let Some(space) = space
         {
-            if operation == "spaces.delete" {
-                st.store
-                    .secrets()
-                    .erase_owner(&calternal_secrets::Owner::Space(space))
-                    .map_err(|e| Error::unavailable(e.to_string()))?;
-            }
             for account in removed {
                 if st
                     .directory

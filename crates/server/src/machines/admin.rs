@@ -77,6 +77,17 @@ pub struct MachineSummary {
     pub draining: bool,
 }
 
+/// Pending erasures for one retained or revoked machine.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MachineErasureSummary {
+    /// Enrolled machine UUID, retained even when authority is retired.
+    pub machine_id: Uuid,
+    /// Instructions awaiting successful receipt.
+    pub pending: u64,
+    /// The machine cannot authenticate and the operator must wipe it.
+    pub operator_wipe: bool,
+}
+
 /// The result of one [`Request`].
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -92,6 +103,8 @@ pub enum Response {
     List {
         /// Machines, ordered by UUID.
         machines: Vec<MachineSummary>,
+        /// Outstanding machine-side erasures, ordered by machine UUID.
+        erasures: Vec<MachineErasureSummary>,
     },
     /// Whether the machine existed (and is now revoked).
     Revoke {
@@ -140,6 +153,7 @@ pub fn execute(svc: &MachineService, request: Request) -> Result<Response, Error
                     draining: m.draining,
                 })
                 .collect(),
+            erasures: svc.pending_erasures()?,
         },
         Request::Revoke { machine } => Response::Revoke {
             revoked: svc.revoke_any(machine)?,

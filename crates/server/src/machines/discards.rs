@@ -197,7 +197,7 @@ impl State {
         machine: Uuid,
         reports: &[DiscardReport],
     ) -> Result<(), Error> {
-        if reports.len() > 128 {
+        if reports.len() > calternal_machine::protocol::MAX_DISCARD_REPORTS {
             return Err(Error::invalid_input("too many discard reports"));
         }
         if reports.is_empty() {
@@ -208,7 +208,15 @@ impl State {
             tx.execute("UPDATE workspace_discards SET state=?1,updated_ms=?2 WHERE request_id=?3 AND machine=?4 AND state IN ('sent','failed')",params![if r.success{"done"}else{"failed"},db::now_ms(),r.request_id.to_string(),machine.to_string()]).map_err(sql)?;
         }
         tx.execute("DELETE FROM workspace_discards WHERE machine=?1 AND state NOT IN ('pending','sent') AND (updated_ms<?2 OR rowid NOT IN (SELECT rowid FROM workspace_discards WHERE machine=?1 AND state NOT IN ('pending','sent') ORDER BY updated_ms DESC LIMIT 1024))",params![machine.to_string(),db::now_ms()-7*86_400_000i64]).map_err(sql)?;
+        let pending = if self.pending_erasure_machines.contains(&machine) {
+            super::erasure_queue::acknowledge(&tx, machine, reports)?
+        } else {
+            false
+        };
         tx.commit().map_err(sql)?;
+        if !pending {
+            self.pending_erasure_machines.remove(&machine);
+        }
         Ok(())
     }
 }

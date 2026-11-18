@@ -13,6 +13,7 @@ pub mod agents;
 mod ceremony;
 mod config;
 pub mod db;
+pub mod erasure;
 mod http_facing;
 mod invite_key;
 pub mod invites;

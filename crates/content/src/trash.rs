@@ -86,6 +86,7 @@ impl Content {
         item: Uuid,
         request: Request<'_>,
     ) -> Result<Value> {
+        let _actor = self.lifecycle.step(request.account.as_uuid())?;
         self.with_space(space, |s| self.purge_selected(s, kind, item, None, request))
     }
 

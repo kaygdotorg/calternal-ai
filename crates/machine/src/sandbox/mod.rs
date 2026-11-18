@@ -136,6 +136,14 @@ pub trait Backend: Send + Sync + 'static {
     /// The caller must exclude active work. Missing artifacts succeed; I/O or
     /// engine failure returns an error. Cost: one recursive removal and optional container removal.
     fn discard(&self, account: uuid::Uuid, thread: uuid::Uuid) -> BoxFuture<'_, SandboxResult<()>>;
+
+    /// Erase one workspace or the account's whole machine-role directory.
+    /// Refuse on teardown or deletion failure so the server can retry.
+    fn erase(
+        &self,
+        account: uuid::Uuid,
+        thread: Option<uuid::Uuid>,
+    ) -> BoxFuture<'_, SandboxResult<()>>;
     /// Start a sandbox using the existing mounted workspace for the thread.
     fn start<'a>(&'a self, spec: &'a SandboxSpec)
     -> BoxFuture<'a, SandboxResult<Arc<dyn Sandbox>>>;

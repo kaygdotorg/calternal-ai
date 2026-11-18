@@ -58,3 +58,9 @@ export async function open(browser, device, scheme, path) {
 }
 
 export const launch = () => chromium.launch();
+
+/** Focuses the composer and waits until it has expanded (the context and chips rows are drawn and reachable): unfocused, the composer is collapsed and its chips are not there to click. Waits for the state, not for a time. */
+export async function expandComposer(page) {
+  await page.locator("#composer-field").click();
+  await page.waitForFunction(() => { const c = document.querySelector(".composer"); const r = c?.querySelector(".chips")?.parentElement; return !!c && !c.hasAttribute("data-collapsed") && !!r && getComputedStyle(r).visibility === "visible" && getComputedStyle(r).opacity === "1"; });
+}

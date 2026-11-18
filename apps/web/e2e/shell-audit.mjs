@@ -2,7 +2,7 @@
 // Usage: node e2e/shell-audit.mjs (after `npm run build`). Exits 1 on any miss.
 import { readFileSync } from "node:fs";
 import { chromium } from "playwright";
-import { serve, BASE, DEVICES } from "./lib.mjs";
+import { serve, BASE, DEVICES, expandComposer } from "./lib.mjs";
 const stop = await serve(); const b = await chromium.launch(); let bad = 0;
 const ok = (c, m, note = "") => { console.log(`${c ? "PASS" : "FAIL"}  ${m}${note ? "  " + note : ""}`); if (!c) bad++; };
 const fresh = async (dev, path, scheme = "light") => { const ctx = await b.newContext({ ...dev, colorScheme: scheme, reducedMotion: "no-preference" }); const page = await ctx.newPage(); await page.goto(BASE + path); await page.waitForSelector("html[data-ready]"); await page.waitForTimeout(1200); return { ctx, page }; };
@@ -51,6 +51,7 @@ const wallpapers = JSON.parse(readFileSync("wallpapers.json", "utf8"));
   ok((await page.getByRole("dialog").count()) > 0, "Keyboard shortcuts are discoverable with ? (and Cmd-/)"); await page.keyboard.press("Escape");
   ok((await page.evaluate(() => JSON.parse(localStorage.getItem("cal.appearance") ?? "{}").streamText ?? false)) === false, "Message text is not streamed by default");
   // composer menus: pickers with icons and search
+  await expandComposer(page);
   await page.getByRole("button", { name: /GPT|Claude|Sonnet|Opus|Codex/ }).first().click(); await page.waitForTimeout(300);
   const picker = page.getByRole("dialog", { name: "Provider and model" }); // a menu with a search field is a dialog holding the search and the menu
   ok((await picker.locator("input[type=search]").count()) > 0 && (await picker.locator("svg").count()) > 0, "Pickers show an icon per provider and have an inline search field"); await page.keyboard.press("Escape");

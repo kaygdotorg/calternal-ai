@@ -38,16 +38,18 @@ impl MachineService {
         }
         let mut st = self.lock()?;
         let st = &mut *st;
-        match st.leases.get(&lease) {
+        let _steps = match st.leases.get(&lease) {
             Some(l) if l.row.account == account && l.row.worker => {
                 return Err(Error::forbidden("plugin worker execs are host-controlled"));
             }
-            Some(l) if l.row.account == account && l.state != LeaseState::Ended => {}
+            Some(l) if l.row.account == account && l.state != LeaseState::Ended => {
+                st.lease_steps(&l.row)?
+            }
             Some(l) if l.row.account == account => {
                 return Err(Error::conflict("run has ended"));
             }
             _ => return Err(Error::not_found("run not found")),
-        }
+        };
         let id = Uuid::new_v4();
         let mut exec = Exec::new(lease, account, argv, env, ExecState::Queued);
         exec.stdin = stdin;

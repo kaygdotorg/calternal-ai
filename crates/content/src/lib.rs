@@ -67,6 +67,7 @@ use uuid::Uuid;
 /// The host retains root locks; opening two services for the same roots is unsupported.
 pub struct Content {
     roots: Roots,
+    lifecycle: calternal_types::OwnerLifecycle,
     index: Mutex<Connection>,
     catalog: ReadPool,
     // Declared before `journals`: open stores drain before the driver stops.
@@ -149,14 +150,18 @@ impl Content {
         }
         let index = db::database(&roots.appdata.join("system/content-index.db"))?;
         index.execute_batch("CREATE TABLE IF NOT EXISTS items(id TEXT PRIMARY KEY,space TEXT NOT NULL,kind TEXT NOT NULL) STRICT;
-            CREATE TABLE IF NOT EXISTS account_items(id TEXT PRIMARY KEY,account TEXT NOT NULL,kind TEXT NOT NULL) STRICT;").map_err(internal)?;
+            CREATE INDEX IF NOT EXISTS items_space ON items(space);
+            CREATE TABLE IF NOT EXISTS account_items(id TEXT PRIMARY KEY,account TEXT NOT NULL,kind TEXT NOT NULL) STRICT;
+            CREATE INDEX IF NOT EXISTS account_items_owner ON account_items(account);").map_err(internal)?;
         let spaces = Arc::new(Mutex::new(std::collections::HashMap::new()));
         let root_guard = Arc::new(Mutex::new(None));
-        let sweeper = spawn_sweeper(&spaces, &root_guard, idle_after, fault)?;
+        let lifecycle = calternal_types::OwnerLifecycle::default();
+        let sweeper = spawn_sweeper(&spaces, &root_guard, lifecycle.clone(), idle_after, fault)?;
         let journals = Journals::open(roots.appdata.clone(), secrets, receipt_retention)?;
         let catalog = ReadPool::new(roots.appdata.join("system/content-index.db"));
         let content = Self {
             roots,
+            lifecycle,
             index: Mutex::new(index),
             catalog,
             spaces,
@@ -173,6 +178,7 @@ impl Content {
     /// opens SQLite and its journal under its own lock only. Refuses with
     /// unavailable when 64 spaces are open and all are in use.
     fn with_space<T>(&self, id: SpaceId, f: impl FnOnce(&mut Space) -> Result<T>) -> Result<T> {
+        let _step = self.lifecycle.step(id.as_uuid())?;
         // A capacity-evicted space is dropped (draining its journal writer) only
         // after the map lock is released, so no other space waits on that drain.
         let mut evicted = None;
@@ -202,7 +208,7 @@ impl Content {
         drop(evicted);
         let mut held = lock(&slot.space);
         if held.is_none() {
-            let journal = self.journals.open_store(id)?;
+            let journal = self.journals.open_store(id, self.lifecycle.clone())?;
             let mut opened =
                 Space::open(&self.roots.appdata, &self.roots.userdata_ssd, id, journal)?;
             self.recover_space(&mut opened)?;
@@ -225,6 +231,35 @@ impl Content {
         }
         result
     }
+    /// Share the space lifecycle with jobs, account input, and secrets. Cost:
+    /// an Arc clone. The host closes it from its protected authority commit.
+    pub fn lifecycle(&self) -> calternal_types::OwnerLifecycle {
+        self.lifecycle.clone()
+    }
+
+    /// Close and drain a space, then detach its cached stores before erasure.
+    /// The map lock covers removal only. Dropping a closed journal skips
+    /// witness publication. Call from a blocking worker.
+    pub fn retire_space(&self, space: SpaceId) {
+        self.lifecycle.drain(space.as_uuid());
+        let slot = lock(&self.spaces).remove(&space);
+        drop(slot);
+    }
+
+    /// Unroute an owner whose lifecycle has drained. One indexed deletion
+    /// from the rebuildable identifier catalog. Repeating it is safe.
+    pub fn unroute_owner(&self, id: Uuid, is_space: bool) -> Result<()> {
+        let sql = if is_space {
+            "DELETE FROM items WHERE space=?1"
+        } else {
+            "DELETE FROM account_items WHERE account=?1"
+        };
+        lock(&self.index)
+            .execute(sql, [id.to_string()])
+            .map_err(internal)?;
+        Ok(())
+    }
+
     /// Releases idle unpinned spaces, also performed by the background sweeper.
     /// Cost: O(open spaces), at most 64, under the cache map lock; closing happens
     /// after it is released and may checkpoint WAL and drain the journal writer.
@@ -350,6 +385,7 @@ impl Content {
         request: Request<'_>,
         result: Value,
     ) -> Result<()> {
+        let _actor = self.lifecycle.step(request.account.as_uuid())?;
         self.with_space(space, |s| {
             self.journals.publish(
                 &s.journal,

@@ -115,6 +115,12 @@
   // What is open, as chips above the field: the workspace the thread works in, and each @mention in the text (removable).
   const mentions = $derived(marks.filter((m) => m.kind === "mention" || m.kind === "person").map((m) => ({ ...m, label: text.slice(m.start + 1, m.end).replace(/^\[|\]$/g, "") })));
   const dropMention = (m: { start: number; end: number }) => { text = (text.slice(0, m.start) + text.slice(m.end)).replace(/ {2,}/g, " ").replace(/^ /, ""); queueMicrotask(() => field?.focus()); };
+  // Collapsed when not in use, like ChatGPT's and Claude's: the context and chips rows fold away (and on a phone the box takes a wider inset) until the composer has focus, or one of its menus is open.
+  // Focus is read after the event (a window losing focus keeps the field active and so keeps the composer open). Pointer, touch and keyboard focus of the field or a chip set it; a mouse press on a button
+  // (Stop, Send) does not (such a button is not `:focus-visible`): pressing it must not move it away from under the pointer by expanding the box before the click is done. The keyboard's change is instant.
+  let panelEl = $state<HTMLElement>();
+  let focused = $state(false);
+  const open = $derived(focused || menuOpen || permOpen || whereOpen || trig !== null);
   const running = $derived(thread.state === "running");
   // A turn parked on a request of yours is still the person's to stop (stopping cancels the request; the server refuses a new message to it). An interrupted turn has its own notice.
   const parked = $derived(thread.state === "waiting" && !thread.notice);
@@ -138,12 +144,12 @@
   }
 </script>
 
-<Panel class="composer" radius="pane" data-ring-host>
-  <div class="ctx" aria-label="Context">
+<Panel class="composer" data-narrow={sheet ? "" : undefined} radius="pane" data-ring-host bind:el={panelEl} data-collapsed={open ? undefined : ""} onfocusin={(e) => { if ((e.target as HTMLElement).matches(":focus-visible")) focused = true; }} onfocusout={() => queueMicrotask(() => (focused = !!panelEl?.contains(document.activeElement)))}>
+  <div class="fold" data-fold><div class="ctx" aria-label="Context">
     {#if thread.workspace}<span class="cx"><Icon inline name="folder" /><span>{thread.workspace}</span></span>{/if}
     <ActiveChildren id={thread.id} />
     {#each mentions as m}<span class="cx on"><Icon inline name={m.label === provider?.name || pool.find((p) => p.label === m.label)?.kind === "agent" ? "spark" : pool.find((p) => p.label === m.label)?.kind === "thread" ? "threads" : pool.find((p) => p.label === m.label)?.kind === "item" ? "notes" : "user"} /><span>{m.label}</span><button type="button" class="x" aria-label="Remove {m.label}" onclick={() => dropMention(m)}><Icon inline name="close" /></button></span>{/each}
-  </div>
+  </div></div>
   <div class="field" bind:this={fieldBox}>
     <InlineEditor id="composer-field" class="field-input" multiline label="Message" bind:el={field} bind:editor bind:value={text} {marks} triggers={{ kinds: ["mention", "skill"], on: (t) => (trig = t) }} onkeydown={onkey} onsubmit={() => send()} placeholder={running ? "Steer the running turn…" : `Message ${provider?.name ?? "the agent"}…`} />
     {#if (running || parked) && !text.trim()}
@@ -152,7 +158,7 @@
       <IconButton icon="send" label={running ? "Steer the turn" : "Send message"} tone="accent" disabled={!text.trim()} onclick={send} />
     {/if}
   </div>
-  <div class="chips">
+  <div class="fold" data-fold><div class="chips">
     <span class="chip prov">
       <Pill label="{provider?.name ?? ''} · {modelName}" icon={providerIcon} showLabel glass={false} aria-haspopup="menu" aria-expanded={menuOpen} bind:el={trigger} onclick={() => (menuOpen = !menuOpen)}>
         <span class="pl">{provider?.name} · {modelName}</span><span class="pm">{modelName}</span>
@@ -173,7 +179,7 @@
         <Popover open={whereOpen} anchor={whereTrigger} morph label="Where it runs" trigger={whereTrigger} onclose={() => (whereOpen = false)}><RunsOnPicker {machines} value={thread.runsOn} onchange={onrunson} /></Popover>
       {/if}
     </span>
-  </div>
+  </div></div>
 </Panel>
 
 <MentionPicker {groups} bind:sel anchor={fieldBox} label={trig?.kind === "skill" ? "Skills" : "Mention"} onchoose={choose} onclose={() => (dismissed = trig?.from ?? null)} />
@@ -183,8 +189,16 @@
 {/if}
 
 <style>
-  :global(.composer) { --ring-offset: 2px; container: cmp / inline-size; padding: var(--s-3) var(--s-3) var(--s-3) var(--s-6); display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s-1); }
-  .ctx { display: flex; flex-wrap: wrap; gap: var(--s-2); padding: 0 var(--s-3) 0 0; }
+    :global(.composer) { --ring-offset: 2px; container: cmp / inline-size; padding: var(--s-3) var(--s-3) var(--s-3) var(--s-6); display: grid; grid-template-columns: minmax(0, 1fr); }
+  /* Expand on focus, collapse on blur, one motion: the two outer rows fold (grid track 1fr to 0fr, so the box keeps its glass and its one radius), fade, and on a phone the box widens by the inset the
+     measured ChatGPT/Claude recordings show (38 pt from the edges unfocused, 12 pt focused: 26 pt a side), over --dur-morph on --ease-morph (the iPhone keyboard's own track, 350 ms). Interruptible (a transition
+     reverses from where it is), and instant in keyboard use and under reduced motion (base.css, tokens). A folded row is invisible and out of the tab order after the fold ends; it is visible again at the first frame of an opening. */
+  .fold { display: grid; grid-template-rows: 1fr; opacity: 1; visibility: visible; transition: grid-template-rows var(--dur-morph) var(--ease-morph), opacity var(--dur-morph) var(--ease-morph), visibility 0s; }
+  .fold > :global(*) { min-height: 0; overflow: clip; overflow-clip-margin: 4px; }
+  :global(.composer[data-collapsed]) .fold { grid-template-rows: 0fr; opacity: 0; visibility: hidden; transition: grid-template-rows var(--dur-morph) var(--ease-morph), opacity calc(var(--dur-morph) * 0.4) linear, visibility 0s linear var(--dur-morph); }
+  :global(.composer[data-narrow]) { margin-inline: 0; transition: margin-inline var(--dur-morph) var(--ease-morph); }
+  :global(.composer[data-narrow][data-collapsed]) { margin-inline: calc(var(--s-8) + var(--s-2)); }
+  .ctx { display: flex; flex-wrap: wrap; gap: var(--s-2); padding: 0 var(--s-3) var(--s-1) 0; }
   .cx { display: inline-flex; align-items: center; gap: var(--s-2); max-width: 100%; padding: var(--s-1) var(--s-4); border-radius: var(--r-pill); background: rgb(var(--ink-rgb) / 0.06); color: var(--ink-2); font-size: var(--text-label); }
   .cx > span:not(:first-child) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .cx.on { background: color-mix(in oklab, var(--accent) 16%, transparent); color: var(--ink); }
@@ -193,7 +207,7 @@
   /* The caret, the placeholder and the typed text are one box: same font, same line height, same inset, so the caret sits exactly on the text's baseline.
      The height is a whole number of lines plus the vertical padding, never a fixed pixel height that leaves the text off centre. */
   :global(.field-input) { flex: 1; padding: var(--s-3) 0; overflow-y: auto; scrollbar-width: none; font-size: var(--text-ui); min-height: max(calc(1lh + 2 * var(--s-3)), var(--pill-h)); max-height: 9.5rem; }
-    .chips { display: flex; flex-wrap: nowrap; gap: var(--s-2); min-width: 0; padding-right: var(--s-3); }
+    .chips { display: flex; flex-wrap: nowrap; gap: var(--s-2); min-width: 0; padding-right: var(--s-3); padding-top: var(--s-1); }
   .chip { position: relative; flex: 0 1 auto; min-width: var(--pill-h); }
   .chip :global(.pill) { max-width: 100%; overflow: hidden; }
   .pl, .pm, .perm, .rl, .rm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

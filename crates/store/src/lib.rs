@@ -476,7 +476,12 @@ impl SpaceStore {
 
     async fn check_at(&self, seq: i64) -> Result<Option<u32>> {
         let path = self.inner.path.clone();
-        blocking(move || token::check_at(&schema::open_reader(&path)?, seq)).await
+        let shared = self.inner.shared.clone();
+        blocking(move || {
+            let _step = shared.step()?;
+            token::check_at(&schema::open_reader(&path)?, seq)
+        })
+        .await
     }
 
     /// Checks a client's token and returns its position.
@@ -611,6 +616,16 @@ impl SpaceStore {
         blocking(move || restore::flush(&shared, &path)).await
     }
 
+    /// Bind this journal to the host's owner lifecycle before exposing it to
+    /// readers or external publishers. Cost: one cell write and no I/O.
+    pub fn bind_lifecycle(&self, lifecycle: calternal_types::OwnerLifecycle) {
+        let _ = self
+            .inner
+            .shared
+            .lifecycle
+            .set((lifecycle, self.inner.space));
+    }
+
     /// Saves events (and an idempotency record) atomically and returns the
     /// stored entries. A receipt key is unique per (account, space) for its
     /// retention: a second commit with a stored key fails with
@@ -642,7 +657,12 @@ impl SpaceStore {
     pub async fn idempotency(&self, account: AccountId, key: &str) -> Result<Option<IdemRecord>> {
         let path = self.inner.path.clone();
         let key = receipt_key(account, key);
-        blocking(move || read::idempotency(&path, &key)).await
+        let shared = self.inner.shared.clone();
+        blocking(move || {
+            let _step = shared.step()?;
+            read::idempotency(&path, &key)
+        })
+        .await
     }
 
     /// Entries after position `after`, oldest first, at most `limit`.
@@ -653,7 +673,11 @@ impl SpaceStore {
     pub async fn since(&self, after: i64, limit: usize) -> Result<Vec<JournalEntry>> {
         let path = self.inner.path.clone();
         let shared = self.inner.shared.clone();
-        blocking(move || read::since(&path, &shared, after, limit)).await
+        blocking(move || {
+            let _step = shared.step()?;
+            read::since(&path, &shared, after, limit)
+        })
+        .await
     }
 }
 

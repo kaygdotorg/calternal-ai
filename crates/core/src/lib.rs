@@ -41,3 +41,9 @@ pub use people::*;
 
 mod requests;
 pub use requests::*;
+
+/// Trusted HTTP account deletion route, using current installation credentials.
+pub const ACCOUNT_ERASURE_PATH: &str = "/api/v1/auth/account/delete";
+
+/// CLI and HTTP action identity for permanent account erasure.
+pub const ACCOUNT_ERASURE_ACTION: &str = "account.delete";

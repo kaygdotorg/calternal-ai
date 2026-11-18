@@ -73,3 +73,23 @@ The page's session code is the shell's: the adapter uses the shared `ServerClien
 - **Tool steps.** Live: `tool_started` carries `name` and `summary` (the bounded target, "Run ls"); the step's title is the summary and its detail the tool name. Saved: one blockquote line per event, `> Tool <name> · <what> (started | N bytes of tool output | finished | failed)`; `blocksOf` folds them into a `steps` group (words between steps split the group), so a reload shows the same steps. Output text is not stored in the file (a byte count only), so a step's output reads "N bytes of output".
 - **`thread_full`** (a checkpoint past 2 MiB fails the turn): `reasonNotice` maps it to the `thread-full` notice, "This thread is full", with a New thread action (fixture scenario `?scenario=full`). Sends are left to the server to refuse.
 - **Checks.** `e2e/steps-server.mjs` runs the repo's fixture provider (`scripted-tool-steps`, success, failing step, 96 KiB output, stop mid-step) on a real server and compares what the page built from additions with a whole read. `e2e/server-double.mjs` now keeps revisions and answers `since` like the server.
+
+## Composer expand and collapse (2026-11-18)
+
+The owner asked for the focus/blur motion ChatGPT and Claude have. Sources read: the bb plugin thread `thr_mfnshymcbk` (its log and `~/Developer/bb-plugins/calternal-ui`: `AGENTS.md` "Phone composer focus morph", `frame/composer.ts`, `frame/pills-composer.ts`, `frame/keyboard-follow.ts`) and the owner's iPhone recordings in its Attachments (`ScreenRecording_11-15-2026-22-55-44_1.mp4` is ChatGPT's composer; the others are the plugin on a phone). The plugin's settled values, which the measurements in its AGENTS.md give from the owner's 60 fps recordings:
+
+| What | Settled value | Here |
+| --- | --- | --- |
+| Unfocused | one-line capsule, 52 pt; 38 pt from the screen edges | the context row and the chips row fold away (grid track `1fr` to `0fr`); on a phone or narrow window the box takes 26 px more inset a side |
+| Focused | two rows, 12 pt from the edges | all three rows; full column width |
+| Radius | one value in both states (26 pt, a capsule at 52 pt) | the pane radius in both states: corners never jump |
+| Duration and curve | 350 ms on the iPhone keyboard's own measured track (a `linear()` fit, 21 samples) | tokens `--dur-morph` 350 ms and `--ease-morph` (that track); 1 ms under reduced motion |
+| Order | width, height and the button row are one motion; it starts at the tap (focus), the close at the blur | one transition set on the same state flip: height (grid rows), opacity (fades in with the track, out in 40 % of it), inset |
+| Interruptible | yes | CSS transitions reverse from where they are; checked by `e2e/composer-fold.mjs` (largest step 9–10 px) |
+| Keyboard | keyboard actions never animate | Tab into or out of the composer changes state at once (base.css zeroes transitions in keyboard use) |
+
+State: open when the composer or one of its menus has focus, or a mention picker is open (`Composer.svelte`); closed otherwise, even with a draft (the field keeps its text and height). Focus is read after the event so a window losing focus keeps it open. A folded row is invisible and out of the tab order once folded.
+
+The message list does not move: `ThreadView` adds the folded rows' natural height (`data-fold` children's `scrollHeight` minus their height) to the composer's measured height, so the inset the list keeps is always the expanded one; the sum is constant through the morph, so nothing re-renders. Cost while typing: none (the state does not change per key). Checks: `e2e/composer-fold.mjs` (desktop and phone), and the key-work measure before and after in `docs/ui-performance.md`.
+
+Approvals for irreversible or access-widening actions are single-use (owner, 2026-11-18): the server lists `once` only for them, and the bar offers nothing else (`lifetimesOf`).

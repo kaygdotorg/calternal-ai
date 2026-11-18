@@ -231,6 +231,7 @@ pub struct Jobs {
     pub(super) security: Option<calternal_auth::agents::Agents>,
     pub(super) receipt_retention: std::time::Duration,
     spaces: Mutex<HashMap<String, OpenSpace>>,
+    pub(super) lifecycle: calternal_types::OwnerLifecycle,
     tick: AtomicUsize,
     pub(super) routes: RwLock<HashMap<String, String>>,
     pub(super) live: LiveMap,
@@ -244,7 +245,7 @@ impl Jobs {
     /// one indexed space-local query, one bounded job decode; no cross-space scan.
     pub(crate) fn thread_latest(&self, space: &str, thread: &str) -> Result<Option<Job>, Error> {
         let conn = self.conn(space)?;
-        let c = conn.lock().unwrap_or_else(|p| p.into_inner());
+        let c = conn.lock().map_err(db_err)?;
         c.query_row(&format!("SELECT {COLUMNS} FROM jobs WHERE operation='agent.turn' AND json_extract(input,'$.request.thread_id')=?1 AND json_extract(input,'$.check') IS NOT 1 ORDER BY rowid DESC LIMIT 1"),[thread],|r|row(space,r)).optional().map_err(db_err)
     }
 
@@ -258,8 +259,18 @@ impl Jobs {
     /// Cost at startup: one directory listing plus, per space with jobs, one open,
     /// one retention delete and one ID scan.
     pub fn open(appdata: &Path) -> Result<Self, Error> {
+        Self::open_with_lifecycle(appdata, calternal_types::OwnerLifecycle::default())
+    }
+
+    /// Open jobs with the host's shared owner lifecycle, before admitting work.
+    /// A marked space is skipped during the initial inventory.
+    pub fn open_with_lifecycle(
+        appdata: &Path,
+        lifecycle: calternal_types::OwnerLifecycle,
+    ) -> Result<Self, Error> {
         let jobs = Self {
             root: Some(appdata.join("spaces")),
+            lifecycle,
             ..Self::disabled()
         };
         let Ok(dir) = std::fs::read_dir(appdata.join("spaces")) else {
@@ -270,8 +281,12 @@ impl Jobs {
             if Uuid::parse_str(&space).is_err() || !entry.path().join("jobs.db").is_file() {
                 continue;
             }
-            let conn = jobs.conn(&space)?;
-            let c = conn.lock().unwrap_or_else(|p| p.into_inner());
+            let conn = match jobs.conn(&space) {
+                Ok(conn) => conn,
+                Err(err) if err.code == calternal_types::ErrorCode::NotFound => continue,
+                Err(err) => return Err(err),
+            };
+            let c = conn.lock().map_err(db_err)?;
             let mut st = c.prepare("SELECT id FROM jobs").map_err(db_err)?;
             let ids = st
                 .query_map([], |r| r.get::<_, String>(0))
@@ -314,6 +329,7 @@ impl Jobs {
             security: None,
             receipt_retention: calternal_content::DEFAULT_RECEIPT_RETENTION,
             spaces: Mutex::new(HashMap::new()),
+            lifecycle: calternal_types::OwnerLifecycle::default(),
             tick: AtomicUsize::new(0),
             routes: RwLock::new(HashMap::new()),
             live: Arc::new(Mutex::new(HashMap::new())),
@@ -332,9 +348,9 @@ impl Jobs {
             .root
             .as_ref()
             .ok_or_else(|| Error::unavailable("jobs are not available on this host"))?;
-        if Uuid::parse_str(space).is_err() {
-            return Err(Error::unavailable("jobs need a space UUID"));
-        }
+        let space_id = calternal_types::SpaceId::parse(space)
+            .map_err(|_| Error::unavailable("jobs need a space UUID"))?;
+        let _step = self.lifecycle.step(space_id.as_uuid())?;
         let tick = self.tick.fetch_add(1, Ordering::Relaxed) as u64;
         if let Some((c, used)) = self
             .spaces
@@ -371,7 +387,7 @@ impl Jobs {
         c.pragma_update(None, "user_version", SCHEMA_VERSION)
             .map_err(db_err)?;
         retain(&c)?;
-        let c = Arc::new(JobDatabase::new(c));
+        let c = Arc::new(JobDatabase::new(c, self.lifecycle.clone(), space_id));
         let mut spaces = self.spaces.lock().unwrap_or_else(|p| p.into_inner());
         if spaces.len() >= MAX_OPEN_SPACES
             && let Some(oldest) = spaces
@@ -385,13 +401,35 @@ impl Jobs {
         Ok(c)
     }
 
+    /// Detach an already drained space's cached jobs and identifier routes.
+    pub(crate) fn retire_space(&self, space: &str) {
+        self.spaces
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .remove(space);
+        let retired = {
+            let mut routes = self.routes.write().unwrap_or_else(|p| p.into_inner());
+            let mut retired = Vec::new();
+            routes.retain(|job, value| {
+                if value == space {
+                    retired.push(job.clone());
+                    false
+                } else {
+                    true
+                }
+            });
+            retired
+        };
+        self.stop_live(retired);
+    }
+
     pub(super) fn tx<T>(
         &self,
         space: &str,
         f: impl FnOnce(&rusqlite::Transaction<'_>) -> Result<T, Error>,
     ) -> Result<T, Error> {
         let conn = self.conn(space)?;
-        let mut c = conn.lock().unwrap_or_else(|p| p.into_inner());
+        let mut c = conn.lock().map_err(db_err)?;
         let tx = c
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_err)?;
@@ -423,7 +461,7 @@ impl Jobs {
     /// Read one job. Cost: one indexed read.
     pub fn get(&self, space: &str, id: &str) -> Result<Option<Job>, Error> {
         let conn = self.conn(space)?;
-        let c = conn.lock().unwrap_or_else(|p| p.into_inner());
+        let c = conn.lock().map_err(db_err)?;
         c.query_row(
             &format!("SELECT {COLUMNS} FROM jobs WHERE id=?1"),
             [id],
@@ -438,9 +476,12 @@ impl Jobs {
     /// final, of another plugin, or already has [`MAX_CHILDREN`] children.
     /// Cost: one FULL transaction with a few indexed reads and one insert.
     pub fn admit(&self, a: Admission) -> Result<String, Error> {
+        let _actor = self.lifecycle.step(a.account.as_uuid())?;
         let input = bounded_json(&a.input, MAX_CHECKPOINT_BYTES)?;
         let session = serde_json::to_string(&a.session).map_err(|_| Error::internal("encode"))?;
         let space = a.space.clone();
+        let space_id = calternal_types::SpaceId::parse(&space)?;
+        let _space = self.lifecycle.step(space_id.as_uuid())?;
         let id = self.tx(&space, |tx| {
             if let Some(id) = tx
                 .query_row("SELECT id FROM jobs WHERE request_key=?1", [&a.request_key], |r| {
@@ -506,17 +547,20 @@ impl Jobs {
     ) -> Result<u32, Error> {
         let text = bounded_json(checkpoint, MAX_CHECKPOINT_BYTES)?;
         let seq = live.next_seq() as i64;
-        self.tx(space, |tx| {
-            let n = tx
-                .execute(
-                    "UPDATE jobs SET checkpoint=?1,checkpoint_seq=?2,checkpoints=checkpoints+1 WHERE id=?3 AND state='running' AND runs=?4",
+        let (checkpoints, _actor) = self.tx(space, |tx| {
+            let (checkpoints, id): (u32, String) = tx
+                .query_row(
+                    "UPDATE jobs SET checkpoint=?1,checkpoint_seq=?2,checkpoints=checkpoints+1
+                      WHERE id=?3 AND state='running' AND runs=?4 RETURNING checkpoints,account",
                     params![text, seq, id, run],
+                    |r| Ok((r.get(0)?, r.get(1)?)),
                 )
-                .map_err(db_err)?;
-            if n == 0 {
-                return Err(Error::conflict("job is no longer running"));
-            }
-            tx.query_row("SELECT checkpoints FROM jobs WHERE id=?1", [id], |r| r.get(0)).map_err(db_err)
-        })
+                .optional()
+                .map_err(db_err)?
+                .ok_or_else(|| Error::conflict("job is no longer running"))?;
+            let account = calternal_types::AccountId::parse(&id)?;
+            Ok((checkpoints, self.lifecycle.step(account.as_uuid())?))
+        })?;
+        Ok(checkpoints)
     }
 }

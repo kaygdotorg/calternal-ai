@@ -308,7 +308,7 @@ impl Jobs {
         change: impl FnOnce(&rusqlite::Transaction<'_>) -> Result<T, Error> + Send + 'static,
     ) -> Result<T, Error> {
         let conn = self.conn(&a.space)?;
-        let c = conn.lock().unwrap_or_else(|p| p.into_inner());
+        let c = conn.lock().map_err(db_err)?;
         let active:bool=c.query_row("SELECT EXISTS(SELECT 1 FROM jobs WHERE id=?1 AND account=?2 AND (state='running' OR (?4 AND state='placing')) AND runs=?3)",params![a.job,a.actor.account.to_string(),run,allow_placing],|r|r.get(0)).map_err(db_err)?;
         if !active {
             return Err(Error::conflict("turn run is no longer current"));

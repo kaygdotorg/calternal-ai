@@ -39,6 +39,7 @@ CREATE TABLE IF NOT EXISTS audit(
 /// One instance per appdata root; it is `Sync` and cheap to share in an `Arc`.
 pub struct LocalStore {
     appdata: PathBuf,
+    owners: calternal_types::OwnerLifecycle,
     pub(crate) lifecycle: std::sync::OnceLock<std::sync::Arc<dyn crate::KeyLifecycle>>,
 }
 
@@ -50,38 +51,56 @@ impl LocalStore {
     pub fn open(appdata: &Path) -> Result<Self> {
         Ok(Self {
             appdata: appdata.to_owned(),
+            owners: calternal_types::OwnerLifecycle::default(),
             lifecycle: std::sync::OnceLock::new(),
         })
     }
 
+    /// Share the installation's owner lifecycle with other owner-local stores.
+    /// Set at construction, before admitting access. Cost: no I/O.
+    pub fn with_owner_lifecycle(mut self, owners: calternal_types::OwnerLifecycle) -> Self {
+        self.owners = owners;
+        self
+    }
+
+    fn acting(&self, actor: &Actor) -> Result<calternal_types::OwnerStep> {
+        self.owners
+            .step(actor.account.as_uuid())
+            .map_err(|_| Error::NotFound)
+    }
+
     pub(crate) fn path(&self, owner: &Owner) -> PathBuf {
-        let dir = match owner {
-            Owner::Account(_) => "accounts",
-            Owner::Space(_) => "spaces",
-        };
         self.appdata
-            .join(dir)
+            .join(owner.directory())
             .join(owner.uuid().as_hyphenated().to_string())
             .join("secrets.db")
     }
 
     /// Open for reading; `None` if this owner never stored anything.
-    fn reader(&self, owner: &Owner) -> Result<Option<Connection>> {
+    fn reader(&self, owner: &Owner) -> Result<Option<calternal_types::OwnerScoped<Connection>>> {
+        let step = self
+            .owners
+            .step(owner.uuid())
+            .map_err(|_| Error::NotFound)?;
         let path = self.path(owner);
         if !path.try_exists().map_err(|_| Error::Internal)? {
             return Ok(None);
         }
         let c = open_db(&path, SCHEMA)?;
-        Ok(Some(c))
+        Ok(Some(step.hold(c)))
     }
 
     /// Open the owner-local database, creating its private directory if needed.
     /// Key initialization happens inside the subsequent owner write transaction.
-    fn writer(&self, owner: &Owner) -> Result<Connection> {
+    fn writer(&self, owner: &Owner) -> Result<calternal_types::OwnerScoped<Connection>> {
+        let step = self
+            .owners
+            .step(owner.uuid())
+            .map_err(|_| Error::NotFound)?;
         let path = self.path(owner);
         calternal_fsio::private::directory(path.parent().ok_or(Error::Internal)?)
             .map_err(|_| Error::Internal)?;
-        open_db(&path, SCHEMA)
+        open_db(&path, SCHEMA).map(|connection| step.hold(connection))
     }
 
     fn key(&self, owner: &Owner, c: &Connection, create: bool) -> Result<MasterKey> {
@@ -228,6 +247,7 @@ impl SecretStore for LocalStore {
         value: SecretValue,
         actor: &Actor,
     ) -> Result<Handle> {
+        let _actor = self.acting(actor)?;
         let label = text(label, 120)?;
         let mut c = self.writer(owner)?;
         let tx = begin(&mut c)?;
@@ -251,6 +271,7 @@ impl SecretStore for LocalStore {
         value: SecretValue,
         actor: &Actor,
     ) -> Result<Handle> {
+        let _actor = self.acting(actor)?;
         let mut c = self.reader(owner)?.ok_or(Error::NotFound)?;
         let tx = begin(&mut c)?;
         let (version, label) = current(&tx, name.as_str())?.ok_or(Error::NotFound)?;
@@ -318,6 +339,7 @@ impl SecretStore for LocalStore {
         actor: &Actor,
         consumer: &Consumer,
     ) -> Result<SecretValue> {
+        let _actor = self.acting(actor)?;
         consumer.validate()?;
         let mut c = self.reader(&handle.owner)?.ok_or(Error::NotFound)?;
         let tx = begin(&mut c)?;
@@ -372,6 +394,7 @@ impl SecretStore for LocalStore {
 
     /// Cost: one fsync'd transaction; freed pages are overwritten.
     fn delete(&self, owner: &Owner, name: &SecretName, actor: &Actor) -> Result<()> {
+        let _actor = self.acting(actor)?;
         let mut c = self.reader(owner)?.ok_or(Error::NotFound)?;
         let tx = begin(&mut c)?;
         self.key(owner, &tx, false)?;
@@ -398,6 +421,7 @@ impl SecretStore for LocalStore {
         reason: &str,
         actor: &Actor,
     ) -> Result<RequestId> {
+        let _actor = self.acting(actor)?;
         let (label, reason) = (text(label, 120)?, text(reason, 500)?);
         let id = RequestId(uuid::Uuid::now_v7());
         let mut c = self.writer(owner)?;
@@ -455,6 +479,7 @@ impl SecretStore for LocalStore {
         value: SecretValue,
         actor: &Actor,
     ) -> Result<Handle> {
+        let _actor = self.acting(actor)?;
         let mut c = self.reader(owner)?.ok_or(Error::NotFound)?;
         let tx = begin(&mut c)?;
         let (name, label): (String, String) = tx
@@ -489,6 +514,7 @@ impl SecretStore for LocalStore {
 
     /// Cost: one fsync'd delete.
     fn cancel(&self, owner: &Owner, request: &RequestId, actor: &Actor) -> Result<()> {
+        let _actor = self.acting(actor)?;
         let mut c = self.reader(owner)?.ok_or(Error::NotFound)?;
         let tx = begin(&mut c)?;
         self.key(owner, &tx, false)?;

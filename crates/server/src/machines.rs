@@ -48,6 +48,8 @@ pub mod admin;
 mod admission;
 pub mod db;
 mod discards;
+mod erasure;
+mod erasure_queue;
 mod execs;
 pub mod http;
 mod owners;
@@ -211,6 +213,7 @@ pub struct MachineService {
     state: Mutex<State>,
     settings: Settings,
     worker_changes: tokio::sync::Notify,
+    pub(super) lifecycle: Arc<std::sync::OnceLock<calternal_types::OwnerLifecycle>>,
 }
 
 const EXEC_RETENTION: Duration = Duration::from_secs(600);
@@ -245,6 +248,11 @@ async fn blocking<T: Send + 'static>(
 }
 
 impl MachineService {
+    /// Attach the shared owner fence before accepting placements. No I/O.
+    pub fn bind_lifecycle(&self, lifecycle: calternal_types::OwnerLifecycle) {
+        let _ = self.lifecycle.set(lifecycle);
+    }
+
     /// Open `<data>/system/machines.db`, then load machines and grants from
     /// `authority` and active leases. The host opens `data_dir` under the root
     /// guard and passes the authority handle of its recovery-protected `auth.db`.
@@ -254,10 +262,10 @@ impl MachineService {
         authority: calternal_auth::machines::Machines,
         settings: Settings,
     ) -> Result<Arc<Self>, Error> {
-        let db = db::open(&data_dir.join("system/machines.db")).map_err(sql)?;
+        let mut db = db::open(&data_dir.join("system/machines.db")).map_err(sql)?;
         let now = Instant::now();
         let draining = db::draining(&db).map_err(sql)?;
-        let machines = authority
+        let machines: HashMap<_, _> = authority
             .list()
             .map_err(authority_error)?
             .into_iter()
@@ -266,7 +274,11 @@ impl MachineService {
                 (r.id, Machine::new(db::MachineRow::new(r, drains), now))
             })
             .collect();
+        erasure::clear_orphan_drains(&mut db, &machines, draining)?;
+        let lifecycle = Arc::new(std::sync::OnceLock::new());
         let mut st = State {
+            lifecycle: lifecycle.clone(),
+            pending_erasure_machines: erasure_queue::pending_machines(&db)?,
             readiness: readiness::Readiness::default(),
             pool_grants: authority
                 .pool_grants()
@@ -331,6 +343,7 @@ impl MachineService {
             state: Mutex::new(st),
             settings,
             worker_changes: tokio::sync::Notify::new(),
+            lifecycle,
         }))
     }
 

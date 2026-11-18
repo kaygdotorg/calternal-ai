@@ -31,6 +31,8 @@ pub(crate) struct Written {
 /// State shared by the per-space writer, read tasks and witness timer.
 pub(crate) struct Shared {
     epoch: RwLock<Arc<str>>,
+    pub(crate) lifecycle:
+        std::sync::OnceLock<(calternal_types::OwnerLifecycle, calternal_types::SpaceId)>,
     pub head: Arc<AtomicI64>,
     /// The head when the current epoch began; 0 for the first epoch.
     pub epoch_head: AtomicI64,
@@ -285,6 +287,7 @@ impl Shared {
     pub fn new(epoch: String, head: i64, epoch_head: i64, guard: Option<Guard>) -> Self {
         Self {
             epoch: RwLock::new(epoch.into()),
+            lifecycle: std::sync::OnceLock::new(),
             head: Arc::new(AtomicI64::new(head)),
             epoch_head: AtomicI64::new(epoch_head),
             guard,
@@ -297,6 +300,14 @@ impl Shared {
             mint_calls: AtomicUsize::new(0),
             restored: watch::channel(0).0,
         }
+    }
+
+    pub(crate) fn step(&self) -> crate::Result<Option<calternal_types::OwnerStep>> {
+        self.lifecycle
+            .get()
+            .map(|(lifecycle, space)| lifecycle.step(space.as_uuid()))
+            .transpose()
+            .map_err(crate::Error::internal)
     }
 
     /// Returns the number of token computations made by this store in tests.

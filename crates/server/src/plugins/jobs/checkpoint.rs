@@ -17,20 +17,22 @@ impl Jobs {
         live: &Live,
         prepare: impl FnOnce() -> Result<Value, Error>,
     ) -> Result<Value, Error> {
-        self.tx(space, |tx| {
-            let current: bool = tx.query_row(
-                "SELECT EXISTS(SELECT 1 FROM jobs WHERE id=?1 AND state='placing' AND runs=?2)",
+        let (checkpoint, _actor) = self.tx(space, |tx| {
+            let account: String = tx.query_row(
+                "SELECT account FROM jobs WHERE id=?1 AND state='placing' AND runs=?2",
                 params![id, run], |row| row.get(0),
-            ).map_err(db_err)?;
-            if !current { return Err(Error::conflict("turn is no longer placing")); }
+            ).optional().map_err(db_err)?
+                .ok_or_else(|| Error::conflict("turn is no longer placing"))?;
+            let actor = self.lifecycle.step(AccountId::parse(&account)?.as_uuid())?;
             let checkpoint = prepare()?;
             let text = bounded_json(&checkpoint, MAX_CHECKPOINT_BYTES)?;
             tx.execute(
                 "UPDATE jobs SET checkpoint=?1,checkpoint_seq=?2,checkpoints=checkpoints+1 WHERE id=?3 AND state='placing' AND runs=?4",
                 params![text, live.next_seq() as i64, id, run],
             ).map_err(db_err)?;
-            Ok(checkpoint)
-        })
+            Ok((checkpoint, actor))
+        })?;
+        Ok(checkpoint)
     }
 
     /// Save queue progress while a native turn is placing. One fenced job
@@ -43,6 +45,7 @@ impl Jobs {
     ) -> Result<(), Error> {
         let text = bounded_json(checkpoint, MAX_CHECKPOINT_BYTES)?;
         let seq = live.next_seq() as i64;
+        let _actor = self.lifecycle.step(job.account.as_uuid())?;
         self.tx(&job.space, |tx| {
             let changed = tx
                 .execute(
@@ -79,15 +82,16 @@ impl Jobs {
         }
         let text = bounded_json(checkpoint, MAX_CHECKPOINT_BYTES)?;
         let seq = live.next_seq() as i64;
-        self.tx(space, |tx| {
-            let n = tx.execute(
-                "UPDATE jobs SET state='running',checkpoint=?1,checkpoint_seq=?2,checkpoints=checkpoints+1 WHERE id=?3 AND state='placing' AND runs=?4",
+        let _actor = self.tx(space, |tx| {
+            let account: String = tx.query_row(
+                "UPDATE jobs SET state='running',checkpoint=?1,checkpoint_seq=?2,checkpoints=checkpoints+1
+                 WHERE id=?3 AND state='placing' AND runs=?4 RETURNING account",
                 params![text, seq, id, run],
-            ).map_err(db_err)?;
-            if n == 0 {
-                return Err(Error::conflict("turn is no longer placing"));
-            }
-            Ok(())
-        })
+                |row| row.get(0),
+            ).optional().map_err(db_err)?
+                .ok_or_else(|| Error::conflict("turn is no longer placing"))?;
+            self.lifecycle.step(AccountId::parse(&account)?.as_uuid())
+        })?;
+        Ok(())
     }
 }

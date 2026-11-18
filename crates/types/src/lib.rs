@@ -2,7 +2,7 @@
 //! [`Actor`], the caller-safe error, the closed host capability vocabulary and the
 //! millisecond clock and shared worker-frame bound.
 //!
-//! The crate does no I/O, holds no locks and depends only on `serde`,
+//! The crate does no file or database I/O and depends only on `serde`,
 //! `serde_json` and `uuid` (plus `schemars`/`ts-rs` behind the `contract`
 //! feature for the wire contract exporter). Crates that need an identifier or
 //! a caller-facing error import it from here instead of defining their own.
@@ -12,6 +12,8 @@ mod actor;
 mod capability;
 mod error;
 mod id;
+mod owner;
+mod owner_lifecycle;
 mod page;
 mod space_paths;
 
@@ -19,6 +21,8 @@ pub use actor::{Actor, Via};
 pub use capability::{Capability, CapabilitySet};
 pub use error::{Error, ErrorCode, Result};
 pub use id::{AccountId, GroupId, InstallationId, InviteId, SpaceId};
+pub use owner::Owner;
+pub use owner_lifecycle::{OwnerLifecycle, OwnerScoped, OwnerStep};
 pub use page::Page;
 pub use space_paths::{SPACE_INSTRUCTIONS_PATH, is_reserved_space_path};
 

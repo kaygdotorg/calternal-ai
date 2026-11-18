@@ -27,7 +27,10 @@ fn digest(bytes: &[u8]) -> String {
 }
 fn key_ok(key: &str) -> bool {
     key.len() == 33
-        && matches!(key.as_bytes()[0], b'0'..=b'4')
+        && (key.as_bytes()[0] == b'0'
+            || state::OWNER_TABLES
+                .iter()
+                .any(|(kind, _)| *kind as u8 == key.as_bytes()[0]))
         && key
             .bytes()
             .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
@@ -398,8 +401,8 @@ impl Coordinator {
         s.stamps = self.stamps(&s.image.segment)?;
         Ok(())
     }
-    fn compact(&self, s: &mut Loaded) -> Result<()> {
-        if s.length >= self.threshold {
+    fn compact(&self, s: &mut Loaded, erasure: bool) -> Result<()> {
+        if s.length >= self.threshold || (erasure && s.length != 0) {
             let old = s.image.segment.clone();
             self.store.tick(Step::BeforeSegment)?;
             let next = format!("log-{}.bin", Uuid::now_v7());
@@ -421,7 +424,7 @@ impl Coordinator {
         let mut cache = self.gate.lock().map_err(err)?;
         let mut s = self.load_cached(&mut cache)?;
         self.replay_loaded(c, &mut s)?;
-        self.compact(&mut s)?;
+        self.compact(&mut s, false)?;
         *cache = Some(s);
         Ok(())
     }

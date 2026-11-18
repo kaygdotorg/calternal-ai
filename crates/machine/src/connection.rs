@@ -152,6 +152,29 @@ async fn expire_locally(runner: &Runner, last_ok: Instant, ttl: Duration) {
     }
 }
 
+/// Query durable owner erasures for this identity without opening a session.
+pub async fn erasure_status(creds: &Credentials) -> Result<crate::protocol::ErasureStatus> {
+    let link = Link::new(&creds.server)?;
+    let timeout = Duration::from_secs(3);
+    let SessionChallenge { challenge } = link
+        .post(
+            "/api/v1/machine/session/start",
+            &SessionStart {
+                machine_id: creds.machine_id,
+            },
+            false,
+            timeout,
+        )
+        .await?;
+    let request = crate::protocol::ErasureStatusRequest {
+        machine_id: creds.machine_id,
+        signature: creds.key.sign_erasure_status(creds.machine_id, &challenge),
+        challenge,
+    };
+    link.post("/api/v1/machine/status", &request, false, timeout)
+        .await
+}
+
 async fn open_session(
     creds: &Credentials,
     link: &Link,

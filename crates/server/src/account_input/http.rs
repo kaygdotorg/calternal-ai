@@ -59,6 +59,9 @@ pub(crate) async fn events<D: Directory>(
     if q.bookmark.as_ref().is_some_and(|b| b.len() > 128) {
         return error_response(Error::invalid_input("invalid bookmark"));
     }
+    if let Err(error) = state.inputs.check_owner(p.id) {
+        return error_response(error);
+    }
     // Subscribe before reading the head: a concurrent commit is either in replay
     // or leaves a wake hint. Every hint, including lag, triggers durable replay.
     let wake = state.inputs.wakes.listen(p.id);
@@ -73,6 +76,7 @@ pub(crate) async fn events<D: Directory>(
     let st = state.clone();
     let identity = p.clone();
     let head = crate::blocking::spawn(move || {
+        let _step = st.inputs.step(identity.id)?;
         let mut c = st.inputs.open(identity.id)?;
         st.inputs.clean(&mut c, &st.directory, &identity)?;
         let head = Inputs::head(&c)?;
@@ -152,6 +156,7 @@ pub(crate) async fn events<D: Directory>(
                         let _ = change.borrow_and_update();
                     }
                 }
+                f.state.inputs.check_owner(p.id).ok()?;
                 let mut reader = f.reader.take()?;
                 let (reader, page) = crate::blocking::spawn(move || {
                     let page = reader.page(&p, &after, maintenance);

@@ -17,7 +17,7 @@ impl RecoverySink for Coordinator {
             }
             state::initialize(c)?;
             self.replay_loaded(c, &mut s)?;
-            self.compact(&mut s)?;
+            self.compact(&mut s, false)?;
             // Obsolete segments and fsio temporary files are harmless; only the
             // exact snapshot-selected segment participates in validation.
             let mut removed = false;
@@ -45,6 +45,17 @@ impl RecoverySink for Coordinator {
         };
         run().map_err(auth_error)
     }
+    fn compact_erasure(&self, c: &Connection) -> calternal_auth::Result<()> {
+        let run = || -> Result<()> {
+            let mut cache = self.gate.lock().map_err(err)?;
+            let mut s = self.load_cached(&mut cache)?;
+            self.replay_loaded(c, &mut s)?;
+            self.compact(&mut s, true)?;
+            *cache = Some(s);
+            Ok(())
+        };
+        run().map_err(auth_error)
+    }
     fn prepare(&self, c: &Connection) -> calternal_auth::Result<String> {
         self.prepare_inner(c).map_err(auth_error)
     }
@@ -64,7 +75,7 @@ impl RecoverySink for Coordinator {
             if s.image.transaction != id {
                 return Err(err("requested transaction did not commit"));
             }
-            self.compact(&mut s)?;
+            self.compact(&mut s, false)?;
             *cache = Some(s);
             Ok(())
         };

@@ -2,7 +2,8 @@ exit: 0
 --- stdout ---
 {
   "data": {
-    "machines": []
+    "machines": [],
+    "pending_erasures": []
   },
   "ok": true
 }

@@ -320,7 +320,7 @@ impl Jobs {
         for space in spaces {
             let waits = {
                 let conn = self.conn(&space)?;
-                let conn = conn.lock().unwrap_or_else(|p| p.into_inner());
+                let conn = conn.lock().map_err(db_err)?;
                 let mut query = conn
                     .prepare(
                         "SELECT id,json_extract(checkpoint,'$.person_request') FROM jobs

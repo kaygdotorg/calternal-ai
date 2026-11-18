@@ -5,7 +5,7 @@
 use super::requests_cases::{Machine, agent};
 use super::*;
 
-async fn start_turn(f: &Fixture, space: &str, thread: &Value, prompt: &str) -> String {
+pub(super) async fn start_turn(f: &Fixture, space: &str, thread: &Value, prompt: &str) -> String {
     let start = f
         .op(
             1,
@@ -21,7 +21,7 @@ fn question_form() -> Value {
     json!({"form":{"genui_version":2,"source":"$release=\"\"\nForm([Input($release,\"Which release?\")], \"Release selection\")"}})
 }
 
-async fn new_thread(f: &Fixture, space: &str) -> Value {
+pub(super) async fn new_thread(f: &Fixture, space: &str) -> Value {
     let created = f
         .op(
             1,

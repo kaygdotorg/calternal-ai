@@ -97,8 +97,7 @@ impl Publisher {
             let write = conn.clone();
             blocking(move || {
                 write
-                    .lock()
-                    .unwrap_or_else(|e| e.into_inner())
+                    .lock()?
                     .execute("DELETE FROM saved_turn_events WHERE seq <= ?1", [last])
             })
             .await?;
@@ -152,7 +151,7 @@ impl Event {
 }
 
 fn read_page(conn: &JobDatabase) -> Result<Vec<Event>, rusqlite::Error> {
-    let conn = conn.lock().unwrap_or_else(|e| e.into_inner());
+    let conn = conn.lock()?;
     let mut stmt = conn.prepare_cached(
         "SELECT seq,event_id,thread,job,account,state,reason_checkpoint FROM saved_turn_events ORDER BY seq LIMIT 64",
     )?;

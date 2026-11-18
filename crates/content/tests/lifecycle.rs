@@ -102,3 +102,128 @@ fn guarded_trash_preserves_identity_history_and_refuses_new_admission() {
             .is_none()
     );
 }
+
+#[test]
+fn retired_space_refuses_a_stale_writer_and_its_pinned_journal() {
+    use calternal_types::ErrorCode;
+    let dir = tempfile::tempdir().unwrap();
+    let roots = calternal_roots::Roots {
+        appdata: dir.path().join("appdata"),
+        userdata_ssd: dir.path().join("ssd"),
+        userdata_hdd: dir.path().join("hdd"),
+    };
+    let content = Content::open(
+        roots.clone(),
+        dir.path().join("secrets"),
+        Duration::ZERO,
+        calternal_content::DEFAULT_RECEIPT_RETENTION,
+        |_| {},
+    )
+    .unwrap();
+    let space = SpaceId::new();
+    let stale = content.live_journal(space).unwrap();
+    let owner = content.lifecycle();
+    let admitted = owner.step(space.as_uuid()).unwrap();
+    owner.close(space.as_uuid());
+    let (send, recv) = std::sync::mpsc::channel();
+    std::thread::scope(|scope| {
+        scope.spawn(|| {
+            content.retire_space(space);
+            send.send(()).unwrap();
+        });
+        assert!(recv.try_recv().is_err());
+        assert_eq!(
+            content.live_journal(space).err().unwrap().code,
+            ErrorCode::NotFound
+        );
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        assert!(
+            runtime
+                .block_on(stale.commit(calternal_store::Commit {
+                    events: vec![],
+                    idempotency: None,
+                    durable: true,
+                }))
+                .is_err()
+        );
+        drop(admitted);
+        recv.recv_timeout(Duration::from_secs(5)).unwrap();
+    });
+    let path = roots.appdata.join("spaces").join(space.to_string());
+    std::fs::remove_dir_all(&path).unwrap();
+    assert!(content.live_journal(space).is_err());
+    assert!(!path.exists());
+}
+
+/// Independent review #44, fence item 1: reads through a retained journal
+/// handle. `since` and `idempotency` open read-only SQLite connections without
+/// a fresh owner permit, so a handle retained before the protected close keeps
+/// returning the closed space's journal while erasure drains. Expected: the
+/// closed owner reads as absent, as `live_journal` already does.
+#[test]
+fn retained_journal_reads_are_refused_after_owner_close() {
+    use calternal_types::ErrorCode;
+    let dir = tempfile::tempdir().unwrap();
+    let roots = calternal_roots::Roots {
+        appdata: dir.path().join("appdata"),
+        userdata_ssd: dir.path().join("ssd"),
+        userdata_hdd: dir.path().join("hdd"),
+    };
+    let content = Content::open(
+        roots,
+        dir.path().join("secrets"),
+        Duration::ZERO,
+        calternal_content::DEFAULT_RECEIPT_RETENTION,
+        |_| {},
+    )
+    .unwrap();
+    let (space, account) = (SpaceId::new(), AccountId::new());
+    content
+        .register_kind(
+            space,
+            "threads",
+            Placement::VisibleTree {
+                folder: "AI".into(),
+                subdirectories: vec!["Chats".into()],
+            },
+            FileFormat::Markdown,
+        )
+        .unwrap();
+    content
+        .write(
+            space,
+            None,
+            "threads",
+            None,
+            json!({"title":"Private title"}),
+            b"private body",
+            Request {
+                account,
+                via: None,
+                id: "create",
+                operation: "example.lifecycle",
+                fingerprint: "create",
+            },
+            |i| json!({"id":i.id}),
+        )
+        .unwrap();
+    let stale = content.live_journal(space).unwrap();
+    content.lifecycle().close(space.as_uuid());
+    assert_eq!(
+        content.live_journal(space).err().unwrap().code,
+        ErrorCode::NotFound
+    );
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let page = runtime.block_on(stale.since(0, 100));
+    assert!(
+        page.is_err(),
+        "closed space journal still readable: {} entries",
+        page.map(|p| p.len()).unwrap_or(0)
+    );
+}
