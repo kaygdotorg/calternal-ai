@@ -2,7 +2,7 @@
 
 Decisions waiting on kayg, most blocking first. Answer here or in chat; answered items
 move to the decision record they belong to and leave this list. Terms: see
-[glossary](glossary.md). Updated 2026-11-18 12:10 IST.
+[glossary](glossary.md). Updated 2026-11-18 12:45 IST.
 
 ## Waiting now
 
@@ -31,7 +31,8 @@ move to the decision record they belong to and leave this list. Terms: see
 - **In progress: Settings and Appearance**: first eleven answers recorded in `settings.md`; second batch asked. Appearance (wordmark and its font, fonts, wallpaper, accent, themes and presets), agents (retry and snooze, streaming, default permission mode), shortcuts, machines, plugins, skills, automations.
 - **Machines without a terminal**, partly decided 2026-11-18 (below); still to grill: pre-configuring machines at deploy time, the `curl | sh` installer at calternal.com/install for both a server and a machine, the macOS app that bundles the CLI, how a machine behind NAT stays reachable for people who know nothing about networking, and how a group's allowance of pool compute is configured and shown.
 - **Plans and compute**: what a group (a plan or role) is allowed on the pool, and how that is configured.
-- **The thread file's format**: kayg wants it readable; today it carries machine state in the frontmatter and message markers as HTML comments.
+- **Plans and compute, measure**: kayg is thinking CPUs and RAM; how they are enforced and shown (builds, especially Rust, use far more than an agent thinking).
+- **Re-authentication wording**: "Sign in again to keep going" sounds like the app itself is locked; a line that names the provider instead.
 - **Plugin-delivered interface**: how a plugin ships real UI, so the orchestrator can be split (shell, composer, a thread rail as `calternal-orchestrator-rail`).
 - **Upgrades with real data**: there is no migration code by rule; what an upgrade across a schema change does once calternal.cloud holds data.
 - Onboarding for developers versus everyone else: what changes.
@@ -46,6 +47,9 @@ move to the decision record they belong to and leave this list. Terms: see
 ## Recently decided (2026-11-17), now in the decision records
 
 - The composer and palette: see `composer.md`.
+- Thread files (2026-11-18): very readable, like the existing app's files: a `format:` tag in the frontmatter as the existing app does (`format: calternal-money`), a heading per message naming who or what wrote it (for an agent: harness, provider, model, reasoning level, time, duration), and machine state (IDs, provider session, counters) in a hidden companion file.
+- Wallpapers reuse the Unsplash key already in the production secrets file (2026-11-18).
+- Installer (2026-11-18): a hand-held, interactive, plain-text wizard (not a TUI) at calternal.com/install for both a server and a machine; it may install Podman and the microVM runtime with consent; the CLI comes first, the macOS app after; the server installer enrolls its own host as a machine by default.
 - Machines and sandboxes (2026-11-18): the first owner's onboarding walks through adding a machine unless one was pre-configured at deploy; someone using only the hosted instance never sees machines, their group decides their compute; adding a machine works by an agent over SSH and also by a printed script to run on any Linux or macOS machine; a machine always connects out to the server; one standard sandbox for everybody, its image changeable only by server admins; own machines are sandboxed by default with Direct as an explicit choice.
 - Provider sign-in (2026-11-18): done in the app, as items in the bar above the composer and an in-chat flow (a message with the link that turns into "Authentication done"); re-authentication is started automatically on expiry and, if it lapses, offered again when the person next starts typing ("these providers need signing in again", expandable); none of the flow is written to the thread file except one line that sign-in was attempted or done for a provider, with a time.
 - calternal.cloud is replaced by this product (kayg's instruction, 2026-11-18); the existing app is stopped and its data kept.
