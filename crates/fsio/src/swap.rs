@@ -54,8 +54,20 @@ impl Prepared {
     /// Writes `bytes` next to `path` under a temporary name and flushes
     /// it. `path` itself is untouched.
     pub fn new(path: &Path, bytes: &[u8]) -> io::Result<Self> {
+        Self::new_mode(path, bytes, 0o666)
+    }
+
+    /// Stage recoverable exchange bytes with an explicit Unix file mode.
+    /// The umask applies. A failed write removes the owned temporary image.
+    /// Cost: one file creation, write and fsync. The destination is untouched.
+    pub fn new_mode(path: &Path, bytes: &[u8], mode: u32) -> io::Result<Self> {
+        use std::os::unix::fs::OpenOptionsExt;
         let tmp = temp_path(path)?;
-        let mut f = OpenOptions::new().write(true).create_new(true).open(&tmp)?;
+        let mut f = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(mode)
+            .open(&tmp)?;
         let mut me = Self {
             path: path.to_owned(),
             tmp,

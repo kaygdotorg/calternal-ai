@@ -245,6 +245,20 @@ fn manifest_validation_vectors() {
     assert!(parse_manifest(b"{} {}").is_err());
 }
 #[test]
+fn live_editing_is_an_opt_in_for_markdown_kinds() {
+    let mut value = serde_json::to_value(manifest()).unwrap();
+    value["kinds"] = json!([{
+        "id": "documents",
+        "storage": {"hidden": true},
+        "claimed_text": true,
+        "schema": {"type": "object", "x-calternal-live-editing": true}
+    }]);
+    assert!(parse_manifest(&serde_json::to_vec(&value).unwrap()).is_ok());
+    value["kinds"][0]["claimed_text"] = json!(false);
+    value["kinds"][0]["extension"] = json!("txt");
+    assert!(parse_manifest(&serde_json::to_vec(&value).unwrap()).is_err());
+}
+#[test]
 fn collisions_are_atomic_and_policy_is_data_only() {
     for kind in ["plugin", "kind", "operation", "collection"] {
         let mut a = manifest();

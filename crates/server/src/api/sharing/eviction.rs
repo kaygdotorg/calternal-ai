@@ -29,10 +29,8 @@ pub(super) async fn after_revoke<D: Directory>(
             Ok(()) => (),
             Err(error) if error.code == ErrorCode::NotFound => {
                 state
-                    .directory
-                    .room_eviction()
-                    .evict_item_account(space, kind, item, account)
-                    .await;
+                    .store
+                    .evict_live_room_account(space, kind, item, account);
             }
             Err(error) => return Err(error),
         }

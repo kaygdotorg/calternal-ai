@@ -210,8 +210,9 @@ impl Plugin {
     /// Visible kinds become top-level folders; hidden kinds live under
     /// `.calternal/<plugin-id>/<kind>/`. Claimed text is stored as Markdown; any other
     /// kind is stored unparsed under its declared extension (manifest validation
-    /// guarantees one). Cost: O(kinds) small allocations.
-    pub fn kind_registrations(&self) -> Vec<(String, Placement, FileFormat)> {
+    /// guarantees one). The last tuple field carries the live-editing opt-in. Cost: O(kinds)
+    /// small allocations.
+    pub fn kind_registrations(&self) -> Vec<(String, Placement, FileFormat, bool)> {
         self.manifest
             .kinds
             .iter()
@@ -237,7 +238,7 @@ impl Plugin {
                     },
                     _ => FileFormat::Markdown,
                 };
-                (kind.id.clone(), placement, format)
+                (kind.id.clone(), placement, format, kind.live_editing())
             })
             .collect()
     }

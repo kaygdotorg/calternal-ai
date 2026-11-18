@@ -26,7 +26,8 @@ database until checkpointed. SQLite SHM, locks and sockets are runtime state.
 | Appdata `system/invite.key`, account and space `secret.key` | Authority | Auth and secrets. Fixed 32-byte payloads with v1 key derivation and ciphertext binding. Preserve bytes, ownership and mode with their database. |
 | Appdata `installed-plugins.sqlite3` and `installed-plugin-workers/` | Mixed | Package store, SQLite 1. Installed and retained archives, digests, approvals and revision counters are authoritative. Manifest API version 1 describes the package contract. Extracted worker copies are a cache reused across restarts only when they match the archive bytes, so they carry no version. Development drafts are disposable. |
 | Appdata `system/content-index.db`, `spaces/<id>/search-v2.db`, `spaces/<id>/search-messages-v1.all.db`, `wallpapers/` | Derived | Content routing, SQLite 1. Retain the exact route catalogue across upgrades. Item search is SQLite 2 at generation 3. Message search, with its postings and thread-location index, is SQLite 1 at generation 1. Wallpaper cache follows its rendition catalogue. |
-| SSD space `Notes/`, `AI/Chats/`, Trash, registered visible and hidden content | Authority | Content writes `calternal-id` and a `calternal-note/v1` envelope for Markdown without its own format tag. Thread writers use `calternal-thread/v1`. Space Collections use `calternal-collection/v1` JSON for their structured membership. Other provider or plugin formats and opaque bytes follow their own contracts. |
+| Appdata `system/automations.db` | Authority | Version 1 scheduler cursor, stop state and run dispatch outbox. The shared SQLite runner owns the schema. |
+| SSD space `Notes/`, `AI/Chats/`, Trash, registered visible and hidden content | Authority | Content writes `calternal-id` and a `calternal-note/v1` envelope for Markdown without its own format tag. Thread writers use `calternal-thread/v1`. Automations use `calternal-automation/v1`. Portable skill entry points use the standard Agent Skills format inventoried here and carry standard frontmatter. Space Collections use `calternal-collection/v1` JSON for their structured membership. Other provider or plugin formats and opaque bytes follow their own contracts. |
 | SSD space `AI/AGENTS.md`, `AI/Skills/*/SKILL.md` | Authority | Space instructions and the person write raw Markdown. Skill descriptors use the external Agent Skills format and may be provisioned on disk. These formats pass through byte-for-byte. |
 | SSD `spaces/<id>/.calternal/settings.json` | Authority | The plugin settings adapter writes `calternal-plugin-settings/v1`. JSON preserves typed nested values, including unknown settings during an older writer’s update. |
 | SSD automation definitions, account shortcuts, themes and other settings files | Authority when introduced | No durable server writer in this lane. Use `calternal-shortcuts/v1` for account shortcuts and `calternal-theme/v1` for themes. Automation definitions, custom components and starred prompts need their own versioned formats when their writers land. |
@@ -37,6 +38,22 @@ database until checkpointed. SQLite SHM, locks and sockets are runtime state.
 | Machine operator files for microVMs | Operator | The guest image is pinned by its manifest digest in the machine config. The machine config rejects unknown fields. The egress policy's `.installed` receipt is bound to the boot and fails closed, so it is reinstalled rather than migrated. |
 | Appdata `system/upgrade-intent.json` and role-local `.calternal-upgrade/` | Temporary authority | Deploy writes the private `calternal-upgrade-intent/v1` decision and one restore point. The manifest binds installation, both image digests and the raw file proofs. The gate supplies `calternal-upgrade-proof/v1` evidence for the two images. |
 | Appdata `startup.json`, `setup.token`, operator and release config | Mixed | Server startup publishes `calternal-startup/v1` and a replaceable setup code. Auth retains its hash and expiry. Operator owns the pinned installation ID and deployment secrets. Deploy owns image IDs, units and release pointers. |
+
+The live-editing migration adds `room_kinds` and `room_checkpoints` to
+space content SQLite as version 6, following Sharing’s version 5 collection
+membership projection. Checkpoints belong to an immutable revision and commit with its outbox
+intent. A checkpoint is limited to 8 MiB. Each item retains up to 64 recent
+checkpoints and 16 MiB total. Purge removes them with the referenced revisions.
+The preceding writer ignores these tables. A head written without a
+checkpoint is a new lineage on the next live access. Older live bases cannot
+be merged automatically across that boundary.
+
+The installed package catalog advances from SQLite version 1 to 2. The
+shared runner adds live editing to the original bundled Notes archive
+and updates its archive checksum. The migration matches the exact
+pre-live archive bytes and checksum and preserves its activation and
+revision. It leaves explicitly approved packages and retained versions
+as stored. Fresh installs receive the opt-in from the shipped manifest.
 
 ## Forward changes
 
