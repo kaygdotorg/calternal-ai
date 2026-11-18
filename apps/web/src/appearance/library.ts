@@ -7,9 +7,13 @@
 
 /** One picture the person can use. `url` is something an `<img>` can load (a same-origin file or a blob URL). A credit is shown wherever the picture is chosen. */
 export interface Wallpaper {
+  /** Stable id; for a built-in it is the file stem, otherwise generated when the picture was added. */
   id: string;
+  /** The name shown under the thumbnail. */
   name: string;
+  /** Where the picture came from: shipped with the app, uploaded by the person, or saved from a search. */
   source: "builtin" | "upload" | "unsplash";
+  /** Address of the full picture: a shipped file, or an object URL for a stored one. */
   url: string;
   /** For a generated look or a photograph, the dark scheme's rendition (the same recipe with lightness remapped); `url` is the light one. */
   urlDark?: string;
@@ -25,9 +29,13 @@ export interface Wallpaper {
 
 /** One search hit, not yet stored. */
 export interface StockResult {
+  /** The provider's id for the photo; the key for saving it. */
   id: string;
+  /** The photographer's own description, shown as the label. */
   description: string;
+  /** A small preview address; the full picture is fetched only when saved. */
   thumb: string;
+  /** Who made the photo and where to credit them; kept with the saved picture. */
   credit: { author: string; link: string };
 }
 

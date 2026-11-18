@@ -25,6 +25,7 @@ const b64 = {
     return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
   },
 };
+/** The base64url helpers WebAuthn needs (bytes to text and back, no padding); exported for tests and for the passkey flows in other modules. Malformed input throws from `atob`. */
 export const base64url = b64;
 
 import { clearCache } from "./cache";

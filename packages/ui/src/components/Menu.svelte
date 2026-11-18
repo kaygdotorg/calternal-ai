@@ -1,10 +1,15 @@
 <script lang="ts" module>
   /** One entry of a Menu. `label` is its name. */
   export interface MenuItem {
+    /** Stable id returned when the item is picked. */
     id: string;
+    /** The visible text and accessible name. */
     label: string;
+    /** A second, quieter line. */
     sub?: string;
+    /** An optional leading icon. */
     icon?: import("../icons").IconName;
+    /** Shows a check mark: this is the current choice (for a menu that picks one value). */
     checked?: boolean;
     /** A destructive entry (drawn in the danger colour). */
     danger?: boolean;

@@ -26,9 +26,13 @@ export function luminance(hex: string): number {
 
 /** A rectangle as fractions of the viewport (0..1). */
 export interface Frac {
+  /** Left edge of the box as a fraction of the picture's width. */
   x0: number;
+  /** Top edge as a fraction of the picture's height. */
   y0: number;
+  /** Right edge as a fraction of the picture's width. */
   x1: number;
+  /** Bottom edge as a fraction of the picture's height. */
   y1: number;
 }
 
@@ -38,8 +42,11 @@ export interface Frac {
  * grid read once from its blurred copy (`setBackdropField`). Nothing here ever reads pixels at runtime.
  */
 export interface Field {
+  /** Columns of the luminance grid. */
   cols: number;
+  /** Rows of the luminance grid. */
   rows: number;
+  /** Relative luminance of each cell, row by row (0 dark to 1 light); read, never changed. */
   lum: ArrayLike<number>;
 }
 
@@ -120,7 +127,9 @@ export function washFor(scheme: Scheme, range: { min: number; max: number }, bas
 
 /** What a surface is drawn with: tint alpha (0..1) and blur radius (px, before the touch scale). */
 export interface Material {
+  /** Opacity of the glass wash, 0 to 1. */
   alpha: number;
+  /** Blur radius of the glass in px. */
   blur: number;
 }
 

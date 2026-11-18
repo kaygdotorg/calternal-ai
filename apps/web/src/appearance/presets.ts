@@ -9,9 +9,13 @@ import type { Palette, Theme } from "./theme";
 
 /** A preset. `theme` null means the built-in tokens; `wallpaper` is a library id or "none". */
 export interface Preset {
+  /** Stable id; stored with the choice. */
   id: string;
+  /** The name shown under the preview. */
   name: string;
+  /** The wallpaper id the preset sets (`none` for a plain paper look). */
   wallpaper: string;
+  /** The colour theme the preset sets, or null to keep the shell's own tokens. */
   theme: Theme | null;
   /** Accent from the wallpaper (true) or the theme's own. */
   accentFromWallpaper: boolean;
@@ -22,6 +26,7 @@ export interface Preset {
 const pal = (paper: string, ink: string, accent: string, danger: string, good: string, warn: string, info: string): Palette => ({ paper, ink, accent, danger, good, warn, info });
 const theme = (id: string, name: string, light: Palette, dark: Palette, licence: string, source: string): Theme => ({ id, name, light, dark, licence, source });
 
+/** The looks offered as one-click presets (the first-run sheet and Appearance): each sets the wallpaper, theme, accent source and material together. The first is the shipped default; a preset names its wallpaper by id, never by URL. Built once at load. */
 export const PRESETS: Preset[] = [
   { id: "calternal", name: "Calternal", wallpaper: tokens.appearance["default-wallpaper"], theme: null, accentFromWallpaper: true, material: "glass" },
   { id: "paper", name: "Paper", wallpaper: "none", theme: null, accentFromWallpaper: false, material: "paper" },

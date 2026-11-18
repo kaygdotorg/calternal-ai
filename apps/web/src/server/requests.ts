@@ -15,9 +15,13 @@ import { ServerClient, ServerError } from "./client";
 
 /** One request as the server lists it. */
 export interface WireRequest {
+  /** The request's UUID; answering it names it. */
   id: string;
+  /** The space it belongs to, when it has one. */
   space_id?: string | null;
+  /** The thread that asked, when it came from a thread. */
   thread_id?: string | null;
+  /** What is asked: a question, an approval or a secret, with the data its form needs (read by `requestOf`). */
   detail:
     | { kind: "question"; label: string; form: { genui_version: number; source: string } }
     | { kind: "approval"; app: string; write: boolean; action?: { operation?: string; input?: unknown; request_id?: string; risk?: string }; lifetimes?: string[] }
@@ -61,6 +65,7 @@ export function answerInput(id: string, a: Answer): { operation: string; input: 
   }
 }
 
+/** The real server's requests (questions, approvals, secrets) behind the requests interface: lists them for a space and answers; failures are `ServerError`, and an answer to a request that is gone is `not_found`. One read per call. */
 export class ServerRequests implements RequestsClient {
   private watchers = new Set<(r: Request[]) => void>();
   /** Prompts the person chose to skip on this page: hidden until the page is reloaded (the server has nothing to decline; the prompt expires by itself). */

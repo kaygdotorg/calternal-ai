@@ -12,8 +12,10 @@ import { Bursts, undoAll, type ToastEvent, type UndoToken } from "./bursts";
 import type { Presenter } from "./presenter";
 import { stackPresenter, onStackEnd } from "./stack.svelte";
 
+/** Where a toast is in its life: shown, loading, undoing, undone, partially undone or failed. Drives its text and whether its button is busy. */
 export type Phase = "shown" | "loading" | "undoing" | "undone" | "partial" | "failed";
 
+/** What one visible toast renders: its words, its count and phase, and its follow-up button (Undo, with tokens left, or another action). */
 export type ToastView = {
   id: string;
   severity: ToastEvent["severity"];
@@ -184,4 +186,5 @@ export function track<T>(
   return id;
 }
 
+/** Removes a toast by id from whichever presenter shows it; an unknown id does nothing. */
 export const dismiss = (id: string) => (where.get(id) ?? presenter).dismiss(id);

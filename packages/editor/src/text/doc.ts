@@ -9,10 +9,15 @@ import type { Change } from "../transaction";
 export interface Line { from: number; to: number; number: number; text: string }
 /** Read-only text addressed by position and by line (lines start at 1). */
 export interface Doc {
+  /** The length in UTF-16 code units. */
   readonly length: number;
+  /** The number of lines (at least 1). */
   readonly lines: number;
+  /** The `n`th line (1-based); throws for a number outside the document. */
   line(n: number): Line;
+  /** The line that contains a position. */
   lineAt(pos: number): Line;
+  /** The text between two positions (to the end when `to` is omitted). */
   sliceString(from: number, to?: number): string;
 }
 /** A selection: where it started and where the caret is (they differ when text is selected). */

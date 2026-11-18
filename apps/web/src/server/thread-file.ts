@@ -13,18 +13,29 @@ import type { Message, Permission, ProviderId, ThreadNotice, ThreadState, Thread
 
 /** The thread metadata the server keeps (the fields this client reads). */
 export interface WireMetadata {
+  /** The thread's title as the person sees it. */
   title: string;
+  /** The provider plugin id the thread talks to (`calternal-claude-code`). */
   provider: string;
+  /** The permission mode the thread runs in (the wire name, see `wireMode`). */
   mode: string;
   /** Null until a turn has named one. */
   model?: string | null;
+  /** How many messages the file holds; used for the list row before the messages are read. */
   message_count?: number;
+  /** When the thread last changed (ISO), for ordering. */
   last_activity_at?: string;
+  /** When the thread was made (ISO). */
   created_at?: string;
+  /** True when the person archived it (hidden from the list, kept). */
   archived?: boolean;
+  /** True when it was deleted (not shown anywhere). */
   deleted?: boolean;
+  /** The thread this one was spawned from, for the child rows. */
   parent_thread?: string;
+  /** What spawned it (a person or an agent), for the row's icon. */
   spawned_by?: string;
+  /** A message waiting for the machine: its request id and when it was made (Unix ms). */
   pending?: { request_id?: string; created_ms?: number };
 }
 /** A saved thread as `threads.get` and the writes return it. */

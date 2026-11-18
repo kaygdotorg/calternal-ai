@@ -1,6 +1,7 @@
 /** The drawn document's look, from the design system's tokens (the host page defines them): type scale, ink, accent, radii. No fonts or colours of its own. */
 import { EditorView } from "@codemirror/view";
 
+/** The editor's look as one CodeMirror theme built from the design tokens (CSS variables), so a scheme or wallpaper change restyles it with no JavaScript. */
 export const theme = EditorView.theme({
   "&": { color: "var(--ink)", fontSize: "var(--text-ui)", lineHeight: "1.6", background: "transparent" },
   "&.cm-focused": { outline: "none" },

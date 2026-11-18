@@ -8,22 +8,35 @@ import { contrast, type Rgb } from "./accent";
 
 /** What a theme supplies for one scheme. Every colour is `#rrggbb`. */
 export interface Palette {
+  /** The surface colour (`#rrggbb`); the veil and every text colour are solved against it. */
   paper: string;
+  /** The text colour on paper. */
   ink: string;
+  /** The accent colour for selection, the primary button and focus. */
   accent: string;
+  /** The colour of errors and destructive actions. */
   danger: string;
+  /** The colour of success. */
   good: string;
+  /** The colour of warnings. */
   warn: string;
+  /** The colour of neutral notices. */
   info: string;
 }
 
 /** A theme: a name and a palette for each scheme (a twin; a theme with one scheme repeats its palette). */
 export interface Theme {
+  /** Stable id; stored with the choice. */
   id: string;
+  /** The name shown in Appearance. */
   name: string;
+  /** The palette used in the light scheme. */
   light: Palette;
+  /** The palette used in the dark scheme. */
   dark: Palette;
+  /** The licence of the theme's colours (shown in credits). */
   licence?: string;
+  /** Where the theme comes from (a link), for credit. */
   source?: string;
 }
 

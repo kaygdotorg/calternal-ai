@@ -13,8 +13,11 @@
  * Cost: a sort of at most a few thousand numbers per probe, about 60 probes per surface; it runs when the wallpaper, scheme, boxes or window size change.
  */
 export type RGB = [number, number, number];
+/** The colour scheme a veil is solved for. */
 export type Scheme = "light" | "dark";
+/** Which surface a veil sits on: `side` (a sidebar, straight on the wallpaper) or `card` (the middle card, which never flips its ink). */
 export type Role = "side" | "card";
+/** Which parts of the glass material are on (Appearance, Materials): `blur` frosts the picture, `dim` adds a neutral veil, `tint` a veil in the scheme's paper. All off leaves the bare picture. */
 export interface Flags { blur: boolean; dim: boolean; tint: boolean }
 /** The colours of one scheme: primary, secondary and tertiary ink, and the paper the veil is made of. */
 export interface Ink { ink: RGB; ink2: RGB; ink3: RGB; paper: RGB }
@@ -22,9 +25,13 @@ export interface Ink { ink: RGB; ink2: RGB; ink3: RGB; paper: RGB }
 export interface Veil {
   /** Which scheme's ink the surface uses (a sidebar may differ from the page's scheme). */
   scheme: Scheme;
+  /** The tint layer: its opacity and colour. */
   tint: { a: number; rgb: RGB };
+  /** The neutral dim layer: its opacity and colour. */
   dim: { a: number; rgb: RGB };
+  /** The secondary text colour the solver chose to meet its contrast target. */
   ink2: RGB;
+  /** The tertiary text colour the solver chose to meet its contrast target. */
   ink3: RGB;
   /** 1 - (1 - tint)(1 - dim): how much of the picture is covered. */
   total: number;
@@ -44,15 +51,19 @@ const mix = (x: RGB, y: RGB, t: number): RGB => over(x, y, t);
 /** The 1st percentile of a list. */
 export const p01 = (xs: number[]): number => [...xs].sort((a, b) => a - b)[Math.floor(0.01 * (xs.length - 1))]!;
 
+/** The opacity of the tint layer per surface when `tint` is on (a starting point; the solver raises the total until the text reaches `TARGET`). */
 export const TINT_A: Record<Role, number> = { side: 0.35, card: 0.85 };
+/** The opacity of the neutral dim layer per surface when `dim` is on (see `TINT_A`). */
 export const DIM_A: Record<Role, number> = { side: 0.25, card: 0.6 };
 const GAIN: Record<Scheme, number> = { light: 0.25, dark: 0.33 };
 const C_CAP = 0.05, A_MAX = 0.9, MARGIN = 0.02, FLIP_GAIN = 0.12;
 /** Headroom over each target for what the model does not see: the grain, the JPEG, and pixels between the 48 by 48 samples. */
 const HEAD = 0.35;
+/** The contrast ratios the veil is solved to for ink, secondary and tertiary text. Mutated by `setFloor`; read by every solve, so a change needs a re-solve (the wallpaper module schedules it). */
 export const TARGET: { ink: number; ink2: number; ink3: number } = { ink: 7, ink2: 5.5, ink3: 4.5 };
 /** The readability floors the veil is solved to: `current` (7, 5.5, 4.5) or `low` (4.5, 4, 3), which shows more of the picture. `low` exists for the owner's side-by-side comparison only (Settings, Appearance, Compare). */
 const FLOORS = { current: { ink: 7, ink2: 5.5, ink3: 4.5 }, low: { ink: 4.5, ink2: 4, ink3: 3 } } as const;
+/** Switches the readability floor between `current` and `low` (the owner's side-by-side comparison; nothing else should call it). Takes effect at the next solve. */
 export function setFloor(f: keyof typeof FLOORS): void { Object.assign(TARGET, FLOORS[f]); }
 
 // ---- OKLCH, for the veil's hue ----

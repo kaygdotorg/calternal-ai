@@ -15,7 +15,9 @@ export type FontRole = "ui" | "chat" | "code" | "brand";
 
 /** A choice for one role. */
 export interface FontChoice {
+  /** The font family name as CSS knows it; the key a choice is stored and looked up by. */
   family: string;
+  /** Where the family comes from, which decides how it is loaded: a catalogue (google, fontsource, fontshare), the person's upload, or the system. */
   source: FontSource;
 }
 
@@ -33,9 +35,13 @@ export const DEFAULT_FONTS: FontPrefs = {
 
 /** One family in a catalogue. `ready` is false when only the server could fetch it (fixture: not downloaded). */
 export interface FontInfo {
+  /** The family name as CSS knows it. */
   family: string;
+  /** Where the family comes from: a catalogue, an upload or the system. */
   source: FontSource;
+  /** True for a monospace family: offered for code, never for text. */
   mono: boolean;
+  /** False when the family is only listed (not downloaded yet): it cannot be drawn until it has been. */
   ready: boolean;
 }
 
