@@ -7,14 +7,14 @@
   import { Avatar, Button, Icon, IconButton, Popover, Selector, Sheet, currentForm, failed, textField, toast } from "@calternal/ui";
   import { say } from "../../../server/say";
   import { qrSvg } from "../../../lib/qr";
-  import { EXPIRIES, audienceKey, expiryText, isGroup, sentenceOf, sharing, type Found, type Grant, type ItemRef, type Permission, type ShareList } from "./sharing";
+  import { EXPIRIES, audienceKey, expiryText, isGroup, sentenceOf, sharing, isLink, type Found, type ItemRef, type LinkGrant, type NamedGrant, type Permission, type ShareList } from "./sharing";
   let { item, title, trigger, onclose }: { item: ItemRef; title: string; trigger: HTMLElement | null; onclose: () => void } = $props();
 
   let list = $state<ShareList | null>(null);
   let unreadable = $state(false);
   const sentence = $derived(list ? sentenceOf(list) : "");
-  const people = $derived(list?.grants.filter((g) => g.audience) ?? []);
-  const links = $derived(list?.grants.filter((g) => !g.audience) ?? []);
+  const people = $derived(list?.grants.filter((g): g is NamedGrant => !isLink(g)) ?? []);
+  const links = $derived(list?.grants.filter(isLink) ?? []);
 
   async function read(cursor?: string) {
     try {
@@ -54,21 +54,29 @@
   /** The expiry choice a link's date stands for: its nearest option, or none when it is already past. */
   const choiceOf = (at: number | null): string | null => (at === null ? "never" : at <= Date.now() ? null : String(EXPIRIES.slice(1).reduce((best, e) => (Math.abs(e.days! * DAY - (at - Date.now())) < Math.abs(best * DAY - (at - Date.now())) ? e.days! : best), 1)));
   const expiryOptions = EXPIRIES.map((e) => ({ value: e.days === null ? "never" : String(e.days), label: e.label }));
-  const setExpiry = (g: Grant, v: string) => void change(() => sharing.link_update(item, g.grant_id, undefined, v === "never" ? null : Date.now() + Number(v) * DAY));
+  const setExpiry = (g: LinkGrant, v: string) => void change(() => sharing.link_update(item, g.grant_id, undefined, v === "never" ? null : Date.now() + Number(v) * DAY));
   const createLink = () => void change(() => sharing.link_create(item, `Link ${links.length + 1}`));
+  // Rename a link (its label): the name becomes a field in place; Enter keeps it, Escape leaves it, an empty name leaves it.
+  let renaming = $state<string | null>(null), draft = $state("");
+  const startRename = (g: LinkGrant) => { renaming = g.grant_id; draft = g.label; };
+  const focusNow = (el: HTMLInputElement) => { el.focus(); el.select(); };
+  function commitRename(g: LinkGrant) {
+    const name = draft.trim();
+    renaming = null;
+    if (name && name !== g.label) void change(() => sharing.link_update(item, g.grant_id, name));
+  }
   let qr = $state<{ id: string; svg: string } | null>(null);
-  async function copy(g: Grant) {
+  async function copy(g: LinkGrant) {
     try {
       const { url } = await sharing.link_copy(item, g.grant_id);
       await navigator.clipboard.writeText(url);
       toast("Link copied");
     } catch (e) { failed(say(e, "copy the link")); }
   }
-  async function showQr(g: Grant) {
+  async function showQr(g: LinkGrant) {
     if (qr?.id === g.grant_id) { qr = null; return; }
     try { qr = { id: g.grant_id, svg: qrSvg((await sharing.link_copy(item, g.grant_id)).url) }; } catch (e) { failed(say(e, "make the code")); }
   }
-  const sub = (g: Grant) => (isGroup(g.audience) ? "Group" : "");
 </script>
 
 {#snippet body()}
@@ -94,9 +102,9 @@
       {#each people as g (g.grant_id)}
         <div class="person" data-person={g.grant_id}>
           <Avatar name={g.name} />
-          <span class="nm">{g.name}{#if sub(g)} <small>{sub(g)}</small>{/if}</span>
+          <span class="nm">{g.name}{#if isGroup(g.audience)} <small>Group</small>{/if}</span>
           {#if list.can_manage_audiences}
-            <Selector size="sm" fill={false} label="{g.name}: what they can do" value={g.permission} options={[{ value: "view", label: "View" }, { value: "edit", label: "Edit" }]} onchange={(v: Permission) => void change(() => sharing.grant(item, g.audience!, v))} />
+            <Selector size="sm" fill={false} label="{g.name}: what they can do" value={g.permission} options={[{ value: "view", label: "View" }, { value: "edit", label: "Edit" }]} onchange={(v: Permission) => void change(() => sharing.grant(item, g.audience, v))} />
             <IconButton small icon="close" label="Remove {g.name}" onclick={() => void change(() => sharing.revoke(item, g.grant_id))} />
           {:else}<span class="role">{g.permission === "edit" ? "Can edit" : "Can view"}</span>{/if}
         </div>
@@ -108,13 +116,18 @@
           <div class="link" data-link={g.grant_id}>
             <div class="l1">
               <Icon name="link" />
-              <span class="nm">{g.name}<small>Anyone with it can view · {g.expires_at === null ? "Never expires" : expiryText(g.expires_at)}</small></span>
-              {#if list.can_manage_links}<IconButton small icon="close" label="Remove {g.name}" onclick={() => void change(() => sharing.revoke(item, g.grant_id))} />{/if}
+              {#if renaming === g.grant_id}
+                <input class="ren" aria-label="Link name" bind:value={draft} use:focusNow onkeydown={(e) => { if (e.key === "Enter") commitRename(g); else if (e.key === "Escape") { e.stopPropagation(); renaming = null; } }} onblur={() => commitRename(g)} />
+              {:else}
+                <span class="nm">{g.label}<small>Anyone with it can view · {g.expires_at === null ? "Never expires" : expiryText(g.expires_at)}</small></span>
+                {#if list.can_manage_links}<IconButton small icon="edit" label="Rename {g.label}" onclick={() => startRename(g)} />{/if}
+              {/if}
+              {#if list.can_manage_links}<IconButton small icon="close" label="Remove {g.label}" onclick={() => void change(() => sharing.revoke(item, g.grant_id))} />{/if}
             </div>
             {#if list.can_manage_links}
-              <Selector size="sm" label="{g.name}: expires" value={choiceOf(g.expires_at)} options={expiryOptions} onchange={(v: string) => setExpiry(g, v)} />
+              <Selector size="sm" label="{g.label}: expires" value={choiceOf(g.expires_at)} options={expiryOptions} onchange={(v: string) => setExpiry(g, v)} />
               <div class="l3"><Button variant="secondary" text={qr?.id === g.grant_id ? "Hide code" : "QR code"} onclick={() => void showQr(g)} /><Button variant="primary" icon="copy" text="Copy link" onclick={() => void copy(g)} /></div>
-              {#if qr?.id === g.grant_id}<div class="qr" role="img" aria-label="QR code for {g.name}">{@html qr.svg}</div>{/if}
+              {#if qr?.id === g.grant_id}<div class="qr" role="img" aria-label="QR code for {g.label}">{@html qr.svg}</div>{/if}
             {/if}
           </div>
         {/each}
@@ -152,6 +165,7 @@
   .link { display: grid; gap: var(--s-3); padding: var(--s-3); border-radius: var(--r-select); background: rgb(var(--ink-rgb) / 0.05); }
   .l1 { display: flex; align-items: center; gap: var(--s-4); color: var(--ink-2); }
   .l1 .nm { color: var(--ink); }
+  .ren { flex: 1; min-width: 0; min-height: var(--pill-h); padding: 0 var(--s-4); border: 0; border-radius: var(--r-pill); background: rgb(var(--ink-rgb) / 0.07); color: var(--ink); font-size: var(--text-ui); text-align: start; }
   .l3 { display: flex; flex-wrap: wrap; gap: var(--s-2); }
   .qr { justify-self: start; width: 9rem; padding: var(--s-2); border-radius: var(--r-select); background: #fff; line-height: 0; }
   .qr :global(svg) { width: 100%; height: auto; }

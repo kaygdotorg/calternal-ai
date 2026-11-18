@@ -1,32 +1,35 @@
 <script lang="ts">
-  // The page a link opens (`/s/<secret>`): only the item, read-only, no sidebar and no sign-in. Someone who is signed in gets "Open in Calternal" to see it in their own app. A secret that does not work
-  // (wrong, revoked or expired) says only that, and what to do: it never says which.
-  import { Avatar, Button, Card } from "@calternal/ui";
+  // The page a link opens (`/s/<secret>`): only the item, read-only, no sidebar and no sign-in. A note shows its text; a collection lists its members, each opening as a page of its own with a way back. "Open in Calternal" shows only when the server sends `item`, which it does only for a signed-in account that can open the item without the link. A link that does not work (wrong, revoked, expired or trashed) says only that, and what to do: never which.
+  import { Button, Card } from "@calternal/ui";
   import NoteEditor from "../apps/notes/NoteEditor.svelte";
-  import { sharing, type GuestItem } from "../apps/notes/share/sharing";
-  import { href } from "../lib/route.svelte";
-  import { serverMode } from "../server/client";
+  import { sharing, type Guest } from "../apps/notes/share/sharing";
+  import { href, route } from "../lib/route.svelte";
   import { say } from "../server/say";
-  let { secret }: { secret: string } = $props();
-  let item = $state<GuestItem | null>(null);
+  let item = $state<Guest | null>(null);
   let error = $state("");
-  let signedIn = $state(false);
+  // Follows the address: a member's page, or Back, is another address of the same kind.
   $effect(() => {
-    void sharing.guest_read(secret).then((i) => (item = i), (e) => { error = e?.code === "not_found" ? "gone" : say(e, "open this link"); });
-    if (serverMode()) void import("../server/auth").then((a) => a.status()).then((s) => (signedIn = s.signed_in), () => {});
-    else signedIn = new URLSearchParams(location.search).has("signedin");
+    const path = route.path;
+    item = null; error = "";
+    void sharing.guest(path).then((i) => (item = i), (e) => { error = e?.code === "not_found" ? "gone" : say(e, "open this link"); });
   });
+  const back = $derived(item && "back" in item ? item.back : undefined);
 </script>
 
 <main class="wrap">
   <header class="top">
     <p class="mark">Calternal</p>
-    {#if item && signedIn}<Button variant="primary" text="Open in Calternal" onclick={() => location.assign(href(`/${item!.item.kind}/${item!.item.id}`))} />{/if}
+    {#if item?.item}<Button variant="primary" text="Open in Calternal" onclick={() => location.assign(href(`/${item!.item!.kind}/${item!.item!.id}`))} />{/if}
   </header>
   <Card label={item ? item.title : "Shared link"} variant="solid" class="card">
     {#if item}
-      <p class="by"><Avatar name={item.shared_by} /><span>Shared by {item.shared_by}. You can read this; you can't change it.</span></p>
-      <div class="doc"><NoteEditor id={item.item.id} text={item.markdown} label={item.title} readOnly onedit={() => {}} /></div>
+      {#if back}<p class="by"><a href={href(back)}>Back to the collection</a></p>{/if}
+      {#if "members" in item}
+        <h1>{item.title}</h1>
+        <ul class="members">{#each item.members as m (m.href)}<li><a href={href(m.href)}>{m.title}</a></li>{/each}</ul>
+      {:else}
+        <div class="doc"><NoteEditor id={item.item?.id ?? route.path} text={item.markdown} label={item.title} readOnly onedit={() => {}} /></div>
+      {/if}
     {:else if error}
       <h1>{error === "gone" ? "This link doesn't work" : "Couldn't open this link"}</h1>
       <p class="lede">{error === "gone" ? "It may have been turned off, or it ran out. Ask whoever sent it for a new one." : error}</p>
@@ -39,7 +42,11 @@
   .top { display: flex; align-items: center; justify-content: space-between; gap: var(--s-4); padding: 0 var(--s-3); min-height: var(--pill-h); }
   .mark { margin: 0; font-size: var(--text-heading); font-weight: var(--strong-weight); font-family: var(--font-rounded, inherit); font-variation-settings: "ROND" 100; }
   .wrap :global(.card) { width: min(46rem, 100%); justify-self: center; box-sizing: border-box; padding: var(--s-6) var(--s-7); }
-  .by { display: flex; align-items: center; gap: var(--s-3); margin: 0 0 var(--s-5); font-size: var(--text-label); color: var(--ink-3); }
-  h1 { margin: 0; font-size: var(--text-title); font-weight: var(--strong-weight); }
+  .by { margin: 0 0 var(--s-5); font-size: var(--text-label); color: var(--ink-3); }
+  .by a { color: var(--ink-2); text-decoration: underline; }
+  h1 { margin: 0 0 var(--s-4); font-size: var(--text-title); font-weight: var(--strong-weight); }
+  .members { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s-1); }
+  .members a { display: flex; align-items: center; min-height: var(--row-h); padding: 0 var(--s-5); border-radius: var(--r-select); font-size: var(--text-ui); color: var(--ink); }
+  @media (hover: hover) and (pointer: fine) { .members a:hover { background: var(--hover); } }
   .lede { color: var(--ink-3); font-size: var(--text-ui); }
 </style>

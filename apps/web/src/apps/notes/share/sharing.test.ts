@@ -7,8 +7,9 @@ const item = { kind: "notes" as const, id: "n-9" };
 describe("the Share sheet's sentence", () => {
   it("says only you when nothing is shared", () => expect(sentenceOf({ grants: [], space_access: null })).toBe("Only you can see this."));
   it("names people by what they can do, then links and the space", () => {
-    const g = (name: string, permission: "view" | "edit", audience?: { account_id: string }) => ({ grant_id: name, name, permission, audience, expires_at: null });
-    expect(sentenceOf({ space_access: "view", grants: [g("Maya", "edit", { account_id: "a" }), g("Theo", "view", { account_id: "b" }), g("Inés", "view", { account_id: "c" }), g("Link 1", "view")] }))
+    const g = (name: string, permission: "view" | "edit", audience: { account_id: string }) => ({ grant_id: name, name, permission, audience });
+    const link = { grant_id: "l", label: "Link 1", permission: "view" as const, expires_at: null };
+    expect(sentenceOf({ space_access: "view", grants: [g("Maya", "edit", { account_id: "a" }), g("Theo", "view", { account_id: "b" }), g("Inés", "view", { account_id: "c" }), link] }))
       .toBe("Everyone in this space can view. Maya can edit. Theo and Inés can view. Anyone with a link can view.");
   });
 });
@@ -28,16 +29,21 @@ describe("the fixture sharing backend", () => {
     await s.grant(item, { account_id: "acc-maya" }, "edit");
     const link = await s.link_create(item, "Link 1");
     let l = await s.list(item);
-    expect(l.grants.map((g) => [g.name, g.permission])).toEqual([["Maya Okafor", "edit"], ["Link 1", "view"]]);
+    expect(l.grants.map((g) => ["label" in g ? g.label : g.name, g.permission])).toEqual([["Maya Okafor", "edit"], ["Link 1", "view"]]);
     expect((await s.audiences(item, "maya")).audiences).toEqual([]); // already granted
     expect((await s.link_copy(item, link.grant_id)).url).toMatch(/\/s\/fx\d+/);
     await s.link_update(item, link.grant_id, undefined, 5);
-    expect((await s.list(item)).grants[1]!.expires_at).toBe(5);
+    expect((await s.list(item)).grants[1]).toMatchObject({ expires_at: 5 });
     await s.revoke(item, link.grant_id);
     l = await s.list(item);
     expect(l.grants).toHaveLength(1);
   });
-  it("a secret that does not work is not_found", async () => { await expect(new FixtureSharing().guest_read("nope")).rejects.toMatchObject({ code: "not_found" }); });
+  it("a collection lists its members and a member leads back", async () => {
+    const s = new FixtureSharing();
+    expect(await s.guest("/s/demo-set")).toMatchObject({ members: [{ href: "/s/demo-set/1" }, { href: "/s/demo-set/2" }] });
+    expect(await s.guest("/s/demo-set/1")).toMatchObject({ back: "/s/demo-set" });
+  });
+  it("a secret that does not work is not_found", async () => { await expect(new FixtureSharing().guest("/s/nope")).rejects.toMatchObject({ code: "not_found" }); });
 });
 
 describe("the QR encoder", () => {

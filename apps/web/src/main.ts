@@ -23,10 +23,9 @@ const boot = serverMode() ? import("./server/boot").then((m) => ({ m, s: m.start
 Promise.race([loadFonts(currentScheme()).catch(() => {}), new Promise((r) => setTimeout(r, 2000))]).then(async () => {
   const target = document.getElementById("app")!;
   // A link someone shared (`/s/<secret>`) is the guest page: only that item, read-only, before and without any sign-in.
-  const secret = /^\/s\/([^/]+)\/?$/.exec(location.pathname.slice(import.meta.env.BASE_URL.replace(/\/$/, "").length))?.[1];
-  if (secret) {
+  if (/^\/s\//.test(location.pathname.slice(import.meta.env.BASE_URL.replace(/\/$/, "").length))) {
     const { default: Guest } = await import("./guest/Guest.svelte");
-    mount(Guest, { target, props: { secret } }); document.documentElement.dataset.ready = ""; return;
+    mount(Guest, { target }); document.documentElement.dataset.ready = ""; return;
   }
   const ready = () => { document.documentElement.dataset.ready = ""; startChrome(); };
   const gate = async (b: Exclude<import("./server/boot").Boot, { screen: "app" }>) => {

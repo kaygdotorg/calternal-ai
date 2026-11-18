@@ -64,8 +64,8 @@
   {/if}
   {#if !hits}{#if notes.notePages.error}<p class="cap" role="alert">{notes.notePages.error} <button type="button" class="retry" onclick={() => notes.notePages.retry()}>Try again</button></p>{/if}{/if}
   {#if !hits && incoming.items.length}
-    <div role="group" aria-label="Shared with me">
-      <p class="section-heading">Shared with me</p>
+    <div role="group" aria-label="Shared with me" class="grp">
+      <p class="section-heading later">Shared with me</p>
       <ul>
         {#each incoming.items as s (s.item.id)}
           <li><Row title={s.title} icon="notes" href={href(`/notes/${s.item.id}`)} selected={current === s.item.id}>{#snippet trailing()}{#if s.unread}<span class="dot" role="img" aria-label="Changed since you last looked"></span>{/if}{/snippet}</Row></li>
@@ -102,6 +102,9 @@
   .tg { padding: var(--s-1) var(--s-4); border-radius: var(--r-pill); background: rgb(var(--ink-rgb) / 0.06); font-size: var(--text-label); color: var(--ink-2); }
   .tg[aria-pressed="true"] { background: var(--accent-soft); color: var(--ink); font-weight: var(--strong-weight); }
   .ct { color: var(--ink-3); }
+  /* The group is a grid like the nav, so its heading keeps the shared distances (the nav gap above it is part of the space above). */
+  .grp { display: grid; gap: var(--s-2); }
+  .later { margin-top: calc(var(--section-above) - var(--s-2)); }
   .dot { width: var(--s-3); height: var(--s-3); border-radius: 50%; background: var(--accent); }
   .trash { display: flex; align-items: center; }
   .find { margin: 0 var(--s-5) var(--s-2); min-height: var(--row-h); padding: 0 var(--s-4); border: 0; border-radius: var(--r-pill); background: rgb(var(--ink-rgb) / 0.06); color: var(--ink); font-size: var(--text-label); }

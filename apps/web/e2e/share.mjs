@@ -33,6 +33,10 @@ try {
     await p.getByRole("button", { name: "Create a link" }).click(); await p.locator("[data-link]").first().waitFor();
     ok(/Never expires/.test(await p.locator("[data-link]").first().textContent()), `${device}: a new link never expires by default`);
     ok(/Anyone with a link can view/.test(await p.locator("[data-share-sentence]").textContent()), `${device}: the sentence mentions the link`);
+    await p.getByRole("button", { name: "Rename Link 1" }).click();
+    await p.getByRole("textbox", { name: "Link name" }).fill("Team"); await p.keyboard.press("Enter");
+    await p.waitForFunction(() => /Team/.test(document.querySelector("[data-link]")?.textContent ?? ""));
+    ok(true, `${device}: a link can be renamed`);
     await p.getByRole("button", { name: "QR code" }).click(); await p.locator(".qr svg").waitFor();
     await sheet(p).evaluate((e) => e.scrollIntoView?.()); await shot(p, `${device}-link-qr`);
     await p.getByRole("button", { name: "Copy link" }).click();
@@ -70,6 +74,10 @@ try {
     ok(await p.getByRole("button", { name: /Shared by Maya Okafor/ }).count() === 1 && await p.getByRole("button", { name: "Share", exact: true }).count() === 0, "on a note shared with me the owner's avatar sits where Share is");
     await shot(p, "desktop-note-shared-with-me"); await ctx.close(); }
   // The guest page.
+  { const { page: p, ctx } = await open(browser, "desktop", "light", "/s/demo-set");
+    await p.getByRole("link", { name: "Release checklist" }).click(); await p.getByText("tests green").waitFor();
+    ok(await p.getByRole("link", { name: "Back to the collection" }).count() === 1, "guest: a collection's member opens as a page with a way back");
+    await shot(p, "guest-collection-member"); await ctx.close(); }
   for (const [device, path] of [["desktop", "/s/demo"], ["phone", "/s/demo?signedin=1"], ["desktop", "/s/nope"]]) {
     const { page: p, ctx } = await open(browser, device, "light", path);
     await p.waitForTimeout(800);
