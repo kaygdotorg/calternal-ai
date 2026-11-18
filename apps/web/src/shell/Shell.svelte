@@ -269,7 +269,7 @@
 
   /* Narrow: layers. */
   .shell.narrow { --peek: calc(var(--s-10) + var(--s-4)); display: block; --bottom-inset: calc(var(--tier-cap) + var(--cap-offset) + var(--s-4)); }
-  .narrow .side { position: fixed; inset: 0; width: 100%; z-index: 1; padding-top: var(--safe-top); visibility: visible; }
+  .narrow .side { position: fixed; inset: 0 var(--safe-right) 0 var(--safe-left); width: auto; z-index: 1; padding-top: var(--safe-top); visibility: visible; }
   .narrow .side > :global(.side) { width: calc(100% - var(--peek)); }
   .narrow[data-sidebar="false"] .side { visibility: hidden; transition: visibility 0s var(--dur-sheet); }
   .narrow[data-npull="left"] .side { visibility: visible; transition: none; }
@@ -280,7 +280,7 @@
   .narrow .mid { touch-action: pan-y; }
   .narrow .mid.dragging { transition: none; }
   .narrow:has(.mid.dragging) .mid :global(.mid-card) { border-radius: var(--r-pane); }
-  .narrow .mid { position: fixed; inset: 0; z-index: 2; padding: 0; transition: transform var(--dur-sheet) var(--ease-sheet), scale var(--dur-sheet) var(--ease-sheet); transform-origin: left center; }
+  .narrow .mid { position: fixed; inset: 0 var(--safe-right) 0 var(--safe-left); z-index: 2; padding: 0; transition: transform var(--dur-sheet) var(--ease-sheet), scale var(--dur-sheet) var(--ease-sheet); transform-origin: left center; }
   .narrow[data-sidebar="true"] .mid { transform: translateX(calc(100% - var(--peek))); }
   .narrow[data-right="true"] .mid { transform: translateX(calc(var(--peek) - 100%)); }
   .narrow .mid :global(.mid-card) { border-radius: 0; transition: border-radius var(--dur-sheet) var(--ease-sheet); }
@@ -288,7 +288,7 @@
   .peek { position: fixed; z-index: 3; top: 0; bottom: 0; right: 0; width: var(--peek); touch-action: pan-y; }
   .peek.l { right: auto; left: 0; }
   /* The side panel is the list's mirror: underneath the card at the right, uncovered as the card slides left (one finger from the right edge, the button, Back). */
-  .narrow .right { position: fixed; inset: 0; width: 100%; z-index: 1; padding-top: var(--safe-top); visibility: visible; display: flex; justify-content: flex-end; overflow: clip; touch-action: pan-y; }
+  .narrow .right { position: fixed; inset: 0 var(--safe-right) 0 var(--safe-left); width: auto; z-index: 1; padding-top: var(--safe-top); visibility: visible; display: flex; justify-content: flex-end; overflow: clip; touch-action: pan-y; }
   .narrow .right > :global(.rs) { width: calc(100% - var(--peek)); }
   .narrow[data-right="false"] .right { visibility: hidden; transition: visibility 0s var(--dur-sheet); }
   .narrow[data-npull="right"] .right { visibility: visible; transition: none; }
