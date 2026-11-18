@@ -460,11 +460,7 @@ impl<D: Directory> InvocationHost for SpaceHost<D> {
                 }))
             }
             HostCallKind::ReadRuntimeWindowV1 => {
-                let object = exact(input, &["since_ms"])?;
-                let since = object
-                    .get("since_ms")
-                    .and_then(Value::as_i64)
-                    .ok_or(Error::Invalid)?;
+                let (since, until) = runtime_window_bounds(input)?;
                 if !self.authorize(ManifestCapability::SpaceSettings) {
                     return Err(Error::Refused);
                 }
@@ -478,7 +474,7 @@ impl<D: Directory> InvocationHost for SpaceHost<D> {
                     .resource_binding(self.space, &self.plugin.manifest.id, checksum)
                     .map_err(|_| Error::Refused)?;
                 machines
-                    .resource_runtime_window(self.space, &binding, since)
+                    .resource_runtime_window(self.space, &binding, since, until)
                     .map_err(|_| Error::Refused)
             }
             HostCallKind::ReadRuntimeObservationsV1 => {
@@ -643,6 +639,20 @@ fn item_json(item: &calternal_content::Item) -> Value {
         "metadata": item.metadata,
         "text": std::str::from_utf8(&item.bytes).ok(),
     })
+}
+
+/// Parse the common bounded runtime request without resolving any authority.
+pub(super) fn runtime_window_bounds(input: &Value) -> Result<(i64, Option<i64>), Error> {
+    let object = exact(input, &["since_ms", "until_ms"])?;
+    let since = object
+        .get("since_ms")
+        .and_then(Value::as_i64)
+        .ok_or(Error::Invalid)?;
+    let until = object
+        .get("until_ms")
+        .map(|value| value.as_i64().ok_or(Error::Invalid))
+        .transpose()?;
+    Ok((since, until))
 }
 
 fn exact<'a>(input: &'a Value, allowed: &[&str]) -> Result<&'a Map<String, Value>, Error> {

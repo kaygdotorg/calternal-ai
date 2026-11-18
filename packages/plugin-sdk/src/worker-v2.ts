@@ -302,10 +302,17 @@ export interface RuntimeWindow {
 }
 
 /** Read a retained runtime window. Declares `read_runtime_window_v1` and needs
- * an operator resource binding. Costs one bounded broker round trip.
+ * an operator resource binding. Pass `untilMs` for a closed interval. An
+ * unresolved count means a clock could still add time to that interval.
+ * Costs one bounded broker round trip.
  */
-export async function readRuntimeWindow(context: WorkerContextV2, sinceMs: number): Promise<RuntimeWindow> {
-  return await context.call("read_runtime_window_v1", { since_ms: sinceMs }) as RuntimeWindow;
+export async function readRuntimeWindow(
+  context: WorkerContextV2, sinceMs: number, untilMs?: number,
+): Promise<RuntimeWindow> {
+  return await context.call("read_runtime_window_v1", {
+    since_ms: sinceMs,
+    ...(untilMs === undefined ? {} : { until_ms: untilMs }),
+  }) as RuntimeWindow;
 }
 
 /** Private JSON state read from the invoking package's namespace. */

@@ -167,7 +167,10 @@ hosted request queued. Existing running work retains its lease.
 The package may declare `read_space_usage_v1` for one authorized space,
 and `read_runtime_window_v1` or `read_runtime_observations_v1` under its
 exact operator binding. Decimal strings preserve exact bytes and
-nanoseconds on JavaScript clients. Clock observations are cumulative by
+nanoseconds on JavaScript clients. An optional `until_ms` closes a runtime
+window at a retained timestamp. The unresolved count then includes generations
+that started before the bound and still lack enough clock evidence to seal it.
+Clock observations are cumulative by
 generation. The cursor returns later observations from the same bounded
 scope. A retention reset requires a fresh read and reconciliation. An
 unknown end retains its last proved duration.

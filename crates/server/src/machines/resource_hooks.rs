@@ -329,9 +329,11 @@ impl MachineService {
         space: SpaceId,
         binding: &ResourceHookBinding,
         since_ms: i64,
+        until_ms: Option<i64>,
     ) -> Result<Value, Error> {
         let now = db::now_ms();
-        if since_ms > now || since_ms < now.saturating_sub(35 * 86_400_000) {
+        let through = until_ms.unwrap_or(now);
+        if since_ms > through || through > now || since_ms < now.saturating_sub(35 * 86_400_000) {
             return Err(Error::invalid_input("runtime window is outside retention"));
         }
         let authority = self.lock()?.authority.clone();
@@ -343,9 +345,10 @@ impl MachineService {
         if state.resource_hooks.get(&space) != Some(binding) {
             return Err(Error::forbidden("no resource observation grant"));
         }
-        let (used, unresolved) = runtime::usage(&state.db, owner, since_ms, now)?;
+        let (used, unresolved) =
+            runtime::usage_at(&state.db, owner, since_ms, through, until_ms.is_some())?;
         Ok(
-            json!({"running_ns":used.to_string(),"unresolved":unresolved,"since_ms":since_ms,"through_ms":now,"owner":owner,"entitlement_groups":groups}),
+            json!({"running_ns":used.to_string(),"unresolved":unresolved,"since_ms":since_ms,"through_ms":through,"owner":owner,"entitlement_groups":groups}),
         )
     }
 

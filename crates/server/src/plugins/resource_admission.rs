@@ -51,22 +51,18 @@ impl<D: Directory> InvocationHost for AdmissionHost<D> {
     }
 
     fn call(&self, method: HostCallKind, input: &Value) -> Result<Value, WorkerError> {
-        let object = input
-            .as_object()
-            .filter(|o| o.len() == 1)
-            .ok_or(WorkerError::Invalid)?;
         match method {
             HostCallKind::ReadRuntimeWindowV1 => {
-                let since = object
-                    .get("since_ms")
-                    .and_then(Value::as_i64)
-                    .ok_or(WorkerError::Invalid)?;
+                let (since, until) = super::broker::runtime_window_bounds(input)?;
                 let svc = self.state.store.machines().ok_or(WorkerError::Refused)?;
-                svc.resource_runtime_window(self.space, &self.binding, since)
+                svc.resource_runtime_window(self.space, &self.binding, since, until)
                     .map_err(|_| WorkerError::Refused)
             }
             HostCallKind::ReadPluginStateV1 => {
-                let key = object
+                let key = input
+                    .as_object()
+                    .filter(|object| object.len() == 1)
+                    .ok_or(WorkerError::Invalid)?
                     .get("key")
                     .and_then(Value::as_str)
                     .ok_or(WorkerError::Invalid)?;

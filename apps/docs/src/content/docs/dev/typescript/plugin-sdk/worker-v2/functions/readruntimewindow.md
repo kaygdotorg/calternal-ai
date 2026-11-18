@@ -14,10 +14,12 @@ title: "plugin-sdk: worker-v2/functions/readRuntimeWindow"
 
 # Function: readRuntimeWindow()
 
-> **readRuntimeWindow**(`context`, `sinceMs`): `Promise`\<[`RuntimeWindow`](/docs/dev/typescript/plugin-sdk/worker-v2/interfaces/runtimewindow/)\>
+> **readRuntimeWindow**(`context`, `sinceMs`, `untilMs?`): `Promise`\<[`RuntimeWindow`](/docs/dev/typescript/plugin-sdk/worker-v2/interfaces/runtimewindow/)\>
 
 Read a retained runtime window. Declares `read_runtime_window_v1` and needs
-an operator resource binding. Costs one bounded broker round trip.
+an operator resource binding. Pass `untilMs` for a closed interval. An
+unresolved count means a clock could still add time to that interval.
+Costs one bounded broker round trip.
 
 ## Parameters
 
@@ -25,6 +27,7 @@ an operator resource binding. Costs one bounded broker round trip.
 | ------ | ------ |
 | `context` | [`WorkerContextV2`](/docs/dev/typescript/plugin-sdk/worker-v2/interfaces/workercontextv2/) |
 | `sinceMs` | `number` |
+| `untilMs?` | `number` |
 
 ## Returns
 

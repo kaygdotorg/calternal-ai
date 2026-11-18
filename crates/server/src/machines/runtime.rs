@@ -223,14 +223,29 @@ pub(super) fn usage(
     since: i64,
     through: i64,
 ) -> Result<(u128, u32), Error> {
+    usage_at(conn, owner, since, through, false)
+}
+
+/// In a closed interval, require either a stop or a sample at its upper bound
+/// before a live or lost generation may count as fully observed.
+pub(super) fn usage_at(
+    conn: &Connection,
+    owner: ResourceOwner,
+    since: i64,
+    through: i64,
+    closed: bool,
+) -> Result<(u128, u32), Error> {
     let (kind, id) = compute::encode(owner);
     let mut query = conn
         .prepare_cached(
             "SELECT started_ms,running_ns,state FROM guest_runtime
-         WHERE scope_kind=?1 AND scope_id=?2 AND (state=2 OR started_ms+running_ns/1000000>=?3)",
+         WHERE scope_kind=?1 AND scope_id=?2 AND started_ms<?4
+           AND (state<>1 OR started_ms+running_ns/1000000>=?3)",
         )
         .map_err(sql)?;
-    let mut rows = query.query(params![kind, id, since]).map_err(sql)?;
+    let mut rows = query
+        .query(params![kind, id, since, through])
+        .map_err(sql)?;
     let mut sum = 0u128;
     let mut unresolved = 0u32;
     while let Some(row) = rows.next().map_err(sql)? {
@@ -239,7 +254,14 @@ pub(super) fn usage(
         let low = ((i128::from(since) - start) * i128::from(NS_PER_MS)).max(0);
         let high = ((i128::from(through) - start) * i128::from(NS_PER_MS)).min(runtime);
         sum += (high - low).max(0) as u128;
-        unresolved = unresolved.saturating_add(u32::from(row.get::<_, i64>(2).map_err(sql)? == 2));
+        let state = row.get::<_, i64>(2).map_err(sql)?;
+        let reaches_end = runtime >= (i128::from(through) - start) * i128::from(NS_PER_MS);
+        let missing = if closed {
+            state != 1 && !reaches_end
+        } else {
+            state == 2
+        };
+        unresolved = unresolved.saturating_add(u32::from(missing));
     }
     Ok((sum, unresolved))
 }
@@ -331,6 +353,14 @@ mod tests {
         assert!(record(&mut conn, Uuid::new_v4(), &[sample]).is_err());
         record(&mut conn, machine, &[sample]).unwrap();
         record(&mut conn, machine, &[sample]).unwrap();
+        assert_eq!(
+            usage_at(&conn, owner, started_at_ms, started_at_ms + 3_000, true).unwrap(),
+            (2_000_000_019, 1)
+        );
+        assert_eq!(
+            usage_at(&conn, owner, started_at_ms, started_at_ms + 1_000, true).unwrap(),
+            (1_000_000_000, 0)
+        );
         drop(conn);
         let mut conn = db::open(&file).unwrap();
         assert_eq!(mark_missing(&conn, None).unwrap(), [owner]);
