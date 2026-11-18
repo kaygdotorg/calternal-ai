@@ -34,7 +34,7 @@ mod tests;
 mod thread;
 use thread::Thread;
 
-const IDLE: Duration = Duration::from_secs(300);
+const IDLE: Duration = Duration::from_secs(600);
 const SWEEP: Duration = Duration::from_secs(15);
 
 /// Operator-owned configuration read once when starting the machine role.

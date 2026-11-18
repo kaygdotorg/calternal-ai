@@ -49,7 +49,6 @@ impl Thread {
         // Serialize teardown with account deletion and replacement. Only this
         // account's operations can wait on the control request.
         let mut account = self.slot.lock().await;
-        account.last_used = Instant::now();
         let vm = account.vm.as_mut().filter(|vm| vm.socket == self.socket);
         if let Some(vm) = vm
             && vm.alive()
@@ -148,6 +147,11 @@ impl Sandbox for Thread {
                     }
                 };
                 writer.abort();
+                let mut account = slot.lock().await;
+                if account.vm.as_ref().is_some_and(|vm| vm.socket == socket) {
+                    account.last_used = Instant::now();
+                }
+                drop(account);
                 if let Some(exit) = exit {
                     let _ = output.send(OutputEvent::Exit(exit)).await;
                 }
