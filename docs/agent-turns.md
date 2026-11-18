@@ -328,3 +328,18 @@ turns. Shared turns start a new provider session with an ephemeral home and no
 executable tools, hooks, or MCP servers. The machine keeps the shared login
 under the enrolling Owner's space directory until that Owner removes it or
 erases the account.
+
+The space Owner can explicitly set `tools_enabled: true` with the existing
+`space.machine.set` operation. New bindings default to off. Enabling tools
+requires protocol v8 and an approved API credential on the selected Podman
+machine. Place the key in the machine sandbox root under
+`broker-credentials/<space-id>/anthropic.key` or `openai.key`, mode 0600.
+The runtime reads the key once per broker launch. Codex also requires its
+qualified image. An unavailable key or unsupported machine refuses the tool
+lease. Disabling tools retires active brokered leases.
+
+The harness uses a machine-local socket and a disposable gateway credential.
+The provider key stays in the broker. The sole workspace tool runs under a
+separate Podman identity with no network, provider mounts or broker socket.
+Full Access can write the mounted workspace. Other modes mount it read-only.
+See [Tools on shared turns](shared-turn-tools.md).

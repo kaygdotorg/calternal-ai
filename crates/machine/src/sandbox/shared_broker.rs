@@ -50,6 +50,8 @@ struct Gateway {
     tool_slot: Semaphore,
     tool: ToolSandbox,
     closed: watch::Receiver<bool>,
+    #[cfg(test)]
+    mock_base: Option<String>,
 }
 
 pub(super) struct ToolSandbox {
@@ -112,7 +114,13 @@ impl Broker {
             tool_slot: Semaphore::new(1),
             tool,
             closed: cancellation,
+            #[cfg(test)]
+            mock_base: None,
         });
+        Self::bind(directory, access, closed, gateway)
+    }
+
+    fn bind(directory: PathBuf, access: String, closed: watch::Sender<bool>, gateway: Arc<Gateway>) -> SandboxResult<Self> {
         let listener = UnixListener::bind(directory.join("gateway.sock")).map_err(SandboxError::new)?;
         let router = Router::new().fallback(dispatch).with_state(gateway);
         let listener = tokio::spawn(async move {
@@ -186,6 +194,10 @@ async fn dispatch(State(state): State<Arc<Gateway>>, request: Request) -> Respon
     if path != "/v1/messages/count_tokens" && !uses_isolated_tools(&body) {
         return (StatusCode::BAD_REQUEST, "unapproved harness tool list").into_response();
     }
+    #[cfg(test)]
+    let mock_url = state.mock_base.as_ref().map(|base| format!("{base}{path}"));
+    #[cfg(test)]
+    let url = mock_url.as_deref().unwrap_or(url);
     let mut call = state.client.post(url)
         .header(header::CONTENT_TYPE, "application/json")
         .header(auth, state.credential.clone());
@@ -290,3 +302,7 @@ impl ToolSandbox {
         Ok(format!("Exit {}\n{}", status.code().unwrap_or(-1), String::from_utf8_lossy(&output)))
     }
 }
+
+#[cfg(test)]
+#[path = "shared_broker_tests.rs"]
+mod tests;
