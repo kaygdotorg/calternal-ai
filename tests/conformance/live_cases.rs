@@ -155,28 +155,40 @@ async fn sigterm_finishes_with_open_streams_and_keeps_the_resume_bookmark() {
     let saved = f.note(1, &space).await;
     let pid = f.child.as_ref().unwrap().id();
     let deadline = Instant::now() + Duration::from_secs(2);
-    assert!(Command::new("kill")
-        .args(["-TERM", &pid.to_string()])
-        .status()
-        .unwrap()
-        .success());
+    assert!(
+        Command::new("kill")
+            .args(["-TERM", &pid.to_string()])
+            .status()
+            .unwrap()
+            .success()
+    );
     loop {
         if let Some(status) = f.child.as_mut().unwrap().try_wait().unwrap() {
             assert!(status.success(), "server exited with {status}");
             break;
         }
-        assert!(Instant::now() < deadline, "server still running two seconds after SIGTERM with SSE open");
+        assert!(
+            Instant::now() < deadline,
+            "server still running two seconds after SIGTERM with SSE open"
+        );
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
     f.child.take();
     drop(live);
     drop(account);
     f.start().await;
-    let mut resumed = Live::open(&f, 1, json!([{"space_id":space,"bookmark":ready["bookmark"]}]))
-        .await
-        .unwrap_or_else(|error| panic!("resuming space stream: {error:?}"));
+    let mut resumed = Live::open(
+        &f,
+        1,
+        json!([{"space_id":space,"bookmark":ready["bookmark"]}]),
+    )
+    .await
+    .unwrap_or_else(|error| panic!("resuming space stream: {error:?}"));
     let frame = resumed.next().await.expect("replayed entry");
     assert_eq!(frame["type"], "entry");
-    assert_eq!(resumed.next().await.expect("resumed ready frame")["type"], "ready");
+    assert_eq!(
+        resumed.next().await.expect("resumed ready frame")["type"],
+        "ready"
+    );
     f.op(1, "notes.get", json!({"id":saved["id"]})).await.ok();
 }

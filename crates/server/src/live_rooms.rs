@@ -101,7 +101,16 @@ pub(crate) async fn entry<D: Directory>(
             let room = shutdown.as_ref().map(crate::shutdown::Shutdown::room);
             move |socket| async move {
                 let _room = room;
-                serve(socket, host, content, identity.id, session, socket_memory, shutdown).await;
+                serve(
+                    socket,
+                    host,
+                    content,
+                    identity.id,
+                    session,
+                    socket_memory,
+                    shutdown,
+                )
+                .await;
             }
         })
 }

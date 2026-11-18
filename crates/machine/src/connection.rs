@@ -85,17 +85,23 @@ pub(crate) async fn run_at(
         }
         if !closed {
             return Err(Error::Protocol(
-                "sandbox teardown incomplete; restart the machine role to sweep its sandboxes".into(),
+                "sandbox teardown incomplete; restart the machine role to sweep its sandboxes"
+                    .into(),
             ));
         }
         backend_closed.map_err(|e| Error::Protocol(e.0))
     })
     .await
-    .unwrap_or_else(|_| Err(Error::Protocol(
-        "machine did not drain within 1750 ms; restart it to sweep its sandboxes".into(),
-    )));
+    .unwrap_or_else(|_| {
+        Err(Error::Protocol(
+            "machine did not drain within 1750 ms; restart it to sweep its sandboxes".into(),
+        ))
+    });
     if result.is_none() && drained.is_ok() {
-        tracing::info!(elapsed_ms = started.elapsed().as_millis(), "machine drain finished");
+        tracing::info!(
+            elapsed_ms = started.elapsed().as_millis(),
+            "machine drain finished"
+        );
     }
     result.unwrap_or(Ok(())).and(drained)
 }
@@ -110,9 +116,16 @@ async fn announce_drain(link: &Link, runner: &Runner, ack: u64) {
         leases: runner.reports(),
         discards: runner.discard_reports(),
     };
-    if link.post::<_, SyncResponse>(
-        "/api/v1/machine/sync", &req, true, Duration::from_millis(200),
-    ).await.is_ok() {
+    if link
+        .post::<_, SyncResponse>(
+            "/api/v1/machine/sync",
+            &req,
+            true,
+            Duration::from_millis(200),
+        )
+        .await
+        .is_ok()
+    {
         runner.ack_discards(&req.discards);
     }
 }

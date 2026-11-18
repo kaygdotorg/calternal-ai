@@ -1,7 +1,7 @@
 use std::future::IntoFuture;
 use std::path::PathBuf;
-use std::time::Duration;
 use std::sync::Arc;
+use std::time::Duration;
 
 mod admin_cli;
 mod cli;
@@ -673,7 +673,9 @@ async fn serve(
     let listener_stop = shutdown.clone();
     let server = axum::serve(
         transport::listener(listener),
-        shutdown.attach(app).into_make_service_with_connect_info::<std::net::SocketAddr>(),
+        shutdown
+            .attach(app)
+            .into_make_service_with_connect_info::<std::net::SocketAddr>(),
     )
     .with_graceful_shutdown(async move { listener_stop.cancelled().await })
     .into_future();

@@ -79,7 +79,9 @@ async fn admit(State(shutdown): State<Shutdown>, request: Request, next: Next) -
         let mut response = crate::api::error_response(calternal_types::Error::unavailable(
             "The server is restarting. Retry this request shortly.",
         ));
-        response.headers_mut().insert(header::RETRY_AFTER, HeaderValue::from_static("1"));
+        response
+            .headers_mut()
+            .insert(header::RETRY_AFTER, HeaderValue::from_static("1"));
         return response;
     }
     let response = next.run(request).await;
@@ -130,6 +132,9 @@ mod tests {
         assert_eq!(refused.status(), StatusCode::SERVICE_UNAVAILABLE);
         assert!(!pending.is_finished());
         finish.notify_one();
-        assert_eq!(pending.await.unwrap().unwrap().status(), StatusCode::NO_CONTENT);
+        assert_eq!(
+            pending.await.unwrap().unwrap().status(),
+            StatusCode::NO_CONTENT
+        );
     }
 }

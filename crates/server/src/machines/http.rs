@@ -165,7 +165,8 @@ async fn sync(
             let req: SyncRequest = body(&bytes)?;
             let (s, t) = (svc.clone(), token.clone());
             let machine = blocking(move || s.authenticate(&t)).await?;
-            let messages = svc.sync_until(machine, &token, req, shutdown.as_ref().map(|ext| &ext.0))
+            let messages = svc
+                .sync_until(machine, &token, req, shutdown.as_ref().map(|ext| &ext.0))
                 .await?;
             Ok(SyncResponse { messages })
         }
