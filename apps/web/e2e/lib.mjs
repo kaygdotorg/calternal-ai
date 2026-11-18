@@ -89,8 +89,12 @@ export function busyNow() {
   const busy = load > cores / 2 || worst > 1.4;
   return { busy, load, cores, spin: worst, why: `load ${load.toFixed(1)} on ${cores} cores, a 30 ms spin took ${(worst * 30).toFixed(0)} ms` };
 }
-/** True when timing checks must be judged: the quiet list (`CAL_QUIET=1`) or a machine that is not busy. */
-export const judgeTimings = () => process.env.CAL_QUIET === "1" || !busyNow().busy;
+/**
+ * True when timing checks must be judged: the quiet list (`CAL_QUIET=1`), or a suite run by hand on a machine that is not busy. Never inside the gate (`CAL_GATE=1`): the gate runs several suites at once, so
+ * the load it measures at a suite's start is not the load the suite will meet (a perf check that goes red because the gate's own neighbours started a moment later proves nothing); the gate records the
+ * numbers and the quiet list judges them.
+ */
+export const judgeTimings = () => process.env.CAL_QUIET === "1" || (process.env.CAL_GATE !== "1" && !busyNow().busy);
 
 /**
  * The window a suite is looking at: the focused canvas window when the canvas is on, the middle card when it is not. A canvas can hold several windows (each with its own composer, header and
