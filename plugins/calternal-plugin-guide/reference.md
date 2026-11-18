@@ -194,27 +194,8 @@ URL as the `Origin` header. Keep both outside fixture logs.
 
 Return `parkJob` from a replayable job run. Declare `parked` in the run's
 output schema and allow an optional `signal` property in its input schema.
-For example, this run parks until the deadline and then returns its saved
-checkpoint.
-
-```ts
-import { parkJob, type JobSignal } from "@calternal/plugin-sdk";
-
-function run(input: {
-  checkpoint: { phase: string } | null;
-  signal?: JobSignal;
-}) {
-  if (input.signal) {
-    return { status: "done", result: input.checkpoint };
-  }
-  return parkJob({
-    checkpoint: { phase: "prepared" },
-    reason: "Waiting for the retry window",
-    deadline_ms: Date.now() + 30_000,
-    source: { kind: "deadline" },
-  });
-}
-```
+Use a deadline source when no other signal should wake the job. The question
+example below also handles deadlines.
 
 #### A job with one text answer
 
@@ -242,13 +223,6 @@ that the worker sends. The JSON's `source` is GenUI source. Form arguments are
 the controls and the label in that order. `Input` takes a bound string and a
 label. Here `$text` creates the submitted field named `text`.
 
-```json
-{
-  "genui_version": 2,
-  "source": "$text=\"\"\nForm([Input($text, \"What should the job use?\")], \"Job question\")"
-}
-```
-
 The start operation uses `plugins.use` and declares the `start_job` host call.
 Use the SDK's `startJob` to get a typed `{ job_id }` reply. `content.write`
 is for editing content, and `space.read` is for reads. After adding or
@@ -260,22 +234,193 @@ The run's manifest uses `oneOf` on its optional `signal` field and a
 a saved checkpoint and a future deadline in Unix milliseconds. Return the
 answer or a timeout result on the next run.
 
-```ts
-"question-job.run": async ({ signal }) => {
-  if (signal?.kind === "answer") {
-    return { status: "done", result: { answer: signal.value.text } };
-  }
-  if (signal?.kind === "deadline") {
-    return { status: "done", result: { timed_out: true } };
-  }
-  return parkJob({
-    checkpoint: { phase: "asked" },
-    reason: "Waiting for a text answer",
-    deadline_ms: Date.now() + 20_000,
-    source: { kind: "question", form, schema_operation: "question-job.answer" },
-  });
-},
+<!-- BEGIN GENERATED question -->
+
+##### manifest.json
+
+```json
+{
+  "id": "question-job",
+  "name": "question-job",
+  "icon": "puzzle",
+  "version": "0.1.0",
+  "api_version": 1,
+  "kinds": [],
+  "collections": [],
+  "views": [],
+  "attention": [],
+  "settings": [],
+  "schedules": [],
+  "webhooks": [],
+  "secrets": [],
+  "hooks": [],
+  "themes": [],
+  "host_calls": ["start_job"],
+  "operations": [
+    {
+      "id": "question-job.start",
+      "input_schema": { "type": "object", "additionalProperties": false },
+      "output_schema": {
+        "type": "object",
+        "properties": { "job_id": { "type": "string" } },
+        "required": ["job_id"]
+      },
+      "required_capability": "plugins.use",
+      "mutates": true,
+      "idempotency": "request_id",
+      "risk": "reversible"
+    },
+    {
+      "id": "question-job.run",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "job_id": { "type": "string" },
+          "input": { "type": "object" },
+          "checkpoint": {},
+          "children": { "type": "array" },
+          "signal": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "kind": { "const": "answer" },
+                  "value": {
+                    "type": "object",
+                    "properties": { "text": { "type": "string" } },
+                    "required": ["text"]
+                  }
+                },
+                "required": ["kind", "value"]
+              },
+              {
+                "type": "object",
+                "properties": { "kind": { "const": "deadline" } },
+                "required": ["kind"]
+              }
+            ]
+          }
+        },
+        "required": ["job_id", "input", "checkpoint", "children"],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": { "status": { "type": "string", "enum": ["parked", "done"] } },
+        "required": ["status"]
+      },
+      "required_capability": "plugins.use",
+      "mutates": false,
+      "idempotency": "read_only",
+      "risk": "read"
+    },
+    {
+      "id": "question-job.answer",
+      "input_schema": {
+        "type": "object",
+        "properties": { "text": { "type": "string" } },
+        "required": ["text"],
+        "additionalProperties": false
+      },
+      "output_schema": { "type": "object" },
+      "required_capability": "plugins.use",
+      "mutates": false,
+      "idempotency": "read_only",
+      "risk": "read"
+    }
+  ]
+}
 ```
+
+##### question.form.json
+
+```json
+{
+  "genui_version": 2,
+  "source": "$text=\"\"\nForm([Input($text, \"What should the job use?\")], \"Job question\")"
+}
+```
+
+##### worker.ts
+
+```ts
+import { parkJob, serveWorker, startJob, typedHandlers, validateGenUiView } from "@calternal/plugin-sdk";
+import manifest from "./manifest.generated.js";
+import question from "./question.form.json" with { type: "json" };
+
+const form = validateGenUiView(question);
+
+const handlers = typedHandlers(manifest, {
+  "question-job.start": async (_, context) =>
+    startJob(context, { operation: "question-job.run", input: {} }),
+
+  "question-job.run": async ({ signal }) => {
+    if (signal?.kind === "answer") {
+      return { status: "done", result: { answer: signal.value.text } };
+    }
+    if (signal?.kind === "deadline") {
+      return { status: "done", result: { timed_out: true } };
+    }
+    return parkJob({
+      checkpoint: { phase: "asked" },
+      reason: "Waiting for a text answer",
+      deadline_ms: Date.now() + 20_000,
+      source: { kind: "question", form, schema_operation: "question-job.answer" },
+    });
+  },
+
+  // The host validates submitted fields against this operation's input schema.
+  "question-job.answer": async () => ({}),
+});
+
+serveWorker(manifest, handlers, process.stdin, line =>
+  new Promise<void>((resolve, reject) =>
+    process.stdout.write(line, error => error ? reject(error) : resolve())),
+).catch(() => {
+  process.stderr.write("Worker protocol error. Check that the host speaks worker-v2.\n");
+  process.exitCode = 1;
+  process.stdin.destroy();
+});
+```
+
+##### worker.test.mjs
+
+```js
+import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
+import { test } from "node:test";
+import { fixtureWorker } from "@calternal/plugin-sdk/testing";
+
+test("starts a job and handles a typed answer or deadline", async () => {
+  const job_id = "01900000-0000-7000-8000-000000000008";
+  const fixture = fixtureWorker(spawn(process.execPath, ["dist/worker.js"]), {
+    start_job(request) {
+      assert.deepEqual(request, { operation: "question-job.run", input: {} });
+      return { job_id };
+    },
+  });
+  try {
+    assert.deepEqual(await fixture.invoke("question-job.start", {}), { job_id });
+    const run = { job_id, input: {}, checkpoint: null, children: [] };
+    const parked = await fixture.invoke("question-job.run", run);
+    assert.equal(parked.status, "parked");
+    assert.equal(parked.wait.source.kind, "question");
+    const resumed = { ...run, checkpoint: parked.wait.checkpoint };
+    assert.deepEqual(
+      await fixture.invoke("question-job.run", { ...resumed, signal: { kind: "answer", value: { text: "Blue" } } }),
+      { status: "done", result: { answer: "Blue" } },
+    );
+    assert.deepEqual(
+      await fixture.invoke("question-job.run", { ...resumed, signal: { kind: "deadline" } }),
+      { status: "done", result: { timed_out: true } },
+    );
+  } finally {
+    await fixture.close();
+  }
+});
+```
+
+<!-- END GENERATED question -->
 
 With the development environment sourced, load the draft and start a job.
 
@@ -287,7 +432,7 @@ calternal invoke requests.list --json --input '{}'
 
 In the Inbox output, find the row whose `job_id` matches the start reply.
 Use that row's `id` for `REQUEST_ID` below, and use the ID from the start
-reply for `JOB_ID`. Answer before the 20-second deadline.
+reply for `JOB_ID`. Answer before the deadline.
 
 ```sh
 calternal invoke requests.answer --json --input '{"id":"REQUEST_ID","answer":{"text":"Blue"}}'

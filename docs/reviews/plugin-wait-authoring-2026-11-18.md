@@ -19,7 +19,15 @@ Dev-01 passed 9 focused job cases, 17 SDK tests, the guide test, and the
 standalone question template fixture. Both Rust formatting checks, the
 generated contract and all 420 generated documentation pages passed.
 
+A fresh round-three author on `ae738a70` passed 8/8 checks in nine
+commands, with zero failed commands and no reads outside the public guide.
+The corrected night-5 merge `cb5fab98` passed nine job cases, 17 SDK tests,
+the guide fixture, both formatting checks, contract parity and all 427
+generated documentation checks.
+
 ## Simplification opportunities
 
-Keep static questions as files the checker and worker share. Reuse the
-same example source for the scaffold and every public guide topic.
+The guide now renders both the generated view and question examples
+directly from their scaffold manifests, workers and fixture tests.
+The guide build rejects stale examples, and its fixture compares the
+returned and published Markdown with the scaffold sources.
