@@ -105,6 +105,11 @@ class Shell {
     this.rightOpen = !this.rightOpen;
     this.save();
   }
+  /** Sets a sidebar open or closed on a wide screen (the end of a pull: absolute, where the toggles flip), and remembers it. */
+  setOpen(side: Side, open: boolean): void {
+    if (side === "left") this.sidebarOpen = open; else this.rightOpen = open;
+    this.save();
+  }
   /** Shows a right-card panel (opening the card). */
   showPanel(id: string): void {
     this.panel = id;
