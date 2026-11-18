@@ -2,6 +2,22 @@
 
 Open **`https://preview.calternal.cloud/ai/#setup=<setup code>`** (replace `<setup code>` with the one-use code of the first-owner setup; the preview build talks to its real server by default, so no flag is needed; the design fixtures you have been reviewing all night, with the mock threads and notes, are now at **`https://preview.calternal.cloud/ai/?server=0`**: without that flag the page goes to the real server and starts at "Set up Calternal") in a browser on the NetBird network. The code is the one-use setup token of the disposable server; keep it out of chat and screenshots. Each line: do this, expect that. Everything below ran end to end on a fresh server (desktop and phone width); the Threads steps are added separately.
 
+## What changed since last night
+
+The things you reported, checked in a headed GPU Chrome at 1500x970, dark, default wallpaper, before (last night's start) against now; screenshots for each are on [issue #15](https://git.kayg.org/kayg/calternal-ai/issues/15).
+
+| You reported | Verdict |
+| --- | --- |
+| A line, strip or band around either sidebar | Fixed (a teal strip at the left edge and an orange one at the right are gone) |
+| Top fade | Fixed: text fades out gradually under the bar |
+| Sidebar buttons and pills | Not reproducible: round glass buttons in both builds, no defect seen |
+| Resize handles | Fixed: a slim handle shows in the gap on hover |
+| Hover actions on a thread row | Still there: the link icon overlaps the end of a long title (Threads lane has it) |
+| Focus rings from a mouse click | Fixed: none after clicking a pill, a tab or a chip |
+| Pill bounce | Not reproducible (no rebound in the press frames) |
+| Popover morph | Fixed: the popover grows out of its chip |
+| Found on the way | The active-children pill floats over the last message lines (Threads lane); a scrollbar thumb stays visible at the conversation's right edge; with 50 spaces the footer dots overflow (your call, see the issue) |
+
 1. **Set up.** The page shows "Set up Calternal" with the code filled in. Type your name, press *Create passkey*, approve the prompt. Expect the app within a few seconds and a "Choose a look" sheet; pick one or *Keep the default*.
 2. **Your space.** Expect no space dots (one space, *Personal*) and *Settings > Space: Personal*.
 3. **Machines.** *Settings > Machines*: "No machines yet" and *Make a code*; press it for a one-use `calternal machine enroll …` command. Run it on a computer you control to add the machine (it then shows Online with Sandboxed/Direct, Pause, Revoke, and each provider's sign-in state with *Check again* once the server has turn readiness).
