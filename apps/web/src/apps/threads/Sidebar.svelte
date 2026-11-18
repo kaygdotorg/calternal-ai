@@ -10,7 +10,8 @@
   import { Button, Icon, IconButton, InlineEditor, Menu, Row, Selector, toast, undoable, type MenuItem } from "@calternal/ui";
   import { href, navigate, segments } from "../../lib/route.svelte";
   import { layout, type Container } from "./layout.svelte";
-  import { pressRow, pressRows, registerPreview, type PressBag } from "@calternal/ui";
+  import { pressRow, pressRows, registerPreview, Sheet, type PressBag } from "@calternal/ui";
+  import RequestBar from "./RequestBar.svelte";
   import ThreadPreview from "./ThreadPreview.svelte";
   import { archiveThread, containerName, containersOf, copyThreadLink, runThreadItem, snoozeItems, threadItems, topLevelIds } from "./thread-menu";
   import { backLabel, backShort } from "./snooze";
@@ -83,6 +84,9 @@
   /** The three-dot button and the swipe's More open the same menu as right-click, under the control that asked. */
   const menuFrom = (el: HTMLElement | undefined, t: ThreadSummary, snooze = false) => { const r = el?.getBoundingClientRect(); ctx = { x: r?.right ?? 0, y: r?.bottom ?? 0, thread: t, snooze }; };
   registerPreview<string>("thread", ThreadPreview);
+  /** The plugin prompt being answered, in its sheet. */
+  let promptId = $state<string | null>(null);
+  const prompt = $derived(store.jobPrompts.find((p) => p.request.id === promptId) ?? null);
   /** What a held or right-clicked row says to the shared press (ui/lib/press.ts): the same menu as the three dots, and a preview of its last messages. */
   const bagOf = (t: ThreadSummary): PressBag => ({ label: `Thread: ${t.title}`, items: () => threadItems(t), onpick: (id) => runThreadItem(id, t, () => edit("thread", t.id, t.title)), preview: { kind: "thread", item: t.id } });
   /** The swipe buttons of a row: right shows the first list, left the second (slot 0 is the outer edge; a long swipe runs it). */
@@ -206,11 +210,22 @@
     </div>
   {:else}
   <!-- The shared Selector (ui/Selector, the old app's state switch): an outer pill with the chosen item as a pill inside it that glides to the new choice; arrow keys, Home and End move and choose. -->
-  <div class="tabs"><Selector label="Which threads" options={TABS} value={tab} onchange={(v) => (chosen = v)}>{#snippet optionContent(o)}{@const n = o.value === "inbox" ? items.length : 0}<span class="tl"><span class="w">{o.label}{#if n}<span class="n">{n}</span>{/if}</span><span class="w twin" aria-hidden="true">{o.label}{#if n}<span class="n">{n}</span>{/if}</span></span>{/snippet}</Selector></div>
+  <div class="tabs"><Selector label="Which threads" options={TABS} value={tab} onchange={(v) => (chosen = v)}>{#snippet optionContent(o)}{@const n = o.value === "inbox" ? items.length + store.jobPrompts.length : 0}<span class="tl"><span class="w">{o.label}{#if n}<span class="n">{n}</span>{/if}</span><span class="w twin" aria-hidden="true">{o.label}{#if n}<span class="n">{n}</span>{/if}</span></span>{/snippet}</Selector></div>
   {#if tab === "inbox"}
     <div role="tabpanel" aria-label="Inbox">
-      {#if items.length}
+      {#if items.length || store.jobPrompts.length}
         <ul class="threads" aria-label="Waiting for you">
+          <!-- What a plugin's durable job waits on belongs to no thread: a row of its own, answered in a sheet (docs/threads-ui.md, "Plugin prompts"). -->
+          {#each store.jobPrompts as p (p.request.id)}
+            <li data-job={p.request.jobId}>
+              <div class="rw">
+                <Row title={p.title} onclick={() => (promptId = p.request.id)}>
+                  {#snippet leading()}<span class="mark"><Icon inline name="spark" /></span>{/snippet}
+                  {#snippet trailing()}<span class="tail"><ReasonMark reasons={[p.reason]} /></span>{/snippet}
+                </Row>
+              </div>
+            </li>
+          {/each}
           {#each items as it (it.thread.id)}
             <li data-thread={it.thread.id} use:pressRow={() => bagOf(it.thread)}>
               <SwipeRow lead={[]} trail={snoozeAvailable() ? [{ id: "snooze", label: "Snooze", icon: "clock", tone: "plain", run: (el) => menuFrom(el, it.thread, true) }] : []}>
@@ -288,6 +303,12 @@
   {/if}
   <p class="visually-hidden" role="status" aria-live="polite">{said}</p>
 </nav>
+
+{#if prompt}
+  <Sheet open label="{prompt.reason === 'Approval' ? 'Approval' : 'Question'} from a plugin" onclose={() => (promptId = null)}>
+    <RequestBar requests={[prompt.request]} onanswer={(rid, a) => client.answer(rid, a).then(() => (promptId = null)).catch((e: Error) => toast(`Not sent: ${e.message}`))} />
+  </Sheet>
+{/if}
 
 <Menu open={!!ctx} items={ctxItems} label={ctx?.thread ? `Thread: ${ctx.thread.title}` : "Section"} anchor={ctx ? { left: ctx.x, top: ctx.y, right: ctx.x, bottom: ctx.y } : null} placement="bottom" onclose={() => (ctx = null)} onpick={pick} />
 

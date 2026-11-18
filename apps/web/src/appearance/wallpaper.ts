@@ -234,7 +234,18 @@ function sample(c: HTMLCanvasElement, r: Frac): RGB[] {
 
 const hex = (h: string): RGB => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
 /** A colour token as the browser resolves it (a theme may have replaced it), as encoded RGB; `fallback` when it cannot be read. */
+const resolvedCache = new Map<string, RGB>();
 function resolved(name: string, fallback: RGB): RGB {
+  // The answer only changes with the scheme or a theme that sets the token on the root (inline), so it is remembered by those: reading it forces a style recalculation of the whole page (every step of Clear to tinted asked, 80 ms at 4x with a canvas of windows).
+  const key = `${currentScheme()}|${name}|${root().getPropertyValue(name)}`;
+  const hit = resolvedCache.get(key);
+  if (hit) return hit;
+  const out = resolveNow(name, fallback);
+  if (resolvedCache.size > 64) resolvedCache.clear();
+  resolvedCache.set(key, out);
+  return out;
+}
+function resolveNow(name: string, fallback: RGB): RGB {
   const e = document.createElement("span");
   e.style.cssText = `position:absolute;visibility:hidden;color:var(${name})`;
   document.body.append(e);

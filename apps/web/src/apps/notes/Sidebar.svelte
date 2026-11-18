@@ -139,8 +139,8 @@
       </ul>
     </div>
   {/if}
-  <button type="button" class="new" onclick={create}>New note</button>
-  <a class="new trash" href={href("/notes?view=trash")} aria-current={route.query.get("view") === "trash" ? "page" : undefined}>Trash</a>
+  <button type="button" class="new" onclick={create}><Icon name="plus" inline /> New note</button>
+  <a class="new trash" href={href("/notes?view=trash")} aria-current={route.query.get("view") === "trash" ? "page" : undefined}><Icon name="trash" inline /> Trash</a>
   {#if notes.waiting.length}
     <div class="wait" role="group" aria-label="Waiting to send">
       <p class="section-heading">Waiting to send</p>
@@ -196,5 +196,5 @@
   .wait { display: grid; gap: var(--s-1); margin-top: var(--s-4); }
   .w { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-1); padding: var(--s-2) var(--s-5); font-size: var(--text-label); }
   .wt { flex: 1 1 100%; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .new { text-align: start; min-height: var(--row-h); padding: 0 var(--s-5); border-radius: var(--r-select); color: var(--ink-3); font-size: var(--text-label); font-weight: var(--strong-weight); }
+  .new { display: flex; align-items: center; gap: var(--s-3); text-align: start; min-height: var(--row-h); padding: 0 var(--s-5); border-radius: var(--r-select); color: var(--ink-3); font-size: var(--text-label); font-weight: var(--strong-weight); }
 </style>
