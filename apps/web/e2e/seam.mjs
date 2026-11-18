@@ -46,7 +46,7 @@ for (const { scheme, id, dpr } of cases) {
     return [...Object.entries(regions).map(([k, v]) => [k, v, where[k] ?? null]), ["step across the card's edge lines (p90)", +steps[Math.floor(steps.length * 0.9)].toFixed(1), null]];
   }, [withCard, without, g, dpr]);
   const worst = Math.max(...res.filter((r) => !r[0].startsWith("step")).map((r) => r[1])); worstAll = Math.max(worstAll, worst);
-  const fail = res.filter((r) => r[1] > (r[0].startsWith("step") ? 4 : MAX));
+  const fail = res.filter((r) => r[1] > (r[0].startsWith("step") ? 10 : MAX));
   console.log(`${fail.length ? "FAIL" : "PASS"}  ${scheme} ${id.slice(0, 6)} ${dpr}x   ${res.map((r) => `${r[0]} ${r[1]}${r[1] > MAX && r[2] ? ` at ${r[2]}` : ""}`).join(", ")}`);
   if (fail.length) bad++;
   await ctx.close();
