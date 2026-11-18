@@ -260,6 +260,10 @@ pub struct Contract {
     pub live_frame: crate::LiveFrame,
     /// Schema representative for the private account invalidation stream.
     pub account_frame: crate::AccountFrame,
+    /// Schema representative for the built-in wallpaper catalog input.
+    pub wallpapers_list_input: crate::WallpapersListInput,
+    /// Schema representative for the built-in wallpaper catalog.
+    pub wallpapers_list_result: crate::WallpapersListResult,
     /// Common address resolution input.
     pub resolve_input: ResolveInput,
     /// Current visible address resolution.

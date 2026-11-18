@@ -12,6 +12,8 @@ mod plugin_wire;
 pub use plugin_wire::*;
 mod spaces;
 pub use spaces::*;
+mod wallpapers;
+pub use wallpapers::*;
 mod secrets;
 pub use secrets::*;
 mod validation;
