@@ -1,8 +1,8 @@
 //! Caller-scoped placement and provider observations from the existing registry.
 use super::{LeaseState, Machine, MachineService, Settings, State, db};
 use calternal_core::{
-    MachineExecution, MachineReadiness, PersonalMachineReadiness, ProviderCheck, ProviderReadiness,
-    ReadinessResult,
+    MachineExecution, MachineReadiness, PersonalMachineReadiness, ProviderBlocked, ProviderCheck,
+    ProviderReadiness, ReadinessResult,
 };
 use calternal_machine::protocol::Owner;
 use calternal_types::{AccountId, Error, SpaceId};
@@ -182,21 +182,29 @@ impl MachineService {
             let providers = providers
                 .iter()
                 .map(|(provider, enabled)| {
-                    let check = checks
-                        .and_then(|checks| checks.get(*provider))
+                    let observation = checks.and_then(|checks| checks.get(*provider));
+                    let check = observation
                         .filter(|check| check.at.elapsed() < CHECK_TTL)
                         .map(|check| check.value.clone());
-                    let ready = available
-                        && *enabled
-                        && check
-                            .as_ref()
-                            .is_some_and(|check| check.installed && check.signed_in);
+                    let blocked = match &check {
+                        _ if !*enabled => Some(ProviderBlocked::Disabled),
+                        _ if !online => Some(ProviderBlocked::MachineOffline),
+                        _ if !available => Some(ProviderBlocked::MachineBusy),
+                        None if observation.is_some() => Some(ProviderBlocked::CheckStale),
+                        None => Some(ProviderBlocked::CheckRequired),
+                        Some(check) if !check.installed => {
+                            Some(ProviderBlocked::RuntimeUnavailable)
+                        }
+                        Some(check) if !check.signed_in => Some(ProviderBlocked::SignInRequired),
+                        Some(_) => None,
+                    };
                     (
                         (*provider).to_owned(),
                         ProviderReadiness {
                             enabled: *enabled,
                             check,
-                            ready,
+                            ready: blocked.is_none(),
+                            blocked,
                             title_blocked: machine
                                 .title_blocked
                                 .as_ref()

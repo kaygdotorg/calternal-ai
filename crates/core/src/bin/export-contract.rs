@@ -52,6 +52,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         MachineExecution,
         SandboxFallback,
         ProviderCheck,
+        ProviderBlocked,
         ProviderReadiness,
         PersonRequest,
         ProviderSignInStart,

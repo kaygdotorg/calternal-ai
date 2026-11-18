@@ -99,10 +99,36 @@ pub struct ProviderReadiness {
     pub check: Option<ProviderCheck>,
     /// The machine has capacity and the enabled provider reports a login.
     pub ready: bool,
+    /// The first unmet readiness condition. A fresh verified provider omits it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub blocked: Option<ProviderBlocked>,
     /// Safe reason an automatic title was skipped on this machine, when observed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub title_blocked: Option<String>,
+}
+
+/// Why the caller cannot currently start a provider turn on one machine.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema, TS,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum ProviderBlocked {
+    /// The plugin is disabled or unavailable in this space.
+    Disabled,
+    /// The machine needs to reconnect.
+    MachineOffline,
+    /// The machine has no free sandbox slot for the caller.
+    MachineBusy,
+    /// The current provider has no observed status on this machine.
+    CheckRequired,
+    /// The provider observation expired. Run another check.
+    CheckStale,
+    /// The sandbox could not use the expected provider executable.
+    RuntimeUnavailable,
+    /// The user's provider login is missing or expired.
+    SignInRequired,
 }
 
 /// The effective execution environment available on a machine.

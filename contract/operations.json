@@ -11699,6 +11699,60 @@
           ],
           "type": "object"
         },
+        "ProviderBlocked": {
+          "description": "Why the caller cannot currently start a provider turn on one machine.",
+          "oneOf": [
+            {
+              "description": "The plugin is disabled or unavailable in this space.",
+              "enum": [
+                "disabled"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "The machine needs to reconnect.",
+              "enum": [
+                "machine_offline"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "The machine has no free sandbox slot for the caller.",
+              "enum": [
+                "machine_busy"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "The current provider has no observed status on this machine.",
+              "enum": [
+                "check_required"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "The provider observation expired. Run another check.",
+              "enum": [
+                "check_stale"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "The sandbox could not use the expected provider executable.",
+              "enum": [
+                "runtime_unavailable"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "The user's provider login is missing or expired.",
+              "enum": [
+                "sign_in_required"
+              ],
+              "type": "string"
+            }
+          ]
+        },
         "ProviderCheck": {
           "additionalProperties": false,
           "description": "A bounded observation of the official provider program's own check.",
@@ -11727,6 +11781,17 @@
           "additionalProperties": false,
           "description": "A machine's readiness for one provider in this space.",
           "properties": {
+            "blocked": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/ProviderBlocked"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The first unmet readiness condition. A fresh verified provider omits it."
+            },
             "check": {
               "anyOf": [
                 {

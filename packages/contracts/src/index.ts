@@ -336,6 +336,11 @@ signed_in: boolean,
  */
 sign_in_command: string, };
 /**
+ * Why the caller cannot currently start a provider turn on one machine.
+ */
+
+export type ProviderBlocked = "disabled" | "machine_offline" | "machine_busy" | "check_required" | "check_stale" | "runtime_unavailable" | "sign_in_required";
+/**
  * A machine's readiness for one provider in this space.
  */
 
@@ -352,6 +357,10 @@ check: ProviderCheck | null,
  * The machine has capacity and the enabled provider reports a login.
  */
 ready: boolean,
+/**
+ * The first unmet readiness condition. A fresh verified provider omits it.
+ */
+blocked?: ProviderBlocked,
 /**
  * Safe reason an automatic title was skipped on this machine, when observed.
  */
