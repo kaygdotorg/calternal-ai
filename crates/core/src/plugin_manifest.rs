@@ -73,6 +73,9 @@ pub enum HostCallKind {
     /// Replace a private state key with a durable compare-and-set receipt.
     #[serde(rename = "cas_plugin_state_v1")]
     CasPluginStateV1,
+    /// Prepare remote asset references from a declared, stored content revision.
+    #[serde(rename = "content_prepare_v1")]
+    ContentPrepareV1,
     /// Write an authorized item.
     #[serde(rename = "write_item")]
     WriteItem,
@@ -463,11 +466,140 @@ pub struct PluginSlotContribution {
     pub renderer: PluginSlotRenderer,
 }
 
-/// Plugin menu read without running plugin code. Every top-level field is required;
-/// only the documented optional fields inside declarations may be omitted.
+/// Network authority requested by a package. Each declaration has its own
+/// approval meaning and is subject to the live space activation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(deny_unknown_fields)]
+pub struct ManifestNetwork {
+    /// Anonymous remote assets from stored content. Omit for no proxy access.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub content_fetch: Option<ManifestContentFetch>,
+}
+
+/// Anonymous content proxy scope shown during trusted installation review.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(deny_unknown_fields)]
+pub struct ManifestContentFetch {
+    /// Host-enforced media and transport policy.
+    pub profile: ContentFetchProfile,
+    /// Up to 32 distinct text sources owned by the declaring package.
+    #[schemars(length(min = 1, max = 32))]
+    pub sources: Vec<ContentFetchSource>,
+}
+
+/// Host-owned remote media policy. Each additional profile requires review.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum ContentFetchProfile {
+    /// Anonymous HTTPS GET for allowed image and font formats, excluding SVG.
+    ImagesFonts,
+}
+
+/// A stored field the broker may read to derive proxy references.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(deny_unknown_fields)]
+pub struct ContentFetchSource {
+    /// The declaring package's own text kind.
+    pub kind: String,
+    /// The source field interpreted as HTML.
+    pub field: ContentFetchField,
+}
+
+/// Worker request to sanitize an exact stored content revision. Authority
+/// comes from invocation admission and the plugin's content declaration.
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
+#[serde(deny_unknown_fields)]
+pub struct ContentPrepareInput {
+    /// Plugin-owned kind named in its proxy profile.
+    pub kind: String,
+    /// Item UUID.
+    pub item_id: String,
+    /// Current opaque revision received from the item store.
+    pub revision: String,
+    /// Field containing the HTML source.
+    pub field: ContentFetchField,
+}
+
+/// Prepared content reference for the acting person, valid briefly.
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
+#[serde(deny_unknown_fields)]
+pub struct ContentPrepareResult {
+    /// Opaque frame ID. Frame delivery checks the current viewer and source.
+    pub frame_id: String,
+}
+
+/// Read a prepared sealed frame as the person it was created for.
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
+#[serde(deny_unknown_fields)]
+pub struct ContentFrameAddress {
+    /// Space UUID.
+    pub space_id: String,
+    /// Short-lived frame ID from content preparation.
+    pub frame_id: String,
+}
+
+/// Trusted client data for mounting a sealed frame and for external navigation.
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
+#[serde(deny_unknown_fields)]
+pub struct ContentFrameView {
+    /// Relative trusted frame URL. Mount with an empty iframe sandbox.
+    pub frame_url: String,
+    /// External targets in the order of the frame's navigation references.
+    /// Open only through the host's explicit navigation action.
+    pub links: Vec<String>,
+    /// Current remote-content preference for the viewer.
+    pub preference: ContentFetchPreference,
+}
+
+/// One person's policy for remote images and fonts in a space.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum ContentFetchPreference {
+    /// Request an explicit decision before downloading remote assets.
+    Ask,
+    /// Fetch eligible assets at ingest, with the older-content fallback.
+    #[default]
+    Always,
+    /// Show placeholders for remote assets.
+    Never,
+}
+
+/// Read the viewer's remote content policy in one space.
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
+#[serde(deny_unknown_fields)]
+pub struct ContentFetchPreferenceAddress {
+    /// Space UUID. The authenticated caller supplies the account identity.
+    pub space_id: String,
+}
+
+/// Set the caller's own remote content policy in one space.
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
+#[serde(deny_unknown_fields)]
+pub struct ContentFetchPreferenceEdit {
+    /// Space UUID. The authenticated caller supplies the account identity.
+    pub space_id: String,
+    /// New choice applied at the next fetch and asset delivery.
+    pub preference: ContentFetchPreference,
+}
+
+/// Stored source fields supported by the content proxy.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum ContentFetchField {
+    /// The item's UTF-8 text body.
+    Text,
+}
+
+/// Plugin menu read without running plugin code. Only documented optional
+/// fields may be omitted.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[serde(deny_unknown_fields)]
 pub struct ManifestV1 {
+    /// Optional outbound network declarations. Omit for no network access.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub network: Option<ManifestNetwork>,
     /// Optional commands, extra phrases and Settings sections for the palette.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]

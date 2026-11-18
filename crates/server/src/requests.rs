@@ -96,6 +96,42 @@ pub(crate) async fn dispatch<D: Directory>(
                     status: "pending".into()
                 })
             }
+            "plugins.network.content.get" => {
+                let i: calternal_core::ContentFrameAddress = decode(input)?;
+                let space = authorize(&st, person.id, &i.space_id, row.required)?;
+                json!(crate::plugins::network::view(
+                    &st,
+                    person.id,
+                    space,
+                    &i.frame_id
+                )?)
+            }
+            "plugins.network.content.preference.get" => {
+                let i: calternal_core::ContentFetchPreferenceAddress = decode(input)?;
+                let space = authorize(&st, person.id, &i.space_id, row.required)?;
+                let lifecycle = st.store.content().lifecycle();
+                let _space = lifecycle.step(space.as_uuid())?;
+                let _account = lifecycle.step(person.id.as_uuid())?;
+                json!(crate::plugins::network::db::preference(
+                    st.store.appdata(),
+                    space,
+                    person.id,
+                )?)
+            }
+            "plugins.network.content.preference.set" => {
+                let i: calternal_core::ContentFetchPreferenceEdit = decode(input)?;
+                let space = authorize(&st, person.id, &i.space_id, row.required)?;
+                let lifecycle = st.store.content().lifecycle();
+                let _space = lifecycle.step(space.as_uuid())?;
+                let _account = lifecycle.step(person.id.as_uuid())?;
+                crate::plugins::network::db::set_preference(
+                    st.store.appdata(),
+                    space,
+                    person.id,
+                    i.preference,
+                )?;
+                json!(i.preference)
+            }
             "plugins.settings.get" | "plugins.settings.set" => {
                 crate::plugins::settings::dispatch(&st, person.id, &rid, row.id, input)?
             }

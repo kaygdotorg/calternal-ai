@@ -86,6 +86,17 @@ pub(super) async fn dispatch_scoped_inner<D: Directory>(
             "thread credentials cannot manage account onboarding",
         ));
     }
+    if calternal_core::is_appearance_operation(op) {
+        if agent.is_some() {
+            return Err(Error::forbidden(
+                "thread credentials cannot manage account appearance",
+            ));
+        }
+        if !session.is_live(&state.directory).await {
+            return Err(Error::unauthorized("session expired or revoked"));
+        }
+        return super::appearance::operation(state, p, op, input).await;
+    }
     if calternal_core::is_account_input_operation(op) {
         if agent.is_some() {
             return Err(Error::forbidden(
@@ -94,6 +105,16 @@ pub(super) async fn dispatch_scoped_inner<D: Directory>(
         }
         return crate::account_input::dispatch(state, p, session, op, input).await;
     }
+    if catalog
+        .policy(op)
+        .is_some_and(|policy| policy.constraint == Constraint::Sharing)
+    {
+        if agent.is_some() {
+            return Err(Error::forbidden("sharing requires a person session"));
+        }
+        return super::sharing::dispatch(state, p, request_id, op, input).await;
+    }
+    let item_grants = agent.is_none() && crate::resolve::allows_item_grants(op);
     let mut input = input;
     // Capabilities already read for this request (by the resolver), so admission
     // does not look them up again.
@@ -126,12 +147,16 @@ pub(super) async fn dispatch_scoped_inner<D: Directory>(
             .policy(op)
             .map(|p| p.required)
             .unwrap_or(calternal_types::Capability::SpaceRead);
-        let (mut resolved, caps) =
-            crate::resolve::resolve_for(&state, &p, &kind, &id, op_required).await?;
+        let (mut resolved, caps, item_only) =
+            crate::resolve::resolve_for(&state, &p, &kind, &id, op_required, item_grants).await?;
         if op == "resolve" && kind == "notes" {
             let st = state.clone();
             resolved = crate::blocking::spawn(move || {
-                resolved.state = Some(crate::notes::state(&st.store, &resolved)?);
+                let item_state = crate::notes::state(&st.store, &resolved)?;
+                if item_only && item_state != calternal_core::ItemState::Active {
+                    return Err(Error::not_found("item not found"));
+                }
+                resolved.state = Some(item_state);
                 Ok::<_, Error>(resolved)
             })
             .await
@@ -372,9 +397,40 @@ pub(super) async fn run_admitted_operation<D: Directory>(
         .get("space_id")
         .and_then(Value::as_str)
         .and_then(|s| SpaceId::parse(s).ok());
-    let value = dispatch_checked(state.clone(), p.clone(), actor, request_id, op, input).await?;
+    let delivery_item = if agent.is_none() && crate::resolve::allows_item_grants(op) {
+        input
+            .get("id")
+            .and_then(Value::as_str)
+            .and_then(|id| uuid::Uuid::parse_str(id).ok())
+    } else {
+        None
+    };
+    let purge = if op == "trash.purge" {
+        input
+            .get("id")
+            .and_then(Value::as_str)
+            .and_then(|id| uuid::Uuid::parse_str(id).ok())
+    } else {
+        None
+    };
+    let value = dispatch_checked(state.clone(), p, actor, request_id, op, input).await?;
+    if let (Some(space), Some(id), Some(directory)) =
+        (delivery_space, purge, state.directory.protected_spaces())
+    {
+        directory
+            .purge_item_grants(space, id)
+            .await
+            .map_err(crate::auth::auth_error)?;
+    }
     if let Some(space) = delivery_space {
-        policy.check(super::authorization::capabilities(&state, p.id, space).await?)?;
+        let caps = if let Some(id) = delivery_item {
+            crate::resolve::item_capabilities(&state, p.id, space, "notes", id)
+                .await?
+                .0
+        } else {
+            super::authorization::capabilities(&state, p.id, space).await?
+        };
+        policy.check(caps)?;
     }
     Ok(value)
 }
@@ -556,6 +612,21 @@ pub(super) async fn mutate_note<D: Directory>(
             .or_else(|| update.as_ref().map(|i| i.space_id.as_str()))
             .expect("note scope"),
     )?;
+    // An item grant authorizes this note only. Name changes use the linked
+    // rename path, which may write other notes and needs space authority.
+    let allow_link_rewrites = if update.is_some() {
+        super::authorization::capabilities(&state, principal, space)
+            .await?
+            .is_some_and(|caps| caps.contains(calternal_types::Capability::ContentWrite))
+    } else {
+        false
+    };
+
+    let authority = if update.is_some() && !allow_link_rewrites {
+        state.directory.protected_spaces().cloned()
+    } else {
+        None
+    };
     #[cfg(feature = "perf-timings")]
     let timing = (op == "notes.update")
         .then(|| {
@@ -584,6 +655,8 @@ pub(super) async fn mutate_note<D: Directory>(
                     &i.base_revision,
                     i.title.as_deref(),
                     &i.markdown,
+                    allow_link_rewrites,
+                    authority.as_ref(),
                 )?
             };
             to_value(NoteResult { note })

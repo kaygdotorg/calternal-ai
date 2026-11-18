@@ -1,7 +1,7 @@
 /** Bounded worker-v2 peer; effects and current authority remain in the trusted host.
  * @module
  */
-import type { ManifestV1, PluginItemPageInput, PluginItemPageResult, WorkerSettingInput } from "@calternal/contracts";
+import type { ContentPrepareInput, ContentPrepareResult, ManifestV1, PluginItemPageInput, PluginItemPageResult, WorkerSettingInput } from "@calternal/contracts";
 import { isHostCallKind, validateManifestV1, type HostCallKind } from "./manifest-v1.js";
 
 /** Maximum serialized frame bytes, excluding newline. */
@@ -153,6 +153,15 @@ export async function listItems(
   input: PluginItemPageInput,
 ): Promise<PluginItemPageResult> {
   return await context.call("list_items_v1", input) as PluginItemPageResult;
+}
+
+/** Prepare a sealed frame from a declared, stored revision. Costs one
+ * broker call and one bounded server-side HTML parse. */
+export async function prepareContent(
+  context: WorkerContextV2,
+  input: ContentPrepareInput,
+): Promise<ContentPrepareResult> {
+  return await context.call("content_prepare_v1", input) as ContentPrepareResult;
 }
 
 /** Read the effective shared value of one setting from this package's manifest.

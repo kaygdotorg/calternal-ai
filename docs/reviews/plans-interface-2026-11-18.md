@@ -29,22 +29,20 @@ through the shared migration runner and has a transition fixture.
 
 ## Verification
 
-Dev-01 ran the full command sequence at `4f277e03`. Plugin build, both
-format checks, the documentation build and gate, the server build, and the
-artifact and real-server CLI contract checks passed. Rust workspace tests
-reported 682 passed, 0 failed, and 2 ignored. Plugin tests reported 32 passed,
-0 failed, and 1 skipped. Integration reported 2 passed and 0 failed.
-Serial conformance reported 138 passed and 2 failed. One reported pass was
-the live Firecracker case, which returned early because no guest config
-was set.
+Dev-01 slot 3 completed the full command sequence at `965ca6e7`. Plugin
+build, both format checks, the documentation build and gate, the server build,
+and the artifact and real-server CLI contract checks passed. Rust workspace
+tests reported 686 passed, 0 failed, and 2 ignored. Plugin tests reported 32
+passed, 0 failed, and 1 skipped. Integration reported 2 passed and 0 failed.
+Serial conformance reported 140 passed and 0 failed. The live Firecracker
+case returned early because no guest config was set, so 139 cases ran.
+Both scratch checkouts were removed, and no lane process remained.
 
-Both measured-memory fixtures used the production 20-second hold for a
-quiet poll, which exceeded the test client's 15-second deadline. The
-corrected fixture uses a two-second hold. Dev-02 at `965ca6e7` passed
-both measured-memory fixtures and all five scoped conformance cases,
-including the owner-bound storage read, refusal without a grant, and
-storage enforcement after restart. The full follow-up remains queued
-on Dev-01 slot 3.
+An earlier serial run timed out in both measured-memory fixtures. A quiet
+poll could hold for 20 seconds, beyond the test client's 15-second deadline.
+The corrected fixtures set a two-second server hold. They passed on Dev-02
+and in the full gate. The scoped plugin tests verified an owner-bound usage
+read, denial without an operator grant, and enforcement after restart.
 
 The test `a_slow_write_in_one_space_does_not_delay_other_spaces` had failed
 intermittently during shutdown on Dev-01. The content sweeper lifetime fix has

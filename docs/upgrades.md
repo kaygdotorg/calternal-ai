@@ -11,9 +11,12 @@ database until checkpointed. SQLite SHM, locks and sockets are runtime state.
 | Root and relative paths | Class | Writer and baseline marker |
 | --- | --- | --- |
 | Appdata `system/auth.db` | Authority | Auth, SQLite 14 on the current baseline. Steps 12 and 13 add accounts changes, and step 14 adds dormant sharing grants. Accounts, passkeys, sessions, roles, memberships, invites, approvals, machine identity and grants, erasures, key fingerprints and protected receipts. |
+| Appdata `system/appearance.db` | Mixed | Appearance, new SQLite 1 baseline through the shared runner. Account preferences and original private uploads are authoritative. Shared manifests and eviction pins coordinate with the cache. The production baseline has no appearance database. |
+| Appdata `fonts-cache-v1/` | Derived | Version 1 directories of immutable WOFF2 bytes by family and digest. Startup verifies the published manifest and retires incomplete or orphan fills. |
 | Appdata `system/machines.db` | Authority | Machine placement, SQLite 6. Leases, fences, drain, work locations, discard and erase delivery, and the durable stop record that keeps an erased worker's machine slot reserved until its stop completes. Version 7 records private title leases. Version 8 adds manual compute limits, explicit space-to-group resource bindings, and a charging scope for newly admitted leases. Version 9 holds fenced guest clock intervals and terminal evidence. Version 10 records operator grants for installed admission hooks and a bounded cumulative observation feed. Version 11 stores one storage allocation per accounting group. |
 | Appdata `spaces/<id>/content.db` | Mixed | Content, SQLite 3. Item identity, revisions, pending placement, trash and tombstones, kinds, plugin controls. Listing, labels and links are derived. Version 4 adds snooze validation. Version 5 adds collection membership. Version 6 adds per-kind and combined ceilings and current-body byte totals. The migration backfills committed heads and revision and purge transactions maintain the totals. Version 7 adds bounded package-private state and receipts. |
 | Appdata `spaces/<id>/index.db`, `secrets/spaces/<id>/head` | Authority | Space journal, SQLite 2 and binary CHW2. Journal, epoch, receipts and independent head witness. Receipts are pruned after the operator's retention (7 days by default) only on content's command, with every receipt of a surviving outbox intent pinned. The fence adds no stored state. |
+| Appdata `spaces/<id>/network.db` | Authority | Plugin network, SQLite 1. Per-person remote content preferences and bounded outbound audit metadata. Absent databases use the default and are initialized by the shared runner on the first saved preference. |
 | Appdata `spaces/<id>/jobs.db` | Authority | Jobs, SQLite 2. Admission, retry and in-flight state, checkpoints, event outbox and retention. |
 | Appdata `accounts/<id>/input.db`, `content.db`, `agent-settings.db` | Authority | Account input, content and jobs. SQLite 2 for drafts and pending input, 1 for protected collections and 1 for retry settings. |
 | Appdata `accounts/<id>/onboarding.db` | Authority | Account onboarding, new SQLite 1 baseline through the shared runner. The production baseline has no marker. Missing files read as unfinished. The completion marker rides with account settings and is removed by account erasure. |
@@ -95,6 +98,14 @@ unsent edits can be lost during a system crash or power loss.
    below and check reads, acknowledged writes, and rollback against that data.
    The test-only `upgrade_schema()` step in `machines/db.rs` shows the shape of
    a real step and how the fixture tests drive it.
+
+### Item sharing
+
+The fresh production baseline at `c98705d7` includes dormant sharing authority
+(`auth.db` 14) and the derived collection membership index (space
+`content.db` 5). The sharing feature uses these shipped schemas. The existing
+`system/invite.key` backup also protects public link credentials through
+independently derived keys.
 
 ## Release handoff
 

@@ -14,6 +14,6 @@ title: "plugin-sdk: index/type-aliases/HostCallKind"
 
 # Type Alias: HostCallKind
 
-> **HostCallKind** = `"read_item"` \| `"list_items_v1"` \| `"read_setting_v1"` \| `"read_space_usage_v1"` \| `"read_runtime_observations_v1"` \| `"read_runtime_window_v1"` \| `"read_plugin_state_v1"` \| `"cas_plugin_state_v1"` \| `"write_item"` \| `"list_collection"` \| `"emit_event"` \| `"start_job"` \| `"checkpoint_job"` \| `"request_secret_handle"`
+> **HostCallKind** = `"read_item"` \| `"list_items_v1"` \| `"read_setting_v1"` \| `"read_space_usage_v1"` \| `"read_runtime_observations_v1"` \| `"read_runtime_window_v1"` \| `"read_plugin_state_v1"` \| `"cas_plugin_state_v1"` \| `"content_prepare_v1"` \| `"write_item"` \| `"list_collection"` \| `"emit_event"` \| `"start_job"` \| `"checkpoint_job"` \| `"request_secret_handle"`
 
 The only broker methods a worker may request.
