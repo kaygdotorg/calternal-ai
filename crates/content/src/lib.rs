@@ -39,6 +39,7 @@ mod mutations;
 mod pool;
 mod publication;
 mod recovery;
+mod revision_slice;
 use lifecycle::{Cache, Slot, spawn_sweeper, sweep};
 mod trash;
 mod types;
@@ -79,6 +80,9 @@ pub struct Content {
 pub(crate) fn file_hash(bytes: &[u8]) -> String {
     blake3::hash(bytes).to_hex().to_string()
 }
+/// Maximum submitted document size in bytes, before file placement adds identity.
+pub const MAX_DOCUMENT_BYTES: usize = 2 * 1024 * 1024;
+
 /// Maximum serialized metadata bytes per content revision.
 pub const MAX_METADATA_BYTES: usize = 256 * 1024;
 /// How long request receipts are kept by default: seven days, the store's default.

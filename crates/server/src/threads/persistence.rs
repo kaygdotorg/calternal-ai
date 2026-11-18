@@ -1,4 +1,5 @@
 //! Bounded, receipted provider text checkpoints through generic content storage.
+use super::delta::Append;
 use super::provider_session::{KEY, ProviderSession};
 use crate::{api::Shared, auth::Directory, plugins::jobs::Job};
 use calternal_content::Request;
@@ -80,10 +81,19 @@ pub(crate) fn checkpoint<D: Directory>(
             return Ok(());
         }
         let mut body = super::document::body(&item)?.to_owned();
-        if !text.is_empty() {
-            append_output(&mut metadata, &mut body, job, id, seq, text)?;
-        }
+        let range = if text.is_empty() {
+            body.len()..body.len()
+        } else {
+            append_output(&mut metadata, &mut body, job, id, seq, text)?
+        };
         let bytes = super::document::encode(&metadata, &body);
+        let append = json!(Append {
+            base_revision: item.revision.clone(),
+            offset: range.start,
+            start: bytes.len() - body.len() + range.start,
+            length: range.len(),
+        });
+        metadata[super::delta::METADATA_KEY] = append.clone();
         match content.write(
             space,
             Some(id),
@@ -97,7 +107,7 @@ pub(crate) fn checkpoint<D: Directory>(
                 operation: "threads.checkpoint",
                 fingerprint: &fp,
             },
-            |_| json!({"checkpoint":seq}),
+            |_| json!({"checkpoint":seq,"append":append}),
         ) {
             Ok(_) => return Ok(()),
             Err(e)
@@ -122,10 +132,10 @@ fn append_output(
     id: Uuid,
     seq: u64,
     text: &str,
-) -> Result<(), Error> {
+) -> Result<std::ops::Range<usize>, Error> {
     let now = calternal_content::now_rfc3339();
     let output = &metadata["output"];
-    let end = if output["job_id"] == job.id {
+    let (end, range) = if output["job_id"] == job.id {
         let offset = output["end"]
             .as_u64()
             .and_then(|v| usize::try_from(v).ok())
@@ -133,8 +143,10 @@ fn append_output(
             .ok_or_else(|| Error::internal("invalid thread output cursor"))?;
         body.insert_str(offset, text);
         super::document::record_activity(metadata, &now);
-        offset + text.len()
+        let end = offset + text.len();
+        (end, offset..end)
     } else {
+        let start = body.len();
         body.push_str(&format!(
             "\n<!-- message:{} role:agent turn:{} actor:{} time:{now} -->\n",
             job.id,
@@ -145,8 +157,8 @@ fn append_output(
         let end = body.len();
         body.push_str("\n<!-- /message -->\n");
         super::document::record_message(metadata, &now);
-        end
+        (end, start..body.len())
     };
     metadata["output"] = json!({"job_id":job.id,"run":job.runs,"checkpoint":seq,"end":end});
-    Ok(())
+    Ok(range)
 }

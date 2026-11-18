@@ -59,12 +59,46 @@ taking the content lock or awaiting the writer. Publication retries on subsequen
 job transactions and recovery. Pending entries are eligible for pruning after
 seven days. The journal's operator-configured receipt retention bounds deduplication.
 
+### Read one checkpoint addition
+
+A `threads.checkpoint` entry carries the target `data.revision` and
+`data.append` with `base_revision`, `offset`, `start` and `length`.
+Pass the entry's `data` as `since` to `threads.get` with the thread ID.
+For example, the operation input is
+
+```json
+{"id":"019a8c00-0000-7000-8000-000000000001","since":{"revision":"v4.example","append":{"base_revision":"v3.example","offset":240,"start":588,"length":9}}}
+```
+
+The response contains `delta` with `id`, `base_revision`, `revision`,
+`offset` and `markdown`. Insert the returned UTF-8 bytes into the cached
+Markdown body at `offset` and advance its revision. Exclude frontmatter when
+applying the insertion. The first checkpoint includes a new message's markers.
+Later checkpoints can insert before its closing marker, which rules out a
+message index or a whole-file suffix as the cursor. `start` and `length` are
+the byte range in the target revision and are echoed from the journal entry.
+A session-only checkpoint has a zero-byte addition. A full get still returns
+the document, metadata and active job.
+
+Apply journal entries in order. Each pair describes one committed transition and
+can be read after newer checkpoints arrive. If the client lacks the matching
+base, receives a non-checkpoint document change, or gets a conflict, reload
+with a full `threads.get`. Do the same when the journal resets. The same
+space, item, capability and agent-thread checks apply to both read forms.
+
+After ordinary authorization, the delta path performs one indexed lookup and
+at most one bounded SQLite BLOB read. It performs zero userdata file reads,
+job lookups and flushes. The checkpoint derives the range from its existing
+body and write buffer. Publication reuses the outbox payload and existing
+journal commit, with no additional reads or flushes per event.
+
 ## CLI
 
 ```sh
 calternal threads --token-file person.token create --space-id <uuid> --title Plan
 calternal threads --token-file person.token list --space-id <uuid>
 calternal threads --token-file person.token get <thread-uuid>
+calternal threads --token-file person.token get <thread-uuid> --since '<checkpoint journal data JSON>'
 calternal threads --token-file person.token --request-id <stable-id> send <thread-uuid> --message 'Inspect this workspace'
 calternal threads --token-file person.token stop <thread-uuid>
 calternal threads --token-file person.token rename <thread-uuid> --title "New title"
