@@ -49,7 +49,7 @@
   {#if notes.list.length}
     <!-- Only the rows near the view exist in the DOM (VirtualList), however many notes there are; the next page is read when the window nears the last loaded row. -->
     <VirtualList inside count={notes.list.length} estimate={40} overscan={600} label="Notes" onrange={(_, end) => { if (end >= notes.list.length - 40) void notes.notePages.next(); }}>
-      {#snippet row(i)}{@const n = notes.list[i]}{#if n}<div class="li" oncontextmenu={(e) => menuAt(e, n)}>
+      {#snippet row(i)}{@const n = notes.list[i]}{#if n}<div class="li" role="presentation" oncontextmenu={(e) => menuAt(e, n)}>
     {#if renaming === n.id}
       <input class="ren" aria-label="Note title" bind:value={draft} onkeydown={(e) => { if (e.key === "Enter") commit(n); else if (e.key === "Escape") renaming = null; }} onblur={() => commit(n)} use:focusNow />
     {:else}
