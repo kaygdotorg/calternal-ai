@@ -30,13 +30,14 @@
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div class="msg {message.role}" class:agent-row={message.role === "agent"} onpointerenter={() => (armed = true)} onfocusin={() => (armed = true)}>
   {#if message.role === "user"}
-    <div class="col end"><div class="bubble">{#each message.blocks as b}{#if b.type === "text"}<Md text={clip(b.text)} />{/if}{/each}</div><MessageActions {message} {armed} /></div>
+    <div class="col end"><div class="bubble">{#each message.blocks as b}{#if b.type === "text"}<Md text={clip(b.text)} />{:else if b.type === "file"}<span class="file"><Icon name={b.kind === "image" ? "image" : "file"} inline />{b.name}</span>{/if}{/each}</div><MessageActions {message} {armed} /></div>
   {:else}
     <div class="lead"><ProviderMark by={message.by} {provider} {providers} /></div>
     <div class="agent" id={message.id}>
       {#each message.blocks as b}
         {#if b.type === "text"}<Md text={clip(b.text)} />
         {:else if b.type === "thought"}<Thought text={b.text} ms={b.ms} />
+        {:else if b.type === "file"}<span class="file"><Icon name={b.kind === "image" ? "image" : "file"} inline />{b.name}</span>
         {:else if b.type === "steps"}<Steps steps={b.steps} ms={b.ms} />
         {:else if b.type === "card"}{#if GenUi}<GenUi source={b.source} />{/if}
         {:else}
@@ -67,6 +68,7 @@
   .col.end { justify-items: end; }
   .col .bubble { max-width: none; }
   .agent { display: grid; gap: var(--s-5); min-width: 0; width: 100%; }
+  .file { display: inline-flex; align-items: center; gap: var(--s-3); margin-bottom: var(--s-2); padding: var(--s-1) var(--s-4); border-radius: var(--r-pill); background: rgb(var(--ink-rgb) / 0.08); font-size: var(--text-label); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .child { display: inline-flex; align-items: center; gap: var(--s-4); padding: var(--s-3) var(--s-5); border-radius: var(--r-pill); background: var(--accent-soft); color: var(--accent); font-size: var(--text-label); font-weight: var(--strong-weight); justify-self: start; }
   .child small { color: var(--ink-3); font-weight: var(--ui-weight); }
 </style>

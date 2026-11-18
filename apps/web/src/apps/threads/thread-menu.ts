@@ -9,10 +9,9 @@ import { layout, type Container } from "./layout.svelte";
 import type { ThreadSummary } from "./model";
 import { client, store } from "./store.svelte";
 
-/** The ids of the current space's threads that stand on their own in the list (children follow their parent; the attention card's first three are listed there instead), newest first. */
+/** The ids of the current space's threads that stand on their own in the list (children follow their parent), newest first. */
 export function topLevelIds(): string[] {
-  const hidden = new Set(store.attention.slice(0, 3).map((a) => a.thread.id));
-  const shown = store.threads.filter((t) => !hidden.has(t.id) && t.spaceId === spaces.current.id);
+  const shown = store.threads.filter((t) => t.spaceId === spaces.current.id);
   const known = new Set(shown.map((t) => t.id));
   return shown.filter((t) => !t.parentId || !known.has(t.parentId)).sort((a, b) => b.updatedAt - a.updatedAt).map((t) => t.id);
 }

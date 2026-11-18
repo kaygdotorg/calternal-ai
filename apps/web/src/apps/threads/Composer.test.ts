@@ -7,14 +7,14 @@ import type { ProviderOption, ThreadSummary } from "./model";
 
 const thread: ThreadSummary = { id: "t", spaceId: "s", title: "T", parentId: null, state: "idle", workspace: "w", updatedAt: 0, provider: "claude", model: "sonnet-5-5", permission: "approve", runsOn: { machine: "dev-02", mode: "sandboxed" }, messageCount: 0 };
 const providers: ProviderOption[] = [{ id: "claude", name: "Claude Code", models: [{ id: "sonnet-5-5", name: "Sonnet 5.5" }, { id: "opus-5-5", name: "Opus 5.5" }] }];
-const props = (o = {}) => ({ thread, providers, machines: ["dev-02", "laptop"], onsend() {}, onstop() {}, onprovider() {}, onpermission() {}, onrunson() {}, ...o });
+const props = (o = {}) => ({ thread, providers, machines: ["dev-02", "laptop"], onsend() {}, onstop() {}, onprovider() {}, onpermission() {}, onrunson() {}, onreasoning() {}, onattach: async () => {}, ...o });
 
 describe("composer", () => {
   it("shows permission mode and where it runs as two separate chips", () => {
     render(Composer, props());
     expect(screen.getByRole("button", { name: "Approve for me" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "dev-02 · Sandboxed" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Claude Code · Sonnet 5.5" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "dev-02, sandboxed" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Claude Code, Sonnet 5.5" })).toBeTruthy();
   });
   it("changing permission is its own menu and does not touch where it runs", async () => {
     const onpermission = vi.fn();
@@ -39,7 +39,7 @@ describe("composer", () => {
   it("where it runs is two choices, a machine then Sandboxed or Direct, in one picker", async () => {
     const onrunson = vi.fn();
     render(Composer, props({ onrunson }));
-    await userEvent.click(screen.getByRole("button", { name: "dev-02 · Sandboxed" }));
+    await userEvent.click(screen.getByRole("button", { name: "dev-02, sandboxed" }));
     const picker = screen.getByRole("dialog", { name: "Where it runs" });
     expect(within(picker).getByRole("radiogroup", { name: "Machine" })).toBeTruthy();
     await userEvent.click(within(picker).getByRole("radio", { name: "laptop" }));
@@ -54,7 +54,7 @@ describe("composer", () => {
     await userEvent.type(field, "hello{Shift>}{Enter}{/Shift}there");
     expect(onsend).not.toHaveBeenCalled();
     await userEvent.type(field, "{Enter}");
-    expect(onsend).toHaveBeenCalledWith("hello\nthere");
+    expect(onsend).toHaveBeenCalledWith("hello\nthere", []);
   });
   it("has no accessibility violations", async () => {
     const { container } = render(Composer, props());

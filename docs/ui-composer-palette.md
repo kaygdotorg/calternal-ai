@@ -39,3 +39,13 @@ Plan for bringing the existing app's composer and palette across, following `doc
 - Filter tokens, previews, frecency, recents. (The existing app has them; they come with the real search service.)
 - Plugin manifests from the server: the data shape is fixed in `manifest.ts`; the fixture registers the built-in apps.
 - The decision service (optional, off): only after Enter, never while typing.
+
+## Server-mode status (2026-11-18)
+
+**Ported from the existing app, unchanged:** the recogniser (whole phrase, spans, slots, kind vote), dates, day words and the Hinglish day words, the task phrases (date, time, repeat, deadline, priority, #tag, @person), 25 of its test vectors (not the 823-vector corpus yet), typo-tolerant search, the palette surface (Cmd/Ctrl-K, top panel or phone sheet), the "what Enter will do" line, plugin commands as data (`manifest.ts`), and the `@` and `/` picker of the thread composer.
+
+**Works against the real server today:** the palette lists this space's threads (the Threads store) and notes (the newest page plus a `notes.lookup` title-prefix request per pause, so every note of the space is findable by title), every space to switch to (`spaces.list`), and runs: open an item, switch space, new thread, ask in the open thread, shortcuts. In notes, `[[` uses `notes.lookup` and `#` uses `tags.lookup`.
+
+**Still fixtures:** the `@` picker's people, agents, threads and items and the `/` skills. Needs: members (`spaces.members` exists, so people can be wired now), an installed-agents list and the person's skills (a plugin or `skills.list` operation), `threads.lookup` and an item lookup across plugins.
+
+**Missing and needs the backend:** search across spaces by typing (today `notes.lookup` is one space's note titles; a cross-space `search.query` with a kinds filter and cursor paging, titles first, bodies next, is the operation), plugin commands and Settings sections from the server (`plugins.manifests` returning commands and phrases in the shape `palette/manifest.ts` fixes), and task or reminder rows ("Task: Fri 5 pm" is recognised but cannot run: there is no tasks plugin and no create operation). Not built anywhere: filter tokens, previews, frecency and recents (they come with the search service).

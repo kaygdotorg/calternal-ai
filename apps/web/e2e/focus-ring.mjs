@@ -11,7 +11,7 @@ const rings = () => page.evaluate(() => [...document.querySelectorAll("*")].map(
 const chips = [["Provider and model", "menu"], ["Permission mode", "menu"], ["Where it runs", "dialog"]];
 for (const [name, kind] of chips) {
   await expandComposer(page);
-  const chip = page.locator(".composer .chips .pill").nth(chips.findIndex((c) => c[0] === name));
+  const chip = page.locator(`.composer .chip[data-chip=${["model", "perm", "where"][chips.findIndex((c) => c[0] === name)]}] .pill`);
   await chip.click();
   await page.waitForTimeout(500);
   ok(`mouse click on the ${name} chip draws no ring (open)`, (await rings()).length === 0, (await rings()).join("; "));
@@ -22,14 +22,14 @@ for (const [name, kind] of chips) {
 }
 // Pick a row of a menu with the mouse.
 await expandComposer(page);
-await page.locator(".composer .chips .pill").nth(1).click();
+await page.locator(".composer .chip[data-chip=perm] .pill").click();
 await page.waitForTimeout(400);
 await page.getByRole("menuitemradio").nth(1).click();
 await page.waitForTimeout(500);
 ok("picking a menu row with the mouse leaves no ring", (await rings()).length === 0, (await rings()).join("; "));
 // A modifier or an OS chord (a screenshot shortcut) is not the keyboard: with the chip clicked and its picker open, the chip draws no ring.
 await expandComposer(page);
-const where = page.locator(".composer .chips .pill").nth(2);
+const where = page.locator(".composer .chip[data-chip=where] .pill");
 await where.click();
 await page.waitForTimeout(400);
 for (const chord of ["Shift", "Meta", "Meta+Shift+4", "Control+c"]) await page.keyboard.press(chord);

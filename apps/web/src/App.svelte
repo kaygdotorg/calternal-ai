@@ -21,7 +21,7 @@
   // The appearance sheet (wallpaper, fonts) opens over the Settings app at /settings/appearance?sheet=1.
   const settings = $derived(seg[0] === "settings" && seg[1] === "appearance" && route.query.get("sheet") === "1");
   const app = $derived(appFor(seg[0]) ?? NONE);
-  // An app starts (loads its data and its code) the first time it is opened; Threads always, since its attention list shows in every app.
+  // An app starts (loads its data and its code) the first time it is opened; Threads always.
   const started = new Set<string>();
   $effect(() => { for (const a of [appFor("threads"), app]) if (a && !started.has(a.kind)) { started.add(a.kind); void a.start?.(); } });
   // Opening a thread of another space (from the palette, a link) makes that space current, so the sidebar lists it. Addresses never name a space.

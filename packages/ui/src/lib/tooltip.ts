@@ -6,6 +6,8 @@
  * Cost: one DOM node for the page, one listener set per trigger, and one rAF loop only while a tooltip is open.
  */
 
+import { adaptive, scheduleMaterial } from "./material";
+
 export type Side = "top" | "bottom" | "left" | "right";
 /** What a tooltip says: the label, an optional shortcut (written the Mac way), and the preferred side. */
 export type Tip = { label: string; kbd?: string; side?: Side };
@@ -47,8 +49,10 @@ function ensure() {
   root = document.createElement("div");
   root.className = "warm-tip";
   root.setAttribute("aria-hidden", "true"); // the trigger already carries the name
-  root.innerHTML = '<div class="wt-surface"></div><div class="wt-stage"></div>';
+  // The surface is the shared glass (components/Glass, styles/glass.css), tinted by what is behind it like every floating surface (lib/material.ts); `dense` because it holds a line of words.
+  root.innerHTML = '<div class="wt-surface glass dense"></div><div class="wt-stage"></div>';
   document.body.append(root);
+  adaptive(root.querySelector<HTMLElement>(".wt-surface")!);
   return root;
 }
 
@@ -105,6 +109,7 @@ function show(target: HTMLElement, how: "pop" | "travel" | "instant") {
   t.style.height = `${h}px`;
   t.style.translate = `${g.x}px ${g.y}px`;
   t.style.transformOrigin = g.origin;
+  scheduleMaterial(); // it is somewhere else now: its tint is read again from what is behind it
 
   const old = [...stage.children].filter((c) => c !== next) as HTMLElement[];
   if (moving) {
