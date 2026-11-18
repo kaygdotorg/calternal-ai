@@ -207,6 +207,20 @@ impl CompiledSchemas {
             .ok_or(Error::Invalid)
     }
 
+    /// Validate the host's prospective durable acknowledgment before mutation.
+    /// Same cached output schema as worker delivery. Cost: O(result bytes).
+    pub fn validate_output(
+        &self,
+        operation: &str,
+        result: &serde_json::Value,
+    ) -> Result<(), Error> {
+        self.0
+            .get(operation)
+            .filter(|(_, schema)| schema.is_valid(result))
+            .map(|_| ())
+            .ok_or(Error::Invalid)
+    }
+
     /// Validates `manifest` and compiles each operation's two schemas.
     ///
     /// # Errors

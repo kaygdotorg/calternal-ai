@@ -288,8 +288,18 @@ async fn create_run<D: Directory>(
                 return Err(Error::invalid_input("image must be 1 to 255 characters"));
             }
             authorize(&state, &who, input.space_id).await?;
-            blocking(move || svc.request_run(input.space_id, me, input.thread_id, input.image))
-                .await
+            let admitted = {
+                let svc = svc.clone();
+                blocking(move || svc.request_run(input.space_id, me, input.thread_id, input.image))
+                    .await?
+            };
+            if admitted.state == super::LeaseState::Waiting {
+                crate::plugins::resource_admission::refresh(&state, &svc, me, admitted.lease_id)
+                    .await?;
+                blocking(move || svc.run(me, admitted.lease_id)).await
+            } else {
+                Ok(admitted)
+            }
         }
         .await,
     )
@@ -323,6 +333,7 @@ async fn get_run<D: Directory>(
         async {
             let svc = service(svc)?;
             let me = authorize_run(&state, &svc, &who, lease).await?;
+            crate::plugins::resource_admission::refresh(&state, &svc, me, lease).await?;
             blocking(move || svc.run(me, lease)).await
         }
         .await,

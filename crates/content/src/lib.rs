@@ -49,6 +49,7 @@ pub use search::{
 };
 mod revision_slice;
 use lifecycle::{Cache, Slot, spawn_sweeper, sweep};
+mod plugin_state;
 mod storage_usage;
 mod trash;
 mod types;
@@ -57,6 +58,7 @@ use calternal_types::{AccountId, Error, ErrorCode, SpaceId};
 pub use collections::StoredCollection;
 use db::Space;
 use journal::{Journals, lock};
+pub use plugin_state::{PluginStateRecord, PluginStateWrite};
 pub use pool::ReadPool;
 use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::Value;

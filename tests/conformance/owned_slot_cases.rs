@@ -37,11 +37,12 @@ fn cli(args: &[&str]) -> std::process::Output {
 }
 
 /// Review and install one ordinary package into a running fixture space.
-pub(super) fn install(f: &Fixture, path: &Path, space: &str) {
+pub(super) fn install(f: &Fixture, path: &Path, space: &str) -> String {
     let source = path.to_str().unwrap();
     let review = cli(&["plugin", "review", source]);
     assert!(review.status.success(), "{review:?}");
     let review: Value = serde_json::from_slice(&review.stdout).unwrap();
+    let checksum = review["data"]["checksum"].as_str().unwrap();
     let installed = cli(&[
         "plugin",
         "install",
@@ -49,13 +50,14 @@ pub(super) fn install(f: &Fixture, path: &Path, space: &str) {
         "--appdata",
         f.appdata().to_str().unwrap(),
         "--approve",
-        review["data"]["checksum"].as_str().unwrap(),
+        checksum,
         "--space",
         space,
         "--account",
         &f.ids[1],
     ]);
     assert!(installed.status.success(), "{installed:?}");
+    checksum.to_owned()
 }
 
 fn mount(id: &str, capability: &str) -> Value {

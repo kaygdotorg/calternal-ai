@@ -356,6 +356,7 @@ pub(super) fn prepare(
         .transpose()?;
     let mut plugin = Plugin::new(entry, package.manifest, worker)?;
     plugin.revision = revision;
+    plugin.review_checksum = Some(approved.clone());
     plugin.activation_approval = approval.unwrap_or(revision);
     Ok(Some(Candidate {
         plugin: std::sync::Arc::new(plugin),
@@ -544,7 +545,8 @@ fn load_rows(
         if plugins.len() >= limit {
             return Err("the installed plugin catalog exceeds its capacity".into());
         }
-        let package = decode(row.get(0).map_err(reason)?, row.get(1).map_err(reason)?)?;
+        let checksum: String = row.get(1).map_err(reason)?;
+        let package = decode(row.get(0).map_err(reason)?, checksum.clone())?;
         let entry = package.entry(row.get(2).map_err(reason)?);
         let revision: u32 = row.get(3).map_err(reason)?;
         let worker = if let Some(code) = package.worker {
@@ -558,6 +560,7 @@ fn load_rows(
         };
         let mut plugin = Plugin::new(entry, package.manifest, worker)?;
         plugin.revision = revision;
+        plugin.review_checksum = Some(checksum);
         plugin.activation_approval = row.get(4).map_err(reason)?;
         plugins.push(plugin);
     }

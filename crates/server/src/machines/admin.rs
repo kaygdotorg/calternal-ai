@@ -59,6 +59,13 @@ pub enum Request {
         /// Space UUID.
         space: SpaceId,
     },
+    /// Select an operator-approved package hook for this space.
+    ResourceHook {
+        /// Space UUID.
+        space: SpaceId,
+        /// Exact package review binding, or none to clear.
+        binding: Option<super::ResourceHookBinding>,
+    },
     /// Read confirmed hosted sandbox seconds for an account or group.
     RuntimeUsage {
         /// Owner of the measured scope.
@@ -168,6 +175,8 @@ pub enum Response {
         /// Protected resource owner, if configured for this space.
         owner: Option<calternal_auth::machines::ResourceOwner>,
     },
+    /// The requested admission hook binding was committed.
+    ResourceHook,
     /// The requested byte ceilings were committed.
     StorageLimits,
     /// Confirmed elapsed time of a scope's hosted guests.
@@ -246,6 +255,10 @@ pub fn execute(
                     .map_err(super::compute::authority_error)?,
                 usage: content.storage_usage(space)?,
             }
+        }
+        Request::ResourceHook { space, binding } => {
+            svc.set_resource_hook(space, binding)?;
+            Response::ResourceHook
         }
         Request::RuntimeUsage { owner } => Response::RuntimeUsage {
             usage: svc.runtime_usage(owner)?,

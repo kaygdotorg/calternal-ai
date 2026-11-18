@@ -106,6 +106,9 @@ impl State {
         {
             return 0;
         }
+        if !self.resource_hook_allows(lease, machine) {
+            return 0;
+        }
         let policy = lease
             .row
             .resource_owner

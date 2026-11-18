@@ -101,6 +101,21 @@ pub enum ResourcesCmd {
         /// Space UUID.
         space: String,
     },
+    /// Set a reviewed package as the hosted admission hook for a space.
+    SetHook {
+        #[command(flatten)]
+        installation: Installation,
+        /// Space UUID.
+        space: String,
+        /// Installed package ID. Omit to clear the operator binding.
+        package: Option<String>,
+        #[arg(long, requires = "package")]
+        /// Complete package review SHA-256.
+        checksum: Option<String>,
+        #[arg(long, requires = "package")]
+        /// Dedicated space where this package keeps resource state.
+        state_space: Option<String>,
+    },
     /// Replace byte ceilings by kind for an existing space.
     SetStorage {
         #[command(flatten)]
@@ -215,6 +230,43 @@ pub fn resources(cmd: ResourcesCmd) -> Result<Reply, CliError> {
                 ("space", space.to_string()), ("owner", owner_label),
                 ("text bytes", usage.text_bytes.to_string()), ("binary bytes", usage.binary_bytes.to_string()),
             ]))
+        }
+        ResourcesCmd::SetHook {
+            installation,
+            space,
+            package,
+            checksum,
+            state_space,
+        } => {
+            let space = parse_space(&space)?;
+            let state_space = state_space.as_deref().map(parse_space).transpose()?;
+            let binding = match (package, checksum) {
+                (Some(package), Some(checksum)) => {
+                    Some(calternal_server::machines::ResourceHookBinding {
+                        package,
+                        checksum,
+                        state_space,
+                    })
+                }
+                (None, None) => None,
+                _ => {
+                    return Err(CliError::usage(
+                        "pass --checksum from the complete package review",
+                    ));
+                }
+            };
+            let Response::ResourceHook = run(
+                installation,
+                Request::ResourceHook {
+                    space,
+                    binding: binding.clone(),
+                },
+            )?
+            else {
+                return Err(unexpected());
+            };
+            Ok(Reply::new(json!({ "space_id": space, "binding": binding }))
+                .line("Saved the resource admission hook binding."))
         }
         ResourcesCmd::SetStorage {
             installation,

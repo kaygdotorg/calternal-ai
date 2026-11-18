@@ -128,6 +128,7 @@ pub(super) async fn place<D: Directory>(
             return Ok(Placement::Ended(RunEnd::Failed));
         }
         super::authorize(state, &who, &job.space, Capability::PluginsUse).await?;
+        crate::plugins::resource_admission::refresh(state, machines, account, lease_id).await?;
         let m = machines.clone();
         let view = blocking(move || m.run(account, lease_id)).await?;
         if view.state == LeaseState::Interrupted {

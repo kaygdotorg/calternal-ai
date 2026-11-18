@@ -165,6 +165,163 @@ export async function readSetting(
   return context.call("read_setting_v1", { key } satisfies WorkerSettingInput);
 }
 
+/** Committed current-body bytes of the calling space, encoded without integer rounding. */
+export interface SpaceUsage {
+  /** Decimal text bytes, including recoverable Trash. */
+  text_bytes: string;
+  /** Decimal binary bytes, including recoverable Trash. */
+  binary_bytes: string;
+}
+
+/** Read the current space's committed body bytes. The package declares
+ * `read_space_usage_v1` and the caller must hold `space.settings`.
+ * Costs one bounded broker round trip. No caller-supplied space is accepted.
+ */
+export async function readSpaceUsage(context: WorkerContextV2): Promise<SpaceUsage> {
+  const value = await context.call("read_space_usage_v1", {});
+  if (!value || typeof value !== "object" || !("text_bytes" in value) || !("binary_bytes" in value)
+    || typeof value.text_bytes !== "string" || !/^(0|[1-9][0-9]*)$/.test(value.text_bytes)
+    || typeof value.binary_bytes !== "string" || !/^(0|[1-9][0-9]*)$/.test(value.binary_bytes)) {
+    throw new Error("Invalid space usage response");
+  }
+  return { text_bytes: value.text_bytes, binary_bytes: value.binary_bytes };
+}
+
+/** One cumulative clock observation. An unknown end has no terminal timestamp. */
+export interface RuntimeObservation {
+  /** Fenced guest generation. */
+  generation: string;
+  /** UTC anchor in Unix milliseconds. */
+  started_at_ms: number;
+  /** Exact decimal nanoseconds to date. */
+  running_ns: string;
+  /** State of the source observation. */
+  state: "running" | "stopped" | "unknown";
+}
+
+/** A bounded page of latest cumulative observations in the granted scope. */
+export interface RuntimeObservationPage {
+  /** Replay cursor. Persist it with the accepted observations. */
+  cursor: string;
+  /** Rows ordered by the host's durable observation sequence. */
+  observations: RuntimeObservation[];
+  /** Read another page while true. */
+  more: boolean;
+  /** This cursor is outside retention. Restart from zero and reconcile. */
+  reset_required: boolean;
+}
+
+/** Read up to 64 observations. The manifest declares `read_runtime_observations_v1`
+ * and the exact installed package needs the operator's resource binding.
+ * Cost is one bounded broker round trip. Replays carry cumulative time.
+ */
+export async function readRuntimeObservations(
+  context: WorkerContextV2, after = "0",
+): Promise<RuntimeObservationPage> {
+  return await context.call("read_runtime_observations_v1", { after }) as RuntimeObservationPage;
+}
+
+/** Principal to which the host attributes a scoped resource. */
+export interface ResourceOwner {
+  /** The two possible principal types. */
+  kind: "account" | "group";
+  /** Protected principal UUID. */
+  id: string;
+}
+
+/** Input to a read-only block hook declared for `resources.admit`. */
+export interface ResourceAdmissionInput {
+  /** Stable lease request UUID. */
+  request_id: string;
+  /** Space UUID assigned by the host. */
+  space_id: string;
+  /** Authenticated sender UUID. */
+  account_id: string;
+  /** Resource owner derived by the host. Null denotes an unassigned space. */
+  scope: ResourceOwner | null;
+  /** Groups available to an operator-approved entitlement policy. */
+  entitlement_groups: string[];
+  /** Hosted placement being considered. */
+  machine_class: "hosted";
+  /** Confirmed nanoseconds in the retained observation interval. */
+  runtime_ns: string;
+  /** Number of unresolved generation ends. */
+  unresolved_generations: number;
+  /** Logical bytes committed in this space. */
+  storage: SpaceUsage;
+  /** Observed sandbox windows for the authenticated sender and scope. */
+  guests: Array<{
+    /** Fenced guest generation UUID. */
+    generation: string;
+    /** Observed available memory expressed as decimal bytes. */
+    memory_available_bytes: string;
+    /** Live thread count at the observation. */
+    active_threads: number;
+    /** Guest RAM in MiB. */
+    profile_mib: number;
+  }>;
+}
+
+/** A block hook's validated decision. The host still enforces its own authority and ceilings. */
+export type ResourceAdmissionDecision =
+  | { decision: "allow"; memory_mib?: number }
+  | { decision: "queue"; reason: string; retry_after_ms: number }
+  | { decision: "refuse"; reason: string };
+
+/** Confirmed runtime within a retained window for the authorized resource scope. */
+export interface RuntimeWindow {
+  /** Resource owner of the granted observation. */
+  owner: ResourceOwner;
+  /** Groups available to this granted entitlement policy. */
+  entitlement_groups: string[];
+  /** Exact decimal nanoseconds. */
+  running_ns: string;
+  /** Generation ends that still require evidence. */
+  unresolved: number;
+  /** Start requested by the package, in Unix milliseconds. */
+  since_ms: number;
+  /** UTC sample boundary from the server, in Unix milliseconds. */
+  through_ms: number;
+}
+
+/** Read a retained runtime window. Declares `read_runtime_window_v1` and needs
+ * an operator resource binding. Costs one bounded broker round trip.
+ */
+export async function readRuntimeWindow(context: WorkerContextV2, sinceMs: number): Promise<RuntimeWindow> {
+  return await context.call("read_runtime_window_v1", { since_ms: sinceMs }) as RuntimeWindow;
+}
+
+/** Private JSON state read from the invoking package's namespace. */
+export interface PluginState<T = unknown> {
+  /** Exact decimal host revision used for compare and set. */
+  revision: string;
+  /** Package-defined format version. */
+  schema: number;
+  /** Package-defined JSON. Validate it before use. */
+  value: T;
+}
+
+/** Read a private state key. Requires `read_plugin_state_v1` and `space.settings`.
+ * Costs one bounded broker round trip.
+ */
+export async function readPluginState(
+  context: WorkerContextV2, key: string,
+): Promise<PluginState | null> {
+  const { state } = await context.call("read_plugin_state_v1", { key }) as {state: PluginState | null};
+  return state;
+}
+
+/** Replace a private state key under a revision fence. Requires `cas_plugin_state_v1`
+ * and a mutating operation with `space.settings`. Use one replacement per key
+ * per request. The value and retry receipt commit together.
+ */
+export async function compareAndSetPluginState(
+  context: WorkerContextV2, key: string, base: string | null, schema: number, value: unknown,
+): Promise<string> {
+  const result = await context.call("cas_plugin_state_v1", { key, base, schema, value }) as {revision: string};
+  return result.revision;
+}
+
 /** Handler implementing one declared operation. Cost is plugin-defined and sandbox-limited; each host effect uses a bounded broker RPC. */
 export type WorkerHandlerV2 = (input: unknown, context: WorkerContextV2) => Promise<unknown>;
 /** Long-lived peer for one plugin/space pair. Transport send promises must apply back pressure.

@@ -432,6 +432,7 @@ pub(crate) fn upgrade_schema() -> calternal_store::migrations::Schema<'static> {
                 TITLE_LEASES,
                 super::compute::MIGRATION,
                 super::runtime::MIGRATION,
+                super::resource_hooks::MIGRATION,
                 "CREATE TABLE upgrade_fixture (id INTEGER PRIMARY KEY) STRICT;",
             ],
         );
@@ -444,6 +445,7 @@ pub(crate) fn upgrade_schema() -> calternal_store::migrations::Schema<'static> {
             TITLE_LEASES,
             super::compute::MIGRATION,
             super::runtime::MIGRATION,
+            super::resource_hooks::MIGRATION,
         ],
     )
 }

@@ -1,9 +1,24 @@
 /** Configurable composer accessory using the ordinary SDK. */
 import type { GenUiView } from "@calternal/contracts";
-import { readSetting, serveWorker, type WorkerHandlerV2 } from "@calternal/plugin-sdk";
+import { compareAndSetPluginState, readPluginState, readSetting, readSpaceUsage, serveWorker, type WorkerHandlerV2 } from "@calternal/plugin-sdk";
 import manifest from "../manifest.json" with { type: "json" };
 
 const handlers = {
+  "composer-settings.saved": async (_input, context) => ({ state: await readPluginState(context, "fixture") }),
+  "composer-settings.remember": async (input, context) => {
+    const current = await readPluginState(context, "fixture");
+    await compareAndSetPluginState(context, "fixture", current?.revision ?? null, 1, input);
+    // The caller still receives its durable host acknowledgment.
+    return { invalid: true };
+  },
+  "composer-settings.admit": async input => {
+    const { storage } = input as { storage: { text_bytes: string } };
+    const used = BigInt(storage.text_bytes);
+    if (used === 0n) return { decision: "allow" };
+    if (used > 1024n) return { decision: "refuse", reason: "Fixture byte ceiling reached" };
+    return { decision: "queue", reason: "Fixture is waiting", retry_after_ms: 500 };
+  },
+  "composer-settings.usage": async (_input, context) => readSpaceUsage(context),
   "composer-settings.label": async (input, context) => {
     const key = input && typeof input === "object" && "key" in input && typeof input.key === "string"
       ? input.key

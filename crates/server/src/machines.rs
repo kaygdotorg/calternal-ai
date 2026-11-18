@@ -48,6 +48,8 @@ pub mod admin;
 mod admission;
 mod capacity;
 mod compute;
+pub(crate) mod resource_hooks;
+pub use resource_hooks::ResourceHookBinding;
 mod runtime;
 pub use compute::ComputeLimits;
 pub use runtime::RuntimeUsage;
@@ -311,6 +313,8 @@ impl MachineService {
             pool_load: HashMap::new(),
             compute_limits: compute::load(&db)?,
             runtime_windows: HashMap::new(),
+            resource_hooks: resource_hooks::load(&db)?,
+            resource_permits: HashMap::new(),
             next_runtime_retirement_ms: db::now_ms(),
             db,
             authority,

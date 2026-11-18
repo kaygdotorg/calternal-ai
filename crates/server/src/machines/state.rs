@@ -168,6 +168,8 @@ pub(super) struct State {
     pub compute_limits: HashMap<calternal_auth::machines::ResourceOwner, super::ComputeLimits>,
     pub runtime_windows: HashMap<calternal_auth::machines::ResourceOwner, super::runtime::Window>,
     pub next_runtime_retirement_ms: i64,
+    pub resource_hooks: HashMap<calternal_types::SpaceId, super::ResourceHookBinding>,
+    pub resource_permits: HashMap<Uuid, super::resource_hooks::Permit>,
     pub leases: HashMap<Uuid, Lease>,
     pub threads: HashMap<Uuid, Uuid>,
     pub execs: HashMap<Uuid, Exec>,
@@ -355,6 +357,7 @@ impl State {
         let thread = l.row.thread;
         self.threads.remove(&thread);
         self.workers.remove(&lease);
+        self.resource_permits.remove(&lease);
         let account = l.row.account;
         if !stopping {
             self.release_slot(assigned, Some(account));
@@ -530,6 +533,7 @@ impl State {
             .expect("existing lease under registry lock");
         l.row = row;
         l.state = LeaseState::Assigned;
+        self.resource_permits.remove(&lease);
         let account = l.row.account;
         self.take_slot(Some(machine), Some(account));
         self.send_assign(lease, settings);
@@ -630,16 +634,25 @@ impl State {
                 .machine
                 .and_then(|id| self.machines.get(&id))
                 .is_some_and(|machine| machine.row.owner == Owner::Account { id: l.row.account }),
-            reason: l.row.reason.clone().or_else(|| {
-                (l.state == LeaseState::Waiting
-                    && self.machines.values().any(|m| {
-                        l.row.pinned_machine.is_none_or(|id| id == m.row.id)
-                            && self.may_use(m, l.row.account)
-                            && self.free(m) > 0
-                            && self.free_for(m, l.row.account) == 0
-                    }))
-                .then(|| "Waiting for sandbox memory".into())
-            }),
+            reason: l
+                .row
+                .reason
+                .clone()
+                .or_else(|| {
+                    self.resource_permits
+                        .get(&lease)
+                        .and_then(|permit| permit.reason.clone())
+                })
+                .or_else(|| {
+                    (l.state == LeaseState::Waiting
+                        && self.machines.values().any(|m| {
+                            l.row.pinned_machine.is_none_or(|id| id == m.row.id)
+                                && self.may_use(m, l.row.account)
+                                && self.free(m) > 0
+                                && self.free_for(m, l.row.account) == 0
+                        }))
+                    .then(|| "Waiting for sandbox memory".into())
+                }),
             queue_position,
         }
     }

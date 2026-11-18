@@ -289,6 +289,12 @@ export { WorkerContextV2 } from "./worker-v2.js";
 export { listItems } from "./worker-v2.js";
 /** Read the effective value of a setting declared in this package. */
 export { readSetting } from "./worker-v2.js";
+/** Read the authorized space's committed current-body byte totals. */
+export { readSpaceUsage, type SpaceUsage } from "./worker-v2.js";
+/** Read and replace private versioned package state with durable retry receipts. */
+export { readPluginState, compareAndSetPluginState, type PluginState } from "./worker-v2.js";
+/** Read bounded, scoped and replayable guest clock observations. */
+export { readRuntimeObservations, readRuntimeWindow, type RuntimeObservation, type RuntimeObservationPage, type RuntimeWindow, type ResourceOwner, type ResourceAdmissionInput, type ResourceAdmissionDecision } from "./worker-v2.js";
 
 /** Worker v2: WorkerHandlerV2; bounded transport and host-authorized effects. */
 export { WorkerHandlerV2 } from "./worker-v2.js";
