@@ -15,7 +15,7 @@ await page.getByRole("button", { name: "Reset all" }).last().click();
 ok(!(await page.locator("#sc-file-text").innerText()).includes("sidebar:"), "…and Reset all empties it");
 await go("/settings/machines?firstrun=0");
 ok((await page.locator(".page li[data-setting^='machines.']").count()) >= 3 && (await page.getByRole("tab", { name: "Direct" }).count()) >= 3, "Machines: the list, each with Sandboxed and Direct");
-await page.locator(".page li[data-setting='machines.kayg-laptop']").getByRole("radio", { name: "Direct" }).click(); await page.waitForTimeout(200);
+await page.locator(".page li[data-setting='machines.kayg-laptop']").getByRole("tab", { name: "Direct" }).click(); await page.waitForTimeout(200);
 ok((await page.locator(".page li[data-setting='machines.kayg-laptop'] [aria-checked=true]").innerText()).trim() === "Direct", "…the choice is kept");
 await page.getByRole("button", { name: "Add a machine…" }).click(); await page.getByRole("button", { name: "Continue" }).click();
 await page.getByPlaceholder("build-01.example.org").fill("build-09.example.org"); await page.getByRole("button", { name: "Continue" }).click(); await page.getByRole("button", { name: "Add the machine" }).click(); await page.waitForTimeout(300);
