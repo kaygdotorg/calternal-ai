@@ -84,7 +84,6 @@ fn roles() -> [CapabilitySet; 4] {
         &[
             SpaceRead,
             ContentWrite,
-            ContentPurge,
             PluginsUse,
             PluginsManage,
             MembersInvite,
@@ -95,7 +94,6 @@ fn roles() -> [CapabilitySet; 4] {
         &[
             SpaceRead,
             ContentWrite,
-            ContentPurge,
             PluginsUse,
             PluginsManage,
             MembersInvite,

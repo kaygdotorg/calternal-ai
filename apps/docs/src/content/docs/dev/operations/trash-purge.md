@@ -8,14 +8,14 @@ title: "trash.purge"
 
 Permanently delete a note from Trash
 
-Capability: content.purge.
+Capability: space.settings.
 
 ## Declaration
 
 ```json
 {
   "risk": "irreversible",
-  "required_capability": "content.purge",
+  "required_capability": "space.settings",
   "id": "trash.purge",
   "description": "Permanently delete a note from Trash",
   "mutates": true

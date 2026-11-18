@@ -71,10 +71,9 @@ for an older release only under the explicit, tested compatibility policy.
 
 Production image `c98705d74bcf` has auth version 14, content version 5
 and machines version 6. After live rooms at content version 6, Empty Trash
-and rename queues follow at versions 7 and 8. Auth version 15 adds the
-Manager and Owner purge grant.
-The prior writer still allows Editors to purge. Treat this rollout as
-incompatible and use the owner-approved restore point for rollback.
+and rename queues follow at versions 7 and 8. Notes uses the existing
+`space.settings` capability for permanent Trash removal and keeps auth
+at version 14.
 
 Message search generation 2 drops the redundant thread-location index and
 rebuilds under the projection worker. Its SQLite schema version stays 1.
