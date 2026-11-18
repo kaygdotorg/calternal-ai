@@ -75,6 +75,8 @@
 <style>
   nav { display: grid; gap: var(--s-2); }
   ul { display: grid; gap: var(--s-1); }
+  /* A long list (10,000 notes scrolled to the end): rows outside the window are not laid out or painted; their height is remembered once seen. */
+  li:not(.none) { content-visibility: auto; contain-intrinsic-size: auto var(--row-h); }
   .sp { padding: 0 var(--s-5); font-size: var(--text-label); font-weight: var(--strong-weight); color: var(--ink-3); }
   .retry { text-decoration: underline; color: var(--ink-2); }
   .ren { width: 100%; min-height: var(--row-h); padding: 0 var(--s-5); border: 0; border-radius: var(--r-select); background: rgb(var(--ink-rgb) / 0.07); color: var(--ink); font-size: var(--text-ui); }
