@@ -15,17 +15,21 @@ use std::time::Duration;
 
 mod role_batch;
 
+const AUTH_CHANGES: &[&str] = &[
+    include_str!("account_details.sql"),
+    include_str!("oidc.sql"),
+    include_str!("sharing.sql"),
+    "INSERT INTO space_role_capabilities VALUES
+     ('manager','content.purge'),('owner','content.purge');",
+];
+
 /// Auth store descriptor shared with the locked deployment coordinator. No I/O.
 pub const MIGRATIONS: calternal_store::migrations::Schema<'_> =
     calternal_store::migrations::Schema::new(
         "auth.db",
         11,
         &[include_str!("schema.sql")],
-        &[
-            include_str!("account_details.sql"),
-            include_str!("oidc.sql"),
-            include_str!("sharing.sql"),
-        ],
+        AUTH_CHANGES,
     );
 
 /// A handle to the dedicated auth.db worker. Its bounded mailbox serializes
@@ -325,6 +329,32 @@ mod port_tests {
     use crate::test_support::TempDir;
     use std::future::Future;
     use std::task::{Context, Poll, Waker};
+
+    #[test]
+    fn note_purge_migration_grants_only_manager_and_owner() {
+        use calternal_store::migrations::{Schema, inspect, migrate_release};
+
+        let conn = Connection::open_in_memory().unwrap();
+        let previous = Schema::new(
+            "auth.db",
+            11,
+            &[include_str!("schema.sql")],
+            &AUTH_CHANGES[..3],
+        );
+        migrate_release(&conn, previous, false).unwrap();
+        migrate_release(&conn, MIGRATIONS, false).unwrap();
+        assert_eq!(inspect(&conn, MIGRATIONS).unwrap(), 15);
+        assert!(inspect(&conn, previous).is_err());
+        let mut query = conn
+            .prepare("SELECT role FROM space_role_capabilities WHERE capability='content.purge' ORDER BY role")
+            .unwrap();
+        let roles = query
+            .query_map([], |row| row.get::<_, String>(0))
+            .unwrap()
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .unwrap();
+        assert_eq!(roles, ["manager", "owner"]);
+    }
 
     #[test]
     fn a_database_at_another_version_is_refused() {

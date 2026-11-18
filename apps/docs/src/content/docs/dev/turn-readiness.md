@@ -23,14 +23,17 @@ identifiers, names and timestamps. Without pool entitlement the array is empty.
 Each provider has `enabled` for the space, `check` (null until observed or
 after expiry), and `ready` when enabled, available and signed in. An observed
 check contains only `installed`, `signed_in` and `sign_in_command`.
-The provider's official program owns the login.
+An unavailable provider reports the first unmet condition in `blocked`:
+`disabled`, `machine_offline`, `machine_busy`, `check_required`,
+`check_stale`, `runtime_unavailable` or `sign_in_required`. The provider's
+official program owns the login.
 
 Use a cached read with `calternal agent readiness --space-id SPACE_UUID`.
 After enrollment, use `machines.verify` with the exact `machine_id` and a
 `space_id` where you can use plugins. The machine's account owner can verify
 it. A server administrator can verify a pool machine, even without an
 execution grant. A pool execution grant does not give this verification access.
-The optional `provider_id` defaults to Claude Code.
+The optional `provider_id` uses the installation's default provider when omitted.
 
 Verification runs a single Check job through the machine channel using the
 same provider probe and cache as `agent.check`. The HTTP result contains
@@ -47,8 +50,8 @@ Refresh a provider with `calternal agent check --space-id SPACE_UUID
 --machine-id MACHINE_UUID --provider PROVIDER_ID`. `--pool` checks an
 available entitled pool machine. A Check job is private to its admitting
 account. The scratch workspace is released after the check and the sandbox
-home is retained. The Claude adapter reports the official program's status
-during regular turns as well.
+home is retained. Both adapters report the official program's status during
+regular turns as well.
 
 The cache is in memory, keyed by account and provider on the selected
 machine. It holds at most 128 observations per machine for five minutes each.

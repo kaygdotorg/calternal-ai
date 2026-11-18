@@ -9,7 +9,7 @@ use crate::{
 };
 use base64::{Engine, engine::general_purpose::STANDARD as B64};
 use calternal_core::{
-    AgentInput, PROVIDER_EVENT_BYTES, ProviderCommand, ProviderEvent, ProviderEventKind,
+    AgentInput, AgentMode, PROVIDER_EVENT_BYTES, ProviderCommand, ProviderEvent, ProviderEventKind,
 };
 use calternal_machine::protocol::{ChunkEvent, Stream};
 use calternal_types::SpaceId;
@@ -147,14 +147,13 @@ async fn execute<D: Directory>(
     if super::enabled_generation(state, &job.space, &job.plugin).await? != job.generation {
         return Ok(RunEnd::Failed);
     }
+    let catalog = state.registry.snapshot();
     let provider_id = if i.provider_id.is_empty() {
-        "calternal-claude-code"
+        catalog.default_provider()
     } else {
         &i.provider_id
     };
-    let provider = state
-        .registry
-        .snapshot()
+    let provider = catalog
         .get(provider_id)
         .ok_or_else(|| Error::unavailable("provider plugin is not installed"))?
         .clone();
@@ -191,7 +190,8 @@ async fn execute<D: Directory>(
     };
     let saved_thread = job.input.get("thread_request").is_some();
     let mut phases = saved_thread.then(|| super::phases::Phases::queued(job, live));
-    let shared = if !check && !i.personal_machine {
+    let automation = job.input["thread_request"]["automation_run"].is_object();
+    let shared = if !check && !automation && !i.personal_machine {
         let (s, m) = (state.clone(), machines.clone());
         blocking(move || super::space_execution::resolve(&s, &m, space)).await?
     } else {
@@ -213,8 +213,32 @@ async fn execute<D: Directory>(
         live.publish(job.runs, &json!({"type":"notice","message":message}));
         return Ok(RunEnd::Failed);
     }
+    let pin = if shared.is_some() { None } else {
+        let st = state.clone();
+        let id = provider_id.to_owned();
+        blocking(move || {
+            crate::plugins::package_store::provider_runtime::read_pin(st.store.appdata(), &id)
+                .map_err(|_| {
+                    Error::unavailable("Provider runtime configuration could not be read.")
+                })
+        })
+        .await?
+    };
+    let runtime = pin.as_ref().map(|(pin, legacy)| {
+        let read_only = scope
+            .as_ref()
+            .is_some_and(|scope| scope.mode == AgentMode::LeastAccess);
+        let mut sandbox = crate::plugins::package_store::provider_runtime::sandbox(
+            pin,
+            provider_id.to_owned(),
+            calternal_machine::protocol::ProviderLoginScope::Account(account),
+            read_only,
+        );
+        sandbox.legacy_profile = *legacy;
+        (pin.image.clone(), sandbox)
+    });
     let mut checkpoint =
-        super::lease::prepare(state, machines, job, live, space, thread, shared).await?;
+        super::lease::prepare(state, machines, job, live, space, thread, shared, runtime).await?;
     let lease_id = checkpoint["lease_id"]
         .as_str()
         .and_then(|id| Uuid::parse_str(id).ok())
@@ -339,7 +363,8 @@ async fn execute<D: Directory>(
         ]
     };
     let stdin = super::launch::encode(commands)?;
-    let (env, mut redactor) = if shared.is_some() {
+    let requested_mode = scope.as_ref().map(|scope| scope.mode);
+    let (mut env, mut redactor) = if shared.is_some() {
         (Vec::new(), None)
     } else if let Some(scope) = scope {
         let st = state.clone();
@@ -352,6 +377,19 @@ async fn execute<D: Directory>(
     } else {
         (Vec::new(), None)
     };
+    let managed = pin.is_some();
+    let interactive = !check && pin.as_ref().is_some_and(|(pin, _)| pin.interactive);
+    if let Some((pin, _)) = pin {
+        env.push(("CALTERNAL_HARNESS_VERSION".into(), pin.version));
+        if let Some(mode) = requested_mode {
+            let mode = match mode {
+                AgentMode::LeastAccess => "least_access",
+                AgentMode::ApproveForMe => "approve_for_me",
+                AgentMode::FullAccess => "full_access",
+            };
+            env.push(("CALTERNAL_AGENT_MODE".into(), mode.into()));
+        }
+    }
     let mut published_seq = 0;
     let m = machines.clone();
     if !live.is_current(job.runs) || !super::session_live(state, job).await? {
@@ -362,16 +400,22 @@ async fn execute<D: Directory>(
         if shared.is_some() {
             return m.shared_turn_exec(account, lease_id, stdin);
         }
-        m.exec_input(
-            account,
-            lease_id,
-            super::launch::argv(executable),
-            env,
-            stdin,
-        )
+        let argv = super::launch::argv(executable);
+        if managed {
+            m.harness_exec(account, lease_id, argv, env, stdin, interactive)
+        } else {
+            m.exec_input(account, lease_id, argv, env, stdin)
+        }
     })
     .await?;
     crate::fault::automation_turn(&job.input, crate::fault::FaultPoint::AutomationAfterExec);
+    if interactive {
+        *live
+            .provider_control
+            .lock()
+            .map_err(|_| Error::internal("provider control unavailable"))? =
+            Some(super::control::Control::new(job.runs, account, exec));
+    }
     let mut cursor = 0;
     let mut pending = Vec::new();
     let mut provider_seq = 0;
@@ -520,6 +564,13 @@ async fn execute<D: Directory>(
                                     );
                                     failure = Some((*class, *billing, *reset_at_ms));
                                 }
+                                ProviderEventKind::ApprovalRequest { request_id: Some(id), can_approve, .. } if interactive => {
+                                    live.provider_control.lock()
+                                        .map_err(|_| Error::internal("provider control unavailable"))?
+                                        .as_mut().filter(|control| control.run == job.runs)
+                                        .ok_or_else(|| Error::conflict("provider control ended"))?
+                                        .offer(id, can_approve.unwrap_or(false))?;
+                                }
                                 ProviderEventKind::Done { outcome: o } => {
                                     outcome = Some(o.clone());
                                     checkpoint["message_outcome"] = json!(o);
@@ -655,6 +706,7 @@ async fn execute<D: Directory>(
                         match outcome.as_deref() {
                             Some("done") if exit.code == Some(0) => RunEnd::Done(checkpoint.clone()),
                             Some("failed") => RunEnd::Failed,
+                            Some("cancelled") if interactive => RunEnd::Interrupted,
                             _ => RunEnd::OutcomeUnknown,
                         }
                     });

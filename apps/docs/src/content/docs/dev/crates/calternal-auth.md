@@ -8,8 +8,8 @@ title: "calternal-auth"
 
 Protected identity storage primitives ported from Calternal's auth crate.
 
-`auth.db` has one current schema (`schema.sql`); there is no migration
-chain and no sharing, DAV or host-cookie state.
+The shared SQLite migration runner applies changes to the pinned
+`auth.db` baseline in `schema.sql`.
 It supplies protected account and space authority to the host HTTP adapter.
 Callers must validate and lock installation roots before opening the DB;
 opening a missing path creates it and is not safe recovery of lost state.

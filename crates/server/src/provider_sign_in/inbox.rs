@@ -20,6 +20,8 @@ pub(super) struct Target {
     pub machine: Uuid,
     pub provider: String,
     pub label: String,
+    pub login_scope: calternal_machine::protocol::ProviderLoginScope,
+    pub policy: crate::plugins::package_store::provider_runtime::SignInPolicy,
     pub retry: bool,
     pub shared: Option<crate::machines::space_execution::SpaceExecution>,
 }
@@ -112,6 +114,7 @@ impl Inbox {
                     && e.target.machine == target.machine
                     && e.target.shared == target.shared
                     && e.target.provider == target.provider
+                    && e.target.login_scope == target.login_scope
             }) {
                 if entry.target.space != target.space {
                     return Err(Error::conflict(

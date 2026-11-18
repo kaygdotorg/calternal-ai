@@ -48,11 +48,13 @@ pub enum Capability {
     RolesList = 1 << 17,
     /// Manage server settings, including named diagnostics on the operator pool.
     ServerSettings = 1 << 18,
+    /// Permanently remove content already in a space's Trash.
+    ContentPurge = 1 << 19,
 }
 
 impl Capability {
     /// Every defined capability, for coverage tests and closed-set decoding.
-    pub const ALL: [Self; 19] = [
+    pub const ALL: [Self; 20] = [
         Self::SpaceRead,
         Self::ContentWrite,
         Self::PluginsUse,
@@ -72,6 +74,7 @@ impl Capability {
         Self::InviteRedeem,
         Self::RolesList,
         Self::ServerSettings,
+        Self::ContentPurge,
     ];
 
     /// The stored and wire name, as written in `auth.db` role rows and manifests.
@@ -79,6 +82,7 @@ impl Capability {
         match self {
             Self::SpaceRead => "space.read",
             Self::ContentWrite => "content.write",
+            Self::ContentPurge => "content.purge",
             Self::PluginsUse => "plugins.use",
             Self::PluginsManage => "plugins.manage",
             Self::MembersInvite => "members.invite",

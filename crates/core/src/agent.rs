@@ -49,12 +49,16 @@ pub struct AgentInput {
     pub model: String,
     /// Options declared by the selected provider, bounded by the command budget.
     pub options: crate::JsonObject,
-    /// Enabled provider plugin; empty selects calternal-claude-code.
+    /// Enabled provider plugin; empty selects the installation's default provider.
     pub provider_id: String,
     /// Permission mode; defaults to Approve for me.
     pub mode: AgentMode,
     /// Per-thread recovery override; absent uses the account defaults.
     pub retry_settings: Option<AgentRetrySettings>,
+    /// Native provider approval received from this active run.
+    pub approval_id: String,
+    /// Allow the named native approval for this run.
+    pub approve: bool,
     /// Originating app operation prefix; empty grants no originating-app access.
     pub source_app: String,
     /// Requested app prefix for an access request.
@@ -170,6 +174,16 @@ pub const AGENT_OPERATIONS: &[(&str, &str, bool)] = &[
     (
         "agent.discard",
         "Explicitly discard a stopped turn workspace, retaining its account home",
+        true,
+    ),
+    (
+        "agent.steer",
+        "Add input to the current interactive provider turn",
+        true,
+    ),
+    (
+        "agent.approval",
+        "Resolve an approval from the current interactive provider turn",
         true,
     ),
     (

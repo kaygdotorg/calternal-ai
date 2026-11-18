@@ -430,6 +430,39 @@ async fn unauthenticated_link_survives_restore_and_each_link_can_be_revoked_alon
                 .unwrap(),
         )
     };
+    let browser = |method: &str, path: &str| {
+        app.clone().oneshot(
+            Request::builder()
+                .method(method)
+                .uri(path)
+                .header("host", "localhost:8080")
+                .header("sec-fetch-site", "cross-site")
+                .header("accept", "text/html")
+                .body(Body::empty())
+                .unwrap(),
+        )
+    };
+    let page = browser("GET", &path).await.unwrap();
+    assert_eq!(page.status(), 200);
+    assert!(
+        page.headers()["content-type"]
+            .to_str()
+            .unwrap()
+            .starts_with("text/html")
+    );
+    assert!(
+        page.headers()["content-security-policy"]
+            .to_str()
+            .unwrap()
+            .starts_with("default-src 'none'")
+    );
+    let html = to_bytes(page.into_body(), 4096).await.unwrap();
+    let html = std::str::from_utf8(&html).unwrap();
+    assert!(html.contains("<pre>original</pre>"));
+    assert!(!html.contains(note["id"].as_str().unwrap()));
+    let head = browser("HEAD", &path).await.unwrap();
+    assert_eq!(head.status(), 200);
+    assert!(to_bytes(head.into_body(), 4096).await.unwrap().is_empty());
     let response = open(&path).await.unwrap();
     assert_eq!(response.status(), 200);
     assert_eq!(response.headers()["cache-control"], "no-store");
@@ -444,22 +477,23 @@ async fn unauthenticated_link_survives_restore_and_each_link_can_be_revoked_alon
     assert_eq!(open(&path).await.unwrap().status(), 404);
     f.run(
         &f.owner,
-        "restore",
-        "notes.restore",
-        json!({"id":note["id"]}),
-    )
-    .await
-    .unwrap();
-    assert_eq!(open(&path).await.unwrap().status(), 200);
-    f.run(
-        &f.owner,
         "revoke",
         "sharing.revoke",
         json!({"item":item,"grant_id":link["grant_id"]}),
     )
     .await
     .unwrap();
+    f.run(
+        &f.owner,
+        "restore",
+        "notes.restore",
+        json!({"id":note["id"]}),
+    )
+    .await
+    .unwrap();
     assert_eq!(open(&path).await.unwrap().status(), 404);
+    assert_eq!(browser("GET", &path).await.unwrap().status(), 404);
+    assert_eq!(browser("HEAD", &path).await.unwrap().status(), 404);
     assert_eq!(open(&spare_path).await.unwrap().status(), 200);
 }
 

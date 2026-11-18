@@ -75,8 +75,7 @@ const MATRIX: &[(&str, Capability, [bool; 4])] = &[
 const TOKEN: &str = "matrix-token";
 const OTHER_TOKEN: &str = "matrix-other-token";
 
-/// Reader, Editor, Manager and Owner, as auth.db seeds them (schema.sql); written
-/// out here as independent expectations.
+/// Independent expectations for the seeded Reader, Editor, Manager and Owner roles.
 fn roles() -> [CapabilitySet; 4] {
     use Capability::*;
     let sets: [&[Capability]; 4] = [
@@ -85,6 +84,7 @@ fn roles() -> [CapabilitySet; 4] {
         &[
             SpaceRead,
             ContentWrite,
+            ContentPurge,
             PluginsUse,
             PluginsManage,
             MembersInvite,
@@ -95,6 +95,7 @@ fn roles() -> [CapabilitySet; 4] {
         &[
             SpaceRead,
             ContentWrite,
+            ContentPurge,
             PluginsUse,
             PluginsManage,
             MembersInvite,

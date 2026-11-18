@@ -38,6 +38,7 @@ impl MachineService {
             false,
             false,
             None,
+            None,
         )
     }
 
@@ -61,6 +62,7 @@ impl MachineService {
             false,
             false,
             None,
+            None,
         )
     }
 
@@ -83,6 +85,7 @@ impl MachineService {
             false,
             true,
             None,
+            None,
         )
     }
 
@@ -104,6 +107,7 @@ impl MachineService {
             false,
             true,
             false,
+            None,
             None,
         )
     }
@@ -128,7 +132,36 @@ impl MachineService {
             false,
             sign_in,
             false,
+            None,
             Some(target),
+        )
+    }
+
+    /// Admit a harness on a machine that supports its isolated profile and policy.
+    /// Uses the same fenced placement and durability as a legacy provider lease.
+    pub(crate) fn request_harness(
+        &self,
+        space: SpaceId,
+        account: AccountId,
+        thread: Uuid,
+        target: Option<Uuid>,
+        image: String,
+        harness: calternal_machine::protocol::HarnessSandbox,
+        sign_in: bool,
+        pool_diagnostic: bool,
+    ) -> Result<RunView, Error> {
+        self.request_work(
+            space,
+            account,
+            thread,
+            Some(image),
+            None,
+            target,
+            pool_diagnostic,
+            sign_in,
+            false,
+            Some(harness),
+            None,
         )
     }
 
@@ -146,6 +179,7 @@ impl MachineService {
         pool_diagnostic: bool,
         provider_login: bool,
         background_title: bool,
+        harness: Option<calternal_machine::protocol::HarnessSandbox>,
         shared: Option<SpaceExecution>,
     ) -> Result<RunView, Error> {
         let _account = self
@@ -200,6 +234,8 @@ impl MachineService {
                 || l.row.space != space
                 || l.row.pinned_machine != pinned_machine
                 || l.row.shared_sponsor != shared_sponsor
+                || l.row.harness != harness
+                || l.row.image != image
             {
                 return Err(Error::conflict("thread is running for another context"));
             }
@@ -217,6 +253,7 @@ impl MachineService {
             shared_sponsor,
             thread,
             image,
+            harness,
             worker: is_worker,
             background_title,
             machine: None,

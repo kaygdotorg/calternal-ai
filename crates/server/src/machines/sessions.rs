@@ -10,8 +10,9 @@ use base64::Engine;
 use base64::engine::general_purpose::STANDARD as B64;
 use calternal_auth::token::{hash32, normalize_setup_token, random32};
 use calternal_machine::protocol::{
-    Capacity, ChunkEvent, Down, EnrolRequest, EnrolResponse, Envelope, OutputAck, OutputPost,
-    Owner, PROTOCOL_VERSION, SessionFinish, SessionGranted, SyncRequest, session_message,
+    Capacity, ChunkEvent, Down, EnrolRequest, EnrolResponse, Envelope, HARNESS_PROTOCOL_VERSION,
+    OutputAck, OutputPost, Owner, PROTOCOL_VERSION, SessionFinish, SessionGranted, SyncRequest,
+    session_message,
 };
 use tokio::sync::Notify;
 use uuid::Uuid;
@@ -206,7 +207,8 @@ impl MachineService {
         machine.live = Some(Live {
             session: hash,
             direct: backend == "direct",
-            shared_provider: f.protocol == PROTOCOL_VERSION && backend == "podman",
+            harness_protocol: f.protocol >= HARNESS_PROTOCOL_VERSION,
+            shared_provider: f.protocol >= calternal_machine::protocol::SHARED_PROVIDER_PROTOCOL_VERSION && backend == "podman",
             kvm_fallback,
             thread_limit,
             outbox: VecDeque::new(),
@@ -230,7 +232,7 @@ impl MachineService {
             .collect();
         for lease in held {
             if st.leases[&lease].row.shared_sponsor.is_some()
-                && (f.protocol != PROTOCOL_VERSION || backend != "podman")
+                && (f.protocol < calternal_machine::protocol::SHARED_PROVIDER_PROTOCOL_VERSION || backend != "podman")
             {
                 st.end_with_files(
                     lease,
@@ -369,6 +371,7 @@ impl MachineService {
         for envelope in queued {
             let lease = match &envelope.message {
                 Down::Assign { lease_id, .. }
+                | Down::AssignHarness { lease_id, .. }
                 | Down::Exec { lease_id, .. }
                 | Down::Input { lease_id, .. } => Some(lease_id),
                 _ => None,

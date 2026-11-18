@@ -15,7 +15,7 @@ database until checkpointed. SQLite SHM, locks and sockets are runtime state.
 | Appdata `system/auth.db` | Authority | Auth, SQLite 11. Accounts, passkeys, sessions, roles, memberships, invites, approvals, machine identity and grants, erasures, key fingerprints and protected receipts. |
 | Appdata `system/appearance.db` | Mixed | Appearance, new SQLite 1 baseline through the shared runner. Account preferences and original private uploads are authoritative. Shared manifests and eviction pins coordinate with the cache. The production baseline has no appearance database. |
 | Appdata `fonts-cache-v1/` | Derived | Version 1 directories of immutable WOFF2 bytes by family and digest. Startup verifies the published manifest and retires incomplete or orphan fills. |
-| Appdata `system/machines.db` | Authority | Machine placement. Production baseline 6 holds leases, fences, work locations and erase delivery. Version 7 classifies title leases. Version 8 adds shared-space execution bindings and the execution sponsor on a lease. Existing leases have no shared sponsor. |
+| Appdata `system/machines.db` | Authority | Machine placement, production SQLite 6. The shared runner installs title leases in v7 and scoped harness leases in v8. Version 9 adds shared-space execution bindings and the lease sponsor. Existing leases have no shared sponsor. Leases, fences, drain, work locations, discard and erase delivery, and the durable stop record that keeps an erased worker's machine slot reserved until its stop completes are authoritative. |
 | Appdata `spaces/<id>/content.db` | Mixed | Content, SQLite 3. Item identity, revisions, pending placement, trash and tombstones, kinds, plugin controls. Listing, labels and links are derived. |
 | Appdata `spaces/<id>/index.db`, `secrets/spaces/<id>/head` | Authority | Space journal, SQLite 2 and binary CHW2. Journal, epoch, receipts and independent head witness. Receipts are pruned after the operator's retention (7 days by default) only on content's command, with every receipt of a surviving outbox intent pinned. The fence adds no stored state. |
 | Appdata `spaces/<id>/network.db` | Authority | Plugin network, SQLite 1. Per-person remote content preferences and bounded outbound audit metadata. Absent databases use the default and are initialized by the shared runner on the first saved preference. |
@@ -24,7 +24,7 @@ database until checkpointed. SQLite SHM, locks and sockets are runtime state.
 | Appdata `accounts/<id>/onboarding.db` | Authority | Account onboarding, new SQLite 1 baseline through the shared runner. The production baseline has no marker. Missing files read as unfinished. The completion marker rides with account settings and is removed by account erasure. |
 | Appdata `accounts/<id>/secrets.db`, `spaces/<id>/secrets.db` | Authority | Secrets, SQLite 1. Sealed values, pending prompts, audit and key state. |
 | Appdata `system/invite.key`, account and space `secret.key` | Authority | Auth and secrets. Fixed 32-byte payloads with v1 key derivation and ciphertext binding. Preserve bytes, ownership and mode with their database. |
-| Appdata `installed-plugins.sqlite3` and `installed-plugin-workers/` | Mixed | Package store, SQLite 1. Installed and retained archives, digests, approvals and revision counters are authoritative. Manifest API version 1 describes the package contract. Extracted worker copies are a cache reused across restarts only when they match the archive bytes, so they carry no version. Development drafts are disposable. |
+| Appdata `installed-plugins.sqlite3` and `installed-plugin-workers/` | Mixed | Package store, production SQLite 1. Version 2 adds live editing to the original bundled Notes archive. Version 3 adds reviewed provider runtime metadata and the shipped provider's sign-in registration, preserving installed and retained archives, checksums, activation approvals and revisions. Manifest API version 1 describes the package contract. Extracted worker copies are a cache reused across restarts only when they match the archive bytes, so they carry no version. Development drafts are disposable. |
 | Appdata `system/content-index.db`, `spaces/<id>/search-v2.db`, `spaces/<id>/search-messages-v1.all.db`, `wallpapers/` | Derived | Content routing, SQLite 1. Retain the exact route catalogue across upgrades. Item search is SQLite 2 at generation 3. Message search, with its postings and thread-location index, is SQLite 1 at generation 1. Wallpaper cache follows its rendition catalogue. |
 | Appdata `system/automations.db` | Authority | Version 1 scheduler cursor, stop state and run dispatch outbox. The shared SQLite runner owns the schema. |
 | SSD space `Notes/`, `AI/Chats/`, Trash, registered visible and hidden content | Authority | Content writes `calternal-id` and a `calternal-note/v1` envelope for Markdown without its own format tag. Thread writers use `calternal-thread/v1`. Automations use `calternal-automation/v1`. Portable skill entry points use the standard Agent Skills format inventoried here and carry standard frontmatter. Space Collections use `calternal-collection/v1` JSON for their structured membership. Other provider or plugin formats and opaque bytes follow their own contracts. |
@@ -65,6 +65,16 @@ schema and every shipped step fixed. A version outside the declared range
 fails before schema changes. The deployment gate will admit a newer version
 for an older release only under the explicit, tested compatibility policy.
 
+Production image `c98705d74bcf` has auth version 14, content version 5
+and machines version 6. After live rooms at content version 6, Empty Trash
+and rename queues follow at versions 7 and 8. Auth version 15 adds the
+Manager and Owner purge grant.
+The prior writer still allows Editors to purge. Treat this rollout as
+incompatible and use the owner-approved restore point for rollback.
+
+Message search generation 2 drops the redundant thread-location index and
+rebuilds under the projection worker. Its SQLite schema version stays 1.
+
 Owned tags put the name before the version, as in `calternal-thread/v1`.
 Binary formats retain the version markers listed above.
 An unknown version of a recognized format stays untouched. File readers
@@ -85,6 +95,8 @@ limits. Draft saves use `synchronous=NORMAL` and suppress checkpoint on
 connection close. Those connection settings leave the account input format
 at SQLite 2. Acknowledged unsent edits survive a process crash. The latest
 unsent edits can be lost during a system crash or power loss.
+
+The lease migration adds nullable harness confinement and login-scope metadata; legacy lease rows retain their existing behavior.
 
 ### How to add a migration
 
