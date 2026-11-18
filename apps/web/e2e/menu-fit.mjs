@@ -32,7 +32,7 @@ try {
   // a row's three-dot menu in the open sidebar (Notes list) at 393 pt: the menu opens at the button, wide as it is, and must still end inside the screen (a point anchor far to the right of the window)
   { const { page: p, ctx } = await open(browser, "phone", "light", "/notes?canvas=0");
     await p.setViewportSize({ width: 393, height: 852 }); await p.waitForTimeout(1500);
-    const dots = p.locator("aside.side nav[aria-label=Notes] button[aria-label*='actions' i], aside.side nav[aria-label=Notes] button[aria-haspopup=menu]").first();
+    const dots = p.getByRole("button", { name: /^Actions for / }).first();
     await dots.waitFor({ timeout: 8000 }); await dots.click(); await p.waitForTimeout(900);
     const r = await p.evaluate(() => { const m = document.querySelector("[role=menu]"); const b = m.getBoundingClientRect(); return { left: Math.round(b.left), right: Math.round(b.right), top: Math.round(b.top), bottom: Math.round(b.bottom), vw: innerWidth, vh: innerHeight }; });
     ok(r.left >= 7.5 && r.right <= r.vw - 7.5 && r.top >= 0 && r.bottom <= r.vh, "a row's menu in the sidebar at 393 pt stays inside the screen with a margin", JSON.stringify(r));
