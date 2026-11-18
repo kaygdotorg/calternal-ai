@@ -10,14 +10,9 @@ use serde_json::{Value, json};
 use std::fs;
 use uuid::Uuid;
 
-pub(crate) fn install(conn: &rusqlite::Connection) -> Result<()> {
-    conn.execute_batch(
-        "CREATE TABLE IF NOT EXISTS trash_origins(
+pub(crate) const SCHEMA: &str = "CREATE TABLE IF NOT EXISTS trash_origins(
             item TEXT PRIMARY KEY REFERENCES items(id), path TEXT NOT NULL
-        ) WITHOUT ROWID, STRICT;",
-    )
-    .map_err(internal)
-}
+        ) WITHOUT ROWID, STRICT;";
 
 impl Content {
     /// Fetch a current live item after space authorization, hiding Trash and purged

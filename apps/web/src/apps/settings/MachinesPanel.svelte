@@ -20,7 +20,7 @@
   {#each all as m (m.id)}
     <li data-setting="machines.{m.id}">
       <span class="n"><span class="t">{m.name}</span><span class="h">{m.state}</span></span>
-      <Selector label="Where threads run on {m.name}" fill={false} options={[{ value: "sandboxed", label: "Sandboxed" }, { value: "direct", label: "Direct" }]} value={mode(m.id)} onchange={(v) => values.set(`machines.${m.id}.mode`, v)} />
+      <Selector class="sel-inline" label="Where threads run on {m.name}" options={[{ value: "sandboxed", label: "Sandboxed" }, { value: "direct", label: "Direct" }]} value={mode(m.id)} onchange={(v) => values.set(`machines.${m.id}.mode`, v)} />
     </li>
   {/each}
 </ul>
@@ -48,7 +48,7 @@
 
 <style>
   .ms { display: grid; }
-  li { display: flex; align-items: center; justify-content: space-between; gap: var(--s-6); min-height: var(--row-h-settings); padding: var(--s-3) var(--s-6); }
+  li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--s-6); min-height: var(--row-h-settings); padding: var(--s-3) var(--s-6); }
   .n, .l { display: grid; min-width: 0; gap: var(--s-1); }
   .t { font-size: var(--text-ui); font-weight: var(--strong-weight); overflow: hidden; text-overflow: ellipsis; }
   .h { font-size: var(--text-label); color: var(--ink-3); }

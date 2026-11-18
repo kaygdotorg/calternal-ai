@@ -151,6 +151,11 @@ pub(super) enum Cmd {
         #[arg(long, env = "CALTERNAL_INSTALLATION_ID")]
         installation_id: String,
     },
+    /// Safely prepare, inspect, or recover a data upgrade with both roles stopped.
+    Upgrade {
+        #[command(flatten)]
+        command: crate::upgrade_cli::UpgradeArgs,
+    },
     /// Serve Calternal. Listens on loopback by default.
     #[command(
         about = "Start the development-preview server",

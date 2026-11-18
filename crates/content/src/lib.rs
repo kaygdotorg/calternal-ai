@@ -116,6 +116,19 @@ pub fn format_rfc3339(instant: time::OffsetDateTime) -> String {
         ))
         .expect("timestamp format")
 }
+/// Descriptor for the installation-wide UUID edge catalogue, retained on upgrade.
+pub const ROUTE_SCHEMA: calternal_store::migrations::Schema<'_> =
+    calternal_store::migrations::Schema::new("content-index.db", 1, &["CREATE TABLE IF NOT EXISTS items(id TEXT PRIMARY KEY,space TEXT NOT NULL,kind TEXT NOT NULL) STRICT;
+            CREATE INDEX IF NOT EXISTS items_space ON items(space);
+            CREATE TABLE IF NOT EXISTS account_items(id TEXT PRIMARY KEY,account TEXT NOT NULL,kind TEXT NOT NULL) STRICT;
+            CREATE INDEX IF NOT EXISTS account_items_owner ON account_items(account);"], &[]);
+
+/// Descriptor for the authoritative per-space item and revision database.
+pub const SPACE_SCHEMA: calternal_store::migrations::Schema<'_> = db::SPACE_SCHEMA;
+
+/// Descriptor for protected account collections.
+pub const ACCOUNT_SCHEMA: calternal_store::migrations::Schema<'_> = collections::ACCOUNT_SCHEMA;
+
 impl Content {
     /// Retain the host's validated root locks during background placement. The
     /// lifecycle worker pins them only while doing I/O, so it cannot outlive the
@@ -158,17 +171,14 @@ impl Content {
         ] {
             calternal_fsio::private::directory(path).map_err(internal)?;
         }
-        let index = db::database(&roots.appdata.join("system/content-index.db"))?;
-        index.execute_batch("CREATE TABLE IF NOT EXISTS items(id TEXT PRIMARY KEY,space TEXT NOT NULL,kind TEXT NOT NULL) STRICT;
-            CREATE INDEX IF NOT EXISTS items_space ON items(space);
-            CREATE TABLE IF NOT EXISTS account_items(id TEXT PRIMARY KEY,account TEXT NOT NULL,kind TEXT NOT NULL) STRICT;
-            CREATE INDEX IF NOT EXISTS account_items_owner ON account_items(account);").map_err(internal)?;
+        let catalog_path = roots.appdata.join("system/content-index.db");
+        let index = db::database(&catalog_path, ROUTE_SCHEMA)?;
         let spaces = Arc::new(Mutex::new(std::collections::HashMap::new()));
         let root_guard = Arc::new(Mutex::new(None));
         let lifecycle = calternal_types::OwnerLifecycle::default();
         let sweeper = spawn_sweeper(&spaces, &root_guard, lifecycle.clone(), idle_after, fault)?;
         let journals = Journals::open(roots.appdata.clone(), secrets, receipt_retention)?;
-        let catalog = ReadPool::new(roots.appdata.join("system/content-index.db"));
+        let catalog = ReadPool::new(catalog_path);
         let content = Self {
             search_readers: search::Readers::default(),
             search_writers: search::Writers::default(),

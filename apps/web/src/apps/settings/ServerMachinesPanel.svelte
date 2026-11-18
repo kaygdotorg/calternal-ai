@@ -29,7 +29,7 @@
   {#each machines as m (m.id)}
     <div class="r" data-setting="machines.{m.id}">
       <span class="n"><span class="t">{m.name}</span><span class="h">{STATE[m.state] ?? m.state} · {m.os} {m.arch}{#if m.state === "offline"} · Not connected. Start the machine, or revoke it if it is gone for good.{/if}</span></span>
-      <Selector label="Where threads run on {m.name}" fill={false} options={[{ value: "sandboxed", label: "Sandboxed" }, { value: "direct", label: "Direct" }]} value={m.direct ? "direct" : "sandboxed"} onchange={(v) => act(() => setDirect(m.id, v === "direct"))} />
+      <Selector class="sel-inline" label="Where threads run on {m.name}" options={[{ value: "sandboxed", label: "Sandboxed" }, { value: "direct", label: "Direct" }]} value={m.direct ? "direct" : "sandboxed"} onchange={(v) => act(() => setDirect(m.id, v === "direct"))} />
       <span class="a">
         <Button text={m.state === "draining" ? "Resume" : "Pause"} variant="quiet" disabled={busy} onclick={() => act(() => drainMachine(m.id, m.state !== "draining"))} />
         <Button text="Revoke" variant="quiet" disabled={busy} onclick={() => confirm(`Revoke ${m.name}? It can never connect again.`) && act(() => revokeMachine(m.id))} />

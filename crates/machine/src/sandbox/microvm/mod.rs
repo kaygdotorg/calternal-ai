@@ -2,6 +2,7 @@
 //! The dedicated control port is always attached. Online guests also lease an
 //! operator-managed TAP. A rootless Podman container runs each thread.
 
+mod disk;
 mod guest;
 mod image;
 mod kvm;
@@ -393,6 +394,12 @@ impl State {
             }
             let staged = self.new_disk().await?;
             persist_disk(staged, disk.clone()).await?;
+        } else {
+            let existing = disk.clone();
+            tokio::task::spawn_blocking(move || disk::check(&existing))
+                .await
+                .map_err(SandboxError::new)?
+                .map_err(SandboxError::new)?;
         }
         if self.capacity.available_permits() == 0 {
             let unused = self.warm.lock().await.pop();
@@ -455,7 +462,8 @@ impl State {
                 .await
                 .map_err(SandboxError::new)?;
             let status = Command::new(&self.config.mkfs_ext4)
-                .args(["-q", "-F", "-E", "lazy_itable_init=0,lazy_journal_init=0"])
+                .args(["-q", "-F", "-L", disk::LABEL])
+                .args(["-E", "lazy_itable_init=0,lazy_journal_init=0"])
                 .arg(&path)
                 .kill_on_drop(true)
                 .status()

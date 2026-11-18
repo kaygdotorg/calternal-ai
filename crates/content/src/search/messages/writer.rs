@@ -17,6 +17,9 @@ const SCAN: i64 = 16;
 const PAGE_BYTES: u64 = 16 * 1024;
 const FREE_FLOOR: u64 = 1024 * 1024 * 1024;
 const SCHEMA: &str = include_str!("schema.sql");
+/// Schema version of `search-messages-v1.all.db`, separate from the generation.
+const MIGRATIONS: calternal_store::migrations::Schema<'_> =
+    calternal_store::migrations::Schema::new("message search projection", 1, &[SCHEMA], &[]);
 const SECONDARY: &str = "CREATE UNIQUE INDEX IF NOT EXISTS locations_id ON locations(thread,id);
     CREATE INDEX IF NOT EXISTS locations_thread ON locations(thread,position);
     CREATE INDEX IF NOT EXISTS postings_newest ON postings(term,stamp DESC,newest DESC,block);";
@@ -54,7 +57,7 @@ pub(in crate::search) fn advance(
     if !reserve(&db, &path)? {
         return Ok(Progress::Idle);
     }
-    db.execute_batch(SCHEMA).map_err(internal)?;
+    calternal_store::migrations::migrate(&db, MIGRATIONS).map_err(internal)?;
     let schema = state(&db).map_err(internal)?;
     if schema.as_ref().is_none_or(|s| !s.matches(head)) {
         db.pragma_update(None, "journal_mode", "DELETE")

@@ -237,12 +237,16 @@ activating the release. The account's login stays on the machine under
 `sandboxes/accounts/<account>/provider-login`, and its transcript home is
 scoped to the space.
 
-Deploy and rollback reuse the three data roots. A schema mismatch can refuse
-startup, including when an older binary opens data initialized by a newer one.
-Per-space stores that open lazily may first report a mismatch when used.
-Automatic rollback switches code and units. Recovering data requires a
-coordinated backup and an operator decision. See **Decisions before real data**
-below.
+The production upgrade gate and durable inventory are tracked in
+[Data-preserving upgrades](upgrades.md).
+
+From the durable baseline, ordinary updates require `--compatibility-proof FILE`
+from `scripts/verify-additive-upgrade.sh PREVIOUS_IMAGE CANDIDATE_IMAGE PROOF_OUTPUT`
+for the exact current and candidate images. Use `--allow-incompatible` only with the owner's approval. The latter stages a full
+restore point before changing data. An incomplete preparation fences server
+startup. A deployment retry, rollback, or the server unit's recovery hook can
+restore the staged bytes before either release starts. After the cutover marker,
+rollback keeps live data and the older build must pass its version check.
 
 ## Backups and service controls
 
@@ -407,10 +411,6 @@ agent. It reruns without replacing an existing identity for that server.
 
 ## Decisions before real data
 
-- **Schema transitions.** Choose a maintenance-window export and import
-  with a rehearsed restore, or keep this release family on one schema until
-  a supported transition is agreed. Export and import require tooling and
-  downtime. Keeping the schema stable limits which releases can ship.
 - **Existing app data.** Choose whether it stays in its separately retained
   installation or needs an explicit import project. An import requires a
   mapping and validation of accounts, files and permissions.

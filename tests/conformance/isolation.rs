@@ -46,6 +46,9 @@ mod plugin_slot_cases;
 mod search_cases;
 mod setup_code_cases;
 mod simplify_review_cases;
+mod upgrade_handoff_cases;
+#[cfg(feature = "release-upgrade")]
+mod upgrade_release_cases;
 mod wallpaper_cases;
 mod worker_cases;
 mod worker_delivery_cases;
@@ -156,6 +159,7 @@ struct Fixture {
     development: bool,
     remote_workers: bool,
     bind_ip: Option<&'static str>,
+    release_binary: Option<PathBuf>,
 }
 impl Drop for Fixture {
     fn drop(&mut self) {
@@ -189,9 +193,20 @@ impl Fixture {
     async fn start_checked(&mut self, explicit: bool, expect_crash: bool) {
         let path = self.appdata().join("startup.json");
         let _ = std::fs::remove_file(&path);
-        let binary = std::env::var("CALTERNAL_SERVER_BIN")
-            .expect("set CALTERNAL_SERVER_BIN to built dev-VM binary");
+        let is_release = self.release_binary.is_some();
+        let binary = self.release_binary.clone().unwrap_or_else(|| {
+            std::env::var_os("CALTERNAL_SERVER_BIN")
+                .expect("set CALTERNAL_SERVER_BIN to built dev-VM binary")
+                .into()
+        });
         let repo = source_root();
+        let plugins = self
+            .release_binary
+            .as_deref()
+            .and_then(Path::parent)
+            .map(|directory| directory.join("plugins"))
+            .filter(|directory| directory.is_dir())
+            .unwrap_or_else(|| repo.join("plugins"));
         let mut command = Command::new(binary);
         command.env_clear();
         if self.dir.path().join("wallpaper-cache-case").is_file() {
@@ -205,7 +220,7 @@ impl Fixture {
         } else {
             command.arg("serve");
         }
-        if !self.remote_workers {
+        if !self.remote_workers && !is_release {
             command.env("CALTERNAL_WORKER_TEST_BACKEND", "direct");
         }
         if let Some(ip) = self.bind_ip {
@@ -215,10 +230,7 @@ impl Fixture {
             command.arg("--development");
         }
         if explicit {
-            command
-                .arg("--plugin-root")
-                .arg(repo.join("plugins"))
-                .current_dir(&repo);
+            command.arg("--plugin-root").arg(plugins).current_dir(&repo);
         } else {
             command.current_dir(self.dir.path());
         }
@@ -234,6 +246,12 @@ impl Fixture {
                     String::new()
                 }
             });
+        if !is_release {
+            // The default binary is built with `test-plugins`; see README.
+            command
+                .arg("--test-plugin-root")
+                .arg(repo.join("tests/plugins"));
+        }
         self.child = Some(
             command
                 .args(["--port", "0", "--origin", ORIGIN, "--create"])
@@ -244,9 +262,6 @@ impl Fixture {
                 .arg(self.dir.path().join("userdata-ssd"))
                 .arg("--userdata-hdd")
                 .arg(self.dir.path().join("userdata-hdd"))
-                // The binary is built with `test-plugins`; see README.
-                .arg("--test-plugin-root")
-                .arg(repo.join("tests/plugins"))
                 .env("PATH", std::env::var("PATH").unwrap_or_default())
                 .env("LANG", "C.UTF-8")
                 .env(
@@ -455,6 +470,7 @@ impl Fixture {
             development: false,
             remote_workers: false,
             bind_ip: None,
+            release_binary: None,
         }
     }
     async fn new() -> Self {

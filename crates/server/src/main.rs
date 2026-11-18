@@ -7,6 +7,7 @@ mod people_maintenance;
 mod plugin_cli;
 mod startup_io;
 mod transport;
+mod upgrade_cli;
 use calternal_cli::output::{CliError, Output, Reply};
 use calternal_server::api::{self, AppState};
 use calternal_server::auth::StoredDirectory;
@@ -112,6 +113,7 @@ fn main() {
         Cmd::PluginDigest { plugin_root } => out.success(&admin_cli::plugin_digest(&plugin_root)),
         Cmd::Machine { cmd } => calternal_machine::cli::main(cmd, &out),
         Cmd::Machines { cmd } => out.finish(admin_cli::machines(cmd, &out)),
+        Cmd::Upgrade { command } => out.finish(upgrade_cli::run(command)),
         Cmd::SetupCode {
             appdata,
             installation_id,
@@ -519,6 +521,7 @@ async fn serve(
     };
     let startup = serde_json::json!({
         "profile": "development-preview",
+        "format": "calternal-startup/v1",
         "development_tokens": development,
         "setup_token_file": setup_file,
         "base_url": base_url,

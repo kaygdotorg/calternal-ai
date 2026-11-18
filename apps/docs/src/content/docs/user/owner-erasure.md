@@ -98,7 +98,7 @@ erased account remove the whole UUID directory, including its sandbox
 person's actual home, provider sign-ins outside the role, and other files
 remain under their control.
 
-This preview uses auth schema 10, machine database schema 5, and machine
+This preview uses auth schema 11, machine database schema 6, and machine
 protocol 4. Use fresh development state and matching server and machine role
 binaries. Before replacing an earlier preview, stop its enrolled roles and
 wipe any retired sandbox roots whose placements were stored by that preview.

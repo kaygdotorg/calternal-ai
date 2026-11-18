@@ -115,6 +115,23 @@ fn safe_member(root: &Path, relative: &str, max: usize) -> Result<Vec<u8>, Strin
     read_regular(&resolved, max)
 }
 
+const PACKAGE_SCHEMA: &str = "CREATE TABLE IF NOT EXISTS installed_plugins (
+            revision INTEGER PRIMARY KEY AUTOINCREMENT CHECK (revision <= 2147483647),
+            id TEXT NOT NULL UNIQUE, archive BLOB NOT NULL, checksum TEXT NOT NULL,
+            default_enabled INTEGER NOT NULL CHECK (default_enabled IN (0, 1)),
+            approval INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE TABLE IF NOT EXISTS retained_plugins (
+            revision INTEGER PRIMARY KEY, id TEXT NOT NULL, archive BLOB NOT NULL,
+            checksum TEXT NOT NULL, default_enabled INTEGER NOT NULL, approval INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS retained_plugins_id ON retained_plugins (id);
+        CREATE TABLE IF NOT EXISTS plugin_seed (singleton INTEGER PRIMARY KEY CHECK (singleton = 1));
+        CREATE TABLE IF NOT EXISTS plugin_draft_counter (
+            singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+            revision INTEGER NOT NULL CHECK (revision BETWEEN 2147483648 AND 4294967295)
+        );";
+
 fn open(appdata: &Path) -> Result<Connection, String> {
     use std::os::unix::fs::OpenOptionsExt;
     let path = appdata.join("installed-plugins.sqlite3");
@@ -130,20 +147,7 @@ fn open(appdata: &Path) -> Result<Connection, String> {
     }
     let db = Connection::open(path).map_err(reason)?;
     db.busy_timeout(Duration::from_secs(5)).map_err(reason)?;
-    db.execute_batch(
-        "CREATE TABLE IF NOT EXISTS installed_plugins (
-            revision INTEGER PRIMARY KEY AUTOINCREMENT CHECK (revision <= 2147483647),
-            id TEXT NOT NULL UNIQUE, archive BLOB NOT NULL, checksum TEXT NOT NULL,
-            default_enabled INTEGER NOT NULL CHECK (default_enabled IN (0, 1)),
-            approval INTEGER NOT NULL DEFAULT 0
-        );
-        CREATE TABLE IF NOT EXISTS retained_plugins (
-            revision INTEGER PRIMARY KEY, id TEXT NOT NULL, archive BLOB NOT NULL,
-            checksum TEXT NOT NULL, default_enabled INTEGER NOT NULL, approval INTEGER NOT NULL
-        );
-        CREATE INDEX IF NOT EXISTS retained_plugins_id ON retained_plugins (id);
-        CREATE TABLE IF NOT EXISTS plugin_seed (singleton INTEGER PRIMARY KEY CHECK (singleton = 1));",
-    ).map_err(reason)?;
+    calternal_store::migrations::migrate(&db, UPGRADE_SCHEMA).map_err(reason)?;
     Ok(db)
 }
 
@@ -152,13 +156,6 @@ fn open(appdata: &Path) -> Result<Connection, String> {
 #[cfg(feature = "dev-plugin-drafts")]
 pub(super) fn next_draft_revision(root: &Path) -> Result<u32, String> {
     let db = open(root)?;
-    db.execute_batch(
-        "CREATE TABLE IF NOT EXISTS plugin_draft_counter (
-            singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
-            revision INTEGER NOT NULL CHECK (revision BETWEEN 2147483648 AND 4294967295)
-        );",
-    )
-    .map_err(reason)?;
     db.query_row(
         "INSERT INTO plugin_draft_counter VALUES (1, 2147483648)
          ON CONFLICT DO UPDATE SET revision = revision + 1 RETURNING revision",
@@ -566,6 +563,16 @@ fn load_rows(
     }
     Ok(plugins)
 }
+
+/// Package database schema shared by startup and release admission. Worker
+/// cache files are verified against their archive bytes and need no version.
+pub(crate) const UPGRADE_SCHEMA: calternal_store::migrations::Schema<'_> =
+    calternal_store::migrations::Schema::new(
+        "installed-plugins.sqlite3",
+        1,
+        &[PACKAGE_SCHEMA],
+        &[],
+    );
 
 #[cfg(test)]
 mod tests;

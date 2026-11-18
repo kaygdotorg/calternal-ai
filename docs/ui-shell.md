@@ -301,3 +301,7 @@ Owner decisions: Google Sans Flex is the default for interface and chat; Cascadi
 6. Presets: the "Preset" row and a "Themes" section in the sheet (the same gallery). One now (Look).
 7. "Stream messages as they are written": in the sheet's Behaviour and on the Agents page. It is an agent behaviour, not a look: it lives only on Agents.
 Wrong or stale: the Apps row's help text still described a switcher under the card and a phone bottom bar (now the capsule at the bottom of the sidebar). "Restore defaults" was at the foot of the sheet; it is a Reset section. `SettingsSheet.svelte`, its tests, `?sheet=1`, and the phone's bottom-sheet mount are deleted (a phone gets the same page: the sections list, then a section with Back); `WallpaperPanel` and `FontsPanel` are the two pieces that remain of it.
+
+## Timing checks: budgets and the quiet list (2026-11-18)
+
+The palette's keystroke check measures main-thread work per key (the input event, the framework's update and the style and layout a read forces) at 6x CPU slowdown against the owner's per-key rule, 8 ms at normal speed, so 48 ms at 6x for the median (and 96 ms for the p95); the wait for the next frame (up to 16.7 ms by itself) is printed as information, not judged. `npm run e2e:quiet -w apps/web` waits (CAL_QUIET_WAIT_S, 600 s by default) for the machine to be quiet; if it never is, it runs nothing and exits 3 ("not judged"), distinct from 1 (a suite failed).
