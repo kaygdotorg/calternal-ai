@@ -198,6 +198,14 @@ journal commit, with no additional reads or flushes per event.
 
 ### Models, phases and turn history
 
+At launch, each attempt captures the provider ID, harness and model labels
+from the live registry snapshot that selects its adapter. A later registry
+update or removal cannot relabel saved output, including the final checkpoint.
+Each changed save takes one live snapshot for the orchestrator's activation
+check. A retry or resume selects its provider again for the new attempt.
+Existing authority checks still govern whether an attempt can continue.
+
+
 Call `threads.models` with `{"space_id":"SPACE_UUID"}` and the space's
 `plugins.use` capability. Each response has a `providers` array.
 
