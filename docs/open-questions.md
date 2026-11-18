@@ -38,7 +38,7 @@ Decided 2026-11-18: a person never signs in twice and no API key is used. The ti
 ## Recently decided (2026-11-17), now in the decision records
 
 - Production is not deployed again until data survives upgrades (kayg, 2026-11-18): migrations for everything that cannot be rebuilt, a version on every format, and a tested rollback come first; kayg signs up after that. The scaling measurement for message search (10 million, 100 million, 1 billion if the disk allows; many threads and few long ones) is accepted as enough.
-- Materials (#24, 2026-11-18): the readability floor is 7:1 with text flipping light or dark; light mode uses the lighter copy of the photo; the temporary Compare section is removed.
+- Materials (#24, 2026-11-18): the readability floor is 7:1 with text flipping light or dark; light mode uses the lighter copy of the photo; the temporary Compare section is removed. Closed 2026-11-18: the Compare section, both toggles and the old paths are deleted; Clear to tinted is in Materials (docs/ui-design-system.md, "Readability floor and Clear to tinted").
 - Draft saves are relaxed (2026-11-18): they no longer wait for the disk to confirm, so a power cut may lose the latest unsent draft edits; notes and sent messages keep the full guarantee.
 - Thread rows are one line in the Inbox as in All Threads; the waiting reason is a mark at the row's end (2026-11-18).
 - Canvas (2026-11-18): the right-sidebar toggle is an item inside the three-dot menu; windows are resized with the same handle as the sidebars.

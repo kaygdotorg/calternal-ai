@@ -246,8 +246,8 @@ export function updateVeil(want: Flags): void {
   const jobs: [string[], Role, RGB[]][] = [[["l", "r"], "side", [...px(copies?.side, r.left), ...px(copies?.side, r.right)]], [["c"], "card", px(copies?.card, r.card)]];
   const out: Record<string, Veil> = {};
   for (const [keys, role, pixels] of jobs) for (const k of keys) {
-    const v: Veil = craftLight && scheme === "light" ? { scheme: "light", tint: { a: 0.92, rgb: [255, 255, 255] }, dim: { a: 0, rgb: [0, 0, 0] }, ink2: T.ink2, ink3: T.ink3, total: 0.92, ratio: 99 } : solve(scheme, role, flags, pixels, T, other);
-    const w: Veil = craftLight && scheme === "light" ? v : scaled(v, veilScale);
+    const v: Veil = solve(scheme, role, flags, pixels, T, other);
+    const w: Veil = scaled(v, veilScale);
     out[k] = w;
     const ink2 = w.ink2, ink3 = w.ink3;
     root().setProperty(`--${k}-tint`, rgbCss(w.tint.rgb));
@@ -342,14 +342,10 @@ function schedule(ms = 60): void {
 /** Shows a wallpaper (an image URL: a blob, a data URL or a same-origin file) or none. The blur is done here, once. */
 let flagsNow: Flags = { blur: true, dim: true, tint: true };
 /** The three boxes as currently chosen; the veil is solved with them whenever the pictures are re-read. */
-/** The comparison of the owner's: in the light scheme, every surface is Craft's nearly opaque white (0.92) over the blurred, unchanged picture instead of the solved veil. Temporary. */
 /** Clear to tinted: the solved veil's strength is scaled by this (1 leaves it as solved; below 1 shows more wallpaper and may fall under the readability floor; above 1 is denser). */
 let veilScale = 1;
-/** Sets the clear-to-tinted position, 0 (clear) to 1 (tinted); 0.5 is the solved veil. Temporary, with the comparison. */
+/** Sets the clear-to-tinted position, 0 (clear) to 1 (tinted); 0.5 is the solved veil. Read by the next `updateVeil`, which is all a step of the slider needs (the picture is not touched). */
 export function setClarity(t: number): void { veilScale = t <= 0.5 ? 0.3 + 1.4 * t : 1 + 1.6 * (t - 0.5); }
-let craftLight = false;
-/** Chooses the "Craft" light-mode surface (the picture under a nearly opaque white) over the default solved veil; the comparison control in Appearance. Read by the next veil solve. */
-export function setCraftLight(b: boolean): void { craftLight = b; }
 /** Records which material layers are on. It does not solve anything itself: the veil is solved with these flags the next time the pictures are read (a new wallpaper, a scheme change, a resize). */
 export function setFlags(f: Flags): void {
   flagsNow = f;
@@ -357,8 +353,9 @@ export function setFlags(f: Flags): void {
 
 /** Makes `src` (a URL, or null for none) the wallpaper, with its precomputed `look` when it has one, and schedules the work that follows: the blurred copies and the veil solve. The same source with no new look is a no-op. */
 export function setWallpaper(src: string | null, l?: WallpaperLook): void {
+  // The same picture with the same blur radii is nothing to redo: the two blurred copies and their blob URLs stay (a change that does not touch the picture, such as a step of Clear to tinted, never re-decodes or re-blurs it).
+  if (src === source && (!l || (l.sideBlur === look.sideBlur && l.cardBlur === look.cardBlur))) return;
   if (l) look = l;
-  if (src === source && !l) return;
   source = src;
   schedule();
 }

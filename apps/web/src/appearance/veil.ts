@@ -63,12 +63,8 @@ const GAIN: Record<Scheme, number> = { light: 0.25, dark: 0.33 };
 const C_CAP = 0.05, A_MAX = 0.9, FLIP_GAIN = 0.12;
 /** Headroom over each target for what the model does not see: the grain, the JPEG, and pixels between the 48 by 48 samples. */
 const HEAD = 0.35;
-/** The contrast ratios the veil is solved to for ink, secondary and tertiary text. Mutated by `setFloor`; read by every solve, so a change needs a re-solve (the wallpaper module schedules it). */
-export const TARGET: { ink: number; ink2: number; ink3: number } = { ink: 7, ink2: 5.5, ink3: 4.5 };
-/** The readability floors the veil is solved to: `current` (7, 5.5, 4.5) or `low` (4.5, 4, 3), which shows more of the picture. `low` exists for the owner's side-by-side comparison only (Settings, Appearance, Compare). */
-const FLOORS = { current: { ink: 7, ink2: 5.5, ink3: 4.5 }, low: { ink: 4.5, ink2: 4, ink3: 3 } } as const;
-/** Switches the readability floor between `current` and `low` (the owner's side-by-side comparison; nothing else should call it). Takes effect at the next solve. */
-export function setFloor(f: keyof typeof FLOORS): void { Object.assign(TARGET, FLOORS[f]); }
+/** The contrast ratios the veil is solved to for ink, secondary and tertiary text: the one readability floor (7:1, with text that flips between light and dark where it must; the owner's decision, 2026-11-18). */
+export const TARGET: { readonly ink: number; readonly ink2: number; readonly ink3: number } = { ink: 7, ink2: 5.5, ink3: 4.5 };
 
 // ---- OKLCH, for the veil's hue ----
 const toOk = ([r, g, b]: RGB): { L: number; c: number; h: number } => {

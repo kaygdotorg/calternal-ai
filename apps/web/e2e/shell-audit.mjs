@@ -171,7 +171,7 @@ const wallpapers = JSON.parse(readFileSync("wallpapers.json", "utf8"));
   await page.getByRole("button", { name: "Show the sidebar" }).click(); await page.waitForTimeout(600);
   ok((await page.locator("aside.side nav h2").allInnerTexts()).some((t) => /^Space/.test(t)), "Phone: the Settings sidebar has the current space's section");
   await page.goto(BASE + "/settings/appearance?firstrun=0"); await page.waitForSelector("html[data-ready]"); await page.waitForTimeout(500);
-  ok((await page.getByText("Compare (temporary").count()) === 1 && (await page.getByText("Clear to tinted").count()) === 1, "Phone: the Compare group (with Clear to tinted) is on the Appearance page");
+  ok((await page.getByText("Compare (temporary").count()) === 0 && (await page.getByText("Clear to tinted").count()) === 1 && (await page.getByText("Readability floor").count()) === 0, "Phone: Clear to tinted is in Materials on the Appearance page; there is no Compare group, floor or Craft toggle");
   await ctx.close();
 }
 await b.close(); stop();
