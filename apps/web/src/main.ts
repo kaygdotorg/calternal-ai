@@ -23,10 +23,23 @@ Promise.race([loadFonts(currentScheme()).catch(() => {}), new Promise((r) => set
   const target = document.getElementById("app")!;
   const ready = () => { document.documentElement.dataset.ready = ""; startChrome(); };
   const gate = async (b: Exclude<import("./server/boot").Boot, { screen: "app" }>) => {
+    // A fresh installation or an invitation is the stepped onboarding (who you are first, then the rest); a returning person signing in is the plain card; a reload part-way resumes the onboarding.
+    if (b.screen === "onboarding" || (b.screen === "signin" && (b.needsSetup || b.invite))) {
+      const { default: Onboarding } = await import("./shell/onboarding/Onboarding.svelte");
+      return mount(Onboarding, { target, props: { who: b.screen === "signin" && !b.needsSetup ? "invited" : "owner", token: b.screen === "signin" ? (b.invite ?? "") : "" } });
+    }
     const { default: Gate } = await import("./shell/SignIn.svelte");
     return mount(Gate, { target, props: b.screen === "signin" ? { needsSetup: b.needsSetup, invite: b.invite } : b.screen === "offline" ? { offline: true } : { version: b } });
   };
-  if (!boot) { mount(App, { target }); ready(); return; }
+  if (!boot) {
+    // Fixtures: the onboarding can be looked at and tested with ?onboarding=1 (the owner's five steps) or ?onboarding=invited (three), against a simulated machine; the passkey is pretended.
+    const demo = new URLSearchParams(location.search).get("onboarding");
+    if (demo === "1" || demo === "invited") {
+      const { default: Onboarding } = await import("./shell/onboarding/Onboarding.svelte");
+      mount(Onboarding, { target, props: { who: demo === "invited" ? "invited" : "owner", demo: true } }); ready(); return;
+    }
+    mount(App, { target }); ready(); return;
+  }
   const { s } = await boot.catch(() => ({ s: { paintNow: true, result: new Promise<never>(() => {}) } }));
   if (s.paintNow) {
     // This device knows the account (a fresh record): the app paints now and the server confirms a round trip later; if it says otherwise the screen turns into the sign-in or version screen.
