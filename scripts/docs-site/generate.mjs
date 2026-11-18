@@ -24,6 +24,7 @@ function publicText(text) {
     .replace(/\[([^\]]+)\]\([^)]*(?:reviews|measurements|open-questions)[^)]*\)/g, '$1')
     .replace(/`?docs\/(?:reviews|measurements)\/[^\s`.)]+(?:\.md|\.json)?`?/g, '(internal evidence)')
     .replace(/\/home\/kayg\/Developer\/calternal/g, 'the reference repository')
+    .replaceAll('/home/u/.local/share/calternal/machine/credentials', '$HOME/.local/share/calternal/machine/credentials')
     .replace(/^Input:.*\n/gm, '')
     .replace(/\n## Open\n[\s\S]*/, '')
     .replace(/\n## How the work is run\n[\s\S]*/, '');
