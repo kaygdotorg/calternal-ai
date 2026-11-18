@@ -20,8 +20,12 @@
 </script>
 
 <div class="backdrop" aria-hidden="true"><div class="wash"></div><div class="grain" style:background-image={tile ? `url(${tile})` : "none"}></div></div>
+<!-- Safari 26+ tints its status bar and toolbar from a fixed box at the screen's edge and cannot read a colour out of a picture: two thin solid strips in the solved top colour (`--bars`, shell/chrome.ts) at the top and bottom edges give it one. -->
+<div class="bars bars-t" aria-hidden="true"></div><div class="bars bars-b" aria-hidden="true"></div>
 
 <style>
+  .bars { position: fixed; left: 0; right: 0; height: 3px; z-index: 0; pointer-events: none; background: var(--bars, var(--paper)); }
+  .bars-t { top: 0; } .bars-b { bottom: 0; }
   .backdrop { position: fixed; inset: 0; z-index: 0; background: var(--wall-side, var(--wall-fallback, var(--backdrop))) center / cover no-repeat; }
   /* ONE continuous background: the wallpaper under a single veil (appearance/veil.ts, solved once from the pixels under both sidebars) spans the whole window. Both sidebars are drawn on it; the middle card is the only
      thing on top, so nothing else paints in the gap beside the card or behind its rounded corners (there used to be a veil per sidebar that stopped at the card's edge, which left the corners bare). */
