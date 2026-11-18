@@ -3297,9 +3297,18 @@ async fn shared_space_machine_routes_member_turns_without_granting_management() 
     assert_eq!(messages["account_id"], f.ids[2]);
     assert_eq!(messages["spec"]["shared_provider_sponsor"], f.ids[1]);
 
-    let code = f.req("POST", "/api/v1/machines/codes", Some(&f.cookies[2]), json!({}), Some(ORIGIN)).await;
+    let code = f
+        .req(
+            "POST",
+            "/api/v1/machines/codes",
+            Some(&f.cookies[2]),
+            json!({}),
+            Some(ORIGIN),
+        )
+        .await;
     code.ok();
-    let mut personal = requests_cases::Machine::enroll_with_code(&f, code.body["code"].as_str().unwrap()).await;
+    let mut personal =
+        requests_cases::Machine::enroll_with_code(&f, code.body["code"].as_str().unwrap()).await;
     f.op(2, "agent.run", json!({
         "space_id":shared, "thread_id":uuid::Uuid::now_v7(), "prompt":"private route", "personal_machine":true
     })).await.ok();
@@ -3310,7 +3319,9 @@ async fn shared_space_machine_routes_member_turns_without_granting_management() 
                 break assign;
             }
         }
-    }).await.unwrap();
+    })
+    .await
+    .unwrap();
     assert_eq!(own_assignment["account_id"], f.ids[2]);
     assert!(own_assignment["spec"]["shared_provider_sponsor"].is_null());
 }
