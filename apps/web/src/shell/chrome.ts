@@ -28,7 +28,7 @@ export function setRootVar(name: string, value: string | null): void {
   const s = root().style;
   if (value === null) { if (s.getPropertyValue(name) !== "") s.removeProperty(name); } else if (s.getPropertyValue(name) !== value) s.setProperty(name, value);
 }
-/** Sets every `theme-color` meta tag to `color`, only where it differs (see the note above on flicker). */
+/** Sets every `theme-color` meta tag to `color` (a hex colour: Safari does not read the space-separated `rgb()` form, and then keeps the fixed one from index.html, which showed as a separate band above the page), only where it differs (see the note above on flicker). */
 export function setThemeColor(color: string): void {
   for (const m of document.querySelectorAll('meta[name="theme-color"]')) if (m.getAttribute("content") !== color) m.setAttribute("content", color);
 }
