@@ -2,7 +2,7 @@
 
 Decisions waiting on kayg, most blocking first. Answer here or in chat; answered items
 move to the decision record they belong to and leave this list. Terms: see
-[glossary](glossary.md). Updated 2026-11-18 20:40 IST.
+[glossary](glossary.md). Updated 2026-11-18 21:40 IST.
 
 ## Waiting now
 
@@ -21,7 +21,7 @@ Decided 2026-11-18: a person never signs in twice and no API key is used. The ti
 
 ## Design rounds
 
-- **In progress: Settings and Appearance**: first eleven answers recorded in `settings.md`; second batch asked. Appearance (wordmark and its font, fonts, wallpaper, accent, themes and presets), agents (retry and snooze, streaming, default permission mode), shortcuts, machines, plugins, skills, automations.
+- **Settings and Appearance**: second batch answered 2026-11-18 (see Recently decided). Left: the readability floor and light mode on the preview (#24).
 - **Machines without a terminal**, partly decided 2026-11-18 (below); still to grill: pre-configuring machines at deploy time, the `curl | sh` installer at calternal.com/install for both a server and a machine, the macOS app that bundles the CLI, how a machine behind NAT stays reachable for people who know nothing about networking, and how a group's allowance of pool compute is configured and shown.
 - **Pricing**: plans are listed at calternal.com/pricing; storage is bought separately; what the sizes, hours and storage steps are.
 - **Upgrades with real data**: decided 2026-11-18 that updates are automatic and a failed one rolls back without the person or admin noticing; the index rebuild is made faster first (search is unavailable for 67 to 80 s at 100,000 notes today), then migrations are written for the small core (accounts, spaces, roles, secrets), which cannot be rebuilt from files.
@@ -36,6 +36,9 @@ Decided 2026-11-18: a person never signs in twice and no API key is used. The ti
 
 ## Recently decided (2026-11-17), now in the decision records
 
+- Settings round (2026-11-18): Settings is an app like the others, so a window in the canvas, with panes modelled on Xcode's settings; a theme is one readable file that can be exported, imported and shared, plugins can ship themes, and themes are tokens, never CSS; an Inbox thread can be snoozed until a chosen time, and a thread waiting for a subscription limit moves to a Snoozed section until the reset; a space's Owner installs plugins for their own space, from a gallery, an address, or built in the app; a machine can be renamed, paused, switched between sandboxed and direct, inspected and removed. Retry and shortcuts were already decided (`orchestrator-proposal.md`, `composer.md`).
+- Editing a sent message (2026-11-18): the interaction on issue #33 is approved; the version on screen is per thread, the same for everyone.
+- First-owner setup code (2026-11-18): a server command prints one when no owner exists yet; production is deployed fresh with that build and earlier test data and rollbacks are deleted (never the old app's data).
 - Sharing (#52, 2026-11-18): the existing app's sharing decisions are ported (people, groups, links with optional expiry and no password, guests, the share sheet, Shared with me). New here: a single item can be shared by itself as well as through a space; notes, collections and threads can be shared, threads view-only; Editors share with people and groups, a public link needs a Manager or the Owner unless the space allows Editors; a public link has its own address (`/s/<secret>`) and may be served on a custom domain, which a later publish or blog plugin will use; Share opens the sheet with people, links, Copy link and the system share sheet, export stays under the three dots; things shared with you show as a section in each app's sidebar; Share on a canvas window shares the item in it.
 - Fonts (2026-11-18): Google Sans Flex is the default for the interface and for chat, each separately configurable; Cascadia Code for monospace and a future terminal (a terminal would come from a plugin), replacing Maple Mono; fonts are configurable per role as in the calternal-ui plugin.
 - Shell footer (2026-11-18 evening, replaces the space dots and the capsule under the card): spaces sit behind the account picture on desktop and phone; the app switcher is an icon-only capsule of three apps at the bottom centre of the left sidebar, scrolling sideways. This also settles where the switcher sits in the canvas.

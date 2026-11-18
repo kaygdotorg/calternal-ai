@@ -147,7 +147,7 @@ What is not measured yet: typing inside a table cell and a 1,000-item nested lis
 
 ## WebKit: iOS Simulator Safari (2026-11-17)
 
-Run with the in-page benchmark (`?bench=1&firstrun=0&test=1` on `/notes/n-1`, `src/bench.ts`, loaded only with that parameter), because Safari cannot be driven from outside. Typing goes through `execCommand("insertText")` on the focused field, the browser's own text-input path. Device: a fresh iPhone 18 Pro simulator, iOS 27.0, Safari, 402x714 viewport at 3x, on the Mac Studio (created for the run and deleted after). The Simulator runs on the host CPU, so these are faster than a phone: they show that nothing is slow in WebKit's layout or paint, not what a phone will measure. WebKit has no CPU throttle.
+Run with the in-page benchmark (`?bench=1&test=1` on `/notes/n-1`, `src/bench.ts`, loaded only with that parameter), because Safari cannot be driven from outside. Typing goes through `execCommand("insertText")` on the focused field, the browser's own text-input path. Device: a fresh iPhone 18 Pro simulator, iOS 27.0, Safari, 402x714 viewport at 3x, on the Mac Studio (created for the run and deleted after). The Simulator runs on the host CPU, so these are faster than a phone: they show that nothing is slow in WebKit's layout or paint, not what a phone will measure. WebKit has no CPU throttle.
 
 | Scenario | Result | Target |
 | --- | --- | --- |

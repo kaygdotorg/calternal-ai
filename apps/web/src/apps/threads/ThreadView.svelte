@@ -8,7 +8,7 @@
   import { appearance } from "../../appearance/prefs.svelte";
   import { hazards } from "../../lib/hazard";
   import { VirtualList } from "@calternal/ui";
-  import { href, navigate } from "../../lib/route.svelte";
+  import { href, navigate, route } from "../../lib/route.svelte";
   import { shell } from "../../shell/shell.svelte";
   import { bridge } from "./compose.svelte";
   import { Conversation } from "./conversation.svelte";
@@ -103,6 +103,20 @@
     conv = c;
     return () => c.dispose();
   });
+  // `?m=<message id>` on the thread's address (a search result, a link to a message) scrolls to that message at once, with no animation, and marks it for a moment; the id is looked up, the messages between are not loaded.
+  let hit = $state("");
+  $effect(() => {
+    const m = route.query.get("m");
+    const ready = !!list && !!conv;
+    if (!m || !ready) return;
+    void untrack(async () => {
+      const i = await client.messageIndex?.(id, m);
+      if (i === undefined || !list) return;
+      list.scrollToIndex(i, "centre");
+      hit = m;
+      setTimeout(() => { if (hit === m) hit = ""; }, 2000);
+    });
+  });
   // A message you send, or a first stream chunk, follows the end.
   let streamId = "";
   $effect(() => {
@@ -147,8 +161,6 @@
     {/if}
   </header>
 
-  <!-- In a canvas window the text that scrolls under the header fades into the window's own colour, as it does under the card's header (the pills float over it). -->
-  {#if windowed}<div class="topfade" aria-hidden="true"></div>{/if}
   <div class="list" bind:this={listEl}>
     {#if conv && conv.count === 0 && !conv.stream}
       <div class="blank">
@@ -162,7 +174,7 @@
           {#snippet row(i)}
             {#if conv && i < conv.count}
               {@const m = conv.get(i)}
-              {#if m}<MessageRow message={m} provider={summary?.provider ?? "claude"} providers={store.providers} />{:else}<div class="skeleton" aria-hidden="true"></div>{/if}
+              {#if m}<MessageRow message={m} hit={hit === m.id} provider={summary?.provider ?? "claude"} providers={store.providers} />{:else}<div class="skeleton" aria-hidden="true"></div>{/if}
             {:else if conv?.stream && i === conv.count}
               <StreamRow turn={conv.stream} provider={summary?.provider ?? "claude"} providers={store.providers} />
             {:else if conv}
@@ -193,7 +205,6 @@
   header { position: absolute; z-index: 3; top: var(--safe-top); left: 0; right: 0; height: var(--bar-h); display: flex; align-items: center; gap: var(--s-3); padding: 0 var(--pad-region) 0 calc(var(--pad-region) + var(--edge-l, 0px)); pointer-events: none; } /* --edge-l: room for the shell's button that shows the sidebar again (shell/Shell.svelte) */
   header > :global(*) { pointer-events: auto; }
   /* In a canvas window the right pill (three buttons) floats over the header: the title pill leaves room for it and shortens with an ellipsis. */
-  .topfade { position: absolute; z-index: 2; top: 0; left: 0; right: 0; height: calc(var(--bar-h) * 1.5); pointer-events: none; background: linear-gradient(var(--win-fade, transparent) 0, var(--win-fade, transparent) 45%, transparent); }
   header.windowed { padding-right: calc(var(--pill-h) * 3 + var(--s-8)); }
   .grow { flex: 1; pointer-events: none; }
   .blank { position: absolute; inset: 0; display: grid; align-content: center; justify-items: start; gap: var(--s-4); max-width: 30rem; margin: 0 auto; padding: 0 var(--pad-region); }

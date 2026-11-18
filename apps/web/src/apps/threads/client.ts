@@ -3,7 +3,7 @@
  * generated operations (`threads.list`, `threads.send` and the rest of `contract/operations.json`), plugs in here and no component changes.
  * Every call is async because the real one crosses the network. Reads are bounded: a thread is read in message ranges, never whole.
  */
-import type { Answer, Attachment, Change, Message, Permission, Step, ProviderOption, Request, RunInfo, RunsOn, ThreadSummary } from "./model";
+import type { Answer, Attachment, Change, Message, MessageHit, Permission, Step, ProviderOption, Request, RunInfo, RunsOn, ThreadSummary } from "./model";
 
 /** What a watcher is told about a thread while it is open. */
 export interface ThreadEvents {
@@ -79,6 +79,10 @@ export interface ThreadsClient extends ChoicesClient, RequestsClient, PanelsClie
   watchThreads(cb: (threads: ThreadSummary[]) => void): () => void;
   /** Messages `from` (inclusive) to `to` (exclusive), oldest first. At most a few hundred per call. */
   messages(threadId: string, from: number, to: number): Promise<Message[]>;
+  /** Messages of the current space's threads that contain `query` (case-insensitive), newest first, at most `limit` (100 by default). Absent when the server has no message search yet (the backend lane's `threads.search`; the UI says so). */
+  searchMessages?(query: string, limit?: number): Promise<MessageHit[]>;
+  /** Where a message is in its thread (its index among the thread's messages), so a list can jump to it without loading what is between; undefined when it is not there. */
+  messageIndex?(threadId: string, messageId: string): Promise<number | undefined>;
   /** Follows a thread while it is open. Returns the unsubscribe. */
   watch(threadId: string, events: ThreadEvents): () => void;
   /** Sends a message (steers a running turn). `requestId` makes a retry safe. */

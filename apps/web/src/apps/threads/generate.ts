@@ -88,6 +88,7 @@ export function longOutput(r: () => number, lines: number): string {
 }
 
 function steps(r: () => number, id: string, n: number, big: boolean): Step[] {
+  const hash = [...id].reduce((a, c) => a + c.charCodeAt(0), 0); // a pick that must not disturb the random stream the messages are made from
   const kinds: StepKind[] = ["read", "search", "read", "edit", "run", "run"];
   return Array.from({ length: n }, (_, i) => {
     const kind = pick(r, kinds);
@@ -100,6 +101,8 @@ function steps(r: () => number, id: string, n: number, big: boolean): Step[] {
       output: kind === "run" ? (big && last ? longOutput(r, 2400) : longOutput(r, 3 + Math.floor(r() * 9))) : undefined,
       status: "ok" as const,
       ms: 120 + Math.floor(r() * 4000),
+      // Some steps produced or read a picture or a file: real links (the fixtures use files the app serves; the real thread format has no artifact address yet).
+      files: kind === "read" && (hash + i) % 10 < 3 ? [{ name: "screenshot.jpg", url: `${import.meta.env.BASE_URL}wallpapers/EX_STserBZM-blur.jpg`, kind: "image" as const }] : kind === "edit" && (hash + i) % 10 < 3 ? [{ name: "manifest.webmanifest", url: `${import.meta.env.BASE_URL}manifest.webmanifest`, kind: "file" as const }] : undefined,
     };
   });
 }

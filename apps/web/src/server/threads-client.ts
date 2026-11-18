@@ -238,6 +238,13 @@ export class ServerThreads implements ThreadsClient {
     return open;
   }
 
+  /** Where a message is in its thread: the position among the messages of the (cached) read of it. */
+  async messageIndex(id: string, messageId: string): Promise<number | undefined> {
+    const open = this.opened.get(id) ?? (await this.load(id));
+    const i = open.messages.findIndex((m) => m.id === messageId);
+    return i >= 0 ? i : undefined;
+  }
+
   async messages(id: string, from: number, to: number): Promise<Message[]> {
     const open = this.opened.get(id) ?? (await this.load(id));
     return open.messages.slice(from, to);

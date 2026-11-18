@@ -18,7 +18,7 @@ The things you reported, checked in a headed GPU Chrome at 1500x970, dark, defau
 | Popover morph | Fixed: the popover grows out of its chip |
 | Found on the way | The active-children pill floats over the last message lines (Threads lane); with 50 spaces the footer dots overflow (your call, see the issue) |
 
-1. **Set up.** The page shows "Set up Calternal" with the code filled in. Type your name, press *Create passkey*, approve the prompt. Expect the app within a few seconds and a "Choose a look" sheet; pick one or *Keep the default*.
+1. **Set up.** The page shows "Set up Calternal" with the code filled in. Type your name, press *Create passkey*, approve the prompt. The stepper goes on to step 2, *Look*: pick one (the page behind the card changes at once). Then *Machine* and *Provider* (each can be skipped, saying what it costs), and *Done*.
 2. **Your space.** Expect no space dots (one space, *Personal*) and *Settings > Space: Personal*.
 3. **Machines.** *Settings > Machines > Make a code* gives a one-use `calternal machine enroll …` command; run it on a computer you control. The machine then shows Online with Sandboxed/Direct, Pause, Revoke, and each provider's sign-in state with *Check again*.
 4. **Notes.** *Notes > Write the first note*, type under the title and add `#home`. Expect *Not saved yet*, *Saving…*, *Saved* about two seconds after you stop; the tag appears as a chip above the list and filters it. Edit the first heading to rename.
