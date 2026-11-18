@@ -32,7 +32,7 @@ pub use account::{Auth, LoginPurpose};
 pub use config::{AuthConfig, Clock};
 pub use passkeys::PasskeyInfo;
 pub use session::{Installation, InstallationKind};
-pub use setup::Created;
+pub use setup::{Created, FirstOwnerCode};
 
 struct Inner {
     db: db::Db,

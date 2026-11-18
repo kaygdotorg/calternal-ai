@@ -2,6 +2,7 @@
 use super::*;
 
 mod live;
+mod rebuild_source;
 
 pub(super) const OPERATIONS: &[&str] = &[
     "search.query",
@@ -11,6 +12,17 @@ pub(super) const OPERATIONS: &[&str] = &[
     "skills.list",
     "plugins.manifests",
 ];
+
+#[track_caller]
+fn package_cli(args: &[&str]) -> Value {
+    let output = Command::new(std::env::var_os("CALTERNAL_SERVER_BIN").unwrap())
+        .args(args)
+        .arg("--json")
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    serde_json::from_slice::<Value>(&output.stdout).unwrap()
+}
 
 #[track_caller]
 fn data(r: Answer) -> Value {
@@ -495,15 +507,6 @@ async fn palette_reflects_live_install_update_and_removal_in_the_enabled_space()
     let path = path.to_str().unwrap();
     let appdata = f.appdata();
     let root = appdata.to_str().unwrap();
-    let cli = |args: &[&str]| {
-        let output = Command::new(std::env::var_os("CALTERNAL_SERVER_BIN").unwrap())
-            .args(args)
-            .arg("--json")
-            .output()
-            .unwrap();
-        assert!(output.status.success(), "{output:?}");
-        serde_json::from_slice::<Value>(&output.stdout).unwrap()
-    };
     let publish = |action: &str, version: &str, label: &str| {
         let archive = json!({"manifest":{
             "api_version":1,"id":id,"name":"Palette live example","icon":"puzzle","version":version,
@@ -513,8 +516,8 @@ async fn palette_reflects_live_install_update_and_removal_in_the_enabled_space()
                        "settings_sections":[]}
         },"worker":null});
         std::fs::write(path, archive.to_string()).unwrap();
-        let review = cli(&["plugin", "review", path]);
-        cli(&[
+        let review = package_cli(&["plugin", "review", path]);
+        package_cli(&[
             "plugin",
             action,
             path,
@@ -564,7 +567,7 @@ async fn palette_reflects_live_install_update_and_removal_in_the_enabled_space()
         command(1, space).await.as_deref(),
         Some("Open the updated example")
     );
-    cli(&["plugin", "remove", id, "--appdata", root]);
+    package_cli(&["plugin", "remove", id, "--appdata", root]);
     assert_eq!(command(1, space).await, None);
     assert_eq!(f.child.as_ref().unwrap().id(), pid);
 }

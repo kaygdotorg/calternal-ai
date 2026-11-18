@@ -6,7 +6,7 @@
   // frame line at its middle (infraternal D177). The right edge and the boundary below it resize between neighbours. Every control has the warm tooltip with its shortcut. Focus follows the press. The window that is not focused is dimmed by a neutral veil and its controls recede; the
   // focused one has no ring (both changes ease on the motion tokens and can be interrupted).
   import { setContext, type Snippet } from "svelte";
-  import { Card, Icon, Panel, tip } from "@calternal/ui";
+  import { Card, Grip, Icon, Panel, tip } from "@calternal/ui";
   import type { IconName } from "@calternal/ui";
   import type { Look, Win } from "./layout";
   export type WinAction = "max" | "share" | "menu" | "lock";
@@ -18,16 +18,11 @@
   setContext("canvas-window", true);
   const variant = $derived(maximised || look === "card" ? "pane" : look === "clear" ? "clear" : "solid");
   const act = (a: WinAction) => (e: MouseEvent) => onaction(a, e.detail === 0 ? "key" : "pointer", e.currentTarget as HTMLElement);
-  /** Drags an edge: reports the movement since the press until release. */
-  function drag(e: PointerEvent, report: (d: number) => void, axis: "x" | "y") {
-    e.preventDefault(); e.stopPropagation();
-    const el = e.currentTarget as HTMLElement;
-    el.setPointerCapture(e.pointerId);
-    let last = axis === "x" ? e.clientX : e.clientY;
-    const move = (ev: PointerEvent) => { const p = axis === "x" ? ev.clientX : ev.clientY; report(p - last); last = p; };
-    const up = () => { el.removeEventListener("pointermove", move); el.removeEventListener("pointerup", up); el.removeEventListener("pointercancel", up); };
-    el.addEventListener("pointermove", move); el.addEventListener("pointerup", up); el.addEventListener("pointercancel", up);
-  }
+  /** The shared Grip reports pointer positions; a window wants the movement since the last one. */
+  let last = 0;
+  const startAt = (axis: "x" | "y") => (e: PointerEvent) => { last = axis === "x" ? e.clientX : e.clientY; };
+  const moveBy = (axis: "x" | "y", report: (d: number) => void) => (e: PointerEvent) => { const p = axis === "x" ? e.clientX : e.clientY; report(p - last); last = p; };
+  const keyBy = (grow: string, shrink: string, report: (d: number) => void) => (e: KeyboardEvent) => { const step = e.shiftKey ? 64 : 16; if (e.key === grow) report(step); else if (e.key === shrink) report(-step); else return; e.preventDefault(); };
   /** The padlock appears near the top edge (the frame's 44 px hit area around its middle). */
   let near = $state(false);
   const nearTop = (e: PointerEvent) => { const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); near = e.clientY - r.top < 44 && Math.abs(e.clientX - (r.left + r.width / 2)) < 90; };
@@ -53,14 +48,15 @@
   <div class="dim" aria-hidden="true"></div>
 </Card>
 {#if !maximised}
-  <div class="rz r" role="separator" aria-orientation="vertical" aria-label="Resize the window's width" onpointerdown={(e) => drag(e, onresizew, "x")}></div>
-  {#if hasBelow}<div class="rz b" role="separator" aria-orientation="horizontal" aria-label="Resize the window's height" onpointerdown={(e) => drag(e, onresizeh, "y")}></div>{/if}
+  <!-- The same handle the sidebars use (ui/Grip), in the gap to the right of the window and, when another window is stacked below, in the gap under it. -->
+  <Grip class="rz" label="Resize the window's width" style="right: calc(var(--s-7) / -2 - 4px)" onstart={startAt("x")} onmove={moveBy("x", onresizew)} onkey={keyBy("ArrowRight", "ArrowLeft", onresizew)} />
+  {#if hasBelow}<Grip class="rz" orientation="horizontal" label="Resize the window's height" style="bottom: calc(var(--s-7) / -2 - 4px)" onstart={startAt("y")} onmove={moveBy("y", onresizeh)} onkey={keyBy("ArrowDown", "ArrowUp", onresizeh)} />{/if}
 {/if}
 
 <style>
   /* The card itself is the shared one; these rules only place the window's own parts. The slot gives it its height. */
   :global(.card.win) { height: 100%; }
-  /* Where canvas=0's card keeps the app (above the app switcher's row), so a single window lays out exactly as the card does. */
+  /* The app fills the window: the app switcher is not on the canvas (it is in the left sidebar), so windows use the full height. */
   .body { position: absolute; inset: 0; }
   /* Inactive windows: a neutral veil (black, never the wallpaper's colour) over the content, under the controls; the controls recede. Both ease on the motion tokens (instant from the keyboard: the shell's rule). */
   .dim { position: absolute; inset: 0; z-index: 4; pointer-events: none; opacity: 0; background: var(--dim-veil); border-radius: inherit; transition: opacity var(--dur-base) var(--ease-out); }
@@ -74,18 +70,11 @@
   .tl { left: var(--pad-region); }
   .tr { right: var(--pad-region); }
   :global(.card.win[data-edge~="l"]) .tl, :global(.card.win[data-edge="lr"]) .tl { margin-left: var(--edge-l, 0px); }
-  :global(.card.win[data-edge~="r"]) .tr, :global(.card.win[data-edge="lr"]) .tr { margin-right: var(--edge-r, 0px); }
   :global(.wt) { display: inline-flex; align-items: center; gap: var(--s-3); height: var(--pill-h); max-width: 100%; padding: 0 var(--s-5); font-size: var(--text-ui); font-weight: var(--strong-weight); }
   .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   :global(.wacts) { display: inline-flex; align-items: center; height: var(--pill-h); padding: 0 var(--s-2); gap: 2px; }
   .tr button { display: inline-grid; place-items: center; width: calc(var(--pill-h) - var(--s-2)); height: calc(var(--pill-h) - var(--s-2)); border-radius: 50%; color: var(--ink-2); transition: background-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out); }
   @media (hover: hover) and (pointer: fine) { .tr button:hover { background: var(--hover); color: var(--ink); } }
-  .rz { position: absolute; z-index: 5; touch-action: none; }
-  .rz.r { top: 12px; bottom: 12px; right: -7px; width: 14px; cursor: ew-resize; }
-  .rz.b { left: 12px; right: 12px; bottom: -7px; height: 14px; cursor: ns-resize; }
-  .rz::after { content: ""; position: absolute; inset: 5px; border-radius: 2px; background: var(--accent-base); opacity: 0; transition: opacity var(--dur-fast) var(--ease-out); }
-  .rz.r::after { left: 5px; right: 5px; } .rz.b::after { top: 5px; bottom: 5px; }
-  @media (hover: hover) and (pointer: fine) { .rz:hover::after { opacity: 0.55; } }
   /* The padlock (infraternal D177, packages/ui styles.css .ui-window-lock): centred at the top edge, the shackle above its body; a 44 px hit area, no chip. */
   .lock { position: absolute; z-index: 6; top: 2px; left: 50%; width: 44px; height: 44px; margin-left: -22px; display: grid; place-items: center; border-radius: var(--r-select); color: var(--ink); opacity: 0; pointer-events: none; transition: opacity var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out); }
   .lock svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; overflow: visible; }

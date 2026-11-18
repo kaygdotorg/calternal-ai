@@ -167,12 +167,14 @@ remember_previous() {
 }
 
 show_setup() {
-  if [[ -s $root/appdata/setup.token ]] &&
-     curl --noproxy '*' -fsS --max-time 2 -H "Host: $authority" \
+  if curl --noproxy '*' -fsS --max-time 2 -H "Host: $authority" \
        "http://$publish_ip:$publish_port/api/v1/auth/status" |
        grep -q '"setup":true'; then
-    log "Open $origin/ to register the first owner. Read $root/appdata/setup.token on the target."
-    if [[ $1 == 1 ]]; then cat -- "$root/appdata/setup.token"; printf '\n'; fi
+    log "On the target, run: podman exec $name /usr/local/bin/calternal setup-code --appdata /data/appdata"
+    log "Open $origin/ to register the first owner."
+    if [[ $1 == 1 ]]; then
+      podman exec "$name" /usr/local/bin/calternal setup-code --appdata /data/appdata
+    fi
   fi
 }
 

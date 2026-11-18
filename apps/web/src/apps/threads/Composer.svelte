@@ -14,9 +14,9 @@
   import type { FieldEditor, FieldTrigger } from "../../../../../packages/editor/src/index";
   import { marksOf } from "../../palette/engine";
   import { fixtureItems } from "../../palette/fixtures";
-  import { mentionPool, pick as pickMentions, skillPool, warmPool, type Mention } from "../../palette/mentions";
+  import { mentionPool, pick as pickMentions, remoteMentionPool, remoteSkillPool, skillPool, warmPool, type Mention } from "../../palette/mentions";
   import { pickerKey } from "../../../../../packages/editor/src/text/picker";
-  import { store } from "./store.svelte";
+  import { client, store } from "./store.svelte";
   import RunsOnPicker from "./RunsOnPicker.svelte";
   import ActiveChildren from "./ActiveChildren.svelte";
   import LevelMark from "./LevelMark.svelte";
@@ -100,13 +100,31 @@
     return () => (window.cancelIdleCallback ?? clearTimeout)(id as number);
   });
   const marks = $derived(marksOf(text));
-  const pool = $derived(mentionPool(providers.map((p) => p.name), store.threads.filter((t) => t.id !== thread.id).map((t) => ({ id: t.id, title: t.title })), fixtureItems().filter((i) => i.kind === "note")));
+  // With a server the pickers are its lookups (people.lookup, threads.lookup, items.lookup for `@`; skills.list for `/`), asked once per pause in typing; without one they are the fixtures.
+  type Found = { people: { id: string; name: string; kind: string }[]; threads: { id: string; title: string }[]; items: { id: string; title: string; kind: string }[]; skills: { name: string; description: string }[] };
+  let found = $state<Found>({ people: [], threads: [], items: [], skills: [] });
+  let lookupSeq = 0;
+  $effect(() => {
+    const L = client.lookups, t = trig;
+    if (!L || !t) return;
+    const kind = t.kind, query = t.query, seq = ++lookupSeq;
+    const h = setTimeout(async () => {
+      try {
+        if (kind === "skill") { const skills = await L.skills(query); if (seq === lookupSeq) found = { ...found, skills }; return; }
+        const [people, threads, items] = await Promise.all([L.people(query), query ? L.threads(query) : Promise.resolve([]), query ? L.items(query) : Promise.resolve([])]);
+        if (seq === lookupSeq) found = { ...found, people, threads: threads.filter((x) => x.id !== thread.id), items };
+      } catch { /* the picker keeps what it had: a failed lookup is not an error the person can act on while typing */ }
+    }, 120);
+    return () => clearTimeout(h);
+  });
+  const pool = $derived(client.lookups ? remoteMentionPool(providers.map((p) => p.name), found) : mentionPool(providers.map((p) => p.name), store.threads.filter((t) => t.id !== thread.id).map((t) => ({ id: t.id, title: t.title })), fixtureItems().filter((i) => i.kind === "note")));
+  const skills = $derived(client.lookups ? remoteSkillPool(found.skills) : skillPool());
   // The pickers' search indexes are built when the composer is idle, not on the first `@` or `/`.
-  $effect(() => { const p = pool, k = skillPool(); const id = (window.requestIdleCallback ?? ((f: () => void) => setTimeout(f, 200)))(() => { warmPool(p); warmPool(k); }); return () => (window.cancelIdleCallback ?? clearTimeout)(id as number); });
+  $effect(() => { const p = pool, k = skills; const id = (window.requestIdleCallback ?? ((f: () => void) => setTimeout(f, 200)))(() => { warmPool(p); warmPool(k); }); return () => (window.cancelIdleCallback ?? clearTimeout)(id as number); });
   // The trigger at the caret (`@` or a line-start `/`) comes from the shared text layer: the field reports it when it changes (packages/editor/src/text/triggers.ts), so no caret is tracked here.
   let trig = $state<FieldTrigger | null>(null);
   let dismissed = $state<number | null>(null); // the trigger position the person closed with Escape
-  const groups = $derived(trig && trig.from !== dismissed ? pickMentions(trig.kind === "skill" ? skillPool() : pool, trig.query) : []);
+  const groups = $derived(trig && trig.from !== dismissed ? pickMentions(trig.kind === "skill" ? skills : pool, trig.query) : []);
   const flat = $derived(groups.flatMap((g) => g.entries));
   let sel = $state(0);
   $effect(() => { flat; sel = 0; });

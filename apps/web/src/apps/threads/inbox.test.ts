@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { inboxOf, reasonLine } from "./inbox";
+import { inboxOf, reasonLine, snoozeEnd, snoozedOf } from "./inbox";
 import type { Request, ThreadSummary } from "./model";
 
 const t = (id: string, over: Partial<ThreadSummary> = {}): ThreadSummary =>
@@ -22,5 +22,26 @@ describe("inboxOf", () => {
   it("words the reasons for a row", () => {
     expect(reasonLine(["Question", "Approval"])).toBe("Question and approval");
     expect(reasonLine(["Failed"])).toBe("Failed");
+  });
+});
+
+describe("snoozing", () => {
+  const now = 1_000_000;
+  it("a snoozed thread leaves the Inbox until its time and is listed as snoozed, soonest first", () => {
+    const threads = [t("a", { state: "failed", snoozedUntil: now + 5000 }), t("b", { state: "failed" }), t("c", { state: "failed", snoozedUntil: now + 1000 })];
+    expect(inboxOf(threads, [], now).map((i) => i.thread.id)).toEqual(["b"]);
+    expect(snoozedOf(threads, now).map((s) => s.thread.id)).toEqual(["c", "a"]);
+    expect(inboxOf(threads, [], now + 6000).map((i) => i.thread.id).sort()).toEqual(["a", "b", "c"]);
+  });
+  it("a thread waiting for a subscription limit to reset is snoozed without any action, until the reset time", () => {
+    const waiting = t("w", { state: "failed", notice: { kind: "retrying", rule: "subscription_reset", nextAt: now + 90_000 } as ThreadSummary["notice"] });
+    expect(snoozeEnd(waiting, now)).toEqual({ until: now + 90_000, auto: true });
+    expect(inboxOf([waiting], [], now)).toEqual([]);
+    expect(snoozedOf([waiting], now)[0]).toMatchObject({ auto: true });
+    expect(snoozeEnd(waiting, now + 100_000)).toBeUndefined();
+  });
+  it("other retry rules do not snooze", () => {
+    const r = t("r", { notice: { kind: "retrying", rule: "provider_backoff", nextAt: now + 1000 } as ThreadSummary["notice"] });
+    expect(snoozeEnd(r, now)).toBeUndefined();
   });
 });

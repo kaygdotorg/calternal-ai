@@ -10,9 +10,10 @@
   import Steps from "./Steps.svelte";
   import Thought from "./Thought.svelte";
   import type { Message, ProviderId } from "./model";
-  import { store } from "./store.svelte";
+  import { client, store } from "./store.svelte";
+  import { InlineEditor } from "@calternal/ui";
   // `provider` is the thread's current provider, the mark of a message whose marker does not say which wrote it.
-  let { message, provider, providers, hit = false }: { hit?: boolean; message: Message; provider: ProviderId; providers: { id: ProviderId; name: string; models: { id: string; name: string }[] }[] } = $props();
+  let { message, provider, providers, threadId = "", hit = false }: { threadId?: string; hit?: boolean; message: Message; provider: ProviderId; providers: { id: ProviderId; name: string; models: { id: string; name: string }[] }[] } = $props();
   // A very long message (a tool's whole output, say) is drawn in part: the first CAP characters, cut at a line end, and the person chooses to draw the rest. Drawing 5 MB of Markdown at once blocked the page
   // for 0.7 s (2.4 s at 4x CPU slowdown); the list virtualises messages, not the inside of one. The text is all there (copy takes all of it).
   const CAP = 64 * 1024;
@@ -23,14 +24,36 @@
   // The generated-UI renderer is its own chunk, fetched the first time a message holds a card; a thread of plain messages never downloads it.
   let GenUi = $state<Component<{ source: string }>>();
   $effect(() => { if (!GenUi && message.blocks.some((b) => b.type === "card")) void import("../../genui/GenUi.svelte").then((m) => (GenUi = m.default as never)); });
+  // Editing your own message is another version of the thread from here on (docs/threads-ui.md, "Editing a sent message"): the bubble becomes an editor in place; Enter sends, Escape cancels.
+  const canEdit = $derived(message.role === "user" && !!threadId && typeof client.editMessage === "function");
+  let editing = $state(false);
+  let draft = $state("");
+  const own = $derived(message.blocks.flatMap((b) => (b.type === "text" ? [b.text] : [])).join("\n\n"));
+  function edit() { draft = own; editing = true; }
+  function send() { const t = draft.trim(); editing = false; if (t && t !== own.trim()) void client.editMessage!(threadId, message.id, t, crypto.randomUUID()); }
+  const version = (v: number) => { void client.setVersion?.(threadId, message.id, v); };
+  // Alt+[ and Alt+] step through the versions from anywhere in the message.
+  function vkey(e: KeyboardEvent) {
+    const v = message.version;
+    if (!v || !e.altKey || (e.code !== "BracketLeft" && e.code !== "BracketRight")) return;
+    const next = v.n + (e.code === "BracketRight" ? 1 : -1);
+    if (next >= 1 && next <= v.of) { e.preventDefault(); version(next); }
+  }
   // Message actions are created on first hover or focus (touch has no hover: they are there from the start).
   let armed = $state(typeof matchMedia === "function" && matchMedia("(hover: none)").matches);
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<div class="msg {message.role}" class:agent-row={message.role === "agent"} data-hit={hit ? "" : undefined} onpointerenter={() => (armed = true)} onfocusin={() => (armed = true)}>
+<div class="msg {message.role}" class:agent-row={message.role === "agent"} data-hit={hit ? "" : undefined} onpointerenter={() => (armed = true)} onfocusin={() => (armed = true)} onkeydown={vkey}>
   {#if message.role === "user"}
-    <div class="col end"><div class="bubble">{#each message.blocks as b}{#if b.type === "text"}<Md text={clip(b.text)} />{:else if b.type === "file"}<span class="file"><Icon name={b.kind === "image" ? "image" : "file"} inline />{b.name}</span>{/if}{/each}</div><MessageActions {message} {armed} /></div>
+    <div class="col end">
+      {#if editing}
+        <div class="editor" data-ring-host><InlineEditor multiline autoselect label="Edit your message" bind:value={draft} onsubmit={send} oncancel={() => (editing = false)} /><span class="eb"><Button variant="quiet" text="Cancel" onclick={() => (editing = false)} /><Button variant="primary" text="Send" onclick={send} /></span></div>
+      {:else}
+        <div class="bubble">{#each message.blocks as b}{#if b.type === "text"}<Md text={clip(b.text)} />{:else if b.type === "file"}<span class="file"><Icon name={b.kind === "image" ? "image" : "file"} inline />{b.name}</span>{/if}{/each}</div>
+      {/if}
+      <MessageActions {message} {armed} onedit={canEdit && !editing ? edit : undefined} onversion={version} />
+    </div>
   {:else}
     <div class="lead"><ProviderMark by={message.by} {provider} {providers} /></div>
     <div class="agent" id={message.id}>
@@ -52,6 +75,8 @@
 </div>
 
 <style>
+  .editor { display: grid; gap: var(--s-3); width: min(100%, 36rem); padding: var(--s-4) var(--s-5); border-radius: var(--r-card); background: rgb(var(--ink-rgb) / 0.06); }
+  .eb { display: flex; justify-content: flex-end; gap: var(--s-2); }
   .clipped { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-3); color: var(--ink-3); font-size: var(--text-label); }
   .msg[data-hit] { animation: hit 2s ease-out; }
   @keyframes hit { from { background: color-mix(in oklab, var(--accent) 16%, transparent); } to { background: transparent; } }

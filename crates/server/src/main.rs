@@ -112,6 +112,10 @@ fn main() {
         Cmd::PluginDigest { plugin_root } => out.success(&admin_cli::plugin_digest(&plugin_root)),
         Cmd::Machine { cmd } => calternal_machine::cli::main(cmd, &out),
         Cmd::Machines { cmd } => out.finish(admin_cli::machines(cmd, &out)),
+        Cmd::SetupCode {
+            appdata,
+            installation_id,
+        } => out.finish(admin_cli::setup_code(&appdata, &installation_id)),
         Cmd::Serve {
             appdata,
             userdata_ssd,
@@ -384,19 +388,19 @@ async fn serve(
             .map_err(|e| boot(1, "failed", format!("invite cleanup: {e}"), DATA_HINT))?;
         invite_tasks.spawn(people_maintenance::sweep_invites(auth, backlog));
     }
-    let setup_file = if let Some(service) = calternal_server::auth::Directory::http_auth(&directory)
-    {
-        match service.auth.first_owner_token().await {
-            Ok(Some(token)) => {
-                let path = data_dir.join("setup.token");
-                write_private_atomic(&path, token.as_bytes())
-                    .await
-                    .map_err(|e| boot(1, "io", format!("setup token file: {e}"), DATA_HINT))?;
-                Some(path)
-            }
-            Ok(None) => None,
-            Err(e) => return Err(boot(1, "failed", format!("setup: {e}"), DATA_HINT)),
-        }
+    let owner_setup = calternal_server::auth::Directory::http_auth(&directory).map(|service| {
+        Arc::new(calternal_server::owner_setup::OwnerSetup::new(
+            service.auth.clone(),
+            &data_dir,
+            &public_origin,
+        ))
+    });
+    let setup_file = if let Some(setup) = &owner_setup {
+        setup
+            .issue(false)
+            .await
+            .map_err(|e| boot(1, "failed", e.message, DATA_HINT))?
+            .map(|_| setup.path().to_owned())
     } else {
         None
     };
@@ -466,7 +470,12 @@ async fn serve(
     let admin_root = data_dir.clone();
     let admin_machines = machines.clone();
     let _admin = tokio::task::spawn_blocking(move || {
-        calternal_server::machines::admin::serve_socket(&admin_root, installation, admin_machines)
+        calternal_server::machines::admin::serve_socket(
+            &admin_root,
+            installation,
+            admin_machines,
+            owner_setup,
+        )
     })
     .await
     .map_err(|e| boot(1, "failed", e.to_string(), DATA_HINT))?
