@@ -7,9 +7,14 @@ pub(super) fn sample() -> (u64, Option<u64>) {
         return (0, None);
     };
     let bytes = |key| {
-        let mut fields = info.lines().find_map(|line| line.strip_prefix(key))?.split_whitespace();
+        let mut fields = info
+            .lines()
+            .find_map(|line| line.strip_prefix(key))?
+            .split_whitespace();
         let kib = fields.next()?.parse::<u64>().ok()?;
-        (fields.next()? == "kB").then(|| kib.checked_mul(1024)).flatten()
+        (fields.next()? == "kB")
+            .then(|| kib.checked_mul(1024))
+            .flatten()
     };
     (bytes("MemTotal:").unwrap_or(0), bytes("MemAvailable:"))
 }
@@ -18,7 +23,9 @@ pub(super) fn sample() -> (u64, Option<u64>) {
 #[cfg(target_os = "macos")]
 pub(super) fn sample() -> (u64, Option<u64>) {
     fn available() -> Option<u64> {
-        let output = std::process::Command::new("/usr/bin/vm_stat").output().ok()?;
+        let output = std::process::Command::new("/usr/bin/vm_stat")
+            .output()
+            .ok()?;
         if !output.status.success() {
             return None;
         }
@@ -26,8 +33,15 @@ pub(super) fn sample() -> (u64, Option<u64>) {
         let (header, counts) = text.split_once('\n')?;
         let (_, size) = header.split_once("page size of ")?;
         let size = size.split_whitespace().next()?.parse::<u64>().ok()?;
-        let pages = counts.lines().find_map(|line| line.strip_prefix("Pages free:"))?;
-        pages.trim().trim_end_matches('.').parse::<u64>().ok()?.checked_mul(size)
+        let pages = counts
+            .lines()
+            .find_map(|line| line.strip_prefix("Pages free:"))?;
+        pages
+            .trim()
+            .trim_end_matches('.')
+            .parse::<u64>()
+            .ok()?
+            .checked_mul(size)
     }
     (0, available())
 }

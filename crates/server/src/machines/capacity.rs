@@ -72,9 +72,9 @@ impl State {
     /// No reads outside the in-memory machine record.
     pub(super) fn memory_slots(&self, m: &Machine) -> usize {
         m.live.as_ref().map_or(0, |live| {
-            let required = live.guest_size.map_or(MIN_SANDBOX_MEMORY_BYTES, |size| {
-                size.host_memory_bytes()
-            });
+            let required = live
+                .guest_size
+                .map_or(MIN_SANDBOX_MEMORY_BYTES, |size| size.host_memory_bytes());
             let bytes = live.capacity.available_memory_bytes.unwrap_or(0);
             let bytes = if live.capacity.memory_bytes == 0 {
                 bytes
@@ -93,15 +93,24 @@ impl State {
     }
 
     /// Combine host headroom with the RAM budget of an account guest.
-    pub(super) fn free_for(&self, m: &Machine, account: AccountId, settings: &super::Settings) -> usize {
+    pub(super) fn free_for(
+        &self,
+        m: &Machine,
+        account: AccountId,
+        settings: &super::Settings,
+    ) -> usize {
         let free = self.free(m);
         m.live
             .as_ref()
             .and_then(|live| live.guest_size)
             .map_or(free, |size| {
-                let per_turn = size.turn_memory_bytes(settings.limits.memory_bytes.unwrap_or(1 << 30));
+                let per_turn =
+                    size.turn_memory_bytes(settings.limits.memory_bytes.unwrap_or(1 << 30));
                 let held = self.pool_load.get(&account).copied().unwrap_or(0);
-                free.min((size.turn_budget_bytes() / per_turn.max(1)).saturating_sub(held as u64) as usize)
+                free.min(
+                    (size.turn_budget_bytes() / per_turn.max(1)).saturating_sub(held as u64)
+                        as usize,
+                )
             })
     }
 }

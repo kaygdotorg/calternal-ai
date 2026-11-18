@@ -159,7 +159,8 @@ pub(super) async fn place<D: Directory>(
             super::readiness::pin(&checkpoint, &job.input),
             view.queue_position,
         );
-        let reason = blocking(move || m.placement_reason(account, pin, position, memory_wait)).await?;
+        let reason =
+            blocking(move || m.placement_reason(account, pin, position, memory_wait)).await?;
         if placement != reason {
             placement = reason;
             checkpoint["placement"] = placement.clone();

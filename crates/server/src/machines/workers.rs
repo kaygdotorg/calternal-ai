@@ -339,7 +339,13 @@ mod tests {
             .machine_id;
         connect(service, machine, &key);
         let mut state = service.lock().unwrap();
-        let live = state.machines.get_mut(&machine).unwrap().live.as_mut().unwrap();
+        let live = state
+            .machines
+            .get_mut(&machine)
+            .unwrap()
+            .live
+            .as_mut()
+            .unwrap();
         live.capacity.max_sandboxes = capacity;
         live.capacity.available_memory_bytes = Some(64 << 30);
         (machine, key)

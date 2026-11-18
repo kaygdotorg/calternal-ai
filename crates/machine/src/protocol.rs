@@ -144,7 +144,11 @@ impl GuestSize {
     /// Cost: integer arithmetic only.
     pub fn turn_memory_bytes(self, limit: u64) -> u64 {
         let budget = self.turn_budget_bytes();
-        limit.min(if self.memory_mib < 2048 { budget / 2 } else { budget })
+        limit.min(if self.memory_mib < 2048 {
+            budget / 2
+        } else {
+            budget
+        })
     }
 }
 

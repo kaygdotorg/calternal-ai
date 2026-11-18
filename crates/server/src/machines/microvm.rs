@@ -21,7 +21,10 @@ pub(super) fn authorize(owner: Owner) -> Result<(), Error> {
 }
 
 /// Validate the account guest profile reported by the machine session.
-pub(super) fn guest_size(backend: &str, memory_mib: Option<u32>) -> Result<Option<GuestSize>, Error> {
+pub(super) fn guest_size(
+    backend: &str,
+    memory_mib: Option<u32>,
+) -> Result<Option<GuestSize>, Error> {
     if is_requested(backend) {
         return memory_mib
             .and_then(GuestSize::from_mib)

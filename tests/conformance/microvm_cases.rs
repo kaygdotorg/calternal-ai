@@ -464,25 +464,57 @@ async fn memory_admission_matches_the_four_and_eight_gib_guest_sizes() {
     let mut pool =
         requests_cases::Machine::enroll_with_code(&f, code["code"].as_str().unwrap()).await;
     for gib in [4_u64, 8] {
-        pool.connect_sized(&f, "microvm", Some((gib * 1024) as u32)).await;
+        pool.connect_sized(&f, "microvm", Some((gib * 1024) as u32))
+            .await;
         let required = gib << 30;
         let (report, lease) = tokio::join!(
             pool.try_sync_with_memory(&f, json!([]), 10, Some(required - 1)),
             run(&f, 1, 0)
         );
-        assert!(!report.unwrap().iter().any(|frame| frame["type"] == "assign"));
+        assert!(
+            !report
+                .unwrap()
+                .iter()
+                .any(|frame| frame["type"] == "assign")
+        );
         let view = f
-            .req("GET", &format!("/api/v1/machines/runs/{lease}"), Some(&f.cookies[1]), json!({}), Some(ORIGIN))
+            .req(
+                "GET",
+                &format!("/api/v1/machines/runs/{lease}"),
+                Some(&f.cookies[1]),
+                json!({}),
+                Some(ORIGIN),
+            )
             .await;
         view.ok();
         assert_eq!(view.body["state"], "waiting");
         assert!(view.body["reason"].as_str().unwrap().contains("memory"));
-        let report = pool.try_sync_with_memory(&f, json!([]), 10, Some(required)).await.unwrap();
-        assert!(report.iter().any(|frame| frame["type"] == "assign" && frame["lease_id"] == lease));
-        f.req("POST", &format!("/api/v1/machines/runs/{lease}/stop"), Some(&f.cookies[1]), json!({}), Some(ORIGIN))
+        let report = pool
+            .try_sync_with_memory(&f, json!([]), 10, Some(required))
             .await
-            .ok();
-        let report = pool.try_sync_with_memory(&f, json!([]), 10, Some(required)).await.unwrap();
-        assert!(report.iter().any(|frame| frame["type"] == "stop" && frame["lease_id"] == lease));
+            .unwrap();
+        assert!(
+            report
+                .iter()
+                .any(|frame| frame["type"] == "assign" && frame["lease_id"] == lease)
+        );
+        f.req(
+            "POST",
+            &format!("/api/v1/machines/runs/{lease}/stop"),
+            Some(&f.cookies[1]),
+            json!({}),
+            Some(ORIGIN),
+        )
+        .await
+        .ok();
+        let report = pool
+            .try_sync_with_memory(&f, json!([]), 10, Some(required))
+            .await
+            .unwrap();
+        assert!(
+            report
+                .iter()
+                .any(|frame| frame["type"] == "stop" && frame["lease_id"] == lease)
+        );
     }
 }

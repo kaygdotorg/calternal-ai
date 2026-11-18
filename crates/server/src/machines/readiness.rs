@@ -449,7 +449,9 @@ impl MachineService {
         memory_wait: bool,
     ) -> Result<Value, Error> {
         if memory_wait {
-            return Ok(json!({"code":"waiting_for_memory","message":super::MEMORY_WAIT,"queue_position":position}));
+            return Ok(
+                json!({"code":"waiting_for_memory","message":super::MEMORY_WAIT,"queue_position":position}),
+            );
         }
         let st = self.lock()?;
         let mut enrolled = false;

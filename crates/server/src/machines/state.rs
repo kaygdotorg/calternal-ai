@@ -230,8 +230,14 @@ impl State {
         let space_id = l.row.space;
         let account_id = l.row.account;
         let mut limits = settings.limits;
-        if let Some(size) = self.machines.get(&machine).and_then(|m| m.live.as_ref()).and_then(|l| l.guest_size) {
-            limits.memory_bytes = Some(size.turn_memory_bytes(limits.memory_bytes.unwrap_or(1 << 30)));
+        if let Some(size) = self
+            .machines
+            .get(&machine)
+            .and_then(|m| m.live.as_ref())
+            .and_then(|l| l.guest_size)
+        {
+            limits.memory_bytes =
+                Some(size.turn_memory_bytes(limits.memory_bytes.unwrap_or(1 << 30)));
         }
         let spec = SandboxSpec {
             space_id: Some(space_id),
@@ -514,11 +520,10 @@ impl State {
         let Some(l) = self.leases.get(&lease) else {
             return;
         };
-        if self
-            .machines
-            .get(&machine)
-            .is_none_or(|m| !super::readiness::connected(m, settings) || self.free_for(m, l.row.account, settings) == 0)
-        {
+        if self.machines.get(&machine).is_none_or(|m| {
+            !super::readiness::connected(m, settings)
+                || self.free_for(m, l.row.account, settings) == 0
+        }) {
             return;
         }
         let Ok(_steps) = self.lease_steps(&l.row) else {
