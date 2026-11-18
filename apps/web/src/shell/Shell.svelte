@@ -240,6 +240,8 @@
   .edge { position: absolute; z-index: 6; top: calc(var(--safe-top) + (var(--bar-h) - var(--pill-h)) / 2); }
   .edge.l { left: calc(var(--inset) + var(--s-4)); }
   .edge.r { right: calc(var(--inset) + var(--s-4)); }
+  /* On a phone the open thread's header has its actions pill at the right edge: the side panel's button sits beside it, not over it. */
+  .narrow .edge.r { right: calc(var(--pad-region) + var(--pill-h) + var(--s-3)); }
   .mid :global(.mid-card) { height: 100%; overflow: clip; }
   /* The card is the only thing on the background, and it casts nothing onto it: a shadow would be a second layer in the gap beside the card (the owner's seam). It is told apart by its own surface (docs/ui-design-system.md). On a phone it slides over the list, where it does cast one. */
   .shell:not(.narrow) .mid :global(.mid-card) { box-shadow: none; }

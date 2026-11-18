@@ -15,7 +15,7 @@ for (const [name, phone, cls] of [["wide screen", false, "card"], ["phone", true
   // more apps than three: the capsule scrolls sideways, three names wide, with no "More" entry
   const scroll = await page.evaluate(() => { const track = document.querySelector("nav.switcher .track"); for (const n of ["Tasks", "Files", "Maps"]) { const x = document.createElement("button"); x.type = "button"; x.setAttribute("role", "tab"); x.className = track.querySelector(".app").className; x.textContent = n; track.append(x); } return { w: track.querySelector(".app").getBoundingClientRect().width, tw: track.clientWidth, scrollable: track.scrollWidth > track.clientWidth + 4, more: [...track.querySelectorAll("button")].some((x) => /more/i.test(x.textContent)), snap: getComputedStyle(track).scrollSnapType }; });
   ok(Math.abs(scroll.w * 3 - scroll.tw) < scroll.tw * 0.12 && scroll.scrollable && !scroll.more && /x/.test(scroll.snap), `${name}: three names in view, the others reached by scrolling, snapping, no More`, `name ${Math.round(scroll.w)} px of ${scroll.tw}`);
-  await page.getByRole("tab", { name: "Threads" }).first().focus(); await page.keyboard.press("ArrowRight"); await page.waitForURL(/\/notes/);
+  await page.locator("nav.switcher").getByRole("tab", { name: "Threads" }).focus(); await page.keyboard.press("ArrowRight"); await page.waitForURL(/\/notes/, { waitUntil: "commit" });
   ok(/\/notes/.test(page.url()), `${name}: the right arrow moves to the next app and opens it`);
   await ctx.close();
 }
