@@ -2088,6 +2088,45 @@ genui_version: 2,
  */
 source: string, };
 /**
+ * Empty input for the built-in catalog.
+ */
+
+export type WallpapersListInput = Record<string, never>;
+/**
+ * Photo and photographer attribution with Unsplash referral parameters.
+ */
+
+export type WallpaperCredit = {
+/**
+ * Unsplash photo ID used in the same-origin rendition route.
+ */
+id: string,
+/**
+ * Photographer's display name.
+ */
+author: string,
+/**
+ * Photographer's Unsplash profile URL for the credit tooltip.
+ */
+author_url: string,
+/**
+ * Photo's Unsplash page URL for attribution to Unsplash.
+ */
+link: string, };
+/**
+ * Fixed photo catalog returned without contacting the image service.
+ */
+
+export type WallpapersListResult = {
+/**
+ * Photo used when no wallpaper was chosen.
+ */
+default_id: string,
+/**
+ * All eight built-in photos in picker order.
+ */
+wallpapers: Array<WallpaperCredit>, };
+/**
  * Empty input for account-scoped space listing.
  */
 

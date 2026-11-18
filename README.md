@@ -89,6 +89,9 @@ nix develop -c sh -c 'npm run build -w apps/web && npm run e2e:gate -w apps/web'
 
 ## Reference documentation
 
+The optional [server wallpaper catalog](docs/wallpapers.md) provides same-origin
+Unsplash renditions for clients using the server contract.
+
 Every public code change includes matching reference comments. Run `npm run check:docs` to enforce documentation coverage and links, or `npm run build:docs` to generate the Rust and TypeScript sites under ignored `reference-docs/`. See [documentation rules and commands](docs/documentation.md) for entry pages, tool versions and server-lane integration.
 
 ## Scope and limitations

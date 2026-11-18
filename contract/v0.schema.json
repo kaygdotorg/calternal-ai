@@ -70,7 +70,9 @@
     "spaces_create_input",
     "spaces_list_input",
     "spaces_list_result",
-    "summarize_result"
+    "summarize_result",
+    "wallpapers_list_input",
+    "wallpapers_list_result"
   ],
   "properties": {
     "account_frame": {
@@ -606,6 +608,22 @@
       "allOf": [
         {
           "$ref": "#/definitions/SummarizeResult"
+        }
+      ]
+    },
+    "wallpapers_list_input": {
+      "description": "Schema representative for the built-in wallpaper catalog input.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/WallpapersListInput"
+        }
+      ]
+    },
+    "wallpapers_list_result": {
+      "description": "Schema representative for the built-in wallpaper catalog.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/WallpapersListResult"
         }
       ]
     }
@@ -3850,6 +3868,62 @@
     "True": {
       "type": "boolean",
       "const": true
+    },
+    "WallpaperCredit": {
+      "description": "Photo and photographer attribution with Unsplash referral parameters.",
+      "type": "object",
+      "required": [
+        "author",
+        "author_url",
+        "id",
+        "link"
+      ],
+      "properties": {
+        "author": {
+          "description": "Photographer's display name.",
+          "type": "string"
+        },
+        "author_url": {
+          "description": "Photographer's Unsplash profile URL for the credit tooltip.",
+          "type": "string"
+        },
+        "id": {
+          "description": "Unsplash photo ID used in the same-origin rendition route.",
+          "type": "string"
+        },
+        "link": {
+          "description": "Photo's Unsplash page URL for attribution to Unsplash.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "WallpapersListInput": {
+      "description": "Empty input for the built-in catalog.",
+      "type": "object",
+      "additionalProperties": false
+    },
+    "WallpapersListResult": {
+      "description": "Fixed photo catalog returned without contacting the image service.",
+      "type": "object",
+      "required": [
+        "default_id",
+        "wallpapers"
+      ],
+      "properties": {
+        "default_id": {
+          "description": "Photo used when no wallpaper was chosen.",
+          "type": "string"
+        },
+        "wallpapers": {
+          "description": "All eight built-in photos in picker order.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/WallpaperCredit"
+          }
+        }
+      },
+      "additionalProperties": false
     }
   }
 }

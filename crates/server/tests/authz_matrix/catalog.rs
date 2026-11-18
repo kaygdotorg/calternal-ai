@@ -35,6 +35,7 @@ async fn every_registered_operation_has_an_independent_matrix_row() {
         "trash.purge",
         "resolve", // dedicated address matrix in resolver.rs
         "spaces.list",
+        "wallpapers.list", // signed-in installation catalog in conformance/wallpaper_cases.rs
         "spaces.create",
         "spaces.members",
         // People directory and group grants are exercised by conformance/people_cases.rs.

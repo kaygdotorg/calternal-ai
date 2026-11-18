@@ -37,6 +37,7 @@ mod notes_cases;
 mod perf_cases;
 mod search_cases;
 mod simplify_review_cases;
+mod wallpaper_cases;
 mod worker_cases;
 
 const ORIGIN: &str = "http://localhost:18080";
@@ -178,6 +179,9 @@ impl Fixture {
         let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
         let mut command = Command::new(binary);
         command.env_clear();
+        if self.dir.path().join("wallpaper-cache-case").is_file() {
+            command.env("CALTERNAL_UNSPLASH_KEY", "fixture-only");
+        }
         if self.dir.path().join("node-gate").is_file() {
             command
                 .arg("serve")
@@ -656,7 +660,7 @@ async fn all_operations_hide_foreign_ids() {
         .await;
     catalog.ok();
     let mut covered: Vec<_> = cases.iter().map(|(op, _, _)| *op).collect();
-    covered.extend(["spaces.list", "spaces.create"]);
+    covered.extend(["spaces.list", "spaces.create", "wallpapers.list"]);
     covered.extend(agent_cases::OPERATIONS.iter().copied());
     covered.extend(people_cases::ADDITIONAL_OPERATIONS.iter().copied());
 

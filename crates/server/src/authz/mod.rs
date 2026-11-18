@@ -65,6 +65,12 @@ pub struct Policy {
 /// manifests by [`crate::plugins::Registry`], and an operation with neither row fails
 /// closed instead of receiving inferred authority.
 pub const POLICIES: &[Policy] = &[
+    Policy {
+        operation: Cow::Borrowed(calternal_core::WALLPAPERS_LIST),
+        required: Capability::SpacesList,
+        scope: Scope::Account,
+        constraint: Constraint::None,
+    },
     // The resolver derives and checks space.read itself; there is no supplied space.
     Policy {
         operation: Cow::Borrowed("resolve"),
