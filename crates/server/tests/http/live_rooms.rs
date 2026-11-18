@@ -255,3 +255,28 @@ fn an_offline_replica_rejoins_over_a_committed_api_edit() {
     let (merged, _) = join(&mut socket(srv.port, &srv.owner), &room, Some(&lineage));
     assert_eq!(body(&merged), "other writer abc offline");
 }
+
+#[test]
+fn room_join_hides_foreign_items_like_missing_items() {
+    let data = TempDir::new("live-room-foreign");
+    let plugins = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../plugins");
+    let srv = start_full(&data.0, None, None, Some(&plugins));
+    let private = create(&srv, "room-private", &srv.personal, "private");
+    let mut guest = socket(srv.port, &srv.guest);
+    let mut failure = |item: &str, membership| -> Value {
+        let room = format!("{}/notes/{item}", srv.shared);
+        guest
+            .send(Frame::text(
+                json!({"type":"join","room":room,"membership":membership}).to_string(),
+            ))
+            .unwrap();
+        let reply = guest.read().unwrap();
+        let reply: Value = serde_json::from_str(reply.to_text().unwrap()).unwrap();
+        assert_eq!(reply["type"], "join_failed");
+        assert_eq!(reply["error"]["code"], "not_found");
+        reply["error"].clone()
+    };
+    let foreign = failure(private["id"].as_str().unwrap(), 1);
+    let missing = failure(&uuid::Uuid::new_v4().to_string(), 2);
+    assert_eq!(foreign, missing);
+}

@@ -78,8 +78,9 @@ that receipt with submitted updates in the same membership. A missing
 dependency requests a fresh step 2 and holds checks. A permanent refusal
 uses tag 102 with a length-prefixed JSON error-code string. Temporary
 failure uses 103 before leaving. Keep unreceipted local and sibling-tab
-edits across reconnect. A lineage_changed join refusal calls for
-recovering only the local diff from the last confirmed base. Retain the
+edits across reconnect. A join refusal with error.code "conflict" and
+error.details.reason "lineage_changed" calls for recovering only the
+local diff from the last confirmed base. Retain the
 recovery intent when it cannot be applied safely. A transport rejoin
 or editor state alone must never clear the pending marker.
 
