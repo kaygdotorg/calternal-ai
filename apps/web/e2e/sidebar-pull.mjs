@@ -93,7 +93,7 @@ const touch = (page, type, x, y, sel = ".mid-card") => page.evaluate(([type, x, 
     const n0 = await page.evaluate(() => window.__pulls.length); const run = track(edge); await page.getByRole("button", { name: hide }).first().click(); const a1 = await asked(n0 + 1); const d1 = a1?.duration ?? 0; const closing = await run;
     const end = closing.at(-1), mid = between(closing, start, end);
     ok(d1 >= 150 && Math.abs(end - start) > 100, `closing the ${side} sidebar by its button animates (the card's ${edge} edge goes ${start} to ${end} through ${mid} in-between positions, animation ${d1} ms)`);
-    const n1 = await page.evaluate(() => window.__pulls.length); const run2 = track(edge); await page.getByRole("button", { name: show }).first().click(); const a2 = await asked(n1 + 1); const d2 = a2?.duration ?? 0; const opening = await run2;
+    const n1 = await page.evaluate(() => window.__pulls.length); const run2 = track(edge); if (side === "left") await page.getByRole("button", { name: show }).first().click(); else { await page.getByRole("button", { name: "Thread actions" }).click(); await page.getByRole("menuitem", { name: /Show side panel/ }).click(); } const a2 = await asked(n1 + 1); const d2 = a2?.duration ?? 0; const opening = await run2;
     const mid2 = between(opening, end, start);
     ok(d2 >= 150 && Math.abs(opening.at(-1) - start) < 3, `and opening it again does the same, back to where it was (${mid2} in-between positions, animation ${d2} ms)`);
   }

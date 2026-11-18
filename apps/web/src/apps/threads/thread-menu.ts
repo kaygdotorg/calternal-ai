@@ -8,6 +8,9 @@ import { spaces } from "../../shell/spaces.svelte";
 import { layout, type Container } from "./layout.svelte";
 import type { ThreadSummary } from "./model";
 import { client, store } from "./store.svelte";
+import { backLabel, snoozeChoices } from "./snooze";
+import { snoozeAsk, snoozeThread } from "./snooze.svelte";
+import { snoozeEnd } from "./inbox";
 
 /** The ids of the current space's threads that stand on their own in the list (children follow their parent), newest first. */
 export function topLevelIds(): string[] {
@@ -20,11 +23,27 @@ export const containersOf = (): Container[] => [null, ...layout.sections.map((s)
 /** A place's name as the person gave it. */
 export const containerName = (c: Container): string => (c === null ? layout.looseName : layout.sections.find((x) => x.id === c)?.name ?? "section");
 
+/** The snooze choices for `t` (none when the server cannot snooze): the presets from now, a date and time, and Unsnooze now when the person snoozed it. */
+export function snoozeItems(t: ThreadSummary): MenuItem[] {
+  if (typeof client.snooze !== "function") return [];
+  const now = Date.now();
+  const s = snoozeEnd(t, now);
+  return [
+    ...snoozeChoices(now).map((c) => ({ id: `snooze:${c.id}`, label: `Snooze: ${c.label}`, icon: "clock" as const })),
+    { id: "snooze:pick", label: "Snooze: pick a date and time…", icon: "clock" as const },
+    ...(s && !s.auto ? [{ id: "snooze:off", label: "Unsnooze now" }] : []),
+  ];
+}
+
+/** The one entry the thread's own menus carry (a long menu turns into a sheet on a phone): it opens the snooze panel with the presets and a date. */
+export const snoozeEntry = (t: ThreadSummary): MenuItem[] => (typeof client.snooze !== "function" ? [] : [{ id: "snooze:ask", label: "Snooze…", icon: "clock" as const }, ...(snoozeEnd(t, Date.now()) && !snoozeEnd(t, Date.now())!.auto ? [{ id: "snooze:off", label: "Unsnooze now" }] : [])]);
+
 /** What the menu offers for `t`: rename, move to another section, copy link, stop (while it runs) and archive. */
 export function threadItems(t: ThreadSummary): MenuItem[] {
   return [
     { id: "rename", label: "Rename" },
     ...containersOf().filter((c) => c !== layout.containerOf(t.id)).map((c) => ({ id: `move:${c ?? ""}`, label: `Move to ${containerName(c)}` })),
+    ...snoozeEntry(t),
     { id: "copy", label: "Copy link" },
     ...(t.state === "running" ? [{ id: "stop", label: "Stop" }] : []),
     { id: "archive", label: "Archive", danger: true },
@@ -44,7 +63,12 @@ export function archiveThread(t: ThreadSummary): Promise<unknown> {
 export function runThreadItem(id: string, t: ThreadSummary, rename: () => void): void {
   if (id === "rename") rename();
   else if (id.startsWith("move:")) { const to = id.slice(5) || null; const ids = layout.idsOf(to, topLevelIds()); layout.move(t.id, to, ids.length, ids); }
-  else if (id === "copy") copyThreadLink(t);
+  else if (id.startsWith("snooze:")) {
+    const k = id.slice(7);
+    if (k === "pick" || k === "ask") snoozeAsk.id = t.id;
+    else if (k === "off") snoozeThread(t.id, null);
+    else { const c = snoozeChoices(Date.now()).find((x) => x.id === k); if (c) snoozeThread(t.id, c.at, backLabel(c.at, Date.now())); }
+  } else if (id === "copy") copyThreadLink(t);
   else if (id === "stop") void client.stop(t.id);
   else if (id === "archive") void archiveThread(t).catch((e: Error) => toast(`Not archived: ${e.message}`));
 }

@@ -15,7 +15,7 @@ import tokens from "../../../../packages/ui/tokens/tokens.json" with { type: "js
 import { surfaces } from "./surfaces.svelte";
 import { blurRgba, saturateRgba } from "./blur";
 import { setThemeColor } from "../shell/chrome";
-import { over, p01, lum, ratio, TARGET, scaled, solve, type Flags, type Ink, type RGB, type Role, type Scheme, type Veil } from "./veil";
+import { over, p01, lum, lumInt, ratio, TARGET, scaled, solve, type Flags, type Ink, type RGB, type Role, type Scheme, type Veil } from "./veil";
 
 type Layer = "side" | "card";
 const SATURATE: Record<Layer, number> = { side: 120, card: 140 };
@@ -199,8 +199,16 @@ function rects(): { left: Frac; right: Frac; card: Frac } {
 }
 
 const SAMPLE = 48; // at most 48 by 48 pixels per surface
-/** The pixels of a copy inside a rectangle (fractions of the viewport), as encoded RGB. */
+/** What was read from each blurred copy, by rectangle: a copy never changes once made, so the pixels behind a rectangle are read once (a canvas read-back is the expensive part of solving a veil, and a step of Clear to tinted solves again for every surface on the page). A new copy is a new key; the cache is dropped whole when it grows past a few hundred rectangles (a window resize makes new ones). */
+const read = new WeakMap<HTMLCanvasElement, Map<string, RGB[]>>();
+/** The pixels of a copy inside a rectangle (fractions of the viewport), as encoded RGB. Cached per copy and rectangle. */
 function sample(c: HTMLCanvasElement, r: Frac): RGB[] {
+  let m = read.get(c);
+  if (!m) read.set(c, (m = new Map()));
+  if (m.size > 400) m.clear();
+  const key = `${r.x0.toFixed(4)},${r.y0.toFixed(4)},${r.x1.toFixed(4)},${r.y1.toFixed(4)}`;
+  const hit = m.get(key);
+  if (hit) return hit;
   const cv = document.createElement("canvas");
   cv.width = cv.height = SAMPLE;
   const ctx = cv.getContext("2d", { willReadFrequently: true })!;
@@ -209,6 +217,7 @@ function sample(c: HTMLCanvasElement, r: Frac): RGB[] {
   const d = ctx.getImageData(0, 0, SAMPLE, SAMPLE).data;
   const out: RGB[] = [];
   for (let i = 0; i < d.length; i += 4) out.push([d[i]!, d[i + 1]!, d[i + 2]!]);
+  m.set(key, out);
   return out;
 }
 
@@ -226,6 +235,10 @@ const inkOf = (s: Scheme): Ink => ({ ink: hex(tokens[s].ink), ink2: hex(tokens[s
 const rgbCss = (c: RGB): string => `${Math.round(c[0])} ${Math.round(c[1])} ${Math.round(c[2])}`;
 
 let copies: { side: HTMLCanvasElement; card: HTMLCanvasElement } | null = null;
+/** Changes whenever the blurred copies are replaced or dropped. */
+let copiesId = 0;
+/** The last solve and what it was for. Clear to tinted scales a solved veil and does not change it, so a step of the slider (nothing else changed) reuses these and only scales them. */
+let solved: { key: string; veils: Record<string, Veil> } | null = null;
 /**
  * Solves the veil of each surface from the pixels under it and writes the result as CSS variables: for each of `l` (left sidebar), `r` (right sidebar) and
  * `c` (the card) the tint and dim layers (`--l-tint`, `--l-tint-a`, `--l-dim`, `--l-dim-a`), the surface's own secondary inks (`--l-ink2`, `--l-ink3`) and the
@@ -245,9 +258,12 @@ export function updateVeil(want: Flags): void {
   // pixels under both sidebars together (the ink must read on the worse of the two), and written under both names (`--l-*` and `--r-*` stay, equal, for what reads them). The card has its own, on top.
   const jobs: [string[], Role, RGB[]][] = [[["l", "r"], "side", [...px(copies?.side, r.left), ...px(copies?.side, r.right)]], [["c"], "card", px(copies?.card, r.card)]];
   const out: Record<string, Veil> = {};
+  const key = [scheme, flags.blur, flags.dim, flags.tint, copiesId, source ?? "", JSON.stringify(r, (_, x) => (typeof x === "number" ? Math.round(x * 1e4) / 1e4 : x)), T.ink, T.ink2, T.ink3, T.paper].join("|");
+  const reuse = solved?.key === key ? solved.veils : null, fresh: Record<string, Veil> = {};
   for (const [keys, role, pixels] of jobs) for (const k of keys) {
-    const v: Veil = craftLight && scheme === "light" ? { scheme: "light", tint: { a: 0.92, rgb: [255, 255, 255] }, dim: { a: 0, rgb: [0, 0, 0] }, ink2: T.ink2, ink3: T.ink3, total: 0.92, ratio: 99 } : solve(scheme, role, flags, pixels, T, other);
-    const w: Veil = craftLight && scheme === "light" ? v : scaled(v, veilScale);
+    const v: Veil = reuse?.[k] ?? solve(scheme, role, flags, pixels, T, other);
+    fresh[k] = v;
+    const w: Veil = scaled(v, veilScale);
     out[k] = w;
     const ink2 = w.ink2, ink3 = w.ink3;
     root().setProperty(`--${k}-tint`, rgbCss(w.tint.rgb));
@@ -258,6 +274,7 @@ export function updateVeil(want: Flags): void {
     root().setProperty(`--${k}-ink3`, `rgb(${rgbCss(ink3)})`);
     root().setProperty(`--veil-${k}`, `linear-gradient(rgb(var(--${k}-dim) / var(--${k}-dim-a)) 0 0), linear-gradient(rgb(var(--${k}-tint) / var(--${k}-tint-a)) 0 0)`);
   }
+  solved = { key, veils: fresh };
   // The browser's own bars (Safari's toolbar and status bar) take the colour at the top of the page: the card's top strip under its veil (shell/chrome.ts).
   const edge = out.c;
   if (edge) {
@@ -281,12 +298,23 @@ export function updateVeil(want: Flags): void {
     if (f.x1 - f.x0 < 0.002 || f.y1 - f.y0 < 0.002) return null;
     const onCard = (f.x0 + f.x1) / 2 > cardFrac.x0 && (f.x0 + f.x1) / 2 < cardFrac.x1 && (f.y0 + f.y1) / 2 > cardFrac.y0 && (f.y0 + f.y1) / 2 < cardFrac.y1;
     const veil = onCard ? vc : vl;
-    const behind = sample(onCard ? copies.card : copies.side, f).map((p) => over(over(p, veil.tint.rgb, veil.tint.a), veil.dim.rgb, veil.dim.a));
-    const ok = (a: number) => p01(behind.map((g) => ratio(lum(over(g, T.paper, a)), lum(T.ink)))) >= TARGET.ink + 0.35;
+    // A 16 by 16 look at the pixels behind the surface (every third row and column of the 48 by 48 sample: the copies are blurred by 12 to 75 px, so they are smooth), already under the veil: the bisection below only blends them with the
+    // paper, in plain numbers, so a step of Clear to tinted can recompute every floating surface on the page within a frame.
+    const all = sample(onCard ? copies.card : copies.side, f), M = 256, R = new Uint8Array(M), G = new Uint8Array(M), Bl = new Uint8Array(M);
+    for (let y = 0, i = 0; y < 16; y++) for (let x = 0; x < 16; x++, i++) {
+      const p = all[Math.min(47, y * 3) * SAMPLE + Math.min(47, x * 3)]!, c = over(over(p, veil.tint.rgb, veil.tint.a), veil.dim.rgb, veil.dim.a);
+      R[i] = Math.round(c[0]); G[i] = Math.round(c[1]); Bl[i] = Math.round(c[2]);
+    }
+    const lumInk = lum(T.ink), ratios = new Array<number>(M), P = T.paper, need = TARGET.ink + 0.35;
+    const ok = (a: number) => {
+      const b = 1 - a, pr = a * P[0], pg = a * P[1], pb = a * P[2];
+      for (let i = 0; i < M; i++) { const l = lumInt(Math.round(b * R[i]! + pr), Math.round(b * G[i]! + pg), Math.round(b * Bl[i]! + pb)); ratios[i] = (Math.max(l, lumInk) + 0.05) / (Math.min(l, lumInk) + 0.05); }
+      return p01(ratios) >= need;
+    };
     if (ok(0)) return 0;
     let lo = 0, hi = 0.9;
     if (!ok(hi)) return hi;
-    for (let i = 0; i < 14; i++) { const m = (lo + hi) / 2; if (ok(m)) hi = m; else lo = m; }
+    for (let i = 0; i < 8; i++) { const m = (lo + hi) / 2; if (ok(m)) hi = m; else lo = m; }
     return hi;
   });
   scheduleMaterial();
@@ -298,7 +326,7 @@ function clear(): void {
     if (urls[l]) URL.revokeObjectURL(urls[l]!);
     delete urls[l];
   }
-  copies = null;
+  copies = null; copiesId++;
   setBackdropField(null);
   updateVeil(flagsNow);
   for (const fn of listeners) fn(null);
@@ -324,7 +352,7 @@ async function update(): Promise<void> {
       root().setProperty(`--wall-${l}`, `url("${u}")`);
       if (old) URL.revokeObjectURL(old);
     }
-    copies = { side, card };
+    copies = { side, card }; copiesId++;
     setBackdropField(fieldOf(side));
     updateVeil(flagsNow);
     const c = colours(img);
@@ -342,14 +370,10 @@ function schedule(ms = 60): void {
 /** Shows a wallpaper (an image URL: a blob, a data URL or a same-origin file) or none. The blur is done here, once. */
 let flagsNow: Flags = { blur: true, dim: true, tint: true };
 /** The three boxes as currently chosen; the veil is solved with them whenever the pictures are re-read. */
-/** The comparison of the owner's: in the light scheme, every surface is Craft's nearly opaque white (0.92) over the blurred, unchanged picture instead of the solved veil. Temporary. */
 /** Clear to tinted: the solved veil's strength is scaled by this (1 leaves it as solved; below 1 shows more wallpaper and may fall under the readability floor; above 1 is denser). */
 let veilScale = 1;
-/** Sets the clear-to-tinted position, 0 (clear) to 1 (tinted); 0.5 is the solved veil. Temporary, with the comparison. */
+/** Sets the clear-to-tinted position, 0 (clear) to 1 (tinted); 0.5 is the solved veil. Read by the next `updateVeil`, which is all a step of the slider needs (the picture is not touched). */
 export function setClarity(t: number): void { veilScale = t <= 0.5 ? 0.3 + 1.4 * t : 1 + 1.6 * (t - 0.5); }
-let craftLight = false;
-/** Chooses the "Craft" light-mode surface (the picture under a nearly opaque white) over the default solved veil; the comparison control in Appearance. Read by the next veil solve. */
-export function setCraftLight(b: boolean): void { craftLight = b; }
 /** Records which material layers are on. It does not solve anything itself: the veil is solved with these flags the next time the pictures are read (a new wallpaper, a scheme change, a resize). */
 export function setFlags(f: Flags): void {
   flagsNow = f;
@@ -357,8 +381,9 @@ export function setFlags(f: Flags): void {
 
 /** Makes `src` (a URL, or null for none) the wallpaper, with its precomputed `look` when it has one, and schedules the work that follows: the blurred copies and the veil solve. The same source with no new look is a no-op. */
 export function setWallpaper(src: string | null, l?: WallpaperLook): void {
+  // The same picture with the same blur radii is nothing to redo: the two blurred copies and their blob URLs stay (a change that does not touch the picture, such as a step of Clear to tinted, never re-decodes or re-blurs it).
+  if (src === source && (!l || (l.sideBlur === look.sideBlur && l.cardBlur === look.cardBlur))) return;
   if (l) look = l;
-  if (src === source && !l) return;
   source = src;
   schedule();
 }

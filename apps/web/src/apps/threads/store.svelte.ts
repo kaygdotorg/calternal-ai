@@ -2,7 +2,7 @@
  * Reactive state for the Threads app: the thread list, the open requests and the provider list, kept current by watching the client.
  * One instance per page. The client is the only thing that changes when the real operations arrive.
  */
-import { inboxOf, type InboxItem } from "./inbox";
+import { inboxOf, snoozedOf, type InboxItem, type SnoozedItem } from "./inbox";
 import type { SignInRequest } from "./model";
 import type { ThreadsClient } from "./client";
 import { FixtureClient } from "./fixtures";
@@ -70,9 +70,15 @@ class ThreadsStore {
     for (const t of this.threads) if (!t.parentId) (by.get(t.workspace) ?? by.set(t.workspace, []).get(t.workspace)!).push(t);
     return [...by].map(([workspace, threads]) => ({ workspace, threads: threads.sort((a, b) => b.updatedAt - a.updatedAt) }));
   }
-  /** The Inbox: the threads that need you, and why (inbox.ts). */
+  /** The clock the Inbox and Snoozed are worked out at; the sidebar moves it to the next time a snoozed thread returns, so a thread comes back by itself. */
+  now = $state(Date.now());
+  /** The Inbox: the threads that need you and are not snoozed, and why (inbox.ts). */
   get inbox(): InboxItem[] {
-    return inboxOf(this.threads, this.requests);
+    return inboxOf(this.threads, this.requests, this.now);
+  }
+  /** The snoozed threads, the soonest to return first. */
+  get snoozed(): SnoozedItem[] {
+    return snoozedOf(this.threads, this.now);
   }
   /** Open requests for one thread (a parent also sees its children's). */
   requestsFor(id: string): Request[] {
