@@ -69,7 +69,9 @@ if "$uninstall"; then
       if [ -f "$service" ]; then unlink "$service"; fi
       ;;
   esac
-  if [ -f "$target" ]; then unlink "$target"; fi
+  for installed in "$target" "$machine_dir/bin/.calternal-tmp-machine-update"; do
+    if [ -f "$installed" ]; then unlink "$installed"; fi
+  done
   printf 'Machine service removed. Revoke the machine in Calternal if it is retired.\n'
   exit 0
 fi
@@ -172,6 +174,12 @@ else
 fi
 [ "${sum%% *}" = "$digest" ] || die 'The machine program digest does not match the signed release.'
 chmod 0700 "$work/calternal"
+
+if [ -f "$machine_dir/credentials" ] && [ -x "$target" ] && [ -f "$service" ] &&
+   ! cmp -s "$work/calternal" "$target"; then
+  printf '%s\n' 'The installed service updates its program after active turns finish.'
+  exit 0
+fi
 
 if [ -f "$machine_dir/credentials" ]; then
   printf '%s\n' 'This machine is already enrolled.'

@@ -75,7 +75,7 @@ case $1 in
   https://fixture.invalid/api/v1/machine/release/*) version_path=${1#https://fixture.invalid/api/v1/machine/release/} ;;
   *) exit 1 ;;
 esac
-printf 'download %s\\n' "$version_path" >> "$HOME/trace"
+printf '%s\\n' "$version_path" > "$HOME/download-${version_path##*/}"
 cp "$RELEASE_FIXTURE/$version_path" "$out"
 """)
     write_executable(tools / "uname", """#!/bin/sh
@@ -123,10 +123,9 @@ def main():
         home, install = fixture("preview")
         result = install()
         assert result.returncode != 0 and "Download the machine program" in result.stdout
-        assert not (home / "trace").exists()
-        assert not (home / prefix).exists()
+        assert not list(home.iterdir())
         result = install("--yes", contents=script.rsplit("\n}", 1)[0])
-        assert result.returncode != 0 and not (home / "trace").exists()
+        assert result.returncode != 0 and not list(home.iterdir())
         print("PASS preview and incomplete bootstrap leave the user home untouched")
 
         home, install = fixture("wrong signature")
@@ -136,7 +135,7 @@ def main():
         sign(untrusted, binary.with_name("manifest"))
         result = install("--yes")
         assert result.returncode != 0 and "signature is invalid" in result.stderr
-        assert "/calternal" not in (home / "trace").read_text()
+        assert not (home / "download-calternal").exists()
         assert not (home / prefix).exists()
         signature.write_bytes(signed)
         print("PASS a valid signature from a different key cannot install a program")
@@ -163,6 +162,14 @@ def main():
         again = install("--yes")
         assert again.returncode == 0, again.stderr
         assert (home / "trace").read_text().count("enrolled") == 1
+        # A managed copy from a previous release is replaced by the drain path.
+        target.write_bytes(b"previous managed release")
+        result = install("--yes")
+        assert result.returncode == 0 and "after active turns finish" in result.stdout, (
+            result.returncode, result.stdout, result.stderr
+        )
+        assert target.read_bytes() == b"previous managed release"
+        assert (home / "trace").read_text().count("systemctl --user restart") == 1
         result = install("--yes", "--uninstall")
         assert result.returncode == 0, result.stderr
         assert not target.exists() and not unit.exists()
