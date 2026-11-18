@@ -293,7 +293,12 @@ pub fn reply(out: &Output, op: &str, data: Value) -> Reply {
                         if op == "notes.lookup" {
                             row.push(text(note, "link_target").into());
                         } else if op == "trash.list" {
-                            row.push(note["days_remaining"].to_string());
+                            row.push(
+                                note["days_remaining"]
+                                    .as_u64()
+                                    .map(|days| days.to_string())
+                                    .unwrap_or_default(),
+                            );
                         }
                         row
                     })
