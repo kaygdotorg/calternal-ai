@@ -24,7 +24,11 @@ pub(super) fn foreign_cases(
         json!({"space_id":space,"confirmation":confirmation}),
         json!({"space_id":missing,"confirmation":confirmation}),
     ));
-    for op in ["trash.empty.status", "notes.rename.status", "notes.rename.undo"] {
+    for op in [
+        "trash.empty.status",
+        "notes.rename.status",
+        "notes.rename.undo",
+    ] {
         cases.push((
             op,
             json!({"space_id":space,"job_id":missing}),
