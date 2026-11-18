@@ -1,9 +1,9 @@
 //! Setup tokens: how the first owner gets in, and how someone who lost
 //! every device gets back in.
 //!
-//! - On first start, while the server has no owner, it prints a long
-//!   first-owner token in its log. Pasting it on the first screen, with a
-//!   name, creates the owner and their first passkey.
+//! - While the server has no first account, the operator can issue a
+//!   first-owner code. Pasting it on the first screen, with a name, creates
+//!   the owner and their first passkey.
 //! - `calternal user recover <username-or-uuid>` prints a recovery token for an
 //!   existing person. Pasting it lets them add a new passkey.
 //! - `calternal user create <name>` makes a person with no passkey yet
@@ -35,19 +35,46 @@ pub(crate) struct Redeemable {
     pub invite: bool,
 }
 
-/// Issues a fresh first-owner token while nobody owns the server.
-/// The optional protected recovery barrier precedes acknowledgement.
-pub(crate) async fn first_owner_token(inner: &Arc<Inner>) -> Result<Option<String>> {
+/// A first-owner code and its exact database expiry. Keep the code private.
+pub struct FirstOwnerCode {
+    /// The one-time code presented to the operator.
+    pub code: String,
+    /// Expiry as Unix milliseconds.
+    pub expires_ms: i64,
+}
+
+/// Verify a startup candidate or issue a replacement under the same transaction.
+/// The optional protected recovery barrier precedes acknowledgement of writes.
+pub(crate) async fn first_owner_code(
+    inner: &Arc<Inner>,
+    candidate: Option<String>,
+) -> Result<Option<FirstOwnerCode>> {
     let ttl = inner.config.setup_ttl.as_millis() as i64;
     inner
         .db
         .run(move |c| {
             let tx = c.transaction().map_err(sql)?;
-            let users: i64 = tx
-                .query_row("SELECT COUNT(*) FROM users", [], |r| r.get(0))
+            let has_account: bool = tx
+                .query_row("SELECT EXISTS(SELECT 1 FROM users)", [], |r| r.get(0))
                 .map_err(sql)?;
-            if users > 0 {
+            if has_account {
                 return Ok(None);
+            }
+            if let Some((code, canonical)) = candidate
+                .and_then(|code| normalize_setup_token(&code).map(|canonical| (code, canonical)))
+            {
+                let expires_ms = tx
+                    .query_row(
+                        "SELECT expires_at FROM setup_tokens
+                     WHERE hash=?1 AND purpose='first-owner' AND used_at IS NULL AND expires_at>?2",
+                        params![hash(&canonical), now_ms()],
+                        |r| r.get(0),
+                    )
+                    .optional()
+                    .map_err(sql)?;
+                if let Some(expires_ms) = expires_ms {
+                    return Ok(Some(FirstOwnerCode { code, expires_ms }));
+                }
             }
             tx.execute(
                 "DELETE FROM setup_tokens WHERE purpose = 'first-owner' AND used_at IS NULL",
@@ -55,9 +82,12 @@ pub(crate) async fn first_owner_token(inner: &Arc<Inner>) -> Result<Option<Strin
             )
             .map_err(sql)?;
             let token = new_setup_token()?;
-            insert_token(&tx, &token, "first-owner", None, ttl)?;
+            let expires_ms = insert_token(&tx, &token, "first-owner", None, ttl)?;
             crate::spaces::commit(tx)?;
-            Ok(Some(token))
+            Ok(Some(FirstOwnerCode {
+                code: token,
+                expires_ms,
+            }))
         })
         .await
 }
@@ -180,7 +210,7 @@ fn insert_token(
     purpose: &str,
     user: Option<&str>,
     ttl: i64,
-) -> Result<()> {
+) -> Result<i64> {
     let canon = normalize_setup_token(token).ok_or_else(|| Error::internal("bad new token"))?;
     let now = now_ms();
     tx.execute(
@@ -189,7 +219,7 @@ fn insert_token(
         params![hash(&canon), purpose, user, now, now + ttl],
     )
     .map_err(sql)?;
-    Ok(())
+    Ok(now + ttl)
 }
 
 fn invalid(detail: &str) -> Error {
@@ -589,3 +619,7 @@ mod tests {
         assert_eq!(live, 1, "a new recovery token replaces the old one");
     }
 }
+
+#[cfg(test)]
+#[path = "setup/owner_code_tests.rs"]
+mod owner_code_tests;
