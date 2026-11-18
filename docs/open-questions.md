@@ -2,37 +2,35 @@
 
 Decisions waiting on kayg, most blocking first. Answer here or in chat; answered items
 move to the decision record they belong to and leave this list. Terms: see
-[glossary](glossary.md). Updated 2026-11-18 09:15 IST.
+[glossary](glossary.md). Updated 2026-11-18 11:15 IST.
 
 ## Waiting now
 
-| # | Question | Recommendation | Blocks |
+| # | Question | Recommendation | Area |
 | --- | --- | --- | --- |
-| 5 | Readability floor for surfaces over a wallpaper (provisional, built so kayg can see it): primary text held at 7:1, lesser text nudged toward it, and a surface may flip its text between light and dark as Craft's header does. Leaves 21 to 49% of the wallpaper visible on sidebars | kayg wants to see it: a comparison is being built on the preview | Materials |
-| 21 | Light mode over a photo: derive a lighter photo and keep showing a lot of it (built), or do as Craft does and put a nearly opaque light surface over any photo (92% white, about 8% of the photo shows), which works with every photo but shows little of it | See both on the preview, then choose | Light theme |
-| 10 | Native font: decide after seeing both on a Mac and an iPhone (deferred by kayg) | Build a switch in the native preview | Native apps |
-| 24 | Materials: the middle card and the sidebars look too alike, which hurts contrast, and the Clear end of the slider gives a light-tinted sidebar even in dark mode. Being rebuilt from the calternal-ui plugin's defaults (how blurred, tinted and dimmed the card is against the sidebars) without the heavy blur; Clear-to-Tinted becomes a stepped slider | kayg to review on the preview | Appearance |
-| 25 | Composer chips: show more icons, or icons with text, when the composer is wide (kayg wants to discuss, 2026-11-18) | To grill | Composer |
-
-| 19 | Which Manager-only operation writes reserved `AI/AGENTS.md`? Generic kinds cannot claim or write it | Narrow space-settings operation, or a general protected space-file writer; costs in morning-decisions.md | Agents |
-| 28 | The first-visit "Choose a look" chooser: now a centred dialog. The record only says "a short gallery, then straight in" | Keep the centred dialog | Onboarding |
-| 29 | On a phone, switching apps takes three taps and the app name does not look tappable: a capsule under the card as on desktop, or the pill in the sidebar footer | See both on a phone first | Phone shell |
-| 30 | Should the composer double as the command palette, or stay separate from Cmd-K | Stay separate | Composer |
-| 31 | Thread rows: on hover the time and state mark give way to the three actions; swipe right shows only Copy link; on touch the long-press menu is dropped for "More" in the swipe tray (iOS starts a drag on a long press) | Keep all three; try on a phone | Threads |
-| 32 | The page waits for its font before painting. Painting first would be earlier but the text would visibly swap | Keep waiting for the font | First paint |
-| 33 | Plugin workers in containers: where a space's workers run and how capacity is shared (at most eight workers per machine today), what happens on a server with no container runtime, brokered network fetch, and proof of teardown when a machine is lost | To grill | Plugins |
-| 34 | Requests, left open by the lane: how a rotated token reaches the agent when a single-use approval is spent; whether an unused single-use approval belongs to the turn or the thread; how the limits (32 per thread, 256 per account) are divided; who may read `AI/AGENTS.md` directly | To grill | Requests |
-| 35 | People: can a group hold a server role; what happens when a space's only Owner is disabled | Port the existing app's answer where it has one | People |
-| 36 | Notes: paging of long lists, purging the whole Trash at once, reusing a file name after delete, renames that touch many links | To grill | Notes |
-| 37 | Readiness: should one refresh probe every machine in the pool, and should provider sign-in be re-checked while a machine sits idle (today: cached five minutes, refreshed on demand) | On demand only | Agents |
-| 38 | The bottom band and edge kayg saw beside the right sidebar could not be reproduced in a real GPU Chrome at 1500x970: which window size and zoom, and does it still show on the current preview | kayg to look again | Shell |
-| 39 | With many spaces the dots overflow the sidebar footer: at 50 spaces about 7 show and the rest are reachable only through the palette. Options and screenshots on issue #15 | To grill with the dots design | Shell |
-| 40 | Performance decisions left by the fix lane: how to shorten security-log replay at start (1,000 spaces still start in 320 to 860 ms against 300 ms), whether to keep an inherited root-layout check, how to close the cold save tail (one arm at 49.9 ms against 40 ms), how to cut the draft-save tail; and what the 10 ms "write reaches a subscribed client" ceiling measures, since it includes the durable save itself | See the lane report; decide the measure first | Performance gate |
-| 42 | A tool step's output: the saved thread file keeps only its size, so a reloaded thread shows "N bytes of output". Where long output lives (its address, how the thread links to it, how long it is kept) is undecided | To grill with long-output storage | Threads |
+| 25 | Composer chips: what each chip shows at each composer width (icon only, icon and text), and which chips exist | In the grill now | Composer |
+| 24 | Materials: how far the middle card separates from the sidebars, the readability floor for text over a wallpaper, and how much photo shows in light mode. Rebuilt from the calternal-ui plugin's defaults with a five-step Clear-to-Tinted slider | Review on the preview | Appearance |
+| 30 | Should the composer double as the command palette, or stay separate from Cmd-K? | Stay separate | Composer |
+| 31 | Thread rows: hover hides the time and state mark for the three actions; swipe right shows only Copy link; touch has no long-press menu, "More" sits in the swipe tray | Keep all three; try on a phone | Threads |
+| 42 | Long tool output: the thread file keeps only its size. Where the output lives, how the thread links to it, how long it is kept | To grill | Threads |
+| 29 | Phone: switching apps takes three taps and the app name does not look tappable | See both forms on a phone | Phone shell |
+| 39 | Many spaces: the dots overflow the sidebar footer (about 7 of 50 show; the rest only through the palette) | To grill | Shell |
+| 28 | The first-visit "Choose a look" chooser is a centred dialog; the record only says "a short gallery, then straight in" | Keep the dialog | Onboarding |
+| 32 | The page waits for its font before painting; painting first is earlier but the text visibly swaps | Keep waiting | First paint |
+| 33 | Plugin workers: where a space's workers run, sharing capacity (eight per machine today), a server with no container runtime, brokered network fetch, a lost machine | To grill | Plugins |
+| 34 | Requests: how a rotated token reaches the agent after a single-use approval; whether an unused approval belongs to the turn or the thread; dividing the limits (32 per thread, 256 per account); who may read `AI/AGENTS.md` | To grill | Requests |
+| 37 | Readiness: probe every pool machine on a refresh? Re-check provider sign-in while a machine idles? (Today: cached five minutes, refreshed on demand) | On demand only | Agents |
+| 35 | People: can a group hold a server role; what happens when a space's only Owner is disabled | Port the existing app's answer | People |
+| 36 | Notes: purging the whole Trash at once, reusing a file name after delete, renames that touch many links | To grill | Notes |
+| 40 | Performance: shortening the security-log replay at start (1,000 spaces: 320 to 860 ms against 300 ms), the cold save tail, the draft-save tail, and what the 10 ms "write reaches a subscribed client" ceiling measures | Decide the measure first | Performance |
+| 10 | Native font: system or Google Sans Flex | Decide after seeing both on a Mac and an iPhone | Native apps |
 
 ## Design rounds
 
 - **In progress: Settings and Appearance**: first eleven answers recorded in `settings.md`; second batch asked. Appearance (wordmark and its font, fonts, wallpaper, accent, themes and presets), agents (retry and snooze, streaming, default permission mode), shortcuts, machines, plugins, skills, automations.
+- **Machines and sandboxes from the UI** (kayg, 2026-11-18): the whole flow without a command line: enrolling a machine, making its sandbox, signing in to a provider inside it; every instance must have machines attached.
+- **Plugin-delivered interface**: how a plugin ships real UI, so the orchestrator can be split (shell, composer, a thread rail as `calternal-orchestrator-rail`).
+- **Upgrades with real data**: there is no migration code by rule; what an upgrade across a schema change does once calternal.cloud holds data.
 - Onboarding for developers versus everyone else: what changes.
 - Skills and automations management screens.
 - The app shell on narrow screens, and the app switcher's exact form.
@@ -80,4 +78,5 @@ move to the decision record they belong to and leave this list. Terms: see
 - Secrets: one key file per owner in appdata; provider logins on a person's own machines stay on the machine.
 - Request IDs are unique per account and space. The root guard and recovery log are wired into the server.
 
-- Thread deletion removes all saved account modes; the 1,024-per-account bound remains (threads lane #28).
+- Thread deletion removes its saved permission mode; the 1,024-per-account bound remains.
+- `AI/AGENTS.md` is written by one narrow operation, Managers and the Owner only.
