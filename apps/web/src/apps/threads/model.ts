@@ -193,15 +193,41 @@ export interface SecretRequest {
   expiresAt: number;
 }
 
+/**
+ * A provider that needs the person to sign in (again): drawn by the shell in the request bar and as an item in the conversation, never kept in the thread. The server's `label` already reads
+ * "<Provider> needs you to sign in again". `url` and `displayCode` are null when the provider has none; `needsCode` says the person must paste back a code the provider shows after signing in.
+ */
+export interface SignInRequest {
+  /** The sign-in's id on the server; the code and the status are addressed to it. */
+  id: string;
+  /** Discriminates the `Request` union. */
+  kind: "signin";
+  /** The thread that raised it; empty when the server names none (an explicit sign-in from onboarding). */
+  threadId: string;
+  /** The provider's id (`claude`, `codex`). */
+  providerId: string;
+  /** The line the person reads, for example "Claude needs you to sign in again". */
+  label: string;
+  /** Where to sign in; null when there is nothing to open. */
+  url: string | null;
+  /** A short code to type at that address; null when there is none. */
+  displayCode: string | null;
+  /** True when the person must paste a code back here once signed in. */
+  needsCode: boolean;
+  /** Milliseconds since the epoch. */
+  expiresAt: number;
+}
+
 /** Anything that waits on the person. */
-export type Request = QuestionRequest | ApprovalRequest | SecretRequest;
+export type Request = QuestionRequest | ApprovalRequest | SecretRequest | SignInRequest;
 
 /** What the person answered. Secrets carry the value; the client sends it and drops it. */
 export type Answer =
   | { kind: "question"; values: Record<string, unknown> }
   | { kind: "approval"; decision: "once" | "thread" | "deny" }
   | { kind: "secret"; value: string }
-  | { kind: "secret-skip" };
+  | { kind: "secret-skip" }
+  | { kind: "signin"; code: string };
 
 /** One file a turn changed. */
 export interface Change {
