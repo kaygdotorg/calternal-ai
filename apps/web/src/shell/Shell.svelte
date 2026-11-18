@@ -17,7 +17,7 @@
   import ResizeHandle from "./ResizeHandle.svelte";
   import Sidebar from "./Sidebar.svelte";
   import { shell } from "./shell.svelte";
-  import { leavesAlone, pickTarget, settleOpen, visible, WheelSwipe, type Side, type Target } from "./pull";
+  import { leavesAlone, parseMs, pickTarget, settleOpen, visible, WheelSwipe, type Side, type Target } from "./pull";
   let { app, id }: { app: AppDef; id?: string } = $props();
   // `?switcher=card|sidebar` picks where the app switcher lives (and is remembered), so both layouts can be compared live; Appearance has the same choice.
   $effect(() => {
@@ -48,7 +48,7 @@
   const openness = () => ({ leftOpen: shell.sidebarOpen, rightOpen, hasRight });
   const moving = (el: Element | undefined) => !!el?.getAnimations().some((a) => a.playState === "running" && (a as Animation & { id: string }).id === "pull");
   /** The sheet motion tokens as an animation's timing. */
-  const sheet = () => { const cs = getComputedStyle(document.documentElement); const ms = parseFloat(cs.getPropertyValue("--dur-sheet")); return { duration: Number.isFinite(ms) ? ms : 340, easing: cs.getPropertyValue("--ease-sheet").trim() || "ease-out", id: "pull" }; };
+  const sheet = () => { const cs = getComputedStyle(document.documentElement); return { duration: parseMs(cs.getPropertyValue("--dur-sheet"), 340), easing: cs.getPropertyValue("--ease-sheet").trim() || "ease-out", id: "pull" }; };
   /** Where a swipe's first move decides what it is: the target by direction, then the geometry that goes with it. False when the swipe is not a pull. */
   function begin(dx: number, dy: number): boolean {
     if (Math.abs(dx) < 10 || Math.abs(dx) < Math.abs(dy) * 1.5) return false; // not yet a horizontal gesture

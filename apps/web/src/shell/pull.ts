@@ -95,3 +95,11 @@ export class WheelSwipe {
   /** Ends the swipe. */
   end(): void { this.active = false; this.samples = []; }
 }
+
+/** A CSS time (`340ms`, `0.19s`, a bare number is ms) in milliseconds; `fallback` when it is not one. A computed custom property keeps the unit it was written in, so both forms occur. */
+export function parseMs(value: string, fallback: number): number {
+  const m = /^\s*(-?[\d.]+)\s*(ms|s)?\s*$/.exec(value);
+  if (!m) return fallback;
+  const n = parseFloat(m[1]!);
+  return Number.isFinite(n) ? (m[2] === "s" ? n * 1000 : n) : fallback;
+}
