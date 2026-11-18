@@ -55,7 +55,8 @@
   .clipped { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-3); color: var(--ink-3); font-size: var(--text-label); }
   .msg { width: 100%; max-width: var(--msg-w); margin: 0 auto; padding: var(--s-4) var(--msg-pad-r, var(--pad-region)) var(--s-4) var(--msg-pad-l, var(--pad-region)); display: flex; }
   .msg.agent-row { display: grid; grid-template-columns: var(--s-8) minmax(0, 1fr); column-gap: var(--s-4); }
-  .lead { padding-top: var(--s-1); }
+  /* The mark sits in a line of the message's own font and line height, so its centre is the first line's x-height centre at every text size and zoom (ProviderMark.svelte). */
+  .lead { font-size: var(--text-ui); line-height: 1.55; font-weight: var(--body-weight); }
   .user { justify-content: flex-end; }
   .bubble { position: relative; max-width: 82%; padding: var(--s-4) var(--s-6); border-radius: var(--r-pane); background: rgb(var(--ink-rgb) / 0.07); }
   /* Your messages get an iMessage tail in the bubble's own fill (ported from the calternal-ui plugin): the bottom-right corner is square and a rounded point flares from that edge a little below the bubble. */

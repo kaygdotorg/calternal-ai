@@ -127,6 +127,10 @@ export interface MessageBy {
   ms?: number;
   /** How long the model thought, in milliseconds, when it was observed. */
   thoughtMs?: number;
+  /** The service tier the turn ran on (`fast`, `flex`), only when it is not the default. Not on the wire yet: the fixtures carry it (docs/threads-ui.md lists it for the backend). */
+  tier?: string;
+  /** How much of the model's context window the thread used by this turn, in tokens. Not on the wire yet: the fixtures carry it. */
+  context?: { used: number; window: number };
 }
 
 /** One message: a block in the thread's file with a stable ID. */
