@@ -1,0 +1,39 @@
+{
+  "binary_sha256": "527f2e41e881bf462473397268d986607d75d788f86a9d1047adfdc741ac3180  bin/calternal\n597f894aa9871ae7f6e56268b80f2dde7a91f6b1c7c00d66cca1f81605bf3df7  bin/calternal-baseline\n099460bf9f4224e55e254455136d31e99cee80d00210d2daefd3b2dae13a91a6  bin/calternal-perf\n06d5b81062dceeb59e98a23b08e29f7eb9164cd655517092c2bc66eb5bcc3e2b  bin/calternal-test\nfb4416fb02cc1dfea1ede519931d13498e555811a1fc84083cb0e49574b37ab9  bin/calternal-debug\n",
+  "commit": "40a3848",
+  "credential_root_directories_remaining": 0,
+  "retention": "raw evidence, copied binaries and dev gate logs: 30 days; fixture credential roots deleted after runs",
+  "startup_before_first_use": {
+    "control": {
+      "head_observations": 3,
+      "maximum_space_writers": 0
+    },
+    "matrix": {
+      "head_observations": 40,
+      "maximum_space_writers": 0
+    },
+    "repeat-1000x100": {
+      "head_observations": 6,
+      "maximum_space_writers": 0
+    },
+    "repeat-1x100000": {
+      "head_observations": 6,
+      "maximum_space_writers": 0
+    },
+    "stages": {
+      "head_observations": 3,
+      "maximum_space_writers": 0
+    }
+  },
+  "suite_exit_codes": {
+    "control": 1,
+    "idle": 2,
+    "jobs-0": 2,
+    "jobs-1": 2,
+    "jobs-2": 2,
+    "matrix": 1,
+    "repeat-1000x100": 1,
+    "repeat-1x100000": 1,
+    "stages": 1
+  }
+}

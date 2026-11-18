@@ -44,7 +44,7 @@
       "budget": 300,
       "unit": "ms",
       "fixture": "1k,10k,100k notes",
-      "measurement": "first notes.list after restart; cold pairs drop caches, warm pairs do not; eager startup may already open the space",
+      "measurement": "first notes.list after restart; startup-state.json records prior writer count; lazy binaries genuinely open the space here; eager baselines remain qualified",
       "reference": "home.first_page p95 300"
     },
     {
@@ -53,7 +53,7 @@
       "budget": null,
       "unit": "ms",
       "fixture": "1k,10k,100k notes",
-      "measurement": "needs timing hook separating authentication, admission, dispatch",
+      "measurement": "debug test-plugin stage timing through resolution/capability admission; excludes HTTP authentication and later agent scope review",
       "reference": null
     },
     {
@@ -73,7 +73,7 @@
       "budget": 10,
       "unit": "ms",
       "fixture": "1k,10k,100k notes",
-      "measurement": "needs commit timestamp correlated with subscribed SSE delivery",
+      "measurement": "debug test-plugin post-durable-commit timestamp before broadcast, correlated by request ID with SSE receipt; 1 ms clock precision",
       "reference": "sync.round_trip p95 10; different start marker"
     },
     {

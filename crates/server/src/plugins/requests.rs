@@ -5,7 +5,7 @@ use super::{
     jobs::bounded_json,
 };
 use crate::turns::access::Authority;
-use calternal_core::{JsonObject, OperationRisk, PersonRequest, RequestDetail};
+use calternal_core::{ApprovalLifetime, JsonObject, OperationRisk, PersonRequest, RequestDetail};
 use calternal_types::{AccountId, Error};
 use rusqlite::{OptionalExtension, params};
 use serde_json::Value;
@@ -14,6 +14,21 @@ use uuid::Uuid;
 const THREAD_LIMIT: i64 = 32;
 const ACCOUNT_LIMIT: i64 = 256;
 const DETAIL_LIMIT: usize = 16 * 1024;
+
+// App-level grants cover reads and, when requested, reversible writes. Exact
+// action requests carry their declared risk in the protected action payload.
+fn approval_lifetimes(
+    risk: Option<&str>,
+    write: bool,
+) -> Result<&'static [ApprovalLifetime], Error> {
+    let risk = match risk {
+        Some(risk) => serde_json::from_value(Value::String(risk.into()))
+            .map_err(|_| Error::internal("stored approval risk"))?,
+        None if write => OperationRisk::Reversible,
+        None => OperationRisk::Read,
+    };
+    Ok(risk.approval_lifetimes())
+}
 
 /// Close pending prompts under the caller's existing protected transaction.
 pub(super) fn cancel_pending_requests(
@@ -112,8 +127,11 @@ impl Jobs {
                 let detail = if kind == "question" {
                     serde_json::from_str(&action).map_err(|_| Error::internal("stored question"))?
                 } else {
+                    let action: JsonObject = serde_json::from_str(&action)
+                        .map_err(|_| Error::internal("stored approval"))?;
+                    let risk = action.get("risk").and_then(Value::as_str);
                     RequestDetail::Approval {
-                        app, write, action: serde_json::from_str(&action).map_err(|_| Error::internal("stored approval"))?,
+                        app, write, lifetimes: approval_lifetimes(risk, write)?.to_vec(), action,
                     }
                 };
                 Ok(PersonRequest { id, space_id: Some(space), thread_id: Some(thread), detail })
@@ -171,24 +189,25 @@ impl Jobs {
             let job = job.clone();
             self.security_change(move |tx| {
                 let row = tx.query_row(
-                    "SELECT kind,status,decision_request,decision_value,resolved_ms,json_extract(action,'$.risk')
+                    "SELECT kind,status,decision_request,decision_value,resolved_ms,json_extract(action,'$.risk'),write_access
                      FROM agent_approvals WHERE id=?1 AND account=?2 AND job=?3",
                     params![id,account.to_string(),job],
                     |r| Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,Option<String>>(2)?,
-                        r.get::<_,Option<String>>(3)?,r.get::<_,Option<i64>>(4)?,r.get::<_,Option<String>>(5)?)),
+                        r.get::<_,Option<String>>(3)?,r.get::<_,Option<i64>>(4)?,r.get::<_,Option<String>>(5)?,r.get::<_,bool>(6)?)),
                 ).optional().map_err(db_err)?.ok_or_else(|| Error::not_found("request not found"))?;
-                let (kind, prior, prior_rid, prior_value, resolved_ms, risk) = row;
+                let (kind, prior, prior_rid, prior_value, resolved_ms, risk, write) = row;
                 if (kind == "question") != (status == "answered") {
                     return Err(Error::not_found("request not found"));
                 }
-                if status == "this_thread"
-                    && let Some(risk) = risk
+                let lifetime = match status {
+                    "once" => Some(ApprovalLifetime::Once),
+                    "this_thread" => Some(ApprovalLifetime::ThisThread),
+                    _ => None,
+                };
+                if let Some(lifetime) = lifetime
+                    && !approval_lifetimes(risk.as_deref(), write)?.contains(&lifetime)
                 {
-                    let risk: OperationRisk = serde_json::from_value(Value::String(risk))
-                        .map_err(|_| Error::internal("stored approval risk"))?;
-                    if !risk.allows_thread_approval() {
-                        return Err(Error::invalid_input("this action only allows once approval"));
-                    }
+                    return Err(Error::invalid_input("this action only allows once approval"));
                 }
                 if prior != "pending" {
                     return if prior == status && prior_rid.as_deref() == Some(&rid) && prior_value == value
@@ -208,7 +227,7 @@ impl Jobs {
                 if reused {
                     return Err(Error::request_reused());
                 }
-                if matches!(status, "once" | "this_thread") {
+                if lifetime.is_some() {
                     // The jobs lock keeps the requesting turn parked while its credential ends.
                     let changed = tx.execute(
                         "UPDATE agent_access SET hash=NULL,expires_ms=0,updated_ms=?1 WHERE job=?2 AND account=?3",

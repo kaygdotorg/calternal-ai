@@ -1,5 +1,5 @@
 //! Operation admission (one capability lookup), receipts and the host handlers.
-use super::*;
+use super::{cursors::admitted_operation, *};
 use crate::authz::Policy;
 
 pub(super) fn decode<T: DeserializeOwned>(input: JsonObject) -> Result<T, Error> {
@@ -59,6 +59,8 @@ pub(super) async fn dispatch_scoped<D: Directory>(
     agent: Option<crate::turns::access::Authority>,
     machines: Option<std::sync::Arc<crate::machines::MachineService>>,
 ) -> Result<Value, Error> {
+    #[cfg(all(feature = "test-plugins", debug_assertions))]
+    let admission_started = std::time::Instant::now();
     if let Some(row) = calternal_core::request_operation(op) {
         return crate::requests::dispatch(state, None, p, session, agent, request_id, row, input)
             .await;
@@ -176,6 +178,18 @@ pub(super) async fn dispatch_scoped<D: Directory>(
                 .map_err(|_| Error::internal("directory task failed"))??;
         }
     }
+    #[cfg(all(feature = "test-plugins", debug_assertions))]
+    {
+        let elapsed = admission_started.elapsed().as_micros();
+        let request = request_id.to_owned();
+        // Debug diagnostics may write stderr; keep that I/O off the async task.
+        // Awaiting bounds diagnostic work by the existing admitted requests.
+        tokio::task::spawn_blocking(move || {
+            calternal_store::timings::emit("admission", &request, Some(elapsed));
+        })
+        .await
+        .map_err(|_| Error::internal("admission diagnostic failed"))?;
+    }
     if let Some(a) = &agent {
         if calternal_core::PeopleOperation::from_id(op)
             == Some(calternal_core::PeopleOperation::ListInvites)
@@ -246,7 +260,7 @@ pub(super) async fn dispatch_scoped<D: Directory>(
     .await
 }
 
-pub(super) async fn admitted_operation<D: Directory>(
+pub(super) async fn run_admitted_operation<D: Directory>(
     state: Shared<D>,
     p: Identity,
     session: Session,
@@ -376,7 +390,9 @@ pub(super) async fn admitted_operation<D: Directory>(
     Ok(value)
 }
 
-/// Private handler entry: called exclusively after the dispatch policy gate.
+/// Private handler entry after the policy gate. Invalid input, storage and worker
+/// failures propagate without bypassing authorization. Dynamic mutation inputs
+/// hash once on the blocking pool; remaining cost is the selected store operation.
 pub(super) async fn dispatch_checked<D: Directory>(
     state: Shared<D>,
     p: Identity,
@@ -385,27 +401,13 @@ pub(super) async fn dispatch_checked<D: Directory>(
     input: JsonObject,
 ) -> Result<Value, Error> {
     match op {
-        "notes.list" | "notes.lookup" | "tags.list" | "tags.lookup" | "trash.list" => {
-            super::notes::discover(&state, op, input).await
-        }
+        "notes.list" | "notes.lookup" | "tags.list" | "tags.lookup" | "trash.list"
+        | "notes.history" => super::note_pages::discover(&state, op, input).await,
         "notes.get" => {
             let i: NotesGetInput = decode(input)?;
             let space = space_of(&i.space_id)?;
             let note = blocking(&state, move |s| s.get(space, &i.id)).await?;
             to_value(NoteResult { note })
-        }
-        "notes.history" => {
-            let i: NotesHistoryInput = decode(input)?;
-            let limit = i.limit.unwrap_or(20);
-            let space = space_of(&i.space_id)?;
-            let (versions, next_cursor) = blocking(&state, move |s| {
-                s.history(space, &i.id, limit, i.cursor.as_deref())
-            })
-            .await?;
-            to_value(NotesHistoryResult {
-                versions,
-                next_cursor,
-            })
         }
         "notes.delete" | "notes.restore" | "trash.purge" | "notes.rename" => {
             super::notes::mutate(&state, p, request_id, op, input).await
@@ -426,7 +428,7 @@ pub(super) async fn dispatch_checked<D: Directory>(
             to_value(PluginsListResult { plugins })
         }
         "plugins.enable" | "plugins.disable" => {
-            let fp = fingerprint(op, &input);
+            let (fp, input) = super::request::fingerprint(op, input).await?;
             let i: PluginInput = decode(input)?;
             let space = space_of(&i.space_id)?;
             let enable = op == "plugins.enable";
@@ -501,7 +503,7 @@ pub(super) async fn dispatch_checked<D: Directory>(
 
 /// Retry handling shared by every mutation in an authorized space: the same
 /// (account, space, request_id) with the same canonical fingerprint returns the
-/// stored result (finishing any pending materialization); a different fingerprint
+/// durable SSD result; userdata placement follows its bounded policy. A different fingerprint
 /// is a conflict. Another account or space never sees this receipt.
 pub(super) fn replay_receipt(
     s: &Store,
@@ -511,26 +513,36 @@ pub(super) fn replay_receipt(
     op: &str,
     fp: &str,
 ) -> Result<Option<Value>, Error> {
-    let Some(r) = s.receipt(principal, space, rid)? else {
+    #[cfg(all(feature = "test-plugins", debug_assertions))]
+    let lookup_started = std::time::Instant::now();
+    let receipt = s.receipt(principal, space, rid);
+    #[cfg(all(feature = "test-plugins", debug_assertions))]
+    calternal_store::timings::emit(
+        "receipt_lookup",
+        rid,
+        Some(lookup_started.elapsed().as_micros()),
+    );
+    let Some(r) = receipt? else {
         return Ok(None);
     };
     if r.operation != op || r.fingerprint != fp {
         return Err(Error::request_reused());
     }
+    // Permanent deletion suppresses older body-bearing receipts, while ordinary
+    // outside-file conflicts do not revoke an already durable acknowledgment.
+    // Purge's own idempotent result contains no body and remains replayable.
     if op != "trash.purge"
-        && let Some(n) = &r.note_id
+        && let Some(item) = r.item
+        && s.content().item_state(space, item)? == "deleted"
     {
-        s.materialize(n).map_err(|e| {
-            if matches!(e.code, ErrorCode::Conflict | ErrorCode::NotFound) {
-                e
-            } else {
-                Error::unavailable("committed but not yet materialized; retry")
-            }
-        })?;
+        return Err(Error::not_found("item not found"));
     }
     Ok(Some(r.result))
 }
 
+/// Replay or commit an authorized native note edit after hashing its owned input
+/// on the blocking pool. Input, revision, worker and storage failures propagate.
+/// Cost: one hash task followed by the store's receipt/read/durability work.
 pub(super) async fn mutate_note<D: Directory>(
     state: Shared<D>,
     p: Identity,
@@ -538,7 +550,7 @@ pub(super) async fn mutate_note<D: Directory>(
     op: &str,
     input: JsonObject,
 ) -> Result<Value, Error> {
-    let fp = fingerprint(op, &input);
+    let (fp, input) = super::request::fingerprint(op, input).await?;
     let (create, update) = if op == "notes.create" {
         let i: NotesCreateInput = decode(input)?;
         (Some(i), None)

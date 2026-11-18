@@ -2,6 +2,7 @@
 use super::*;
 use crate::linked_write::{self, Retarget, Staged};
 use rusqlite::TransactionBehavior;
+use std::time::{Duration, Instant};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Destination {
@@ -19,7 +20,7 @@ impl Content {
     /// commit with an outbox intent in one FULL transaction, then the receipt is
     /// published to the space's journal. Callers authorize the space first.
     /// Cost: the space's lock (this space only), one receipt read, one FULL
-    /// content transaction and one FULL journal commit.
+    /// content transaction, one FULL journal commit and one FULL outbox retirement.
     pub fn set_control(
         &self,
         space: SpaceId,
@@ -162,14 +163,19 @@ impl Content {
             Ok(response)
         })
     }
-    /// Commits generic bytes/metadata and finishes journal publication and placement.
+    /// Commits generic bytes/metadata and journal publication before acknowledgement.
+    /// The lifecycle worker materializes userdata within ADR 0062's one-second
+    /// maximum; a missed deadline refuses further writes until placement recovers.
     /// `id=None` creates a UUIDv7; updates require the current base token. The host
     /// supplies the operation response encoder and checks authority before calling.
     /// Request IDs are unique per (account, space); a reused one is a conflict.
     /// Cost: cache/space locks, bounded metadata/byte
     /// allocations, indexed head/name checks, one FULL content transaction, a catalog
     /// route insert for a new item, one FULL journal receipt/event commit,
-    /// checked file I/O with file+directory fsync, and FULL placement/outbox updates.
+    /// one FULL outbox retirement (prevents resurrecting expired receipts).
+    /// File+directory fsync and NORMAL placement
+    /// bookkeeping follow on the lifecycle worker. An update to a still-pending
+    /// item first finishes that item's placement to retain outside-edit guards.
     /// First name allocation loads the directory-name cache; warm Linux allocations
     /// drain inherited name-watch events. Other platforms rescan that one directory.
     /// No unrelated-space history/content reads. This is durability, not a perf gate.
@@ -208,6 +214,7 @@ impl Content {
     /// holding the lock across a job check fences admission against deletion.
     /// Authority cleanup follows the committed tombstone and must be replayable;
     /// a failed content commit must not forget a saved narrower mode.
+    /// Trash placement completes before authority cleanup, using file/directory syncs.
     /// Callback failures preserve the current head. Cost: `write` plus
     /// the caller's bounded guard; no unrelated space waits on this lock.
     pub fn trash(
@@ -320,27 +327,39 @@ impl Content {
         }
         files::validate_kind(kind)?;
         self.with_space(space,|s| {
+            // Refuse further growth when a failed/slow disk misses ADR 0062's
+            // maximum; the lifecycle worker continues retrying durable intents.
+            if s.pending_since.is_some_and(|at| at.elapsed() >= Duration::from_secs(1)) {
+                return Err(Error::unavailable("userdata materialization exceeded one second; check the SSD root and retry"));
+            }
             s.validate_bytes(kind,bytes)?;
             self.publish_pending(s)?;
             // Request IDs are unique per (account, space): the host replays a matching
             // receipt before calling, so any receipt here is a reuse.
             if self.journals.receipt(&s.journal,request.account,request.id)?.is_some(){return Err(Error::request_reused());}
             let (id,seq,old_path,expected)=if let Some(id)=id {
-                let head = s.conn.query_row("SELECT kind,revision,seq,path,mat_state FROM items WHERE id=?1",[id.to_string()],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,i64>(2)?,r.get::<_,String>(3)?,r.get::<_,String>(4)?))).optional().map_err(internal)?.ok_or_else(missing)?;
-                let (current_kind, revision, seq, path, state) = head;
-                if current_kind != kind || state == "purged" || state == "purging" {
+                let mut head = s.header(id)?;
+                if head.kind != kind || head.state == "purged" || head.state == "purging" {
                     return Err(missing());
                 }
-                if base!=Some(revision.as_str()) {return Err(Error {code:ErrorCode::Conflict,message:"item has a newer revision".into(),details:Some(serde_json::json!({"reason":"stale_revision","current_revision":revision}))});}
-                if path.starts_with(".trash/") != (destination == Destination::Restore) {
+                if base != Some(head.revision.as_str()) {
+                    return Err(Error {code:ErrorCode::Conflict,message:"item has a newer revision".into(),details:Some(serde_json::json!({"reason":"stale_revision","current_revision":head.revision}))});
+                }
+                if head.path.starts_with(".trash/") != (destination == Destination::Restore) {
                     return Err(Error::conflict(if destination == Destination::Restore {
                         "item is not in Trash"
                     } else {
                         "restore this item from Trash first"
                     }));
                 }
-                s.place(id,self.fault)?;
-                let sha = s.check_file(id)?;
+                if head.state == "pending" {
+                    s.place_header(id,head,None,self.fault)?;
+                    // Placement changes the expected hash/state. Reload only on
+                    // this pending slow path, never for an ordinary warm save.
+                    head = s.header(id)?;
+                }
+                let sha = s.check_header(id,&head)?;
+                let (seq,path) = (head.seq,head.path);
                 (id,seq+1,Some(path),sha)
             }else{(Uuid::now_v7(),1,None,None)};
             guard()?;
@@ -377,7 +396,11 @@ impl Content {
             tx.commit().map_err(internal)?;
             (self.fault)(FaultPoint::AfterCommit);
             self.publish_pending(s)?;
-            s.place_snapshot(id,Some(&root.item),self.fault)?;
+            if destination != Destination::Current || retarget.is_some() {
+                s.place_snapshot(id,Some(&root.item),self.fault)?;
+            } else {
+                s.pending_since.get_or_insert_with(Instant::now);
+            }
             Ok(root.item)
         })
     }

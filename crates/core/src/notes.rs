@@ -67,6 +67,15 @@ pub struct NotesListInput {
     #[ts(optional)]
     #[schemars(with = "String")]
     pub tag: Option<String>,
+    /// Opaque cursor from the preceding page with the same space and filters.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "optional_present"
+    )]
+    #[ts(optional)]
+    #[schemars(with = "String", length(min = 1, max = 524288))]
+    pub cursor: Option<String>,
     /// Owning/access space identifier: 1..80 ASCII letters, digits or `_.:-`; never proof of authority.
     #[schemars(length(min = 1, max = 80), regex(pattern = r"^[a-zA-Z0-9_.:-]+$"))]
     pub space_id: String,
@@ -182,6 +191,10 @@ pub struct NotesHistoryInput {
 pub struct NotesListResult {
     /// At most 100 current summaries, ordered by descending update timestamp then resource ID.
     pub notes: Vec<NoteSummary>,
+    /// Opaque continuation for the next page, omitted at the end.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub next_cursor: Option<String>,
 }
 /// Result for `notes.get`, `notes.create` and `notes.update`, containing one current snapshot.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, TS)]

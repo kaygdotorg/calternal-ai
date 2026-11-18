@@ -1,5 +1,18 @@
 # Performance qualification — 2026-11-17
 
+The performance-fixes follow-up is tracked in
+[issue #31](https://git.kayg.org/kayg/calternal-ai/issues/31) and its
+[implementation/review report](reviews/perf-fixes-2026-11-17.md). It adds lazy
+space recovery, blocking startup initialization, durable SSD acknowledgment with
+bounded userdata placement, commit-driven account feeds, and debug-only stage
+observations. The historical control and missing-path analysis below remain
+unchanged evidence. Updated target measurements and remaining decisions are in
+the follow-up report. The integrated matrix passes all 40 head-arm save p95s,
+but one cold bounded-repeat arm misses 40 ms; 1,000-space startup and some
+account-feed arms also miss their targets. Idle-close and engineering gates pass.
+This page does not turn a partial qualification into a pass.
+
+
 Performance acceptance is **blocked**. The tooling and first control matrix are
 complete enough to reproduce breaches, but not to certify every requested path.
 [Issue #25](https://git.kayg.org/kayg/calternal-ai/issues/25), thread

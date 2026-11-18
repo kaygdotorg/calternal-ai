@@ -14,9 +14,9 @@ space tree. The global catalog contains routing identifiers only. The
 inherited store owns each space's journal and account-qualified receipts.
 
 A FULL content transaction records a head and outbox intent. Publication
-durably records its journal event/receipt, then checked fsio placement makes
-the current file durable before acknowledgement. Startup replays unfinished
-intents. A changed/deleted/foreign file blocks writes and is preserved.
+durably records its journal event/receipt, before acknowledgement. The existing lifecycle worker then uses checked fsio
+placement within ADR 0062's one-second maximum; overdue placement blocks new
+writes. First use replays unfinished intents before exposing that space. A changed/deleted/foreign file blocks writes and is preserved.
 This preserves the preview materialization contract; complete file-only
 recovery, external-editor reconciliation and tier moves remain separate work.
 

@@ -29,9 +29,14 @@ struct Follow<D: Directory> {
     after: String,
     page: VecDeque<String>,
     ready: bool,
+    wake: super::wake::Listener,
+    changes: Vec<tokio::sync::watch::Receiver<u64>>,
     done: bool,
-    _admission: std::fs::File,
+    reader: Option<super::reader::Reader<D>>,
+    maintenance: bool,
+    maintenance_at: tokio::time::Instant,
     readiness: Option<crate::machines::readiness::Listener>,
+    readiness_pending: bool,
 }
 fn encode(frame: AccountFrame) -> String {
     format!(
@@ -53,6 +58,9 @@ pub(crate) async fn events<D: Directory>(
     if q.bookmark.as_ref().is_some_and(|b| b.len() > 128) {
         return error_response(Error::invalid_input("invalid bookmark"));
     }
+    // Subscribe before reading the head: a concurrent commit is either in replay
+    // or leaves a wake hint. Every hint, including lag, triggers durable replay.
+    let wake = state.inputs.wakes.listen(p.id);
     let machines = q
         .readiness
         .then(|| {
@@ -66,18 +74,21 @@ pub(crate) async fn events<D: Directory>(
     let head = tokio::task::spawn_blocking(move || {
         let mut c = st.inputs.open(identity.id)?;
         st.inputs.clean(&mut c, &st.directory, &identity)?;
+        let head = Inputs::head(&c)?;
         let admission = st.inputs.admit(identity.id)?;
+        let reader = super::reader::Reader::new(c, admission, st)?;
         let readiness = machines
             .map(|m| m.subscribe_readiness(identity.id))
             .transpose()?;
-        Ok::<_, Error>((Inputs::head(&c)?, admission, readiness))
+        Ok::<_, Error>((head, reader, readiness))
     })
     .await;
-    let (head, admission, readiness) = match head {
+    let (head, reader, readiness) = match head {
         Ok(Ok(v)) => v,
         Ok(Err(e)) => return error_response(e),
         Err(e) => return error_response(internal(e)),
     };
+    let changes = state.directory.changes();
     let follow = Follow {
         state,
         p,
@@ -85,9 +96,14 @@ pub(crate) async fn events<D: Directory>(
         after: q.bookmark.unwrap_or(head),
         page: VecDeque::new(),
         ready: false,
+        wake,
+        changes,
         done: false,
-        _admission: admission,
+        reader: Some(reader),
+        maintenance: false,
+        maintenance_at: tokio::time::Instant::now() + std::time::Duration::from_secs(1),
         readiness,
+        readiness_pending: false,
     };
     let body = Body::from_stream(futures_util::stream::unfold(follow, |mut f| async move {
         if f.done {
@@ -97,10 +113,15 @@ pub(crate) async fn events<D: Directory>(
             if !f.session.is_live(&f.state.directory).await {
                 return None;
             }
-            if let Some(listener) = &mut f.readiness
-                && listener.changes.has_changed().unwrap_or(false)
+            if f.readiness_pending
+                || f.readiness
+                    .as_ref()
+                    .is_some_and(|listener| listener.changes.has_changed().unwrap_or(false))
             {
-                listener.changes.borrow_and_update();
+                if let Some(listener) = &mut f.readiness {
+                    listener.changes.borrow_and_update();
+                }
+                f.readiness_pending = false;
                 return Some((Ok(encode(AccountFrame::ReadinessChanged)), f));
             }
             if let Some(bookmark) = f.page.pop_front() {
@@ -110,17 +131,35 @@ pub(crate) async fn events<D: Directory>(
                     f,
                 ));
             }
-            let st = f.state.clone();
+            while matches!(
+                f.wake.receiver.try_recv(),
+                Ok(_) | Err(tokio::sync::broadcast::error::TryRecvError::Lagged(_))
+            ) {}
             let p = f.p.clone();
             let after = f.after.clone();
-            let page = tokio::task::spawn_blocking(move || {
-                let mut c = st.inputs.open(p.id)?;
-                st.inputs.clean(&mut c, &st.directory, &p)?;
-                Inputs::page(&c, &after)
+            let maintenance = f.maintenance
+                || tokio::time::Instant::now() >= f.maintenance_at
+                || f.changes
+                    .iter()
+                    .any(|change| change.has_changed().unwrap_or(true));
+            if maintenance {
+                for change in &mut f.changes {
+                    let _ = change.borrow_and_update();
+                }
+            }
+            let mut reader = f.reader.take()?;
+            let (reader, page) = tokio::task::spawn_blocking(move || {
+                let page = reader.page(&p, &after, maintenance);
+                (reader, page)
             })
             .await
-            .ok()?
             .ok()?;
+            f.reader = Some(reader);
+            if maintenance {
+                f.maintenance_at = tokio::time::Instant::now() + std::time::Duration::from_secs(1);
+            }
+            f.maintenance = false;
+            let page = page.ok()?;
             let Some(page) = page else {
                 f.done = true;
                 return Some((Ok(encode(AccountFrame::Reset)), f));
@@ -135,7 +174,36 @@ pub(crate) async fn events<D: Directory>(
                 let bookmark = f.after.clone();
                 return Some((Ok(encode(AccountFrame::Ready { bookmark })), f));
             }
-            tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+            let authority = async {
+                if f.changes.is_empty() {
+                    std::future::pending::<()>().await;
+                }
+                let _ = futures_util::future::select_all(
+                    f.changes.iter_mut().map(|c| Box::pin(c.changed())),
+                )
+                .await;
+            };
+            let readiness = async {
+                match &mut f.readiness {
+                    Some(listener) => listener.changes.changed().await,
+                    None => std::future::pending().await,
+                }
+            };
+            tokio::select! {
+                result = readiness => {
+                    if result.is_err() { return None; }
+                    // Loop through current-session validation before emitting.
+                    f.readiness_pending = true;
+                },
+                _ = f.wake.receiver.recv() => {},
+                _ = authority => { f.maintenance = true; },
+                _ = tokio::time::sleep_until(f.maintenance_at) => {
+                    f.maintenance = true;
+                    // Bounds session expiry and age-based confirmation checks;
+                    // commits wake immediately, independently of this keepalive.
+                    return Some((Ok(": keepalive\n\n".into()), f));
+                }
+            }
         }
     }));
     (

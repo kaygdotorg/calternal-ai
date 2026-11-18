@@ -6,7 +6,7 @@ use calternal_fsio::{names, rename_safely, write_atomic_mode};
 use rusqlite::{OptionalExtension, params};
 use std::{
     fs::{self, File},
-    path::{Path, PathBuf},
+    path::Path,
 };
 use uuid::Uuid;
 
@@ -117,6 +117,9 @@ pub(crate) fn encoded(item: &Item, format: &FileFormat) -> Result<Vec<u8>> {
 }
 impl Space {
     fn registration(&self, kind: &str) -> Result<(Placement, FileFormat)> {
+        if let Some(definition) = self.registrations.borrow().get(kind) {
+            return Ok(definition.clone());
+        }
         let json = self
             .conn
             .query_row("SELECT definition FROM kinds WHERE kind=?1", [kind], |r| {
@@ -125,7 +128,13 @@ impl Space {
             .optional()
             .map_err(internal)?
             .ok_or_else(|| Error::invalid_input("kind is not registered"))?;
-        serde_json::from_str(&json).map_err(internal)
+        let definition: (Placement, FileFormat) = serde_json::from_str(&json).map_err(internal)?;
+        let mut cache = self.registrations.borrow_mut();
+        if cache.len() >= crate::db::KIND_CACHE {
+            cache.clear();
+        }
+        cache.insert(kind.into(), definition.clone());
+        Ok(definition)
     }
     pub(crate) fn validate_bytes(&self, kind: &str, bytes: &[u8]) -> Result<()> {
         let (_, format) = self.registration(kind)?;
@@ -133,20 +142,6 @@ impl Space {
             return Err(Error::invalid_input("Markdown must be UTF-8"));
         }
         Ok(())
-    }
-    pub(crate) fn file_path(&self, id: Uuid) -> Result<PathBuf> {
-        let path: String = self
-            .conn
-            .query_row(
-                "SELECT path FROM items WHERE id=?1",
-                [id.to_string()],
-                |r| r.get(0),
-            )
-            .optional()
-            .map_err(internal)?
-            .ok_or_else(missing)?;
-        ensure_item_path(&path)?;
-        Ok(self.files.join(path))
     }
     /// UUID names avoid Trash collisions; placement remains the existing guarded move.
     pub(crate) fn trash_path(&self, kind: &str, id: Uuid) -> Result<String> {
@@ -170,7 +165,7 @@ impl Space {
         // Prepare the folder once per cached name set, not on every write.
         if !self.names.contains_key(&folder) {
             calternal_fsio::private::directory(&dir).map_err(internal)?;
-            if self.names.len() >= 32 {
+            if self.names.len() >= crate::db::KIND_CACHE {
                 self.names.clear();
             }
         }
@@ -240,15 +235,18 @@ impl Space {
         Ok(format!("{folder}/{candidate}"))
     }
     pub(crate) fn check_file(&mut self, id: Uuid) -> Result<Option<String>> {
-        let (state, expected): (String, Option<String>) = self
-            .conn
-            .query_row(
-                "SELECT mat_state,file_hash FROM items WHERE id=?1",
-                [id.to_string()],
-                |r| Ok((r.get(0)?, r.get(1)?)),
-            )
-            .map_err(internal)?;
-        let found = match hash(&self.file_path(id)?) {
+        let head = self.header(id)?;
+        self.check_header(id, &head)
+    }
+    /// Check the current file once against an already loaded header. The caller
+    /// holds the space lock; conflicts durably block this item and preserve bytes.
+    pub(crate) fn check_header(
+        &mut self,
+        id: Uuid,
+        head: &crate::db::Header,
+    ) -> Result<Option<String>> {
+        ensure_item_path(&head.path)?;
+        let found = match hash(&self.files.join(&head.path)) {
             Ok(found) => found,
             Err(e) if e.code == calternal_types::ErrorCode::Conflict => {
                 self.block(id)?;
@@ -256,11 +254,11 @@ impl Space {
             }
             Err(e) => return Err(e),
         };
-        if state == "blocked" || found != expected {
+        if head.state == "blocked" || found != head.file_hash {
             self.block(id)?;
             return Err(blocked());
         }
-        Ok(expected)
+        Ok(head.file_hash.clone())
     }
     fn block(&self, id: Uuid) -> Result<()> {
         self.conn
@@ -283,14 +281,26 @@ impl Space {
         snapshot: Option<&Item>,
         fault: fn(FaultPoint),
     ) -> Result<()> {
-        let (state, expected, old): (String, Option<String>, Option<String>) = self
-            .conn
-            .query_row(
-                "SELECT mat_state,file_hash,old_path FROM items WHERE id=?1",
-                [id.to_string()],
-                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
-            )
-            .map_err(internal)?;
+        let head = self.header(id)?;
+        self.place_header(id, head, snapshot, fault)
+    }
+
+    /// Place the already loaded revision header under its space lock, preserving
+    /// the final checked file read and all file/directory durability boundaries.
+    pub(crate) fn place_header(
+        &mut self,
+        id: Uuid,
+        head: crate::db::Header,
+        snapshot: Option<&Item>,
+        fault: fn(FaultPoint),
+    ) -> Result<()> {
+        let crate::db::Header {
+            state,
+            file_hash: expected,
+            old_path: old,
+            path,
+            ..
+        } = head;
         if state == "purged" || state == "purging" {
             return Err(missing());
         }
@@ -311,7 +321,8 @@ impl Space {
         let (_, format) = self.registration(&item.kind)?;
         let bytes = encoded(item, &format)?;
         let new_hash = file_hash(&bytes);
-        let path = self.file_path(id)?;
+        ensure_item_path(&path)?;
+        let path = self.files.join(path);
         let dir = path.parent().ok_or_else(|| internal("parent"))?;
         // Normally prepared by `choose_path`; recreate only if it vanished since.
         if !fs::symlink_metadata(dir).is_ok_and(|metadata| metadata.is_dir()) {
@@ -405,12 +416,15 @@ impl Space {
             }
             return Err(e);
         }
-        self.conn
+        crate::db::bookkeeping(&self.conn, || {
+            self.conn
             .execute(
                 "UPDATE items SET mat_state='materialized',file_hash=?1,old_path=NULL WHERE id=?2",
                 params![new_hash, id.to_string()],
             )
             .map_err(internal)?;
+            Ok(())
+        })?;
         Ok(())
     }
     pub(crate) fn cleanup(&self) -> Result<()> {

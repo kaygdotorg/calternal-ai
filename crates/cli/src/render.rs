@@ -85,6 +85,7 @@ pub fn operation(out: &Output, operation: &str, request_id: &str, data: Value) -
                     "This space has no notes yet; run `cl notes create` to add one.",
                 )
                 .hint(hint)
+                .page_cursor()
         }
         "notes.get" | "notes.create" | "notes.update" => {
             let note = &data["note"];

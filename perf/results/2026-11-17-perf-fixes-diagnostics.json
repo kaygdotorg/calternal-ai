@@ -1,0 +1,83 @@
+{
+  "instrumented_syncs_are_not_latency_acceptance": true,
+  "sync_observations": {
+    "before": [
+      {
+        "run": "sync-corrected-before-0",
+        "sync_calls": {
+          "content_wal": 3,
+          "journal_wal": 1,
+          "other_including_witness": 1,
+          "userdata_directory": 1,
+          "userdata_file": 1
+        }
+      },
+      {
+        "run": "sync-corrected-before-1",
+        "sync_calls": {
+          "content_wal": 3,
+          "journal_wal": 1,
+          "other_including_witness": 1,
+          "userdata_directory": 1,
+          "userdata_file": 1
+        }
+      },
+      {
+        "run": "sync-corrected-before-2",
+        "sync_calls": {
+          "content_wal": 3,
+          "journal_wal": 1,
+          "other_including_witness": 1,
+          "userdata_directory": 1,
+          "userdata_file": 1
+        }
+      }
+    ],
+    "after": [
+      {
+        "run": "sync-corrected-after-0",
+        "sync_calls": {
+          "content_wal": 2,
+          "journal_wal": 1,
+          "other_including_witness": 1,
+          "userdata_directory": 1,
+          "userdata_file": 1
+        }
+      },
+      {
+        "run": "sync-corrected-after-1",
+        "sync_calls": {
+          "content_wal": 2,
+          "journal_wal": 1,
+          "other_including_witness": 1,
+          "userdata_directory": 1,
+          "userdata_file": 1
+        }
+      },
+      {
+        "run": "sync-corrected-after-2",
+        "sync_calls": {
+          "content_wal": 2,
+          "journal_wal": 1,
+          "other_including_witness": 1,
+          "userdata_directory": 1,
+          "userdata_file": 1
+        }
+      }
+    ]
+  },
+  "startup_writers_before_first_use": {
+    "matrix-final": {
+      "head_arms": 40,
+      "minimum": 0,
+      "maximum": 0,
+      "all_zero": true
+    },
+    "repeat-final-1000x100": {
+      "head_arms": 6,
+      "minimum": 0,
+      "maximum": 0,
+      "all_zero": true
+    }
+  }
+}

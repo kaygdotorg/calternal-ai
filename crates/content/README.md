@@ -10,8 +10,10 @@ and **userdata-hdd** (other originals). The current `calternal-roots::Roots`
 field names are used at its API boundary until that crate's separate rename.
 Callers retain its root guards. The disposable server helper places the two
 userdata trees inside its data directory; it is not production mount validation.
-Production callers use `Store::open_roots` with independently validated roots
-and a journal-witness root outside appdata backups.
+The host adapter `Store::open` validates and locks the supplied roots and retains
+those guards during background placement. The witness root is `<appdata>/secrets`;
+production backup policy must keep independent witnesses outside restored state.
+This preview is not proof of complete file-only or rollback recovery.
 
 | Location | Contents |
 | --- | --- |
@@ -43,12 +45,26 @@ when the file is materialized.
 
 Writes commit metadata, immutable bytes and an outbox intent with FULL SQLite
 synchronization. Recovery publishes its journal event and receipt, uses a FULL
-journal publication barrier, then retires the intent. Checked current-file
-placement fsyncs the file and directory before success. Restart handles both
+journal publication barrier, then durably retires the intent. Acknowledgement
+requires FULL content/history, journal/receipt and outbox-retirement commits on SSD.
+The retirement barrier prevents power loss from resurrecting an intent after its
+receipt has expired; removing it needs a shared transaction or expiry proof. The existing
+lifecycle worker wakes after commit, fsyncs the current file and directory, then
+marks placement with NORMAL bookkeeping. Lost bookkeeping is replayed from durable
+intents and file hashes. Pending heads pin their existing cache slots; no second
+cache, queue, per-write thread or unbounded task list is added. The worker pins the
+host's root locks while doing I/O. It does not poll while idle: the inherited
+30-second retirement deadline remains; failed placement retries after 50 ms.
+ADR 0062's materialization maximum is one second after acknowledgement. The oldest
+pending age never extends when newer edits arrive. A missed deadline refuses new
+writes in that space until placement succeeds; failed/outside-changed files remain
+preserved and blocked. An update to a pending head first finishes its placement,
+keeping the existing checked outside-edit and rename guards. Crash recovery opens
+and recovers affected spaces lazily before serving their first operation. Restart handles both
 committed-before-placement and placed-before-bookkeeping states. This preserves
 the preview's checked-copy contract, including its documented limitation for an
 external writer racing the last hash check and replacement. It does not implement
-file-only reconstruction, watcher reconciliation, tier moves, backlinks rewriting
+file-only reconstruction, watcher reconciliation, tier moves, general backlinks reconciliation
 or a complete production recovery profile.
 
 `ensure_standard_collection` creates stable, idempotent manifest-keyed space
@@ -64,7 +80,11 @@ Main modules are `types` (plain boundary values), `db` (bound metadata/history),
 calls into each space's inherited journal store), `pool` (pooled read connections),
 `collections` (collection records) and `lib` (service/cache/publication
 coordination). At most 64 spaces are open, released after 600 idle seconds in the
-server, with a 30-second background sweep; each open space owns its journal store. Name caches are capped by directory count, and inherited name
+server, with a 30-second background sweep; each open space owns its journal store.
+Startup opens only the identifier catalog. First use validates that space and
+replays its outbox before pending file placement, under the existing slot lock;
+failed recovery never exposes an opened slot. Root locks and authority recovery
+still complete eagerly before the server admits requests. Name caches are capped by directory count, and inherited name
 watchers avoid warm Linux directory rescans; their byte size is not separately
 metered. There is no performance qualification claim.
 
@@ -72,9 +92,11 @@ Every public operation documents its allocations, locks, I/O and durability cost
 Lists seek an index and load bounded metadata pages. Item/history reads select
 one physical database. Resolution uses indexed global identifier routes read through
 a connection pool, never membership/content scans. Request IDs are unique per
-(account, space) and checked in that space's journal. Writes pay FULL content and
-journal commits plus file/directory syncs, and a FULL catalog insert only when an
-item is created. Work in one space never waits for another: each space has its own
+(account, space) and checked in that space's journal. Writes pay three FULL SSD commits before acknowledgement (content, journal and
+outbox retirement),
+plus a FULL catalog insert only for a new item. The former FULL placement mark is now NORMAL, safe-to-replay bookkeeping.
+File/directory syncs follow off the acknowledgement path. SQLite may still sync at
+WAL creation/checkpoint; those maintenance costs are measured separately. Work in one space never waits for another: each space has its own
 lock, the cache map lock covers lookups only, and journal calls run on the caller's
 thread.
 
@@ -83,7 +105,8 @@ Threads reuse the same Markdown kind storage and guarded move outbox. `admit_ite
 ## Indexed discovery and lifecycle
 
 The current head keeps rebuildable label and link projections. Per-space SQL
-indexes provide prefix and name lookups without reading body bytes. A move
+indexes provide keyset pages in update, folded title or tag name order without
+reading body bytes. Each warmed-space page uses one indexed query. A move
 between live placement and Trash changes index membership in the same
 transaction as the revision and outbox intent. A path-and-link edit stages
 changed same-kind sources atomically and finishes their recoverable placement
@@ -92,3 +115,12 @@ its versions while retaining the item identity in the selected space.
 
 See [Notes operations](../../docs/notes-operations.md) for the native
 plugin's bounds and retention.
+
+Warm ordinary writes load kind, revision, sequence, path, placement state, prior
+path and expected file hash in one shared header query. Admission reuses it for
+the checked file read; a pending prior revision is placed and then reread before
+another edit. Placement reuses its header path instead of selecting it again.
+No previous body is loaded on the ordinary acknowledgment path. The two checked
+file reads (admission and later placement) remain; only repeated SQL header
+reads were removed. Linked path edits and Trash/restore finish placement before
+returning, and purge finishes removal before publishing its receipt.

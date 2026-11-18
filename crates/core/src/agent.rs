@@ -146,9 +146,14 @@ pub enum OperationRisk {
 }
 
 impl OperationRisk {
-    /// Whether a person can retain approval for this class across a thread.
-    pub fn allows_thread_approval(self) -> bool {
-        matches!(self, Self::Read | Self::Reversible | Self::External)
+    /// Approval choices in display order. Irreversible and access-widening
+    /// actions admit a single execution; other actions may be scoped to a thread.
+    pub fn approval_lifetimes(self) -> &'static [crate::ApprovalLifetime] {
+        use crate::ApprovalLifetime::{Once, ThisThread};
+        match self {
+            Self::Read | Self::Reversible | Self::External => &[Once, ThisThread],
+            Self::Irreversible | Self::WidensAccess => &[Once],
+        }
     }
 }
 

@@ -27,10 +27,12 @@ mod requests_cases;
 mod requests_review_cases;
 mod threads_cases;
 
+mod cursor_cases;
 mod drafts_cases;
 #[path = "live_cases.rs"]
 mod live_cases;
 mod notes_cases;
+mod perf_cases;
 mod simplify_review_cases;
 mod worker_cases;
 

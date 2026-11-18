@@ -36,6 +36,14 @@ for the owner once, passes its one-use code over stdin, and waits for the
 machine to report online. Passkey setup uses an empty installation as
 described below.
 
+The morning build requires fresh roots for auth schema 8 and jobs schema 2.
+When refreshing an existing preview, build the server and both images from
+the same tree first. Stop one installation at a time and set aside its
+three server roots and machine enrollment before starting the new binary.
+Keep its sandbox homes in place. The seeded installation enrolls a new
+machine for its new account. The empty browser installation generates a new
+first-owner code for the coordinator.
+
 The server listens on `127.0.0.1:34135`. The relay binds `34134` to dev-01's
 NetBird IPv4 address on `wt0`, observed as `10.69.69.237`. The three
 `calternal-e2e-*.service` user units write to the systemd journal, with
@@ -80,6 +88,21 @@ To check continuation, use `./scripts/dev-e2e/prove.py claude-continuation`
 in place of `prove.py claude`. It verifies a two-message exchange and reports
 only timing and outcome.
 
+From dev-01, run the cached readiness command for the seeded account and its
+personal space after a real turn:
+
+```sh
+export CALTERNAL_URL=http://127.0.0.1:34135
+export CALTERNAL_TOKEN_FILE="$HOME/calternal-e2e/appdata/dev-tokens/owner.token"
+cal="$HOME/calternal-e2e/bin/calternal"
+space=$("$cal" --json invoke spaces.list --input '{}' |
+  jq -er '.data.spaces[] | select(.personal and .role == "owner") | .id')
+"$cal" agent readiness --space-id "$space"
+```
+
+Readiness uses the latest machine observation. It shows `Unknown` for provider
+sign-in until a turn or Check reports it.
+
 ## Browser installation and Caddy
 
 Use a separate empty installation for the real browser passkey. On dev-01,
@@ -97,6 +120,10 @@ This installs a separate binary and pairs three roots under
 `service.sh stop-browser` stops just those two units. `service.sh logs`
 includes both installations. The fixture reset only resets the seeded
 installation.
+After a refresh, rehearse with a third installation that has its own roots,
+machine unit, and software passkey. The rehearsal can exercise direct
+Claude Code startup or the optional fixture proof. The live browser token
+stays available for the owner.
 
 Inside the coordinator’s existing `preview.calternal.cloud` Caddy site,
 route the absolute API paths ahead of the static SPA fallback:
@@ -134,16 +161,12 @@ in Settings.
    `https://preview.calternal.cloud/ai/?server=1#setup=SETUP_CODE`, with the
    code from the file below in the fragment. You can also open
    [the preview](https://preview.calternal.cloud/ai/?server=1) and paste the
-   code into the form.
-2. Create your passkey and stay signed in. The server creates your Personal
-   space during setup. In the browser’s developer tools,
-   open storage for `https://preview.calternal.cloud` and copy the value of
-   `__Host-calternal_session` for the next step.
-3. Run the post-setup script and paste the session value at its hidden
-   prompt. Clear the clipboard after pasting. The script uses the session
-   only in memory against dev-01’s loopback server. It enrolls the browser
-   account’s machine, verifies a fixture turn, switches the machine to the
-   Claude Code image, and prints the private sandbox home.
+   code into the form. Create your passkey and stay signed in.
+2. In **Settings → Machines**, select
+   **Make a code**. Copy the one-time enrollment code shown in the command.
+3. Run the post-setup script and paste the enrollment code when prompted.
+   It starts dev-01 on the Claude Code image and prints your sandbox home
+   and login command.
 
    ```sh
    ssh -t claude@calternal-dev-01-compute02 'cd ~/Developer/lanes/e2e-dev && ./scripts/dev-e2e/after-owner-setup.sh'
@@ -160,7 +183,27 @@ in Settings.
    ssh -t claude@calternal-dev-01-compute02 'podman run --rm -it -e HOME=/home/agent -v /home/claude/calternal-e2e/browser/machine/sandboxes/accounts/ACCOUNT_UUID/home:/home/agent localhost/calternal-e2e-claude:dev claude auth login'
    ```
 
-5. Back in the preview, open a new Thread in your space and send a message.
+   Your first message in a new Thread in the preview is the live check.
+
+### Optional fixture verification
+
+Before placing provider sign-in files, operators can append
+`--verify-fixture` to the post-setup script command. While the script waits,
+open a new Thread in the preview and send `Verify the fixture machine`.
+After **Hello 🌏** appears and the turn finishes, press Enter in the script.
+It checks for a fresh fixture workspace marker on dev-01 and waits for the
+fixture container to be removed before switching to Claude Code. It then
+prints the sandbox home and login command.
+
+The enrollment code comes from the signed-in browser’s
+`POST /api/v1/machines/codes` request. The script feeds it to
+`calternal machine enroll --code -` over stdin and derives the account UUID
+from the resulting machine identity. Creating a thread, sending a turn and
+reading its stream require the owner's authority in their space. Those calls
+run in the preview using its existing browser session. A fully scripted
+proof would need a scoped operation such as `machines.verify`. The owner
+would authorize one fixture diagnostic on the newly enrolled machine, and
+the script could receive that diagnostic's outcome through the machine channel.
 
 ### First owner token
 
@@ -173,8 +216,9 @@ Keep the code out of query strings, the console, and logs. An unredeemed
 token expires after 24 hours.
 Restarting the empty installation replaces the unused token. The file path
 is safe to report. After setup, check `GET /api/v1/auth/status`; the used
-file can remain and its value is invalid. The post-setup script discovers
-the account and its provisioned Personal space through the signed-in API.
+file can remain and its value is invalid. The preview operates in the owner’s
+server-created Personal space. The post-setup script uses the enrolled
+machine identity to locate the account’s home.
 The enrollment target is
 `http://127.0.0.1:34136` from dev-01, with a machine directory under
 `~/calternal-e2e/browser/machine`. Any Claude Code sign-in for that account
@@ -258,11 +302,12 @@ and [job stream implementation](../crates/server/src/plugins/job_api.rs).
 | Threads decoded a flat provider chunk | The merged browser adapter reads `chunk.data.event` for provider output. Rendering the separate placement and session notices remains a UI follow-up. |
 | Browser setup and sign-in need their own first owner | Caddy reaches the separate browser server. The post-setup script passed with a fresh software passkey and its provisioned Personal space. The preview’s actual owner ceremony remains to be exercised. |
 | Podman startup exhausted the dev-01 account’s kernel keyring quota | The instrumented worker test saw `crun` reject 14 starts with exit 126. Individual failures took 301–1,912 ms, and the test surfaced a 10-second worker-drain timeout. Adjusting a test deadline would leave the sandbox startup fault in place. |
+| An enrolled plugin worker hit the three-second cold deadline | The cached-image diagnostic measured a 2.184-second p99 on dev-01. The lane adds a three-second allowance for the first call to a fresh enrolled worker. See the [measurement](reviews/dev-e2e-2026-11-17.md#enrolled-worker-cold-starts-on-dev-01). |
 
 See [Forgejo #34](https://git.kayg.org/kayg/calternal-ai/issues/34) for the
 active qualification status.
 
-On dev-01, prefix Rust test commands with `./scripts/dev-e2e/check-podman-tests.sh`
+On dev-01, prefix Rust test commands with `./scripts/check-podman-tests.sh`
 inside the Nix shell. It gives the run a private temporary directory and fails
 if a container owned by that run remains after the test process returns, then
 attempts to remove those containers. Test fixtures also remove their own

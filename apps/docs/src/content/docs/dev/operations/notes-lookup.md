@@ -6,7 +6,7 @@ title: "notes.lookup"
 
 > **Preview: the app is not released.** This site describes a development preview and accepted designs; it does not establish production readiness.
 
-Find notes by title prefix
+Find a page of up to 100 notes by title prefix
 
 Capability: not declared in this catalogue; the host policy remains authoritative.
 
@@ -16,7 +16,7 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
 {
   "risk": "read",
   "id": "notes.lookup",
-  "description": "Find notes by title prefix",
+  "description": "Find a page of up to 100 notes by title prefix",
   "mutates": false
 }
 ```
@@ -29,6 +29,12 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
   "additionalProperties": false,
   "description": "Space-scoped lookup of notes or tags by literal prefix.",
   "properties": {
+    "cursor": {
+      "description": "Opaque cursor from the preceding page with the same space and filters.",
+      "maxLength": 524288,
+      "minLength": 1,
+      "type": "string"
+    },
     "prefix": {
       "description": "Literal prefix, up to 256 Unicode scalars. Empty starts at the first name.",
       "maxLength": 256,
@@ -101,6 +107,13 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
   },
   "description": "Bounded title-matching page in folded title and UUID order.",
   "properties": {
+    "next_cursor": {
+      "description": "Opaque continuation for the same prefix, omitted at the end.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
     "notes": {
       "description": "At most 100 live matches with their exact on-disk destinations.",
       "items": {

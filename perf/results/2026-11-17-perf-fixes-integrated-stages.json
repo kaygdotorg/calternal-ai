@@ -1,0 +1,971 @@
+{
+  "baseline_commit": "40a3848",
+  "baseline_plugins": "/home/kayg/calternal-ai-perf/perf-fixes-integrated/plugins",
+  "binary_sha256": "fb4416fb02cc1dfea1ede519931d13498e555811a1fc84083cb0e49574b37ab9  /home/kayg/calternal-ai-perf/perf-fixes-integrated/bin/calternal-debug\nfb4416fb02cc1dfea1ede519931d13498e555811a1fc84083cb0e49574b37ab9  /home/kayg/calternal-ai-perf/perf-fixes-integrated/bin/calternal-debug\n099460bf9f4224e55e254455136d31e99cee80d00210d2daefd3b2dae13a91a6  /home/kayg/calternal-ai-perf/perf-fixes-integrated/bin/calternal-perf\n",
+  "cache": "cold pairs drop OS caches; warm pairs retain OS caches",
+  "cold_pairs": 0,
+  "commit": "40a3848",
+  "failures": [],
+  "machine": "Linux calternal-perf-01-backup01 6.12.115+deb13.1-amd64 #1 SMP PREEMPT_DYNAMIC Debian 6.12.115-2 (2026-11-01) x86_64 GNU/Linux\nArchitecture:                            x86_64\nCPU op-mode(s):                          32-bit, 64-bit\nAddress sizes:                           48 bits physical, 48 bits virtual\nByte Order:                              Little Endian\nCPU(s):                                  4\nOn-line CPU(s) list:                     0-3\nVendor ID:                               AuthenticAMD\nModel name:                              AMD Ryzen 7 3700X 8-Core Processor\nCPU family:                              23\nModel:                                   113\nThread(s) per core:                      1\nCore(s) per socket:                      4\nSocket(s):                               1\nStepping:                                0\nBogoMIPS:                                7186.49\nFlags:                                   fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush mmx fxsr sse sse2 ht syscall nx mmxext fxsr_opt pdpe1gb rdtscp lm rep_good nopl xtopology cpuid extd_apicid tsc_known_freq pni pclmulqdq ssse3 fma cx16 sse4_1 sse4_2 x2apic movbe popcnt tsc_deadline_timer aes xsave avx f16c rdrand hypervisor lahf_lm cmp_legacy svm cr8_legacy abm sse4a misalignsse 3dnowprefetch osvw perfctr_core ssbd ibpb stibp vmmcall fsgsbase tsc_adjust bmi1 avx2 smep bmi2 rdseed adx smap clflushopt clwb sha_ni xsaveopt xsavec xgetbv1 clzero xsaveerptr wbnoinvd arat npt lbrv nrip_save tsc_scale vmcb_clean flushbyasid pausefilter pfthreshold v_vmsave_vmload vgif umip rdpid overflow_recov succor\nVirtualization:                          AMD-V\nHypervisor vendor:                       KVM\nVirtualization type:                     full\nL1d cache:                               256 KiB (4 instances)\nL1i cache:                               256 KiB (4 instances)\nL2 cache:                                2 MiB (4 instances)\nL3 cache:                                64 MiB (4 instances)\nNUMA node(s):                            1\nNUMA node0 CPU(s):                       0-3\nVulnerability Gather data sampling:      Not affected\nVulnerability Indirect target selection: Not affected\nVulnerability Itlb multihit:             Not affected\nVulnerability L1tf:                      Not affected\nVulnerability Mds:                       Not affected\nVulnerability Meltdown:                  Not affected\nVulnerability Mmio stale data:           Not affected\nVulnerability Reg file data sampling:    Not affected\nVulnerability Retbleed:                  Mitigation; untrained return thunk; SMT disabled\nVulnerability Spec rstack overflow:      Mitigation; SMT disabled\nVulnerability Spec store bypass:         Mitigation; Speculative Store Bypass disabled via prctl\nVulnerability Spectre v1:                Mitigation; usercopy/swapgs barriers and __user pointer sanitization\nVulnerability Spectre v2:                Mitigation; Retpolines; IBPB conditional; STIBP disabled; RSB filling; PBRSB-eIBRS Not affected; BHI Not affected\nVulnerability Srbds:                     Not affected\nVulnerability Tsa:                       Not affected\nVulnerability Tsx async abort:           Not affected\nVulnerability Vmscape:                   Not affected\n               total        used        free      shared  buff/cache   available\nMem:      8262774784  1394905088  6778920960   600051712  1065320448  6867869696\nSwap:              0           0           0\nTARGET SOURCE    FSTYPE OPTIONS\n/      /dev/sda1 ext4   rw,relatime,discard,errors=remount-ro\nNAME      SIZE ROTA FSTYPE  MOUNTPOINTS\nsda       400G    0         \n\u251c\u2500sda1  399.9G    0 ext4    /\n\u251c\u2500sda14     3M    0         \n\u2514\u2500sda15   124M    0 vfat    /boot/efi\nsdb       100G    1         \n\u2514\u2500sdb1    100G    1 xfs     /srv/homes\nsr0         4M    1 iso9660 \n",
+  "noise_pct": {
+    "1x1000/baseline/warm/account.draft_save_ack": 2.4164405655896726,
+    "1x1000/baseline/warm/account.draft_write_to_feed": 2.761615899085858,
+    "1x1000/baseline/warm/admission": 2.054794520547947,
+    "1x1000/baseline/warm/auth.session": 4.573133763957091,
+    "1x1000/baseline/warm/live.commit_to_client": 14.285714285714286,
+    "1x1000/baseline/warm/live.update_to_client": 1.451858223346454,
+    "1x1000/baseline/warm/memory.1_spaces.after_2s": 0.6855463968007834,
+    "1x1000/baseline/warm/notes.get": 2.92511767845438,
+    "1x1000/baseline/warm/notes.list.first100": 1.603903735600112,
+    "1x1000/baseline/warm/notes.update": 1.463674923419634,
+    "1x1000/baseline/warm/receipt.lookup": 4.155124653739616,
+    "1x1000/baseline/warm/receipt.round_trip": 2.330189047476541,
+    "1x1000/baseline/warm/resolve": 4.200524439468495,
+    "1x1000/baseline/warm/space.process_cold_open": 52.14086568307394,
+    "1x1000/baseline/warm/startup.1_spaces": 56.7662098550259,
+    "1x1000/baseline/warm/userdata.write_to_durable_file": 1.4038780238152104,
+    "1x1000/head/warm/account.draft_save_ack": 7.550794561704756,
+    "1x1000/head/warm/account.draft_write_to_feed": 6.810755962134075,
+    "1x1000/head/warm/admission": 1.7182130584192457,
+    "1x1000/head/warm/auth.session": 1.3812034424349984,
+    "1x1000/head/warm/live.commit_to_client": 14.285714285714286,
+    "1x1000/head/warm/live.update_to_client": 17.217210689822235,
+    "1x1000/head/warm/memory.1_spaces.after_2s": 2.019712392955243,
+    "1x1000/head/warm/notes.get": 3.8205115472400344,
+    "1x1000/head/warm/notes.list.first100": 0.7964335140031249,
+    "1x1000/head/warm/notes.update": 17.24711260420813,
+    "1x1000/head/warm/receipt.lookup": 3.3898305084745797,
+    "1x1000/head/warm/receipt.round_trip": 4.215010696395809,
+    "1x1000/head/warm/resolve": 1.9498420156327605,
+    "1x1000/head/warm/space.process_cold_open": 20.238205455276983,
+    "1x1000/head/warm/startup.1_spaces": 30.089230310608496,
+    "1x1000/head/warm/userdata.write_to_durable_file": 18.036772065407824
+  },
+  "operation_concurrency": 1,
+  "plugins": "/home/kayg/calternal-ai-perf/perf-fixes-integrated/plugins",
+  "qualification": "incomplete: admission, commit timestamp and three-host-call worker; see separate job and idle suites",
+  "reproduced_breach": true,
+  "runs": [
+    {
+      "arm": "baseline",
+      "cache": "warm",
+      "pair": 0,
+      "size": 1000,
+      "spaces": 1,
+      "summary": [
+        {
+          "breached": false,
+          "max": 41.1297,
+          "metric": "account.draft_save_ack",
+          "p50": 8.315141,
+          "p95": 26.826324,
+          "p99": 38.565915,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 41.534819,
+          "metric": "account.draft_write_to_feed",
+          "p50": 8.577069999999999,
+          "p95": 27.086551,
+          "p99": 40.319454,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 0.963,
+          "metric": "admission",
+          "p50": 0.291,
+          "p95": 0.403,
+          "p99": 0.443,
+          "samples": 200
+        },
+        {
+          "breached": false,
+          "max": 0.7203080000000001,
+          "metric": "auth.session",
+          "p50": 0.47144199999999997,
+          "p95": 0.5629740000000001,
+          "p99": 0.696643,
+          "samples": 100
+        },
+        {
+          "breached": true,
+          "max": 25.0,
+          "metric": "live.commit_to_client",
+          "p50": 7.0,
+          "p95": 20.0,
+          "p99": 23.0,
+          "samples": 100
+        },
+        {
+          "breached": true,
+          "max": 46.171487,
+          "metric": "live.update_to_client",
+          "p50": 23.856255,
+          "p95": 38.396516,
+          "p99": 43.890918,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 47.81640625,
+          "metric": "memory.1_spaces.after_2s",
+          "p50": 47.81640625,
+          "p95": 47.81640625,
+          "p99": 47.81640625,
+          "samples": 1
+        },
+        {
+          "breached": false,
+          "max": 1.6307820000000002,
+          "metric": "notes.get",
+          "p50": 1.071135,
+          "p95": 1.3286769999999999,
+          "p99": 1.447749,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 4.566765999999999,
+          "metric": "notes.list.first100",
+          "p50": 3.137311,
+          "p95": 3.634821,
+          "p99": 3.98061,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 47.725714,
+          "metric": "notes.update",
+          "p50": 23.962083,
+          "p95": 27.997294999999998,
+          "p99": 44.242897000000006,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 1.159,
+          "metric": "receipt.lookup",
+          "p50": 0.349,
+          "p95": 0.46,
+          "p99": 0.503,
+          "samples": 200
+        },
+        {
+          "breached": false,
+          "max": 2.8916609999999996,
+          "metric": "receipt.round_trip",
+          "p50": 1.879177,
+          "p95": 2.3293,
+          "p99": 2.824136,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 1.914412,
+          "metric": "resolve",
+          "p50": 0.652921,
+          "p95": 0.9091210000000001,
+          "p99": 1.115539,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 13.753138,
+          "metric": "space.process_cold_open",
+          "p50": 13.753138,
+          "p95": 13.753138,
+          "p99": 13.753138,
+          "samples": 1
+        },
+        {
+          "breached": false,
+          "max": 116.60612900000001,
+          "metric": "startup.1_spaces",
+          "p50": 116.60612900000001,
+          "p95": 116.60612900000001,
+          "p99": 116.60612900000001,
+          "samples": 1
+        },
+        {
+          "breached": false,
+          "max": 74.04073199999999,
+          "metric": "userdata.write_to_durable_file",
+          "p50": 38.380114999999996,
+          "p95": 45.941586,
+          "p99": 63.82033400000001,
+          "samples": 100
+        }
+      ]
+    },
+    {
+      "arm": "head",
+      "cache": "warm",
+      "pair": 0,
+      "size": 1000,
+      "spaces": 1,
+      "summary": [
+        {
+          "breached": false,
+          "max": 11.734100000000002,
+          "metric": "account.draft_save_ack",
+          "p50": 8.491411000000001,
+          "p95": 8.920034000000001,
+          "p99": 9.488287,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 12.132064999999999,
+          "metric": "account.draft_write_to_feed",
+          "p50": 8.782886999999999,
+          "p95": 9.235211999999999,
+          "p99": 9.787917,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 0.517,
+          "metric": "admission",
+          "p50": 0.291,
+          "p95": 0.377,
+          "p99": 0.403,
+          "samples": 200
+        },
+        {
+          "breached": false,
+          "max": 0.8570439999999999,
+          "metric": "auth.session",
+          "p50": 0.482333,
+          "p95": 0.5754170000000001,
+          "p99": 0.6472519999999999,
+          "samples": 100
+        },
+        {
+          "breached": true,
+          "max": 22.0,
+          "metric": "live.commit_to_client",
+          "p50": 7.0,
+          "p95": 14.0,
+          "p99": 22.0,
+          "samples": 100
+        },
+        {
+          "breached": true,
+          "max": 38.177707,
+          "metric": "live.update_to_client",
+          "p50": 23.723837,
+          "p95": 36.538719,
+          "p99": 38.012578,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 48.69921875,
+          "metric": "memory.1_spaces.after_2s",
+          "p50": 48.69921875,
+          "p95": 48.69921875,
+          "p99": 48.69921875,
+          "samples": 1
+        },
+        {
+          "breached": false,
+          "max": 1.5595679999999998,
+          "metric": "notes.get",
+          "p50": 1.087446,
+          "p95": 1.32032,
+          "p99": 1.508813,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 3.923503,
+          "metric": "notes.list.first100",
+          "p50": 3.166366,
+          "p95": 3.604386,
+          "p99": 3.883358,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 38.460085,
+          "metric": "notes.update",
+          "p50": 23.830557,
+          "p95": 26.632310999999998,
+          "p99": 36.570689,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 0.464,
+          "metric": "receipt.lookup",
+          "p50": 0.354,
+          "p95": 0.419,
+          "p99": 0.443,
+          "samples": 200
+        },
+        {
+          "breached": false,
+          "max": 2.464212,
+          "metric": "receipt.round_trip",
+          "p50": 1.9025100000000001,
+          "p95": 2.261863,
+          "p99": 2.286139,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 1.1893850000000001,
+          "metric": "resolve",
+          "p50": 0.670003,
+          "p95": 0.9397490000000001,
+          "p99": 1.0199989999999999,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 13.998336,
+          "metric": "space.process_cold_open",
+          "p50": 13.998336,
+          "p95": 13.998336,
+          "p99": 13.998336,
+          "samples": 1
+        },
+        {
+          "breached": false,
+          "max": 67.949332,
+          "metric": "startup.1_spaces",
+          "p50": 67.949332,
+          "p95": 67.949332,
+          "p99": 67.949332,
+          "samples": 1
+        },
+        {
+          "breached": false,
+          "max": 60.713901,
+          "metric": "userdata.write_to_durable_file",
+          "p50": 38.089892,
+          "p95": 43.321072,
+          "p99": 52.738887999999996,
+          "samples": 100
+        }
+      ]
+    },
+    {
+      "arm": "head",
+      "cache": "warm",
+      "pair": 1,
+      "size": 1000,
+      "spaces": 1,
+      "summary": [
+        {
+          "breached": false,
+          "max": 13.044473,
+          "metric": "account.draft_save_ack",
+          "p50": 8.381376,
+          "p95": 9.867267,
+          "p99": 10.255814,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 14.662008,
+          "metric": "account.draft_write_to_feed",
+          "p50": 8.676075,
+          "p95": 10.140827999999999,
+          "p99": 13.241140999999999,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 0.464,
+          "metric": "admission",
+          "p50": 0.294,
+          "p95": 0.389,
+          "p99": 0.422,
+          "samples": 200
+        },
+        {
+          "breached": false,
+          "max": 0.830484,
+          "metric": "auth.session",
+          "p50": 0.486881,
+          "p95": 0.604411,
+          "p99": 0.633536,
+          "samples": 100
+        },
+        {
+          "breached": true,
+          "max": 26.0,
+          "metric": "live.commit_to_client",
+          "p50": 8.0,
+          "p95": 11.0,
+          "p99": 17.0,
+          "samples": 100
+        },
+        {
+          "breached": true,
+          "max": 52.400124,
+          "metric": "live.update_to_client",
+          "p50": 27.389597000000002,
+          "p95": 34.275774,
+          "p99": 45.069395,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 48.3515625,
+          "metric": "memory.1_spaces.after_2s",
+          "p50": 48.3515625,
+          "p95": 48.3515625,
+          "p99": 48.3515625,
+          "samples": 1
+        },
+        {
+          "breached": false,
+          "max": 1.797004,
+          "metric": "notes.get",
+          "p50": 1.1056679999999999,
+          "p95": 1.340177,
+          "p99": 1.441437,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 3.994705,
+          "metric": "notes.list.first100",
+          "p50": 3.170364,
+          "p95": 3.602903,
+          "p99": 3.9047880000000004,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 52.641434000000004,
+          "metric": "notes.update",
+          "p50": 27.492111,
+          "p95": 33.919609,
+          "p99": 37.357361999999995,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 1.792,
+          "metric": "receipt.lookup",
+          "p50": 0.364,
+          "p95": 0.447,
+          "p99": 0.495,
+          "samples": 200
+        },
+        {
+          "breached": false,
+          "max": 3.856837,
+          "metric": "receipt.round_trip",
+          "p50": 1.94505,
+          "p95": 2.345228,
+          "p99": 2.5995049999999997,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 1.069101,
+          "metric": "resolve",
+          "p50": 0.676376,
+          "p95": 0.885657,
+          "p99": 1.027111,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 16.305314000000003,
+          "metric": "space.process_cold_open",
+          "p50": 16.305314000000003,
+          "p95": 16.305314000000003,
+          "p99": 16.305314000000003,
+          "samples": 1
+        },
+        {
+          "breached": false,
+          "max": 85.233779,
+          "metric": "startup.1_spaces",
+          "p50": 85.233779,
+          "p95": 85.233779,
+          "p99": 85.233779,
+          "samples": 1
+        },
+        {
+          "breached": false,
+          "max": 69.947874,
+          "metric": "userdata.write_to_durable_file",
+          "p50": 44.563307,
+          "p95": 51.386647,
+          "p99": 67.998555,
+          "samples": 100
+        }
+      ]
+    },
+    {
+      "arm": "baseline",
+      "cache": "warm",
+      "pair": 1,
+      "size": 1000,
+      "spaces": 1,
+      "summary": [
+        {
+          "breached": false,
+          "max": 15.998479999999999,
+          "metric": "account.draft_save_ack",
+          "p50": 8.50652,
+          "p95": 10.293053,
+          "p99": 13.328002999999999,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 16.259659,
+          "metric": "account.draft_write_to_feed",
+          "p50": 8.787826,
+          "p95": 10.538343000000001,
+          "p99": 13.688768,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 0.467,
+          "metric": "admission",
+          "p50": 0.297,
+          "p95": 0.389,
+          "p99": 0.409,
+          "samples": 200
+        },
+        {
+          "breached": false,
+          "max": 0.740746,
+          "metric": "auth.session",
+          "p50": 0.486581,
+          "p95": 0.583943,
+          "p99": 0.657411,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 21.0,
+          "metric": "live.commit_to_client",
+          "p50": 7.0,
+          "p95": 10.0,
+          "p99": 21.0,
+          "samples": 100
+        },
+        {
+          "breached": true,
+          "max": 38.508556,
+          "metric": "live.update_to_client",
+          "p50": 23.672441,
+          "p95": 27.726038000000003,
+          "p99": 37.260771,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 47.86328125,
+          "metric": "memory.1_spaces.after_2s",
+          "p50": 47.86328125,
+          "p95": 47.86328125,
+          "p99": 47.86328125,
+          "samples": 1
+        },
+        {
+          "breached": false,
+          "max": 1.415108,
+          "metric": "notes.get",
+          "p50": 1.0998189999999999,
+          "p95": 1.30363,
+          "p99": 1.376666,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 4.1009649999999995,
+          "metric": "notes.list.first100",
+          "p50": 3.1883369999999998,
+          "p95": 3.6678729999999997,
+          "p99": 4.0886309999999995,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 38.445087,
+          "metric": "notes.update",
+          "p50": 23.776867,
+          "p95": 27.45439,
+          "p99": 29.951573,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 0.545,
+          "metric": "receipt.lookup",
+          "p50": 0.361,
+          "p95": 0.439,
+          "p99": 0.486,
+          "samples": 200
+        },
+        {
+          "breached": false,
+          "max": 2.455105,
+          "metric": "receipt.round_trip",
+          "p50": 1.921475,
+          "p95": 2.327407,
+          "p99": 2.423465,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 1.05791,
+          "metric": "resolve",
+          "p50": 0.681435,
+          "p95": 0.9564400000000001,
+          "p99": 1.040899,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 21.817079,
+          "metric": "space.process_cold_open",
+          "p50": 21.817079,
+          "p95": 21.817079,
+          "p99": 21.817079,
+          "samples": 1
+        },
+        {
+          "breached": false,
+          "max": 78.28149900000001,
+          "metric": "startup.1_spaces",
+          "p50": 78.28149900000001,
+          "p95": 78.28149900000001,
+          "p99": 78.28149900000001,
+          "samples": 1
+        },
+        {
+          "breached": false,
+          "max": 52.784272,
+          "metric": "userdata.write_to_durable_file",
+          "p50": 38.17414,
+          "p95": 42.548105,
+          "p99": 49.721491,
+          "samples": 100
+        }
+      ]
+    },
+    {
+      "arm": "baseline",
+      "cache": "warm",
+      "pair": 2,
+      "size": 1000,
+      "spaces": 1,
+      "summary": [
+        {
+          "breached": false,
+          "max": 12.93619,
+          "metric": "account.draft_save_ack",
+          "p50": 8.520696,
+          "p95": 9.349117,
+          "p99": 11.343909,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 13.217607,
+          "metric": "account.draft_write_to_feed",
+          "p50": 8.819756,
+          "p95": 9.845515,
+          "p99": 12.528336,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 0.629,
+          "metric": "admission",
+          "p50": 0.292,
+          "p95": 0.39,
+          "p99": 0.434,
+          "samples": 200
+        },
+        {
+          "breached": false,
+          "max": 0.847887,
+          "metric": "auth.session",
+          "p50": 0.493694,
+          "p95": 0.608047,
+          "p99": 0.704749,
+          "samples": 100
+        },
+        {
+          "breached": true,
+          "max": 34.0,
+          "metric": "live.commit_to_client",
+          "p50": 8.0,
+          "p95": 11.0,
+          "p99": 22.0,
+          "samples": 100
+        },
+        {
+          "breached": true,
+          "max": 67.571837,
+          "metric": "live.update_to_client",
+          "p50": 24.0188,
+          "p95": 31.576043999999996,
+          "p99": 38.059746,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 48.14453125,
+          "metric": "memory.1_spaces.after_2s",
+          "p50": 48.14453125,
+          "p95": 48.14453125,
+          "p99": 48.14453125,
+          "samples": 1
+        },
+        {
+          "breached": false,
+          "max": 1.4691100000000001,
+          "metric": "notes.get",
+          "p50": 1.1033060000000001,
+          "p95": 1.361828,
+          "p99": 1.435006,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 4.331926,
+          "metric": "notes.list.first100",
+          "p50": 3.181363,
+          "p95": 3.7343379999999997,
+          "p99": 4.009072,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 46.924217,
+          "metric": "notes.update",
+          "p50": 24.127594,
+          "p95": 30.964398,
+          "p99": 37.54887,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 0.527,
+          "metric": "receipt.lookup",
+          "p50": 0.364,
+          "p95": 0.464,
+          "p99": 0.509,
+          "samples": 200
+        },
+        {
+          "breached": false,
+          "max": 2.706435,
+          "metric": "receipt.round_trip",
+          "p50": 1.923951,
+          "p95": 2.343595,
+          "p99": 2.592191,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 1.527579,
+          "metric": "resolve",
+          "p50": 0.67882,
+          "p95": 0.929759,
+          "p99": 1.118142,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 15.465682999999999,
+          "metric": "space.process_cold_open",
+          "p50": 15.465682999999999,
+          "p95": 15.465682999999999,
+          "p99": 15.465682999999999,
+          "samples": 1
+        },
+        {
+          "breached": false,
+          "max": 72.168689,
+          "metric": "startup.1_spaces",
+          "p50": 72.168689,
+          "p95": 72.168689,
+          "p99": 72.168689,
+          "samples": 1
+        },
+        {
+          "breached": false,
+          "max": 67.659631,
+          "metric": "userdata.write_to_durable_file",
+          "p50": 38.712950000000006,
+          "p95": 45.579571,
+          "p99": 56.776463,
+          "samples": 100
+        }
+      ]
+    },
+    {
+      "arm": "head",
+      "cache": "warm",
+      "pair": 2,
+      "size": 1000,
+      "spaces": 1,
+      "summary": [
+        {
+          "breached": false,
+          "max": 11.949823,
+          "metric": "account.draft_save_ack",
+          "p50": 9.022545,
+          "p95": 10.279908,
+          "p99": 11.899138,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 12.879273,
+          "metric": "account.draft_write_to_feed",
+          "p50": 9.274256,
+          "p95": 10.684155,
+          "p99": 12.211131,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 0.71,
+          "metric": "admission",
+          "p50": 0.289,
+          "p95": 0.379,
+          "p99": 0.422,
+          "samples": 200
+        },
+        {
+          "breached": false,
+          "max": 0.9331860000000001,
+          "metric": "auth.session",
+          "p50": 0.480219,
+          "p95": 0.5929610000000001,
+          "p99": 0.734154,
+          "samples": 100
+        },
+        {
+          "breached": true,
+          "max": 28.0,
+          "metric": "live.commit_to_client",
+          "p50": 7.0,
+          "p95": 21.0,
+          "p99": 25.0,
+          "samples": 100
+        },
+        {
+          "breached": true,
+          "max": 51.949850999999995,
+          "metric": "live.update_to_client",
+          "p50": 23.305014,
+          "p95": 36.601046999999994,
+          "p99": 40.888481,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 47.72265625,
+          "metric": "memory.1_spaces.after_2s",
+          "p50": 47.72265625,
+          "p95": 47.72265625,
+          "p99": 47.72265625,
+          "samples": 1
+        },
+        {
+          "breached": false,
+          "max": 1.8655819999999999,
+          "metric": "notes.get",
+          "p50": 1.064122,
+          "p95": 1.275436,
+          "p99": 1.371918,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 4.305778,
+          "metric": "notes.list.first100",
+          "p50": 3.145146,
+          "p95": 3.677854,
+          "p99": 4.23238,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 37.280679,
+          "metric": "notes.update",
+          "p50": 23.382028,
+          "p95": 28.747410000000002,
+          "p99": 36.827870999999995,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 0.506,
+          "metric": "receipt.lookup",
+          "p50": 0.352,
+          "p95": 0.431,
+          "p99": 0.464,
+          "samples": 200
+        },
+        {
+          "breached": false,
+          "max": 2.857437,
+          "metric": "receipt.round_trip",
+          "p50": 1.864859,
+          "p95": 2.254499,
+          "p99": 2.406493,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 1.127711,
+          "metric": "resolve",
+          "p50": 0.663312,
+          "p95": 0.851863,
+          "p99": 0.927446,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 13.472302,
+          "metric": "space.process_cold_open",
+          "p50": 13.472302,
+          "p95": 13.472302,
+          "p99": 13.472302,
+          "samples": 1
+        },
+        {
+          "breached": false,
+          "max": 64.788348,
+          "metric": "startup.1_spaces",
+          "p50": 64.788348,
+          "p95": 64.788348,
+          "p99": 64.788348,
+          "samples": 1
+        },
+        {
+          "breached": false,
+          "max": 58.729389,
+          "metric": "userdata.write_to_durable_file",
+          "p50": 37.69311999999999,
+          "p95": 44.697699,
+          "p99": 52.023689999999995,
+          "samples": 100
+        }
+      ]
+    }
+  ],
+  "seed": 20261117,
+  "subscriptions": 2,
+  "warm_pairs": 3
+}

@@ -49,6 +49,10 @@ export CALTERNAL_TOKEN_FILE="$PWD/.dev-data/appdata/dev-tokens/owner.token"
 ./target/debug/cl plugins list --space <space-uuid>
 ```
 
+Notes, Tags and Trash list and lookup commands return up to 100 rows per page.
+Reuse the same arguments with `--cursor` to continue.
+See [Notes operations](docs/notes-operations.md).
+
 Use `calternal people`, `calternal groups`, and `calternal invites` to
 manage space access through the same HTTP transport. See [people and access](docs/people.md).
 
@@ -65,7 +69,7 @@ for qualification and remaining platform work.
 
 ## Verification
 
-`./scripts/verify-preview.sh` builds the packages, checks generated-contract drift, runs SDK/Rust tests and backend integration checks.
+`./scripts/verify-preview.sh` builds the packages, checks generated-contract drift, runs SDK/Rust tests and backend integration checks. Where Podman is installed, it checks for containers left by the workspace tests.
 
 `python3 contract/verify-cli.py --running-data-dir .dev-data` checks the CLI against a running preview using disposable fixtures. `node scripts/measure-preview.mjs` launches a separate disposable server and records local debug timings in `artifacts/preview-smoke.json`. Those timings are not a 120 Hz UI result or a production performance gate.
 

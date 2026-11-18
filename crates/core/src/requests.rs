@@ -35,6 +35,8 @@ pub enum RequestDetail {
         app: String,
         /// Whether the proposed grant includes writes.
         write: bool,
+        /// Choices enforced by the server for this action, in display order.
+        lifetimes: Vec<ApprovalLifetime>,
         /// Exact operation details when raised by an automatic approval check.
         #[ts(type = "JsonObject")]
         action: JsonObject,

@@ -6,7 +6,7 @@
 pub enum FaultPoint {
     /// Thread message and replay intent placed, before durable turn admission.
     AfterThreadMessage,
-    /// SQLite committed the revision and receipt, before materialization.
+    /// Content revision and publication intent committed, before journal publication.
     AfterCommit,
     /// Materialization is about to publish the new file bytes.
     BeforePlacement,

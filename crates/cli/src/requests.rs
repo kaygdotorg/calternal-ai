@@ -76,12 +76,22 @@ pub fn reply(data: Value, rid: &str) -> Reply {
                     item["id"].as_str().unwrap_or("").to_owned(),
                     item["space_id"].as_str().unwrap_or("Personal").to_owned(),
                     summary.unwrap_or("").to_owned(),
+                    detail["lifetimes"]
+                        .as_array()
+                        .map_or_else(String::new, |choices| {
+                            choices
+                                .iter()
+                                .filter_map(Value::as_str)
+                                .map(|value| value.replace('_', "-"))
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        }),
                 ]
             })
             .collect();
         reply
             .table(
-                &["KIND", "ID", "SPACE", "DETAIL"],
+                &["KIND", "ID", "SPACE", "DETAIL", "LIFETIMES"],
                 rows,
                 "No requests waiting on you.",
             )

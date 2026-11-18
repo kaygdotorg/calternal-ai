@@ -33,10 +33,9 @@ Capability: people.manage.
   "properties": {
     "cursor": {
       "description": "The previous page's cursor. Omit it to start at the first row.",
-      "type": [
-        "string",
-        "null"
-      ]
+      "maxLength": 524288,
+      "minLength": 1,
+      "type": "string"
     }
   },
   "title": "DirectoryPageInput",

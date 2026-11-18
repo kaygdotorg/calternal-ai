@@ -2,13 +2,16 @@
 #![deny(missing_docs)]
 #![deny(rustdoc::broken_intra_doc_links)]
 mod fixtures;
+mod fsync_probe;
 mod http;
 mod idle;
 mod jobs;
 mod live;
+mod materialization;
 mod report;
 mod server;
 mod stats;
+mod timings;
 use clap::Parser;
 use http::Result;
 use serde_json::json;
@@ -24,6 +27,9 @@ struct Args {
     work: PathBuf,
     #[arg(long, default_value = "plugins")]
     plugins: PathBuf,
+    /// Matching historical bundle when the baseline pins an older worker digest.
+    #[arg(long)]
+    baseline_plugins: Option<PathBuf>,
     #[arg(long, default_value = "perf/budgets.json")]
     budgets: PathBuf,
     #[arg(long, default_value = "1000,10000,100000")]
@@ -46,6 +52,10 @@ struct Args {
     baseline_commit: String,
     #[arg(long)]
     idle_only: bool,
+    #[arg(long)]
+    fsync_probe: bool,
+    #[arg(long)]
+    startup_only: bool,
     #[arg(long)]
     jobs_only: bool,
     #[arg(long)]
@@ -79,16 +89,27 @@ fn run(a: &Args) -> Result<i32> {
     if a.samples > 10_000 || a.pairs > 20 || a.cold_pairs > 5 {
         return Err("limit samples to 10000, warm pairs to 20 and cold pairs to 5".into());
     }
-    if [a.prepare_only, a.jobs_only, a.idle_only]
-        .into_iter()
-        .filter(|v| *v)
-        .count()
+    if [
+        a.prepare_only,
+        a.jobs_only,
+        a.idle_only,
+        a.fsync_probe,
+        a.startup_only,
+    ]
+    .into_iter()
+    .filter(|v| *v)
+    .count()
         > 1
     {
-        return Err("choose one of --prepare-only, --jobs-only or --idle-only".into());
+        return Err(
+            "choose one of --prepare-only, --jobs-only, --idle-only, --fsync-probe or --startup-only".into(),
+        );
     }
     if a.startup_timeout_seconds == 0 || a.startup_timeout_seconds > 300 {
         return Err("startup timeout must be 1..300 seconds".into());
+    }
+    if a.fsync_probe {
+        return fsync_probe::run(a);
     }
     if a.prepare_only {
         return fixtures::prepare(a);
@@ -117,7 +138,7 @@ fn run(a: &Args) -> Result<i32> {
         .arg(&a.baseline)
         .arg(std::env::current_exe()?)
         .output()?;
-    let run_info = json!({"commit":a.commit,"baseline_commit":a.baseline_commit,"seed":a.seed,"sizes":a.sizes,"spaces":a.spaces,"warm_pairs":a.pairs,"cold_pairs":a.cold_pairs,"samples":a.samples,"machine":String::from_utf8_lossy(&machine.stdout),"binary_sha256":String::from_utf8_lossy(&hashes.stdout)});
+    let run_info = json!({"commit":a.commit,"baseline_commit":a.baseline_commit,"plugins":a.plugins,"baseline_plugins":a.baseline_plugins.as_ref().unwrap_or(&a.plugins),"seed":a.seed,"sizes":a.sizes,"spaces":a.spaces,"warm_pairs":a.pairs,"cold_pairs":a.cold_pairs,"samples":a.samples,"machine":String::from_utf8_lossy(&machine.stdout),"binary_sha256":String::from_utf8_lossy(&hashes.stdout)});
     std::fs::write(
         a.work.join("run-info.json"),
         serde_json::to_vec_pretty(&run_info)?,
@@ -201,7 +222,17 @@ fn run(a: &Args) -> Result<i32> {
                 if pair >= a.cold_pairs && !std::process::Command::new("sync").status()?.success() {
                     return Err("warm fixture sync failed".into());
                 }
-                let samples = match scenario(a, bin, &root, &fixture) {
+                let samples = match scenario(
+                    a,
+                    bin,
+                    if arm == "head" {
+                        &a.plugins
+                    } else {
+                        a.baseline_plugins.as_ref().unwrap_or(&a.plugins)
+                    },
+                    &root,
+                    &fixture,
+                ) {
                     Ok(samples) => samples,
                     Err(error) => {
                         let failure = json!({"size":size,"spaces":spaces,"pair":pair,"arm":arm,"error":error.to_string(),"startup_timeout_seconds":a.startup_timeout_seconds,"log":root.join("server.log")});
@@ -268,7 +299,7 @@ fn run(a: &Args) -> Result<i32> {
             (k, pct)
         })
         .collect();
-    let report = json!({"commit":a.commit,"baseline_commit":a.baseline_commit,"binary_sha256":String::from_utf8_lossy(&hashes.stdout),"machine":String::from_utf8_lossy(&machine.stdout),"noise_pct":noise,"qualification":"incomplete: admission, commit timestamp and three-host-call worker; see separate job and idle suites","seed":a.seed,"operation_concurrency":1,"subscriptions":2,"cache":"cold pairs drop OS caches; warm pairs retain OS caches","warm_pairs":a.pairs,"cold_pairs":a.cold_pairs,"reproduced_breach":reproduced,"runs":all,"failures":failures});
+    let report = json!({"commit":a.commit,"baseline_commit":a.baseline_commit,"plugins":a.plugins,"baseline_plugins":a.baseline_plugins.as_ref().unwrap_or(&a.plugins),"binary_sha256":String::from_utf8_lossy(&hashes.stdout),"machine":String::from_utf8_lossy(&machine.stdout),"noise_pct":noise,"qualification":"incomplete: admission, commit timestamp and three-host-call worker; see separate job and idle suites","seed":a.seed,"operation_concurrency":1,"subscriptions":2,"cache":"cold pairs drop OS caches; warm pairs retain OS caches","warm_pairs":a.pairs,"cold_pairs":a.cold_pairs,"reproduced_breach":reproduced,"runs":all,"failures":failures});
     std::fs::write(
         a.work.join("summary.json"),
         serde_json::to_vec_pretty(&report)?,
@@ -280,13 +311,14 @@ fn run(a: &Args) -> Result<i32> {
 fn scenario(
     a: &Args,
     bin: &std::path::Path,
+    plugins: &std::path::Path,
     root: &std::path::Path,
     fixture: &fixtures::Fixture,
 ) -> Result<BTreeMap<String, Vec<f64>>> {
     let (server, mut h, start) = server::Server::start(
         bin,
         root,
-        &a.plugins,
+        plugins,
         a.test_plugin_root.as_deref(),
         a.startup_timeout_seconds,
     )?;
@@ -294,12 +326,24 @@ fn scenario(
     let space = fixture.spaces[0].clone();
     let mut first = fixture.first.clone();
     let mut samples: BTreeMap<String, Vec<f64>> = BTreeMap::new();
+    let mut deliveries = BTreeMap::new();
     samples.insert(
         format!("startup.{}_spaces", fixture.spaces.len()),
         vec![start],
     );
+    // External read-only evidence: startup must leave all space writers unopened
+    // before the first list can qualify as a genuinely cold-space activation.
+    std::fs::write(
+        root.join("startup-state.json"),
+        serde_json::to_vec_pretty(
+            &json!({"space_writer_threads_before_first_use":server.writers()?}),
+        )?,
+    )?;
     let (_, ms) = h.op("notes.list", json!({"space_id":space}))?;
     samples.insert("space.process_cold_open".into(), vec![ms]);
+    if a.startup_only {
+        return Ok(samples);
+    }
     let mut live = live::Live::open(
         &h,
         "/api/v1/live",
@@ -309,6 +353,8 @@ fn scenario(
         )],
     )?;
     live.wait_type("ready")?;
+    let placement =
+        materialization::Probe::open(root, space.as_str().ok_or("invalid fixture space")?)?;
     let mut account = live::Live::open(&h, "/api/v1/account/live", &[])?;
     account.wait_type("ready")?;
     for i in 0..a.samples {
@@ -327,19 +373,22 @@ fn scenario(
         let rid = format!("timed-save-{i}");
         let delivery = std::time::Instant::now();
         // Read the subscription concurrently: HTTP acknowledgement may follow delivery.
-        let (updated, ms, event, delivery_ms) = std::thread::scope(|scope| -> Result<_> {
-            let write = scope.spawn(|| {
-                h.op_id("notes.update", input.clone(), &rid)
-                    .map_err(|e| e.to_string())
-            });
-            let event = live.wait_type("entry")?;
-            let elapsed = delivery.elapsed().as_secs_f64() * 1000.;
-            let (updated, ms) = write
-                .join()
-                .map_err(|_| "write thread panicked")?
-                .map_err(|e| format!("update failed: {e}"))?;
-            Ok((updated, ms, event, elapsed))
-        })?;
+        let (updated, ms, event, delivery_ms, received_at_ms) =
+            std::thread::scope(|scope| -> Result<_> {
+                let write = scope.spawn(|| {
+                    h.op_id("notes.update", input.clone(), &rid)
+                        .map_err(|e| e.to_string())
+                });
+                let event = live.wait_type("entry")?;
+                let received_at_ms = calternal_types::now_ms();
+                let elapsed = delivery.elapsed().as_secs_f64() * 1000.;
+                let (updated, ms) = write
+                    .join()
+                    .map_err(|_| "write thread panicked")?
+                    .map_err(|e| format!("update failed: {e}"))?;
+                Ok((updated, ms, event, elapsed, received_at_ms))
+            })?;
+        deliveries.insert(rid.clone(), received_at_ms);
         samples.entry("notes.update".into()).or_default().push(ms);
         if event["entry"]["item"] != first["id"] || event["entry"]["request_id"] != rid {
             return Err("live event did not correlate with request and note".into());
@@ -348,6 +397,15 @@ fn scenario(
             .entry("live.update_to_client".into())
             .or_default()
             .push(delivery_ms);
+        placement.wait(&updated["note"])?;
+        let durable_file_ms = delivery.elapsed().as_secs_f64() * 1000.;
+        if durable_file_ms > 1000. {
+            return Err("write-to-file exceeded the conservative one-second bound".into());
+        }
+        samples
+            .entry("userdata.write_to_durable_file".into())
+            .or_default()
+            .push(durable_file_ms);
         first = updated["note"].clone();
         let (_, ms) = h.op_id("notes.update", input, &rid)?;
         samples
@@ -357,16 +415,21 @@ fn scenario(
     }
     for i in 0..a.samples {
         let t = std::time::Instant::now();
-        h.op(
+        let (_, save_ack_ms) = h.op(
             "drafts.save",
             json!({"space_id":space,"item_id":first["id"],"text":format!("draft {i}")}),
         )?;
+        samples
+            .entry("account.draft_save_ack".into())
+            .or_default()
+            .push(save_ack_ms);
         account.wait_type("changed")?;
         samples
             .entry("account.draft_write_to_feed".into())
             .or_default()
             .push(t.elapsed().as_secs_f64() * 1000.);
     }
+    timings::collect(&root.join("server.log"), &deliveries, &mut samples)?;
     drop(live);
     drop(account);
     for space in &fixture.spaces {
