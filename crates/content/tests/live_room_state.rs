@@ -92,4 +92,27 @@ fn initial_state_is_read_only_and_wire_replay_keeps_the_same_lineage() {
     let after = content.room_snapshot(space, "documents", item.id).unwrap();
     assert_eq!(after.lineage, state.lineage);
     assert_eq!(content.get(space, item.id).unwrap().bytes, b"abc!");
+
+    // Simulate a crash after the swap displaced an outside edit, before the
+    // exchange discovered that the displaced bytes were not its base.
+    drop(content);
+    let folder = root.join(format!("ssd/spaces/{space}/Documents"));
+    let path = folder.join("Document.md");
+    let saved = std::fs::read(&path).unwrap();
+    let temp = format!("{}abc-Document.md", calternal_fsio::TEMP_PREFIX);
+    let intent = format!("{}intent-Document.md", calternal_fsio::TEMP_PREFIX);
+    let base = b"expected old file";
+    let outside = b"outside edit";
+    let mut record = format!("{temp}\n").into_bytes();
+    record.extend_from_slice(&(base.len() as u64).to_le_bytes());
+    record.extend_from_slice(base);
+    record.extend_from_slice(&saved);
+    std::fs::write(folder.join(&temp), outside).unwrap();
+    std::fs::write(folder.join(&intent), record).unwrap();
+
+    let content = open();
+    content.room_snapshot(space, "documents", item.id).unwrap();
+    assert_eq!(std::fs::read(path).unwrap(), outside);
+    assert!(!folder.join(temp).exists());
+    assert!(!folder.join(intent).exists());
 }

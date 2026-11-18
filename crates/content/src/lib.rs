@@ -76,6 +76,8 @@ use uuid::Uuid;
 /// Installation content service with bounded per-space connections and idle release.
 /// The host retains root locks; opening two services for the same roots is unsupported.
 pub struct Content {
+    // Drop the placement worker before the stores and their root guards.
+    sweeper: lifecycle::Sweeper,
     roots: Roots,
     search_readers: search::Readers,
     search_writers: search::Writers,
@@ -86,7 +88,6 @@ pub struct Content {
     // Declared before `journals`: open stores drain before the driver stops.
     spaces: Cache,
     root_guard: lifecycle::RootGuard,
-    sweeper: std::thread::Thread,
     idle_after: Duration,
     journals: Journals,
     fault: fn(FaultPoint),

@@ -594,7 +594,17 @@ impl Space {
                         && nonce.bytes().all(|c| c.is_ascii_hexdigit())
                         && entry.file_type().is_ok_and(|t| t.is_file())
                     {
-                        fs::remove_file(entry.path()).map_err(internal)?;
+                        // The prepared image may hold a displaced outside edit.
+                        // Recover the durable exchange before deleting stray temps.
+                        if self.live_editing(&kind)? {
+                            calternal_fsio::recover_exact(&entry.path().with_file_name(final_name))
+                                .map_err(internal)?;
+                        }
+                        match fs::remove_file(entry.path()) {
+                            Ok(()) => {}
+                            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                            Err(error) => return Err(internal(error)),
+                        }
                     }
                 }
             }
