@@ -117,8 +117,18 @@ try {
       ok(!covered, "canvas phone: the presence control is topmost, so it can be tapped");
       await pres.first().tap(); await p.locator(".cm-editor[data-labels=all]").waitFor({ timeout: 2000 });
       ok(true, "canvas phone: tapping it shows every name");
-    } else console.log("INFO  canvas phone: no presence control in the window yet (the window-actions hook, WindowPresence, is not mounted)");
+    } else ok(false, "canvas phone: the window's actions pill holds the presence control (WindowPresence)");
     await ctx.close(); }
+  // A crowd in a note's window on a phone: the actions pill (presence, Share, three dots) stays inside the window, nothing is cut off, and the presence is still topmost.
+  for (const peers of [1, 3, 6]) {
+    const { page: p, ctx } = await open(browser, "phone", "dark", `/notes/n-1?firstrun=0&live=1&canvas=1&peers=${peers}`);
+    await p.locator("[data-win][data-kind=notes] .cm-content").waitFor({ timeout: 15000 });
+    await p.waitForTimeout(3500);
+    const g = await p.evaluate(() => { const w = document.querySelector("[data-win][data-kind=notes]").getBoundingClientRect(); const pill = document.querySelector("[data-win][data-kind=notes] .wacts").getBoundingClientRect(); const t = document.querySelector("[data-win][data-kind=notes] .tl")?.getBoundingClientRect(); const pr = document.querySelector("[data-win][data-kind=notes] .wacts [data-presence]"); const r = pr?.getBoundingClientRect(); const top = r ? document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2) : null; return { win: [w.left, w.right], pill: [pill.left, pill.right], title: t ? [t.left, t.right] : null, presence: !!pr, topmost: !!pr && (top === pr || pr.contains(top)) }; });
+    ok(g.presence && g.topmost, `canvas phone, ${peers} in the note: the presence control is there and topmost`, JSON.stringify(g));
+    ok(g.pill[0] >= g.win[0] && g.pill[1] <= g.win[1] + 0.5 && (!g.title || g.title[1] <= g.pill[0] + 0.5), `canvas phone, ${peers} in the note: the actions pill stays inside the window and clear of the title`, JSON.stringify(g));
+    await ctx.close();
+  }
   // Two notes live in two windows at once: each keeps its own room.
   { const { page: p, ctx } = await open(browser, "desktop", "light", "/notes/n-1?firstrun=0&live=1&canvas=1&peer=0");
     await p.locator("[data-win][data-kind=notes] .cm-content").first().waitFor({ timeout: 15000 });
