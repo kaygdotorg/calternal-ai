@@ -58,25 +58,21 @@ pub(super) fn apply<D: Directory>(
         return Ok(saved.result);
     }
     if operation == "threads.list" {
-        let rows = super::index::page(st, space, who.id)?;
-        let parent = data.get("parent_thread").and_then(Value::as_str);
-        let include_archived = parent.is_some()
-            || data
-                .get("archived")
+        let page = super::index::page(
+            st,
+            space,
+            who.id,
+            data.get("parent_thread").and_then(Value::as_str),
+            data.get("archived")
                 .and_then(Value::as_bool)
-                .unwrap_or(false);
-        let limit = data.get("limit").and_then(Value::as_u64).unwrap_or(100) as usize;
-        let threads: Vec<_> = rows
-            .into_iter()
-            .filter(|r| {
-                (parent.is_some() || r.metadata["deleted"] != true)
-                    && (include_archived || r.metadata["archived"] != true)
-                    && parent.is_none_or(|p| r.metadata["parent_thread"] == p)
-            })
-            .take(limit)
+                .unwrap_or(false),
+            data.get("cursor").and_then(Value::as_str),
+            data.get("limit").and_then(Value::as_u64).unwrap_or(100) as usize,
+        )?;
+        let threads: Vec<_> = page.rows.into_iter()
             .map(|r| json!({"id":r.id,"address":format!("/threads/{}",r.id),"revision":r.revision,"metadata":document::public_metadata(r.metadata),"turn_state":r.turn_state,"turn_reason":r.turn_reason}))
             .collect();
-        return Ok(json!({"threads":threads}));
+        return Ok(json!({"threads":threads,"next_cursor":page.next}));
     }
     if operation == "threads.create" {
         for (kind, placement, format) in st

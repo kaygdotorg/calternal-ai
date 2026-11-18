@@ -139,10 +139,12 @@ saved message text. Renames and archive changes update `updated_at`. The indexed
 mode is the last recorded thread choice. Send still uses the caller's protected
 mode when the input omits one.
 
-A warm list executes **one index query and zero thread file reads** for N threads.
-The bounded content index scan joins the space's current turn index with one
-indexed seek per candidate. It reads no message bytes and selects only the reason fields from the retained
-checkpoint. It has zero flushes. The jobs connection attaches the same space's content
+A warm page executes **one indexed query and zero thread file reads**. It
+seeks the list index by update time and item UUID, filters before the limit,
+and looks up the latest job by index for each returned row and one lookahead.
+It reads no message bytes and performs zero flushes. Pass `next_cursor` back
+as `cursor` with the same space and filters. The cursor is scoped to the
+current account, and `null` marks the last page. The jobs connection attaches the same space's content
 database read-only, once per cached connection. A cold read also opens the
 existing indexes. Static metadata is mirrored in Markdown and can be indexed
 again from its envelope. Live state comes from the retained jobs index. Full
@@ -239,13 +241,13 @@ Until those are defined, the preview keeps only the tool status and byte count.
 ## Bounds and remaining integration
 
 Prompts are at most 16 KiB, titles 256 bytes, provider
-IDs 80 bytes, models 128 bytes. List is one bounded page of at most 1,000 content
-rows (100 by default); filters run within that page. Owned conversation files and
+IDs 80 bytes, models 128 bytes. Each list page returns at most 1,000 rows
+(100 by default). Owned conversation files and
 Trash have no automatic time expiry; receipts, jobs and streams retain their
 existing bounds. Long tool output must be stored separately and linked, following
 the accepted grill decision; this change does not invent an attachment format.
 
-The list operation currently returns a bounded metadata page; an addressable
+The list operation returns paged metadata. An addressable
 standard collection awaits the foundation's accepted Markdown Views format.
 Cross-turn transcript handoff remains turn engine integration work. Each
 send admits a fresh job and can resume the native provider session.
@@ -294,6 +296,7 @@ for account-scoped availability and provider checks.
 ```sh
 calternal threads --token-file person.token create --space-id <uuid> --title Plan
 calternal threads --token-file person.token list --space-id <uuid>
+calternal threads --token-file person.token list --space-id <uuid> --cursor <cursor>
 calternal threads --token-file person.token get <thread-uuid>
 calternal threads --token-file person.token get <thread-uuid> --since '<checkpoint journal data JSON>'
 calternal threads --token-file person.token --request-id <stable-id> send <thread-uuid> --message 'Inspect this workspace'

@@ -19,13 +19,20 @@ pub(super) async fn admitted_operation<D: Directory>(
     policy: Policy,
     job_scoped: bool,
 ) -> Result<Value, Error> {
-    let scope = calternal_core::cached_operation(op)
-        .filter(|d| {
+    let supports_cursor = |schema: &Value| schema["properties"].get("cursor").is_some();
+    let paged = (op == "threads.list"
+        && state
+            .registry
+            .owner_of_operation(op)
+            .and_then(|plugin| plugin.operation(op))
+            .is_some_and(|d| supports_cursor(&d.input_schema)))
+        || calternal_core::cached_operation(op).is_some_and(|d| {
             d.input_schema
                 .get("properties")
                 .is_some_and(|p| p.get("cursor").is_some())
-        })
-        .map(|_| super::cursors::CursorScope::open(&state.store.cursor_key, p.id, op, &mut input))
+        });
+    let scope = paged
+        .then(|| CursorScope::open(&state.store.cursor_key, p.id, op, &mut input))
         .transpose()?;
     let account = p.id;
     let mut result = run_admitted_operation(
