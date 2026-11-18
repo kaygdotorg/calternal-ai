@@ -2,7 +2,7 @@
 
 Decisions waiting on kayg, most blocking first. Answer here or in chat; answered items
 move to the decision record they belong to and leave this list. Terms: see
-[glossary](glossary.md). Updated 2026-11-18 11:15 IST.
+[glossary](glossary.md). Updated 2026-11-18 12:10 IST.
 
 ## Waiting now
 
@@ -29,7 +29,9 @@ move to the decision record they belong to and leave this list. Terms: see
 ## Design rounds
 
 - **In progress: Settings and Appearance**: first eleven answers recorded in `settings.md`; second batch asked. Appearance (wordmark and its font, fonts, wallpaper, accent, themes and presets), agents (retry and snooze, streaming, default permission mode), shortcuts, machines, plugins, skills, automations.
-- **Machines and sandboxes from the UI** (kayg, 2026-11-18): the whole flow without a command line: enrolling a machine, making its sandbox, signing in to a provider inside it; every instance must have machines attached.
+- **Machines without a terminal**, partly decided 2026-11-18 (below); still to grill: pre-configuring machines at deploy time, the `curl | sh` installer at calternal.com/install for both a server and a machine, the macOS app that bundles the CLI, how a machine behind NAT stays reachable for people who know nothing about networking, and how a group's allowance of pool compute is configured and shown.
+- **Plans and compute**: what a group (a plan or role) is allowed on the pool, and how that is configured.
+- **The thread file's format**: kayg wants it readable; today it carries machine state in the frontmatter and message markers as HTML comments.
 - **Plugin-delivered interface**: how a plugin ships real UI, so the orchestrator can be split (shell, composer, a thread rail as `calternal-orchestrator-rail`).
 - **Upgrades with real data**: there is no migration code by rule; what an upgrade across a schema change does once calternal.cloud holds data.
 - Onboarding for developers versus everyone else: what changes.
@@ -44,6 +46,9 @@ move to the decision record they belong to and leave this list. Terms: see
 ## Recently decided (2026-11-17), now in the decision records
 
 - The composer and palette: see `composer.md`.
+- Machines and sandboxes (2026-11-18): the first owner's onboarding walks through adding a machine unless one was pre-configured at deploy; someone using only the hosted instance never sees machines, their group decides their compute; adding a machine works by an agent over SSH and also by a printed script to run on any Linux or macOS machine; a machine always connects out to the server; one standard sandbox for everybody, its image changeable only by server admins; own machines are sandboxed by default with Direct as an explicit choice.
+- Provider sign-in (2026-11-18): done in the app, as items in the bar above the composer and an in-chat flow (a message with the link that turns into "Authentication done"); re-authentication is started automatically on expiry and, if it lapses, offered again when the person next starts typing ("these providers need signing in again", expandable); none of the flow is written to the thread file except one line that sign-in was attempted or done for a provider, with a time.
+- calternal.cloud is replaced by this product (kayg's instruction, 2026-11-18); the existing app is stopped and its data kept.
 - Composer chips (2026-11-18): Attach, Model, Permission, Runs on; the reasoning level lives in the model chip, which reads provider icon, model name, level; Runs on shows the machine name and a shield when sandboxed; no dots inside a chip. Chips drop to icon-only by the composer's width in the order Runs on, Permission, Model; on a phone all are icon-only except a non-default choice. Attachments sit in a sticky row above the text. Everywhere, rows of labelled controls go from icon and text to icon-only when width is short, through one shared primitive.
 - The composer's 8 ms budget applies to main-thread work per key, with zero missed frames required (2026-11-18).
 - An approval for an action that cannot be undone, or that widens access, is always single-use (2026-11-18).
