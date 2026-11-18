@@ -1,8 +1,8 @@
 <script lang="ts">
   // Notes sidebar: the current space's notes (the fixture's, or the server's in server mode), newest first, and a way to make a new one.
   import { Button, Icon, IconButton, Menu, pressRow, pressRows, registerPreview, Row, VirtualList, failed, type MenuItem, type PressBag } from "@calternal/ui";
-  import NotePressPreview from "./NotePressPreview.svelte";
   import { say } from "../../server/say";
+  import NotePressPreview from "./NotePressPreview.svelte";
   import { href, navigate, route, segments } from "../../lib/route.svelte";
   import { spaces } from "../../shell/spaces.svelte";
   import { notes } from "./store.svelte";
@@ -78,7 +78,7 @@
 </script>
 
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions: one delegated listener for every row (the rows are the interactive elements) -->
-<nav aria-label="Notes" use:pressRows onclickcapture={pickClick} onkeydown={selectKey}>
+<nav aria-label="Notes" onclickcapture={pickClick} onkeydown={selectKey} use:pressRows>
   {#if notes.space}<p class="section-heading first">{notes.space.name}</p>{/if}
   {#if notes.tags.length}
     <div class="tags" role="group" aria-label="Filter by tag">
