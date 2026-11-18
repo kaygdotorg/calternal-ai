@@ -9,7 +9,7 @@
 - The account's `input.db` migration 2 to 3 adds personal overrides and
   receipts alongside its existing input binding. Each account can store
   1,024 overrides. Values are at most 4 KiB. The write transaction checks
-  the base revision, co-commits the value and receipt, and invalidates
+  the previous override, co-commits the value and receipt, and invalidates
   the caller's private input feed. It holds at most 4,096 live receipts,
   with the configured receipt window. No auth.db migration is required.
 - An owned-slot subscription returns the same capability-filtered
@@ -38,9 +38,14 @@
 ## Verification
 
 - On dev-02, focused conformance passed 3 settings cases and 4 owned-slot
-  cases. The installed diagnostics case checks the stderr bound, crash
-  readiness, reader denial and separation between spaces.
-- The full verification gate is pending.
+  cases. The account input migration transition passed. The installed
+  diagnostics case checks the stderr bound, crash readiness, reader
+  denial and separation between spaces.
+- The follow-up implementation at `6342052a` passed all 150 serial
+  conformance tests and all 11 independent authorization matrix tests.
+  Workspace and conformance formatting, the 387-page site,
+  `scripts/check-docs.sh` and generated contract parity passed on
+  dev-02. The dev-01 full workspace gate is pending.
 
 ## Simplification opportunities
 

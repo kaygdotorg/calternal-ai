@@ -75,11 +75,24 @@ are looked up only for rows in the parked state.
   command was stopped during the SDK build and the dependency directories
   it created were moved to the system Trash. All reported verification
   came from the development VMs.
-- Browser Inbox rendering, the trial kit refresh, scoped reactive values,
-  and installed-package diagnostics are pending.
+- The merge with `stack/night-1` at `893a5965` rebuilt the worker pins
+  and passed all eight focused jobs HTTP cases on dev-02. The standalone
+  Inbox renderer remains a Claude client follow-up.
+- The dev-01 author kit at `6342052a` passed the standard smoke and a
+  fresh draft's deadline wait. The draft exposed its checkpoint while
+  parked and returned the same checkpoint with a deadline signal on
+  resume. Both runs removed the server, runner, containers, listener
+  and disposable data. The initial kit setup failed because the isolation
+  helper linked schema 11. The refresh now builds the helper and server
+  from the same source.
+- Follow-up work on scoped reactive values and installed-package
+  diagnostics is recorded in the
+  [settings and diagnostics review](plugin-settings-diagnostics-2026-11-18.md).
 
 ## Simplification opportunities
 
 Store the Inbox form once. The current two readers share a wait row, but
 the form appears in both its signal and presentation data. A narrower
 persisted signal descriptor could remove that duplication.
+When replacing a scaffold's starter operation, update its generated slot
+and README together. A job-oriented scaffold could omit the starter slot.
