@@ -26,7 +26,6 @@ const CANDIDATES: &str = "FROM items i WHERE i.kind='notes'
     AND substr(i.path,1,7)='.trash/' AND i.mat_state NOT IN ('purged','purging','blocked')";
 pub(crate) const PURGE_STEP: &str = "trash.empty.item";
 const PAGE: i64 = 16;
-const MAX_TARGETS: i64 = 250_000;
 
 // The same query inside the admission transaction binds exactly the previewed
 // revisions. SQLite length(BLOB) reads lengths without copying note bodies.
@@ -34,8 +33,7 @@ fn preview(db: &Connection, space: SpaceId) -> Result<(i64, i64, String)> {
     let mut q = db
         .prepare(&format!(
             "SELECT id,revision,(SELECT sum(length(bytes)) FROM versions WHERE item=i.id)
-         {CANDIDATES} ORDER BY id LIMIT {}",
-            MAX_TARGETS + 1
+         {CANDIDATES} ORDER BY id"
         ))
         .map_err(internal)?;
     let mut rows = q.query([]).map_err(internal)?;
@@ -45,9 +43,6 @@ fn preview(db: &Connection, space: SpaceId) -> Result<(i64, i64, String)> {
     let mut bytes = 0i64;
     while let Some(row) = rows.next().map_err(internal)? {
         count += 1;
-        if count > MAX_TARGETS {
-            return Err(Error::unavailable("Trash exceeds the confirmed-job limit"));
-        }
         for col in 0..2 {
             let key = row
                 .get_ref(col)
