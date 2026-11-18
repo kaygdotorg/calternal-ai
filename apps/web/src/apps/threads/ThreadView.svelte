@@ -8,7 +8,7 @@
   import { appearance } from "../../appearance/prefs.svelte";
   import { hazards } from "../../lib/hazard";
   import { VirtualList } from "@calternal/ui";
-  import { href, navigate } from "../../lib/route.svelte";
+  import { href, navigate, route } from "../../lib/route.svelte";
   import { shell } from "../../shell/shell.svelte";
   import { bridge } from "./compose.svelte";
   import { Conversation } from "./conversation.svelte";
@@ -103,6 +103,20 @@
     conv = c;
     return () => c.dispose();
   });
+  // `?m=<message id>` on the thread's address (a search result, a link to a message) scrolls to that message at once, with no animation, and marks it for a moment; the id is looked up, the messages between are not loaded.
+  let hit = $state("");
+  $effect(() => {
+    const m = route.query.get("m");
+    const ready = !!list && !!conv;
+    if (!m || !ready) return;
+    void untrack(async () => {
+      const i = await client.messageIndex?.(id, m);
+      if (i === undefined || !list) return;
+      list.scrollToIndex(i, "centre");
+      hit = m;
+      setTimeout(() => { if (hit === m) hit = ""; }, 2000);
+    });
+  });
   // A message you send, or a first stream chunk, follows the end.
   let streamId = "";
   $effect(() => {
@@ -162,7 +176,7 @@
           {#snippet row(i)}
             {#if conv && i < conv.count}
               {@const m = conv.get(i)}
-              {#if m}<MessageRow message={m} provider={summary?.provider ?? "claude"} providers={store.providers} />{:else}<div class="skeleton" aria-hidden="true"></div>{/if}
+              {#if m}<MessageRow message={m} hit={hit === m.id} provider={summary?.provider ?? "claude"} providers={store.providers} />{:else}<div class="skeleton" aria-hidden="true"></div>{/if}
             {:else if conv?.stream && i === conv.count}
               <StreamRow turn={conv.stream} provider={summary?.provider ?? "claude"} providers={store.providers} />
             {:else if conv}
