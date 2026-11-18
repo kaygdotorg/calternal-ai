@@ -2,13 +2,12 @@
 
 Decisions waiting on kayg, most blocking first. Answer here or in chat; answered items
 move to the decision record they belong to and leave this list. Terms: see
-[glossary](glossary.md). Updated 2026-11-19 12:30 IST.
+[glossary](glossary.md). Updated 2026-11-19 13:40 IST.
 
 ## Waiting now
 
 | # | Question | Recommendation | Area |
 | --- | --- | --- | --- |
-| 53 | A request receipt is kept past the 7-day retention while its request is still unfinished on disk (the fix for a duplicated append after a crash); a stuck request can pin it with no fixed bound | Accept, with the stuck state shown in health | Storage |
 | 31 | Thread rows: hover hides the time and state mark for the three actions; swipe right shows only Copy link; touch has no long-press menu, "More" sits in the swipe tray | Keep all three; try on a phone | Threads |
 | 35 | People: can a group hold a server role; what happens when a space's only Owner is disabled | Port the existing app's answer | People |
 | 40 | Performance: the slow start at 1,000 spaces (320 to 860 ms against 300 ms), the cold save tail and the draft-save tail. No profile yet says where the time goes | Profile first, then ask | Performance |
@@ -50,6 +49,8 @@ Decided 2026-11-18: a person never signs in twice and no API key is used. The ti
 
 ## Recently decided (2026-11-17), now in the decision records
 
+- Automations (2026-11-19): a run uses the authority of the person who made the automation, on their machine or sandbox; a run missed because the machine was off happens once when it is back if it is still the same day, otherwise it is skipped and says so; its permission mode is what the person configured, Approve for me by default.
+- Also 2026-11-19: four plans at 20, 50, 100 and 200 US dollars a month; no free cloud hours on the hosted service; the existing app's notes are brought over by moving the files, no importer; mail is the first app plugin after Notes and Threads; backups stay external (the production VM is backed up nightly), a per-person backup plugin comes later; an hour is counted plainly; the receipt kept until its request finishes is accepted (#53); an agent message is not indented for the provider mark, the mark is part of its first line; there is no fixed limit on lanes.
 - Plans (2026-11-19): 150, 750 and 1,500 sandbox hours a month on the 2, 4 and 8 GiB sizes; when hours run out new work queues, running turns finish and a pay-as-you-go top-up is offered. Plans, billing and the hour meter are closed source in a separate private repository; the open core keeps only limits an admin sets by hand.
 - Settings layout (2026-11-19): pages are flat on every width, in the person's Wide or Centred layout (Wide by default on desktop); a split is used only for content beside a live preview, as on Appearance.
 - More decisions (2026-11-19): the server pins a tested version of each harness and offers updates in Admin after a smoke test; running turns finish on the old version; Calternal manages the harnesses in Direct mode too. Sandbox sizes are 2, 4 and 8 GiB of memory (kayg will enlarge the VM). Storage is sold in two kinds, text and binary (photos, video, documents). Production moves to a microVM per person. A thread file's limit rises from 2 MiB to 16 MiB, with speed and indexing proven at that size. Notifications are web push, native apps later. Claude Code and Codex are both plugins; Codex support is next.
