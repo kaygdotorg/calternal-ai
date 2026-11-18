@@ -19,7 +19,7 @@ export { default as Switch } from "./components/Switch.svelte";
 export { default as Badge } from "./components/Badge.svelte";
 export { default as Spinner } from "./components/Spinner.svelte";
 export { ICONS, type IconName } from "./icons";
-export { adaptive, backdropRange, behindLuminance, material, luminance, scheduleMaterial, setBackdropField, washFor, type Field } from "./lib/material";
+export { adaptive, backdropRange, behindLuminance, material, luminance, scheduleMaterial, setBackdropField, setMaterialSource, washFor, type Field, type MaterialSource } from "./lib/material";
 export { initScheme, applyScheme, currentScheme, currentForm, schemePreference, onScheme, type Scheme, type SchemePreference, type Form } from "./lib/theme";
 export { roving } from "./lib/roving";
 export { ready } from "./lib/ready";
