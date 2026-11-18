@@ -170,7 +170,7 @@
       </div>
     </div>
   {/if}
-  <SelectionActions root={listEl} oncomment={(t) => bridge.comment(t)} onask={(t) => { bridge.ask(t); shell.showPanel("chat"); }} />
+  <SelectionActions root={listEl} oncomment={(t) => bridge.comment(t)} onask={(t) => bridge.ask(t)} />
 </div>
 
 <style>

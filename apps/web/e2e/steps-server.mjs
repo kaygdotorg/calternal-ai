@@ -5,6 +5,7 @@ import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync, wr
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { chromium } from "playwright";
+import { checkMessageActions } from "./actions-check.mjs";
 
 const PORT = Number(process.env.CAL_STEPS_PORT ?? 3413);
 const BIN = process.env.CAL_BIN ?? `${process.env.HOME}/Developer/lanes/ui-threads/target/debug/calternal`;
@@ -75,6 +76,11 @@ try {
   ok(JSON.stringify(before.map((t) => t.replace(/Worked.*?tools?/, "")))  === JSON.stringify(after.map((t) => t.replace(/Worked.*?tools?/, ""))), "what the page built from checkpoint additions equals what a whole read shows", `before=${JSON.stringify(before).slice(0, 160)} after=${JSON.stringify(after).slice(0, 160)}`);
   console.log("   after reload steps:", (await p.locator(".steps").allInnerTexts()).join(" || ").replace(/\s+/g, " ").slice(0, 400));
   ok(/Bash|ls/i.test((await p.locator(".steps").allInnerTexts()).join(" ")), "after a reload the saved steps show the tool and target");
+
+  // the message actions, on the server's own thread (clipboard allowed for the page)
+  await ctx.grantPermissions(["clipboard-read", "clipboard-write"], { origin: url }).catch(() => {});
+  await p.goto(`${url}/threads/${id1}?server=1`); await p.waitForSelector("html[data-ready]"); await p.waitForTimeout(1500);
+  await checkMessageActions(p, ok, "desktop");
 
   // 2. long output
   const id2 = await run("scripted-tool-steps long-output");
