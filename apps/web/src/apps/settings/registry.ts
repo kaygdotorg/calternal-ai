@@ -235,11 +235,11 @@ export const SECTIONS: Section[] = [
 
 const deleteSpace = (): void => {
   if (!confirm(`Delete the space "${spaces.current.name}"? Its records are removed.`)) return;
-  void import("../../server/client").then(({ server }) => server.operate("spaces.delete", { space_id: spaces.current.id })).then(() => location.replace(import.meta.env.BASE_URL), (e: Error) => alert(e.message));
+  void import("../../server/mutations").then(({ deleteSpace }) => deleteSpace(spaces.current.id)).then(() => location.replace(import.meta.env.BASE_URL), (e: Error) => alert(e.message));
 };
 const leaveSpace = (): void => {
   if (!confirm(`Leave the space "${spaces.current.name}"? You lose access to everything in it.`)) return;
-  void import("../../server/client").then(({ server }) => server.operate("spaces.leave", { space_id: spaces.current.id })).then(() => location.replace(import.meta.env.BASE_URL), (e: Error) => alert(e.message));
+  void import("../../server/mutations").then(({ leaveSpace }) => leaveSpace(spaces.current.id)).then(() => location.replace(import.meta.env.BASE_URL), (e: Error) => alert(e.message));
 };
 /**
  * The pages in server mode: only what a server operation backs. Account, Members, Secrets, Space plugins and Machines show the real data; Appearance and Keyboard are this browser's own and stay; every other

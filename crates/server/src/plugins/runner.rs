@@ -65,10 +65,14 @@ pub fn schedule<D: Directory>(state: &Shared<D>, space: String, job: String) {
 pub async fn recover<D: Directory>(state: &Shared<D>) -> Result<usize, Error> {
     let st = state.clone();
     let woken = crate::blocking::spawn(move || {
-        st.jobs.recover(|plugin, operation| {
-            st.registry
-                .get(plugin)
-                .is_some_and(|p| resumable(&p.manifest, operation))
+        let catalog = st.registry.snapshot();
+        st.jobs.recover(|plugin, operation, revision| {
+            let entry = if revision == 0 {
+                catalog.get(plugin)
+            } else {
+                catalog.revision(plugin, revision)
+            };
+            entry.is_some_and(|p| resumable(&p.manifest, operation))
         })
     })
     .await
@@ -124,7 +128,12 @@ async fn execute<D: Directory>(
     cancel: &Arc<super::worker::CancelFlag>,
 ) -> Result<Option<RunEnd>, Error> {
     let refused = || Error::forbidden("job authority no longer holds");
-    let plugin = state.registry.get(&job.plugin).ok_or_else(refused)?.clone();
+    let plugin = state
+        .registry
+        .snapshot()
+        .revision(&job.plugin, job.package_revision)
+        .ok_or_else(refused)?
+        .clone();
     let required = plugin
         .operation(&job.operation)
         .and_then(|op| host_capability(op.required_capability))

@@ -445,6 +445,10 @@ async fn serve(
         jobs,
         allowed_hosts: hosts,
     });
+    drop(
+        calternal_server::api::configure_search(&state)
+            .map_err(|e| boot(1, "failed", e.message, DATA_HINT))?,
+    );
     let erasing = state.clone();
     tokio::task::spawn_blocking(move || {
         calternal_server::erasure::replay(
@@ -467,6 +471,8 @@ async fn serve(
     .await
     .map_err(|e| boot(1, "failed", e.to_string(), DATA_HINT))?
     .map_err(|e| boot(1, "io", format!("admin socket: {e}"), DATA_HINT))?;
+    let _plugin_admin = plugins::live_catalog::serve(data_dir.clone(), state.clone(), development)
+        .map_err(|e| boot(1, "io", format!("plugin admin socket: {e}"), DATA_HINT))?;
     match plugins::runner::recover(&state).await {
         Ok(0) => {}
         Ok(n) => tracing::info!(jobs = n, "resuming plugin jobs"),

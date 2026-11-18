@@ -1,5 +1,7 @@
 //! One bounded maintenance lane, independent of request read/write admission.
-use super::{Result, SCHEMA, SearchConfig, internal, register_functions, source};
+use super::{
+    Result, SCHEMA, SearchConfig, SearchConfigSource, internal, register_functions, source,
+};
 use crate::{Content, journal::lock};
 use calternal_store::{ProjectionJournal, SyncToken};
 use calternal_types::SpaceId;
@@ -18,21 +20,25 @@ const PAGE: usize = 128;
 const REQUESTS: usize = 128;
 const GENERATION: &str = concat!("2/", env!("CARGO_PKG_VERSION"));
 
-pub(super) fn start(content: &Arc<Content>) -> Result<SyncSender<SpaceId>> {
+pub(super) fn start(
+    content: &Arc<Content>,
+    source: SearchConfigSource,
+) -> Result<(SyncSender<SpaceId>, std::thread::JoinHandle<()>)> {
     let (send, receive) = mpsc::sync_channel(REQUESTS);
     let weak = Arc::downgrade(content);
-    std::thread::Builder::new()
+    let handle = std::thread::Builder::new()
         .name("search-index".into())
-        .spawn(move || work(weak, receive))
+        .spawn(move || work(weak, receive, source))
         .map_err(internal)?;
-    Ok(send)
+    Ok((send, handle))
 }
 
-fn work(content: Weak<Content>, receive: Receiver<SpaceId>) {
+fn work(content: Weak<Content>, receive: Receiver<SpaceId>, source: SearchConfigSource) {
     let mut queue = VecDeque::new();
     let mut marked = HashSet::new();
     let mut ready = HashMap::new();
     let mut more = false;
+    let mut previous: Option<Arc<SearchConfig>> = None;
     loop {
         if queue.is_empty() && !more {
             match receive.recv_timeout(POLL) {
@@ -44,6 +50,9 @@ fn work(content: Weak<Content>, receive: Receiver<SpaceId>) {
                 Err(mpsc::RecvTimeoutError::Timeout) => {}
             }
         }
+        let Some(config) = source() else {
+            return;
+        };
         let Some(content) = content.upgrade() else {
             return;
         };
@@ -52,9 +61,19 @@ fn work(content: Weak<Content>, receive: Receiver<SpaceId>) {
             std::thread::sleep(POLL);
             continue;
         }
-        let Some(config) = content.search.get() else {
+        if previous
+            .as_ref()
+            .is_none_or(|prior| prior.kinds != config.kinds)
+        {
+            ready.clear();
+        }
+        previous = Some(Arc::clone(&config));
+        if config.kinds == "[]" {
+            queue.clear();
+            marked.clear();
+            more = false;
             continue;
-        };
+        }
         let active: Vec<_> = lock(&content.spaces).keys().copied().collect();
         ready.retain(|space, _| active.contains(space));
         for space in active {
@@ -71,7 +90,7 @@ fn work(content: Weak<Content>, receive: Receiver<SpaceId>) {
                 break;
             };
             marked.remove(&space);
-            match project(&content, config, space, ready.get(&space)) {
+            match project(&content, &config, space, ready.get(&space)) {
                 Ok(Progress::Ready(head)) => {
                     ready.insert(space, head);
                 }

@@ -121,13 +121,22 @@ export async function reverify(): Promise<void> {
   const cred = await ceremony("get", s.options as Json);
   await post("reverify/finish", { ceremony: s.ceremony, credential: encodeCredential(cred), device: deviceName() });
 }
-/** Runs a change that may ask for a fresh passkey: if the server says so, verifies once and tries again. */
-async function fresh<T>(f: () => Promise<T>): Promise<T> {
+/**
+ * Runs a call that may need a fresh passkey proof (approving a request, providing a secret, changing how someone signs in): when the server answers HTTP 403 with the dedicated code `passkey_reverification_required`
+ * (crates/types/src/error.rs; docs/requests.md), asks for the passkey once (`again`, the real ceremony by default; tests pass a stand-in) and tries the call again, now with the renewed session. Any other refusal, and a
+ * second refusal, is thrown as the server said it (the person is shown its plain message). The ONE helper for every call that can demand a fresh proof: do not match on `forbidden`, which the server uses for other refusals.
+ * Cost: none unless the proof is stale; then one passkey ceremony (two requests and the person's touch).
+ */
+export async function withFreshProof<T>(f: () => Promise<T>, again: () => Promise<void> = reverify): Promise<T> {
   try { return await f(); } catch (e) {
-    if (e instanceof ServerError && e.code === "passkey_reverification_required") { await reverify(); return f(); }
+    if (e instanceof ServerError && e.code === "passkey_reverification_required") { await again(); return f(); }
     throw e;
   }
 }
+/** The re-verification every screen's changes use: the real passkey ceremony. Tests replace `proof.again` to answer it without a device. */
+export const proof = { again: reverify };
+/** `withFreshProof` with the shared ceremony: the one wrapper for a change that may demand a fresh passkey (docs/requests.md). */
+export const fresh = <T>(call: () => Promise<T>): Promise<T> => withFreshProof(call, () => proof.again());
 /** The account endpoints behind Settings, Account. */
 export const account = {
   me: () => get("me") as unknown as Promise<Me>,

@@ -29,7 +29,7 @@ pub(super) fn list(
     };
     let mut names = directory.entry_names(DIRECTORIES).map_err(storage)?;
     names.sort_unstable();
-    let prefix = calternal_content::fold_title(prefix.trim());
+    let prefix = prefix.trim().to_ascii_lowercase();
     let mut skills = Vec::new();
     for name in names {
         if skills.len() >= DESCRIPTORS {

@@ -17,7 +17,7 @@ use axum::routing::{any, get, post};
 use calternal_core::{
     ErrorCode, GENUI_VERSION, JsonObject, MAX_BODY_BYTES, NoteResult, NotesCreateInput,
     NotesGetInput, NotesUpdateInput, OperationResponse, PROTOCOL_VERSION, PluginInput,
-    PluginPreviewResult, PluginResult, PluginState, PluginsListInput, PluginsListResult, True,
+    PluginPreviewResult, PluginResult, PluginState, PluginsListInput, True,
     canonical_request_input, operation_catalog, parse_request,
 };
 use serde::de::DeserializeOwned;
@@ -31,7 +31,7 @@ use crate::plugins::{
     Call, Jobs, PREVIEW_ITEM_ID, Plugin, PreviewHost, Registry, Session, WorkerPool, activation,
     broker::SpaceHost,
 };
-use crate::store::{PluginRow, Store, sha256_hex};
+use crate::store::{Store, sha256_hex};
 use calternal_types::{AccountId, Error, SpaceId};
 
 pub(crate) mod authorization;
@@ -47,10 +47,6 @@ mod request;
 mod search;
 mod search_skills;
 
-/// Configure immutable manifest search projections before any content space is opened.
-pub fn configure_search(store: &Store, registry: &Registry) -> Result<(), Error> {
-    store.configure_search(search::configuration(registry)?)
-}
 mod request_action;
 mod spaces;
 pub mod wallpapers;
@@ -84,7 +80,7 @@ pub struct AppState<D: Directory = StoredDirectory> {
     /// space keeps its own store and journal. See the auth database worker's
     /// documentation for the exact serialized interval.
     pub directory: D,
-    /// Immutable registry of trusted plugins and their manifest-derived policy rows.
+    /// Atomically published snapshots of trusted plugins and their derived policies.
     pub registry: Registry,
     /// Bounded pool of long-lived (plugin, space) workers routed through enrolled
     /// machines; explicit direct adapters serve disposable development and tests.
@@ -97,6 +93,20 @@ pub struct AppState<D: Directory = StoredDirectory> {
 
 /// Reference-counted host state; cloning never clones the directory or its grants.
 pub type Shared<D = StoredDirectory> = Arc<AppState<D>>;
+
+/// Start the background search worker against the live plugin catalog.
+/// The worker only holds a weak state reference and exits after the state drops.
+/// Startup spawns one thread and performs no content I/O.
+pub fn configure_search<D: Directory>(
+    state: &Shared<D>,
+) -> Result<std::thread::JoinHandle<()>, Error> {
+    let owner = Arc::downgrade(state);
+    let source: calternal_content::SearchConfigSource = Box::new(move || {
+        let state = owner.upgrade()?;
+        Some(state.registry.snapshot().search_configuration().clone())
+    });
+    state.store.shared_content().configure_search(source)
+}
 
 /// Construct the exact loopback hostnames accepted for a bound listener port.
 pub fn allowed_hosts(port: u16) -> Vec<String> {
@@ -279,9 +289,8 @@ fn operation_catalog_json() -> &'static serde_json::value::RawValue {
 
 /// Scheduling derives from the same immutable operation declarations as policy.
 /// Unknown operations get writer scheduling until normal admission rejects them.
-fn operation_mutates<D: Directory>(state: &Shared<D>, op: &str) -> bool {
-    state
-        .registry
+fn operation_mutates(catalog: &crate::plugins::Catalog, op: &str) -> bool {
+    catalog
         .owner_of_operation(op)
         .and_then(|p| p.operation(op))
         .map(|p| p.mutates)
@@ -353,7 +362,8 @@ async fn operations<D: Directory>(State(state): State<Shared<D>>, req: Request) 
     let state_for_threads = state.clone();
     let thread_scheduler = machines.clone();
     let workers = state.blocking.clone();
-    let mutates = operation_mutates(&state, &request.operation);
+    let catalog = state.registry.snapshot();
+    let mutates = operation_mutates(&catalog, &request.operation);
     let result = workers
         .scope(mutates, async {
             let mut result =
@@ -390,7 +400,7 @@ async fn operations<D: Directory>(State(state): State<Shared<D>>, req: Request) 
                         None => Err(Error::unavailable("machines are not enabled")),
                     }
                 } else {
-                    dispatch_scoped(
+                    dispatch_scoped_inner(
                         state,
                         p,
                         session,
@@ -399,6 +409,7 @@ async fn operations<D: Directory>(State(state): State<Shared<D>>, req: Request) 
                         request.input,
                         agent,
                         machines,
+                        catalog,
                     )
                     .await
                 };

@@ -183,11 +183,13 @@ async fn thread_send_crash_after_append_retries_into_exactly_one_turn() {
             .count(),
         1
     );
-    let document = saved.body["data"]["thread"]["markdown"].as_str().unwrap();
     let stamp = saved.body["data"]["thread"]["metadata"]["last_activity_at"]
         .as_str()
         .unwrap();
-    assert!(document.contains(&format!(" time:{stamp} -->")));
+    let message = &saved.body["data"]["thread"]["messages"][0];
+    assert_eq!(message["role"], "person");
+    assert_eq!(message["text"], "one durable message");
+    assert_eq!(&message["at"].as_str().unwrap()[..19], &stamp[..19]);
     let first = f
         .op_id(1, "threads.send", input.clone(), "send-crash")
         .await;
@@ -201,6 +203,7 @@ async fn thread_send_crash_after_append_retries_into_exactly_one_turn() {
     assert_eq!(first.body["data"]["job"]["space_id"], f.spaces[0]);
     let reopened = f.op(1, "threads.get", json!({"id":id})).await;
     reopened.ok();
+    assert_eq!(reopened.body["data"]["thread"]["messages"][0], *message);
     assert_eq!(
         reopened.body["data"]["job"]["id"],
         first.body["data"]["job"]["id"]

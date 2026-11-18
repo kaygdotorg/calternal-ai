@@ -220,6 +220,44 @@ at `threads_cases.rs:518:5`. Its assertion was
 `assertion failed: std::fs::read_to_string(chats.join("Renamed.md")).unwrap().contains("title: \"Renamed\"")`.
 The current serial gate passed the case.
 
+## Live catalog integration
+
+The merge with `fc4c453` keeps dev's implementations of `people.lookup`,
+`skills.list` and `plugins.manifests`, including the live palette test.
+It adds `search.query`, `items.lookup` and `threads.lookup` through the
+same dispatcher and cursor helper. Dev's slots and package lifecycle remain
+part of the merged manifest contract.
+
+The immutable catalog caches searchable kinds. The search handlers reuse
+the pinned admission snapshot across all spaces and both match passes. That
+is one atomic catalog snapshot read per request and zero added SQL or file
+reads. Each warm, ready per-space match pass uses six SQLite read statements.
+An approved live update can change `searchable` while the stored kind and
+collection declarations still require the existing migration check.
+
+The content worker receives a content-owned callback. The server captures
+`Weak<AppState>`, and the callback returns no configuration after the owner
+drops. The shutdown test retains a separate strong reference to Content and
+joins the worker. The live integration test changes the opt-in and removes
+the package without restarting. Before the storage-comparison fix, the test
+failed because the package update incorrectly required a migration.
+
+The dev-02 merge gate repeated the workspace command above with 597 passing
+tests and the same coordinator-owned Podman skip. The server build with
+`test-plugins` and the standalone serial conformance command passed, with
+114 conformance tests. Integration passed 2 tests and plugins passed 27
+with one signed-in test skipped. Contract export, CLI smoke, the docs gate,
+and both formatting checks passed. The conformance format check covered
+`tests/conformance/search_cases.rs` and `tests/conformance/search_cases/live.rs`.
+
+The explicit installed-server case ran as
+`cargo test --locked -j6 -p calternal-client --all-features --test real_server real_server_operations_receipts_and_authority -- --ignored`
+and passed. An earlier broad invocation ran out of disk during compilation.
+The docs site passed with `CARGO_TARGET_DIR=target npm run docs:site`. The
+first invocation gave the site script an absolute target path, which it joined
+to the workspace path. Both shipped worker digests came from the clean
+`npm ci` and `npm run build:plugins` build.
+
 ## Review gate
 
 | Item | Evidence |

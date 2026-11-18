@@ -318,9 +318,59 @@ pub enum PluginSlot {
     Toasts,
 }
 
+/// A package-qualified slot. Its namespace cannot address a host surface.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(deny_unknown_fields)]
+pub struct OwnedPluginSlotId {
+    /// Registered package that declares the slot.
+    pub plugin_id: String,
+    /// Local slot ID in that package.
+    pub id: String,
+}
+
+/// Mount addressed either by the fixed host vocabulary or a package-qualified name.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(untagged)]
+pub enum PluginSlotTarget {
+    /// One extensible host mount point.
+    Host(PluginSlot),
+    /// A slot defined by an installed package.
+    Owned(OwnedPluginSlotId),
+}
+
+/// Operation-backed contribution types available to a package-owned mount.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema, TS,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum OwnedPluginSlotKind {
+    /// A read-only operation yielding a portable generated view.
+    Generated,
+    /// An operation invoked through the host's normal command and approval path.
+    Command,
+}
+
+/// One package-owned slot, with explicit visibility, accepted renderers and capacity.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(deny_unknown_fields)]
+pub struct OwnedPluginSlot {
+    /// Stable local name; the host obtains the owner ID from the enclosing manifest.
+    pub id: String,
+    /// Space capability a caller must hold to resolve this slot.
+    pub required_capability: ManifestCapability,
+    /// Nonempty set of operation-backed renderer types. Duplicates are invalid.
+    #[schemars(length(min = 1, max = 2))]
+    pub accepts: Vec<OwnedPluginSlotKind>,
+    /// Maximum visible contributions per listing, between 1 and 32.
+    #[schemars(range(min = 1, max = 32))]
+    pub max_contributions: u8,
+}
+
 /// A portable operation-backed contribution or a reference to a sealed web bundle.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
-#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+#[serde(tag = "type")]
+#[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum PluginSlotRenderer {
     /// Resolve through a declared read-only operation returning a generated view.
     Generated {
@@ -347,8 +397,8 @@ pub struct PluginSlotContribution {
     pub id: String,
     /// Accessible name and visible label, bounded to 128 UTF-8 bytes.
     pub label: String,
-    /// Host mount point, independent of renderer implementation.
-    pub slot: PluginSlot,
+    /// Extensible host mount or package-owned target, independent of the renderer.
+    pub slot: PluginSlotTarget,
     /// Renderer or command to resolve.
     pub renderer: PluginSlotRenderer,
 }
@@ -370,6 +420,11 @@ pub struct ManifestV1 {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub slots: Option<Vec<PluginSlotContribution>>,
+    /// Up to 32 mounts owned by this package, resolved only while enabled.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(length(max = 32))]
+    #[ts(optional)]
+    pub owned_slots: Option<Vec<OwnedPluginSlot>>,
     /// Stable plugin identifier.
     pub id: String,
     /// Human-readable plugin name.

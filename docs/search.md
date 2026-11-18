@@ -37,10 +37,18 @@ operation.
 ## Index
 
 A manifest opts a Markdown kind in with `searchable: true`. Notes opt in
-during this stage. Message search follows the byte-counted thread producer
-in #46. Effective plugin activation is read from the space's current controls
-on every probe. Disabled kinds and unreadable spaces contribute zero hits and
-zero coverage information.
+during this stage. Message indexing and message-ID lookup remain future work
+using the byte-counted thread format. The live catalog caches the search
+projection per immutable snapshot. Each request reuses its one catalog read
+from admission across spaces and match passes. The worker pins one snapshot
+per bounded sweep and shuts down when its owner closes.
+
+Each probe reads effective plugin activation from current space controls.
+Disabled kinds, packages scoped to another space, and unreadable spaces
+contribute zero hits and zero coverage information. The live catalog adds
+zero SQL or file reads. A warm ready probe uses six SQLite statements per
+space and match pass. The request normally uses two authority reads to
+confirm the same spaces before delivery.
 
 The derived per-space `search-v2.db` opens lazily. A separate maintenance
 thread scans at most 128 heads per turn and cycles through spaces. It runs
@@ -64,8 +72,9 @@ until recovery catches up.
 On first use, a fresh generation scans retained UUID heads and the guarded
 Markdown files. Pending placement, a missing file or an external edit
 uses the last durable version. The journal catches changes during the
-scan before the worker publishes readiness. The release version, schema generation, kind configuration and journal
-epoch invalidate a projection on change.
+scan before the worker publishes readiness. A change to the release version,
+schema generation, searchable kinds, or journal epoch invalidates the
+projection.
 Foreground Notes list, ID reads and saves keep using existing head metadata
 and the journal during rebuild. This covers the Notes search projection.
 Other indexes use their existing lifecycle.

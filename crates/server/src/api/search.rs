@@ -1,8 +1,9 @@
 //! Authorized palette queries and the indexed mention pickers.
+#[cfg(test)]
+mod tests;
+
 use super::*;
-use calternal_content::{
-    IndexedHit, SearchConfig, SearchKey, SearchKind, SearchMatch, SearchProbe,
-};
+use calternal_content::{IndexedHit, SearchConfig, SearchKey, SearchMatch, SearchProbe};
 use calternal_core::{
     LookupInput, PaletteResult, PeopleLookupResult, SearchHit, SearchInput, SearchOperation,
     SearchResult, SearchSegment, SpaceLookupInput,
@@ -14,11 +15,21 @@ pub(super) async fn dispatch<D: Directory>(
     person: &Identity,
     op: SearchOperation,
     input: JsonObject,
+    catalog: &crate::plugins::Catalog,
 ) -> Result<Value, Error> {
     match op {
         SearchOperation::Query => {
             let input: SearchInput = decode(input)?;
-            to_value(search(state, person.id, input, false).await?)
+            to_value(
+                search(
+                    state,
+                    person.id,
+                    input,
+                    false,
+                    catalog.search_configuration(),
+                )
+                .await?,
+            )
         }
         SearchOperation::Items | SearchOperation::Threads => {
             let i: LookupInput = decode(input)?;
@@ -34,7 +45,16 @@ pub(super) async fn dispatch<D: Directory>(
                 limit: i.limit,
                 cursor: i.cursor,
             };
-            to_value(search(state, person.id, input, true).await?)
+            to_value(
+                search(
+                    state,
+                    person.id,
+                    input,
+                    true,
+                    catalog.search_configuration(),
+                )
+                .await?,
+            )
         }
         SearchOperation::People => {
             let i: SpaceLookupInput = decode(input)?;
@@ -58,7 +78,7 @@ pub(super) async fn dispatch<D: Directory>(
             let st = state.clone();
             let manifests = blocking(state, move |store| {
                 let mut manifests = Vec::new();
-                for plugin in st.registry.plugins() {
+                for plugin in st.registry.snapshot().plugins() {
                     if let Some(menu) = &plugin.palette
                         && activation(store, space, plugin)?.enabled
                     {
@@ -73,28 +93,6 @@ pub(super) async fn dispatch<D: Directory>(
     }
 }
 
-pub(super) fn configuration(registry: &Registry) -> Result<SearchConfig, Error> {
-    SearchConfig::new(
-        registry
-            .plugins()
-            .iter()
-            .filter(|p| p.unavailable.is_none())
-            .flat_map(|p| {
-                p.manifest
-                    .kinds
-                    .iter()
-                    .filter(|k| k.searchable == Some(true))
-                    .map(move |k| SearchKind {
-                        kind: k.id.clone(),
-                        control: crate::store::plugin_key(&p.manifest.id),
-                        default_enabled: crate::plugins::default_row(p).enabled,
-                        approval: crate::plugins::default_row(p).approval,
-                    })
-            })
-            .collect(),
-    )
-}
-
 fn directory<D: Directory>(state: &Shared<D>) -> Result<&calternal_auth::spaces::Spaces, Error> {
     state
         .directory
@@ -107,6 +105,7 @@ async fn search<D: Directory>(
     account: AccountId,
     input: SearchInput,
     prefix: bool,
+    config: &Arc<SearchConfig>,
 ) -> Result<SearchResult, Error> {
     let selected = input.space_id.as_deref().map(space_of).transpose()?;
     let auth = directory(state)?;
@@ -117,8 +116,9 @@ async fn search<D: Directory>(
     };
     let spaces = load().await?;
     let selected_spaces = spaces.clone();
+    let selected_config = Arc::clone(config);
     let (input, page) = blocking(state, move |store| {
-        let page = collect(store, &selected_spaces, &input, prefix);
+        let page = collect(store, &selected_spaces, &input, prefix, &selected_config);
         Ok((input, page))
     })
     .await?;
@@ -127,7 +127,7 @@ async fn search<D: Directory>(
         return page;
     }
     // Recompute ordering, coverage and continuation if a grant changed.
-    retry(state, account, input, prefix, current).await
+    retry(state, account, input, prefix, current, Arc::clone(config)).await
 }
 
 async fn retry<D: Directory>(
@@ -136,11 +136,12 @@ async fn retry<D: Directory>(
     input: SearchInput,
     prefix: bool,
     spaces: Vec<SpaceId>,
+    config: Arc<SearchConfig>,
 ) -> Result<SearchResult, Error> {
     let filter = input.space_id.as_deref().map(space_of).transpose()?;
     let selected = spaces.clone();
     let result = blocking(state, move |store| {
-        collect(store, &selected, &input, prefix)
+        collect(store, &selected, &input, prefix, &config)
     })
     .await?;
     let current = directory(state)?
@@ -158,6 +159,7 @@ fn collect(
     spaces: &[SpaceId],
     input: &SearchInput,
     prefix: bool,
+    config: &SearchConfig,
 ) -> Result<SearchResult, Error> {
     let words: Vec<_> = input
         .query
@@ -183,6 +185,7 @@ fn collect(
      -> Result<(), Error> {
         for &space in spaces {
             let page = store.content().search_page(
+                config,
                 space,
                 &SearchProbe {
                     matching,

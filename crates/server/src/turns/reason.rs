@@ -53,11 +53,12 @@ pub(crate) fn describe(state: Option<JobState>, c: &Value, private: bool) -> Val
         Some(Failed) if c["error"]["class"] == "authentication" => json!({
             "code":"provider_signed_out",
             "provider":c["error"]["provider"],
+            "message":format!("{} needs you to sign in again", c["error"]["provider_name"].as_str().unwrap_or("Your provider")),
             "sign_in_command":c["error"]["sign_in_command"],
         }),
         Some(Failed) if c["error"]["origin"] == "thread_storage" => json!({
-            "code":"failed","class":"permanent",
-            "why":c["error"]["code"],"message":c["error"]["message"]
+            "code":crate::threads::persistence::THREAD_FULL,
+            "class":"permanent","message":c["error"]["message"]
         }),
         Some(Failed) => {
             let class = match c["error"]["class"].as_str() {

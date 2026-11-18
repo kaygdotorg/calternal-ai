@@ -43,6 +43,18 @@ pub(super) async fn dispatch<D: Directory>(
                 PeopleOperation::SetProfile => {
                     spaces.set_profile(actor, text("name")?.to_owned(), receipt)
                 }
+                PeopleOperation::SetTimeZone => {
+                    let zone = match input.get("time_zone") {
+                        Some(Value::Null) => None,
+                        Some(Value::String(zone)) => Some(zone.clone()),
+                        _ => {
+                            return Err(Error::invalid_input(
+                                "provide time_zone, or null to follow the device",
+                            ));
+                        }
+                    };
+                    spaces.set_time_zone(actor, zone, receipt)
+                }
                 PeopleOperation::ListPeople => {
                     spaces.people_list(actor, cursor.map(AccountId::parse).transpose()?)
                 }
@@ -120,7 +132,16 @@ pub(super) async fn dispatch<D: Directory>(
                     return Err(Error::internal("space grant must use directory dispatch"));
                 }
             };
-            result.map_err(auth_error)
+            result.map_err(|error| {
+                if operation == PeopleOperation::SetTimeZone
+                    && error.code() == calternal_auth::ErrorCode::InvalidInput
+                {
+                    return Error::invalid_input(
+                        "choose a valid IANA time zone, such as Asia/Kolkata",
+                    );
+                }
+                auth_error(error)
+            })
         };
         if let Some(space) = space
             && operation.risk() != OperationRisk::Read

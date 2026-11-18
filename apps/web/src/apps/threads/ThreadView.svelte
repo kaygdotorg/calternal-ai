@@ -2,7 +2,7 @@
   // The open thread in the middle card: header, the virtualised message list, then the sticky request bar and the composer.
   // Messages are read a page at a time around what is on screen; the streaming message is one extra row at the end whose text is the
   // only thing that changes while it streams.
-  import { untrack } from "svelte";
+  import { getContext, untrack } from "svelte";
   import { Button, cssPx, InlineEditor, Menu, Panel, Pill, toast } from "@calternal/ui";
   import { runThreadItem, threadItems } from "./thread-menu";
   import { appearance } from "../../appearance/prefs.svelte";
@@ -110,6 +110,8 @@
     if (sid && sid !== streamId) list?.scrollToBottom();
     streamId = sid;
   });
+  // In a canvas window (canvas/WindowFrame.svelte) the window supplies the top right pill (full screen, share, the menu) and the sidebar's way back is the shell's: this view keeps only its title pill.
+  const windowed = getContext<boolean | undefined>("canvas-window") === true;
   // The thread's own menu, at the card's top right: the very menu the sidebar row opens (thread-menu.ts, one definition).
   let menuOpen = $state(false);
   let moreEl = $state<HTMLButtonElement>();
@@ -125,8 +127,8 @@
 </script>
 
 <div class="thread">
-  <header bind:this={headerEl}>
-    {#if shell.narrow}<Pill icon="sidebar" label="Show threads" onclick={() => shell.toggleSidebar()} />{/if}
+  <header bind:this={headerEl} class:windowed>
+    {#if shell.narrow && !windowed}<Pill icon="sidebar" label="Show threads" onclick={() => shell.toggleSidebar()} />{/if}
     <Panel class="title" radius="pill">
       <div class="tt">
         {#if parent}<a class="crumb" href={href(`/threads/${parent.id}`)}>{parent.title}</a>{/if}
@@ -139,12 +141,14 @@
       {#if summary && summary.state !== "idle" && summary.state !== "done"}<StateMark state={summary.state} form="word" />{/if}
     </Panel>
     <span class="grow"></span>
-    {#if summary}
+    {#if summary && !windowed}
       <Pill icon="more" label="Thread actions" aria-haspopup="menu" aria-expanded={menuOpen} bind:el={moreEl} onclick={() => (menuOpen = !menuOpen)} />
-      <Menu open={menuOpen} items={threadItems(summary)} label="Thread actions" trigger={moreEl} morph onclose={() => (menuOpen = false)} onpick={(item) => { menuOpen = false; if (summary) runThreadItem(item, summary, startRename); }} />
+      <Menu open={menuOpen} items={[...threadItems(summary), ...(shell.narrow ? [{ id: "panel", label: "Open side panel", icon: "sidebar-right" as const }] : [])]} label="Thread actions" trigger={moreEl} morph onclose={() => (menuOpen = false)} onpick={(item) => { menuOpen = false; if (item === "panel") shell.openPanel(); else if (summary) runThreadItem(item, summary, startRename); }} />
     {/if}
   </header>
 
+  <!-- In a canvas window the text that scrolls under the header fades into the window's own colour, as it does under the card's header (the pills float over it). -->
+  {#if windowed}<div class="topfade" aria-hidden="true"></div>{/if}
   <div class="list" bind:this={listEl}>
     {#if conv && conv.count === 0 && !conv.stream}
       <div class="blank">
@@ -188,6 +192,9 @@
   /* The header and the composer float over the list; the list fades out under them (VirtualList), so there is no opaque band at the top of the card. */
   header { position: absolute; z-index: 3; top: var(--safe-top); left: 0; right: 0; height: var(--bar-h); display: flex; align-items: center; gap: var(--s-3); padding: 0 var(--pad-region) 0 calc(var(--pad-region) + var(--edge-l, 0px)); pointer-events: none; } /* --edge-l: room for the shell's button that shows the sidebar again (shell/Shell.svelte) */
   header > :global(*) { pointer-events: auto; }
+  /* In a canvas window the right pill (three buttons) floats over the header: the title pill leaves room for it and shortens with an ellipsis. */
+  .topfade { position: absolute; z-index: 2; top: 0; left: 0; right: 0; height: calc(var(--bar-h) * 1.5); pointer-events: none; background: linear-gradient(var(--win-fade, transparent) 0, var(--win-fade, transparent) 45%, transparent); }
+  header.windowed { padding-right: calc(var(--pill-h) * 3 + var(--s-8)); }
   .grow { flex: 1; pointer-events: none; }
   .blank { position: absolute; inset: 0; display: grid; align-content: center; justify-items: start; gap: var(--s-4); max-width: 30rem; margin: 0 auto; padding: 0 var(--pad-region); }
   .blank h2 { font-size: var(--text-heading); font-weight: var(--strong-weight); }

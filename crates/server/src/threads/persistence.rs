@@ -10,6 +10,40 @@ use uuid::Uuid;
 /// Stable reason for a saved turn whose next checkpoint cannot fit.
 pub(crate) const THREAD_FULL: &str = "thread_full";
 
+/// Snapshot the manifest selected for this attempt and the model sent to its
+/// adapter. Later saves reuse these labels even if the live catalog changes.
+/// Cost: one in-memory model search at placement and no I/O.
+pub(crate) fn bind_provider(
+    checkpoint: &mut Value,
+    manifest: &calternal_core::ManifestV1,
+    model: &str,
+) {
+    let display_name = manifest
+        .provider
+        .as_ref()
+        .and_then(|provider| provider.models.iter().find(|entry| entry.id == model))
+        .map(|entry| entry.name.as_str())
+        .filter(|name| !name.is_empty())
+        .unwrap_or("Unknown model");
+    checkpoint["message_provider"] = json!({
+        "id":manifest.id,"harness":manifest.name,"model_id":model,"model_name":display_name
+    });
+}
+
+/// Reject an overflowing write before creating its revision or journal event.
+pub(super) fn check_size(bytes: usize) -> Result<(), Error> {
+    const HOST_ID_BYTES: usize = "calternal-id: ".len() + 36 + 1;
+    if bytes.saturating_add(HOST_ID_BYTES) > MAX_DOCUMENT_BYTES {
+        return Err(Error {
+            details: Some(json!({"reason":THREAD_FULL})),
+            ..Error::conflict(
+                "Thread reached its 2 MiB limit. Earlier output is saved; the latest output was not saved. Start a new thread to continue.",
+            )
+        });
+    }
+    Ok(())
+}
+
 /// Flush at most 32 KiB of scrubbed output and any new provider session. The
 /// content CAS serializes this against sends. A superseded turn cannot replace
 /// the session binding. A saved cursor and receipt prevent duplicate output.
@@ -25,7 +59,8 @@ pub(crate) fn checkpoint<D: Directory>(
         return Ok(());
     }
     let text = checkpoint["thread_text"].as_str().unwrap_or("");
-    if text.is_empty() && session.is_none() {
+    let timing = &checkpoint["message_timing"];
+    if text.is_empty() && session.is_none() && timing.is_null() {
         return Ok(());
     }
     if text.len() > 32768 {
@@ -39,8 +74,8 @@ pub(crate) fn checkpoint<D: Directory>(
     {
         return Err(Error::not_found("item not found"));
     }
-    let plugin = state
-        .registry
+    let catalog = state.registry.snapshot();
+    let plugin = catalog
         .get("calternal-orchestrator")
         .ok_or_else(|| Error::not_found("item not found"))?;
     let activation = crate::plugins::activation(&state.store, space, plugin)?;
@@ -59,7 +94,7 @@ pub(crate) fn checkpoint<D: Directory>(
     let fp = crate::api::fingerprint(
         "threads.checkpoint",
         &serde_json::from_value(
-            json!({"job":job.id,"run":job.runs,"seq":seq,"text":text,(KEY):session}),
+            json!({"job":job.id,"run":job.runs,"seq":seq,"text":text,"timing":timing,(KEY):session}),
         )
         .unwrap(),
     );
@@ -91,31 +126,32 @@ pub(crate) fn checkpoint<D: Directory>(
             && metadata[KEY] != session;
         if new_session {
             metadata[KEY] = session.clone();
-        } else if text.is_empty() {
+        } else if text.is_empty() && timing.is_null() {
             return Ok(());
         }
         let mut body = super::document::body(&item)?.to_owned();
-        let range = if text.is_empty() {
-            body.len()..body.len()
+        let range = if text.is_empty() && timing.is_null() {
+            Some(body.len()..body.len())
         } else {
-            append_output(&mut metadata, &mut body, job, id, seq, text, checkpoint)?
+            append_output(&mut metadata, &mut body, job, seq, text, checkpoint)?
         };
         let bytes = super::document::encode(&metadata, &body);
-        if bytes.len() > MAX_DOCUMENT_BYTES {
-            return Err(Error {
-                details: Some(json!({"reason":THREAD_FULL})),
-                ..Error::conflict(
-                    "Thread reached its 2 MiB limit. Earlier output is saved; the latest output was not saved. Start a new thread to continue.",
-                )
+        check_size(bytes.len())?;
+        let mut receipt = json!({"checkpoint":seq});
+        metadata
+            .as_object_mut()
+            .expect("thread metadata object")
+            .remove(super::delta::METADATA_KEY);
+        if let Some(range) = range {
+            let append = json!(Append {
+                base_revision: item.revision.clone(),
+                offset: super::document::public_prefix_bytes(&metadata) + range.start,
+                start: bytes.len() - body.len() - 1 + range.start,
+                length: range.len(),
             });
+            metadata[super::delta::METADATA_KEY] = append.clone();
+            receipt["append"] = append;
         }
-        let append = json!(Append {
-            base_revision: item.revision.clone(),
-            offset: range.start,
-            start: bytes.len() - body.len() + range.start,
-            length: range.len(),
-        });
-        metadata[super::delta::METADATA_KEY] = append.clone();
         match content.write(
             space,
             Some(id),
@@ -130,7 +166,7 @@ pub(crate) fn checkpoint<D: Directory>(
                 operation: "threads.checkpoint",
                 fingerprint: &fp,
             },
-            |_| json!({"checkpoint":seq,"append":append}),
+            |_| receipt,
         ) {
             Ok(_) => return Ok(()),
             Err(e)
@@ -152,48 +188,168 @@ fn append_output(
     metadata: &mut Value,
     body: &mut String,
     job: &Job,
-    id: Uuid,
     seq: u64,
     text: &str,
     checkpoint: &Value,
-) -> Result<std::ops::Range<usize>, Error> {
-    let now = calternal_content::now_rfc3339();
-    let output = &metadata["output"];
-    let (end, range) = if output["job_id"] == job.id && output["run"] == job.runs {
-        let offset = output["end"]
-            .as_u64()
-            .and_then(|v| usize::try_from(v).ok())
-            .filter(|&v| v <= body.len() && body.is_char_boundary(v))
-            .ok_or_else(|| Error::internal("invalid thread output cursor"))?;
-        body.insert_str(offset, text);
-        super::document::record_activity(metadata, &now);
-        let end = offset + text.len();
-        (end, offset..end)
+) -> Result<Option<std::ops::Range<usize>>, Error> {
+    let attribution = &job.input["thread_request"];
+    let now = super::headings::now(
+        attribution["time_zone"].as_str(),
+        attribution["client_offset_minutes"].as_i64().unwrap_or(0),
+    )?;
+    let id = checkpoint["message_id"]
+        .as_str()
+        .and_then(|v| Uuid::parse_str(v).ok())
+        .ok_or_else(|| Error::internal("saved assistant message ID missing"))?;
+    let turn = Uuid::parse_str(&job.id).map_err(|_| Error::internal("invalid saved turn ID"))?;
+    let timing = &checkpoint["message_timing"];
+    let request = &job.input["request"];
+    let provider = &checkpoint["message_provider"];
+    let provider_id = provider["id"]
+        .as_str()
+        .ok_or_else(|| Error::internal("saved assistant provider missing"))?;
+    let selected = provider["model_id"].as_str().unwrap_or("");
+    let model = provider["model_name"].as_str().unwrap_or("Unknown model");
+    let harness = provider["harness"].as_str().unwrap_or("Unknown harness");
+    let serving = checkpoint["serving_provider"]
+        .as_str()
+        .unwrap_or("Unknown provider");
+    let reasoning = request["options"]["effort"].as_str();
+    let continuation = if job.runs <= 1 {
+        String::new()
+    } else if job.checkpoint["retry"]["retry_count"]
+        .as_u64()
+        .is_some_and(|n| n > 0)
+    {
+        format!(" · Retry {}", job.runs)
     } else {
-        let start = body.len();
-        let request = &job.input["request"];
-        let provider = request["provider_id"]
-            .as_str()
-            .ok_or_else(|| Error::internal("saved provider missing"))?;
-        let model = request["model"]
-            .as_str()
-            .ok_or_else(|| Error::internal("saved model missing"))?;
-        let reasoning = request["options"]["effort"].as_str().unwrap_or("-");
-        let machine = checkpoint["message_machine"].as_str().unwrap_or("-");
-        let message_id = checkpoint["message_id"]
-            .as_str()
-            .ok_or_else(|| Error::internal("saved assistant message ID missing"))?;
-        body.push_str(&format!(
-            "\n<!-- message:{message_id} role:agent turn:{} actor:{} provider:{provider} model:{model} reasoning:{reasoning} machine:{machine} time:{now} -->\n",
-            job.id,
-            calternal_types::Actor::agent(job.account, id)
-        ));
-        body.push_str(text);
-        let end = body.len();
-        body.push_str("\n<!-- /message -->\n");
-        super::document::record_message(metadata, &now);
-        (end, start..body.len())
+        " · Resumed".into()
     };
-    metadata["output"] = json!({"job_id":job.id,"run":job.runs,"checkpoint":seq,"end":end});
+    let rendered = |at: &str| {
+        super::headings::agent(
+            harness,
+            serving,
+            model,
+            reasoning,
+            at,
+            timing,
+            &continuation,
+        )
+    };
+    let provenance = super::records::Provenance {
+        provider_id: provider_id.to_owned(),
+        model_id: (!selected.is_empty()).then(|| selected.to_owned()),
+        reasoning_level: reasoning.map(str::to_owned),
+        machine_id: checkpoint["message_machine"].as_str().map(str::to_owned),
+        duration_ms: timing["duration_ms"].as_u64(),
+        reasoning_ms: timing["reasoning_ms"].as_u64(),
+    };
+    let output = &metadata["output"];
+    let (start, range) = if output["job_id"] == job.id && output["run"] == job.runs {
+        let start = output["start"]
+            .as_u64()
+            .and_then(|n| usize::try_from(n).ok())
+            .ok_or_else(|| Error::internal("invalid thread output cursor"))?;
+        let current = super::records::tail(body, start, id)?;
+        let heading = if timing.is_null() {
+            current.heading.to_owned()
+        } else {
+            rendered(&current.at)?
+        };
+        let mut combined = String::with_capacity(current.text.len() + text.len());
+        combined.push_str(current.text);
+        combined.push_str(text);
+        body.truncate(start);
+        // The indexed start already excludes the separator.
+        let mut replacement = String::new();
+        super::records::append(
+            &mut replacement,
+            id,
+            "agent",
+            &heading,
+            &combined,
+            Some((turn, &provenance)),
+        );
+        body.push_str(&replacement);
+        super::document::record_activity(metadata, &now);
+        (start, None)
+    } else {
+        let offset = body.len();
+        let start = super::records::append(
+            body,
+            id,
+            "agent",
+            &rendered(&now)?,
+            text,
+            Some((turn, &provenance)),
+        );
+        super::document::record_message(metadata, &now);
+        (start, Some(offset..body.len()))
+    };
+    metadata["output"] = json!({"job_id":job.id,"run":job.runs,"checkpoint":seq,"start":start});
     Ok(range)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::plugins::{
+        Session,
+        jobs::{Admission, Jobs},
+    };
+    use calternal_types::AccountId;
+
+    #[test]
+    fn saved_attempt_retains_the_manifest_selected_at_launch() {
+        let mut manifest: calternal_core::ManifestV1 = serde_json::from_str(include_str!(
+            "../../../../plugins/calternal-claude-code/manifest.json"
+        ))
+        .unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let jobs = Jobs::open(dir.path()).unwrap();
+        let space = SpaceId::new().to_string();
+        let id = jobs
+            .admit(Admission {
+                space: space.clone(),
+                plugin: "calternal-orchestrator".into(),
+                account: AccountId::new(),
+                session: Session::Static,
+                operation: "agent.turn".into(),
+                input: json!({"request":{
+                    "thread_id":Uuid::now_v7(),"model":"claude-sonnet-5-5","options":{"effort":"high"}
+                }}),
+                parent: None,
+                generation: 1,
+                request_key: "saved-provider".into(),
+            })
+            .unwrap();
+        let job = jobs.claim_turn(&space, &id, None).unwrap().unwrap().job;
+        let mut checkpoint = json!({"message_id":id});
+        bind_provider(&mut checkpoint, &manifest, "claude-sonnet-5-5");
+
+        manifest.name = "Replacement harness".into();
+        manifest.provider.as_mut().unwrap().models[0].name = "Replacement model".into();
+        let mut replacement = json!({});
+        bind_provider(&mut replacement, &manifest, "claude-sonnet-5-5");
+        assert_ne!(
+            checkpoint["message_provider"],
+            replacement["message_provider"]
+        );
+
+        let mut metadata = json!({});
+        let mut body = String::new();
+        append_output(&mut metadata, &mut body, &job, 1, "First", &checkpoint).unwrap();
+        checkpoint["message_timing"] = json!({"duration_ms":1200});
+        append_output(&mut metadata, &mut body, &job, 2, " second.", &checkpoint).unwrap();
+        let records = super::super::records::read(&body).unwrap();
+        assert_eq!(records.len(), 1);
+        let record = &records[0];
+        assert_eq!(record.text, "First second.");
+        assert!(record.heading.starts_with("Claude Code via "));
+        assert!(record.heading.contains("Sonnet 5.5"));
+        let provenance = record.provenance.as_ref().unwrap();
+        assert_eq!(provenance.provider_id, "calternal-claude-code");
+        assert_eq!(provenance.model_id.as_deref(), Some("claude-sonnet-5-5"));
+        assert_eq!(provenance.duration_ms, Some(1200));
+    }
 }

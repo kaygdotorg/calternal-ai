@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { contrast } from "../appearance/accent";
-import { hueOf, windowColours } from "./surface";
+import { hueOf, lightnessOf, windowColours } from "./surface";
 
 describe("windowColours", () => {
   for (const scheme of ["light", "dark"] as const) for (const hue of [null, 20, 95, 150, 250, 330]) {
@@ -21,5 +21,15 @@ describe("hueOf", () => {
   it("reads a hue and none for grey", () => {
     expect(Math.abs(hueOf("#0087ff")! - 255)).toBeLessThan(15);
     expect(hueOf("#808080")).toBeNull();
+  });
+});
+
+describe("windowColours against the wallpaper's tone", () => {
+  it("moves within Craft's band away from a wallpaper of nearly the same lightness, and stays put otherwise", () => {
+    const same = windowColours("dark", 40, 0.23), far = windowColours("dark", 40, 0.8), none = windowColours("dark", 40);
+    expect(far.bg).toEqual(none.bg);
+    expect(lightnessOf(same.bg)).toBeGreaterThanOrEqual(0.2);
+    expect(lightnessOf(same.bg)).toBeLessThanOrEqual(0.28);
+    expect(same.bg).not.toEqual(none.bg);
   });
 });

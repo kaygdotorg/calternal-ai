@@ -42,8 +42,8 @@ mod publication;
 mod recovery;
 mod search;
 pub use search::{
-    IndexedHit, IndexedPage, SearchConfig, SearchKey, SearchKind, SearchMatch, SearchProbe,
-    fold_title, typo_expression,
+    IndexedHit, IndexedPage, SearchConfig, SearchConfigSource, SearchKey, SearchKind, SearchMatch,
+    SearchProbe, fold_title, typo_expression,
 };
 mod revision_slice;
 use lifecycle::{Cache, Slot, spawn_sweeper, sweep};
@@ -72,7 +72,6 @@ use uuid::Uuid;
 /// The host retains root locks; opening two services for the same roots is unsupported.
 pub struct Content {
     roots: Roots,
-    search: std::sync::OnceLock<SearchConfig>,
     search_readers: search::Readers,
     search_writers: search::Writers,
     search_worker: std::sync::OnceLock<std::sync::mpsc::SyncSender<SpaceId>>,
@@ -169,7 +168,6 @@ impl Content {
         let journals = Journals::open(roots.appdata.clone(), secrets, receipt_retention)?;
         let catalog = ReadPool::new(roots.appdata.join("system/content-index.db"));
         let content = Self {
-            search: std::sync::OnceLock::new(),
             search_readers: search::Readers::default(),
             search_writers: search::Writers::default(),
             search_worker: std::sync::OnceLock::new(),

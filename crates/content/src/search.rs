@@ -9,6 +9,7 @@ pub use fuzzy::typo_expression;
 pub(super) use readers::{Readers, Writers};
 use rusqlite::{Connection, functions::FunctionFlags, params};
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 
 const SCHEMA: &str = include_str!("search/schema.sql");
 
@@ -23,26 +24,32 @@ pub struct SearchKind {
     pub default_enabled: bool,
     /// Current package approval stamp, required for a stored override.
     pub approval: u32,
+    /// Space owning a development draft. An installed package has no restriction.
+    pub space: Option<SpaceId>,
 }
 
-/// Precompiled search configuration shared by all stores.
+/// Precompiled search configuration derived from one published manifest catalog.
+#[derive(Debug)]
 pub struct SearchConfig {
     kinds: String,
     filters: String,
 }
 
 impl SearchConfig {
-    /// Serialize manifest data once at startup. Input contains only available,
+    /// Serialize manifest data once per catalog. Input contains only available,
     /// claimed-text kinds that explicitly opt in.
-    pub fn new(mut kinds: Vec<SearchKind>) -> Result<Self> {
+    pub fn new(mut kinds: Vec<SearchKind>) -> Self {
         kinds.sort_by(|a, b| a.kind.cmp(&b.kind));
-        Ok(Self {
-            kinds: serde_json::to_string(&kinds.iter().map(|k| &k.kind).collect::<Vec<_>>())
-                .map_err(internal)?,
-            filters: serde_json::to_string(&kinds).map_err(internal)?,
-        })
+        Self {
+            kinds: serde_json::json!(kinds.iter().map(|k| &k.kind).collect::<Vec<_>>()).to_string(),
+            filters: serde_json::json!(kinds).to_string(),
+        }
     }
 }
+
+/// Load the searchable projection of the current catalog without I/O.
+/// Returning None means the owner closed and the worker should exit.
+pub type SearchConfigSource = Box<dyn Fn() -> Option<Arc<SearchConfig>> + Send + 'static>;
 
 /// Title folding for literal index ranges; O(title bytes).
 pub fn fold_title(title: &str) -> String {
@@ -258,24 +265,29 @@ impl IndexedPage {
 }
 
 impl Content {
-    /// Start the manifest-scoped worker before requests. Opening the service
-    /// does no scan or filesystem I/O here. A configured host retains one
-    /// background thread which advances lazy, independently stored indexes.
-    pub fn configure_search(self: &std::sync::Arc<Self>, config: SearchConfig) -> Result<()> {
-        let enabled = config.kinds != "[]";
-        if self.search.set(config).is_ok() && enabled {
-            let _ = self.search_worker.set(worker::start(self)?);
-        }
-        Ok(())
+    /// Start one background worker for lazy per-space projections. Startup only
+    /// spawns a thread. The owner can join the returned handle after closing the
+    /// catalog source. A second configuration attempt returns an error.
+    pub fn configure_search(
+        self: &Arc<Self>,
+        source: SearchConfigSource,
+    ) -> Result<std::thread::JoinHandle<()>> {
+        let (send, handle) = worker::start(self, source)?;
+        self.search_worker
+            .set(send)
+            .map_err(|_| Error::internal("search worker is already configured"))?;
+        Ok(handle)
     }
 
     /// Query an authorized space's projection. Cold and lagging indexes set
     /// partial and enqueue a bounded background wake. This path never opens
     /// the content writer or runs a rebuild.
-    pub fn search_page(&self, space: SpaceId, probe: &SearchProbe<'_>) -> Result<IndexedPage> {
-        let Some(config) = self.search.get() else {
-            return Ok(IndexedPage::empty());
-        };
+    pub fn search_page(
+        &self,
+        config: &SearchConfig,
+        space: SpaceId,
+        probe: &SearchProbe<'_>,
+    ) -> Result<IndexedPage> {
         let _step = self.lifecycle.step(space.as_uuid())?;
         let path = crate::db::space_path(&self.roots.appdata, space);
         if !path.is_file() || config.kinds == "[]" {
@@ -284,7 +296,7 @@ impl Content {
         let pair = self.search_readers.take(space, &self.roots.appdata)?;
         let (source, index, journal) = &pair;
         let result = (|| {
-            let (allowed, capped) = source::allowed(source, &config.filters, probe.kinds)?;
+            let (allowed, capped) = source::allowed(source, &config.filters, probe.kinds, space)?;
             if allowed == "[]" {
                 return Ok(IndexedPage::empty());
             }

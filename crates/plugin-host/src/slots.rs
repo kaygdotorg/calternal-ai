@@ -1,8 +1,25 @@
 //! Validate contribution references and the renderer allowed at each mount point.
-use crate::registry::unique;
-use calternal_core::{ManifestV1, PluginSlot, PluginSlotRenderer};
+use crate::registry::{identifier, unique};
+use calternal_core::{
+    ManifestCapability, ManifestV1, PluginSlot, PluginSlotRenderer, PluginSlotTarget,
+};
 
 pub(crate) fn valid(manifest: &ManifestV1) -> bool {
+    if manifest.owned_slots.as_ref().is_some_and(|slots| {
+        slots.len() > 32
+            || !unique(slots.iter().map(|slot| slot.id.as_str()))
+            || slots.iter().any(|slot| {
+                matches!(
+                    slot.required_capability,
+                    ManifestCapability::SpacesList | ManifestCapability::SpacesCreate
+                ) || !(1..=32).contains(&slot.max_contributions)
+                    || slot.accepts.is_empty()
+                    || slot.accepts.len() > 2
+                    || (slot.accepts.len() == 2 && slot.accepts[0] == slot.accepts[1])
+            })
+    }) {
+        return false;
+    }
     let Some(slots) = &manifest.slots else {
         return true;
     };
@@ -15,9 +32,18 @@ pub(crate) fn valid(manifest: &ManifestV1) -> bool {
             {
                 return false;
             }
+            let host = match &slot.slot {
+                PluginSlotTarget::Host(host) => Some(*host),
+                PluginSlotTarget::Owned(target) => {
+                    if !identifier(&target.plugin_id) || !identifier(&target.id) {
+                        return false;
+                    }
+                    None
+                }
+            };
             match &slot.renderer {
                 PluginSlotRenderer::Generated { operation } => {
-                    slot.slot != PluginSlot::PaletteCommands
+                    host != Some(PluginSlot::PaletteCommands)
                         && manifest.operations.iter().any(|op| {
                             op.id == *operation
                                 && !op.mutates
@@ -30,18 +56,20 @@ pub(crate) fn valid(manifest: &ManifestV1) -> bool {
                         })
                 }
                 PluginSlotRenderer::Sealed { asset } => {
-                    !matches!(
-                        slot.slot,
-                        PluginSlot::PaletteCommands
-                            | PluginSlot::MessageDecoration
-                            | PluginSlot::Toasts
-                    ) && asset.len() <= 256
+                    host.is_some_and(|host| {
+                        !matches!(
+                            host,
+                            PluginSlot::PaletteCommands
+                                | PluginSlot::MessageDecoration
+                                | PluginSlot::Toasts
+                        )
+                    }) && asset.len() <= 256
                         && asset.ends_with(".html")
                         && asset.split('/').all(crate::registry::identifier)
                         && !asset.split('/').any(|part| matches!(part, "." | ".."))
                 }
                 PluginSlotRenderer::Command { operation } => {
-                    slot.slot == PluginSlot::PaletteCommands
+                    host.is_none_or(|slot| slot == PluginSlot::PaletteCommands)
                         && manifest.operations.iter().any(|op| op.id == *operation)
                 }
             }

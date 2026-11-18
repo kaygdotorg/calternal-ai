@@ -24,6 +24,7 @@ pub(super) async fn build<D: Directory>(
             .map_err(|_| Error::internal("instruction index"))?;
         let index = st
             .registry
+            .snapshot()
             .tool_index()
             .lines()
             .filter(|line| {
@@ -32,6 +33,7 @@ pub(super) async fn build<D: Directory>(
                 };
                 if !st
                     .registry
+                    .snapshot()
                     .policy(op)
                     .is_some_and(|p| caps.is_some_and(|c| c.contains(p.required)))
                 {
@@ -39,6 +41,7 @@ pub(super) async fn build<D: Directory>(
                 }
                 let meta = st
                     .registry
+                    .snapshot()
                     .owner_of_operation(op)
                     .and_then(|p| p.operation(op))
                     .map(|o| (o.mutates, o.risk))

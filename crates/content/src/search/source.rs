@@ -93,7 +93,12 @@ impl Head {
 
 /// Uses live plugin controls after authorization. The same filter applies to
 /// hits and coverage, so indexing disabled kinds cannot affect the response.
-pub(super) fn allowed(conn: &Connection, filters: &str, kinds: &str) -> Result<(String, bool)> {
+pub(super) fn allowed(
+    conn: &Connection,
+    filters: &str,
+    kinds: &str,
+    space: calternal_types::SpaceId,
+) -> Result<(String, bool)> {
     conn.prepare_cached(
         "WITH allowed(kind) AS (
             SELECT j.value->>'kind' FROM json_each(?1) j
@@ -101,15 +106,16 @@ pub(super) fn allowed(conn: &Connection, filters: &str, kinds: &str) -> Result<(
             WHERE CASE WHEN c.key IS NULL THEN j.value->>'default_enabled'
                        ELSE c.value->>'enabled'=1
                             AND json_type(c.value,'$.generation')='integer'
-                            AND (CAST(c.value->>'generation' AS INTEGER) >> 32)=j.value->>'approval'
+                            AND (CAST(c.value->>'generation' AS INTEGER) >> 32)>=j.value->>'approval'
                   END = 1
+              AND (j.value->>'space' IS NULL OR j.value->>'space'=?4)
               AND (json_array_length(?2)=0 OR j.value->>'kind' IN (SELECT value FROM json_each(?2)))
          )
          SELECT (SELECT json_group_array(kind) FROM allowed),
                 EXISTS(SELECT 1 FROM items WHERE rowid>?3 AND kind IN allowed)",
     )
     .map_err(internal)?
-    .query_row(params![filters, kinds, SLOTS], |row| {
+    .query_row(params![filters, kinds, SLOTS, space.to_string()], |row| {
         Ok((row.get(0)?, row.get(1)?))
     })
     .map_err(internal)

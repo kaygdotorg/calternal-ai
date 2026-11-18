@@ -2,12 +2,14 @@
 //! All durable work runs on blocking workers; no independent store or global lock.
 mod delta;
 mod document;
+mod headings;
 pub(crate) mod index;
 mod models;
 mod operations;
 pub(crate) mod persistence;
 pub(crate) mod provider_notice;
 pub(crate) mod provider_session;
+mod records;
 pub(crate) mod turn_events;
 mod turn_status;
 use crate::turns::blocking;
@@ -43,8 +45,8 @@ pub(crate) async fn dispatch<D: Directory>(
     let generation =
         crate::turns::enabled_generation(&state, &space.to_string(), "calternal-orchestrator")
             .await?;
-    let plugin = state
-        .registry
+    let catalog = state.registry.snapshot();
+    let plugin = catalog
         .get("calternal-orchestrator")
         .ok_or_else(|| Error::not_found("unknown operation"))?;
     plugin
@@ -122,7 +124,7 @@ pub(crate) async fn dispatch<D: Directory>(
             rid,
             i,
             generation,
-            value["thread"]["metadata"]["pending"].clone(),
+            value["intent"].clone(),
         )
         .await?;
         return Ok(json!({"thread":value["thread"],"job":job.view()}));

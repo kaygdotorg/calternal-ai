@@ -46,25 +46,15 @@ pub async fn dispatch<D: Directory>(
     op: &str,
     input: JsonObject,
 ) -> Result<Value, Error> {
-    dispatch_scoped(state, p, session, request_id, op, input, None, None).await
-}
-
-pub(super) async fn dispatch_scoped<D: Directory>(
-    state: Shared<D>,
-    p: Identity,
-    session: Session,
-    request_id: &str,
-    op: &str,
-    input: JsonObject,
-    agent: Option<crate::turns::access::Authority>,
-    machines: Option<std::sync::Arc<crate::machines::MachineService>>,
-) -> Result<Value, Error> {
     let workers = state.blocking.clone();
-    let mutates = super::operation_mutates(&state, op);
+    let catalog = state.registry.snapshot();
+    let mutates = super::operation_mutates(&catalog, op);
     workers
         .scope(
             mutates,
-            dispatch_scoped_inner(state, p, session, request_id, op, input, agent, machines),
+            dispatch_scoped_inner(
+                state, p, session, request_id, op, input, None, None, catalog,
+            ),
         )
         .await
 }
@@ -78,6 +68,7 @@ pub(super) async fn dispatch_scoped_inner<D: Directory>(
     input: JsonObject,
     agent: Option<crate::turns::access::Authority>,
     machines: Option<std::sync::Arc<crate::machines::MachineService>>,
+    catalog: Arc<crate::plugins::Catalog>,
 ) -> Result<Value, Error> {
     #[cfg(all(feature = "test-plugins", debug_assertions))]
     let admission_started = std::time::Instant::now();
@@ -97,17 +88,13 @@ pub(super) async fn dispatch_scoped_inner<D: Directory>(
     // Capabilities already read for this request (by the resolver), so admission
     // does not look them up again.
     let mut granted = None;
-    let item_scoped = state
-        .registry
+    let item_scoped = catalog
         .policy(op)
         .is_some_and(|p| p.scope == authz::Scope::Item);
     if op == "resolve" || item_scoped {
         // A plugin operation names its target in the manifest; host item operations
         // and `resolve` carry the item ID in `id`.
-        let target = state
-            .registry
-            .owner_of_operation(op)
-            .and_then(|p| p.target(op));
+        let target = catalog.owner_of_operation(op).and_then(|p| p.target(op));
         let field = target.map_or("id", |t| t.field.as_str());
         if calternal_core::is_known_operation(op) {
             calternal_core::validate_operation_input(op, &input)?;
@@ -125,8 +112,7 @@ pub(super) async fn dispatch_scoped_inner<D: Directory>(
             .and_then(Value::as_str)
             .unwrap_or("")
             .to_owned();
-        let op_required = state
-            .registry
+        let op_required = catalog
             .policy(op)
             .map(|p| p.required)
             .unwrap_or(calternal_types::Capability::SpaceRead);
@@ -156,8 +142,7 @@ pub(super) async fn dispatch_scoped_inner<D: Directory>(
         input.insert("space_id".into(), Value::String(resolved.space_id));
     }
     // A job's space comes from the job store, never from the caller.
-    let job_scoped = state
-        .registry
+    let job_scoped = catalog
         .policy(op)
         .is_some_and(|p| p.scope == authz::Scope::Job);
     if job_scoped {
@@ -168,7 +153,7 @@ pub(super) async fn dispatch_scoped_inner<D: Directory>(
     // One authorization path: a host row or a row derived from a plugin manifest.
     // Without either, answer as a hidden target would, so a caller cannot tell an
     // unregistered plugin operation from an item or space it may not see.
-    let Some(policy) = state.registry.policy(op).cloned() else {
+    let Some(policy) = catalog.policy(op).cloned() else {
         return Err(Error::not_found(if input.contains_key("id") {
             "item not found"
         } else if input.contains_key("space_id") {
@@ -177,6 +162,14 @@ pub(super) async fn dispatch_scoped_inner<D: Directory>(
             "unknown operation"
         }));
     };
+    #[cfg(feature = "dev-plugin-drafts")]
+    if let Some(plugin) = catalog.owner_of_operation(op)
+        && let Some(space) = input.get("space_id").and_then(Value::as_str)
+        && let Ok(space) = SpaceId::parse(space)
+        && !plugin.available_in(space)
+    {
+        return Err(Error::not_found("unknown operation"));
+    }
     // Admission: one capability lookup per request (or none after the resolver);
     // handlers do not repeat it. Delivery rechecks once after the handler.
     match granted {
@@ -203,8 +196,7 @@ pub(super) async fn dispatch_scoped_inner<D: Directory>(
         {
             return Err(Error::forbidden("invite links require a person session"));
         }
-        let declared = state
-            .registry
+        let declared = catalog
             .owner_of_operation(op)
             .and_then(|p| p.operation(op))
             .map(|d| (d.mutates, d.risk))
@@ -229,8 +221,19 @@ pub(super) async fn dispatch_scoped_inner<D: Directory>(
             }
             if let Session::Agent { token_hash, .. } = &session
                 && let Some(result) = super::request_action::once(
-                    &state, &p, &session, a, token_hash, request_id, op, &input, &policy, mutates,
-                    risk, job_scoped,
+                    &state,
+                    &p,
+                    &session,
+                    a,
+                    token_hash,
+                    request_id,
+                    op,
+                    &input,
+                    &policy,
+                    mutates,
+                    risk,
+                    job_scoped,
+                    catalog.clone(),
                 )
                 .await?
             {
@@ -262,7 +265,7 @@ pub(super) async fn dispatch_scoped_inner<D: Directory>(
         }
     }
     admitted_operation(
-        state, p, session, request_id, op, input, agent, policy, job_scoped,
+        state, p, session, request_id, op, input, agent, policy, job_scoped, catalog,
     )
     .await
 }
@@ -277,6 +280,7 @@ pub(super) async fn run_admitted_operation<D: Directory>(
     agent: Option<crate::turns::access::Authority>,
     policy: Policy,
     job_scoped: bool,
+    catalog: Arc<crate::plugins::Catalog>,
 ) -> Result<Value, Error> {
     if job_scoped {
         let space = match input.remove("space_id") {
@@ -300,10 +304,8 @@ pub(super) async fn run_admitted_operation<D: Directory>(
     if op.starts_with("spaces.") {
         return super::spaces::dispatch(state, p, actor, request_id, op, input).await;
     }
-    if state
-        .registry
-        .owner_of_operation(op)
-        .is_some_and(|p| p.manifest.id == "calternal-orchestrator")
+    let owner = catalog.owner_of_operation(op);
+    if owner.is_some_and(|p| p.manifest.id == "calternal-orchestrator")
         && op.starts_with("threads.")
     {
         let result = crate::threads::dispatch(
@@ -321,11 +323,17 @@ pub(super) async fn run_admitted_operation<D: Directory>(
         return Ok(result);
     }
     if policy.constraint == Constraint::PluginInvocation {
-        return invoke_plugin(state, p, session, actor, request_id, op, policy, input).await;
+        let plugin = owner
+            .cloned()
+            .ok_or_else(|| Error::not_found("unknown operation"))?;
+        return invoke_plugin(
+            state, p, session, actor, request_id, op, policy, input, plugin,
+        )
+        .await;
     }
     if let Some(operation) = calternal_core::SearchOperation::from_id(op) {
         let delivery_space = policy.scope_space(&input)?;
-        let value = super::search::dispatch(&state, &p, operation, input).await?;
+        let value = super::search::dispatch(&state, &p, operation, input, &catalog).await?;
         if let Some(space) = delivery_space {
             policy.check(super::authorization::capabilities(&state, p.id, space).await?)?;
         }
@@ -368,19 +376,12 @@ pub(super) async fn dispatch_checked<D: Directory>(
         }
         "notes.create" | "notes.update" => mutate_note(state, actor, request_id, op, input).await,
         "plugins.list" => {
-            let i: PluginsListInput = decode(input)?;
-            let space = space_of(&i.space_id)?;
-            let st = state.clone();
-            let plugins = blocking(&state, move |s| {
-                st.registry
-                    .plugins()
-                    .iter()
-                    .map(|plugin| plugin_state(s, space, plugin))
-                    .collect::<Result<Vec<_>, _>>()
-            })
-            .await?;
-            let slots = super::plugin_slots::resolve(&state, p.id, space, &plugins).await?;
-            to_value(PluginsListResult { plugins, slots })
+            super::plugin_slots::list(
+                &state,
+                p.id,
+                space_of(&decode::<PluginsListInput>(input)?.space_id)?,
+            )
+            .await
         }
         "plugins.enable" | "plugins.disable" => {
             let (fp, input) = super::request::fingerprint(op, input).await?;
@@ -393,9 +394,10 @@ pub(super) async fn dispatch_checked<D: Directory>(
                 if let Some(v) = replay_receipt(s, principal, space, &rid, &op, &fp)? {
                     return Ok(v);
                 }
-                let plugin = st
-                    .registry
+                let catalog = st.registry.snapshot();
+                let plugin = catalog
                     .get(&i.plugin_id)
+                    .filter(|plugin| plugin.available_in(space))
                     .ok_or_else(|| Error::not_found("plugin is not registered"))?;
                 if enable {
                     if let Some(why) = &plugin.unavailable {
@@ -425,7 +427,7 @@ pub(super) async fn dispatch_checked<D: Directory>(
                     &fp,
                     space,
                     &plugin.manifest.id,
-                    default_row(plugin),
+                    catalog.control_default(plugin),
                     enable,
                     |row| {
                         serde_json::to_value(PluginResult {
@@ -443,12 +445,14 @@ pub(super) async fn dispatch_checked<D: Directory>(
         }
         "plugins.preview" => {
             let i: PluginInput = decode(input)?;
-            let plugin = state
-                .registry
+            let space = space_of(&i.space_id)?;
+            let catalog = state.registry.snapshot();
+            let plugin = catalog
                 .get(&i.plugin_id)
+                .filter(|plugin| plugin.available_in(space))
                 .ok_or_else(|| Error::not_found("plugin is not registered"))?
                 .clone();
-            preview(state, p, plugin, space_of(&i.space_id)?).await
+            preview(state, p, plugin, space).await
         }
         _ => Err(Error::unavailable(
             "operation has no host binding in this preview",

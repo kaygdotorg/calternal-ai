@@ -66,7 +66,5 @@ pub(super) fn open_stores(
                 "Check the installation's plugin packages and appdata.",
             )
         })?;
-    calternal_server::api::configure_search(&store, &registry)
-        .map_err(|e| boot(1, "failed", e.message, DATA_HINT))?;
     Ok((store, data_dir, recovery, registry))
 }

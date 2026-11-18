@@ -17,7 +17,7 @@ const finger = (x0, x1, { y = 400, steps = 8, gap = 16, hold = false } = {}) => 
   for (let i = 1; i <= steps; i++) { await new Promise((r) => setTimeout(r, gap)); fire("pointermove", x0 + ((x1 - x0) * i) / steps); }
   if (!hold) fire("pointerup", x1);
 }, [x0, x1, y, steps, gap, hold]);
-const lift = () => page.evaluate(() => document.querySelector("main.mid, .peek, .scrim, .right")?.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, pointerType: "touch", pointerId: 5, isPrimary: true })));
+const lift = () => page.evaluate(() => document.querySelector("main.mid, .peek, .right")?.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, pointerType: "touch", pointerId: 5, isPrimary: true })));
 
 // 1. The button: the list is a history entry.
 const len0 = await page.evaluate(() => history.length);
@@ -73,8 +73,8 @@ await page.evaluate(() => { if (history.state?.over) history.back(); }); await s
 
 // 7. The side panel: from the right edge it follows the finger; Back closes it.
 await finger(w - 4, w - 200, { hold: true });
-const rx = await page.evaluate(() => new DOMMatrixReadOnly(getComputedStyle(document.querySelector(".right")).transform).m41);
-ok(rx > 0 && rx < (await page.evaluate(() => document.querySelector(".right").getBoundingClientRect().width)), "the side panel follows the finger from the right edge", `${rx.toFixed(0)} px`);
+const rx = await page.evaluate(() => new DOMMatrixReadOnly(getComputedStyle(document.querySelector("main.mid")).transform).m41);
+ok(rx < 0 && -rx < (await page.evaluate(() => document.querySelector(".right > .rs").getBoundingClientRect().width)), "the side panel is the mirror of the list: the card follows the finger to the left from the right edge", `${rx.toFixed(0)} px`);
 await lift(); await settle();
 if ((await right()) !== "true") await finger(w - 4, 40).then(settle);
 ok((await right()) === "true" && (await over()) === "panel", "the side panel is a history entry");

@@ -2115,6 +2115,17 @@
             "$ref": "#/definitions/ManifestOperation"
           }
         },
+        "owned_slots": {
+          "description": "Up to 32 mounts owned by this package, resolved only while enabled.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/definitions/OwnedPluginSlot"
+          },
+          "maxItems": 32
+        },
         "palette": {
           "description": "Optional commands, extra phrases and Settings sections for the palette.",
           "anyOf": [
@@ -2723,6 +2734,85 @@
         }
       ]
     },
+    "OwnedPluginSlot": {
+      "description": "One package-owned slot, with explicit visibility, accepted renderers and capacity.",
+      "type": "object",
+      "required": [
+        "accepts",
+        "id",
+        "max_contributions",
+        "required_capability"
+      ],
+      "properties": {
+        "accepts": {
+          "description": "Nonempty set of operation-backed renderer types. Duplicates are invalid.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/OwnedPluginSlotKind"
+          },
+          "maxItems": 2,
+          "minItems": 1
+        },
+        "id": {
+          "description": "Stable local name; the host obtains the owner ID from the enclosing manifest.",
+          "type": "string"
+        },
+        "max_contributions": {
+          "description": "Maximum visible contributions per listing, between 1 and 32.",
+          "type": "integer",
+          "format": "uint8",
+          "maximum": 32.0,
+          "minimum": 1.0
+        },
+        "required_capability": {
+          "description": "Space capability a caller must hold to resolve this slot.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/ManifestCapability"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "OwnedPluginSlotId": {
+      "description": "A package-qualified slot. Its namespace cannot address a host surface.",
+      "type": "object",
+      "required": [
+        "id",
+        "plugin_id"
+      ],
+      "properties": {
+        "id": {
+          "description": "Local slot ID in that package.",
+          "type": "string"
+        },
+        "plugin_id": {
+          "description": "Registered package that declares the slot.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "OwnedPluginSlotKind": {
+      "description": "Operation-backed contribution types available to a package-owned mount.",
+      "oneOf": [
+        {
+          "description": "A read-only operation yielding a portable generated view.",
+          "type": "string",
+          "enum": [
+            "generated"
+          ]
+        },
+        {
+          "description": "An operation invoked through the host's normal command and approval path.",
+          "type": "string",
+          "enum": [
+            "command"
+          ]
+        }
+      ]
+    },
     "PaletteCommand": {
       "description": "One palette command, in the web palette's command shape.",
       "type": "object",
@@ -3042,10 +3132,10 @@
           ]
         },
         "slot": {
-          "description": "Host mount point, independent of renderer implementation.",
+          "description": "Extensible host mount or package-owned target, independent of the renderer.",
           "allOf": [
             {
-              "$ref": "#/definitions/PluginSlot"
+              "$ref": "#/definitions/PluginSlotTarget"
             }
           ]
         }
@@ -3120,6 +3210,27 @@
         }
       ]
     },
+    "PluginSlotTarget": {
+      "description": "Mount addressed either by the fixed host vocabulary or a package-qualified name.",
+      "anyOf": [
+        {
+          "description": "One extensible host mount point.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/PluginSlot"
+            }
+          ]
+        },
+        {
+          "description": "A slot defined by an installed package.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/OwnedPluginSlotId"
+            }
+          ]
+        }
+      ]
+    },
     "PluginState": {
       "description": "Space-scoped activation snapshot returned by `plugins.list`, `plugins.enable` and `plugins.disable`.",
       "type": "object",
@@ -3174,6 +3285,16 @@
         "plugins"
       ],
       "properties": {
+        "owned_slots": {
+          "description": "Available owned mounts, ordered by owner package and local slot ID.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/definitions/ResolvedOwnedPluginSlot"
+          }
+        },
         "plugins": {
           "description": "Registered plugins and their space-scoped activation state.",
           "type": "array",
@@ -3333,6 +3454,36 @@
               "$ref": "#/definitions/ItemState"
             }
           ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "ResolvedOwnedPluginSlot": {
+      "description": "An owned mount available in the caller's selected space.",
+      "type": "object",
+      "required": [
+        "definition",
+        "generation",
+        "plugin_id"
+      ],
+      "properties": {
+        "definition": {
+          "description": "The validated declaration, including renderer and capacity constraints.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/OwnedPluginSlot"
+            }
+          ]
+        },
+        "generation": {
+          "description": "Current owner activation generation, used to invalidate a mounted slot.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "plugin_id": {
+          "description": "Owner package. Pair it with the local ID from the definition.",
+          "type": "string"
         }
       },
       "additionalProperties": false

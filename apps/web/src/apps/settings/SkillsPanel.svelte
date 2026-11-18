@@ -3,13 +3,22 @@
   // The last step creates `AI/Skills/<name>/SKILL.md` and opens it in the Notes editor.
   import { Button, toast } from "@calternal/ui";
   import { navigate } from "../../lib/route.svelte";
+  import { say } from "../../server/say";
   import { spaces } from "../../shell/spaces.svelte";
+  import type { Skill } from "./skills/skill";
   import { AGENTS, descriptionHint, descriptionProblem, DESCRIPTION_MAX, nameProblem, NAME_MAX, renderSkill, skillPath, slugify, STARTER } from "./skills/skill";
   import { NEEDS, skillsStore } from "./skills/store.svelte";
   import Wizard from "./skills/Wizard.svelte";
   import "./panel.css";
   const space = $derived(spaces.current.id);
   const list = $derived(skillsStore.skills(space));
+  // The real server: the space's skills, read with `skills.list` whenever the space changes.
+  let remote = $state<Skill[]>([]), remoteLoaded = $state(false), remoteError = $state("");
+  $effect(() => {
+    const id = space;
+    if (!skillsStore.unavailable) return;
+    skillsStore.loadSkills(id).then((k) => { remote = k; remoteError = ""; remoteLoaded = true; }, (e) => { remoteError = say(e); remoteLoaded = true; });
+  });
   let adding = $state(false), index = $state(0), busy = $state(false), name = $state(""), title = $state(""), description = $state(""), body = $state(STARTER), agents = $state<string[]>([]);
   const STEPS = ["Name", "Description", "Instructions", "Who uses it", "Review"];
   function begin() { adding = true; index = 0; name = ""; title = ""; description = ""; body = STARTER; agents = []; }
@@ -25,7 +34,12 @@
 
 <div class="sp">
   {#if skillsStore.unavailable}
-    <div class="r"><span class="n"><span class="t">Skills are not on this server yet</span><span class="h">Reading and writing skills needs the server to offer: {NEEDS.filter((n) => /^(skills|agents|notes)/.test(n)).map((n) => n.split(" ")[0]).join(", ")}.</span></span></div>
+    {#each remote as s (s.name)}
+      <div class="r"><span class="n"><span class="t">{s.name}</span><span class="h">{s.description}</span><span class="h"><code>{s.path}</code></span></span></div>
+    {/each}
+    {#if remoteLoaded && !remote.length && !remoteError}<div class="r"><span class="n"><span class="t">No skills yet</span><span class="h">A skill is a folder with a SKILL.md in AI/Skills of this space.</span></span></div>{/if}
+    {#if remoteError}<p class="e" role="alert">{remoteError}</p>{/if}
+    <div class="r"><span class="n"><span class="h">Writing a skill from here needs the server to offer: {NEEDS.filter((n) => /^(skills\.create|agents|notes)/.test(n)).map((n) => n.split(" ")[0]).join(", ")}. Skills follow the open <a href="https://agentskills.io/specification" target="_blank" rel="noreferrer">Agent Skills</a> format.</span></span></div>
   {:else if adding}
     <Wizard steps={STEPS} bind:index {valid} {busy} finish="Create and open" onfinish={create} oncancel={() => (adding = false)}>
       {#snippet children(i)}

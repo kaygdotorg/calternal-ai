@@ -772,3 +772,36 @@ fn new_session(manifest: ManifestV1) -> Result<WorkerSession, calternal_plugin_h
     let schemas = std::sync::Arc::new(CompiledSchemas::compile(&manifest)?);
     WorkerSession::new(manifest, schemas, authority().space_id)
 }
+
+#[test]
+fn owned_slot_validation_rejects_foundation_targets_and_invalid_bounds() {
+    let mut candidate = serde_json::to_value(manifest_with_slots()).unwrap();
+    candidate["owned_slots"] = json!([{
+        "id": "stats", "required_capability": "space.read", "accepts": ["generated"],
+        "max_contributions": 2
+    }]);
+    candidate["slots"][0]["slot"] = json!({"plugin_id":candidate["id"],"id":"stats"});
+    let parse = |value: &Value| parse_manifest(&serde_json::to_vec(value).unwrap());
+    assert!(parse(&candidate).is_ok());
+    for (pointer, input) in [
+        ("/owned_slots/0/required_capability", json!("spaces.list")),
+        ("/owned_slots/0/max_contributions", json!(0)),
+        ("/owned_slots/0/max_contributions", json!(33)),
+        ("/owned_slots/0/accepts", json!(["generated", "generated"])),
+        ("/owned_slots/0/accepts", json!(["sealed"])),
+        ("/slots/0/slot", json!("approvals")),
+        ("/slots/0/slot/plugin_id", json!("../host")),
+        (
+            "/slots/0/slot",
+            json!({"plugin_id":"host","id":"approvals","foundation":true}),
+        ),
+        (
+            "/slots/0/renderer",
+            json!({"type":"sealed","asset":"panel.html"}),
+        ),
+    ] {
+        let mut invalid = candidate.clone();
+        *invalid.pointer_mut(pointer).unwrap() = input;
+        assert!(parse(&invalid).is_err(), "{pointer}: {invalid}");
+    }
+}

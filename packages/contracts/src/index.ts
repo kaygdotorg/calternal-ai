@@ -1198,22 +1198,83 @@ reasoning_levels: Array<string>, };
 
 export type PluginSlot = "sidebar_section" | "card_window" | "composer_row" | "message_decoration" | "thread_edge" | "settings_section" | "palette_commands" | "toasts";
 /**
+ * A package-qualified slot. Its namespace cannot address a host surface.
+ */
+
+export type OwnedPluginSlotId = {
+/**
+ * Registered package that declares the slot.
+ */
+plugin_id: string,
+/**
+ * Local slot ID in that package.
+ */
+id: string, };
+/**
+ * Mount addressed either by the fixed host vocabulary or a package-qualified name.
+ */
+
+export type PluginSlotTarget = PluginSlot | OwnedPluginSlotId;
+/**
+ * Operation-backed contribution types available to a package-owned mount.
+ */
+
+export type OwnedPluginSlotKind = "generated" | "command";
+/**
+ * One package-owned slot, with explicit visibility, accepted renderers and capacity.
+ */
+
+export type OwnedPluginSlot = {
+/**
+ * Stable local name; the host obtains the owner ID from the enclosing manifest.
+ */
+id: string,
+/**
+ * Space capability a caller must hold to resolve this slot.
+ */
+required_capability: ManifestCapability,
+/**
+ * Nonempty set of operation-backed renderer types. Duplicates are invalid.
+ */
+accepts: Array<OwnedPluginSlotKind>,
+/**
+ * Maximum visible contributions per listing, between 1 and 32.
+ */
+max_contributions: number, };
+/**
+ * An owned mount available in the caller's selected space.
+ */
+
+export type ResolvedOwnedPluginSlot = {
+/**
+ * Owner package. Pair it with the local ID from the definition.
+ */
+plugin_id: string,
+/**
+ * Current owner activation generation, used to invalidate a mounted slot.
+ */
+generation: number,
+/**
+ * The validated declaration, including renderer and capacity constraints.
+ */
+definition: OwnedPluginSlot, };
+/**
  * A portable operation-backed contribution or a reference to a sealed web bundle.
  */
 
-export type PluginSlotRenderer = { "Generated": {
+export type PluginSlotRenderer = { "type": "generated",
 /**
  * Plugin-local operation declaration to dispatch with current authority.
  */
-operation: string, } } | { "Sealed": {
+operation: string, } | { "type": "sealed",
 /**
  * Relative HTML asset path. The prototype does not serve or mount this asset.
  */
-asset: string, } } | { "Command": {
+asset: string, } | { "type": "command",
 /**
  * Operation to dispatch with current authority and normal approval checks.
  */
-operation: string, } };
+operation: string, };
 /**
  * One plugin-owned contribution that the host can resolve without running code.
  */
@@ -1228,9 +1289,9 @@ id: string,
  */
 label: string,
 /**
- * Host mount point, independent of renderer implementation.
+ * Extensible host mount or package-owned target, independent of the renderer.
  */
-slot: PluginSlot,
+slot: PluginSlotTarget,
 /**
  * Renderer or command to resolve.
  */
@@ -1270,6 +1331,10 @@ provider?: ManifestProvider,
  * Optional contributions to host slots, validated without running code.
  */
 slots?: Array<PluginSlotContribution>,
+/**
+ * Up to 32 mounts owned by this package, resolved only while enabled.
+ */
+owned_slots?: Array<OwnedPluginSlot>,
 /**
  * Stable plugin identifier.
  */
@@ -2222,7 +2287,11 @@ plugins: Array<PluginState>,
 /**
  * Available contributions in slot, package ID and local ID order.
  */
-slots?: Array<ResolvedPluginSlot>, };
+slots?: Array<ResolvedPluginSlot>,
+/**
+ * Available owned mounts, ordered by owner package and local slot ID.
+ */
+owned_slots?: Array<ResolvedOwnedPluginSlot>, };
 /**
  * Result for `plugins.enable` and `plugins.disable` after the state transition.
  */
@@ -2600,6 +2669,28 @@ account_id: string,
  * The normalized name.
  */
 name: string, };
+/**
+ * The caller's IANA time zone preference. Null follows the device.
+ */
+
+export type TimeZoneInput = {
+/**
+ * IANA time zone name, or null to clear the stored preference.
+ */
+time_zone: string | null, };
+/**
+ * The caller's saved time-zone preference.
+ */
+
+export type TimeZoneResult = {
+/**
+ * The unchanged account UUID.
+ */
+account_id: string,
+/**
+ * Canonically cased IANA name, or null when following the device.
+ */
+time_zone: string | null, };
 /**
  * Target of a server people operation.
  */

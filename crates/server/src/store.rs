@@ -231,13 +231,6 @@ impl Store {
         &self.content
     }
 
-    /// Enable the lazy search projection from the trusted manifest catalog.
-    pub(crate) fn configure_search(
-        &self,
-        config: calternal_content::SearchConfig,
-    ) -> Result<(), Error> {
-        self.content.configure_search(config)
-    }
     /// Resolves identifier-only catalog routing for any stored kind. No content is read
     /// and no authority is granted. A malformed ID is simply absent.
     /// Cost: catalog mutex and one indexed read; no membership scan or fsync.
@@ -583,9 +576,12 @@ impl Store {
                 } else {
                     PluginRow {
                         enabled,
-                        generation: current.generation.checked_add(1).ok_or_else(|| {
-                            Error::internal("plugin activation generation exhausted")
-                        })?,
+                        generation: current
+                            .generation
+                            .checked_add(u32::from(current.enabled != enabled))
+                            .ok_or_else(|| {
+                                Error::internal("plugin activation generation exhausted")
+                            })?,
                         approval: default.approval,
                     }
                 };

@@ -188,6 +188,39 @@ pub fn validate_manifest(m: &ManifestV1) -> Result<(), Error> {
     if !crate::slots::valid(m) {
         return Err(Error::Invalid);
     }
+    if let Some(menu) = &m.palette {
+        let label =
+            |s: &str| !s.trim().is_empty() && s.len() <= 256 && !s.chars().any(char::is_control);
+        let address =
+            |s: &str| label(s) && s.starts_with('/') && !s.starts_with("//") && !s.contains('\\');
+        if menu.commands.len() > 128
+            || menu.settings_sections.len() > 128
+            || !unique(
+                menu.commands.iter().map(|c| c.id.as_str()).chain(
+                    menu.settings_sections
+                        .iter()
+                        .map(|section| section.id.as_str()),
+                ),
+            )
+            || menu.commands.iter().any(|c| {
+                !label(&c.label)
+                    || !label(&c.group)
+                    || c.words.len() > 32
+                    || c.words.iter().any(|word| !label(word))
+                    || !match (&c.go, &c.op) {
+                        (Some(go), None) => address(go),
+                        (None, Some(op)) => identifier(op),
+                        _ => false,
+                    }
+            })
+            || menu
+                .settings_sections
+                .iter()
+                .any(|s| !label(&s.label) || !address(&s.go))
+        {
+            return Err(Error::Invalid);
+        }
+    }
     let op = |id: &str| m.operations.iter().any(|x| x.id == id);
     if m.kinds.iter().any(|x| {
         x.searchable == Some(true) && !x.claimed_text

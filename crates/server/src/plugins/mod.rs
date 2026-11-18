@@ -22,12 +22,14 @@ pub mod job_sql;
 mod job_streams;
 pub mod jobs;
 pub mod live;
+pub mod live_catalog;
 mod machine_worker;
 pub mod package_store;
 mod requests;
 pub(crate) use requests::OnceAdmission;
 pub mod runner;
 pub mod session;
+mod slots;
 pub mod worker;
 
 use std::borrow::Cow;
@@ -98,6 +100,8 @@ pub struct Plugin {
     pub schemas: Arc<host::CompiledSchemas>,
     revision: u32,
     activation_approval: u32,
+    #[cfg(feature = "dev-plugin-drafts")]
+    draft_space: Option<SpaceId>,
 }
 
 impl Plugin {
@@ -152,7 +156,18 @@ impl Plugin {
             schemas,
             revision: 0,
             activation_approval: 0,
+            #[cfg(feature = "dev-plugin-drafts")]
+            draft_space: None,
         })
+    }
+
+    /// Whether this package is visible in the given space. Cost: one comparison.
+    pub(crate) fn available_in(&self, _space: SpaceId) -> bool {
+        #[cfg(feature = "dev-plugin-drafts")]
+        if let Some(scope) = self.draft_space {
+            return scope == _space;
+        }
+        true
     }
 
     /// Revision that durable jobs created by this worker must continue under.
@@ -220,11 +235,18 @@ impl Plugin {
     }
 }
 
-/// Immutable registry of trusted plugins, with manifest-derived policy rows.
+/// Atomically published plugin catalog. Reader snapshots never lock the catalog writer.
 #[derive(Debug, Default)]
-pub struct Registry {
+pub struct Registry(arc_swap::ArcSwap<Catalog>);
+
+/// Immutable installed plugins and their derived operation policy.
+#[derive(Clone, Debug, Default)]
+pub struct Catalog {
     plugins: Vec<Arc<Plugin>>,
+    retained: BTreeMap<(String, u32), Arc<Plugin>>,
     tool_index: std::sync::OnceLock<String>,
+    search: std::sync::OnceLock<Arc<calternal_content::SearchConfig>>,
+    slots: slots::SlotIndex,
     /// Operation ID -> (owning plugin index, derived policy).
     operations: BTreeMap<String, (usize, Policy)>,
 }
@@ -265,21 +287,21 @@ pub fn host_capability(capability: ManifestCapability) -> Option<Capability> {
 }
 
 impl Registry {
-    /// Generated one-line operation index, built once after registry construction.
-    /// Includes manifest operations as well as host operations; never grants access.
-    pub fn tool_index(&self) -> &str {
-        self.tool_index.get_or_init(|| {
-            let mut rows: Vec<_> = calternal_core::operation_catalog()
-                .into_iter()
-                .map(|d| format!("{}: {} ({:?})", d.id, d.description, d.risk))
-                .collect();
-            for p in &self.plugins {
-                for op in &p.manifest.operations {
-                    rows.push(format!("{}: {} ({:?})", op.id, p.manifest.name, op.risk));
-                }
-            }
-            rows.join("\n")
-        })
+    /// Pin the catalog for one admission or lookup. Cost: one atomic reference load.
+    pub fn snapshot(&self) -> Arc<Catalog> {
+        self.0.load_full()
+    }
+
+    /// Publish a fully validated snapshot. Existing references stay valid for admitted work.
+    fn publish(&self, catalog: Catalog) {
+        self.0.store(Arc::new(catalog));
+    }
+
+    /// Build the initial catalog from known packages. Cost: validates the supplied declarations.
+    pub fn from_plugins(plugins: Vec<Plugin>) -> Self {
+        Self(arc_swap::ArcSwap::from_pointee(Catalog::from_plugins(
+            plugins.into_iter().map(Arc::new).collect(),
+        )))
     }
 
     /// An empty registry: no plugin operations exist. Cost: none.
@@ -303,12 +325,65 @@ impl Registry {
             .collect();
         Self::from_plugins(plugins)
     }
+}
+
+impl Catalog {
+    /// Derive the search view once per immutable snapshot. Builds from trusted,
+    /// available packages, with no storage access on subsequent requests.
+    pub(crate) fn search_configuration(&self) -> &Arc<calternal_content::SearchConfig> {
+        self.search.get_or_init(|| {
+            let kinds = self
+                .plugins()
+                .iter()
+                .filter(|plugin| plugin.unavailable.is_none())
+                .flat_map(|plugin| {
+                    let default = default_row(plugin);
+                    plugin.manifest.kinds.iter().filter_map(move |kind| {
+                        (kind.searchable == Some(true)).then(|| calternal_content::SearchKind {
+                            kind: kind.id.clone(),
+                            control: crate::store::plugin_key(&plugin.manifest.id),
+                            default_enabled: default.enabled,
+                            approval: default.approval,
+                            space: {
+                                #[cfg(feature = "dev-plugin-drafts")]
+                                {
+                                    plugin.draft_space
+                                }
+                                #[cfg(not(feature = "dev-plugin-drafts"))]
+                                {
+                                    None
+                                }
+                            },
+                        })
+                    })
+                })
+                .collect();
+            Arc::new(calternal_content::SearchConfig::new(kinds))
+        })
+    }
+
+    /// Generated one-line operation index, built once after registry construction.
+    /// Includes manifest operations as well as host operations; never grants access.
+    pub fn tool_index(&self) -> &str {
+        self.tool_index.get_or_init(|| {
+            let mut rows: Vec<_> = calternal_core::operation_catalog()
+                .into_iter()
+                .map(|d| format!("{}: {} ({:?})", d.id, d.description, d.risk))
+                .collect();
+            for p in &self.plugins {
+                for op in &p.manifest.operations {
+                    rows.push(format!("{}: {} ({:?})", op.id, p.manifest.name, op.risk));
+                }
+            }
+            rows.join("\n")
+        })
+    }
 
     /// Register already-built plugins in order, skipping (with a warning) any whose
     /// declarations collide with an earlier plugin or a host operation, or whose
     /// operations need an authority that is not space-scoped.
     /// Cost: O(declarations * log registered) plus schema compilation per plugin.
-    pub fn from_plugins(plugins: Vec<Plugin>) -> Self {
+    fn from_plugins(plugins: Vec<Arc<Plugin>>) -> Self {
         let mut index = host::Registry::default();
         let mut out = Self::default();
         for plugin in plugins {
@@ -329,7 +404,7 @@ impl Registry {
                     tracing::info!(plugin = %id, version = %plugin.manifest.version, "trusted plugin registered")
                 }
             }
-            out.plugins.push(Arc::new(plugin));
+            out.plugins.push(plugin);
         }
         // Policy rows come from the manifests, never from a hand-written table.
         for row in index.policy_rows() {
@@ -348,7 +423,27 @@ impl Registry {
             };
             out.operations.insert(row.operation.id, (slot, policy));
         }
+        out.slots = slots::SlotIndex::compile(&out);
         out
+    }
+
+    /// Whether there is any registered mount or compatible contribution.
+    /// Cost: two checks on the immutable index.
+    pub(crate) fn has_slots(&self) -> bool {
+        !self.slots.is_empty()
+    }
+
+    /// Resolve a listing from activation rows in catalog order. Invisible packages
+    /// occupy empty positions. Cost: one bounded scan, no I/O or package execution.
+    pub(crate) fn resolve_slots(
+        &self,
+        plugins: &[Option<calternal_core::PluginState>],
+        authority: calternal_types::CapabilitySet,
+    ) -> (
+        Vec<calternal_core::ResolvedPluginSlot>,
+        Vec<calternal_core::ResolvedOwnedPluginSlot>,
+    ) {
+        self.slots.resolve(plugins, authority)
     }
 
     /// Registered plugins in trusted-file order.
@@ -359,6 +454,32 @@ impl Registry {
     /// Look up a plugin by identifier. Cost: O(plugins), no allocation.
     pub fn get(&self, id: &str) -> Option<&Arc<Plugin>> {
         self.plugins.iter().find(|p| p.manifest.id == id)
+    }
+
+    /// Find code already pinned to an invocation or durable job. Removed and narrowed
+    /// revisions disappear at publication. Cost: one bounded lookup.
+    pub(crate) fn revision(&self, id: &str, revision: u32) -> Option<&Arc<Plugin>> {
+        self.get(id)
+            .filter(|plugin| plugin.revision == revision)
+            .or_else(|| self.retained.get(&(id.to_owned(), revision)))
+    }
+
+    /// Check that the current catalog still authorizes this immutable revision.
+    /// Cost: indexed in-memory lookups; per-space activation is checked separately.
+    pub(crate) fn authorizes(&self, plugin: &Plugin) -> bool {
+        self.revision(&plugin.manifest.id, plugin.revision)
+            .is_some()
+    }
+
+    /// Default persisted control used when a manager enables or disables a package.
+    /// Preserve the generation of implicitly enabled older revisions during approval.
+    /// Cost: bounded scan of retained declarations, only on an activation write.
+    pub(crate) fn control_default(&self, plugin: &Plugin) -> PluginRow {
+        let mut row = default_row(plugin);
+        row.enabled |= self.retained.values().any(|previous| {
+            previous.manifest.id == plugin.manifest.id && default_row(previous).enabled
+        });
+        row
     }
 
     /// The plugin that declares `operation`. Cost: O(log operations).
@@ -405,7 +526,9 @@ pub fn activation(store: &Store, space: SpaceId, plugin: &Plugin) -> Result<Plug
     let mut row = store
         .plugin_row(space, &plugin.manifest.id)?
         .unwrap_or_else(|| default_row(plugin));
-    row.enabled &= plugin.unavailable.is_none() && row.approval == plugin.activation_approval;
+    row.enabled &= plugin.available_in(space)
+        && plugin.unavailable.is_none()
+        && row.approval >= plugin.activation_approval;
     Ok(row)
 }
 

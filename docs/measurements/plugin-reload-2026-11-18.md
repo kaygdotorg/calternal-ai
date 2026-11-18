@@ -77,3 +77,73 @@ regardless of runtime configuration.
 
 The measured topology is the starting point. The implementation gate remains
 edit-to-first-valid-result p95 under one second in the full development loop.
+
+## Full author loop
+
+The fixture starts the server and enrolls a machine on perf-01. It uses
+the `node:24-alpine` image recorded above. The release server and standalone
+conformance binary were cross-built for `x86_64-unknown-linux-musl` on dev-02.
+The benchmark runs prebuilt executables under the perf lock. Inside the
+benchmark, the development CLI bundles each edited fixture. The clock starts
+at the source rename and ends after the expected generated view returns
+through the authenticated HTTP route and a brokered note read.
+
+The first run (server at `d4fa600`) had 30 samples after two warm-up edits.
+
+| Phase | Stop before first invocation, p95 | Stop after first result, p95 |
+| --- | ---: | ---: |
+| Manifest and bundle build | 176.2 ms | 190.5 ms |
+| Package read, readiness and publication | 489.9 ms | 642.0 ms |
+| Edit to CLI reports ready | 691.6 ms | 855.1 ms |
+| Ready to correct first result | 419.1 ms | 50.3 ms |
+| Edit to correct first result | 1,084.1 ms | **903.0 ms** |
+
+The phase percentiles are computed independently. The full path was
+1,030.7 ms p50 and 1,086.3 ms p99. The first run missed the one-second p95
+gate. The machine processes sandbox stops and input in message order.
+Stopping the previous draft as part of publication made the first invocation
+wait behind cleanup of that container. The follow-up fences the old draft
+at publication and defers physical retirement until the replacement answers.
+Both sandbox permits count against capacity until authenticated teardown.
+Idle eviction covers a draft whose replacement is never invoked.
+
+The second run passed with 861.0 ms p50, 903.0 ms p95 and 915.9 ms p99
+over 30 samples. CPU and machine time from a prior teardown can still
+overlap the following activation. The build's p95 increased by 14.3 ms.
+Scheduling the current result before teardown reduced end-to-end p95 by
+181.0 ms.
+
+Run the prebuilt conformance binary with `CALTERNAL_MEASURE_RELOAD=remote`,
+`CALTERNAL_SERVER_BIN` set to the release binary built with
+`test-plugins,dev-plugin-drafts`, and `CALTERNAL_CONFORMANCE_SOURCE_ROOT`
+set to the copied plugin and SDK sources. Put the isolated Podman store's
+wrapper on `PATH`. The gate command was:
+
+```sh
+/usr/local/bin/perf-lock.sh ./bin/isolation edit_to_first_valid_plugin_result --test-threads=1 --nocapture
+```
+
+The follow-up binary linked the same OpenSSL release as the first run
+using existing x86_64-musl static archives. Rust compilation and linking
+ran on dev-02.
+
+[Raw full-loop samples](plugin-reload-author-loop-2026-11-18.json)
+
+## Standby option
+
+The first full-loop run spent 176.2 ms p95 in the build and 489.9 ms in
+package activation. The passing run's median was 861.0 ms, with 190.5 ms
+build and 642.0 ms activation p95. These are separate phase percentiles.
+Activation includes the package read, isolated container and worker startup,
+the readiness round trip and publication. Cleanup from the prior edit can
+also delay placement in the passing run.
+
+An empty standby can overlap some container provisioning with validation if
+the host can reserve a separate sandbox early. It would still need verified
+bytes, a fresh worker process, the data-free handshake and a catalog commit.
+The topology test measured 464.5 ms p95 from validation through the first
+result with a standby and 463.3 ms with a fresh container. The standby saves
+time only to the extent provisioning can overlap work that is already on the
+critical path. It consumes a sandbox permit while it waits and cannot remove
+the previous revision's teardown queueing by itself. The current plan keeps
+fresh containers on demand.
