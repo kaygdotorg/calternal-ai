@@ -11,7 +11,7 @@ const sample = (page, name, ms) => page.evaluate(([name, ms]) => new Promise((re
   const { ctx, page } = await go(false);
   const sw = page.getByRole("switch", { name: /Animations/ });
   ok((await sw.getAttribute("aria-checked")) === "true", "the switch is named by its label and starts in the stored state");
-  const run = sample(page, "Animations", 900); await sw.click(); const frames = await run;
+  const run = sample(page, "Animations", 2500); await sw.click(); const frames = await run; // long enough for a loaded machine: frames of 50 ms or more slow the spring (its step is capped)
   const travel = await page.evaluate(() => { const t = document.querySelector("button[role=switch] .track"), k = t.querySelector(".knob"); return t.offsetWidth - k.offsetWidth - 2 * k.offsetLeft; });
   const maxSx = Math.max(...frames.map((f) => f.sx)), minSy = Math.min(...frames.map((f) => f.sy));
   ok((await sw.getAttribute("aria-checked")) === "false", "a click toggles it");
