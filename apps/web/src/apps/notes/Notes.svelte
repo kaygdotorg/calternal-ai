@@ -1,6 +1,7 @@
 <script lang="ts">
   // The note: the block editor in a narrow centred column with no inner card, and a thin rail at the card's left edge that expands into a small contents card (hover, focus or press;
   // Escape folds it). The document is the note's Markdown (the fixture's or the server's); every edit is kept as the note's private draft after a short pause and saved after a longer one.
+  import { getContext } from "svelte";
   import { Button, IconButton, Panel } from "@calternal/ui";
   import { shell } from "../../shell/shell.svelte";
   import NoteEditor from "./NoteEditor.svelte";
@@ -15,6 +16,8 @@
   // Fixture words for the # picker; in server mode the editor asks the space's tag index instead.
   const TAGS = ["design", "journal", "release", "storage", "reading"];
   let { id }: { id?: string } = $props();
+  /** In a canvas window the window's own pill (three buttons) floats at the top right: the save state leaves room for it and the sidebar's way back is the shell's. */
+  const windowed = getContext<boolean | undefined>("canvas-window") === true;
   // Leaving a note saves what is pending first (against that note), then the next one opens.
   $effect(() => { void notes.open(id); return () => { clearTimeout(saveTimer); if (latest) void flush(); latest = ""; }; });
   // The editor was given new text (a note opened, changed elsewhere, or the other version taken): what was typed before no longer applies.
@@ -65,8 +68,8 @@
   </div>
 
   <div class="scroll">
-  <header class="nc-head">
-    {#if shell.narrow}<IconButton icon="sidebar" label="Show notes" onclick={() => shell.toggleSidebar()} />{/if}
+  <header class="nc-head" class:windowed>
+    {#if shell.narrow && !windowed}<IconButton icon="sidebar" label="Show notes" onclick={() => shell.toggleSidebar()} />{/if}
     <span class="grow"></span>
     {#if notes.note}<span class="state" role="status" aria-live="polite" data-state={notes.saveState}>{STATE[notes.saveState]}</span>{/if}
   </header>
@@ -98,6 +101,7 @@
   .grow { flex: 1; }
   .draft { padding: var(--s-3) var(--s-5); border-radius: var(--r-card); background: var(--accent-soft); font-size: var(--text-label); display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); }
   .state { font-size: var(--text-label); color: var(--ink-3); }
+  .nc-head.windowed { padding-right: calc(var(--pill-h) * 3 + var(--s-8)); }
   .state[data-state="conflict"], .state[data-state="failed"] { color: var(--danger); }
   .err { color: var(--danger); font-size: var(--text-label); }
   :global(.tocard) a.l2 { padding-left: var(--s-6); } :global(.tocard) a.l3 { padding-left: var(--s-8); }

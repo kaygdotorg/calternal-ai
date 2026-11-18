@@ -71,6 +71,13 @@ describe("the saved thread's records", () => {
     expect(messagesOf(md(agent)).map((m) => m.at)).toEqual([Date.parse("2026-11-17T12:01:00+00:00"), Date.parse("2026-11-17T12:04:00+00:00")]);
     expect(messageOf({ ...person, at: "2026-11-18T19:30:00+05:30" }).at).toBe(Date.parse("2026-11-18T14:00:00Z"));
   });
+  test("a saved agent message's reasoning summary and thinking time become a thought block ahead of its text", () => {
+    const m = messageOf({ ...agent, text: "> Reasoning summary — Compared the checklist.\n\nThe answer." });
+    expect(m.blocks.map((b) => b.type)).toEqual(["thought", "text"]);
+    expect(m.blocks[0]).toEqual({ type: "thought", text: "Compared the checklist.", ms: 4000 });
+    expect((m.blocks[1] as { text: string }).text).toBe("The answer.");
+    expect(messageOf({ ...agent, provenance: { ...agent.provenance!, reasoning_ms: null } }).blocks.map((b) => b.type)).toEqual(["text"]);
+  });
   test("an agent message carries who wrote it: provider, service, model, reasoning, duration and thinking time", () => {
     expect(messageOf(agent).by).toEqual({ provider: "claude", providerId: "calternal-claude-code", service: "Anthropic", model: "claude-sonnet-5-5", reasoning: "high", ms: 12000, thoughtMs: 4000 });
     expect(messageOf(person).by).toBeUndefined();

@@ -40,6 +40,7 @@
   const native = typeof CSS !== "undefined" && CSS.supports?.("field-sizing", "content");
   function grow() {
     if (!multiline || !el || native) return;
+    if (!el.value) { el.style.height = ""; return; } // empty: one row, whatever the placeholder does at a large text size (a wrapped placeholder is clipped, never makes the field two lines)
     el.style.height = "auto";
     el.style.height = `${Math.min(el.scrollHeight, maxRows * 1.5 * parseFloat(getComputedStyle(el).fontSize))}px`;
   }

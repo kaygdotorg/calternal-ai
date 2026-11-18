@@ -1,21 +1,23 @@
 import { describe, expect, it } from "vitest";
-import { centring, dragBoundary, GAP, heightsOf, leftOf, maxScroll, nearColumns, nextPreset, proportionFor, proportionOf, scrollTo, stripWidth, widthOf, widthsOf, type Col, type Win } from "./layout";
+import { centring, dragBoundary, edgeOf, GAP, heightsOf, leftOf, maxScroll, nearColumns, nextPreset, proportionFor, proportionOf, scrollTo, stripWidth, widthOf, widthsOf, type Col, type Win } from "./layout";
 
-const w = (id: string, weight = 1): Win => ({ id, kind: "threads", item: id, weight, frosted: false, locked: false });
+const w = (id: string, weight = 1): Win => ({ id, kind: "threads", item: id, weight, look: "card", locked: false });
 const col = (id: string, p: number | null = null): Col => ({ id, p, wins: [w(id)] });
 
 describe("niri's proportions", () => {
   it("1/n columns and their gaps fill the canvas exactly", () => {
     for (const n of [1, 2, 3, 4]) {
       const ws = Array.from({ length: n }, () => widthOf(1 / n, 1000));
-      expect(stripWidth(ws)).toBeCloseTo(1000);
+      expect(stripWidth(ws, 1000)).toBeCloseTo(1000);
     }
   });
-  it("one window fills the canvas minus a gap all round (about 99 % of a wide canvas) and is centred", () => {
+  it("one window is the card: the area minus the card's inset on each side, centred; on a phone it is edge to edge", () => {
     const ws = widthsOf([col("a")], 1000);
     expect(ws[0]).toBe(1000 - 2 * GAP);
     expect(centring(ws, 1000)).toBe(0);
-    expect(centring([widthOf(2 / 3, 1000)], 1000)).toBeCloseTo((1000 - stripWidth([widthOf(2 / 3, 1000)])) / 2);
+    expect(centring([widthOf(2 / 3, 1000)], 1000)).toBeCloseTo((1000 - stripWidth([widthOf(2 / 3, 1000)], 1000)) / 2);
+    expect(widthsOf([col("a")], 390)[0]).toBe(390);
+    expect(edgeOf(390)).toBe(0);
   });
   it("two share it, half each; three keep half each and the strip scrolls", () => {
     expect(proportionOf(col("a"), 2, 1000)).toBe(0.5);
@@ -32,8 +34,8 @@ describe("niri's proportions", () => {
 describe("placement", () => {
   const ws = [500, 400, 600, 300, 500];
   it("places columns by arithmetic", () => {
-    expect(leftOf(ws, 0)).toBe(GAP);
-    expect(leftOf(ws, 2)).toBe(GAP + 500 + GAP + 400 + GAP);
+    expect(leftOf(ws, 0, 1000)).toBe(GAP);
+    expect(leftOf(ws, 2, 1000)).toBe(GAP + 500 + GAP + 400 + GAP);
   });
   it("mounts only the columns near the viewport", () => {
     expect(nearColumns(ws, 0, 800, 0)).toEqual([0, 1]);
@@ -41,7 +43,7 @@ describe("placement", () => {
   });
   it("scrolls the least to show a column, clamped; a wide column is centred", () => {
     expect(scrollTo(ws, 0, 0, 800)).toBe(0);
-    expect(scrollTo(ws, 2, 0, 800)).toBe(leftOf(ws, 2) + 600 + GAP - 800);
+    expect(scrollTo(ws, 2, 0, 800)).toBe(leftOf(ws, 2, 800) + 600 + GAP - 800);
     expect(scrollTo(ws, 1, 9000, 800)).toBeLessThanOrEqual(maxScroll(ws, 800));
     expect(scrollTo([780], 0, 0, 790)).toBeCloseTo(3);
   });

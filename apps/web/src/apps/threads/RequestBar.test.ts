@@ -67,7 +67,7 @@ describe("request bar", () => {
     expect(screen.getByText("15:00")).toBeTruthy();
     unmount();
     render(RequestBar, { requests: [{ ...S, expiresAt: 999_000 }], onanswer() {}, now });
-    expect(screen.getByText(/expired after 15 minutes/)).toBeTruthy();
+    expect(screen.getByText(/This request expired/)).toBeTruthy();
     expect(screen.queryByLabelText("Forgejo access token")).toBeNull();
     expect(screen.getByRole("button", { name: "Ask again" })).toBeTruthy();
   });

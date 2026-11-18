@@ -6,7 +6,7 @@
  * the focused window (Canvas.svelte navigates on focus), so the sidebars, which are chosen by the address's kind, follow the focused window's app with no code of their own.
  */
 import { serverMode } from "../server/client";
-import { dragBoundary, nextPreset, type Col, type Win } from "./layout";
+import { dragBoundary, nextPreset, type Col, type Look, type Win } from "./layout";
 
 const KEY = "cal.canvas";
 /** Whether the experiment is on: `?canvas=1` once (remembered for the visit), `?canvas=0` to leave. Fixtures build only. */
@@ -32,18 +32,16 @@ class CanvasModel {
   focus = $state<string | null>(null);
   /** The maximised window's id: it fills the outer card (merged into it) until restored. */
   max = $state<string | null>(null);
-  /** Every window frosted (the global toggle); a window's own `frosted` flips it for that window. */
-  frostAll = $state(false);
   /** The scroll position, kept here so a reload restores it; written by Canvas.svelte at rest. */
   x = 0;
 
   constructor() {
     try {
-      const s = JSON.parse(localStorage.getItem(KEY) ?? "null") as { cols: Col[]; focus: string | null; frostAll?: boolean; x?: number } | null;
-      if (s?.cols?.length && s.cols.every((c) => c && "p" in c && Array.isArray(c.wins))) { this.cols = s.cols; this.focus = s.focus; this.frostAll = !!s.frostAll; this.x = s.x ?? 0; }
+      const s = JSON.parse(localStorage.getItem(KEY) ?? "null") as { cols: Col[]; focus: string | null; x?: number } | null;
+      if (s?.cols?.length && s.cols.every((c) => c && "p" in c && Array.isArray(c.wins) && c.wins.every((w) => w.look))) { this.cols = s.cols; this.focus = s.focus; this.x = s.x ?? 0; }
     } catch { /* nothing kept */ }
   }
-  save(): void { try { localStorage.setItem(KEY, JSON.stringify({ cols: this.cols, focus: this.focus, frostAll: this.frostAll, x: this.x })); } catch { /* storage is off */ } }
+  save(): void { try { localStorage.setItem(KEY, JSON.stringify({ cols: this.cols, focus: this.focus, x: this.x })); } catch { /* storage is off */ } }
 
   all(): Win[] { return this.cols.flatMap((c) => c.wins); }
   win(id: string | null): Win | undefined { return id ? this.all().find((w) => w.id === id) : undefined; }
@@ -51,7 +49,7 @@ class CanvasModel {
   find(kind: string, item: string): Win | undefined { return this.all().find((w) => w.kind === kind && w.item === item); }
   address(w: Win): string { return `/${w.kind}/${w.item}`; }
 
-  private make(kind: string, item: string): Win { return { id: uid("w"), kind, item, weight: 1, frosted: false, locked: false }; }
+  private make(kind: string, item: string): Win { return { id: uid("w"), kind, item, weight: 1, look: "card", locked: false }; }
 
   /** Opens an address: its window gets focus, or a new column opens right of the focused one. Returns the window. One window per address. */
   show(kind: string, item: string): Win {
@@ -121,7 +119,8 @@ class CanvasModel {
   }
   toggleMax(id: string): void { this.max = this.max === id ? null : id; this.focus = id; this.save(); }
   toggleLock(id: string): void { this.patch(id, (w) => ({ ...w, locked: !w.locked })); }
-  toggleFrost(id: string, now: boolean): void { this.patch(id, (w) => ({ ...w, frosted: !now })); }
+  /** Sets how a window looks (card, transparent, solid). */
+  setLook(id: string, look: Look): void { this.patch(id, (w) => ({ ...w, look })); }
   private patch(id: string, f: (w: Win) => Win): void { this.cols = this.cols.map((c) => ({ ...c, wins: c.wins.map((w) => (w.id === id ? f(w) : w)) })); this.save(); }
   /** Sets a column's width as a proportion of the canvas. */
   setProportion(colId: string, p: number | null): void { this.cols = this.cols.map((c) => (c.id === colId ? { ...c, p } : c)); this.save(); }

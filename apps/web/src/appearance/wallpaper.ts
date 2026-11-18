@@ -47,18 +47,21 @@ let image: { src: string; img: Promise<HTMLImageElement> } | null = null;
 const listeners = new Set<(c: WallpaperColours | null) => void>();
 
 /**
- * The darkest and the lightest colour the wallpaper shows (the 1st and 99th percentile by luminance of its pixels, sampled from the small copy) and its mean, or null with no wallpaper. The canvas's frosted windows are as dense as the least that
- * still reads against these two (canvas/frost.ts, ported from the old Calternal's `frostRange`); its opaque windows keep their lightness away from the mean. Cost: a sample of a 160 px copy, a sort, once per call.
+ * The darkest and the lightest colour of the background the windows sit on (the 1st and 99th percentile by luminance of the sidebars' wallpaper copy under the one veil both sidebars are drawn on, `--veil-l`), or null with no wallpaper. A
+ * transparent canvas window is as dense as the least that still reads against these two (canvas/frost.ts, the old Calternal's `frostRange`). Cost: a sample of a small copy, a sort, once per call.
  */
-export function wallpaperExtremes(): { lo: RGB; hi: RGB; mean: RGB } | null {
+export function wallpaperExtremes(): { lo: RGB; hi: RGB } | null {
   if (!copies || !source) return null;
-  const px = sample(copies.card, { x0: 0, y0: 0, x1: 1, y1: 1 });
+  const v = lastVeilL;
+  const px = sample(copies.side, { x0: 0, y0: 0, x1: 1, y1: 1 }).map((p) => (v ? over(over(p, v.tint.rgb, v.tint.a), v.dim.rgb, v.dim.a) : p));
   if (!px.length) return null;
   const by = [...px].sort((a, b) => lum(a) - lum(b));
   const at = (q: number) => by[Math.min(by.length - 1, Math.max(0, Math.floor(q * (by.length - 1))))]!;
-  const mean = [0, 1, 2].map((i) => px.reduce((t, p) => t + p[i]!, 0) / px.length) as RGB;
-  return { lo: at(0.01), hi: at(0.99), mean };
+  return { lo: at(0.01), hi: at(0.99) };
 }
+
+/** The veil the sidebars (and the area behind the canvas's windows) are drawn under, as last solved. */
+let lastVeilL: Veil | undefined;
 
 /** Subscribes to the colours read from each new wallpaper (the accent follows them). */
 export function onWallpaperColours(fn: (c: WallpaperColours | null) => void): () => void {
@@ -263,6 +266,7 @@ export function updateVeil(want: Flags): void {
     const c = over(over(m, edge.tint.rgb, edge.tint.a), edge.dim.rgb, edge.dim.a);
     setThemeColor(`rgb(${Math.round(c[0])} ${Math.round(c[1])} ${Math.round(c[2])})`);
   }
+  lastVeilL = out.l;
   const flip = (v: Veil | undefined) => (v && v.scheme !== scheme ? v.scheme : null);
   surfaces.left = flip(out.l);
   surfaces.right = flip(out.r);
@@ -356,8 +360,6 @@ export function setWallpaper(src: string | null, l?: WallpaperLook): void {
   if (l) look = l;
   if (src === source && !l) return;
   source = src;
-  // The picture itself, unblurred, for the canvas experiment's sharp area around its windows (canvas/Canvas.svelte); the URL is already the one being decoded, so this costs nothing.
-  if (src) root().setProperty("--wall-sharp", `url("${src}")`); else root().removeProperty("--wall-sharp");
   schedule();
 }
 

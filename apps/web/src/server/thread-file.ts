@@ -165,7 +165,11 @@ export function messageOf(r: WireRecord): Message {
   const by: MessageBy | undefined = p
     ? { provider: PROVIDER_IDS[p.provider_id], providerId: p.provider_id, model: p.model_id ?? undefined, reasoning: p.reasoning_level ?? undefined, ms: p.duration_ms ?? undefined, thoughtMs: p.reasoning_ms ?? undefined, service: serviceOf(r.heading) ?? undefined }
     : undefined;
-  return { id: r.id, role: r.role === "agent" ? "agent" : "user", at: Number.isFinite(at) ? at : 0, blocks: blocksOf(r.id, r.text), ...(by ? { by } : {}) };
+  // A saved agent message carries its reasoning as blockquote lines (`> Reasoning summary — …`, docs/threads.md) and how long it thought in its provenance; the live reasoning text itself is not saved.
+  const summaries: string[] = [];
+  const text = r.role === "agent" ? r.text.replace(/^> Reasoning summary — (.*)(?:\n|$)/gm, (_, t: string) => { summaries.push(t); return ""; }).replace(/\n{3,}/g, "\n\n").trim() : r.text;
+  const thought: Block[] = r.role === "agent" && (summaries.length || (p?.reasoning_ms ?? 0) > 0) ? [{ type: "thought", text: summaries.join("\n\n"), ms: p?.reasoning_ms ?? 0 }] : [];
+  return { id: r.id, role: r.role === "agent" ? "agent" : "user", at: Number.isFinite(at) ? at : 0, blocks: [...thought, ...blocksOf(r.id, text)], ...(by ? { by } : {}) };
 }
 
 /** The messages of a full read, oldest first. */
