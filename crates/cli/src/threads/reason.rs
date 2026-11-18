@@ -11,7 +11,7 @@ pub(super) fn summary(reason: &Value) -> Option<&'static str> {
         "provider_signed_out" => "Provider signed out",
         "waiting_on_person" => "Waiting for a person",
         "retrying" => "Retry scheduled",
-        "failed" if reason["why"] == "thread_full" => "Thread size limit reached",
+        "thread_full" => "Thread size limit reached",
         "failed" => "Turn failed",
         "interrupted" => "Turn interrupted",
         _ => return None,

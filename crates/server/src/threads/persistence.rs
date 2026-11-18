@@ -10,6 +10,40 @@ use uuid::Uuid;
 /// Stable reason for a saved turn whose next checkpoint cannot fit.
 pub(crate) const THREAD_FULL: &str = "thread_full";
 
+/// Snapshot the manifest selected for this attempt and the model sent to its
+/// adapter. Later saves reuse these labels even if the live catalog changes.
+/// Cost: one in-memory model search at placement and no I/O.
+pub(crate) fn bind_provider(
+    checkpoint: &mut Value,
+    manifest: &calternal_core::ManifestV1,
+    model: &str,
+) {
+    let display_name = manifest
+        .provider
+        .as_ref()
+        .and_then(|provider| provider.models.iter().find(|entry| entry.id == model))
+        .map(|entry| entry.name.as_str())
+        .filter(|name| !name.is_empty())
+        .unwrap_or("Unknown model");
+    checkpoint["message_provider"] = json!({
+        "id":manifest.id,"harness":manifest.name,"model_id":model,"model_name":display_name
+    });
+}
+
+/// Reject an overflowing write before creating its revision or journal event.
+pub(super) fn check_size(bytes: usize) -> Result<(), Error> {
+    const HOST_ID_BYTES: usize = "calternal-id: ".len() + 36 + 1;
+    if bytes.saturating_add(HOST_ID_BYTES) > MAX_DOCUMENT_BYTES {
+        return Err(Error {
+            details: Some(json!({"reason":THREAD_FULL})),
+            ..Error::conflict(
+                "Thread reached its 2 MiB limit. Earlier output is saved; the latest output was not saved. Start a new thread to continue.",
+            )
+        });
+    }
+    Ok(())
+}
+
 /// Flush at most 32 KiB of scrubbed output and any new provider session. The
 /// content CAS serializes this against sends. A superseded turn cannot replace
 /// the session binding. A saved cursor and receipt prevent duplicate output.
@@ -99,27 +133,10 @@ pub(crate) fn checkpoint<D: Directory>(
         let range = if text.is_empty() && timing.is_null() {
             Some(body.len()..body.len())
         } else {
-            let provider = job.input["request"]["provider_id"].as_str().unwrap_or("");
-            let manifest = state.registry.get(provider).map(|plugin| &plugin.manifest);
-            append_output(
-                &mut metadata,
-                &mut body,
-                job,
-                seq,
-                text,
-                checkpoint,
-                manifest,
-            )?
+            append_output(&mut metadata, &mut body, job, seq, text, checkpoint)?
         };
         let bytes = super::document::encode(&metadata, &body);
-        if bytes.len() > MAX_DOCUMENT_BYTES {
-            return Err(Error {
-                details: Some(json!({"reason":THREAD_FULL})),
-                ..Error::conflict(
-                    "Thread reached its 2 MiB limit. Earlier output is saved; the latest output was not saved. Start a new thread to continue.",
-                )
-            });
-        }
+        check_size(bytes.len())?;
         let mut receipt = json!({"checkpoint":seq});
         metadata
             .as_object_mut()
@@ -174,12 +191,11 @@ fn append_output(
     seq: u64,
     text: &str,
     checkpoint: &Value,
-    manifest: Option<&calternal_core::ManifestV1>,
 ) -> Result<Option<std::ops::Range<usize>>, Error> {
+    let attribution = &job.input["thread_request"];
     let now = super::headings::now(
-        job.input["thread_request"]["client_offset_minutes"]
-            .as_i64()
-            .unwrap_or(0),
+        attribution["time_zone"].as_str(),
+        attribution["client_offset_minutes"].as_i64().unwrap_or(0),
     )?;
     let id = checkpoint["message_id"]
         .as_str()
@@ -188,16 +204,13 @@ fn append_output(
     let turn = Uuid::parse_str(&job.id).map_err(|_| Error::internal("invalid saved turn ID"))?;
     let timing = &checkpoint["message_timing"];
     let request = &job.input["request"];
-    let selected = request["model"].as_str().unwrap_or("");
-    let model = manifest
-        .and_then(|m| m.provider.as_ref())
-        .and_then(|p| p.models.iter().find(|m| m.id == selected))
-        .map(|m| m.name.as_str())
-        .filter(|name| !name.is_empty())
-        .unwrap_or("Unknown model");
-    let harness = manifest
-        .map(|m| m.name.as_str())
-        .unwrap_or("Unknown harness");
+    let provider = &checkpoint["message_provider"];
+    let provider_id = provider["id"]
+        .as_str()
+        .ok_or_else(|| Error::internal("saved assistant provider missing"))?;
+    let selected = provider["model_id"].as_str().unwrap_or("");
+    let model = provider["model_name"].as_str().unwrap_or("Unknown model");
+    let harness = provider["harness"].as_str().unwrap_or("Unknown harness");
     let serving = checkpoint["serving_provider"]
         .as_str()
         .unwrap_or("Unknown provider");
@@ -224,11 +237,7 @@ fn append_output(
         )
     };
     let provenance = super::records::Provenance {
-        provider_id: request["provider_id"]
-            .as_str()
-            .filter(|id| !id.is_empty())
-            .unwrap_or("calternal-claude-code")
-            .to_owned(),
+        provider_id: provider_id.to_owned(),
         model_id: (!selected.is_empty()).then(|| selected.to_owned()),
         reasoning_level: reasoning.map(str::to_owned),
         machine_id: checkpoint["message_machine"].as_str().map(str::to_owned),
@@ -279,4 +288,68 @@ fn append_output(
     };
     metadata["output"] = json!({"job_id":job.id,"run":job.runs,"checkpoint":seq,"start":start});
     Ok(range)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::plugins::{
+        Session,
+        jobs::{Admission, Jobs},
+    };
+    use calternal_types::AccountId;
+
+    #[test]
+    fn saved_attempt_retains_the_manifest_selected_at_launch() {
+        let mut manifest: calternal_core::ManifestV1 = serde_json::from_str(include_str!(
+            "../../../../plugins/calternal-claude-code/manifest.json"
+        ))
+        .unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let jobs = Jobs::open(dir.path()).unwrap();
+        let space = SpaceId::new().to_string();
+        let id = jobs
+            .admit(Admission {
+                space: space.clone(),
+                plugin: "calternal-orchestrator".into(),
+                account: AccountId::new(),
+                session: Session::Static,
+                operation: "agent.turn".into(),
+                input: json!({"request":{
+                    "thread_id":Uuid::now_v7(),"model":"claude-sonnet-5-5","options":{"effort":"high"}
+                }}),
+                parent: None,
+                generation: 1,
+                request_key: "saved-provider".into(),
+            })
+            .unwrap();
+        let job = jobs.claim_turn(&space, &id, None).unwrap().unwrap().job;
+        let mut checkpoint = json!({"message_id":id});
+        bind_provider(&mut checkpoint, &manifest, "claude-sonnet-5-5");
+
+        manifest.name = "Replacement harness".into();
+        manifest.provider.as_mut().unwrap().models[0].name = "Replacement model".into();
+        let mut replacement = json!({});
+        bind_provider(&mut replacement, &manifest, "claude-sonnet-5-5");
+        assert_ne!(
+            checkpoint["message_provider"],
+            replacement["message_provider"]
+        );
+
+        let mut metadata = json!({});
+        let mut body = String::new();
+        append_output(&mut metadata, &mut body, &job, 1, "First", &checkpoint).unwrap();
+        checkpoint["message_timing"] = json!({"duration_ms":1200});
+        append_output(&mut metadata, &mut body, &job, 2, " second.", &checkpoint).unwrap();
+        let records = super::super::records::read(&body).unwrap();
+        assert_eq!(records.len(), 1);
+        let record = &records[0];
+        assert_eq!(record.text, "First second.");
+        assert!(record.heading.starts_with("Claude Code via "));
+        assert!(record.heading.contains("Sonnet 5.5"));
+        let provenance = record.provenance.as_ref().unwrap();
+        assert_eq!(provenance.provider_id, "calternal-claude-code");
+        assert_eq!(provenance.model_id.as_deref(), Some("claude-sonnet-5-5"));
+        assert_eq!(provenance.duration_ms, Some(1200));
+    }
 }

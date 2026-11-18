@@ -1,4 +1,4 @@
--- auth.db, version 10: the current schema in one definition (no migration chain).
+-- auth.db, version 11: the current schema in one definition (no migration chain).
 -- Accounts and their credentials, server roles, groups and invites (existing app
 -- ADR 0058-0060), and spaces with their memberships and directory receipts.
 -- Disposable preview data only: an auth.db at any other version is refused.
@@ -10,6 +10,7 @@ CREATE TABLE users (
     created_at  INTEGER NOT NULL,
     role        TEXT NOT NULL DEFAULT 'member',
     disabled_at INTEGER,
+    time_zone   TEXT CHECK (time_zone IS NULL OR length(time_zone) BETWEEN 1 AND 128),
     quota_bytes INTEGER CHECK (quota_bytes IS NULL OR quota_bytes >= 0)
 );
 CREATE TABLE passkeys (

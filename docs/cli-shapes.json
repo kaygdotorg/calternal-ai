@@ -54,6 +54,7 @@
     "calternal people roles": {"roles": [{"name": "string", "capabilities": ["string"]}]},
     "calternal people list": {"people": [{"account_id": "string", "name": "string", "role": "string", "disabled": "bool"}], "next_cursor?": "string"},
     "calternal people set-profile": {"account_id": "string", "name": "string"},
+    "calternal people set-time-zone": {"account_id": "string", "time_zone": "string?"},
     "calternal people add": {},
     "calternal people set-role": {},
     "calternal people remove": {},

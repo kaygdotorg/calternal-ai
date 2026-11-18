@@ -63,6 +63,14 @@ fn people_output_goldens() {
             }),
         ),
         (
+            "people-set-time-zone",
+            "calternal people set-time-zone",
+            "account.set_time_zone",
+            json!({
+                "account_id":"01912345-6789-7abc-8123-000000000001","time_zone":"Asia/Kolkata"
+            }),
+        ),
+        (
             "people-add",
             "calternal people add",
             "spaces.add_member",

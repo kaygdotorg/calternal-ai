@@ -37,7 +37,8 @@ pub(super) fn body(item: &Item) -> Result<&str, Error> {
     } else {
         tail
     };
-    tail.strip_suffix('\n')
+    super::provider_notice::skip(tail)?
+        .strip_suffix('\n')
         .ok_or_else(|| Error::internal("invalid thread framing"))
 }
 
@@ -85,6 +86,7 @@ fn format_document(metadata: &Value, body: &str, id: Option<uuid::Uuid>, private
         let session = session.to_string().replace('>', "\\u003e");
         writeln!(out, "<!-- provider-session:{session} -->\n").expect("write to String");
     }
+    super::provider_notice::render(metadata, &mut out);
     out.push_str(body);
     out.push('\n');
     out
@@ -92,7 +94,9 @@ fn format_document(metadata: &Value, body: &str, id: Option<uuid::Uuid>, private
 
 /// Size of the public body's generated prefix for translating delta offsets.
 pub(super) fn public_prefix_bytes(metadata: &Value) -> usize {
-    headline(metadata).len()
+    let mut prefix = headline(metadata);
+    super::provider_notice::render(metadata, &mut prefix);
+    prefix.len()
 }
 
 /// Exclude transport internals and the account's private native session binding.
@@ -102,6 +106,8 @@ pub(super) fn public_metadata(mut metadata: Value) -> Value {
             super::delta::METADATA_KEY,
             super::provider_session::KEY,
             "output",
+            "pending",
+            super::provider_notice::KEY,
         ] {
             fields.remove(key);
         }
