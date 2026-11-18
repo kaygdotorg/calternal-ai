@@ -17,7 +17,7 @@ export type RGB = [number, number, number];
 export type Scheme = "light" | "dark";
 /** Which surface a veil sits on: `side` (a sidebar, straight on the wallpaper) or `card` (the middle card, which never flips its ink). */
 export type Role = "side" | "card";
-/** Which parts of the glass material are on (Appearance, Materials): `blur` frosts the picture, `dim` adds a neutral veil, `tint` a veil in the scheme's paper. All off leaves the bare picture. */
+/** Which parts of the glass material are on (Appearance, Materials): `blur` frosts the picture, `dim` adds a neutral veil, `tint` a veil in the scheme's paper. With tint and dim both off the surface is opaque paper, which is always readable. */
 export interface Flags { blur: boolean; dim: boolean; tint: boolean }
 /** The colours of one scheme: primary, secondary and tertiary ink, and the paper the veil is made of. */
 export interface Ink { ink: RGB; ink2: RGB; ink3: RGB; paper: RGB }
@@ -51,9 +51,9 @@ const mix = (x: RGB, y: RGB, t: number): RGB => over(x, y, t);
 /** The 1st percentile of a list. */
 export const p01 = (xs: number[]): number => [...xs].sort((a, b) => a - b)[Math.floor(0.01 * (xs.length - 1))]!;
 
-/** The opacity of the tint layer per surface when `tint` is on (a starting point; the solver raises the total until the text reaches `TARGET`). */
+/** The starting opacity of a sidebar's tint layer when `tint` is on; the solver raises Dim (or Tint when Dim is off) above the starting values only as far as the readability floor needs. The card's veil is computed, not started from here. */
 export const TINT_A: Record<Role, number> = { side: 0.35, card: 0.85 };
-/** The opacity of the neutral dim layer per surface when `dim` is on (see `TINT_A`). */
+/** The starting opacity of a sidebar's neutral dim layer when `dim` is on (see `TINT_A`). */
 export const DIM_A: Record<Role, number> = { side: 0.25, card: 0.6 };
 const GAIN: Record<Scheme, number> = { light: 0.25, dark: 0.33 };
 const C_CAP = 0.05, A_MAX = 0.9, MARGIN = 0.02, FLIP_GAIN = 0.12;

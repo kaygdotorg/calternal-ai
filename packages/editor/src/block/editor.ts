@@ -51,7 +51,7 @@ export interface BlockEditorOptions {
   extensions?: Extension;
 }
 
-/** The handle a host holds: read and replace the text, apply changes with an origin, ask about headings and blocks, run block actions as single undoable changes, scroll, focus, undo and redo, and destroy. After `destroy` every call is a no-op. */
+/** The handle a host holds: read and replace the text, apply changes with an origin, ask about headings and blocks, run block actions as single undoable changes, scroll, focus, undo and redo, and destroy (the host must not call it after that). */
 export interface BlockEditor {
   /** The underlying CodeMirror view, for the host's own extensions; do not mutate the document through it (use `apply`). */
   readonly view: EditorView;

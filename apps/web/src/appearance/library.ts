@@ -7,7 +7,7 @@
 
 /** One picture the person can use. `url` is something an `<img>` can load (a same-origin file or a blob URL). A credit is shown wherever the picture is chosen. */
 export interface Wallpaper {
-  /** Stable id; for a built-in it is the file stem, otherwise generated when the picture was added. */
+  /** Stable id; stored with the choice. */
   id: string;
   /** The name shown under the thumbnail. */
   name: string;
@@ -29,13 +29,13 @@ export interface Wallpaper {
 
 /** One search hit, not yet stored. */
 export interface StockResult {
-  /** The provider's id for the photo; the key for saving it. */
+  /** The provider's id for the photo. */
   id: string;
   /** The photographer's own description, shown as the label. */
   description: string;
-  /** A small preview address; the full picture is fetched only when saved. */
+  /** A small preview address for the results grid. */
   thumb: string;
-  /** Who made the photo and where to credit them; kept with the saved picture. */
+  /** Who made the photo and where to credit them; shown wherever the picture is chosen. */
   credit: { author: string; link: string };
 }
 

@@ -21,9 +21,9 @@ const GRID = { cols: 24, rows: 14 };
 
 /** How the wallpaper is applied: blur radii (px) of the two copies, as chosen in settings. */
 export interface WallpaperLook {
-  /** Blur radius for the sidebars in px, chosen for the picture (a busy one needs more). */
+  /** Blur radius in px of the copy of the picture behind the sidebars (set in Appearance). */
   sideBlur: number;
-  /** Blur radius for the middle card in px (stronger than the sidebars'). */
+  /** Blur radius in px of the copy behind the middle card (set in Appearance). */
   cardBlur: number;
 }
 
@@ -271,14 +271,14 @@ let veilScale = 1;
 /** Sets the clear-to-tinted position, 0 (clear) to 1 (tinted); 0.5 is the solved veil. Temporary, with the comparison. */
 export function setClarity(t: number): void { veilScale = t <= 0.5 ? 0.3 + 1.4 * t : 1 + 1.6 * (t - 0.5); }
 let craftLight = false;
-/** Chooses the "Craft" light-mode surface (the picture under a nearly opaque white) over the default solved veil; the comparison control in Appearance. Applies at the next paint of the surfaces. */
+/** Chooses the "Craft" light-mode surface (the picture under a nearly opaque white) over the default solved veil; the comparison control in Appearance. Read by the next veil solve. */
 export function setCraftLight(b: boolean): void { craftLight = b; }
-/** Sets which material layers are on and re-solves the veil. Cheap when unchanged; a change costs one solve per surface (about 60 probes each). */
+/** Records which material layers are on. It does not solve anything itself: the veil is solved with these flags the next time the pictures are read (a new wallpaper, a scheme change, a resize). */
 export function setFlags(f: Flags): void {
   flagsNow = f;
 }
 
-/** Makes `src` (a URL, or null for none) the wallpaper, with its precomputed `look` when it has one, and schedules the work that follows: the blurred copy and the veil solve. The same source with no new look is a no-op; a failed load leaves the previous surfaces. */
+/** Makes `src` (a URL, or null for none) the wallpaper, with its precomputed `look` when it has one, and schedules the work that follows: the blurred copies and the veil solve. The same source with no new look is a no-op. */
 export function setWallpaper(src: string | null, l?: WallpaperLook): void {
   if (l) look = l;
   if (src === source && !l) return;

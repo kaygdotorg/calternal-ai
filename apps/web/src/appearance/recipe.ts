@@ -35,7 +35,7 @@ export interface Recipe {
   sigma: number;
   /** Strength of the sine warp. */
   warp: number;
-  /** Seeds the grain, so the same recipe draws the same picture every time. */
+  /** Offsets the phase of the sine warp, so recipes with the same points still bend differently; fixed per recipe, so the picture is always the same. */
   seed: number;
 }
 

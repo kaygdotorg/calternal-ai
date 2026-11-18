@@ -15,7 +15,7 @@ export type FontRole = "ui" | "chat" | "code" | "brand";
 
 /** A choice for one role. */
 export interface FontChoice {
-  /** The font family name as CSS knows it; the key a choice is stored and looked up by. */
+  /** The font family name as CSS knows it. */
   family: string;
   /** Where the family comes from, which decides how it is loaded: a catalogue (google, fontsource, fontshare), the person's upload, or the system. */
   source: FontSource;

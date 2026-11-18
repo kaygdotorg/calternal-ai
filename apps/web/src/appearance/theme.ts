@@ -8,7 +8,7 @@ import { contrast, type Rgb } from "./accent";
 
 /** What a theme supplies for one scheme. Every colour is `#rrggbb`. */
 export interface Palette {
-  /** The surface colour (`#rrggbb`); the veil and every text colour are solved against it. */
+  /** The surface colour; the secondary inks and the soft accent are derived from it and the ink. */
   paper: string;
   /** The text colour on paper. */
   ink: string;
