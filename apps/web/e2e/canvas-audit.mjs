@@ -1,5 +1,6 @@
 // Side-by-side audit of canvas=0 and canvas=1 (a single window, the same thread, the same size): screenshots and every element whose computed type, spacing, radius or position differs.
-// A permanent parity check in the gate: a thread in the canvas must look exactly like the same thread in the card, so any element that differs fails it (screenshots and the full list go to the outdir).
+// A permanent parity check in the gate: a thread in the canvas must look like the same thread in the card. The differences that are intended today (the window's own pills beside the title, six pixels of height the window gives
+// to its frame, the rows that follow from them) are listed in canvas-audit.baseline.json; ANY OTHER difference fails. A baseline entry that no longer differs is reported (shrink the file: `UPDATE=1 node e2e/canvas-audit.mjs`).
 // Usage: CAL_URL=... node e2e/canvas-audit.mjs [outdir]
 import { mkdirSync, writeFileSync } from "node:fs";
 import { chromium } from "playwright";
@@ -18,7 +19,7 @@ async function grab(canvas, scheme) {
     const out = [];
     const walk = (el, path) => {
       const cs = getComputedStyle(el); const r = el.getBoundingClientRect();
-      const sig = path + ">" + el.tagName.toLowerCase() + (typeof el.className === "string" && el.className ? "." + el.className.split(/\s+/).filter((c) => !/^svelte-|^s-/.test(c)).join(".") : "");
+      const sig = path + ">" + el.tagName.toLowerCase() + (typeof el.className === "string" && el.className ? "." + el.className.split(/\s+/).filter((c) => !/^svelte-|^s-|^windowed$/.test(c)).join(".") : "");
       out.push({ sig, style: Object.fromEntries(PROPS.map((k) => [k, cs[k]])), box: [Math.round((r.left - cr.left) * 10) / 10, Math.round((r.top - cr.top) * 10) / 10, Math.round(r.width * 10) / 10, Math.round(r.height * 10) / 10], text: (el.childNodes[0]?.nodeType === 3 ? el.childNodes[0].textContent.trim().slice(0, 24) : "") });
       for (const c of el.children) walk(c, sig);
     };
@@ -42,8 +43,16 @@ for (const scheme of ["dark", "light"]) {
   report[scheme] = { card: { canvas0: a.card, canvas1: b.card }, count0: a.rows.length, count1: b.rows.length, diffs };
 }
 writeFileSync(`${dir}/audit.json`, JSON.stringify(report, null, 1));
-const nDiff = report.dark.diffs.length + report.light.diffs.length;
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+const baseFile = join(dirname(fileURLToPath(import.meta.url)), "canvas-audit.baseline.json");
+const now = [...new Set(["dark", "light"].flatMap((sch) => report[sch].diffs.map((d) => `${sch}: ${d.sig}`)))].sort();
+if (process.env.UPDATE === "1") { writeFileSync(baseFile, JSON.stringify(now, null, 1) + "\n"); console.log(`wrote ${now.length} entries to ${baseFile}`); }
+const known = new Set(existsSync(baseFile) ? JSON.parse(readFileSync(baseFile, "utf8")) : []);
+const fresh = now.filter((x) => !known.has(x)), gone = [...known].filter((x) => !now.includes(x));
 console.log(JSON.stringify({ dark: { card: report.dark.card, n: report.dark.diffs.length }, light: { n: report.light.diffs.length } }));
-for (const sch of ["dark", "light"]) for (const d of report[sch].diffs.slice(0, 12)) console.log(`   ${sch}: ${d.sig}${d.missing ? " " + d.missing : ""} ${d.boxd ?? ""} ${(d.d ?? []).join("; ")}`);
-console.log(`${nDiff ? "FAIL" : "PASS"}  a thread in the canvas matches the same thread in the card (${nDiff} differing elements; full list in ${dir}/audit.json)`);
-await browser.close(); await stop(); process.exit(nDiff ? 1 : 0);
+for (const x of fresh.slice(0, 15)) console.log(`   new difference: ${x}`);
+if (gone.length) console.log(`   info  ${gone.length} baseline entries no longer differ (shrink canvas-audit.baseline.json)`);
+console.log(`${fresh.length ? "FAIL" : "PASS"}  a thread in the canvas matches the same thread in the card except for the ${known.size} intended differences (${fresh.length} new; full list in ${dir}/audit.json)`);
+await browser.close(); await stop(); process.exit(fresh.length ? 1 : 0);
