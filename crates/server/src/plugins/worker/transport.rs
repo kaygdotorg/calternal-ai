@@ -148,6 +148,8 @@ pub(super) async fn spawn(
             events,
             alive,
             busy,
+            #[cfg(feature = "dev-plugin-drafts")]
+            retire_after_result: None,
         })
     })
     .await

@@ -206,6 +206,8 @@ struct Worker {
     events: SyncSender<Event>,
     alive: Arc<AtomicBool>,
     busy: Arc<AtomicUsize>,
+    #[cfg(feature = "dev-plugin-drafts")]
+    retire_after_result: Option<WorkerKey>,
 }
 
 impl Worker {

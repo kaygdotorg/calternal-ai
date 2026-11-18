@@ -53,14 +53,13 @@ pub(super) async fn publish(
     })
     .await
     .map_err(reason)??;
-    let result = activate(state, base, &plugin, space, account, previous.is_none()).await;
+    let result = activate(state, base, &plugin, space, account, previous.as_deref()).await;
     if result.is_err() {
         state.workers.discard_candidate(&plugin, space);
         if let Some(path) = &plugin.worker {
             let _ = tokio::fs::remove_file(path).await;
         }
     } else if let Some(previous) = previous {
-        state.workers.discard_candidate(&previous, space);
         if let Some(path) = &previous.worker {
             let _ = tokio::fs::remove_file(path).await;
         }
@@ -74,7 +73,7 @@ async fn activate(
     plugin: &Arc<Plugin>,
     space: SpaceId,
     account: AccountId,
-    provision: bool,
+    previous: Option<&Plugin>,
 ) -> Result<(), String> {
     let batch = base
         .plugins()
@@ -101,7 +100,7 @@ async fn activate(
         .await
         .map_err(|error| error.message)?;
     manager(state, space, account).await?;
-    if provision {
+    if previous.is_none() {
         let st = state.clone();
         let plugin = plugin.clone();
         crate::blocking::spawn(move || {
@@ -122,6 +121,11 @@ async fn activate(
         })
         .await
         .map_err(reason)??;
+    }
+    if let Some(previous) = previous {
+        state
+            .workers
+            .retire_after_first_result(plugin, previous, space);
     }
     state.registry.publish(next);
     Ok(())

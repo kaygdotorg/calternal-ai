@@ -33,6 +33,26 @@ impl WorkerPool {
         }
     }
 
+    /// Defer physical teardown of a fenced draft until the replacement answers.
+    /// The machine handles stops in order and a stop would otherwise delay the
+    /// first invocation on the new container. Both permits stay reserved, and
+    /// ordinary idle eviction applies if the replacement is never invoked.
+    #[cfg(feature = "dev-plugin-drafts")]
+    pub(in crate::plugins) fn retire_after_first_result(
+        &self,
+        replacement: &Plugin,
+        previous: &Plugin,
+        space: SpaceId,
+    ) {
+        let key = (replacement.manifest.id.clone(), space, replacement.revision);
+        if let Ok(mut workers) = self.workers.lock()
+            && let Some(worker) = workers.get_mut(&key)
+        {
+            worker.retire_after_result =
+                Some((previous.manifest.id.clone(), space, previous.revision));
+        }
+    }
+
     async fn dispatch(
         &self,
         plugin: &Arc<Plugin>,
@@ -226,12 +246,14 @@ impl WorkerPool {
             let Some(request) = pending.take() else {
                 return Outcome::Complete(serde_json::Value::Null);
             };
+            #[cfg(feature = "dev-plugin-drafts")]
+            let mut retire = None;
             let sent = {
-                let workers = match self.workers.lock() {
+                let mut workers = match self.workers.lock() {
                     Ok(w) => w,
                     Err(_) => return Outcome::Failed(Error::internal("worker pool poisoned")),
                 };
-                let Some(worker) = workers.get(&key) else {
+                let Some(worker) = workers.get_mut(&key) else {
                     pending = Some(request);
                     continue;
                 };
@@ -251,7 +273,13 @@ impl WorkerPool {
                     cancel.bind(&worker.events);
                 }
                 match worker.events.try_send(Event::Invoke(request)) {
-                    Ok(()) => None,
+                    Ok(()) => {
+                        #[cfg(feature = "dev-plugin-drafts")]
+                        {
+                            retire = worker.retire_after_result.take();
+                        }
+                        None
+                    }
                     Err(mpsc::TrySendError::Full(_)) => {
                         worker.busy.fetch_sub(1, Ordering::AcqRel);
                         self.in_flight.fetch_sub(1, Ordering::AcqRel);
@@ -276,9 +304,16 @@ impl WorkerPool {
             match sent {
                 None => {
                     drop(admission);
-                    return answer.await.unwrap_or_else(|_| {
+                    let outcome = answer.await.unwrap_or_else(|_| {
                         Outcome::Failed(Error::unavailable("extension worker stopped"))
                     });
+                    #[cfg(feature = "dev-plugin-drafts")]
+                    if let Some(key) = retire
+                        && let Ok(mut workers) = self.workers.lock()
+                    {
+                        workers.remove(&key);
+                    }
+                    return outcome;
                 }
                 Some(p) => pending = Some(p),
             }
