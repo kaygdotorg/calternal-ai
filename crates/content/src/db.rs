@@ -83,13 +83,16 @@ const SPACE_INITIAL: &[&str] = &[
     crate::trash::SCHEMA,
 ];
 const COLLECTION_MEMBERS: &str = include_str!("collection_members.sql");
-const SPACE_CHANGES: &[&str] = &[
-    THREAD_SNOOZE,
-    COLLECTION_MEMBERS,
-    crate::rooms::SCHEMA,
-    crate::trash_job::SCHEMA,
-    crate::rename_job::SCHEMA,
-    crate::thread_append::revision::SCHEMA,
+const SPACE_CHANGES: &[(i64, &str)] = &[
+    (4, THREAD_SNOOZE),
+    (5, COLLECTION_MEMBERS),
+    (6, crate::rooms::SCHEMA),
+    (7, crate::trash_job::SCHEMA),
+    (8, crate::rename_job::SCHEMA),
+    (
+        crate::thread_append::revision::PATCH_SCHEMA_VERSION,
+        crate::thread_append::revision::SCHEMA,
+    ),
 ];
 const CONTENT_BASELINE: i64 = 3;
 const CONTENT_SCHEMA_NAME: &str = "space content.db";
@@ -107,7 +110,7 @@ pub(crate) const SPACE_SCHEMA: calternal_store::migrations::Schema<'_> =
 pub(crate) fn thread_patch_transition() -> [calternal_store::migrations::Schema<'static>; 2] {
     let patch_index = SPACE_CHANGES
         .iter()
-        .position(|step| *step == crate::thread_append::revision::SCHEMA)
+        .position(|(version, _)| *version == crate::thread_append::revision::PATCH_SCHEMA_VERSION)
         .expect("the content schema includes the thread patch step");
     [patch_index, patch_index + 1].map(|step_count| {
         calternal_store::migrations::Schema::new(
@@ -370,28 +373,32 @@ mod tests {
 
     const BASELINE: Schema<'_> = Schema::new("space content.db", 3, SPACE_INITIAL, &[]);
     const SNOOZE_RELEASE: Schema<'_> =
-        Schema::new("space content.db", 3, SPACE_INITIAL, &[THREAD_SNOOZE]);
+        Schema::new("space content.db", 3, SPACE_INITIAL, &[(4, THREAD_SNOOZE)]);
     const SHARING_RELEASE: Schema<'_> = Schema::new(
         "space content.db",
         3,
         SPACE_INITIAL,
-        &[THREAD_SNOOZE, COLLECTION_MEMBERS],
+        &[(4, THREAD_SNOOZE), (5, COLLECTION_MEMBERS)],
     );
     const ROOMS_RELEASE: Schema<'_> = Schema::new(
         "space content.db",
         3,
         SPACE_INITIAL,
-        &[THREAD_SNOOZE, COLLECTION_MEMBERS, crate::rooms::SCHEMA],
+        &[
+            (4, THREAD_SNOOZE),
+            (5, COLLECTION_MEMBERS),
+            (6, crate::rooms::SCHEMA),
+        ],
     );
     const EMPTY_TRASH_RELEASE: Schema<'_> = Schema::new(
         "space content.db",
         3,
         SPACE_INITIAL,
         &[
-            THREAD_SNOOZE,
-            COLLECTION_MEMBERS,
-            crate::rooms::SCHEMA,
-            crate::trash_job::SCHEMA,
+            (4, THREAD_SNOOZE),
+            (5, COLLECTION_MEMBERS),
+            (6, crate::rooms::SCHEMA),
+            (7, crate::trash_job::SCHEMA),
         ],
     );
 
@@ -400,11 +407,11 @@ mod tests {
         CONTENT_BASELINE,
         SPACE_INITIAL,
         &[
-            THREAD_SNOOZE,
-            COLLECTION_MEMBERS,
-            crate::rooms::SCHEMA,
-            crate::trash_job::SCHEMA,
-            crate::rename_job::SCHEMA,
+            (4, THREAD_SNOOZE),
+            (5, COLLECTION_MEMBERS),
+            (6, crate::rooms::SCHEMA),
+            (7, crate::trash_job::SCHEMA),
+            (8, crate::rename_job::SCHEMA),
         ],
     );
 

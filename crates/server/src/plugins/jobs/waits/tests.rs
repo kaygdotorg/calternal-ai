@@ -52,14 +52,14 @@ fn jobs_v2_migrates_with_existing_rows_and_a_failed_batch_rolls_back() {
         params![row, AccountId::new().to_string()],
     ).unwrap();
     let bad_batch = format!("{SCHEMA} INSERT INTO absent_table VALUES (1);");
-    let changes = [bad_batch.as_str()];
+    let changes = [(3, bad_batch.as_str())];
     let invalid = calternal_store::migrations::Schema::new("jobs.db", 2, &batches, &changes);
     assert!(calternal_store::migrations::migrate(&conn, invalid).is_err());
     assert_eq!(
         calternal_store::migrations::inspect(&conn, baseline).unwrap(),
         2
     );
-    let waits = calternal_store::migrations::Schema::new("jobs.db", 2, &batches, &[SCHEMA]);
+    let waits = calternal_store::migrations::Schema::new("jobs.db", 2, &batches, &[(3, SCHEMA)]);
     calternal_store::migrations::migrate(&conn, waits).unwrap();
     assert_eq!(
         calternal_store::migrations::inspect(&conn, waits).unwrap(),

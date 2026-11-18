@@ -39,4 +39,4 @@ pub struct Roots {
 #[cfg(any(target_os = "linux", target_os = "android", target_vendor = "apple"))]
 mod guard;
 #[cfg(any(target_os = "linux", target_os = "android", target_vendor = "apple"))]
-pub use guard::{RootLocks, prepare, prepare_with_wait, re_pair};
+pub use guard::{RootLocks, check_pairing, prepare, prepare_with_wait, re_pair};

@@ -248,6 +248,7 @@ pub struct Jobs {
     pub(super) live: LiveMap,
     pub(super) subscribers: Arc<AtomicUsize>,
     permits: Arc<Semaphore>,
+    pub(crate) push: std::sync::OnceLock<crate::web_push::Service>,
     thread_events: Option<Arc<crate::threads::turn_events::Publisher>>,
 }
 
@@ -348,6 +349,7 @@ impl Jobs {
             subscribers: Arc::new(AtomicUsize::new(0)),
             permits: Arc::new(Semaphore::new(super::runner::MAX_RUNNING)),
             thread_events: None,
+            push: std::sync::OnceLock::new(),
         }
     }
 
@@ -629,7 +631,7 @@ pub(crate) fn upgrade_schema() -> calternal_store::migrations::Schema<'static> {
         "jobs.db",
         2,
         BATCHES.get_or_init(|| [SCHEMA, crate::threads::turn_events::schema()]),
-        &[waits::SCHEMA, THREAD_SEND_RECEIPTS],
+        &[(3, waits::SCHEMA), (THREAD_SEND_RECEIPT_VERSION, THREAD_SEND_RECEIPTS)],
     )
 }
 
@@ -672,7 +674,7 @@ mod admission_receipt_tests {
         std::fs::create_dir_all(&space_dir).unwrap();
         let path = space_dir.join("jobs.db");
         let initial = [SCHEMA, crate::threads::turn_events::schema()];
-        let previous = Schema::new("jobs.db", 2, &initial, &[waits::SCHEMA]);
+        let previous = Schema::new("jobs.db", 2, &initial, &[(3, waits::SCHEMA)]);
         let conn = Connection::open(&path).unwrap();
         migrate_release(&conn, previous, false).unwrap();
         conn.execute(

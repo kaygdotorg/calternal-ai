@@ -97,6 +97,8 @@ pub struct AppState<D: Directory = StoredDirectory> {
 /// Reference-counted host state; cloning never clones the directory or its grants.
 pub type Shared<D = StoredDirectory> = Arc<AppState<D>>;
 
+pub use crate::web_push::configure as configure_web_push;
+
 /// Start the background search worker against the live plugin catalog.
 /// The worker only holds a weak state reference and exits after the state drops.
 /// Startup spawns one thread and performs no content I/O.

@@ -15837,6 +15837,224 @@
     }
   },
   {
+    "risk": "reversible",
+    "id": "push.subscribe",
+    "description": "Register this browser for thread notifications",
+    "mutates": true,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Register or renew the signed-in installation's browser subscription.",
+      "properties": {
+        "auth": {
+          "description": "Unpadded base64url-encoded 16-byte browser authentication secret.",
+          "type": "string"
+        },
+        "endpoint": {
+          "description": "Browser PushSubscription endpoint, restricted to supported HTTPS providers.",
+          "type": "string"
+        },
+        "p256dh": {
+          "description": "Unpadded base64url-encoded uncompressed P-256 public key.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "auth",
+        "endpoint",
+        "p256dh"
+      ],
+      "title": "PushSubscribeInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "definitions": {
+        "PushDevice": {
+          "description": "One active subscription, with no endpoint or browser key material.",
+          "properties": {
+            "current": {
+              "description": "Whether the current credential belongs to this installation.",
+              "type": "boolean"
+            },
+            "device_id": {
+              "description": "Revocable installation UUID.",
+              "type": "string"
+            },
+            "expires_at_ms": {
+              "description": "Server-enforced expiry in Unix milliseconds.",
+              "format": "int64",
+              "type": "integer"
+            },
+            "name": {
+              "description": "Display name from the installation directory.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "current",
+            "device_id",
+            "expires_at_ms",
+            "name"
+          ],
+          "type": "object"
+        }
+      },
+      "description": "Subscription inventory and the public browser application server key.",
+      "properties": {
+        "application_server_key": {
+          "description": "Unpadded base64url VAPID public key for PushManager.subscribe.",
+          "type": "string"
+        },
+        "devices": {
+          "description": "The signed-in account's live subscriptions.",
+          "items": {
+            "$ref": "#/definitions/PushDevice"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "application_server_key",
+        "devices"
+      ],
+      "title": "PushDevices",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "reversible",
+    "id": "push.unsubscribe",
+    "description": "Remove one of your push subscriptions",
+    "mutates": true,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Remove an installation belonging to the signed-in account.",
+      "properties": {
+        "device_id": {
+          "description": "Installation UUID returned by push.devices.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "device_id"
+      ],
+      "title": "PushUnsubscribeInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "description": "Outcome of an idempotent subscription removal.",
+      "properties": {
+        "removed": {
+          "description": "True when a stored subscription was removed.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "removed"
+      ],
+      "title": "PushRemoved",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "read",
+    "id": "push.devices",
+    "description": "List your registered push devices and the public VAPID key",
+    "mutates": false,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Account-private list input. No caller-supplied account is accepted.",
+      "title": "AccountInputList",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "definitions": {
+        "PushDevice": {
+          "description": "One active subscription, with no endpoint or browser key material.",
+          "properties": {
+            "current": {
+              "description": "Whether the current credential belongs to this installation.",
+              "type": "boolean"
+            },
+            "device_id": {
+              "description": "Revocable installation UUID.",
+              "type": "string"
+            },
+            "expires_at_ms": {
+              "description": "Server-enforced expiry in Unix milliseconds.",
+              "format": "int64",
+              "type": "integer"
+            },
+            "name": {
+              "description": "Display name from the installation directory.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "current",
+            "device_id",
+            "expires_at_ms",
+            "name"
+          ],
+          "type": "object"
+        }
+      },
+      "description": "Subscription inventory and the public browser application server key.",
+      "properties": {
+        "application_server_key": {
+          "description": "Unpadded base64url VAPID public key for PushManager.subscribe.",
+          "type": "string"
+        },
+        "devices": {
+          "description": "The signed-in account's live subscriptions.",
+          "items": {
+            "$ref": "#/definitions/PushDevice"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "application_server_key",
+        "devices"
+      ],
+      "title": "PushDevices",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "external",
+    "id": "push.test",
+    "description": "Queue a test push to this browser",
+    "mutates": true,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Account-private list input. No caller-supplied account is accepted.",
+      "title": "AccountInputList",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "description": "Best-effort admission of a test notification for the current installation.",
+      "properties": {
+        "queued": {
+          "description": "True when the background worker accepted the test.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "queued"
+      ],
+      "title": "PushQueued",
+      "type": "object"
+    }
+  },
+  {
     "risk": "read",
     "id": "plugins.diagnostics",
     "description": "Inspect an installed plugin's readiness and recent worker failures",

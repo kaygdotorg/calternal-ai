@@ -12,20 +12,32 @@ pub struct Schema<'a> {
     name: &'a str,
     baseline: i64,
     initial: &'a [&'a str],
-    changes: &'a [&'a str],
+    changes: &'a [(i64, &'a str)],
 }
 
 impl<'a> Schema<'a> {
     /// Declare the schema at its first supported version. Opening an unversioned
-    /// database applies every initial batch. Each subsequent batch adds one version.
-    /// Use SQL without transaction controls. Cost is constant and allocation-free.
+    /// database applies every initial batch. Subsequent entries pair an explicit
+    /// target version with its SQL. Reject duplicates and gaps, starting at
+    /// baseline plus one. Use SQL without transaction controls. Validation is
+    /// allocation-free and runs at compile time for a constant descriptor.
     pub const fn new(
         name: &'a str,
         baseline: i64,
         initial: &'a [&'a str],
-        changes: &'a [&'a str],
+        changes: &'a [(i64, &'a str)],
     ) -> Self {
         assert!(baseline > 0, "schema versions start at one");
+        let mut index = 0;
+        let mut expected = baseline;
+        while index < changes.len() {
+            expected = expected.checked_add(1).expect("migration version overflow");
+            assert!(
+                changes[index].0 == expected,
+                "migration versions must be consecutive"
+            );
+            index += 1;
+        }
         Self {
             name,
             baseline,
@@ -36,7 +48,10 @@ impl<'a> Schema<'a> {
 
     /// Version written after all declared batches. No I/O.
     pub const fn version(self) -> i64 {
-        self.baseline + self.changes.len() as i64
+        match self.changes.last() {
+            Some(&(version, _)) => version,
+            None => self.baseline,
+        }
     }
 }
 
@@ -97,9 +112,9 @@ fn apply(conn: &Connection, schema: Schema<'_>, additive: bool) -> Result<()> {
         have = schema.baseline;
         tx.pragma_update(None, "user_version", have)?;
     }
-    for batch in &schema.changes[(have - schema.baseline) as usize..] {
+    for &(version, batch) in &schema.changes[(have - schema.baseline) as usize..] {
         tx.execute_batch(batch)?;
-        have += 1;
+        have = version;
         tx.pragma_update(None, "user_version", have)?;
     }
     if additive && previous > 0 {
