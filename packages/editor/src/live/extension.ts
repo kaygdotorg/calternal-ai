@@ -13,6 +13,7 @@ import type { Awareness } from 'y-protocols/awareness'
 import * as Y from 'yjs'
 import { origin } from '../block/origin'
 import type { NoteSession } from '../note'
+import { LocalIntent } from './intent'
 
 /** How another person is drawn: a display name and a colour (from their account, resolved by the browser). */
 export interface Person { name: string; color: string; colorLight: string }
@@ -119,13 +120,16 @@ const theme = EditorView.baseTheme({
  * The extension for a live note: pass it as the block editor's `extensions` and create the editor with `session.text.toString()`. `resolve` turns the account the room stamped on a cursor into a name and colour;
  * `awareness` is `session.awareness` (null shows no cursors). The returned `undo` is this editor's own undo manager.
  */
-export function liveExtension(session: NoteSession, resolve: (account: string) => Person): { extension: Extension; undo: Y.UndoManager } {
+export function liveExtension(session: NoteSession, resolve: (account: string) => Person): { extension: Extension; undo: Y.UndoManager; intent: LocalIntent } {
   const ytext = session.text
   const undo = new Y.UndoManager(ytext, { trackedOrigins: new Set() })
+  // What this editor itself wrote (the items this document's own client inserted since the room last confirmed): the only text a rescue may take.
+  const intent = new LocalIntent(ytext)
   const keys = undoKeys(session)
   const presence = session.awareness ? new Named(session.awareness, resolve) : null
   return {
     undo,
+    intent,
     extension: [
       historyInput(keys),
       Prec.highest(keymap.of(keys)),

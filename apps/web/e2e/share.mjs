@@ -91,7 +91,7 @@ try {
     await p.getByRole("button", { name: "Actions for Reading list" }).click(); await p.getByRole("menuitem", { name: "Select" }).click();
     await p.locator("[data-select-id]", { hasText: "Rich note" }).click();
     await p.getByRole("toolbar", { name: "Selected notes" }).getByRole("button", { name: "Move to Trash" }).click();
-    await p.getByText("Moved 2 notes to the Trash").waitFor({ timeout: 5000 });
+    await p.getByText("Moved 2 notes to the Trash").first().waitFor({ timeout: 5000 });
     ok(await p.locator("[data-select-id]", { hasText: "Rich note" }).count() === 0 && await p.locator("[data-select-id]", { hasText: "Reading list" }).count() === 0, "bulk: the picked notes leave the list together, with one toast");
     await ctx.close(); }
   // Two fingers swiped down over the list start selecting and pick the rows they cross (phone).

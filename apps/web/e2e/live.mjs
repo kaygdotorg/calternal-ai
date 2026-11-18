@@ -90,6 +90,20 @@ try {
     await p.reload(); await p.locator(".cm-content").waitFor({ timeout: 15000 }); await p.waitForTimeout(1000);
     ok(await p.evaluate(() => (JSON.parse(localStorage.getItem("cal.fixture.rescued") ?? "[]")).length) === 1, "owed: the rescued note exists once, however often it was retried");
     await ctx.close(); }
+  // Rescue holds only what this person wrote: an unconfirmed local change, then a peer's later change, then access ends.
+  { const { page: p, ctx } = await open(browser, "desktop", "light", "/notes/n-2?firstrun=0&live=1&test=1");
+    await p.evaluate(() => localStorage.removeItem("cal.fixture.rescued"));
+    await p.locator(".cm-content").waitFor({ timeout: 15000 });
+    await p.getByText("Saved", { exact: true }).waitFor({ timeout: 8000 });
+    await p.evaluate(() => window.__net.cut()); // the local change stays unconfirmed
+    await p.locator(".cm-content").click(); await p.keyboard.press("Control+End"); await p.keyboard.type("\n\nMine, unconfirmed.");
+    await p.evaluate(() => window.__net.restore()); await p.evaluate(() => window.__peer.type("\n\nPeer wrote this meanwhile."));
+    await p.getByText("Peer wrote this meanwhile.").waitFor({ timeout: 8000 });
+    await p.evaluate(() => window.__net.revoke());
+    await p.getByText(/Your edits were kept as/).waitFor({ timeout: 8000 });
+    const blocks = await p.evaluate(() => JSON.parse(localStorage.getItem("cal.fixture.rescued") ?? "[]")[0]?.blocks ?? []);
+    ok(blocks.join(" ").includes("Mine, unconfirmed.") && !blocks.join(" ").includes("Peer wrote this"), "rescue: only this person's own words are kept, never a peer's later change", JSON.stringify(blocks));
+    await ctx.close(); }
 } catch (e) { console.log("FAIL  " + e.message); bad++; }
 await browser.close(); await stop();
 process.exit(bad ? 1 : 0);

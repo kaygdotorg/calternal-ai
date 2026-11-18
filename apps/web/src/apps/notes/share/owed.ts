@@ -39,7 +39,14 @@ export const owedLine = (title: string): string => `You can no longer open “${
  * `requestId` is stable for the same text, so a second attempt is the same request.
  */
 export async function rescueEdits(noteId: string, title: string, base: string, local: string, requestId: string): Promise<string> {
-  const blocks = changedBlocks(base, local);
+  return rescueBlocks(noteId, title, changedBlocks(base, local), requestId);
+}
+
+/**
+ * The same, for blocks already known to be this person's own (a live note's `LocalIntent`, which never includes what other people wrote): the room case must not diff the shared text, since that would hand other people's
+ * edits to the rescue.
+ */
+export async function rescueBlocks(noteId: string, title: string, blocks: string[], requestId: string): Promise<string> {
   if (!blocks.length) return `You can no longer open “${title}”. You had changed nothing in it.`;
   const rec: Owed = { requestId, noteId, title, blocks, at: Date.now() };
   try { await owedStore().put(rec); } catch { /* no durable store: still try now */ }

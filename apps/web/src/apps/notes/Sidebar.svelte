@@ -85,7 +85,7 @@
 </script>
 
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions: one delegated listener for every row (the rows are the interactive elements) -->
-<nav aria-label="Notes" onclickcapture={pickClick} onkeydown={selectKey} use:twoFinger={{ kind: "note" }} use:pressRows>
+<nav aria-label="Notes" onclickcapture={pickClick} onkeydown={selectKey} use:pressRows use:twoFinger={{ kind: "note" }}>
   {#if notes.space}<p class="section-heading first">{notes.space.name}</p>{/if}
   {#if notes.tags.length}
     <div class="tags" role="group" aria-label="Filter by tag">
