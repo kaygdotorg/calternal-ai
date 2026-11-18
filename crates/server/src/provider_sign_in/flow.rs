@@ -53,36 +53,38 @@ pub(super) async fn run<D: Directory>(
     let login_scope = target.login_scope;
     let shared = target.shared;
     let lease = match current(&state, &machines, account, &session, &target).await {
-        Ok(()) => blocking(move || {
-            if let Some(shared) = shared {
-                return svc.request_shared(space, account, Uuid::new_v4(), shared, true);
-            }
-            match crate::plugins::package_store::provider_runtime::read_pin(&appdata, &provider)
-                .map_err(|_| failed())?
-            {
-                Some((pin, legacy)) => {
-                    let mut sandbox = crate::plugins::package_store::provider_runtime::sandbox(
-                        &pin,
-                        provider,
-                        login_scope,
-                        false,
-                    );
-                    sandbox.legacy_profile = legacy;
-                    svc.request_harness(
-                        space,
-                        account,
-                        Uuid::new_v4(),
-                        Some(machine),
-                        pin.image,
-                        sandbox,
-                        true,
-                        false,
-                    )
+        Ok(()) => {
+            blocking(move || {
+                if let Some(shared) = shared {
+                    return svc.request_shared(space, account, Uuid::new_v4(), shared, true);
                 }
-                None => svc.request_sign_in(space, account, machine),
-            }
-        })
-        .await,
+                match crate::plugins::package_store::provider_runtime::read_pin(&appdata, &provider)
+                    .map_err(|_| failed())?
+                {
+                    Some((pin, legacy)) => {
+                        let mut sandbox = crate::plugins::package_store::provider_runtime::sandbox(
+                            &pin,
+                            provider,
+                            login_scope,
+                            false,
+                        );
+                        sandbox.legacy_profile = legacy;
+                        svc.request_harness(
+                            space,
+                            account,
+                            Uuid::new_v4(),
+                            Some(machine),
+                            pin.image,
+                            sandbox,
+                            true,
+                            false,
+                        )
+                    }
+                    None => svc.request_sign_in(space, account, machine),
+                }
+            })
+            .await
+        }
         Err(error) => Err(error),
     };
     let done = match lease {

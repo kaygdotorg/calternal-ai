@@ -85,7 +85,17 @@ impl MachineService {
         stdin: String,
         interactive: bool,
     ) -> Result<Uuid, Error> {
-        self.queued_exec(account, lease, argv, env, stdin, false, true, interactive, false)
+        self.queued_exec(
+            account,
+            lease,
+            argv,
+            env,
+            stdin,
+            false,
+            true,
+            interactive,
+            false,
+        )
     }
 
     #[allow(clippy::too_many_arguments)]

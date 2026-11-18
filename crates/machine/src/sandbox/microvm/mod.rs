@@ -199,7 +199,11 @@ impl Backend for MicrovmBackend {
         spec: &'a SandboxSpec,
     ) -> BoxFuture<'a, SandboxResult<Arc<dyn Sandbox>>> {
         if spec.shared_provider_sponsor.is_some() {
-            return Box::pin(async { Err(SandboxError("shared provider login is unavailable on this backend".into())) });
+            return Box::pin(async {
+                Err(SandboxError(
+                    "shared provider login is unavailable on this backend".into(),
+                ))
+            });
         }
         self.start_thread(spec, None)
     }

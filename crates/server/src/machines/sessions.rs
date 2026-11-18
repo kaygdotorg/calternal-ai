@@ -208,7 +208,9 @@ impl MachineService {
             session: hash,
             direct: backend == "direct",
             harness_protocol: f.protocol >= HARNESS_PROTOCOL_VERSION,
-            shared_provider: f.protocol >= calternal_machine::protocol::SHARED_PROVIDER_PROTOCOL_VERSION && backend == "podman",
+            shared_provider: f.protocol
+                >= calternal_machine::protocol::SHARED_PROVIDER_PROTOCOL_VERSION
+                && backend == "podman",
             kvm_fallback,
             thread_limit,
             outbox: VecDeque::new(),
@@ -232,7 +234,8 @@ impl MachineService {
             .collect();
         for lease in held {
             if st.leases[&lease].row.shared_sponsor.is_some()
-                && (f.protocol < calternal_machine::protocol::SHARED_PROVIDER_PROTOCOL_VERSION || backend != "podman")
+                && (f.protocol < calternal_machine::protocol::SHARED_PROVIDER_PROTOCOL_VERSION
+                    || backend != "podman")
             {
                 st.end_with_files(
                     lease,

@@ -213,7 +213,9 @@ async fn execute<D: Directory>(
         live.publish(job.runs, &json!({"type":"notice","message":message}));
         return Ok(RunEnd::Failed);
     }
-    let pin = if shared.is_some() { None } else {
+    let pin = if shared.is_some() {
+        None
+    } else {
         let st = state.clone();
         let id = provider_id.to_owned();
         blocking(move || {
