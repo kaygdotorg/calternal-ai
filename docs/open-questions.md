@@ -8,7 +8,8 @@ move to the decision record they belong to and leave this list. Terms: see
 
 | # | Question | Recommendation | Area |
 | --- | --- | --- | --- |
-| 25 | Composer chips: what each chip shows at each composer width (icon only, icon and text), and which chips exist | In the grill now | Composer |
+| 25 | Composer chips, one point left: is a chip always shown, or hidden while it is at its default value? (kayg's answer was cut off) | Always show | Composer |
+| 45 | Editing a message that was already sent: what happens to the rest of the thread (replaced, forked, kept as a branch) | To grill; options being written up | Threads |
 | 24 | Materials: how far the middle card separates from the sidebars, the readability floor for text over a wallpaper, and how much photo shows in light mode. Rebuilt from the calternal-ui plugin's defaults with a five-step Clear-to-Tinted slider | Review on the preview | Appearance |
 | 30 | Should the composer double as the command palette, or stay separate from Cmd-K? | Stay separate | Composer |
 | 31 | Thread rows: hover hides the time and state mark for the three actions; swipe right shows only Copy link; touch has no long-press menu, "More" sits in the swipe tray | Keep all three; try on a phone | Threads |
@@ -43,6 +44,7 @@ move to the decision record they belong to and leave this list. Terms: see
 ## Recently decided (2026-11-17), now in the decision records
 
 - The composer and palette: see `composer.md`.
+- Composer chips (2026-11-18): Attach, Model, Permission, Runs on; the reasoning level lives in the model chip, which reads provider icon, model name, level; Runs on shows the machine name and a shield when sandboxed; no dots inside a chip. Chips drop to icon-only by the composer's width in the order Runs on, Permission, Model; on a phone all are icon-only except a non-default choice. Attachments sit in a sticky row above the text. Everywhere, rows of labelled controls go from icon and text to icon-only when width is short, through one shared primitive.
 - The composer's 8 ms budget applies to main-thread work per key, with zero missed frames required (2026-11-18).
 - An approval for an action that cannot be undone, or that widens access, is always single-use (2026-11-18).
 - Deleting an account that is a shared space's only Owner is refused until ownership is transferred (2026-11-18).
