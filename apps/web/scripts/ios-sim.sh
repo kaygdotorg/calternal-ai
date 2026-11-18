@@ -1,6 +1,7 @@
 #!/bin/bash
 # Drives a lane's own iPhone Simulator on the Mac Studio (kayg@std) in Safari, from any machine that can ssh there: create it, open an address, tap, type, swipe, take screenshots, delete it.
 # It wraps `~/Developer/calternal-sim/ui.sh` (XCUITest runner on std: testOpenURL, testTap, testSwipe, testTopCheck), which holds the Studio's lock, so lanes never touch each other's runs. README.md in this folder.
+# CAL_SIM_DEVICE picks the device type for `create` (default iPhone-18-Pro, 393 pt; iPhone-18-Pro-Max is 440 pt, iPhone-17e and others exist: `xcrun simctl list devicetypes`).
 # Usage: ios-sim.sh <command> [args]   (state lives in $CAL_SIM_STATE, default ~/.cache/calternal-ios-sim)
 set -euo pipefail
 STD="${CAL_STD:-kayg@std}"
@@ -16,7 +17,7 @@ cmd="${1:-help}"; shift || true
 case "$cmd" in
   create)   # create + boot a simulator of its own (iPhone 18 Pro, iOS 27.0); never reuses another lane's
     name="${1:-$LANE-$(date +%m%d%H%M)}"
-    U=$(ssh "$STD" "xcrun simctl create '$name' com.apple.CoreSimulator.SimDeviceType.iPhone-18-Pro com.apple.CoreSimulator.SimRuntime.iOS-27-0")
+    U=$(ssh "$STD" "xcrun simctl create '$name' com.apple.CoreSimulator.SimDeviceType.${CAL_SIM_DEVICE:-iPhone-18-Pro} com.apple.CoreSimulator.SimRuntime.iOS-27-0")
     ssh "$STD" "xcrun simctl boot $U; xcrun simctl bootstatus $U >/dev/null"
     echo "$U" > "$UDIDFILE"; echo "created $name ($U)" ;;
   appearance) ssh "$STD" "xcrun simctl ui $(udid) appearance ${1:?dark or light}" ;;

@@ -4,7 +4,7 @@
   // changes by replacing, so Back does not collect every step); Enter or a tap opens the message and closes the search; Esc closes and goes back to where you were.
   // Nothing animates: the jump to a message is a plain scroll.
   import { untrack } from "svelte";
-  import { Icon, InlineEditor, Sheet } from "@calternal/ui";
+  import { Icon, InlineEditor, Sheet, Spinner } from "@calternal/ui";
   import { navigate, route } from "../../lib/route.svelte";
   import { shell } from "../../shell/shell.svelte";
   import { client } from "./store.svelte";
@@ -13,13 +13,17 @@
   let text = $state("");
   let sel = $state(0);
   let hits = $state<MessageHit[]>([]);
+  // A cold search can take a while: the previous results stay (and a quiet mark shows) until the new ones arrive, so the list never flashes "No message matches" for a search still running; the index can also be catching up (`partial`).
+  let pending = $state(false);
+  let partial = $state(false);
+  let asked = $state("");
   let list = $state<HTMLElement>();
   let from = "";
   const available = messageSearchAvailable();
   const ago = (at: number | undefined) => at === undefined ? "" : new Date(at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
   $effect(() => {
     if (!messageSearch.open) return;
-    text = untrack(takeMessageSearchText); sel = 0; hits = [];
+    text = untrack(takeMessageSearchText); sel = 0; hits = []; partial = false; pending = false; asked = "";
     // (read untracked: following a result changes the address, and this effect must not run again and clear the typed text)
     untrack(() => { const qs = route.query.toString(); from = route.path + (qs ? `?${qs}` : ""); });
     const f = () => document.querySelector<HTMLElement>(".msg-search-input");
@@ -29,9 +33,13 @@
   let seq = 0;
   $effect(() => {
     const q = text.trim();
-    if (!messageSearch.open || !q || !available) { hits = []; return; }
+    if (!messageSearch.open || !q || !available) { hits = []; partial = false; pending = false; asked = ""; return; }
     const mine = ++seq;
-    void client.searchMessages!(q, 100).then((r) => { if (mine === seq) { hits = r; sel = 0; } });
+    pending = true;
+    void client.searchMessages!(q, 100)
+      .then((r) => { if (mine === seq) { hits = r.hits; partial = r.partial; asked = q; sel = 0; } })
+      .catch(() => { /* the previous results stay; the next keystroke asks again */ })
+      .finally(() => { if (mine === seq) pending = false; });
   });
   const target = (h: MessageHit) => `/threads/${h.threadId}${h.messageId ? `?m=${encodeURIComponent(h.messageId)}` : ""}`;
   function follow() { const h = hits[sel]; if (h) navigate(target(h), true); }
@@ -56,8 +64,11 @@
     </div>
     {#if !available}
       <p class="none" role="status">Searching messages is not available on this server yet.</p>
-    {:else if text.trim() && hits.length === 0}
+    {:else if text.trim() && hits.length === 0 && !pending && asked === text.trim()}
       <p class="none" role="status">No message matches.</p>
+    {/if}
+    {#if available && (pending || partial)}
+      <p class="none quiet" role="status" aria-live="polite">{#if pending}<Spinner />{/if}<span>{partial ? "Still indexing: results may be incomplete." : "Searching…"}</span></p>
     {/if}
     <ul bind:this={list} role="listbox" aria-label="Matching messages">
       {#each hits as h, i (h.threadId + (h.messageId ?? i))}
@@ -74,6 +85,7 @@
   .in { display: grid; gap: var(--s-3); padding: var(--s-5); }
   .field { display: flex; align-items: center; gap: var(--s-4); min-height: var(--pill-h); padding: 0 var(--s-6); border-radius: var(--r-pill); background: rgb(var(--ink-rgb) / 0.08); color: var(--ink-3); }
   :global(.msg-search-input) { position: relative; width: 100%; height: var(--pill-h); }
+  .quiet { display: flex; align-items: center; gap: var(--s-3); }
   .none { padding: 0 var(--s-4); font-size: var(--text-label); color: var(--ink-3); }
   /* On a phone the keyboard covers the lower half: the panel is anchored to the top (a bottom sheet would sit behind the keyboard) and the list fits above it. */
   .phone ul { max-height: 36dvh; }
