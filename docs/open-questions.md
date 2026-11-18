@@ -2,7 +2,7 @@
 
 Decisions waiting on kayg, most blocking first. Answer here or in chat; answered items
 move to the decision record they belong to and leave this list. Terms: see
-[glossary](glossary.md). Updated 2026-11-19 06:20 IST.
+[glossary](glossary.md). Updated 2026-11-19 09:40 IST.
 
 ## Waiting now
 
@@ -36,7 +36,8 @@ Decided 2026-11-18: a person never signs in twice and no API key is used. The ti
 - The plugin-worker sandbox probe test times out when the whole workspace suite runs in parallel on a loaded machine (twice so far) and passes alone; make the container tests serial or give the probe a load-aware wait.
 - Production runs sandboxes in containers; the per-person microVM backend is merged and opt-in, and needs the operator network set-up on the production VM before it is switched on.
 
-- Codex reached its usage limit on 2026-11-19 (resets 2026-11-24). Backend lanes fall back to Claude per the standing rule: upgrades and plugins restarted; performance, search and microVM follow-ups parked until the first deploy is out.
+- Codex is available again (kayg, 2026-11-19): five backend lanes run on it (performance, search and Notes choices, upgrades follow-ups, threads backend, fonts backend); the plugins lane finishes its current piece on Claude.
+- Production (calternal.cloud) was installed fresh on 2026-11-19 from dev c880862, the first schema baseline; it runs sandboxes in containers. kayg has not signed up yet.
 - Parked performance work: the cost of the smaller security-log compaction threshold (warm start 328 to 120 ms), the perf VM's own fsync tail against the 40 ms save budget at 100,000 notes, a health reason for a receipt pinned past retention.
 - Parked search work: account for the message index being 168 MB per million against 117 in the probe.
 
