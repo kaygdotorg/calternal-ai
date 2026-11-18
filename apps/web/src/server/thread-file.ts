@@ -32,6 +32,8 @@ export interface WireMetadata {
   archived?: boolean;
   /** True when it was deleted (not shown anywhere). */
   deleted?: boolean;
+  /** The shared manual Inbox deadline in Unix milliseconds. */
+  snoozed_until_ms?: number;
   /** The thread this one was spawned from, for the child rows. */
   parent_thread?: string;
   /** What spawned it (a person or an agent), for the row's icon. */
@@ -112,6 +114,7 @@ export function summaryOf(id: string, spaceId: string, md: WireMetadata, turn: s
     // The server picks the machine itself (no operation names it): say so rather than show a blank.
     runsOn: known.runsOn ?? { machine: "Automatic", mode: "sandboxed" },
     messageCount: md.message_count ?? 0,
+    ...(md.snoozed_until_ms !== undefined ? { snoozedUntil: md.snoozed_until_ms } : {}),
     ...noticeOf(turn, reason),
   };
 }

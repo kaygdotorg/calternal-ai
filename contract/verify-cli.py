@@ -60,12 +60,16 @@ def smoke(data_dir, spawn):
             assert result.returncode == 0, 'CLI failed (credentials omitted)'
         return payload
 
-    def account_cli(*command):
+    def account_cli(*command, connection_after=None):
         env = dict(os.environ)
         env.pop('CALTERNAL_TOKEN', None)
         env.pop('CALTERNAL_TOKEN_FILE', None)
-        result = subprocess.run([str(ROOT/'target/debug/calternal'), '--json', *command,
-            '--base-url', info['base_url'], '--token-file', str(data_dir/'appdata'/'dev-tokens'/'owner.token')],
+        connection = ['--base-url', info['base_url'],
+            '--token-file', str(data_dir/'appdata'/'dev-tokens'/'owner.token')]
+        if connection_after is None:
+            connection_after = len(command)
+        result = subprocess.run([str(ROOT/'target/debug/calternal'), '--json',
+            *command[:connection_after], *connection, *command[connection_after:]],
             capture_output=True, text=True, env=env, timeout=20)
         payload = json.loads(result.stdout)
         assert result.returncode == 0, f'account CLI failed: {payload.get("error", {})}'
@@ -102,6 +106,14 @@ def smoke(data_dir, spawn):
         assert owner['id'] != guest['id']
         shared = next(space['id'] for space in guest['spaces'] if space['role'] == 'reader')
         private = next(space['id'] for space in owner['spaces'] if space['id'] != shared)
+        thread = account_cli('threads', 'create', '--space-id', private, connection_after=1)['thread']
+        thread_id = thread['id']
+        until = int(time.time() * 1000) + 60000
+        assert account_cli('threads', 'snooze', thread_id, '--until-ms', str(until), connection_after=1) == {
+            'id': thread_id, 'snoozed_until_ms': until}
+        assert account_cli('threads', 'get', thread_id, connection_after=1)['thread']['snoozed_until_ms'] == until
+        assert account_cli('threads', 'snooze', thread_id, '--clear', connection_after=1)['snoozed_until_ms'] is None
+
         operation = ['--request-id', f'cli-smoke-create-{run_id}', 'notes', 'create', '--space', private, '--title', 'CLI conformance fixture', '--markdown', 'Initial Markdown\n']
         first = watched_create(private, operation)
         assert cl(*operation)['data']['note'] == first

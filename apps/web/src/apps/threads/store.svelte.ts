@@ -91,7 +91,7 @@ class ThreadsStore {
 export const store = new ThreadsStore();
 
 /** Starts an empty thread (palette "New thread"), refreshes the list so the sidebar has it, and returns it; the caller opens it. */
-export async function startThread(title = "New thread"): Promise<ThreadSummary> {
+export async function startThread(title?: string): Promise<ThreadSummary> {
   const t = await client.createThread(title);
   await store.refresh();
   return t;

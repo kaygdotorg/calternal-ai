@@ -74,7 +74,7 @@ export interface ThreadsClient extends ChoicesClient, RequestsClient, PanelsClie
   /** One thread as it is now, with its real message count (the list does not know it); undefined when it does not exist or cannot be seen. */
   getThread(threadId: string): Promise<ThreadSummary | undefined>;
   /** Starts an empty thread (optionally under a parent). */
-  createThread(title: string, options?: { provider?: ThreadSummary["provider"]; parentId?: string }): Promise<ThreadSummary>;
+  createThread(title?: string, options?: { provider?: ThreadSummary["provider"]; parentId?: string }): Promise<ThreadSummary>;
   /** Deletes a stopped thread: its file goes to the space's Trash. */
   deleteThread(threadId: string): Promise<void>;
   /** Subscribes to changes of the thread list (state, new threads). Returns the unsubscribe. */
