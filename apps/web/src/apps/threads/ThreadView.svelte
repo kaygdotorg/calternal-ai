@@ -30,7 +30,10 @@
   // The list's insets follow the floating bars: the header's height token and the composer's measured height (it grows as the field does).
   $effect(() => {
     if (!bottomEl) return;
-    const ro = new ResizeObserver(() => (bottomH = Math.ceil(bottomEl!.getBoundingClientRect().height)));
+    // The list reserves the composer's expanded height whatever state it is in: the rows that are folded away (`data-fold`) still count at their natural height, so focusing or leaving the composer
+    // never moves the messages. Read after layout, once per frame of the morph; the number does not change, so nothing re-renders.
+    const folded = () => { let n = 0; for (const e of bottomEl!.querySelectorAll<HTMLElement>("[data-fold] > *")) n += Math.max(0, e.scrollHeight - e.getBoundingClientRect().height); return n; };
+    const ro = new ResizeObserver(() => { const h = Math.ceil(bottomEl!.getBoundingClientRect().height + folded()); if (h !== bottomH) bottomH = h; });
     ro.observe(bottomEl);
     return () => ro.disconnect();
   });

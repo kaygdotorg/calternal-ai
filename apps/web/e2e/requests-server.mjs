@@ -117,7 +117,9 @@ try {
   await newThread(p); await say(p, "[ask] and then stop");
   ok(await waitBar(p), "a second question raises the bar");
   const stop = p.getByRole("button", { name: "Stop the turn" }); await stop.waitFor({ timeout: 8000 }).catch(() => {});
+  if (process.env.DBG) console.log("   before stop:", JSON.stringify(await p.evaluate(() => { const c = document.querySelector(".composer"); const b = document.querySelector("[aria-label=\"Stop the turn\"]")?.getBoundingClientRect(); return { collapsed: c.hasAttribute("data-collapsed"), h: c.getBoundingClientRect().height, stop: b && [b.x, b.y], active: document.activeElement?.id || document.activeElement?.tagName }; })));
   if (await stop.count()) await stop.click(); else console.log("   no Stop button while waiting; bar:", await barText(p));
+  if (process.env.DBG) { await p.waitForTimeout(1500); console.log("   after stop:", await barText(p), "|", JSON.stringify((await op(p, "threads.list", { space_id: space })).data?.threads?.slice(0, 2).map((t) => [t.turn_state, t.turn_reason?.code])), "| requests:", JSON.stringify((await op(p, "requests.list", {})).data).slice(0, 200)); }
   ok(await waitGone(p, 10000), "stopping the turn drops its request from the bar");
 
   // ---- 7. a second device follows the feed

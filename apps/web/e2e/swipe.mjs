@@ -1,6 +1,6 @@
 // Shell touch gestures on a phone: pull to refresh, the edge swipes, a sheet's grabber. (The rows' own swipe is e2e/swipe-rows.mjs.)
 import { chromium } from "playwright";
-import { serve, open } from "./lib.mjs";
+import { serve, open, expandComposer } from "./lib.mjs";
 const stop = await serve(); const b = await chromium.launch();
 let bad = 0;
 const ok = (n, p, note = "") => { console.log(`${p ? "PASS" : "FAIL"}  ${n}${note ? "  " + note : ""}`); if (!p) bad++; };
@@ -39,6 +39,7 @@ await page.waitForTimeout(500);
 ok("a swipe left closes it", (await page.locator(".shell").getAttribute("data-sidebar")) === "false");
 await page.keyboard.press("Escape"); await page.waitForTimeout(300);
 await page.goto(page.url().replace(/\/threads.*$/, "/threads/t-run")); await page.waitForSelector("h1");
+await expandComposer(page);
 await page.locator(".chip.prov button").click();
 await page.waitForSelector(".sheet.bottom");
 await page.waitForTimeout(500);

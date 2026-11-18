@@ -96,7 +96,7 @@ ${decl(t.dark)}
 }
 @media (prefers-reduced-motion: reduce) {
   :root {
-    --dur-fast: 1ms; --dur-pulse: 1ms; --dur-sheet: 1ms; --dur-leave: 1ms; --dur-base: 1ms; --dur-slow: 1ms;
+    --dur-fast: 1ms; --dur-pulse: 1ms; --dur-sheet: 1ms; --dur-leave: 1ms; --dur-base: 1ms; --dur-slow: 1ms; --dur-morph: 1ms;
     --spring: linear;
   }
 }
