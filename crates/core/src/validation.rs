@@ -127,8 +127,10 @@ pub fn is_known_operation(operation: &str) -> bool {
         .iter()
         .any(|(id, _, _)| *id == operation)
         || crate::PeopleOperation::from_id(operation).is_some()
+        || crate::is_appearance_operation(operation)
         || is_account_input_operation(operation)
         || crate::note_operation(operation).is_some()
+        || crate::sharing_operation(operation).is_some()
         || crate::SearchOperation::from_id(operation).is_some()
         || request_operation(operation).is_some()
         || matches!(
@@ -225,8 +227,14 @@ pub fn validate_operation_input(operation: &str, input: &JsonObject) -> Result<(
     if let Some(op) = crate::note_operation(operation) {
         return op.validate(input);
     }
+    if let Some(op) = crate::sharing_operation(operation) {
+        return op.validate(input);
+    }
     if let Some(row) = request_operation(operation) {
         return row.validate(input);
+    }
+    if crate::is_appearance_operation(operation) {
+        return crate::appearance::validate(operation, input);
     }
     if is_account_input_operation(operation) {
         return validate_account_input(operation, input);
@@ -436,25 +444,26 @@ impl PendingRequest {
     }
 }
 
+pub(crate) fn entry<I: schemars::JsonSchema, O: schemars::JsonSchema>(
+    id: &str,
+    description: &str,
+    mutates: bool,
+) -> OperationDescription {
+    let object = |value: Value| serde_json::from_value(value).expect("schema is object");
+    OperationDescription {
+        risk: crate::builtin_operation_risk(id, mutates),
+        required_capability: None,
+        target: None,
+        id: id.into(),
+        description: description.into(),
+        mutates,
+        input_schema: object(serde_json::to_value(schemars::schema_for!(I)).unwrap()),
+        output_schema: object(serde_json::to_value(schemars::schema_for!(O)).unwrap()),
+    }
+}
+
 /// Build discovery metadata and JSON Schemas for all preview operations including the stored space directory. Allocates fresh schema trees on each call; callers may cache the result outside the pure core.
 pub fn operation_catalog() -> Vec<OperationDescription> {
-    fn entry<I: schemars::JsonSchema, O: schemars::JsonSchema>(
-        id: &str,
-        description: &str,
-        mutates: bool,
-    ) -> OperationDescription {
-        let object = |value: Value| serde_json::from_value(value).expect("schema is object");
-        OperationDescription {
-            risk: crate::builtin_operation_risk(id, mutates),
-            required_capability: None,
-            target: None,
-            id: id.into(),
-            description: description.into(),
-            mutates,
-            input_schema: object(serde_json::to_value(schemars::schema_for!(I)).unwrap()),
-            output_schema: object(serde_json::to_value(schemars::schema_for!(O)).unwrap()),
-        }
-    }
     let mut catalog = vec![
         entry::<OnboardingInput, OnboardingState>(
             ONBOARDING_STATE,
@@ -554,7 +563,9 @@ pub fn operation_catalog() -> Vec<OperationDescription> {
             .map(crate::NoteOperation::describe),
     );
     catalog.extend(crate::SearchOperation::ALL.iter().map(|op| op.describe()));
+    catalog.extend(SHARING_OPERATIONS.iter().map(SharingOperation::describe));
     catalog.extend(account_input_catalog());
+    catalog.extend(crate::appearance::catalogue());
     catalog.extend(REQUEST_OPERATIONS.iter().map(RequestOperation::description));
     catalog.extend(crate::AGENT_OPERATIONS.iter().map(|(id, text, mutates)| {
         if *id == crate::MACHINES_INSTALL {
