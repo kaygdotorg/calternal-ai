@@ -6,7 +6,8 @@ const SUITES = ["clarity-perf", "canvas", "composer-fold", "switch", "phone-nav"
 const wait = Number(process.env.CAL_QUIET_WAIT_S ?? 600);
 const t0 = Date.now(); let b = busyNow();
 while (b.busy && (Date.now() - t0) / 1000 < wait) { console.log(`waiting for the machine to be quiet (${b.why})`); await new Promise((r) => setTimeout(r, 15000)); b = busyNow(); }
-if (b.busy) console.log(`WARNING  the machine is still busy (${b.why}): the verdicts below are not trustworthy; run again when other work has finished`);
+// A machine that never calms down within the wait gets no verdict at all: exit 3 (not judged), distinct from 1 (a suite failed).
+if (b.busy) { console.log(`NOT JUDGED  the machine is still busy after ${wait} s (${b.why}); nothing was run. Run again when other work has finished (exit code 3, not a failure).`); process.exit(3); }
 let bad = 0;
 for (const name of SUITES) {
   const args = name === "palette-focus" ? ["12"] : [];
