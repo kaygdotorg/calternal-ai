@@ -45,7 +45,23 @@
   conformance tests and all 11 independent authorization matrix tests.
   Workspace and conformance formatting, the 387-page site,
   `scripts/check-docs.sh` and generated contract parity passed on
-  dev-02. The dev-01 full workspace gate is pending.
+  dev-02 before it became web-only.
+- The dev-01 run on that tip passed both formatting checks, the docs
+  site and the docs gate. The coordinator stopped lane full gates
+  during the workspace build and took ownership of the merged-stack
+  gate. The lane removed its build output and released slot 1.
+- After merging `stack/night-4`, dev-01 checked implementation tip
+  `45fc4674` outside the gate slots. Both formatting checks, generated
+  catalogue and docs passed. The authorization matrix passed 11 tests.
+  All 19 plugin server unit tests and the account input migration test
+  passed. Focused HTTP conformance passed eight job cases, three scoped
+  settings cases, four owned-slot cases and one diagnostics case.
+- The foreign-ID conformance check matched the operation inventory and
+  response signatures in both runs. Its separate 20 ms timing assertion
+  failed first on `notes.delete`, then on `secrets.revoke` and
+  `secrets.request` on retry. The dev-01 load average was 18 on 12
+  cores at the retry. The timing assertion remains open for the
+  coordinator's merged-stack run.
 
 ## Simplification opportunities
 
