@@ -2,7 +2,7 @@
 // (a perf check that goes red whenever another lane builds gets ignored; one that never judges proves nothing), so this is where they are judged: run it by itself before a merge. Usage: `npm run build -w apps/web && npm run e2e:quiet -w apps/web`.
 import { spawnSync } from "node:child_process";
 import { busyNow } from "./lib.mjs";
-const SUITES = ["clarity-perf", "canvas", "composer-fold", "switch", "phone-nav", "sidebar-pull", "palette", "thread-size", "press"];
+const SUITES = ["clarity-perf", "canvas", "composer-fold", "switch", "phone-nav", "sidebar-pull", "palette", "thread-size", "live-typing", "press"];
 const wait = Number(process.env.CAL_QUIET_WAIT_S ?? 600);
 const t0 = Date.now(); let b = busyNow();
 while (b.busy && (Date.now() - t0) / 1000 < wait) { console.log(`waiting for the machine to be quiet (${b.why})`); await new Promise((r) => setTimeout(r, 15000)); b = busyNow(); }

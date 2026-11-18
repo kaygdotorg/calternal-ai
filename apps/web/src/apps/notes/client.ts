@@ -105,6 +105,8 @@ export class FixtureNotes implements NotesClient {
     return n;
   }
   async update(_s: string, id: string, baseRevision: string, title: string, markdown: string): Promise<Note> {
+    // `?revoked=1` (fixtures only) is a note whose share has ended: every write is refused, to try the rescue.
+    if (new URLSearchParams(location.search).has("revoked")) throw new ServerError("forbidden", "you can no longer edit this note");
     const n = await this.get("", id);
     if (n.revision !== baseRevision) throw new ServerError("conflict", "the note changed since you read it");
     const next = { ...n, title, markdown, revision: String(Number(n.revision) + 1), updatedAt: new Date().toISOString() };

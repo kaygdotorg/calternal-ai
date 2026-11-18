@@ -1,3 +1,4 @@
+import { signUp } from "./lib.mjs";
 // The pickers and message search against a real server of this tree: the composer's @ lists the account from people.lookup, / lists skills.list, @ with a typed title finds a thread by threads.lookup, and message search (search.query) opens a thread.
 // Same setup as readiness-server.mjs. Env: CAL_BIN, CAL_DIST, CAL_LOOKUP_PORT.
 import { spawn } from "node:child_process";
@@ -22,7 +23,7 @@ try {
   const p = await ctx.newPage(); const cdp = await ctx.newCDPSession(p);
   await cdp.send("WebAuthn.enable"); await cdp.send("WebAuthn.addVirtualAuthenticator", { options: { protocol: "ctap2", transport: "internal", hasResidentKey: true, hasUserVerification: true, isUserVerified: true, automaticPresenceSimulation: true } });
   await p.goto(`${url}/?server=1`); await p.waitForSelector("html[data-ready]");
-  await p.fill('input[name="token"]', token); await p.fill('input[name="name"]', "Lookup Owner"); await p.getByRole("button", { name: "Create passkey" }).click();
+  await signUp(p, token, "Lookup Owner");
   await p.waitForTimeout(2500); await p.evaluate(() => localStorage.removeItem("cal.onboarding")); /* the first owner lands in the onboarding (shell lane): the account exists, leave the wizard */ await p.waitForSelector("html[data-ready]"); await p.waitForTimeout(1200);
   const space = (await op(p, "spaces.list", {})).data.spaces.find((s) => s.personal).id;
 

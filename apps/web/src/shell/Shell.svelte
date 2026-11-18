@@ -12,8 +12,7 @@
   import { surfaces } from "../appearance/surfaces.svelte";
   import CollapsedPill from "./CollapsedPill.svelte";
   import Backdrop from "./Backdrop.svelte";
-  import Canvas from "../canvas/Canvas.svelte";
-  import { canvasEnabled } from "../canvas/model.svelte";
+  import { activeWindowArea } from "./window-area";
   import RightSidebar from "./RightSidebar.svelte";
   import ResizeHandle from "./ResizeHandle.svelte";
   import Sidebar from "./Sidebar.svelte";
@@ -180,6 +179,7 @@
   // Choosing something in the sidebar shows it: the list goes away without a history step, so Back brings the list back over what you came from.
   const choose = (e: MouseEvent) => { if (shell.narrow && (e.target as Element).closest("a[href]")) shell.closeOver(); };
   // The panels belong to what is open: with no thread (or note) open there is nothing to switch between, so no side panel and, on a phone, no bottom bar. The way back to the list stays (the header button, the edge swipe).
+  const area = $derived(activeWindowArea());
   const hasRight = $derived(app.panels.length > 0 && (!shell.narrow || !!id));
   const rightOpen = $derived(shell.rightOpen && hasRight);
   // A closed sidebar or side panel always has a way back: a button at the card's top corner on the same side, with the shortcut in its tooltip. (A phone has its own header button and the edge swipe.)
@@ -194,15 +194,15 @@
   <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
   <aside class="side" class:pulled={wp?.side === "left"} style:--vis={wp?.side === "left" ? `${wp.vis}px` : undefined} style:--w={wp?.side === "left" ? `${wp.w}px` : undefined} bind:this={sideEl} onclick={choose} data-ink={surfaces.left ?? undefined} aria-label="{app.name} sidebar" inert={!shell.sidebarOpen}><Sidebar {app} /></aside>
 
-  <main class="mid" class:cv={canvasEnabled} bind:this={midEl} style:--edge-l={showLeft && !shell.narrow ? "calc(var(--pill-h) * 2 + var(--s-3))" : undefined} class:dragging={drag !== null} style:transform={wp ? `translateX(${wp.side === "left" ? wp.vis - (wp.layoutOpen ? wp.w : 0) : -(wp.vis - (wp.layoutOpen ? wp.w : 0))}px)` : dragMode && drag !== null ? `translateX(${dragMode === "card" ? drag : -drag}px)` : undefined} inert={shell.narrow && (shell.sidebarOpen || rightOpen)}>
+  <main class="mid" class:cv={!!area} bind:this={midEl} style:--edge-l={showLeft && !shell.narrow ? "calc(var(--pill-h) * 2 + var(--s-3))" : undefined} class:dragging={drag !== null} style:transform={wp ? `translateX(${wp.side === "left" ? wp.vis - (wp.layoutOpen ? wp.w : 0) : -(wp.vis - (wp.layoutOpen ? wp.w : 0))}px)` : dragMode && drag !== null ? `translateX(${dragMode === "card" ? drag : -drag}px)` : undefined} inert={shell.narrow && (shell.sidebarOpen || rightOpen)}>
     {#if !shell.narrow && shell.sidebarOpen}<ResizeHandle side="left" />{/if}
     {#if !shell.narrow && hasRight && rightOpen}<ResizeHandle side="right" />{/if}
     {#if showLeft}<div class="edge l">{#if shell.narrow}<Pill icon="sidebar" label="Show the sidebar" aria-keyshortcuts={ariaKeys(shortcuts.chordFor("sidebar"))} onclick={() => shell.toggleSidebar()} />{:else}<CollapsedPill {app} />{/if}</div>{/if}
-    {#if !canvasEnabled}<div class="edge hl" style:--hl-off={showLeft || (shell.narrow && !!chromeHeader.pinned) ? (shell.narrow ? "calc(var(--pill-h) + var(--s-3))" : "calc(var(--pill-h) * 2 + var(--s-3) * 2)") : "0px"}><HeaderPill /></div>{/if}
-    {#if canvasEnabled}
-      <!-- The canvas experiment (canvas/Canvas.svelte): no card round it; the area between the sidebars is the canvas and each window is a middle card. The app switcher is in the sidebar's footer. -->
+    {#if !area}<div class="edge hl" style:--hl-off={showLeft || (shell.narrow && !!chromeHeader.pinned) ? (shell.narrow ? "calc(var(--pill-h) + var(--s-3))" : "calc(var(--pill-h) * 2 + var(--s-3) * 2)") : "0px"}><HeaderPill /></div>{/if}
+    {#if area}
+      <!-- A window area (shell/window-area.ts; today the canvas): no card round it; the space between the sidebars is its own and each window is a middle card. The app switcher is in the sidebar's footer. -->
       <div class="area" role="region" aria-label={app.name}>
-        <div class="app"><Canvas /></div>
+        <div class="app">{#await area.load() then Area}<Area />{/await}</div>
       </div>
     {:else}
     <Card label={app.name} class="mid-card">
