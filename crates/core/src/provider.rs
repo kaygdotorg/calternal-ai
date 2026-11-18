@@ -154,6 +154,10 @@ pub enum ProviderEventKind {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[ts(optional)]
         request_id: Option<String>,
+        /// Whether an interactive confirmation can proceed within the tool sandbox.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        can_approve: Option<bool>,
         /// Short action description, at most 4 KiB.
         summary: String,
     },
@@ -247,6 +251,7 @@ impl ProviderEvent {
             ProviderEventKind::ApprovalRequest {
                 summary,
                 request_id,
+                ..
             } => short(summary, 4096) && request_id.as_deref().is_none_or(|id| short(id, 128)),
             ProviderEventKind::Usage {
                 input_tokens,

@@ -510,12 +510,12 @@ async fn execute<D: Directory>(
                                     );
                                     failure = Some((*class, *billing, *reset_at_ms));
                                 }
-                                ProviderEventKind::ApprovalRequest { request_id: Some(id), .. } if interactive => {
+                                ProviderEventKind::ApprovalRequest { request_id: Some(id), can_approve, .. } if interactive => {
                                     live.provider_control.lock()
                                         .map_err(|_| Error::internal("provider control unavailable"))?
                                         .as_mut().filter(|control| control.run == job.runs)
                                         .ok_or_else(|| Error::conflict("provider control ended"))?
-                                        .offer(id)?;
+                                        .offer(id, can_approve.unwrap_or(false))?;
                                 }
                                 ProviderEventKind::Done { outcome: o } => {
                                     outcome = Some(o.clone());

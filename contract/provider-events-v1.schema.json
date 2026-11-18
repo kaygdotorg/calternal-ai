@@ -335,6 +335,13 @@
             "type"
           ],
           "properties": {
+            "can_approve": {
+              "description": "Whether an interactive confirmation can proceed within the tool sandbox.",
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
             "request_id": {
               "description": "ID of an interactive, run-scoped approval. Legacy notices omit it.",
               "type": [

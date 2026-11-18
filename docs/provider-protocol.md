@@ -118,4 +118,5 @@ machine rejects unsupported space-scoped assignments before mounting any profile
 
 Interactive runtimes accept `agent.steer`, `agent.approval`, and a bounded graceful
 `agent.stop`. Approvals expire and apply only to the pending request in its current
-run. The adapter may refuse a native approval that would bypass the sandbox.
+run. An approval request with `can_approve: false` allows dismissal only. The
+host rejects approval when the requested escalation would bypass the sandbox.

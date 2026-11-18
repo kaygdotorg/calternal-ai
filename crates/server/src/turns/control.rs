@@ -14,7 +14,7 @@ pub(crate) struct Control {
     account: AccountId,
     exec: Uuid,
     seq: u64,
-    requests: HashMap<String, Instant>,
+    requests: HashMap<String, (Instant, bool)>,
 }
 
 impl Control {
@@ -29,15 +29,32 @@ impl Control {
         }
     }
 
-    pub(super) fn offer(&mut self, id: &str) -> Result<(), Error> {
-        self.requests.retain(|_, expiry| *expiry > Instant::now());
+    pub(super) fn offer(&mut self, id: &str, can_approve: bool) -> Result<(), Error> {
+        self.requests
+            .retain(|_, (expiry, _)| *expiry > Instant::now());
         if self.requests.len() >= 16 || self.requests.contains_key(id) {
             return Err(Error::invalid_input(
                 "too many or duplicate provider approvals",
             ));
         }
-        self.requests
-            .insert(id.to_owned(), Instant::now() + Duration::from_secs(90));
+        self.requests.insert(
+            id.to_owned(),
+            (Instant::now() + Duration::from_secs(90), can_approve),
+        );
+        Ok(())
+    }
+
+    fn decision(&self, request_id: &str, approved: bool) -> Result<(), Error> {
+        let (_, can_approve) = self
+            .requests
+            .get(request_id)
+            .filter(|(expiry, _)| *expiry > Instant::now())
+            .ok_or_else(|| Error::not_found("provider approval expired or already resolved"))?;
+        if approved && !*can_approve {
+            return Err(Error::forbidden(
+                "the native request would exceed the sandbox boundary",
+            ));
+        }
         Ok(())
     }
 
@@ -47,16 +64,11 @@ impl Control {
         command: ProviderCommand,
     ) -> Result<(), Error> {
         let approval = match &command {
-            ProviderCommand::Approve { request_id, .. } => {
-                if !self
-                    .requests
-                    .get(request_id)
-                    .is_some_and(|expiry| *expiry > Instant::now())
-                {
-                    return Err(Error::not_found(
-                        "provider approval expired or already resolved",
-                    ));
-                }
+            ProviderCommand::Approve {
+                request_id,
+                approved,
+            } => {
+                self.decision(request_id, *approved)?;
                 Some(request_id.clone())
             }
             _ => None,
@@ -77,5 +89,22 @@ impl Control {
             self.requests.remove(&id);
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn native_confirmation_never_grants_a_sandbox_escalation() {
+        let mut control = Control::new(1, AccountId::new(), Uuid::new_v4());
+        control.offer("escalation", false).unwrap();
+        assert!(control.decision("escalation", false).is_ok());
+        assert_eq!(
+            control.decision("escalation", true).unwrap_err().code,
+            calternal_types::ErrorCode::Forbidden
+        );
+        assert!(control.decision("foreign", false).is_err());
     }
 }

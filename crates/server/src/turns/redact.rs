@@ -46,6 +46,7 @@ impl Redactor {
             ApprovalRequest {
                 summary,
                 request_id,
+                ..
             } => {
                 self.string(summary);
                 if let Some(id) = request_id {

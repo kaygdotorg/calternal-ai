@@ -180,7 +180,7 @@ class Adapter {
     const timer = setTimeout(() => { this.resolveApproval(key); }, 85_000);
     this.approvals.set(key, {id, timer});
     await this.emit({
-      type: 'approval_request', request_id: key,
+      type: 'approval_request', request_id: key, can_approve: false,
       summary: 'Codex requested permission outside its tool sandbox. Calternal will keep the existing boundary.',
     });
   }

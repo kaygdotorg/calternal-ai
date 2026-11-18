@@ -1866,6 +1866,10 @@ text: string, } | { "type": "approval_request",
  */
 request_id?: string,
 /**
+ * Whether an interactive confirmation can proceed within the tool sandbox.
+ */
+can_approve?: boolean,
+/**
  * Short action description, at most 4 KiB.
  */
 summary: string, } | { "type": "usage",
