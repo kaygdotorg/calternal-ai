@@ -99,8 +99,9 @@
 {/if}
 
 <style>
-  .sh { padding: var(--s-2) 0; } .sh .menu { min-width: 0; max-width: none; } .sh .it { min-height: var(--menu-row-h, 42px); }
-  .menu { min-width: 15rem; max-width: 22rem; padding: var(--s-2); display: grid; gap: var(--s-1); }
+  .sh { padding: var(--s-2) 0; } .sh .menu { min-width: 0; max-width: none; max-height: none; overflow: visible; } .sh .it { min-height: var(--menu-row-h, 42px); }
+  /* A long list (the space list at 50 spaces) scrolls inside the dropdown; the search field above it stays put. */
+  .menu { min-width: 15rem; max-width: 22rem; max-height: min(60dvh, 24rem); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; padding: var(--s-2); display: grid; gap: var(--s-1); align-content: start; }
   .s { display: flex; align-items: center; gap: var(--s-3); margin: var(--s-2) var(--s-2) 0; padding: 0 var(--s-4); min-height: var(--pill-h); border-radius: var(--r-pill); background: rgb(var(--ink-rgb) / 0.07); color: var(--ink-3); }
   .s input { flex: 1; min-width: 0; border: 0; background: none; color: var(--ink); font-size: var(--text-ui); }
   .s input:focus, .s input:focus-visible { outline: none; }
