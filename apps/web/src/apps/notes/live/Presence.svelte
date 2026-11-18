@@ -10,7 +10,7 @@
 
 {#if here.length}
   <span class="presence" role="img" aria-label={label} use:tip={{ label, side: "bottom" }}>
-    {#each shown as h (h.client)}<span class="p" style:--c={h.color}><Avatar name={h.name} /></span>{/each}
+    {#each shown as h (h.client)}<span class="p" style:--c={h.color}><Avatar name={h.name} size="xs" /></span>{/each}
     {#if here.length > shown.length}<span class="more">+{here.length - shown.length}</span>{/if}
   </span>
 {/if}
