@@ -21,6 +21,7 @@
   const who: Who = saved?.who ?? whoProp;
   // svelte-ignore state_referenced_locally
   let step = $state<StepId>(saved?.step ?? "you"), done = $state<StepId[]>(saved?.done ?? []), skipped = $state<StepId[]>(saved?.skipped ?? []), confirming = $state<StepId | null>(null), keyed = $state(false);
+  // svelte-ignore state_referenced_locally
   const api: OnboardingApi = demo ? fixtureApi() : serverApi;
   const steps = $derived(path(who));
   const TITLE: Record<StepId, string> = { you: "Who you are", look: "Choose a look", machine: "Your machine", provider: "Sign in to a provider", done: "You are set up" };
