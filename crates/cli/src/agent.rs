@@ -427,6 +427,12 @@ pub fn invoke(
             }
             return Ok(reply.hint(hint));
         }
+        if let Some(op) = operation
+            .as_deref()
+            .and_then(calternal_core::SearchOperation::from_id)
+        {
+            return Ok(crate::search::reply(op, value));
+        }
         if operation.as_deref() == Some(calternal_core::MACHINES_VERIFY) {
             let yes = |b: &Value| match b.as_bool() {
                 Some(true) => "Yes",

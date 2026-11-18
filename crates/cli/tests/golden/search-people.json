@@ -1,0 +1,13 @@
+{
+  "data": {
+    "people": [
+      {
+        "id": "019aabb0-1100-7111-8111-111111111111",
+        "kind": "account",
+        "name": "Account A"
+      }
+    ]
+  },
+  "ok": true,
+  "request_id": "req-search"
+}

@@ -83,6 +83,17 @@
         "$ref": "#/definitions/ManifestOperation"
       }
     },
+    "palette": {
+      "description": "Optional commands, extra phrases and Settings sections for the palette.",
+      "anyOf": [
+        {
+          "$ref": "#/definitions/PaletteDeclaration"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "provider": {
       "description": "Machine-side provider adapter; omitted by plugins that offer no provider.",
       "anyOf": [
@@ -844,6 +855,100 @@
           ]
         }
       ]
+    },
+    "PaletteCommand": {
+      "description": "One palette command, in the web palette's command shape.",
+      "type": "object",
+      "required": [
+        "group",
+        "id",
+        "label"
+      ],
+      "properties": {
+        "go": {
+          "description": "Navigation address, if this command navigates.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "group": {
+          "description": "Display group.",
+          "type": "string"
+        },
+        "id": {
+          "description": "Stable, globally unique command identifier.",
+          "type": "string"
+        },
+        "label": {
+          "description": "Searchable command label.",
+          "type": "string"
+        },
+        "op": {
+          "description": "Named host action, if the command invokes one.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "words": {
+          "description": "Extra phrases that match this command.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "PaletteDeclaration": {
+      "description": "Optional palette declarations in a plugin manifest.",
+      "type": "object",
+      "required": [
+        "commands",
+        "settings_sections"
+      ],
+      "properties": {
+        "commands": {
+          "description": "Commands with their extra search phrases.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/PaletteCommand"
+          }
+        },
+        "settings_sections": {
+          "description": "Settings sections that the plugin contributes.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/PaletteSettingsSection"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "PaletteSettingsSection": {
+      "description": "A discoverable Settings section.",
+      "type": "object",
+      "required": [
+        "go",
+        "id",
+        "label"
+      ],
+      "properties": {
+        "go": {
+          "description": "Settings address.",
+          "type": "string"
+        },
+        "id": {
+          "description": "Stable section identifier.",
+          "type": "string"
+        },
+        "label": {
+          "description": "Section label.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
     },
     "PluginSlot": {
       "description": "Host-defined mount point for an activated plugin contribution.",

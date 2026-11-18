@@ -1,4 +1,31 @@
 {
+  "palette": {
+    "commands": [
+      {
+        "id": "threads.open",
+        "label": "Open Threads",
+        "group": "Threads",
+        "go": "/threads",
+        "words": [
+          "agents",
+          "chat"
+        ]
+      },
+      {
+        "id": "threads.new",
+        "label": "New thread",
+        "group": "Threads",
+        "op": "thread.new",
+        "words": [
+          "start thread",
+          "create thread"
+        ]
+      }
+    ],
+    "settings_sections": [
+      { "id": "settings.agents", "label": "Agents", "go": "/settings/agents" }
+    ]
+  },
   "id": "calternal-orchestrator",
   "name": "Threads",
   "icon": "terminal",
