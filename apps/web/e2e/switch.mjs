@@ -4,7 +4,7 @@ import { chromium } from "playwright";
 import { serve, BASE } from "./lib.mjs";
 const stop = await serve(); const b = await chromium.launch(); let bad = 0;
 const ok = (c, m, note = "") => { console.log(`${c ? "PASS" : "FAIL"}  ${m}${note ? "  " + note : ""}`); if (!c) bad++; };
-const go = async (reduced) => { const ctx = await b.newContext({ viewport: { width: 1440, height: 900 }, reducedMotion: reduced ? "reduce" : "no-preference" }); await ctx.addInitScript(() => localStorage.setItem("cal.firstrun", "1")); const page = await ctx.newPage(); await page.goto(`${BASE}/settings/appearance`); await page.waitForSelector("html[data-ready]"); await page.waitForTimeout(500); return { ctx, page }; };
+const go = async (reduced) => { const ctx = await b.newContext({ viewport: { width: 1440, height: 900 }, reducedMotion: reduced ? "reduce" : "no-preference" }); await ctx.addInitScript(() => localStorage.setItem("cal.firstrun", "1")); const page = await ctx.newPage(); await page.goto(`${BASE}/settings/appearance/appearance.motion`); await page.waitForSelector("html[data-ready]"); await page.waitForTimeout(500); return { ctx, page }; };
 const knob = (page, name) => page.getByRole("switch", { name }).locator(".knob");
 // Rest is when the component has taken its inline transform away (its loop stopped): waiting for that, not for a guessed time, makes the checks the same on a busy machine.
 const rested = (page, name) => page.waitForFunction((name) => { const btn = [...document.querySelectorAll("button[role=switch]")].find((x) => document.getElementById(x.getAttribute("aria-labelledby"))?.textContent.includes(name)); return btn.querySelector(".knob").style.transform === ""; }, name, { timeout: 15000 });

@@ -88,7 +88,7 @@ for (const phone of [false, true]) {
 }
 // ---- Settings: Move Notes up changes the capsule
 {
-  const { ctx, page } = await open(false, "/settings/appearance?firstrun=0");
+  const { ctx, page } = await open(false, "/settings/appearance/appearance.app-order?firstrun=0");
   await page.getByRole("button", { name: "Move Notes up" }).click(); await page.waitForTimeout(300);
   const g = await geom(page);
   ok(g.labels.join(",") === "Notes,Threads,Settings", "Settings, Appearance, Apps: Move Notes up changes the capsule", g.labels.join(","));
