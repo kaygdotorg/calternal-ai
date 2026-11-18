@@ -24,4 +24,18 @@ describe("provider sign-in on the wire", () => {
     await expect(r.signInTyping("t1")).resolves.toBeUndefined();
     expect(operate).toHaveBeenCalledWith("provider.sign_in.typing", { space_id: "s1", thread_id: "t1" });
   });
+  it("an approval is retried once after the passkey check when the server asks for it, and not for any other refusal", async () => {
+    const operate = vi.fn()
+      .mockRejectedValueOnce(new ServerError("passkey_reverification_required", "Verify with your passkey to continue.", 403))
+      .mockResolvedValueOnce({}).mockResolvedValue({ requests: [] });
+    const reverify = vi.fn().mockResolvedValue(undefined);
+    const r = new ServerRequests({ operate } as unknown as ServerClient, () => "s1", reverify);
+    await r.answer("a1", { kind: "approval", decision: "once" });
+    expect(reverify).toHaveBeenCalledTimes(1);
+    expect(operate.mock.calls.filter((c) => c[0] === "requests.approve")).toHaveLength(2);
+    const refused = vi.fn().mockRejectedValue(new ServerError("forbidden", "No.", 403));
+    const r2 = new ServerRequests({ operate: refused } as unknown as ServerClient, () => "s1", reverify);
+    await expect(r2.answer("a2", { kind: "approval", decision: "once" })).rejects.toThrow("No.");
+    expect(reverify).toHaveBeenCalledTimes(1);
+  });
 });

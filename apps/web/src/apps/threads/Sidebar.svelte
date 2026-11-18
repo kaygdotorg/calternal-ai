@@ -268,8 +268,9 @@
     .rw:hover .tail, .rw:focus-within .tail { display: none; }
     .rw:hover :global(.row), .rw:focus-within :global(.row) { padding-right: calc(var(--s-2) * 2 + 3 * var(--ib-small) + 2 * var(--s-1)); }
   }
-  .tabs { display: flex; gap: var(--s-1); margin: var(--s-3) 0 var(--s-2); padding: 0 var(--s-2); }
-  .tabs button { display: inline-flex; align-items: center; gap: var(--s-2); min-height: var(--row-h); padding: 0 var(--s-4); border-radius: var(--r-pill); font-size: var(--text-label); font-weight: var(--strong-weight); color: var(--ink-3); }
+  /* The two tabs split the sidebar's width in halves; the selected one's capsule spans its half (no empty space at the right). */
+  .tabs { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s-1); margin: var(--s-3) 0 var(--s-2); padding: 0 var(--s-2); }
+  .tabs button { display: inline-flex; align-items: center; justify-content: center; gap: var(--s-2); min-height: var(--row-h); padding: 0 var(--s-4); border-radius: var(--r-pill); font-size: var(--text-label); font-weight: var(--strong-weight); color: var(--ink-3); }
   .tabs button[aria-selected="true"] { background: rgb(var(--ink-rgb) / 0.1); color: var(--ink); }
   .tabs .n { font-variant-numeric: tabular-nums; color: var(--accent); }
   @media (hover: hover) and (pointer: fine) { .tabs button:hover { color: var(--ink); } }

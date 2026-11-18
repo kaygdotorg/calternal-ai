@@ -16,7 +16,7 @@
   import { onWallpaperColours, wallpaperExtremes } from "../appearance/wallpaper";
   import { spaces } from "../shell/spaces.svelte";
   import { shell } from "../shell/shell.svelte";
-  import { centring, GAP, heightsOf, leftOf, maxScroll, nearColumns, NARROW, nextPreset, PRESETS, proportionFor, proportionOf, scrollTo, stripWidth, widthsOf } from "./layout";
+  import { centring, edgeOf, GAP, leftOf, maxScroll, nearColumns, NARROW, nextPreset, PRESETS, proportionFor, proportionOf, scrollTo, stripWidth, widthsOf, type Look } from "./layout";
   import { canvas } from "./model.svelte";
   import { frostDensity } from "./frost";
   import { hueOf, lightnessOf, windowColours } from "./surface";
@@ -41,7 +41,7 @@
   let scheme = $state(currentScheme());
   const accentHue = () => hueOf(getComputedStyle(document.documentElement).getPropertyValue("--accent-base").trim() || "#808080");
   let hue = $state<number | null>(accentHue());
-  let tone = $state<{ lo: [number, number, number]; hi: [number, number, number]; mean: [number, number, number] } | null>(null);
+  let tone = $state<{ lo: [number, number, number]; hi: [number, number, number] } | null>(null);
   onMount(() => {
     const read = () => { tone = wallpaperExtremes(); };
     read();
@@ -49,7 +49,7 @@
     const b = onWallpaperColours((c) => { hue = c?.hue?.h ?? accentHue(); read(); });
     return () => { a(); b(); };
   });
-  const colours = $derived(windowColours(scheme, hue, tone ? lightnessOf(tone.mean) : undefined));
+  const colours = $derived(windowColours(scheme, hue, tone ? lightnessOf([0, 1, 2].map((i) => (tone!.lo[i]! + tone!.hi[i]!) / 2) as [number, number, number]) : undefined));
   /** The scheme's own paper and inks as the page resolves them (the frosted window is the page's paper over glass, with the page's inks). */
   const page = $derived.by(() => {
     void scheme;
@@ -67,7 +67,7 @@
   /** The edge fade: how far a window is cut off at the left and right edge of the viewport, as the complement of the edge strip's opacity (1: no fade). It is 1 at both edges unless a window crosses that edge and falls to 0 over `FADE` px of crossing. */
   const FADE = 24;
   function fades(): [number, number] {
-    let l = 1, r = 1, left = GAP + pad;
+    let l = 1, r = 1, left = edgeOf(vw) + pad;
     for (const w of widths) {
       const right = left + w;
       if (left < x && right > x) l = Math.min(l, 1 - Math.min(1, (x - left) / FADE));
@@ -78,9 +78,27 @@
     return [l, r];
   }
   let fl = 1, fr = 1;
+  // Frosted windows show a blurred picture of the wallpaper that must stay still while the window moves: each picture is moved against the strip's movement, in the frame that moves the strip (transform only, no layout, no style invalidation of the windows'
+  // contents). Its offsets are worked out when the layout changes (`refreshPics`), from layout offsets that no animation disturbs.
+  let pics: { el: HTMLElement; cl: number; oy: number }[] = [];
+  let canvasLeft = 0;
+  const place = () => { for (const p of pics) p.el.style.transform = `translate3d(${x - canvasLeft - p.cl}px, ${p.oy}px, 0)`; };
+  function refreshPics() {
+    if (!el) return;
+    const cr = el.getBoundingClientRect();
+    canvasLeft = cr.left;
+    pics = [...el.querySelectorAll<HTMLElement>(".pic")].map((p) => {
+      const slot = p.closest<HTMLElement>("[data-win]")!.parentElement as HTMLElement, col = slot.parentElement as HTMLElement;
+      p.style.width = `${innerWidth}px`; p.style.height = `${innerHeight}px`;
+      return { el: p, cl: Number(col.dataset.l ?? 0), oy: -(cr.top + col.offsetTop + slot.offsetTop) };
+    });
+    place();
+  }
+  $effect(() => { void canvas.cols; void mounted; void vw; void vh; void pad; void tick().then(refreshPics); });
   const write = () => {
     frame = 0;
     if (strip) strip.style.transform = `translate3d(${-x}px,0,0)`;
+    place();
     const [l, r] = canvas.max ? [1, 1] : fades();
     if (l !== fl) { fl = l; if (fadeL) fadeL.style.opacity = String(1 - l); }
     if (r !== fr) { fr = r; if (fadeR) fadeR.style.opacity = String(1 - r); }
@@ -176,7 +194,7 @@
   $effect(() => { for (const k of new Set(canvas.all().map((w) => w.kind))) void appFor(k)?.start?.(); });
   onMount(() => { void appFor("notes")?.start?.(); });
   // First visit: a thread, a second thread beside it and a note below that, so there is something to arrange (the person's own arrangement is kept after that).
-  let seeded = (() => { try { return localStorage.getItem("cal.canvas.seeded") === "1"; } catch { return true; } })();
+  let seeded = (() => { try { return localStorage.getItem("cal.canvas.seeded.2") === "1"; } catch { return true; } })();
   $effect(() => {
     if (seeded) return;
     const open = untrack(() => new Set(canvas.all().map((w) => `${w.kind}/${w.item}`)));
@@ -184,7 +202,7 @@
     const n = notes.list[0];
     const need = untrack(() => (canvas.cols.length === 0 ? 2 : 1));
     if (mine.length < need || !n) return;
-    seeded = true; try { localStorage.setItem("cal.canvas.seeded", "1"); } catch { /* storage is off */ }
+    seeded = true; try { localStorage.setItem("cal.canvas.seeded.2", "1"); } catch { /* storage is off */ }
     untrack(() => {
       const keep = canvas.focus;
       if (canvas.cols.length === 0) canvas.addRight("threads", mine.shift()!.id);
@@ -278,8 +296,9 @@
     const widthsList: MenuItem[] = narrow ? [] : PRESETS.map((x) => ({ id: `width:${x}`, label: `Width ${x === 1 ? "full" : x === 1 / 3 ? "1/3" : x === 1 / 2 ? "1/2" : "2/3"}`, checked: Math.abs(p - x) < 0.01 }));
     const rest: MenuItem[] = [
       ...(c && c.wins.length > 1 ? [{ id: "equal", label: "Equal heights" }] : []),
-      { id: "frost", label: w.frosted || canvas.frostAll ? "Make this window opaque" : "Make this window frosted", icon: "spark" },
+      ...(["card", "clear", "solid"] as Look[]).map((l) => ({ id: `look:${l}`, label: `Look: ${l === "card" ? "Card" : l === "clear" ? "Transparent" : "Solid"}`, checked: w.look === l })),
       { id: "lock", label: w.locked ? "Unlock input" : "Lock input", icon: "lock" },
+      ...((appFor(w.kind)?.panels.length ?? 0) > 0 ? [{ id: "panel", label: "Open side panel", icon: "sidebar-right" as IconName }] : []),
     ];
     const thread: MenuItem[] = w.kind === "threads" && store.get(w.item) ? threadItems(store.get(w.item)!).map((i) => ({ ...i, id: `t:${i.id}` })) : [];
     return [...open, ...widthsList, ...rest, ...thread, { id: "close", label: "Close window", icon: "close", danger: true }];
@@ -328,8 +347,9 @@
     else if (item.startsWith("below:")) addBeside(item.slice(6), true, source);
     else if (item.startsWith("width:")) setPreset(w.id, Number(item.slice(6)), source);
     else if (item === "equal") canvas.equalHeights(canvas.cols[canvas.colIndexOf(w.id)]!.id);
-    else if (item === "frost") canvas.toggleFrost(w.id, w.frosted || canvas.frostAll);
+    else if (item.startsWith("look:")) canvas.setLook(w.id, item.slice(5) as Look);
     else if (item === "lock") canvas.toggleLock(w.id);
+    else if (item === "panel") { if (shell.narrow) shell.over("panel"); else shell.toggleRight(); }
     else if (item === "close") closeWin(w.id, source);
     else if (item.startsWith("t:")) { const t = store.get(w.item); if (t) runThreadItem(item.slice(2), t, () => toast("Rename it from the sidebar: double-click its row")); }
   }
@@ -360,21 +380,21 @@
     shortcuts.register([...shortcuts.commands.filter((c) => !ids.has(c.id)), ...mine]);
     return () => shortcuts.register(shortcuts.commands.filter((c) => !ids.has(c.id)));
   });
-  void ariaKeys; void shell; void heightsOf; void leftOf; void stripWidth; void PRESETS;
+  void ariaKeys; void shell; void leftOf; void stripWidth; void PRESETS;
 </script>
 
 <div class="canvas" bind:this={el} data-max={maxed ? "" : undefined} data-canvas>
   <div class="fade l" bind:this={fadeL} aria-hidden="true"></div><div class="fade r" bind:this={fadeR} aria-hidden="true"></div>
   <div class="view">
-    <div class="strip" bind:this={strip} style:width="{stripWidth(widths) + pad}px">
+    <div class="strip" bind:this={strip} style:width="{stripWidth(widths, vw) + pad}px">
       {#each canvas.cols as c, i (c.id)}
         {@const mine = c.wins.some((w) => w.id === canvas.max)}
         {#if isNear(c.id) || mine}
-          <div class="col" class:max={mine} class:hidden={!!maxed && !mine} style:left="{mine ? x : leftOf(widths, i) + pad}px" style:width={mine ? `${vw}px` : `${widths[i]}px`} data-col={c.id}>
+          <div class="col" class:max={mine} class:hidden={!!maxed && !mine} style:left="{mine ? x + edgeOf(vw) : leftOf(widths, i, vw) + pad}px" style:width={mine ? `${vw - 2 * edgeOf(vw)}px` : `${widths[i]}px`} data-col={c.id} data-l={mine ? x + edgeOf(vw) : leftOf(widths, i, vw) + pad}>
             {#each c.wins as w, k (w.id)}
               {#if !maxed || w.id === canvas.max}
                 <div class="slot" style:flex="{mine ? 1 : w.weight} 1 0" style:min-height="0">
-                  <WindowFrame win={w} title={titleOf(w.kind, w.item)} icon={iconOf(w.kind)} ownTitle={w.kind === "threads"} focused={canvas.focus === w.id} maximised={mine} frosted={w.frosted || canvas.frostAll} {colours}
+                  <WindowFrame win={w} title={titleOf(w.kind, w.item)} icon={iconOf(w.kind)} ownTitle={w.kind === "threads"} focused={canvas.focus === w.id} maximised={mine} look={w.look} {colours}
                     paper={page.paper.join(" ")} {density} hasBelow={k < c.wins.length - 1} edge={i === 0 && i === canvas.cols.length - 1 ? "lr" : i === 0 ? "l" : i === canvas.cols.length - 1 ? "r" : ""} {kbd}
                     onfocus={() => focusWin(w.id)} onaction={(a, source, target) => act(w.id, a, source, target)}
                     onresizew={(dx) => resizeWidth(c.id, i, dx)} onresizeh={(dy) => canvas.dragBoundary(c.id, k, dy, el?.querySelector<HTMLElement>(`[data-col="${c.id}"]`)?.clientHeight ?? vh)}>
@@ -395,22 +415,20 @@
 <Menu open={!!menu} items={menuItems} label="Window menu" anchor={menu ? { left: menu.x, top: menu.y, right: menu.x, bottom: menu.y } : null} placement="bottom" onclose={() => (menu = null)} onpick={pick} />
 
 <style>
-  /* The area around the windows shows the wallpaper sharp (Craft: the backdrop photo fills the area around the page at full sharpness), fixed to the viewport like the card's own picture, so panning never moves it. */
+  /* The area between the sidebars is the canvas and paints nothing: behind the windows is the one veiled wallpaper layer the sidebars sit on (shell/Backdrop.svelte), so every pixel outside the windows is the same with and without them. The windows are middle cards. */
   .canvas { position: absolute; inset: 0; overflow: hidden; touch-action: pan-x pan-y; overscroll-behavior: contain; }
-  .canvas::before { content: ""; position: absolute; inset: 0; z-index: 0; background: var(--wall-sharp, var(--wall-fallback, var(--backdrop))) center / cover no-repeat fixed; transition: opacity var(--dur-base) var(--ease-out); }
-  .canvas[data-max]::before { opacity: 0; }
-  /* The edge fade (the owner's: minimal, only while a window enters or leaves through an edge, never a standing band): two 28 px strips at the left and right edges that paint the same sharp picture as the area around the windows (fixed to the viewport, so they
-     match it exactly) under a static gradient, drawn over the windows. Their opacity is 0 unless a window crosses that edge (`fades()`), so nothing is visible at rest; it is the only thing that changes while panning, and opacity is composited. */
-  .fade { position: absolute; z-index: 2; top: 0; bottom: 0; width: 28px; pointer-events: none; opacity: 0; background: var(--wall-sharp, var(--wall-fallback, var(--backdrop))) center / cover no-repeat fixed; }
+  /* The edge fade (the owner's: minimal, only while a window enters or leaves through an edge, never a standing band): two 28 px strips at the area's left and right edges that paint the same layers as the background (the picture, the veil), fixed to the viewport so they match it,
+     under a static gradient, drawn over the windows. Their opacity is 0 unless a window crosses that edge (`fades()`), so nothing is drawn at rest; it is the only thing that changes while panning, and opacity is composited. */
+  .fade { position: absolute; z-index: 2; top: 0; bottom: 0; width: 28px; pointer-events: none; opacity: 0; background: var(--veil-l, linear-gradient(rgb(var(--tint) / 0.5) 0 0)), var(--wall-side, var(--wall-fallback, var(--backdrop))) center / cover no-repeat fixed; }
   .fade.l { left: 0; -webkit-mask-image: linear-gradient(to right, #000, transparent); mask-image: linear-gradient(to right, #000, transparent); }
   .fade.r { right: 0; -webkit-mask-image: linear-gradient(to left, #000, transparent); mask-image: linear-gradient(to left, #000, transparent); }
   .canvas[data-max] .fade { display: none; }
   .view { position: absolute; inset: 0; z-index: 1; }
   .strip { position: absolute; top: 0; bottom: 0; left: 0; will-change: transform; }
-  /* Columns run top to bottom of the canvas with the gap all round; the capsule floats over the bottom (the shell's `--canvas-bottom` leaves room for it). */
-  .col { position: absolute; top: calc(var(--safe-top, 0px) + 8px); bottom: var(--canvas-bottom, 8px); display: flex; flex-direction: column; gap: 8px; }
+  /* Columns run from the top to the bottom edge of the area as today's card does; the gap between stacked windows is the same 8 px. */
+  .col { position: absolute; top: 0; bottom: 0; display: flex; flex-direction: column; gap: 8px; }
   .col.max { top: 0; bottom: 0; }
   .col.hidden { display: none; }
   .slot { position: relative; min-height: 0; }
-  .none { position: absolute; inset: 0; z-index: 1; display: grid; place-items: center; color: #fff; font-size: var(--text-ui); }
+  .none { position: absolute; inset: 0; z-index: 1; display: grid; place-items: center; color: var(--ink-2); font-size: var(--text-ui); }
 </style>

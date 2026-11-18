@@ -28,9 +28,9 @@ try {
   await cdp.send("WebAuthn.enable"); await cdp.send("WebAuthn.addVirtualAuthenticator", { options: { protocol: "ctap2", transport: "internal", hasResidentKey: true, hasUserVerification: true, isUserVerified: true, automaticPresenceSimulation: true } });
   await p.goto(`${url}/?server=1`); await p.waitForSelector("html[data-ready]");
   await p.fill('input[name="token"]', token); await p.fill('input[name="name"]', "Req Owner"); await p.getByRole("button", { name: "Create passkey" }).click();
-  await p.waitForFunction(() => !document.querySelector("h1")?.textContent?.includes("Set up"), null, { timeout: 15000 }); await p.waitForSelector("html[data-ready]"); await p.waitForTimeout(1200);
+  await p.waitForTimeout(2500); await p.evaluate(() => localStorage.removeItem("cal.onboarding")); /* the first owner lands in the onboarding (shell lane): the account exists, leave the wizard */ await p.waitForSelector("html[data-ready]"); await p.waitForTimeout(1200);
   const go = async (page, path) => { await page.evaluate((x) => { history.pushState(null, "", x); dispatchEvent(new PopStateEvent("popstate")); }, path); await page.waitForTimeout(600); };
-  await go(p, "/settings/machines");
+  await p.evaluate(() => localStorage.removeItem("cal.onboarding")); await p.goto(`${url}/settings/machines?server=1`); await p.waitForSelector("html[data-ready]");
   await p.getByRole("button", { name: "Make a code" }).click();
   const code = /--code\s+(\S+)/.exec((await p.locator("code.cmd").first().innerText()).trim())?.[1];
   const home = join(data, "machine");
@@ -65,7 +65,7 @@ try {
   const waitGone = async (page, ms = 15000) => { for (let i = 0; i < ms / 100; i++) { if ((await bar(page).count()) === 0) return true; await page.waitForTimeout(100); } return false; };
   const agentSays = async (page, re, ms = 20000) => { for (let i = 0; i < ms / 200; i++) { const t = (await page.locator(".msg.agent").allInnerTexts()).join(" "); if (re.test(t)) return true; await page.waitForTimeout(200); } return false; };
   const diag = async (l) => console.log(`   [${l}] page:`, (await p.locator("main").innerText()).replace(/\s+/g, " ").slice(0, 200), "| threads:", JSON.stringify((await op(p, "threads.list", { space_id: space })).data?.threads?.map((t) => [t.turn_state, t.turn_reason?.code, t.turn_reason?.class])), "| requests:", JSON.stringify((await op(p, "requests.list", {})).data).slice(0, 300), "| fake:", (() => { try { return readFileSync(join(data, "fake.log"), "utf8").split("\n").filter((l) => /->|^cwd/.test(l)).slice(-2).join(" ; "); } catch { return ""; } })());
-  const calls = []; p.on("response", async (r) => { if (/operations|secrets|reverify|account\/live/.test(r.url()) && r.request().method() === "POST" && r.status() >= 400) calls.push(`${r.status()} ${new URL(r.url()).pathname} ${JSON.stringify(JSON.parse(r.request().postData() ?? "{}").operation ?? "")}`); });
+  const calls = []; p.on("response", async (r) => { if (/operations|secrets|reverify|account\/live/.test(r.url()) && r.request().method() === "POST" && r.status() >= 400) calls.push(`${r.status()} ${new URL(r.url()).pathname} ${JSON.stringify(JSON.parse(r.request().postData() ?? "{}").operation ?? "")} ${(await r.text().catch(() => "")).slice(0, 220)}`); });
   await open(p);
 
   // ---- 1. a question, answered from the bar

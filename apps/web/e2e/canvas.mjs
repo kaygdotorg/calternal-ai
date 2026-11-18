@@ -15,6 +15,28 @@ const rects = (p) => p.evaluate(() => [...document.querySelectorAll("[data-win]"
 const canvasBox = (p) => p.locator("[data-canvas]").boundingBox();
 const animating = (p, wait = 600) => p.waitForFunction(() => [...document.querySelectorAll("[data-col]")].some((c) => c.getAnimations().length > 0), null, { timeout: wait }).then(() => true, () => false);
 const item = (p, re) => p.locator("[role^=menuitem]", { hasText: re }).first();
+/** Every pixel outside the windows (and the app switcher, which floats over them) is the same with and without the windows: two screenshots, the second with the strip hidden, compared outside the windows' boxes. Returns how many pixels differ by more than 3 in a channel. */
+async function seam(p) {
+  const rs = await p.evaluate(() => [...document.querySelectorAll("[data-win]")].map((w) => w.getBoundingClientRect()).concat(document.querySelector(".appbar") ? [document.querySelector(".appbar").getBoundingClientRect()] : []).map((r) => [r.left, r.top, r.right, r.bottom]));
+  const a = (await p.screenshot()).toString("base64");
+  await p.addStyleTag({ content: ".strip { visibility: hidden !important; }" });
+  await p.waitForTimeout(200);
+  const b = (await p.screenshot()).toString("base64");
+  return p.evaluate(async ([a, b, rs]) => {
+    const load = (d) => new Promise((res) => { const i = new Image(); i.onload = () => res(i); i.src = "data:image/png;base64," + d; });
+    const [ia, ib] = await Promise.all([load(a), load(b)]);
+    const draw = (i) => { const c = document.createElement("canvas"); c.width = i.width; c.height = i.height; const x = c.getContext("2d"); x.drawImage(i, 0, 0); return x.getImageData(0, 0, i.width, i.height); };
+    const da = draw(ia), db = draw(ib); const k = ia.width / innerWidth;
+    let bad = 0;
+    for (let y = 0; y < da.height; y += 2) for (let x = 0; x < da.width; x += 2) {
+      const X = x / k, Y = y / k;
+      if (rs.some((r) => X >= r[0] - 2 && X <= r[2] + 2 && Y >= r[1] - 2 && Y <= r[3] + 2)) continue;
+      const i = (y * da.width + x) * 4;
+      if (Math.abs(da.data[i] - db.data[i]) > 3 || Math.abs(da.data[i + 1] - db.data[i + 1]) > 3 || Math.abs(da.data[i + 2] - db.data[i + 2]) > 3) bad++;
+    }
+    return bad;
+  }, [a, b, rs]);
+}
 const key = async (p, chord) => { await p.keyboard.press(chord); await p.waitForTimeout(150); };
 try {
   { const { page, ctx } = await open(browser, "desktop", "dark", "/threads/t-idle"); ok((await page.locator("[data-canvas]").count()) === 0, "without ?canvas=1 nothing changes (no canvas)"); await ctx.close(); }
@@ -25,8 +47,8 @@ try {
     ok((await wins(p).count()) === 3, "a fresh visit seeds a thread, another thread and a note", String(await wins(p).count()));
     // ---- chrome ----
     ok((await p.locator("[data-canvas]").getByText(/\d+ windows?/).count()) === 0 && (await p.getByRole("button", { name: "Open another window" }).count()) === 0, "the canvas carries no counter and no plus");
-    const g = await p.evaluate(() => { const c = document.querySelector("[data-canvas]").getBoundingClientRect(), card = document.querySelector(".mid-card").getBoundingClientRect(), bar = document.querySelector(".appbar")?.getBoundingClientRect(); const wb = Math.max(...[...document.querySelectorAll("[data-win]")].map((w) => w.getBoundingClientRect().bottom)); return { cb: c.bottom, kb: card.bottom, bt: bar?.top, wb }; });
-    ok(Math.abs(g.cb - g.kb) < 1 && g.bt < g.cb && g.wb <= g.bt, "the canvas runs to the card's bottom edge, the capsule floats over it and the windows stop above it", JSON.stringify(g));
+    const g = await p.evaluate(() => { const c = document.querySelector("[data-canvas]").getBoundingClientRect(), bar = document.querySelector(".appbar")?.getBoundingClientRect(); const wb = Math.max(...[...document.querySelectorAll("[data-win]")].map((w) => w.getBoundingClientRect().bottom)); const bodyB = Math.max(...[...document.querySelectorAll("[data-win] > .body")].map((w) => w.getBoundingClientRect().bottom)); return { cb: c.bottom, bt: bar?.top, wb, bodyB, hasCard: !!document.querySelector(".mid-card") }; });
+    ok(g.bt < g.cb && Math.abs(g.wb - g.cb) < 1 && g.bodyB <= g.bt + 1, "the windows run to the bottom edge, the capsule floats over them, and their content stops above it", JSON.stringify(g));
     for (const [i, w] of (await wins(p).all()).entries()) {
       const titles = await w.evaluate((e) => [...e.querySelectorAll(".wt, header .title")].filter((t) => t.getClientRects().length).length);
       const buttons = await w.locator(".tr button").evaluateAll((b) => b.map((x) => x.getAttribute("aria-label")));
@@ -43,15 +65,25 @@ try {
     ok(/Alt|⌥/.test(await (async () => { await w0.getByRole("button", { name: "Full screen" }).hover(); await p.waitForTimeout(700); return p.locator(".warm-tip").innerText().catch(() => ""); })()), "the tooltip of full screen shows its shortcut");
     await p.mouse.move(5, 5);
     // ---- the wallpaper and the colour ----
-    ok(await p.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--wall-sharp").includes("url(")) && await p.evaluate(() => /url\(/.test(getComputedStyle(document.querySelector("[data-canvas]"), "::before").backgroundImage)), "the wallpaper's own picture shows sharp around the windows");
-    const c = await p.evaluate(() => { const w = document.querySelectorAll("[data-win]")[0]; const s = getComputedStyle(w); return { bg: s.backgroundColor, ink: s.color }; });
-    ok(ratio(rgbOf(c.bg), rgbOf(c.ink)) >= 7, "a window's ink reaches 7:1 on its wallpaper-derived colour", `${c.bg} / ${c.ink}`);
-    ok(scheme === "dark" ? Math.max(...rgbOf(c.bg)) < 80 : Math.min(...rgbOf(c.bg)) > 200, `the window colour is ${scheme === "dark" ? "a deep" : "a pale"} tone`, c.bg);
+    ok(!(await p.evaluate(() => !!document.querySelector(".mid-card"))) && await p.evaluate(() => { const c = getComputedStyle(document.querySelector("[data-canvas]")); const b = getComputedStyle(document.querySelector("[data-canvas]"), "::before"); return c.backgroundImage === "none" && c.backgroundColor === "rgba(0, 0, 0, 0)" && (b.content === "none" || b.content === "normal"); }), "there is no card round the canvas and the area paints nothing itself (the sidebars' background shows through)");
+    ok(await p.evaluate(() => [...document.querySelectorAll("[data-win]")].every((w) => w.dataset.look === "card" && !!w.querySelector(".fg .pic"))), "every window is a middle card by default: the wallpaper's card copy under the card veil");
+    // the looks: Solid is the wallpaper-derived colour with ink at 7:1; Transparent is a tint over the background with no blurred copy and no backdrop filter
+    await wins(p).nth(0).getByRole("button", { name: "More" }).click(); await item(p, /Look: Solid/).click(); await p.waitForTimeout(300);
+    const c = await p.evaluate(() => { const w = document.querySelectorAll("[data-win]")[0]; const s = getComputedStyle(w); return { bg: s.backgroundColor, ink: s.color, look: w.dataset.look }; });
+    ok(c.look === "solid" && ratio(rgbOf(c.bg), rgbOf(c.ink)) >= 7, "Solid: the ink reaches 7:1 on the wallpaper-derived colour", `${c.bg} / ${c.ink}`);
+    ok(scheme === "dark" ? Math.max(...rgbOf(c.bg)) < 80 : Math.min(...rgbOf(c.bg)) > 200, `the solid colour is ${scheme === "dark" ? "a deep" : "a pale"} tone`, c.bg);
+    await wins(p).nth(0).getByRole("button", { name: "More" }).click(); await item(p, /Look: Transparent/).click(); await p.waitForTimeout(300);
+    const cl = await p.evaluate(() => { const w = document.querySelectorAll("[data-win]")[0]; const g = w.querySelector(".fg"); const after = getComputedStyle(g, "::after"); return { look: w.dataset.look, pic: !!g.querySelector(".pic"), f: getComputedStyle(g).backdropFilter, bg: after.backgroundColor, d: getComputedStyle(w).getPropertyValue("--fd") }; });
+    ok(cl.look === "clear" && !cl.pic && (cl.f === "none" || cl.f === "") && /oklab|color\(|rgba?\(/.test(cl.bg) && +cl.d > 0 && +cl.d <= 1, "Transparent: only a tint over the background (no blurred copy, no backdrop filter), at the least density that reads", JSON.stringify(cl));
+    await wins(p).nth(0).getByRole("button", { name: "More" }).click(); await item(p, /Look: Card/).click(); await p.waitForTimeout(300);
     // ---- niri's structure ----
     let r = await rects(p); const cb = await canvasBox(p);
     ok(r.length === 3 && Math.abs(r[1].x - r[0].x - r[0].w - 8) < 1.5 && Math.abs(r[0].w - (cb.width - 24) / 2) < 2, "two columns share the canvas, half each, with an 8 px gap all round and between", `${r[0].w.toFixed(0)} / ${r[1].w.toFixed(0)} of ${cb.width}`);
-    ok(Math.abs(r[0].y - cb.y - 8) < 1.5 && Math.abs(r[0].x - cb.x - 8) < 1.5, "the first window is one gap from the canvas's top and left edge");
+    ok(Math.abs(r[0].y - cb.y) < 1.5 && Math.abs((r[0].y + r[0].h) - (cb.y + cb.height)) < 1.5 && Math.abs(r[0].x - cb.x - 8) < 1.5, "the windows touch the top and bottom edge of the area as the card does, and keep the card's 8 px inset at the side", JSON.stringify([r[0].x - cb.x, r[0].y - cb.y]));
     ok(Math.abs(r[1].x - r[0].x - r[0].w - 8) < 1.5 && Math.abs(r[2].x - r[1].x) < 1.5 && r[2].y > r[1].y, "the note is stacked below the second thread in its column");
+    const diff = await seam(p);
+    ok(diff === 0, "the seam: every pixel outside the windows is the same with and without them", `${diff} pixels differ`);
+    await p.reload(); await p.waitForSelector("html[data-ready]"); await p.waitForTimeout(2000);
     // a window opened by the keyboard: instant, right of the focused column
     await p.locator("[data-win]").nth(0).click({ position: { x: 100, y: 400 } }); await p.waitForTimeout(500);
     const before = (await wins(p).count());
@@ -84,8 +116,9 @@ try {
     while ((await wins(p).count()) > 1) { await key(p, "Alt+Shift+KeyW"); await p.waitForTimeout(100); }
     await p.waitForTimeout(300);
     r = await rects(p);
-    ok(r.length === 1 && Math.abs(r[0].w - (cb.width - 16)) < 2 && r[0].w / cb.width > 0.97, "a single window fills the canvas (a gap all round): about 99 % of the width", `${(r[0].w / cb.width * 100).toFixed(1)} %`);
-    ok(Math.abs((r[0].x - cb.x) - (cb.x + cb.width - r[0].x - r[0].w)) < 2, "and is centred");
+    ok(r.length === 1 && Math.abs(r[0].w - (cb.width - 16)) < 2 && Math.abs((r[0].x - cb.x) - (cb.x + cb.width - r[0].x - r[0].w)) < 2, "a single window is the card: the area less the card's inset on each side, centred", `${r[0].w.toFixed(0)} of ${cb.width}`);
+    const plain = await (async () => { const { page: q, ctx: c2 } = await open(browser, "desktop", scheme, "/threads/t-idle"); await q.waitForTimeout(700); const b = await q.locator(".mid-card").boundingBox(); await c2.close(); return b; })();
+    ok(Math.abs(r[0].x - plain.x) < 1 && Math.abs(r[0].y - plain.y) < 1 && Math.abs(r[0].w - plain.width) < 1 && Math.abs(r[0].h - plain.height) < 1, "a single window is identical to the app's own middle card (same box)", `${[r[0].x, r[0].y, r[0].w, r[0].h].map(Math.round)} / ${[plain.x, plain.y, plain.width, plain.height].map(Math.round)}`);
     await key(p, "Alt+Shift+KeyN"); await key(p, "Alt+Shift+KeyN");
     r = await rects(p);
     ok(r.length === 3 && Math.abs(r[0].w - r[1].w) < 2 && Math.abs(r[0].w - (cb.width - 24) / 2) < 2, "two windows share it, half each; the third keeps half and the strip scrolls", r.map((x) => x.w.toFixed(0)).join("/"));
@@ -149,7 +182,7 @@ try {
     ok(await animating(p), "full screen by the pointer animates");
     await p.waitForTimeout(600);
     const cv = await canvasBox(p), mx = await p.locator("[data-win].maximised").boundingBox();
-    ok(Math.abs(mx.width - cv.width) < 2 && Math.abs(mx.height - cv.height) < 2, "full screen merges the window into the outer card (it fills it)", `${mx.width}x${mx.height} of ${cv.width}x${cv.height}`);
+    ok(Math.abs(mx.width - (cv.width - 16)) < 2 && Math.abs(mx.height - cv.height) < 2, "full screen makes the window fill the area (a card with no neighbours)", `${mx.width}x${mx.height} of ${cv.width}x${cv.height}`);
     await key(p, "Alt+Shift+KeyF"); await p.waitForTimeout(100);
     ok((await p.locator("[data-win].maximised").count()) === 0 && !(await animating(p, 150)), "the keyboard restores it instantly");
     // focus follows the press, and the address and sidebars follow focus
@@ -170,25 +203,32 @@ try {
     ok((await fadeAt())[0] < 1, "a window leaving through the left edge fades it", String(await fadeAt()));
     await ctx.close();
   }
-  // ---- the frosted window: the old Calternal's card ----
+  // ---- the card's wallpaper layer is a picture that stays still behind the moving cards ----
   {
     const { page: p, ctx } = await open(browser, "desktop", "dark", "/threads?canvas=1");
     await p.waitForTimeout(2200);
-    await wins(p).nth(0).getByRole("button", { name: "More" }).click();
-    await item(p, /frosted/).click(); await p.waitForTimeout(300);
-    const fg = await p.evaluate(() => { const g = document.querySelector(".win.frosted .fg"); if (!g) return null; const s = getComputedStyle(g); return { f: s.backdropFilter || s.webkitBackdropFilter, d: getComputedStyle(g.parentElement).getPropertyValue("--fd") }; });
-    ok(fg && /blur\(20px\)/.test(fg.f) && /saturate\(1\.4\)/.test(fg.f), "a frosted window is one glass layer: blur 20 px, saturation 140 %", JSON.stringify(fg));
-    ok(fg && +fg.d > 0 && +fg.d <= 1, "its paper density is the least that still reads (frost.ts), from the wallpaper's extremes", fg?.d);
+    await key(p, "Alt+Shift+KeyN"); await key(p, "Alt+Shift+KeyN");
+    const origin = () => p.evaluate(() => { const g = document.querySelector(".win .pic"); const r = g.getBoundingClientRect(); return [Math.round(r.left), Math.round(r.top)]; });
+    for (let i = 0; i < 6; i++) await key(p, "Alt+Shift+ArrowLeft");
+    await p.waitForTimeout(300);
+    const o0 = await origin();
+    const wb = await wins(p).nth(1).boundingBox(); await p.mouse.move(wb.x + wb.width / 2, wb.y + wb.height / 2); await p.mouse.wheel(0, 260); await p.waitForTimeout(500);
+    const o1 = await origin();
+    ok(Math.abs(o0[0]) <= 1 && Math.abs(o0[1]) <= 1 && Math.abs(o1[0]) <= 1 && Math.abs(o1[1]) <= 1, "each card's wallpaper picture stays at the viewport's origin while the strip scrolls (only transforms move)", `${o0} -> ${o1}`);
+    ok(await p.evaluate(() => getComputedStyle(document.querySelector(".win .fg")).backdropFilter === "none"), "no window has a live backdrop filter");
     await ctx.close();
   }
-  // ---- six windows: frame times at 4x CPU, opaque and with every window frosted ----
-  for (const frosted of [false, true]) {
+  // ---- six windows: frame times at 4x CPU, as cards and with every window transparent ----
+  for (const clear of [false, true]) {
     const { page: p, ctx } = await open(browser, "desktop", "dark", "/threads?canvas=1");
     await p.waitForTimeout(2200);
     for (let i = 0; i < 3; i++) await key(p, "Alt+Shift+KeyN");
-    if (frosted) { await p.evaluate(() => { const s = JSON.parse(localStorage.getItem("cal.canvas")); s.frostAll = true; localStorage.setItem("cal.canvas", JSON.stringify(s)); }); await p.reload(); await p.waitForSelector("html[data-ready]"); await p.waitForTimeout(2500); }
+    if (clear) { await p.evaluate(() => { const s = JSON.parse(localStorage.getItem("cal.canvas")); for (const c of s.cols) for (const w of c.wins) w.look = "clear"; localStorage.setItem("cal.canvas", JSON.stringify(s)); }); await p.reload(); await p.waitForSelector("html[data-ready]"); await p.waitForTimeout(2500); }
     const total = await p.evaluate(() => JSON.parse(localStorage.getItem("cal.canvas")).cols.reduce((n, c) => n + c.wins.length, 0));
     await p.mouse.wheel(0, -9999); await p.waitForTimeout(500);
+    // Warm: every column is mounted once before the measurement (mounting a thread view is the one cost of a pan, and it is the same for every look).
+    for (let i = 0; i < 16; i++) { await p.mouse.wheel(0, 300); await p.waitForTimeout(40); }
+    await p.waitForTimeout(500); await p.mouse.wheel(0, -9999); await p.waitForTimeout(500);
     const cdp = await ctx.newCDPSession(p);
     await cdp.send("Emulation.setCPUThrottlingRate", { rate: 4 });
     const win = (await wins(p).first().boundingBox());
@@ -199,11 +239,11 @@ try {
     await p.waitForTimeout(300);
     const dt = await p.evaluate(() => { cancelAnimationFrame(window.__r); return window.__f.slice(5); });
     const s = [...dt].sort((a, b) => a - b); const p95 = s[Math.floor(s.length * 0.95)], max = s.at(-1), late = dt.filter((v) => v > 24).length;
-    console.log(`INFO  frame times while panning, 4x CPU, ${total} windows, ${frosted ? "all frosted" : "opaque"}: n=${dt.length} p50=${s[s.length >> 1].toFixed(1)}ms p95=${p95.toFixed(1)}ms max=${max.toFixed(1)}ms late(>24ms)=${late}`);
+    console.log(`INFO  frame times while panning, 4x CPU, ${total} windows, ${clear ? "all transparent" : "cards"}: n=${dt.length} p50=${s[s.length >> 1].toFixed(1)}ms p95=${p95.toFixed(1)}ms max=${max.toFixed(1)}ms late(>24ms)=${late}`);
     if (loadavg()[0] > cpus().length) console.log(`SKIP  p95 judgement: the VM is busy (load ${loadavg()[0].toFixed(0)} on ${cpus().length} cores)`);
-    else if (!frosted) ok(p95 < 24, "panning six windows at 4x CPU keeps the p95 frame under 24 ms", `p95=${p95.toFixed(1)}`);
+    else ok(p95 < 24, `panning six ${clear ? "transparent " : ""}windows at 4x CPU keeps the p95 frame under 24 ms`, `p95=${p95.toFixed(1)}`);
     await cdp.send("Emulation.setCPUThrottlingRate", { rate: 1 });
-    if (!frosted) {
+    if (!clear) {
       for (let i = 0; i < 4; i++) await key(p, "Alt+Shift+KeyN");
       await p.mouse.wheel(0, -9999); await p.waitForTimeout(500);
       const all = await p.evaluate(() => JSON.parse(localStorage.getItem("cal.canvas")).cols.reduce((n, c) => n + c.wins.length, 0));
@@ -219,7 +259,7 @@ try {
     const cdp = await ctx.newCDPSession(p);
     const touch = (type, pts) => cdp.send("Input.dispatchTouchEvent", { type, touchPoints: pts.map(([x, y], id) => ({ x, y, id })) });
     const w = (await wins(p).first().boundingBox());
-    ok(w.width > 360 && w.width <= 390 - 8 + 1, "a phone window is the screen's width less a gap on each side", String(w.width));
+    ok(Math.abs(w.width - 390) < 1, "a phone window is the screen's full width, edge to edge as the card is", String(w.width));
     const x0 = await stripX(p);
     await touch("touchStart", [[150, 400], [250, 400]]);
     for (let i = 1; i <= 8; i++) await touch("touchMove", [[150 - i * 20, 400], [250 - i * 20, 400]]);

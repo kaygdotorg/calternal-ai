@@ -184,7 +184,7 @@
   // (A phone shows it for Settings only: Threads and Notes have their own header button, and the Settings page has no header.)
   const showLeft = $derived((!shell.narrow && !shell.sidebarOpen) || (shell.narrow && (app.kind === "settings" || !id) && !shell.sidebarOpen)); // a phone card with no header of its own (Settings, or an app with nothing open) still has a way to the list
   // The side panel's button at the card's corner: on a wide screen when it is closed; on a phone (where the bottom bar is the apps) whenever there is something open to show panels for and nothing else is over the card.
-  const showRight = $derived(hasRight && !rightOpen && (!shell.narrow || (!!id && !shell.sidebarOpen)));
+  const showRight = $derived(hasRight && !rightOpen && (!shell.narrow || (!!id && !shell.sidebarOpen && !canvasEnabled))); // (on a phone the canvas's windows carry "Open side panel" in their menu; the shell lane is removing this phone button for every screen)
 </script>
 
 <Backdrop />
@@ -193,17 +193,25 @@
   <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
   <aside class="side" class:pulled={wp?.side === "left"} style:--vis={wp?.side === "left" ? `${wp.vis}px` : undefined} style:--w={wp?.side === "left" ? `${wp.w}px` : undefined} bind:this={sideEl} onclick={choose} data-ink={surfaces.left ?? undefined} aria-label="{app.name} sidebar" inert={!shell.sidebarOpen}><Sidebar {app} /></aside>
 
-  <main class="mid" bind:this={midEl} style:--edge-l={showLeft && !shell.narrow ? "calc(var(--pill-h) + var(--s-3))" : undefined} style:--edge-r={showRight && !shell.narrow ? "calc(var(--pill-h) + var(--s-3))" : undefined} class:dragging={drag !== null} style:transform={wp ? `translateX(${wp.side === "left" ? wp.vis - (wp.layoutOpen ? wp.w : 0) : -(wp.vis - (wp.layoutOpen ? wp.w : 0))}px)` : dragMode === "card" && drag !== null ? `translateX(${drag}px)` : undefined} style:scale={dragMode === "panel" && drag !== null ? 1 - 0.04 * (1 - drag / panelWidth()) : undefined} inert={shell.narrow && (shell.sidebarOpen || rightOpen)}>
+  <main class="mid" class:cv={canvasEnabled} bind:this={midEl} style:--edge-l={showLeft && !shell.narrow ? "calc(var(--pill-h) + var(--s-3))" : undefined} style:--edge-r={showRight && !shell.narrow ? "calc(var(--pill-h) + var(--s-3))" : undefined} class:dragging={drag !== null} style:transform={wp ? `translateX(${wp.side === "left" ? wp.vis - (wp.layoutOpen ? wp.w : 0) : -(wp.vis - (wp.layoutOpen ? wp.w : 0))}px)` : dragMode === "card" && drag !== null ? `translateX(${drag}px)` : undefined} style:scale={dragMode === "panel" && drag !== null ? 1 - 0.04 * (1 - drag / panelWidth()) : undefined} inert={shell.narrow && (shell.sidebarOpen || rightOpen)}>
     {#if !shell.narrow && shell.sidebarOpen}<ResizeHandle side="left" />{/if}
     {#if !shell.narrow && hasRight && rightOpen}<ResizeHandle side="right" />{/if}
     {#if showLeft}<div class="edge l"><Pill icon="sidebar" label="Show the sidebar" aria-keyshortcuts={ariaKeys(shortcuts.chordFor("sidebar"))} onclick={() => shell.toggleSidebar()} /></div>{/if}
     {#if showRight}<div class="edge r"><Pill icon="sidebar-right" label="Show the side panel" aria-keyshortcuts={ariaKeys(shortcuts.chordFor("panel"))} onclick={() => shell.toggleRight()} /></div>{/if}
+    {#if canvasEnabled}
+      <!-- The canvas experiment (canvas/Canvas.svelte): no card round it; the area between the sidebars is the canvas and each window is a middle card. The app switcher floats over the windows in one slot at the area's bottom centre (`.area > .appbar`). -->
+      <div class="area" role="region" aria-label={app.name}>
+        <div class="app"><Canvas /></div>
+        {#if !shell.narrow}<div class="appbar"><AppSwitcher {app} placement="card" /></div>{/if}
+      </div>
+    {:else}
     <Card label={app.name} class="mid-card">
-      <div class="col" class:cv={canvasEnabled}>
-        <div class="app">{#if canvasEnabled}<Canvas />{:else}<app.Main {id} />{/if}</div>
+      <div class="col">
+        <div class="app"><app.Main {id} /></div>
         {#if !shell.narrow}<div class="appbar"><AppSwitcher {app} placement="card" /></div>{/if}
       </div>
     </Card>
+    {/if}
   </main>
 
   {#if shell.narrow && shell.sidebarOpen}<button type="button" class="peek" aria-label="Close the sidebar" onclick={tap}></button>{/if}
@@ -255,10 +263,13 @@
   .col { position: relative; height: 100%; display: flex; flex-direction: column; }
   .app { flex: 1; min-height: 0; position: relative; }
   .appbar { flex: none; padding: var(--s-3) var(--s-6) var(--s-4); }
-  /* The canvas experiment: the canvas runs to the card's bottom edge and the capsule floats over it (no band behind it); the windows stop above it (`--canvas-bottom`). */
-  .col.cv { --canvas-bottom: calc(var(--s-3) + var(--pill-h) + var(--s-4) + var(--s-5)); }
-  .col.cv > .appbar { position: absolute; z-index: 4; left: 0; right: 0; bottom: 0; pointer-events: none; }
-  .col.cv > .appbar > :global(*) { pointer-events: auto; }
+  /* The canvas experiment: the area has no card of its own. Its windows run to the bottom edge and their content stops above the app switcher (`--switcher-clear`, what the card's content leaves for it today); the switcher floats over them in ONE slot, the bottom centre of the area (this
+     rule is the only place that says where it is). */
+  .area { --switcher-clear: calc(var(--s-3) + var(--pill-h) + var(--s-4) + var(--s-3)); position: relative; height: 100%; }
+  .area > .app { position: absolute; inset: 0; }
+  .area > .appbar { position: absolute; z-index: 4; left: 0; right: 0; bottom: 0; padding: var(--s-3) var(--s-6) var(--s-4); display: flex; justify-content: center; pointer-events: none; }
+  .area > .appbar > :global(*) { pointer-events: auto; }
+  .mid.cv { padding: 0; }
   .right { min-width: 0; overflow: hidden; }
   .right > :global(.rs) { width: var(--right-w); }
 

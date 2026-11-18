@@ -71,6 +71,13 @@ describe("the saved thread's records", () => {
     expect(messagesOf(md(agent)).map((m) => m.at)).toEqual([Date.parse("2026-11-17T12:01:00+00:00"), Date.parse("2026-11-17T12:04:00+00:00")]);
     expect(messageOf({ ...person, at: "2026-11-18T19:30:00+05:30" }).at).toBe(Date.parse("2026-11-18T14:00:00Z"));
   });
+  test("a saved agent message's reasoning summary and thinking time become a thought block ahead of its text", () => {
+    const m = messageOf({ ...agent, text: "> Reasoning summary — Compared the checklist.\n\nThe answer." });
+    expect(m.blocks.map((b) => b.type)).toEqual(["thought", "text"]);
+    expect(m.blocks[0]).toEqual({ type: "thought", text: "Compared the checklist.", ms: 4000 });
+    expect((m.blocks[1] as { text: string }).text).toBe("The answer.");
+    expect(messageOf({ ...agent, provenance: { ...agent.provenance!, reasoning_ms: null } }).blocks.map((b) => b.type)).toEqual(["text"]);
+  });
   test("an agent message carries who wrote it: provider, service, model, reasoning, duration and thinking time", () => {
     expect(messageOf(agent).by).toEqual({ provider: "claude", providerId: "calternal-claude-code", service: "Anthropic", model: "claude-sonnet-5-5", reasoning: "high", ms: 12000, thoughtMs: 4000 });
     expect(messageOf(person).by).toBeUndefined();
@@ -361,13 +368,13 @@ describe("requests (docs/requests.md, crates/core/src/requests.rs)", () => {
     expect(d.calls.filter((c) => c.operation === "requests.list")).toHaveLength(1);
   });
   test("a refused approval (no fresh passkey proof) is thrown with the server's words", async () => {
-    const d = double({ "requests.approve": () => new Response(JSON.stringify({ request_id: "r", ok: false, error: { code: "forbidden", message: "verify with your passkey again first" } }), { status: 403 }) });
+    const d = double({ "requests.approve": () => new Response(JSON.stringify({ request_id: "r", ok: false, error: { code: "passkey_reverification_required", message: "verify with your passkey again first" } }), { status: 403 }) });
     await expect(d.client.answer("a1", { kind: "approval", decision: "once" })).rejects.toMatchObject({ message: "verify with your passkey again first" });
     expect(d.reverified).toHaveLength(1);
   });
   test("a stale passkey proof asks for the passkey once and tries the approval again", async () => {
     let n = 0;
-    const d = double({ "requests.approve": () => (n++ === 0 ? new Response(JSON.stringify({ request_id: "r", ok: false, error: { code: "forbidden", message: "sign in again with a passkey to approve access" } }), { status: 403 }) : { id: "a1", status: "approved" }), "requests.list": () => ({ requests: [] }) });
+    const d = double({ "requests.approve": () => (n++ === 0 ? new Response(JSON.stringify({ request_id: "r", ok: false, error: { code: "passkey_reverification_required", message: "sign in again with a passkey to approve access" } }), { status: 403 }) : { id: "a1", status: "approved" }), "requests.list": () => ({ requests: [] }) });
     await d.client.answer("a1", { kind: "approval", decision: "once" });
     expect(d.reverified).toHaveLength(1);
     expect(d.ops("requests.approve")).toHaveLength(2);

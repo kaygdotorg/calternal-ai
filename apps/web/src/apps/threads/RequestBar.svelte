@@ -79,22 +79,24 @@
         {:else if cur.kind === "signin"}
           {#key cur.id}<SignIn request={cur} onanswer={(code) => answer({ kind: "signin", code })} />{/key}
         {:else}
-          <div class="trusted"><Icon name="lock" inline /> Drawn by Calternal. The agent gets a handle, never the value.</div>
-          <h2>{cur.label}</h2>
-          <p id="why">{cur.why} Paste the value below; it goes straight to Calternal’s secret store.</p>
-          <div class="meta"><Badge text={cur.scope === "personal" ? "Personal" : "Shared with the space"} tone="info" /><Badge text={cur.required ? "Required" : "Optional"} /><code>{cur.name}</code></div>
+          <!-- One line of what is asked and by whom, one field, one action and a quiet "Not now"; the rest (why, where it goes, its scope and name, how long it lasts) is behind a disclosure. -->
+          <h2 class="ask">The agent asks for your {cur.label}</h2>
           {#if expired}
-            <p class="exp">This request expired after 15 minutes.</p>
+            <p class="exp">This request expired.</p>
             <div class="foot"><Button variant="primary" text="Ask again" onclick={() => answer({ kind: "secret-skip" })} /></div>
           {:else}
             <form onsubmit={(e) => { e.preventDefault(); if (secret) answer({ kind: "secret", value: secret }); }}>
               <label class="visually-hidden" for="secret">{cur.label}</label>
               <input id="secret" type="password" autocomplete="off" spellcheck="false" bind:value={secret} aria-describedby="why" placeholder="Paste the value" />
-              <Button variant="quiet" text={cur.required ? "Not now" : "Skip"} onclick={() => answer({ kind: "secret-skip" })} />
               <Button variant="primary" text="Save" disabled={!secret} type="submit" />
             </form>
-            <p class="clock">Expires in <time>{clock}</time></p>
+            <div class="foot"><Button variant="quiet" text={cur.required ? "Not now" : "Skip"} onclick={() => answer({ kind: "secret-skip" })} /></div>
           {/if}
+          <details class="more">
+            <summary>Why, and where it goes</summary>
+            <p id="why">{cur.why} The value goes straight to Calternal’s secret store; the agent gets a handle, never the value. Drawn by Calternal: an agent can’t answer this for you.</p>
+            <div class="meta"><Badge text={cur.scope === "personal" ? "Personal" : "Shared with the space"} tone="info" /><Badge text={cur.required ? "Required" : "Optional"} /><code>{cur.name}</code>{#if !expired}<span class="clock">Expires in <time>{clock}</time></span>{/if}</div>
+          </details>
         {/if}
       </div>
     {/if}
@@ -109,6 +111,7 @@
   .pager { display: inline-flex; align-items: center; font-size: var(--text-label); color: var(--ink-3); font-variant-numeric: tabular-nums; }
   .body { display: grid; gap: var(--s-4); padding: 0 var(--s-6) var(--s-6); }
   h2 { font-size: var(--text-heading); font-weight: var(--strong-weight); }
+  h2.ask { font-size: var(--text-ui); line-height: 1.35; }
   p { color: var(--ink-2); font-size: var(--text-ui); }
   .trusted { display: inline-flex; align-items: center; gap: var(--s-3); font-size: var(--text-label); color: var(--ink-2); }
   pre { margin: 0; padding: var(--s-4) var(--s-5); border-radius: var(--r-select); background: rgb(var(--ink-rgb) / 0.08); overflow-x: auto; font-size: var(--text-label); }

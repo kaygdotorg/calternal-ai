@@ -1,13 +1,11 @@
 /**
- * The frosted window, ported from the old Calternal (`origin/review/switcher-a-pills`: `apps/mockup/src/lib/behind.ts` `frostRange`, `frost.svelte.ts`, `packages/ui/src/styles/panes.css` `.fg-glass`). Its rule, in the owner's words then: "the page is always
- * frosted glass, as frosted as still reads and no less". The glass is ONE layer under the whole card: `backdrop-filter: blur(20px) saturate(140%)` (`AUTO_BLUR_PX`) and the page's paper laid over it at a density (`--pane-up`) that is the least at which the
- * page's body ink reaches 4.5:1 and its secondary ink 3:1 against the worst colour behind it (bisection, `FLOOR`), plus a taste margin of 0.06 (`MARGIN`); with no white sheet in light: contrast comes from the page's own density, never from a tint over the
- * picture. The old app took the extremes from the backdrop's own colours; here they are the wallpaper's 1st and 99th percentile pixels (appearance/wallpaper.ts `wallpaperExtremes`). Cost: 18 bisection steps, once per wallpaper or scheme change.
+ * The density of a transparent window (the old Calternal's `frostRange`, `origin/review/switcher-a-pills` `apps/mockup/src/lib/behind.ts`; its rule was "the page is always frosted glass, as frosted as still reads and no less"): the page's paper laid over what is behind
+ * it at the least density `d` at which the page's body ink reaches 4.5:1 and its secondary ink 3:1 against the worst colour behind it (an 18-step bisection, `FLOOR`), plus a taste margin of 0.06 (`MARGIN`); no white sheet in light, so the contrast comes from the page's own
+ * density and never from a tint over the picture. What is behind a canvas window is the one background the sidebars sit on, which is already blurred and veiled, so the window needs no blur of its own and no live backdrop filter: it is only this tint. The old app took the
+ * extremes from its backdrop's own colours; here they are the 1st and 99th percentile pixels of the background under its veil (appearance/wallpaper.ts `wallpaperExtremes`). Cost: 18 bisection steps, once per wallpaper or scheme change.
  */
 import { contrast, type Rgb } from "../appearance/accent";
 
-/** The blur of an automatic frost (px) and the saturation the old glass used. */
-export const BLUR_PX = 20, SATURATE = 1.4;
 /** The contrast floors the page's words must reach (WCAG), and the taste margin above the least readable density. */
 export const FLOOR = { body: 4.5, secondary: 3 }, MARGIN = 0.06;
 
