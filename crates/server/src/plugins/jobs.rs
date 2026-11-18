@@ -7,6 +7,8 @@
 //! the plugin, the starting account and its sign-in ([`Session`], an installation ID,
 //! never a token), the run operation and input, the state, the last checkpoint and
 //! the final result. Child results are recorded once per (parent, child) pair.
+//! A job can park on a typed signal with a deadline. The first outcome and
+//! its replay receipt commit in the same space transaction as readmission.
 //!
 //! Stream chunks are not stored: each running job has a bounded in-memory buffer
 //! ([`MAX_BUFFERED_CHUNKS`] chunks and [`MAX_BUFFERED_BYTES`] bytes; the oldest are
@@ -30,6 +32,7 @@ mod checkpoint;
 mod claim;
 mod complete;
 mod database;
+pub(crate) mod waits;
 pub(crate) use database::JobDatabase;
 
 use std::collections::HashMap;
@@ -105,6 +108,8 @@ pub struct Job {
     pub parent: Option<String>,
     /// Current state.
     pub state: JobState,
+    /// Public wait summary, when parked for a signal.
+    pub(super) wait: Option<calternal_core::JobWait>,
     /// Last checkpoint, or null.
     pub checkpoint: Value,
     /// Sequence number of the first chunk after the checkpoint.
@@ -158,6 +163,7 @@ impl Job {
             space_id: self.space.clone(),
             state: self.state,
             parent_id: self.parent.clone(),
+            wait: self.wait.clone(),
             checkpoint: self.checkpoint.clone(),
             checkpoint_seq: self.checkpoint_seq,
             result: self.result.clone(),
@@ -209,6 +215,8 @@ pub enum RunEnd {
     RetryWaiting,
     /// Provider exited without a definite outcome.
     OutcomeUnknown,
+    /// The wait was rejected before parking, with a caller-safe explanation.
+    WaitRejected(String),
     /// The run failed, was refused or broke protocol.
     Failed,
 }
@@ -232,6 +240,7 @@ pub struct Jobs {
     pub(super) root: Option<PathBuf>,
     pub(super) security: Option<calternal_auth::agents::Agents>,
     pub(super) receipt_retention: std::time::Duration,
+    wait_signals: Mutex<HashMap<String, HashMap<String, Arc<tokio::sync::Notify>>>>,
     spaces: Mutex<HashMap<String, OpenSpace>>,
     pub(super) lifecycle: calternal_types::OwnerLifecycle,
     tick: AtomicUsize,
@@ -331,6 +340,7 @@ impl Jobs {
             root: None,
             security: None,
             receipt_retention: calternal_content::DEFAULT_RECEIPT_RETENTION,
+            wait_signals: Mutex::new(HashMap::new()),
             spaces: Mutex::new(HashMap::new()),
             lifecycle: calternal_types::OwnerLifecycle::default(),
             tick: AtomicUsize::new(0),
@@ -380,6 +390,10 @@ impl Jobs {
         retain(&c)?;
         let c = Arc::new(JobDatabase::new(c, self.lifecycle.clone(), space_id));
         let mut spaces = self.spaces.lock().unwrap_or_else(|p| p.into_inner());
+        if let Some((cached, used)) = spaces.get_mut(space) {
+            *used = tick;
+            return Ok(cached.clone());
+        }
         if spaces.len() >= MAX_OPEN_SPACES
             && let Some(oldest) = spaces
                 .iter()
@@ -569,6 +583,6 @@ pub(crate) fn upgrade_schema() -> calternal_store::migrations::Schema<'static> {
         "jobs.db",
         2,
         BATCHES.get_or_init(|| [SCHEMA, crate::threads::turn_events::schema()]),
-        &[],
+        &[waits::SCHEMA],
     )
 }

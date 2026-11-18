@@ -27,7 +27,7 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "additionalProperties": false,
-  "description": "Read one manifest-declared setting as a Manager of the addressed space.",
+  "description": "Address one manifest-declared setting in an accessible space.",
   "properties": {
     "key": {
       "description": "Stable setting key from that package's manifest.",

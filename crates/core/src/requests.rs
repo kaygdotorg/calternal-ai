@@ -14,6 +14,10 @@ pub struct PersonRequest {
     pub space_id: Option<String>,
     /// Thread UUID when the request was raised during a turn.
     pub thread_id: Option<String>,
+    /// Job UUID for a plugin wait addressed to this person.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub job_id: Option<String>,
     /// Question, approval or trusted secret prompt.
     pub detail: RequestDetail,
 }
@@ -160,7 +164,7 @@ pub enum RequestTarget {
     Account,
     /// Issuing agent's current turn. Space and job come from its token.
     Turn,
-    /// Explicit space UUID and current space settings capability.
+    /// Explicit space UUID and the row’s current space capability.
     Space,
 }
 
@@ -241,6 +245,15 @@ pub const REQUEST_OPERATIONS: &[RequestOperation] = &[
         crate::PushQueued
     ),
     operation!(
+        "plugins.diagnostics",
+        "Inspect an installed plugin's readiness and recent worker failures",
+        Space,
+        PluginsManage,
+        Read,
+        crate::PluginInput,
+        crate::PluginDiagnostics
+    ),
+    operation!(
         "plugins.network.content.get",
         "Get a prepared sealed content frame",
         Space,
@@ -266,6 +279,24 @@ pub const REQUEST_OPERATIONS: &[RequestOperation] = &[
         Reversible,
         crate::ContentFetchPreferenceEdit,
         crate::ContentFetchPreference
+    ),
+    operation!(
+        "plugins.personal_settings.get",
+        "Read your own declared plugin setting",
+        Space,
+        SpaceRead,
+        Read,
+        crate::PluginSettingAddress,
+        crate::PluginSettingValue
+    ),
+    operation!(
+        "plugins.personal_settings.set",
+        "Edit your own declared plugin setting",
+        Space,
+        SpaceRead,
+        Reversible,
+        crate::PluginPersonalSettingEdit,
+        crate::PluginSettingValue
     ),
     operation!(
         "plugins.settings.get",

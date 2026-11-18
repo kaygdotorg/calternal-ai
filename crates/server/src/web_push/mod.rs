@@ -107,8 +107,8 @@ pub async fn configure<D: Directory>(state: &Shared<D>) -> Result<(), Error> {
                 let transport = transport.clone();
                 let state = weak.upgrade();
                 async move {
-                    if !fixture && let Some(state) = state {
-                        deliver(&state, transport, notice).await;
+                    if let Some(state) = state {
+                        deliver(&state, transport, notice, fixture).await;
                     }
                 }
             })
@@ -282,11 +282,15 @@ fn payload<D: Directory>(state: &Shared<D>, notice: &Notice) -> Option<PushPaylo
                 } else {
                     PushStatus::Finished
                 },
+                space_id: Some(space.to_string()),
+                thread_id: Some(thread.to_string()),
             })
         }
         Target::Test { .. } => Some(PushPayload {
             title: "Calternal".into(),
             status: PushStatus::Test,
+            space_id: None,
+            thread_id: None,
         }),
     }
 }
@@ -295,6 +299,7 @@ async fn deliver<D: Directory>(
     state: &Shared<D>,
     transport: Arc<transport::Transport>,
     notice: Notice,
+    fixture: bool,
 ) {
     if notice.at.elapsed() > MAX_AGE {
         return;
@@ -321,6 +326,18 @@ async fn deliver<D: Directory>(
                     sub.device == *device && sub.generation == *generation
                 }
             });
+        if fixture {
+            if targets.count() > 0
+                && let Ok(bytes) = serde_json::to_vec(&payload)
+            {
+                let _ = calternal_fsio::write_atomic_mode(
+                    &root.join("web-push-fixture.json"),
+                    &bytes,
+                    0o600,
+                );
+            }
+            return None;
+        }
         Some(
             targets
                 .filter_map(|sub| {

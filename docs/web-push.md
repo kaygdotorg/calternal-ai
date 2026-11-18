@@ -2,9 +2,10 @@
 
 Calternal sends notifications for the initiating person's thread when a
 committed request needs them or a turn finishes. Subscribing is opt-in.
-The browser receives the current title and a status. Message text, request
-details, tool output, thread IDs, credentials, and account IDs stay out of
-the payload. The browser can open the signed-in app from a notification.
+The browser displays the current thread title and a status. The encrypted
+payload carries the thread and space UUIDs for click routing. Message text,
+request details, tool output, credentials, and account IDs stay out of the
+payload.
 
 ## Operations
 
@@ -31,10 +32,13 @@ installations and never returns endpoints or browser keys. Unsubscribing a
 missing or foreign device returns `removed: false`. The test targets the
 current registered installation and reports admission to the queue.
 
-The decrypted service-worker payload is `{title, status}`. Render
-`needs_you` as “needs you”, `finished` as “finished”, and `test` as a test
-notification. The test uses the title “Calternal”. The wire shape is also
-exported as `PushPayload` in the TypeScript contract.
+The decrypted service-worker payload for a thread is
+`{title, status, space_id, thread_id}`. Render `needs_you` as “needs you”
+and `finished` as “finished”. Keep the ID strings in the notification's
+`data` so a click can open that thread in the signed-in app. The IDs are
+never displayed. The app still checks current access when opening it.
+A `test` notification has only `{title, status}` and uses the title
+“Calternal”. The TypeScript contract exports the shape as `PushPayload`.
 
 ## Storage and delivery
 

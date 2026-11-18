@@ -58,6 +58,15 @@ impl Host {
         self.dir.path().join("appdata")
     }
 
+    pub fn cli(&self) -> Command {
+        let mut command = Command::new(BIN);
+        command.env(
+            "CALTERNAL_INSTALLATION_ID",
+            "00000000-0000-0000-0000-000000000001",
+        );
+        command
+    }
+
     pub async fn get(&self, path: &str, cookie: Option<&str>) -> Res {
         self.request(Method::GET, path, cookie, None).await
     }
@@ -126,7 +135,7 @@ impl Host {
     }
 }
 
-fn wait_json(child: &mut Proc, path: &Path) -> Value {
+pub(super) fn wait_json(child: &mut Proc, path: &Path) -> Value {
     let deadline = Instant::now() + Duration::from_secs(15);
     loop {
         if let Ok(bytes) = std::fs::read(path)

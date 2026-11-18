@@ -159,7 +159,7 @@ impl Jobs {
                         app, write, lifetimes: approval_lifetimes(risk, write)?.to_vec(), action,
                     }
                 };
-                Ok(PersonRequest { id, space_id: Some(space), thread_id: Some(thread), detail })
+                Ok(PersonRequest { id, space_id: Some(space), thread_id: Some(thread), job_id: None, detail })
             }).collect()
         })
     }

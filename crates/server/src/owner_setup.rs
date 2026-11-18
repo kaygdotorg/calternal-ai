@@ -58,6 +58,25 @@ impl OwnerSetup {
         Ok(grant)
     }
 
+    /// Sends a test message via the shared account queue and awaits SMTP acceptance.
+    /// Returns no result when SMTP is unavailable and never emits credential material.
+    pub(crate) async fn mail_test(&self, recipient: &str) -> Result<Option<bool>, Error> {
+        let recipient = recipient
+            .parse::<lettre::Address>()
+            .map_err(|_| Error::invalid_input("Enter one recipient email address."))?;
+        match &self.mail {
+            Some(mail) => Ok(Some(
+                mail.challenge(calternal_auth::AccountMail {
+                    to: recipient.to_string(),
+                    subject: "Calternal SMTP test",
+                    code: None,
+                })
+                .await,
+            )),
+            None => Ok(None),
+        }
+    }
+
     /// Path of the private file published by this service. No I/O.
     pub fn path(&self) -> &Path {
         &self.path

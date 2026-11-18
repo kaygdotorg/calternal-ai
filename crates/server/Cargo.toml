@@ -42,14 +42,16 @@ calternal-cli.workspace = true
 calternal-client.workspace = true
 calternal-secrets.workspace = true
 serde.workspace = true
+serde_yaml = "=0.9.34"
 serde_json = { workspace = true, features = ["raw_value"] }
 uuid.workspace = true
 clap.workspace = true
 tokio = { workspace = true, features = ["process", "sync", "signal", "fs"] }
-axum = { version = "0.8", default-features = false, features = ["http1", "tokio", "json", "query", "form", "multipart"] }
+axum = { version = "0.8", default-features = false, features = ["http1", "tokio", "json", "query", "form", "multipart", "ws"] }
 tower-http = { version = "0.7", features = ["fs"] }
 rusqlite.workspace = true
 regex = "1"
+yrs = { version = "0.28", features = ["sync"] }
 hex.workspace = true
 subtle = "2"
 getrandom.workspace = true
@@ -71,6 +73,7 @@ openidconnect = { version = "4", default-features = false, features = ["reqwest"
 lettre = { version = "0.11", default-features = false, features = ["builder", "smtp-transport", "tokio1-native-tls"] }
 
 [dev-dependencies]
+tungstenite = "0.29.0"
 tower = { version = "0.5", features = ["util"] }
 http-body-util = "0.1"
 

@@ -190,10 +190,16 @@ mod tests {
         let payload = PushPayload {
             title: "Fixture thread title".into(),
             status: PushStatus::NeedsYou,
+            space_id: Some("01932910-0000-7000-8000-000000000002".into()),
+            thread_id: Some("01932910-0000-7000-8000-000000000003".into()),
         };
         assert_eq!(
             serde_json::to_value(&payload).unwrap(),
-            serde_json::json!({"title":"Fixture thread title","status":"needs_you"})
+            serde_json::json!({
+                "title": "Fixture thread title", "status": "needs_you",
+                "space_id": "01932910-0000-7000-8000-000000000002",
+                "thread_id": "01932910-0000-7000-8000-000000000003",
+            })
         );
         let req = transport
             .message(&device, &payload)

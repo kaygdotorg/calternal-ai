@@ -78,3 +78,80 @@ async fn subscriptions_follow_the_signed_in_browser_and_survive_restart() {
         json!([])
     );
 }
+
+#[tokio::test]
+async fn thread_push_contains_click_routing_and_no_message_text() {
+    let mut f = Fixture::new().await;
+    f.stop();
+    std::fs::write(f.dir.path().join("web-push-local"), []).unwrap();
+    f.start().await;
+    let devices = f.op(1, "push.devices", json!({})).await;
+    devices.ok();
+    f.op(
+        1,
+        "push.subscribe",
+        json!({
+            "endpoint": "https://fcm.googleapis.com/thread-fixture",
+            "p256dh": devices.body["data"]["application_server_key"],
+            "auth": "BwcHBwcHBwcHBwcHBwcHBw",
+        }),
+    )
+    .await
+    .ok();
+
+    let mut machine = crate::requests_cases::Machine::enroll(&f).await;
+    let space = &f.spaces[0];
+    let title = "A thread to open";
+    let created = f
+        .op(1, "threads.create", json!({"space_id":space,"title":title}))
+        .await;
+    created.ok();
+    let thread = &created.body["data"]["thread"]["id"];
+    let message = "fixture message must stay out of the notification";
+    f.op(1, "threads.send", json!({"id":thread,"message":message}))
+        .await
+        .ok();
+    let deadline = Instant::now() + Duration::from_secs(15);
+    let exec = loop {
+        assert!(Instant::now() < deadline, "fixture turn did not start");
+        if let Some(exec) = machine
+            .sync(&f, json!([]))
+            .await
+            .into_iter()
+            .find(|frame| frame["type"] == "exec")
+        {
+            break exec;
+        }
+    };
+    // A provider text_delta followed by a successful completion.
+    const TURN: &str = "eyJ2ZXJzaW9uIjoxLCJzZXEiOjEsImV2ZW50Ijp7InR5cGUiOiJ0ZXh0X2RlbHRhIiwidGV4dCI6IkFzc2lzdGFudCBmaXh0dXJlIn19CnsidmVyc2lvbiI6MSwic2VxIjoyLCJldmVudCI6eyJ0eXBlIjoiZG9uZSIsIm91dGNvbWUiOiJkb25lIn19Cg==";
+    machine
+        .output(
+            &f,
+            &exec,
+            json!([
+                {"kind":"data","seq":1,"stream":"stdout","data":TURN},
+                {"kind":"exit","seq":2,"code":0}
+            ]),
+        )
+        .await;
+
+    let capture = f.appdata().join("web-push-fixture.json");
+    let deadline = Instant::now() + Duration::from_secs(15);
+    let raw = loop {
+        if let Ok(raw) = std::fs::read_to_string(&capture) {
+            break raw;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "fixture thread push was not captured"
+        );
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    };
+    assert!(!raw.contains(message));
+    assert!(!raw.contains("Assistant fixture"));
+    assert_eq!(
+        serde_json::from_str::<Value>(&raw).unwrap(),
+        json!({"title":title,"status":"finished","space_id":space,"thread_id":thread})
+    );
+}

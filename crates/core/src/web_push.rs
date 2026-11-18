@@ -78,4 +78,12 @@ pub struct PushPayload {
     pub title: String,
     /// Notification label. No message, tool output, or request text.
     pub status: PushStatus,
+    /// Owning space UUID for click routing. Absent for a test push.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub space_id: Option<String>,
+    /// Thread UUID for click routing. Absent for a test push.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub thread_id: Option<String>,
 }
