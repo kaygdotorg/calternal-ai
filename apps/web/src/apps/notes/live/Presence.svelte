@@ -9,14 +9,15 @@
 </script>
 
 {#if here.length}
-  <span class="presence" role="img" aria-label={label} use:tip={{ label, side: "bottom" }}>
+  <!-- A press shows every name beside the cursors until the next press elsewhere (a touch screen has no hover); the editor listens for it. -->
+  <button type="button" class="presence" data-presence aria-label="{label}. Show their names" use:tip={{ label, side: "bottom" }} onclick={() => dispatchEvent(new Event("calternal-live-labels"))}>
     {#each shown as h (h.client)}<span class="p" style:--c={h.color}><Avatar name={h.name} size="xs" /></span>{/each}
     {#if here.length > shown.length}<span class="more">+{here.length - shown.length}</span>{/if}
-  </span>
+  </button>
 {/if}
 
 <style>
-  .presence { display: inline-flex; align-items: center; flex: none; }
+  .presence { display: inline-flex; align-items: center; flex: none; border-radius: var(--r-pill); min-height: var(--pill-h); padding: 0 var(--s-2); }
   .p { display: inline-grid; border-radius: 50%; box-shadow: 0 0 0 2px var(--c); margin-left: calc(var(--s-2) * -1); }
   .p:first-child { margin-left: 0; }
   .more { margin-left: var(--s-2); font-size: var(--text-label); color: var(--ink-3); }
