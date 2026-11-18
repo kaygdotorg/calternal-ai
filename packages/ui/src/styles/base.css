@@ -6,7 +6,7 @@ body {
   font-family: var(--font-ui); font-size: var(--text-ui); font-weight: var(--ui-weight);
   /* opsz is pinned: left to the browser it follows the font size (13 px text gets opsz 13, about 5 % wider and looser than the reference look at 18 and up). */
   font-variation-settings: "GRAD" var(--text-grad), "opsz" var(--text-opsz);
-  line-height: 1.45; color: var(--ink); background: var(--paper);
+  line-height: 1.45; color: var(--ink); background: var(--bars, var(--paper));
   -webkit-font-smoothing: auto; text-rendering: optimizeLegibility;
 }
 button, input, textarea, select { font: inherit; color: inherit; letter-spacing: inherit; }
