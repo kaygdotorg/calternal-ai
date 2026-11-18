@@ -194,16 +194,18 @@ async fn serve<D: Directory>(
                 std::future::pending::<()>().await;
             }
         };
-        if shutdown.as_ref().is_some_and(crate::shutdown::Shutdown::is_closing) {
-            break;
-        }
         let result = tokio::select! {
             () = crate::shutdown::wait(shutdown.as_ref()) => break,
-            message = conn.socket.recv() => match message {
-                Some(Ok(ws::Message::Text(value))) => conn.control(value.as_str()).await,
-                Some(Ok(ws::Message::Binary(value))) => conn.binary(&value).await,
-                Some(Ok(ws::Message::Ping(_) | ws::Message::Pong(_))) => Ok(()),
-                _ => break,
+            message = conn.socket.recv() => {
+                if shutdown.as_ref().is_some_and(crate::shutdown::Shutdown::is_closing) {
+                    break;
+                }
+                match message {
+                    Some(Ok(ws::Message::Text(value))) => conn.control(value.as_str()).await,
+                    Some(Ok(ws::Message::Binary(value))) => conn.binary(&value).await,
+                    Some(Ok(ws::Message::Ping(_) | ws::Message::Pong(_))) => Ok(()),
+                    _ => break,
+                }
             },
             event = events.recv() => match event {
                 Some(event) => conn.event(event).await,
