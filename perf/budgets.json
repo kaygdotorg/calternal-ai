@@ -192,6 +192,15 @@
       "measurement": "client starts the HTTP update through receipt of the matching journal SSE event by the subscribed client"
     },
     {
+      "metric": "userdata.ack_to_durable_file",
+      "percentile": "max",
+      "budget": 1000,
+      "unit": "ms",
+      "fixture": "1k,10k,100k notes and multi-space Notes fixtures",
+      "measurement": "from receipt of the HTTP acknowledgment to observation of the matching revision's post-fsync file placement mark; one head sample over budget fails",
+      "reference": "ADR 0062 one-second durable file materialization bound"
+    },
+    {
       "metric": "account.draft_write_to_feed",
       "percentile": "p95",
       "budget": 9,

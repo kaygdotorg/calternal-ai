@@ -142,12 +142,14 @@ use. A zero space-writer count, together with lazy content initialization, makes
 `space.process_cold_open` a real first activation for that binary. The baseline
 may eagerly open spaces; its first-list observation keeps that qualification.
 
-Every measured update now checks the read-only content placement mark, written
-only after file and directory syncs. `userdata.write_to_durable_file` starts before
-the HTTP write, making it a conservative upper bound on acknowledgement-to-file
-lag; any observation over 1,000 ms fails the arm. This check runs after the timed
-acknowledgement, never inside its span. An independent library test checks that
-placement also completes without a follow-up request or receipt replay.
+Every measured update checks the matching revision's read-only placement mark,
+written after file and directory syncs. `userdata.ack_to_durable_file` starts
+at HTTP acknowledgment on the HTTP client thread, independently of the live
+subscriber. The separate placement verdict has a 1,000 ms maximum and a
+single head breach fails it. If the observer stops without a matching mark,
+its measured span is a lower bound. The report retains samples collected before
+the miss and identifies incomplete timing arms. An independent
+library test checks placement without a follow-up request or receipt replay.
 
 `--fsync-probe` traces one warmed, same-title update using the already extracted
 strace on perf-01. Run separately under the lock, once with the baseline binary
