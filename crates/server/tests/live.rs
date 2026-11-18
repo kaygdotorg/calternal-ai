@@ -58,6 +58,7 @@ impl Fixture {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
         let state = Arc::new(AppState {
+            blocking: calternal_server::blocking::RequestWorkers::new().unwrap(),
             inputs: store.account_inputs(),
             store,
             directory: tokens,

@@ -107,6 +107,7 @@ impl Fixture {
             )
             .unwrap();
             let state = Arc::new(AppState {
+                blocking: calternal_server::blocking::RequestWorkers::new().unwrap(),
                 inputs: store.account_inputs(),
                 store,
                 directory: tokens,

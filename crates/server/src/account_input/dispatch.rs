@@ -39,9 +39,10 @@ pub(crate) async fn dispatch<D: Directory>(
     if !session.is_live(&state.directory).await {
         return Err(Error::unauthorized("session expired or revoked"));
     }
+    state.inputs.check_owner(p.id)?;
     let st = state.clone();
     let operation = op.to_owned();
-    let prepared = tokio::task::spawn_blocking(move || prepare(st, p, operation, parsed))
+    let prepared = crate::blocking::spawn(move || prepare(st, p, operation, parsed))
         .await
         .map_err(internal)??;
     if !matches!(op, "pending.submit" | "pending.confirm") {
@@ -70,7 +71,8 @@ pub(crate) async fn dispatch<D: Directory>(
         request.input,
     ))
     .await?;
-    tokio::task::spawn_blocking(move || {
+    state.inputs.check_owner(p.id)?;
+    crate::blocking::spawn(move || {
         let _step = state.inputs.step(p.id)?;
         let mut c = state.inputs.open(p.id)?;
         let before = c.total_changes();
@@ -295,4 +297,88 @@ fn prepare<D: Directory>(
         service.wakes.committed(identity.id);
     }
     Ok(value)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        api::{AppState, allowed_hosts},
+        auth::StoredDirectory,
+        blocking::{RequestWorkers, spawn},
+        plugins::{Jobs, Registry, WorkerPool},
+        store::Store,
+    };
+    use std::{sync::Arc, time::Duration};
+
+    #[tokio::test]
+    async fn a_closed_account_is_refused_when_request_readers_are_busy() {
+        let root = tempfile::tempdir().unwrap();
+        let roots = calternal_roots::Roots {
+            appdata: root.path().join("appdata"),
+            userdata_ssd: root.path().join("ssd"),
+            userdata_hdd: root.path().join("hdd"),
+        };
+        let store = Store::open(
+            &roots,
+            Uuid::from_u128(1),
+            true,
+            calternal_content::DEFAULT_RECEIPT_RETENTION,
+        )
+        .unwrap();
+        let directory = StoredDirectory::load_or_create(&roots.appdata).unwrap();
+        let person = Identity {
+            id: calternal_types::AccountId::new(),
+        };
+        store.content().lifecycle().close(person.id.as_uuid());
+        let state = Arc::new(AppState {
+            blocking: RequestWorkers::new().unwrap(),
+            inputs: store.account_inputs(),
+            store,
+            directory,
+            registry: Registry::empty(),
+            workers: WorkerPool::new(None),
+            jobs: Jobs::disabled(),
+            allowed_hosts: allowed_hosts(0),
+        });
+        let mut readers = Vec::new();
+        for _ in 0..2 {
+            let pool = state.blocking.clone();
+            let (entered, ready) = tokio::sync::oneshot::channel();
+            let (release, blocked) = std::sync::mpsc::channel();
+            let reader = tokio::spawn(async move {
+                pool.scope(
+                    false,
+                    spawn(move || {
+                        entered.send(()).unwrap();
+                        blocked.recv().unwrap();
+                    }),
+                )
+                .await
+                .unwrap();
+            });
+            ready.await.unwrap();
+            readers.push((release, reader));
+        }
+        let result = tokio::time::timeout(
+            Duration::from_secs(1),
+            crate::api::dispatch(
+                state,
+                person,
+                Session::Static,
+                "closed-account",
+                "drafts.list",
+                JsonObject::new(),
+            ),
+        )
+        .await;
+        for (release, reader) in readers {
+            release.send(()).unwrap();
+            reader.await.unwrap();
+        }
+        let refusal = result
+            .expect("owner refusal waited behind the read pool")
+            .unwrap_err();
+        assert_eq!(refusal.code, calternal_types::ErrorCode::NotFound);
+    }
 }

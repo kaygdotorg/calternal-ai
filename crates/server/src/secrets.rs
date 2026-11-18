@@ -117,7 +117,7 @@ pub async fn dispatch<D: Directory>(
     input: JsonObject,
     via: Option<Via>,
 ) -> Result<Value, Error> {
-    tokio::task::spawn_blocking(move || {
+    crate::blocking::spawn(move || {
         let op = policy.operation.as_ref();
         let secrets = store(&state)?;
         let actor = Actor { account: p.id, via };
@@ -260,7 +260,7 @@ async fn provide<D: Directory>(State(state): State<Shared<D>>, req: Request) -> 
     let Ok(input) = serde_json::from_slice::<SecretsProvideInput>(&bytes) else {
         return reply(Error::invalid_input("input does not match schema"));
     };
-    let result = tokio::task::spawn_blocking(move || {
+    let result = crate::blocking::spawn(move || {
         let p = Identity { id: account };
         let owner = owner(
             &state,

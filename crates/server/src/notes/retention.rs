@@ -43,7 +43,7 @@ impl Store {
             loop {
                 let spaces = spaces.clone();
                 let content = content.clone();
-                let result = tokio::task::spawn_blocking(move || {
+                let result = crate::blocking::spawn(move || {
                     let cutoff = calternal_content::format_rfc3339(
                         OffsetDateTime::now_utc()
                             .checked_sub(time::Duration::days(i64::from(days)))

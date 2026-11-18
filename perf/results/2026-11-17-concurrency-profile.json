@@ -1,0 +1,25 @@
+{
+  "commit": "2ab266596862c83f7c612cbb51e7dec38ac70f9c",
+  "product_sha256": "879aa14d09469186887666b4ab9668550f1e27f0c178ebd1384abd734c01b12f",
+  "fixture": "32 development-bearer role writers, first baseline arm, 20 requests/client",
+  "host": "kayg@calternal-perf-01-backup01",
+  "locking": "/usr/local/bin/perf-lock.sh",
+  "event": "cpu-clock:u",
+  "frequency_hz": 99,
+  "requested_window_seconds": 10,
+  "samples": 111,
+  "lost_samples": 0,
+  "flat_user_cpu_sample_pct_by_thread_name": {
+    "auth-db": 90.0,
+    "content-journal": 5.4,
+    "tokio-rt-worker": 4.5
+  },
+  "observed_stacks": [
+    "calternal_recovery::state::capture_record",
+    "calternal_recovery::state::sort_tables",
+    "serde_json proposal serialization"
+  ],
+  "qualification": "small CPU sample; not wall-clock attribution; instrumented latencies excluded from gates",
+  "raw_evidence": "~/calternal-ai-perf/perf-fixes-concurrency/profile-before/",
+  "retention_days": 30
+}

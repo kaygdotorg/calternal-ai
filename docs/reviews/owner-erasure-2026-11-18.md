@@ -302,6 +302,40 @@ checks, and the drift check for 296 generated pages passed. All four
 required Podman scopes passed leak checks. The dev-01 build targets were
 removed after qualification.
 
+## Merge with request admission at `cb8e313`
+
+Space operations use the upstream `api::spaces` dispatcher. Its scheduled
+host callback routes explicit deletion through the protected erasure path
+before any ordinary directory mutation. Space writes retain content receipt
+admission and its owner permits. An account-level space create takes the
+account permit around its protected directory callback.
+
+Account input preparation, pending-submission cleanup, and feed bootstrap
+all use the bounded request workers. A closed account is refused in the
+request scope before scheduling I/O. The durable permit is acquired again
+inside the existing callback, since the owner can close while a request
+waits for a worker. The same ordering applies to each retained feed page,
+and the account transaction remains released during nested dispatch. The
+additional preflight takes only a short in-memory lookup. It adds no
+blocking job, SQLite read, or flush. Stored session and capability checks
+retain upstream scheduling on their authority workers.
+
+The merge regression occupies both request read workers and submits an
+account input operation against a closed owner. Refusal must return before
+either worker is released. It passed with the workspace suite.
+
+The dev-01 verification commands above ran against the merged tree using
+the separately built `target/conformance-bin/calternal`. Workspace tests
+passed 586 cases, and the full serial conformance suite passed 86 cases.
+The four erasure cases also passed on their own. The opt-in Rust client
+integration and the Node integration passed. The plugin suites passed 23
+tests and retained one opt-in signed-in Claude skip. The dedicated Podman
+plugin host passed 18 tests. The focused conformance, workspace, full
+conformance, and Podman plugin host runs all passed their container leak
+checks. Contract export, CLI verification, the documentation gate, both
+formatting checks, and the drift check for 296 documentation pages passed.
+The dev-01 lane targets were removed after qualification.
+
 ## Simplification opportunities
 
 Account erasure visits the job stores indexed in the in-memory route map.

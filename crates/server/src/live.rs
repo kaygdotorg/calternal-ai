@@ -56,7 +56,7 @@ fn hidden() -> Error {
 async fn blocking<T: Send + 'static>(
     f: impl FnOnce() -> Result<T, Error> + Send + 'static,
 ) -> Result<T, Error> {
-    tokio::task::spawn_blocking(f)
+    crate::blocking::spawn(f)
         .await
         .map_err(|_| Error::internal("live task failed"))?
 }
@@ -91,6 +91,7 @@ pub(crate) async fn events<D: Directory>(
     Query(query): Query<LiveQuery>,
     req: Request,
 ) -> Response {
+    let read_workers = state.blocking.clone();
     let Some(identity) = req.extensions().get::<Identity>().cloned() else {
         return crate::api::error_response(hidden());
     };
@@ -171,10 +172,13 @@ pub(crate) async fn events<D: Directory>(
         next_space: 0,
         done: false,
     };
-    let body = Body::from_stream(futures_util::stream::unfold(stream, |mut s| async move {
-        let frame = s.next_frame().await?;
-        Some((Ok::<_, std::convert::Infallible>(frame), s))
-    }));
+    let body = Body::from_stream(read_workers.read_stream(futures_util::stream::unfold(
+        stream,
+        |mut s| async move {
+            let frame = s.next_frame().await?;
+            Some((Ok::<_, std::convert::Infallible>(frame), s))
+        },
+    )));
     (
         StatusCode::OK,
         [

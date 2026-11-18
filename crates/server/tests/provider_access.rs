@@ -180,6 +180,7 @@ async fn thread_bearers_enforce_scope_before_handlers_and_cannot_approve() {
         .unwrap()
         .with_security(tokens.spaces.agents());
     let state = Arc::new(AppState {
+        blocking: calternal_server::blocking::RequestWorkers::new().unwrap(),
         inputs: store.account_inputs(),
         store,
         directory: tokens,

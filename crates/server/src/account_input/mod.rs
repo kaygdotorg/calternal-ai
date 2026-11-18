@@ -108,6 +108,14 @@ impl Inputs {
         self.content = Some(content);
         self
     }
+    // Fast refusal in the request scope. The actual I/O still takes its own
+    // permit, since the owner can close while the request waits for a worker.
+    fn check_owner(&self, account: calternal_types::AccountId) -> Result<(), Error> {
+        self.content.as_ref().map_or(Ok(()), |content| {
+            content.lifecycle().check(account.as_uuid())
+        })
+    }
+
     fn step(
         &self,
         account: calternal_types::AccountId,

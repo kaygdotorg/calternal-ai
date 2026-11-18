@@ -34,13 +34,32 @@ fn human_reply(report: &Value, path: &Path) -> Reply {
     }
     if let Some(runs) = report["runs"].as_array() {
         for run in runs {
-            reply = reply.blank().fields([
-                ("spaces", run["spaces"].to_string()),
-                ("notes", run["size"].to_string()),
-                ("arm", run["arm"].as_str().unwrap_or("").to_owned()),
-                ("pair", run["pair"].to_string()),
-                ("cache", run["cache"].as_str().unwrap_or("").to_owned()),
-            ]);
+            let fields = [
+                ("clients", "clients"),
+                ("mode", "workload"),
+                ("spaces", "spaces"),
+                ("size", "notes"),
+                ("arm", "arm"),
+                ("pair", "pair"),
+                ("cache", "cache"),
+            ]
+            .into_iter()
+            .filter_map(|(key, label)| {
+                run.get(key).map(|value| {
+                    (
+                        if key == "spaces" && run.get("clients").is_some() {
+                            "target spaces"
+                        } else {
+                            label
+                        },
+                        value
+                            .as_str()
+                            .map(str::to_owned)
+                            .unwrap_or_else(|| value.to_string()),
+                    )
+                })
+            });
+            reply = reply.blank().fields(fields);
             if let Some(values) = run["summary"].as_array() {
                 reply = metrics(reply, values);
             }

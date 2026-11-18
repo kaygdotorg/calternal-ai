@@ -32,7 +32,7 @@ pub struct Identity {
 /// Implementations must read current grants on each `capabilities` call and distinguish
 /// neither unknown spaces nor absent membership: both return `None`. Fail closed
 /// on lookup failure. Storage implementations own lookup and synchronization costs; the host
-/// invokes authorization on blocking tasks to keep SQLite off async workers. Authentication
+/// awaits native authority workers or adapts synchronous providers on blocking tasks. Authentication
 /// must validate current sessions, never trust a caller-supplied account ID.
 pub trait Directory: Send + Sync + 'static {
     /// Mutation hints for idle live connections. Implementations must include
@@ -50,6 +50,19 @@ pub trait Directory: Send + Sync + 'static {
     /// Resolve current capability grants for one account and space; no membership
     /// or failed lookup returns `None`, while an empty set grants no operations.
     fn capabilities(&self, account: AccountId, space: SpaceId) -> Option<CapabilitySet>;
+    /// Optional direct asynchronous current-grant query. Some returns a future
+    /// owning only the selected account/space and backend handle; it must fail
+    /// closed and retain the synchronous API's publication ordering. None selects
+    /// the synchronous adapter on a blocking thread. Constructing it performs no
+    /// I/O; no result may be cached as authority for a later request.
+    fn capabilities_async(
+        &self,
+        _account: AccountId,
+        _space: SpaceId,
+    ) -> Option<futures_util::future::BoxFuture<'static, Option<CapabilitySet>>> {
+        None
+    }
+
     /// Build the discovery snapshot; these grants are informational, not authority.
     /// Allocation is confined to discovery, outside the operation check path.
     fn describe(&self, principal: &Identity) -> Principal;
@@ -187,6 +200,21 @@ impl Directory for StoredDirectory {
     fn capabilities(&self, account: AccountId, space: SpaceId) -> Option<CapabilitySet> {
         self.spaces.capabilities(account, space).ok()?
     }
+    fn capabilities_async(
+        &self,
+        account: AccountId,
+        space: SpaceId,
+    ) -> Option<futures_util::future::BoxFuture<'static, Option<CapabilitySet>>> {
+        let spaces = self.spaces.clone();
+        Some(Box::pin(async move {
+            spaces
+                .capabilities_async(account, space)
+                .await
+                .ok()
+                .flatten()
+        }))
+    }
+
     fn describe(&self, principal: &Identity) -> Principal {
         let spaces = self.spaces.list(principal.id).unwrap_or_default();
         Principal {

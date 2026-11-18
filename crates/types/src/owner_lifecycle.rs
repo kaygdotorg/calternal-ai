@@ -47,13 +47,22 @@ impl OwnerLifecycle {
         &self.0[id.as_bytes()[15] as usize % SHARDS]
     }
 
+    /// Refuse a closed owner before waiting to schedule I/O. This is an
+    /// in-memory preflight. The actual I/O must still acquire a step.
+    pub fn check(&self, id: Uuid) -> Result<()> {
+        if self.is_closed(id) {
+            return Err(closed_owner());
+        }
+        Ok(())
+    }
+
     /// Admit one blocking durable step. Dropping the permit after the step
     /// lets erasure proceed. A closed owner is reported as absent.
     pub fn step(&self, id: Uuid) -> Result<OwnerStep> {
         let mut owners = self.bucket(id).lock();
         let state = owners.entry(id).or_default();
         if state.erasing {
-            return Err(Error::not_found("owner storage has been erased"));
+            return Err(closed_owner());
         }
         state.running += 1;
         Ok(OwnerStep {
@@ -89,6 +98,10 @@ impl OwnerLifecycle {
                 .unwrap_or_else(|error| error.into_inner()),
         );
     }
+}
+
+fn closed_owner() -> Error {
+    Error::not_found("owner storage has been erased")
 }
 
 /// A permit for a single durable store step. Never hold it while waiting for

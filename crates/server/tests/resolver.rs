@@ -31,6 +31,7 @@ impl Fixture {
         let dev = support::dev(&tokens);
         let (owner, guest) = (dev.owner, dev.guest);
         let state = Arc::new(AppState {
+            blocking: calternal_server::blocking::RequestWorkers::new().unwrap(),
             inputs: store.account_inputs(),
             store,
             directory: tokens,

@@ -11,7 +11,7 @@ pub(super) async fn fingerprint(
     input: JsonObject,
 ) -> Result<(String, JsonObject), Error> {
     let operation = operation.to_owned();
-    tokio::task::spawn_blocking(move || {
+    crate::blocking::spawn(move || {
         let digest = super::fingerprint(&operation, &input);
         (digest, input)
     })

@@ -127,7 +127,7 @@ fn main() {
             };
             let rt = tokio::runtime::Builder::new_multi_thread()
                 .worker_threads(2)
-                .max_blocking_threads(8)
+                .max_blocking_threads(2)
                 .enable_all()
                 .build()
                 .expect("tokio runtime");
@@ -410,6 +410,8 @@ async fn serve(
     .with_thread_events(store.shared_content());
     let token_files = directory.files.clone();
     let state = Arc::new(AppState {
+        blocking: calternal_server::blocking::RequestWorkers::new()
+            .map_err(|e| boot(1, "failed", e.to_string(), DATA_HINT))?,
         inputs: calternal_server::account_input::Inputs::new(
             &data_dir,
             calternal_server::account_input::Limits::from_env()

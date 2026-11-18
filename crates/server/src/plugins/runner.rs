@@ -64,7 +64,7 @@ pub fn schedule<D: Directory>(state: &Shared<D>, space: String, job: String) {
 /// Cost: see [`super::jobs::Jobs::recover`], on a blocking task.
 pub async fn recover<D: Directory>(state: &Shared<D>) -> Result<usize, Error> {
     let st = state.clone();
-    let woken = tokio::task::spawn_blocking(move || {
+    let woken = crate::blocking::spawn(move || {
         st.jobs.recover(|plugin, operation| {
             st.registry
                 .get(plugin)
@@ -83,7 +83,7 @@ pub async fn recover<D: Directory>(state: &Shared<D>) -> Result<usize, Error> {
 async fn blocking<T: Send + 'static>(
     f: impl FnOnce() -> Result<T, Error> + Send + 'static,
 ) -> Result<T, Error> {
-    tokio::task::spawn_blocking(f)
+    crate::blocking::spawn(f)
         .await
         .map_err(|_| Error::internal("job task failed"))?
 }
