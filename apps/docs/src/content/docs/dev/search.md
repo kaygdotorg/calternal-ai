@@ -32,6 +32,11 @@ An empty query returns no hits.
 | `skills.list` | Current `space_id` and optional skill-name `prefix`. Returns up to 50 names and one-line descriptions from `AI/Skills/<name>/SKILL.md`. |
 | `plugins.manifests` | Current `space_id`. Returns enabled contributions as `manifests: [{plugin, version, commands, settings_sections}]`. Commands supply the web palette's `id`, `label`, `group`, optional `words` and either `go` or `op`. Settings sections also appear as navigation commands in the Settings group. |
 
+`threads.lookup` reads current titles from the existing content-head index.
+Each enabled readable space takes a plugin activation read and one indexed
+title range query, with no thread body reads. The picker includes renamed
+titles as soon as their heads are committed.
+
 Skill directories can be placed in userdata. The server reads up to 8 KiB
 of each candidate for the frontmatter name and single-line description and
 skips symlinks. The declared name must match the directory as specified by

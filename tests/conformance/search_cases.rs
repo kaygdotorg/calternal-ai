@@ -3,6 +3,7 @@ use super::*;
 
 mod live;
 mod rebuild_source;
+mod thread_titles;
 
 pub(super) const OPERATIONS: &[&str] = &[
     "search.query",
