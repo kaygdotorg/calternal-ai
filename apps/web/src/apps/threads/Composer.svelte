@@ -8,6 +8,7 @@
   //   phone     provider icon only          "Approve for me"  machine icon only
   // The permission mode's own name is the last label to go. Every chip keeps its full name as its accessible name and tooltip.
   // The provider control changes nothing visible in the thread (the handover is internal), and never creates a thread.
+  import { motionAllowed, snapshot, play, type FoldSnap } from "./fold";
   import { Button, Icon, IconButton, InlineEditor, Menu, Panel, Pill, Popover, Sheet, currentForm, type IconName, type MenuItem } from "@calternal/ui";
   import type { FieldEditor, FieldTrigger } from "../../../../../packages/editor/src/index";
   import { marksOf } from "../../palette/engine";
@@ -120,7 +121,34 @@
   // (Stop, Send) does not (such a button is not `:focus-visible`): pressing it must not move it away from under the pointer by expanding the box before the click is done. The keyboard's change is instant.
   let panelEl = $state<HTMLElement>();
   let focused = $state(false);
-  const open = $derived(focused || menuOpen || permOpen || whereOpen || trig !== null);
+  // A press inside the box keeps it open until the click is done: a button that takes the focus on press (or, in Safari, does not take it at all) must not have its row taken out from under the pointer.
+  let pressing = $state(false);
+  function press() {
+    pressing = open; // only an open box is held open: a press on Stop or Send of a collapsed one must not unfold it under the pointer
+    const done = () => { removeEventListener("pointerup", done, true); removeEventListener("pointercancel", done, true); setTimeout(() => (pressing = false), 0); };
+    addEventListener("pointerup", done, true); addEventListener("pointercancel", done, true);
+  }
+  const open = $derived(focused || pressing || menuOpen || permOpen || whereOpen || trig !== null);
+  // The morph: the state above flips the layout at once; before the DOM changes the old look is read, after it the motion is played from it (fold.ts). Not for keyboard use or reduced motion, and the
+  // list above is told (`cmp-fold`) so it keeps the last message above the composer and slides with it.
+  let prevOpen: boolean | undefined;
+  let snap: FoldSnap | null = null;
+  $effect.pre(() => { const now = open; if (prevOpen !== undefined && now !== prevOpen && panelEl) snap = snapshot(panelEl, !now); });
+  $effect(() => {
+    const now = open;
+    if (prevOpen === undefined) { prevOpen = now; return; }
+    if (now === prevOpen || !panelEl) return;
+    prevOpen = now;
+    const go = snap; snap = null;
+    const animate = !!go && motionAllowed();
+    const cs = getComputedStyle(document.documentElement);
+    // A custom property comes back as the browser normalised it (".35s"), so the unit is read.
+    const dur = cs.getPropertyValue("--dur-morph").trim();
+    const ms = (dur.endsWith("ms") ? parseFloat(dur) : parseFloat(dur) * 1000) || 350;
+    const easing = cs.getPropertyValue("--ease-morph").trim() || "ease-out";
+    panelEl.dispatchEvent(new CustomEvent("cmp-fold", { bubbles: true, detail: { animate, ms, easing } }));
+    if (animate && go) play(panelEl, go, ms, easing);
+  });
   const running = $derived(thread.state === "running");
   // A turn parked on a request of yours is still the person's to stop (stopping cancels the request; the server refuses a new message to it). An interrupted turn has its own notice.
   const parked = $derived(thread.state === "waiting" && !thread.notice);
@@ -144,13 +172,13 @@
   }
 </script>
 
-<Panel class="composer" data-narrow={sheet ? "" : undefined} radius="pane" data-ring-host bind:el={panelEl} data-collapsed={open ? undefined : ""} onfocusin={(e) => { if ((e.target as HTMLElement).matches(":focus-visible")) focused = true; }} onfocusout={() => queueMicrotask(() => (focused = !!panelEl?.contains(document.activeElement)))}>
-  <div class="fold" data-fold><div class="ctx" aria-label="Context">
+<Panel class="composer" data-narrow={sheet ? "" : undefined} radius="pane" data-ring-host bind:el={panelEl} data-collapsed={open ? undefined : ""} onfocusin={(e) => { if ((e.target as HTMLElement).matches(":focus-visible")) focused = true; }} onfocusout={(e) => { if (e.relatedTarget instanceof Node && panelEl?.contains(e.relatedTarget)) return; queueMicrotask(() => (focused = !!panelEl?.contains(document.activeElement))); }} onpointerdown={press}>
+  <div class="ctx" data-fold aria-label="Context">
     {#if thread.workspace}<span class="cx"><Icon inline name="folder" /><span>{thread.workspace}</span></span>{/if}
     <ActiveChildren id={thread.id} />
     {#each mentions as m}<span class="cx on"><Icon inline name={m.label === provider?.name || pool.find((p) => p.label === m.label)?.kind === "agent" ? "spark" : pool.find((p) => p.label === m.label)?.kind === "thread" ? "threads" : pool.find((p) => p.label === m.label)?.kind === "item" ? "notes" : "user"} /><span>{m.label}</span><button type="button" class="x" aria-label="Remove {m.label}" onclick={() => dropMention(m)}><Icon inline name="close" /></button></span>{/each}
-  </div></div>
-  <div class="field" bind:this={fieldBox}>
+  </div>
+  <div class="field" data-fold-row bind:this={fieldBox}>
     <InlineEditor id="composer-field" class="field-input" multiline label="Message" bind:el={field} bind:editor bind:value={text} {marks} triggers={{ kinds: ["mention", "skill"], on: (t) => (trig = t) }} onkeydown={onkey} onsubmit={() => send()} placeholder={running ? "Steer the running turn…" : `Message ${provider?.name ?? "the agent"}…`} />
     {#if (running || parked) && !text.trim()}
       <IconButton icon="stop" label="Stop the turn" tone="tint" onclick={onstop} />
@@ -158,7 +186,7 @@
       <IconButton icon="send" label={running ? "Steer the turn" : "Send message"} tone="accent" disabled={!text.trim()} onclick={send} />
     {/if}
   </div>
-  <div class="fold" data-fold><div class="chips">
+  <div class="chips" data-fold>
     <span class="chip prov">
       <Pill label="{provider?.name ?? ''} · {modelName}" icon={providerIcon} showLabel glass={false} aria-haspopup="menu" aria-expanded={menuOpen} bind:el={trigger} onclick={() => (menuOpen = !menuOpen)}>
         <span class="pl">{provider?.name} · {modelName}</span><span class="pm">{modelName}</span>
@@ -179,7 +207,7 @@
         <Popover open={whereOpen} anchor={whereTrigger} morph label="Where it runs" trigger={whereTrigger} onclose={() => (whereOpen = false)}><RunsOnPicker {machines} value={thread.runsOn} onchange={onrunson} /></Popover>
       {/if}
     </span>
-  </div></div>
+  </div>
 </Panel>
 
 <MentionPicker {groups} bind:sel anchor={fieldBox} label={trig?.kind === "skill" ? "Skills" : "Mention"} onchoose={choose} onclose={() => (dismissed = trig?.from ?? null)} />
@@ -190,13 +218,11 @@
 
 <style>
     :global(.composer) { --ring-offset: 2px; container: cmp / inline-size; padding: var(--s-3) var(--s-3) var(--s-3) var(--s-6); display: grid; grid-template-columns: minmax(0, 1fr); }
-  /* Expand on focus, collapse on blur, one motion: the two outer rows fold (grid track 1fr to 0fr, so the box keeps its glass and its one radius), fade, and on a phone the box widens by the inset the
-     measured ChatGPT/Claude recordings show (38 pt from the edges unfocused, 12 pt focused: 26 pt a side), over --dur-morph on --ease-morph (the iPhone keyboard's own track, 350 ms). Interruptible (a transition
-     reverses from where it is), and instant in keyboard use and under reduced motion (base.css, tokens). A folded row is invisible and out of the tab order after the fold ends; it is visible again at the first frame of an opening. */
-  .fold { display: grid; grid-template-rows: 1fr; opacity: 1; visibility: visible; transition: grid-template-rows var(--dur-morph) var(--ease-morph), opacity var(--dur-morph) var(--ease-morph), visibility 0s; }
-  .fold > :global(*) { min-height: 0; overflow: clip; overflow-clip-margin: 4px; }
-  :global(.composer[data-collapsed]) .fold { grid-template-rows: 0fr; opacity: 0; visibility: hidden; transition: grid-template-rows var(--dur-morph) var(--ease-morph), opacity calc(var(--dur-morph) * 0.4) linear, visibility 0s linear var(--dur-morph); }
-  :global(.composer[data-narrow]) { margin-inline: 0; transition: margin-inline var(--dur-morph) var(--ease-morph); }
+  /* Expand on focus, collapse on blur: the state flips at once (the two outer rows leave the layout when collapsed, and on a phone the box takes 26 px more inset a side, the
+     measured ChatGPT/Claude recordings: 38 pt from the edges unfocused, 12 pt focused), and fold.ts plays the motion from the old look over --dur-morph on --ease-morph (the iPhone keyboard's own track,
+     350 ms): the glass's edges, the field and the button by transform, the rows by opacity, so no layout runs per frame. Interruptible; instant in keyboard use and under reduced motion. */
+  :global(.composer[data-collapsed]) [data-fold] { display: none; }
+  
   :global(.composer[data-narrow][data-collapsed]) { margin-inline: calc(var(--s-8) + var(--s-2)); }
   .ctx { display: flex; flex-wrap: wrap; gap: var(--s-2); padding: 0 var(--s-3) var(--s-1) 0; }
   .cx { display: inline-flex; align-items: center; gap: var(--s-2); max-width: 100%; padding: var(--s-1) var(--s-4); border-radius: var(--r-pill); background: rgb(var(--ink-rgb) / 0.06); color: var(--ink-2); font-size: var(--text-label); }

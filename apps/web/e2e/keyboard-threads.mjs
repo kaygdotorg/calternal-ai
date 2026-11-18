@@ -78,6 +78,7 @@ async function tabTo(p, test, max = 60) { for (let i = 0; i < max; i++) { if (aw
 for (const [name, vp] of [["desktop 200%", { width: 720, height: 450 }], ["phone 320 CSS px (400% zoom)", { width: 320, height: 568 }]]) {
   const ctx = await b.newContext({ viewport: vp, deviceScaleFactor: 2, isMobile: name.startsWith("phone"), hasTouch: name.startsWith("phone") }); await ctx.addInitScript(() => localStorage.setItem("cal.firstrun", "1"));
   const page = await ctx.newPage(); await page.goto(BASE + "/threads/t-idle"); await page.waitForSelector("html[data-ready]"); await page.waitForTimeout(800);
+  await expandComposer(page); // the chips are drawn once the composer has focus
   const m = await page.evaluate(() => { const c = document.querySelector(".composer")?.getBoundingClientRect(); const chips = [...document.querySelectorAll(".composer .chips .pill")].map((e) => e.getBoundingClientRect()); return { sw: document.documentElement.scrollWidth, iw: innerWidth, composer: c && { l: c.left, r: c.right }, chipsInside: c ? chips.every((r) => r.left >= c.left - 1 && r.right <= c.right + 1) : false, send: !!document.querySelector("[aria-label='Send message']") }; });
   ok(`${name}: no horizontal scrolling, the composer fits, its chips stay inside it, the send button is there`, m.sw <= m.iw + 1 && m.composer && m.composer.r <= m.iw + 1 && m.chipsInside && m.send, JSON.stringify(m));
   await page.screenshot({ path: `/tmp/zoom-${name.split(" ")[0]}.png` });
