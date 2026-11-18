@@ -99,7 +99,12 @@ pub(crate) fn spawn(
                             if let Some(at_ns) = committed.at_ns {
                                 for entry in &committed.entries {
                                     if let Some(request) = &entry.request_id {
-                                        crate::timings::emit_commit(request, at_ns);
+                                        crate::timings::emit_commit(
+                                            request,
+                                            at_ns,
+                                            #[cfg(feature = "perf-timings")]
+                                            committed.commit_ns,
+                                        );
                                     }
                                 }
                             }
@@ -134,6 +139,8 @@ struct Committed {
         all(feature = "test-timings", debug_assertions)
     ))]
     at_ns: Option<u64>,
+    #[cfg(feature = "perf-timings")]
+    commit_ns: u64,
 }
 
 /// Commits one batch, then retains only its newest bounded set of signed tokens.
@@ -208,6 +215,8 @@ fn commit(conn: &mut Connection, shared: &Shared, c: Commit) -> Result<Committed
             ));
         }
     }
+    #[cfg(feature = "perf-timings")]
+    let commit_start = c.durable.then(calternal_types::perf_monotonic_ns);
     tx.commit().map_err(Error::internal)?;
     #[cfg(any(
         feature = "perf-timings",
@@ -229,5 +238,9 @@ fn commit(conn: &mut Connection, shared: &Shared, c: Commit) -> Result<Committed
             all(feature = "test-timings", debug_assertions)
         ))]
         at_ns,
+        #[cfg(feature = "perf-timings")]
+        commit_ns: at_ns
+            .zip(commit_start)
+            .map_or(0, |(end, start)| end - start),
     })
 }

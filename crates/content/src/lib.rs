@@ -218,7 +218,11 @@ impl Content {
             }
         };
         drop(evicted);
+        #[cfg(feature = "perf-timings")]
+        let slot_wait = calternal_store::timings::SaveStage::SlotWait.start();
         let mut held = lock(&slot.space);
+        #[cfg(feature = "perf-timings")]
+        slot_wait.finish();
         if held.is_none() {
             let journal = self.journals.open_store(id, self.lifecycle.clone())?;
             let mut opened =
