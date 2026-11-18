@@ -6,6 +6,8 @@
     "request_id?": "string"
   },
   "commands": {
+    "calternal onboarding state": { "finished": "bool" },
+    "calternal onboarding finish": { "finished": "bool" },
     "calternal search query": {
       "hits": [
         {

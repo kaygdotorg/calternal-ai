@@ -87,6 +87,13 @@ pub(super) enum Cmd {
         #[command(flatten)]
         connection: calternal_cli::agent::Connection,
     },
+    /// Read or record onboarding completion for the signed-in account.
+    Onboarding {
+        #[command(flatten)]
+        connection: calternal_cli::account_input::Connection,
+        #[command(subcommand)]
+        cmd: calternal_cli::onboarding::Onboarding,
+    },
     /// Save, read and erase private account compositions.
     Drafts {
         #[command(flatten)]
