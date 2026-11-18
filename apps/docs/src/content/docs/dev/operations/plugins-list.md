@@ -341,6 +341,13 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
         "schema": {
           "description": "JSON Schema for the kind content; no executable code."
         },
+        "searchable": {
+          "description": "Opt in to indexing the title and Markdown body for space search.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
         "storage": {
           "allOf": [
             {

@@ -64,7 +64,7 @@ pub(crate) fn install(conn: &Connection) -> Result<()> {
 
 // An upper bound under SQLite's binary collation. Increment the last scalar
 // with a successor and discard the suffix, skipping the surrogate gap.
-fn prefix_end(prefix: &str) -> Option<String> {
+pub(crate) fn prefix_end(prefix: &str) -> Option<String> {
     for (index, ch) in prefix.char_indices().rev() {
         let next = u32::from(ch) + 1;
         if let Some(ch) = char::from_u32(if next == 0xd800 { 0xe000 } else { next }) {

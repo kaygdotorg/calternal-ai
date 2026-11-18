@@ -6,8 +6,27 @@ use crate::{
 
 #[test]
 fn search_commands_match_human_and_json_goldens() {
+    let hits = json!({"hits":[{
+        "address":"/notes/019aabb0-1100-7111-8111-111111111111",
+        "space_id":"019aabb0-2200-7222-8222-222222222222",
+        "title":"Review notes","kind":"notes",
+        "excerpt":[{"text":"Review","matched":true},{"text":" notes","matched":false}]
+    }],"partial":false,"next_cursor":"p-next"});
+    let mut prefix_hits = hits.clone();
+    prefix_hits["hits"][0]["excerpt"] = json!([]);
     let base = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden");
     for (name, op, data) in [
+        ("query", SearchOperation::Query, hits.clone()),
+        ("items", SearchOperation::Items, prefix_hits),
+        (
+            "threads",
+            SearchOperation::Threads,
+            json!({"hits":[{
+            "address":"/threads/019aabb0-1100-7111-8111-111111111111",
+            "space_id":"019aabb0-2200-7222-8222-222222222222",
+            "title":"Review plan","kind":"threads","excerpt":[]
+        }],"partial":false}),
+        ),
         (
             "people",
             SearchOperation::People,

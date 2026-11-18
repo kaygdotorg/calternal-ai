@@ -5,6 +5,72 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
+/// Search visible items by title and body. An omitted space searches all readable spaces.
+#[derive(Debug, Deserialize, Serialize, JsonSchema, TS)]
+#[serde(deny_unknown_fields)]
+pub struct SearchInput {
+    /// Text typed into the palette.
+    pub query: String,
+    /// Optional space UUID.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub space_id: Option<String>,
+    /// Kind filter. An empty list selects all opted-in kinds.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[ts(as = "Option<Vec<String>>", optional)]
+    pub kinds: Vec<String>,
+    /// Maximum rows to return, from 1 to 50. Defaults to 20.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub limit: Option<u32>,
+    /// Opaque continuation from this operation and filter set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub cursor: Option<String>,
+}
+
+impl SearchInput {
+    /// Bound decoding and validate identifiers without consulting storage.
+    pub fn validate(&self) -> Result<(), Error> {
+        validate_text(&self.query)?;
+        if let Some(space) = &self.space_id {
+            crate::validate_resource_id(space)?;
+        }
+        if self.kinds.len() > 32 || self.limit.is_some_and(|n| !(1..=50).contains(&n)) {
+            return Err(Error::invalid_input(
+                "search accepts up to 32 kinds and a limit of 1 through 50",
+            ));
+        }
+        for kind in &self.kinds {
+            crate::validate_id(kind)?;
+        }
+        if let Some(cursor) = &self.cursor {
+            crate::validate_page_cursor(cursor)?;
+        }
+        Ok(())
+    }
+}
+
+/// Picker filter for cross-space item and thread lookups.
+#[derive(Debug, Deserialize, Serialize, JsonSchema, TS)]
+#[serde(deny_unknown_fields)]
+pub struct LookupInput {
+    /// Literal title prefix.
+    pub prefix: String,
+    /// Optional space UUID.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub space_id: Option<String>,
+    /// Maximum rows, from 1 to 50. Defaults to 20.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub limit: Option<u32>,
+    /// Opaque continuation from the same lookup and filters.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub cursor: Option<String>,
+}
+
 /// Picker filter within one space.
 #[derive(Debug, Deserialize, Serialize, JsonSchema, TS)]
 #[serde(deny_unknown_fields)]
@@ -15,6 +81,43 @@ pub struct SpaceLookupInput {
     #[serde(default)]
     #[ts(as = "Option<String>", optional)]
     pub prefix: String,
+}
+
+/// One plain-text excerpt segment. Render its text literally.
+#[derive(Debug, Serialize, Deserialize, JsonSchema, TS)]
+pub struct SearchSegment {
+    /// Literal display text.
+    pub text: String,
+    /// Whether the segment matches the search.
+    pub matched: bool,
+}
+
+/// One indexed item in its visible space.
+#[derive(Debug, Serialize, Deserialize, JsonSchema, TS)]
+pub struct SearchHit {
+    /// Stable item address.
+    pub address: String,
+    /// Manifest kind identifier.
+    pub kind: String,
+    /// Owning space UUID.
+    pub space_id: String,
+    /// Display title.
+    pub title: String,
+    /// Short title or body excerpt with structured highlights.
+    pub excerpt: Vec<SearchSegment>,
+}
+
+/// Visible results in deterministic order.
+#[derive(Debug, Serialize, Deserialize, JsonSchema, TS)]
+pub struct SearchResult {
+    /// The current page.
+    pub hits: Vec<SearchHit>,
+    /// Opaque continuation, omitted at the end.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub next_cursor: Option<String>,
+    /// A readable selected index is catching up, rebuilding, or has reached its coverage limit.
+    pub partial: bool,
 }
 
 /// A named account or group directly granted access to the selected space.
@@ -54,7 +157,7 @@ pub struct SkillsResult {
 fn validate_text(value: &str) -> Result<(), Error> {
     if value.len() > 512 || value.chars().any(char::is_control) {
         return Err(Error::invalid_input(
-            "lookup text must be at most 512 bytes with no controls",
+            "search text must be at most 512 bytes with no controls",
         ));
     }
     Ok(())
@@ -63,6 +166,12 @@ fn validate_text(value: &str) -> Result<(), Error> {
 /// Host-owned read operations for the palette and pickers.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum SearchOperation {
+    /// Full-text palette results.
+    Query,
+    /// Cross-kind title prefix.
+    Items,
+    /// Thread title prefix.
+    Threads,
     /// Direct mention targets.
     People,
     /// Per-space skills.
@@ -87,13 +196,13 @@ macro_rules! operations {
                 match self { $(Self::$variant => $id,)+ }
             }
 
-            /// Minimum authority at the selected space.
+            /// Minimum authority at the selected space or each result space.
             pub const CAPABILITY: Capability = Capability::SpaceRead;
 
             /// Declared action class used by agent admission.
             pub const RISK: OperationRisk = OperationRisk::Read;
 
-            /// Authority target for the selected space.
+            /// Authority target. Account-scoped queries check every returned space.
             pub fn target(self) -> PeopleTarget {
                 match self { $(Self::$variant => PeopleTarget::$target),+ }
             }
@@ -117,6 +226,9 @@ macro_rules! operations {
 }
 
 operations! {
+    Query: "search.query", "Search titles and bodies across readable spaces.", Account, SearchInput => SearchResult;
+    Items: "items.lookup", "Find indexed items by title prefix across readable spaces.", Account, LookupInput => SearchResult;
+    Threads: "threads.lookup", "Find threads by title prefix across readable spaces.", Account, LookupInput => SearchResult;
     People: "people.lookup", "Find mentionable accounts and groups in a space.", Space, SpaceLookupInput => PeopleLookupResult;
     Skills: "skills.list", "List visible space skills and their descriptions.", Space, SpaceLookupInput => SkillsResult;
     Manifests: "plugins.manifests", "List palette contributions from enabled plugins.", Space, crate::PluginsListInput => crate::PaletteResult;
@@ -127,6 +239,18 @@ impl SearchOperation {
     pub(crate) fn validate(self, input: &JsonObject) -> Result<(), Error> {
         use crate::validation::decode;
         match self {
+            Self::Query => decode::<SearchInput>(input)?.validate(),
+            Self::Items | Self::Threads => {
+                let i: LookupInput = decode(input)?;
+                SearchInput {
+                    query: i.prefix,
+                    space_id: i.space_id,
+                    kinds: Vec::new(),
+                    limit: i.limit,
+                    cursor: i.cursor,
+                }
+                .validate()
+            }
             Self::People | Self::Skills => {
                 let i: SpaceLookupInput = decode(input)?;
                 crate::validate_resource_id(&i.space_id)?;

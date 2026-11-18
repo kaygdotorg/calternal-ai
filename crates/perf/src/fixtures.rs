@@ -11,7 +11,11 @@ pub(crate) fn build(a: &Args, root: &Path, notes: usize, spaces: usize) -> Resul
     let (_server, mut h, _) = Server::start(
         &a.bin,
         root,
-        &a.plugins,
+        if a.paired_search {
+            a.baseline_plugins.as_deref().unwrap_or(&a.plugins)
+        } else {
+            &a.plugins
+        },
         a.test_plugin_root.as_deref(),
         a.startup_timeout_seconds,
     )?;
@@ -108,4 +112,20 @@ pub(crate) fn prepare(a: &Args) -> Result<i32> {
     let report = serde_json::json!({"prepared":a.work,"spaces":spaces,"notes_per_space":notes,"timed":false});
     crate::report::print(a, &report, &a.work);
     Ok(0)
+}
+
+/// Reset the stopped fixture's package catalog so startup seeds the chosen
+/// on/off manifest. The copied authority, journal and note files remain intact.
+pub(crate) fn reset_search_catalog(root: &Path) -> Result<()> {
+    for suffix in ["", "-wal", "-shm", "-journal"] {
+        let path = root
+            .join("appdata")
+            .join(format!("installed-plugins.sqlite3{suffix}"));
+        match std::fs::remove_file(path) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error.into()),
+        }
+    }
+    Ok(())
 }

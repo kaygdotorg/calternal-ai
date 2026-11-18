@@ -1,7 +1,41 @@
-//! Current space mention visibility.
+//! Current search authority and the space's mentionable direct grants.
 use super::*;
 
 impl Spaces {
+    /// Read the current UUIDs on which this account holds the supplied capability.
+    /// Uses the same indexed direct/group authority view as a single-space check.
+    /// A selected UUID never discloses whether inaccessible space metadata exists.
+    pub async fn search_spaces(
+        &self,
+        account: AccountId,
+        selected: Option<SpaceId>,
+        capability: Capability,
+    ) -> Result<Vec<SpaceId>> {
+        self.db
+            .read(move |c| {
+                let mut stmt = c
+                    .prepare_cached(
+                        "SELECT DISTINCT m.space_id FROM space_account_roles m
+                 JOIN space_role_capabilities rc ON rc.role=m.role
+                 WHERE m.account_id=?1 AND rc.capability=?2
+                   AND (?3 IS NULL OR m.space_id=?3) ORDER BY m.space_id",
+                    )
+                    .map_err(sql)?;
+                stmt.query_map(
+                    params![
+                        account.to_string(),
+                        capability.name(),
+                        selected.map(|id| id.to_string())
+                    ],
+                    |r| r.get::<_, String>(0),
+                )
+                .map_err(sql)?
+                .map(|row| space_id(row.map_err(sql)?))
+                .collect()
+            })
+            .await
+    }
+
     /// Query direct account and group grants by display-name prefix. Uses the
     /// grant indexes for the selected space and one SQL statement, including the
     /// live capability check. Accounts reached through groups stay private.

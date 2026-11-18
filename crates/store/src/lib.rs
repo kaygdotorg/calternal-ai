@@ -13,7 +13,9 @@
 #![deny(missing_docs, rustdoc::broken_intra_doc_links)]
 
 mod highwater;
+mod projection;
 mod proof;
+pub use projection::{ProjectionChange, ProjectionJournal};
 mod read;
 mod restore;
 mod schema;

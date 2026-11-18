@@ -2,7 +2,7 @@
 
 Decisions waiting on kayg, most blocking first. Answer here or in chat; answered items
 move to the decision record they belong to and leave this list. Terms: see
-[glossary](glossary.md). Updated 2026-11-18 18:15 IST.
+[glossary](glossary.md). Updated 2026-11-18 20:10 IST.
 
 ## Waiting now
 
@@ -11,12 +11,9 @@ move to the decision record they belong to and leave this list. Terms: see
 | 52 | Sharing: what the share button on a note, thread or window offers beyond Copy link (people, groups, public links, the system share sheet) | To grill | Sharing |
 | 24 | Materials: how far the middle card separates from the sidebars, the readability floor for text over a wallpaper, and how much photo shows in light mode. Rebuilt from the calternal-ui plugin's defaults with a five-step Clear-to-Tinted slider | Review on the preview | Appearance |
 | 31 | Thread rows: hover hides the time and state mark for the three actions; swipe right shows only Copy link; touch has no long-press menu, "More" sits in the swipe tray | Keep all three; try on a phone | Threads |
-| 28 | "Choose a look" exists twice: as a step in the onboarding stepper and as a separate centred dialog on first visit. Keep one? | Keep the stepper step, delete the dialog | Onboarding |
-| 33 | Plugin workers: where a space's workers run, sharing capacity (eight per machine today), a server with no container runtime, brokered network fetch, a lost machine | To grill | Plugins |
-| 34 | Requests: how a rotated token reaches the agent after a single-use approval; whether an unused approval belongs to the turn or the thread; dividing the limits (32 per thread, 256 per account); who may read `AI/AGENTS.md` | To grill | Requests |
 | 35 | People: can a group hold a server role; what happens when a space's only Owner is disabled | Port the existing app's answer | People |
 | 36 | Notes: purging the whole Trash at once, reusing a file name after delete, renames that touch many links | To grill | Notes |
-| 40 | Performance: shortening the security-log replay at start (1,000 spaces: 320 to 860 ms against 300 ms), the cold save tail, the draft-save tail, and what the 10 ms "write reaches a subscribed client" ceiling measures | Decide the measure first | Performance |
+| 40 | Performance: the slow start at 1,000 spaces (320 to 860 ms against 300 ms), the cold save tail and the draft-save tail. No profile yet says where the time goes | Profile first, then ask | Performance |
 | 10 | Native font: system or Google Sans Flex | Decide after seeing both on a Mac and an iPhone | Native apps |
 
 ## Automatic thread title
@@ -29,9 +26,9 @@ Decided 2026-11-18: a person never signs in twice and no API key is used. The ti
 - **Machines without a terminal**, partly decided 2026-11-18 (below); still to grill: pre-configuring machines at deploy time, the `curl | sh` installer at calternal.com/install for both a server and a machine, the macOS app that bundles the CLI, how a machine behind NAT stays reachable for people who know nothing about networking, and how a group's allowance of pool compute is configured and shown.
 - **Pricing**: plans are listed at calternal.com/pricing; storage is bought separately; what the sizes, hours and storage steps are.
 - **Upgrades with real data**: decided 2026-11-18 that updates are automatic and a failed one rolls back without the person or admin noticing; the index rebuild is made faster first (search is unavailable for 67 to 80 s at 100,000 notes today), then migrations are written for the small core (accounts, spaces, roles, secrets), which cannot be rebuilt from files.
-- **MicroVMs**: one per person with a container per thread is decided; the smallest memory size is chosen after the lane measures real turns at 256, 512, 1024 and 2048 MiB (issue #51).
-- **Next to write up** (kayg, 2026-11-18): plugin workers (#33), performance measures (#40), requests (#34).
-- **The canvas experiment** (kayg, 2026-11-18; still an experiment behind `?canvas=1`): no outer card; the area between the sidebars is the canvas and each window is a middle card, so one window looks exactly like the app today and a second animates as a split; structured columns as in niri; windows touch the top; one continuous veiled background behind them, as under the sidebars; windows opaque or transparent with no blur of their own; both sidebars follow the focused window's app; on a phone one window at a time. Open: where the app switcher belongs (bottom centre for now, auto-hide available and off by default, never hidden on a phone). Feedback 2026-11-18 17:00, being fixed by the Threads lane: one window must match the app without the canvas exactly (fonts, spacing, animations); no fade on a half-scrolled window; windows are neutral dark or light, never tinted by the wallpaper's accent; no accent border on the selected window (inactive windows dim instead, to be judged); the fullscreen icon is two diagonal chevrons and the link icon becomes a real share menu.
+- **MicroVMs**: one per person with a container per thread; sizes decided; the lane posts its build plan on issue #51 for review.
+- **Next to write up** (kayg, 2026-11-18): sharing (#52), then Settings and Appearance.
+- **The canvas experiment** (kayg, 2026-11-18; still an experiment behind `?canvas=1`): no outer card; the area between the sidebars is the canvas and each window is a middle card, so one window looks exactly like the app today and a second animates as a split; structured columns as in niri; windows touch the top; one continuous veiled background behind them, as under the sidebars; windows opaque or transparent with no blur of their own; both sidebars follow the focused window's app; on a phone one window at a time. The app switcher is no longer part of the canvas (it moved to the left sidebar's footer). Feedback 2026-11-18 17:00, being fixed by the Threads lane: one window must match the app without the canvas exactly (fonts, spacing, animations); no fade on a half-scrolled window; windows are neutral dark or light, never tinted by the wallpaper's accent; no accent border on the selected window (inactive windows dim instead, to be judged); the fullscreen icon is two diagonal chevrons and the link icon becomes a real share menu.
 
 ## Queued, no decision needed
 
@@ -40,6 +37,15 @@ Decided 2026-11-18: a person never signs in twice and no API key is used. The ti
 
 ## Recently decided (2026-11-17), now in the decision records
 
+- Fonts (2026-11-18): Google Sans Flex is the default for the interface and for chat, each separately configurable; Cascadia Code for monospace and a future terminal (a terminal would come from a plugin).
+- Shell footer (2026-11-18 evening, replaces the space dots and the capsule under the card): spaces sit behind the account picture on desktop and phone; the app switcher is an icon-only capsule of three apps at the bottom centre of the left sidebar, scrolling sideways. This also settles where the switcher sits in the canvas.
+- MicroVM sizes (2026-11-18): the smallest is 512 MiB with at most two active threads, then 1,024 MiB; measured on real turns (issue #51).
+- Plugin network access is refused for private addresses by default, with an explicit grant approved by a server admin or the machine's owner; only cloud metadata addresses are always refused. Design to be written up.
+- Plugin workers (#33, 2026-11-18): a shared space's workers run only on the operator's pool machines; with no machine able to run containers the plugin says it is unavailable and how to add a machine; revoking a machine frees its capacity, nothing is freed on a timeout; network access is declared in the manifest, approved by a Manager and fetched by the server on the plugin's behalf, with the design for broad needs (mail, money) still to be written up.
+- Requests (#34, 2026-11-18): an unused single-use approval belongs to the turn; limits are 32 open requests per person per thread and 256 per account, standing grants counted separately; any member may read `AI/AGENTS.md`, Managers and the Owner edit it; a replaced token reaches the running agent through a protected local channel only the `calternal` command reads.
+- Performance (2026-11-18): the 10 ms ceiling measures from the durable commit to the client receiving it, in release builds, as a hard gate; the full round trip gets its own limit.
+- The look chooser is only a step in onboarding; the separate first-visit dialog goes (#28, 2026-11-18).
+- Automatic titles run with no tools on the person's existing sign-in; kayg's Claude Code sign-in may be reused for tests as a reduced copy, never displayed.
 - Long tool output is kept in full for the thread's life, in a hidden plain-text file beside the thread, and counts toward storage (#42, 2026-11-18; measured at about 225 KiB a coding session).
 - 2026-11-18 evening: composer chips are always shown, also at their default (#25). The palette and the composer stay two surfaces of one engine (#30 closed; `composer.md`). Editing a sent message forks inside the same thread: the old tail is kept and shown there, never as a second thread in the list (#45). Many spaces: a horizontal strip showing three dots at once, scrolling sideways, as Aside (#39). The page waits for its font before painting (#32). Readiness is checked on demand only (#37). Wallpapers are downloaded from Unsplash on first use and served from our own copy, as the existing app does. The thread file's hidden comment line stays. Canvas: no fade on a half-scrolled window; the share menu holds the system share sheet and Copy link until the sharing round (#52).
 
