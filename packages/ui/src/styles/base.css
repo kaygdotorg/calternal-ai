@@ -6,7 +6,7 @@ body {
   font-family: var(--font-ui); font-size: var(--text-ui); font-weight: var(--ui-weight);
   /* opsz is pinned: left to the browser it follows the font size (13 px text gets opsz 13, about 5 % wider and looser than the reference look at 18 and up). */
   font-variation-settings: "GRAD" var(--text-grad), "opsz" var(--text-opsz);
-  line-height: 1.45; color: var(--ink); background: var(--paper);
+  line-height: 1.45; color: var(--ink); background: var(--bars, var(--paper));
   -webkit-font-smoothing: auto; text-rendering: optimizeLegibility;
 }
 button, input, textarea, select { font: inherit; color: inherit; letter-spacing: inherit; }
@@ -69,3 +69,10 @@ input, textarea, [contenteditable], .selectable, .selectable * { -webkit-user-se
 :root { --section-pad: calc((var(--row-h) - var(--section-h)) / 2); }
 .section-heading { box-sizing: border-box; min-height: var(--section-h); margin: var(--section-above) 0 var(--section-below); padding: 0 var(--s-5); display: flex; align-items: center; font-size: var(--text-label); font-weight: var(--strong-weight); line-height: 1.25; color: var(--ink-3); }
 .section-heading.first { margin-top: 0; }
+
+/* A Selector that is the control of its own row fills the row (its default) up to a readable maximum, so three options never stretch across a wide pane (docs/ui-design-system.md, "Selectors fill their row"). */
+:root { --selector-row-max: 28rem; }
+.row-selector { max-width: var(--selector-row-max); }
+
+/* The canvas behind the page is what Safari 26+ tints its status bar and toolbar with (it ignores `theme-color`, and the page's layout viewport starts below the status bar): the solved top colour of the wallpaper under its veil (shell/chrome.ts), so the app runs edge to edge. */
+:root:root { background-color: var(--bars, var(--paper)); }

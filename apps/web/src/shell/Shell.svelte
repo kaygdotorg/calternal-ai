@@ -4,7 +4,7 @@
   // them: the sidebar is underneath and the middle card slides aside to reveal it (and visibly floats above it); the right card slides
   // over the middle card from the right; the app and its panels are the bottom bar.
   import { untrack } from "svelte";
-  import { Card, Pill, tokenEase, tokenMs } from "@calternal/ui";
+  import { Card, HeaderPill, Pill, tokenEase, tokenMs } from "@calternal/ui";
   import { ariaKeys, shortcuts } from "../lib/shortcuts.svelte";
   import type { AppDef } from "../apps/registry";
   import { appearance } from "../appearance/prefs.svelte";
@@ -198,6 +198,7 @@
     {#if !shell.narrow && shell.sidebarOpen}<ResizeHandle side="left" />{/if}
     {#if !shell.narrow && hasRight && rightOpen}<ResizeHandle side="right" />{/if}
     {#if showLeft}<div class="edge l">{#if shell.narrow}<Pill icon="sidebar" label="Show the sidebar" aria-keyshortcuts={ariaKeys(shortcuts.chordFor("sidebar"))} onclick={() => shell.toggleSidebar()} />{:else}<CollapsedPill {app} />{/if}</div>{/if}
+    {#if !canvasEnabled}<div class="edge hl" style:--hl-off={showLeft ? (shell.narrow ? "calc(var(--pill-h) + var(--s-3))" : "calc(var(--pill-h) * 2 + var(--s-3) * 2)") : "0px"}><HeaderPill /></div>{/if}
     {#if canvasEnabled}
       <!-- The canvas experiment (canvas/Canvas.svelte): no card round it; the area between the sidebars is the canvas and each window is a middle card. The app switcher is in the sidebar's footer. -->
       <div class="area" role="region" aria-label={app.name}>
@@ -250,6 +251,8 @@
   .mid { min-width: 0; padding: 0 var(--inset); position: relative; }
   .edge { position: absolute; z-index: 6; top: calc(var(--safe-top) + (var(--bar-h) - var(--pill-h)) / 2); }
   .edge.l { left: calc(var(--inset) + var(--s-4)); }
+  /* The header line (HeaderPill) sits beside the sidebar button, or at the card's corner when there is none, and leaves room for the card's own corner controls on the right. */
+  .edge.hl { left: calc(var(--inset) + var(--s-4) + var(--hl-off, 0px)); right: calc(var(--inset) + var(--s-4) + var(--pill-h) * 2); pointer-events: none; display: flex; }
   .mid :global(.mid-card) { height: 100%; overflow: clip; }
   /* The card is the only thing on the background, and it casts nothing onto it: a shadow would be a second layer in the gap beside the card (the owner's seam). It is told apart by its own surface (docs/ui-design-system.md). On a phone it slides over the list, where it does cast one. */
   .shell:not(.narrow) .mid :global(.mid-card) { box-shadow: none; }
