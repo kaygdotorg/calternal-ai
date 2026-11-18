@@ -231,6 +231,9 @@ export class FixtureClient implements ThreadsClient {
     const o = this.open.get(threadId);
     if (o && !o.timer) setTimeout(() => this.startStream(threadId), 300);
   }
+  async snooze(threadId: string, until: number | null): Promise<void> {
+    this.patch(threadId, { snoozedUntil: until ?? undefined });
+  }
   async setVersion(threadId: string, _messageId: string, version: number): Promise<void> {
     const f = this.forks.get(threadId);
     if (!f) return;

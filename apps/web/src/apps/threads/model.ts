@@ -39,6 +39,8 @@ export type ThreadNotice =
 
 /** What the sidebar and the header need to know about a thread. A child thread has a `parentId`. */
 export interface ThreadSummary {
+  /** Until when the person snoozed the thread (milliseconds since the epoch): it is out of the Inbox until then and listed under Snoozed. Per thread, as the owner decided; the server clears it at the time. */
+  snoozedUntil?: number;
   /** The thread's UUID, the same in the sidebar, the address and every operation. */
   id: string;
   /** The space the thread is in (a UUID). The sidebar lists only the current space's threads. */
