@@ -7,7 +7,7 @@
   const p = $derived(A.prefs);
   $effect(() => { void A.ensureThumbs(); });
   /** The shell's own paper and ink per scheme, for presets that keep its tokens (a tile shows the preset's colours, not the current scheme's). */
-  const own = { light: { paper: tokens.light.paper, ink: tokens.light.ink }, dark: { paper: tokens.dark.paper, ink: tokens.dark.ink }, accent: tokens.appearance["accent-base"] };
+  const own = { light: { paper: tokens.light.paper, ink: tokens.light.ink }, dark: { paper: tokens.dark.paper, ink: tokens.dark.ink }, accent: tokens.base["accent-base"] };
   /** A tile is drawn with the preset's light colours on one diagonal half and its dark colours on the other, whatever scheme is on now, so presets can be told apart in either. */
   const split = (l: string, d: string) => `linear-gradient(135deg, ${l} 50%, ${d} 50%)`;
 </script>
