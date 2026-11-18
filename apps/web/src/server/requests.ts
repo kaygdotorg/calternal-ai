@@ -14,7 +14,7 @@ import { spaces } from "../shell/spaces.svelte";
 import type { RequestsClient } from "../apps/threads/client";
 import type { Answer, Request } from "../apps/threads/model";
 import { ServerClient, ServerError } from "./client";
-import { reverify as reverifyPasskey } from "./auth";
+import { reverify as reverifyPasskey, withFreshProof } from "./auth";
 
 /** One request as the server lists it. */
 export interface WireRequest {
@@ -83,18 +83,8 @@ export class ServerRequests implements RequestsClient {
   private absent = false;
   /** `reverify` asks for the passkey again (a real ceremony in a browser); tests pass a stand-in. */
   constructor(private server: ServerClient, private space: () => string = () => spaces.current.id, private reverify: () => Promise<void> = reverifyPasskey) { void this.space; }
-  /**
-   * Runs a call that needs a fresh passkey proof (an approval, a secret's value). The server answers a stale session with a plain `forbidden`, not a
-   * dedicated code, so a forbidden answer is retried once after asking for the passkey; if the second try is refused too, that refusal is thrown.
-   * Cost: none unless the proof is stale; then one passkey ceremony (two requests and the person's touch).
-   */
-  private async fresh<T>(call: () => Promise<T>): Promise<T> {
-    try { return await call(); } catch (e) {
-      if (!(e instanceof ServerError) || e.code !== "forbidden") throw e;
-      await this.reverify();
-      return call();
-    }
-  }
+  /** Runs a call that needs a fresh passkey proof (an approval, a secret's value) through the shared helper, which asks for the passkey once when the server says `passkey_reverification_required`. */
+  private fresh<T>(call: () => Promise<T>): Promise<T> { return withFreshProof(call, this.reverify); }
 
   async requests(): Promise<Request[]> {
     if (this.absent) return [];
