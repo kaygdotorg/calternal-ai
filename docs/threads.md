@@ -406,3 +406,276 @@ plugin path, the native manifest is available from the binary if the working
 directory lacks `plugins/calternal-orchestrator/manifest.json`. Deployments
 using `--plugin-root` provide their own trusted plugin tree. An authorized
 fresh space lists zero threads before any conversation is created.
+
+## Proposed readable file format
+
+This proposal is for owner review before changes to the writer. The materialized
+file is still `AI/Chats/<title>.md`, with the thread UUID as its permanent
+`calternal-id`. The unsuffixed `format: calternal-thread` follows the existing
+app's [Money ADR 0057] and [Contacts ADR 0063]. The contact note and original
+card also provide the precedent for a journaled pair. The task and calendar
+rules in [ADR 0068] retain authored bytes and keep identities independent of
+display text. On acceptance the writer and reader move together to this one
+format.
+
+### Visible Markdown
+
+The only frontmatter keys are `format`, `calternal-id`, `title`, `created-at`,
+`updated-at`, and `archived`. Times use RFC 3339 UTC in frontmatter. The file
+shows each message as an ordinary Markdown H2 with the body beneath it. The H2
+shows the historical display name of the author, automation, or harness. An
+agent heading uses `via` to name the service that handled inference. The
+billing label is optional and describes a known subscription or API route.
+For a routed call, this names the gateway the harness actually used. The model
+name can still identify the model family. Never infer a service or billing
+route from the model name, login configuration, or harness name.
+
+```text
+person     = "## " label sep time
+automation = "## Automation " label sep time
+agent      = "## " label " via " label [billing]
+             sep label sep effort sep time sep elapsed [sep outcome] [sep continuation]
+sep        = " · "
+billing    = " (subscription)" | " (API)"
+time       = YYYY-MM-DD SP HH:MM:SS SP "UTC"
+effort     = label | "Provider default" | "Unknown effort"
+elapsed    = integer " s" | integer " min " integer " s"
+             | "In progress" | "Duration unavailable"
+outcome    = "Failed" | "Interrupted" | "Cancelled"
+continuation = "Resumed" | "Retry " positive-integer
+```
+
+The agent labels in order are harness, serving provider, and model. When a
+serving provider is unreported, use `Unknown provider`. Absent effort uses
+`Provider default` only when the harness default was requested. If an explicit
+effort was requested and its effective value is unknown, display the requested
+level followed by ` requested`. Use the measured execution time for that
+attempt, excluding queue, person wait, and backoff. Use floor seconds for
+measured values. Put an attempt's starting time in its heading. A resume or
+retry has a new heading if it has text or a recorded outcome. An empty failed
+attempt can have a heading without an invented response. The stable turn ID
+ties the attempts together in the companion. Each subagent writes to its own
+thread file and uses that thread's actual harness, provider and model.
+
+The writer normalizes generated labels to a single display line and escapes
+Markdown metacharacters in the heading only. Reserved separators inside labels,
+including a literal ` · ` or ` via `, use numeric entities for the middle dot
+or the initial `v`. Parentheses in labels are Markdown-escaped before appending
+a billing suffix. The companion stores the original display strings and the
+heading's kind. It defines boundaries by byte range, so a person's name may
+start with `Automation` without being classified as an automation.
+
+The writer emits one blank line after the H2, then the original UTF-8 body
+bytes. It adds separation outside the body before a following record. The
+stored body ranges preserve the author's line endings, leading and trailing
+blank lines, headings and code exactly. A streamed attempt can have multiple
+body ranges when annotations occur between chunks. A body can contain a line identical
+to a generated heading. Readers use the companion's ranges and never scan the
+body for delimiters.
+
+Trusted tool and reasoning notes are separate Markdown paragraphs in the
+attempt, with their own ranges. Examples are blockquotes beginning with
+`Tool — ` or `Reasoning summary — `. Tool output remains bounded to the
+existing short status and byte count. A reasoning summary appears only when
+the adapter supplies a distinct summary eligible for persistence. Live
+reasoning deltas are never copied into that paragraph. Sign-in writes at most
+one line per flow in the thread. It uses
+`> Sign-in was attempted for <provider> at <time>.` or
+`> Sign-in was done for <provider> at <time>.` with the same UTC form.
+A successful flow records the completion line. The file contains no sign-in URL,
+credential, prompt or form data from the flow.
+
+### Companion and journal
+
+Use `.calternal/threads/<calternal-id>.md` in the same space, with a Markdown
+frontmatter map and ordered message and annotation records. The companion is
+host-owned and excluded from generic content access, listings and search. It
+holds the thread UUID, committed revision and transcript SHA-256, plus:
+
+- Stable message and turn UUIDs, actor IDs, attempt numbers, automation and
+  parent/child bindings, and heading, body and annotation ranges.
+- Stable harness, provider and model IDs when reported, requested and known
+  effective effort, billing route, phase durations, result, and protected
+  placement information. Personal machines can be correlated within a thread.
+  Hosted readers cannot see pool identities.
+- The provider session binding and the existing pending send, output cursor,
+  message count, last-activity, deleted flag and last mode and mode owner.
+  Current permission and per-account saved modes remain under the existing
+  protected authority. The companion's recorded mode never grants access.
+
+For each range, store a zero-based UTF-8 byte offset and byte length relative
+to the visible body after frontmatter. Ranges are ordered, disjoint and on
+character boundaries. Apply the existing document size ceiling to the transcript
+and companion independently. Bound generated labels and annotation text before
+encoding. Refuse a pair that exceeds either limit before committing.
+Before accepting a pair as a snapshot, check the thread
+UUID, revision, transcript digest and range bounds. The reader only parses
+generated headings at those ranges. A service without the companion can still
+display the file as Markdown. It cannot guess stable message identities.
+
+Stage both versions under the same thread revision, in one per-space content
+transaction and one outbox intent. Adapt the existing linked placement path
+used by Notes, with the pair as the unit of placement and retry. Check both
+expected heads before committing and use guarded replacement for each file.
+Publish one thread journal entry and acknowledge the receipt only after both
+placements are verified. Rename leaves the UUID-addressed companion path
+alone. A normal delete or restore moves the visible file and updates the
+companion lifecycle in the same commit.
+
+A crash between the two file replacements can leave a partial view to an
+external editor. Recovery recognizes a member that already matches the staged
+digest and completes the other against its expected predecessor. Calternal
+only serves matched revisions. A hand edit, hand deletion or unexpected
+replacement of either file blocks writes under the existing external-edit
+rule. Preserve the surviving bytes and companion; never repair by guessing
+where a message begins or by generating a new ID. Restoring the exact committed
+pair clears the discrepancy. Any future import of hand edits needs its own
+owner-approved action.
+
+The existing insertion delta can carry an appended body while its heading is
+stable. Completing an in-progress heading changes existing bytes. The choices
+are one full refresh on that revision, which keeps the existing wire cursor
+and reloads long threads, or bounded replacement ranges using the same
+immutable revision pair, which preserves a small read but requires a coordinated
+client update. In either case full and delta reads must refer to the same
+committed pair. Placement needs an extra guarded file write and parent-directory
+sync for the companion at existing checkpoints. The proposal supplies no new
+per-token writes or second journal commit.
+
+### Five example threads
+
+#### 1. Claude Code with its own subscription
+
+```markdown
+---
+format: calternal-thread
+calternal-id: 019a8c00-0000-7000-8000-000000000011
+title: "Release checklist"
+created-at: "2026-11-18T14:00:00Z"
+updated-at: "2026-11-18T14:00:18Z"
+archived: false
+---
+
+## Maya Chen · 2026-11-18 14:00:00 UTC
+
+Which release checks are still open?
+
+> Sign-in was done for Anthropic at 2026-11-18 14:00:04 UTC.
+
+## Claude Code via Anthropic (subscription) · Claude Sonnet 5.5 · High · 2026-11-18 14:00:06 UTC · 12 s
+
+The accessibility review is the only open check.
+
+> Tool — Read release.md · completed
+
+> Reasoning summary — Compared the checklist with the review status.
+```
+
+#### 2. Shared thread, gateway and model switch
+
+```markdown
+---
+format: calternal-thread
+calternal-id: 019a8c00-0000-7000-8000-000000000012
+title: "Launch note"
+created-at: "2026-11-18T14:10:00Z"
+updated-at: "2026-11-18T14:12:09Z"
+archived: false
+---
+
+## Mira Patel · 2026-11-18 14:10:00 UTC
+
+Draft a sentence for the launch note.
+
+## fx via Vercel AI Gateway (API) · Claude Sonnet 5.5 · Medium · 2026-11-18 14:10:01 UTC · 8 s
+
+The release makes shared project updates easier to follow.
+
+## Jules Rivera · 2026-11-18 14:12:00 UTC
+
+Use this structure for the draft:
+
+## Changes
+
+- A short summary.
+
+## Codex via OpenAI · GPT-5.5 · High · 2026-11-18 14:12:01 UTC · 8 s
+
+Shared projects now show recent updates together.
+```
+
+The `## Changes` line belongs to Jules's body and is preserved byte for byte.
+
+#### 3. Parent thread links to work delegated to a subagent
+
+```markdown
+---
+format: calternal-thread
+calternal-id: 019a8c00-0000-7000-8000-000000000013
+title: "Compare onboarding notes"
+created-at: "2026-11-18T14:20:00Z"
+updated-at: "2026-11-18T14:20:21Z"
+archived: false
+---
+
+## Maya Chen · 2026-11-18 14:20:00 UTC
+
+Compare the setup steps with the short reference.
+
+## Claude Code via Anthropic (subscription) · Claude Opus 5.5 · High · 2026-11-18 14:20:01 UTC · 20 s
+
+The reference is missing the account setup step. See [Reference review](<Reference review.md>) for the comparison.
+```
+
+#### 4. Child thread with an interrupted attempt and explicit resume
+
+```markdown
+---
+format: calternal-thread
+calternal-id: 019a8c00-0000-7000-8000-000000000014
+title: "Reference review"
+created-at: "2026-11-18T14:20:02Z"
+updated-at: "2026-11-18T14:20:19Z"
+archived: true
+---
+
+## fx via Vercel AI Gateway (API) · Claude Haiku 5.5 · Low · 2026-11-18 14:20:02 UTC · 5 s · Interrupted
+
+I found the reference and saved the first comparison.
+
+## fx via Vercel AI Gateway (API) · Claude Haiku 5.5 · Low · 2026-11-18 14:20:12 UTC · 7 s · Resumed
+
+The setup note includes account setup. The reference starts at project setup.
+```
+
+The two attempts share a turn ID. Their protected placement references differ
+because the resume ran on a different machine.
+
+#### 5. Automation, a failed attempt and retry
+
+```markdown
+---
+format: calternal-thread
+calternal-id: 019a8c00-0000-7000-8000-000000000015
+title: "Weekly release review"
+created-at: "2026-11-18T15:00:00Z"
+updated-at: "2026-11-18T15:00:41Z"
+archived: false
+---
+
+## Automation Weekly release review · 2026-11-18 15:00:00 UTC
+
+Summarize the release checks due this week.
+
+## Claude Code via Anthropic (subscription) · Claude Sonnet 5.5 · Provider default · 2026-11-18 15:00:01 UTC · 2 s · Failed
+
+Anthropic was temporarily unavailable.
+
+## Claude Code via Anthropic (subscription) · Claude Sonnet 5.5 · Provider default · 2026-11-18 15:00:33 UTC · 8 s · Retry 2
+
+Two checks are due on Friday.
+```
+
+[Money ADR 0057]: https://git.kayg.org/kayg/calternal/src/branch/dev/docs/adr/0057-money-files.md
+[Contacts ADR 0063]: https://git.kayg.org/kayg/calternal/src/branch/dev/docs/adr/0063-contact-notes-keep-original-vcard-lines.md
+[ADR 0068]: https://git.kayg.org/kayg/calternal/src/branch/dev/docs/adr/0068-frontmatter-and-lines.md
