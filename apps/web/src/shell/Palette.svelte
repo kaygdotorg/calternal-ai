@@ -5,6 +5,7 @@
   import { untrack } from "svelte";
   import { Icon, InlineEditor, Sheet, toast } from "@calternal/ui";
   import { marksOf, plan, setItems, type Row } from "../palette/engine";
+  import { replaceServerManifests, type ServerManifest } from "../palette/manifest";
   import { fixtureItems } from "../palette/fixtures";
   import { spaces } from "./spaces.svelte";
   import { navigate, segments } from "../lib/route.svelte";
@@ -50,7 +51,14 @@
     }, 150);
     return () => clearTimeout(h);
   });
-  const p = $derived(plan(text, provider));
+  // The enabled plugins' commands and Settings sections, read from the server when the palette opens (and again when the space changes), as data: nothing of theirs runs while the person types.
+  let manifestTick = $state(0);
+  $effect(() => {
+    if (!open || !serverMode()) return;
+    const space = spaces.current.id;
+    void import("../server/client").then(({ server }) => server.operate<{ manifests: ServerManifest[] }>("plugins.manifests", { space_id: space })).then((r) => { replaceServerManifests(r.manifests); rebuild(store.threads.map((t) => ({ id: t.id, kind: "thread" as const, title: t.title, space: spaces.list.find((x) => x.id === t.spaceId)?.name ?? spaces.current.name, go: `/threads/${t.id}` }))); manifestTick++; }, () => { /* an older server has none: the built-in commands stay */ });
+  });
+  const p = $derived((manifestTick, plan(text, provider)));
   $effect(() => { p; sel = 0; });
   const marks = $derived(marksOf(text));
   function run(r: Row | undefined) {

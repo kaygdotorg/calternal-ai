@@ -250,3 +250,5 @@ Two pages in Settings, in the current space's section, built on fixtures (`apps/
 ## Phone checks (2026-11-18)
 
 No phone layout is pushed before it has been looked at on an iPhone Simulator, in Safari, at the preview address: created, used and deleted on std (Simulator work only); the frames are attached to issue #15. The pass of 2026-11-18 went through the shell (list, thread, side panel), Settings, onboarding, the palette, Notes and the sheets.
+
+*(2026-11-18, later)* Skills page, server mode: the list is read with `skills.list {space_id}` (name and one line each; the file is `AI/Skills/<name>/SKILL.md`). Writing a skill from here and the agents that use each still need the server operations in `NEEDS`.
