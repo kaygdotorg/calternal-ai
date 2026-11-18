@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { centring, dragBoundary, edgeOf, GAP, heightsOf, leftOf, maxScroll, nearColumns, nextPreset, proportionFor, proportionOf, scrollTo, stripWidth, widthOf, widthsOf, type Col, type Win } from "./layout";
 
-const w = (id: string, weight = 1): Win => ({ id, kind: "threads", item: id, weight, look: "card", locked: false });
+const w = (id: string, weight = 1): Win => ({ id, kind: "threads", item: id, weight, locked: false });
 const col = (id: string, p: number | null = null): Col => ({ id, p, wins: [w(id)] });
 
 describe("niri's proportions", () => {

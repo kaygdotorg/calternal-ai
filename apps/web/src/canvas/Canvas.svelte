@@ -16,8 +16,9 @@
   import { onWallpaperColours, wallpaperExtremes } from "../appearance/wallpaper";
   import { spaces } from "../shell/spaces.svelte";
   import { shell } from "../shell/shell.svelte";
-  import { centring, edgeOf, leftOf, maxScroll, nearColumns, NARROW, nextPreset, PRESETS, proportionFor, proportionOf, scrollTo, stripWidth, widthsOf, type Look } from "./layout";
+  import { centring, edgeOf, leftOf, maxScroll, nearColumns, NARROW, nextPreset, PRESETS, proportionFor, proportionOf, scrollTo, stripWidth, widthsOf } from "./layout";
   import { canvas } from "./model.svelte";
+  import { canvasPrefs } from "./prefs.svelte";
   import { frostDensity } from "./frost";
   import NotePreview from "./NotePreview.svelte";
   import WindowFrame, { type WinAction } from "./WindowFrame.svelte";
@@ -295,16 +296,13 @@
     const c = canvas.cols[canvas.colIndexOf(w.id)];
     const next = (k: string) => nextOf(k);
     const open: MenuItem[] = ["threads", "notes"].flatMap((k) => (next(k) ? [{ id: `beside:${k}`, label: `Open ${appFor(k)?.name === "Threads" ? "a thread" : "a note"} beside`, icon: "sidebar-right" as IconName }, { id: `below:${k}`, label: `Open ${k === "threads" ? "a thread" : "a note"} below`, icon: "down" as IconName }] : []));
-    const p = c ? proportionOf(c, canvas.cols.length, vw) : 1;
-    const widthsList: MenuItem[] = narrow ? [] : PRESETS.map((x) => ({ id: `width:${x}`, label: `Width ${x === 1 ? "full" : x === 1 / 3 ? "1/3" : x === 1 / 2 ? "1/2" : "2/3"}`, checked: Math.abs(p - x) < 0.01 }));
     const rest: MenuItem[] = [
       ...(c && c.wins.length > 1 ? [{ id: "equal", label: "Equal heights" }] : []),
-      ...(["card", "clear", "solid"] as Look[]).map((l) => ({ id: `look:${l}`, label: `Look: ${l === "card" ? "Card" : l === "clear" ? "Transparent" : "Solid"}`, checked: w.look === l })),
       { id: "lock", label: w.locked ? "Unlock input" : "Lock input", icon: "lock" },
       ...((appFor(w.kind)?.panels.length ?? 0) > 0 ? [{ id: "panel", label: shell.rightOpen ? "Hide side panel" : "Show side panel", icon: "sidebar-right" as IconName }] : []),
     ];
     const thread: MenuItem[] = w.kind === "threads" && store.get(w.item) ? threadItems(store.get(w.item)!).map((i) => ({ ...i, id: `t:${i.id}` })) : [];
-    return [...open, ...widthsList, ...rest, ...thread, { id: "close", label: "Close window", icon: "close", danger: true }];
+    return [...open, ...rest, ...thread, { id: "close", label: "Close window", icon: "close", danger: true }];
   });
 
   function addBeside(kind: string, below: boolean, source: "pointer" | "key") {
@@ -351,9 +349,7 @@
     else if (item === "share:copy") shareLink(w, "copy");
     else if (item.startsWith("beside:")) addBeside(item.slice(7), false, source);
     else if (item.startsWith("below:")) addBeside(item.slice(6), true, source);
-    else if (item.startsWith("width:")) setPreset(w.id, Number(item.slice(6)), source);
     else if (item === "equal") canvas.equalHeights(canvas.cols[canvas.colIndexOf(w.id)]!.id);
-    else if (item.startsWith("look:")) canvas.setLook(w.id, item.slice(5) as Look);
     else if (item === "lock") canvas.toggleLock(w.id);
     else if (item === "panel") shell.toggleRight();
     else if (item === "close") closeWin(w.id, source);
@@ -377,7 +373,7 @@
       { id: "win-move-left", label: "Move the column left", group: "Canvas" as const, where: "Anywhere", chord: "Mod+Alt+Shift+ArrowLeft", run: () => { canvas.moveColumn(-1); const f = canvas.focus; if (f) void tick().then(() => reveal(f, false)); } },
       { id: "win-move-right", label: "Move the column right", group: "Canvas" as const, where: "Anywhere", chord: "Mod+Alt+Shift+ArrowRight", run: () => { canvas.moveColumn(1); const f = canvas.focus; if (f) void tick().then(() => reveal(f, false)); } },
       { id: "win-preset", label: "Cycle the column's width presets", group: "Canvas" as const, where: "Anywhere", chord: "Alt+Shift+KeyR", run: () => { const f = canvas.focus, c = canvas.cols[canvas.colIndexOf(f)]; if (!f || !c) return false; setPreset(f, nextPreset(proportionOf(c, canvas.cols.length, vw)), "key"); } },
-      { id: "win-max", label: "Full screen the window", group: "Canvas" as const, where: "Anywhere", chord: "Alt+Shift+KeyF", run: () => { const f = canvas.focus; if (!f) return false; toggleMax(f, "key"); } },
+      { id: "win-max", label: "Full screen the window", group: "Canvas" as const, where: "Anywhere", chord: "Alt+Shift+KeyF", run: () => { const f = canvas.focus; if (!f || (canvas.all().length < 2 && !canvas.max)) return false; toggleMax(f, "key"); } },
       { id: "win-lock", label: "Lock or unlock input in the window", group: "Canvas" as const, where: "Anywhere", chord: "Alt+Shift+KeyL", run: () => { const f = canvas.focus; if (!f) return false; canvas.toggleLock(f); } },
       { id: "win-close", label: "Close the window", group: "Canvas" as const, where: "Anywhere", chord: "Alt+Shift+KeyW", run: () => { const f = canvas.focus; if (!f) return false; closeWin(f, "key"); } },
       { id: "win-new", label: "Open another window beside", group: "Canvas" as const, where: "Anywhere", chord: "Alt+Shift+KeyN", run: () => { const k = nextOf("threads") ? "threads" : nextOf("notes") ? "notes" : null; if (!k) return false; addBeside(k, false, "key"); } },
@@ -399,8 +395,8 @@
             {#each c.wins as w, k (w.id)}
               {#if !maxed || w.id === canvas.max}
                 <div class="slot" style:flex="{mine ? 1 : w.weight} 1 0" style:min-height="0">
-                  <WindowFrame win={w} title={titleOf(w.kind, w.item)} icon={iconOf(w.kind)} ownTitle={w.kind === "threads"} focused={canvas.focus === w.id} maximised={mine} look={w.look}
-                    paper={page.paper.join(" ")} {density} hasBelow={k < c.wins.length - 1} edge={i === 0 && i === canvas.cols.length - 1 ? "lr" : i === 0 ? "l" : i === canvas.cols.length - 1 ? "r" : ""} {kbd}
+                  <WindowFrame win={w} title={titleOf(w.kind, w.item)} icon={iconOf(w.kind)} ownTitle={w.kind === "threads"} focused={canvas.focus === w.id} maximised={mine} look={canvasPrefs.look}
+                    canMax={canvas.all().length > 1 && !shell.narrow} paper={page.paper.join(" ")} {density} hasBelow={k < c.wins.length - 1} edge={i === 0 && i === canvas.cols.length - 1 ? "lr" : i === 0 ? "l" : i === canvas.cols.length - 1 ? "r" : ""} {kbd}
                     onfocus={() => focusWin(w.id)} onaction={(a, source, target) => act(w.id, a, source, target)}
                     onresizew={(dx) => resizeWidth(c.id, i, dx)} onresizeh={(dy) => canvas.dragBoundary(c.id, k, dy, el?.querySelector<HTMLElement>(`[data-col="${c.id}"]`)?.clientHeight ?? vh)}>
                     {#if w.kind === "notes" && canvas.focus !== w.id}<NotePreview item={w.item} />

@@ -16,9 +16,9 @@ for (const scheme of ["dark", "light"]) {
   await p.locator("[data-win]").first().getByRole("button", { name: "Full screen" }).hover(); await p.waitForTimeout(1100);
   await p.screenshot({ path: `${dir}/${scheme}-3-tooltip.png` });
   await p.mouse.move(5, 5);
-  await p.locator("[data-win]").first().getByRole("button", { name: "More" }).click(); await p.waitForTimeout(300);
-  await p.locator("[role^=menuitem]", { hasText: /Look: Transparent/ }).first().click(); await p.waitForTimeout(500);
+  await p.evaluate(() => localStorage.setItem("cal.canvas.prefs", JSON.stringify({ look: "clear", width: null }))); await p.reload(); await p.waitForSelector("html[data-ready]"); await p.waitForTimeout(2200);
   await p.screenshot({ path: `${dir}/${scheme}-4-transparent.png` });
+  await p.evaluate(() => localStorage.setItem("cal.canvas.prefs", JSON.stringify({ look: "card", width: null }))); await p.reload(); await p.waitForSelector("html[data-ready]"); await p.waitForTimeout(2200);
   await p.locator("[data-win]").first().getByRole("button", { name: "Full screen" }).click(); await p.waitForTimeout(800);
   await p.screenshot({ path: `${dir}/${scheme}-5-fullscreen.png` });
   await p.keyboard.press("Alt+Shift+KeyF"); await p.waitForTimeout(300);
