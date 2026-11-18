@@ -83,6 +83,12 @@ Re-exports [parseWorkerFrameV2](/docs/dev/typescript/plugin-sdk/worker-v2/functi
 
 ***
 
+### readSetting
+
+Re-exports [readSetting](/docs/dev/typescript/plugin-sdk/worker-v2/functions/readsetting/)
+
+***
+
 ### serveWorker
 
 Re-exports [serveWorker](/docs/dev/typescript/plugin-sdk/stdio-worker/functions/serveworker/)

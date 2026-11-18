@@ -267,11 +267,7 @@ pub fn validate_manifest(m: &ManifestV1) -> Result<(), Error> {
     {
         return Err(Error::Invalid);
     }
-    if m.settings.iter().any(|x| !match x.value_type {
-        ManifestSettingType::String => x.default.is_string(),
-        ManifestSettingType::Boolean => x.default.is_boolean(),
-        ManifestSettingType::Number => x.default.is_number(),
-    }) {
+    if m.settings.iter().any(|x| !x.accepts(&x.default)) {
         return Err(Error::Invalid);
     }
     if m.hooks.iter().any(|x| {

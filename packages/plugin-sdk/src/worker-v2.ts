@@ -1,7 +1,7 @@
 /** Bounded worker-v2 peer; effects and current authority remain in the trusted host.
  * @module
  */
-import type { ManifestV1, PluginItemPageInput, PluginItemPageResult } from "@calternal/contracts";
+import type { ManifestV1, PluginItemPageInput, PluginItemPageResult, WorkerSettingInput } from "@calternal/contracts";
 import { isHostCallKind, validateManifestV1, type HostCallKind } from "./manifest-v1.js";
 
 /** Maximum serialized frame bytes, excluding newline. */
@@ -153,6 +153,16 @@ export async function listItems(
   input: PluginItemPageInput,
 ): Promise<PluginItemPageResult> {
   return await context.call("list_items_v1", input) as PluginItemPageResult;
+}
+
+/** Read the effective shared value of one setting from this package's manifest.
+ * Declare `read_setting_v1` in host_calls. Costs one bounded broker round trip.
+ */
+export async function readSetting(
+  context: WorkerContextV2,
+  key: WorkerSettingInput["key"],
+): Promise<unknown> {
+  return context.call("read_setting_v1", { key } satisfies WorkerSettingInput);
 }
 
 /** Handler implementing one declared operation. Cost is plugin-defined and sandbox-limited; each host effect uses a bounded broker RPC. */

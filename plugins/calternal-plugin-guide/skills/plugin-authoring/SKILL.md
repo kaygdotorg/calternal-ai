@@ -32,3 +32,19 @@ Use the session connection supplied with the task. Confirm the response has
 the expected generated view. Use continuous `plugin dev` by omitting
 `--once`. A failed check or readiness response leaves the last ready draft
 in place. Read its diagnostic and try the edit again.
+
+For a shared setting, declare a key with `id`, `value_type` and `default` in
+`settings`. Add `read_setting_v1` to `host_calls`. In a handler, import
+`readSetting` from `@calternal/plugin-sdk` and check the returned value's
+type. To put that value in the composer, declare a `composer_row` slot with
+`renderer: { "type": "generated", "operation": "<your renderer operation>" }`.
+Have that operation return `{ view: { genui_version: 2, source } }`. For a
+text chip, build the source as `"Badge(" + JSON.stringify(label) + ")"` so
+a quote in the label stays text.
+
+With the Manager connection supplied for the trial, invoke
+`plugins.settings.get` with `space_id`, `plugin_id` and `key`. Then invoke
+`plugins.settings.set` with the same fields, the read result's `value` as
+`base`, and the new `value`. Set `value` to null to reset. Invoke the plugin
+view again and check that it reflects the value. Use `plugins.list` and
+look for the contribution in `slots`.

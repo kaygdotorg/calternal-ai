@@ -29,6 +29,7 @@ mod requests;
 pub(crate) use requests::OnceAdmission;
 pub mod runner;
 pub mod session;
+pub(crate) mod settings;
 mod slots;
 pub mod worker;
 

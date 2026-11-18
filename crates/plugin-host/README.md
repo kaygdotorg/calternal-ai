@@ -94,3 +94,7 @@ read-only operation that returns a required view. Palette commands name a
 declared operation. Sealed renderer paths are metadata for the interface
 prototype. The host checks activation and caller authority before listing
 operation-backed contributions.
+
+A worker can declare `read_setting_v1` to read an effective setting from its
+own manifest in the invocation's space. The normal broker effect and delivery
+checks apply. The manager API handles overrides and offline conflicts.

@@ -39,6 +39,7 @@ mod notes_cases;
 mod owned_slot_cases;
 mod perf_cases;
 mod plugin_parity_cases;
+mod plugin_settings_cases;
 mod plugin_slot_cases;
 
 mod search_cases;
@@ -706,6 +707,7 @@ async fn all_operations_hide_foreign_ids() {
 
     covered.extend(requests_cases::OPERATIONS.iter().copied());
     covered.extend(provider_sign_in_cases::OPERATIONS.iter().copied());
+    covered.extend(plugin_settings_cases::OPERATIONS.iter().copied());
     covered.extend(search_cases::OPERATIONS.iter().copied());
     // Private account input is exercised with real sessions in drafts_cases.rs.
     covered.extend([

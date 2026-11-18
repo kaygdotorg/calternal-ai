@@ -55,6 +55,9 @@ pub enum HostCallKind {
     /// List a bounded page of live items from the calling plugin's own kind.
     #[serde(rename = "list_items_v1")]
     ListItemsV1,
+    /// Read the effective value of a setting declared by the calling package.
+    #[serde(rename = "read_setting_v1")]
+    ReadSettingV1,
     /// Write an authorized item.
     #[serde(rename = "write_item")]
     WriteItem,

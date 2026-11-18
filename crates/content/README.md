@@ -130,3 +130,8 @@ A bounded worker advances its projection and journal watermark outside the
 acknowledgment path. A new generation becomes visible when it has scanned
 the retained heads and caught up. List and ID reads use the retained metadata.
 See [search and palette lookups](../../docs/search.md).
+
+Space plugin settings use a versioned file in userdata. A single durable,
+settings-only intent in the existing per-space database carries the file
+exchange and journal receipt across process death. Recovery runs on the next
+settings access. A file that needs repair blocks settings writes in that space.

@@ -73,6 +73,8 @@ Generated operation schemas. Capability and risk are shown only when the catalog
 - [pending.cancel](./pending-cancel/): pending cancel
 - [pending.confirm](./pending-confirm/): pending confirm
 - [pending.submit](./pending-submit/): pending submit
+- [plugins.settings.get](./plugins-settings-get/): Read a declared space plugin setting
+- [plugins.settings.set](./plugins-settings-set/): Edit a declared space plugin setting
 - [provider.sign_in.start](./provider-sign-in-start/): Start a private provider sign-in
 - [provider.sign_in.answer](./provider-sign-in-answer/): Supply a code to the official provider login
 - [provider.sign_in.status](./provider-sign-in-status/): Read a private provider sign-in result

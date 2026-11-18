@@ -9,6 +9,9 @@ only its child process. Run serially to keep race evidence interpretable.
 The binary must be built with the `test-plugins` feature: fixtures pass
 `--test-plugin-root tests/plugins` so the test-only `jobs-demo` plugin (plugin
 writes, jobs, streams, cancellation) is trusted; `jobs_cases.rs` holds those cases.
+`plugin_settings_cases.rs` installs the ordinary composer example into the
+running fixture server. Build it with `npm run build:plugins` before running
+conformance.
 
 Accounts enroll and sign in through the HTTP passkey routes using the same
 software-authenticator approach as `crates/server/tests/account_common/mod.rs`.

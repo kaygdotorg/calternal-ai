@@ -6,6 +6,7 @@
   "workspaces": [
     "packages/*",
     "plugins/*",
+    "tests/plugins/composer-settings",
     "apps/web"
   ],
   "engines": {
@@ -15,9 +16,9 @@
     "docs:site": "node scripts/docs-site/build.mjs",
     "check:docs": "./scripts/check-docs.sh",
     "build:docs": "./scripts/build-docs.sh",
-    "build:plugins": "npm run build --workspace @calternal/plugin-sdk && npm run build --workspace @calternal/notes-insights && npm run build --workspace @calternal/claude-code && npm run build --workspace @calternal/plugin-guide",
+    "build:plugins": "npm run build --workspace @calternal/plugin-sdk && npm run build --workspace @calternal/notes-insights && npm run build --workspace @calternal/claude-code && npm run build --workspace @calternal/plugin-guide && npm run build --workspace composer-settings",
     "build": "npm run build:plugins",
-    "test:plugins": "npm test --workspace @calternal/plugin-sdk && npm test --workspace @calternal/notes-insights && npm test --workspace @calternal/claude-code && npm test --workspace @calternal/plugin-guide",
+    "test:plugins": "npm test --workspace @calternal/plugin-sdk && npm test --workspace @calternal/notes-insights && npm test --workspace @calternal/claude-code && npm test --workspace @calternal/plugin-guide && npm test --workspace composer-settings",
     "test:integration": "node --test tests/integration/*.test.mjs",
     "web:dev": "npm run dev --workspace @calternal/web",
     "web:build": "npm run build --workspace @calternal/web",

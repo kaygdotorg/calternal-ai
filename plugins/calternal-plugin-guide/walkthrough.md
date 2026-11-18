@@ -33,3 +33,18 @@ const page = await listItems(context, {
 Use `page.items` to populate the generated list and return
 `page.next_cursor` in the declared result. Declare the read operation
 with `space.read`, `read_only` idempotency and `read` risk.
+
+## A setting on a composer chip
+
+Declare `settings: [{ "id": "label", "value_type": "string", "default": "Quick note" }]`,
+and include `read_setting_v1` in `host_calls`. Use `readSetting(context, "label")`
+inside a read-only operation. Return a GenUI badge from that operation and target
+it from a generated `composer_row` slot. The text argument can be encoded with
+`JSON.stringify` to keep quotes inside the label.
+
+Run `calternal plugin check .` and `calternal plugin test .`, then start
+the draft in the supplied space with `calternal plugin dev`. Use the
+normal Manager session to invoke `plugins.settings.get` with the space UUID,
+package ID and key. Invoke `plugins.settings.set` with those fields, the current
+override as `base`, and a new string as `value`. Invoke the view to see the
+change. The view must still show the default in another enabled space.

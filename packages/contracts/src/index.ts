@@ -643,7 +643,7 @@ export type ManifestCapability = "space.read" | "content.write" | "plugins.use" 
  * The only broker methods a worker may request.
  */
 
-export type HostCallKind = "read_item" | "list_items_v1" | "write_item" | "list_collection" | "emit_event" | "start_job" | "checkpoint_job" | "request_secret_handle";
+export type HostCallKind = "read_item" | "list_items_v1" | "read_setting_v1" | "write_item" | "list_collection" | "emit_event" | "start_job" | "checkpoint_job" | "request_secret_handle";
 /**
  * Version-one worker request for an indexed page of its own kind.
  */
@@ -665,6 +665,103 @@ cursor?: string,
  * Number of items, from 1 to 100. Defaults to 100.
  */
 limit?: number, };
+/**
+ * Read one manifest-declared setting as a Manager of the addressed space.
+ */
+
+export type PluginSettingAddress = {
+/**
+ * Space UUID.
+ */
+space_id: string,
+/**
+ * Installed package ID.
+ */
+plugin_id: string,
+/**
+ * Stable setting key from that package's manifest.
+ */
+key: string, };
+/**
+ * Edit one setting while retaining edits from other devices.
+ */
+
+export type PluginSettingEdit = {
+/**
+ * Space UUID.
+ */
+space_id: string,
+/**
+ * Installed package ID.
+ */
+plugin_id: string,
+/**
+ * Stable setting key from that package's manifest.
+ */
+key: string,
+/**
+ * Override last read for this key. Null means no override.
+ */
+base: unknown,
+/**
+ * New override of the declared type. Null clears the override.
+ */
+value: unknown,
+/**
+ * Explicit conflict resolution echoes every alternative the caller saw.
+ */
+resolve?: Array<unknown>, };
+/**
+ * Current values for a setting. The worker receives only its effective value.
+ */
+
+export type PluginSettingValue = {
+/**
+ * Value the package sees, using the manifest default when needed.
+ */
+effective: unknown,
+/**
+ * Stored override for the next edit's base. Null indicates no override.
+ */
+value: unknown,
+/**
+ * Concurrent alternatives preserved until explicit resolution.
+ */
+alternatives: Array<unknown>,
+/**
+ * True when the current settings file can be changed through the API.
+ */
+writable: boolean,
+/**
+ * Caller-safe description of the file and line to repair, when applicable.
+ */
+repair: string | null, };
+/**
+ * Durable receipt and scoped invalidation for a setting write.
+ */
+
+export type PluginSettingChange = {
+/**
+ * Package whose setting should be re-read.
+ */
+plugin_id: string,
+/**
+ * Changed manifest key.
+ */
+key: string,
+/**
+ * True when manual resolution is needed.
+ */
+conflicted: boolean, };
+/**
+ * Worker input for its own setting. Space and package are taken from admission.
+ */
+
+export type WorkerSettingInput = {
+/**
+ * Stable key declared in this package's manifest.
+ */
+key: string, };
 /**
  * Indexed fields available without loading the item's body or copying metadata.
  */

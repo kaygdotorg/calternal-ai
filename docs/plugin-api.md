@@ -140,6 +140,33 @@ Input: `docs/reviews/plugin-and-client-map-sol.md`.
   and the space's instructions at `AI/AGENTS.md`. A person's own skills, automations,
   instructions and starred prompts are the same files in their personal space.
 
+
+## Space plugin settings
+
+Declare a key in the manifest's `settings`, including its primitive type and
+default. A Manager uses `plugins.settings.get` and `plugins.settings.set` with a
+space UUID, package ID and key. For a write, echo the last read `value` as
+`base` and send the new `value`. Null clears the override. Concurrent edits
+to one key keep the current value and retain up to eight alternatives. To
+resolve them, include the observed alternatives in `resolve` with the
+chosen value. Use one request ID per edit and reuse it for network retries.
+
+A worker declares `read_setting_v1` and calls `readSetting(context, "label")`.
+The host supplies the invocation's package and space. A worker gets only
+the effective setting value. The authorized space feed publishes a setting
+invalidation with its package ID and key, without including the value.
+The shell can use this to re-invoke a generated slot view.
+
+Space userdata stores these overrides in `.calternal/settings.json` under
+the `calternal-plugin-settings/v1` tag. An individual value is limited to
+4 KiB and a settings document to 1 MiB. One durable pending edit is allowed
+per space. On first settings access after a crash, the host finishes the
+file exchange, publishes the feed entry and receipt, and removes the
+intent. Syntax damage returns defaults with a file-and-line repair hint.
+Once the file is valid, recovery reapplies the pending key and keeps other
+edits. A competing edit to the same key becomes a conflict. Unrelated
+operations stay available during repair.
+
 ## Open
 
 - Composer and chat experience (mentions, commands): needs its own design round.

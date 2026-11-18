@@ -387,6 +387,19 @@ impl<D: Directory> InvocationHost for SpaceHost<D> {
         match method {
             HostCallKind::ReadItem => self.read_item(input),
             HostCallKind::ListItemsV1 => self.list_items(input),
+            HostCallKind::ReadSettingV1 => {
+                let request: calternal_core::WorkerSettingInput =
+                    serde_json::from_value(input.clone()).map_err(|_| Error::Invalid)?;
+                let setting = super::settings::declaration(&self.plugin, &request.key)
+                    .map_err(|_| Error::Refused)?;
+                let record = self
+                    .state
+                    .store
+                    .content()
+                    .plugin_setting(self.space, &self.plugin.manifest.id, &request.key)
+                    .map_err(|_| Error::Refused)?;
+                Ok(super::settings::effective(setting, record).effective)
+            }
             HostCallKind::WriteItem => self.write_item(input),
             HostCallKind::StartJob => self.start_job(input),
             HostCallKind::CheckpointJob => self.checkpoint_job(input),

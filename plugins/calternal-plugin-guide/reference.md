@@ -56,3 +56,12 @@ a possible escape hatch where the server and client support it. Keep stable
 references as `/<kind>/<item-id>`. An address proves no authority.
 
 See [the project API decisions](https://git.kayg.org/kayg/calternal-ai/src/branch/dev/docs/plugin-api.md).
+
+## Shared settings
+
+Declare typed defaults in the manifest and add `read_setting_v1` to
+`host_calls`. The SDK's `readSetting(context, key)` returns the effective
+value of that declaration for the calling package and space. A Manager
+can read or edit that value using `plugins.settings.get` and
+`plugins.settings.set`. A write echoes the last stored value as its base.
+Overlapping edits remain available for an explicit resolution.
