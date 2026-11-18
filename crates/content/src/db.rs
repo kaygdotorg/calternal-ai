@@ -77,17 +77,39 @@ const THREAD_SNOOZE: &str = "
         BEGIN SELECT RAISE(ABORT, 'invalid thread snooze timestamp'); END;
 ";
 
+const SPACE_INITIAL: &[&str] = &[
+    SPACE_BASE,
+    crate::linked_write::SCHEMA,
+    crate::trash::SCHEMA,
+];
+const SPACE_CHANGES: &[&str] = &[THREAD_SNOOZE, crate::thread_append::revision::SCHEMA];
+const CONTENT_BASELINE: i64 = 3;
+const CONTENT_SCHEMA_NAME: &str = "space content.db";
+
 pub(crate) const SPACE_SCHEMA: calternal_store::migrations::Schema<'_> =
     calternal_store::migrations::Schema::new(
-        "space content.db",
-        3,
-        &[
-            SPACE_BASE,
-            crate::linked_write::SCHEMA,
-            crate::trash::SCHEMA,
-        ],
-        &[THREAD_SNOOZE, crate::thread_append::revision::SCHEMA],
+        CONTENT_SCHEMA_NAME,
+        CONTENT_BASELINE,
+        SPACE_INITIAL,
+        SPACE_CHANGES,
     );
+
+/// The adjacent production descriptors for the introduction of patch rows.
+#[cfg(test)]
+pub(crate) fn thread_patch_transition() -> [calternal_store::migrations::Schema<'static>; 2] {
+    let patch_index = SPACE_CHANGES
+        .iter()
+        .position(|step| *step == crate::thread_append::revision::SCHEMA)
+        .expect("the content schema includes the thread patch step");
+    [patch_index, patch_index + 1].map(|step_count| {
+        calternal_store::migrations::Schema::new(
+            CONTENT_SCHEMA_NAME,
+            CONTENT_BASELINE,
+            SPACE_INITIAL,
+            &SPACE_CHANGES[..step_count],
+        )
+    })
+}
 
 pub(crate) fn database(
     path: &Path,
@@ -341,15 +363,12 @@ mod tests {
     #[test]
     fn baseline_threads_survive_the_snooze_migration_and_rollback_writer() {
         let conn = Connection::open_in_memory().unwrap();
-        let previous = Schema::new(
-            "space content.db",
-            3,
-            &[
-                SPACE_BASE,
-                crate::linked_write::SCHEMA,
-                crate::trash::SCHEMA,
-            ],
-            &[],
+        let previous = Schema::new(CONTENT_SCHEMA_NAME, CONTENT_BASELINE, SPACE_INITIAL, &[]);
+        let snooze_release = Schema::new(
+            CONTENT_SCHEMA_NAME,
+            CONTENT_BASELINE,
+            SPACE_INITIAL,
+            &[THREAD_SNOOZE],
         );
         migrate_release(&conn, previous, false).unwrap();
         conn.execute_batch(
@@ -362,7 +381,7 @@ mod tests {
             "CREATE TRIGGER thread_snooze_update BEFORE UPDATE ON items BEGIN SELECT 1; END;",
         )
         .unwrap();
-        assert!(migrate_release(&conn, SPACE_SCHEMA, true).is_err());
+        assert!(migrate_release(&conn, snooze_release, true).is_err());
         assert_eq!(
             calternal_store::migrations::inspect(&conn, previous).unwrap(),
             3
@@ -378,16 +397,6 @@ mod tests {
         conn.execute_batch("DROP TRIGGER thread_snooze_update;")
             .unwrap();
 
-        let snooze_release = Schema::new(
-            "space content.db",
-            3,
-            &[
-                SPACE_BASE,
-                crate::linked_write::SCHEMA,
-                crate::trash::SCHEMA,
-            ],
-            &[THREAD_SNOOZE],
-        );
         migrate_release(&conn, snooze_release, true).unwrap();
         let original: Vec<u8> = conn
             .query_row("SELECT bytes FROM versions WHERE revision='v1'", [], |r| {

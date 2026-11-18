@@ -3,6 +3,10 @@ use crate::{Result, types::internal};
 use rusqlite::{Connection, OptionalExtension, params};
 use std::ops::Range;
 
+/// First writer version that can read a head stored as an append patch.
+pub(super) const PATCH_SCHEMA_VERSION: i64 = 5;
+
+/// Add immutable revision ranges to the existing content database.
 pub(crate) const SCHEMA: &str = "
 CREATE TABLE thread_revision_patches(
     item TEXT NOT NULL,
@@ -138,20 +142,44 @@ mod tests {
 
     #[test]
     fn old_revisions_and_bounded_ranges_across_patches_are_readable_after_migration() {
-        let db = Connection::open_in_memory().unwrap();
+        use calternal_store::migrations::{inspect, migrate_release, require_writer_version};
+
+        let mut db = Connection::open_in_memory().unwrap();
+        let [previous, patch_release] = crate::db::thread_patch_transition();
+        assert_eq!(patch_release.version(), previous.version() + 1);
+        assert_eq!(patch_release.version(), PATCH_SCHEMA_VERSION);
+        migrate_release(&db, previous, false).unwrap();
         db.execute_batch(
-            "CREATE TABLE versions(item TEXT, seq INTEGER, bytes BLOB, PRIMARY KEY(item,seq));
-             INSERT INTO versions VALUES('t',1,X'616263');",
+            "INSERT INTO items VALUES ('t','threads','{}','v1',1,'now','thread.md','thread.md',NULL,'materialized',NULL);
+             INSERT INTO versions VALUES ('t',1,'v1','{}',X'616263','now','owner');",
         )
         .unwrap();
-        db.execute_batch(SCHEMA).unwrap();
-        db.execute_batch(
-            "INSERT INTO versions VALUES('t',2,X'6465'),('t',3,X'666768'),('t',4,X'7A');
+
+        migrate_release(&db, patch_release, true).unwrap();
+        assert_eq!(inspect(&db, previous).unwrap(), patch_release.version());
+        assert_eq!(
+            Revision::get(&db, "t".into(), 1)
+                .unwrap()
+                .unwrap()
+                .read(&db, 0..3)
+                .unwrap(),
+            b"abc"
+        );
+
+        let tx = db.transaction().unwrap();
+        require_writer_version(&tx, PATCH_SCHEMA_VERSION).unwrap();
+        tx.execute_batch(
+            "INSERT INTO versions VALUES
+             ('t',2,'v2','{}',X'6465','now','owner'),
+             ('t',3,'v3','{}',X'666768','now','owner'),
+             ('t',4,'v4','{}',X'7A','now','owner');
              INSERT INTO thread_revision_patches VALUES
              ('t',2,1,3,2,zeroblob(32),zeroblob(32), printf('%064d',0)),
              ('t',3,1,5,3,zeroblob(32),zeroblob(32), printf('%064d',0));",
         )
         .unwrap();
+        tx.commit().unwrap();
+        assert!(inspect(&db, previous).is_err());
         for (seq, range, expected) in [
             (1, 0..3, b"abc".as_slice()),
             (2, 2..5, b"cde"),

@@ -126,8 +126,9 @@ impl Content {
                 seq,path:head.path,expected:head.file_hash,
             };
             let tx = s.conn.transaction_with_behavior(TransactionBehavior::Immediate).map_err(internal)?;
-            // V5 is the first content writer that can read patch-backed heads.
-            calternal_store::migrations::require_writer_version(&tx, 5).map_err(internal)?;
+            calternal_store::migrations::require_writer_version(
+                &tx, super::revision::PATCH_SCHEMA_VERSION,
+            ).map_err(internal)?;
             staged.write(&tx, None, &request.account.to_string())?;
             tx.execute(
                 "INSERT INTO thread_revision_patches VALUES(?1,?2,?3,?4,?5,?6,?7,?8)",
