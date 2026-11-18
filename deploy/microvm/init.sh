@@ -16,6 +16,11 @@ mount -t tmpfs tmpfs /tmp
 mount -t tmpfs tmpfs /run
 mount -t cgroup2 none /sys/fs/cgroup
 mount -t ext4 -o nodev,nosuid /dev/vdb /data
+# Image import can need more scratch than fits in the guest's RAM.
+rm -rf /data/podman-tmp
+mkdir -m 700 /data/podman-tmp
+chown 1000:1000 /data/podman-tmp
+mount --bind /data/podman-tmp /var/tmp
 chown 1000:1000 /dev/vdc
 chmod 400 /dev/vdc
 ip link set lo up
