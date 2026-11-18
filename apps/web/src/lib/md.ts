@@ -45,7 +45,7 @@ export function parse(src: string): MdBlock[] {
   let i = 0;
   while (i < lines.length) {
     const line = lines[i]!;
-    if (!line.trim()) { i++; continue; }
+    if (!line.trim() || /^<!--.*-->\s*$/.test(line)) { i++; continue; } // a line that is only an HTML comment (the server's own markers) is not drawn
     const img = /^!\[([^\]\n]*)\]\(((?:https?:\/\/|data:image\/(?:png|jpeg|webp|svg\+xml)[;,])[^)\s]+)\)\s*$/.exec(line);
     if (img) { out.push({ t: "img", alt: img[1]!, src: img[2]! }); i++; continue; }
     const fence = /^```(\w*)\s*$/.exec(line);
@@ -68,7 +68,7 @@ export function parse(src: string): MdBlock[] {
       out.push({ t: "ol", v: items });
     } else {
       const para: string[] = [];
-      while (i < lines.length && lines[i]!.trim() && !/^(```|#{1,4}\s|[-*]\s|\d+\.\s)/.test(lines[i]!)) para.push(lines[i++]!);
+      while (i < lines.length && lines[i]!.trim() && !/^(```|#{1,4}\s|[-*]\s|\d+\.\s|<!--.*-->\s*$)/.test(lines[i]!)) para.push(lines[i++]!);
       out.push({ t: "p", v: inline(para.join(" ")) });
     }
   }

@@ -15,7 +15,7 @@
  */
 import { spaces } from "../shell/spaces.svelte";
 import type { ThreadEvents, ThreadsClient } from "../apps/threads/client";
-import type { Answer, Change, Message, Permission, ProviderOption, Request, RunInfo, RunsOn, Step, ThreadState, ThreadSummary } from "../apps/threads/model";
+import type { Answer, Attachment, Change, Message, Permission, ProviderOption, Request, RunInfo, RunsOn, Step, ThreadState, ThreadSummary } from "../apps/threads/model";
 import { ServerClient, ServerError } from "./client";
 import { ServerRequests } from "./requests";
 import { applyAppend, bodyOf, type Body } from "./thread-delta";
@@ -27,7 +27,10 @@ const TRACE = (() => { try { return localStorage.getItem("cal.debug.threads") ==
 const t0 = Date.now();
 const trace = (...a: unknown[]) => { if (TRACE) console.debug(`[threads +${Date.now() - t0}ms]`, ...a); };
 
-const PROVIDERS: ProviderOption[] = [{ id: "claude", name: "Claude Code", models: [{ id: "default", name: "Default" }], listed: false }];
+/** One provider of `threads.models`: its plugin id, name, default model and models with the reasoning levels each accepts (lowest first). */
+interface WireProviderCatalog { id: string; name: string; default_model: string; models: { id: string; name: string; reasoning_levels?: string[] }[] }
+const PROVIDER_OF: Record<string, ProviderOption["id"]> = { "calternal-claude-code": "claude", "calternal-codex": "codex" };
+const PROVIDERS: ProviderOption[] = [{ id: "claude", name: "Claude Code", models: [{ id: "default", name: "Default", default: true }], listed: false }];
 
 /** One thread held in memory: the last read (its revision), its parsed messages, its summary and the Markdown as `Body` (bytes, so the next addition can be spliced in; the string is not kept). */
 interface Open { thread: WireThread; messages: Message[]; summary: ThreadSummary; body: Body; at: number }
@@ -36,7 +39,7 @@ interface CheckpointData { revision: string; append: { base_revision: string; of
 /** The answer to `threads.get` with `since`: the bytes to insert at `offset` of the body, taking `base_revision` to `revision`. */
 interface WireDelta { id: string; base_revision: string; revision: string; offset: number; markdown: string }
 /** The composer's choices for the next send, kept per thread on this page. */
-type Choices = Partial<Pick<ThreadSummary, "provider" | "model" | "permission" | "runsOn">>;
+type Choices = Partial<Pick<ThreadSummary, "provider" | "model" | "permission" | "runsOn" | "reasoning">>;
 
 /** The real server behind the threads interface (one thread is a Markdown file in the space plus jobs): list, open, send, steer, stop, archive, provider choice and readiness. Failures are `ServerError`; reads are cached per revision and the live feeds keep them current. */
 export class ServerThreads implements ThreadsClient {
@@ -108,7 +111,21 @@ export class ServerThreads implements ThreadsClient {
     await this.loadReadiness();
   }
 
-  async providers(): Promise<ProviderOption[]> { return PROVIDERS; }
+  /** The providers and their models and reasoning levels, from `threads.models` (the manifests of the providers enabled in this space); a server without it keeps the one default model, said plainly (`listed: false`). */
+  async providers(): Promise<ProviderOption[]> {
+    await this.loadSpaces();
+    try {
+      const r = await this.server.operate<{ providers: WireProviderCatalog[] }>("threads.models", { space_id: this.space() });
+      const out: ProviderOption[] = [];
+      for (const p of r.providers) {
+        const id = PROVIDER_OF[p.id];
+        if (!id) continue; // a provider plugin this page has no mark for
+        out.push({ id, name: p.name, listed: true, models: p.models.map((m) => ({ id: m.id, name: m.name, ...(m.reasoning_levels?.length ? { levels: m.reasoning_levels } : {}), default: m.id === p.default_model })) });
+      }
+      if (out.length) return out;
+    } catch { /* an older server: the default only */ }
+    return PROVIDERS;
+  }
 
   async listThreads(): Promise<ThreadSummary[]> {
     await this.loadSpaces();
@@ -277,7 +294,7 @@ export class ServerThreads implements ThreadsClient {
     this.streams.set(id, abort);
     f.ev.onStreamStart(job);
     f.ev.onPhase?.("Waiting to start");
-    let n = 0, started = false, last: { title: string; tool?: string; at: number } | null = null;
+    let n = 0, started = false, sawPhase = false, last: { title: string; tool?: string; at: number } | null = null;
     try {
       await this.server.jobEvents(job, (name, data, eid) => {
         trace("job event", name, eid ?? "");
@@ -295,7 +312,20 @@ export class ServerThreads implements ThreadsClient {
         const e = (data as { data?: { event?: { type?: string; text?: string; name?: string; summary?: string; failed?: boolean } } })?.data?.event ?? {};
         const ev = this.follows.get(id)?.ev;
         // What the working row says: each provider event moves it (placement and the session start come first, then thinking and tools, then the words).
-        if (e.type === "session" || e.type === "start") { started = true; ev?.onPhase?.("Thinking"); }
+        const d = (data as { data?: { type?: string; phase?: string } })?.data;
+        if (d?.type === "turn_phase") {
+          // The server's own phases, from the moment of the send (docs/threads.md, "Models, phases and turn history"); a tool's summary refines "running_tool" below.
+          sawPhase = true;
+          const label = ({ queued: "Waiting to start", starting_sandbox: "Starting the machine", running: "Starting", thinking: "Thinking", running_tool: "Running a tool", waiting_on_person: "Waiting for you" } as Record<string, string>)[d.phase ?? ""];
+          if (d.phase && d.phase !== "queued") started = true;
+          if (label) ev?.onPhase?.(label);
+          return;
+        }
+        const r = e as { type?: string; text?: string; duration_ms?: number };
+        if (r.type === "reasoning_started") { ev?.onThought?.({ text: "" }); return; }
+        if (r.type === "reasoning_delta") { ev?.onThought?.({ text: r.text ?? "" }); return; }
+        if (r.type === "reasoning_finished") { ev?.onThought?.({ text: "", done: true, ms: r.duration_ms }); return; }
+        if (e.type === "session" || e.type === "start") { started = true; if (!sawPhase) ev?.onPhase?.("Thinking"); }
         else if (e.type === "tool_started") ev?.onPhase?.(e.summary ?? e.name ?? "Running a tool");
         else if (e.type === "tool_finished") ev?.onPhase?.("Thinking");
         else if (e.type === "text_delta") ev?.onPhase?.("Writing");
@@ -317,13 +347,17 @@ export class ServerThreads implements ThreadsClient {
     // The saved checkpoints reach the page as additions through the journal, in order; the end of the stream needs no read of its own.
   }
 
-  async send(id: string, text: string, requestId: string): Promise<void> {
+  /** The server has no operation to store a file for a thread yet (docs/threads-ui.md, "Attachments"): attaching says so in plain words instead of pretending. */
+  async upload(): Promise<void> { throw new Error("This server cannot store attachments yet."); }
+  async send(id: string, text: string, requestId: string, _attachments?: Attachment[]): Promise<void> {
     const k = this.known(id);
     const input: Record<string, unknown> = { id, space_id: this.space(), message: text };
     // The composer's choices apply directly to this send (the server saves them).
     if (k.permission) input.mode = wireMode(k.permission);
     if (k.provider) input.provider = providerPlugin(k.provider);
     if (k.model && k.model !== "default") input.model = k.model;
+    // An explicit reasoning level is validated against the model before the message is saved; without one the provider keeps its own setting.
+    if (k.reasoning) input.reasoning = k.reasoning;
     const res = await this.server.operate<{ thread: WireThread; job?: WireJob }>("threads.send", input, requestId);
     this.opened.delete(id);
     if (res.job) {
@@ -390,6 +424,8 @@ export class ServerThreads implements ThreadsClient {
   }
 
   // The composer's choices travel with the next send; the server has no operation for where a thread runs.
+  /** The level for the next send (`threads.send` validates it against the model). */
+  async setReasoning(id: string, level: string | null): Promise<void> { this.choose(id, { reasoning: level ?? undefined }); this.announce(id); }
   async setProvider(id: string, provider: ThreadSummary["provider"], model: string): Promise<void> { this.choose(id, { provider, model }); this.announce(id); }
   async setPermission(id: string, permission: Permission): Promise<void> { this.choose(id, { permission }); this.announce(id); }
   async machines(): Promise<string[]> { await this.loadReadiness(); return [...(this.ready?.machines.map((m) => m.name ?? "Machine") ?? []), ...(this.ready?.pool.length ? ["Pool"] : [])]; }

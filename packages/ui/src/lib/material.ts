@@ -157,6 +157,19 @@ export function material(scheme: Scheme, behind: number, role: Role = "glass", _
   return { alpha: Math.min(0.4, base + WASH_MAX * need), blur: Math.round(BLUR * (1 + 0.2 * need)) };
 }
 
+/**
+ * Where a floating surface's tint comes from when the app can read what is really behind it: `rect` is the surface in CSS pixels; the answer is the tint opacity (0..1) its glass needs so ink reaches the shell's
+ * readability floor over the real backdrop (the wallpaper copy under the sidebars' veil, or the card's own surface), or null for "no reading: use the brightness field". Registered once by the app that owns the pictures
+ * (`appearance/wallpaper.ts`); every menu, popover, picker, sheet, dialog, tooltip, toast and pill reads it through `adaptive`, so there is one rule, the one the sidebars follow.
+ */
+export type MaterialSource = (rect: { left: number; top: number; right: number; bottom: number }, scheme: Scheme) => number | null;
+let source: MaterialSource | null = null;
+/** Registers (or, with null, removes) the source of floating surfaces' readability tint, and re-reads every surface. */
+export function setMaterialSource(fn: MaterialSource | null): void {
+  source = fn;
+  scheduleMaterial();
+}
+
 // ---- registry: surfaces ask to be adapted; one frame does all the reads, then all the writes ----
 
 type Entry = { role: Role };
@@ -183,17 +196,19 @@ function flushLater(): void {
     const form = currentForm();
     const w = innerWidth || 1;
     const h = innerHeight || 1;
-    const reads: [HTMLElement, Entry, Frac][] = [];
+    const reads: [HTMLElement, Entry, Frac, { left: number; top: number; right: number; bottom: number }][] = [];
     for (const el of todo) {
       const e = surfaces.get(el);
       if (!e) continue;
       const r = el.getBoundingClientRect();
-      reads.push([el, e, { x0: r.left / w, y0: r.top / h, x1: r.right / w, y1: r.bottom / h }]);
+      reads.push([el, e, { x0: r.left / w, y0: r.top / h, x1: r.right / w, y1: r.bottom / h }, { left: r.left, top: r.top, right: r.right, bottom: r.bottom }]);
     }
     fresh.clear();
-    for (const [el, e, f] of reads) {
+    for (const [el, e, f, rect] of reads) {
       const behind = behindLuminance(scheme, f);
       const m = material(scheme, behind, e.role, form);
+      const read = source?.(rect, scheme); // (the source reads pictures it already holds, not the page)
+      if (read != null) m.alpha = Math.min(0.9, Math.max(BASE[scheme][e.role], read)); // the real backdrop decides when the app can read it; the field only guesses
       el.style.setProperty("--mat-a", m.alpha.toFixed(3));
       el.style.setProperty("--mat-blur", `${m.blur}px`);
       el.dataset.behind = behind > 0.5 ? "light" : "dark";

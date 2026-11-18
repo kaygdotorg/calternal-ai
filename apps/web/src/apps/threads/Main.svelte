@@ -7,7 +7,18 @@
   let { id }: { id?: string } = $props();
 </script>
 
-{#if id && store.get(id)}
+{#if id === "automations" || id === "skills"}
+  <!-- Placeholders until the design round: they say what the screen is for and nothing else is invented. -->
+  <div class="first" data-placeholder={id}>
+    {#if id === "automations"}
+      <h2>Automations</h2>
+      <p>Automations will start a thread for you on a schedule or when something happens, such as every morning or when a note changes. They are not built yet; this screen is a placeholder until they are designed.</p>
+    {:else}
+      <h2>Skills</h2>
+      <p>Skills will be reusable instructions and tools you can give a thread, kept as files you can read and edit. They are not built yet; this screen is a placeholder until they are designed.</p>
+    {/if}
+  </div>
+{:else if id && store.get(id)}
   {#key id}<ThreadView {id} />{/key}
 {:else if id && store.ready}
   <p class="empty" role="status">That thread does not exist, or you cannot see it.</p>

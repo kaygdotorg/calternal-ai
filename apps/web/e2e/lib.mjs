@@ -64,3 +64,9 @@ export async function expandComposer(page) {
   await page.locator("#composer-field").click();
   await page.waitForFunction(() => { const c = document.querySelector(".composer"); const r = c?.querySelector(".chips"); return !!c && !c.hasAttribute("data-collapsed") && !!r && getComputedStyle(r).display !== "none" && !c.getAnimations({ subtree: true }).some((a) => a.playState === "running" && a.effect?.getComputedTiming().iterations !== Infinity); });
 }
+
+/** The Threads sidebar opens on its Inbox when something waits on the person; suites that work on the whole list switch to All Threads first (a no-op when that tab is already showing or there are no tabs). */
+export async function allThreads(page) {
+  const tab = page.locator("aside.side [role=tab]", { hasText: "All Threads" });
+  if (await tab.count() && (await tab.getAttribute("aria-selected")) !== "true") { await tab.click(); await page.waitForTimeout(150); }
+}
