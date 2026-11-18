@@ -461,7 +461,12 @@ mod tests {
     #[test]
     fn shared_execution_migrates_from_harness_leases() {
         let conn = Connection::open_in_memory().unwrap();
-        let previous = Schema::new("machines.db", 6, &[SCHEMA], &[(7, TITLE_LEASES), (8, ADD_HARNESS)]);
+        let previous = Schema::new(
+            "machines.db",
+            6,
+            &[SCHEMA],
+            &[(7, TITLE_LEASES), (8, ADD_HARNESS)],
+        );
         migrate_release(&conn, previous, false).unwrap();
         let space = SpaceId::new();
         let actor = AccountId::new();
