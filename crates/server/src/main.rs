@@ -137,6 +137,11 @@ fn main() {
             &reason,
             identity_verified,
         )),
+        Cmd::MailTest {
+            recipient,
+            appdata,
+            installation_id,
+        } => out.finish(admin_cli::mail_test(&appdata, &installation_id, &recipient)),
         Cmd::ReceiptStatus {
             appdata,
             installation_id,
@@ -347,6 +352,18 @@ async fn serve(
             ));
         }
     };
+    config.oidc_enabled = match std::env::var("CALTERNAL_ACCOUNT_OIDC_ENABLED").as_deref() {
+        Ok("1" | "true") => true,
+        Ok("0" | "false") | Err(std::env::VarError::NotPresent) => false,
+        _ => {
+            return Err(boot(
+                1,
+                "invalid_input",
+                "invalid CALTERNAL_ACCOUNT_OIDC_ENABLED setting",
+                "Set it to true or false.",
+            ));
+        }
+    };
     // Directory receipts follow the same retention as space receipts.
     config.receipt_retention = receipt_retention;
     config.invite_retention = invite_retention;
@@ -431,6 +448,10 @@ async fn serve(
             .purge_invites()
             .await
             .map_err(|e| boot(1, "failed", format!("invite cleanup: {e}"), DATA_HINT))?;
+        invite_tasks.spawn(people_maintenance::sweep_purged_sharing(
+            auth.spaces(),
+            store.shared_content(),
+        ));
         invite_tasks.spawn(people_maintenance::sweep_account_security(auth.clone()));
         invite_tasks.spawn(people_maintenance::sweep_invites(auth, backlog));
     }
@@ -548,6 +569,7 @@ async fn serve(
     calternal_server::turns::retry::recover(&state, &machines)
         .await
         .map_err(|e| boot(1, "failed", e.message, DATA_HINT))?;
+    api::configure_automations(&state);
     let _notes_retention = state.store.start_notes_retention().map_err(|e| {
         boot(
             2,

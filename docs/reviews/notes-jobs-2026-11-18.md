@@ -20,8 +20,8 @@ The Trash and rename decisions are recorded in
   sources. Undo claims the original root path, then reapplies the recorded
   prior source revisions. Conflicting later revisions are preserved.
   Restore uses numbered filenames when its previous name is occupied.
-- Auth version 15 and content versions 6–7 follow the production
-  baseline through the shared runner. Auth version 15 is incompatible
+- Auth version 15 follows the production baseline and content versions
+  7–8 follow live rooms through the shared runner. Auth version 15 is incompatible
   because the previous writer still allows Editors to purge. Each new
   transition has an independent test. Conformance recovers an interrupted
   Empty Trash admission with existing content.

@@ -182,6 +182,9 @@ pub fn builtin_operation_risk(id: &str, mutates: bool) -> OperationRisk {
     if let Some(op) = crate::note_operation(id) {
         return op.risk;
     }
+    if let Some(op) = crate::automation_operation(id) {
+        return op.risk;
+    }
     match id {
         "plugins.enable" | "agent.mode" | "access.request" | "machines.set" => {
             OperationRisk::WidensAccess

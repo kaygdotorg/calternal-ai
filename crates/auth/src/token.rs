@@ -52,6 +52,19 @@ pub fn new_session_token() -> Result<String> {
     Ok(format!("ci1_{}", encode(&random32()?)))
 }
 
+/// A random item link credential in its version-one canonical URL encoding.
+pub(crate) fn new_item_link_token() -> Result<String> {
+    Ok(format!("cs1_{}", encode(&random32()?)))
+}
+
+/// Reject noncanonical strings before any item link cryptography or database read.
+pub(crate) fn plausible_item_link_token(t: &str) -> bool {
+    t.len() == 56
+        && t.starts_with("cs1_")
+        && t[4..].bytes().all(|b| ALPHABET.contains(&b))
+        && matches!(t.as_bytes()[55], b'a' | b's')
+}
+
 /// Whether a presented token could be one of ours, before any lookup.
 pub fn plausible_session_token(t: &str) -> bool {
     t.len() == 56 && t.starts_with("ci1_") && t[4..].bytes().all(|b| ALPHABET.contains(&b))

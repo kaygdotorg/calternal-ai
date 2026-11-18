@@ -7,6 +7,7 @@
 //! [`Store::open`] validates and locks the three roots through `calternal-roots`
 //! before it creates or opens anything, and holds those locks for its lifetime.
 mod plugin_items;
+pub(crate) use plugin_items::PluginItemWrite;
 
 use crate::fault::{self, FaultPoint};
 use calternal_content::{Content, Item, Request};
@@ -25,6 +26,7 @@ use uuid::Uuid;
 pub struct Store {
     /// Shared with live streams and account inputs; never behind a store-wide lock.
     content: std::sync::Arc<Content>,
+    live_rooms: crate::live_rooms::Hub,
     /// The appdata root (account-input databases live under it).
     appdata: std::path::PathBuf,
     /// The three roots this store validated and locked.
@@ -33,7 +35,11 @@ pub struct Store {
     installation: Uuid,
     pub(crate) notes_trash_days: std::sync::OnceLock<u32>,
     pub(crate) notes_maintenance_wake: std::sync::Arc<tokio::sync::Notify>,
+    /// Account appearance service and bounded installation font cache.
+    pub(crate) appearance: std::sync::Arc<crate::api::appearance::Appearance>,
     machines: std::sync::OnceLock<std::sync::Weak<crate::machines::MachineService>>,
+    /// Bounded viewer-scoped references for sealed plugin content.
+    pub(crate) plugin_frames: crate::plugins::network::frames::Frames,
     /// Process-lifetime key for authenticated, stateless list cursors.
     pub(crate) cursor_key: ring::hmac::Key,
     // Dropped last: every database and file handle above closes first.
@@ -66,6 +72,7 @@ fn io_err(context: &'static str, e: std::io::Error) -> Error {
 }
 fn content_fault(point: calternal_content::FaultPoint) {
     fault::hit(match point {
+        calternal_content::FaultPoint::BeforeRoomCommit => FaultPoint::BeforeRoomCommit,
         calternal_content::FaultPoint::AfterCommit => FaultPoint::AfterCommit,
         calternal_content::FaultPoint::AfterJournalCommit => FaultPoint::AfterJournalCommit,
         calternal_content::FaultPoint::BeforePlacement => FaultPoint::BeforePlacement,
@@ -219,9 +226,16 @@ impl Store {
         let cursor_key =
             ring::hmac::Key::generate(ring::hmac::HMAC_SHA256, &ring::rand::SystemRandom::new())
                 .map_err(|_| Error::unavailable("cursor entropy unavailable"))?;
+        let appearance = std::sync::Arc::new(crate::api::appearance::Appearance::open(
+            &root,
+            locks.clone(),
+        )?);
         Ok(Self {
             cursor_key,
+            plugin_frames: Default::default(),
+            appearance,
             content: std::sync::Arc::new(content),
+            live_rooms: crate::live_rooms::Hub::default(),
             appdata: root.clone(),
             roots: roots.clone(),
             secrets: std::sync::Arc::new(secrets),
@@ -232,6 +246,24 @@ impl Store {
             _roots: locks,
         })
     }
+    pub(crate) fn live_rooms(&self) -> &crate::live_rooms::Hub {
+        &self.live_rooms
+    }
+
+    /// Evict all of an account's live sessions on an item after its last
+    /// effective read grant is revoked. Call after the grant commits.
+    /// Cost: bounded registry and participant lookups, no storage or awaits.
+    pub fn evict_live_room_account(
+        &self,
+        space: SpaceId,
+        kind: &str,
+        item: Uuid,
+        account: AccountId,
+    ) {
+        self.live_rooms
+            .evict_item_account(space, kind, item, account);
+    }
+
     /// Returns the generic item service for trusted host integrations such as
     /// plugin kind/standard-collection provisioning. Every caller must enforce
     /// current authority before opening a selected account or space.
@@ -362,6 +394,8 @@ impl Store {
         base_revision: &str,
         title: Option<&str>,
         markdown: &str,
+        allow_link_rewrites: bool,
+        shared_authority: Option<&calternal_auth::spaces::Spaces>,
     ) -> Result<NoteResult, Error> {
         let id = item_id(id)?;
         let current = self.content.live_metadata(space_id, "notes", id)?;
@@ -386,7 +420,36 @@ impl Store {
         };
         calternal_core::validate_title(title)?;
         calternal_core::validate_markdown(&markdown)?;
-        if title == old_title {
+        if title != old_title && !allow_link_rewrites {
+            return Err(Error::forbidden(
+                "renaming a shared note requires space edit access",
+            ));
+        }
+        if let Some(authority) = shared_authority {
+            let updated = self.content.write_shared_note(
+                space_id,
+                id,
+                base_revision,
+                crate::notes::metadata(title, &markdown)?,
+                markdown.as_bytes(),
+                request,
+                |i| serde_json::json!({"note":note(i)}),
+                |collections| {
+                    if authority
+                        .can_edit_shared_item(actor.account, space_id, id, collections)
+                        .map_err(crate::auth::auth_error)?
+                    {
+                        Ok(())
+                    } else {
+                        Err(Error::not_found("item not found"))
+                    }
+                },
+            )?;
+            Ok(NoteResult {
+                note: note(&updated),
+                job_id: None,
+            })
+        } else if title == old_title {
             let updated = self.content.write(
                 space_id,
                 Some(id),
@@ -445,14 +508,18 @@ impl Store {
             String,
             calternal_content::Placement,
             calternal_content::FileFormat,
+            bool,
         )],
         collections: &[(String, String, String)],
     ) -> Result<(), Error> {
         let space = space_id;
         let actor = actor.into();
-        for (kind, placement, format) in kinds {
+        for (kind, placement, format, live_editing) in kinds {
             self.content
                 .register_kind(space, kind, placement.clone(), format.clone())?;
+            if *live_editing {
+                self.content.enable_live_editing(space, kind)?;
+            }
         }
         if collections.is_empty() {
             return Ok(());
@@ -515,6 +582,7 @@ impl Store {
             operation,
             fingerprint,
         };
+        let _room_activation_edit = self.live_rooms.begin_activation_edit(space_id);
         self.content
             .set_control(space_id, request, &plugin_key(plugin_id), |current| {
                 let current = current.map(plugin_row).transpose()?.unwrap_or(default);

@@ -245,6 +245,20 @@ fn manifest_validation_vectors() {
     assert!(parse_manifest(b"{} {}").is_err());
 }
 #[test]
+fn live_editing_is_an_opt_in_for_markdown_kinds() {
+    let mut value = serde_json::to_value(manifest()).unwrap();
+    value["kinds"] = json!([{
+        "id": "documents",
+        "storage": {"hidden": true},
+        "claimed_text": true,
+        "schema": {"type": "object", "x-calternal-live-editing": true}
+    }]);
+    assert!(parse_manifest(&serde_json::to_vec(&value).unwrap()).is_ok());
+    value["kinds"][0]["claimed_text"] = json!(false);
+    value["kinds"][0]["extension"] = json!("txt");
+    assert!(parse_manifest(&serde_json::to_vec(&value).unwrap()).is_err());
+}
+#[test]
 fn collisions_are_atomic_and_policy_is_data_only() {
     for kind in ["plugin", "kind", "operation", "collection"] {
         let mut a = manifest();
@@ -826,4 +840,29 @@ fn owned_slot_validation_rejects_foundation_targets_and_invalid_bounds() {
         *invalid.pointer_mut(pointer).unwrap() = input;
         assert!(parse(&invalid).is_err(), "{pointer}: {invalid}");
     }
+}
+
+#[test]
+fn content_prepare_requires_a_declared_plugin_owned_text_source() {
+    let mut fixture = serde_json::to_value(manifest()).unwrap();
+    fixture["kinds"] = json!([{
+        "id": "mail", "schema": true, "claimed_text": true, "storage": {"hidden": true}
+    }]);
+    fixture["host_calls"] = json!(["content_prepare_v1"]);
+    fixture["network"] = json!({
+        "content_fetch": {"profile": "images_fonts", "sources": [{"kind": "mail", "field": "text"}]}
+    });
+    let parse = |fixture: &Value| parse_manifest(&serde_json::to_vec(fixture).unwrap());
+    assert!(parse(&fixture).is_ok());
+
+    let mut bad = fixture.clone();
+    bad["network"]["content_fetch"]["sources"][0]["kind"] = json!("notes");
+    assert!(parse(&bad).is_err());
+
+    let mut bad = fixture.clone();
+    bad["network"]["content_fetch"]["sources"][0]["field"] = json!("url");
+    assert!(parse(&bad).is_err());
+
+    fixture.as_object_mut().unwrap().remove("network");
+    assert!(parse(&fixture).is_err());
 }

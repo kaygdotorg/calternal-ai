@@ -9,6 +9,7 @@ pub(crate) struct JobDatabase {
     connection: Mutex<Connection>,
     lifecycle: OwnerLifecycle,
     space: SpaceId,
+    webhook_messages: Mutex<(i64, u8)>,
     publishing: Mutex<Option<bool>>,
 }
 
@@ -19,8 +20,27 @@ impl JobDatabase {
             connection: Mutex::new(connection),
             lifecycle,
             space,
+            webhook_messages: Mutex::new((0, 0)),
             publishing: Mutex::new(None),
         }
+    }
+
+    /// Limit webhook verification to 60 attempts per minute for this cached
+    /// space. A window expires without work; one short lock and no SQLite.
+    pub(crate) fn admit_webhook(&self) -> bool {
+        let minute = crate::plugins::job_sql::now_ms() / 60_000;
+        let mut window = self
+            .webhook_messages
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        if window.0 != minute {
+            *window = (minute, 0);
+        }
+        if window.1 >= 60 {
+            return false;
+        }
+        window.1 += 1;
+        true
     }
 
     /// Lock this space's connection for a short blocking query or transaction.

@@ -6,6 +6,7 @@ use calternal_fsio::{names, rename_safely, write_atomic_mode};
 use rusqlite::{OptionalExtension, params};
 use std::{
     fs::{self, File},
+    io::Read,
     path::Path,
 };
 use uuid::Uuid;
@@ -29,9 +30,27 @@ fn hash(path: &Path) -> Result<Option<String>> {
         Ok(_) => Ok(Some(file_hash(&fs::read(path).map_err(internal)?))),
     }
 }
+pub(crate) fn bounded_file(root: &Path, rel: &str) -> Result<Option<Vec<u8>>> {
+    let root = calternal_fsio::beneath::Folder::open_existing(root).map_err(internal)?;
+    let file = match root.open_file(rel) {
+        Ok(file) => file,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(_) => return Err(blocked()),
+    };
+    let limit = crate::MAX_DOCUMENT_BYTES as u64 + 8192;
+    let mut bytes = Vec::new();
+    file.take(limit + 1)
+        .read_to_end(&mut bytes)
+        .map_err(internal)?;
+    if bytes.len() as u64 > limit {
+        return Err(blocked());
+    }
+    Ok(Some(bytes))
+}
+
 pub(crate) fn validate_kind(kind: &str) -> Result<()> {
     if !kind.is_empty()
-        && kind.len() <= 64
+        && (kind.len() <= 64 || (kind.starts_with("skill-") && kind.len() <= 70))
         && kind
             .bytes()
             .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
@@ -89,6 +108,14 @@ fn folder(placement: &Placement, kind: &str) -> String {
         Placement::Hidden { plugin_id } => format!(".calternal/{plugin_id}/{kind}"),
     }
 }
+fn skill_bundle(placement: &Placement) -> bool {
+    matches!(
+        placement,
+        Placement::VisibleTree { folder, subdirectories }
+            if folder == "AI" && subdirectories.len() == 2 && subdirectories[0] == "Skills"
+    )
+}
+
 const MARKDOWN_FORMAT: &str = "format: calternal-note/v1\n";
 
 pub(crate) fn encoded(item: &Item, format: &FileFormat) -> Result<Vec<u8>> {
@@ -159,8 +186,17 @@ fn finish_case_move(staged: &Path, original: &Path, destination: &Path) -> Resul
     ))
 }
 
+pub(crate) fn encoded_live(item: &Item) -> Result<Vec<u8>> {
+    let (style, body) =
+        crate::rooms::style::Style::split(std::str::from_utf8(&item.bytes).map_err(internal)?);
+    let mut input = item.clone();
+    input.bytes = body.as_bytes().to_vec();
+    let wrapped = encoded(&input, &FileFormat::Markdown)?;
+    Ok(style.encode(std::str::from_utf8(&wrapped).map_err(internal)?))
+}
+
 impl Space {
-    fn registration(&self, kind: &str) -> Result<(Placement, FileFormat)> {
+    pub(crate) fn registration(&self, kind: &str) -> Result<(Placement, FileFormat)> {
         if let Some(definition) = self.registrations.borrow().get(kind) {
             return Ok(definition.clone());
         }
@@ -189,7 +225,10 @@ impl Space {
     }
     /// UUID names avoid Trash collisions; placement remains the existing guarded move.
     pub(crate) fn trash_path(&self, kind: &str, id: Uuid) -> Result<String> {
-        let (_, format) = self.registration(kind)?;
+        let (placement, format) = self.registration(kind)?;
+        if skill_bundle(&placement) {
+            return Ok(format!(".trash/skill-{id}/SKILL.md"));
+        }
         let extension = match format {
             FileFormat::Markdown => "md".to_owned(),
             FileFormat::Opaque { extension } => extension,
@@ -236,6 +275,17 @@ impl Space {
             let (parent, name) = path.rsplit_once('/')?;
             (parent == folder && name.ends_with(&suffix)).then_some(name.to_owned())
         };
+        // A portable skill bundle has a fixed entry point. A competing
+        // SKILL.md belongs to the directory's existing owner.
+        if skill_bundle(&placement) {
+            let path = format!("{folder}/SKILL.md");
+            if taken("skill.md")? {
+                return Err(Error::conflict(
+                    "this skill directory already contains SKILL.md",
+                ));
+            }
+            return Ok(path);
+        }
         // Keep a collision suffix once assigned. A later save must not quietly
         // change a readable path merely because an earlier filename was freed.
         if let Some(path) = current
@@ -284,7 +334,14 @@ impl Space {
         head: &crate::db::Header,
     ) -> Result<Option<String>> {
         ensure_item_path(&head.path)?;
-        let found = match hash(&self.files.join(&head.path)) {
+        let path = self.files.join(&head.path);
+        let found = if self.live_editing(&head.kind)? {
+            calternal_fsio::recover_exact(&path).map_err(internal)?;
+            bounded_file(&self.files, &head.path).map(|bytes| bytes.as_deref().map(file_hash))
+        } else {
+            hash(&path)
+        };
+        let found = match found {
             Ok(found) => found,
             Err(e) if e.code == calternal_types::ErrorCode::Conflict => {
                 self.block(id)?;
@@ -357,15 +414,33 @@ impl Space {
             loaded = self.get(id)?;
             &loaded
         };
-        let (_, format) = self.registration(&item.kind)?;
-        let bytes = encoded(item, &format)?;
+        let (placement, format) = self.registration(&item.kind)?;
+        let live = self.live_editing(&item.kind)?;
+        let bytes = if live {
+            encoded_live(item)?
+        } else {
+            encoded(item, &format)?
+        };
         let new_hash = file_hash(&bytes);
         ensure_item_path(&path)?;
-        let path = self.files.join(path);
+        let relative = path;
+        let path = self.files.join(&relative);
+        if live {
+            calternal_fsio::recover_exact(&path).map_err(internal)?;
+        }
         let dir = path.parent().ok_or_else(|| internal("parent"))?;
-        // Normally prepared by `choose_path`; recreate only if it vanished since.
-        if !fs::symlink_metadata(dir).is_ok_and(|metadata| metadata.is_dir()) {
-            calternal_fsio::private::directory(dir).map_err(internal)?;
+        let bundle_move = skill_bundle(&placement)
+            && old
+                .as_deref()
+                .is_some_and(|old| self.files.join(old).parent() != Some(dir));
+        // A bundle move claims the destination directory itself.
+        let prepare = if bundle_move {
+            dir.parent().ok_or_else(|| internal("parent"))?
+        } else {
+            dir
+        };
+        if !fs::symlink_metadata(prepare).is_ok_and(|metadata| metadata.is_dir()) {
+            calternal_fsio::private::directory(prepare).map_err(internal)?;
         }
         let result = (|| {
             let moved_from = old.as_deref();
@@ -373,10 +448,34 @@ impl Space {
             if let Some(old) = &old {
                 ensure_item_path(old)?;
                 let old = self.files.join(old);
+                if bundle_move {
+                    let source = old.parent().ok_or_else(|| internal("bundle parent"))?;
+                    if hash(&old)? == expected && expected.is_some() {
+                        fault(FaultPoint::BeforePlacement);
+                        rename_safely(source, dir).map_err(|error| {
+                            if error.kind() == std::io::ErrorKind::AlreadyExists {
+                                blocked()
+                            } else {
+                                internal(error)
+                            }
+                        })?;
+                    } else if !fs::symlink_metadata(source).is_ok_and(|entry| entry.is_dir())
+                        && hash(&path)?.as_deref() == Some(&new_hash)
+                    {
+                        calternal_fsio::sync_dir(prepare).map_err(internal)?;
+                        calternal_fsio::sync_dir(
+                            source.parent().ok_or_else(|| internal("bundle parent"))?,
+                        )
+                        .map_err(internal)?;
+                    } else {
+                        return Err(blocked());
+                    }
+                    moved = true;
+                }
                 let moving = dir.join(format!(".calternal-move-{id}"));
                 // A fixed private staging name makes both halves of case-only
                 // rename replayable. Every move refuses an occupied destination.
-                if old != path && hash(&old)? == expected && expected.is_some() {
+                if !bundle_move && old != path && hash(&old)? == expected && expected.is_some() {
                     if names::fold(old.to_str().unwrap_or(""))
                         == names::fold(path.to_str().unwrap_or(""))
                     {
@@ -399,7 +498,16 @@ impl Space {
                     moved = true;
                 }
             }
-            let found = hash(&path)?;
+            let live_base = if live {
+                bounded_file(&self.files, &relative)?
+            } else {
+                None
+            };
+            let found = if live {
+                live_base.as_deref().map(file_hash)
+            } else {
+                hash(&path)?
+            };
             if found.as_deref() == Some(&new_hash) {
                 // A checked move began with a fully placed revision and fsio
                 // has synced both directories. Replays reestablish that boundary.
@@ -438,6 +546,16 @@ impl Space {
                             internal(e)
                         }
                     })?;
+                } else if live {
+                    let base = live_base.as_deref().ok_or_else(blocked)?;
+                    let prepared = calternal_fsio::Prepared::new_mode(&path, &bytes, 0o600)
+                        .map_err(internal)?;
+                    if prepared
+                        .place_exact_recoverable(Some(base))
+                        .map_err(internal)?
+                    {
+                        return Err(blocked());
+                    }
                 } else {
                     // Same checked-copy contract as the preview: external writers
                     // racing the final hash/replace interval remain out of scope.
@@ -509,7 +627,17 @@ impl Space {
                         && nonce.bytes().all(|c| c.is_ascii_hexdigit())
                         && entry.file_type().is_ok_and(|t| t.is_file())
                     {
-                        fs::remove_file(entry.path()).map_err(internal)?;
+                        // The prepared image may hold a displaced outside edit.
+                        // Recover the durable exchange before deleting stray temps.
+                        if self.live_editing(&kind)? {
+                            calternal_fsio::recover_exact(&entry.path().with_file_name(final_name))
+                                .map_err(internal)?;
+                        }
+                        match fs::remove_file(entry.path()) {
+                            Ok(()) => {}
+                            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                            Err(error) => return Err(internal(error)),
+                        }
                     }
                 }
             }

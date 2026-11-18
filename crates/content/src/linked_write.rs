@@ -15,6 +15,7 @@ pub(crate) struct Staged {
     pub(crate) seq: i64,
     pub(crate) path: String,
     pub(crate) expected: Option<String>,
+    pub(crate) room: Option<crate::rooms::Checkpoint>,
 }
 
 impl Staged {
@@ -35,7 +36,7 @@ impl Staged {
              VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,'pending',?10)
              ON CONFLICT(id) DO UPDATE SET metadata=excluded.metadata,revision=excluded.revision,
                seq=excluded.seq,updated_at=excluded.updated_at,path=excluded.path,
-               folded_path=excluded.folded_path,old_path=excluded.old_path,mat_state='pending'",
+               folded_path=excluded.folded_path,old_path=excluded.old_path,mat_state='pending',file_hash=excluded.file_hash",
             params![
                 item.id.to_string(),item.kind,metadata,item.revision,self.seq,item.updated_at,
                 self.path,calternal_fsio::names::fold(&self.path),
@@ -55,6 +56,9 @@ impl Staged {
             ],
         )
         .map_err(internal)?;
+        if let Some(room) = &self.room {
+            room.write(tx, item.id, self.seq)?;
+        }
         Ok(())
     }
 
@@ -150,7 +154,7 @@ impl Space {
             ));
         }
         let mut source = self.get_selected(id, true)?;
-        let Some((metadata, bytes)) = edit(&source)? else {
+        let Some((mut metadata, mut bytes)) = edit(&source)? else {
             return Ok(None);
         };
         Content::validate_write_size(&metadata, &bytes)?;
@@ -159,6 +163,20 @@ impl Space {
             head = self.header(id)?;
         }
         let expected = self.check_header(id, &head)?;
+        let room = if self.live_editing(&source.kind)? {
+            let (merged, checkpoint, _) = self.merge_room_write(
+                &source,
+                head.seq,
+                base,
+                &mut metadata,
+                crate::rooms::Body::Replace(&bytes),
+            )?;
+            Content::validate_write_size(&metadata, &merged)?;
+            bytes = merged;
+            Some(checkpoint)
+        } else {
+            None
+        };
         source.metadata = metadata;
         source.bytes = bytes;
         source.revision = Staged::version(head.seq + 1);
@@ -168,6 +186,7 @@ impl Space {
             seq: head.seq + 1,
             path: head.path,
             expected,
+            room,
         }))
     }
 

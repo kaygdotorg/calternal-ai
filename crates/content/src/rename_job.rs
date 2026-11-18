@@ -198,6 +198,7 @@ fn retire_occupied_root(
     account: &str,
     request: &str,
 ) -> Result<()> {
+    let _revision = calternal_types::begin_item_access_change();
     let tx = db
         .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(internal)?;
@@ -342,6 +343,7 @@ impl Content {
                 )?
                 .ok_or_else(|| internal("rename inverse lacks a root revision"))?;
             root.path = path;
+            let _revision = calternal_types::begin_item_access_change();
             let tx = s
                 .conn
                 .transaction_with_behavior(TransactionBehavior::Immediate)

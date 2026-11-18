@@ -11,7 +11,7 @@ async fn empty_trash_requires_confirmation_and_manager_authority() {
     db.execute_batch(
         "DROP TABLE notes_trash_targets; DROP TABLE notes_trash_jobs;
          DROP TABLE notes_rename_steps; DROP TABLE notes_rename_jobs;
-         PRAGMA user_version=5;",
+         PRAGMA user_version=6;",
     )
     .unwrap();
     drop(db);

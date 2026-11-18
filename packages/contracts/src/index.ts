@@ -374,6 +374,10 @@ space_id: string | null,
  */
 thread_id: string | null,
 /**
+ * Job UUID for a plugin wait addressed to this person.
+ */
+job_id?: string,
+/**
  * Question, approval or trusted secret prompt.
  */
 detail: RequestDetail, };
@@ -660,7 +664,7 @@ export type ManifestCapability = "space.read" | "content.write" | "plugins.use" 
  * The only broker methods a worker may request.
  */
 
-export type HostCallKind = "read_item" | "list_items_v1" | "read_setting_v1" | "write_item" | "list_collection" | "emit_event" | "start_job" | "checkpoint_job" | "request_secret_handle";
+export type HostCallKind = "read_item" | "list_items_v1" | "read_setting_v1" | "content_prepare_v1" | "write_item" | "list_collection" | "emit_event" | "start_job" | "checkpoint_job" | "request_secret_handle";
 /**
  * Version-one worker request for an indexed page of its own kind.
  */
@@ -683,7 +687,7 @@ cursor?: string,
  */
 limit?: number, };
 /**
- * Read one manifest-declared setting as a Manager of the addressed space.
+ * Address one manifest-declared setting in an accessible space.
  */
 
 export type PluginSettingAddress = {
@@ -728,6 +732,86 @@ value: unknown,
  * Explicit conflict resolution echoes every alternative the caller saw.
  */
 resolve?: Array<unknown>, };
+/**
+ * Last observed state of an installed package in one space.
+ */
+
+export type PluginReadiness = "disabled" | "unavailable" | "not_started" | "ready" | "failed";
+/**
+ * One caller-safe runtime failure from this space.
+ */
+
+export type PluginRuntimeFailure = {
+/**
+ * Operation attempted, when the failure belongs to an invocation.
+ */
+operation: string | null,
+/**
+ * Stable reason code without private input or output values.
+ */
+reason: string,
+/**
+ * When the host observed the failure, in Unix milliseconds.
+ */
+at_ms: number, };
+/**
+ * Installed-package diagnostics exposed to authorized space managers.
+ */
+
+export type PluginDiagnostics = {
+/**
+ * Explicit space UUID.
+ */
+space_id: string,
+/**
+ * Installed package ID.
+ */
+plugin_id: string,
+/**
+ * Revision inspected by this read.
+ */
+revision: number,
+/**
+ * Last observed readiness in this space.
+ */
+readiness: PluginReadiness,
+/**
+ * Caller-safe reason when the package is unavailable or failed.
+ */
+reason: string | null,
+/**
+ * Up to eight recent failures, newest first.
+ */
+recent_errors: Array<PluginRuntimeFailure>,
+/**
+ * Up to 4 KiB from the last failed worker's own stderr in this space.
+ */
+stderr_tail: string | null, };
+/**
+ * Replace the caller's override if their observed value still matches.
+ */
+
+export type PluginPersonalSettingEdit = {
+/**
+ * Space UUID.
+ */
+space_id: string,
+/**
+ * Installed package ID.
+ */
+plugin_id: string,
+/**
+ * Personal setting key in that package's manifest.
+ */
+key: string,
+/**
+ * Last observed override. Null means no override.
+ */
+base: unknown,
+/**
+ * New override. Null restores the manifest default.
+ */
+value: unknown, };
 /**
  * Current values for a setting. The worker receives only its effective value.
  */
@@ -833,6 +917,11 @@ export type ManifestHookMode = "watch" | "block";
  */
 
 export type ManifestSettingType = "string" | "boolean" | "number";
+/**
+ * Owner of an override for a declared plugin setting.
+ */
+
+export type ManifestSettingScope = "personal" | "space";
 /**
  * Placement inside a space userdata tree; hidden files belong to the declaring plugin.
  */
@@ -1014,7 +1103,19 @@ name: string,
 /**
  * One-line description declared in the file.
  */
-description: string, };
+description: string,
+/**
+ * Harness labels selecting the skill. Empty means all eligible agents.
+ */
+agents: Array<string>,
+/**
+ * Path to SKILL.md relative to the space.
+ */
+path: string,
+/**
+ * Stable content item for an application-managed skill.
+ */
+id?: string, };
 /**
  * Bounded skill matches for the selected space.
  */
@@ -1024,6 +1125,397 @@ export type SkillsResult = {
  * Skill descriptors, ordered by name.
  */
 skills: Array<SkillMatch>, };
+/**
+ * An operation selecting the named skill in a space.
+ */
+
+export type SkillTarget = {
+/**
+ * Owning space UUID.
+ */
+space_id: string,
+/**
+ * Name of the bundle directory.
+ */
+name: string, };
+/**
+ * The entire portable SKILL.md document to write.
+ */
+
+export type SkillWrite = {
+/**
+ * Owning space UUID.
+ */
+space_id: string,
+/**
+ * Name of the bundle directory.
+ */
+name: string,
+/**
+ * Standard YAML frontmatter followed by Markdown instructions.
+ */
+markdown: string,
+/**
+ * Required for update and omitted for create.
+ */
+base_revision?: string, };
+/**
+ * A conditional removal of a skill bundle.
+ */
+
+export type SkillRemove = {
+/**
+ * Owning space UUID.
+ */
+space_id: string,
+/**
+ * Name of the bundle directory.
+ */
+name: string,
+/**
+ * Revision returned by the read operation.
+ */
+base_revision: string, };
+/**
+ * Descriptor and exact Markdown for one skill.
+ */
+
+export type SkillDocument = {
+/**
+ * Standard portable Markdown contents.
+ */
+markdown: string,
+/**
+ * Opaque version to send on update or remove.
+ */
+revision: string,
+/**
+ * Skill directory name.
+ */
+name: string,
+/**
+ * One-line description declared in the file.
+ */
+description: string,
+/**
+ * Harness labels selecting the skill. Empty means all eligible agents.
+ */
+agents: Array<string>,
+/**
+ * Path to SKILL.md relative to the space.
+ */
+path: string,
+/**
+ * Stable content item for an application-managed skill.
+ */
+id?: string, };
+/**
+ * A single skill read or mutation result.
+ */
+
+export type SkillResult = {
+/**
+ * Current skill contents.
+ */
+skill: SkillDocument, };
+/**
+ * Read-only schedule preview input.
+ */
+
+export type AutomationPreview = {
+/**
+ * Owning space UUID.
+ */
+space_id: string,
+/**
+ * Original words as entered by the creator.
+ */
+schedule_text: string, };
+/**
+ * Normalized schedule and the exact details to confirm when saving.
+ */
+
+export type AutomationSchedule = {
+/**
+ * Original schedule phrase, including its original spelling and whitespace.
+ */
+schedule_text: string,
+/**
+ * Canonical calendar expression generated by the server.
+ */
+schedule: string,
+/**
+ * Normalized schedule in plain words.
+ */
+human: string,
+/**
+ * IANA zone used to compute the next instant.
+ */
+timezone: string,
+/**
+ * Next instant in UTC epoch milliseconds, when scheduled.
+ */
+next_run_ms: number | null, };
+/**
+ * Space and existing automation identity.
+ */
+
+export type AutomationTarget = {
+/**
+ * Owning space UUID.
+ */
+space_id: string,
+/**
+ * Stable automation UUID.
+ */
+id: string, };
+/**
+ * A conditional pause, enable or removal.
+ */
+
+export type AutomationRevision = {
+/**
+ * Owning space UUID.
+ */
+space_id: string,
+/**
+ * Stable automation UUID.
+ */
+id: string,
+/**
+ * Opaque definition revision.
+ */
+base_revision: string, };
+/**
+ * Create an automation using the schedule approved in the preview.
+ */
+
+export type AutomationCreate = {
+/**
+ * Owning space UUID.
+ */
+space_id: string,
+/**
+ * Readable title and filename stem.
+ */
+name: string,
+/**
+ * Markdown prompt submitted as the initial turn.
+ */
+prompt: string,
+/**
+ * Original schedule phrase.
+ */
+schedule_text: string,
+/**
+ * Canonical expression shown by the preview.
+ */
+schedule: string,
+/**
+ * Account zone confirmed in the preview.
+ */
+timezone: string,
+/**
+ * Permission mode for new turns.
+ */
+mode?: AgentMode | null,
+/**
+ * Creator-owned machine or the creator's authorized sandbox when omitted.
+ */
+machine_id?: string | null, };
+/**
+ * Change selected fields, sending all three preview fields to change the schedule.
+ */
+
+export type AutomationUpdate = {
+/**
+ * Owning space UUID.
+ */
+space_id: string,
+/**
+ * Stable automation UUID.
+ */
+id: string,
+/**
+ * Opaque current definition revision.
+ */
+base_revision: string,
+/**
+ * New display title.
+ */
+name?: string | null,
+/**
+ * New Markdown prompt.
+ */
+prompt?: string | null,
+/**
+ * Original words for a changed or reconfirmed schedule.
+ */
+schedule_text?: string | null,
+/**
+ * Canonical expression for the same schedule preview.
+ */
+schedule?: string | null,
+/**
+ * Account zone confirmed by that preview.
+ */
+timezone?: string | null,
+/**
+ * Mode to apply to subsequent runs.
+ */
+mode?: AgentMode | null,
+/**
+ * Machine UUID, or an empty string to select the authorized sandbox.
+ */
+machine_id?: string | null, };
+/**
+ * One scheduling outcome, with a thread when a turn was admitted.
+ */
+
+export type AutomationOutcome = {
+/**
+ * Stable run lifecycle status.
+ */
+status: string,
+/**
+ * Scheduled instant in UTC epoch milliseconds, absent for manual runs.
+ */
+scheduled_at_ms: number | null,
+/**
+ * Time this outcome was recorded, in UTC epoch milliseconds.
+ */
+at_ms: number,
+/**
+ * Admitted thread UUID, if any.
+ */
+thread_id: string | null,
+/**
+ * Caller-safe explanation for an exceptional outcome.
+ */
+reason: string | null, };
+/**
+ * An automation's status and saved definition metadata.
+ */
+
+export type AutomationRecord = {
+/**
+ * Stable automation UUID.
+ */
+id: string,
+/**
+ * Display title.
+ */
+name: string,
+/**
+ * Opaque current definition revision.
+ */
+revision: string,
+/**
+ * Relative Markdown path in the owning space.
+ */
+path: string,
+/**
+ * Whether scheduled execution is enabled.
+ */
+enabled: boolean,
+/**
+ * Permission mode for subsequent runs.
+ */
+mode: AgentMode,
+/**
+ * Most recent recorded outcome, absent before the first occurrence.
+ */
+last: AutomationOutcome | null,
+/**
+ * Last stop reason, if automatic execution was revoked.
+ */
+stop_reason?: string,
+/**
+ * Creator's new account zone, when a schedule move requires confirmation.
+ */
+account_timezone?: string,
+/**
+ * Explicit machine when visible to the creator.
+ */
+machine_id?: string,
+/**
+ * Exact prompt supplied with individual reads and definition edits.
+ */
+prompt?: string,
+/**
+ * Original schedule phrase, including its original spelling and whitespace.
+ */
+schedule_text: string,
+/**
+ * Canonical calendar expression generated by the server.
+ */
+schedule: string,
+/**
+ * Normalized schedule in plain words.
+ */
+human: string,
+/**
+ * IANA zone used to compute the next instant.
+ */
+timezone: string,
+/**
+ * Next instant in UTC epoch milliseconds, when scheduled.
+ */
+next_run_ms: number | null, };
+/**
+ * A space's bounded list of automation definitions.
+ */
+
+export type AutomationList = {
+/**
+ * Definitions and their scheduling status.
+ */
+automations: Array<AutomationRecord>, };
+/**
+ * A single automation definition.
+ */
+
+export type AutomationResult = {
+/**
+ * Definition and latest scheduling status.
+ */
+automation: AutomationRecord, };
+/**
+ * Next scheduled instant for an automation.
+ */
+
+export type AutomationNext = {
+/**
+ * UTC epoch milliseconds, or null when paused or stopped.
+ */
+next_run_ms: number | null, };
+/**
+ * Latest recorded run or skip.
+ */
+
+export type AutomationLast = {
+/**
+ * Null before the first outcome.
+ */
+last: AutomationOutcome | null, };
+/**
+ * Admitted thread for a manual run.
+ */
+
+export type AutomationThread = {
+/**
+ * Stable UUID of the new thread.
+ */
+thread_id: string, };
+/**
+ * Acknowledgement of a successful removal into Trash.
+ */
+
+export type RemovalResult = {
+/**
+ * True after the committed removal.
+ */
+ok: true, };
 /**
  * One palette command, in the web palette's command shape.
  */
@@ -1246,10 +1738,14 @@ id: string,
  */
 operation: string, };
 /**
- * Typed space setting; secrets use separate handles.
+ * Typed plugin setting; secrets use separate handles.
  */
 
 export type ManifestSetting = {
+/**
+ * Override owner. Omission selects the shared space setting.
+ */
+scope?: ManifestSettingScope,
 /**
  * Stable setting identifier.
  */
@@ -1495,11 +1991,171 @@ generation: number,
  */
 contribution: PluginSlotContribution, };
 /**
- * Plugin menu read without running plugin code. Every top-level field is required;
- * only the documented optional fields inside declarations may be omitted.
+ * Latest authorized projection for one package-owned slot on its live stream.
+ */
+
+export type OwnedSlotUpdate = {
+/**
+ * Space UUID whose slot is being followed.
+ */
+space_id: string,
+/**
+ * Package-qualified slot requested when opening the stream.
+ */
+target: OwnedPluginSlotId,
+/**
+ * Whether the recipient can still use the declared slot.
+ */
+active: boolean,
+/**
+ * Current visible contributions in declaration priority order.
+ */
+contributions: Array<ResolvedPluginSlot>, };
+/**
+ * Worker request to sanitize an exact stored content revision. Authority
+ * comes from invocation admission and the plugin's content declaration.
+ */
+
+export type ContentPrepareInput = {
+/**
+ * Plugin-owned kind named in its proxy profile.
+ */
+kind: string,
+/**
+ * Item UUID.
+ */
+item_id: string,
+/**
+ * Current opaque revision received from the item store.
+ */
+revision: string,
+/**
+ * Field containing the HTML source.
+ */
+field: ContentFetchField, };
+/**
+ * Prepared content reference for the acting person, valid briefly.
+ */
+
+export type ContentPrepareResult = {
+/**
+ * Opaque frame ID. Frame delivery checks the current viewer and source.
+ */
+frame_id: string, };
+/**
+ * Read a prepared sealed frame as the person it was created for.
+ */
+
+export type ContentFrameAddress = {
+/**
+ * Space UUID.
+ */
+space_id: string,
+/**
+ * Short-lived frame ID from content preparation.
+ */
+frame_id: string, };
+/**
+ * Trusted client data for mounting a sealed frame and for external navigation.
+ */
+
+export type ContentFrameView = {
+/**
+ * Relative trusted frame URL. Mount with an empty iframe sandbox.
+ */
+frame_url: string,
+/**
+ * External targets in the order of the frame's navigation references.
+ * Open only through the host's explicit navigation action.
+ */
+links: Array<string>,
+/**
+ * Current remote-content preference for the viewer.
+ */
+preference: ContentFetchPreference, };
+/**
+ * Stored source fields supported by the content proxy.
+ */
+
+export type ContentFetchField = "text";
+/**
+ * A stored field the broker may read to derive proxy references.
+ */
+
+export type ContentFetchSource = {
+/**
+ * The declaring package's own text kind.
+ */
+kind: string,
+/**
+ * The source field interpreted as HTML.
+ */
+field: ContentFetchField, };
+/**
+ * Host-owned remote media policy. Each additional profile requires review.
+ */
+
+export type ContentFetchProfile = "images_fonts";
+/**
+ * One person's policy for remote images and fonts in a space.
+ */
+
+export type ContentFetchPreference = "ask" | "always" | "never";
+/**
+ * Read the viewer's remote content policy in one space.
+ */
+
+export type ContentFetchPreferenceAddress = {
+/**
+ * Space UUID. The authenticated caller supplies the account identity.
+ */
+space_id: string, };
+/**
+ * Set the caller's own remote content policy in one space.
+ */
+
+export type ContentFetchPreferenceEdit = {
+/**
+ * Space UUID. The authenticated caller supplies the account identity.
+ */
+space_id: string,
+/**
+ * New choice applied at the next fetch and asset delivery.
+ */
+preference: ContentFetchPreference, };
+/**
+ * Anonymous content proxy scope shown during trusted installation review.
+ */
+
+export type ManifestContentFetch = {
+/**
+ * Host-enforced media and transport policy.
+ */
+profile: ContentFetchProfile,
+/**
+ * Up to 32 distinct text sources owned by the declaring package.
+ */
+sources: Array<ContentFetchSource>, };
+/**
+ * Network authority requested by a package. Each declaration has its own
+ * approval meaning and is subject to the live space activation.
+ */
+
+export type ManifestNetwork = {
+/**
+ * Anonymous remote assets from stored content. Omit for no proxy access.
+ */
+content_fetch?: ManifestContentFetch, };
+/**
+ * Plugin menu read without running plugin code. Only documented optional
+ * fields may be omitted.
  */
 
 export type ManifestV1 = {
+/**
+ * Optional outbound network declarations. Omit for no network access.
+ */
+network?: ManifestNetwork,
 /**
  * Optional commands, extra phrases and Settings sections for the palette.
  */
@@ -1915,6 +2571,19 @@ export type JobInput = {
  */
 job_id: string, };
 /**
+ * Public summary of a parked plugin job with no signal payload or credentials.
+ */
+
+export type JobWait = {
+/**
+ * Why the job is waiting, supplied by the worker at the checkpoint.
+ */
+reason: string,
+/**
+ * Unix milliseconds when the wait ends if no signal arrives.
+ */
+deadline_ms: number, };
+/**
  * What a client may see of a job: its durable record, never its stream.
  */
 
@@ -1940,6 +2609,10 @@ state: JobState,
  */
 parent_id?: string,
 /**
+ * Public summary while a plugin job waits for a signal.
+ */
+wait?: JobWait,
+/**
  * Last durable checkpoint written by the plugin, or null.
  */
 checkpoint: unknown,
@@ -1948,7 +2621,7 @@ checkpoint: unknown,
  */
 checkpoint_seq: bigint,
 /**
- * Final result of a `done` job, or null.
+ * Final result, a caller-safe wait rejection, or null.
  */
 result: unknown, };
 /**
@@ -2750,6 +3423,429 @@ default_id: string,
  * All eight built-in photos in picker order.
  */
 wallpapers: Array<WallpaperCredit>, };
+/**
+ * Empty input for an account-bound read.
+ */
+
+export type AppearanceGetInput = Record<string, never>;
+/**
+ * Apply only supplied fields. Explicit null clears nullable fields.
+ */
+
+export type AppearancePatch = {
+/**
+ * Wallpaper library ID, auto for the default, or null for none.
+ */
+wallpaperId?: string | null,
+/**
+ * Material effects.
+ */
+materials?: AppearanceMaterialsPatch,
+/**
+ * Palette preset, or null for the built-in palette.
+ */
+themeId?: string | null,
+/**
+ * Last applied look, or null.
+ */
+presetId?: string | null,
+/**
+ * Accent color policy.
+ */
+accent?: AppearanceAccent,
+/**
+ * Custom accent color in #rrggbb form.
+ */
+accentColor?: string,
+/**
+ * Sidebar wordmark text.
+ */
+brand?: string,
+/**
+ * Show streamed conversation text.
+ */
+streamText?: boolean,
+/**
+ * Typeface selection per role.
+ */
+fonts?: AppearanceFontsPatch,
+/**
+ * Enable motion when the device permits it.
+ */
+motion?: boolean, };
+/**
+ * The saved account appearance. A client overlays its local device settings for first paint.
+ */
+
+export type AppearancePreferences = {
+/**
+ * Wallpaper library ID, auto for the default, or null for none.
+ */
+wallpaperId: string | null,
+/**
+ * Material effects.
+ */
+materials: AppearanceMaterials,
+/**
+ * Palette preset, or null for the built-in palette.
+ */
+themeId: string | null,
+/**
+ * Last applied look, or null.
+ */
+presetId: string | null,
+/**
+ * Accent color policy.
+ */
+accent: AppearanceAccent,
+/**
+ * Custom accent color in #rrggbb form.
+ */
+accentColor: string,
+/**
+ * Sidebar wordmark text.
+ */
+brand: string,
+/**
+ * Show streamed conversation text.
+ */
+streamText: boolean,
+/**
+ * Typeface selection per role.
+ */
+fonts: AppearanceFonts,
+/**
+ * Enable motion when the device permits it.
+ */
+motion: boolean, };
+/**
+ * Local overlay for appearance on a single device, independent of the
+ * signed-in account's server snapshot. Store it at the client per installation.
+ */
+
+export type DeviceAppearancePreferences = {
+/**
+ * Light/dark policy. System follows the device's current color scheme.
+ */
+scheme: AppearanceScheme,
+/**
+ * UI size in percent, from 80 to 150.
+ */
+uiSize: number,
+/**
+ * App kinds in this device's switcher order.
+ */
+appOrder: Array<string>,
+/**
+ * Width of this device's conversation column.
+ */
+chatWidth: AppearanceChatWidth,
+/**
+ * Backdrop clarity between zero and one, or null to follow the device.
+ */
+clarity: number | null, };
+/**
+ * Opaque family identifier, resolved against the caller's permitted library.
+ */
+
+export type FontIdInput = {
+/**
+ * Family ID returned by the catalogue, list or upload reply.
+ */
+id: string, };
+/**
+ * Fetch a page of remote families using local search.
+ */
+
+export type FontCatalogueInput = {
+/**
+ * Case-insensitive substring, at most 120 characters.
+ */
+query?: string,
+/**
+ * Optionally filter by a remote provider.
+ */
+source?: FontSource,
+/**
+ * Optionally filter by monospace classification.
+ */
+mono?: boolean,
+/**
+ * Opaque next cursor from the same filters and cached snapshot.
+ */
+cursor?: string,
+/**
+ * Page size from 1 to 100. Defaults to 30.
+ */
+limit?: number, };
+/**
+ * A page of remote catalogue families.
+ */
+
+export type FontCatalogueResult = {
+/**
+ * Matching families in deterministic order.
+ */
+families: Array<FontCatalogueFamily>,
+/**
+ * Cursor for the next page, or null at the end.
+ */
+next_cursor: string | null,
+/**
+ * Whether a source is unreachable, stale or disabled.
+ */
+partial: boolean, };
+/**
+ * Local install state and the installation's download policy.
+ */
+
+export type FontStatusResult = {
+/**
+ * Family state.
+ */
+state: FontInstallState,
+/**
+ * Whether remote requests are enabled.
+ */
+downloads_enabled: boolean, };
+/**
+ * Generate CSS for the account's roles, or inspect one family for a preview.
+ */
+
+export type FontFacesInput = {
+/**
+ * Optional ID of a local family to preview.
+ */
+id?: string, };
+/**
+ * Local CSS with typeface aliases for clients' font stacks.
+ */
+
+export type FontFacesResult = {
+/**
+ * Generated rules with same-origin URLs.
+ */
+css: string,
+/**
+ * Library ID to generated CSS family alias.
+ */
+families: { [key in string]?: string }, };
+/**
+ * Page of installed families and the authenticated account's own uploads.
+ */
+
+export type FontListInput = {
+/**
+ * Opaque next cursor from a preceding page.
+ */
+cursor?: string,
+/**
+ * Page size from 1 to 100. Defaults to 30.
+ */
+limit?: number, };
+/**
+ * The user's visible local font storage.
+ */
+
+export type FontListResult = {
+/**
+ * Current page of installed or owned families.
+ */
+families: Array<FontStoredFamily>,
+/**
+ * Next cursor or null.
+ */
+next_cursor: string | null, };
+/**
+ * Successful removal of an uploaded family from the caller's library.
+ */
+
+export type FontRemoveResult = {
+/**
+ * Saved preferences after resetting the affected roles.
+ */
+appearance: AppearancePreferences, };
+/**
+ * Metadata for one locally usable family.
+ */
+
+export type FontStoredFamily = {
+/**
+ * Stable library ID.
+ */
+id: string,
+/**
+ * Display family name.
+ */
+family: string,
+/**
+ * Provider or Upload.
+ */
+source: FontSource,
+/**
+ * Byte count of stored files.
+ */
+bytes: number,
+/**
+ * Roles in which the authenticated account uses this family.
+ */
+used_by: Array<FontRole>, };
+/**
+ * The user's light and dark appearance policy.
+ */
+
+export type AppearanceScheme = "system" | "light" | "dark";
+/**
+ * Where the accent color is obtained.
+ */
+
+export type AppearanceAccent = "wallpaper" | "custom" | "theme";
+/**
+ * Conversation column width in the desktop shell.
+ */
+
+export type AppearanceChatWidth = "wide" | "centered";
+/**
+ * The account's material effects.
+ */
+
+export type AppearanceMaterials = {
+/**
+ * Blur backgrounds.
+ */
+blur: boolean,
+/**
+ * Dim backgrounds.
+ */
+dim: boolean,
+/**
+ * Tint backgrounds.
+ */
+tint: boolean, };
+/**
+ * Partial update of material switches.
+ */
+
+export type AppearanceMaterialsPatch = {
+/**
+ * Blur backgrounds.
+ */
+blur?: boolean,
+/**
+ * Dim backgrounds.
+ */
+dim?: boolean,
+/**
+ * Tint backgrounds.
+ */
+tint?: boolean, };
+/**
+ * The account's five font selections.
+ */
+
+export type AppearanceFonts = {
+/**
+ * Interface typeface.
+ */
+ui: FontChoice,
+/**
+ * Conversation typeface.
+ */
+chat: FontChoice,
+/**
+ * Code typeface.
+ */
+code: FontChoice,
+/**
+ * Terminal typeface.
+ */
+terminal: FontChoice,
+/**
+ * Wordmark typeface.
+ */
+brand: FontChoice, };
+/**
+ * Partial update of role selections.
+ */
+
+export type AppearanceFontsPatch = {
+/**
+ * Interface typeface.
+ */
+ui?: FontChoice,
+/**
+ * Conversation typeface.
+ */
+chat?: FontChoice,
+/**
+ * Code typeface.
+ */
+code?: FontChoice,
+/**
+ * Terminal typeface.
+ */
+terminal?: FontChoice,
+/**
+ * Wordmark typeface.
+ */
+brand?: FontChoice, };
+/**
+ * A role's selected typeface. Bundled and System faces omit the library ID.
+ */
+
+export type FontChoice = {
+/**
+ * Display family name.
+ */
+family: string,
+/**
+ * Catalogue, upload or device source.
+ */
+source: FontSource,
+/**
+ * Opaque library ID returned by catalogue or list.
+ */
+id?: string, };
+/**
+ * Each independent typography role in the shell.
+ */
+
+export type FontRole = "ui" | "chat" | "code" | "terminal" | "brand";
+/**
+ * Available catalogue and local font sources.
+ */
+
+export type FontSource = "google" | "fontsource" | "fontshare" | "upload" | "system";
+/**
+ * A merged catalogue row.
+ */
+
+export type FontCatalogueFamily = {
+/**
+ * Stable ID for installation.
+ */
+id: string,
+/**
+ * Display family name.
+ */
+family: string,
+/**
+ * Source category normalized by the server.
+ */
+category: string,
+/**
+ * Provider.
+ */
+source: FontSource,
+/**
+ * Whether the provider classifies this as monospaced.
+ */
+mono: boolean, };
+/**
+ * Availability of one family at this installation.
+ */
+
+export type FontInstallState = "missing" | "installing" | "ready";
 /**
  * Empty input for account-scoped space listing.
  */

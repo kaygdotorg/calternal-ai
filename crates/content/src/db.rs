@@ -87,6 +87,7 @@ pub(crate) const SPACE_SCHEMA: calternal_store::migrations::Schema<'_> =
         &[
             THREAD_SNOOZE,
             COLLECTION_MEMBERS,
+            crate::rooms::SCHEMA,
             crate::trash_job::SCHEMA,
             crate::rename_job::SCHEMA,
         ],
@@ -270,11 +271,22 @@ mod tests {
         SPACE_INITIAL,
         &[THREAD_SNOOZE, COLLECTION_MEMBERS],
     );
+    const ROOMS_RELEASE: Schema<'_> = Schema::new(
+        "space content.db",
+        3,
+        SPACE_INITIAL,
+        &[THREAD_SNOOZE, COLLECTION_MEMBERS, crate::rooms::SCHEMA],
+    );
     const EMPTY_TRASH_RELEASE: Schema<'_> = Schema::new(
         "space content.db",
         3,
         SPACE_INITIAL,
-        &[THREAD_SNOOZE, COLLECTION_MEMBERS, crate::trash_job::SCHEMA],
+        &[
+            THREAD_SNOOZE,
+            COLLECTION_MEMBERS,
+            crate::rooms::SCHEMA,
+            crate::trash_job::SCHEMA,
+        ],
     );
 
     #[test]
@@ -389,9 +401,56 @@ mod tests {
     }
 
     #[test]
-    fn empty_trash_migration_preserves_an_existing_deleted_note() {
+    fn room_migration_preserves_prior_writer_and_is_atomic() {
         let conn = Connection::open_in_memory().unwrap();
         migrate_release(&conn, SHARING_RELEASE, false).unwrap();
+        conn.execute_batch(
+            "INSERT INTO kinds VALUES('documents','[]');
+             INSERT INTO items VALUES ('item','documents','{}','v1',1,'now','Doc.md','doc.md',NULL,'materialized',NULL);
+             INSERT INTO versions VALUES ('item',1,'v1','{}',X'41','now','owner');
+             CREATE TABLE room_checkpoints(conflicts_with_migration INT);",
+        ).unwrap();
+        assert!(migrate_release(&conn, ROOMS_RELEASE, true).is_err());
+        assert_eq!(
+            calternal_store::migrations::inspect(&conn, SHARING_RELEASE).unwrap(),
+            5
+        );
+        let flag_table: bool = conn
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM sqlite_schema WHERE name='room_kinds')",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert!(!flag_table);
+        conn.execute_batch("DROP TABLE room_checkpoints").unwrap();
+        migrate_release(&conn, ROOMS_RELEASE, true).unwrap();
+        assert_eq!(
+            calternal_store::migrations::inspect(&conn, ROOMS_RELEASE).unwrap(),
+            6
+        );
+        assert_eq!(
+            calternal_store::migrations::inspect(&conn, SHARING_RELEASE).unwrap(),
+            6
+        );
+        conn.execute_batch(
+            "INSERT INTO room_kinds VALUES('documents');
+             INSERT INTO room_checkpoints VALUES('item',1,'lineage',X'0000');
+             INSERT INTO versions VALUES ('item',2,'v2','{}',X'42','now','owner');
+             UPDATE items SET revision='v2',seq=2 WHERE id='item';",
+        )
+        .unwrap();
+        let body: Vec<u8> = conn.query_row(
+            "SELECT bytes FROM versions JOIN items ON versions.item=items.id AND versions.seq=items.seq",
+            [], |r| r.get(0),
+        ).unwrap();
+        assert_eq!(body, b"B");
+    }
+
+    #[test]
+    fn empty_trash_migration_preserves_an_existing_deleted_note() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate_release(&conn, ROOMS_RELEASE, false).unwrap();
         conn.execute_batch(
             "INSERT INTO items VALUES ('note','notes','{}','v1',1,'now','.trash/note.md','.trash/note.md',NULL,'materialized',NULL);
              INSERT INTO versions VALUES ('note',1,'v1','{}',X'41','now','owner');
@@ -400,8 +459,8 @@ mod tests {
         .unwrap();
         migrate_release(&conn, EMPTY_TRASH_RELEASE, true).unwrap();
         assert_eq!(
-            calternal_store::migrations::inspect(&conn, SHARING_RELEASE).unwrap(),
-            6
+            calternal_store::migrations::inspect(&conn, ROOMS_RELEASE).unwrap(),
+            7
         );
         let note: (String, Vec<u8>, i64) = conn
             .query_row(
@@ -426,7 +485,7 @@ mod tests {
         migrate_release(&conn, SPACE_SCHEMA, true).unwrap();
         assert_eq!(
             calternal_store::migrations::inspect(&conn, EMPTY_TRASH_RELEASE).unwrap(),
-            7
+            8
         );
         let pending: (String, String, i64) = conn
             .query_row(

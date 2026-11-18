@@ -80,6 +80,7 @@ impl Db {
     /// Does not validate root pairing or recover lost installation state;
     /// callers must apply those guards before allowing database creation.
     pub fn open(path: &Path) -> Result<Self> {
+        let _revision = calternal_types::begin_item_access_change();
         let mut connection = open_conn(path)?;
         let (worker, mut inbox) = tokio::sync::mpsc::channel::<Job>(64);
         let db = Self {
@@ -97,7 +98,10 @@ impl Db {
                     ACTIVE_SINK.with(|s| *s.borrow_mut() = sink.get().cloned());
                     let before = connection.total_changes();
                     match job {
-                        Job::Single(job) => job(&mut connection),
+                        Job::Single(job) => {
+                            let _revision = calternal_types::begin_item_access_change();
+                            job(&mut connection);
+                        }
                         Job::Read(read) => read(&connection),
                         Job::Role(first) => {
                             let mut batch = vec![first];
@@ -112,6 +116,7 @@ impl Db {
                                     Err(_) => break,
                                 }
                             }
+                            let _revision = calternal_types::begin_item_access_change();
                             role_batch::execute(&mut connection, batch);
                         }
                     }
