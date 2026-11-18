@@ -7,11 +7,11 @@ const ok = (n, p, note = "") => { console.log(`${p ? "PASS" : "FAIL"}  ${n}${not
 { // hazards
   const { page, ctx } = await open(b, "desktop", "light", "/threads/t-run");
   await page.waitForSelector("h1");
-  const pillBox = await page.locator("header .title").boundingBox();
+  const pillBox = await page.locator(".hdr .hp").boundingBox();
   await page.evaluate(([x, y]) => { const feed = document.querySelector("[role=feed]"); const fr = feed.getBoundingClientRect(); x -= fr.left; y = y - fr.top + feed.scrollTop; const img = document.createElement("img"); img.setAttribute("data-media", ""); img.alt = ""; img.src = "data:image/gif;base64,R0lGODlhAQABAAAAACw="; Object.assign(img.style, { position: "absolute", left: x + "px", top: y + "px", width: "120px", height: "60px", zIndex: "0" }); feed.append(img); feed.dispatchEvent(new Event("scroll")); }, [pillBox.x + 10, pillBox.y]);
   await page.waitForTimeout(300);
-  ok("a picture under a floating pill marks the pill as a hazard", (await page.locator("header .title").getAttribute("data-hazard")) !== null);
-  const alpha = await page.locator("header .title > .glass").evaluate((e) => getComputedStyle(e).backgroundColor);
+  ok("a picture under a floating pill marks the pill as a hazard", (await page.locator(".hdr .hp").getAttribute("data-hazard")) !== null);
+  const alpha = await page.locator(".hdr .hp > .glass").evaluate((e) => getComputedStyle(e).backgroundColor);
   ok("its glass fill rises", /0\.9/.test(alpha), alpha);
   await ctx.close();
 }

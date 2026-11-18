@@ -30,7 +30,11 @@
   const TITLE: Record<StepId, string> = { you: "Who you are", look: "Choose a look", machine: "Your machine", provider: "Sign in to a provider", repos: "Your repositories", cli: "The command line", direct: "Direct mode", done: "You are set up" };
   let heading = $state<HTMLElement>();
   const reduced = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
-  const persist = () => save({ who, coder, step, done, skipped }, store);
+  // The account this record belongs to, once there is one (after who-you-are): a reload resumes only a record of the signed-in account (server/boot.ts).
+  // svelte-ignore state_referenced_locally
+  let account = $state<string | undefined>(saved?.account);
+  const persist = () => save({ who, coder, step, done, skipped, ...(account ? { account } : {}) }, store);
+  $effect(() => { if (demo || account || step === "you") return; void import("../../server/auth").then((a) => a.account.me()).then((m) => { account = m.user.id; persist(); }, () => {}); });
   $effect(() => { void step; void coder; persist(); queueMicrotask(() => heading?.focus({ preventScroll: true })); });
   // A key-driven finish shows its tick at once (a keyboard user is not made to watch); a pointer-driven one draws it on.
   const onKey = () => (keyed = true), onPointer = () => (keyed = false);

@@ -77,7 +77,7 @@
   .row > :global(.sw) { width: 100%; }
   .row { min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: var(--s-6); min-height: calc(var(--row-h-settings)); padding: var(--s-3) var(--s-6); position: relative; transition: background-color var(--dur-slow) var(--ease-out); }
   .row.col { display: grid; gap: var(--s-3); justify-content: stretch; padding-block: var(--s-5); }
-  .row.col:has(> :global(ul)), .row.col:has(> :global(.sp)) { padding: 0; }
+  .row.col:has(> :global(ul)), .row.col:has(> :global(.sp)), .row.col:has(> :global(.fp)) { padding: 0; }
   .row.col:has(> :global(.sc)) { padding: var(--s-3) var(--s-2); }
   .row.hl { background: var(--accent-soft); }
   .l { display: grid; min-width: 0; gap: var(--s-1); }
@@ -96,7 +96,7 @@
     .h { max-width: none; }
   }
   .num { display: inline-flex; align-items: center; gap: var(--s-3); }
-  :global(.row .field) { min-height: var(--pill-h); padding: 0 var(--s-5); border: 0; border-radius: var(--r-pill); background: rgb(var(--ink-rgb) / 0.07); color: var(--ink); text-align: end; width: 10rem; }
+  :global(.row .field) { min-height: var(--pill-h); padding: 0 var(--s-5); border: 0; border-radius: var(--r-pill); background: rgb(var(--ink-rgb) / 0.07); color: var(--ink); text-align: start; width: 10rem; }
   .drill { display: inline-flex; align-items: center; gap: var(--s-2); min-height: var(--pill-h); }
   /* A hairline between rows, inset from the label's edge. */
   :global(.sg > .row + .row)::before, :global(.sg > .row + .row)::before { content: ""; position: absolute; top: 0; left: var(--s-6); right: 0; height: 1px; background: var(--line); }

@@ -24,6 +24,15 @@
       <p class="note">Run this on the other machine. One use, valid for 15 minutes.</p>
       <div class="cmd"><code>{script.script}</code><CopyButton text={script.script} label="Copy the script" onfail={() => (error = "Could not copy. Select the script and copy it.")} /></div>
     {/if}
+  {:else if status.attached}
+    <p class="notice" role="status"><strong>This server's own machine has not connected yet.</strong> It starts with the server and usually connects within a minute. If it stays like this, the server could not reach its own public address: check the server's log, or add a machine of your own below and carry on.</p>
+    <Waiting label="Waiting for the server's own machine" />
+    {#if script}
+      <p class="note">Run this on a machine of your own, as the user that should run the agents. One use, valid for 15 minutes.</p>
+      <div class="cmd"><code>{script.script}</code><CopyButton text={script.script} label="Copy the script" onfail={() => (error = "Could not copy. Select the script and copy it.")} /></div>
+    {:else}
+      <div class="go"><Button variant="secondary" text="Add a machine of my own" disabled={busy} onclick={make} /></div>
+    {/if}
   {:else}
     <p class="note">A machine is a computer your threads run on: a Mac or Linux box of your own, or a cloud server. Run this script on it, as the user that should run the agents:</p>
     {#if script}
@@ -45,6 +54,8 @@
   .ready small { color: var(--ink-3); font-size: var(--text-label); }
   .cmd { display: flex; align-items: center; gap: var(--s-4); padding: var(--s-4) var(--s-5); border-radius: var(--r-select); background: rgb(var(--ink-rgb) / 0.07); }
   code { flex: 1; min-width: 0; overflow-wrap: anywhere; font-family: var(--font-mono); font-size: var(--text-label); }
+  .notice { font-size: var(--text-ui); padding: var(--s-4) var(--s-5); border-radius: var(--r-select); background: rgb(var(--ink-rgb) / 0.07); }
+  .notice strong { display: block; margin-bottom: var(--s-1); }
   .error { font-size: var(--text-label); color: var(--danger); }
   .go { display: flex; gap: var(--s-4); }
 </style>
