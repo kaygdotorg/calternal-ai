@@ -1,5 +1,9 @@
 # Performance qualification — 2026-11-17
 
+The release delivery gate and current profiles are tracked in
+[the November 18 report](reviews/perf-profile-2026-11-18.md). The measurements
+below describe the November 17 artifacts and their budgets.
+
 The performance-fixes follow-up is tracked in
 [issue #31](https://git.kayg.org/kayg/calternal-ai/issues/31) and its
 [implementation/review report](reviews/perf-fixes-2026-11-17.md). It adds lazy

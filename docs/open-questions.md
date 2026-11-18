@@ -2,7 +2,7 @@
 
 Decisions waiting on kayg, most blocking first. Answer here or in chat; answered items
 move to the decision record they belong to and leave this list. Terms: see
-[glossary](glossary.md). Updated 2026-11-18 22:20 IST.
+[glossary](glossary.md). Updated 2026-11-18 22:50 IST.
 
 ## Waiting now
 
@@ -31,13 +31,13 @@ Decided 2026-11-18: a person never signs in twice and no API key is used. The ti
 ## Queued, no decision needed
 
 - A long thread: a thread file stops at 2 MiB today (`thread_full`), so a thread cannot hold 100,000 messages; how a thread continues past the limit needs a design.
-- File format tags (`format: calternal-thread` and the rest) carry no version in either app; add one while no real data exists.
 
 - Rewrite git history to drop old images at the next quiet point.
 - Try phone navigation (swipe back, dragging the card) on a real phone: it is merged but not counted as done until checked on a device.
 
 ## Recently decided (2026-11-17), now in the decision records
 
+- Production is not deployed again until data survives upgrades (kayg, 2026-11-18): migrations for everything that cannot be rebuilt, a version on every format, and a tested rollback come first; kayg signs up after that. The scaling measurement for message search (10 million, 100 million, 1 billion if the disk allows; many threads and few long ones) is accepted as enough.
 - Materials (#24, 2026-11-18): the readability floor is 7:1 with text flipping light or dark; light mode uses the lighter copy of the photo; the temporary Compare section is removed.
 - Draft saves are relaxed (2026-11-18): they no longer wait for the disk to confirm, so a power cut may lose the latest unsent draft edits; notes and sent messages keep the full guarantee.
 - Thread rows are one line in the Inbox as in All Threads; the waiting reason is a mark at the row's end (2026-11-18).
