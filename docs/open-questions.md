@@ -2,7 +2,7 @@
 
 Decisions waiting on kayg, most blocking first. Answer here or in chat; answered items
 move to the decision record they belong to and leave this list. Terms: see
-[glossary](glossary.md). Updated 2026-11-19 13:40 IST.
+[glossary](glossary.md). Updated 2026-11-19 14:40 IST.
 
 ## Waiting now
 
@@ -25,7 +25,7 @@ Decided 2026-11-18: a person never signs in twice and no API key is used. The ti
 - **Upgrades with real data**: decided 2026-11-18 that updates are automatic and a failed one rolls back without the person or admin noticing; the index rebuild is made faster first (search is unavailable for 67 to 80 s at 100,000 notes today), then migrations are written for the small core (accounts, spaces, roles, secrets), which cannot be rebuilt from files.
 - **MicroVMs**: one per person with a container per thread; sizes decided; the lane posts its build plan on issue #51 for review.
 - **Next to write up** (kayg, 2026-11-18): sharing (#52), then Settings and Appearance.
-- **The canvas experiment** (kayg, 2026-11-18; still an experiment behind `?canvas=1`): no outer card; the area between the sidebars is the canvas and each window is a middle card, so one window looks exactly like the app today and a second animates as a split; structured columns as in niri; windows touch the top; one continuous veiled background behind them, as under the sidebars; windows opaque or transparent with no blur of their own; both sidebars follow the focused window's app; on a phone one window at a time. The app switcher is no longer part of the canvas (it moved to the left sidebar's footer). Feedback 2026-11-18 17:00, being fixed by the Threads lane: one window must match the app without the canvas exactly (fonts, spacing, animations); no fade on a half-scrolled window; windows are neutral dark or light, never tinted by the wallpaper's accent; no accent border on the selected window (inactive windows dim instead, to be judged); the fullscreen icon is two diagonal chevrons and the link icon becomes a real share menu.
+- **The canvas** (default from 2026-11-19; was an experiment behind `?canvas=1`): no outer card; the area between the sidebars is the canvas and each window is a middle card, so one window looks exactly like the app today and a second animates as a split; structured columns as in niri; windows touch the top; one continuous veiled background behind them, as under the sidebars; windows opaque or transparent with no blur of their own; both sidebars follow the focused window's app; on a phone one window at a time. The app switcher is no longer part of the canvas (it moved to the left sidebar's footer). Feedback 2026-11-18 17:00, being fixed by the Threads lane: one window must match the app without the canvas exactly (fonts, spacing, animations); no fade on a half-scrolled window; windows are neutral dark or light, never tinted by the wallpaper's accent; no accent border on the selected window (inactive windows dim instead, to be judged); the fullscreen icon is two diagonal chevrons and the link icon becomes a real share menu.
 
 ## Queued, no decision needed
 
@@ -49,6 +49,7 @@ Decided 2026-11-18: a person never signs in twice and no API key is used. The ti
 
 ## Recently decided (2026-11-17), now in the decision records
 
+- 2026-11-19 afternoon: plans are $20 (2 GiB, 150 h), $50 (4 GiB, 400 h), $100 (4 GiB, 750 h) and $200 (8 GiB, 1,500 h); the canvas becomes the default, kept behind a clean boundary so it can become a shell plugin, with a switch back in Settings; no separate limit on subagents beyond a person's compute; native apps after the web app is solid, iPhone first; mail starts with reading; voice input (speech to text and live voice) comes first once the plugin API is stable; in shared spaces the machine and provider login are configured per space, not per person (details open).
 - Automations (2026-11-19): a run uses the authority of the person who made the automation, on their machine or sandbox; a run missed because the machine was off happens once when it is back if it is still the same day, otherwise it is skipped and says so; its permission mode is what the person configured, Approve for me by default.
 - Also 2026-11-19: four plans at 20, 50, 100 and 200 US dollars a month; no free cloud hours on the hosted service; the existing app's notes are brought over by moving the files, no importer; mail is the first app plugin after Notes and Threads; backups stay external (the production VM is backed up nightly), a per-person backup plugin comes later; an hour is counted plainly; the receipt kept until its request finishes is accepted (#53); an agent message is not indented for the provider mark, the mark is part of its first line; there is no fixed limit on lanes.
 - Plans (2026-11-19): 150, 750 and 1,500 sandbox hours a month on the 2, 4 and 8 GiB sizes; when hours run out new work queues, running turns finish and a pay-as-you-go top-up is offered. Plans, billing and the hour meter are closed source in a separate private repository; the open core keeps only limits an admin sets by hand.
