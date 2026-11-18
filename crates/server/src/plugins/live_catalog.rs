@@ -52,6 +52,18 @@ pub enum Change {
         /// Enrolled development account with plugin management access.
         account: AccountId,
     },
+    /// Inspect the current draft revision and the requesting author's failures.
+    #[cfg(feature = "dev-plugin-drafts")]
+    Diagnostics {
+        /// Draft package ID.
+        id: String,
+        /// Declared operation whose recent errors are requested.
+        operation: String,
+        /// Draft space.
+        space: SpaceId,
+        /// Development Manager whose own diagnostics are requested.
+        account: AccountId,
+    },
     /// Unpublish a package and fence its existing workers.
     Remove {
         /// Registered package identifier.
@@ -70,6 +82,33 @@ fn reason(error: impl std::fmt::Display) -> String {
 /// Apply a package change through the running server's private socket.
 /// Cost: one bounded request and reply. No direct access to the catalog database.
 pub fn request(appdata: &Path, change: Change) -> Result<(), String> {
+    exchange(appdata, change).map(|_| ())
+}
+
+/// Inspect a draft through the private development socket. Refuses foreign
+/// spaces and callers without current management authority. Cost: one
+/// bounded local request and reply.
+#[cfg(feature = "dev-plugin-drafts")]
+pub fn diagnostics(
+    appdata: &Path,
+    id: String,
+    operation: String,
+    space: SpaceId,
+    account: AccountId,
+) -> Result<serde_json::Value, String> {
+    exchange(
+        appdata,
+        Change::Diagnostics {
+            id,
+            operation,
+            space,
+            account,
+        },
+    )?
+    .ok_or_else(|| "development server returned no diagnostics".into())
+}
+
+fn exchange(appdata: &Path, change: Change) -> Result<Option<serde_json::Value>, String> {
     let bytes = serde_json::to_vec(&change).map_err(reason)?;
     if bytes.len() > MAX_REQUEST {
         return Err("plugin request exceeds its byte budget".into());
@@ -118,8 +157,25 @@ pub fn serve(
                 continue;
             }
             let change = tokio::time::timeout(TIMEOUT, read(&mut stream)).await;
-            let result = match change {
-                Ok(Ok(change)) => apply(&appdata, &state, change, _development).await,
+            let result: Result<Option<serde_json::Value>, String> = match change {
+                #[cfg(feature = "dev-plugin-drafts")]
+                Ok(Ok(Change::Diagnostics {
+                    id,
+                    operation,
+                    space,
+                    account,
+                })) => {
+                    if _development {
+                        drafts::diagnostics(&state, &id, &operation, space, account)
+                            .await
+                            .map(Some)
+                    } else {
+                        Err("diagnostics require a development server".into())
+                    }
+                }
+                Ok(Ok(change)) => apply(&appdata, &state, change, _development)
+                    .await
+                    .map(|()| None),
                 Ok(Err(error)) => Err(error),
                 Err(_) => Err("plugin request timed out".into()),
             };
@@ -151,6 +207,10 @@ async fn apply(
     let base = state.registry.snapshot();
     let root = appdata.to_owned();
     match change {
+        #[cfg(feature = "dev-plugin-drafts")]
+        Change::Diagnostics { .. } => {
+            return Err("diagnostic request sent to package writer".into());
+        }
         #[cfg(feature = "dev-plugin-drafts")]
         Change::Draft {
             package,
