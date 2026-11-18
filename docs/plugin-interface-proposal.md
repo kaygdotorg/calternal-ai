@@ -260,6 +260,40 @@ rendering and uses loopback links, so it measures the application path
 before adding network latency between machines.
 [SDK fixture benchmark](reviews/plugin-dx-2026-11-18.md)
 
+The follow-up on locked `calternal-perf-02-backup01` used the same operation
+and colocated setup. A loopback HTTP relay timed both machine exchanges.
+A pipe relay recorded when the runner delivered and received worker frames.
+Both relays used the host's monotonic clock. Each column represents 100
+serial calls after warm-up. Browser-edge measurements include the relay
+overhead. Percentiles for individual hops do not add to the end-to-end percentile.
+
+| Hop with tracing | Before p50 / p95 | After p50 / p95 |
+| --- | ---: | ---: |
+| Browser sends request | 0.59 / 1.26 ms | 0.56 / 1.29 ms |
+| Server dispatch and sync hand-off | 1.67 / 6.26 ms | 1.60 / 3.39 ms |
+| Runner delivers invocation to worker | 0.35 / 0.82 ms | 0.34 / 1.07 ms |
+| Worker emits host call | 0.71 / 1.36 ms | 0.70 / 1.95 ms |
+| Runner uploads host call | 21.54 / 22.94 ms | 0.21 / 0.50 ms |
+| Server broker read and sync hand-off | 1.68 / 6.24 ms | 1.40 / 3.34 ms |
+| Runner delivers broker reply to worker | 0.30 / 0.94 ms | 0.29 / 0.60 ms |
+| Worker completes operation | 0.67 / 1.46 ms | 0.59 / 2.09 ms |
+| Runner uploads result | 21.55 / 22.13 ms | 0.20 / 0.58 ms |
+| Server rechecks authority and responds | 1.80 / 5.48 ms | 1.43 / 4.98 ms |
+| Browser receives and parses response | 1.25 / 2.24 ms | 1.22 / 2.38 ms |
+| End to end with tracing | 52.2 / 71.3 ms | 8.6 / 22.9 ms |
+| End to end without relays | 49.3 / 63.6 ms | 5.6 / 10.1 ms |
+
+The matched, untraced rerun on locked perf-01 measured 47.8 / 48.8 ms
+before the change and 4.8 / 5.2 ms afterward.
+
+The runner waited 20 ms before uploading each burst of exec output. The
+worker pauses for the host reply, so the runner paid the timer twice per
+operation. Together the uploads took 43.07 ms p50 before the change and
+0.42 ms after it. Worker output uploads now start immediately and drain
+already-queued frames in the same bounded post. Ordinary command output
+keeps its timed batching. The comparison reused the checkpoint server
+and plugin and changed only the runner's batching condition.
+
 ## Plugin worker placement and network access
 
 The operator's pool runs shared-space plugin workers. Member-owned machines

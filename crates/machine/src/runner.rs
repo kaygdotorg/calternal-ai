@@ -292,7 +292,8 @@ impl Runner {
                         _ => failed_exec("lease not held by this machine"),
                     };
                     let _ = ready.send(exec.input.clone());
-                    me.upload(lease_id, fence, exec_id, exec).await;
+                    let batch = slot.as_ref().is_none_or(|slot| slot.spec.worker.is_none());
+                    me.upload(lease_id, fence, exec_id, exec, batch).await;
                     if let Some(slot) = &slot {
                         *slot.last_use.lock().expect("sandbox last use") = Instant::now();
                         slot.inputs.lock().expect("inputs").remove(&exec_id);
@@ -494,8 +495,16 @@ impl Runner {
     }
 
     /// Number the exec's events and upload them until the exit is acknowledged,
-    /// the lease is fenced or the machine is revoked.
-    async fn upload(&self, lease_id: Uuid, fence: u64, exec_id: Uuid, mut exec: Exec) {
+    /// the lease is fenced or the machine is revoked. Worker replies can
+    /// unblock a broker round trip, so only ordinary exec output waits to batch.
+    async fn upload(
+        &self,
+        lease_id: Uuid,
+        fence: u64,
+        exec_id: Uuid,
+        mut exec: Exec,
+        batch: bool,
+    ) {
         let mut pending: VecDeque<(Chunk, usize)> = VecDeque::new();
         let (mut seq, mut bytes, mut ended, mut backoff) =
             (0u64, 0usize, false, Duration::from_millis(200));
@@ -531,7 +540,7 @@ impl Runner {
                         ended |= push(lost, &mut seq, &mut pending, &mut bytes);
                     }
                 }
-                if !ended {
+                if !ended && batch {
                     tokio::time::sleep(COALESCE).await;
                 }
             }
