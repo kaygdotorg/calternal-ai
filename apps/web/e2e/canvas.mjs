@@ -53,12 +53,12 @@ try {
     for (const [i, w] of (await wins(p).all()).entries()) {
       const titles = await w.evaluate((e) => [...e.querySelectorAll(".wt")].filter((t) => t.getClientRects().length).length);
       const buttons = await w.locator(".tr button").evaluateAll((b) => b.map((x) => x.getAttribute("aria-label")));
-      ok(titles === 1 && buttons.join("|") === ["Full screen", "Share", "More"].join("|"), `window ${i + 1}: one title pill and one pill of exactly three buttons`, `${titles} / ${buttons.join(",")}`);
+      ok(titles === 1 && /^Full screen\|Share\|(Thread actions|Note actions|More)$/.test(buttons.join("|")), `window ${i + 1}: one title pill and one pill of exactly three buttons`, `${titles} / ${buttons.join(",")}`);
     }
     // tooltips on every control, with the shortcut on full screen
     await p.waitForTimeout(800);
     const w0 = wins(p).nth(0);
-    for (const [name, text] of [["Full screen", /Full screen/], ["Share", /Share/], ["More", /More/]]) {
+    for (const [name, text] of [["Full screen", /Full screen/], ["Share", /Share/], ["Thread actions", /Thread actions|More/]]) {
       await w0.getByRole("button", { name }).hover(); await p.waitForTimeout(1000);
       ok(text.test(await p.locator(".warm-tip").innerText().catch(() => "")), `the ${name} button has its warm tooltip`, await p.locator(".warm-tip").innerText().catch(() => ""));
       await p.mouse.move(5, 5); await p.waitForTimeout(150);
@@ -96,7 +96,7 @@ try {
     ok((await p.locator("[data-win][data-focused]").getAttribute("data-kind")) === "threads", "the new window has focus", focused);
     // pointer: add beside from the menu animates (a column animation of the token duration is requested)
     await arm(p);
-    await p.locator("[data-win][data-focused]").getByRole("button", { name: "More" }).click();
+    await p.locator("[data-win][data-focused]").getByRole("button", { name: /^(Thread actions|Note actions|More)$/ }).click();
     await item(p, /Open a thread beside/).click();
     ok(await animating(p), "a pointer-opened window animates (FLIP on the motion tokens)");
     await p.waitForTimeout(700);
@@ -111,7 +111,7 @@ try {
     const fw = await p.locator("[data-win][data-focused]").evaluate((e) => e.getBoundingClientRect().width);
     ok(Math.abs(fw - ((cb.width - 8) * 2 / 3 - 8)) < 2 || Math.abs(fw - ((cb.width - 8) / 3 - 8)) < 2 || Math.abs(fw - (cb.width - 16)) < 2, "the preset is one of 1/3, 2/3 or full (from half)", fw.toFixed(0));
     // the window menu has no Width and no Look entries (width is the handle, the look a preference)
-    await p.locator("[data-win][data-focused]").getByRole("button", { name: "More" }).click();
+    await p.locator("[data-win][data-focused]").getByRole("button", { name: /^(Thread actions|Note actions|More)$/ }).click();
     const menuNames = (await p.locator("[role^=menuitem]").allInnerTexts()).map((x) => x.trim());
     ok(!menuNames.some((x) => /^Width |^Look:/.test(x)) && menuNames.some((x) => /Open a thread beside/.test(x)), "the window menu has no Width and no Look entries", menuNames.join(" | ").slice(0, 160));
     await p.keyboard.press("Escape");
