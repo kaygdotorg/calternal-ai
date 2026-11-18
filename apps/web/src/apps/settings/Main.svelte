@@ -4,6 +4,7 @@
   import { tick } from "svelte";
   import { SplitView, chromeTrack } from "@calternal/ui";
   import { route, segments } from "../../lib/route.svelte";
+  import { serverMode } from "../../server/client";
   import SettingGroup from "./SettingGroup.svelte";
   import SettingRow from "./SettingRow.svelte";
   import { pageById, visibleSections } from "./registry";
@@ -11,7 +12,9 @@
   const page = $derived(pageById(id));
   const target = $derived(segments()[0] === "settings" ? segments()[2] : undefined);
   // A page that opted into sections is two panes only where the card is wide (the list of sections, the selected one beside it, the first selected until the person picks); narrow, it is one flat page: every section in order under its heading, full width, no drill-in and no Back. The address's setting id selects its section.
-  let sel = $state<number | null>(null), width = $state(0);
+  let sel = $state<number | null>(null), width = $state(0), scrollEl = $state<HTMLElement>();
+  // Fixtures only: `?scroll=N` opens the page already scrolled N px, so a phone Simulator (which cannot be dragged by script) can show the sticky header pill.
+  $effect(() => { const n = Number(new URLSearchParams(location.search).get("scroll")); if (scrollEl && width && n > 0 && !serverMode) scrollEl.scrollTop = n; });
   const wide = $derived(width >= 640);
   $effect(() => { void page?.id; sel = null; });
   $effect(() => {
@@ -33,7 +36,7 @@
   });
 </script>
 
-<div class="scroller edge-fade" use:chromeTrack style:--fade-t="calc(var(--safe-top) + var(--bar-h))" style:--fade-b="var(--s-8)" bind:clientWidth={width}>
+<div class="scroller edge-fade" bind:this={scrollEl} use:chromeTrack style:--fade-t="calc(var(--safe-top) + var(--bar-h))" style:--fade-b="var(--s-8)" bind:clientWidth={width}>
 {#if width === 0}
   <!-- the card is not measured yet: nothing, so the page never flashes the wrong arrangement -->
 {:else if page?.split && wide}
