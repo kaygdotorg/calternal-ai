@@ -56,7 +56,7 @@
       {/if}
     </div>
   {/each}
-  {#if pg && !pg.done}<div class="r" use:reach={() => void more()}><span class="h">Loading more people…</span></div>{/if}
+  {#if pg && !pg.done}<div class="r" use:reach={more}><span class="h">Loading more people…</span></div>{/if}
   {#if g.groups.length}<h2>Groups</h2>{/if}
   {#each g.groups as x (x.group_id)}
     <div class="r" data-setting="space.group.{x.group_id}"><span class="n"><span class="t">{x.name}</span><span class="h">{label(x.role)} · {x.member_count} {x.member_count === 1 ? "person" : "people"}</span></span></div>

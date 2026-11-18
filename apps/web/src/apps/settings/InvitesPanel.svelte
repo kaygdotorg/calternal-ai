@@ -35,7 +35,7 @@
       <span class="a">{#if i.link}<Button text={copied === i.invite_id ? "Copied" : "Copy link"} variant="secondary" onclick={() => copy(i)} /><Button text="Revoke" variant="quiet" disabled={busy} onclick={() => confirm("Revoke this invitation? The link stops working.") && act(() => people.revokeInvite(space, i.invite_id))} />{/if}</span>
     </div>
   {/each}
-  {#if pg && !pg.done}<div class="r" use:reach={() => void more()}><span class="h">Loading more…</span></div>{/if}
+  {#if pg && !pg.done}<div class="r" use:reach={more}><span class="h">Loading more…</span></div>{/if}
   {#if earlier.length}<div class="r"><span class="h">{earlier.length} earlier {earlier.length === 1 ? "invitation" : "invitations"} (used, revoked or expired)</span><Button text={past ? "Hide them" : "Show them"} variant="quiet" onclick={() => (past = !past)} /></div>{/if}
   {#if loaded && !list.length && !error}<div class="r"><span class="h">No invitations yet. An invitation is a one-use link for someone who has no account here.</span></div>{/if}
   {#if error}<p class="e" role="alert">{error}</p>{/if}
