@@ -99,7 +99,7 @@ export class ServerClient {
   }
   spaces = { list: () => this.operate<SpacesListResult>("spaces.list") };
   notes = {
-    list: (space_id: string, tag?: string) => this.operate<NotesListResult>("notes.list", { space_id, ...(tag ? { tag } : {}) }),
+    list: (space_id: string, tag?: string, cursor?: string) => this.operate<NotesListResult>("notes.list", { space_id, ...(tag ? { tag } : {}), ...(cursor ? { cursor } : {}) }),
     get: (space_id: string, id: string) => this.operate<NoteResult>("notes.get", { space_id, id }),
     create: (i: NotesCreateInput, requestId?: string) => this.operate<NoteResult>("notes.create", i as unknown as Record<string, unknown>, requestId),
     update: (i: NotesUpdateInput, requestId?: string) => this.operate<NoteResult>("notes.update", i as unknown as Record<string, unknown>, requestId),
