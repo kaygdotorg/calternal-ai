@@ -28,6 +28,25 @@ try {
     await p.screenshot({ path: `${SHOTS}/live-${device}.png` });
     await ctx.close();
   }
+  // The socket drops mid-edit, the page reloads, the room comes back: nothing typed is lost, and the room has it afterwards.
+  { const { page: p, ctx } = await open(browser, "desktop", "light", "/notes/n-2?firstrun=0&live=1&peer=0&test=1");
+    await p.locator(".cm-content").waitFor({ timeout: 15000 });
+    await p.getByText("Saved", { exact: true }).waitFor({ timeout: 8000 });
+    await p.evaluate(() => window.__net.cut());
+    await p.locator(".cm-content").click(); await p.keyboard.press("Control+End"); await p.keyboard.type(" typed while cut off");
+    await p.waitForFunction(() => /Not saved|Can.t reach|Offline|waiting/i.test(document.querySelector(".state")?.textContent ?? ""), null, { timeout: 8000 });
+    ok(true, "offline: with the room unreachable the line says the text is not saved yet");
+    await p.waitForTimeout(600);
+    await p.reload(); await p.locator(".cm-content").waitFor({ timeout: 15000 });
+    await p.waitForFunction(() => document.querySelector(".cm-content")?.textContent.includes("typed while cut off"), null, { timeout: 12000 });
+    ok(true, "offline: after a reload the text typed while cut off is still there (replayed from this device's copy)");
+    await p.getByText("Saved", { exact: true }).waitFor({ timeout: 12000 });
+    ok(true, "offline: and once the room is back it says Saved");
+    await p.waitForTimeout(800);
+    await p.reload(); await p.locator(".cm-content").waitFor({ timeout: 15000 });
+    await p.waitForFunction(() => document.querySelector(".cm-content")?.textContent.includes("typed while cut off"), null, { timeout: 12000 });
+    ok(true, "offline: a second reload still has it (the room kept it)");
+    await ctx.close(); }
 } catch (e) { console.log("FAIL  " + e.message); bad++; }
 await browser.close(); await stop();
 process.exit(bad ? 1 : 0);

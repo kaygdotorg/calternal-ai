@@ -12,13 +12,38 @@ import { ImeGate } from "../../../../../../packages/editor/src/sync/gate";
 import type { Transport } from "../../../../../../packages/editor/src/sync/transport";
 
 const rooms = new Map<string, Room>();
+const KEEP = (id: string) => `cal.fixture-room.${id}`;
+const toB64 = (b: Uint8Array) => { let s = ""; for (let i = 0; i < b.length; i += 0x8000) s += String.fromCharCode(...b.subarray(i, i + 0x8000)); return btoa(s); };
+const fromB64 = (t: string) => Uint8Array.from(atob(t), (c) => c.charCodeAt(0));
+
+/** The room, as a server would keep it between visits: its lineage and state are kept in this browser (written a moment after a change, never per keystroke), so a reload finds the same room. */
+function roomFor(noteId: string, text: string): Room {
+  const room = new Room("");
+  let saved: { lineage: string; state: string } | null = null;
+  try { saved = JSON.parse(localStorage.getItem(KEEP(noteId)) ?? "null"); } catch { /* no kept room */ }
+  if (saved) { room.lineage = saved.lineage; Y.applyUpdate(room.doc, fromB64(saved.state)); } else room.doc.getText("md").insert(0, text);
+  let timer = 0;
+  room.doc.on("update", () => {
+    clearTimeout(timer);
+    timer = window.setTimeout(() => { try { localStorage.setItem(KEEP(noteId), JSON.stringify({ lineage: room.lineage, state: toB64(Y.encodeStateAsUpdate(room.doc)) })); } catch { /* full: the room is just not kept */ } }, 400);
+  });
+  return room;
+}
+
+/** `?test=1`: the network, for the e2e checks: `cut()` drops the connection and keeps it down, `restore()` lets it come back. */
+interface Net { cut(): void; restore(): void }
 
 /** The transport for a note's fixture room, made (with its scripted collaborator) the first time it is asked for. */
 export function fixtureTransport(noteId: string, text: string, lineage: () => string | null, onLineage: (l: string) => void): Transport {
   let room = rooms.get(noteId);
-  if (!room) { room = new Room(text); rooms.set(noteId, room); if (new URLSearchParams(location.search).get("peer") !== "0") collaborator(room); } // `?peer=0`: alone in the room (the typing measurement)
+  if (!room) { room = roomFor(noteId, text); rooms.set(noteId, room); if (new URLSearchParams(location.search).get("peer") !== "0") collaborator(room); } // `?peer=0`: alone in the room (the typing measurement)
   const r = room;
-  return memoryTransport(() => r, lineage, onLineage);
+  const t = memoryTransport(() => r, lineage, onLineage);
+  let down = false;
+  const connect = t.connect.bind(t);
+  t.connect = () => { if (!down) connect(); };
+  if (new URLSearchParams(location.search).has("test")) (globalThis as unknown as { __net: Net }).__net = { cut() { down = true; t.drop(); }, restore() { down = false; t.connect(); } };
+  return t;
 }
 
 /** Maya: joins, moves her cursor around the first lines now and then, and types one line a little while after. */

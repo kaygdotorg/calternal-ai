@@ -53,7 +53,7 @@ class LiveNotes {
     const me = serverMode() ? (await account.me().catch(() => null))?.user.id ?? "" : "acc-you";
     const session = await live.NoteSession.open({
       id: noteId,
-      offline: serverMode(),
+      offline: true, // a copy of the note is kept on this device (IndexedDB): edits made with the room unreachable, or before a reload, are replayed to the room when it is back
       awareness: (doc) => new Awareness(doc),
       transport: (lineage, onLineage) => {
         if (fixture) return fixture.fixtureTransport(noteId, text, lineage, onLineage);
