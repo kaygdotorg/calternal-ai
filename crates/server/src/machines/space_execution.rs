@@ -44,11 +44,9 @@ impl State {
             machine.row.owner == (Owner::Account { id: target.sponsor })
                 && !machine.row.revoked
                 && !machine.row.direct
-                && machine
-                    .live
-                    .as_ref()
-                    .is_none_or(|session| session.shared_provider
-                        && (!target.tools_enabled || session.shared_tools))
+                && machine.live.as_ref().is_none_or(|session| {
+                    session.shared_provider && (!target.tools_enabled || session.shared_tools)
+                })
         })
     }
 
@@ -60,9 +58,11 @@ impl State {
         target: SpaceExecution,
     ) -> Result<(), Error> {
         if !self.space_execution(space)?.is_some_and(|current| {
-            current.machine == target.machine && current.sponsor == target.sponsor
+            current.machine == target.machine
+                && current.sponsor == target.sponsor
                 && (!target.tools_enabled || current.tools_enabled)
-        }) || !self.shared_eligible(target) {
+        }) || !self.shared_eligible(target)
+        {
             return Err(Error::unavailable("shared space machine is unavailable"));
         }
         Ok(())
@@ -115,17 +115,31 @@ impl MachineService {
         }
         .map_err(sql)?;
         if previous.is_some_and(|old| old.tools_enabled)
-            && !st.space_execution(space)?.is_some_and(|current| Some(current.machine) == machine
-                && current.tools_enabled && previous.is_some_and(|old| old.machine == current.machine
-                    && old.sponsor == current.sponsor))
+            && !st.space_execution(space)?.is_some_and(|current| {
+                Some(current.machine) == machine
+                    && current.tools_enabled
+                    && previous.is_some_and(|old| {
+                        old.machine == current.machine && old.sponsor == current.sponsor
+                    })
+            })
         {
-            let affected: Vec<_> = st.leases.values()
-                .filter(|lease| lease.row.space == space && lease.row.shared_tools.is_some()
-                    && lease.state != LeaseState::Ended)
+            let affected: Vec<_> = st
+                .leases
+                .values()
+                .filter(|lease| {
+                    lease.row.space == space
+                        && lease.row.shared_tools.is_some()
+                        && lease.state != LeaseState::Ended
+                })
                 .map(|lease| lease.row.id)
                 .collect();
             for lease in affected {
-                st.end_with_files(lease, "shared tool access was withdrawn", &self.settings, true);
+                st.end_with_files(
+                    lease,
+                    "shared tool access was withdrawn",
+                    &self.settings,
+                    true,
+                );
             }
         }
         Ok(())

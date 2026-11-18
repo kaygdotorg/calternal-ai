@@ -203,18 +203,25 @@ async fn execute<D: Directory>(
         .is_some_and(|previous| {
             *previous != json!(shared.map(|target| target.machine))
                 || job.checkpoint["shared_sponsor"] != json!(shared.map(|target| target.sponsor))
-                || job.checkpoint.get("shared_tools").is_some_and(|old| *old != json!(shared.map(|target| target.tools_enabled)))
+                || job
+                    .checkpoint
+                    .get("shared_tools")
+                    .is_some_and(|old| *old != json!(shared.map(|target| target.tools_enabled)))
         });
     use calternal_machine::protocol::{SharedTools, SharedToolsProvider};
-    let shared_tool_provider = shared.filter(|target| target.tools_enabled).and_then(|_| {
-        match provider_id {
-            "calternal-claude-code" => Some(SharedToolsProvider::Claude),
-            "calternal-codex" => Some(SharedToolsProvider::Codex),
-            _ => None,
-        }
-    });
-    if route_changed || (shared.is_some()
-        && provider_id != "calternal-claude-code" && shared_tool_provider.is_none()) {
+    let shared_tool_provider =
+        shared
+            .filter(|target| target.tools_enabled)
+            .and_then(|_| match provider_id {
+                "calternal-claude-code" => Some(SharedToolsProvider::Claude),
+                "calternal-codex" => Some(SharedToolsProvider::Codex),
+                _ => None,
+            });
+    if route_changed
+        || (shared.is_some()
+            && provider_id != "calternal-claude-code"
+            && shared_tool_provider.is_none())
+    {
         let message = if route_changed {
             "The shared machine changed. Start a new turn to use the new setting."
         } else {
@@ -237,30 +244,49 @@ async fn execute<D: Directory>(
         .await?
     };
     if shared_tool_provider == Some(SharedToolsProvider::Codex) && pin.is_none() {
-        return Err(Error::unavailable("install the qualified Codex harness before enabling shared tools"));
+        return Err(Error::unavailable(
+            "install the qualified Codex harness before enabling shared tools",
+        ));
     }
-    let shared_sandbox = shared_tool_provider.map(|provider| (
-        pin.as_ref().map(|(pin, _)| pin.image.clone()),
-        SharedTools {
-            provider,
-            workspace_read_only: scope.as_ref().is_none_or(|scope| scope.mode != AgentMode::FullAccess),
-        },
-    ));
-    let runtime = pin.as_ref().filter(|_| shared.is_none()).map(|(pin, legacy)| {
-        let read_only = scope
-            .as_ref()
-            .is_some_and(|scope| scope.mode == AgentMode::LeastAccess);
-        let mut sandbox = crate::plugins::package_store::provider_runtime::sandbox(
-            pin,
-            provider_id.to_owned(),
-            calternal_machine::protocol::ProviderLoginScope::Account(account),
-            read_only,
-        );
-        sandbox.legacy_profile = *legacy;
-        (pin.image.clone(), sandbox)
+    let shared_sandbox = shared_tool_provider.map(|provider| {
+        (
+            pin.as_ref().map(|(pin, _)| pin.image.clone()),
+            SharedTools {
+                provider,
+                workspace_read_only: scope
+                    .as_ref()
+                    .is_none_or(|scope| scope.mode != AgentMode::FullAccess),
+            },
+        )
     });
-    let mut checkpoint =
-        super::lease::prepare(state, machines, job, live, space, thread, shared, runtime, shared_sandbox).await?;
+    let runtime = pin
+        .as_ref()
+        .filter(|_| shared.is_none())
+        .map(|(pin, legacy)| {
+            let read_only = scope
+                .as_ref()
+                .is_some_and(|scope| scope.mode == AgentMode::LeastAccess);
+            let mut sandbox = crate::plugins::package_store::provider_runtime::sandbox(
+                pin,
+                provider_id.to_owned(),
+                calternal_machine::protocol::ProviderLoginScope::Account(account),
+                read_only,
+            );
+            sandbox.legacy_profile = *legacy;
+            (pin.image.clone(), sandbox)
+        });
+    let mut checkpoint = super::lease::prepare(
+        state,
+        machines,
+        job,
+        live,
+        space,
+        thread,
+        shared,
+        runtime,
+        shared_sandbox,
+    )
+    .await?;
     let lease_id = checkpoint["lease_id"]
         .as_str()
         .and_then(|id| Uuid::parse_str(id).ok())
@@ -400,7 +426,8 @@ async fn execute<D: Directory>(
         (Vec::new(), None)
     };
     let managed = pin.is_some();
-    let interactive = shared.is_none() && !check && pin.as_ref().is_some_and(|(pin, _)| pin.interactive);
+    let interactive =
+        shared.is_none() && !check && pin.as_ref().is_some_and(|(pin, _)| pin.interactive);
     if let Some((pin, _)) = pin {
         env.push(("CALTERNAL_HARNESS_VERSION".into(), pin.version));
         if let Some(mode) = requested_mode {

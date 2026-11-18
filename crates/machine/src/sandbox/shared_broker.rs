@@ -19,7 +19,12 @@ use calternal_fsio::beneath::Folder;
 use calternal_types::SpaceId;
 use ring::rand::{SecureRandom, SystemRandom};
 use serde::Deserialize;
-use tokio::{io::{AsyncReadExt, AsyncWriteExt}, net::UnixListener, process::Command, sync::{Semaphore, watch}};
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::UnixListener,
+    process::Command,
+    sync::{Semaphore, watch},
+};
 use uuid::Uuid;
 
 use super::{SandboxError, SandboxResult};
@@ -88,8 +93,11 @@ impl Broker {
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => (),
                 Err(e) => return Err(SandboxError::new(e)),
             }
-            std::fs::write(setup.join("client.mjs"), include_str!("shared_broker_client.mjs"))
-                .map_err(SandboxError::new)?;
+            std::fs::write(
+                setup.join("client.mjs"),
+                include_str!("shared_broker_client.mjs"),
+            )
+            .map_err(SandboxError::new)?;
             load_credential(&root, space, provider)
         })
         .await
@@ -120,17 +128,32 @@ impl Broker {
         Self::bind(directory, access, closed, gateway)
     }
 
-    fn bind(directory: PathBuf, access: String, closed: watch::Sender<bool>, gateway: Arc<Gateway>) -> SandboxResult<Self> {
-        let listener = UnixListener::bind(directory.join("gateway.sock")).map_err(SandboxError::new)?;
+    fn bind(
+        directory: PathBuf,
+        access: String,
+        closed: watch::Sender<bool>,
+        gateway: Arc<Gateway>,
+    ) -> SandboxResult<Self> {
+        let listener =
+            UnixListener::bind(directory.join("gateway.sock")).map_err(SandboxError::new)?;
         let router = Router::new().fallback(dispatch).with_state(gateway);
         let listener = tokio::spawn(async move {
             let _ = axum::serve(listener, router).await;
         });
-        Ok(Self { listener, directory, access, closed })
+        Ok(Self {
+            listener,
+            directory,
+            access,
+            closed,
+        })
     }
 }
 
-fn load_credential(root: &Path, space: SpaceId, provider: SharedToolsProvider) -> SandboxResult<HeaderValue> {
+fn load_credential(
+    root: &Path,
+    space: SpaceId,
+    provider: SharedToolsProvider,
+) -> SandboxResult<HeaderValue> {
     let bytes = (|| {
         let directory = Folder::open(root)?
             .child("broker-credentials", false)?
@@ -148,13 +171,20 @@ fn load_credential(root: &Path, space: SpaceId, provider: SharedToolsProvider) -
             return Err(std::io::Error::other("credential size"));
         }
         Ok(bytes)
-    })().map_err(|_: std::io::Error| SandboxError("approved machine-local provider key unavailable".into()))?;
-    let key = std::str::from_utf8(&bytes).ok().map(str::trim).filter(|s| !s.is_empty())
+    })()
+    .map_err(|_: std::io::Error| {
+        SandboxError("approved machine-local provider key unavailable".into())
+    })?;
+    let key = std::str::from_utf8(&bytes)
+        .ok()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
         .ok_or_else(|| SandboxError("invalid machine-local provider key".into()))?;
     let mut value = match provider {
         SharedToolsProvider::Claude => HeaderValue::from_str(key),
         SharedToolsProvider::Codex => HeaderValue::from_str(&format!("Bearer {key}")),
-    }.map_err(|_| SandboxError("invalid machine-local provider key".into()))?;
+    }
+    .map_err(|_| SandboxError("invalid machine-local provider key".into()))?;
     value.set_sensitive(true);
     Ok(value)
 }
@@ -162,9 +192,16 @@ fn load_credential(root: &Path, space: SpaceId, provider: SharedToolsProvider) -
 impl Gateway {
     fn upstream(&self, path: &str) -> Option<(&'static str, &'static str)> {
         match (self.provider, path) {
-            (SharedToolsProvider::Claude, "/v1/messages") => Some(("https://api.anthropic.com/v1/messages", "x-api-key")),
-            (SharedToolsProvider::Claude, "/v1/messages/count_tokens") => Some(("https://api.anthropic.com/v1/messages/count_tokens", "x-api-key")),
-            (SharedToolsProvider::Codex, "/v1/responses") => Some(("https://api.openai.com/v1/responses", "authorization")),
+            (SharedToolsProvider::Claude, "/v1/messages") => {
+                Some(("https://api.anthropic.com/v1/messages", "x-api-key"))
+            }
+            (SharedToolsProvider::Claude, "/v1/messages/count_tokens") => Some((
+                "https://api.anthropic.com/v1/messages/count_tokens",
+                "x-api-key",
+            )),
+            (SharedToolsProvider::Codex, "/v1/responses") => {
+                Some(("https://api.openai.com/v1/responses", "authorization"))
+            }
             _ => None,
         }
     }
@@ -174,7 +211,12 @@ async fn dispatch(State(state): State<Arc<Gateway>>, request: Request) -> Respon
     if *state.closed.borrow() {
         return StatusCode::GONE.into_response();
     }
-    if request.headers().get(header::AUTHORIZATION).and_then(|v| v.to_str().ok()) != Some(state.access.as_str()) {
+    if request
+        .headers()
+        .get(header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        != Some(state.access.as_str())
+    {
         return StatusCode::UNAUTHORIZED.into_response();
     }
     if request.method() != Method::POST {
@@ -191,14 +233,16 @@ async fn dispatch(State(state): State<Arc<Gateway>>, request: Request) -> Respon
     let Some((url, auth)) = state.upstream(path) else {
         return StatusCode::NOT_FOUND.into_response();
     };
-    let Some(body) = isolate_request(&body) else {
+    let Some(body) = isolate_request(&body, state.provider) else {
         return (StatusCode::BAD_REQUEST, "invalid harness request").into_response();
     };
     #[cfg(test)]
     let mock_url = state.mock_base.as_ref().map(|base| format!("{base}{path}"));
     #[cfg(test)]
     let url = mock_url.as_deref().unwrap_or(url);
-    let mut call = state.client.post(url)
+    let mut call = state
+        .client
+        .post(url)
         .header(header::CONTENT_TYPE, "application/json")
         .header(auth, state.credential.clone());
     if state.provider == SharedToolsProvider::Claude {
@@ -214,10 +258,17 @@ async fn dispatch(State(state): State<Arc<Gateway>>, request: Request) -> Respon
     if !reply.status().is_success() {
         // Vendor errors can echo headers or key fragments. Keep their status,
         // and give the harness a deliberately generic provider error.
-        let status = if reply.status().is_redirection() { StatusCode::BAD_GATEWAY } else { reply.status() };
+        let status = if reply.status().is_redirection() {
+            StatusCode::BAD_GATEWAY
+        } else {
+            reply.status()
+        };
         return (status, "provider request failed").into_response();
     }
-    let content_type = reply.headers().get(header::CONTENT_TYPE).cloned()
+    let content_type = reply
+        .headers()
+        .get(header::CONTENT_TYPE)
+        .cloned()
         .unwrap_or_else(|| HeaderValue::from_static("application/json"));
     let streaming = content_type.as_bytes().starts_with(b"text/event-stream");
     let guard = if streaming {
@@ -228,10 +279,17 @@ async fn dispatch(State(state): State<Arc<Gateway>>, request: Request) -> Respon
                     if let Some(end) = event_end(&buffer) {
                         let remainder = buffer.split_off(end);
                         check_event(&buffer)?;
-                        return Ok::<_, std::io::Error>(Some((Bytes::from(buffer), (response, remainder))));
+                        return Ok::<_, std::io::Error>(Some((
+                            Bytes::from(buffer),
+                            (response, remainder),
+                        )));
                     }
                     let Some(chunk) = response.chunk().await.map_err(std::io::Error::other)? else {
-                        return if buffer.is_empty() { Ok(None) } else { Err(rejected_event()) };
+                        return if buffer.is_empty() {
+                            Ok(None)
+                        } else {
+                            Err(rejected_event())
+                        };
                     };
                     if buffer.len().saturating_add(chunk.len()) > BODY_LIMIT {
                         return Err(rejected_event());
@@ -245,8 +303,9 @@ async fn dispatch(State(state): State<Arc<Gateway>>, request: Request) -> Respon
         let mut bytes = Vec::new();
         loop {
             match reply.chunk().await {
-                Ok(Some(chunk)) if bytes.len().saturating_add(chunk.len()) <= BODY_LIMIT =>
-                    bytes.extend_from_slice(&chunk),
+                Ok(Some(chunk)) if bytes.len().saturating_add(chunk.len()) <= BODY_LIMIT => {
+                    bytes.extend_from_slice(&chunk)
+                }
                 Ok(None) => break,
                 _ => return StatusCode::BAD_GATEWAY.into_response(),
             }
@@ -260,25 +319,43 @@ async fn dispatch(State(state): State<Arc<Gateway>>, request: Request) -> Respon
 }
 
 const TOOL: &str = "mcp__workspace__workspace_command";
+const CODEX_NAMESPACE: &str = "mcp__workspace";
+const CODEX_METHOD: &str = "workspace_command";
 
-fn isolate_request(body: &[u8]) -> Option<Vec<u8>> {
+fn isolate_request(body: &[u8], provider: SharedToolsProvider) -> Option<Vec<u8>> {
     let mut body: serde_json::Value = serde_json::from_slice(body).ok()?;
     let contents = body.as_object_mut()?;
     if let Some(tools) = contents.get_mut("tools") {
-        tools.as_array_mut()?.retain(|tool| tool["name"].as_str() == Some(TOOL)
-            && tool.get("type").is_none_or(|kind| kind == "function" || kind == "custom"));
-    }
-    if let Some(choice) = contents.get("tool_choice")
-        && choice.is_object() && choice["name"].as_str().is_some_and(|name| name != TOOL)
-    {
-        return None;
+        tools.as_array_mut()?.retain_mut(|tool| match provider {
+            SharedToolsProvider::Claude => tool["name"] == TOOL && tool.get("type").is_none_or(|kind| kind == "custom"),
+            SharedToolsProvider::Codex => {
+                if tool["type"] == "function" && tool["name"] == TOOL {
+                    return true;
+                }
+                if tool["type"] != "namespace" || tool["name"] != CODEX_NAMESPACE {
+                    return false;
+                }
+                tool["tools"].as_array_mut().is_some_and(|functions| {
+                    functions.retain(|function| {
+                        function["type"] == "function" && function["name"] == CODEX_METHOD
+                    });
+                    !functions.is_empty()
+                })
+            }
+        });
     }
     serde_json::to_vec(&body).ok()
 }
 
 fn event_end(buffer: &[u8]) -> Option<usize> {
-    let lf = buffer.windows(2).position(|bytes| bytes == b"\n\n").map(|at| at + 2);
-    let crlf = buffer.windows(4).position(|bytes| bytes == b"\r\n\r\n").map(|at| at + 4);
+    let lf = buffer
+        .windows(2)
+        .position(|bytes| bytes == b"\n\n")
+        .map(|at| at + 2);
+    let crlf = buffer
+        .windows(4)
+        .position(|bytes| bytes == b"\r\n\r\n")
+        .map(|at| at + 4);
     lf.into_iter().chain(crlf).min()
 }
 
@@ -286,7 +363,9 @@ fn check_event(frame: &[u8]) -> std::io::Result<()> {
     let mut data = Vec::new();
     for line in frame.split(|byte| *byte == b'\n') {
         if let Some(value) = line.strip_prefix(b"data:") {
-            if !data.is_empty() { data.push(b'\n'); }
+            if !data.is_empty() {
+                data.push(b'\n');
+            }
             data.extend_from_slice(value.strip_prefix(b" ").unwrap_or(value));
         }
     }
@@ -306,9 +385,19 @@ fn valid_reply(body: &[u8]) -> bool {
         match node {
             serde_json::Value::Object(fields) => {
                 let kind = fields.get("type").and_then(|kind| kind.as_str());
-                if matches!(kind, Some("tool_use" | "function_call" | "custom_tool_call"))
-                    && fields.get("name").and_then(|name| name.as_str()) != Some(TOOL)
-                {
+                let name = fields.get("name").and_then(|name| name.as_str());
+                let namespace = fields.get("namespace").and_then(|name| name.as_str());
+                let allowed_call = match kind {
+                    Some("tool_use") => name == Some(TOOL),
+                    Some("function_call") => match namespace {
+                        Some(CODEX_NAMESPACE) => name == Some(CODEX_METHOD),
+                        None => name == Some(TOOL),
+                        _ => false,
+                    },
+                    Some("custom_tool_call") => false,
+                    _ => true,
+                };
+                if !allowed_call {
                     return false;
                 }
                 fields.values().all(allowed)
@@ -317,7 +406,9 @@ fn valid_reply(body: &[u8]) -> bool {
             _ => true,
         }
     }
-    serde_json::from_slice(body).ok().is_some_and(|value| allowed(&value))
+    serde_json::from_slice(body)
+        .ok()
+        .is_some_and(|value| allowed(&value))
 }
 
 #[derive(Deserialize)]
@@ -343,21 +434,57 @@ async fn run_tool(state: &Gateway, body: &[u8]) -> Response {
 }
 
 impl ToolSandbox {
-    async fn execute(&self, command: String, mut closed: watch::Receiver<bool>) -> SandboxResult<String> {
+    async fn execute(
+        &self,
+        command: String,
+        mut closed: watch::Receiver<bool>,
+    ) -> SandboxResult<String> {
         if *closed.borrow() {
             return Err(SandboxError("tool lease closed".into()));
         }
         let name = format!("calternal-shared-tool-{}", Uuid::new_v4());
-        let mount = format!("{}:/work:{}", self.work.display(), if self.writable { "rw" } else { "ro" });
+        let mount = format!(
+            "{}:/work:{}",
+            self.work.display(),
+            if self.writable { "rw" } else { "ro" }
+        );
         let mut child = Command::new(&self.podman)
-            .args(["run", "-i", "--rm", "--pull=never", "--network=none", "--pid=private",
-                "--ipc=private", "--read-only", "--cap-drop=all",
-                "--security-opt=no-new-privileges", "--userns=keep-id:uid=65534,gid=65534",
-                "--user=65534:65534", "--http-proxy=false", "--log-driver=none", "--image-volume=ignore",
-                "--memory=256m", "--pids-limit=32", "--timeout=20",
-                "--name", &name, "--label", &self.root_label, "--volume", &mount, "--workdir", "/work",
-                "--entrypoint=/usr/bin/env", &self.image, "-i", "LANG=C.UTF-8",
-                "HOME=/tmp", "PATH=/usr/bin:/bin", "/bin/sh", "-s"])
+            .args([
+                "run",
+                "-i",
+                "--rm",
+                "--pull=never",
+                "--network=none",
+                "--pid=private",
+                "--ipc=private",
+                "--read-only",
+                "--cap-drop=all",
+                "--security-opt=no-new-privileges",
+                "--userns=keep-id:uid=65534,gid=65534",
+                "--user=65534:65534",
+                "--http-proxy=false",
+                "--log-driver=none",
+                "--image-volume=ignore",
+                "--memory=256m",
+                "--pids-limit=32",
+                "--timeout=20",
+                "--name",
+                &name,
+                "--label",
+                &self.root_label,
+                "--volume",
+                &mount,
+                "--workdir",
+                "/work",
+                "--entrypoint=/usr/bin/env",
+                &self.image,
+                "-i",
+                "LANG=C.UTF-8",
+                "HOME=/tmp",
+                "PATH=/usr/bin:/bin",
+                "/bin/sh",
+                "-s",
+            ])
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
@@ -382,11 +509,19 @@ impl ToolSandbox {
         };
         if result.is_err() {
             let _ = child.start_kill();
-            let _ = Command::new(&self.podman).args(["rm", "-f", "--ignore", &name])
-                .stdout(Stdio::null()).stderr(Stdio::null()).status().await;
+            let _ = Command::new(&self.podman)
+                .args(["rm", "-f", "--ignore", &name])
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status()
+                .await;
         }
         let status = result?;
-        Ok(format!("Exit {}\n{}", status.code().unwrap_or(-1), String::from_utf8_lossy(&output)))
+        Ok(format!(
+            "Exit {}\n{}",
+            status.code().unwrap_or(-1),
+            String::from_utf8_lossy(&output)
+        ))
     }
 }
 

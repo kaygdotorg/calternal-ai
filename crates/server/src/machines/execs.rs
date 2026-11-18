@@ -64,8 +64,9 @@ impl MachineService {
         provider: Option<calternal_machine::protocol::SharedToolsProvider>,
     ) -> Result<Uuid, Error> {
         let executable = match provider {
-            Some(calternal_machine::protocol::SharedToolsProvider::Codex) =>
-                "/opt/calternal-provider/bin/calternal-provider-codex",
+            Some(calternal_machine::protocol::SharedToolsProvider::Codex) => {
+                "/opt/calternal-provider/bin/calternal-provider-codex"
+            }
             _ => crate::turns::space_execution::SHARED_ADAPTER,
         };
         self.queued_exec(

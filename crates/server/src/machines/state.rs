@@ -233,8 +233,9 @@ impl State {
                 .machines
                 .get(&machine)
                 .and_then(|m| m.live.as_ref())
-                .is_some_and(|live| live.shared_provider
-                    && (l.row.shared_tools.is_none() || live.shared_tools))
+                .is_some_and(|live| {
+                    live.shared_provider && (l.row.shared_tools.is_none() || live.shared_tools)
+                })
         {
             return;
         }

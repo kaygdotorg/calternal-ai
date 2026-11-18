@@ -21,9 +21,9 @@ use std::sync::{Arc, Mutex};
 use rustix::process::{Pid, Signal, kill_process_group, test_kill_process_group};
 use uuid::Uuid;
 
+use super::shared_broker::{Broker, ToolSandbox};
 use super::{Backend, BoxFuture, Exec, ExecRequest, Sandbox, SandboxError, SandboxResult};
 use crate::protocol::{Limits, SandboxSpec};
-use super::shared_broker::{Broker, ToolSandbox};
 
 mod ownership;
 
@@ -477,7 +477,13 @@ impl Sandbox for PodmanSandbox {
                 "exec",
                 "-i",
                 "--workdir",
-                if self.worker { "/plugin" } else if self.broker.is_some() { "/home/agent" } else { "/work" },
+                if self.worker {
+                    "/plugin"
+                } else if self.broker.is_some() {
+                    "/home/agent"
+                } else {
+                    "/work"
+                },
             ]);
             for (k, v) in &request.env {
                 // Podman resolves a name-only --env from its own environment.

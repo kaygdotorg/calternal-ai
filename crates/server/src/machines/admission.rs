@@ -181,7 +181,10 @@ impl MachineService {
         provider_login: bool,
         background_title: bool,
         harness: Option<calternal_machine::protocol::HarnessSandbox>,
-        shared: Option<(SpaceExecution, Option<calternal_machine::protocol::SharedTools>)>,
+        shared: Option<(
+            SpaceExecution,
+            Option<calternal_machine::protocol::SharedTools>,
+        )>,
     ) -> Result<RunView, Error> {
         let _account = self
             .lifecycle

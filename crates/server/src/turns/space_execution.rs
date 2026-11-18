@@ -45,10 +45,14 @@ pub(super) async fn dispatch<D: Directory>(
                 .ok_or_else(|| Error::invalid_input("only shared spaces have a shared machine"))?;
             if tools_enabled == Some(true) {
                 if who.id != sponsor {
-                    return Err(Error::forbidden("only the space Owner can enable shared tools"));
+                    return Err(Error::forbidden(
+                        "only the space Owner can enable shared tools",
+                    ));
                 }
                 if machine.is_none() {
-                    return Err(Error::invalid_input("choose a shared machine before enabling tools"));
+                    return Err(Error::invalid_input(
+                        "choose a shared machine before enabling tools",
+                    ));
                 }
             }
             machines.set_space_execution(space, sponsor, machine, tools_enabled)?;

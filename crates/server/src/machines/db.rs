@@ -350,10 +350,17 @@ fn lease_from(r: &rusqlite::Row<'_>) -> rusqlite::Result<LeaseRow> {
             .get::<_, Option<String>>(15)?
             .map(|id| typed(15, id))
             .transpose()?,
-        shared_tools: r.get::<_, Option<String>>(16)?
+        shared_tools: r
+            .get::<_, Option<String>>(16)?
             .map(|value| serde_json::from_str(&value))
-            .transpose().map_err(|error| rusqlite::Error::FromSqlConversionFailure(
-                16, rusqlite::types::Type::Text, Box::new(error)))?,
+            .transpose()
+            .map_err(|error| {
+                rusqlite::Error::FromSqlConversionFailure(
+                    16,
+                    rusqlite::types::Type::Text,
+                    Box::new(error),
+                )
+            })?,
     })
 }
 

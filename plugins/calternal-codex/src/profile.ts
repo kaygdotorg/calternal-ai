@@ -110,6 +110,7 @@ export async function prepareProfile(workspace: string, mode: AgentMode, withBro
     'mcp_servers.workspace.enabled_tools=["workspace_command"]',
     'mcp_servers.workspace.env_vars=["CALTERNAL_GATEWAY_TOKEN"]',
     'mcp_servers.workspace.required=true',
+    'mcp_servers.workspace.tools.workspace_command.approval_mode="approve"',
   ] : [];
   const args = [
     ...gatewayArgs,
