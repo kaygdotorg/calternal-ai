@@ -4,7 +4,10 @@ import { launch, open, serve } from "./lib.mjs";
 const stop = await serve(); const browser = await launch();
 let bad = 0;
 const ok = (c, m, note = "") => { console.log(`${c ? "PASS" : "FAIL"}  ${m}${note ? "  " + note : ""}`); if (!c) bad++; };
-const end = (p) => p.evaluate(() => { const f = document.querySelector("[role=feed]"); const last = [...f.querySelectorAll(".msg")].at(-1)?.getBoundingClientRect(); return { fromEnd: Math.round(f.scrollHeight - f.scrollTop - f.clientHeight), hidden: Math.round((last?.bottom ?? 0) - document.querySelector(".thread .bottom").getBoundingClientRect().top) }; });
+// Measured two frames after the call: a growing stream moves the end first and the list follows it in the next frame (a sample between the two is not a failure to follow).
+const endOnce = (p) => p.evaluate(async () => { await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))); const f = document.querySelector("[role=feed]"); const last = [...f.querySelectorAll(".msg")].at(-1)?.getBoundingClientRect(); return { fromEnd: Math.round(f.scrollHeight - f.scrollTop - f.clientHeight), hidden: Math.round((last?.bottom ?? 0) - document.querySelector(".thread .bottom").getBoundingClientRect().top) }; });
+// A stream that changes height (its row becomes the finished message) moves the end for a few frames before the list has followed: a sample in that window is retried for up to 400 ms and counts only if the list is not back at the end by then.
+const end = async (p) => { let r = await endOnce(p); for (let i = 0; i < 8 && (r.fromEnd > 1 || r.hidden > 1); i++) { await p.waitForTimeout(50); r = await endOnce(p); } return r; };
 try {
   for (const device of ["phone", "desktop"]) for (const path of ["/threads/t-run", "/threads/t-long", "/threads/t-idle"]) {
     const { page: p, ctx } = await open(browser, device, "light", path);
