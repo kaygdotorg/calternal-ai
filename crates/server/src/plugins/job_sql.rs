@@ -177,6 +177,7 @@ struct Active {
     parent: Option<String>,
     diagnostic: bool,
     package_revision: u32,
+    automation: bool,
 }
 
 impl Jobs {
@@ -201,7 +202,7 @@ impl Jobs {
         for space in spaces {
             let woken = self.tx(&space, |tx| {
                 let mut st = tx
-                    .prepare(&format!("SELECT id,state,plugin,operation,runs,parent,json_extract(input,'$.verify') IS 1,(generation >> 32) & 4294967295 FROM jobs WHERE state IN {ACTIVE}"))
+                    .prepare(&format!("SELECT id,state,plugin,operation,runs,parent,json_extract(input,'$.verify') IS 1,(generation >> 32) & 4294967295, json_type(input,'$.thread_request.automation_run') IS 'object' FROM jobs WHERE state IN {ACTIVE}"))
                     .map_err(db_err)?;
                 let rows = st
                     .query_map([], |r| {
@@ -214,6 +215,7 @@ impl Jobs {
                             parent: r.get(5)?,
                             diagnostic: r.get(6)?,
                             package_revision: r.get(7)?,
+                            automation: r.get(8)?,
                         })
                     })
                     .map_err(db_err)?
@@ -221,11 +223,12 @@ impl Jobs {
                     .map_err(db_err)?;
                 drop(st);
                 let mut wake = vec![];
-                for Active { id, state, plugin, operation, runs, parent, diagnostic, package_revision } in rows {
+                for Active { id, state, plugin, operation, runs, parent, diagnostic, package_revision, automation } in rows {
                     if operation == "agent.turn" {
                         if diagnostic {
                             set_state(tx, &id, JobState::OutcomeUnknown, "null")?;
-                        } else if !matches!(state.as_str(), "retry_waiting" | "waiting") {
+                        } else if !(matches!(state.as_str(), "retry_waiting" | "waiting")
+                            || automation && state == "admitted" && runs == 0) {
                             tx.execute(
                                 "UPDATE jobs SET state='interrupted',checkpoint=json_set(coalesce(nullif(checkpoint,'null'),'{}'),'$.interruption',json_object('why','server_restarted')) WHERE id=?1",
                                 [&id],

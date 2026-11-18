@@ -65,6 +65,21 @@ Generated operation schemas. Capability and risk are shown only when the catalog
 - [people.lookup](./people-lookup/): Find mentionable accounts and groups in a space.
 - [skills.list](./skills-list/): List visible space skills and their descriptions.
 - [plugins.manifests](./plugins-manifests/): List palette contributions from enabled plugins.
+- [skills.read](./skills-read/): Read the portable document of a named skill
+- [skills.create](./skills-create/): Create a portable skill in its own space folder
+- [skills.update](./skills-update/): Write a new revision of a skill document
+- [skills.remove](./skills-remove/): Move a skill bundle to Trash
+- [automations.preview_schedule](./automations-preview-schedule/): Parse a schedule and preview it in your account zone
+- [automations.list](./automations-list/): List a space's automation definitions and status
+- [automations.read](./automations-read/): Read an automation and its prompt
+- [automations.create](./automations-create/): Create an automation for your account
+- [automations.update](./automations-update/): Update your automation at a known revision
+- [automations.enable](./automations-enable/): Enable scheduled runs for your automation
+- [automations.pause](./automations-pause/): Pause future runs for an automation
+- [automations.remove](./automations-remove/): Move an automation definition to Trash
+- [automations.run_now](./automations-run-now/): Start a thread for your automation
+- [automations.next_run](./automations-next-run/): Read the next scheduled run
+- [automations.last_run](./automations-last-run/): Read the latest automation outcome
 - [collections.get](./collections-get/): Open a saved notes collection
 - [collections.create](./collections-create/): Save an explicit set of notes in one space
 - [collections.set_members](./collections-set-members/): Replace a saved collection's explicit notes

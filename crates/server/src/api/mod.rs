@@ -45,7 +45,7 @@ mod plugin_slots;
 mod plugins;
 mod request;
 mod search;
-mod search_skills;
+pub(crate) mod search_skills;
 mod sharing;
 
 pub(crate) mod appearance;
@@ -114,6 +114,11 @@ pub fn configure_search<D: Directory>(
         .configure_search(source, crate::threads::search::decode)
 }
 
+/// Start one bounded background automation scheduler after turn recovery.
+pub fn configure_automations<D: Directory>(state: &Shared<D>) {
+    crate::automations::scheduling::start(state);
+}
+
 /// Construct the exact loopback hostnames accepted for a bound listener port.
 pub fn allowed_hosts(port: u16) -> Vec<String> {
     vec![
@@ -132,7 +137,7 @@ pub fn router<D: Directory>(state: Shared<D>, web_dir: Option<PathBuf>) -> Route
             "/api/v1/account/live",
             get(crate::account_input::events::<D>),
         )
-        .route("/api/v1/live", get(crate::live::events::<D>))
+        .route("/api/v1/live", get(crate::live_rooms::entry::<D>))
         .route(
             "/api/v1/plugin-slots/live",
             get(plugin_slots::live::events::<D>),

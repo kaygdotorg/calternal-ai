@@ -23,6 +23,12 @@
   let { id }: { id?: string } = $props();
   // Live editing (`?live=1`): the note is a room, other people's cursors and presence show, and the room (not an HTTP save) keeps the text. Off by default; nothing of it loads when off.
   const liveMode = liveOn();
+  // Edits owed to the personal space after access ended are sent now and whenever the browser comes back online.
+  $effect(() => {
+    const go = () => void live.settleOwed();
+    go(); addEventListener("online", go);
+    return () => removeEventListener("online", go);
+  });
   const noteId = $derived(notes.note?.id);
   $effect(() => {
     const nid = noteId;
@@ -123,7 +129,7 @@
         <p class="draft" role="alert">Someone changed this note while you were editing it. Your text is kept here. <Button variant="primary" text="Keep mine" onclick={() => notes.keepMine(titleOf(editor?.current() ?? latest), editor?.current() ?? latest)} /> <Button variant="quiet" text="Use theirs" onclick={() => notes.takeTheirs()} /></p>
       {/if}
       {#if notes.error}<p class="err" role="alert">{notes.error}</p>{/if}
-      {#if liveMode && live.notice}<p class="err" role="alert">{live.notice}</p>{/if}
+      {#if live.notice}<p class="err" role="alert">{live.notice}</p>{/if}
     {:else}
       <h1>{notes.error ? (notes.errorCode === "unavailable" ? "Can't reach the server" : notes.errorCode === "forbidden" ? "You can't open this note" : id ? "Note not found" : "Notes") : id ? "Note not found" : "Notes"}</h1>
       <p class="lede">{notes.error || (id ? "It may have been removed, or you may not have access." : notes.list.length ? "Choose a note on the left, or make a new one." : "A note is a page of Markdown that you and your agents can read and edit. This space has none yet.")}</p>

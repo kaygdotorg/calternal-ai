@@ -369,6 +369,8 @@ directory lacks `plugins/calternal-orchestrator/manifest.json`. Deployments
 using `--plugin-root` provide their own trusted plugin tree. An authorized
 fresh space lists zero threads before any conversation is created.
 
+The [Skills and Automations operations](automations.md) cover portable skill bundles and scheduled turn admission.
+
 ## Readable file format
 
 The owner approved the heading layout and one file per thread. A conversation

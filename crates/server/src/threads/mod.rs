@@ -1,5 +1,6 @@
 //! Threads product engine: manifest policy, content files and the existing turn engine.
 //! All durable work runs on blocking workers; no independent store or global lock.
+pub(crate) mod automation;
 mod delta;
 mod document;
 mod headings;

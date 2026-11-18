@@ -36,3 +36,9 @@ Named grants `{grant_id, permission, audience, name}`; link grants `{grant_id, p
 ## Checked
 
 `apps/web/e2e/share.mjs` (in the gate): both device sizes, the sentence, add a person and a group, View/Edit, a link, QR, Copy, remove, Editor and Viewer limits, Shared with me, the owner's avatar, the guest page signed in and out. Phone frames on the iPhone Simulator are on the issue.
+
+## Live rooms (`?live=1`, off by default)
+
+The note opens as a room; other people's cursors, presence avatars in the header, the save line from the room's receipts, the fixture room with a scripted collaborator (fixtures mode), receive-side reassembly of `+` pieces, a strict `joined` check, `access_revoked` ending a membership, and rescue owed (kept in IndexedDB until `sharing.rescue` succeeds).
+
+Known: on a touch screen a name shows beside a cursor for two seconds when someone's cursor moves; the cursor plugin gives no per-person hook, so every visible name shows at once, not only the one who moved (acceptable with one or two collaborators; exact per-person labels would mean owning the cursor drawing). Pressing the presence avatars shows every name until the next press elsewhere.

@@ -10,6 +10,7 @@ pub mod api;
 mod asset_cache;
 pub mod auth;
 pub mod authz;
+mod automations;
 pub mod blocking;
 pub mod erasure;
 pub mod fault;
@@ -20,13 +21,13 @@ pub mod plugins;
 #[cfg(feature = "rebuild-probe")]
 pub mod rebuild_probe;
 pub mod resolve;
-pub mod room_eviction;
 pub mod secrets;
 pub mod store;
 
 pub mod turns;
 
 pub mod live;
+mod live_rooms;
 
 pub mod account_input;
 mod netguard;

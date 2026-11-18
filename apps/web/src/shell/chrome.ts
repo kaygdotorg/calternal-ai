@@ -4,9 +4,10 @@
  *  - Safe areas: the shell pads regions by the notch and the home indicator (`--safe-*` tokens, docs/ui-shell.md "Safe areas"); apps and plugins get that padding from the shell and never read `env()` themselves.
  *  - The bars take the wallpaper's colour: Safari tints its toolbar and status bar from `theme-color`; it is set to the colour at the top of the page (the card's top edge, the wallpaper copy under its veil), and only
  *    written when it really changes (some browsers repaint their chrome on every write, even of the same value, and it shows as a flicker up there).
- *  - A home-screen app on iOS 26 and 27 is laid out one status bar shorter than the screen (`100dvh`, `innerHeight` and `position: fixed` boxes stop about 62 px above the bottom: WebKit bugs 301994 and 301108),
- *    so no unit is trusted alone: a zero-width fixed probe measures the layout viewport, and where the page runs under the status bar the screen's own size counts too. The tallest sizes the app (`--vh` on the root);
- *    `data-home-screen` marks it. Only a home-screen app, never a Safari tab, Android or a desktop browser.
+ *  - A home-screen app on iOS 26 and 27 is laid out one status bar shorter than the screen (`100dvh`, `innerHeight` and `position: fixed` boxes stop about 62 px above the bottom: WebKit bugs 301994 and 301108).
+ *    Checked on the iPhone Simulator (iOS 27.0, installed app): nothing drawn below that line is painted at all, so a box made taller than the layout viewport is cut (the composer, the sidebar's footer). The app is therefore exactly as
+ *    tall as a zero-width fixed probe measures the layout viewport (`--vh` on the root; `data-home-screen` marks it), with the keyboard handled by the visual viewport rule below; the strip under it shows the page background, which is
+ *    the wallpaper's edge colour (`--bars`). Only a home-screen app, never a Safari tab, Android or a desktop browser.
  *  - The keyboard: iOS keeps the layout viewport under the keyboard, so a field at the bottom hides behind it. While a text field is focused, the part of the screen the keyboard covers goes to `--kb` and the shell
  *    lifts by it. Where the browser resizes the page itself (Android Chrome, `interactive-widget=resizes-content`) the difference is zero and nothing happens.
  */
@@ -37,15 +38,6 @@ export function setThemeColor(color: string): void {
   try { const k = root().dataset.scheme ?? "light", all = JSON.parse(localStorage.getItem("cal.bars") || "{}") as Record<string, string>; if (all[k] !== color) localStorage.setItem("cal.bars", JSON.stringify({ ...all, [k]: color })); } catch { /* storage off */ } // for the next load (public/boot.js)
 }
 
-/** The screen's own height when the app covers the whole screen (under the status bar, or turned on its side), else 0. */
-function screenTall(safeTop: number): number {
-  const short = Math.min(screen.width, screen.height), long = Math.max(screen.width, screen.height);
-  const portrait = innerHeight >= innerWidth;
-  if (!(safeTop > 0 || !portrait)) return 0;
-  if (Math.abs(innerWidth - (portrait ? short : long)) > 1) return 0; // a window beside another (an iPad), not a full-screen app
-  return portrait ? long : short;
-}
-
 let started = false;
 /**
  * Starts following the viewport: the home-screen height and the keyboard. Call once, after the first paint. Cost: one `ResizeObserver` on a zero-width probe, `resize` and `visualViewport` listeners that write
@@ -64,7 +56,7 @@ export function startChrome(): void {
     let height = 0;
     const fit = () => {
       const typing = !!document.activeElement && /^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName);
-      const h = Math.max(Math.round(probe.getBoundingClientRect().height), screenTall(parseFloat(getComputedStyle(probe).paddingTop) || 0));
+      const h = Math.round(probe.getBoundingClientRect().height); // what the browser really lays out and paints; the screen below it (a status bar short on iOS 26 and 27) is the page background
       if (!h || h === height || (h < height && typing)) return; // the keyboard never makes the app shorter
       height = h;
       setRootVar("--vh", `${h}px`);

@@ -51,6 +51,28 @@ pub(super) fn run(
             placement_breach: false,
         });
     }
+    if a.rooms_only {
+        let space = space.as_str().ok_or("invalid fixture space")?;
+        let item = first["id"].as_str().ok_or("invalid fixture note")?;
+        samples.extend(crate::rooms::sample(
+            &h,
+            space,
+            item,
+            a.samples,
+            require_commit_timings,
+            &root.join("server.log"),
+        )?);
+        if a.room_access_storm {
+            samples.insert(
+                crate::rooms::ACCESS_STORM.into(),
+                crate::rooms::sample_access_storm(&mut h, space, item)?,
+            );
+        }
+        return Ok(ScenarioObservations {
+            samples,
+            placement_breach: false,
+        });
+    }
     if a.paired_search {
         search_stage::first_use(&server, &mut h, root, &space, &mut first, &mut samples)?;
         let enabled = samples["search.rebuild.index_on"][0] == 1.0;
