@@ -60,8 +60,8 @@
 <style>
   /* The card itself is the shared one; these rules only place the window's own parts. The slot gives it its height. */
   :global(.card.win) { height: 100%; }
-  /* Where canvas=0's card keeps the app (above the app switcher's row), so a single window lays out exactly as the card does. */
-  .body { position: absolute; inset: 0 0 var(--switcher-clear, 0px) 0; }
+  /* The app fills the window: the app switcher is not on the canvas (it is in the left sidebar), so windows use the full height. */
+  .body { position: absolute; inset: 0; }
   /* Inactive windows: a neutral veil (black, never the wallpaper's colour) over the content, under the controls; the controls recede. Both ease on the motion tokens (instant from the keyboard: the shell's rule). */
   .dim { position: absolute; inset: 0; z-index: 4; pointer-events: none; opacity: 0; background: var(--dim-veil); border-radius: inherit; transition: opacity var(--dur-base) var(--ease-out); }
   :global(:root) { --dim-veil: rgb(0 0 0 / 0.07); }

@@ -48,7 +48,7 @@ try {
     // ---- chrome ----
     ok((await p.locator("[data-canvas]").getByText(/\d+ windows?/).count()) === 0 && (await p.getByRole("button", { name: "Open another window" }).count()) === 0, "the canvas carries no counter and no plus");
     const g = await p.evaluate(() => { const c = document.querySelector("[data-canvas]").getBoundingClientRect(), bar = document.querySelector(".appbar")?.getBoundingClientRect(); const wb = Math.max(...[...document.querySelectorAll("[data-win]")].map((w) => w.getBoundingClientRect().bottom)); const bodyB = Math.max(...[...document.querySelectorAll("[data-win] > .body")].map((w) => w.getBoundingClientRect().bottom)); return { cb: c.bottom, bt: bar?.top, wb, bodyB, hasCard: !!document.querySelector(".mid-card") }; });
-    ok(g.bt < g.cb && Math.abs(g.wb - g.cb) < 1 && g.bodyB <= g.bt + 1, "the windows run to the bottom edge, the capsule floats over them, and their content stops above it", JSON.stringify(g));
+    ok(Math.abs(g.wb - g.cb) < 1 && Math.abs(g.bodyB - g.wb) < 1, "the windows run to the bottom edge and their content uses the full height (the app switcher is not on the canvas)", JSON.stringify(g));
     for (const [i, w] of (await wins(p).all()).entries()) {
       const titles = await w.evaluate((e) => [...e.querySelectorAll(".wt, header .title")].filter((t) => t.getClientRects().length).length);
       const buttons = await w.locator(".tr button").evaluateAll((b) => b.map((x) => x.getAttribute("aria-label")));

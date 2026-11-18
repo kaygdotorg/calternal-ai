@@ -76,29 +76,10 @@
     place();
   }
   $effect(() => { void canvas.cols; void mounted; void vw; void vh; void pad; void tick().then(refreshPics); });
-  /**
-   * The app switcher floats in the shell's one slot at the area's bottom centre (`.area > .appbar`); here it is carried to the middle of the focused window's visible part (clamped inside the area), so it never straddles the boundary of two windows or a window's corner (as long
-   * as the window is wider than it). It is one transform on one element, written in the frame that moves the strip while panning, and eased on the motion token when the focus or the layout changes.
-   */
-  function placeCapsule(animate: boolean) {
-    const bar = el?.closest(".area")?.querySelector<HTMLElement>(":scope > .appbar");
-    const cap = bar?.querySelector<HTMLElement>(".sw") ?? null;
-    if (!bar || !cap) return;
-    const f = canvas.colIndexOf(canvas.focus);
-    let dx = 0;
-    if (f >= 0 && !canvas.max) {
-      const l = leftOf(widths, f, vw) + pad - x, a = Math.max(0, l), b = Math.min(vw, l + widths[f]!), half = cap.offsetWidth / 2;
-      dx = Math.max(half, Math.min(vw - half, (a + b) / 2)) - vw / 2;
-    }
-    bar.style.transition = animate && !reduced() ? `transform var(--dur-base) var(--ease-out)` : "none";
-    bar.style.transform = dx ? `translate3d(${dx}px,0,0)` : "";
-  }
-  $effect(() => { void canvas.focus; void canvas.cols; void widths; void vw; void pad; void canvas.max; void tick().then(() => placeCapsule(true)); });
   const write = () => {
     frame = 0;
     if (strip) strip.style.transform = `translate3d(${-x}px,0,0)`;
     place();
-    placeCapsule(false);
     if (Math.abs(x - vx) > vw / 4) vx = x;
   };
   const apply = () => { if (!frame) frame = requestAnimationFrame(write); };
@@ -440,7 +421,7 @@
 
 <style>
   /* The area between the sidebars is the canvas and paints nothing: behind the windows is the one veiled wallpaper layer the sidebars sit on (shell/Backdrop.svelte), so every pixel outside the windows is the same with and without them. The windows are middle cards. */
-  .canvas { --switcher-clear: calc(var(--s-3) + var(--pill-h) + var(--s-4)); position: absolute; inset: 0; overflow: hidden; touch-action: pan-x pan-y; overscroll-behavior: contain; }
+  .canvas { position: absolute; inset: 0; overflow: hidden; touch-action: pan-x pan-y; overscroll-behavior: contain; }
   .view { position: absolute; inset: 0; z-index: 1; }
   .strip { position: absolute; top: 0; bottom: 0; left: 0; will-change: transform; }
   /* Columns run from the top to the bottom edge of the area as today's card does; the gap between stacked windows is the same 8 px. */
