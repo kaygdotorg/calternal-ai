@@ -269,7 +269,10 @@ mod tests {
         "space content.db",
         3,
         INITIAL,
-        &[THREAD_SNOOZE, include_str!("collection_members.sql")],
+        &[
+            (4, THREAD_SNOOZE),
+            (5, include_str!("collection_members.sql")),
+        ],
     );
 
     #[test]
