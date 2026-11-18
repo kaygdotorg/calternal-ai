@@ -236,6 +236,8 @@
   :global(html[data-home-screen]) .shell { bottom: auto; height: calc(var(--vh, 100%) - var(--kb, 0px)); }
   /* A phone lays the card and the two sidebars out as fixed boxes of their own: on a home-screen app they are as tall as the screen too (the layout viewport is a status bar short there), not just the shell. */
   :global(html[data-home-screen]) .narrow .mid, :global(html[data-home-screen]) .narrow .side, :global(html[data-home-screen]) .narrow .right { bottom: auto; height: calc(var(--vh, 100%) - var(--kb, 0px)); }
+  /* A phone keyboard in a Safari tab pans the visual viewport instead of resizing the layout one (shell/chrome.ts): while it is up the shell and the three fixed panes occupy the visual viewport, so the header stays in view and the composer sits on the keyboard. */
+  :global(html[data-kb]) .shell, :global(html[data-kb]) .narrow .mid, :global(html[data-kb]) .narrow .side, :global(html[data-kb]) .narrow .right { top: var(--vvt, 0px); bottom: auto; height: var(--vvh, 100%); }
   .shell[data-sidebar="false"] { --sw: 0px; }
   .shell[data-right="false"] { --rw: 0px; }
   /* Each surface carries its own secondary inks, solved from the pixels under it (appearance/veil.ts). */

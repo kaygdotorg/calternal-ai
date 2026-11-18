@@ -50,6 +50,8 @@ export const DEVICES = {
 export async function open(browser, device, scheme, path) {
   const ctx = await browser.newContext({ ...DEVICES[device], colorScheme: scheme, reducedMotion: "no-preference" });
   if (!process.env.CAL_FIRSTRUN) await ctx.addInitScript(() => { try { localStorage.setItem("cal.firstrun", "1"); } catch { /* none */ } });
+  // CAL_CANVAS=1 runs any suite with the canvas on (the fixtures build's `?canvas=1` is remembered for the visit in sessionStorage): the same checks, windows instead of one card.
+  if (process.env.CAL_CANVAS === "1") await ctx.addInitScript(() => { try { sessionStorage.setItem("cal.canvas.on", "1"); if (!localStorage.getItem("cal.canvas.prefs") && !location.search.includes("canvas=1")) localStorage.setItem("cal.canvas.prefs", JSON.stringify({ look: "card", width: 1 })); /* a window opens at the full width, as the one card the suites were written for does */ } catch { /* none */ } });
   const page = await ctx.newPage();
   await page.goto(BASE + path);
   await page.waitForSelector("html[data-ready]");
@@ -63,7 +65,7 @@ export const launch = () => chromium.launch();
 /** Focuses the composer and waits until it has expanded and its morph has finished (the context and chips rows are in the layout and fully drawn): unfocused, the composer is collapsed and its chips are not there to click. Waits for the state, not for a time. */
 export async function expandComposer(page) {
   await page.locator("#composer-field").click();
-  await page.waitForFunction(() => { const c = document.querySelector(".composer"); const r = c?.querySelector(".chips"); return !!c && !c.hasAttribute("data-collapsed") && !!r && getComputedStyle(r).display !== "none" && !c.getAnimations({ subtree: true }).some((a) => a.playState === "running" && a.effect?.getComputedTiming().iterations !== Infinity); });
+  await page.waitForFunction(() => { const c = (document.querySelector("[data-win][data-focused]") ?? document).querySelector(".composer"); const r = c?.querySelector(".chips"); return !!c && !c.hasAttribute("data-collapsed") && !!r && getComputedStyle(r).display !== "none" && !c.getAnimations({ subtree: true }).some((a) => a.playState === "running" && a.effect?.getComputedTiming().iterations !== Infinity); });
 }
 
 /** The Threads sidebar opens on its Inbox when something waits on the person; suites that work on the whole list switch to All Threads first (a no-op when that tab is already showing or there are no tabs). */
@@ -120,3 +122,9 @@ export async function signUp(p, token, name) {
   await p.getByRole("button", { name: "Start the first thread" }).click();
   await p.waitForSelector("html[data-ready]");
 }
+
+/**
+ * The window a suite is looking at: the focused canvas window when the canvas is on, the middle card when it is not. A canvas can hold several windows (each with its own composer, header and
+ * headings), so a suite scopes `.composer`, `h1`, the header and the list to this, never to the page. (The composer's field keeps the id `composer-field` in the focused window alone.)
+ */
+export const win = (page) => page.locator("[data-win][data-focused], .mid-card:not([data-win])").first();
