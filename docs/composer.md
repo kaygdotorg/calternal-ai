@@ -36,6 +36,18 @@ this says otherwise; its map is in `reviews/composer-map-2026-11-17.md`. Terms:
 - **Every inline field is the Notes block editor**: the composer, rename fields, the
   palette field. The block editor therefore has to be extremely fast.
 
+## Chips and adaptive rows (decided 2026-11-18, the owner's grill)
+
+1. **The chips are Attach, Model, Permission and Runs on.** The workspace stays in the context row above the field.
+2. **The reasoning level lives inside the model chip.** The picker offers the levels each model accepts (the backend lane's operation, #46, will list them; until then a model offers none and the picker says so).
+3. **The model chip reads: provider icon, model name, reasoning level.** No middle dots anywhere: an icon, then one label; a second fact is a second icon (the reasoning level is a small level mark) or goes in the tooltip.
+4. **Runs on is the machine's name and a shield icon when sandboxed** (no word).
+5. **Adaptive by the composer's own width**, not the window's (a measuring row, not a media query). As it narrows, chips drop from icon and text to icon only, in this order: Runs on, then Permission, then Model. A collapsed chip keeps its full text in its tooltip and as its accessible name.
+6. **Narrowest (a phone): every chip icon only, except a chip holding a non-default choice, which keeps its text.** Full access also keeps a warning tint, so it is never hidden.
+7. **Open: whether a chip at its default value is always shown.** The owner's answer was cut off; every chip stays shown.
+8. **The rule is the owner's for the whole product** ("pretty much everywhere we need to be adaptive, going from icons + text or text to icons only when there's less width available"), so it is built once: `PillRow` in `packages/ui` (a row of pills that measures itself, with the pure decision in `lib/fit.ts`). The composer, the right sidebar's tab capsule and the app switcher use that one primitive.
+9. **Reasoning level, from omp** (oh-my-pi, by Stencil; `https://omp.sh/docs/using`, "Choose the model and thinking level", read 2026-11-18; nothing copied): the model and its thinking level are always visible in its status line; one key cycles the thinking effort the active model supports (Shift+Tab, with an Auto step), and a model that has no configurable thinking says so instead of changing; the transcript's thinking blocks are shown or hidden by a separate key, so visibility and effort are two controls. Taken here: the level is always visible on the model chip; the picker lists only the levels the model accepts and says plainly when it accepts none; showing the reasoning text (the folded "Thought for" block) is separate from the level. A one-key cycle of the level on the chip is worth adding once the levels are real.
+
 ## Decision service
 
 A fast typed-decision model (OpenAI's Decisions API, TypeSafe's Jev: yes/no with a

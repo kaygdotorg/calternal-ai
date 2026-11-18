@@ -22,7 +22,7 @@ await shot("sidebar", "light", "/threads/t-run", (p) => tap(p, "Show threads"));
 await shot("right-panel", "light", "/threads/t-run", (p) => p.getByRole("tab", { name: "Changes" }).click());
 await shot("request", "light", "/threads/t-wait");
 await shot("composer-picker", "light", "/threads/t-idle", async (p) => { await p.locator("#composer-field").click(); await p.locator("#composer-field").pressSequentially("ask @pr"); });
-await shot("provider-menu", "light", "/threads/t-run", (p) => p.locator(".chip.prov button").click());
+await shot("provider-menu", "light", "/threads/t-run", (p) => p.locator(".chip[data-chip=model] button").click());
 await shot("permission-menu", "light", "/threads/t-run", (p) => p.getByRole("button", { name: "Approve for me" }).click());
 await shot("palette", "light", "/threads/t-run", async (p) => { await p.getByRole("button", { name: "Show threads" }).click(); await p.waitForTimeout(400); await p.getByRole("button", { name: "Search", exact: true }).click(); });
 await shot("context-menu", "light", "/threads/t-run", async (p) => { await p.getByRole("button", { name: "Show threads" }).click(); await p.waitForTimeout(500); await p.locator("a.row").first().click({ button: "right" }); });

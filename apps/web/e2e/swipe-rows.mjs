@@ -1,14 +1,14 @@
 // Thread rows: the provider mark at the left; exactly three hover actions (copy link, archive, three dots = the right-click menu); swipe on a phone (finger) and a desktop (trackpad wheel) with the
 // existing app's engine and thresholds; never from the shell's 24 px edges; vertical drags scroll; one row open at a time.
 import { chromium } from "playwright";
-import { serve, open } from "./lib.mjs";
+import { serve, allThreads, open } from "./lib.mjs";
 const stop = await serve(); const b = await chromium.launch();
 let bad = 0;
 const ok = (n, p, note = "") => { console.log(`${p ? "PASS" : "FAIL"}  ${n}${note ? "  " + note : ""}`); if (!p) bad++; };
 
 // ---------- desktop ----------
 {
-  const { page, ctx } = await open(b, "desktop", "dark", "/threads/t-idle");
+  const { page, ctx } = await open(b, "desktop", "dark", "/threads/t-idle"); await allThreads(page);
   const row = page.locator("nav[aria-label=Threads] a.row").first();
   const first = await row.evaluate((a) => { const r = a.getBoundingClientRect(); const icon = a.querySelector(".mark svg"); const t = a.querySelector(".t"); return { iconLeft: icon.getBoundingClientRect().left - r.left, titleLeft: t.getBoundingClientRect().left - r.left, firstIsMark: a.firstElementChild.classList.contains("mark") }; });
   ok("the provider icon is the first thing in the row, left of the title", first.firstIsMark && first.iconLeft < first.titleLeft, JSON.stringify(first));
@@ -54,7 +54,7 @@ const ok = (n, p, note = "") => { console.log(`${p ? "PASS" : "FAIL"}  ${n}${not
 {
   const { page, ctx } = await open(b, "phone", "light", "/threads/t-run");
   await page.getByRole("button", { name: "Show threads" }).click();
-  await page.waitForTimeout(600);
+  await page.waitForTimeout(600); await allThreads(page);
   const rowsAll = page.locator("nav[aria-label=Threads] .ra");
   const r0 = rowsAll.first();
   const finger = (el, dx, o = {}) => el.evaluate((node, { dx, startX, steps, dy, dt }) => {

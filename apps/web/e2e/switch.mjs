@@ -17,9 +17,9 @@ const sample = (page, name, ms) => page.evaluate(([name, ms]) => new Promise((re
   const travel = await page.evaluate(() => { const t = document.querySelector("button[role=switch] .track"), k = t.querySelector(".knob"); return t.offsetWidth - k.offsetWidth - 2 * k.offsetLeft; });
   const maxSx = Math.max(...frames.map((f) => f.sx)), minSy = Math.min(...frames.map((f) => f.sy));
   ok((await sw.getAttribute("aria-checked")) === "false", "a click toggles it");
-  const moving = frames.filter((f) => Math.abs(f.x - frames.at(-1).x) > 0.3).length; // frames drawn while the knob was away from its rest
-  if (moving < 10) console.log(`info  the stretch was not judged: only ${moving} frames were drawn while the knob moved (a busy machine), too few to see its peak`);
-  else ok(maxSx > 1.04 && minSy < 0.96, "the knob stretches along its travel and squashes across while it moves", `scale x up to ${maxSx.toFixed(2)}, y down to ${minSy.toFixed(2)}`);
+  // What the motion did is read from the knob itself (`data-peak`, the largest stretch of the motion that just ended), not caught in sampled frames: a busy machine draws few of them.
+  const peak = parseFloat(await sw.locator(".knob").getAttribute("data-peak") ?? "1");
+  ok(peak > 1.04, "the knob stretches along its travel (and so squashes across) while it moves", `largest stretch ${peak.toFixed(2)}${minSy < 0.96 ? `, seen squashed to ${minSy.toFixed(2)} in a frame` : ""}`);
   ok(Math.abs(frames.at(-1).x) < 0.5 && Math.abs(frames.at(-1).sx - 1) < 0.01, "and rests at the off end, unscaled", `x ${frames.at(-1).x.toFixed(1)} of ${travel}`);
   await rested(page, "Animations"); await sw.focus(); await page.keyboard.press("Space"); await page.waitForTimeout(50); await rested(page, "Animations");
   ok((await sw.getAttribute("aria-checked")) === "true" && Math.abs((await knob(page, /Animations/).evaluate((e) => new DOMMatrixReadOnly(getComputedStyle(e).transform).m41)) - travel) < 0.5, "Space toggles it and it rests at the on end", `travel ${travel}`);

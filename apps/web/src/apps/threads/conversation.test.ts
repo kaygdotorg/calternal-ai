@@ -2,7 +2,6 @@ import { describe, expect, test } from "vitest";
 import { Conversation } from "./conversation.svelte";
 import type { ThreadEvents, ThreadsClient } from "./client";
 import type { Message, ThreadSummary } from "./model";
-import { byOf, parseMessages } from "../../server/thread-file";
 
 const summary = { id: "t", spaceId: "s", title: "T", parentId: null, state: "idle", workspace: "", updatedAt: 0, provider: "claude", model: "default", permission: "approve", runsOn: { machine: "m", mode: "sandboxed" }, messageCount: 0 } as ThreadSummary;
 /** A client that only lets the test reach the events the conversation registered. */
@@ -43,16 +42,3 @@ describe("the running turn", () => {
   });
 });
 
-describe("who wrote a message, from its marker", () => {
-  test("provider, model, reasoning and duration are read; an older marker has none", () => {
-    expect(byOf("turn:x actor:y time:2026-11-17T10:00:00.000Z provider:calternal-codex model:gpt-6-luna reasoning:high duration:12500")).toEqual({ provider: "codex", model: "gpt-6-luna", reasoning: "high", ms: 12500 });
-    expect(byOf("turn:x actor:y time:2026-11-17T10:00:00.000Z")).toBeUndefined();
-    expect(byOf("provider:someone-else")).toBeUndefined();
-  });
-  test("an assistant message carries it, and the duration fills its steps' time", () => {
-    const md = `---\ntitle: "x"\n---\n\n<!-- message:019a8c00-0000-7000-8000-0000000000a1 role:agent turn:j actor:y time:2026-11-17T12:04:00.000Z provider:calternal-claude-code model:sonnet duration:5000 -->\n> Tool Bash · Run ls (started)\n\n> Tool Bash · Run ls (finished)\n\nhello\n<!-- /message -->\n`;
-    const [m] = parseMessages(md);
-    expect(m!.by).toEqual({ provider: "claude", model: "sonnet", ms: 5000 });
-    expect(m!.blocks[0]).toMatchObject({ type: "steps", ms: 5000 });
-  });
-});

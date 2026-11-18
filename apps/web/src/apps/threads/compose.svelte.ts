@@ -8,6 +8,8 @@ export function quoteOf(text: string): string {
   return text.trim().split(/\r?\n/).map((l) => `> ${l}`.trimEnd()).join("\n") + "\n\n";
 }
 
+import { shell } from "../../shell/shell.svelte";
+
 class Bridge {
   /** Text waiting to be put in the composer, with a counter so a repeat still triggers. */
   composer = $state<{ quote: string; n: number } | null>(null);
@@ -18,9 +20,10 @@ class Bridge {
   comment(text: string): void {
     this.composer = { quote: quoteOf(text), n: ++this.n };
   }
-  /** "Ask in Side Chat": the selection opens the side chat, quoted. */
+  /** "Ask in Side Chat" and "Reply in side chat": the text goes to the side chat, quoted, and the side chat is shown (it did nothing visible when the right panel was closed or on another tab). */
   ask(text: string): void {
     this.side = { quote: quoteOf(text), n: ++this.n };
+    shell.showPanel("chat");
   }
 }
 

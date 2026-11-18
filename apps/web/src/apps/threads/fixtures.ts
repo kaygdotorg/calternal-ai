@@ -7,7 +7,7 @@ import { FIXTURE_SPACES } from "../../shell/spaces.svelte";
 import type { ThreadEvents, ThreadsClient } from "./client";
 import { messageAt } from "./generate";
 import { permissionLabel, runsOnLabel } from "./permissions";
-import type { Answer, Change, Message, Permission, Step, ProviderOption, Request, RunInfo, RunsOn, ThreadNotice, ThreadState, ThreadSummary } from "./model";
+import type { Answer, Attachment, Change, Message, Permission, Step, ProviderOption, Request, RunInfo, RunsOn, ThreadNotice, ThreadState, ThreadSummary } from "./model";
 
 const BASE = Date.UTC(2026, 10, 17, 6, 0, 0);
 const MIN = 60_000;
@@ -16,8 +16,8 @@ const MIN = 60_000;
 export const LONG_THREAD = "t-long";
 
 const PROVIDERS: ProviderOption[] = [
-  { id: "claude", name: "Claude Code", models: [{ id: "opus-5-5", name: "Opus 5.5" }, { id: "sonnet-5-5", name: "Sonnet 5.5" }, { id: "haiku-5-5", name: "Haiku 5.5" }] },
-  { id: "codex", name: "Codex", models: [{ id: "gpt-6-1-sol", name: "GPT-6.1 Sol" }, { id: "gpt-6-luna", name: "GPT-6 Luna" }] },
+  { id: "claude", name: "Claude Code", models: [{ id: "opus-5-5", name: "Opus 5.5", levels: ["low", "medium", "high"] }, { id: "sonnet-5-5", name: "Sonnet 5.5", levels: ["low", "medium", "high"], default: true }, { id: "haiku-5-5", name: "Haiku 5.5" }] },
+  { id: "codex", name: "Codex", models: [{ id: "gpt-6-1-sol", name: "GPT-6.1 Sol", levels: ["low", "medium", "high", "max"], default: true }, { id: "gpt-6-luna", name: "GPT-6 Luna", levels: ["low", "medium", "high", "max"] }] },
 ];
 
 function thread(id: string, title: string, state: ThreadState, workspace: string, ago: number, count: number, parentId: string | null = null, provider: "claude" | "codex" = "claude", model = "sonnet-5-5"): ThreadSummary {
@@ -60,13 +60,14 @@ const STREAM_TEXT =
 
 /**
  * Fixture scenarios for the screens that only show when something is wrong or missing, picked with `?scenario=` (fixtures only; tests and review): `empty` (a fresh account with no thread and no
- * request), `no-machine`, `offline`, `signin`, `failed`, `usage-limit`, `permanent`, `queued`, `retrying`, `retrying-api`, `retrying-plan`, `interrupted`, `interrupted-unsure` and `full` (a thread at the size limit; the thread `t-idle` carries that notice).
+ * request), `quiet` (threads, but none waiting on the person), `no-machine`, `offline`, `signin`, `failed`, `usage-limit`, `permanent`, `queued`, `retrying`, `retrying-api`, `retrying-plan`, `interrupted`, `interrupted-unsure` and `full` (a thread at the size limit; the thread `t-idle` carries that notice).
  */
 function applyScenario(threads: ThreadSummary[], requests: Request[]): void {
   let s: string | null = null;
   try { s = new URLSearchParams(location.search).get("scenario"); } catch { /* not in a page */ }
   if (!s) return;
   if (s === "empty") { threads.length = 0; requests.length = 0; return; }
+  if (s === "quiet") { requests.length = 0; for (const x of threads) { x.notice = undefined; if (x.state === "failed" || x.state === "waiting") x.state = "idle"; } return; }
   const t = threads.find((x) => x.id === "t-idle");
   if (!t) return;
   const machine = t.runsOn.machine;
@@ -128,7 +129,7 @@ export class FixtureClient implements ThreadsClient {
     return this.threadList.find((t) => t.id === threadId);
   }
   async createThread(title: string, o: { provider?: ThreadSummary["provider"]; parentId?: string } = {}): Promise<ThreadSummary> {
-    const t: ThreadSummary = { id: `t-new-${this.threadList.length}`, spaceId: FIXTURE_SPACES[0]!.id, title, parentId: o.parentId ?? null, state: "idle", workspace: "calternal-ai", updatedAt: Date.now(), provider: o.provider ?? "claude", model: "sonnet-5-5", permission: "approve", runsOn: { machine: "calternal-dev-02-std", mode: "sandboxed" }, messageCount: 0 };
+    const t: ThreadSummary = { id: `t-new-${this.threadList.length}`, spaceId: FIXTURE_SPACES[0]!.id, title, parentId: o.parentId ?? null, state: "idle", workspace: "calternal-ai", updatedAt: Date.now(), provider: o.provider ?? "claude", model: "sonnet-5-5", permission: "approve", runsOn: { machine: "Automatic", mode: "sandboxed" }, messageCount: 0 };
     this.threadList = [t, ...this.threadList];
     for (const w of this.threadWatchers) w(this.threadList);
     return t;
@@ -210,9 +211,15 @@ export class FixtureClient implements ThreadsClient {
     if (o) for (const e of o.events) e.onMessage(msg, t.messageCount);
   }
 
-  async send(threadId: string, text: string, _requestId: string): Promise<void> {
+  /** The fixtures take any file: its progress runs to the end over a time that grows a little with its size. */
+  async upload(_threadId: string, file: File, progress: (fraction: number) => void): Promise<void> {
+    const ms = Math.min(2500, 700 + file.size / 2000);
+    const t0 = Date.now();
+    await new Promise<void>((done) => { const tick = () => { const f = Math.min(1, (Date.now() - t0) / ms); progress(f); if (f >= 1) done(); else setTimeout(tick, 60); }; tick(); });
+  }
+  async send(threadId: string, text: string, _requestId: string, attachments: Attachment[] = []): Promise<void> {
     const t = this.summary(threadId);
-    const msg: Message = { id: `${threadId}-u${t.messageCount}`, role: "user", at: Date.now(), blocks: [{ type: "text", text }] };
+    const msg: Message = { id: `${threadId}-u${t.messageCount}`, role: "user", at: Date.now(), blocks: [...attachments.map((a) => ({ type: "file" as const, name: a.name, kind: a.kind, size: a.size, url: a.url })), ...(text ? [{ type: "text" as const, text }] : [])] };
     this.extra.set(threadId, [...(this.extra.get(threadId) ?? []), msg]);
     this.patch(threadId, { messageCount: t.messageCount + 1, state: "running", updatedAt: Date.now() });
     const o = this.open.get(threadId);
@@ -262,6 +269,9 @@ export class FixtureClient implements ThreadsClient {
   }
   async setRunsOn(threadId: string, runsOn: RunsOn): Promise<void> {
     this.patch(threadId, { runsOn });
+  }
+  async setReasoning(threadId: string, level: string | null): Promise<void> {
+    this.patch(threadId, { reasoning: level ?? undefined });
   }
   async setProvider(threadId: string, provider: ThreadSummary["provider"], model: string): Promise<void> {
     this.patch(threadId, { provider, model });
