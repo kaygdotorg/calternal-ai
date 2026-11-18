@@ -91,10 +91,8 @@ pub(super) async fn run<D: Directory>(
             let notice = notice.or_else(|| {
                 crate::threads::provider_notice::append(&s, space, thread, account, id, &label).ok()
             });
-            if done && let Some(notice) = notice {
-                let _ = crate::threads::provider_notice::complete(
-                    &s, space, thread, account, id, &notice,
-                );
+            if done && notice.is_some() {
+                let _ = crate::threads::provider_notice::complete(&s, space, thread, account, id);
             }
         }
         if let Some(job) = job_id.filter(|_| done) {

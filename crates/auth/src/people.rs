@@ -162,15 +162,18 @@ impl Spaces {
         })
     }
 
-    /// Snapshot the authenticated account's active display name for authored
+    /// Snapshot the authenticated account's active display name and zone for authored
     /// content. Call only for the authenticated actor, never a client-supplied
     /// target. One indexed read on the account authority worker.
-    pub fn own_display_name(&self, actor: AccountId) -> Result<Option<String>> {
+    pub fn own_heading_profile(
+        &self,
+        actor: AccountId,
+    ) -> Result<Option<(String, Option<String>)>> {
         self.run(move |c| {
             c.query_row(
-                "SELECT name FROM users WHERE id=?1 AND disabled_at IS NULL",
+                "SELECT name, time_zone FROM users WHERE id=?1 AND disabled_at IS NULL",
                 [actor.to_string()],
-                |row| row.get(0),
+                |row| Ok((row.get(0)?, row.get(1)?)),
             )
             .optional()
             .map_err(sql)
@@ -264,6 +267,35 @@ impl Spaces {
         self.mutate(actor, None, Some(receipt), move |tx| {
             require(tx, actor, operation.capability())?;
             Ok(move |tx: &rusqlite::Transaction<'_>| apply_group(tx, actor, change))
+        })
+    }
+
+    /// Update the active caller's private IANA zone. A null zone uses the
+    /// device fallback. One protected mutation and its idempotent receipt.
+    pub fn set_time_zone(
+        &self,
+        actor: AccountId,
+        zone: Option<String>,
+        receipt: (&str, &str, &str),
+    ) -> Result<Value> {
+        let zone = zone
+            .as_deref()
+            .map(|name| {
+                calternal_core::time_zone::canonical(name).ok_or_else(|| {
+                    Error::invalid("choose a valid IANA time zone, such as Asia/Kolkata")
+                })
+            })
+            .transpose()?;
+        self.mutate(actor, None, Some(receipt), move |tx| {
+            require_active(tx, actor)?;
+            Ok(move |tx: &rusqlite::Transaction<'_>| {
+                tx.execute(
+                    "UPDATE users SET time_zone=?2 WHERE id=?1",
+                    params![actor.to_string(), zone],
+                )
+                .map_err(sql)?;
+                Ok(json!({"account_id":actor,"time_zone":zone}))
+            })
         })
     }
 

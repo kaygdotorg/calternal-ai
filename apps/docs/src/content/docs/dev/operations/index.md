@@ -35,6 +35,7 @@ Generated operation schemas. Capability and risk are shown only when the catalog
 - [spaces.remove_member](./spaces-remove-member/): Remove a direct account or group grant.
 - [roles.list](./roles-list/): List the space roles and their capabilities.
 - [account.set_profile](./account-set-profile/): Change your own display name.
+- [account.set_time_zone](./account-set-time-zone/): Choose your time zone or follow the device.
 - [people.list](./people-list/): List server accounts.
 - [people.disable](./people-disable/): Disable an account and revoke its sessions.
 - [groups.list](./groups-list/): List server groups.

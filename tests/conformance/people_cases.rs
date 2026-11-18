@@ -5,6 +5,7 @@ mod invites;
 
 pub(crate) const ADDITIONAL_OPERATIONS: &[&str] = &[
     "account.set_profile",
+    "account.set_time_zone",
     "groups.add_member",
     "groups.create",
     "groups.delete",
@@ -570,4 +571,100 @@ async fn people_directories_bound_rows_and_continue_by_cursor() {
         .await;
     assert_eq!(hidden.status, 404);
     assert_eq!(hidden.signature(), missing.signature());
+}
+
+#[tokio::test]
+async fn account_time_zone_is_private_and_overrides_the_device_for_thread_headings() {
+    let f = Fixture::new().await;
+    let op = "account.set_time_zone";
+    let unauthenticated = f.req("POST", "/api/v1/operations", None,
+        json!({"operation":op,"request_id":"anonymous-zone","input":{"time_zone":"Asia/Tokyo"}}),
+        Some(ORIGIN)).await;
+    assert_eq!(unauthenticated.status, 401);
+    for invalid in [
+        json!({"time_zone":"Asia/Tokyo","account_id":f.ids[2]}),
+        json!({"time_zone":"../localtime"}),
+        json!({}),
+    ] {
+        assert_eq!(f.op(1, op, invalid).await.status, 400);
+    }
+
+    let input = json!({"time_zone":"asia/tokyo"});
+    let saved = f.op_id(1, op, input.clone(), "set-zone").await;
+    saved.ok();
+    assert_eq!(
+        saved.body["data"],
+        json!({"account_id":f.ids[1],"time_zone":"Asia/Tokyo"})
+    );
+    let replay = f.op_id(1, op, input, "set-zone").await;
+    replay.ok();
+    assert_eq!(replay.body["data"], saved.body["data"]);
+    for (actor, zone) in [(1, json!("Asia/Tokyo")), (2, Value::Null)] {
+        let own = f
+            .req(
+                "GET",
+                "/api/v1/auth/me",
+                Some(&f.cookies[actor]),
+                json!({}),
+                Some(ORIGIN),
+            )
+            .await;
+        own.ok();
+        assert_eq!(own.body["user"]["time_zone"], zone);
+    }
+
+    let space = &f.spaces[2];
+    let device = "Asia/Kolkata";
+    let created = f
+        .op(
+            1,
+            "threads.create",
+            json!({"space_id":space,"title":"Time zone","client_time_zone":device}),
+        )
+        .await;
+    created.ok();
+    let id = &created.body["data"]["thread"]["id"];
+    let sent = f
+        .op(
+            1,
+            "threads.send",
+            json!({"id":id,"message":"Account zone","client_time_zone":device}),
+        )
+        .await;
+    sent.ok();
+    assert!(
+        sent.body["data"]["thread"]["messages"][0]["at"]
+            .as_str()
+            .unwrap()
+            .ends_with("+09:00")
+    );
+    assert!(!sent.body.to_string().contains("Asia/Tokyo"));
+
+    let peer = f.op(2, "threads.get", json!({"id":id})).await;
+    peer.ok();
+    assert!(!peer.body.to_string().contains("Asia/Tokyo"));
+    f.op(1, op, json!({"time_zone":null})).await.ok();
+    let second = f
+        .op(
+            1,
+            "threads.create",
+            json!({"space_id":space,"title":"Device fallback","client_time_zone":device}),
+        )
+        .await;
+    second.ok();
+    let sent = f
+        .op(
+            1,
+            "threads.send",
+            json!({"id":second.body["data"]["thread"]["id"],
+        "message":"Device zone","client_time_zone":device,"client_offset_minutes":0}),
+        )
+        .await;
+    sent.ok();
+    assert!(
+        sent.body["data"]["thread"]["messages"][0]["at"]
+            .as_str()
+            .unwrap()
+            .ends_with("+05:30")
+    );
 }

@@ -102,6 +102,11 @@ pub enum People {
         /// Display name.
         name: String,
     },
+    /// Set your IANA time zone. Omit it to follow the device.
+    SetTimeZone {
+        /// IANA time zone name, for example America/New_York.
+        time_zone: Option<String>,
+    },
     /// List server accounts. Requires server people administration.
     List {
         /// Continue from the previous people page.
@@ -231,6 +236,9 @@ impl People {
             ),
             Self::Roles => (Op::ListRoles.id(), json!({})),
             Self::SetProfile { name } => (Op::SetProfile.id(), json!({"name":name})),
+            Self::SetTimeZone { time_zone } => {
+                (Op::SetTimeZone.id(), json!({"time_zone":time_zone}))
+            }
             Self::List { cursor } => (Op::ListPeople.id(), json!({"cursor":cursor})),
             Self::Disable { account } => (Op::DisablePerson.id(), json!({"account_id":account})),
         }
@@ -471,6 +479,16 @@ pub fn render(out: &Output, operation: &str, id: &str, data: &Value) -> Option<R
             Op::SetProfile => reply.fields([
                 ("account", text(data, "account_id")),
                 ("name", text(data, "name")),
+            ]),
+            Op::SetTimeZone => reply.fields([
+                ("Account", text(data, "account_id")),
+                (
+                    "Time zone",
+                    data["time_zone"]
+                        .as_str()
+                        .unwrap_or("Follow the device")
+                        .to_owned(),
+                ),
             ]),
             Op::DisablePerson => reply
                 .line("Account disabled.")

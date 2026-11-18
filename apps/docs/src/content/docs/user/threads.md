@@ -47,6 +47,7 @@ whose `kind` is one of these values.
 | Renamed | `threads.rename` |
 | Archived or unarchived | `threads.archive`, `threads.unarchive` |
 | Person message or agent text checkpoint saved | `threads.send`, `threads.checkpoint` |
+| A provider sign-in was attempted or completed | `threads.provider_sign_in` with `data.notice` |
 | Turn state changed | `threads.turn_state_changed` |
 | Deleted | `threads.delete` |
 
@@ -160,11 +161,10 @@ output as a byte count. The saved message records the step and status in
 Markdown blockquotes. The adapter and host scrub the issued Calternal
 credential before the step reaches a client or the file.
 
-The existing content limit accepts at most 2 MiB of submitted Markdown,
-before placement adds the host-owned identity line. Previously an oversized
-checkpoint was rejected atomically and the turn ended with a generic
-outcome-unknown state. A saved turn now fails with `thread_full` on the job
-stream and `turn_reason.why` on reload. Earlier checkpoints remain readable.
+A saved thread holds at most 2 MiB of Markdown, including the host-owned
+identity line. An overflowing checkpoint is rejected atomically. A saved turn
+reports `thread_full` on the job stream and in `turn_reason.code` on reload.
+Earlier checkpoints remain readable.
 The failure message explains that the latest checkpoint was not saved and that
 the person can start a new thread. The turn does not automatically retry.
 

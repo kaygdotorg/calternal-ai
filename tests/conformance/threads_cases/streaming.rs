@@ -406,3 +406,64 @@ async fn person_wait_phase_is_shared_and_request_details_stay_private() {
     assert!(owner.body["data"]["job"]["checkpoint"]["person_request"].is_string());
     f.op(1, "threads.stop", json!({"id":thread})).await.ok();
 }
+
+#[tokio::test]
+async fn thread_full_reaches_live_and_saved_reads_without_losing_prior_output() {
+    let f = Fixture::new().await;
+    let _machine = direct_fixture(&f).await;
+    let thread = f
+        .op(
+            1,
+            "threads.create",
+            json!({
+                "space_id":f.spaces[2],"title":"HTTP checkpoint ceiling"
+            }),
+        )
+        .await;
+    thread.ok();
+    let id = &thread.body["data"]["thread"]["id"];
+    let sent = f
+        .op(
+            1,
+            "threads.send",
+            json!({"id":id,"message":"thread-size-limit"}),
+        )
+        .await;
+    sent.ok();
+    let job = sent.body["data"]["job"]["id"].as_str().unwrap();
+    assert!(Sse::open(&f, &f.cookies[3], job, None).await.is_err());
+    let mut feed = Sse::open(&f, &f.cookies[2], job, None).await.unwrap();
+    tokio::time::timeout(Duration::from_secs(60), async {
+        let mut failure = false;
+        loop {
+            let (kind, _, frame) = feed.next().await.expect("terminal turn event");
+            if kind == "end" {
+                assert!(failure, "the terminal stream lost the storage failure");
+                break;
+            }
+            let event = &frame["data"]["event"];
+            if event["code"] == "thread_full" {
+                assert_eq!(event["class"], "permanent");
+                assert!(event["message"].as_str().unwrap().contains("not saved"));
+                failure = true;
+            }
+        }
+    })
+    .await
+    .expect("thread ceiling");
+    let saved = f.op(2, "threads.get", json!({"id":id})).await;
+    saved.ok();
+    let saved = &saved.body["data"]["thread"];
+    assert_eq!(saved["turn_state"], "failed");
+    assert_eq!(saved["turn_reason"]["code"], "thread_full");
+    assert!(
+        saved["turn_reason"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("not saved")
+    );
+    let text = saved["messages"][1]["text"].as_str().unwrap();
+    assert!(text.contains("overflow-segment-0:"));
+    assert!(!text.contains("overflow-segment-32:"));
+    assert!(saved["markdown"].as_str().unwrap().len() <= 2 * 1024 * 1024);
+}

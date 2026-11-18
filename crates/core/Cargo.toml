@@ -6,6 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
+jiff = { version = "0.2", features = ["tzdb-bundle-always"] }
 calternal-types = { workspace = true, features = ["contract"] }
 serde.workspace = true
 serde_json.workspace = true

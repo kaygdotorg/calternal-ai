@@ -86,6 +86,7 @@ uses them. Human invite output shows expiry in the local time zone.
 | `people delete [--account ACCOUNT_UUID]` | Permanently erase your account or delete another as a server administrator. | Account UUID and deletion status. | `account_id`, `deleted` |
 | `people roles` | Show role definitions for a space. | Role labels and capability tables. | `roles` |
 | `people set-profile NAME` | Update your own display name. | Account ID and name. | `account_id`, `name` |
+| `people set-time-zone [ZONE]` | Save your IANA time zone or follow this device. | Account ID and time-zone preference. | `account_id`, `time_zone` |
 | `people list [--cursor CURSOR]` | List server accounts with the people administration capability. | ID, name, role, state. | `people` |
 | `people disable ACCOUNT` | Disable the account and sign out its sessions. | Account ID and disable confirmation. | `account_id`, `disabled` |
 | `groups list [--group GROUP] [--cursor CURSOR]` | List server groups and current member IDs. | Group and member tables. | `groups` |

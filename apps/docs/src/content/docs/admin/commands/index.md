@@ -10,6 +10,7 @@ title: "Command reference"
 - [calternal-people-roles](./calternal-people-roles/)
 - [calternal-people-list](./calternal-people-list/)
 - [calternal-people-set-profile](./calternal-people-set-profile/)
+- [calternal-people-set-time-zone](./calternal-people-set-time-zone/)
 - [calternal-people-add](./calternal-people-add/)
 - [calternal-people-set-role](./calternal-people-set-role/)
 - [calternal-people-remove](./calternal-people-remove/)

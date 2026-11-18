@@ -25,14 +25,36 @@ pub(super) fn label(input: &str) -> String {
     escaped.replace(" via ", " &#118;ia ")
 }
 
-/// Format the write instant at the validated client offset, with no filesystem access.
-pub(super) fn now(offset_minutes: i64) -> Result<String, Error> {
+/// Resolve the caller's names and private zone together on the authority worker.
+pub(super) fn profile<D: crate::auth::Directory>(
+    state: &crate::api::Shared<D>,
+    account: calternal_types::AccountId,
+) -> Result<(String, Option<String>), Error> {
+    Ok(state
+        .directory
+        .protected_spaces()
+        .map(|spaces| {
+            spaces
+                .own_heading_profile(account)
+                .map_err(crate::auth::auth_error)
+        })
+        .transpose()?
+        .flatten()
+        .unwrap_or_else(|| ("Person".into(), None)))
+}
+
+/// Format the write instant in the named zone, falling back to the device offset.
+pub(super) fn now(zone: Option<&str>, offset_minutes: i64) -> Result<String, Error> {
     let offset = i32::try_from(offset_minutes)
         .ok()
         .and_then(|minutes| minutes.checked_mul(60))
         .and_then(|seconds| UtcOffset::from_whole_seconds(seconds).ok())
         .ok_or_else(|| Error::invalid_input("invalid client timezone offset"))?;
-    let at = OffsetDateTime::now_utc().to_offset(offset);
+    let at = OffsetDateTime::now_utc();
+    let zone_offset = zone
+        .and_then(|zone| calternal_core::time_zone::offset_seconds(zone, at.unix_timestamp()))
+        .and_then(|seconds| UtcOffset::from_whole_seconds(seconds).ok());
+    let at = at.to_offset(zone_offset.unwrap_or(offset));
     // RFC 3339's Z is valid, but the note convention uses an explicit offset.
     let value = at
         .format(&Rfc3339)

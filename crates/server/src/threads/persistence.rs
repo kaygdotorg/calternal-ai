@@ -10,6 +10,20 @@ use uuid::Uuid;
 /// Stable reason for a saved turn whose next checkpoint cannot fit.
 pub(crate) const THREAD_FULL: &str = "thread_full";
 
+/// Reject an overflowing write before creating its revision or journal event.
+pub(super) fn check_size(bytes: usize) -> Result<(), Error> {
+    const HOST_ID_BYTES: usize = "calternal-id: ".len() + 36 + 1;
+    if bytes.saturating_add(HOST_ID_BYTES) > MAX_DOCUMENT_BYTES {
+        return Err(Error {
+            details: Some(json!({"reason":THREAD_FULL})),
+            ..Error::conflict(
+                "Thread reached its 2 MiB limit. Earlier output is saved; the latest output was not saved. Start a new thread to continue.",
+            )
+        });
+    }
+    Ok(())
+}
+
 /// Flush at most 32 KiB of scrubbed output and any new provider session. The
 /// content CAS serializes this against sends. A superseded turn cannot replace
 /// the session binding. A saved cursor and receipt prevent duplicate output.
@@ -112,14 +126,7 @@ pub(crate) fn checkpoint<D: Directory>(
             )?
         };
         let bytes = super::document::encode(&metadata, &body);
-        if bytes.len() > MAX_DOCUMENT_BYTES {
-            return Err(Error {
-                details: Some(json!({"reason":THREAD_FULL})),
-                ..Error::conflict(
-                    "Thread reached its 2 MiB limit. Earlier output is saved; the latest output was not saved. Start a new thread to continue.",
-                )
-            });
-        }
+        check_size(bytes.len())?;
         let mut receipt = json!({"checkpoint":seq});
         metadata
             .as_object_mut()
@@ -176,10 +183,10 @@ fn append_output(
     checkpoint: &Value,
     manifest: Option<&calternal_core::ManifestV1>,
 ) -> Result<Option<std::ops::Range<usize>>, Error> {
+    let attribution = &job.input["thread_request"];
     let now = super::headings::now(
-        job.input["thread_request"]["client_offset_minutes"]
-            .as_i64()
-            .unwrap_or(0),
+        attribution["time_zone"].as_str(),
+        attribution["client_offset_minutes"].as_i64().unwrap_or(0),
     )?;
     let id = checkpoint["message_id"]
         .as_str()

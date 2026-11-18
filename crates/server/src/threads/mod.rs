@@ -124,7 +124,7 @@ pub(crate) async fn dispatch<D: Directory>(
             rid,
             i,
             generation,
-            value["thread"]["metadata"]["pending"].clone(),
+            value["intent"].clone(),
         )
         .await?;
         return Ok(json!({"thread":value["thread"],"job":job.view()}));

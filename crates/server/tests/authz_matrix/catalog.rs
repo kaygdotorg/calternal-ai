@@ -44,6 +44,7 @@ async fn every_registered_operation_has_an_independent_matrix_row() {
         "spaces.remove_member",
         "roles.list",
         "account.set_profile",
+        "account.set_time_zone",
         "people.list",
         "people.disable",
         "groups.list",
