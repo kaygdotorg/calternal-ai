@@ -12,6 +12,8 @@
   import { surfaces } from "../appearance/surfaces.svelte";
   import AppSwitcher from "./AppSwitcher.svelte";
   import Backdrop from "./Backdrop.svelte";
+  import Canvas from "../canvas/Canvas.svelte";
+  import { canvasEnabled } from "../canvas/model.svelte";
   import PhoneTabs from "./PhoneTabs.svelte";
   import RightSidebar from "./RightSidebar.svelte";
   import ResizeHandle from "./ResizeHandle.svelte";
@@ -218,7 +220,7 @@
     {#if showRight}<div class="edge r"><Pill icon="sidebar-right" label="Show the side panel" aria-keyshortcuts={ariaKeys(shortcuts.chordFor("panel"))} onclick={() => shell.toggleRight()} /></div>{/if}
     <Card label={app.name} class="mid-card">
       <div class="col">
-        <div class="app"><app.Main {id} /></div>
+        <div class="app">{#if canvasEnabled}<Canvas />{:else}<app.Main {id} />{/if}</div>
         {#if cardSwitcher}<div class="appbar" class:auto={appearance.prefs.switcherAutoHide}><AppSwitcher {app} /></div>{/if}
       </div>
     </Card>
