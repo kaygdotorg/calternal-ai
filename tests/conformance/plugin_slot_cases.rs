@@ -100,6 +100,7 @@ async fn installed_package_is_live_and_survives_restart() {
     let mut f = Fixture::new().await;
     let space = f.spaces[0].clone();
     let account = f.ids[1].clone();
+    let other_account = f.ids[2].clone();
     let source = f.dir.path().join("fixture.calplugin");
     let id = "conformance-package";
     let op = "conformance-package.read";
@@ -152,7 +153,7 @@ async fn installed_package_is_live_and_survives_restart() {
         let reviewed = run(&["plugin", "review", source.to_str().unwrap()]);
         assert!(reviewed.status.success(), "{:?}", reviewed);
         let review: Value = serde_json::from_slice(&reviewed.stdout).unwrap();
-        let args = |approval| {
+        let args = |approval, target_account| {
             run(&[
                 "plugin",
                 action,
@@ -164,11 +165,23 @@ async fn installed_package_is_live_and_survives_restart() {
                 "--space",
                 &space,
                 "--account",
-                &account,
+                target_account,
             ])
         };
-        assert!(!args("wrong-checksum").status.success());
-        let result = args(review["data"]["checksum"].as_str().unwrap());
+        assert!(!args("wrong-checksum", &account).status.success());
+        let checksum = review["data"]["checksum"].as_str().unwrap();
+        if action == "install" {
+            let denied = args(checksum, &other_account);
+            assert!(!denied.status.success(), "{denied:?}");
+            let reply: Value = serde_json::from_slice(&denied.stdout).unwrap();
+            assert!(
+                reply["error"]["message"]
+                    .as_str()
+                    .unwrap()
+                    .contains("cannot manage plugins")
+            );
+        }
+        let result = args(checksum, &account);
         assert!(result.status.success(), "{:?}", result);
     };
 
@@ -279,7 +292,7 @@ async fn drafts_require_the_development_build_and_stay_in_one_space() {
     let op = "conformance-draft.result";
     let space = f.spaces[0].clone();
     let account = f.ids[1].clone();
-    let send = |root: &Path, worker: &str| {
+    let send = |root: &Path, worker: &str, account: &str| {
         let package = json!({
             "action": "draft", "space": space, "account": account,
             "package": {
@@ -316,14 +329,14 @@ async fn drafts_require_the_development_build_and_stay_in_one_space() {
     )
     };
     let scope = || json!({"space_id":space});
-    let first = send(&f.appdata(), &worker(1));
+    let first = send(&f.appdata(), &worker(1), &account);
     if !development_build {
         assert!(first.unwrap_err().contains("unknown variant `draft`"));
         f.stop();
         f.development = true;
         f.start().await;
         assert!(
-            send(&f.appdata(), &worker(1))
+            send(&f.appdata(), &worker(1), &account)
                 .unwrap_err()
                 .contains("unknown variant `draft`")
         );
@@ -334,7 +347,13 @@ async fn drafts_require_the_development_build_and_stay_in_one_space() {
     f.stop();
     f.development = true;
     f.start().await;
-    send(&f.appdata(), &worker(1)).unwrap();
+    assert!(
+        send(&f.appdata(), &worker(1), &f.ids[2])
+            .unwrap_err()
+            .contains("cannot manage plugins")
+    );
+    assert_eq!(f.op(1, op, scope()).await.status, 404);
+    send(&f.appdata(), &worker(1), &account).unwrap();
     let result = f.op(1, op, scope()).await;
     result.ok();
     assert_eq!(result.body["data"]["value"], 1);
@@ -353,9 +372,9 @@ async fn drafts_require_the_development_build_and_stay_in_one_space() {
         f.op(2, op, json!({"space_id":f.spaces[1]})).await.status,
         404
     );
-    assert!(send(&f.appdata(), "process.exit(1)").is_err());
+    assert!(send(&f.appdata(), "process.exit(1)", &account).is_err());
     assert_eq!(f.op(1, op, scope()).await.body["data"]["value"], 1);
-    send(&f.appdata(), &worker(2)).unwrap();
+    send(&f.appdata(), &worker(2), &account).unwrap();
     assert_eq!(f.op(1, op, scope()).await.body["data"]["value"], 2);
     f.stop();
     f.start().await;

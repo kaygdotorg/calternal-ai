@@ -273,6 +273,15 @@ use in host, broker, registry and client code. Public operation and kind IDs
 remain valid. Run the source check and the renamed-package conformance suite
 together, with no exception list for official code paths.
 
+The current [conformance case](../tests/conformance/plugin_parity_cases.rs)
+installs renamed copies of both seeded TypeScript worker packages in a separate
+installation. It compares grants, slots, operation results and cross-space
+denials. Manifest v1 has no publisher identity. A publisher substitution
+test requires a provenance contract with no authority-bearing fields.
+The strict [source check](../scripts/check-plugin-parity.py) detects the
+identity references still present in the host and clients. The native app
+and provider cuts above must land before it can pass.
+
 **Interface today.** Every package can declare the same portable view slots.
 The current web shell and orchestrator visuals are client code. They cannot
 ship unchanged as ordinary plugin contributions. The host component catalog
@@ -331,7 +340,7 @@ contains the detailed constraints for the 24 previously adopted capabilities.
 | Extension point in the reference systems | Calternal status | What an author can do there today |
 | --- | --- | --- |
 | bb-lite plugin-declared typed slots and single or multiple selection | Decided, unbuilt | Let another package add a new kind of entry without changing the foundation. This prototype has fixed slots. |
-| bb and bb-lite local install, hot reload and development inspection | Live install and scoped draft reload implemented. End-to-end performance and the broader inspection surface are pending. | Follow readiness, logs and timing for an edited worker in one author-facing view. |
+| bb and bb-lite local install, hot reload and development inspection | Live install and scoped draft reload built. The enrolled-machine author loop measured 903 ms p95. Broader inspection remains unbuilt. | Follow readiness, logs and timing for an edited worker in one author-facing view. |
 | bb marketplace and bb-lite Git/local catalogs, dependency and engine ranges, upgrade rollback | Decided, unbuilt | Find packages by source, have compatibility checked and restore the last working activation. Local checksum review is built in this lane. |
 | bb-lite fork existing server, app or runner entry and profiles | Decided, unbuilt | Fork one part of a default feature and keep updating the other parts. |
 | bb status, logs, lifecycle timings, safe mode and bb-lite audit chain | Decided, unbuilt | See why a plugin needs setup, view handler latency and disable scoped plugins together. |
