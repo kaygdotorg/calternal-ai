@@ -5,12 +5,13 @@
   // collapses: what the list holds (rows, a virtual list) and what the detail shows are the caller's snippets, and `selected` and `onback` are the caller's state.
   import type { Snippet } from "svelte";
   import Icon from "./Icon.svelte";
-  let { list, detail, selected, onback, listLabel, backLabel = "Back", breakpoint = "40rem", listWidth = "15rem", class: klass }: {
+  let { list, detail, selected, onback, listLabel, detailLabel = "Details", backLabel = "Back", breakpoint = "40rem", listWidth = "15rem", class: klass }: {
     /** The list pane's content. */ list: Snippet;
     /** The detail pane's content (shown when something is selected; the caller may also show an empty state). */ detail: Snippet;
     /** Whether something is selected: in the narrow arrangement this picks the pane that shows. */ selected: boolean;
     /** Called by the Back button of the narrow arrangement (the caller clears its selection). */ onback: () => void;
     /** The name of the list region, for assistive technology. */ listLabel: string;
+    /** The name of the detail region, for assistive technology. */ detailLabel?: string;
     /** The Back button's accessible name and text (it shows only in the narrow arrangement). */ backLabel?: string;
     /** The card width below which the panes take turns (any CSS length). */ breakpoint?: string;
     /** The list pane's width in the side-by-side arrangement. */ listWidth?: string;
@@ -20,7 +21,7 @@
 
 <div class={["split", klass]} data-selected={selected || undefined} style:--split-bp={breakpoint} style:--split-list={listWidth}>
   <nav class="list" aria-label={listLabel}>{@render list()}</nav>
-  <section class="detail">
+  <section class="detail" aria-label={detailLabel}>
     <button type="button" class="back" onclick={onback}><Icon inline name="back" /><span>{backLabel}</span></button>
     {@render detail()}
   </section>

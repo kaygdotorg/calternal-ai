@@ -39,7 +39,7 @@
     <h1>{page.name}</h1>
     <p class="blurb">{page.blurb}</p>
     <div class="sp">
-      <SplitView selected={sel !== null} onback={() => (sel = null)} listLabel="{page.name} sections" backLabel={page.name}>
+      <SplitView selected={sel !== null} onback={() => (sel = null)} listLabel="{page.name} sections" detailLabel={sel !== null ? page.groups[sel]?.title : page.name} backLabel={page.name}>
         {#snippet list()}
           <ul class="sections">
             {#each page.groups as g, i (g.title)}

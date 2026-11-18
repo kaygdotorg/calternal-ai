@@ -139,7 +139,7 @@
   .file { position: relative; display: inline-flex; align-items: center; gap: var(--s-3); min-height: var(--pill-h); padding: 0 var(--s-6); border-radius: var(--r-pill); background: rgb(var(--ink-rgb) / 0.07); font-weight: var(--strong-weight); }
   .file input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
   .file:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
-  .field, .search input { min-height: var(--pill-h); padding: 0 var(--s-5); border: 0; border-radius: var(--r-pill); background: rgb(var(--ink-rgb) / 0.07); color: var(--ink); width: 100%; }
+  .search input { min-height: var(--pill-h); padding: 0 var(--s-5); border: 0; border-radius: var(--r-pill); background: rgb(var(--ink-rgb) / 0.07); color: var(--ink); width: 100%; }
   .search input { flex: 1 1 7rem; width: auto; }
   .store { display: grid; gap: var(--s-1); }
   .store li { display: flex; align-items: center; gap: var(--s-4); min-height: var(--pill-h); }
@@ -148,5 +148,4 @@
   .note { font-size: var(--text-label); color: var(--ink-3); }
   .note a { color: var(--accent); }
   .err { color: var(--danger); font-size: var(--text-label); }
-  .field-l { display: grid; gap: var(--s-2); font-weight: var(--strong-weight); font-size: var(--text-label); }
 </style>
