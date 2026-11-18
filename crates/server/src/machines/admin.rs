@@ -37,6 +37,13 @@ const IO_TIMEOUT: Duration = Duration::from_secs(30);
 pub enum Request {
     /// Rotate the first-owner code through the running server.
     SetupCode,
+    /// Issue an account replacement grant through privileged local transport.
+    AccountRecover {
+        /// Immutable account identity, never a display name.
+        account: AccountId,
+        /// Out-of-band verification reason from the operator.
+        reason: String,
+    },
     /// Issue a one-time enrolment code for `owner`, valid for `minutes`.
     Code {
         /// Who the enrolled machine will belong to.
@@ -103,6 +110,13 @@ pub enum Response {
         /// Public origin for registration.
         url: String,
     },
+    /// A one-time, enrollment-only grant shown privately to the operator.
+    AccountRecovery {
+        /// Secret to present at the account recovery enrollment screen.
+        enrollment_grant: String,
+        /// Public origin at which this grant can be used.
+        url: String,
+    },
     /// Registration has already been completed.
     SetupComplete {
         /// Public origin for signing in.
@@ -150,7 +164,7 @@ struct Reply {
 /// commit; call on a blocking thread.
 pub fn execute(svc: &MachineService, request: Request) -> Result<Response, Error> {
     Ok(match request {
-        Request::SetupCode => {
+        Request::SetupCode | Request::AccountRecover { .. } => {
             return Err(Error::unavailable(
                 "start this server before requesting a setup code",
             ));
@@ -373,6 +387,19 @@ async fn answer(
             None => Err(Error::unavailable(
                 "passkey onboarding is unavailable on this server",
             )),
+        },
+        Ok(Envelope {
+            request: Request::AccountRecover { account, reason },
+            ..
+        }) => match owner_setup {
+            Some(setup) => setup
+                .recover(account, &reason)
+                .await
+                .map(|enrollment_grant| Response::AccountRecovery {
+                    enrollment_grant,
+                    url: setup.url().to_owned(),
+                }),
+            None => Err(Error::unavailable("account recovery is unavailable")),
         },
         Ok(e) => crate::blocking::spawn(move || execute(&svc, e.request))
             .await
