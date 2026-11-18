@@ -59,7 +59,8 @@ const open = async (query, reduced = false) => { const ctx = await b.newContext(
   await page.getByRole("button", { name: "Create passkey" }).click(); await waitHeading(page, "Choose a look");
   await page.getByRole("button", { name: "Skip" }).click(); await waitHeading(page, "Your machine");
   ok((await page.locator("ol.steps li").nth(1).textContent()).includes("skipped"), "a skipped step is marked skipped, not ticked");
-  ok((await page.getByText("Set up with this instance and connected").count()) === 1, "an instance machine set up at deploy shows as connected, with nothing to do");
+  await page.getByText("Set up with this instance and connected").waitFor({ timeout: 10000 });
+  ok(true, "an instance machine set up at deploy shows as connected, with nothing to do");
   await page.getByRole("button", { name: "Continue" }).click(); await waitHeading(page, "Sign in to a provider");
   await page.getByRole("button", { name: "Skip" }).click(); await waitHeading(page, "Your repositories");
   await page.getByLabel("Repository address").fill("https://git.example.org/me/app.git"); await page.getByRole("button", { name: "Add", exact: true }).click();
