@@ -2,6 +2,9 @@
 
 use super::*;
 
+/// The operations this file covers, for the inventory in `isolation.rs`.
+pub(super) const OPERATIONS: &[&str] = &["onboarding.state", "onboarding.finish"];
+
 #[tokio::test]
 async fn onboarding_is_account_bound_and_finish_is_durable_and_idempotent() {
     let mut f = Fixture::new().await;
