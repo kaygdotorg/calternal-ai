@@ -36,7 +36,7 @@ try {
     const { page: p, ctx } = await open(browser, "phone", "dark", "/threads/t-run");
     await p.waitForTimeout(800);
     const st = await p.locator(".go").first().getAttribute("data-state");
-    const g = await p.locator(".go svg rect").count();
+    const g = await p.locator('.go svg[data-icon="stop-round"][fill="currentColor"]').count();
     const cs = await p.locator(".go").first().evaluate((e) => { const s = getComputedStyle(e); return { bg: s.backgroundColor, fg: s.color }; });
     ok(st === "stop" && g === 1, "running: the control is Stop, a solid rounded square on the ink circle (the weight of ChatGPT's and bb's)", `${st} ${JSON.stringify(cs)}`);
     const go = await centre(p, ".go"); const lc = await lineCentre(p);
