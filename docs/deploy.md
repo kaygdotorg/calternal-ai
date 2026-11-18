@@ -191,11 +191,11 @@ calternal machine run --backend microvm --dir "$MACHINE_DIR" \
   --microvm-config "$MICROVM_CONFIG"
 ```
 
-The 512 MiB profile has two active thread slots across the person's pool
-work. A third turn shows **Waiting for capacity** with its queue position.
+The 512 MiB and 1,024 MiB profiles each have two active thread slots across
+the person's pool work. A third turn shows **Waiting for capacity** with its queue position.
 The person can cancel while waiting. Placement retries when an active slot
-is released. The next RAM profile is 1,024 MiB. Its account thread limit
-requires further measurement. Both profiles stay within the machine-wide
+is released. Three threads at 1,024 MiB were at the median-latency cutoff
+on the busy development host. Both profiles stay within the machine-wide
 sandbox ceiling.
 
 The role verifies the kernel and system disk once at startup. It keeps up to

@@ -126,7 +126,8 @@ impl GuestSize {
             },
             GuestSize {
                 memory_mib: 1024,
-                active_threads: None,
+                // Three threads were at the latency cutoff on the busy dev host.
+                active_threads: Some(2),
             },
         ];
         PROFILES

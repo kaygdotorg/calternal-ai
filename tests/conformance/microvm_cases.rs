@@ -359,7 +359,16 @@ async fn container_fallback_is_visible_only_to_entitled_accounts() {
 }
 
 #[tokio::test]
-async fn small_pool_guests_queue_a_third_thread_across_spaces() {
+async fn pool_guest_512_queues_a_third_thread_across_spaces() {
+    assert_pool_guest_queues_a_third_thread(512).await;
+}
+
+#[tokio::test]
+async fn pool_guest_1024_queues_a_third_thread_across_spaces() {
+    assert_pool_guest_queues_a_third_thread(1024).await;
+}
+
+async fn assert_pool_guest_queues_a_third_thread(memory_mib: u32) {
     let f = Fixture::new().await;
     for who in [1, 2] {
         machine_admin(&f, &["pool-grant", &f.ids[who]]);
@@ -368,7 +377,7 @@ async fn small_pool_guests_queue_a_third_thread_across_spaces() {
     let mut pool =
         requests_cases::Machine::enroll_with_code(&f, code["code"].as_str().unwrap()).await;
     assert_eq!(
-        pool.connect_sized(&f, "microvm", Some(512)).await,
+        pool.connect_sized(&f, "microvm", Some(memory_mib)).await,
         "microvm"
     );
     let (_, first) = tokio::join!(pool.sync_with_slots(&f, json!([]), 10), run(&f, 1, 0));

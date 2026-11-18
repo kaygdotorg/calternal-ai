@@ -233,7 +233,8 @@ latency increase over this run's one-thread reference. Three completed
 every turn and measured 10.64% above the reference. Four and five
 completed with higher latency and peak VM PSS above 974 MiB. These
 observations support a cap of two if the earlier 10% criterion applies.
-The production profile is unchanged pending the owner's cap decision.
+The owner approved two active threads for the 1,024 MiB profile for now.
+Three was at the cutoff on the busy development host.
 The dev-01 harness and sanitized raw metrics are in
 `~/Developer/lanes/microvm/cap1024/`.
 
