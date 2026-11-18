@@ -47,6 +47,13 @@ function double(handlers: Record<string, (input: any, requestId: string) => unkn
   return { client, calls, reverified, eventUrls, hasFeed: () => live !== null, push, setEvents: (r: Response) => (events = r), ops: (name: string) => calls.filter((c) => c.operation === name) };
 }
 
+describe("thread_full", () => {
+  test("a turn that failed because the thread reached its size limit says so and offers a new thread", async () => {
+    const { reasonNotice } = await import("./thread-file");
+    expect(reasonNotice({ code: "thread_full" })).toEqual({ kind: "thread-full" });
+  });
+});
+
 describe("the saved thread's Markdown", () => {
   test("messages are read in order, with roles and ids; unclosed ones run to the next marker", () => {
     const ms = parseMessages(md(agent), 1000, 2000);
@@ -286,8 +293,8 @@ describe("ServerThreads", () => {
 describe("requests (docs/requests.md, crates/core/src/requests.rs)", () => {
   const list = { requests: [
     { id: "q1", space_id: SPACE, thread_id: T1, detail: { kind: "question", label: "Before I open the pull request", form: { genui_version: 2, source: "Form([],\"x\")" } } },
-    { id: "a1", space_id: SPACE, thread_id: T1, detail: { kind: "approval", app: "calternal-notes", write: true, action: { operation: "threads.delete", input: { id: T2 }, request_id: "r", risk: "irreversible" } } },
-    { id: "a2", space_id: SPACE, thread_id: T1, detail: { kind: "approval", app: "calternal-notes", write: false, action: { operation: "notes.get", input: { id: "n" }, request_id: "r", risk: "read" } } },
+    { id: "a1", space_id: SPACE, thread_id: T1, detail: { kind: "approval", app: "calternal-notes", write: true, action: { operation: "threads.delete", input: { id: T2 }, request_id: "r" }, lifetimes: ["once"] } },
+    { id: "a2", space_id: SPACE, thread_id: T1, detail: { kind: "approval", app: "calternal-notes", write: false, action: { operation: "notes.get", input: { id: "n" }, request_id: "r" }, lifetimes: ["once", "this_thread"] } },
     { id: "s1", space_id: null, thread_id: T2, detail: { kind: "secret", name: "FORGEJO_TOKEN", label: "Forgejo token", reason: "To publish", expires_at_ms: 1_800_000 } },
     { id: "z", space_id: SPACE, thread_id: T1, detail: { kind: "something-new" } },
   ] };
@@ -299,13 +306,12 @@ describe("requests (docs/requests.md, crates/core/src/requests.rs)", () => {
     expect(r[3]).toMatchObject({ name: "FORGEJO_TOKEN", expiresAt: 1_800_000, scope: "personal" });
     expect(d.ops("requests.list")[0]!.input).toEqual({});
   });
-  test("an irreversible or access-widening approval is single-use; the rest may last for the thread; a server list wins", async () => {
+  test("the lifetimes come from the server's list, in its order; none listed means once only", async () => {
     const d = double({ "requests.list": () => list });
     const r = (await d.client.requests()).filter((x) => x.kind === "approval") as { lifetimes: string[] }[];
     expect(r.map((x) => x.lifetimes)).toEqual([["once"], ["once", "thread"]]);
-    expect(lifetimesOf({ kind: "approval", app: "a", write: true, action: { risk: "widens_access" } })).toEqual(["once"]);
-    expect(lifetimesOf({ kind: "approval", app: "a", write: true, action: { risk: "read" }, lifetimes: ["once"] })).toEqual(["once"]);
-    expect(lifetimesOf({ kind: "approval", app: "a", write: true, lifetimes: ["once", "this_thread"] })).toEqual(["once", "thread"]);
+    expect(lifetimesOf({ kind: "approval", app: "a", write: true, lifetimes: ["this_thread", "once"] })).toEqual(["thread", "once"]);
+    expect(lifetimesOf({ kind: "approval", app: "a", write: true, lifetimes: [] })).toEqual(["once"]);
   });
   test("answers become the real operations: answer, approve once or this_thread, deny", async () => {
     const d = double({ "requests.list": () => ({ requests: [] }), "requests.answer": () => ({}), "requests.approve": () => ({}), "requests.deny": () => ({}) });

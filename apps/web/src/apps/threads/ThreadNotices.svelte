@@ -5,7 +5,7 @@
   import { navigate } from "../../lib/route.svelte";
   import Notice from "./Notice.svelte";
   import type { ThreadSummary } from "./model";
-  let { thread, onresume, oncheck }: { thread: ThreadSummary; onresume: () => void; oncheck?: () => void } = $props();
+  let { thread, onresume, oncheck, onnew }: { thread: ThreadSummary; onresume: () => void; oncheck?: () => void; onnew?: () => void } = $props();
   const n = $derived(thread.notice);
   const machines = () => navigate("/settings/machines");
   // The retry wait counts down while a notice shows it (one timer, only while shown).
@@ -67,6 +67,10 @@
       {sentence(n.reason)}Calternal already retried by itself (five times, from 30 seconds up to 8 minutes). Try again now, or change the provider under the message box.
     </Notice>
   {/if}
+{:else if n?.kind === "thread-full"}
+  <Notice icon="warning" title="This thread is full" actions={onnew ? [{ text: "New thread", onclick: onnew, primary: true }] : []}>
+    The thread reached the size one thread can hold (2 MiB), so the last turn stopped. Everything written so far is kept and can be read. Start a new thread to carry on.
+  </Notice>
 {:else if n?.kind === "interrupted"}
   {#if n.resumable}
     <Notice icon="warning" title={n.machine ? `${n.machine} stopped answering` : "The machine stopped answering"} actions={[{ text: "Resume", onclick: onresume, primary: true }]}>

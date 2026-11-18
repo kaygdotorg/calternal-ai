@@ -34,7 +34,8 @@ export type ThreadNotice =
   | { kind: "provider-signin"; machine?: string; provider: string; command?: string }
   | { kind: "failed"; failure: "transient" | "usage_limit" | "permanent"; reason?: string; resetAtMs?: number }
   | { kind: "retrying"; rule: "provider_backoff" | "api_availability" | "subscription_reset"; reason?: string; attempt?: number; of?: number; nextAt?: number }
-  | { kind: "interrupted"; machine?: string; resumable: boolean; why?: string; sinceMs?: number };
+  | { kind: "interrupted"; machine?: string; resumable: boolean; why?: string; sinceMs?: number }
+  | { kind: "thread-full" };
 
 /** What the sidebar and the header need to know about a thread. A child thread has a `parentId`. */
 export interface ThreadSummary {

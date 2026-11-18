@@ -5,7 +5,7 @@
  *   - `requests.answer` `{ id, answer }` (a question's form values), `requests.approve` `{ id, lifetime: "once" | "this_thread" }`, `requests.deny` `{ id }`.
  *   - A secret's value is not an operation: it goes to `POST /api/v1/auth/secrets/provide` `{ space_id?, request_id, value }` (a signed-in session with a fresh passkey check), and is not kept here.
  * Approving needs a fresh passkey proof on an installation session, so a development bearer is refused: the refusal reaches the person as the server's own words.
- * Which lifetimes an approval allows is the server's rule (irreversible and access-widening actions are single-use): `lifetimesOf` reads it from the action's risk (or a `lifetimes` list when the server sends one),
+ * Which lifetimes an approval allows is the server's rule (`detail.lifetimes`, in display order; irreversible and access-widening actions are single-use): `lifetimesOf` reads that list and nothing else,
  * and the bar offers nothing else. Not polled: the thread feed calls `refresh` when a turn starts or stops waiting.
  */
 import { spaces } from "../shell/spaces.svelte";
@@ -25,15 +25,17 @@ export interface WireRequest {
   /** What is asked: a question, an approval or a secret, with the data its form needs (read by `requestOf`). */
   detail:
     | { kind: "question"; label: string; form: { genui_version: number; source: string } }
-    | { kind: "approval"; app: string; write: boolean; action?: { operation?: string; input?: unknown; request_id?: string; risk?: string }; lifetimes?: string[] }
+    | { kind: "approval"; app: string; write: boolean; action?: { operation?: string; input?: unknown; request_id?: string }; lifetimes: string[] }
     | { kind: "secret"; name: string; label: string; reason: string; expires_at_ms: number };
 }
 
-/** The lifetimes an approval may be given for. A server-sent list wins; otherwise the action's risk decides (the requests lane's rule). */
+/**
+ * The lifetimes an approval may be given for: the server's own list (`once`, `this_thread`), mapped to the bar's words. The server enforces the same list when it checks a decision, so nothing is
+ * inferred here; a list that is missing or empty (an older server) offers `once` only, the choice that is always safe.
+ */
 export function lifetimesOf(d: Extract<WireRequest["detail"], { kind: "approval" }>): ("once" | "thread")[] {
-  if (d.lifetimes?.length) return d.lifetimes.map((l) => (l === "this_thread" || l === "thread" ? "thread" : "once")).filter((l, i, a) => a.indexOf(l) === i) as ("once" | "thread")[];
-  const risk = d.action?.risk;
-  return risk === "irreversible" || risk === "widens_access" ? ["once"] : ["once", "thread"];
+  const l = (d.lifetimes ?? []).map((x) => (x === "this_thread" ? "thread" : "once") as "once" | "thread").filter((x, i, a) => a.indexOf(x) === i);
+  return l.length ? l : ["once"];
 }
 
 /** A listed request as the Threads app's type. An unknown kind is dropped (the bar cannot draw it). */
