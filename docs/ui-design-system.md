@@ -236,3 +236,34 @@ other scheme's ink when that needs clearly (0.12) less veil (`data-ink`, the gen
 Checked on rendered pixels: `e2e/veil-pixels.mjs` (all eight photographs, both schemes).
 
 The photographs suit the dark scheme, so the light scheme uses a lighter rendition of each, made at build time (`scripts/wallpapers.mjs`).
+
+## Card against sidebars: the plugin's values and ours (2026-11-18)
+
+The owner's report: the middle card and the sidebars look too alike, which hurts contrast, and Clear to tinted turned the sidebar light in dark mode. The reference is the `calternal-ui` bb plugin (`~/Developer/bb-plugins/calternal-ui`, `shared/defaults.ts`, `frame/css.ts`, `frame/preblur.ts`).
+
+**The plugin's defaults** (settings Chat and Sidebar surfaces):
+
+| Surface | Blur | Tint (of the theme's colour) | Dim | Notes |
+| --- | --- | --- | --- | --- |
+| Sidebar | 12 px, saturate 120 % | 35 % | off (20 % if switched on) | light scheme adds a 50 % white wash |
+| Middle card | 75 px, saturate 140 % | 85 % | 30 %, black in dark, white in light (boosted to about 65 % in light so a dark photo never greys the card) | |
+
+So the card is a nearly solid sheet (about 0.9 of the picture covered, and 75 px blur on what remains) and the sidebars are the picture seen through light glass (0.35). The plugin renders the blur once into a small canvas (`frame/preblur.ts`, a 1/8-size copy for 75 px) and drops the live `backdrop-filter`; ours has done the same since the first veil work (`appearance/wallpaper.ts`: two pre-blurred copies, 12 and 75 px, no live blur on the card or the sidebars), so the cost was never the blur: the card was solved to the readability floor plus a margin, which left it as thin as 0.36 and as bright as the wallpaper.
+
+**What changed.** The card now starts at the plugin's tint 0.85 and dim 0.3 (0.45 in the dark scheme, black; white in light) and the readability floor can only raise it; a sidebar starts at tint 0.35 with no dim and the floor raises its dim only as far as it needs (`appearance/veil.ts`). Nothing flips to a light veil in the dark scheme (a sidebar can still flip to dark text over a very dark picture in the light scheme). Clear to tinted keeps at least 0.3 of the scheme's own paper over every surface.
+
+**Contrast between the card and each sidebar** (WCAG ratio of the mean colour of each surface with text and icons hidden; default wallpaper; 1500 x 970; `e2e/material-contrast.mjs`, dev-02; the plugin's recipe is painted onto our shell with `PLUGIN=1` so both are measured the same way):
+
+| | dark: card vs left / right | light: card vs left / right |
+| --- | --- | --- |
+| before (solved floor, flip allowed) | 1.16 / 1.19 (the build on the shared port; see below) | 1.20 / 1.09 |
+| plugin recipe | 1.18 / 1.04 | 1.21 / 1.19 |
+| now | 1.15 / 1.06 | 1.57 / 1.43 |
+
+Measured colours now: dark card (31, 29, 28) against left sidebar (45, 40, 36); light card (233, 231, 230) against (192, 186, 179). The dark sidebar stays dim because the 7:1 floor on the default photograph's highlights asks for a dim of 0.5; the plugin has no such floor, which is why its dark sidebars are brighter (55, 45, 36) while ours keep their text readable. The two are within 0.03 of each other in dark and ours is 0.3 stronger in light.
+
+(The "before" row was measured against a preview already running on the shared test port; treat it as indicative. The two after rows were measured against our own build on a free port, `e2e/with-preview.mjs`.)
+
+**Why Clear made the sidebar light in dark mode.** Two causes: the solver could flip a sidebar to the other scheme's ink and paper whenever that needed clearly less veil (a bright photograph in the dark scheme did), and the slider scaled whatever veil came out, so a flipped light veil at low strength read as a light tint; the scaled veil also had no floor. Fixed by never flipping in the dark scheme and by `scaled()` (`veil.ts`): strength is multiplied but the colours stay the scheme's paper and the total never falls under 0.3.
+
+**Clear to tinted is a stepped control** (`StepSlider` in `packages/ui`): five named steps (Clear, Light, Balanced, Dense, Tinted) that multiply the veil by 0.3, 0.65, 1, 1.4 and 1.8; it snaps, a press or drag moves to the nearest step, Left/Down and Right/Up move one step, Home and End the ends, the ends are labelled and `aria-valuetext` names the step. Balanced (the middle) is the solved veil. A stored value from the old continuous slider rounds to the nearest step. Measured per step in the dark scheme (left sidebar mean colour): Clear (56, 46, 37), Light (51, 43, 37), Balanced (45, 40, 36), Dense (40, 38, 36), Tinted (37, 36, 36): darker with every step and never light.
