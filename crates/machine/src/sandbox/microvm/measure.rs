@@ -222,34 +222,39 @@ async fn compare_microvm_and_podman_under_perf_lock() {
         picked_up.release().await.unwrap();
         drop(picked_up);
 
-        // Advance the idle timestamp while exercising the actual sweep path
-        // and persisted disk. The benchmark times the wake, not the wait.
-        let slot = pool.0.account(spec.account_id);
-        slot.lock().await.last_used = Instant::now() - super::IDLE;
-        drop(slot);
-        tokio::time::timeout(Duration::from_secs(90), async {
-            loop {
-                if pool.0.account(spec.account_id).lock().await.vm.is_none() {
-                    break;
+        let mut idle_wakes_ms = Vec::with_capacity(10);
+        for _ in 0..10 {
+            // Advance the idle timestamp while exercising the actual sweep path
+            // and persisted disk. The benchmark times the wake, not the wait.
+            let slot = pool.0.account(spec.account_id);
+            slot.lock().await.last_used = Instant::now() - super::IDLE;
+            drop(slot);
+            tokio::time::timeout(Duration::from_secs(90), async {
+                loop {
+                    if pool.0.account(spec.account_id).lock().await.vm.is_none() {
+                        break;
+                    }
+                    tokio::time::sleep(Duration::from_millis(100)).await;
                 }
-                tokio::time::sleep(Duration::from_millis(100)).await;
-            }
-        })
-        .await
-        .unwrap();
-        let time = Instant::now();
-        let restarted = pool.start(&spec).await.unwrap();
-        command(&*restarted).await;
-        let idle_wake_ms = time.elapsed().as_secs_f64() * 1000.0;
+            })
+            .await
+            .unwrap();
+            let time = Instant::now();
+            let restarted = pool.start(&spec).await.unwrap();
+            command(&*restarted).await;
+            let idle_wake_ms = time.elapsed().as_secs_f64() * 1000.0;
+            idle_wakes_ms.push(idle_wake_ms);
+            restarted.release().await.unwrap();
+            drop(restarted);
+        }
         println!(
             "{}",
             json!({
                 "backend":"microvm",
                 "warm_pickup_ms":warm_pickup_ms,
-                "idle_wake_ms":idle_wake_ms
+                "idle_wakes_ms":idle_wakes_ms
             })
         );
-        restarted.release().await.unwrap();
         pool.erase(spec.account_id, None).await.unwrap();
         pool.shutdown().await.unwrap();
     }

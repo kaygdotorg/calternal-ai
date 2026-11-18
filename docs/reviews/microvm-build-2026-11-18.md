@@ -174,6 +174,26 @@ per account. Its results are the earlier locked control from the same
 host, so the table compares separate runs. Raw current results are in
 `~/calternal-ai-microvm-51/stage5/perf-512-tap-fixed.log`.
 
+### Ten idle wakes on perf-02
+
+The follow-up used a dev-built artifact with the same 512 MiB guest
+configuration, TAP firewall and locked perf host. The test repeated the actual
+idle sweep and restart on the same persisted account disk, advancing the
+idle timestamp before each sweep. Timing starts after the old guest stops
+and ends when the first `true` command completes. It contains neither the
+idle interval nor the sweep's wait. The test completed in 265.83 seconds.
+
+| Samples | Minimum | Median | p90 | Maximum | Under 1 s |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 10 | 950.12 ms | 998.47 ms | 1,009.82 ms | 1,019.26 ms | 5 |
+
+Samples in run order, in milliseconds: 1,019.26, 986.41, 993.02, 963.38,
+1,009.82, 1,006.17, 1,002.73, 950.12, 994.21, and 1,006.10. Percentiles
+use nearest rank, so p95 is the maximum at this sample count. The same
+locked command above used `./calternal-microvm-bench-wakes` as its binary.
+Raw output is in
+`~/calternal-ai-microvm-51/stage5/perf-512-ten-wakes.log`.
+
 ## Backend gate commands
 
 Run these in the development VM lane. Each cargo build or test uses six jobs.
