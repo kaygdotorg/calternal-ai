@@ -87,6 +87,13 @@ pub(super) enum Cmd {
         #[command(flatten)]
         connection: calternal_cli::agent::Connection,
     },
+    /// Read or record onboarding completion for the signed-in account.
+    Onboarding {
+        #[command(flatten)]
+        connection: calternal_cli::account_input::Connection,
+        #[command(subcommand)]
+        cmd: calternal_cli::onboarding::Onboarding,
+    },
     /// Save, read and erase private account compositions.
     Drafts {
         #[command(flatten)]
@@ -161,6 +168,17 @@ pub(super) enum Cmd {
         /// Confirms that the operator verified the caller's identity out of band.
         #[arg(long, required = true)]
         identity_verified: bool,
+        /// The running server's appdata directory.
+        #[arg(long)]
+        appdata: PathBuf,
+        /// The installation UUID configured for the running server.
+        #[arg(long, env = "CALTERNAL_INSTALLATION_ID")]
+        installation_id: String,
+    },
+    /// Inspect receipt-pruning health for one space through the private admin socket.
+    ReceiptStatus {
+        /// Space UUID to inspect.
+        space: String,
         /// The running server's appdata directory.
         #[arg(long)]
         appdata: PathBuf,

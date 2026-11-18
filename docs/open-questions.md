@@ -2,12 +2,14 @@
 
 Decisions waiting on kayg, most blocking first. Answer here or in chat; answered items
 move to the decision record they belong to and leave this list. Terms: see
-[glossary](glossary.md). Updated 2026-11-19 18:10 IST.
+[glossary](glossary.md). Updated 2026-11-19 20:30 IST.
 
 ## Waiting now
 
 | # | Question | Recommendation | Area |
 | --- | --- | --- | --- |
+| 66 | Mail for the hosted service: which SMTP provider, sender address, and the credential (to be given through the secure prompt). Until then production runs with email optional and no verification | kayg chooses; any transactional provider works | Accounts |
+| 67 | Remove what my lane start-up left in the existing app's repository: twelve bb worktrees and their branches, the branch lane/perf-2 and three extra refs (nothing was pushed, its files and dev branch are unchanged) | Yes, once those lanes have finished | Housekeeping |
 | 65 | Using Codex's own cloud sandboxes for people with no machine and no paid plan: only through what OpenAI officially supports from another program; being researched | Decide after the research | Harnesses |
 | 10 | Native font: system or Google Sans Flex | Decide after seeing both on a Mac and an iPhone | Native apps |
 

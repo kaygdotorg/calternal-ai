@@ -326,10 +326,10 @@ async fn drafts_require_the_development_build_and_stay_in_one_space() {
             "package": {
                 "manifest": {
                     "id": id, "name":"Conformance draft", "icon":"puzzle", "version":"0.1.0",
-                    "api_version":1, "kinds":[],
+                    "api_version":1,
                     "operations":[{
-                        "id":op, "input_schema":{"type":"object","additionalProperties":false},
-                        "output_schema":{"type":"object"},"required_capability":"space.read",
+                        "id":op, "input_schema":{"type":"object","properties":{"sentence":{"type":"string"}},"additionalProperties":false},
+                        "output_schema":{"type":"object","properties":{"value":{"type":"number"}},"required":["value"]},"required_capability":"space.read",
                         "mutates":false,"idempotency":"read_only","risk":"read"
                     }],
                     "collections":[],"views":[],"attention":[],"settings":[],"schedules":[],
@@ -346,7 +346,7 @@ async fn drafts_require_the_development_build_and_stay_in_one_space() {
         sock.read_to_end(&mut reply).unwrap();
         serde_json::from_slice::<Result<(), String>>(&reply).unwrap()
     };
-    let worker = |result| {
+    let worker = |result: Value| {
         format!(
         "require('node:readline').createInterface({{input:process.stdin}}).on('line', line => {{
             const request = JSON.parse(line);
@@ -357,14 +357,14 @@ async fn drafts_require_the_development_build_and_stay_in_one_space() {
     )
     };
     let scope = || json!({"space_id":space});
-    let first = send(&f.appdata(), &worker(1), &account);
+    let first = send(&f.appdata(), &worker(json!(1)), &account);
     if !development_build {
         assert!(first.unwrap_err().contains("unknown variant `draft`"));
         f.stop();
         f.development = true;
         f.start().await;
         assert!(
-            send(&f.appdata(), &worker(1), &account)
+            send(&f.appdata(), &worker(json!(1)), &account)
                 .unwrap_err()
                 .contains("unknown variant `draft`")
         );
@@ -376,12 +376,12 @@ async fn drafts_require_the_development_build_and_stay_in_one_space() {
     f.development = true;
     f.start().await;
     assert!(
-        send(&f.appdata(), &worker(1), &f.ids[2])
+        send(&f.appdata(), &worker(json!(1)), &f.ids[2])
             .unwrap_err()
             .contains("cannot manage plugins")
     );
     assert_eq!(f.op(1, op, scope()).await.status, 404);
-    send(&f.appdata(), &worker(1), &account).unwrap();
+    send(&f.appdata(), &worker(json!(1)), &account).unwrap();
     let result = f.op(1, op, scope()).await;
     result.ok();
     assert_eq!(result.body["data"]["value"], 1);
@@ -400,9 +400,68 @@ async fn drafts_require_the_development_build_and_stay_in_one_space() {
         f.op(2, op, json!({"space_id":f.spaces[1]})).await.status,
         404
     );
+    let diagnostics = |space: &str, account: &str, op: &str| {
+        Command::new(&binary)
+            .args(["plugin", "diagnostics", id, op, "--json", "--appdata"])
+            .arg(f.appdata())
+            .args(["--space", space, "--account", account])
+            .output()
+            .unwrap()
+    };
+    let show = || {
+        let result = diagnostics(&space, &account, op);
+        assert!(result.status.success(), "{result:?}");
+        serde_json::from_slice::<Value>(&result.stdout).unwrap()["data"].clone()
+    };
+    let first_ready = show();
+    assert_eq!(first_ready["phase"], "ready");
+    assert!(first_ready["timing"]["handshake_ms"].is_number());
+    assert!(!diagnostics(&space, &f.ids[2], op).status.success());
+    assert!(!diagnostics(&f.spaces[1], &f.ids[2], op).status.success());
+    assert!(
+        !diagnostics(&space, &account, "conformance-draft.missing")
+            .status
+            .success()
+    );
     assert!(send(&f.appdata(), "process.exit(1)", &account).is_err());
     assert_eq!(f.op(1, op, scope()).await.body["data"]["value"], 1);
-    send(&f.appdata(), &worker(2), &account).unwrap();
+    assert_eq!(show()["ready_revision"], first_ready["ready_revision"]);
+    let failed = show()["last_failed_candidate"].clone();
+    assert_eq!(failed["phase"], "handshake", "{failed:?}");
+    assert!(
+        failed["message"]
+            .as_str()
+            .is_some_and(|m| !m.is_empty() && m.len() <= 300)
+    );
+    send(
+        &f.appdata(),
+        &worker(json!("private-worker-value")),
+        &account,
+    )
+    .unwrap();
+    assert!(show()["last_failed_candidate"].is_null());
+    let err = f.op(1, op, scope()).await;
+    assert_eq!(err.status, 503);
+    assert_eq!(
+        err.body["error"]["details"]["path"],
+        "/properties/value/type"
+    );
+    assert!(!err.body.to_string().contains("private-worker-value"));
+    for _ in 0..6 {
+        let input = json!({"space_id":space,"sentence":1});
+        assert_eq!(f.op(1, op, input).await.status, 400);
+    }
+    let recent = show();
+    let errors = recent["errors"].as_array().unwrap();
+    assert_eq!(errors.len(), 5);
+    assert!(
+        errors.iter().all(|e| e["path"] == "/sentence"),
+        "{errors:?}"
+    );
+    f.op(1, op, scope()).await;
+    assert_eq!(show()["errors"][0]["path"], "/properties/value/type");
+    send(&f.appdata(), &worker(json!(2)), &account).unwrap();
+    assert_eq!(show()["errors"], json!([]));
     assert_eq!(f.op(1, op, scope()).await.body["data"]["value"], 2);
     f.stop();
     f.start().await;

@@ -6,6 +6,8 @@ title: "Command reference"
 
 > **Preview: the app is not released.** This site describes a development preview and accepted designs; it does not establish production readiness.
 
+- [calternal-onboarding-state](./calternal-onboarding-state/)
+- [calternal-onboarding-finish](./calternal-onboarding-finish/)
 - [calternal-search-query](./calternal-search-query/)
 - [calternal-search-items](./calternal-search-items/)
 - [calternal-search-threads](./calternal-search-threads/)
@@ -81,6 +83,7 @@ title: "Command reference"
 - [calternal-threads-models](./calternal-threads-models/)
 - [calternal-agent-readiness](./calternal-agent-readiness/)
 - [calternal-serve](./calternal-serve/)
+- [calternal-receipt-status](./calternal-receipt-status/)
 - [calternal-machines-code](./calternal-machines-code/)
 - [calternal-machines-list](./calternal-machines-list/)
 - [calternal-machines-revoke](./calternal-machines-revoke/)

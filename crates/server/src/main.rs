@@ -62,6 +62,12 @@ fn main() {
         Cmd::Describe { connection } => {
             calternal_cli::agent::invoke(connection, None, "{}".into(), &out)
         }
+        Cmd::Onboarding { connection, cmd } => out.finish(calternal_cli::account_input::run(
+            connection,
+            cmd.operation(),
+            serde_json::json!({}),
+            &out,
+        )),
         Cmd::Drafts { connection, cmd } => {
             let (op, input) = cmd.operation();
             out.finish(calternal_cli::account_input::run(
@@ -130,6 +136,15 @@ fn main() {
             &account,
             &reason,
             identity_verified,
+        )),
+        Cmd::ReceiptStatus {
+            appdata,
+            installation_id,
+            space,
+        } => out.finish(admin_cli::receipt_status(
+            &appdata,
+            &installation_id,
+            &space,
         )),
         Cmd::Serve {
             appdata,
@@ -503,12 +518,14 @@ async fn serve(
     // Operator commands reach this server here instead of writing behind it.
     let admin_root = data_dir.clone();
     let admin_machines = machines.clone();
+    let admin_content = state.store.shared_content();
     let _admin = tokio::task::spawn_blocking(move || {
         calternal_server::machines::admin::serve_socket(
             &admin_root,
             installation,
             admin_machines,
             owner_setup,
+            admin_content,
         )
     })
     .await

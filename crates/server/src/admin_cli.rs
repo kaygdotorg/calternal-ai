@@ -207,6 +207,51 @@ pub fn account_recover(
     }
 }
 
+/// Inspect one space's receipt-pruning health through the live admin socket.
+/// Costs one socket round trip and the server's read-only inspection.
+pub fn receipt_status(
+    appdata: &Path,
+    installation_id: &str,
+    space: &str,
+) -> Result<Reply, CliError> {
+    use calternal_content::ReceiptPruningIssue;
+    let installation =
+        uuid::Uuid::parse_str(installation_id).map_err(|_| bad_uuid("installation"))?;
+    let space = calternal_types::SpaceId::parse(space).map_err(|_| bad_uuid("space"))?;
+    let hint = "Run as the server's user with its appdata directory and installation ID.";
+    let response = admin::ask_server(appdata, installation, Request::ReceiptStatus { space })
+        .map_err(|e| CliError::new("failed", e.message).hint(hint))?;
+    let issue = match response {
+        Some(Response::ReceiptStatus { issue }) => issue,
+        Some(_) => return Err(unexpected()),
+        None => {
+            return Err(CliError::new(
+                "server_unavailable",
+                "The local admin socket is unavailable.",
+            )
+            .hint(hint));
+        }
+    };
+    let status = match &issue {
+        None => "No receipt-pruning problem observed.".to_owned(),
+        Some(ReceiptPruningIssue::ExpiredPin { age_ms }) => {
+            let hours = age_ms / 3_600_000;
+            format!(
+                "Outbox pins an expired receipt ({} days, {} hours old).",
+                hours / 24,
+                hours % 24
+            )
+        }
+        Some(ReceiptPruningIssue::OutboxUnreadable) => {
+            "Outbox unreadable. Receipt age unknown.".to_owned()
+        }
+        Some(ReceiptPruningIssue::JournalUnreadable) => {
+            "Journal unreadable. Receipt age unknown.".to_owned()
+        }
+    };
+    Ok(Reply::new(json!({"space_id": space, "issue": issue})).line(status))
+}
+
 /// Run one `machines` subcommand. Cost: see [`run`].
 pub fn machines(cmd: MachinesCmd, out: &Output) -> Result<Reply, CliError> {
     let account = |s: &str| calternal_types::AccountId::parse(s).map_err(|_| bad_uuid("account"));
