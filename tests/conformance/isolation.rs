@@ -41,6 +41,7 @@ mod plugin_parity_cases;
 mod plugin_slot_cases;
 
 mod search_cases;
+mod setup_code_cases;
 mod simplify_review_cases;
 mod wallpaper_cases;
 mod worker_cases;
@@ -251,8 +252,11 @@ impl Fixture {
                 .env("RUST_LOG", "warn")
                 .env("CALTERNAL_FAULT", crash)
                 .stdin(Stdio::null())
-                .stdout(Stdio::null())
-                .stderr(Stdio::inherit())
+                .stdout(self.setup_log("server.stdout").unwrap_or_else(Stdio::null))
+                .stderr(
+                    self.setup_log("server.stderr")
+                        .unwrap_or_else(Stdio::inherit),
+                )
                 .spawn()
                 .unwrap(),
         );
@@ -284,6 +288,21 @@ impl Fixture {
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
         panic!("startup timeout");
+    }
+
+    fn setup_log(&self, name: &str) -> Option<Stdio> {
+        self.dir
+            .path()
+            .join("capture-setup-logs")
+            .is_file()
+            .then(|| {
+                std::fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(self.dir.path().join(name))
+                    .unwrap()
+                    .into()
+            })
     }
     async fn req(
         &self,
