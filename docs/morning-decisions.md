@@ -136,3 +136,15 @@ options, implementation costs and the placement revocation problem.
   its links and can grow storage independently of Markdown. A separate quota or
   expiry bounds storage and needs an explicit expired-output state. Define
   the inline threshold and the point at which the artifact becomes durable.
+
+## Wallpaper attribution and tracking (issue #49)
+
+- **Same-origin image views.** Ask Unsplash about its documented view-beacon
+  alternative, which retains server caching and adds provider integration work.
+  A separately approved release-asset arrangement needs asset management and
+  attribution. Direct hotlinking would change the decided CSP and expose browser
+  requests to Unsplash.
+- **Selection tracking.** Add a signed-in picker event that triggers the API call
+  when someone selects a photo, even when its image is cached. This needs a
+  client hook and a budget for selection events separate from rendition fills.
+  The current contract reports first wallpaper use per photo per installation.
