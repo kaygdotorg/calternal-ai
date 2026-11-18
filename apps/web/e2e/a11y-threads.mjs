@@ -32,7 +32,11 @@ let bad = 0;
 // The states are independent pages: a few at a time (CAL_WORKERS, default 4), reported in order.
 const jobs = []; for (const device of ["desktop", "phone"]) for (const scheme of ["light", "dark"]) for (const [name, path, act] of states) jobs.push({ device, scheme, name, path, act });
 const lines = new Array(jobs.length);
+// A page the machine could not keep alive (a renderer killed under memory pressure) says so with "closed"/"crashed": that state is run again, once, in a fresh context; a real finding never is.
 async function one(j, i) {
+  try { return await attempt(j, i); } catch (e) { if (!/closed|crash/i.test(String(e.message))) throw e; return attempt(j, i); }
+}
+async function attempt(j, i) {
   const { page, ctx } = await open(browser, j.device, j.scheme, j.path);
   try {
     try { if (j.act) { await j.act(page); await settle(page); } } catch (e) { lines[i] = `skip ${j.device} ${j.scheme} ${j.name}: ${String(e.message).split("\n")[0]}`; return; }
