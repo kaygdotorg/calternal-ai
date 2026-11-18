@@ -50,7 +50,7 @@ const wallpapers = JSON.parse(readFileSync("wallpapers.json", "utf8"));
   ok((await page.evaluate(() => JSON.parse(localStorage.getItem("cal.appearance") ?? "{}").streamText ?? false)) === false, "Message text is not streamed by default");
   // composer menus: pickers with icons and search
   await expandComposer(page);
-  await page.getByRole("button", { name: /GPT|Claude|Sonnet|Opus|Codex/ }).first().click(); await page.waitForTimeout(300);
+  await page.locator(".chip[data-chip=model] .pill").first().click(); await page.waitForTimeout(300);
   const picker = page.getByRole("dialog", { name: /Provider/ }); // a menu with a search field is a dialog holding the search and the menu
   ok((await picker.locator("input[type=search]").count()) > 0 && (await picker.locator("svg").count()) > 0, "Pickers show an icon per provider and have an inline search field"); await page.keyboard.press("Escape");
   // message actions

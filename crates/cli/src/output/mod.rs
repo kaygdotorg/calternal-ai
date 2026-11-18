@@ -222,6 +222,11 @@ pub struct Output {
 }
 
 impl Output {
+    /// Local offset captured before starting the runtime, in minutes east of UTC.
+    pub(crate) fn utc_offset_minutes(&self) -> i16 {
+        self.offset.whole_minutes()
+    }
+
     /// Output for this process: `json` from `--json`; colour, width and time
     /// zone from the environment. Reads `--no-hints` from the argument vector.
     /// Call from `main` before starting a runtime.

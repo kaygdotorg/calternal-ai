@@ -20,7 +20,7 @@ export interface Command {
   /** The name shown in the help sheet and the palette. */
   label: string;
   /** The help sheet section it is listed in. */
-  group: "Navigation" | "Threads" | "Help";
+  group: "Navigation" | "Threads" | "Canvas" | "Help";
   /** Where it applies, in plain words, shown in the help sheet. */
   where: string;
   /** The default chord. */

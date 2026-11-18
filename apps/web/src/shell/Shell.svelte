@@ -76,8 +76,14 @@
     wp = { side, vis, w, layoutOpen, settling: false };
     return vis;
   }
+  /** The fingers on the screen now (pointer id and when it went down): a second one ends any pull. */
+  const touching = new Map<number, number>();
   function gdown(e: PointerEvent) {
     if (e.pointerType !== "touch") return;
+    // A second finger is never a pull: two fingers are the canvas's (canvas/Canvas.svelte), so a pull that the first finger began is let go and the rest of the gesture is left alone.
+    touching.set(e.pointerId, e.timeStamp);
+    for (const [id, t] of touching) if (e.timeStamp - t > 3000) touching.delete(id); // a finger whose release was missed does not count for ever
+    if (touching.size > 1) { gskip = true; if (drag !== null || mode || tgt) { drag = null; dragMode = null; mode = null; tgt = null; } return; }
     gtouch = true; gx = e.clientX; gy = e.clientY; gmoved = false; samples = [{ t: e.timeStamp, x: e.clientX }];
     gtarget = e.target as Element;
     gskip = leavesAlone(gtarget, 0, !!getSelection()?.toString());
@@ -103,6 +109,7 @@
     if (mode) drag = mode === "card" ? Math.max(0, Math.min(g0 + dx, travel())) : Math.max(0, Math.min(g0 - dx, panelWidth()));
   }
   function gup(e: PointerEvent) {
+    touching.delete(e.pointerId);
     // A swipe that arrived as a press and a release with no moves between (a quick flick the browser coalesced): judge it by where it ended.
     if (gtouch && !gskip && !tgt && e.pointerType === "touch") { const dx = e.clientX - gx, dy = e.clientY - gy; if (Math.abs(dx) >= 56 && Math.abs(dx) >= Math.abs(dy) * 1.5 && begin(dx, dy)) samples.push({ t: e.timeStamp, x: e.clientX }); }
     gtouch = false;
@@ -187,7 +194,7 @@
   <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
   <aside class="side" class:pulled={wp?.side === "left"} style:--vis={wp?.side === "left" ? `${wp.vis}px` : undefined} style:--w={wp?.side === "left" ? `${wp.w}px` : undefined} bind:this={sideEl} onclick={choose} data-ink={surfaces.left ?? undefined} aria-label="{app.name} sidebar" inert={!shell.sidebarOpen}><Sidebar {app} /></aside>
 
-  <main class="mid" bind:this={midEl} style:--edge-l={showLeft && !shell.narrow ? "calc(var(--pill-h) + var(--s-3))" : undefined} style:--edge-r={showRight && shell.narrow ? "calc(var(--pill-h) + var(--s-3))" : undefined} class:dragging={drag !== null} style:transform={wp ? `translateX(${wp.side === "left" ? wp.vis - (wp.layoutOpen ? wp.w : 0) : -(wp.vis - (wp.layoutOpen ? wp.w : 0))}px)` : dragMode && drag !== null ? `translateX(${dragMode === "card" ? drag : -drag}px)` : undefined} inert={shell.narrow && (shell.sidebarOpen || rightOpen)}>
+  <main class="mid" bind:this={midEl} style:--edge-l={showLeft && !shell.narrow ? "calc(var(--pill-h) + var(--s-3))" : undefined} style:--edge-r={showRight && !shell.narrow ? "calc(var(--pill-h) + var(--s-3))" : undefined} style:--panel-btn={showRight && shell.narrow ? "calc(var(--pill-h) + var(--s-3))" : undefined} class:dragging={drag !== null} style:transform={wp ? `translateX(${wp.side === "left" ? wp.vis - (wp.layoutOpen ? wp.w : 0) : -(wp.vis - (wp.layoutOpen ? wp.w : 0))}px)` : dragMode === "card" && drag !== null ? `translateX(${drag}px)` : undefined} style:scale={dragMode === "panel" && drag !== null ? 1 - 0.04 * (1 - drag / panelWidth()) : undefined} inert={shell.narrow && (shell.sidebarOpen || rightOpen)}>
     {#if !shell.narrow && shell.sidebarOpen}<ResizeHandle side="left" />{/if}
     {#if !shell.narrow && hasRight && rightOpen}<ResizeHandle side="right" />{/if}
     {#if showLeft}<div class="edge l"><Pill icon="sidebar" label="Show the sidebar" aria-keyshortcuts={ariaKeys(shortcuts.chordFor("sidebar"))} onclick={() => shell.toggleSidebar()} /></div>{/if}
@@ -241,7 +248,7 @@
   .edge { position: absolute; z-index: 6; top: calc(var(--safe-top) + (var(--bar-h) - var(--pill-h)) / 2); }
   .edge.l { left: calc(var(--inset) + var(--s-4)); }
   .edge.r { right: calc(var(--inset) + var(--s-4)); }
-  /* On a phone the open thread's header has its actions pill at the right edge: the side panel's button sits beside it, not over it. */
+  /* On a phone the open thread's header has its actions pill at the right edge: the side panel's button sits beside it, not over it (the title leaves room: `--panel-btn`). */
   .narrow .edge.r { right: calc(var(--pad-region) + var(--pill-h) + var(--s-3)); }
   .mid :global(.mid-card) { height: 100%; overflow: clip; }
   /* The card is the only thing on the background, and it casts nothing onto it: a shadow would be a second layer in the gap beside the card (the owner's seam). It is told apart by its own surface (docs/ui-design-system.md). On a phone it slides over the list, where it does cast one. */

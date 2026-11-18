@@ -25,7 +25,8 @@ pub(crate) fn checkpoint<D: Directory>(
         return Ok(());
     }
     let text = checkpoint["thread_text"].as_str().unwrap_or("");
-    if text.is_empty() && session.is_none() {
+    let timing = &checkpoint["message_timing"];
+    if text.is_empty() && session.is_none() && timing.is_null() {
         return Ok(());
     }
     if text.len() > 32768 {
@@ -59,7 +60,7 @@ pub(crate) fn checkpoint<D: Directory>(
     let fp = crate::api::fingerprint(
         "threads.checkpoint",
         &serde_json::from_value(
-            json!({"job":job.id,"run":job.runs,"seq":seq,"text":text,(KEY):session}),
+            json!({"job":job.id,"run":job.runs,"seq":seq,"text":text,"timing":timing,(KEY):session}),
         )
         .unwrap(),
     );
@@ -91,14 +92,24 @@ pub(crate) fn checkpoint<D: Directory>(
             && metadata[KEY] != session;
         if new_session {
             metadata[KEY] = session.clone();
-        } else if text.is_empty() {
+        } else if text.is_empty() && timing.is_null() {
             return Ok(());
         }
         let mut body = super::document::body(&item)?.to_owned();
-        let range = if text.is_empty() {
-            body.len()..body.len()
+        let range = if text.is_empty() && timing.is_null() {
+            Some(body.len()..body.len())
         } else {
-            append_output(&mut metadata, &mut body, job, id, seq, text, checkpoint)?
+            let provider = job.input["request"]["provider_id"].as_str().unwrap_or("");
+            let manifest = state.registry.get(provider).map(|plugin| &plugin.manifest);
+            append_output(
+                &mut metadata,
+                &mut body,
+                job,
+                seq,
+                text,
+                checkpoint,
+                manifest,
+            )?
         };
         let bytes = super::document::encode(&metadata, &body);
         if bytes.len() > MAX_DOCUMENT_BYTES {
@@ -109,13 +120,21 @@ pub(crate) fn checkpoint<D: Directory>(
                 )
             });
         }
-        let append = json!(Append {
-            base_revision: item.revision.clone(),
-            offset: range.start,
-            start: bytes.len() - body.len() + range.start,
-            length: range.len(),
-        });
-        metadata[super::delta::METADATA_KEY] = append.clone();
+        let mut receipt = json!({"checkpoint":seq});
+        metadata
+            .as_object_mut()
+            .expect("thread metadata object")
+            .remove(super::delta::METADATA_KEY);
+        if let Some(range) = range {
+            let append = json!(Append {
+                base_revision: item.revision.clone(),
+                offset: super::document::public_prefix_bytes(&metadata) + range.start,
+                start: bytes.len() - body.len() - 1 + range.start,
+                length: range.len(),
+            });
+            metadata[super::delta::METADATA_KEY] = append.clone();
+            receipt["append"] = append;
+        }
         match content.write(
             space,
             Some(id),
@@ -130,7 +149,7 @@ pub(crate) fn checkpoint<D: Directory>(
                 operation: "threads.checkpoint",
                 fingerprint: &fp,
             },
-            |_| json!({"checkpoint":seq,"append":append}),
+            |_| receipt,
         ) {
             Ok(_) => return Ok(()),
             Err(e)
@@ -152,48 +171,112 @@ fn append_output(
     metadata: &mut Value,
     body: &mut String,
     job: &Job,
-    id: Uuid,
     seq: u64,
     text: &str,
     checkpoint: &Value,
-) -> Result<std::ops::Range<usize>, Error> {
-    let now = calternal_content::now_rfc3339();
-    let output = &metadata["output"];
-    let (end, range) = if output["job_id"] == job.id && output["run"] == job.runs {
-        let offset = output["end"]
-            .as_u64()
-            .and_then(|v| usize::try_from(v).ok())
-            .filter(|&v| v <= body.len() && body.is_char_boundary(v))
-            .ok_or_else(|| Error::internal("invalid thread output cursor"))?;
-        body.insert_str(offset, text);
-        super::document::record_activity(metadata, &now);
-        let end = offset + text.len();
-        (end, offset..end)
+    manifest: Option<&calternal_core::ManifestV1>,
+) -> Result<Option<std::ops::Range<usize>>, Error> {
+    let now = super::headings::now(
+        job.input["thread_request"]["client_offset_minutes"]
+            .as_i64()
+            .unwrap_or(0),
+    )?;
+    let id = checkpoint["message_id"]
+        .as_str()
+        .and_then(|v| Uuid::parse_str(v).ok())
+        .ok_or_else(|| Error::internal("saved assistant message ID missing"))?;
+    let turn = Uuid::parse_str(&job.id).map_err(|_| Error::internal("invalid saved turn ID"))?;
+    let timing = &checkpoint["message_timing"];
+    let request = &job.input["request"];
+    let selected = request["model"].as_str().unwrap_or("");
+    let model = manifest
+        .and_then(|m| m.provider.as_ref())
+        .and_then(|p| p.models.iter().find(|m| m.id == selected))
+        .map(|m| m.name.as_str())
+        .filter(|name| !name.is_empty())
+        .unwrap_or("Unknown model");
+    let harness = manifest
+        .map(|m| m.name.as_str())
+        .unwrap_or("Unknown harness");
+    let serving = checkpoint["serving_provider"]
+        .as_str()
+        .unwrap_or("Unknown provider");
+    let reasoning = request["options"]["effort"].as_str();
+    let continuation = if job.runs <= 1 {
+        String::new()
+    } else if job.checkpoint["retry"]["retry_count"]
+        .as_u64()
+        .is_some_and(|n| n > 0)
+    {
+        format!(" · Retry {}", job.runs)
     } else {
-        let start = body.len();
-        let request = &job.input["request"];
-        let provider = request["provider_id"]
-            .as_str()
-            .ok_or_else(|| Error::internal("saved provider missing"))?;
-        let model = request["model"]
-            .as_str()
-            .ok_or_else(|| Error::internal("saved model missing"))?;
-        let reasoning = request["options"]["effort"].as_str().unwrap_or("-");
-        let machine = checkpoint["message_machine"].as_str().unwrap_or("-");
-        let message_id = checkpoint["message_id"]
-            .as_str()
-            .ok_or_else(|| Error::internal("saved assistant message ID missing"))?;
-        body.push_str(&format!(
-            "\n<!-- message:{message_id} role:agent turn:{} actor:{} provider:{provider} model:{model} reasoning:{reasoning} machine:{machine} time:{now} -->\n",
-            job.id,
-            calternal_types::Actor::agent(job.account, id)
-        ));
-        body.push_str(text);
-        let end = body.len();
-        body.push_str("\n<!-- /message -->\n");
-        super::document::record_message(metadata, &now);
-        (end, start..body.len())
+        " · Resumed".into()
     };
-    metadata["output"] = json!({"job_id":job.id,"run":job.runs,"checkpoint":seq,"end":end});
+    let rendered = |at: &str| {
+        super::headings::agent(
+            harness,
+            serving,
+            model,
+            reasoning,
+            at,
+            timing,
+            &continuation,
+        )
+    };
+    let provenance = super::records::Provenance {
+        provider_id: request["provider_id"]
+            .as_str()
+            .filter(|id| !id.is_empty())
+            .unwrap_or("calternal-claude-code")
+            .to_owned(),
+        model_id: (!selected.is_empty()).then(|| selected.to_owned()),
+        reasoning_level: reasoning.map(str::to_owned),
+        machine_id: checkpoint["message_machine"].as_str().map(str::to_owned),
+        duration_ms: timing["duration_ms"].as_u64(),
+        reasoning_ms: timing["reasoning_ms"].as_u64(),
+    };
+    let output = &metadata["output"];
+    let (start, range) = if output["job_id"] == job.id && output["run"] == job.runs {
+        let start = output["start"]
+            .as_u64()
+            .and_then(|n| usize::try_from(n).ok())
+            .ok_or_else(|| Error::internal("invalid thread output cursor"))?;
+        let current = super::records::tail(body, start, id)?;
+        let heading = if timing.is_null() {
+            current.heading.to_owned()
+        } else {
+            rendered(&current.at)?
+        };
+        let mut combined = String::with_capacity(current.text.len() + text.len());
+        combined.push_str(current.text);
+        combined.push_str(text);
+        body.truncate(start);
+        // The indexed start already excludes the separator.
+        let mut replacement = String::new();
+        super::records::append(
+            &mut replacement,
+            id,
+            "agent",
+            &heading,
+            &combined,
+            Some((turn, &provenance)),
+        );
+        body.push_str(&replacement);
+        super::document::record_activity(metadata, &now);
+        (start, None)
+    } else {
+        let offset = body.len();
+        let start = super::records::append(
+            body,
+            id,
+            "agent",
+            &rendered(&now)?,
+            text,
+            Some((turn, &provenance)),
+        );
+        super::document::record_message(metadata, &now);
+        (start, Some(offset..body.len()))
+    };
+    metadata["output"] = json!({"job_id":job.id,"run":job.runs,"checkpoint":seq,"start":start});
     Ok(range)
 }
