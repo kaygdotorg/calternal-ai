@@ -11,6 +11,8 @@ STATE="${CAL_SIM_STATE:-$HOME/.cache/calternal-ios-sim}"; mkdir -p "$STATE"
 SHOTS="${CAL_SIM_SHOTS:-$PWD/sim-shots}"
 UDIDFILE="$STATE/$LANE.udid"
 udid() { [[ -s "$UDIDFILE" ]] || { echo "no simulator for lane '$LANE': run '$0 create' first" >&2; exit 2; }; cat "$UDIDFILE"; }
+# one preview port per lane (4200 to 4399 from the lane's name), so lanes sharing the Studio and the dev VMs never meet on one port; CAL_SIM_PORT overrides
+port() { echo "${CAL_SIM_PORT:-$((4200 + $(printf %s "$LANE" | cksum | cut -d' ' -f1) % 200))}"; }
 # runs ui.sh on the Studio against this lane's simulator; prints the last lines of its output
 ui() { local U; U=$(udid); ssh "$STD" "cd ~/$SIMDIR && SIM_UDID=$U ./ui.sh $(printf '%q ' "$@")" 2>&1 | grep -E "OUTPUT_DIR|error|failed|Executed|TEST (EXECUTE )?FAILED" | tail -3; }
 cmd="${1:-help}"; shift || true
@@ -21,7 +23,7 @@ case "$cmd" in
     ssh "$STD" "xcrun simctl boot $U; xcrun simctl bootstatus $U >/dev/null"
     echo "$U" > "$UDIDFILE"; echo "created $name ($U)" ;;
   appearance) ssh "$STD" "xcrun simctl ui $(udid) appearance ${1:?dark or light}" ;;
-  open)     # open an address in Safari (http or https): open http://127.0.0.1:4180/threads/t-idle
+  open)     # open an address in Safari (http or https): open http://127.0.0.1:$PORT/threads/t-idle
     ui testOpenURL "URL=${1:?url}" ;;
   onboard)  # a fresh Safari shows the one-time "Choose a look" panel: keep the default so the app is visible
     ui testTap X=0.734 Y=0.866 WAIT=1 ;;
@@ -67,12 +69,12 @@ REMOTE
     ui testRotate "ORIENTATION=${1:-landscapeLeft}" "WAIT=${2:-2}" ;;
   home)     # add a page to the Home Screen (as an installed web app) and open it from there: home URL [name]
     ui testAddToHomeScreen "URL=${1:?url}" "NAME=${2:-Calternal lane}" STRICT=1 ;;
-  serve)    # serve this lane's build to the simulator: vite preview on a dev VM, tunnelled to the Studio's 127.0.0.1:$PORT (VM: $CAL_DEV_VM, lane dir $CAL_DEV_LANE)
-    VM="${CAL_DEV_VM:-ubuntu@calternal-dev-02-std}"; PORT="${CAL_SIM_PORT:-4180}"; LD="${CAL_DEV_LANE:-Developer/lanes/ui-threads}"
+  serve)    # serve this lane's build to the simulator: vite preview on a dev VM, tunnelled to the Studio's 127.0.0.1:$PORT (VM: $CAL_DEV_VM; the lane's checkout there: $CAL_DEV_LANE, default Developer/lanes/<lane>; port: $CAL_SIM_PORT, default one per lane)
+    VM="${CAL_DEV_VM:-ubuntu@calternal-dev-02-std}"; PORT="$(port)"; LD="${CAL_DEV_LANE:-Developer/lanes/$LANE}"
     ssh "$VM" "cd ~/$LD/apps/web && (nohup node ../../node_modules/.bin/vite preview --port $PORT --strictPort --host 127.0.0.1 >/tmp/preview-$PORT.log 2>&1 &); sleep 3; curl -s -o /dev/null -w 'vm %{http_code}\n' http://127.0.0.1:$PORT/"
     ssh -fN -L $PORT:127.0.0.1:$PORT "$VM"; ssh -fN -R $PORT:127.0.0.1:$PORT "$STD"
     ssh "$STD" "curl -s -o /dev/null -w 'studio %{http_code}\n' http://127.0.0.1:$PORT/"; echo "open: http://127.0.0.1:$PORT/<path>" ;;
-  unserve)  PORT="${CAL_SIM_PORT:-4180}"; pkill -f "ssh -fN -[LR] $PORT:127.0.0.1:$PORT" || true; pkill -f "ssh -N -[LR] $PORT:127.0.0.1:$PORT" || true
+  unserve)  PORT="$(port)"; pkill -f "ssh -fN -[LR] $PORT:127.0.0.1:$PORT" || true; pkill -f "ssh -N -[LR] $PORT:127.0.0.1:$PORT" || true
     ssh "${CAL_DEV_VM:-ubuntu@calternal-dev-02-std}" "pkill -u \$USER -f 'vite preview --port $PORT'" 2>/dev/null || true; echo "tunnels and preview stopped" ;;
   delete)   U=$(udid); ssh "$STD" "xcrun simctl shutdown $U 2>/dev/null; xcrun simctl delete $U"; rm -f "$UDIDFILE"; echo "deleted $U" ;;
   *) sed -n 2,5p "$0"; echo "commands: setup | rotate portrait|landscapeLeft|landscapeRight | home URL [name] | create [name] | appearance dark|light | open URL | onboard | tap x y [wait] | tappx px py | type TEXT | keys ACTIONS | swipe x y dx dy [s] | shot NAME | record start|stop NAME [fps] | serve | unserve | delete" ;;
