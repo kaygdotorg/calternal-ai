@@ -1,35 +1,95 @@
-// The app switcher is one component in two placements: under the middle card on a wide screen and the bottom bar on a phone. Text only (no icons), three names in view, the rest reached by scrolling the capsule sideways (no "More"
-// list), the person's order, the chosen app always in view, arrow keys move and choose.
+// The app switcher is an icon-only capsule in the sidebar's footer (account picture, capsule, search): three whole icons at a time, the outer icon smaller and fainter when more apps exist on that side, the current app
+// centred, real links with names, one tab stop, arrow keys. The collapsed sidebar has a two-part pill [sidebar | current app] with a dropdown of apps. Spaces are in the account menu (a search field above five).
+// Checked at 1, 3, 4 and 20 apps and 1, 3, 4 and 50 spaces, desktop and phone (fixtures: `?apps=N`, `?spaces=N`).
 import { chromium } from "playwright";
 import { BASE, serve } from "./lib.mjs";
 const stop = await serve(); const b = await chromium.launch(); let bad = 0;
 const ok = (c, m, note = "") => { console.log(`${c ? "PASS" : "FAIL"}  ${m}${note ? "  " + note : ""}`); if (!c) bad++; };
-const open = async (phone, order) => { const ctx = await b.newContext(phone ? { viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true } : { viewport: { width: 1440, height: 900 } }); await ctx.addInitScript((o) => { localStorage.setItem("cal.firstrun", "1"); if (o) localStorage.setItem("cal.appearance", JSON.stringify({ appOrder: o })); }, order); const page = await ctx.newPage(); await page.goto(`${BASE}/threads/t-run`); await page.waitForSelector("html[data-ready]"); await page.waitForTimeout(700); return { ctx, page }; };
-for (const [name, phone, cls] of [["wide screen", false, "card"], ["phone", true, "bar"]]) {
-  const { ctx, page } = await open(phone);
-  ok((await page.locator(`nav.switcher.${cls}`).count()) === 1 && (await page.locator("nav.switcher").count()) === 1, `${name}: the one switcher component, placed as '${cls}'`);
-  const t = await page.locator("nav.switcher [role=tab]").allInnerTexts();
-  ok(t.join(",") === "Threads,Notes,Settings" && (await page.locator("nav.switcher svg, nav.switcher img").count()) === 0, `${name}: the apps' names, text only`, t.join(","));
-  const r = await page.evaluate(() => { const bb = document.querySelector("nav.switcher .sw").getBoundingClientRect(), mid = document.querySelector(".mid-card").getBoundingClientRect(); return { bottom: bb.bottom, midBottom: mid.bottom, ih: innerHeight }; });
-  ok(phone ? r.ih - r.bottom < 120 : Math.abs(r.midBottom - r.bottom) < 40, `${name}: at the ${phone ? "bottom of the screen" : "bottom of the card"}`);
-  // more apps than three: the capsule scrolls sideways, three names wide, with no "More" entry
-  const scroll = await page.evaluate(() => { const track = document.querySelector("nav.switcher .track"); for (const n of ["Tasks", "Files", "Maps"]) { const x = document.createElement("button"); x.type = "button"; x.setAttribute("role", "tab"); x.className = track.querySelector(".app").className; x.textContent = n; track.append(x); } return { w: track.querySelector(".app").getBoundingClientRect().width, tw: track.clientWidth, scrollable: track.scrollWidth > track.clientWidth + 4, more: [...track.querySelectorAll("button")].some((x) => /more/i.test(x.textContent)), snap: getComputedStyle(track).scrollSnapType }; });
-  ok(Math.abs(scroll.w * 3 - scroll.tw) < scroll.tw * 0.12 && scroll.scrollable && !scroll.more && /x/.test(scroll.snap), `${name}: three names in view, the others reached by scrolling, snapping, no More`, `name ${Math.round(scroll.w)} px of ${scroll.tw}`);
-  await page.locator("nav.switcher").getByRole("tab", { name: "Threads" }).focus(); await page.keyboard.press("ArrowRight"); await page.waitForURL(/\/notes/, { waitUntil: "commit" });
-  ok(/\/notes/.test(page.url()), `${name}: the right arrow moves to the next app and opens it`);
+const open = async (phone, path, order) => {
+  const ctx = await b.newContext(phone ? { viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true } : { viewport: { width: 1440, height: 900 } });
+  await ctx.addInitScript((o) => { if (o) localStorage.setItem("cal.appearance", JSON.stringify({ appOrder: o })); }, order);
+  const page = await ctx.newPage(); await page.goto(`${BASE}${path}`); await page.waitForSelector("html[data-ready]"); await page.waitForTimeout(600);
+  if (phone) { await page.getByRole("button", { name: "Show threads" }).click().catch(() => {}); await page.waitForTimeout(700); }
+  return { ctx, page };
+};
+const geom = (page) => page.evaluate(() => {
+  const nav = document.querySelector('aside.side footer nav[aria-label="Apps"]'), track = nav.querySelector(".track"), tr = track.getBoundingClientRect();
+  const icons = [...nav.querySelectorAll("a")], r = (e) => e.getBoundingClientRect();
+  const whole = icons.filter((a) => r(a).left >= tr.left - 1 && r(a).right <= tr.right + 1 && r(a).width > 0);
+  const cur = icons.find((a) => a.getAttribute("aria-current") === "page");
+  const c = cur ? r(cur) : null;
+  return { total: icons.length, whole: whole.length, outer: icons.filter((a) => a.classList.contains("outer")).length, scrolls: track.scrollWidth > track.clientWidth + 1, centred: c ? Math.abs(c.left + c.width / 2 - (tr.left + tr.width / 2)) : 999, labels: icons.map((a) => a.getAttribute("aria-label")), current: icons.filter((a) => a.hasAttribute("aria-current")).length, text: nav.innerText.trim(), tabbable: icons.filter((a) => a.tabIndex === 0).length };
+});
+for (const phone of [false, true]) {
+  const where = phone ? "phone" : "wide screen";
+  // ---- app counts
+  for (const [n, route, outerWant] of [[1, "/threads", 0], [3, "/threads", 0], [4, "/threads", 1], [4, "/notes", 1], [20, "/settings/appearance", 2], [20, "/threads", 1]]) {
+    const { ctx, page } = await open(phone, `${route}?apps=${n}&firstrun=0`);
+    const g = await geom(page);
+    const wholeWant = Math.min(3, n);
+    ok(g.total === n && g.whole === wholeWant, `${where}, ${n} apps (on ${route}): ${wholeWant} whole icon${wholeWant > 1 ? "s" : ""} in view, none clipped`, `${g.whole} of ${g.total}`);
+    ok(g.outer === outerWant, `${where}, ${n} apps on ${route}: ${outerWant ? "the outer icon on the side with more is smaller and fainter" : "all icons full size"}`, `${g.outer} outer`);
+    ok(n <= 3 ? !g.scrolls : g.scrolls, `${where}, ${n} apps: ${n <= 3 ? "nothing scrolls" : "the rest scroll sideways"}`);
+    ok(g.centred < 3, `${where}, ${n} apps: the current app is centred in the capsule`, `${g.centred.toFixed(1)} px off`);
+    ok(g.current === 1 && g.tabbable === 1 && g.labels.every((l) => !!l) && g.text === "", `${where}, ${n} apps: every icon is a named link, one current page, one tab stop, no words`);
+    await ctx.close();
+  }
+  // ---- keys, links, current app after navigation
+  {
+    const { ctx, page } = await open(phone, "/threads?apps=20&firstrun=0");
+    const nav = page.locator('aside.side footer nav[aria-label="Apps"]');
+    await nav.getByRole("link", { name: "Threads" }).focus(); await page.keyboard.press("ArrowRight"); await page.waitForTimeout(500);
+    ok((await page.evaluate(() => document.activeElement?.getAttribute("aria-label"))) === "Notes", `${where}: the right arrow moves focus to the next app`);
+    await page.keyboard.press("End"); await page.waitForTimeout(500);
+    const e = await geom(page);
+    ok((await page.evaluate(() => document.activeElement?.getAttribute("aria-label"))) === "App 17" && e.whole >= 1, `${where}: End goes to the last app and scrolls it into the middle`);
+    await page.keyboard.press("Home"); await page.waitForTimeout(500); await page.keyboard.press("ArrowRight"); await page.waitForTimeout(400);
+    await page.keyboard.press("Enter"); await page.waitForURL(/\/notes/, { waitUntil: "commit" });
+    await page.waitForTimeout(700);
+    const g = await geom(page);
+    ok(/\/notes/.test(page.url()) && g.centred < 3, `${where}: Enter opens it and the capsule keeps the current app centred`, `${g.centred.toFixed(1)} px off`);
+    await ctx.close();
+  }
+  // ---- spaces are in the account menu
+  for (const n of [1, 3, 4, 50]) {
+    const { ctx, page } = await open(phone, `/threads?spaces=${n}&firstrun=0`);
+    ok((await page.locator("aside.side footer [aria-label='Spaces']").count()) === 0, `${where}, ${n} spaces: no space dots in the footer`);
+    await page.getByRole("button", { name: /Account, spaces and settings/ }).click(); await page.waitForTimeout(500);
+    const rows = await page.getByRole("menuitemradio").count(), search = await page.locator('input[type=search]').count();
+    ok(rows === n && page.url() && (await page.getByRole("menuitem", { name: "Settings" }).count()) + (await page.getByText("Settings").count()) > 0, `${where}, ${n} spaces: the account menu lists them (the current one checked) and Settings`, `${rows} rows`);
+    ok(n > 5 ? search === 1 : search === 0, `${where}, ${n} spaces: ${n > 5 ? "a search field" : "no search field"}`);
+    if (n === 50) { await page.locator("input[type=search]").fill("Space 49"); await page.waitForTimeout(300); ok((await page.getByRole("menuitemradio").count()) === 1, `${where}, 50 spaces: the search finds one`); }
+    await ctx.close();
+  }
+}
+// ---- the person's order
+{
+  const { ctx, page } = await open(false, "/threads?firstrun=0", ["settings", "threads"]);
+  const g = await geom(page);
+  ok(g.labels.join(",") === "Settings,Threads,Notes", "the person's order is the order shown", g.labels.join(","));
   await ctx.close();
 }
+// ---- the collapsed sidebar: a two-part pill with a dropdown of apps
 {
-  const { ctx, page } = await open(false, ["settings", "threads"]);
-  const t = await page.locator("nav.switcher [role=tab]").allInnerTexts();
-  ok(t.join(",") === "Settings,Threads,Notes", "the person's order is the order shown", t.join(","));
+  const { ctx, page } = await open(false, "/threads/t-run?firstrun=0");
+  await page.getByRole("button", { name: "Hide the sidebar" }).click(); await page.waitForTimeout(500);
+  const pill = page.getByRole("group", { name: "Sidebar and apps" });
+  ok((await pill.count()) === 1 && (await pill.getByRole("button").count()) === 2, "collapsed: one pill with two parts, the sidebar and the current app");
+  await pill.getByRole("button", { name: "Apps: Threads" }).click(); await page.waitForTimeout(500);
+  const rows = await page.getByRole("menuitemradio").evaluateAll((e) => e.map((x) => `${x.textContent.trim()}${x.getAttribute("aria-checked") === "true" ? "*" : ""}`));
+  ok(rows.join(",") === "Threads*,Notes,Settings", "…its dropdown lists the apps with their names, the current one checked", rows.join(","));
+  await page.getByRole("menuitemradio", { name: "Notes" }).click(); await page.waitForURL(/\/notes/, { waitUntil: "commit" });
+  ok(/\/notes/.test(page.url()), "…and choosing one opens it");
+  await pill.getByRole("button", { name: "Show the sidebar" }).click(); await page.waitForTimeout(500);
+  ok((await page.getByRole("button", { name: "Hide the sidebar" }).count()) === 1, "…and the first part shows the sidebar again");
   await ctx.close();
 }
+// ---- Settings: Move Notes up changes the capsule
 {
-  const { ctx, page } = await open(false); await page.goto(`${BASE}/settings/appearance`); await page.waitForSelector("html[data-ready]"); await page.waitForTimeout(500);
+  const { ctx, page } = await open(false, "/settings/appearance?firstrun=0");
   await page.getByRole("button", { name: "Move Notes up" }).click(); await page.waitForTimeout(300);
-  const t = await page.locator("nav.switcher [role=tab]").allInnerTexts();
-  ok(t.join(",") === "Notes,Threads,Settings", "Settings, Appearance, Apps: Move Notes up changes the switcher", t.join(","));
+  const g = await geom(page);
+  ok(g.labels.join(",") === "Notes,Threads,Settings", "Settings, Appearance, Apps: Move Notes up changes the capsule", g.labels.join(","));
   await ctx.close();
 }
 await b.close(); stop(); process.exit(bad ? 1 : 0);
