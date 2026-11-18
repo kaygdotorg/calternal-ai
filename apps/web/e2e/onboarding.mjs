@@ -7,8 +7,8 @@ const stop = await serve(); const b = await chromium.launch(); let bad = 0;
 const ok = (c, m, note = "") => { console.log(`${c ? "PASS" : "FAIL"}  ${m}${note ? "  " + note : ""}`); if (!c) bad++; };
 const heading = (p) => p.locator("h1").first().textContent();
 const waitHeading = (p, t) => p.waitForFunction((t) => document.querySelector("main h1")?.textContent === t, t, { timeout: 20000 });
-const axe = async (p, tag) => { const r = await new AxeBuilder({ page: p }).withTags(["wcag2a", "wcag2aa", "best-practice"]).analyze(); ok(r.violations.length === 0, `${tag}: no accessibility violation`, r.violations.map((v) => `${v.id}: ${v.nodes[0].target.join(" ")}`).join("; ")); };
-const open = async (query, reduced = false) => { const ctx = await b.newContext({ viewport: { width: 1280, height: 860 }, reducedMotion: reduced ? "reduce" : "no-preference" }); const page = await ctx.newPage(); await page.goto(`${BASE}/?server=0&${query}`); await page.waitForSelector("html[data-ready]"); await page.waitForTimeout(500); return { ctx, page }; };
+const axe = async (p, tag) => { await p.waitForTimeout(600); /* the step has finished entering */ const r = await new AxeBuilder({ page: p }).withTags(["wcag2a", "wcag2aa", "best-practice"]).analyze(); ok(r.violations.length === 0, `${tag}: no accessibility violation`, r.violations.map((v) => `${v.id}: ${v.nodes[0].target.join(" ")}`).join("; ")); };
+const open = async (query, reduced = false) => { const ctx = await b.newContext({ viewport: { width: 1280, height: 860 }, reducedMotion: reduced ? "reduce" : "no-preference", permissions: ["clipboard-read", "clipboard-write"] }); const page = await ctx.newPage(); await page.goto(`${BASE}/?server=0&${query}`); await page.waitForSelector("html[data-ready]"); await page.waitForTimeout(500); return { ctx, page }; };
 {
   const { ctx, page } = await open("onboarding=1");
   ok((await page.locator("ol.steps li").count()) === 5, "the owner has five numbered steps");
@@ -37,7 +37,7 @@ const open = async (query, reduced = false) => { const ctx = await b.newContext(
   ok(true, "the step sees the machine connect by itself");
   await axe(page, "step 3 connected");
   await page.getByRole("button", { name: "Continue" }).click(); await waitHeading(page, "Sign in to a provider");
-  ok(/Not signed in/.test(await page.locator("li").first().textContent()), "the provider shows not signed in, with the sign-in command to copy");
+  ok(/Not signed in/.test(await page.locator("section ul li").first().textContent()), "the provider shows not signed in, with the sign-in command to copy");
   await page.getByRole("button", { name: "Check again" }).click(); await page.waitForTimeout(900);
   await page.getByRole("button", { name: "Check again" }).click();
   await page.getByText("Signed in", { exact: false }).first().waitFor({ timeout: 15000 });
