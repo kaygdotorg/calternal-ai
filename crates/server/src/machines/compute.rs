@@ -22,7 +22,8 @@ pub struct ComputeLimits {
     pub queue_bound: Option<u32>,
     /// Stop a bound guest after this many idle seconds, or use the machine default.
     pub idle_seconds: Option<u32>,
-    /// Confirmed sandbox seconds available in a reset window.
+    /// Confirmed sandbox seconds available in a reset window. A configured
+    /// budget requires a hosted runner that reports a durable guest clock.
     pub runtime_seconds: Option<u32>,
     /// Window length in seconds, aligned to the Unix epoch.
     pub reset_seconds: Option<u32>,

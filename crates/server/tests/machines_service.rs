@@ -42,11 +42,11 @@ struct M {
 }
 
 fn enrol(svc: &MachineService, owner: AccountId) -> (Uuid, MachineKey) {
-    tokio::task::block_in_place(|| enrol_blocking(svc, owner))
+    tokio::task::block_in_place(|| enrol_blocking(svc, Owner::Account { id: owner }))
 }
 
-fn enrol_blocking(svc: &MachineService, owner: AccountId) -> (Uuid, MachineKey) {
-    let (code, _) = svc.issue_code(Owner::Account { id: owner }).unwrap();
+fn enrol_blocking(svc: &MachineService, owner: Owner) -> (Uuid, MachineKey) {
+    let (code, _) = svc.issue_code(owner).unwrap();
     let key = MachineKey::generate().unwrap();
     let req = EnrolRequest {
         code,
@@ -635,4 +635,43 @@ async fn manual_queue_bound_applies_to_the_persisted_owner_scope() {
             LeaseState::Waiting
         );
     });
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn hosted_runtime_budget_requires_a_metered_sandbox() {
+    use calternal_server::machines::{ComputeLimits, LeaseState};
+    use calternal_types::ResourceOwner;
+
+    let dir = tempfile::tempdir().unwrap();
+    let (svc, account) = service(dir.path());
+    let (id, key, personal) = tokio::task::block_in_place(|| {
+        let (id, key) = enrol_blocking(&svc, Owner::Pool);
+        svc.set_pool_grant(account, true).unwrap();
+        svc.set_compute_limits(
+            ResourceOwner::Account(account),
+            Some(ComputeLimits {
+                hosted: true,
+                memory_mib: None,
+                active_threads: None,
+                queue_bound: None,
+                idle_seconds: None,
+                runtime_seconds: Some(120),
+                reset_seconds: Some(3_600),
+            }),
+        )
+        .unwrap();
+        let spaces =
+            calternal_auth::spaces::Spaces::open(&dir.path().join("system/auth.db")).unwrap();
+        (id, key, spaces.seed_development().unwrap().personal)
+    });
+    let machine = connect(&svc, id, key, Uuid::new_v4());
+    sync(&svc, &machine, vec![]).await;
+    let run = request_run(&svc, personal, account, Uuid::new_v4()).unwrap();
+    assert_eq!(run.state, LeaseState::Waiting);
+    tokio::task::block_in_place(|| svc.set_compute_limits(ResourceOwner::Account(account), None))
+        .unwrap();
+    assert_eq!(
+        svc.run(account, run.lease_id).unwrap().state,
+        LeaseState::Assigned
+    );
 }

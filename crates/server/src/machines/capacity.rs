@@ -121,11 +121,15 @@ impl State {
             };
         };
         if limits.runtime_seconds.is_some()
-            && !lease
-                .row
-                .resource_owner
-                .and_then(|owner| self.runtime_windows.get(&owner))
-                .is_some_and(|window| window.allowed)
+            && (machine
+                .live
+                .as_ref()
+                .is_none_or(|live| live.guest_memory_mib.is_none())
+                || !lease
+                    .row
+                    .resource_owner
+                    .and_then(|owner| self.runtime_windows.get(&owner))
+                    .is_some_and(|window| window.allowed))
         {
             return 0;
         }
