@@ -634,11 +634,7 @@ pub(crate) fn thread_send_key(account: AccountId, request_id: &str) -> String {
     format!("threads/{account}/{request_id}")
 }
 
-fn thread_send_receipt(
-    conn: &Connection,
-    key: &[u8],
-    now: i64,
-) -> Result<Option<String>, Error> {
+fn thread_send_receipt(conn: &Connection, key: &[u8], now: i64) -> Result<Option<String>, Error> {
     conn.prepare_cached(
         "SELECT job FROM thread_send_receipts WHERE request_key=?1 AND expires_ms>?2",
     )

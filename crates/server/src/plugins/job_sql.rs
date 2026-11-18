@@ -149,14 +149,17 @@ pub(super) fn report(
 }
 
 /// Delete final jobs past [`RETAIN_FINAL`] or beyond [`MAX_FINAL_PER_SPACE`], and the
-/// child reports of deleted parents. Cost: indexed deletes; runs when a file opens.
+/// child reports of deleted parents and expired send receipts. Cost: indexed
+/// deletes in one transaction when a file opens.
 pub(super) fn retain(c: &Connection) -> Result<(), Error> {
-    let cutoff = now_ms() - RETAIN_FINAL.as_millis() as i64;
+    let now = now_ms();
+    let cutoff = now - RETAIN_FINAL.as_millis() as i64;
     c.execute_batch(&format!(
         "BEGIN IMMEDIATE;
          DELETE FROM jobs WHERE finished_ms IS NOT NULL AND (finished_ms < {cutoff} OR id NOT IN
            (SELECT id FROM jobs WHERE finished_ms IS NOT NULL ORDER BY finished_ms DESC LIMIT {MAX_FINAL_PER_SPACE}));
          DELETE FROM child_results WHERE parent NOT IN (SELECT id FROM jobs);
+         DELETE FROM thread_send_receipts WHERE expires_ms<={now};
          COMMIT;"
     ))
     .map_err(db_err)
