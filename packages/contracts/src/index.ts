@@ -687,7 +687,7 @@ cursor?: string,
  */
 limit?: number, };
 /**
- * Read one manifest-declared setting as a Manager of the addressed space.
+ * Address one manifest-declared setting in an accessible space.
  */
 
 export type PluginSettingAddress = {
@@ -732,6 +732,31 @@ value: unknown,
  * Explicit conflict resolution echoes every alternative the caller saw.
  */
 resolve?: Array<unknown>, };
+/**
+ * Replace the caller's override if their observed value still matches.
+ */
+
+export type PluginPersonalSettingEdit = {
+/**
+ * Space UUID.
+ */
+space_id: string,
+/**
+ * Installed package ID.
+ */
+plugin_id: string,
+/**
+ * Personal setting key in that package's manifest.
+ */
+key: string,
+/**
+ * Last observed override. Null means no override.
+ */
+base: unknown,
+/**
+ * New override. Null restores the manifest default.
+ */
+value: unknown, };
 /**
  * Current values for a setting. The worker receives only its effective value.
  */
@@ -837,6 +862,11 @@ export type ManifestHookMode = "watch" | "block";
  */
 
 export type ManifestSettingType = "string" | "boolean" | "number";
+/**
+ * Owner of an override for a declared plugin setting.
+ */
+
+export type ManifestSettingScope = "personal" | "space";
 /**
  * Placement inside a space userdata tree; hidden files belong to the declaring plugin.
  */
@@ -1250,10 +1280,14 @@ id: string,
  */
 operation: string, };
 /**
- * Typed space setting; secrets use separate handles.
+ * Typed plugin setting; secrets use separate handles.
  */
 
 export type ManifestSetting = {
+/**
+ * Override owner. Omission selects the shared space setting.
+ */
+scope?: ManifestSettingScope,
 /**
  * Stable setting identifier.
  */
@@ -1498,6 +1532,27 @@ generation: number,
  * Validated declaration; it conveys no authority to dispatch or mount code.
  */
 contribution: PluginSlotContribution, };
+/**
+ * Latest authorized projection for one package-owned slot on its live stream.
+ */
+
+export type OwnedSlotUpdate = {
+/**
+ * Space UUID whose slot is being followed.
+ */
+space_id: string,
+/**
+ * Package-qualified slot requested when opening the stream.
+ */
+target: OwnedPluginSlotId,
+/**
+ * Whether the recipient can still use the declared slot.
+ */
+active: boolean,
+/**
+ * Current visible contributions in declaration priority order.
+ */
+contributions: Array<ResolvedPluginSlot>, };
 /**
  * Worker request to sanitize an exact stored content revision. Authority
  * comes from invocation admission and the plugin's content declaration.

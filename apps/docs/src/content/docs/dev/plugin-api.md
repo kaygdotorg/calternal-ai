@@ -184,6 +184,17 @@ timeout and a 60 attempts/minute budget per cached space. A 202
 acknowledges the first accepted delivery or an identical replay.
 Keep signing keys out of worker state and logs.
 
+## Personal plugin settings
+
+A package may declare `scope: "personal"` on a typed setting. A signed-in
+space member can read and edit only their own override through
+`plugins.personal_settings.get` and `plugins.personal_settings.set`.
+Address the space UUID, package and key. For edits submit the last stored
+`base`, the next `value` and a request ID. Null restores the manifest
+default. A stale base conflicts and an identical retry replays its receipt.
+The worker’s existing setting broker resolves the authenticated person's
+value. An edit wakes that person's account feed without publishing the value.
+
 ## Space plugin settings
 
 Declare a key in the manifest's `settings`, including its primitive type and

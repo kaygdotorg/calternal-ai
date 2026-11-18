@@ -133,6 +133,9 @@ pub(crate) async fn dispatch<D: Directory>(
                 )?;
                 json!(i.preference)
             }
+            "plugins.personal_settings.get" | "plugins.personal_settings.set" => {
+                crate::plugins::settings::personal(&st, person.id, &rid, row, input)?
+            }
             "plugins.settings.get" | "plugins.settings.set" => {
                 crate::plugins::settings::dispatch(&st, person.id, &rid, row.id, input)?
             }

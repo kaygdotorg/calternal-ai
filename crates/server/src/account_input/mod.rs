@@ -9,11 +9,13 @@ mod db;
 pub(crate) use db::UPGRADE_SCHEMA;
 mod dispatch;
 mod http;
+mod plugin_settings;
 mod reader;
 mod wake;
 use calternal_types::Error;
 pub(crate) use dispatch::dispatch;
 pub(crate) use http::events;
+pub(crate) use plugin_settings::PersonalEdit;
 use std::{
     path::{Path, PathBuf},
     sync::Arc,

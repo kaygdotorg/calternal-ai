@@ -1595,7 +1595,7 @@
         },
         "ManifestSetting": {
           "additionalProperties": false,
-          "description": "Typed space setting; secrets use separate handles.",
+          "description": "Typed plugin setting; secrets use separate handles.",
           "properties": {
             "default": {
               "description": "Default setting value."
@@ -1603,6 +1603,17 @@
             "id": {
               "description": "Stable setting identifier.",
               "type": "string"
+            },
+            "scope": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/ManifestSettingScope"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Override owner. Omission selects the shared space setting."
             },
             "value_type": {
               "allOf": [
@@ -1619,6 +1630,25 @@
             "value_type"
           ],
           "type": "object"
+        },
+        "ManifestSettingScope": {
+          "description": "Owner of an override for a declared plugin setting.",
+          "oneOf": [
+            {
+              "description": "Each person in the space can have their own value.",
+              "enum": [
+                "personal"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Space managers can change the shared value.",
+              "enum": [
+                "space"
+              ],
+              "type": "string"
+            }
+          ]
         },
         "ManifestSettingType": {
           "description": "Primitive setting value type.",
@@ -3146,7 +3176,7 @@
         },
         "ManifestSetting": {
           "additionalProperties": false,
-          "description": "Typed space setting; secrets use separate handles.",
+          "description": "Typed plugin setting; secrets use separate handles.",
           "properties": {
             "default": {
               "description": "Default setting value."
@@ -3154,6 +3184,17 @@
             "id": {
               "description": "Stable setting identifier.",
               "type": "string"
+            },
+            "scope": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/ManifestSettingScope"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Override owner. Omission selects the shared space setting."
             },
             "value_type": {
               "allOf": [
@@ -3170,6 +3211,25 @@
             "value_type"
           ],
           "type": "object"
+        },
+        "ManifestSettingScope": {
+          "description": "Owner of an override for a declared plugin setting.",
+          "oneOf": [
+            {
+              "description": "Each person in the space can have their own value.",
+              "enum": [
+                "personal"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Space managers can change the shared value.",
+              "enum": [
+                "space"
+              ],
+              "type": "string"
+            }
+          ]
         },
         "ManifestSettingType": {
           "description": "Primitive setting value type.",
@@ -4618,7 +4678,7 @@
         },
         "ManifestSetting": {
           "additionalProperties": false,
-          "description": "Typed space setting; secrets use separate handles.",
+          "description": "Typed plugin setting; secrets use separate handles.",
           "properties": {
             "default": {
               "description": "Default setting value."
@@ -4626,6 +4686,17 @@
             "id": {
               "description": "Stable setting identifier.",
               "type": "string"
+            },
+            "scope": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/ManifestSettingScope"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Override owner. Omission selects the shared space setting."
             },
             "value_type": {
               "allOf": [
@@ -4642,6 +4713,25 @@
             "value_type"
           ],
           "type": "object"
+        },
+        "ManifestSettingScope": {
+          "description": "Owner of an override for a declared plugin setting.",
+          "oneOf": [
+            {
+              "description": "Each person in the space can have their own value.",
+              "enum": [
+                "personal"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Space managers can change the shared value.",
+              "enum": [
+                "space"
+              ],
+              "type": "string"
+            }
+          ]
         },
         "ManifestSettingType": {
           "description": "Primitive setting value type.",
@@ -13206,13 +13296,157 @@
   },
   {
     "risk": "read",
+    "id": "plugins.personal_settings.get",
+    "description": "Read your own declared plugin setting",
+    "mutates": false,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Address one manifest-declared setting in an accessible space.",
+      "properties": {
+        "key": {
+          "description": "Stable setting key from that package's manifest.",
+          "type": "string"
+        },
+        "plugin_id": {
+          "description": "Installed package ID.",
+          "type": "string"
+        },
+        "space_id": {
+          "description": "Space UUID.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "key",
+        "plugin_id",
+        "space_id"
+      ],
+      "title": "PluginSettingAddress",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "description": "Current values for a setting. The worker receives only its effective value.",
+      "properties": {
+        "alternatives": {
+          "description": "Concurrent alternatives preserved until explicit resolution.",
+          "items": true,
+          "type": "array"
+        },
+        "effective": {
+          "description": "Value the package sees, using the manifest default when needed."
+        },
+        "repair": {
+          "description": "Caller-safe description of the file and line to repair, when applicable.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "value": {
+          "description": "Stored override for the next edit's base. Null indicates no override."
+        },
+        "writable": {
+          "description": "True when the current settings file can be changed through the API.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "alternatives",
+        "effective",
+        "value",
+        "writable"
+      ],
+      "title": "PluginSettingValue",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "reversible",
+    "id": "plugins.personal_settings.set",
+    "description": "Edit your own declared plugin setting",
+    "mutates": true,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Replace the caller's override if their observed value still matches.",
+      "properties": {
+        "base": {
+          "description": "Last observed override. Null means no override."
+        },
+        "key": {
+          "description": "Personal setting key in that package's manifest.",
+          "type": "string"
+        },
+        "plugin_id": {
+          "description": "Installed package ID.",
+          "type": "string"
+        },
+        "space_id": {
+          "description": "Space UUID.",
+          "type": "string"
+        },
+        "value": {
+          "description": "New override. Null restores the manifest default."
+        }
+      },
+      "required": [
+        "base",
+        "key",
+        "plugin_id",
+        "space_id",
+        "value"
+      ],
+      "title": "PluginPersonalSettingEdit",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "description": "Current values for a setting. The worker receives only its effective value.",
+      "properties": {
+        "alternatives": {
+          "description": "Concurrent alternatives preserved until explicit resolution.",
+          "items": true,
+          "type": "array"
+        },
+        "effective": {
+          "description": "Value the package sees, using the manifest default when needed."
+        },
+        "repair": {
+          "description": "Caller-safe description of the file and line to repair, when applicable.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "value": {
+          "description": "Stored override for the next edit's base. Null indicates no override."
+        },
+        "writable": {
+          "description": "True when the current settings file can be changed through the API.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "alternatives",
+        "effective",
+        "value",
+        "writable"
+      ],
+      "title": "PluginSettingValue",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "read",
     "id": "plugins.settings.get",
     "description": "Read a declared space plugin setting",
     "mutates": false,
     "input_schema": {
       "$schema": "http://json-schema.org/draft-07/schema#",
       "additionalProperties": false,
-      "description": "Read one manifest-declared setting as a Manager of the addressed space.",
+      "description": "Address one manifest-declared setting in an accessible space.",
       "properties": {
         "key": {
           "description": "Stable setting key from that package's manifest.",

@@ -164,7 +164,7 @@ pub enum RequestTarget {
     Account,
     /// Issuing agent's current turn. Space and job come from its token.
     Turn,
-    /// Explicit space UUID and current space settings capability.
+    /// Explicit space UUID and the row’s current space capability.
     Space,
 }
 
@@ -234,6 +234,24 @@ pub const REQUEST_OPERATIONS: &[RequestOperation] = &[
         Reversible,
         crate::ContentFetchPreferenceEdit,
         crate::ContentFetchPreference
+    ),
+    operation!(
+        "plugins.personal_settings.get",
+        "Read your own declared plugin setting",
+        Space,
+        SpaceRead,
+        Read,
+        crate::PluginSettingAddress,
+        crate::PluginSettingValue
+    ),
+    operation!(
+        "plugins.personal_settings.set",
+        "Edit your own declared plugin setting",
+        Space,
+        SpaceRead,
+        Reversible,
+        crate::PluginPersonalSettingEdit,
+        crate::PluginSettingValue
     ),
     operation!(
         "plugins.settings.get",

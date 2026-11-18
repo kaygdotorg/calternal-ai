@@ -44,6 +44,20 @@ pub struct ResolvedPluginSlot {
     /// Validated declaration; it conveys no authority to dispatch or mount code.
     pub contribution: PluginSlotContribution,
 }
+
+/// Latest authorized projection for one package-owned slot on its live stream.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+pub struct OwnedSlotUpdate {
+    /// Space UUID whose slot is being followed.
+    pub space_id: String,
+    /// Package-qualified slot requested when opening the stream.
+    pub target: crate::OwnedPluginSlotId,
+    /// Whether the recipient can still use the declared slot.
+    pub active: bool,
+    /// Current visible contributions in declaration priority order.
+    pub contributions: Vec<ResolvedPluginSlot>,
+}
+
 /// An owned mount available in the caller's selected space.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[serde(deny_unknown_fields)]

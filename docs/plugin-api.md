@@ -179,6 +179,17 @@ timeout and a 60 attempts/minute budget per cached space. A 202
 acknowledges the first accepted delivery or an identical replay.
 Keep signing keys out of worker state and logs.
 
+## Personal plugin settings
+
+A package may declare `scope: "personal"` on a typed setting. A signed-in
+space member can read and edit only their own override through
+`plugins.personal_settings.get` and `plugins.personal_settings.set`.
+Address the space UUID, package and key. For edits submit the last stored
+`base`, the next `value` and a request ID. Null restores the manifest
+default. A stale base conflicts and an identical retry replays its receipt.
+The worker’s existing setting broker resolves the authenticated person's
+value. An edit wakes that person's account feed without publishing the value.
+
 ## Space plugin settings
 
 Declare a key in the manifest's `settings`, including its primitive type and
@@ -306,8 +317,12 @@ the selected space. The caller needs both declared capabilities. Admission,
 approval, item and space checks still run when a rendered action invokes the
 operation. Where a slot fills, the first eligible contributions in package ID
 and local contribution ID order win. A disable or removal is reflected by the
-next listing. The planned scoped reactive values feed will deliver that change
-to the slot owner. The existing `plugins` array remains a manifest and
+next listing. The owner can open
+`GET /api/v1/plugin-slots/live?space_id=…&plugin_id=…&slot_id=…` with the
+person's normal sign-in. Each SSE data frame is an `OwnedSlotUpdate`
+containing the full current grant-filtered projection. An inactive update
+clears the mount. Reconnect for the latest snapshot. This stream shares
+the space journal's listener budget. The existing `plugins` array remains a manifest and
 activation inventory.
 
 Fixed host targets retain their string names. Sealed renderer paths at

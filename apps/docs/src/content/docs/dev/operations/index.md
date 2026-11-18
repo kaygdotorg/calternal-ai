@@ -100,6 +100,8 @@ Generated operation schemas. Capability and risk are shown only when the catalog
 - [plugins.network.content.get](./plugins-network-content-get/): Get a prepared sealed content frame
 - [plugins.network.content.preference.get](./plugins-network-content-preference-get/): Read your remote content preference
 - [plugins.network.content.preference.set](./plugins-network-content-preference-set/): Set your remote content preference
+- [plugins.personal_settings.get](./plugins-personal-settings-get/): Read your own declared plugin setting
+- [plugins.personal_settings.set](./plugins-personal-settings-set/): Edit your own declared plugin setting
 - [plugins.settings.get](./plugins-settings-get/): Read a declared space plugin setting
 - [plugins.settings.set](./plugins-settings-set/): Edit a declared space plugin setting
 - [provider.sign_in.start](./provider-sign-in-start/): Start a private provider sign-in
