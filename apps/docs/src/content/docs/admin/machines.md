@@ -21,7 +21,7 @@ machine and never starts containers or VMs. The server side lives in
 # On the server host, or from the signed-in account (POST /api/v1/machines/codes):
 calternal machines code --appdata APPDATA --userdata-ssd SSD --userdata-hdd HDD --account <account-uuid>   # or --pool
 # On the machine:
-scripts/install-machine.sh --server https://cal.example.org --code CODE
+scripts/install-machine.sh --server https://cal.example.org --code - < code.txt
 # which runs, in order:
 calternal machine enroll --server https://cal.example.org --code CODE
 calternal machine run                    # --backend auto|podman|direct; default auto follows owner setting, --max-sandboxes 10
@@ -101,3 +101,17 @@ profile: no network, read-only code only, no persistent home or host data mounts
 256 MiB / 1 CPU / 64 PIDs. Interactive execs return a bounded stdin sender;
 machine `Input` messages retain ordering and fencing. Details, lifecycle, test
 commands and placement restrictions: plugin workers.
+
+
+First-owner deployments start their machine service before setup. The server
+and that service share an owner-only directory for the public-key enrollment
+handoff. The machine role retains its private key. Use `calternal machine
+onboarding` to see its attachment and capacity and `calternal machine verify`
+to run a sandbox diagnostic.
+
+A person can get the installer through the app's `machines.install` operation
+or `calternal machine install`. It enrolls to that person's account with a
+15-minute code, copies the supplied Calternal binary and sets up a user-level
+systemd service or launchd agent. Install the matching binary and have the
+Podman engine running first. Use `sh installer.sh --binary /path/to/calternal`
+when the binary is outside PATH.

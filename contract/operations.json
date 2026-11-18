@@ -1346,6 +1346,10 @@
               "format": "uint32",
               "minimum": 0.0,
               "type": "integer"
+            },
+            "sign_in": {
+              "description": "Whether the executable implements the private `--sign-in` mode.",
+              "type": "boolean"
             }
           },
           "required": [
@@ -2285,6 +2289,10 @@
               "format": "uint32",
               "minimum": 0.0,
               "type": "integer"
+            },
+            "sign_in": {
+              "description": "Whether the executable implements the private `--sign-in` mode.",
+              "type": "boolean"
             }
           },
           "required": [
@@ -3225,6 +3233,10 @@
               "format": "uint32",
               "minimum": 0.0,
               "type": "integer"
+            },
+            "sign_in": {
+              "description": "Whether the executable implements the private `--sign-in` mode.",
+              "type": "boolean"
             }
           },
           "required": [
@@ -7932,6 +7944,222 @@
     }
   },
   {
+    "risk": "reversible",
+    "id": "provider.sign_in.start",
+    "description": "Start a private provider sign-in",
+    "mutates": true,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Select the sandbox and official provider for sign-in.",
+      "properties": {
+        "machine_id": {
+          "default": null,
+          "description": "Explicitly selected personal machine UUID.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "pool": {
+          "default": false,
+          "description": "Use an entitled anonymous pool machine. Mutually exclusive with machine_id.",
+          "type": "boolean"
+        },
+        "provider_id": {
+          "description": "Installed provider plugin ID.",
+          "type": "string"
+        },
+        "space_id": {
+          "description": "Space UUID in which the caller may use this provider.",
+          "type": "string"
+        },
+        "thread_id": {
+          "default": null,
+          "description": "Optional saved thread UUID for the private prompt and final notice.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "provider_id",
+        "space_id"
+      ],
+      "title": "ProviderSignInStart",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "description": "A sign-in result never includes the challenge or the browser's answer.",
+      "properties": {
+        "id": {
+          "description": "Account-private request UUID.",
+          "type": "string"
+        },
+        "status": {
+          "description": "Pending, done or failed.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "status"
+      ],
+      "title": "ProviderSignInResult",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "reversible",
+    "id": "provider.sign_in.answer",
+    "description": "Supply a code to the official provider login",
+    "mutates": true,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Supply a browser authorization code to the original official process.",
+      "properties": {
+        "code": {
+          "description": "The short-lived code. Never saved in a request receipt.",
+          "type": "string"
+        },
+        "id": {
+          "description": "Account-private request UUID.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "id"
+      ],
+      "title": "ProviderSignInAnswer",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "description": "A sign-in result never includes the challenge or the browser's answer.",
+      "properties": {
+        "id": {
+          "description": "Account-private request UUID.",
+          "type": "string"
+        },
+        "status": {
+          "description": "Pending, done or failed.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "status"
+      ],
+      "title": "ProviderSignInResult",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "read",
+    "id": "provider.sign_in.status",
+    "description": "Read a private provider sign-in result",
+    "mutates": false,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Look up one account-private, volatile sign-in request.",
+      "properties": {
+        "id": {
+          "description": "Account-private request UUID.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "ProviderSignInStatus",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "description": "A sign-in result never includes the challenge or the browser's answer.",
+      "properties": {
+        "id": {
+          "description": "Account-private request UUID.",
+          "type": "string"
+        },
+        "status": {
+          "description": "Pending, done or failed.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "status"
+      ],
+      "title": "ProviderSignInResult",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "reversible",
+    "id": "provider.sign_in.typing",
+    "description": "Offer provider re-authentication while composing",
+    "mutates": true,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Report that the person began composing in a saved thread.",
+      "properties": {
+        "space_id": {
+          "description": "Authorized space UUID.",
+          "type": "string"
+        },
+        "thread_id": {
+          "description": "Saved thread UUID.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "space_id",
+        "thread_id"
+      ],
+      "title": "ProviderSignInTyping",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "anyOf": [
+        {
+          "$ref": "#/definitions/ProviderSignInResult"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "definitions": {
+        "ProviderSignInResult": {
+          "description": "A sign-in result never includes the challenge or the browser's answer.",
+          "properties": {
+            "id": {
+              "description": "Account-private request UUID.",
+              "type": "string"
+            },
+            "status": {
+              "description": "Pending, done or failed.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "status"
+          ],
+          "type": "object"
+        }
+      },
+      "title": "Nullable_ProviderSignInResult"
+    }
+  },
+  {
     "risk": "read",
     "id": "requests.list",
     "description": "List requests waiting on the signed-in account",
@@ -8092,6 +8320,56 @@
                 "kind",
                 "lifetimes",
                 "write"
+              ],
+              "type": "object"
+            },
+            {
+              "description": "An expiring challenge from an official machine-side login program.",
+              "properties": {
+                "display_code": {
+                  "description": "Code to enter on the provider page for a device flow.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "expires_at_ms": {
+                  "description": "Unix milliseconds when the pending challenge expires.",
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "kind": {
+                  "enum": [
+                    "provider_sign_in"
+                  ],
+                  "type": "string"
+                },
+                "label": {
+                  "description": "Provider prompt shown privately to the signed-in person.",
+                  "type": "string"
+                },
+                "needs_code": {
+                  "description": "The official command expects an authorization code from the user.",
+                  "type": "boolean"
+                },
+                "provider_id": {
+                  "description": "Installed provider plugin ID.",
+                  "type": "string"
+                },
+                "url": {
+                  "description": "Provider-owned HTTPS authorization page.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "expires_at_ms",
+                "kind",
+                "label",
+                "needs_code",
+                "provider_id"
               ],
               "type": "object"
             },
@@ -8425,6 +8703,82 @@
         "markdown"
       ],
       "title": "SpaceInstructionsResult",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "reversible",
+    "id": "machines.install",
+    "description": "Create a single-use personal machine enrollment script",
+    "mutates": true,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "No caller-controlled scope or target for machine onboarding and enrollment.",
+      "title": "MachineOnboardingInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "The enrollment script and the deadline for redeeming its one-time code.",
+      "properties": {
+        "expires_ms": {
+          "description": "Unix milliseconds when the code expires if unused.",
+          "format": "int64",
+          "type": "integer"
+        },
+        "script": {
+          "description": "Readable shell script containing the private enrollment code.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "expires_ms",
+        "script"
+      ],
+      "title": "MachineInstallResult",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "read",
+    "id": "machines.onboarding",
+    "description": "Check whether the installation has an enrolled, available machine",
+    "mutates": false,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "No caller-controlled scope or target for machine onboarding and enrollment.",
+      "title": "MachineOnboardingInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Enrollment and current placement availability for first-owner setup.",
+      "properties": {
+        "attached": {
+          "description": "An active enrollment exists on this installation.",
+          "type": "boolean"
+        },
+        "machine_id": {
+          "description": "The selected machine UUID for the owner's explicit verification.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "ready": {
+          "description": "The selected machine is connected and can accept a sandbox placement.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "attached",
+        "ready"
+      ],
+      "title": "MachineOnboardingResult",
       "type": "object"
     }
   },

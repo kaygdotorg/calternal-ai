@@ -24,7 +24,7 @@ describe("request bar", () => {
     const input = screen.getByLabelText("Branch name") as HTMLInputElement;
     await userEvent.clear(input);
     await userEvent.type(input, "lane/invites");
-    await userEvent.click(screen.getByRole("radio", { name: "Rebase" }));
+    await userEvent.click(screen.getByRole("tab", { name: "Rebase" }));
     await userEvent.click(screen.getByRole("button", { name: "Send answers" }));
     expect(onanswer).toHaveBeenCalledWith("q", { kind: "question", values: { branch: "lane/invites", how: "Rebase" } });
   });

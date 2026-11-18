@@ -37,7 +37,7 @@ origin=$(sed -n 's/^CALTERNAL_ORIGIN=//p' "$public")
 [[ $origin =~ ^https://([a-zA-Z0-9.-]+)(:[0-9]{1,5})?$ ]] ||
   die "Set one HTTPS CALTERNAL_ORIGIN in $public."
 authority=${origin#https://}
-install -d -m 0700 "$releases"
+install -d -m 0700 "$releases" "$root/machine-handoff"
 mkdir -p "$quadlets" "$systemd"
 exec 9>"$releases/lock"
 flock -n 9 || die 'Another deploy or rollback is running.'
@@ -133,7 +133,7 @@ prepare_release() {
     -e "s|@HDD_ROOT@|$hdd|g" -e "s|@HOME@|$HOME|g" \
     -e "s|@SECRETS_FILE@|${secrets##*/}|g" <<< "$server_template" > "$release/server.container" &&
     sed -e "s|@NAME@|$name|g" -e "s|@ROOT@|$root|g" \
-      -e "s|@SANDBOX_IMAGE@|$sandbox_image|g" -e "s|@PODMAN@|$engine|g" \
+      -e "s|@SANDBOX_IMAGE@|$sandbox_image|g" -e "s|@PODMAN@|$engine|g" -e "s|@ORIGIN@|$origin|g" \
       <<< "$machine_template" > "$release/machine.service"
 }
 

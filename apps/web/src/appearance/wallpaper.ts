@@ -342,6 +342,8 @@ export function setWallpaper(src: string | null, l?: WallpaperLook): void {
   if (l) look = l;
   if (src === source && !l) return;
   source = src;
+  // The picture itself, unblurred, for the canvas experiment's sharp area around its windows (canvas/Canvas.svelte); the URL is already the one being decoded, so this costs nothing.
+  if (src) root().setProperty("--wall-sharp", `url("${src}")`); else root().removeProperty("--wall-sharp");
   schedule();
 }
 

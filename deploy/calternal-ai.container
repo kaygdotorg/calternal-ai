@@ -18,6 +18,8 @@ NoNewPrivileges=true
 Volume=@ROOT@/appdata:/data/appdata:Z
 Volume=@ROOT@/userdata-ssd:/data/userdata-ssd:Z
 Volume=@HDD_ROOT@:/data/userdata-hdd:Z
+Volume=@ROOT@/machine-handoff:/data/machine-handoff:Z
+Environment=CALTERNAL_COLOCATED_HANDOFF=/data/machine-handoff
 EnvironmentFile=@HOME@/@SECRETS_FILE@
 EnvironmentFile=@ROOT@/server.env
 # Inherit the image command in exec form. The runtime has no shell.

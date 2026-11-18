@@ -167,7 +167,7 @@ const emit=m=>"#);
     wait_online(&server, &server.owner, 1).await;
     let provider = "calternal-claude-code";
     let (account, _) = server.principal(&server.owner).await;
-    let home = mdir.join(&format!("sandboxes/accounts/{account}/home"));
+    let home = mdir.join(&format!("sandboxes/accounts/{account}/spaces/{space}/home"));
     let mut account_feed = Feed::open(&server, "/api/v1/account/live?readiness=true").await;
     account_feed.next(|f| f["type"] == "ready").await;
     let verify = || {

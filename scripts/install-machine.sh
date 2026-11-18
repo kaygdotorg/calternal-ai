@@ -1,106 +1,136 @@
 #!/bin/sh
-# Install the Calternal machine role for the current user and enroll it.
-#
-#   scripts/install-machine.sh --server https://cal.example.org --code CODE [--binary PATH]
-#                              [--backend podman|process] [--max-sandboxes N]
-#
-# Deterministic, no agent involved. Steps, each idempotent:
-#   1. copy the `calternal` binary to ~/.local/bin/calternal (mode 0755);
-#   2. enroll with the one-time code (skipped when credentials already exist);
-#   3. install and start a user-level service:
-#      Linux: ~/.config/systemd/user/calternal-machine.service, enabled with
-#             `systemctl --user enable --now`; run `loginctl enable-linger $USER`
-#             once (needs admin rights) so it runs without a login session.
-#      macOS: ~/Library/LaunchAgents/org.calternal.machine.plist, loaded with
-#             `launchctl bootstrap gui/$UID` (starts at login, restarts on exit).
-# Exit code 3 from the service means the machine was revoked; systemd then does
-# not restart it (launchd has no such filter: it retries every 10 s and exits again). Credentials: ~/.local/share/calternal/machine/credentials (0600).
+# Install the Calternal machine service for this user.
+# Usage: sh install-machine.sh --server URL --code - --image IMAGE [--binary PATH]
+set +x
 set -eu
+umask 077
 
-server= code= binary= backend=podman max=10
-while [ $# -gt 0 ]; do
+die() { printf '%s\n' "$*" >&2; exit 1; }
+# The server defaults to sandboxing and can later honor an explicit owner choice.
+server= code= image= binary= backend=auto max=10
+while [ "$#" -gt 0 ]; do
+  [ "$#" -ge 2 ] || die "This option needs a value: $1"
   case $1 in
-    --server) server=$2; shift 2 ;;
-    --code) code=$2; shift 2 ;;
-    --binary) binary=$2; shift 2 ;;
-    --backend) backend=$2; shift 2 ;;
-    --max-sandboxes) max=$2; shift 2 ;;
-    *) echo "install-machine: unknown argument $1" >&2; exit 2 ;;
+    --server) server=$2 ;;
+    --code) code=$2 ;;
+    --image) image=$2 ;;
+    --binary) binary=$2 ;;
+    --backend) backend=$2 ;;
+    --max-sandboxes) max=$2 ;;
+    *) die "Unknown installer option." ;;
   esac
+  shift 2
 done
-[ -n "$server" ] || { echo "install-machine: --server is required" >&2; exit 2; }
+[ -n "$server" ] || die 'Supply the server URL with --server.'
+[ -n "$image" ] || image=docker.io/library/alpine:3
+system=$(uname -s)
+case $system in
+  Linux|Darwin) ;;
+  *) die "The machine service does not support $system." ;;
+esac
 [ -n "$binary" ] || binary=$(command -v calternal || true)
-[ -n "$binary" ] && [ -x "$binary" ] || { echo "install-machine: no calternal binary (pass --binary)" >&2; exit 2; }
+[ -x "$binary" ] || die 'Put the Calternal binary on your PATH, or run this script with --binary /path/to/calternal.'
+case $backend in
+  podman|auto)
+    engine=$(command -v podman) || die 'Install Podman for this user and start it before enrolling.'
+    "$engine" info >/dev/null || die 'Start Podman for this user before enrolling.'
+    ;;
+  direct) engine=podman ;;
+  *) die 'Choose the podman, auto or direct backend.' ;;
+esac
 
-bin_dir=$HOME/.local/bin
+target=$HOME/.local/bin/calternal
 machine_dir=${XDG_DATA_HOME:-$HOME/.local/share}/calternal/machine
-target=$bin_dir/calternal
-mkdir -p "$bin_dir"
-if [ "$(cd "$(dirname "$binary")" && pwd)/$(basename "$binary")" != "$target" ]; then
-  cp "$binary" "$target.new" && chmod 0755 "$target.new" && mv -f "$target.new" "$target"
+case "$target$machine_dir$engine$image$max" in
+  *'
+'*) die 'Use installation paths without line breaks.' ;;
+esac
+if [ -f "$machine_dir/credentials" ]; then
+  enrolled_server=$(sed -n 's/^server: //p' "$machine_dir/credentials")
+  [ "$enrolled_server" = "${server%/}" ] || die 'This directory is already enrolled with a different server.'
 fi
-echo "install-machine: binary $target"
+
+printf '%s\n' 'Copying Calternal into your user bin directory.'
+mkdir -p "$HOME/.local/bin"
+changed=false
+if ! [ -x "$target" ] || ! cmp -s "$binary" "$target"; then
+  binary_stage=$(mktemp "$target.XXXXXX")
+  trap 'rm -f "$binary_stage"' EXIT
+  cp "$binary" "$binary_stage"
+  chmod 0755 "$binary_stage"
+  mv -f "$binary_stage" "$target"
+  trap - EXIT
+  changed=true
+fi
 
 if [ -f "$machine_dir/credentials" ]; then
-  echo "install-machine: already enrolled ($machine_dir/credentials)"
+  printf '%s\n' 'This machine is already enrolled.'
 else
-  [ -n "$code" ] || { echo "install-machine: --code is required to enroll" >&2; exit 2; }
-  CALTERNAL_ENROLL_CODE=$code "$target" machine enroll --server "$server" --dir "$machine_dir"
+  printf '%s\n' 'Enrolling this machine with a single-use code.'
+  [ -n "$code" ] || die 'Get a new installer from the app, then run it again.'
+  if [ "$code" = - ]; then
+    "$target" machine enroll --server "$server" --dir "$machine_dir" --code -
+  else
+    printf '%s\n' "$code" | "$target" machine enroll --server "$server" --dir "$machine_dir" --code -
+  fi
 fi
 
-run_args="machine run --dir $machine_dir --backend $backend --max-sandboxes $max"
-case $(uname -s) in
+set -- "$target" machine run --dir "$machine_dir" --backend "$backend" --podman "$engine" --image "$image" --max-sandboxes "$max"
+printf '%s\n' 'Installing and starting the machine service for your account.'
+case $system in
   Linux)
     unit_dir=${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user
+    unit=$unit_dir/calternal-machine.service
     mkdir -p "$unit_dir"
-    cat > "$unit_dir/calternal-machine.service.new" <<EOF
-[Unit]
-Description=Calternal machine role
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-ExecStart=$target $run_args
-Restart=on-failure
-RestartSec=5
-RestartPreventExitStatus=3
-Environment=RUST_LOG=info
-
-[Install]
-WantedBy=default.target
-EOF
-    mv -f "$unit_dir/calternal-machine.service.new" "$unit_dir/calternal-machine.service"
-    systemctl --user daemon-reload
-    systemctl --user enable --now calternal-machine.service
-    systemctl --user restart calternal-machine.service
-    echo "install-machine: systemd user service calternal-machine running"
+    {
+      printf '%s\n' '[Unit]' 'Description=Calternal machine' '[Service]'
+      printf 'ExecStart=:'
+      for arg do
+        escaped=$(printf '%s' "$arg" | sed 's/[\\"]/\\&/g; s/%/%%/g')
+        printf '"%s" ' "$escaped"
+      done
+      printf '\n%s\n' 'Restart=on-failure' 'RestartSec=5' 'RestartPreventExitStatus=3' '[Install]' 'WantedBy=default.target'
+    } > "$unit.new"
+    if cmp -s "$unit.new" "$unit"; then
+      rm -f "$unit.new"
+    else
+      mv -f "$unit.new" "$unit"
+      systemctl --user daemon-reload
+      changed=true
+    fi
+    if "$changed"; then
+      systemctl --user enable calternal-machine.service
+      systemctl --user restart calternal-machine.service
+    else
+      systemctl --user enable --now calternal-machine.service
+    fi
     ;;
   Darwin)
     agents=$HOME/Library/LaunchAgents
     plist=$agents/org.calternal.machine.plist
-    mkdir -p "$agents" "$HOME/Library/Logs"
-    args=""
-    for a in $target $run_args; do args="$args    <string>$a</string>
-"; done
-    cat > "$plist.new" <<EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>Label</key><string>org.calternal.machine</string>
-  <key>ProgramArguments</key>
-  <array>
-$args  </array>
-  <key>RunAtLoad</key><true/>
-  <key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>
-  <key>StandardErrorPath</key><string>$HOME/Library/Logs/calternal-machine.log</string>
-</dict>
-</plist>
-EOF
-    mv -f "$plist.new" "$plist"
-    launchctl bootout "gui/$(id -u)/org.calternal.machine" 2>/dev/null || true
-    launchctl bootstrap "gui/$(id -u)" "$plist"
-    echo "install-machine: launchd agent org.calternal.machine loaded"
+    domain=gui/$(id -u)
+    mkdir -p "$agents"
+    {
+      printf '%s\n' '<?xml version="1.0" encoding="UTF-8"?>' '<plist version="1.0"><dict>'
+      printf '%s\n' '<key>Label</key><string>org.calternal.machine</string>' '<key>ProgramArguments</key><array>'
+      for arg do
+        escaped=$(printf '%s' "$arg" | sed 's/\&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g')
+        printf '<string>%s</string>\n' "$escaped"
+      done
+      printf '%s\n' '</array><key>RunAtLoad</key><true/>' '<key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>' '</dict></plist>'
+    } > "$plist.new"
+    if cmp -s "$plist.new" "$plist"; then
+      rm -f "$plist.new"
+    else
+      mv -f "$plist.new" "$plist"
+      changed=true
+    fi
+    if "$changed"; then
+      launchctl bootout "$domain/org.calternal.machine" 2>/dev/null || true
+    fi
+    if ! launchctl print "$domain/org.calternal.machine" >/dev/null 2>&1; then
+      launchctl bootstrap "$domain" "$plist"
+    fi
     ;;
-  *) echo "install-machine: unsupported system $(uname -s)" >&2; exit 1 ;;
 esac
+printf '%s\n' 'The service is installed. Return to Calternal to check that the machine connected.'

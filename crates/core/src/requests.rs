@@ -41,6 +41,22 @@ pub enum RequestDetail {
         #[ts(type = "JsonObject")]
         action: JsonObject,
     },
+    /// An expiring challenge from an official machine-side login program.
+    ProviderSignIn {
+        /// Installed provider plugin ID.
+        provider_id: String,
+        /// Provider prompt shown privately to the signed-in person.
+        label: String,
+        /// Provider-owned HTTPS authorization page.
+        url: Option<String>,
+        /// Code to enter on the provider page for a device flow.
+        display_code: Option<String>,
+        /// The official command expects an authorization code from the user.
+        needs_code: bool,
+        /// Unix milliseconds when the pending challenge expires.
+        #[ts(type = "number")]
+        expires_at_ms: i64,
+    },
     /// Trusted, fixed form describing the existing secret request.
     Secret {
         /// Secret name, never the value.
@@ -188,6 +204,42 @@ macro_rules! operation {
 }
 /// Static policy rows, ordered by the public operation catalog.
 pub const REQUEST_OPERATIONS: &[RequestOperation] = &[
+    operation!(
+        "provider.sign_in.start",
+        "Start a private provider sign-in",
+        Account,
+        PluginsUse,
+        Reversible,
+        crate::ProviderSignInStart,
+        crate::ProviderSignInResult
+    ),
+    operation!(
+        "provider.sign_in.answer",
+        "Supply a code to the official provider login",
+        Account,
+        PluginsUse,
+        Reversible,
+        crate::ProviderSignInAnswer,
+        crate::ProviderSignInResult
+    ),
+    operation!(
+        "provider.sign_in.status",
+        "Read a private provider sign-in result",
+        Account,
+        PluginsUse,
+        Read,
+        crate::ProviderSignInStatus,
+        crate::ProviderSignInResult
+    ),
+    operation!(
+        "provider.sign_in.typing",
+        "Offer provider re-authentication while composing",
+        Account,
+        PluginsUse,
+        Reversible,
+        crate::ProviderSignInTyping,
+        Option<crate::ProviderSignInResult>
+    ),
     operation!(
         "requests.list",
         "List requests waiting on the signed-in account",

@@ -19,7 +19,7 @@ for (const [token, style] of Object.entries(t.touchText)) {
 
 // One "UI size" scale (--ui-scale, set from Settings, 1 by default) multiplies the whole interface together: type (through --type-px, a rem fraction), and every
 // spacing, radius, control and region size below. Blur radii and safe-area insets are not sized by it.
-const SCALED = /^(s-\d+|r-card|r-pane|r-select|inset|tier-cap|cap-offset|side-w|right-w|ib-small|foot-inset|row-h(-settings)?|bar-h|pill-h|pad-region)$/;
+const SCALED = /^(s-\d+|r-card|r-pane|r-menu|r-select|inset|tier-cap|cap-offset|side-w|right-w|ib-small|foot-inset|row-h(-settings)?|bar-h|pill-h|pad-region)$/;
 const scaled = (k, v) => (SCALED.test(k) && /^\d+(\.\d+)?px$/.test(v) ? `calc(${v} * var(--ui-scale, 1))` : k === "type-px" ? `calc(${v} * var(--ui-scale, 1))` : v);
 const decl = (obj, pad = "  ") =>
   Object.entries(obj)

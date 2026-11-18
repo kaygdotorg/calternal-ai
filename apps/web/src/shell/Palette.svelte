@@ -10,7 +10,9 @@
   import { navigate, segments } from "../lib/route.svelte";
   import { client, startThread, store } from "../apps/threads/store.svelte";
   import { shell } from "./shell.svelte";
+  import PalettePreview from "./PalettePreview.svelte";
   import { serverMode } from "../server/client";
+  const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
   let { open, onclose }: { open: boolean; onclose: () => void } = $props();
   let text = $state("");
   let sel = $state(0);
@@ -75,23 +77,37 @@
   }
 </script>
 
-<Sheet {open} label="Search and commands" {onclose} side={shell.narrow ? "bottom" : "top"}>
-  <div class="in">
+<Sheet {open} label="Search and commands" {onclose} side={shell.narrow ? "bottom" : "top"} wide={!shell.narrow}>
+  <div class="in" class:two={!shell.narrow}>
     <div class="field">
       <Icon inline name="search" />
       <InlineEditor class="pal-input" label="Search, go to, or ask" bind:value={text} placeholder="Search, go to, or ask…" autoselect onsubmit={() => run(p.rows[sel])} onkeydown={key} {marks} />
+      {#if !shell.narrow}
+        {#if text}<button type="button" class="hb" aria-label="Clear the search" onpointerdown={(e) => e.preventDefault()} onclick={() => { text = ""; document.querySelector<HTMLElement>(".pal-input")?.focus(); }}><Icon name="close" inline /></button>{/if}
+        <button type="button" class="esc" aria-label="Close search" onpointerdown={(e) => e.preventDefault()} onclick={onclose}>esc</button>
+      {/if}
     </div>
     {#if p.intent}<p class="intent" aria-live="polite">{p.intent}</p>{/if}
-    <ul bind:this={list} role="listbox" aria-label="Results">
-      {#each p.rows as r, i (r.id + i)}
-        <li role="option" id="pal-{i}" aria-selected={i === sel} class:on={i === sel} class="r {r.kind}" onpointermove={() => (sel = i)} onclick={() => run(r)} onkeydown={() => {}}>
-          <span class="l">{r.label}</span>
-          {#if r.space}<span class="sp">{r.space}</span>{/if}
-          <span class="g">{r.sub}</span>
-        </li>
-      {/each}
-    </ul>
-    {#if !text.trim()}<p class="hint">Type to search every space, go somewhere, run a command, or ask an agent. <kbd>Esc</kbd> closes.</p>{/if}
+    <div class="body" class:has={!shell.narrow && (p.rows.length > 0 || !text.trim())}>
+      <div class="col">
+        <ul bind:this={list} role="listbox" aria-label="Results">
+          {#each p.rows as r, i (r.id + i)}
+            <li role="option" id="pal-{i}" aria-selected={i === sel} class:on={i === sel} class="r {r.kind}" onpointermove={() => (sel = i)} onclick={() => run(r)} onkeydown={() => {}}>
+              <span class="l">{r.label}</span>
+              {#if r.space}<span class="sp">{r.space}</span>{/if}
+              <span class="g">{r.sub}</span>
+            </li>
+          {/each}
+        </ul>
+        {#if !text.trim() && shell.narrow}<p class="hint">Type to search every space, go somewhere, run a command, or ask an agent. <kbd>Esc</kbd> closes.</p>{/if}
+      </div>
+      {#if !shell.narrow}
+        <div class="right">
+          <div class="card"><PalettePreview row={p.rows[sel]} words={text} /></div>
+          <footer class="hints" aria-hidden="true">{#if p.rows.length}<span><kbd>{isMac ? "return" : "Enter"}</kbd>{p.rows[sel]?.kind === "open" ? "Open" : "Run"}</span><span><kbd>↑↓</kbd>Choose</span>{/if}</footer>
+        </div>
+      {/if}
+    </div>
   </div>
 </Sheet>
 
@@ -109,4 +125,19 @@
   .g { font-size: var(--text-label); color: var(--ink-3); }
   .hint { padding: var(--s-3) var(--s-4); font-size: var(--text-label); color: var(--ink-3); }
   kbd { font: inherit; padding: 0 var(--s-2); border-radius: var(--s-2); background: rgb(var(--ink-rgb) / 0.08); }
+  .hb { flex: none; display: grid; place-items: center; width: var(--s-9); height: var(--s-9); border-radius: var(--r-pill); color: var(--ink-3); cursor: pointer; }
+  .esc { flex: none; height: var(--s-8); padding: 0 var(--s-4); border-radius: var(--r-select); font-size: var(--text-label); font-weight: var(--strong-weight); letter-spacing: 0.02em; color: var(--ink-3); cursor: pointer; box-shadow: inset 0 0 0 1px rgb(var(--ink-rgb) / 0.14); }
+  @media (hover: hover) { .hb:hover { background: rgb(var(--ink-rgb) / 0.08); } }
+  /* The wide palette, as the old app's: the results on the left (a third of the panel, 300 to 420 px), the highlighted thing or what Enter will do on the right, both inside one panel. It opens to its full height with the first
+     words and keeps it, so the list never jumps as the answer changes. */
+  .two { padding: var(--s-3); }
+  .two .body { display: grid; grid-template-columns: clamp(300px, 36%, 420px) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); height: 0; overflow: hidden; }
+  .two .body.has { height: min(620px, calc(100dvh - 12dvh - 150px)); margin-top: var(--s-2); }
+  .two .col { min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; padding: var(--s-2); }
+  .two ul { max-height: none; overflow: visible; }
+  .two .r { height: 44px; min-height: 0; gap: var(--s-5); }
+  .right { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+  .card { flex: 1; min-height: 0; margin: 0 var(--s-4) 0 var(--s-2); border-radius: var(--r-card); /* inset 8 in a 28 panel */ background: rgb(var(--ink-rgb) / 0.05); overflow: hidden; }
+  .hints { display: flex; justify-content: flex-end; gap: var(--s-6); align-items: center; min-height: 34px; padding: 0 var(--s-5); font-size: var(--text-label); color: var(--ink-2); }
+  .hints kbd { margin-right: var(--s-3); color: var(--ink-3); box-shadow: inset 0 0 0 1px rgb(var(--ink-rgb) / 0.14); }
 </style>

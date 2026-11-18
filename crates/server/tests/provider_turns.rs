@@ -202,7 +202,7 @@ const scenarioFile="#);
     let workspace = mdir.join(&format!(
         "sandboxes/accounts/{account}/threads/{initial_thread}"
     ));
-    let home = mdir.join(&format!("sandboxes/accounts/{account}/home"));
+    let home = mdir.join(&format!("sandboxes/accounts/{account}/spaces/{space}/home"));
     assert!(workspace.exists());
     // The machine owner's local command refuses deletion while its role is running.
     let local = tokio::process::Command::new(BIN)
@@ -414,7 +414,7 @@ async fn classified_provider_retries_are_durable_and_do_not_repeat_unknown_effec
     until(&server, id, |j| j["state"] == "interrupted").await;
     op(&server, "agent.stop", json!({"job_id":id})).await;
     let (account, _) = server.principal(&server.owner).await;
-    let home = mdir.join(&format!("sandboxes/accounts/{account}/home"));
+    let home = mdir.join(&format!("sandboxes/accounts/{account}/spaces/{space}/home"));
     std::fs::write(home.join("subscription"), "disposable billing fixture").unwrap();
     let limit = op(
         &server,

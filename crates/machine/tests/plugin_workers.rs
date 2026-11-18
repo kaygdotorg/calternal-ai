@@ -31,6 +31,8 @@ async fn backend(root: &std::path::Path) -> Option<PodmanBackend> {
 
 fn spec(source: &str) -> SandboxSpec {
     SandboxSpec {
+        space_id: Some(calternal_types::SpaceId::new()),
+        provider_login: false,
         code_directory: None,
         account_id: Uuid::new_v4(),
         thread_id: Uuid::new_v4(),

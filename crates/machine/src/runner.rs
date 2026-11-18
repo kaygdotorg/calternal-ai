@@ -183,9 +183,11 @@ impl Runner {
             Down::Assign {
                 lease_id,
                 fence,
-                spec,
+                space_id,
+                mut spec,
                 ..
             } => {
+                spec.space_id = Some(space_id);
                 let slot = {
                     let mut slots = self.slots.lock().expect("slots");
                     let closing_workspace = slots.iter().any(|(id, slot)| {
