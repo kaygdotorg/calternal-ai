@@ -20,7 +20,7 @@
 
 <script lang="ts">
   // A menu on a Popover (placement, portal and material are the Popover's); on a touch screen it is an inset sheet from the bottom instead, with rows of the native menu height (42). Items are radio-style when any is `checked`. Arrows move focus, Enter picks,
-  // Escape and an outside press close it. `compact` puts a row's second line beside its label instead of under it. `search` adds an inline field at the top that filters by label and sub text (Down moves into the list).
+  // Escape and an outside press close it. `compact` puts a row's second line beside its label instead of under it. `empty` is what a search that finds nothing says (default "Nothing matches."); a list that is short for another reason says so here. `search` adds an inline field at the top that filters by label and sub text (Down moves into the list).
   // Anchored to `trigger` (a button) or to `anchor` (a point, for a context menu). `label` names the menu.
   import Icon from "./Icon.svelte";
   import Popover from "./Popover.svelte";
@@ -39,9 +39,10 @@
     anchor,
     search = false,
     compact = false,
+    empty = "Nothing matches.",
     morph = false,
     placement = "top",
-  }: { open: boolean; items: MenuItem[]; label: string; onpick: (id: string) => void; onclose: () => void; trigger?: HTMLElement | null; anchor?: Anchor | null; search?: boolean; compact?: boolean; morph?: boolean; placement?: "top" | "bottom" } = $props();
+  }: { open: boolean; items: MenuItem[]; label: string; onpick: (id: string) => void; onclose: () => void; trigger?: HTMLElement | null; anchor?: Anchor | null; search?: boolean; compact?: boolean; empty?: string; morph?: boolean; placement?: "top" | "bottom" } = $props();
   let q = $state("");
   let list = $state<HTMLElement>();
   const radio = $derived(items.some((i) => i.checked !== undefined));
@@ -84,7 +85,7 @@
         {#if it.checked}<Icon inline name="check" />{/if}
       </button>
     {:else}
-      <p class="none">Nothing matches.</p>
+      <p class="none">{empty}</p>
     {/each}
   </div>
 {/snippet}

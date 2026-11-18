@@ -10,6 +10,7 @@
   import { Button, Icon, IconButton, InlineEditor, Menu, Row, toast, undoable, type MenuItem } from "@calternal/ui";
   import { href, navigate, segments } from "../../lib/route.svelte";
   import { layout, type Container } from "./layout.svelte";
+  import { archiveThread, containerName, containersOf, copyThreadLink, runThreadItem, threadItems, topLevelIds } from "./thread-menu";
   import StateMark from "./StateMark.svelte";
   import SwipeRow, { type SwipeAction } from "../../lib/swipe/SwipeRow.svelte";
   import { swipeRows } from "../../lib/swipe/rows";
@@ -23,12 +24,12 @@
   const hidden = $derived(new Set(store.attention.slice(0, 3).map((a) => a.thread.id)));
   const shown = $derived(store.threads.filter((t) => !hidden.has(t.id) && t.spaceId === spaces.current.id)); // only the current space's threads
   const byId = $derived(new Map(shown.map((t) => [t.id, t])));
-  const top = $derived(shown.filter((t) => !t.parentId || !byId.has(t.parentId)).sort((a, b) => b.updatedAt - a.updatedAt).map((t) => t.id));
+  const top = $derived(topLevelIds());
   const idsIn = (c: Container) => layout.idsOf(c, top);
   const ids0 = $derived(idsIn(null));
   const kids = (id: string) => shown.filter((t) => t.parentId === id).sort((a, b) => b.updatedAt - a.updatedAt);
-  const containers = $derived<Container[]>([null, ...layout.sections.map((s) => s.id)]);
-  const nameOf = (c: Container) => (c === null ? layout.looseName : layout.sections.find((s) => s.id === c)?.name ?? "section");
+  const containers = $derived<Container[]>(containersOf());
+  const nameOf = containerName;
 
   // ---- renaming in place ----
   let editing = $state<{ kind: "thread" | "section"; id: string } | null>(null);
@@ -48,24 +49,15 @@
   let ctx = $state<{ x: number; y: number; thread?: ThreadSummary; section?: string } | null>(null);
   const ctxItems = $derived<MenuItem[]>(
     ctx?.thread
-      ? [
-          { id: "rename", label: "Rename" },
-          ...containers.filter((c) => c !== layout.containerOf(ctx!.thread!.id)).map((c) => ({ id: `move:${c ?? ""}`, label: `Move to ${nameOf(c)}` })),
-          { id: "copy", label: "Copy link" },
-          ...(ctx.thread.state === "running" ? [{ id: "stop", label: "Stop" }] : []),
-          { id: "archive", label: "Archive", danger: true },
-        ]
+      ? threadItems(ctx.thread)
       : ctx?.section
         ? ctx.section === LOOSE
         ? [{ id: "srename", label: "Rename section" }]
         : [{ id: "srename", label: "Rename section" }, { id: "up", label: "Move up" }, { id: "down", label: "Move down" }, { id: "delete", label: "Delete section", danger: true }]
       : [],
   );
-  function archive(t: ThreadSummary) {
-    if (current === t.id) navigate("/threads");
-    return client.archive(t.id).then(() => undoable("thread.archive", t.id, "Archived", () => client.unarchive(t.id)));
-  }
-  const copyLink = (t: ThreadSummary) => void navigator.clipboard?.writeText(location.origin + href(`/threads/${t.id}`)).then(() => toast("Link copied"));
+  const archive = (t: ThreadSummary) => archiveThread(t);
+  const copyLink = copyThreadLink;
   /** The three-dot button and the swipe's More open the same menu as right-click, under the control that asked. */
   const menuFrom = (el: HTMLElement | undefined, t: ThreadSummary) => { const r = el?.getBoundingClientRect(); ctx = { x: r?.right ?? 0, y: r?.bottom ?? 0, thread: t }; };
   /** The swipe buttons of a row: right shows the first list, left the second (slot 0 is the outer edge; a long swipe runs it). */
@@ -82,11 +74,7 @@
     if (!c) return;
     if (c.thread) {
       const t = c.thread;
-      if (id === "rename") edit("thread", t.id, t.title);
-      else if (id.startsWith("move:")) { const to = id.slice(5) || null; layout.move(t.id, to, idsIn(to).length, idsIn(to)); }
-      else if (id === "copy") copyLink(t);
-      else if (id === "stop") void client.stop(t.id);
-      else if (id === "archive") archive(t);
+      runThreadItem(id, t, () => edit("thread", t.id, t.title));
     } else if (c.section) {
       if (c.section === LOOSE) { if (id === "srename") edit("section", LOOSE, layout.looseName); return; }
       const s = layout.sections.find((x) => x.id === c.section);

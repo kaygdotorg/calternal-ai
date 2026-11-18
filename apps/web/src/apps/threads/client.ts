@@ -15,6 +15,10 @@ export interface ThreadEvents {
   onDelta(text: string): void;
   /** The agent started another tool step. The thread shows a working state and these steps while it runs, then the finished message at once. */
   onStep(step: Step): void;
+  /** What the running turn is doing now, in words for the working row ("Waiting to start", "Starting the machine", "Thinking", "Running ls", "Writing"). */
+  onPhase?(phase: string): void;
+  /** The provider is reasoning: more of its reasoning text (may be empty when the provider shares only that it is thinking), and `done` when it has finished, with how long it took in milliseconds. */
+  onThought?(thought: { text: string; done?: boolean; ms?: number }): void;
   /** The thread's summary changed (state, title, provider). */
   onSummary(summary: ThreadSummary): void;
   /** The working turn ended without a message of its own appearing (stopped, failed): the working state goes away. */

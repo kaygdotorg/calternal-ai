@@ -6,10 +6,13 @@
   import { Button, Icon } from "@calternal/ui";
   import Md from "../../lib/Md.svelte";
   import MessageActions from "./MessageActions.svelte";
+  import ProviderMark from "./ProviderMark.svelte";
   import Steps from "./Steps.svelte";
-  import type { Message } from "./model";
+  import Thought from "./Thought.svelte";
+  import type { Message, ProviderId } from "./model";
   import { store } from "./store.svelte";
-  let { message }: { message: Message } = $props();
+  // `provider` is the thread's current provider, the mark of a message whose marker does not say which wrote it.
+  let { message, provider, providers }: { message: Message; provider: ProviderId; providers: { id: ProviderId; name: string; models: { id: string; name: string }[] }[] } = $props();
   // A very long message (a tool's whole output, say) is drawn in part: the first CAP characters, cut at a line end, and the person chooses to draw the rest. Drawing 5 MB of Markdown at once blocked the page
   // for 0.7 s (2.4 s at 4x CPU slowdown); the list virtualises messages, not the inside of one. The text is all there (copy takes all of it).
   const CAP = 64 * 1024;
@@ -25,13 +28,15 @@
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<div class="msg {message.role}" onpointerenter={() => (armed = true)} onfocusin={() => (armed = true)}>
+<div class="msg {message.role}" class:agent-row={message.role === "agent"} onpointerenter={() => (armed = true)} onfocusin={() => (armed = true)}>
   {#if message.role === "user"}
     <div class="col end"><div class="bubble">{#each message.blocks as b}{#if b.type === "text"}<Md text={clip(b.text)} />{/if}{/each}</div><MessageActions {message} {armed} /></div>
   {:else}
+    <div class="lead"><ProviderMark by={message.by} {provider} {providers} /></div>
     <div class="agent" id={message.id}>
       {#each message.blocks as b}
         {#if b.type === "text"}<Md text={clip(b.text)} />
+        {:else if b.type === "thought"}<Thought text={b.text} ms={b.ms} />
         {:else if b.type === "steps"}<Steps steps={b.steps} ms={b.ms} />
         {:else if b.type === "card"}{#if GenUi}<GenUi source={b.source} />{/if}
         {:else}
@@ -48,6 +53,8 @@
 <style>
   .clipped { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-3); color: var(--ink-3); font-size: var(--text-label); }
   .msg { width: 100%; max-width: var(--msg-w); margin: 0 auto; padding: var(--s-4) var(--msg-pad-r, var(--pad-region)) var(--s-4) var(--msg-pad-l, var(--pad-region)); display: flex; }
+  .msg.agent-row { display: grid; grid-template-columns: var(--s-8) minmax(0, 1fr); column-gap: var(--s-4); }
+  .lead { padding-top: var(--s-1); }
   .user { justify-content: flex-end; }
   .bubble { position: relative; max-width: 82%; padding: var(--s-4) var(--s-6); border-radius: var(--r-pane); background: rgb(var(--ink-rgb) / 0.07); }
   /* Your messages get an iMessage tail in the bubble's own fill (ported from the calternal-ui plugin): the bottom-right corner is square and a rounded point flares from that edge a little below the bubble. */

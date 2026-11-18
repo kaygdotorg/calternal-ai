@@ -170,15 +170,20 @@ export class FixtureClient implements ThreadsClient {
     const id = `${threadId}-stream-${this.summary(threadId).messageCount}`;
     o.sent = 0;
     for (const e of o.events) e.onStreamStart(id);
+    for (const e of o.events) e.onPhase?.("Starting the machine");
     let stepN = 0;
+    let thought = 0;
     o.timer = setInterval(() => {
       // A tool step about every 700 ms of the run, so the working state has something to show.
       if (o.sent % 60 < 5 && o.sent / 60 >= stepN) {
         const s: Step = { id: `${id}-s${stepN}`, kind: (["read", "search", "edit", "run"] as const)[stepN % 4]!, title: ["Read", "Searched", "Edited", "Ran"][stepN % 4]!, detail: ["crates/store/src/lib.rs", "rg -n 'sync_all' crates", "crates/store/src/journal.rs", "cargo test -j6 -p calternal-store"][stepN % 4], status: "ok", ms: 400 + stepN * 150 };
         stepN++;
         this.stepLog.set(id, [...(this.stepLog.get(id) ?? []), s]);
-        for (const e of o.events) e.onStep(s);
+        for (const e of o.events) { e.onStep(s); e.onPhase?.(s.detail ?? s.title); }
       }
+      // The first moments the provider reasons (the fixture shares its reasoning); then it writes.
+      if (thought === 0) { thought = 1; for (const e of o.events) { e.onPhase?.("Thinking"); e.onThought?.({ text: "The question is about the storage layout, so the first step is to read how the store crate places its files.\n\nThen compare that with the ADR before changing anything." }); } }
+      else if (thought === 1 && o.sent > 40) { thought = 2; for (const e of o.events) { e.onThought?.({ text: "", done: true, ms: 3_000 }); e.onPhase?.("Writing"); } }
       const step = 4 + (o.sent % 5);
       const chunk = STREAM_TEXT.slice(o.sent, o.sent + step);
       o.sent += step;
