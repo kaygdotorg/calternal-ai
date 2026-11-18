@@ -19,7 +19,10 @@
   let btn = $state<HTMLButtonElement>(), box = $state<HTMLElement>();
   // The fixtures offer both designs; the real build shows the detailed one.
   let compact = $state(!serverMode() && localStorage.getItem("cal.modelcard") === "compact");
-  const toggle = () => { compact = !compact; try { localStorage.setItem("cal.modelcard", compact ? "compact" : "detailed"); } catch { /* storage is off */ } void tick().then(fit); };
+  const toggle = () => { compact = !compact; try { localStorage.setItem("cal.modelcard", compact ? "compact" : "detailed"); } catch { /* storage is off */ } stuck = true; void tick().then(fit); addEventListener("pointermove", away, true); };
+  const away = (e: PointerEvent) => { const t = e.target as Node; if (box?.contains(t) || btn?.contains(t)) return; removeEventListener("pointermove", away, true); stuck = false; hide(120); };
+  // After the switch the card changes size under a still pointer; it stays open until the pointer has been in it again and left (or Escape, scrolling or blurring close it).
+  let stuck = false;
   const fit = () => { if (btn && box) place(box, btn, { prefer: "bottom", gap: 8 }); };
   const toBody = (n: HTMLElement) => { document.body.append(n); return { destroy: () => n.remove() }; };
 
@@ -33,31 +36,32 @@
   }
   function hide(grace = 0) {
     clearTimeout(timer);
+    if (stuck && grace > 0) return;
     timer = window.setTimeout(() => { if (open) win.__cardClosed = performance.now(); open = false; }, grace);
   }
   $effect(() => {
     if (!open) return;
     const close = () => hide();
-    const key = (e: KeyboardEvent) => { if (e.key === "Escape") hide(); };
+    const key = (e: KeyboardEvent) => { if (e.key === "Escape") { stuck = false; hide(); } };
     addEventListener("scroll", close, { capture: true, passive: true }); addEventListener("keydown", key);
     return () => { removeEventListener("scroll", close, { capture: true } as EventListenerOptions); removeEventListener("keydown", key); };
   });
 </script>
 
 <button type="button" class="mark" aria-label={label} aria-describedby={open ? `mc-${by?.model ?? id}` : undefined} bind:this={btn}
-  onpointerenter={(e) => { if (e.pointerType !== "touch") show(); }} onpointerleave={() => hide(120)}
+  onpointerenter={(e) => { stuck = false; if (e.pointerType !== "touch") show(); }} onpointerleave={() => hide(120)}
   onfocus={(e) => { if ((e.currentTarget as HTMLElement).matches(":focus-visible")) show(true); }} onblur={() => hide()}
   onclick={(e) => { const ev = e as unknown as PointerEvent; if (ev.pointerType === "touch" || ev.detail === 0) { open ? hide() : show(true); } }}><Icon name={icon} inline /></button>
 
 {#if open}
-  <div class="host" use:toBody onpointerenter={() => clearTimeout(timer)} onpointerleave={() => hide(120)} role="tooltip" id="mc-{by?.model ?? id}">
+  <div class="host" use:toBody onpointerenter={() => { stuck = false; clearTimeout(timer); }} onpointerleave={() => hide(120)} role="tooltip" id="mc-{by?.model ?? id}">
     <Panel floating dense radius="card" bind:el={box} class="mc"><ModelCard {by} {provider} {providers} {compact} ontoggle={serverMode() ? undefined : toggle} /></Panel>
   </div>
 {/if}
 
 <style>
-  /* An inline mark, aligned to the first line's x-height centre by the line box (`vertical-align: middle` puts its centre at the baseline plus half the parent's x-height), never by a pixel nudge. */
-  .mark { display: inline-grid; place-items: center; vertical-align: middle; width: var(--s-8); height: var(--s-8); color: var(--ink-2); border-radius: 50%; }
+  /* An inline mark, aligned to the first line's x-height centre by the line box (`vertical-align: middle` puts its centre at the baseline plus half the parent's x-height), never by a pixel nudge; the margin makes the box one line tall, so it never pushes the line's baseline off the text beside it. */
+  .mark { display: inline-grid; place-items: center; vertical-align: middle; width: var(--s-8); height: var(--s-8); margin-block: calc((1lh - var(--s-8)) / 2); color: var(--ink-2); border-radius: 50%; }
   @media (hover: hover) and (pointer: fine) { .mark:hover { background: var(--hover); color: var(--ink); } }
   .host { position: fixed; inset: 0 auto auto 0; z-index: 60; pointer-events: none; }
   .host :global(.mc) { position: fixed; left: 0; top: 0; pointer-events: auto; z-index: 60; }

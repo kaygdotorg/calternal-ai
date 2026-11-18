@@ -25,6 +25,16 @@ for (const scheme of ["dark", "light"]) {
   while ((await p.locator("[data-win]").count()) > 1) { await p.keyboard.press("Alt+Shift+KeyW"); await p.waitForTimeout(150); }
   await p.waitForTimeout(400);
   await p.screenshot({ path: `${dir}/${scheme}-6-single.png` });
+  // a neighbour peeking at rest (the focused window fully in view, the next cut cleanly by the canvas edge), the share menu, and two windows for the active and inactive states
+  await p.keyboard.press("Alt+Shift+KeyN"); await p.keyboard.press("Alt+Shift+KeyN"); await p.keyboard.press("Alt+Shift+KeyN"); await p.waitForTimeout(500);
+  for (let i = 0; i < 6; i++) await p.keyboard.press("Alt+Shift+ArrowLeft");
+  for (let i = 0; i < 4; i++) { await p.keyboard.press("Alt+Shift+KeyR"); await p.waitForTimeout(100); await p.keyboard.press("Alt+Shift+ArrowRight"); await p.waitForTimeout(100); }
+  for (let i = 0; i < 6; i++) await p.keyboard.press("Alt+Shift+ArrowLeft");
+  await p.waitForTimeout(600);
+  await p.screenshot({ path: `${dir}/${scheme}-7-peek.png` });
+  await p.locator("[data-win][data-focused]").getByRole("button", { name: "Share" }).click(); await p.waitForTimeout(400);
+  await p.screenshot({ path: `${dir}/${scheme}-8-share.png` });
+  await p.keyboard.press("Escape");
   await ctx.close();
 }
 {

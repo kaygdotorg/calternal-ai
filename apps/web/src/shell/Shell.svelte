@@ -81,8 +81,9 @@
   function gdown(e: PointerEvent) {
     if (e.pointerType !== "touch") return;
     // A second finger is never a pull: two fingers are the canvas's (canvas/Canvas.svelte), so a pull that the first finger began is let go and the rest of the gesture is left alone.
+    // A primary touch is by definition the first finger of a sequence (the Pointer Events rule): no other finger is down, whatever releases were missed (a lost `pointerup` of the second finger used to make the next one-finger swipe look like a second finger, for up to three seconds).
+    if (e.isPrimary) touching.clear();
     touching.set(e.pointerId, e.timeStamp);
-    for (const [id, t] of touching) if (e.timeStamp - t > 3000) touching.delete(id); // a finger whose release was missed does not count for ever
     if (touching.size > 1) { gskip = true; if (drag !== null || mode || tgt) { drag = null; dragMode = null; mode = null; tgt = null; } return; }
     gtouch = true; gx = e.clientX; gy = e.clientY; gmoved = false; samples = [{ t: e.timeStamp, x: e.clientX }];
     gtarget = e.target as Element;
