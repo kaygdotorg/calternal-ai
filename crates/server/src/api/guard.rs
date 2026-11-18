@@ -77,11 +77,23 @@ pub(super) async fn guard<D: Directory>(
                 break 'resp deny(Error::forbidden("cross-origin request denied"));
             }
         }
+        // The fixed provider callback has its own one-use state and browser binding.
+        let oidc_enabled = state
+            .directory
+            .http_auth()
+            .is_some_and(|auth| auth.config.oidc_enabled);
+        let provider_callback = oidc_enabled
+            && path == crate::account_http::OIDC_CALLBACK_PATH
+            && matches!(
+                *req.method(),
+                axum::http::Method::GET | axum::http::Method::POST
+            );
         if req
             .headers()
             .get("sec-fetch-site")
             .and_then(|v| v.to_str().ok())
             == Some("cross-site")
+            && !provider_callback
         {
             break 'resp deny(Error::forbidden("cross-site request denied"));
         }

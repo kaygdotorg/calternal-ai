@@ -15,7 +15,8 @@
   });
 </script>
 
-<div class="np selectable" data-preview>
+<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+<div class="np selectable" data-preview tabindex="0" role="region" aria-label="Note preview">
   {#if note}<Md text={note.markdown} />{:else if gone}<p class="q">That note does not exist, or you cannot see it.</p>{:else}<p class="q">Loading the note…</p>{/if}
   <p class="hint">A copy to read. Click the window to edit this note.</p>
 </div>

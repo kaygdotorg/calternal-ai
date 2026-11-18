@@ -1,3 +1,4 @@
+import { signUp } from "./lib.mjs";
 // Turn readiness against a real server of this tree, each state made true in turn: no machine enrolled, a machine that is stopped, a provider signed out (stand-in `claude`
 // reports it), then Check again after signing in; also what `agent.readiness` says against what the thread shows. Same setup as requests-server.mjs. Env: CAL_BIN, CAL_DIST, CAL_READY_PORT.
 import { spawn } from "node:child_process";
@@ -24,7 +25,7 @@ try {
   const p = await ctx.newPage(); const cdp = await ctx.newCDPSession(p);
   await cdp.send("WebAuthn.enable"); await cdp.send("WebAuthn.addVirtualAuthenticator", { options: { protocol: "ctap2", transport: "internal", hasResidentKey: true, hasUserVerification: true, isUserVerified: true, automaticPresenceSimulation: true } });
   await p.goto(`${url}/?server=1`); await p.waitForSelector("html[data-ready]");
-  await p.fill('input[name="token"]', token); await p.fill('input[name="name"]', "Ready Owner"); await p.getByRole("button", { name: "Create passkey" }).click();
+  await signUp(p, token, "Ready Owner");
   await p.waitForTimeout(2500); await p.evaluate(() => localStorage.removeItem("cal.onboarding")); /* the first owner lands in the onboarding (shell lane): the account exists, leave the wizard */ await p.waitForSelector("html[data-ready]"); await p.waitForTimeout(1200);
   const space = (await op(p, "spaces.list", {})).data.spaces.find((s) => s.personal).id;
   for (const id of ["calternal-claude-code", "calternal-orchestrator"]) await op(p, "plugins.enable", { space_id: space, plugin_id: id });

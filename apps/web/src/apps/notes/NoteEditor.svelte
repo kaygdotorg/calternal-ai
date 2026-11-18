@@ -10,7 +10,7 @@
   import { serverMode } from "../../server/client";
   import { notes as store } from "./store.svelte";
   import type { BlockEditor, Block, Trigger } from "../../../../../packages/editor/src/block/index";
-  let { id, text, onedit, onheadings, label = "Note", notes = [], threads = [], agents = [], tags = [] }: { id: string; text: string; onedit: (text: string) => void; onheadings?: (h: { level: number; text: string; from: number }[]) => void; label?: string; notes?: { id: string; title: string }[]; threads?: { id: string; title: string }[]; agents?: string[]; tags?: string[] } = $props();
+  let { id, text, onedit, onheadings, label = "Note", readOnly = false, live = undefined, notes = [], threads = [], agents = [], tags = [] }: { id: string; text: string; onedit: (text: string) => void; onheadings?: (h: { level: number; text: string; from: number }[]) => void; label?: string; /** No typing: someone who can only view the note, or a guest. */ readOnly?: boolean; /** The note is in a live room: the extension binds the editor to the room's text (the room saves, so `onedit` is not called). */ live?: { extension: import("@codemirror/state").Extension }; notes?: { id: string; title: string }[]; threads?: { id: string; title: string }[]; agents?: string[]; tags?: string[] } = $props();
   let host = $state<HTMLElement>();
   let ed: BlockEditor | undefined;
   let openedId = "";
@@ -70,10 +70,11 @@
       await m.prepare(text); // the lazy pieces this note needs (frontmatter, block IDs, tables, code grammars), so its first draw is right
       if (dead || !host) return;
       ed = createBlockEditor({
-        parent: host, text, label,
+        parent: host, text, label, readOnly,
+        extensions: live?.extension,
         // A task is a list item that starts with a box: the host says so, the editor package has no such kind.
         kinds: (b, s) => (b.kind === "item" && /^\s*[-*+] \[[ xX]\]/.test(s.doc.sliceString(b.from, Math.min(b.to, b.from + 8))) ? "task" : null),
-        onchange: (t, origin) => { if (origin !== "remote") onedit(t); heads(); },
+        onchange: (t, origin) => { if (!live && origin !== "remote") onedit(t); heads(); },
         onMenu: (block, rect) => (menu = { block, rect }),
         onTrigger: (t) => { if (!t) dismissed = null; trig = t; },
         pickerKey,
@@ -86,6 +87,7 @@
   // Another note, or the same note saved elsewhere with different text: replace the document (never while it already shows exactly this text).
   $effect(() => {
     const t = text, i = id;
+    if (live) return; // the room owns the text
     if (!ed || (i === openedId && ed.value === t)) return;
     openedId = i;
     const e = ed;

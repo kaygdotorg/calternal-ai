@@ -155,3 +155,23 @@ full deployment budget.
 During a reconnect, the client retains queued sends and delivers them after
 the server is reachable again. Requests that already received a durable
 receipt replay using the same request ID.
+
+## Account onboarding and recovery
+
+Auth schema 12 adds account-owned email state, challenges, recovery
+proofs and grants, and audit history through the shared runner. Account
+erasure cascades to these rows. The protected recovery inventory captures
+the new tables under their account UUIDs. Invite-bound email challenges
+without an account expire after ten minutes and are owned by the
+installation until consumed or pruned. Preserve `system/invite.key`,
+which also provides separate derived keys for account proofs and sealed
+provider credentials. Auth schema 13 adds provider definitions with
+sealed credentials, issuer-bound identity links and session origins.
+Definitions belong to the installation. Links and session origins belong
+to the account.
+
+This upgrade is incompatible with the schema-11 protected recovery
+writer because its table inventory is closed. Take the full restore
+point with explicit owner approval and use the locked deployment
+coordinator. A v11 process must refuse the newer authority rather than
+discard unknown records.

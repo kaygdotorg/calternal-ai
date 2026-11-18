@@ -6,6 +6,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { chromium } from "playwright";
+import { fillWho, signUp } from "./lib.mjs";
 
 const PORT = Number(process.env.CAL_SIGNIN_PORT ?? 3391);
 const BIN = process.env.CAL_BIN ?? `${process.env.HOME}/Developer/lanes/ui-shell/target/debug/calternal`;
@@ -36,15 +37,14 @@ try {
 
   await page.goto(`${url}/?server=1`);
   await page.waitForSelector("html[data-ready]");
-  check(await page.getByRole("heading", { name: "Set up Calternal" }).isVisible(), "empty installation shows first-owner setup");
+  check(await page.getByRole("heading", { name: "Who you are" }).isVisible(), "empty installation shows first-owner setup");
   // A wrong setup code is refused in plain words and the form stays.
-  await page.fill('input[name="token"]', "not-the-code"); await page.fill('input[name="name"]', "Test Owner");
+  await fillWho(page, "not-the-code", "Test Owner");
   await page.getByRole("button", { name: "Create passkey" }).click();
-  await page.getByText(/wrong or has expired.*setup\.token/).waitFor({ timeout: 8000 });
+  await page.getByText(/wrong or has expired.*setup-code/).waitFor({ timeout: 8000 });
   check(true, "wrong setup code: plain words and the form stays");
-  await page.fill('input[name="token"]', setupToken);
-  await page.fill('input[name="name"]', "Test Owner");
-  await page.getByRole("button", { name: "Create passkey" }).click();
+  await page.reload(); await page.waitForSelector("html[data-ready]");
+  await signUp(page, setupToken, "Test Owner");
   await page.waitForSelector("[data-app], aside, nav", { timeout: 15000 }).catch(() => {});
   await page.waitForSelector("html[data-ready]"); await page.waitForTimeout(1200); // (a live stream stays open, so the network is never idle)
   let st = await (await ctx.request.get(`${url}/api/v1/auth/status`)).json();

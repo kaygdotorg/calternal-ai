@@ -37,6 +37,11 @@ pub struct AuthConfig {
     pub origin: Url,
     /// The host name passkeys are bound to (the origin's host).
     pub rp_id: String,
+    /// Require a verified email before redeeming a signup token.
+    pub email_required: bool,
+    /// Enable the core OIDC transport on a host that is ready to offer it.
+    /// The standard server starts with the transport disabled.
+    pub oidc_enabled: bool,
     /// How long a setup token works. A day by default.
     pub setup_ttl: Duration,
     /// Idle session lifetime; source touch extends it at most once per hour.
@@ -103,6 +108,8 @@ impl AuthConfig {
         }
         Ok(Self {
             rp_id: host,
+            email_required: false,
+            oidc_enabled: false,
             origin: url,
             setup_ttl: Duration::from_secs(24 * 3600),
             session_ttl: Duration::from_secs(90 * 24 * 3600),
