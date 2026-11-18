@@ -47,6 +47,25 @@ case "$cmd" in
         echo "$SHOTS/$name.mp4" ;;
       *) echo "record start | record stop NAME [fps]" >&2; exit 2 ;;
     esac ;;
+  setup)    # once per Studio: adds the rotate test to the runner (testRotate), allows ORIENTATION in ui.sh and rebuilds the runner; harmless to repeat
+    HERE="$(cd "$(dirname "$0")" && pwd)"
+    scp -q "$HERE/runner-rotate.swift.txt" "$STD:/tmp/runner-rotate.swift.txt"
+    ssh "$STD" "cd ~/$SIMDIR && bash -s" <<'REMOTE'
+set -e
+if grep -q testRotate UITests/Runner.swift; then echo "runner already has testRotate"; else
+  python3 - <<'PY'
+p='UITests/Runner.swift'; s=open(p).read(); add=open('/tmp/runner-rotate.swift.txt').read()
+i=s.rstrip().rfind('}'); open(p,'w').write(s[:i]+add+'}\n'); print('added testRotate')
+PY
+fi
+grep -q ORIENTATION ui.sh || sed -i '' -e 's/URL|NAME|X|Y|DX|DY|SECONDS|WAIT|ACTIONS|BUNDLE|STRICT/URL|NAME|X|Y|DX|DY|SECONDS|WAIT|ACTIONS|BUNDLE|STRICT|ORIENTATION/' -e 's/testOpenURL|testAddToHomeScreen|testTap|testSwipe|testInspect|testTopCheck)/testOpenURL|testAddToHomeScreen|testTap|testSwipe|testInspect|testTopCheck|testRotate)/' ui.sh
+./build-runner.sh 2>&1 | tail -3
+REMOTE
+    ;;
+  rotate)   # portrait | landscapeLeft | landscapeRight | upsideDown
+    ui testRotate "ORIENTATION=${1:-landscapeLeft}" "WAIT=${2:-2}" ;;
+  home)     # add a page to the Home Screen (as an installed web app) and open it from there: home URL [name]
+    ui testAddToHomeScreen "URL=${1:?url}" "NAME=${2:-Calternal lane}" STRICT=1 ;;
   serve)    # serve this lane's build to the simulator: vite preview on a dev VM, tunnelled to the Studio's 127.0.0.1:$PORT (VM: $CAL_DEV_VM, lane dir $CAL_DEV_LANE)
     VM="${CAL_DEV_VM:-ubuntu@calternal-dev-02-std}"; PORT="${CAL_SIM_PORT:-4180}"; LD="${CAL_DEV_LANE:-Developer/lanes/ui-threads}"
     ssh "$VM" "cd ~/$LD/apps/web && (nohup node ../../node_modules/.bin/vite preview --port $PORT --strictPort --host 127.0.0.1 >/tmp/preview-$PORT.log 2>&1 &); sleep 3; curl -s -o /dev/null -w 'vm %{http_code}\n' http://127.0.0.1:$PORT/"
@@ -55,5 +74,5 @@ case "$cmd" in
   unserve)  PORT="${CAL_SIM_PORT:-4180}"; pkill -f "ssh -fN -[LR] $PORT:127.0.0.1:$PORT" || true; pkill -f "ssh -N -[LR] $PORT:127.0.0.1:$PORT" || true
     ssh "${CAL_DEV_VM:-ubuntu@calternal-dev-02-std}" "pkill -u \$USER -f 'vite preview --port $PORT'" 2>/dev/null || true; echo "tunnels and preview stopped" ;;
   delete)   U=$(udid); ssh "$STD" "xcrun simctl shutdown $U 2>/dev/null; xcrun simctl delete $U"; rm -f "$UDIDFILE"; echo "deleted $U" ;;
-  *) sed -n 2,5p "$0"; echo "commands: create [name] | appearance dark|light | open URL | onboard | tap x y [wait] | tappx px py | type TEXT | keys ACTIONS | swipe x y dx dy [s] | shot NAME | record start|stop NAME [fps] | serve | unserve | delete" ;;
+  *) sed -n 2,5p "$0"; echo "commands: setup | rotate portrait|landscapeLeft|landscapeRight | home URL [name] | create [name] | appearance dark|light | open URL | onboard | tap x y [wait] | tappx px py | type TEXT | keys ACTIONS | swipe x y dx dy [s] | shot NAME | record start|stop NAME [fps] | serve | unserve | delete" ;;
 esac
