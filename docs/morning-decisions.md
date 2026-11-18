@@ -136,3 +136,22 @@ options, implementation costs and the placement revocation problem.
   its links and can grow storage independently of Markdown. A separate quota or
   expiry bounds storage and needs an explicit expired-output state. Define
   the inline threshold and the point at which the artifact becomes durable.
+
+## Machine onboarding and provider sign-in (issue #48)
+
+- **Existing provider homes.** Start with empty homes scoped to each account
+  and space, which requires everyone with an existing machine login to sign
+  in again, or offer a transfer into one explicitly selected space, which
+  preserves that login and adds a confirmation and recovery path.
+- **Pool access.** Provision an initial group and limits at deployment, or
+  define a default owner group across installations. The latter needs a rule
+  for accounts with multiple groups.
+- **Installer distribution.** Publish signed binaries for supported platforms
+  or bundle them in installers. The former needs a release index and
+  verification keys. The latter requires distribution packages per platform.
+- **Hosted provider prompts.** Use provider callbacks or device codes where
+  the official CLI supports them. A paste-back flow needs an additional
+  private input channel and confirmation that the provider permits the relay.
+
+[Machine lane review](reviews/machine-ux-2026-11-18.md) records the remaining
+macOS and SSH work.

@@ -10,7 +10,10 @@ sandbox and provider diagnostic.
 The personal installer uses the existing enrollment path and a 15-minute code.
 It copies a platform-matched binary supplied by the person and starts a user
 service with the configured image. It consumes the code through stdin and
-preserves an existing identity enrolled to the same server.
+preserves an existing identity enrolled to the same server. It starts with
+the server-selected sandbox mode. A later authorized owner change can select
+Direct. The script includes the expiry shown by JSON output. An unchanged installer
+replay preserves the active machine service as well as its identity.
 
 ## Review gate
 
@@ -32,8 +35,58 @@ preserves an existing identity enrolled to the same server.
 | 14 | The CLI, machine, and deployment docs describe the same contract. |
 | 15 | New server implementation lives in separate modules. The existing machine service and conformance harness exceed 600 lines. |
 
+## Verification on dev-01
+
+The lane used `claude@calternal-dev-01-compute02:~/Developer/lanes/machine-ux`
+and disposable fixtures. Each command ran within `nix develop -c`.
+
+```sh
+npm ci --ignore-scripts --no-audit --no-fund
+npm run build:plugins
+scripts/check-podman-tests.sh cargo test --locked --workspace -j6
+cargo build --locked -j6 -p calternal-server --features test-plugins
+cp target/debug/calternal target/debug/calternal-machine-ux-conformance
+CALTERNAL_SERVER_BIN="$PWD/target/debug/calternal-machine-ux-conformance" \
+  scripts/check-podman-tests.sh cargo test --locked \
+  --manifest-path tests/conformance/Cargo.toml -j6 --test isolation -- --test-threads=1
+npm run test:integration
+npm run test:plugins
+cargo run --locked -j6 -p calternal-core --bin export-contract -- --check
+scripts/check-docs.sh
+cargo fmt --all --check
+```
+
+- Workspace passed with 586 tests and one ignored test. The first workspace
+  attempt reached the expected stale operation snapshot before regeneration.
+  The workspace Podman leak check passed.
+- Serial conformance passed all 92 cases. Its Podman leak check passed.
+  New cases cover the handoff before and after first-owner setup, the existing
+  pool grant, owner-only status, thread-token refusal, private personal codes
+  and one-time redemption.
+- The integration test passed. The plugin suites passed 24 tests and skipped
+  the opt-in real Claude test.
+- The exported contract matched the generated snapshots.
+- The documentation gate passed and checked 302 generated pages. Workspace
+  formatting and a separate formatting check of every touched Rust file passed.
+- After the installer began showing expiry and honoring server-selected
+  execution, the rebuilt server passed all four `deploy_cases::` conformance
+  tests with the Podman leak check.
+- The installer shell syntax, deploy shell syntax and rehearsal JS syntax
+  passed. A two-run fixture exercised both user service templates with mocked
+  service commands and validated the launchd plist. Linux systemd syntax was
+  checked with `systemd-analyze --user --man=no verify` on a disposable unit.
+  The last shell-only change passed the two-run smoke and left the active
+  service running on both fixture paths.
+- The deployed rehearsal was outside this gate. The script now polls automatic
+  enrollment. A rehearsal using private TLS certificates must let its machine
+  trust the endpoint used by the co-located service.
+
 ## Pending decisions
 
+- Installer request retries. Repeated installer requests currently issue
+  fresh bounded-lifetime codes through the existing enrollment primitive.
+  The generated script itself can be rerun without replacing the machine's
+  identity.
 - Group compute authorization. Configure an initial group at deployment to
   give the administrator explicit membership and limits, or define a default
   owner group in the product. The second option requires a stable group policy
