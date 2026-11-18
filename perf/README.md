@@ -30,6 +30,14 @@ The JSON includes the raw samples and the budget verdict. A breach exits
 For controlled A/B diagnosis only, `CALTERNAL_PERF_WORKER_RUNNER` can
 select a separately built runner. Leave it unset for qualification.
 
+Set `CALTERNAL_PERF_SETTINGS_FIXTURE` to the built
+`tests/plugins/composer-settings` directory to measure the settings path.
+The script installs that package, sends 35 edits through the Manager
+operation and times their scoped events on the authorized live feed.
+It discards five warm-ups, then measures 100 warm browser calls through
+the enrolled worker. This mode reports the samples without applying the
+Notes operation's budget.
+
 The coordinator also runs this check in `scripts/perf-check.sh`. Use
 `PERF_CHROMIUM` and `PERF_PODMAN` to supply executable paths on the perf
 VM when they are absent from its PATH. As with the wider gate, an initial
