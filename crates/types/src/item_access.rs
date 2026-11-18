@@ -43,7 +43,7 @@ impl Drop for ItemAccessChange {
 }
 
 fn advance(value: &AtomicU64, begin: bool) {
-    let _ = value.fetch_update(Ordering::AcqRel, Ordering::Acquire, |previous| {
+    let _ = value.try_update(Ordering::AcqRel, Ordering::Acquire, |previous| {
         if previous == POISONED {
             return None;
         }
