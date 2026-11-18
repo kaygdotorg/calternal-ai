@@ -6,13 +6,13 @@
   // frame line at its middle (infraternal D177). The right edge and the boundary below it resize between neighbours. Every control has the warm tooltip with its shortcut. Focus follows the press. The window that is not focused is dimmed by a neutral veil and its controls recede; the
   // focused one has no ring (both changes ease on the motion tokens and can be interrupted).
   import { setContext, type Snippet } from "svelte";
-  import { Card, Grip, HeaderPill, Icon, InlineEditor, Panel, Pill, tip } from "@calternal/ui";
+  import { Avatar, Card, Grip, HeaderPill, Icon, InlineEditor, Panel, Pill, tip } from "@calternal/ui";
   import { shell } from "../shell/shell.svelte";
   import type { IconName } from "@calternal/ui";
   import type { Look, Win } from "./layout";
   export type WinAction = "max" | "share" | "menu" | "lock";
-  let { win, title, nth = 1, renaming = false, onrename, oncancelrename, wNow, hNow, icon, ownTitle, focused, maximised, canMax, look, paper, density, hasBelow, edge, kbd, onfocus, onaction, onresizew, onresizeh, children }: {
-    win: Win; title: string; /** The title pill is an editor (Rename in the window's menu). */ renaming?: boolean; onrename?: (to: string) => void; oncancelrename?: () => void; /** Which of several windows with this title this is (1 for the first): the landmark labels must differ. */ nth?: number; /** The column's width and the window's height share, in percent: the resize handles' current values. */ wNow: number; hNow: number; icon: IconName; /** The app draws its own title pill (Threads). */ ownTitle: boolean; focused: boolean; maximised: boolean; /** There is another window to be full screen among: a lone window is full already, so it has no full screen control. */ canMax: boolean; look: Look;
+  let { win, title, nth = 1, sharedBy, renaming = false, onrename, oncancelrename, wNow, hNow, icon, ownTitle, focused, maximised, canMax, look, paper, density, hasBelow, edge, kbd, onfocus, onaction, onresizew, onresizeh, children }: {
+    win: Win; title: string; /** Who shared this note with the person, when someone else owns it: their avatar then takes the Share button's place and opens the same sheet. */ sharedBy?: string; /** The title pill is an editor (Rename in the window's menu). */ renaming?: boolean; onrename?: (to: string) => void; oncancelrename?: () => void; /** Which of several windows with this title this is (1 for the first): the landmark labels must differ. */ nth?: number; /** The column's width and the window's height share, in percent: the resize handles' current values. */ wNow: number; hNow: number; icon: IconName; /** The app draws its own title pill (Threads). */ ownTitle: boolean; focused: boolean; maximised: boolean; /** There is another window to be full screen among: a lone window is full already, so it has no full screen control. */ canMax: boolean; look: Look;
     /** The scheme's paper as `r g b` and the density of a transparent window (frost.ts). */ paper: string; density: number; hasBelow: boolean; /** Which edge of the area this window touches, for the shell's sidebar pills. */ edge: "l" | "r" | "lr" | "";
     kbd: Record<string, string>; onfocus: () => void; onaction: (a: WinAction, source: "pointer" | "key", el: HTMLElement) => void; onresizew: (dx: number) => void; onresizeh: (dy: number) => void; children: Snippet;
   } = $props();
@@ -47,7 +47,8 @@
   <div class="tr">
     <Panel radius="pill" class="wacts">
       {#if canMax || maximised}<button type="button" aria-label={maximised ? "Restore the window" : "Full screen"} aria-pressed={maximised} use:tip={{ label: maximised ? "Restore" : "Full screen", kbd: kbd.max, side: "bottom" }} onclick={act("max")}><Icon name={maximised ? "restore" : "expand"} /></button>{/if}
-      <button type="button" aria-label="Share" aria-haspopup="menu" use:tip={{ label: "Share", side: "bottom" }} onclick={act("share")}><Icon name="share" /></button>
+      {#if sharedBy}<button type="button" class="owner" aria-label="Shared by {sharedBy}. Who can see this" aria-haspopup="dialog" use:tip={{ label: `Shared by ${sharedBy}`, side: "bottom" }} onclick={act("share")}><Avatar name={sharedBy} size="md" /></button>
+      {:else}<button type="button" aria-label="Share" aria-haspopup="menu" use:tip={{ label: "Share", side: "bottom" }} onclick={act("share")}><Icon name="share" /></button>{/if}
       <button type="button" aria-label={more} aria-haspopup="menu" use:tip={{ label: more, side: "bottom" }} onclick={act("menu")}><Icon name="more" /></button>
     </Panel>
   </div>

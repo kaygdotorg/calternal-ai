@@ -18,23 +18,34 @@
   let at = $state({ left: 0, top: 0, width: 0, height: 0 });
   let scrim = $state<HTMLElement>();
   let menuOpen = $state(false);
-  let shown = $state.raw<typeof cur>(null);
+  /** What the surface holds: a staged press (built and measured while the finger waits, unseen) or an open one. */
+  let shown = $state.raw<{ row: HTMLElement; bag: NonNullable<typeof cur>["bag"]; preview: boolean; x: number; y: number; copy?: HTMLElement } | null>(null);
+  /** Whether the card is revealed (the press has opened), and which row it was measured for. */
+  let revealed = $state(false);
+  let preparedFor: HTMLElement | null = null;
   let anims: Animation[] = [];
   let closing = false;
   const reduce = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
   const items = $derived(shown ? shown.bag.items() : []);
   const Face = $derived(shown?.preview && shown.bag.preview ? previewOf(shown.bag.preview.kind) : undefined);
-  const anchor = $derived<Anchor | null>(shown ? (shown.preview ? { left: at.left, right: at.left + at.width, top: at.top, bottom: at.top + at.height } : { left: shown.x, right: shown.x, top: shown.y, bottom: shown.y }) : null);
+  const anchor = $derived<Anchor | null>(shown && revealed ? (shown.preview ? { left: at.left, right: at.left + at.width, top: at.top, bottom: at.top + at.height } : { left: shown.x, right: shown.x, top: shown.y, bottom: shown.y }) : null);
 
+  // A held row is staged: its card is built, measured and placed unseen, with the row's look-alike in it, so opening is only a reveal, a clip and a fade.
+  $effect(() => {
+    const s = pressState.stage;
+    untrack(() => {
+      if (s) { if (!revealed) void prepare({ ...s, preview: true, x: 0, y: 0 }); }
+      else if (!revealed && !pressState.cur && shown) { shown = null; preparedFor = null; }
+    });
+  });
   $effect(() => {
     const c = cur;
-    untrack(() => { if (c) void open(c); else if (shown) void close(); });
+    untrack(() => { if (c) void open(c); else if (shown && revealed) void close(); });
   });
 
-  async function open(c: NonNullable<typeof cur>) {
-    closing = false; for (const a of anims) a.cancel(); anims = [];
-    shown = c; menuOpen = false;
-    if (!c.preview) { await tick(); menuOpen = true; return; }
+  async function prepare(c: NonNullable<typeof shown>) {
+    shown = c; preparedFor = null;
+    if (!c.preview) return;
     const r = c.row.getBoundingClientRect();
     const vw = innerWidth, vh = innerHeight;
     const pw = Math.min(vw - 2 * M, 360, Math.max(r.width, 300));
@@ -43,17 +54,27 @@
     if (!card || shown !== c) return;
     // The card's height: what its content needs, up to a limit; measured in place, unseen.
     const ph = Math.max(r.height, Math.min(faceEl?.scrollHeight ?? r.height, 300, vh * 0.38));
-    const menuH = Math.min(8, Math.max(1, items.length)) * 44 + 16;
+    const menuH = Math.min(8, Math.max(1, c.bag.items().length)) * 44 + 16;
     const top = r.top + ph + GAP + menuH > vh - M ? Math.max(M, vh - M - ph - GAP - menuH) : r.top;
     at = { left: at.left, top, width: pw, height: ph };
     await tick();
     if (!card || shown !== c) return;
-    const copy = c.copy ?? undefined;
-    if (copy && copyHost) {
-      copy.style.cssText += `;position:absolute;width:${r.width}px;height:${r.height}px;left:${r.left - at.left}px;top:${r.top - top}px;background:var(--paper)`;
-      copyHost.replaceChildren(copy);
+    if (c.copy && copyHost) {
+      c.copy.style.cssText += `;position:absolute;width:${r.width}px;height:${r.height}px;left:${r.left - at.left}px;top:${r.top - top}px;background:var(--paper)`;
+      copyHost.replaceChildren(c.copy);
     }
-    dimPage(true);
+    preparedFor = c.row;
+  }
+  async function open(c: NonNullable<typeof cur>) {
+    closing = false; for (const a of anims) a.cancel(); anims = [];
+    menuOpen = false;
+    if (!c.preview) { shown = c; revealed = true; await tick(); menuOpen = true; return; }
+    if (preparedFor !== c.row) await prepare({ row: c.row, bag: c.bag, preview: true, x: c.x, y: c.y, copy: c.copy });
+    else if (c.copy && copyHost && !copyHost.contains(c.copy)) { const r = c.row.getBoundingClientRect(); c.copy.style.cssText += `;position:absolute;width:${r.width}px;height:${r.height}px;left:${r.left - at.left}px;top:${r.top - at.top}px;background:var(--paper)`; copyHost.replaceChildren(c.copy); }
+    if (!card || preparedFor !== c.row) return;
+    const r = c.row.getBoundingClientRect(), top = at.top, ph = at.height, pw = at.width;
+    revealed = true; dimPage(true);
+    await tick();
     if (!reduce()) {
       const ms = tokenMs("--dur-base", 220), ease = tokenEase("--ease-out", "cubic-bezier(0.23, 1, 0.32, 1)");
       const inset = `inset(${r.top - top}px ${at.left + pw - r.right}px ${top + ph - r.bottom}px ${r.left - at.left}px round ${R - 4}px)`;
@@ -70,9 +91,10 @@
   async function close() {
     if (closing) return;
     closing = true; menuOpen = false;
+    const row = shown?.row;
     const live = anims.filter((a) => a.playState !== "idle");
     if (live.length) { for (const a of live) { a.playbackRate = -1.2; a.play(); } await Promise.allSettled(live.map((a) => a.finished)); }
-    if (closing) { dimPage(false); anims = []; shown = null; }
+    if (closing) { dimPage(false); anims = []; if (row) row.style.visibility = ""; shown = null; revealed = false; preparedFor = null; }
   }
   const dismiss = () => { pressState.cur = null; };
   let drag: { y: number } | null = null;
@@ -83,14 +105,14 @@
 
 {#if shown}
   {#if shown.preview}
-    <div class="scrim" bind:this={scrim} onpointerdown={dismiss} role="presentation"></div>
-    <div class="card" bind:this={card} style:left="{at.left}px" style:top="{at.top}px" style:width="{at.width}px" style:height={at.height ? `${at.height}px` : "auto"} style:visibility={at.height ? "visible" : "hidden"}
+    <div class="scrim" bind:this={scrim} onpointerdown={dismiss} role="presentation" style:visibility={revealed ? "visible" : "hidden"}></div>
+    <div class="card" bind:this={card} style:left="{at.left}px" style:top="{at.top}px" style:width="{at.width}px" style:height={at.height ? `${at.height}px` : "auto"} style:visibility={revealed && at.height ? "visible" : "hidden"}
       onpointerdown={(e) => { drag = { y: e.clientY }; }} onpointermove={dmove} onpointerup={() => (drag = null)} role="presentation">
       <div class="face" bind:this={faceEl}>{#if Face && shown.bag.preview}<Face item={shown.bag.preview.item as never} />{/if}</div>
       <div class="copy" bind:this={copyHost}></div>
     </div>
   {/if}
-  <Menu open={menuOpen} {items} label={shown.bag.label} {anchor} placement="bottom" onpick={(id) => { dismiss(); shown?.bag.onpick(id); }} onclose={dismiss} />
+  <Menu open={menuOpen && revealed} {items} label={shown.bag.label} {anchor} placement="bottom" onpick={(id) => { dismiss(); shown?.bag.onpick(id); }} onclose={dismiss} />
 {/if}
 
 <style>
