@@ -6,6 +6,9 @@ cd "$(dirname "$0")/.."
 : "${PERF_BASELINE_COMMIT:?Set PERF_BASELINE_COMMIT to the baseline git commit}"
 [[ "$PERF_BASELINE_BIN" =~ ^/[a-zA-Z0-9_./-]+$ ]]
 [[ "$PERF_BASELINE_COMMIT" =~ ^[a-f0-9]{7,40}$ ]]
+chromium=${PERF_CHROMIUM:-chromium}
+podman=${PERF_PODMAN:-podman}
+[[ "$chromium" =~ ^[a-zA-Z0-9_./-]+$ && "$podman" =~ ^[a-zA-Z0-9_./-]+$ ]]
 run="$(date -u +%Y%m%dT%H%M%SZ)-$$"
 head_commit=$(git rev-parse HEAD)
 dev=claude@calternal-dev-01-compute02
@@ -42,13 +45,23 @@ scp -3 -q "$dev:Developer/lanes/perf-budgets/target/release/calternal-timings" "
 scp -3 -q "$dev:Developer/lanes/perf-budgets/target/release/calternal-test" "$perf:calternal-ai-perf/$run/bin/calternal-test"
 # Only source manifests and built workers are transferred, not node_modules.
 ssh "$dev" 'cd ~/Developer/lanes/perf-budgets && tar --exclude=node_modules -cf - plugins tests/plugins' | ssh "$perf" "cd ~/calternal-ai-perf/$run && tar xf -"
-scp -q perf/budgets.json perf/repeat-plan.py "$perf:calternal-ai-perf/$run/"
+scp -q perf/budgets.json perf/repeat-plan.py perf/browser-worker.mjs "$perf:calternal-ai-perf/$run/"
 set +e
-ssh "$perf" /usr/local/bin/perf-lock.sh bash -s -- "$run" "$head_commit" "$PERF_BASELINE_BIN" "$PERF_BASELINE_COMMIT" > "/tmp/perf-budgets-$run.log" <<'REMOTE'
+ssh "$perf" /usr/local/bin/perf-lock.sh bash -s -- "$run" "$head_commit" "$PERF_BASELINE_BIN" "$PERF_BASELINE_COMMIT" "$chromium" "$podman" > "/tmp/perf-budgets-$run.log" <<'REMOTE'
 set -uo pipefail
 run=$1 commit=$2 baseline=$3 baseline_commit=$4
 root="$HOME/calternal-ai-perf/$run"
 cd "$root"
+browser_status=2
+if chromium=$(command -v -- "$5") && podman=$(command -v -- "$6"); then
+  env -u CALTERNAL_PERF_WORKER_RUNNER CALTERNAL_PERF_PODMAN="$podman" \
+    node browser-worker.mjs "$root/bin/calternal" "$root/plugins" "$chromium" "$root/browser-worker.json"
+  browser_status=$?
+  [[ -f "$root/browser-worker.json" ]] || browser_status=2
+else
+  printf '%s\n' 'Browser worker gate needs Chromium and Podman on the perf VM.'
+fi
+if [[ "$browser_status" == 1 ]]; then exit 1; fi
 ./bin/calternal-perf --bin "$root/bin/calternal" --baseline "$baseline"   --work "$root/work" --plugins "$root/plugins" --budgets budgets.json   --commit "$commit" --baseline-commit "$baseline_commit" --json > full-output.json
 full_status=$?
 [[ -f "$root/work/summary.json" ]] || exit 2
@@ -79,7 +92,7 @@ for repeat in 0 1 2; do
     --budgets budgets.json --commit "$commit" --baseline-commit "$commit" --jobs-only --json > "jobs-$repeat-output.json"
   [[ -f "$root/jobs-$repeat/jobs-summary.json" ]] || exit 2
 done
-printf 'Full suite: %s\nRelease commit timing: %s\nIdle suite: %s\n' "$full_status" "$commit_status" "$idle_status"
+printf 'Browser worker: %s\nFull suite: %s\nRelease commit timing: %s\nIdle suite: %s\n' "$browser_status" "$full_status" "$commit_status" "$idle_status"
 if [[ "$full_status" == 1 || "$commit_status" == 1 || "$idle_status" == 1 ]]; then exit 1; fi
 exit 2 # Mandatory instrumentation gaps remain explicit, never silently green.
 REMOTE
