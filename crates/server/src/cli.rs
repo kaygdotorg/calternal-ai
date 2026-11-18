@@ -175,6 +175,17 @@ pub(super) enum Cmd {
         #[arg(long, env = "CALTERNAL_INSTALLATION_ID")]
         installation_id: String,
     },
+    /// Send a test message through the running server's account mail service.
+    MailTest {
+        /// Recipient mailbox for the test message.
+        recipient: String,
+        /// The running server's appdata directory.
+        #[arg(long)]
+        appdata: PathBuf,
+        /// The installation UUID configured for the running server.
+        #[arg(long, env = "CALTERNAL_INSTALLATION_ID")]
+        installation_id: String,
+    },
     /// Inspect receipt-pruning health for one space through the private admin socket.
     ReceiptStatus {
         /// Space UUID to inspect.
