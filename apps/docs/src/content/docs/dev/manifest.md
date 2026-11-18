@@ -17,7 +17,7 @@ Plugin menu read without running plugin code. Every top-level field is required;
 | `host_calls` | yes | array | Broker calls the worker may request; each still needs live authorization. |
 | `icon` | yes | string | Registered icon identifier. |
 | `id` | yes | string | Stable plugin identifier. |
-| `kinds` | yes | array | Kinds offered by this plugin. |
+| `kinds` | no | array | Kinds offered by this plugin. An omitted list declares no kinds. |
 | `name` | yes | string | Human-readable plugin name. |
 | `operations` | yes | array | Public operation schemas and policy. |
 | `owned_slots` | no | array, null | Up to 32 mounts owned by this package, resolved only while enabled. |
@@ -618,6 +618,7 @@ Machine-side provider declaration; executable is installed in the sandbox image 
 | `models` | yes | array | Models offered by this adapter, validated and cached with the manifest. |
 | `protocol_version` | yes | integer | Version of the bounded stdio contract, currently one. |
 | `sign_in` | no | boolean | Whether the executable implements the private `--sign-in` mode. |
+| `title_generation` | no | boolean | Whether the adapter implements the private, stateless `--title` command. |
 
 ```json
 {
@@ -653,6 +654,10 @@ Machine-side provider declaration; executable is installed in the sandbox image 
     },
     "sign_in": {
       "description": "Whether the executable implements the private `--sign-in` mode.",
+      "type": "boolean"
+    },
+    "title_generation": {
+      "description": "Whether the adapter implements the private, stateless `--title` command.",
       "type": "boolean"
     }
   },

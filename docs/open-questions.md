@@ -2,18 +2,20 @@
 
 Decisions waiting on kayg, most blocking first. Answer here or in chat; answered items
 move to the decision record they belong to and leave this list. Terms: see
-[glossary](glossary.md). Updated 2026-11-19 18:10 IST.
+[glossary](glossary.md). Updated 2026-11-19 20:30 IST.
 
 ## Waiting now
 
 | # | Question | Recommendation | Area |
 | --- | --- | --- | --- |
+| 66 | Mail for the hosted service: which SMTP provider, sender address, and the credential (to be given through the secure prompt). Until then production runs with email optional and no verification | kayg chooses; any transactional provider works | Accounts |
+| 67 | Remove what my lane start-up left in the existing app's repository: twelve bb worktrees and their branches, the branch lane/perf-2 and three extra refs (nothing was pushed, its files and dev branch are unchanged) | Yes, once those lanes have finished | Housekeeping |
 | 65 | Using Codex's own cloud sandboxes for people with no machine and no paid plan: only through what OpenAI officially supports from another program; being researched | Decide after the research | Harnesses |
 | 10 | Native font: system or Google Sans Flex | Decide after seeing both on a Mac and an iPhone | Native apps |
 
 ## In progress, no decision needed
 
-- Production: the 2026-11-19 install is being replaced by a fresh one with the two fixes from kayg's first sign-up (the server's own machine could not reach the server: hairpin, fixed by connecting through the proxy's address; onboarding was skipped because the old app's service worker still answered at that address, fixed with a kill-switch and onboarding tied to the account). Then the microVM backend is switched on, which needs one root step on the VM.
+- Production was reinstalled fresh on 2026-11-19 evening from dev 9f800564 (the schema baseline) with the two fixes from kayg's first sign-up (the server's own machine could not reach the server: hairpin, fixed by connecting through the proxy's address; onboarding was skipped because the old app's service worker still answered at that address, fixed with a kill-switch and onboarding tied to the account). It waits for kayg to sign up: `ssh calternal@calternal-cloud podman exec calternal-ai /usr/local/bin/calternal setup-code --appdata /data/appdata`. The microVM backend is switched on afterwards; it needs one root step on the VM.
 - Lanes (no fixed limit; gates on dev-01 queue behind one lock): upgrades (links in restore points, measured update downtime, the update runbook), threads backend (titles and snooze done; 16 MiB threads by appended patches; edit-as-fork as calternal-thread/v2), Codex harness plugin, plans and billing (private repository), plugin network access, automations and skills, fonts and account preferences on the server (plus the onboarding-finished mark), search (smaller message index; Trash purge and Empty Trash), performance, plugins (readiness and logs for authors), and the two UI lanes (canvas as the default, Appearance live preview, keyboard module, inline provider mark, side chat on a phone).
 - Performance: commit to client 1 to 4 ms against 10; warm start at 1,000 spaces about 305 ms against 300 and cold start over budget everywhere; saves at 100,000 notes warm observed at 75 ms p95 against the 40 ms gate, traced to the virtual disk's flush. Shrinking the security log (receipt deltas) is designed and reviewed but is an incompatible log format change, so it waits for restore points that hold links and kayg's go.
 - Not started: shared-space machine and provider login (decided 2026-11-19, below), thread admission by free memory, web push, the installer and machine relay, sharing, live rooms for notes, Notes and Threads as ordinary plugins, the mail plugin (after plugin network access), voice (after the plugin API is stable; live voice through the ChatGPT subscription as kayg's Hermes projects do, transcription route to be checked).

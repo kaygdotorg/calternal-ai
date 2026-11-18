@@ -76,6 +76,16 @@ pub(super) async fn dispatch_scoped_inner<D: Directory>(
         return crate::requests::dispatch(state, None, p, session, agent, request_id, row, input)
             .await;
     }
+    if agent.is_some()
+        && matches!(
+            op,
+            calternal_core::ONBOARDING_STATE | calternal_core::ONBOARDING_FINISH
+        )
+    {
+        return Err(Error::forbidden(
+            "thread credentials cannot manage account onboarding",
+        ));
+    }
     if calternal_core::is_account_input_operation(op) {
         if agent.is_some() {
             return Err(Error::forbidden(
@@ -282,6 +292,25 @@ pub(super) async fn run_admitted_operation<D: Directory>(
     job_scoped: bool,
     catalog: Arc<crate::plugins::Catalog>,
 ) -> Result<Value, Error> {
+    if matches!(
+        op,
+        calternal_core::ONBOARDING_STATE | calternal_core::ONBOARDING_FINISH
+    ) {
+        if agent.is_some() || matches!(&session, Session::Agent { .. }) {
+            return Err(Error::forbidden(
+                "thread credentials cannot manage account onboarding",
+            ));
+        }
+        let _: calternal_core::OnboardingInput = decode(input)?;
+        if !session.is_live(&state.directory).await {
+            return Err(Error::unauthorized("session expired or revoked"));
+        }
+        let finish = op == calternal_core::ONBOARDING_FINISH;
+        return blocking(&state, move |store| {
+            to_value(crate::onboarding::state(store, p.id, finish)?)
+        })
+        .await;
+    }
     if job_scoped {
         let space = match input.remove("space_id") {
             Some(Value::String(space)) => space,

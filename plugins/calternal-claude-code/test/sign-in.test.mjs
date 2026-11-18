@@ -44,3 +44,39 @@ test('official sign-in relays only the challenge and keeps credentials on the ma
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test('a vanished parent does not leave the official login running', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'calternal-sign-in-gone-'));
+  const home = join(root, 'home');
+  const shared = join(root, 'login');
+  await mkdir(home);
+  await mkdir(shared);
+  const child = spawn(process.execPath, [launcher, '--sign-in'], {
+    env: { HOME: home, PATH: process.env.PATH, CALTERNAL_CLAUDE_LOGIN_DIR: shared,
+      CALTERNAL_PROVIDER_LOGIN: '1', CALTERNAL_CLAUDE_BINARY: fake },
+  });
+  const ended = new Promise(resolve => child.once('close', resolve));
+  let pid = 0;
+  try {
+    for await (const line of createInterface({ input: child.stdout })) {
+      JSON.parse(line);
+      pid = Number(await readFile(join(home, 'login.pid'), 'utf8'));
+      child.stdin.end(); // the machine goes away before any code is relayed
+      break;
+    }
+    assert.ok(pid > 0);
+    await Promise.race([ended, new Promise((_, no) => setTimeout(() => no(new Error('adapter outlived its parent')), 5000))]);
+    const gone = async () => {
+      for (let tries = 0; tries < 50; tries++) {
+        try { process.kill(pid, 0); } catch { return true; }
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+      return false;
+    };
+    assert.equal(await gone(), true, 'the login process was left running');
+  } finally {
+    child.kill();
+    if (pid > 0) { try { process.kill(pid, 'SIGKILL'); } catch { /* already gone */ } }
+    await rm(root, { recursive: true, force: true });
+  }
+});
