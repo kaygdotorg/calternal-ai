@@ -4,7 +4,7 @@
   // What the caller may change comes from `sharing.list`: `can_manage_audiences` (people and groups) and `can_manage_links` (links need a Manager or the Owner unless the space lets Editors); a part the caller may not
   // change is not drawn as a control, and a line says who can.
   import { onMount, tick } from "svelte";
-  import { Avatar, Button, Icon, IconButton, Popover, Selector, Sheet, currentForm, failed, textField, toast } from "@calternal/ui";
+  import { Avatar, Button, Icon, IconButton, Popover, SearchField, Selector, Sheet, currentForm, failed, toast } from "@calternal/ui";
   import { say } from "../../../server/say";
   import { qrSvg } from "../../../lib/qr";
   import { EXPIRIES, audienceKey, expiryText, isGroup, sentenceOf, sharing, isLink, type Found, type ItemRef, type LinkGrant, type NamedGrant, type Permission, type ShareList } from "./sharing";
@@ -85,10 +85,7 @@
     {#if list}
       <p class="who" data-share-sentence>{sentence}</p>
       {#if list.can_manage_audiences}
-        <div class="field" data-ring-host>
-          <Icon inline name="search" />
-          <input bind:this={field} type="text" use:textField={{ kind: "search", cancels: true }} placeholder="Add people or groups" aria-label="Add people or groups" autocomplete="off" bind:value={query} onkeydown={addKey} />
-        </div>
+        <SearchField bind:el={field} bind:value={query} label="Add people or groups" onkeydown={addKey} />
         {#if found.length}
           <ul class="found" role="listbox" aria-label="People and groups">
             {#each found as f, i (audienceKey(f.audience))}
@@ -152,9 +149,6 @@
   .who { margin: 0 0 var(--s-2); padding: 0 var(--s-2); color: var(--ink-2); font-size: var(--text-ui); line-height: 1.4; }
   .sec { margin: var(--s-3) 0 0; padding: 0 var(--s-2); font-size: var(--text-label); font-weight: var(--strong-weight); color: var(--ink-3); }
   .none { margin: 0; padding: 0 var(--s-2); color: var(--ink-3); font-size: var(--text-label); }
-  .field { display: flex; align-items: center; gap: var(--s-3); padding: 0 var(--s-4); min-height: var(--pill-h); border-radius: var(--r-pill); background: rgb(var(--ink-rgb) / 0.07); color: var(--ink-3); }
-  .field input { flex: 1; min-width: 0; border: 0; background: none; color: var(--ink); font-size: var(--text-ui); text-align: start; }
-  .field input:focus, .field input:focus-visible { outline: none; }
   .found { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s-1); }
   .pick, .person { display: flex; align-items: center; gap: var(--s-4); width: 100%; min-height: var(--row-h); padding: 0 var(--s-3); border-radius: var(--r-select); text-align: start; }
   .pick.on { background: var(--accent-soft); }

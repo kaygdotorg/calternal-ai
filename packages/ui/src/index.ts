@@ -27,6 +27,7 @@ export { default as Switch } from "./components/Switch.svelte";
 export { default as SplitView } from "./components/SplitView.svelte";
 export { default as Badge } from "./components/Badge.svelte";
 export { default as Avatar } from "./components/Avatar.svelte";
+export { default as SearchField } from "./components/SearchField.svelte";
 export { default as Spinner } from "./components/Spinner.svelte";
 export { ICONS, type IconName } from "./icons";
 export { adaptive, backdropRange, behindLuminance, material, luminance, scheduleMaterial, setBackdropField, setMaterialSource, washFor, type Field, type MaterialSource } from "./lib/material";

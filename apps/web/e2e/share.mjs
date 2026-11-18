@@ -73,6 +73,12 @@ try {
     await p.waitForTimeout(500);
     ok(await p.getByRole("button", { name: /Shared by Maya Okafor/ }).count() === 1 && await p.getByRole("button", { name: "Share", exact: true }).count() === 0, "on a note shared with me the owner's avatar sits where Share is");
     await shot(p, "desktop-note-shared-with-me"); await ctx.close(); }
+  // Access ended while writing: the edits are kept and the person is told in one line where they went.
+  { const { page: p, ctx } = await open(browser, "desktop", "light", "/notes/n-2?firstrun=0&revoked=1");
+    await p.locator(".cm-content").click(); await p.keyboard.press("End"); await p.keyboard.type("\n\nA new paragraph of mine."); 
+    await p.getByText(/Your edits to Storage layout/).waitFor({ timeout: 8000 });
+    ok(/personal space/.test(await p.getByText(/Your edits to Storage layout/).textContent()), "a refused write is rescued and the person is told where it went");
+    await shot(p, "desktop-rescue"); await ctx.close(); }
   // The guest page.
   { const { page: p, ctx } = await open(browser, "desktop", "light", "/s/demo-set");
     await p.getByRole("link", { name: "Release checklist" }).click(); await p.getByText("tests green").waitFor();

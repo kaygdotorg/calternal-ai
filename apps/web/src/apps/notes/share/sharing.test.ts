@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { FixtureSharing, expiryText, sentenceOf } from "./sharing";
 import { qrMatrix, qrSvg } from "../../../lib/qr";
 
@@ -51,5 +51,33 @@ describe("the QR encoder", () => {
     expect(qrMatrix("https://calternal.example/s/abcdef")?.length).toBeGreaterThanOrEqual(21);
     expect(qrSvg("x".repeat(300))).toBe("");
     expect(qrSvg("https://calternal.example/s/abcdef")).toContain("<svg");
+  });
+});
+
+describe("the real client's guest read", () => {
+  it("asks for JSON, and a 404 is not_found whatever the reason", async () => {
+    const { RealSharing } = await import("./real");
+    const seen: string[] = [];
+    vi.stubGlobal("fetch", async (url: string, init: RequestInit) => { seen.push(`${url} ${(init.headers as Record<string, string>).Accept}`); return url.endsWith("/s/ok") ? new Response(JSON.stringify({ title: "T", markdown: "x" })) : new Response("", { status: 404 }); });
+    const c = new RealSharing();
+    expect(await c.guest("/s/ok")).toEqual({ title: "T", markdown: "x" });
+    await expect(c.guest("/s/gone")).rejects.toMatchObject({ code: "not_found" });
+    expect(seen[0]).toMatch(/\/s\/ok application\/json$/);
+    vi.unstubAllGlobals();
+  });
+});
+
+import { blocksOf, changedBlocks, rescueLine, textKey } from "./rescue";
+describe("rescue", () => {
+  it("keeps only the blocks the person changed", () => {
+    const base = "# T\n\nOne.\n\nTwo.";
+    expect(changedBlocks(base, "# T\n\nOne.\n\nTwo, changed.\n\nNew.")).toEqual(["Two, changed.", "New."]);
+    expect(changedBlocks(base, base)).toEqual([]);
+    expect(blocksOf("a\n \nb\n\n\nc")).toEqual(["a", "b", "c"]);
+  });
+  it("makes the same text the same request, and says where the edits went", () => {
+    expect(textKey("abc")).toBe(textKey("abc"));
+    expect(textKey("abc")).not.toBe(textKey("abd"));
+    expect(rescueLine("Plan", "Your edits to Plan")).toBe("You can no longer open “Plan”. Your edits were kept as “Your edits to Plan” in your personal space.");
   });
 });

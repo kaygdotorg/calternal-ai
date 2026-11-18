@@ -5,7 +5,8 @@
  * Shapes confirmed by the sharing lane: named grant rows are `{grant_id, permission, audience, name}`; link rows are `{grant_id, permission: "view", label, expires_at}`; `space_access` is "view", "edit" or null. Still open: the values
  * of the caller's own `permission`.
  */
-import { ServerError } from "../../../server/client";
+import { ServerError, serverMode } from "../../../server/client";
+import { RealSharing } from "./real";
 
 /** What a share points at: a note, or a collection (a View). */
 export interface ItemRef { kind: "notes" | "collections"; id: string }
@@ -57,6 +58,8 @@ export interface SharingClient {
   revoke(item: ItemRef, grant_id: string): Promise<void>;
   shared_with_me(kind: ItemRef["kind"], cursor?: string): Promise<{ items: Incoming[]; next_cursor?: string }>;
   set_link_policy(space_id: string, editors_can_manage_links: boolean): Promise<void>;
+  /** After a write was refused because access ended: saves only the locally changed blocks, with the cached title, as a note in the person's personal space ("Your edits to <title>"). `request_id` makes a retry the same request. */
+  rescue(title: string, changed_blocks: string[], request_id: string): Promise<{ note: { id: string; title: string } }>;
   /** Clears the item's unread mark in "Shared with me": called when the person opens it. */
   mark_seen(item: ItemRef): Promise<{ seen: true }>;
   /** Reads a link's address (`/s/<secret>` or a member's `href`) without signing in: just that item, read-only. */
@@ -154,6 +157,7 @@ export class FixtureSharing implements SharingClient {
   async revoke(item: ItemRef, grant_id: string): Promise<void> { this.grants.set(this.key(item), this.of(item).filter((g) => g.grant_id !== grant_id)); }
   async shared_with_me(_kind: ItemRef["kind"]) { return { items: this.incoming }; }
   async set_link_policy(): Promise<void> {}
+  async rescue(title: string, _blocks: string[]) { return { note: { id: "rescue-1", title: `Your edits to ${title}` } }; }
   async mark_seen(item: ItemRef) { this.incoming = this.incoming.map((i) => (i.item.id === item.id ? { ...i, unread: false } : i)); return { seen: true as const }; }
   async guest(path: string): Promise<Guest> {
     const g = await this.guestAnon(path);
@@ -172,5 +176,5 @@ export class FixtureSharing implements SharingClient {
   }
 }
 
-/** The one client the screens use. */
-export const sharing: SharingClient = new FixtureSharing();
+/** The one client the screens use: the real server's when one is chosen, else the fixtures. */
+export const sharing: SharingClient = serverMode() ? new RealSharing() : new FixtureSharing();
