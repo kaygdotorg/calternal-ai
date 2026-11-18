@@ -105,7 +105,7 @@ async fn check(
     let manifest = small(link, &format!("{prefix}/manifest"), 512).await?;
     let signature = small(link, &format!("{prefix}/manifest.sig"), 4096).await?;
     let key = key.to_owned();
-    let (manifest, file) = {
+    let (manifest, file, writer) = {
         let target = target.to_owned();
         let version = version.to_owned();
         let platform = platform.to_owned();
@@ -116,13 +116,21 @@ async fn check(
             let folder = Folder::open_existing(parent)?;
             let name = binary_name(&target)?;
             folder.check_replacement(name)?;
-            Ok::<_, Error>((manifest, folder.create_temp(name)?))
+            // The running machine holds the directory ownership lock. Recover
+            // its single staging name if a previous process was killed.
+            let stage = format!("{}machine-update", calternal_fsio::TEMP_PREFIX);
+            match folder.remove(&stage) {
+                Ok(()) => (),
+                Err(err) if err.kind() == std::io::ErrorKind::NotFound => (),
+                Err(err) => return Err(err.into()),
+            }
+            let mut staged = folder.create_temp(&stage)?;
+            let writer = staged.file().try_clone()?;
+            Ok::<_, Error>((manifest, staged, writer))
         })
         .await
         .map_err(|_| invalid("verification task"))??
     };
-    let mut output = file;
-    let writer = output.file().try_clone()?;
     let mut writer = tokio::fs::File::from_std(writer);
     let mut response = link.release_get(&format!("{prefix}/calternal")).await?;
     let mut received = 0;
@@ -139,9 +147,14 @@ async fn check(
     if received != manifest.size || digest.finish().as_ref() != manifest.digest {
         return Err(invalid("binary digest or size"));
     }
-    writer.set_permissions(std::fs::Permissions::from_mode(0o700)).await?;
+    writer
+        .set_permissions(std::fs::Permissions::from_mode(0o700))
+        .await?;
     drop(writer);
-    Ok(Some(Staged { file: output, target: target.to_owned() }))
+    Ok(Some(Staged {
+        file,
+        target: target.to_owned(),
+    }))
 }
 
 struct Manifest {
@@ -161,18 +174,27 @@ fn parse(data: &[u8], version: &str, platform: &str) -> Result<Manifest> {
     {
         return Err(invalid("manifest version or platform"));
     }
-    let size = lines.next()
+    let size = lines
+        .next()
         .filter(|n| !n.starts_with('0') && n.bytes().all(|b| b.is_ascii_digit()))
         .and_then(|n| n.parse::<u64>().ok())
         .filter(|n| (1..=MAX_BINARY).contains(n))
         .ok_or_else(|| invalid("manifest size"))?;
-    let hash = lines.next().filter(|h| h.len() == 64).ok_or_else(|| invalid("manifest digest"))?;
-    if lines.next().is_some() || !hash.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)) {
+    let hash = lines
+        .next()
+        .filter(|h| h.len() == 64)
+        .ok_or_else(|| invalid("manifest digest"))?;
+    if lines.next().is_some()
+        || !hash
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    {
         return Err(invalid("manifest fields"));
     }
     let mut digest = [0; 32];
     for (i, byte) in digest.iter_mut().enumerate() {
-        *byte = u8::from_str_radix(&hash[i * 2..i * 2 + 2], 16).map_err(|_| invalid("manifest digest"))?;
+        *byte = u8::from_str_radix(&hash[i * 2..i * 2 + 2], 16)
+            .map_err(|_| invalid("manifest digest"))?;
     }
     Ok(Manifest { size, digest })
 }
@@ -184,7 +206,15 @@ fn verify(key: &str, manifest: &[u8], signature: &[u8]) -> Result<()> {
     std::fs::write(&allowed, format!("calternal-release {key}\n"))?;
     std::fs::write(&sig, signature)?;
     let mut verify = std::process::Command::new("ssh-keygen")
-        .args(["-Y", "verify", "-I", "calternal-release", "-n", "calternal-machine-release-v1", "-f"])
+        .args([
+            "-Y",
+            "verify",
+            "-I",
+            "calternal-release",
+            "-n",
+            "calternal-machine-release-v1",
+            "-f",
+        ])
         .arg(allowed)
         .arg("-s")
         .arg(sig)
@@ -192,7 +222,11 @@ fn verify(key: &str, manifest: &[u8], signature: &[u8]) -> Result<()> {
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()?;
-    let written = verify.stdin.take().expect("piped stdin").write_all(manifest);
+    let written = verify
+        .stdin
+        .take()
+        .expect("piped stdin")
+        .write_all(manifest);
     let result = verify.wait()?;
     if written.is_ok() && result.success() {
         Ok(())
@@ -200,3 +234,6 @@ fn verify(key: &str, manifest: &[u8], signature: &[u8]) -> Result<()> {
         Err(invalid("signature"))
     }
 }
+
+#[cfg(test)]
+pub(crate) mod tests;

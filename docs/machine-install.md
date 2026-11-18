@@ -1,18 +1,18 @@
 # Install a personal machine
 
 Copy the command in Calternal's machine setup. It fetches the installer from
-your server, shows what it will install, and asks for confirmation. You can
-also use your server's public bootstrap and enter a one-time code from the app
+calternal.com, shows what it will install, and asks for confirmation. You can
+also run the public bootstrap yourself and enter a one-time code from the app
 at the prompt.
 
 ```sh
-curl --disable --proto '=https' --tlsv1.2 -fsS https://cal.example.org/install |
+curl --disable --proto '=https' --tlsv1.2 -fsS https://calternal.com/install |
   sh -s -- --server https://cal.example.org
 ```
 
-Use the origin of the instance you intend to trust. HTTPS authenticates the
-bootstrap script. The script checks the machine program against an Ed25519
-release key pinned into that server's build. The app command contains a
+HTTPS authenticates the bootstrap script from calternal.com. Set `--server`
+to the Calternal instance you want to enroll with. The bootstrap verifies
+that server's machine program with the release key pinned at calternal.com. The app command contains a
 single-use code valid for 15 minutes. The prompt keeps the code out of shell
 history. The command passes it via the installer's environment and the
 installer passes it to enrollment via stdin.
@@ -30,7 +30,7 @@ with a retained lease waits until that lease is released.
 To remove the service and installed executable, use:
 
 ```sh
-curl --disable --proto '=https' --tlsv1.2 -fsS https://cal.example.org/install |
+curl --disable --proto '=https' --tlsv1.2 -fsS https://calternal.com/install |
   sh -s -- --uninstall
 ```
 
@@ -57,6 +57,10 @@ The executable limit is 256 MiB. Generate the digest from the final published
 binary, including any stripping or platform signing. The owner signs the
 manifest with `ssh-keygen -Y sign -n calternal-machine-release-v1 -f KEY manifest`.
 Publish the resulting `manifest.sig` beside it.
+
+The official enrollment command uses the pinned bootstrap at
+`https://calternal.com/install`. Independently signed builds can use their own
+server's `/install` path and enter the code at the prompt.
 
 Set `CALTERNAL_MACHINE_RELEASE_DIR` to the absolute, read-only release
 directory on the server. A container deployment can mount it as a read-only

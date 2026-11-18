@@ -18010,7 +18010,7 @@
   {
     "risk": "reversible",
     "id": "machines.install",
-    "description": "Create a single-use personal machine enrollment script",
+    "description": "Create a single-use personal machine enrollment command",
     "mutates": true,
     "input_schema": {
       "$schema": "http://json-schema.org/draft-07/schema#",
@@ -18022,7 +18022,7 @@
     "output_schema": {
       "$schema": "http://json-schema.org/draft-07/schema#",
       "additionalProperties": false,
-      "description": "The enrollment script and the deadline for redeeming its one-time code.",
+      "description": "The enrollment command and the deadline for redeeming its one-time code.",
       "properties": {
         "expires_ms": {
           "description": "Unix milliseconds when the code expires if unused.",
@@ -18030,7 +18030,7 @@
           "type": "integer"
         },
         "script": {
-          "description": "Readable shell script containing the private enrollment code.",
+          "description": "One-line shell command containing the private enrollment code.",
           "type": "string"
         }
       },

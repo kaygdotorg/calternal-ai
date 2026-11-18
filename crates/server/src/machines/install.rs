@@ -1,11 +1,12 @@
 //! Public signed machine releases and a private single-use enrollment command.
 use super::*;
-use axum::{extract::Path, http::StatusCode, response::IntoResponse};
 use crate::auth::Directory;
+use axum::{extract::Path, http::StatusCode, response::IntoResponse};
 use calternal_core::MachineInstallResult;
 use serde_json::{Value, json};
 
 const INSTALLER: &str = include_str!("../../../../scripts/install-machine.sh");
+const PUBLIC_INSTALLER: &str = "https://calternal.com/install";
 const TTL: Duration = Duration::from_secs(15 * 60);
 
 /// Issue a personal install command containing the one-time code for this
@@ -37,7 +38,7 @@ pub(crate) async fn script<D: Directory>(
         let (code, expires_ms) = machines.issue_code_for(Owner::Account { id: account }, TTL)?;
         let script = format!(
             "curl --disable --proto '=https' --tlsv1.2 -fsS {} | CALTERNAL_ENROLL_CODE={} sh -s -- --server {} --image {}",
-            quote(&format!("{server}/install")),
+            quote(PUBLIC_INSTALLER),
             quote(&code),
             quote(&server),
             quote(&image),
@@ -54,7 +55,14 @@ fn quote(value: &str) -> String {
 pub(super) async fn installer() -> axum::response::Response {
     let key = calternal_machine::release::public_key().unwrap_or_default();
     let script = INSTALLER.replacen("release_key=", &format!("release_key={}", quote(key)), 1);
-    ([("content-type", "text/plain; charset=utf-8"), ("cache-control", "no-store")], script).into_response()
+    (
+        [
+            ("content-type", "text/plain; charset=utf-8"),
+            ("cache-control", "no-store"),
+        ],
+        script,
+    )
+        .into_response()
 }
 
 pub(super) async fn version() -> axum::response::Response {
@@ -81,7 +89,12 @@ pub(super) async fn asset(
     let Some((current, root)) = distribution() else {
         return StatusCode::NOT_FOUND.into_response();
     };
-    if version != current || !matches!(platform.as_str(), "linux-x86_64" | "linux-aarch64" | "macos-x86_64" | "macos-aarch64") {
+    if version != current
+        || !matches!(
+            platform.as_str(),
+            "linux-x86_64" | "linux-aarch64" | "macos-x86_64" | "macos-aarch64"
+        )
+    {
         return StatusCode::NOT_FOUND.into_response();
     }
     let limit = match asset.as_str() {
@@ -91,7 +104,9 @@ pub(super) async fn asset(
         _ => return StatusCode::NOT_FOUND.into_response(),
     };
     let file = tokio::task::spawn_blocking(move || {
-        let folder = Folder::open_existing(&root)?.child(current, false)?.child(&platform, false)?;
+        let folder = Folder::open_existing(&root)?
+            .child(current, false)?
+            .child(&platform, false)?;
         let file = folder.open_file(&asset)?;
         let size = file.metadata()?.len();
         Ok::<_, std::io::Error>((file, size))
@@ -111,7 +126,12 @@ pub(super) async fn asset(
         Ok::<_, std::io::Error>((len > 0).then_some((bytes, file)))
     });
     (
-        [("content-type", "application/octet-stream"), ("cache-control", "no-store"), ("content-length", &size.to_string())],
-        axum::body::Body::from_stream(stream)
-    ).into_response()
+        [
+            ("content-type", "application/octet-stream"),
+            ("cache-control", "no-store"),
+            ("content-length", &size.to_string()),
+        ],
+        axum::body::Body::from_stream(stream),
+    )
+        .into_response()
 }

@@ -248,12 +248,12 @@ bookmark: string, } } | { "Ready": {
  */
 bookmark: string, } } | "ReadinessChanged" | "Reset";
 /**
- * The enrollment script and the deadline for redeeming its one-time code.
+ * The enrollment command and the deadline for redeeming its one-time code.
  */
 
 export type MachineInstallResult = {
 /**
- * Readable shell script containing the private enrollment code.
+ * One-line shell command containing the private enrollment code.
  */
 script: string,
 /**

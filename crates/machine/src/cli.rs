@@ -520,9 +520,15 @@ async fn run(cmd: Command) -> Result<Reply, CliError> {
                 backend,
                 max_sandboxes,
             };
-            connection::run_at(config, connect_address.as_ref(), &ready, self_update, shutdown_signal())
-                .await
-                .map_err(|e| fail("machine run", e))?;
+            connection::run_at(
+                config,
+                connect_address.as_ref(),
+                &ready,
+                self_update,
+                shutdown_signal(),
+            )
+            .await
+            .map_err(|e| fail("machine run", e))?;
             Ok(Reply::new(json!({"stopped": true})).line("The machine stopped cleanly."))
         }
     }

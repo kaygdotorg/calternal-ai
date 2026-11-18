@@ -80,13 +80,21 @@ impl Link {
         let url = reqwest::Url::parse(base)
             .map_err(|_| Error::Protocol("machine updates require an HTTPS server".into()))?;
         if url.scheme() != "https" {
-            return Err(Error::Protocol("machine updates require an HTTPS server".into()));
+            return Err(Error::Protocol(
+                "machine updates require an HTTPS server".into(),
+            ));
         }
-        Self::build(base, address, reqwest::Client::builder().redirect(reqwest::redirect::Policy::none()))
+        Self::build(
+            base,
+            address,
+            reqwest::Client::builder().redirect(reqwest::redirect::Policy::none()),
+        )
     }
 
     pub(crate) async fn release_get(&self, path: &str) -> Result<reqwest::Response> {
-        let response = self.http.get(format!("{}{path}", self.base))
+        let response = self
+            .http
+            .get(format!("{}{path}", self.base))
             .timeout(Duration::from_secs(120))
             .send()
             .await?;

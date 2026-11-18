@@ -237,7 +237,7 @@ async fn personal_machine_installer_uses_a_private_one_time_code() {
     );
     let script = data["script"].as_str().unwrap();
     assert!(script.starts_with("curl --disable --proto '=https'"));
-    assert!(script.contains("/install' | CALTERNAL_ENROLL_CODE='"));
+    assert!(script.contains("https://calternal.com/install' | CALTERNAL_ENROLL_CODE='"));
     assert_eq!(script.lines().count(), 1);
     let code = script
         .split("CALTERNAL_ENROLL_CODE='")

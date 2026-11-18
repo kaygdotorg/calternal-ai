@@ -30,5 +30,7 @@ pub fn valid_id(id: &str) -> bool {
     !id.is_empty()
         && id.len() <= 80
         && id.as_bytes()[0].is_ascii_alphanumeric()
-        && id.bytes().all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b))
+        && id
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b))
 }

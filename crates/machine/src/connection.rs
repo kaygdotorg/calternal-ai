@@ -178,7 +178,10 @@ async fn session_loop(
                     // handle its queued assignments. Release only after their
                     // turns and teardown have completed. Reconnect repeats
                     // this acknowledgement barrier with the new session.
-                    if req.draining && runner.reports().is_empty() && runner.discard_reports().is_empty() {
+                    if req.draining
+                        && runner.reports().is_empty()
+                        && runner.discard_reports().is_empty()
+                    {
                         return Ok(staged);
                     }
                     let runner = runner.clone();
@@ -298,3 +301,7 @@ pub fn default_dir() -> std::path::PathBuf {
         });
     base.join("calternal/machine")
 }
+
+#[cfg(test)]
+#[path = "connection_update_tests.rs"]
+mod update_tests;

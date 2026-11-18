@@ -27,9 +27,9 @@ pub mod protocol;
 mod ready;
 /// Build identity and limits for signed machine releases.
 pub mod release;
-mod update;
 pub mod runner;
 pub mod sandbox;
+mod update;
 
 /// Machine-role failure.
 #[derive(Debug, thiserror::Error)]

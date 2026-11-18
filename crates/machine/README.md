@@ -12,7 +12,7 @@ machine and never starts containers or VMs. The server side lives in
 # On the server host, or from the signed-in account (POST /api/v1/machines/codes):
 calternal machines code --appdata APPDATA --userdata-ssd SSD --userdata-hdd HDD --account <account-uuid>   # or --pool
 # On the machine:
-curl --disable --proto '=https' --tlsv1.2 -fsS https://cal.example.org/install |
+curl --disable --proto '=https' --tlsv1.2 -fsS https://calternal.com/install |
   sh -s -- --server https://cal.example.org
 # which runs, in order:
 calternal machine enroll --server https://cal.example.org --code CODE
