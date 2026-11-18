@@ -66,9 +66,21 @@ try {
     ...(settingUp ? {} : { storageState: session }),
   });
   const page = await context.newPage();
-  const shell = await page.goto(origin, { waitUntil: "domcontentloaded" });
+  const shell = settingUp
+    ? await context.request.get(origin)
+    : await page.goto(origin, { waitUntil: "domcontentloaded" });
   assert.equal(shell.status(), 200);
   assert.match(shell.headers()["content-security-policy"], /script-src 'self'/);
+  if (settingUp) {
+    // Use the deployed origin for WebAuthn while keeping the app's first-owner
+    // navigation out of the fixture's credential ceremony.
+    const ceremonyPage = new URL("/__rehearsal-passkey", origin).href;
+    await page.route(ceremonyPage, route => route.fulfill({
+      contentType: "text/html",
+      body: "<!doctype html><title>Rehearsal passkey</title>",
+    }));
+    await page.goto(ceremonyPage);
+  }
   const api = async (path, data) => {
     const response = await context.request.fetch(`${origin}/api/v1/${path}`, {
       method: data === undefined ? "GET" : "POST", data,
@@ -120,7 +132,6 @@ try {
     if (phase === "upgrade-setup") {
       // Start the measured browser visit as an owner who finished onboarding.
       assert.deepEqual(await op("onboarding.finish"), { finished: true });
-      await page.evaluate(() => localStorage.removeItem("cal.onboarding"));
     }
     await context.storageState({ path: session });
     console.log("First owner registered a resident software passkey at the configured HTTPS origin.");
