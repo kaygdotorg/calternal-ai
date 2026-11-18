@@ -15,14 +15,21 @@ use std::time::Duration;
 
 mod role_batch;
 
+const AUTH_CHANGES: &[&str] = &[
+    include_str!("account_details.sql"),
+    include_str!("oidc.sql"),
+    include_str!("sharing.sql"),
+    "INSERT INTO space_role_capabilities VALUES
+     ('manager','content.purge'),('owner','content.purge');",
+];
+
 /// Auth store descriptor shared with the locked deployment coordinator. No I/O.
 pub const MIGRATIONS: calternal_store::migrations::Schema<'_> =
     calternal_store::migrations::Schema::new(
         "auth.db",
         11,
         &[include_str!("schema.sql")],
-        &["INSERT INTO space_role_capabilities VALUES
-           ('manager','content.purge'),('owner','content.purge');"],
+        AUTH_CHANGES,
     );
 
 /// A handle to the dedicated auth.db worker. Its bounded mailbox serializes
@@ -323,10 +330,16 @@ mod port_tests {
         use calternal_store::migrations::{Schema, inspect, migrate_release};
 
         let conn = Connection::open_in_memory().unwrap();
-        let previous = Schema::new("auth.db", 11, &[include_str!("schema.sql")], &[]);
+        let previous = Schema::new(
+            "auth.db",
+            11,
+            &[include_str!("schema.sql")],
+            &AUTH_CHANGES[..3],
+        );
         migrate_release(&conn, previous, false).unwrap();
-        migrate_release(&conn, MIGRATIONS, true).unwrap();
-        assert_eq!(inspect(&conn, previous).unwrap(), 12);
+        migrate_release(&conn, MIGRATIONS, false).unwrap();
+        assert_eq!(inspect(&conn, MIGRATIONS).unwrap(), 15);
+        assert!(inspect(&conn, previous).is_err());
         let mut query = conn
             .prepare("SELECT role FROM space_role_capabilities WHERE capability='content.purge' ORDER BY role")
             .unwrap();
@@ -485,3 +498,6 @@ pub(crate) fn sql(e: rusqlite::Error) -> crate::Error {
 
 #[cfg(test)]
 mod role_batch_tests;
+
+#[cfg(test)]
+mod sharing_schema_tests;

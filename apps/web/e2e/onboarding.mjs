@@ -11,14 +11,19 @@ const axe = async (p, tag) => { await p.waitForTimeout(600); /* the step has fin
 const open = async (query, reduced = false) => { const ctx = await b.newContext({ viewport: { width: 1280, height: 860 }, reducedMotion: reduced ? "reduce" : "no-preference", permissions: ["clipboard-read", "clipboard-write"] }); const page = await ctx.newPage(); await page.goto(`${BASE}/?server=0&${query}`); await page.waitForSelector("html[data-ready]"); await page.waitForTimeout(500); return { ctx, page }; };
 {
   const { ctx, page } = await open("onboarding=1");
-  ok((await page.locator("ol.steps li").count()) === 5, "one path of five numbered steps (a switch adds three)");
+  ok((await page.locator("ol.steps li").count()) === 7, "one path of seven numbered steps (a switch adds three)");
   ok((await heading(page)) === "Who you are" && (await page.locator("footer").getByRole("button", { name: "Skip" }).count()) === 0, "step 1 is who you are, and it cannot be skipped");
   ok(await page.evaluate(() => document.activeElement?.tagName === "H1"), "the step's heading takes focus when it appears");
   await axe(page, "step 1");
   // keyboard only: type the name, Enter creates the passkey
-  await page.getByLabel("Your name").focus(); await page.keyboard.type("Kay"); await page.keyboard.press("Enter");
+  await page.getByLabel("Your name").focus(); await page.keyboard.type("Kay"); await page.keyboard.press("Tab"); await page.keyboard.type("kay-g"); await page.keyboard.press("Enter");
+  await page.getByLabel("Email").focus(); await page.keyboard.press("Enter"); // no email: optional here
+  await page.getByRole("button", { name: "Create passkey" }).focus(); await page.keyboard.press("Enter");
+  await waitHeading(page, "Your recovery codes");
+  await page.getByRole("button", { name: "I have saved them" }).click(); await waitHeading(page, "A second passkey");
+  await page.locator("footer").getByRole("button", { name: "Skip" }).click();
   await waitHeading(page, "Choose a look");
-  ok((await page.locator("ol.steps li.ok").count()) === 1 && (await page.locator("ol.steps li.now").textContent()).includes("Look"), "step 1 ticked and the look step has the card");
+  ok((await page.locator("ol.steps li.ok").count()) === 2 && (await page.locator("ol.steps li.now").textContent()).includes("Look"), "who you are and the recovery codes are ticked, the second passkey skipped, and the look step has the card");
   await axe(page, "step 2");
   ok((await page.locator("footer").getByRole("button", { name: "Skip" }).count()) === 1 && /change the look any time/.test(await page.locator("footer small").textContent()), "the look can be skipped, and says what that means");
   await page.reload(); await page.waitForSelector("html[data-ready]"); await page.waitForTimeout(500);
@@ -45,20 +50,23 @@ const open = async (query, reduced = false) => { const ctx = await b.newContext(
   await page.getByText("Signed in", { exact: false }).first().waitFor({ timeout: 15000 });
   await axe(page, "step 4");
   await page.getByRole("button", { name: "Continue" }).click(); await waitHeading(page, "You are set up");
-  ok((await page.locator("ol.steps li.ok").count()) === 4, "the four finished steps are ticks", `${await page.locator("ol.steps li.ok").count()}`);
+  ok((await page.locator("ol.steps li.ok").count()) === 5, "the five finished steps are ticks (the second passkey was skipped)", `${await page.locator("ol.steps li.ok").count()}`);
   await axe(page, "done");
   ok((await page.getByRole("button", { name: "Start the first thread" }).count()) === 1, "the last step leads into the first thread");
   await ctx.close();
 }
 {
   const { ctx, page } = await open("onboarding=invited&attached=1");
-  ok((await page.locator("ol.steps li").count()) === 5, "an invited person has the same five steps");
-  await page.getByLabel("Your name").fill("Sam");
+  ok((await page.locator("ol.steps li").count()) === 7, "an invited person has the same seven steps");
+  await page.getByLabel("Your name").fill("Sam"); await page.getByLabel("Username").fill("sam-b");
   await page.getByRole("switch", { name: "I write code" }).click(); await page.waitForTimeout(300);
-  ok((await page.locator("ol.steps li").count()) === 8, "the I write code switch adds three steps (repositories, the CLI, direct mode)");
-  await page.getByRole("button", { name: "Create passkey" }).click(); await waitHeading(page, "Choose a look");
+  ok((await page.locator("ol.steps li").count()) === 10, "the I write code switch adds three steps (repositories, the CLI, direct mode)");
+  await page.getByRole("button", { name: "Continue" }).click(); await page.getByLabel("Email").waitFor(); await page.getByRole("button", { name: "Continue" }).click();
+  await page.getByRole("button", { name: "Create passkey" }).click(); await waitHeading(page, "Your recovery codes");
+  await page.getByRole("button", { name: "I have saved them" }).click(); await waitHeading(page, "A second passkey");
+  await page.locator("footer").getByRole("button", { name: "Skip" }).click(); await waitHeading(page, "Choose a look");
   await page.getByRole("button", { name: "Skip" }).click(); await waitHeading(page, "Your machine");
-  ok((await page.locator("ol.steps li").nth(1).textContent()).includes("skipped"), "a skipped step is marked skipped, not ticked");
+  ok((await page.locator("ol.steps li").nth(3).textContent()).includes("skipped"), "a skipped step is marked skipped, not ticked");
   await page.getByText("Set up with this instance and connected").waitFor({ timeout: 10000 });
   ok(true, "an instance machine set up at deploy shows as connected, with nothing to do");
   await page.getByRole("button", { name: "Continue" }).click(); await waitHeading(page, "Sign in to a provider");

@@ -11,14 +11,14 @@ async fn empty_trash_requires_confirmation_and_manager_authority() {
     db.execute_batch(
         "DROP TABLE notes_trash_targets; DROP TABLE notes_trash_jobs;
          DROP TABLE notes_rename_steps; DROP TABLE notes_rename_jobs;
-         PRAGMA user_version=4;",
+         PRAGMA user_version=5;",
     )
     .unwrap();
     drop(db);
     let auth = rusqlite::Connection::open(f.appdata().join("system/auth.db")).unwrap();
     auth.execute_batch(
         "DELETE FROM space_role_capabilities WHERE capability='content.purge';
-         PRAGMA user_version=11;",
+         PRAGMA user_version=14;",
     )
     .unwrap();
     drop(auth);

@@ -45,11 +45,11 @@ schema and every shipped step fixed. A version outside the declared range
 fails before schema changes. The deployment gate will admit a newer version
 for an older release only under the explicit, tested compatibility policy.
 
-The Notes job migrations add the Manager and Owner purge grant at auth
-version 12. The content migration for thread snooze remains version 4.
-Empty Trash and rename queues follow at content versions 5 and 6. The previous writer can lack the new purge enforcement and job
-semantics. Qualify those policy changes with the release upgrade gate
-before allowing an earlier image to run against upgraded roots.
+Production image `c98705d74bcf` has auth version 14, content version 5
+and machines version 6. Empty Trash and rename queues follow at content
+versions 6 and 7. Auth version 15 adds the Manager and Owner purge grant.
+The prior writer still allows Editors to purge. Treat this rollout as
+incompatible and use the owner-approved restore point for rollback.
 
 Message search generation 2 drops the redundant thread-location index and
 rebuilds under the projection worker. Its SQLite schema version stays 1.
@@ -159,3 +159,23 @@ full deployment budget.
 During a reconnect, the client retains queued sends and delivers them after
 the server is reachable again. Requests that already received a durable
 receipt replay using the same request ID.
+
+## Account onboarding and recovery
+
+Auth schema 12 adds account-owned email state, challenges, recovery
+proofs and grants, and audit history through the shared runner. Account
+erasure cascades to these rows. The protected recovery inventory captures
+the new tables under their account UUIDs. Invite-bound email challenges
+without an account expire after ten minutes and are owned by the
+installation until consumed or pruned. Preserve `system/invite.key`,
+which also provides separate derived keys for account proofs and sealed
+provider credentials. Auth schema 13 adds provider definitions with
+sealed credentials, issuer-bound identity links and session origins.
+Definitions belong to the installation. Links and session origins belong
+to the account.
+
+This upgrade is incompatible with the schema-11 protected recovery
+writer because its table inventory is closed. Take the full restore
+point with explicit owner approval and use the locked deployment
+coordinator. A v11 process must refuse the newer authority rather than
+discard unknown records.

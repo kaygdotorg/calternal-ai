@@ -189,6 +189,7 @@
     "calternal threads models": {"providers": [{"id": "string", "name": "string", "default_model": "string", "models": [{"id": "string", "name": "string", "reasoning_levels": ["string"]}]}]},
     "calternal agent readiness": {"machines": [{"machine_id": "string", "name": "string", "enrolled": "bool", "connected": "bool", "available": "bool", "execution": "string", "last_seen_ms": "any", "providers": "any"}], "pool": [{"enrolled": "bool", "connected": "bool", "available": "bool", "execution": "string", "providers": "any"}], "check_ttl_ms": "integer"},
     "calternal serve": { "profile": "string", "url": "string", "token_files": "any", "startup_file": "string" },
+    "calternal account-recover": { "enrollment_grant": "string", "url": "string", "valid_for_seconds": "integer" },
     "calternal receipt-status": { "space_id": "string", "issue": "any" },
     "calternal machines code": { "code": "string", "owner": "string", "expires_at": "string" },
     "calternal machines list": { "machines": [{ "id": "string", "owner": "string", "name": "string", "os": "string", "arch": "string", "state": "string" }], "pending_erasures": [{"machine_id":"string", "pending":"integer", "operator_wipe":"bool"}] },

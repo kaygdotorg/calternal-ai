@@ -19,7 +19,7 @@ import { dropWorkers, markWorkersCleaned, originWiped, wipeOrigin, workersCleane
 export const EXPECTED_PROTOCOL = 1;
 
 /** Where start-up goes next. */
-export type Boot = { screen: "app" } | { screen: "signin"; needsSetup: boolean; invite?: string } | { screen: "onboarding" } | { screen: "offline" } | { screen: "version"; server: number; expected: number };
+export type Boot = { screen: "app" } | { screen: "signin"; needsSetup: boolean; invite?: string } | { screen: "onboarding" } | { screen: "email"; mail: boolean } | { screen: "offline" } | { screen: "version"; server: number; expected: number };
 
 async function check(): Promise<Boot> {
   link.quiet = true;
@@ -46,6 +46,12 @@ async function run(): Promise<Boot> {
     const raw = savedOnboarding(), mine = reconcile(raw, me.user.id);
     if (raw && !mine) clearOnboarding();
     if (mine) { saveOnboarding(mine); return { screen: "onboarding" }; }
+    // The server keeps whether this account finished the onboarding (any browser): unfinished means it resumes, here at the recovery codes (the account exists), whatever this browser remembers.
+    if (d?.operations?.some((o) => o.id === "onboarding.state")) {
+      const s = await server.operate<{ finished: boolean }>("onboarding.state", {}).catch(() => null);
+      if (s && !s.finished) { saveOnboarding({ who: "owner", coder: false, step: "recovery", done: ["you"], skipped: [], account: me.user.id }); return { screen: "onboarding" }; }
+    }
+    if (me.email_setup_required) return { screen: "email", mail: me.mail_available !== false }; // the server requires a verified address and this account has none: ask before going on
     if (invite) await redeem(invite);
     await spaces.load().catch(() => {});
     writeCache({ account: me.user.id, capabilities: me.user.capabilities, spaces: spaces.list });

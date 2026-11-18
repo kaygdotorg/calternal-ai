@@ -15,8 +15,21 @@ pub(super) fn foreign_cases(
         json!({"id":note["id"],"base_revision":note["revision"],"title":"renamed"}),
         json!({"id":missing,"base_revision":note["revision"],"title":"renamed"}),
     ));
-    for op in ["trash.list", "tags.list"] {
+    for op in ["trash.list", "trash.empty.preview", "tags.list"] {
         cases.push((op, json!({"space_id":space}), json!({"space_id":missing})));
+    }
+    let confirmation = "0".repeat(64);
+    cases.push((
+        "trash.empty",
+        json!({"space_id":space,"confirmation":confirmation}),
+        json!({"space_id":missing,"confirmation":confirmation}),
+    ));
+    for op in ["trash.empty.status", "notes.rename.status", "notes.rename.undo"] {
+        cases.push((
+            op,
+            json!({"space_id":space,"job_id":missing}),
+            json!({"space_id":missing,"job_id":missing}),
+        ));
     }
     for op in ["notes.lookup", "tags.lookup"] {
         cases.push((

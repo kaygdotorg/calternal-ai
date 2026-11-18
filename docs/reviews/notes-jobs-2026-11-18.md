@@ -20,9 +20,11 @@ The Trash and rename decisions are recorded in
   sources. Undo claims the original root path, then reapplies the recorded
   prior source revisions. Conflicting later revisions are preserved.
   Restore uses numbered filenames when its previous name is occupied.
-- Additive auth version 12 and content versions 5–6 use the shared runner.
-  The conformance fixture exercises the previous schema numbers with
-  existing content and recovers an interrupted Empty Trash admission.
+- Auth version 15 and content versions 6–7 follow the production
+  baseline through the shared runner. Auth version 15 is incompatible
+  because the previous writer still allows Editors to purge. Each new
+  transition has an independent test. Conformance recovers an interrupted
+  Empty Trash admission with existing content.
 
 Purge unlinks owned Markdown files through the filesystem usage hook and
 removes stored content versions. Calternal-AI's owning-space quota
@@ -33,9 +35,9 @@ on small disposable spaces.
 
 ## Moving existing Notes files
 
-The source check covered `c880862` and the recorded production reinstall
-at `9f800564`. The current lane keeps the same file-discovery behavior.
-[Production install record](https://git.kayg.org/kayg/calternal-ai/src/commit/0d66ebad/docs/open-questions.md).
+The source check covered the currently installed `c98705d7` and the prior
+`9f800564` baseline. The current lane keeps the same file-discovery behavior.
+[Current production source](https://git.kayg.org/kayg/calternal-ai/src/commit/c98705d74bcf).
 
 A saved Note belongs in
 `<userdata-ssd>/spaces/<SPACE_UUID>/Notes/<Title>.md`. The checked-in cloud
