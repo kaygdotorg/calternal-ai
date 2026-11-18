@@ -4,7 +4,7 @@
   import { Button } from "@calternal/ui";
   import { show, shortcuts as S } from "../lib/shortcuts.svelte";
   let { file = false }: { file?: boolean } = $props();
-  const groups = ["Navigation", "Threads", "Help"] as const;
+  const groups = ["Navigation", "Threads", "Canvas", "Help"] as const;
   const FIXED: [string, string][] = [["Send the message", "Enter"], ["New line in the message", "Shift+Enter"], ["Move the focused thread within its section", "Alt+↑ or Alt+↓"], ["Move it to the next or previous section", "Alt+Shift+↑ or ↓"], ["Rename the focused thread or section", "F2"], ["Open the context menu on a thread", "Menu key or Shift+F10"], ["Close a menu or sheet", "Esc"]];
   /** The per-account shortcuts file: a Markdown file of `command: chord` lines, only what differs from the defaults (the server keeps it per account). */
   const asFile = $derived(["---", "kind: shortcuts", "---", "", ...Object.entries(S.overrides).map(([id, c]) => `${id}: ${c ?? "none"}`)].join("\n") + "\n");

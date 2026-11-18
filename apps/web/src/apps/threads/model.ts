@@ -113,14 +113,24 @@ export type Block =
 
 /** Who wrote an assistant message and how long the turn took, as its marker in the thread file records it: so a person scrolling back can tell which provider, model and reasoning level a turn used. */
 export interface MessageBy {
-  /** The provider's id. */
+  /** The provider's id, when this client knows the plugin. */
   provider?: ProviderId;
+  /** The provider plugin's id as the server recorded it (`calternal-claude-code`); the harness's name is looked up from it. */
+  providerId?: string;
+  /** The service that actually served the turn (`Anthropic`, `OpenAI`), from the message's heading; absent when the harness did not report one. */
+  service?: string;
   /** The model id the turn ran with. */
   model?: string;
   /** The reasoning level the turn ran with ("low", "high", …), when the provider has such a setting. */
   reasoning?: string;
   /** How long the turn took, in milliseconds. */
   ms?: number;
+  /** How long the model thought, in milliseconds, when it was observed. */
+  thoughtMs?: number;
+  /** The service tier the turn ran on (`fast`, `flex`), only when it is not the default. Not on the wire yet: the fixtures carry it (docs/threads-ui.md lists it for the backend). */
+  tier?: string;
+  /** How much of the model's context window the thread used by this turn, in tokens. Not on the wire yet: the fixtures carry it. */
+  context?: { used: number; window: number };
 }
 
 /** One message: a block in the thread's file with a stable ID. */

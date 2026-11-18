@@ -6,10 +6,11 @@
  *     (`get` carries the durable job while a turn is not final, to follow its stream after a reload)
  *   - `metadata`: `{ title, provider, model|null, mode, mode_for, message_count, last_activity_at, created_at, archived, deleted, parent_thread?, spawned_by?, pending? }`
  *   - `turn_state`: `idle | queued | running | waiting | interrupted | failed`
- *   - `markdown`: a small frontmatter, then messages: `<!-- message:<uuid> role:person|agent time:<rfc3339> [turn:<job>] [actor:<..>] -->` text `<!-- /message -->`.
+ *   - `messages` (in `thread`, and in a checkpoint's `delta`): the saved messages as records, `{ id, role: person|agent|automation, heading, at (RFC 3339 with the writer's offset), turn?, text, provenance? }`; an agent's
+ *     `provenance` is `{ provider_id, model_id, reasoning_level, machine_id, duration_ms, reasoning_ms }`. The server frames the file (byte counts, ids); this client never reads the Markdown transcript.
  * Message text is untrusted display text: nothing here reads access, roles or instructions from it.
  */
-import type { Block, Message, Permission, ProviderId, Step, StepKind, ThreadNotice, ThreadState, ThreadSummary } from "../apps/threads/model";
+import type { Block, Message, MessageBy, Permission, ProviderId, Step, StepKind, ThreadNotice, ThreadState, ThreadSummary } from "../apps/threads/model";
 
 /** The thread metadata the server keeps (the fields this client reads). */
 export interface WireMetadata {
@@ -39,7 +40,7 @@ export interface WireMetadata {
   pending?: { request_id?: string; created_ms?: number };
 }
 /** A saved thread as `threads.get` and the writes return it. */
-export interface WireThread { id: string; space_id: string; address: string; revision: string; turn_state?: string; turn_reason?: WireReason | null; metadata: WireMetadata; markdown?: string; job?: WireJob }
+export interface WireThread { id: string; space_id: string; address: string; revision: string; turn_state?: string; turn_reason?: WireReason | null; metadata: WireMetadata; messages?: WireRecord[]; markdown?: string; job?: WireJob }
 /** One row of `threads.list`. */
 export interface WireRow { id: string; address: string; revision: string; turn_state?: string; turn_reason?: WireReason | null; metadata: WireMetadata }
 /** A job as the server describes it (`JobView`). */
@@ -115,9 +116,6 @@ export function summaryOf(id: string, spaceId: string, md: WireMetadata, turn: s
   };
 }
 
-const OPEN = /<!-- message:([0-9a-fA-F-]{36}) role:(person|agent)([^>]*?) -->\n/g;
-const CLOSE = "\n<!-- /message -->";
-
 /** Which icon a tool's step gets, from the tool's name (the provider's own: Bash, Read, Edit, …); anything unknown is a plain run. */
 const KIND: Record<string, StepKind> = { Bash: "run", Read: "read", Edit: "edit", MultiEdit: "edit", Write: "edit", NotebookEdit: "edit", Grep: "search", Glob: "search", WebSearch: "search", WebFetch: "search", Task: "spawn" };
 /** One saved tool line: `> Tool <name> · <what it did> (started | finished | failed | <n> bytes of tool output)`. */
@@ -149,24 +147,42 @@ export function blocksOf(id: string, text: string): Block[] {
   return out;
 }
 
-/** The messages of a thread's Markdown, oldest first, each with the time its marker records (an older file with none: the thread's creation time, the last one its update time). A message with no closing marker (still being written) runs to the next marker or the end. */
-export function parseMessages(markdown: string, createdAt = 0, updatedAt = createdAt): Message[] {
-  const body = markdown.startsWith("---\n") ? (markdown.split("\n---\n").slice(1).join("\n---\n")) : markdown;
-  const at: { id: string; role: Message["role"]; from: number; start: number; time: number }[] = [];
-  for (const m of body.matchAll(OPEN)) at.push({ id: m[1]!, role: m[2] === "person" ? "user" : "agent", from: m.index!, start: m.index! + m[0].length, time: ms(/\btime:(\S+)/.exec(m[3] ?? "")?.[1], NaN) });
-  return at.map((m, i) => {
-    const next = at[i + 1]?.from ?? body.length;
-    let text = body.slice(m.start, next);
-    const close = text.lastIndexOf(CLOSE);
-    if (close >= 0) text = text.slice(0, close);
-    return { id: m.id, role: m.role, at: Number.isFinite(m.time) ? m.time : i === at.length - 1 ? updatedAt : createdAt, blocks: blocksOf(m.id, text.replace(/\n$/, "")) };
-  });
+/** An agent message's provenance on the wire (`threads/records.rs`): ids, the requested effort, and how long the attempt and its reasoning took. */
+export interface WireProvenance { provider_id: string; model_id?: string | null; reasoning_level?: string | null; machine_id?: string | null; duration_ms?: number | null; reasoning_ms?: number | null }
+/** One saved message as the server returns it: the framing is the server's, the `text` is the message's own Markdown, byte for byte. */
+export interface WireRecord { id: string; role: "person" | "agent" | "automation"; heading: string; at: string; turn?: string | null; text: string; provenance?: WireProvenance }
+
+/** The service that serves an agent message, from its heading (`<harness> via <service> (subscription) · …`): display text only, null when the heading has none. */
+export function serviceOf(heading: string): string | null {
+  const m = /^.*? via (.+?)(?: \((?:subscription|API)\))?(?: · |$)/.exec(heading);
+  return m?.[1] ?? null;
 }
 
-/** The `updated-at` of a thread's frontmatter, in milliseconds, or `fallback`. */
-export function updatedAtOf(markdown: string, fallback: number): number {
-  const m = /^updated-at: (\S+)$/m.exec(markdown.slice(0, 2048));
-  return ms(m?.[1]?.replace(/^"|"$/g, ""), fallback);
+/** A record as the Threads app's message: a person or an automation is the `user` side; an agent carries who wrote it (from `provenance`) and how long it took. */
+export function messageOf(r: WireRecord): Message {
+  const p = r.provenance;
+  const at = Date.parse(r.at);
+  const by: MessageBy | undefined = p
+    ? { provider: PROVIDER_IDS[p.provider_id], providerId: p.provider_id, model: p.model_id ?? undefined, reasoning: p.reasoning_level ?? undefined, ms: p.duration_ms ?? undefined, thoughtMs: p.reasoning_ms ?? undefined, service: serviceOf(r.heading) ?? undefined }
+    : undefined;
+  // A saved agent message carries its reasoning as blockquote lines (`> Reasoning summary — …`, docs/threads.md) and how long it thought in its provenance; the live reasoning text itself is not saved.
+  const summaries: string[] = [];
+  const text = r.role === "agent" ? r.text.replace(/^> Reasoning summary — (.*)(?:\n|$)/gm, (_, t: string) => { summaries.push(t); return ""; }).replace(/\n{3,}/g, "\n\n").trim() : r.text;
+  const thought: Block[] = r.role === "agent" && (summaries.length || (p?.reasoning_ms ?? 0) > 0) ? [{ type: "thought", text: summaries.join("\n\n"), ms: p?.reasoning_ms ?? 0 }] : [];
+  return { id: r.id, role: r.role === "agent" ? "agent" : "user", at: Number.isFinite(at) ? at : 0, blocks: [...thought, ...blocksOf(r.id, text)], ...(by ? { by } : {}) };
+}
+
+/** The messages of a full read, oldest first. */
+export const messagesOf = (records: readonly WireRecord[] | undefined): Message[] => (records ?? []).map(messageOf);
+
+/**
+ * The messages after a checkpoint's insertion: its records are complete new messages, appended in order. Null when one of them is already held: the checkpoint extended or finished a held message (the server says so
+ * with no insertion), so the whole thread is read instead. Cost: linear in the new records.
+ */
+export function appendRecords(held: readonly Message[], records: readonly WireRecord[]): Message[] | null {
+  const have = new Set(held.map((m) => m.id));
+  if (records.some((r) => have.has(r.id))) return null;
+  return [...held, ...records.map(messageOf)];
 }
 
 // ---- readiness (agent.readiness, docs/agent-turns.md): is there a machine, is it connected, is the provider signed in ----

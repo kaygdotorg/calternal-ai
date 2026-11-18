@@ -8,6 +8,7 @@
  *    `done` or `failed` (a missing or expired id is `not_found`).
  * The fixture implementation is a small simulation for `?server=0&onboarding=1`, tests and the design.
  */
+import { enrollmentCode, installScript, setDirect } from "../../server/mutations";
 import { server } from "../../server/client";
 import { checkProvider, providerName, readiness } from "../../server/readiness";
 import { spaces } from "../spaces.svelte";
@@ -74,10 +75,10 @@ export const serverApi: OnboardingApi = {
     }
   },
   async install() {
-    try { const r = await server.operate<{ script: string; expires_ms: number }>("machines.install", {}); return { script: r.script, expiresMs: r.expires_ms }; }
+    try { const r = await installScript(); return { script: r.script, expiresMs: r.expires_ms }; }
     catch (e) {
       if (!missing(e)) throw e;
-      const c = await server.json<{ code: string; expires_ms: number }>("/api/v1/machines/codes", {}); // an older server: the one-use code and its command
+      const c = await enrollmentCode(); // an older server: the one-use code and its command
       return { script: `calternal machine enroll --server ${location.origin} --code ${c.code}`, expiresMs: c.expires_ms };
     }
   },
@@ -100,7 +101,7 @@ export const serverApi: OnboardingApi = {
   async signInStatus(id) { return (await server.operate<{ status: SignInStatus }>("provider.sign_in.status", { id })).status; },
   async repositories() { throw new Error("repositories: no server operation yet"); },
   async addRepository() { throw new Error("repositories: no server operation yet"); },
-  setDirect: (machineId, direct) => server.operate("machines.set", { machine_id: machineId, direct }).then(() => undefined),
+  setDirect: (machineId, direct) => setDirect(machineId, direct).then(() => undefined),
 };
 
 /** A simulation for fixtures: a machine that connects on the third look after the script was made (or is there from the start with `attached`), a sign-in that waits for its code. */

@@ -117,5 +117,10 @@ export function messageAt(threadId: string, seed: number, index: number, baseTim
   blocks.push({ type: "text", text: [pick(r, BODIES), r() < 0.4 ? pick(r, LISTS) : "", r() < 0.4 ? pick(r, CODE) : "", r() < 0.12 ? PICTURE : ""].filter(Boolean).join("\n\n") });
   if (r() < 0.12) blocks.push({ type: "card", source: TABLE_CARD });
   blocks.push({ type: "text", text: pick(r, FOLLOW) });
-  return { id, role: "agent", at, blocks };
+  // Who wrote it, as the saved record's provenance will say (the service, tier and context are fixture-only until the backend sends them).
+  const codex = r() < 0.3;
+  const by: Message["by"] = codex
+    ? { provider: "codex", providerId: "calternal-codex", service: "OpenAI", model: "gpt-6-1-sol", reasoning: pick(r, ["medium", "high", "max"]), ms: 6000 + Math.floor(r() * 80000), thoughtMs: 2000 + Math.floor(r() * 9000), tier: r() < 0.5 ? "fast" : undefined, context: { used: 20000 + Math.floor(r() * 300000), window: 400000 } }
+    : { provider: "claude", providerId: "calternal-claude-code", service: "Anthropic", model: "sonnet-5-5", reasoning: pick(r, ["low", "medium", "high"]), ms: 4000 + Math.floor(r() * 90000), thoughtMs: 1000 + Math.floor(r() * 9000), context: { used: 10000 + Math.floor(r() * 170000), window: 200000 } };
+  return { id, role: "agent", at, blocks, by };
 }

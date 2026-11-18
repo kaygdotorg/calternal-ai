@@ -44,7 +44,7 @@ try {
     const text = (await last.innerText()).replace(/\s+/g, " ");
     ok(/Thought for \d+ s/.test(text), "the finished message has a folded Thought for block", text.slice(0, 120));
     ok(/Worked for \d+ s · \d+ tools?/.test(text), "and a folded Worked for block with its steps inside");
-    const mark = await last.locator('[role="img"]').first().getAttribute("aria-label");
+    const mark = await last.locator("button.mark").first().getAttribute("aria-label");
     ok(/Claude Code|Codex/.test(mark ?? ""), "its provider's mark is at its left, naming provider and model", mark ?? "");
     await p.screenshot({ path: `/tmp/turn-${device}.png` });
     // the spinner: one steady speed, kept in keyboard use

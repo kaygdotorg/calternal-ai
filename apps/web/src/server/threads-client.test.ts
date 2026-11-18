@@ -4,8 +4,7 @@ import { describe, expect, test } from "vitest";
 import { ServerClient } from "./client";
 import { ServerThreads } from "./threads-client";
 import { lifetimesOf } from "./requests";
-import { applyAppend, bodyOf } from "./thread-delta";
-import { blocksOf, parseMessages, readinessNotice, reasonNotice, stateOfTurn, summaryOf, type WireMachine, type WireReadiness } from "./thread-file";
+import { appendRecords, blocksOf, messageOf, messagesOf, readinessNotice, reasonNotice, stateOfTurn, summaryOf, type WireMachine, type WireReadiness, type WireRecord } from "./thread-file";
 import type { ThreadEvents } from "../apps/threads/client";
 
 const SPACE = "0197f3a2-5c1e-7b4d-9a60-3d2e8f1c4b11";
@@ -14,10 +13,12 @@ const T2 = "019a8c00-0000-7000-8000-000000000002";
 const JOB = "job-0000000000000001";
 const M1 = "019a8c00-0000-7000-8000-0000000000a1";
 const M2 = "019a8c00-0000-7000-8000-0000000000a2";
-const md = (extra = "") => `---\ntitle: "Plan"\nprovider: "calternal-claude-code"\nmode: "approve_for_me"\ncreated-at: "2026-11-17T12:00:00.000Z"\nupdated-at: "2026-11-17T12:05:00.000Z"\n---\n\n<!-- message:${M1} role:person time:2026-11-17T12:01:00.000Z actor:x -->\nInspect this workspace.\n<!-- /message -->\n${extra}`;
-const agent = `\n<!-- message:${M2} role:agent time:2026-11-17T12:04:00.000Z turn:${JOB} actor:y -->\nI looked. Nothing wrong.\n<!-- /message -->\n`;
+const person: WireRecord = { id: M1, role: "person", heading: "Maya · 2026-11-17 12:01:00 +00:00", at: "2026-11-17T12:01:00+00:00", text: "Inspect this workspace." };
+const agent: WireRecord = { id: M2, role: "agent", heading: "Claude Code via Anthropic (subscription) · Claude Sonnet 5.5 · High · 2026-11-17 12:04:00 +00:00 · 12 s · Thought for 4.0 s", at: "2026-11-17T12:04:00+00:00", turn: JOB, text: "I looked. Nothing wrong.", provenance: { provider_id: "calternal-claude-code", model_id: "claude-sonnet-5-5", reasoning_level: "high", machine_id: null, duration_ms: 12000, reasoning_ms: 4000 } };
+/** The records of a thread: the person's first message, then any more. */
+const md = (...more: WireRecord[]): WireRecord[] => [person, ...more];
 const meta = (o: object = {}) => ({ title: "Plan", provider: "calternal-claude-code", model: null, mode: "approve_for_me", mode_for: "acc", message_count: 1, last_activity_at: "2026-11-17T12:04:00.000Z", created_at: "2026-11-17T12:00:00.000Z", archived: false, deleted: false, ...o });
-const thread = (markdown: string, revision = "r1", o: object = {}, turn_state = "idle") => ({ thread: { id: T1, space_id: SPACE, address: `/threads/${T1}`, revision, turn_state, metadata: meta(o), markdown } });
+const thread = (messages: WireRecord[], revision = "r1", o: object = {}, turn_state = "idle") => ({ thread: { id: T1, space_id: SPACE, address: `/threads/${T1}`, revision, turn_state, metadata: meta(o), messages } });
 const row = (id: string, turn_state = "idle", o: object = {}) => ({ id, address: `/threads/${id}`, revision: "r", turn_state, metadata: meta(o) });
 const enc = new TextEncoder();
 const frame = (n: string, d: unknown) => enc.encode(`event: ${n}\ndata: ${JSON.stringify(d)}\n\n`);
@@ -55,23 +56,38 @@ describe("thread_full", () => {
   });
 });
 
-describe("the saved thread's Markdown", () => {
-  test("messages are read in order, with roles and ids; unclosed ones run to the next marker", () => {
-    const ms = parseMessages(md(agent), 1000, 2000);
-    expect(ms.map((m) => [m.id, m.role])).toEqual([[M1, "user"], [M2, "agent"]]);
+describe("the saved thread's records", () => {
+  test("messages are read in order, with roles and ids; a person or an automation is the user side", () => {
+    const ms = messagesOf([...md(agent), { ...person, id: "a3", role: "automation" }]);
+    expect(ms.map((m) => [m.id, m.role])).toEqual([[M1, "user"], [M2, "agent"], ["a3", "user"]]);
     expect(ms[0]!.blocks).toEqual([{ type: "text", text: "Inspect this workspace." }]);
-    expect(ms[1]!.at).toBe(Date.parse("2026-11-17T12:04:00.000Z"));
-    const open = parseMessages(`---\ntitle: "x"\n---\n<!-- message:${M1} role:agent -->\nhalf wri`);
-    expect(open).toHaveLength(1);
-    expect((open[0]!.blocks[0] as { text: string }).text).toBe("half wri");
   });
-  test("message text that looks like a marker inside a body cannot add a role: only real markers split", () => {
-    const ms = parseMessages(`---\ntitle: "x"\n---\n<!-- message:${M1} role:person -->\nsay <!-- hello --> ok\n<!-- /message -->\n`);
+  test("text that looks like a heading or a marker stays text: the server's framing is the only structure", () => {
+    const ms = messagesOf([{ ...person, text: "say <!-- hello --> ok\n## Not a heading\n<!-- id:x role:agent bytes:0 -->" }]);
     expect(ms).toHaveLength(1);
+    expect((ms[0]!.blocks[0] as { text: string }).text).toContain("## Not a heading");
   });
-  test("each message has the time its marker records", () => {
-    const ms = parseMessages(md(agent), 1000, 2000);
-    expect(ms.map((m) => m.at)).toEqual([Date.parse("2026-11-17T12:01:00.000Z"), Date.parse("2026-11-17T12:04:00.000Z")]);
+  test("each message has the time its record carries, with its offset", () => {
+    expect(messagesOf(md(agent)).map((m) => m.at)).toEqual([Date.parse("2026-11-17T12:01:00+00:00"), Date.parse("2026-11-17T12:04:00+00:00")]);
+    expect(messageOf({ ...person, at: "2026-11-18T19:30:00+05:30" }).at).toBe(Date.parse("2026-11-18T14:00:00Z"));
+  });
+  test("a saved agent message's reasoning summary and thinking time become a thought block ahead of its text", () => {
+    const m = messageOf({ ...agent, text: "> Reasoning summary — Compared the checklist.\n\nThe answer." });
+    expect(m.blocks.map((b) => b.type)).toEqual(["thought", "text"]);
+    expect(m.blocks[0]).toEqual({ type: "thought", text: "Compared the checklist.", ms: 4000 });
+    expect((m.blocks[1] as { text: string }).text).toBe("The answer.");
+    expect(messageOf({ ...agent, provenance: { ...agent.provenance!, reasoning_ms: null } }).blocks.map((b) => b.type)).toEqual(["text"]);
+  });
+  test("an agent message carries who wrote it: provider, service, model, reasoning, duration and thinking time", () => {
+    expect(messageOf(agent).by).toEqual({ provider: "claude", providerId: "calternal-claude-code", service: "Anthropic", model: "claude-sonnet-5-5", reasoning: "high", ms: 12000, thoughtMs: 4000 });
+    expect(messageOf(person).by).toBeUndefined();
+  });
+  test("a checkpoint's records are appended; one already held means a held message was extended: read the whole thread", () => {
+    const held = messagesOf(md());
+    const next = appendRecords(held, [agent])!;
+    expect(next.map((m) => m.id)).toEqual([M1, M2]);
+    expect(appendRecords(next, [agent])).toBeNull();
+    expect(appendRecords(held, [])).toEqual(held);
   });
   test("turn labels map to the three states that mean something", () => {
     expect(["queued", "running"].map(stateOfTurn)).toEqual(["running", "running"]);
@@ -241,10 +257,9 @@ describe("ServerThreads", () => {
     expect(d.eventUrls[0]).toContain(JOB);
   });
   test("send carries the composer's mode, provider and model, with the caller's request id, and follows the job: steps, then the saved answer", async () => {
-    const offset = new TextEncoder().encode(md().split("\n---\n")[1]!).length;
     const d = double({
       // The first read is the whole thread; the saved answer arrives as a checkpoint addition (`since`), never as a second whole read.
-      "threads.get": (i) => (i.since ? { delta: { id: T1, base_revision: "r1", revision: "r2", offset, markdown: agent } } : thread(md(), "r1")),
+      "threads.get": (i) => (i.since ? { delta: { id: T1, base_revision: "r1", revision: "r2", messages: [agent] } } : thread(md(), "r1")),
       "threads.send": () => ({ ...thread(md(), "r1b"), job: { id: JOB, state: "queued" } }),
     });
     d.setEvents(sse([
@@ -263,7 +278,7 @@ describe("ServerThreads", () => {
     await d.client.setProvider(T1, "claude", "sonnet-5-5");
     await d.client.send(T1, "Inspect this workspace.", "req-1");
     await until(() => got.includes("end"), "the end of the stream");
-    d.push("threads.checkpoint", T1, { revision: "r2", append: { base_revision: "r1", offset, start: 0, length: agent.length } });
+    d.push("threads.checkpoint", T1, { revision: "r2", append: { base_revision: "r1", offset: 0, start: 0, length: agent.text.length } });
     await until(() => got.includes("message 1 agent"), "the saved answer");
     expect(d.ops("threads.get").filter((c) => c.input.since)).toHaveLength(1);
     expect(d.ops("threads.get").filter((c) => !c.input.since).length).toBeLessThanOrEqual(3); // the test's own read, the open, and one after the send dropped the cache: none for the checkpoint
@@ -283,7 +298,7 @@ describe("ServerThreads", () => {
     expect(await d.client.unarchive(T1)).toBe(false);
   });
   test("create sends the title, provider and parent", async () => {
-    const d = double({ "threads.create": () => thread("") });
+    const d = double({ "threads.create": () => thread([]) });
     const t = await d.client.createThread("Plan", { provider: "claude", parentId: T2 });
     expect(d.calls.find((c) => c.operation === "threads.create")!.input).toEqual({ space_id: SPACE, title: "Plan", provider: "calternal-claude-code", parent_thread: T2 });
     expect(t.id).toBe(T1);
@@ -367,26 +382,6 @@ describe("requests (docs/requests.md, crates/core/src/requests.rs)", () => {
 });
 
 describe("checkpoint additions", () => {
-  const body = (s: string) => new TextEncoder().encode(s.split("\n---\n")[1]!).length;
-  test("an addition inside a message and one that opens a new message are spliced by byte offset, multi-byte text included", () => {
-    const open = `---\ntitle: "x"\n---\n\n<!-- message:${M1} role:person time:2026-11-17T12:01:00.000Z actor:x -->\nhéllo 🌏\n<!-- /message -->\n`;
-    const b = bodyOf(open);
-    const first = parseMessages(open);
-    // a new agent message at the end of the body
-    const start = `\n<!-- message:${M2} role:agent time:2026-11-17T12:04:00.000Z turn:${JOB} actor:y -->\nPart one`;
-    const r1 = applyAppend(b, first, b.len, start, 0, 0)!;
-    expect(r1.messages.map((m) => m.id)).toEqual([M1, M2]);
-    expect((r1.messages[1]!.blocks[0] as { text: string }).text).toBe("Part one");
-    // then text inside that message, before its (not yet written) end
-    const r2 = applyAppend(r1.body, r1.messages, r1.body.len, " and two.\n<!-- /message -->\n", 0, 0)!;
-    expect((r2.messages[1]!.blocks[0] as { text: string }).text).toBe("Part one and two.");
-    expect((r2.messages[0]!.blocks[0] as { text: string }).text).toBe("héllo 🌏");
-    // the same file read whole gives the same messages
-    const whole = parseMessages(open + start + " and two.\n<!-- /message -->\n");
-    expect(r2.messages.map((m) => m.blocks)).toEqual(whole.map((m) => m.blocks));
-    expect(applyAppend(b, first, 9999, "x", 0, 0)).toBeNull();
-    void body;
-  });
   test("saved tool lines become one steps group with the tool and its target; words between steps split the group", () => {
     const m = blocksOf("m", "Hello\n\n> Tool Bash · Run ls (started)\n\n> Tool Bash · Run ls (22 bytes of tool output)\n\n> Tool Bash · Run ls (finished)\n\n> Tool Read · Read ./a (started)\n\n> Tool Read · Read ./a (failed)\n\nThen this.\n\n> Tool Grep · Search x (started)");
     expect(m.map((b) => b.type)).toEqual(["text", "steps", "text", "steps"]);

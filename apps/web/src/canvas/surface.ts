@@ -31,9 +31,26 @@ function toward(tok: Rgb, ink: Rgb, bg: Rgb, target: number): Rgb {
   return ink;
 }
 
-/** The surface and inks for a scheme and accent hue (null: a calm blue-grey). */
-export function windowColours(scheme: "light" | "dark", hue: number | null): WindowColours {
-  const { L, C } = DOC[scheme];
+/** Craft's measured lightness bands for the document colour (OKLCH L): dark 0.21 to 0.27, light 0.91 to 0.97 (docs/ui-shell-status.md). */
+export const BAND = { dark: [0.21, 0.27], light: [0.91, 0.97] } as const;
+
+/** OKLCH lightness of an sRGB colour. */
+export function lightnessOf([r, g, b]: Rgb): number {
+  const f = (v: number) => ((v /= 255) <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
+  const [R, G, B] = [f(r), f(g), f(b)] as [number, number, number];
+  const l = Math.cbrt(0.4122214708 * R + 0.5363325363 * G + 0.0514459929 * B), m = Math.cbrt(0.2119034982 * R + 0.6806995451 * G + 0.1073969566 * B), s = Math.cbrt(0.0883024619 * R + 0.2817188376 * G + 0.6299787005 * B);
+  return 0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s;
+}
+
+/**
+ * The surface and inks for a scheme and accent hue (null: a calm blue-grey). `backdropL` is the wallpaper's own mean lightness: where the window would sit close to it in tone, its lightness moves to the end of Craft's measured band that is
+ * further from it (the band is narrow, so the hairline edge and the shadow do the rest of the separating).
+ */
+export function windowColours(scheme: "light" | "dark", hue: number | null, backdropL?: number): WindowColours {
+  const base = DOC[scheme];
+  const [lo, hi] = BAND[scheme];
+  const L = backdropL === undefined || Math.abs(backdropL - base.L) > 0.12 ? base.L : Math.abs(backdropL - lo) > Math.abs(backdropL - hi) ? lo : hi;
+  const { C } = base;
   let bg: Rgb | null = null;
   for (let c = C; c >= 0 && !bg; c -= 0.004) bg = oklchToRgb(L, Math.max(0, c), hue ?? 250);
   const surface = bg ?? ([scheme === "dark" ? 31 : 247, scheme === "dark" ? 31 : 247, scheme === "dark" ? 31 : 247] as Rgb);

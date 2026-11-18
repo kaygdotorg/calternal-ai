@@ -25,7 +25,7 @@ try {
   await cdp.send("WebAuthn.enable"); await cdp.send("WebAuthn.addVirtualAuthenticator", { options: { protocol: "ctap2", transport: "internal", hasResidentKey: true, hasUserVerification: true, isUserVerified: true, automaticPresenceSimulation: true } });
   await p.goto(`${url}/?server=1`); await p.waitForSelector("html[data-ready]");
   await p.fill('input[name="token"]', token); await p.fill('input[name="name"]', "Ready Owner"); await p.getByRole("button", { name: "Create passkey" }).click();
-  await p.waitForFunction(() => !document.querySelector("h1")?.textContent?.includes("Set up"), null, { timeout: 15000 }); await p.waitForSelector("html[data-ready]"); await p.waitForTimeout(1200);
+  await p.waitForTimeout(2500); await p.evaluate(() => localStorage.removeItem("cal.onboarding")); /* the first owner lands in the onboarding (shell lane): the account exists, leave the wizard */ await p.waitForSelector("html[data-ready]"); await p.waitForTimeout(1200);
   const space = (await op(p, "spaces.list", {})).data.spaces.find((s) => s.personal).id;
   for (const id of ["calternal-claude-code", "calternal-orchestrator"]) await op(p, "plugins.enable", { space_id: space, plugin_id: id });
   const t = (await op(p, "threads.create", { space_id: space, title: "Readiness run" })).data.thread;
@@ -41,7 +41,7 @@ try {
 
   // 2. enroll one, signed in: nothing extra
   writeFileSync(signed, "");
-  await p.goto(`${url}/settings/machines?server=1`); await p.waitForSelector("html[data-ready]");
+  await p.evaluate(() => localStorage.removeItem("cal.onboarding")); await p.goto(`${url}/settings/machines?server=1`); await p.waitForSelector("html[data-ready]");
   await p.getByRole("button", { name: "Make a code" }).click();
   const code = /--code\s+(\S+)/.exec((await p.locator("code.cmd").first().innerText()).trim())?.[1];
   const home = join(data, "machine"); const bin = join(data, "bin"); mkdirSync(bin);
