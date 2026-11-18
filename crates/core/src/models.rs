@@ -260,6 +260,10 @@ pub struct Contract {
     pub live_frame: crate::LiveFrame,
     /// Schema representative for the private account invalidation stream.
     pub account_frame: crate::AccountFrame,
+    /// Schema representative for empty account onboarding input.
+    pub onboarding_input: crate::OnboardingInput,
+    /// Schema representative for account onboarding completion.
+    pub onboarding_state: crate::OnboardingState,
     /// Schema representative for the built-in wallpaper catalog input.
     pub wallpapers_list_input: crate::WallpapersListInput,
     /// Schema representative for the built-in wallpaper catalog.
