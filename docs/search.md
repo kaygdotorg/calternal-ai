@@ -69,9 +69,12 @@ the watermark is behind and receive `partial: true`. A missing or invalid
 generation or an unpublished authoritative intent yields an empty partial page
 until recovery catches up.
 
-On first use, a fresh generation scans retained UUID heads and the guarded
-Markdown files. Pending placement, a missing file or an external edit
-uses the last durable version. The journal catches changes during the
+On first use, a fresh generation scans retained UUID heads that have a durable
+version. It opens each eligible Markdown file beneath the space and checks
+that it is regular, within the full-file byte limit, and has the durable
+hash before extracting the searchable prefix. Pending placement, a missing
+or unreadable file, and a size or hash mismatch use the exact staged version
+from the same bounded read snapshot. The journal catches changes during the
 scan before the worker publishes readiness. A change to the release version,
 schema generation, searchable kinds, or journal epoch invalidates the
 projection.
