@@ -166,3 +166,37 @@ test('same-socket room replacement ignores already-sent packets and controls fro
   expect(JSON.parse(ws.sent.at(-1) as string)).toEqual({ type: 'leave', room: 'notes/a', membership })
   live.disconnect()
 })
+
+test.each([
+  ['the code itself', { code: 'lineage_changed' }],
+  ['conflict with details.reason', { code: 'conflict', details: { reason: 'lineage_changed' } }],
+])('a lineage_changed refusal (%s) closes the room as a lineage mismatch and is not retried', (_name, error) => {
+  vi.useFakeTimers()
+  const live = new LiveSocket(() => 'ws://test')
+  const room = live.room('notes/a')
+  const closes: Array<[number, string]> = []
+  room.onClose((code, reason) => closes.push([code, reason]))
+  room.connect()
+  const ws = Socket.instances[0]!
+  const joins = () => ws.sent.filter((s) => typeof s === 'string' && JSON.parse(s).type === 'join').length
+  ws.json({ type: 'join_failed', room: 'notes/a', membership: latestMembership(ws), error })
+  expect(closes).toEqual([[4409, 'lineage_changed']])
+  vi.advanceTimersByTime(5000)
+  expect(joins()).toBe(1)
+  live.disconnect()
+  vi.useRealTimers()
+})
+
+test('any other conflict is not mistaken for a lineage change', () => {
+  vi.useFakeTimers()
+  const live = new LiveSocket(() => 'ws://test')
+  const room = live.room('notes/a')
+  const closes: Array<[number, string]> = []
+  room.onClose((code, reason) => closes.push([code, reason]))
+  room.connect()
+  const ws = Socket.instances[0]!
+  ws.json({ type: 'join_failed', room: 'notes/a', membership: latestMembership(ws), error: { code: 'conflict', details: { reason: 'something_else' } } })
+  expect(closes).toEqual([])
+  live.disconnect()
+  vi.useRealTimers()
+})

@@ -8,7 +8,7 @@
  *
  * A room is joined with `{"type":"join","room":"notes/<id>","membership":1,"lineage":…}`.
  * The server answers `joined` (with the room's lineage) before any frame,
- * or `join_failed`; `lineage_changed` means this device's copy is from an
+ * or `join_failed`; a `lineage_changed` refusal (the code itself, or `conflict` with `details.reason` `lineage_changed`) means this device's copy is from an
  * older lineage and must not be merged. `left` means the server dropped us
  * from the room; we join again and resync. Every join gets a fresh page-wide
  * membership nonce; JSON and binary packets from older joins are ignored.
@@ -283,8 +283,10 @@ class RoomTransport implements Transport {
         return
       case 'join_failed': {
         this.joining = false
-        const code = (msg.error as { code?: string } | undefined)?.code ?? ''
-        if (code === 'lineage_changed') return this.refused(CLOSE_LINEAGE, code)
+        const error = msg.error as { code?: string; details?: { reason?: string } } | undefined
+        const code = error?.code ?? ''
+        // Two shapes of the same refusal: the code itself (`lineage_changed`), or `conflict` with `details.reason` `lineage_changed` (docs/live-rooms.md, "Browser binding").
+        if (code === 'lineage_changed' || (code === 'conflict' && error?.details?.reason === 'lineage_changed')) return this.refused(CLOSE_LINEAGE, 'lineage_changed')
         this.errors.forEach((f) => f(code || 'join_failed'))
         if (FINAL.has(code)) return this.refused(CLOSE_REFUSED, code)
         // Anything else (a server hiccup) is worth another try.
