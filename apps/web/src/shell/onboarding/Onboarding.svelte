@@ -13,6 +13,7 @@
   let { who: whoProp = "owner", token = "", demo = false }: { who?: Who; token?: string; demo?: boolean } = $props();
   // svelte-ignore state_referenced_locally
   // A pretended run (fixtures) keeps its place in the tab's session storage, so it never leaves anything for the real onboarding to resume.
+  // svelte-ignore state_referenced_locally
   const store: Storage = demo ? sessionStorage : localStorage;
   // svelte-ignore state_referenced_locally
   const saved = load(store);
