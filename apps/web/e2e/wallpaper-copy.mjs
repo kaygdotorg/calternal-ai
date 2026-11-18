@@ -10,7 +10,7 @@ for (const [name, engine, manual] of [["webkit", webkit, false], ["chromium", ch
     const ctx = await b.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: dpr, isMobile: true, hasTouch: true, colorScheme: "dark" });
     await ctx.addInitScript((m) => { localStorage.setItem("cal.firstrun", "1"); if (m) globalThis.__noCanvasFilter = true; }, manual);
     let page; try { page = await ctx.newPage(); } catch (e) { console.log(`${name} ${dpr}x: ${String(e).split("\n")[0]}`); break; } await page.goto(`${BASE}/threads`); await page.waitForSelector("html[data-ready]"); await page.waitForTimeout(1500);
-    const info = await page.evaluate(async () => { const out = {}; for (const k of ["--wall-card", "--wall-side"]) { const u = getComputedStyle(document.documentElement).getPropertyValue(k).match(/url\("?([^")]+)/)?.[1]; if (!u) { out[k] = null; continue; } const img = new Image(); img.src = u; await img.decode(); const bytes = (await (await fetch(u)).blob()).size; out[k] = `${img.naturalWidth}x${img.naturalHeight} px, ${(bytes / 1024).toFixed(0)} KB`; } return out; });
+    const info = await page.evaluate(async () => { const out = { dpr: devicePixelRatio, iw: innerWidth }; for (const k of ["--wall-card", "--wall-side"]) { const u = getComputedStyle(document.documentElement).getPropertyValue(k).match(/url\("?([^")]+)/)?.[1]; if (!u) { out[k] = null; continue; } const img = new Image(); img.src = u; await img.decode(); const bytes = (await (await fetch(u)).blob()).size; out[k] = `${img.naturalWidth}x${img.naturalHeight} px, ${(bytes / 1024).toFixed(0)} KB`; } return out; });
     console.log(`${name} ${dpr}x: ${JSON.stringify(info)}`);
     await page.screenshot({ path: `${dir}/${name}-${dpr}x.png` });
     await ctx.close();
