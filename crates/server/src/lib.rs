@@ -32,3 +32,6 @@ mod provider_sign_in;
 mod requests;
 
 pub(crate) mod threads;
+
+/// Local release-coordinator commands and startup fencing.
+pub mod upgrades;

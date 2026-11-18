@@ -31,11 +31,7 @@ impl Inputs {
             .map_err(internal)?;
         c.execute_batch("PRAGMA synchronous=FULL; PRAGMA secure_delete=ON;")
             .map_err(internal)?;
-        calternal_store::migrations::migrate(
-            &c,
-            calternal_store::migrations::Schema::new("input.db", 2, &[SCHEMA], &[]),
-        )
-        .map_err(internal)?;
+        calternal_store::migrations::migrate(&c, UPGRADE_SCHEMA).map_err(internal)?;
         c.pragma_update(None, "journal_mode", "WAL")
             .map_err(internal)?;
         let read = || {
@@ -380,3 +376,6 @@ CREATE INDEX inputs_budget ON inputs(kind,payload_bytes);
 CREATE INDEX inputs_due ON inputs(kind,json_extract(body,'$.state'),json_extract(body,'$.created_at_ms'));
 CREATE TABLE events(seq INTEGER PRIMARY KEY AUTOINCREMENT,token TEXT NOT NULL UNIQUE);
 ";
+
+pub(crate) const UPGRADE_SCHEMA: calternal_store::migrations::Schema<'_> =
+    calternal_store::migrations::Schema::new("input.db", 2, &[SCHEMA], &[]);

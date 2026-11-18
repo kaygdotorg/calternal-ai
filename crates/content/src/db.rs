@@ -56,7 +56,7 @@ const SPACE_BASE: &str = "
             CREATE TABLE IF NOT EXISTS controls(key TEXT PRIMARY KEY,value TEXT NOT NULL) STRICT;
             CREATE UNIQUE INDEX IF NOT EXISTS standard_collections ON items(json_extract(metadata,'$.item_kind'),json_extract(metadata,'$.standard_key')) WHERE kind='collections' AND json_extract(metadata,'$.standard_key') IS NOT NULL;
 ";
-const SPACE_SCHEMA: calternal_store::migrations::Schema<'_> =
+pub(crate) const SPACE_SCHEMA: calternal_store::migrations::Schema<'_> =
     calternal_store::migrations::Schema::new(
         "space content.db",
         3,

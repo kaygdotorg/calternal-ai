@@ -145,16 +145,7 @@ fn open(appdata: &Path) -> Result<Connection, String> {
     }
     let db = Connection::open(path).map_err(reason)?;
     db.busy_timeout(Duration::from_secs(5)).map_err(reason)?;
-    calternal_store::migrations::migrate(
-        &db,
-        calternal_store::migrations::Schema::new(
-            "installed-plugins.sqlite3",
-            1,
-            &[PACKAGE_SCHEMA],
-            &[],
-        ),
-    )
-    .map_err(reason)?;
+    calternal_store::migrations::migrate(&db, UPGRADE_SCHEMA).map_err(reason)?;
     Ok(db)
 }
 
@@ -570,3 +561,11 @@ fn load_rows(
     }
     Ok(plugins)
 }
+
+pub(crate) const UPGRADE_SCHEMA: calternal_store::migrations::Schema<'_> =
+    calternal_store::migrations::Schema::new(
+        "installed-plugins.sqlite3",
+        1,
+        &[PACKAGE_SCHEMA],
+        &[],
+    );

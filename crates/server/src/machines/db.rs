@@ -80,10 +80,7 @@ pub fn open(path: &Path) -> rusqlite::Result<Connection> {
     c.busy_timeout(std::time::Duration::from_secs(5))?;
     c.pragma_update(None, "synchronous", "FULL")?;
     c.pragma_update(None, "foreign_keys", "ON")?;
-    calternal_store::migrations::migrate(
-        &c,
-        calternal_store::migrations::Schema::new("machines.db", 5, &[SCHEMA], &[]),
-    )?;
+    calternal_store::migrations::migrate(&c, UPGRADE_SCHEMA)?;
     c.pragma_update(None, "journal_mode", "WAL")?;
     Ok(c)
 }
@@ -318,3 +315,6 @@ pub(crate) fn last_thread_machine(
     let id:Option<String>=c.query_row("SELECT last_machine FROM leases WHERE account=?1 AND thread=?2 AND last_machine IS NOT NULL ORDER BY created_ms DESC LIMIT 1",params![account.to_string(),thread.to_string()],|r|r.get(0)).optional()?;
     Ok(id.and_then(|s| Uuid::parse_str(&s).ok()))
 }
+
+pub(crate) const UPGRADE_SCHEMA: calternal_store::migrations::Schema<'_> =
+    calternal_store::migrations::Schema::new("machines.db", 5, &[SCHEMA], &[]);

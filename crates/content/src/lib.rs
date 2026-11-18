@@ -114,11 +114,18 @@ pub fn format_rfc3339(instant: time::OffsetDateTime) -> String {
         ))
         .expect("timestamp format")
 }
-const ROUTE_SCHEMA: calternal_store::migrations::Schema<'_> =
+/// Descriptor for the installation-wide UUID edge catalogue, retained on upgrade.
+pub const ROUTE_SCHEMA: calternal_store::migrations::Schema<'_> =
     calternal_store::migrations::Schema::new("content-index.db", 1, &["CREATE TABLE IF NOT EXISTS items(id TEXT PRIMARY KEY,space TEXT NOT NULL,kind TEXT NOT NULL) STRICT;
             CREATE INDEX IF NOT EXISTS items_space ON items(space);
             CREATE TABLE IF NOT EXISTS account_items(id TEXT PRIMARY KEY,account TEXT NOT NULL,kind TEXT NOT NULL) STRICT;
             CREATE INDEX IF NOT EXISTS account_items_owner ON account_items(account);"], &[]);
+
+/// Descriptor for the authoritative per-space item and revision database.
+pub const SPACE_SCHEMA: calternal_store::migrations::Schema<'_> = db::SPACE_SCHEMA;
+
+/// Descriptor for protected account collections.
+pub const ACCOUNT_SCHEMA: calternal_store::migrations::Schema<'_> = collections::ACCOUNT_SCHEMA;
 
 impl Content {
     /// Retain the host's validated root locks during background placement. The

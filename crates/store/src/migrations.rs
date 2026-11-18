@@ -1,6 +1,10 @@
 //! Forward-only SQLite schema changes shared by the durable stores.
 
-use rusqlite::{Connection, Result, Transaction, TransactionBehavior, ffi};
+use rusqlite::{
+    Connection, OptionalExtension, Result, Transaction, TransactionBehavior, ffi, params,
+};
+
+const COMPATIBLE: &str = "_calternal_schema_compatibility";
 
 /// A store's first shipped schema and the consecutive changes after it.
 #[derive(Clone, Copy)]
@@ -41,14 +45,34 @@ impl<'a> Schema<'a> {
 /// database is rechecked under the write lock. Unknown versions and failing
 /// batches leave the schema and version unchanged. Run on the store's writer.
 pub fn migrate(conn: &Connection, schema: Schema<'_>) -> Result<()> {
-    let mut have = version(conn)?;
-    check(have, schema)?;
-    if have == schema.version() {
+    apply(conn, schema, false)
+}
+
+/// Apply the declared steps under the release coordinator's snapshot and locks.
+/// Additive approval is granted by the cross-release gate. It records the exact
+/// previous schema as readable by its writer, atomically with the migration.
+pub fn migrate_release(conn: &Connection, schema: Schema<'_>, additive: bool) -> Result<()> {
+    apply(conn, schema, additive)
+}
+
+/// Read the installed version and reject an unsupported source. One pragma on
+/// the normal path. Used before a deployment chooses files to snapshot.
+pub fn inspect(conn: &Connection, schema: Schema<'_>) -> Result<i64> {
+    let have = version(conn)?;
+    check(conn, have, schema)?;
+    Ok(have)
+}
+
+fn apply(conn: &Connection, schema: Schema<'_>, additive: bool) -> Result<()> {
+    if inspect(conn, schema)? >= schema.version() {
         return Ok(());
     }
     let tx = Transaction::new_unchecked(conn, TransactionBehavior::Immediate)?;
-    have = version(&tx)?;
-    check(have, schema)?;
+    let previous = inspect(&tx, schema)?;
+    if previous >= schema.version() {
+        return Ok(());
+    }
+    let mut have = previous;
     if have == 0 {
         for batch in schema.initial {
             tx.execute_batch(batch)?;
@@ -61,6 +85,17 @@ pub fn migrate(conn: &Connection, schema: Schema<'_>) -> Result<()> {
         have += 1;
         tx.pragma_update(None, "user_version", have)?;
     }
+    if additive && previous > 0 {
+        tx.execute_batch(&format!(
+            "CREATE TABLE IF NOT EXISTS {COMPATIBLE}(
+             singleton INTEGER PRIMARY KEY CHECK(singleton=1),
+             format TEXT NOT NULL, older INTEGER NOT NULL, newer INTEGER NOT NULL) STRICT;"
+        ))?;
+        tx.execute(
+            &format!("INSERT OR REPLACE INTO {COMPATIBLE} VALUES(1,?1,?2,?3)"),
+            params![schema.name, previous, have],
+        )?;
+    }
     tx.commit()
 }
 
@@ -68,17 +103,40 @@ fn version(conn: &Connection) -> Result<i64> {
     conn.pragma_query_value(None, "user_version", |row| row.get(0))
 }
 
-fn check(have: i64, schema: Schema<'_>) -> Result<()> {
-    if have != 0 && !(schema.baseline..=schema.version()).contains(&have) {
-        return Err(rusqlite::Error::SqliteFailure(
-            ffi::Error::new(ffi::SQLITE_MISMATCH),
-            Some(format!(
-                "{} schema version {have} is outside the supported range {}–{}",
-                schema.name,
-                schema.baseline,
-                schema.version(),
-            )),
-        ));
+fn check(conn: &Connection, have: i64, schema: Schema<'_>) -> Result<()> {
+    if have == 0 || (schema.baseline..=schema.version()).contains(&have) {
+        return Ok(());
     }
-    Ok(())
+    if have > schema.version() && compatible(conn, have, schema)? {
+        return Ok(());
+    }
+    Err(rusqlite::Error::SqliteFailure(
+        ffi::Error::new(ffi::SQLITE_MISMATCH),
+        Some(format!(
+            "{} schema version {have} is outside the supported range {}–{}",
+            schema.name,
+            schema.baseline,
+            schema.version(),
+        )),
+    ))
+}
+
+fn compatible(conn: &Connection, have: i64, schema: Schema<'_>) -> Result<bool> {
+    let has_table = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_schema WHERE name=?1 AND type='table')",
+        [COMPATIBLE],
+        |row| row.get::<_, bool>(0),
+    )?;
+    if !has_table {
+        return Ok(false);
+    }
+    conn.query_row(
+        &format!(
+            "SELECT 1 FROM {COMPATIBLE} WHERE singleton=1 AND format=?1 AND older=?2 AND newer=?3"
+        ),
+        params![schema.name, schema.version(), have],
+        |_| Ok(true),
+    )
+    .optional()
+    .map(|found| found.unwrap_or(false))
 }

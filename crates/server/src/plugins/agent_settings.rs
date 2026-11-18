@@ -33,7 +33,7 @@ impl Jobs {
         let c = rusqlite::Connection::open(file).map_err(db_err)?;
         c.pragma_update(None, "synchronous", "FULL")
             .map_err(db_err)?;
-        calternal_store::migrations::migrate(&c, calternal_store::migrations::Schema::new("agent-settings.db", 1, &["CREATE TABLE IF NOT EXISTS settings(id INTEGER PRIMARY KEY CHECK(id=1),provider_errors INTEGER NOT NULL,subscription_limits INTEGER NOT NULL) STRICT;"], &[])).map_err(db_err)?;
+        calternal_store::migrations::migrate(&c, UPGRADE_SCHEMA).map_err(db_err)?;
         if let Some(v) = value {
             c.execute("INSERT INTO settings VALUES(1,?1,?2) ON CONFLICT(id) DO UPDATE SET provider_errors=excluded.provider_errors,subscription_limits=excluded.subscription_limits",rusqlite::params![v.provider_errors,v.subscription_limits]).map_err(db_err)?;
         }
@@ -99,3 +99,13 @@ impl Jobs {
         self.tx(space,|tx|Ok(tx.execute("UPDATE jobs SET state='admitted' WHERE id=?1 AND state='retry_waiting' AND CAST(json_extract(checkpoint,'$.retry.next_attempt_ms') AS INTEGER)<=?2",rusqlite::params![id,now]).map_err(db_err)?==1))
     }
 }
+
+pub(crate) const UPGRADE_SCHEMA: calternal_store::migrations::Schema<'_> =
+    calternal_store::migrations::Schema::new(
+        "agent-settings.db",
+        1,
+        &[
+            "CREATE TABLE IF NOT EXISTS settings(id INTEGER PRIMARY KEY CHECK(id=1),provider_errors INTEGER NOT NULL,subscription_limits INTEGER NOT NULL) STRICT;",
+        ],
+        &[],
+    );

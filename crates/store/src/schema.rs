@@ -29,7 +29,7 @@ const SCHEMA: &str = "CREATE TABLE meta (
         at_ms        INTEGER NOT NULL
     ) STRICT;
     CREATE INDEX idempotency_at ON idempotency (at_ms);";
-const MIGRATIONS: crate::migrations::Schema<'_> =
+pub(crate) const MIGRATIONS: crate::migrations::Schema<'_> =
     crate::migrations::Schema::new("index.db", 2, &[SCHEMA], &[]);
 
 /// Validates the explicit space binding before exposing an opened journal.

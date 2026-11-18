@@ -22,6 +22,7 @@ pub mod enroll;
 pub mod identity;
 pub mod link;
 mod ownership;
+pub use ownership::{OwnerLock, lock_for_upgrade};
 pub mod protocol;
 pub mod runner;
 pub mod sandbox;

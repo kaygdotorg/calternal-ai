@@ -149,6 +149,9 @@ impl LocalStore {
     }
 }
 
+pub(crate) const OWNER_SCHEMA: calternal_store::migrations::Schema<'_> =
+    calternal_store::migrations::Schema::new("secrets.db", 1, &[SCHEMA], &[]);
+
 /// Open (creating with mode 0600 if needed) a database with FULL sync and
 /// overwrite-on-delete. Existing current databases need one schema version read.
 pub(crate) fn open_db(path: &Path) -> Result<Connection> {
@@ -158,11 +161,7 @@ pub(crate) fn open_db(path: &Path) -> Result<Connection> {
         .map_err(|_| Error::Internal)?;
     c.execute_batch("PRAGMA synchronous=FULL; PRAGMA secure_delete=ON;")
         .map_err(|_| Error::Internal)?;
-    calternal_store::migrations::migrate(
-        &c,
-        calternal_store::migrations::Schema::new("secrets.db", 1, &[SCHEMA], &[]),
-    )
-    .map_err(|_| Error::Internal)?;
+    calternal_store::migrations::migrate(&c, OWNER_SCHEMA).map_err(|_| Error::Internal)?;
     c.pragma_update(None, "journal_mode", "WAL")
         .map_err(|_| Error::Internal)?;
     Ok(c)

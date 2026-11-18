@@ -372,16 +372,7 @@ impl Jobs {
         c.pragma_update(None, "synchronous", "FULL")
             .map_err(db_err)?;
         c.busy_timeout(Duration::from_secs(5)).map_err(db_err)?;
-        calternal_store::migrations::migrate(
-            &c,
-            calternal_store::migrations::Schema::new(
-                "jobs.db",
-                2,
-                &[SCHEMA, crate::threads::turn_events::schema()],
-                &[],
-            ),
-        )
-        .map_err(db_err)?;
+        calternal_store::migrations::migrate(&c, upgrade_schema()).map_err(db_err)?;
         c.pragma_update(None, "journal_mode", "WAL")
             .map_err(db_err)?;
         retain(&c)?;
@@ -568,4 +559,14 @@ impl Jobs {
         })?;
         Ok(checkpoints)
     }
+}
+
+pub(crate) fn upgrade_schema() -> calternal_store::migrations::Schema<'static> {
+    static BATCHES: std::sync::OnceLock<[&'static str; 2]> = std::sync::OnceLock::new();
+    calternal_store::migrations::Schema::new(
+        "jobs.db",
+        2,
+        BATCHES.get_or_init(|| [SCHEMA, crate::threads::turn_events::schema()]),
+        &[],
+    )
 }

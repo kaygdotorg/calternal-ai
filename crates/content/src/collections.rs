@@ -10,7 +10,7 @@ use rusqlite::{OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-const ACCOUNT_SCHEMA: calternal_store::migrations::Schema<'_> =
+pub(crate) const ACCOUNT_SCHEMA: calternal_store::migrations::Schema<'_> =
     calternal_store::migrations::Schema::new(
         "account content.db",
         1,

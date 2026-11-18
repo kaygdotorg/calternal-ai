@@ -48,3 +48,31 @@ fn refuses_a_newer_database_without_creating_tables() {
     assert_eq!(version(&db), 9);
     assert!(db.prepare("SELECT * FROM records").is_err());
 }
+
+#[test]
+fn an_explicitly_compatible_upgrade_admits_the_previous_schema_writer() {
+    use calternal_store::migrations::migrate_release;
+    let db = Connection::open_in_memory().unwrap();
+    let old = Schema::new("test", 4, BASE, &[]);
+    migrate(&db, old).unwrap();
+    let steps = &[ADD];
+    migrate_release(&db, Schema::new("test", 4, BASE, steps), true).unwrap();
+    migrate(&db, old).unwrap();
+    db.execute(
+        "INSERT INTO records (id,text) VALUES (2,'from older writer')",
+        [],
+    )
+    .unwrap();
+    assert_eq!(version(&db), 5);
+}
+
+#[test]
+fn incompatible_release_leaves_no_exception_for_an_older_writer() {
+    use calternal_store::migrations::migrate_release;
+    let db = Connection::open_in_memory().unwrap();
+    let old = Schema::new("test", 4, BASE, &[]);
+    migrate(&db, old).unwrap();
+    let steps = &[ADD];
+    migrate_release(&db, Schema::new("test", 4, BASE, steps), false).unwrap();
+    assert!(migrate(&db, old).is_err());
+}
