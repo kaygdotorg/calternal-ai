@@ -188,7 +188,8 @@
   /* The header and the composer float over the list; the list fades out under them (VirtualList), so there is no opaque band at the top of the card. */
   header { position: absolute; z-index: 3; top: var(--safe-top); left: 0; right: 0; height: var(--bar-h); display: flex; align-items: center; gap: var(--s-3); padding: 0 var(--pad-region) 0 calc(var(--pad-region) + var(--edge-l, 0px)); pointer-events: none; } /* --edge-l: room for the shell's button that shows the sidebar again (shell/Shell.svelte) */
   header > :global(*) { pointer-events: auto; }
-  .grow { flex: 1; pointer-events: none; }
+  /* --edge-r: room for the shell's side-panel button, which sits beside the actions pill on a phone (shell/Shell.svelte); the title shrinks to leave it. */
+  .grow { flex: 1; min-width: var(--edge-r, 0px); pointer-events: none; }
   .blank { position: absolute; inset: 0; display: grid; align-content: center; justify-items: start; gap: var(--s-4); max-width: 30rem; margin: 0 auto; padding: 0 var(--pad-region); }
   .blank h2 { font-size: var(--text-heading); font-weight: var(--strong-weight); }
   .blank p { color: var(--ink-2); font-size: var(--text-ui); }
