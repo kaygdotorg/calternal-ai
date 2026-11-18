@@ -73,6 +73,20 @@ try {
     await p.waitForTimeout(500);
     ok(await p.getByRole("button", { name: /Shared by Maya Okafor/ }).count() === 1 && await p.getByRole("button", { name: "Share", exact: true }).count() === 0, "on a note shared with me the owner's avatar sits where Share is");
     await shot(p, "desktop-note-shared-with-me"); await ctx.close(); }
+  // Multi-select: pick several notes, Share makes a collection and opens its sheet; one picked note shares as itself.
+  for (const device of ["desktop", "phone"]) {
+    const { page: p, ctx } = await open(browser, device, "light", "/notes/n-1?firstrun=0");
+    if (device === "phone") { await p.getByRole("button", { name: /Show notes/ }).first().click(); await p.waitForTimeout(600); }
+    await p.getByRole("button", { name: "Actions for Storage layout" }).click();
+    await p.getByRole("menuitem", { name: "Select" }).click();
+    await p.getByRole("toolbar", { name: "Selected notes" }).waitFor();
+    await p.locator("[data-select-id]", { hasText: "Invite flow" }).click();
+    ok(/2 selected/.test(await p.getByRole("status").filter({ hasText: "selected" }).textContent()), `${device}: a click picks a note while selecting, and the count says so`);
+    await shot(p, `${device}-selecting`);
+    await p.getByRole("toolbar", { name: "Selected notes" }).getByRole("button", { name: "Share" }).click(); await sheet(p).waitFor();
+    ok(/Storage layout and 1 more/.test(await sheet(p).locator("h2").textContent()), `${device}: Share makes a collection of the picked notes and opens its sheet`);
+    await p.keyboard.press("Escape"); await ctx.close();
+  }
   // Access ended while writing: the edits are kept and the person is told in one line where they went.
   { const { page: p, ctx } = await open(browser, "desktop", "light", "/notes/n-2?firstrun=0&revoked=1");
     await p.locator(".cm-content").click(); await p.keyboard.press("End"); await p.keyboard.type("\n\nA new paragraph of mine."); 
