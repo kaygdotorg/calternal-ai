@@ -20,7 +20,8 @@
   const measure = () => { if (track && thumb) travel = track.offsetWidth - thumb.offsetWidth - 2 * thumb.offsetLeft; return travel; };
   const paint = () => {
     if (!thumb) return;
-    const s = 1 + Math.min(MAX_STRETCH, Math.abs(flow.value) / STRETCH_SPEED) * STRETCH;
+    // The speed is taken as if the travel were the original's 38 px (our knob travels about a third of that), so the squish is as visible on a small switch.
+    const s = 1 + Math.min(MAX_STRETCH, (Math.abs(flow.value) * (38 / Math.max(8, travel))) / STRETCH_SPEED) * STRETCH;
     thumb.style.transform = `translateX(${x.value}px) scale(${s}, ${1 / s})`;
   };
   const rest = () => { cancelAnimationFrame(raf); raf = 0; if (thumb) thumb.style.transform = ""; };
