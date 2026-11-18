@@ -151,10 +151,7 @@ fn forwarding_stops_at_first_untrusted_hop_and_rejects_malformed_chains() {
     let app = app();
     let mut config = calternal_auth::AuthConfig::new(ORIGIN).unwrap();
     config.set_trusted_proxies("127.0.0.0/8, ::1/128").unwrap();
-    let service = HttpAuth {
-        auth: app.auth.clone(),
-        config,
-    };
+    let service = HttpAuth::new(app.auth.clone(), config);
     let request = |peer: &str, xff: &str| {
         Request::builder()
             .extension(ConnectInfo(peer.parse::<std::net::SocketAddr>().unwrap()))
@@ -252,4 +249,129 @@ async fn stale_account_proof_requires_reverification_before_adding_a_passkey() {
     )
     .await;
     assert_eq!(fresh.status, 200, "{}", fresh.body);
+}
+
+#[tokio::test]
+async fn only_the_oidc_callback_accepts_cross_site_navigation() {
+    let app = app_with(|config| config.oidc_enabled = true);
+    let callback = send(
+        &app,
+        "POST",
+        "/api/v1/auth/oidc/callback",
+        &[
+            ("origin", "https://appleid.apple.com"),
+            ("sec-fetch-site", "cross-site"),
+            ("content-type", "application/x-www-form-urlencoded"),
+        ],
+        Body::from("state=unknown&code=unused"),
+    )
+    .await;
+    assert_eq!(callback.status, 401);
+    assert_eq!(callback.code(), "provider_failed");
+
+    let ordinary = send(
+        &app,
+        "POST",
+        "/api/v1/auth/oidc/start",
+        &[
+            ("origin", "https://appleid.apple.com"),
+            ("sec-fetch-site", "cross-site"),
+        ],
+        Body::from("{}"),
+    )
+    .await;
+    assert_eq!(ordinary.status, 403);
+}
+
+#[tokio::test]
+async fn the_baseline_has_no_oidc_transport() {
+    let app = app();
+    assert_eq!(
+        get(&app, "/api/v1/auth/oidc/providers", None).await.status,
+        404
+    );
+}
+
+#[tokio::test]
+async fn no_mail_first_owner_can_enroll_and_later_receives_the_email_prompt() {
+    let app = app();
+    let status = get(&app, "/api/v1/auth/status", None).await;
+    assert_eq!(status.body["email_required"], false);
+    assert_eq!(status.body["mail_available"], false);
+    let token = app.auth.first_owner_token().await.unwrap().unwrap();
+    let start = post(
+        &app,
+        "/api/v1/auth/setup/start",
+        None,
+        json!({"token":token,"name":"Fixture Owner","username":"Fixture-Owner"}),
+    )
+    .await;
+    assert_eq!(start.status, 200, "{}", start.body);
+    let mut first = Device::new();
+    let registration = first.create(&start);
+    let enrolled = post(
+        &app,
+        "/api/v1/auth/setup/finish",
+        None,
+        json!({"ceremony":start.body["ceremony"],"credential":registration}),
+    )
+    .await;
+    assert_eq!(enrolled.status, 200, "{}", enrolled.body);
+    let user = enrolled.body["user"]["id"].clone();
+    let codes = enrolled.body["recovery_codes"].as_array().unwrap();
+    assert_eq!(codes.len(), 10);
+    assert!(codes.iter().all(|code| code.as_str().unwrap().len() == 32));
+    assert_eq!(enrolled.body["second_passkey_prompt"], true);
+    let cookie = enrolled.session();
+    let profile = get(&app, "/api/v1/auth/me", Some(&cookie)).await;
+    assert_eq!(profile.body["email_status"], "missing");
+    assert_eq!(profile.body["mail_available"], false);
+    assert_eq!(profile.body["email_setup_required"], false);
+    assert_eq!(profile.body["user"]["name"], "Fixture Owner");
+    assert_eq!(profile.body["user"]["username"], "fixture-owner");
+
+    let add = post(
+        &app,
+        "/api/v1/auth/passkeys/add/start",
+        Some(&cookie),
+        json!({}),
+    )
+    .await;
+    let mut second = Device::new();
+    let credential = second.create(&add);
+    let finished = post(
+        &app,
+        "/api/v1/auth/passkeys/add/finish",
+        Some(&cookie),
+        json!({"ceremony":add.body["ceremony"],"credential":credential,"name":"Phone"}),
+    )
+    .await;
+    assert_eq!(finished.status, 200, "{}", finished.body);
+    let profile = get(&app, "/api/v1/auth/me", Some(&cookie)).await;
+    assert_eq!(profile.body["second_passkey_prompt"], false);
+
+    let path = app.dir.path().join("appdata/system/auth.db");
+    let schema = || {
+        rusqlite::Connection::open(&path)
+            .unwrap()
+            .pragma_query_value(None, "user_version", |row| row.get::<_, i64>(0))
+            .unwrap()
+    };
+    let before = schema();
+    let App {
+        dir,
+        auth,
+        router,
+        state,
+    } = app;
+    drop((auth, router, state));
+    let app = app_in(dir, |config| config.email_required = true);
+    let later = login(&app, &mut first).await;
+    assert_eq!(later.status, 200, "{}", later.body);
+    assert_eq!(later.body["user"]["id"], user);
+    assert_eq!(later.body["email_setup_required"], true);
+    assert!(later.body["recovery_codes"].is_null());
+    let later_profile = get(&app, "/api/v1/auth/me", Some(&later.session())).await;
+    assert_eq!(later_profile.body["email_setup_required"], true);
+    assert_eq!(schema(), before);
 }

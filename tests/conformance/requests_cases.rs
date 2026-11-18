@@ -456,9 +456,7 @@ async fn request_operations_keep_questions_approvals_and_secrets_account_private
         mode.body["error"]["code"],
         "passkey_reverification_required"
     );
-    let login = f.login(1).await;
-    login.ok();
-    f.cookies[1] = login.cookie();
+    erasure_cases::reverify(&mut f, 1).await;
     f.op(
         1,
         "requests.approve",

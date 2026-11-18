@@ -27,6 +27,8 @@
   let list = $state<ReturnType<typeof VirtualList>>();
   let listEl = $state<HTMLElement>();
   let bottomEl = $state<HTMLElement>();
+  /** An element's height in its own layout pixels: a canvas window may sit under a scaling transform, which `getBoundingClientRect` would apply (the list's inset would then be short by the scale). */
+  const layoutH = (el: HTMLElement) => { const r = el.getBoundingClientRect(); const k = el.offsetWidth ? r.width / el.offsetWidth : 1; return Math.ceil(r.height / (k || 1) - 0.01); };
   let bottomH = $state(160);
   let barH = $state(52);
   // The list's bottom inset follows the height of what floats under it (the composer, with its notices and the request bar), as measured: that is where the last message ends. A list that was at the bottom
@@ -55,10 +57,10 @@
         const sz = f.querySelector(".sizer"); if (morph && sz && Math.abs(d) > 1) slide(sz, d, morph.ms, morph.easing);
       });
     };
-    const ro = new ResizeObserver(() => settle(Math.ceil(el.getBoundingClientRect().height)));
+    const ro = new ResizeObserver(() => settle(layoutH(el)));
     const onfold = (e: Event) => {
       const d = (e as CustomEvent<{ animate: boolean; ms: number; easing: string }>).detail;
-      const h = Math.ceil(el.getBoundingClientRect().height);
+      const h = layoutH(el);
       const moved = h - bottomH;
       // What sits above the composer (the request bar, the notices) moves by the same amount in the one layout; it is played from where it was, so a press that began on it still lands on it.
       if (d.animate && Math.abs(moved) > 1) for (const n of el.querySelectorAll<HTMLElement>(".inner > :not(.composer)")) slide(n, moved, d.ms, d.easing);

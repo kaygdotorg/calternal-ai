@@ -1,8 +1,6 @@
 # Data-preserving upgrades
 
-Calternal-AI's first production baseline is the exact commit and image digest
-that passes the release-to-release gate. The schema numbers and generations
-below are that first production baseline. Preview data predates it and is
+The current production baseline was reinstalled from commit `c98705d7` and image `c98705d74bcf`. The retained migration descriptors still recognize the first supported versions listed below. Preview data predates it and is
 refused rather than migrated.
 
 ## Durable inventory
@@ -12,9 +10,9 @@ database until checkpointed. SQLite SHM, locks and sockets are runtime state.
 
 | Root and relative paths | Class | Writer and baseline marker |
 | --- | --- | --- |
-| Appdata `system/auth.db` | Authority | Auth, SQLite 11. Accounts, passkeys, sessions, roles, memberships, invites, approvals, machine identity and grants, erasures, key fingerprints and protected receipts. |
+| Appdata `system/auth.db` | Authority | Auth, SQLite 14 on the current baseline. Steps 12 and 13 add accounts changes, and step 14 adds dormant sharing grants. Accounts, passkeys, sessions, roles, memberships, invites, approvals, machine identity and grants, erasures, key fingerprints and protected receipts. |
 | Appdata `system/machines.db` | Authority | Machine placement, SQLite 6. Leases, fences, drain, work locations, discard and erase delivery, and the durable stop record that keeps an erased worker's machine slot reserved until its stop completes. Version 7 records private title leases. Version 8 adds manual compute limits, explicit space-to-group resource bindings, and a charging scope for newly admitted leases. Version 9 holds fenced guest clock intervals and terminal evidence. Version 10 records operator grants for installed admission hooks and a bounded cumulative observation feed. Version 11 stores one storage allocation per accounting group. |
-| Appdata `spaces/<id>/content.db` | Mixed | Content, SQLite 3. Item identity, revisions, pending placement, trash and tombstones, kinds, plugin controls. Listing, labels and links are derived. Version 4 adds snooze validation. Version 5 adds per-kind and combined ceilings and current-body byte totals. The migration backfills committed heads and revision and purge transactions maintain the totals. Version 6 adds bounded package-private state and receipts. |
+| Appdata `spaces/<id>/content.db` | Mixed | Content, SQLite 3. Item identity, revisions, pending placement, trash and tombstones, kinds, plugin controls. Listing, labels and links are derived. Version 4 adds snooze validation. Version 5 adds collection membership. Version 6 adds per-kind and combined ceilings and current-body byte totals. The migration backfills committed heads and revision and purge transactions maintain the totals. Version 7 adds bounded package-private state and receipts. |
 | Appdata `spaces/<id>/index.db`, `secrets/spaces/<id>/head` | Authority | Space journal, SQLite 2 and binary CHW2. Journal, epoch, receipts and independent head witness. Receipts are pruned after the operator's retention (7 days by default) only on content's command, with every receipt of a surviving outbox intent pinned. The fence adds no stored state. |
 | Appdata `spaces/<id>/jobs.db` | Authority | Jobs, SQLite 2. Admission, retry and in-flight state, checkpoints, event outbox and retention. |
 | Appdata `accounts/<id>/input.db`, `content.db`, `agent-settings.db` | Authority | Account input, content and jobs. SQLite 2 for drafts and pending input, 1 for protected collections and 1 for retry settings. |
@@ -151,3 +149,23 @@ full deployment budget.
 During a reconnect, the client retains queued sends and delivers them after
 the server is reachable again. Requests that already received a durable
 receipt replay using the same request ID.
+
+## Account onboarding and recovery
+
+Auth schema 12 adds account-owned email state, challenges, recovery
+proofs and grants, and audit history through the shared runner. Account
+erasure cascades to these rows. The protected recovery inventory captures
+the new tables under their account UUIDs. Invite-bound email challenges
+without an account expire after ten minutes and are owned by the
+installation until consumed or pruned. Preserve `system/invite.key`,
+which also provides separate derived keys for account proofs and sealed
+provider credentials. Auth schema 13 adds provider definitions with
+sealed credentials, issuer-bound identity links and session origins.
+Definitions belong to the installation. Links and session origins belong
+to the account.
+
+This upgrade is incompatible with the schema-11 protected recovery
+writer because its table inventory is closed. Take the full restore
+point with explicit owner approval and use the locked deployment
+coordinator. A v11 process must refuse the newer authority rather than
+discard unknown records.
