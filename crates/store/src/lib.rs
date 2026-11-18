@@ -20,7 +20,10 @@ mod read;
 mod restore;
 mod schema;
 mod shared;
-#[cfg(all(feature = "test-timings", debug_assertions))]
+#[cfg(any(
+    feature = "perf-timings",
+    all(feature = "test-timings", debug_assertions)
+))]
 pub mod timings;
 mod token;
 mod writer;

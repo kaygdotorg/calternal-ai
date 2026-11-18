@@ -62,6 +62,9 @@ struct Args {
     startup_only: bool,
     #[arg(long)]
     jobs_only: bool,
+    /// Require release timestamps and gate durable-commit-to-SSE delivery alone.
+    #[arg(long, conflicts_with = "paired_search")]
+    commit_timing_only: bool,
     /// Measure protected directory reads/writes with closed-loop client waves.
     #[arg(long)]
     concurrency_only: bool,
@@ -127,6 +130,7 @@ fn run(a: &Args) -> Result<i32> {
         a.idle_only,
         a.fsync_probe,
         a.startup_only,
+        a.commit_timing_only,
         a.concurrency_only,
         a.search_only,
         a.search_queue,
@@ -138,7 +142,7 @@ fn run(a: &Args) -> Result<i32> {
         > 1
     {
         return Err(
-            "choose one measurement mode: --prepare-only, --jobs-only, --idle-only, --fsync-probe, --startup-only, --concurrency-only, --search-only or --rebuild-only".into(),
+            "choose one measurement mode: --prepare-only, --jobs-only, --idle-only, --fsync-probe, --startup-only, --commit-timing-only, --concurrency-only, --search-only or --rebuild-only".into(),
         );
     }
     if a.startup_timeout_seconds == 0 || a.startup_timeout_seconds > 300 {
@@ -182,6 +186,15 @@ fn run(a: &Args) -> Result<i32> {
         serde_json::to_vec_pretty(&run_info)?,
     )?;
     let budgets: stats::Budgets = serde_json::from_slice(&std::fs::read(&a.budgets)?)?;
+    if a.commit_timing_only
+        && !budgets.entries.iter().any(|entry| {
+            entry.metric == timings::COMMIT_TO_CLIENT
+                && matches!(entry.percentile, stats::Percentile::P95)
+                && entry.budget.is_some()
+        })
+    {
+        return Err("commit timing requires a p95 budget in the catalog".into());
+    }
     let sizes: Vec<usize> = a
         .sizes
         .split(',')
@@ -194,6 +207,7 @@ fn run(a: &Args) -> Result<i32> {
     let mut all = Vec::new();
     let mut failures = Vec::new();
     let mut reproduced = false;
+    let mut commit_breach = false;
     let mut pooled: BTreeMap<String, Vec<f64>> = BTreeMap::new();
     let mut cases: Vec<(usize, usize)> = sizes.into_iter().map(|n| (n, 1)).collect();
     for n in a.spaces.split(',') {
@@ -273,6 +287,7 @@ fn run(a: &Args) -> Result<i32> {
                     },
                     &root,
                     &fixture,
+                    a.commit_timing_only && arm == "head",
                 ) {
                     Ok(samples) => samples,
                     Err(error) => {
@@ -307,6 +322,7 @@ fn run(a: &Args) -> Result<i32> {
                         .or_default()
                         .push(s.p50);
                     if arm == "head" && s.breached {
+                        commit_breach |= s.metric == timings::COMMIT_TO_CLIENT;
                         *breaches.entry(s.metric.clone()).or_default() += 1;
                     }
                 }
@@ -340,14 +356,25 @@ fn run(a: &Args) -> Result<i32> {
             (k, pct)
         })
         .collect();
-    let report = json!({"commit":a.commit,"baseline_commit":a.baseline_commit,"plugins":a.plugins,"baseline_plugins":a.baseline_plugins.as_ref().unwrap_or(&a.plugins),"binary_sha256":hashes,"machine":machine,"noise_pct":noise,"qualification":"incomplete: admission, commit timestamp and three-host-call worker; see separate job and idle suites","seed":a.seed,"operation_concurrency":1,"subscriptions":2,"cache":"cold pairs drop OS caches; warm pairs retain OS caches","warm_pairs":a.pairs,"cold_pairs":a.cold_pairs,"reproduced_breach":reproduced,"runs":all,"failures":failures});
+    let qualification = if a.commit_timing_only {
+        "release durable commit to client receipt"
+    } else {
+        "incomplete: see separate release commit timing, job and idle suites"
+    };
+    let report = json!({"commit":a.commit,"baseline_commit":a.baseline_commit,"plugins":a.plugins,"baseline_plugins":a.baseline_plugins.as_ref().unwrap_or(&a.plugins),"binary_sha256":hashes,"machine":machine,"noise_pct":noise,"qualification":qualification,"hard_commit_breach":commit_breach,"seed":a.seed,"operation_concurrency":1,"subscriptions":2,"cache":"cold pairs drop OS caches; warm pairs retain OS caches","warm_pairs":a.pairs,"cold_pairs":a.cold_pairs,"reproduced_breach":reproduced,"runs":all,"failures":failures});
     std::fs::write(
         a.work.join("summary.json"),
         serde_json::to_vec_pretty(&report)?,
     )?;
     report::print(a, &report, &a.work.join("summary.json"));
-    // Missing mandatory scenarios cannot produce a green coordinator gate.
-    Ok(if reproduced { 1 } else { 2 })
+    Ok(if commit_breach || (!a.commit_timing_only && reproduced) {
+        1
+    } else if !a.commit_timing_only || !failures.is_empty() {
+        // A plain matrix is only one part of the backend performance gate.
+        2
+    } else {
+        0
+    })
 }
 fn scenario(
     a: &Args,
@@ -355,6 +382,7 @@ fn scenario(
     plugins: &std::path::Path,
     root: &std::path::Path,
     fixture: &fixtures::Fixture,
+    require_commit_timings: bool,
 ) -> Result<BTreeMap<String, Vec<f64>>> {
     let (server, mut h, start) = server::Server::start(
         bin,
@@ -421,22 +449,22 @@ fn scenario(
         let rid = format!("timed-save-{i}");
         let delivery = std::time::Instant::now();
         // Read the subscription concurrently: HTTP acknowledgement may follow delivery.
-        let (updated, ms, event, delivery_ms, received_at_ms) =
+        let (updated, ms, event, delivery_ms, received_at_ns) =
             std::thread::scope(|scope| -> Result<_> {
                 let write = scope.spawn(|| {
                     h.op_id("notes.update", input.clone(), &rid)
                         .map_err(|e| e.to_string())
                 });
                 let event = live.wait_type("entry")?;
-                let received_at_ms = calternal_types::now_ms();
+                let received_at_ns = calternal_types::perf_monotonic_ns();
                 let elapsed = delivery.elapsed().as_secs_f64() * 1000.;
                 let (updated, ms) = write
                     .join()
                     .map_err(|_| "write thread panicked")?
                     .map_err(|e| format!("update failed: {e}"))?;
-                Ok((updated, ms, event, elapsed, received_at_ms))
+                Ok((updated, ms, event, elapsed, received_at_ns))
             })?;
-        deliveries.insert(rid.clone(), received_at_ms);
+        deliveries.insert(rid.clone(), received_at_ns);
         samples.entry("notes.update".into()).or_default().push(ms);
         if event["entry"]["item"] != first["id"] || event["entry"]["request_id"] != rid {
             return Err("live event did not correlate with request and note".into());
@@ -461,6 +489,16 @@ fn scenario(
             .or_default()
             .push(ms);
     }
+    timings::collect(
+        &root.join("server.log"),
+        &deliveries,
+        &mut samples,
+        require_commit_timings,
+    )?;
+    if a.commit_timing_only {
+        samples.retain(|metric, _| metric == timings::COMMIT_TO_CLIENT);
+        return Ok(samples);
+    }
     for i in 0..a.samples {
         let t = std::time::Instant::now();
         let (_, save_ack_ms) = h.op(
@@ -480,7 +518,6 @@ fn scenario(
     if a.paired_search {
         search_stage::lag(&mut h, &placement, &space, &mut first, &mut samples)?;
     }
-    timings::collect(&root.join("server.log"), &deliveries, &mut samples)?;
     drop(live);
     drop(account);
     for space in &fixture.spaces {

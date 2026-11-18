@@ -44,16 +44,16 @@ currently capped at 100 rows without pagination; its inherited page budget expos
 the responses have equivalent sizes. Session check is `/api/v1/auth/me`; address
 resolution is the `resolve` operation, not a fabricated static route.
 
-Debug-only admission, receipt-lookup and post-commit/SSE stage observations are
-available as described below. Plain releases exclude those hooks, so the default
-incomplete-backend qualification label remains; debug observations do not certify
-release stage latency. A three-host-call worker is still missing. See
-`docs/performance.md` and the issue #31 follow-up report for measured coverage.
-The harness cannot certify the whole backend merge gate.
+The coordinator runs ordinary latency on the plain release and the durable
+commit-to-client gate on a separate `perf-timings` release. Admission and
+receipt lookup remain debug diagnostics. The exact three-host-call worker is
+still missing, so the coordinator cannot certify the whole backend gate.
 
-Exit 1 means a reproduced numeric breach. Exit 2 means an error or incomplete
-mandatory coverage; neither is green. A summary is written before either numeric
-breach or incomplete coverage is returned.
+Exit 1 records a reproduced baseline-budget breach or any release delivery arm
+over 10 ms p95. Exit 2 records errors or incomplete mandatory coverage. A
+completed focused delivery gate exits 0 when all tested head arms meet its
+ceiling. A summary is written before a numeric breach or incomplete coverage is
+returned from a completed matrix.
 
 The gate also runs `--idle-only`: three independent servers per fixture size
 (1, 100, 1,000 spaces, each with 100 notes) wait concurrently for 632 seconds
@@ -117,16 +117,27 @@ and once with the new binary, each in a fresh work directory. It records success
 The diagnostic takes four seconds and never contributes latency acceptance data.
 It needs the same `sudo -n` profiling permissions as `profile.sh`.
 
-A debug server built with `--features test-plugins` emits small `CALTERNAL_STAGE`
-JSON lines for capability admission, receipt lookup and a post-durable-commit
-marker before journal broadcast. The driver correlates that marker by request ID
-with SSE receipt. These hooks are absent from **all release builds**, even when
-`test-plugins` is enabled; they allocate nothing and read no clock in release.
-Admission includes item resolution/capability lookup but excludes HTTP sign-in
-and later agent scope review. Lookup includes its per-space lock and pending
-outbox check; cold recovery is visible rather than subtracted. Commit/delivery
-uses the shared millisecond clock, so its precision is 1 ms. These instrumented
-debug observations stay separate from plain-release latency qualification.
+A debug `test-plugins` server emits `CALTERNAL_STAGE` markers for capability
+admission, receipt lookup and journal commit. Admission covers resolution and
+capabilities and excludes HTTP sign-in and later agent scope review. Receipt
+lookup includes its per-space lock and pending outbox check.
+
+Build the instrumented release with `cargo build --release -p calternal-server
+--features perf-timings`. Run `calternal-perf --commit-timing-only` with that
+binary as `--bin` and a plain release as `--baseline`. The driver requires one
+release commit marker per matching head-arm SSE entry, keyed by request ID.
+The marker is sampled immediately after the FULL journal transaction commits.
+The server and client share a nanosecond monotonic clock on the perf VM. The
+client timestamps the decoded event as soon as the subscribed connection
+receives it. The instrumented writer reads the clock once per durable commit
+and emits one diagnostic line per request-bearing entry after broadcasting.
+The build excludes this work entirely when `perf-timings` is off in release.
+
+The delivery p95 ceiling is 10 ms on every head arm. The separate
+`live.update_to_client` round trip starts before the HTTP save on the writing
+client and ends at the subscribed client. Its p95 limit is 50 ms, the 40 ms
+save ceiling plus the 10 ms delivery ceiling. The plain matrix measures that
+round trip directly.
 
 `--startup-only` uses the same seeded fixtures, alternating binaries, cache-drop
 conditioning, first-use writer evidence and first-list timing, then stops the
