@@ -2,6 +2,8 @@
 //! come from the existing app's netguard (ADR 0071).
 
 mod deny;
+mod fetch;
+pub(crate) use fetch::{checked_url, get_with_redirects, read_bounded};
 
 use reqwest::dns::{Name, Resolve, Resolving};
 use std::{io, sync::Arc, time::Duration};
@@ -10,27 +12,42 @@ use std::{io, sync::Arc, time::Duration};
 /// DNS answers are rejected as a set if any address is disallowed. Reqwest
 /// connects to the checked addresses and retains the host name for TLS.
 pub(crate) fn client(hosts: &'static [&'static str]) -> Result<reqwest::Client, reqwest::Error> {
-    reqwest::Client::builder()
+    client_for(Some(hosts), Duration::from_secs(12))
+}
+
+/// Build a DNS-checked direct HTTPS transport. With no fixed host list, use
+/// the public-host policy at dial time and pair it with per-hop authorization
+/// in `get_with_redirects`. Anonymous public fetches open a fresh checked
+/// HTTP/1 connection for each hop. Cost: one process-local transport build.
+/// Intended for the plugin network broker in Forgejo #58 and fixed-host adapters.
+pub(crate) fn client_for(
+    hosts: Option<&'static [&'static str]>,
+    timeout: Duration,
+) -> Result<reqwest::Client, reqwest::Error> {
+    let mut builder = reqwest::Client::builder()
         .https_only(true)
         .no_proxy()
         .redirect(reqwest::redirect::Policy::none())
         .retry(reqwest::retry::never())
         .dns_resolver(Arc::new(PublicDns { hosts }))
         .connect_timeout(Duration::from_secs(5))
-        .timeout(Duration::from_secs(12))
-        .user_agent("calternal")
-        .build()
+        .timeout(timeout)
+        .user_agent("calternal");
+    if hosts.is_none() {
+        builder = builder.http1_only().pool_max_idle_per_host(0);
+    }
+    builder.build()
 }
 
 struct PublicDns {
-    hosts: &'static [&'static str],
+    hosts: Option<&'static [&'static str]>,
 }
 
 impl Resolve for PublicDns {
     fn resolve(&self, name: Name) -> Resolving {
         let hosts = self.hosts;
         Box::pin(async move {
-            if !hosts.contains(&name.as_str()) {
+            if hosts.is_some_and(|hosts| !hosts.contains(&name.as_str())) {
                 return Err(refused().into());
             }
             // A trailing dot makes the OS query the exact DNS name without

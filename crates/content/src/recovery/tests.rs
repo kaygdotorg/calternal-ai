@@ -112,6 +112,51 @@ fn a_forward_boot_clock_jump_keeps_the_pending_checkpoint_reply() {
 }
 
 #[test]
+fn receipt_status_observes_dormant_outbox_without_recovering_it() {
+    let f = Fixture::new();
+    let content = f.open(|_| {});
+    assert_eq!(content.receipt_pruning_issue(f.space).unwrap(), None);
+    content
+        .with_space(f.space, |space| {
+            space
+                .conn
+                .execute_batch(
+                    "CREATE TRIGGER stop_retirement BEFORE DELETE ON outbox
+                     BEGIN SELECT RAISE(FAIL, 'interrupted after publication'); END;",
+                )
+                .map_err(internal)
+        })
+        .unwrap();
+    f.write(&content).unwrap_err();
+    assert_eq!(content.receipt_pruning_issue(f.space).unwrap(), None);
+    drop(content);
+    let age = DEFAULT_RECEIPT_RETENTION.as_millis() as i64 + 60_000;
+    f.index()
+        .execute("UPDATE idempotency SET at_ms=?1", [now_ms() - age])
+        .unwrap();
+
+    let restarted = f.open(|_| {});
+    let Some(ReceiptPruningIssue::ExpiredPin { age_ms }) =
+        restarted.receipt_pruning_issue(f.space).unwrap()
+    else {
+        panic!("expected an expired pin");
+    };
+    assert!(age_ms >= age);
+    let db = Connection::open(crate::db::space_path(&f.roots.appdata, f.space)).unwrap();
+    let pending: i64 = db
+        .query_row("SELECT count(*) FROM outbox", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(pending, 1);
+    assert!(lock(&restarted.spaces).is_empty());
+    db.execute_batch("ALTER TABLE outbox RENAME TO unavailable_outbox")
+        .unwrap();
+    assert_eq!(
+        restarted.receipt_pruning_issue(f.space).unwrap(),
+        Some(ReceiptPruningIssue::OutboxUnreadable)
+    );
+}
+
+#[test]
 fn unreadable_outbox_skips_pruning() {
     let f = Fixture::new();
     let content = f.open(|_| {});

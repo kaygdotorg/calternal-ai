@@ -34,6 +34,16 @@ struct Target {
     account: Option<OsString>,
 }
 
+#[derive(clap::Args)]
+pub(crate) struct DiagnosticsArgs {
+    /// ID of the currently loaded development plugin.
+    id: String,
+    /// Declared operation to inspect.
+    operation: String,
+    #[command(flatten)]
+    target: Target,
+}
+
 struct Draft {
     dir: PathBuf,
     appdata: PathBuf,
@@ -93,6 +103,62 @@ fn draft(args: Args) -> Result<Draft, CliError> {
         account,
         once: args.once,
     })
+}
+
+pub(super) fn diagnostics(args: DiagnosticsArgs) -> Result<Reply, CliError> {
+    let (appdata, space, space_source, account) = target(args.target)?;
+    let value = live_catalog::diagnostics(&appdata, args.id.clone(), args.operation.clone(), space, account)
+        .map_err(|message| CliError::new("plugin_diagnostics", format!("{message} (space {space} from {space_source})"))
+            .hint("Use the development Manager and a declared operation of the loaded draft in that space."))?;
+    let revision = value["ready_revision"]
+        .as_u64()
+        .map_or_else(|| "none loaded".to_owned(), |r| r.to_string());
+    let timing = &value["timing"];
+    let ms = |key: &str| {
+        timing[key]
+            .as_u64()
+            .map_or_else(|| "n/a".to_owned(), |v| format!("{v} ms"))
+    };
+    let rows = value["errors"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|e| {
+            vec![
+                e["reason"].as_str().unwrap_or_default().to_owned(),
+                e["path"].as_str().unwrap_or_default().to_owned(),
+                e["elapsed_ms"].to_string(),
+            ]
+        })
+        .collect();
+    let failed = &value["last_failed_candidate"];
+    let failed_text = failed["phase"].as_str().map_or_else(
+        || "none".to_owned(),
+        |phase| {
+            format!(
+                "{phase}: {}",
+                failed["message"].as_str().unwrap_or_default()
+            )
+        },
+    );
+    Ok(Reply::new(value.clone())
+        .fields([
+            ("Plugin", args.id),
+            ("Operation", args.operation),
+            ("Space", space.to_string()),
+            ("State", value["phase"].as_str().unwrap_or("unknown").to_owned()),
+            ("Ready revision", revision),
+            ("Validate", ms("validation_ms")),
+            ("Handshake", ms("handshake_ms")),
+            ("Publish", ms("publication_ms")),
+            ("Last failed candidate", failed_text),
+        ])
+        .table(
+            &["ERROR", "FIELD PATH", "MS"],
+            rows,
+            "No recent errors for this caller and operation.",
+        )
+        .hint("Compare each field path with the plugin's input or output schema. Edit the source to reload."))
 }
 
 fn activate(args: &Draft) -> Result<Reply, CliError> {

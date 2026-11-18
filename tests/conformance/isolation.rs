@@ -43,6 +43,7 @@ mod plugin_parity_cases;
 mod plugin_settings_cases;
 mod plugin_slot_cases;
 
+mod onboarding_cases;
 mod search_cases;
 mod setup_code_cases;
 mod simplify_review_cases;
@@ -720,6 +721,7 @@ async fn all_operations_hide_foreign_ids() {
     covered.extend(["spaces.list", "spaces.create", "wallpapers.list"]);
     covered.extend(agent_cases::OPERATIONS.iter().copied());
     covered.extend(deploy_cases::OPERATIONS.iter().copied());
+    covered.extend(onboarding_cases::OPERATIONS.iter().copied());
     covered.extend(people_cases::ADDITIONAL_OPERATIONS.iter().copied());
 
     covered.extend(requests_cases::OPERATIONS.iter().copied());
