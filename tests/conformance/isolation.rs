@@ -43,6 +43,7 @@ mod plugin_parity_cases;
 mod plugin_settings_cases;
 mod plugin_slot_cases;
 
+mod onboarding_cases;
 mod search_cases;
 mod setup_code_cases;
 mod simplify_review_cases;

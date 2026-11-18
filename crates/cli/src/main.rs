@@ -56,6 +56,11 @@ struct Cli {
 }
 #[derive(Subcommand)]
 enum Command {
+    /// Read or record onboarding completion for the signed-in account.
+    Onboarding {
+        #[command(subcommand)]
+        command: calternal_cli::onboarding::Onboarding,
+    },
     Drafts {
         #[command(subcommand)]
         command: calternal_cli::account_input::Drafts,
@@ -334,6 +339,7 @@ fn load_token(file: Option<PathBuf>) -> Result<String, CliError> {
 }
 fn request_for(command: Command, request_id: Option<String>) -> Result<PendingRequest, String> {
     let (operation, mut input) = match command {
+        Command::Onboarding { command } => (command.operation().into(), json!({})),
         Command::Drafts { command } => {
             let (op, input) = command.operation();
             (op.into(), input)

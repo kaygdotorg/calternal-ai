@@ -76,6 +76,25 @@ pub(super) async fn dispatch_scoped_inner<D: Directory>(
         return crate::requests::dispatch(state, None, p, session, agent, request_id, row, input)
             .await;
     }
+    if matches!(
+        op,
+        calternal_core::ONBOARDING_STATE | calternal_core::ONBOARDING_FINISH
+    ) {
+        if agent.is_some() {
+            return Err(Error::forbidden(
+                "thread credentials cannot manage account onboarding",
+            ));
+        }
+        let _: calternal_core::OnboardingInput = decode(input)?;
+        if !session.is_live(&state.directory).await {
+            return Err(Error::unauthorized("session expired or revoked"));
+        }
+        let finish = op == calternal_core::ONBOARDING_FINISH;
+        return blocking(&state, move |store| {
+            to_value(crate::onboarding::state(store, p.id, finish)?)
+        })
+        .await;
+    }
     if calternal_core::is_account_input_operation(op) {
         if agent.is_some() {
             return Err(Error::forbidden(
