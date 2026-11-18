@@ -1,5 +1,5 @@
 /**
- * The canvas's state (docs/ui-shell-status.md, "The canvas experiment"): the columns and their windows, which window has focus, which is maximised, and the strip's scroll position. The shell's default window area (Appearance, Windows turns it off; `?canvas=0` and `?canvas=1` override it for a visit); the arrangement is kept in the browser (`cal.canvas`, JSON because it is throwaway experiment state, not the person's userdata). Pure placement arithmetic is in layout.ts.
+ * The canvas's state (docs/ui-shell-status.md, "The canvas experiment"): the columns and their windows, which window has focus, which is maximised, and the strip's scroll position. The shell's window area (Appearance, Windows turns it on or off; `?canvas=0` and `?canvas=1` override it for a visit); the arrangement is kept in the browser (`cal.canvas`, JSON because it is throwaway experiment state, not the person's userdata). Pure placement arithmetic is in layout.ts.
  *
  * Addresses: a window's address is `/<kind>/<item>` and there is one window per address, so a deep link always has exactly one window to open: `show` focuses it, or adds one beside the focused column. The address bar follows
  * the focused window (Canvas.svelte navigates on focus), so the sidebars, which are chosen by the address's kind, follow the focused window's app with no code of their own.
@@ -10,7 +10,7 @@ import { canvasPrefs } from "./prefs.svelte";
 
 const KEY = "cal.canvas";
 /**
- * Whether windows are shown on the canvas now: the person's setting (Appearance, Windows; on by default), unless the address says otherwise for this visit: `?canvas=0` (one card) or `?canvas=1` (the canvas), kept for the tab so
+ * Whether windows are shown on the canvas now: the person's setting (Appearance, Windows; the build decides the default, see canvas/prefs.svelte.ts), unless the address says otherwise for this visit: `?canvas=0` (one card) or `?canvas=1` (the canvas), kept for the tab so
  * tests and links behave the same after the first navigation drops the query. Reactive: switching the setting changes the shell's window area at once.
  */
 export function canvasActive(): boolean {

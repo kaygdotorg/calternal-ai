@@ -12,8 +12,8 @@ export const OPEN_WIDTHS: { value: number | null; label: string }[] = [{ value: 
 
 const KEY = "cal.canvas.prefs";
 class CanvasPrefs {
-  /** Whether the shell shows windows on a canvas (the default) or one app in a single card. Build default: `VITE_CANVAS_DEFAULT=0` makes the card the default (the e2e gate runs both). */
-  enabled = $state(import.meta.env.VITE_CANVAS_DEFAULT !== "0");
+  /** Whether the shell shows windows on a canvas or one app in a single card. The default is the build's: `VITE_CANVAS_DEFAULT=1` makes the canvas the default (the e2e gate runs with it on and off); it flips to on by default when every suite passes with it on. */
+  enabled = $state(import.meta.env.VITE_CANVAS_DEFAULT === "1");
   /** How every window looks. */
   look = $state<Look>("card");
   /** The share of the canvas a new window opens at, or null for automatic. */
