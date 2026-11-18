@@ -41,12 +41,15 @@ fn exercise(
         }
         let clock = tick * 60_000;
         let begin = Instant::now();
-        let tx = writer(conn);
-        samples.waits.push(begin.elapsed().as_micros());
-        let Some(tx) = tx else {
-            samples.admission_busy += 1;
-            continue;
+        let tx = match writer(conn) {
+            Some(tx) => tx,
+            None => {
+                samples.waits.push(begin.elapsed().as_micros());
+                samples.admission_busy += 1;
+                continue;
+            }
         };
+        samples.waits.push(begin.elapsed().as_micros());
         let run = queue(
             &tx,
             space,
