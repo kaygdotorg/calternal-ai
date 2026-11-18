@@ -60,7 +60,12 @@ private ext4 data disk and one container per thread. Spaces have separate homes
 within that disk. Claude uses the account-wide login directory from the
 Podman backend. Turns mount it read-only and login runs use a disposable
 home with a writable mount. The guest uses one administrator-selected
-container image. Change the pinned image as a unit with a machine-role restart.
+container image. The immutable guest root holds the unpacked OCI filesystem.
+Podman gives each thread a writable overlay on the account disk. Boot reads
+the shared lower layer and skips per-account image import. Change the pinned
+image as a unit with a machine-role restart. Keep one active image and at most
+one rollback image rooted per machine. Drop older deployment roots so the
+operator’s normal Nix garbage collection can reclaim them.
 The guest has a host-initiated vsock control channel and no NIC or host mounts.
 Provider OAuth, package downloads and the command-line tool's remote operations
 need a validated egress path.
@@ -68,9 +73,13 @@ need a validated egress path.
 Run Firecracker as the machine user with read/write access to `/dev/kvm`.
 An installer can grant access through the device's `kvm` group or a persistent
 device ACL. Restart the role or open a fresh login after a group change. If the
-device is missing or the KVM VM-creation ioctl fails after opening it, check
-the host's KVM module and expose virtualization extensions to the machine VM on
-the hypervisor. The offline guest needs no TAP, host `CAP_NET_ADMIN`, or root.
+role cannot open the device, read KVM API version 12, and create a VM with
+the machine user’s permissions, it logs the reason and uses rootless Podman.
+Machine readiness reports `sandbox_fallback: "kvm_unavailable"`; the
+fallback has the container isolation boundary. A missing Podman installation
+returns an explicit startup error. For Proxmox, the hypervisor operator
+checks nested KVM on the physical host and exposes virtualization extensions
+to the machine VM, then reruns the machine role probe in a fresh guest login. The offline guest needs no TAP, host `CAP_NET_ADMIN`, or root.
 Firecracker bridges vsock to a Unix socket in the machine's private runtime
 directory. A private boot device authenticates the host to the guest agent
 before it decodes a control request. The guest supplies init, an unprivileged UID with guest-local
@@ -79,8 +88,7 @@ subuid/subgid ranges, and delegated cgroups for rootless Podman.
 ### Build and configure a disposable guest
 
 Build the OCI archive on the development VM after `npm run build:plugins`.
-Use a digest-qualified Node 24 Debian base. The archive must carry the exact
-tag `localhost/calternal-standard:current` when loaded. Its content, the
+Use a digest-qualified Node 24 Debian base. The archive carries one image. Its filesystem, the
 static guest agent and CLI, the measured kernel and Nix-pinned runtime are
 included in the resulting immutable image.
 

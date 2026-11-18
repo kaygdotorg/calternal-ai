@@ -16,11 +16,6 @@ mount -t tmpfs tmpfs /tmp
 mount -t tmpfs tmpfs /run
 mount -t cgroup2 none /sys/fs/cgroup
 mount -t ext4 -o nodev,nosuid /dev/vdb /data
-# Image import can need more scratch than fits in the guest's RAM.
-rm -rf /data/podman-tmp
-mkdir -m 700 /data/podman-tmp
-chown 1000:1000 /data/podman-tmp
-mount --bind /data/podman-tmp /var/tmp
 chown 1000:1000 /dev/vdc
 chmod 400 /dev/vdc
 ip link set lo up
@@ -35,8 +30,6 @@ chown -R 1000:1000 /sys/fs/cgroup/agent
 mkdir -p /run/agent /run/user/1000 /data/home /data/sandboxes
 chown 1000:1000 /run/agent /run/user/1000 /data/home /data/sandboxes
 chmod 700 /run/agent /run/user/1000
-# The immutable OCI archive is preloaded into the guest's Podman image store.
-# An image change is handled before the agent opens its listening socket.
 sh -ec '
   echo "$$" > /sys/fs/cgroup/agent/ctl/cgroup.procs
   exec chpst -u agent /sbin/agent-start

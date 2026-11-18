@@ -12,10 +12,19 @@ for binary in "$1" "$2"; do
     exit 2
   fi
 done
-export CALTERNAL_GUEST_AGENT CALTERNAL_GUEST_CLI CALTERNAL_GUEST_ARCHIVE CALTERNAL_GUEST_REPO
+# Unpack the verified local image with the OCI-aware tool. Nix's builder
+# forbids restoring set-ID bits present in upstream distro layers.
+scratch=$(mktemp -d "$(dirname -- "$(realpath -m "$4")")/.guest-oci.XXXXXXXX")
+trap 'rm -rf -- "$scratch"' EXIT
+skopeo --insecure-policy copy "docker-archive:$(realpath "$3")" "oci:$scratch/oci:standard"
+umoci unpack --rootless --image "$scratch/oci:standard" "$scratch/bundle"
+tar --sort=name --mtime=@1735689600 --format=gnu --numeric-owner \
+  --owner=0 --group=0 --mode='u-s,g-s' -C "$scratch/bundle/rootfs" -cf - . \
+  | gzip -n -1 > "$scratch/rootfs.tar.gz"
+export CALTERNAL_GUEST_AGENT CALTERNAL_GUEST_CLI CALTERNAL_GUEST_ROOT CALTERNAL_GUEST_REPO
 CALTERNAL_GUEST_AGENT=$(realpath "$1")
 CALTERNAL_GUEST_CLI=$(realpath "$2")
-CALTERNAL_GUEST_ARCHIVE=$(realpath "$3")
+CALTERNAL_GUEST_ROOT="$scratch/rootfs.tar.gz"
 CALTERNAL_GUEST_REPO=$(cd -- "$(dirname -- "$0")/../.." && pwd)
 nix build --impure --out-link "$4" --expr '
   let
@@ -30,6 +39,6 @@ nix build --impure --out-link "$4" --expr '
     pkgs = import nixpkgs { system = "x86_64-linux"; };
     agent = input "CALTERNAL_GUEST_AGENT";
     cli = input "CALTERNAL_GUEST_CLI";
-    standardArchive = input "CALTERNAL_GUEST_ARCHIVE";
+    standardRoot = input "CALTERNAL_GUEST_ROOT";
   }'
 sha256sum "$4/image.sha256"

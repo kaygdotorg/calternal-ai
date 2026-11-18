@@ -174,12 +174,15 @@ impl MachineService {
                 "the owner must enable direct execution with calternal machine set",
             ));
         }
-        if super::microvm::is_requested(&f.backend) {
+        let kvm_fallback = f.backend == calternal_machine::protocol::PODMAN_KVM_FALLBACK;
+        if super::microvm::is_requested(&f.backend) || kvm_fallback {
             super::microvm::authorize(machine.row.owner)?;
         } else if !matches!(f.backend.as_str(), "direct" | "podman" | "auto") {
             return Err(Error::invalid_input("unsupported machine backend"));
         }
-        let backend = if f.backend == "auto" {
+        let backend = if kvm_fallback {
+            "podman"
+        } else if f.backend == "auto" {
             if machine.row.direct && machine.row.owner != Owner::Pool {
                 "direct"
             } else {
@@ -202,6 +205,7 @@ impl MachineService {
         machine.live = Some(Live {
             session: hash,
             direct: backend == "direct",
+            kvm_fallback,
             outbox: VecDeque::new(),
             next_seq: 1,
             polls: 0,
@@ -222,7 +226,7 @@ impl MachineService {
             .map(|l| l.row.id)
             .collect();
         for lease in held {
-            if rebooted && super::microvm::is_requested(&backend) {
+            if rebooted && (super::microvm::is_requested(&backend) || kvm_fallback) {
                 let keep_files = !st.leases[&lease].row.worker;
                 super::microvm::lost(st, f.machine_id, lease, &self.settings, keep_files);
                 continue;

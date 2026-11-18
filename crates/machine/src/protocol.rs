@@ -103,6 +103,10 @@ pub struct SessionChallenge {
     pub challenge: String,
 }
 
+/// Session preference emitted when a Linux microVM role falls back to Podman
+/// because the machine user cannot create KVM guests.
+pub const PODMAN_KVM_FALLBACK: &str = "podman-no-kvm";
+
 /// Proof of the machine key, opening a session.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

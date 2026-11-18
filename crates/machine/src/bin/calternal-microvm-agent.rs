@@ -19,7 +19,7 @@ fn main() -> std::process::ExitCode {
     let result = runtime.block_on(calternal_machine::sandbox::microvm::run_agent(
         "/run/agent/control.sock".into(),
         "/data/sandboxes".into(),
-        "localhost/calternal-standard:current".into(),
+        "/opt/standard:O".into(),
         token,
     ));
     if result.is_err() {

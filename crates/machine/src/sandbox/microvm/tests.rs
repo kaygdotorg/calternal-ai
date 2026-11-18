@@ -82,12 +82,8 @@ async fn shell(sandbox: &dyn Sandbox, script: &str) -> String {
 
 #[tokio::test]
 async fn kvm_separates_accounts_threads_and_spaces_and_persists_across_crash() {
-    if let Err(error) = std::fs::OpenOptions::new()
-        .read(true)
-        .write(true)
-        .open("/dev/kvm")
-    {
-        eprintln!("SKIP Firecracker isolation: opening /dev/kvm failed: {error}");
+    if let Err(error) = super::probe_kvm().await {
+        eprintln!("SKIP Firecracker isolation: {error}");
         return;
     }
     let Some(config) = std::env::var_os("CALTERNAL_MICROVM_TEST_CONFIG") else {
@@ -131,7 +127,11 @@ async fn kvm_separates_accounts_threads_and_spaces_and_persists_across_crash() {
     let kernel = shell(&*a, "cat /proc/sys/kernel/random/boot_id").await;
     let host = std::fs::read_to_string("/proc/sys/kernel/random/boot_id").unwrap();
     assert_ne!(kernel, host);
-    shell(&*a, "echo saved > /work/private; echo home > $HOME/private").await;
+    shell(
+        &*a,
+        "echo saved > /work/private; echo home > $HOME/private; touch /root/calternal-overlay-test",
+    )
+    .await;
     assert_eq!(
         shell(
             &*a,
@@ -157,7 +157,7 @@ async fn kvm_separates_accounts_threads_and_spaces_and_persists_across_crash() {
     assert_eq!(
         shell(
             &*sibling,
-            "test ! -e /work/private; test ! -e $HOME/private; cat /proc/sys/kernel/random/boot_id"
+            "test ! -e /work/private; test ! -e $HOME/private; test ! -e /root/calternal-overlay-test; cat /proc/sys/kernel/random/boot_id"
         )
         .await,
         kernel
@@ -170,7 +170,7 @@ async fn kvm_separates_accounts_threads_and_spaces_and_persists_across_crash() {
     assert_ne!(
         shell(
             &*other_thread,
-            "test ! -e /work/private; test ! -e $HOME/private; cat /proc/sys/kernel/random/boot_id"
+            "test ! -e /work/private; test ! -e $HOME/private; test ! -e /root/calternal-overlay-test; cat /proc/sys/kernel/random/boot_id"
         )
         .await,
         kernel
@@ -211,4 +211,29 @@ async fn kvm_separates_accounts_threads_and_spaces_and_persists_across_crash() {
     other_thread.release().await.unwrap();
     backend.shutdown().await.unwrap();
     assert!(!backend.0.root.join("run").exists());
+}
+
+#[tokio::test]
+async fn offline_fallback_removes_only_the_erased_accounts_disk() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("microvm");
+    std::fs::create_dir_all(root.join("accounts")).unwrap();
+    std::fs::write(root.join("vmm.lock"), []).unwrap();
+    let account = Uuid::new_v4();
+    let other = Uuid::new_v4();
+    let disk = super::account_disk(&root, account);
+    let foreign = super::account_disk(&root, other);
+    std::fs::write(&disk, b"one").unwrap();
+    std::fs::write(&foreign, b"two").unwrap();
+    assert!(
+        super::erase_without_kvm(dir.path(), account, Some(Uuid::new_v4()))
+            .await
+            .is_err()
+    );
+    assert!(disk.exists());
+    super::erase_without_kvm(dir.path(), account, None)
+        .await
+        .unwrap();
+    assert!(!disk.exists());
+    assert!(foreign.exists());
 }

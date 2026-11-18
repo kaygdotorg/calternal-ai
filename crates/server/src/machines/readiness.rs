@@ -184,6 +184,11 @@ impl MachineService {
                 enrolled: true,
                 connected: online,
                 available,
+                sandbox_fallback: machine
+                    .live
+                    .as_ref()
+                    .filter(|live| live.kvm_fallback)
+                    .map(|_| calternal_core::SandboxFallback::KvmUnavailable),
                 providers,
                 execution: if direct {
                     MachineExecution::Direct

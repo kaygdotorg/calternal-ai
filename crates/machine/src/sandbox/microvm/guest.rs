@@ -23,6 +23,7 @@ struct Agent {
 }
 
 /// Run the guest-only agent on a Unix socket behind the boot image's vsock listener.
+/// The image names the packaged root filesystem and its writable-overlay flag.
 /// Startup sweeps old Podman containers before accepting commands. The caller must
 /// run as the dedicated unprivileged guest user, with a delegated cgroup.
 /// The kernel-local token authenticates the host before any request is decoded.

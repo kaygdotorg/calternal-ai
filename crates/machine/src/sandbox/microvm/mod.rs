@@ -4,6 +4,7 @@
 
 mod guest;
 mod image;
+mod kvm;
 #[cfg(test)]
 mod measure;
 mod vmm;
@@ -33,6 +34,15 @@ use wire::Request;
 mod tests;
 mod thread;
 use thread::Thread;
+
+/// Confirm the current user can open KVM and create a VM. Reports the
+/// kernel error when nested virtualization or device access is unavailable.
+pub async fn probe_kvm() -> SandboxResult<()> {
+    tokio::task::spawn_blocking(|| kvm::check(Path::new("/dev/kvm")))
+        .await
+        .map_err(SandboxError::new)?
+        .map_err(|error| SandboxError(format!("KVM is unavailable: {error}")))
+}
 
 const IDLE: Duration = Duration::from_secs(600);
 const SWEEP: Duration = Duration::from_secs(15);
@@ -232,9 +242,43 @@ impl Backend for MicrovmBackend {
     }
 }
 
+fn account_disk(root: &Path, account: Uuid) -> PathBuf {
+    root.join("accounts").join(format!("{account}.ext4"))
+}
+
+/// Remove an offline account disk while container fallback owns the role.
+pub(super) async fn erase_without_kvm(
+    sandbox_root: &Path,
+    account: Uuid,
+    thread: Option<Uuid>,
+) -> SandboxResult<()> {
+    let root = sandbox_root.join("microvm");
+    tokio::task::spawn_blocking(move || {
+        let disk = account_disk(&root, account);
+        if !disk.try_exists()? {
+            return Ok(());
+        }
+        if thread.is_some() {
+            return Err(io::Error::other(
+                "KVM is required to erase one workspace inside its account disk",
+            ));
+        }
+        let lock = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(root.join("vmm.lock"))?;
+        lock.try_lock().map_err(io::Error::other)?;
+        std::fs::remove_file(&disk)?;
+        calternal_fsio::sync_dir(disk.parent().expect("data directory"))
+    })
+    .await
+    .map_err(SandboxError::new)?
+    .map_err(SandboxError::new)
+}
+
 impl State {
     fn disk(&self, account: Uuid) -> PathBuf {
-        self.root.join("accounts").join(format!("{account}.ext4"))
+        account_disk(&self.root, account)
     }
 
     fn account(&self, id: Uuid) -> AccountSlot {
@@ -261,12 +305,7 @@ impl State {
     }
 
     async fn initialize(&self) -> SandboxResult<()> {
-        tokio::fs::OpenOptions::new()
-            .read(true)
-            .write(true)
-            .open("/dev/kvm")
-            .await
-            .map_err(|e| SandboxError(format!("opening /dev/kvm failed: {e}")))?;
+        probe_kvm().await?;
         image::check(&self.config).await?;
         let root = self.root.clone();
         let lock = tokio::task::spawn_blocking(move || {

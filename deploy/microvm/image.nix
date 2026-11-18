@@ -1,6 +1,6 @@
-# Build with the repository's locked nixpkgs. The OCI archive and static
+# Build with the repository's locked nixpkgs. The normalized OCI root and static
 # executables are input store paths so the builder has no network dependency.
-{ pkgs, agent, cli, standardArchive }:
+{ pkgs, agent, cli, standardRoot }:
 let
   runtime = with pkgs; [ busybox podman conmon crun catatonit socat shadow coreutils ];
   closure = pkgs.closureInfo { rootPaths = runtime; };
@@ -9,7 +9,7 @@ let
     hash = "sha256-9XNXdOJXDZ30UfxWZfNSXTuvcj+mqKQToDWR1XQrOaU=";
   };
 in
-pkgs.runCommand "calternal-microvm-x86_64-v1" {
+pkgs.runCommand "calternal-microvm-x86_64-v2" {
   nativeBuildInputs = with pkgs; [ fakeroot e2fsprogs ];
   SOURCE_DATE_EPOCH = "1735689600";
   E2FSPROGS_FAKE_TIME = "1735689600";
@@ -35,15 +35,15 @@ pkgs.runCommand "calternal-microvm-x86_64-v1" {
   install -m 0755 ${./agent-start.sh} root/sbin/agent-start
   install -m 0755 ${agent} root/opt/calternal-microvm-agent
   install -m 0755 ${cli} root/opt/calternal
-  cp ${standardArchive} root/opt/standard.tar
-  sha256sum < root/opt/standard.tar > root/opt/standard.sha256
+  mkdir root/opt/standard
+  tar --no-same-owner -xzf ${standardRoot} -C root/opt/standard
 
   printf 'root:x:0:0:root:/root:/bin/sh\nagent:x:1000:1000:agent:/data/home:/bin/sh\n' > root/etc/passwd
   printf 'root:x:0:\nagent:x:1000:\n' > root/etc/group
   printf 'agent:100000:65536\n' > root/etc/subuid
   cp root/etc/subuid root/etc/subgid
   printf '127.0.0.1 localhost\n' > root/etc/hosts
-  printf '{"default":[{"type":"reject"}],"transports":{"docker-archive":{"":[{"type":"insecureAcceptAnything"}]}}}\n' > root/etc/containers/policy.json
+  printf '{"default":[{"type":"reject"}]}\n' > root/etc/containers/policy.json
   cat > root/etc/containers/containers.conf <<CONF
   [engine]
   cgroup_manager="cgroupfs"
@@ -58,6 +58,7 @@ pkgs.runCommand "calternal-microvm-x86_64-v1" {
   truncate -s "$((size + 128))M" "$out/root.ext4"
   fakeroot -- sh -ec '
     chown -hR 0:0 root
+    chown -hR 1000:1000 root/opt/standard
     mkfs.ext4 -q -F -O ^has_journal -m 0 -U f792e824-b9c6-4a01-b079-1fe1ad7435b4 \
       -E root_owner=0:0,lazy_itable_init=0,hash_seed=134976e2-fc97-4129-9d89-331910dbbaa2 \
       -d root "$1"

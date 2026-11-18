@@ -21,6 +21,7 @@ use super::{LeaseState, MachineView, RunView, Settings, db};
 pub(super) struct Live {
     pub session: [u8; 32],
     pub direct: bool,
+    pub kvm_fallback: bool,
     pub outbox: VecDeque<Envelope>,
     pub next_seq: u64,
     pub polls: u32,

@@ -442,7 +442,27 @@ async fn run(cmd: Command) -> Result<Reply, CliError> {
                     root, podman, image,
                 )),
                 BackendKind::Direct => Arc::new(DirectBackend::new(root)),
-                BackendKind::Microvm => microvm(root, microvm_config).await?,
+                BackendKind::Microvm => {
+                    #[cfg(target_os = "linux")]
+                    {
+                        match crate::sandbox::microvm::probe_kvm().await {
+                            Ok(()) => microvm(root, microvm_config).await?,
+                            Err(error) => {
+                                tracing::warn!(%error, "using containers because KVM is unavailable");
+                                if !PodmanBackend::available(&podman).await {
+                                    return Err(CliError::new(
+                                        "unavailable",
+                                        "KVM and rootless Podman are unavailable.",
+                                    )
+                                    .hint("Enable nested KVM or install rootless Podman."));
+                                }
+                                Arc::new(PodmanBackend::new(podman, root, image).kvm_fallback())
+                            }
+                        }
+                    }
+                    #[cfg(not(target_os = "linux"))]
+                    microvm(root, microvm_config).await?
+                }
                 BackendKind::Podman => {
                     if !PodmanBackend::available(&podman).await {
                         return Err(CliError::new(

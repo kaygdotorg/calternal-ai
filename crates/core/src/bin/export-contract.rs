@@ -50,6 +50,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         MachineReadiness,
         PersonalMachineReadiness,
         MachineExecution,
+        SandboxFallback,
         ProviderCheck,
         ProviderReadiness,
         PersonRequest,

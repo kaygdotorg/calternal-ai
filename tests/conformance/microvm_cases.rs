@@ -75,12 +75,9 @@ async fn output(f: &Fixture, who: usize, exec: &str) -> String {
 
 #[tokio::test]
 async fn microvm_pool_keeps_account_execs_and_boot_instances_separate() {
-    if let Err(error) = std::fs::OpenOptions::new()
-        .read(true)
-        .write(true)
-        .open("/dev/kvm")
+    if let Err(error) = calternal_machine::sandbox::microvm::probe_kvm().await
     {
-        eprintln!("SKIP Firecracker conformance: opening /dev/kvm failed: {error}");
+        eprintln!("SKIP Firecracker conformance: {error}");
         return;
     }
     let Some(config) = std::env::var_os("CALTERNAL_MICROVM_TEST_CONFIG") else {
@@ -167,4 +164,25 @@ async fn microvm_pool_keeps_account_execs_and_boot_instances_separate() {
         !dir.join("sandboxes/microvm/run").exists(),
         "guest runtime leaked"
     );
+}
+
+#[tokio::test]
+async fn container_fallback_is_visible_only_to_entitled_accounts() {
+    let f = Fixture::new().await;
+    machine_admin(&f, &["pool-grant", &f.ids[1]]);
+    let code = machine_admin(&f, &["code", "--pool"]);
+    let mut pool = requests_cases::Machine::enroll_with_code(&f, code["code"].as_str().unwrap()).await;
+    assert_eq!(
+        pool.connect_as(&f, calternal_machine::protocol::PODMAN_KVM_FALLBACK).await,
+        "podman",
+    );
+    let input = json!({"space_id":f.spaces[3]});
+    let own = f.op(1, "agent.readiness", input.clone()).await;
+    own.ok();
+    let row = &own.body["data"]["pool"][0];
+    assert_eq!(row["execution"], "sandboxed");
+    assert_eq!(row["sandbox_fallback"], "kvm_unavailable");
+    let foreign = f.op(2, "agent.readiness", input).await;
+    foreign.ok();
+    assert_eq!(foreign.body["data"]["pool"], json!([]));
 }

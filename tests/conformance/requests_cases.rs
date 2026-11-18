@@ -61,6 +61,10 @@ impl Machine {
     }
 
     pub(super) async fn connect(&mut self, f: &Fixture) {
+        self.connect_as(f, "podman").await;
+    }
+
+    pub(super) async fn connect_as(&mut self, f: &Fixture, backend: &str) -> String {
         let challenge = f
             .machine(
                 "/api/v1/machine/session/start",
@@ -72,12 +76,13 @@ impl Machine {
         let ch = challenge.body["challenge"].as_str().unwrap();
         let r = f.machine("/api/v1/machine/session/finish",None,json!({
             "machine_id":self.id,"challenge":ch,"signature":self.key.sign_session(self.id,ch),
-            "boot_id":self.boot,"protocol":calternal_machine::protocol::PROTOCOL_VERSION,"backend":"podman",
+            "boot_id":self.boot,"protocol":calternal_machine::protocol::PROTOCOL_VERSION,"backend":backend,
         })).await;
         r.ok();
         self.token = r.body["token"].as_str().unwrap().to_owned();
         self.ack = 0;
         self.leases.clear();
+        r.body["backend"].as_str().unwrap().to_owned()
     }
 
     pub(super) async fn sync(&mut self, f: &Fixture, discards: Value) -> Vec<Value> {

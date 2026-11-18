@@ -37,6 +37,7 @@ pub struct PodmanBackend {
     root: PathBuf,
     default_image: String,
     guest: bool,
+    kvm_fallback: bool,
 }
 
 impl PodmanBackend {
@@ -52,7 +53,13 @@ impl PodmanBackend {
             root: root.into(),
             default_image: default_image.into(),
             guest: false,
+            kvm_fallback: false,
         }
+    }
+
+    pub(crate) fn kvm_fallback(mut self) -> Self {
+        self.kvm_fallback = true;
+        self
     }
 
     /// Reuse rootless Podman inside a guest with the packaged image and no container networking.
@@ -132,12 +139,23 @@ impl Backend for PodmanBackend {
             }
         })
     }
+    fn preference(&self) -> &'static str {
+        if self.kvm_fallback {
+            crate::protocol::PODMAN_KVM_FALLBACK
+        } else {
+            self.name()
+        }
+    }
+
     fn name(&self) -> &'static str {
         "podman"
     }
 
     fn discard(&self, account: uuid::Uuid, thread: uuid::Uuid) -> BoxFuture<'_, SandboxResult<()>> {
         Box::pin(async move {
+            if self.kvm_fallback {
+                return self.erase(account, Some(thread)).await;
+            }
             let root = self.canonical_root().await?;
             let name = Self::container_name(account, thread);
             ownership::remove_named(&self.podman, &root, &name).await?;
@@ -149,6 +167,10 @@ impl Backend for PodmanBackend {
     fn erase(&self, account: Uuid, thread: Option<Uuid>) -> BoxFuture<'_, SandboxResult<()>> {
         Box::pin(async move {
             let root = self.canonical_root().await?;
+            #[cfg(target_os = "linux")]
+            if self.kvm_fallback {
+                super::microvm::erase_without_kvm(&root, account, thread).await?;
+            }
             match thread {
                 Some(thread) => {
                     let name = Self::container_name(account, thread);
@@ -284,9 +306,9 @@ impl Backend for PodmanBackend {
                 }
                 if self.guest {
                     args.extend(["--cgroup-parent".into(), "/agent/ctr".into()]);
+                    args.retain(|arg| arg != "--pull=never");
                     if spec.worker.is_none() {
                         args.extend([
-                            "--pull=never".into(),
                             "--network=none".into(),
                             "--log-driver=none".into(),
                             "--volume".into(),
@@ -322,10 +344,15 @@ impl Backend for PodmanBackend {
                     cidfile.display().to_string(),
                     "--label".into(),
                     ownership::root_label(&root),
-                    image.to_owned(),
-                    "sleep".into(),
-                    "2147483647".into(),
                 ]);
+                if self.guest {
+                    args.extend([
+                        "--rootfs".into(),
+                        "--env".into(),
+                        "PATH=/home/agent/.local/bin:/opt/calternal-provider/bin:/usr/local/bin:/usr/bin:/bin".into(),
+                    ]);
+                }
+                args.extend([image.to_owned(), "sleep".into(), "2147483647".into()]);
                 let refs: Vec<&str> = args.iter().map(String::as_str).collect();
                 let created = podman(&self.podman, &refs).await;
                 if created.is_err()
