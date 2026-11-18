@@ -369,7 +369,9 @@ async fn pool_guest_1024_places_threads_using_measured_memory() {
 }
 
 async fn assert_pool_guest_places_using_memory(memory_mib: u32) {
-    let f = Fixture::new().await;
+    // Reporting headroom can leave the outbox empty. Complete those polls
+    // inside the HTTP fixture's deadline without changing production timing.
+    let f = Fixture::new_with_machine_poll_hold(Some(2_000)).await;
     for who in [1, 2] {
         machine_admin(&f, &["pool-grant", &f.ids[who]]);
     }
@@ -380,7 +382,12 @@ async fn assert_pool_guest_places_using_memory(memory_mib: u32) {
         pool.connect_sized(&f, "microvm", Some(memory_mib)).await,
         "microvm"
     );
-    let (_, first) = tokio::join!(pool.sync_with_slots(&f, json!([]), 10), run(&f, 1, 0));
+    let (messages, first) = tokio::join!(pool.sync_with_slots(&f, json!([]), 10), run(&f, 1, 0));
+    assert!(
+        messages
+            .iter()
+            .any(|r| r["type"] == "assign" && r["lease_id"] == first)
+    );
     let generation = uuid::Uuid::new_v4();
     let sample = |available_mib: u32, threads| {
         json!([{
