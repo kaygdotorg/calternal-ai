@@ -27,6 +27,7 @@ move to the decision record they belong to and leave this list. Terms: see
 | 74 | Shared spaces: the first version runs the shared login with tools switched off. Should a shared space's agent have tools, and with whose approval? | Tools on once a boundary is proven: today a tool runs as the same user as the harness and could read the Owner's login, so another member could ask the agent for it. The lane is designing a broker that keeps the login outside the sandbox | Shared spaces |
 | 75 | Old-menu behaviours not carried over: submenus opening in place, the row of icon buttons, shortcut chips, the pill morph, drag and drop. Also to confirm on a real phone: sliding a held finger onto a menu item (passes in the browser test; the Simulator cannot do it) | Port submenus and shortcut chips; leave the rest until asked | Interface |
 | 76 | 178 GB under `~/Developer/Worktrees` on dev-01 is not ours (the existing app's work in the shared account); the disk fell to 20 GB free in the night | kayg prunes it, or says we may | Machines |
+| 77 | Plugin jobs that wait for a person: where a standalone question or approval shows in the Inbox (built now: its own row above the threads, counted in the tab), and whether parked jobs must be drained before the server is downgraded | Keep the row above the threads; refuse a downgrade while jobs are parked and say which | Plugins |
 
 ## In progress, no decision needed
 
