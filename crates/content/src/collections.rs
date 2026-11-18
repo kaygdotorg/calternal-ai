@@ -30,7 +30,7 @@ impl Content {
     pub fn ensure_standard_collection(
         &self,
         space: SpaceId,
-        account: AccountId,
+        actor: impl Into<calternal_types::Actor>,
         kind: &str,
         key: &str,
         title: &str,
@@ -39,6 +39,7 @@ impl Content {
             return Err(Error::invalid_input("invalid standard collection key"));
         }
         super::files::validate_kind(kind)?;
+        let actor = actor.into();
         let existing = || {
             self.with_space(space,|s|{
             s.conn.query_row("SELECT id FROM items WHERE kind='collections' AND json_extract(metadata,'$.item_kind')=?1 AND json_extract(metadata,'$.standard_key')=?2",params![kind,key],|r|r.get::<_,String>(0)).optional().map_err(internal)?.map(|id|{
@@ -69,7 +70,8 @@ impl Content {
             metadata,
             &bytes,
             Request {
-                account,
+                account: actor.account,
+                via: actor.via.as_ref(),
                 id: &request,
                 operation: "collections.create",
                 fingerprint: &fingerprint,

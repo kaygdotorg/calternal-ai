@@ -73,7 +73,7 @@ impl Staged {
                 request.fingerprint,
                 self.item.id.to_string(),
                 self.item.revision,
-                response.to_string(),
+                request.outbox_result(response),
             ],
         )
         .map_err(internal)?;

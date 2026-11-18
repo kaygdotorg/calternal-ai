@@ -74,3 +74,27 @@ export function parse(src: string): MdBlock[] {
   }
   return out;
 }
+
+/** What a growing message remembers between parses: its text, the blocks of the finished part (up to `cut`, a blank line outside any code fence) and all blocks. */
+export interface Parsed { src: string; cut: number; head: MdBlock[]; blocks: MdBlock[] }
+
+/** The end of the last finished block of `src`: just after a blank line that is not inside a code fence, or 0 when there is none. Cost: a scan back from the end, usually one step. */
+function finishedEnd(src: string): number {
+  for (let at = src.lastIndexOf("\n\n"); at > 0; at = src.lastIndexOf("\n\n", at - 1)) {
+    const before = src.slice(0, at);
+    let fences = 0; for (const m of before.matchAll(/^```/gm)) { void m; fences++; }
+    if (fences % 2 === 0) return at + 2;
+  }
+  return 0;
+}
+
+/**
+ * Parses `src`, reusing what `prev` parsed when `src` only grew: the blocks before the last blank line are kept as they are and only the unfinished tail is parsed again, so a streaming message costs the
+ * length of its last block per update, not of the whole message. The result equals `parse(src)` (a text that did not just grow is parsed whole). Cost: linear in the unfinished tail.
+ */
+export function parseMore(prev: Parsed | undefined, src: string): Parsed {
+  const cut = finishedEnd(src);
+  const grew = !!prev && prev.cut <= cut && prev.cut > 0 && src.startsWith(prev.src.slice(0, prev.cut)) && prev.src.slice(0, prev.cut) === src.slice(0, prev.cut);
+  const head = grew ? prev!.head.concat(parse(src.slice(prev!.cut, cut))) : cut > 0 ? parse(src.slice(0, cut)) : [];
+  return { src, cut, head, blocks: head.concat(parse(src.slice(cut))) };
+}

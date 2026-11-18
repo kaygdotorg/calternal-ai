@@ -1,9 +1,10 @@
 <script lang="ts">
   // Notes sidebar: the current space's notes (the fixture's, or the server's in server mode), newest first, and a way to make a new one.
-  import { Button, IconButton, Menu, Row, type MenuItem } from "@calternal/ui";
+  import { Button, IconButton, Menu, Row, VirtualList, type MenuItem } from "@calternal/ui";
   import { href, navigate, route, segments } from "../../lib/route.svelte";
   import { spaces } from "../../shell/spaces.svelte";
   import { notes } from "./store.svelte";
+  import { reach } from "../../lib/reach";
   import { shell } from "../../shell/shell.svelte";
   // The list follows the space the shell is showing.
   $effect(() => { void notes.useSpace(spaces.current.id); });
@@ -37,22 +38,28 @@
     <div class="tags" role="group" aria-label="Filter by tag">
       <button type="button" class="tg" aria-pressed={!notes.tag} onclick={() => notes.filter(null)}>All</button>
       {#each (allTags ? notes.tags : notes.tags.slice(0, 12)) as t (t.name)}<button type="button" class="tg" aria-pressed={notes.tag === t.name} onclick={() => notes.filter(notes.tag === t.name ? null : t.name)}>#{t.name} <span class="ct">{t.count}</span></button>{/each}
-    {#if notes.tags.length > 12}<button type="button" class="tg" onclick={() => (allTags = !allTags)}>{allTags ? "Fewer tags" : `${notes.tags.length - 12} more…`}</button>{/if}
+    {#if notes.tags.length > 12 || notes.tagPages.more}<button type="button" class="tg" onclick={() => { allTags = !allTags; if (allTags) void notes.tagPages.next(); }}>{allTags ? "Fewer tags" : `${notes.tags.length > 12 ? `${notes.tags.length - 12}${notes.tagPages.more ? "+" : ""} ` : ""}more…`}</button>{/if}
+    {#if allTags && notes.tagPages.more}<div class="end" aria-hidden="true" use:reach={() => notes.tagPages.next()}></div>{/if}
     </div>
   {/if}
   <input class="find" type="search" aria-label="Find a note by title" placeholder="Find a note" bind:value={q} autocomplete="off" />
   {#if hits}
     <ul>{#each hits as n (n.id)}<li><Row title={n.title} icon="notes" href={href(`/notes/${n.id}`)} selected={current === n.id} /></li>{:else}<li class="none">No note starts with “{q.trim()}”.</li>{/each}</ul>
   {:else}
-  <ul>{#each notes.list as n (n.id)}<li oncontextmenu={(e) => menuAt(e, n)}>
+  {#if notes.list.length}
+    <!-- Only the rows near the view exist in the DOM (VirtualList), however many notes there are; the next page is read when the window nears the last loaded row. -->
+    <VirtualList inside count={notes.list.length} estimate={40} overscan={600} label="Notes" onrange={(_, end) => { if (end >= notes.list.length - 40) void notes.notePages.next(); }}>
+      {#snippet row(i)}{@const n = notes.list[i]}{#if n}<div class="li" oncontextmenu={(e) => menuAt(e, n)}>
     {#if renaming === n.id}
       <input class="ren" aria-label="Note title" bind:value={draft} onkeydown={(e) => { if (e.key === "Enter") commit(n); else if (e.key === "Escape") renaming = null; }} onblur={() => commit(n)} use:focusNow />
     {:else}
       <Row title={n.title} icon="notes" href={href(`/notes/${n.id}`)} selected={current === n.id}>{#snippet trailing()}<IconButton icon="more" label="Actions for {n.title}" onclick={(e) => menuAt(e, n, e.currentTarget as HTMLElement)} />{/snippet}</Row>
     {/if}
-  </li>{:else}<li class="none">{notes.error || "No notes yet."}{#if notes.error} <button type="button" class="retry" onclick={() => notes.retry()}>Try again</button>{/if}</li>{/each}</ul>
+      </div>{/if}{/snippet}
+    </VirtualList>
+  {:else}<ul><li class="none">{notes.error || "No notes yet."}{#if notes.error} <button type="button" class="retry" onclick={() => notes.retry()}>Try again</button>{/if}</li></ul>{/if}
   {/if}
-  {#if notes.list.length >= 100}<p class="cap">Showing the newest 100. Use a tag, or the search above, to find the others.</p>{/if}
+  {#if !hits}{#if notes.notePages.error}<p class="cap" role="alert">{notes.notePages.error} <button type="button" class="retry" onclick={() => notes.notePages.retry()}>Try again</button></p>{/if}{/if}
   <button type="button" class="new" onclick={create}>New note</button>
   <a class="new trash" href={href("/notes?view=trash")} aria-current={route.query.get("view") === "trash" ? "page" : undefined}>Trash</a>
   {#if notes.waiting.length}
@@ -73,6 +80,7 @@
 <style>
   nav { display: grid; gap: var(--s-2); }
   ul { display: grid; gap: var(--s-1); }
+  .li { padding-bottom: var(--s-1); }
   .sp { padding: 0 var(--s-5); font-size: var(--text-label); font-weight: var(--strong-weight); color: var(--ink-3); }
   .retry { text-decoration: underline; color: var(--ink-2); }
   .ren { width: 100%; min-height: var(--row-h); padding: 0 var(--s-5); border: 0; border-radius: var(--r-select); background: rgb(var(--ink-rgb) / 0.07); color: var(--ink); font-size: var(--text-ui); }
@@ -82,6 +90,7 @@
   .ct { color: var(--ink-3); }
   .trash { display: flex; align-items: center; }
   .find { margin: 0 var(--s-5) var(--s-2); min-height: var(--row-h); padding: 0 var(--s-4); border: 0; border-radius: var(--r-pill); background: rgb(var(--ink-rgb) / 0.06); color: var(--ink); font-size: var(--text-label); }
+  .end { height: 1px; flex-basis: 100%; }
   .cap { padding: var(--s-2) var(--s-5); font-size: var(--text-label); color: var(--ink-3); }
   .none { padding: var(--s-4) var(--s-5); color: var(--ink-3); font-size: var(--text-label); }
   .wait { display: grid; gap: var(--s-1); margin-top: var(--s-4); }

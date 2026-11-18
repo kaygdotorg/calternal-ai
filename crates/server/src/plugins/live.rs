@@ -140,6 +140,13 @@ impl Live {
     pub fn watch(&self) -> watch::Receiver<u64> {
         self.changed.subscribe()
     }
+
+    /// Whether a claimed run has stopped. Outcome-only waiters use this hint
+    /// to skip database reads for chunks. Cost: one short stream lock.
+    pub(crate) fn run_settled(&self) -> bool {
+        let state = self.lock();
+        state.run > 0 && !state.running
+    }
 }
 
 pub(super) type LiveMap = Arc<Mutex<HashMap<String, Arc<Live>>>>;

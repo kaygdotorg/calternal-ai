@@ -83,12 +83,14 @@ pub(super) async fn once<D: Directory>(
         job_scoped,
     )
     .await?;
+    let via = a.actor.via.clone();
     let (op, saved) = (op.to_owned(), result.clone());
     blocking(state, move |store| {
         store.content().record_receipt(
             space,
             calternal_content::Request {
                 account,
+                via: via.as_ref(),
                 id: &receipt_key,
                 operation: &op,
                 fingerprint: &fp,

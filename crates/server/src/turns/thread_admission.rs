@@ -9,12 +9,13 @@ pub(crate) async fn admit<D: Directory>(
     state: &Shared<D>,
     who: Identity,
     session: Session,
+    actor: calternal_types::Actor,
     rid: &str,
     mut input: AgentInput,
     generation: u32,
     intent: Value,
 ) -> Result<Job, Error> {
-    validate(&mut input, "agent.run")?;
+    super::input::validate(&mut input, "agent.run")?;
     let defaults = retry::manifest_defaults(state)?;
     let (st, account) = (state.clone(), who.id.to_string());
     let settings = blocking(move || st.jobs.agent_settings(&account, None, defaults)).await?;
@@ -31,7 +32,7 @@ pub(crate) async fn admit<D: Directory>(
         .to_owned();
     let id=blocking(move || {
         let thread=Uuid::parse_str(&input.thread_id).map_err(|_|Error::internal("invalid saved thread"))?;
-        st.store.content().admit_item(SpaceId::parse(&space).map_err(|_|Error::internal("invalid saved space"))?,thread,calternal_content::Request{account:who.id,id:&request_id,operation:"threads.send",fingerprint:&fp},|current,saved| {
+        st.store.content().admit_item(SpaceId::parse(&space).map_err(|_|Error::internal("invalid saved space"))?,thread,calternal_content::Request{account:who.id,via: actor.via.as_ref(),id:&request_id,operation:"threads.send",fingerprint:&fp},|current,saved| {
             if current.kind!="threads" || current.metadata["deleted"]==true {return Err(Error::not_found("item not found"));}
             if let Some(saved)=saved {return Ok(saved);}
             if current.metadata["pending"]!=intent {return Err(Error::conflict("the pending send has been superseded"));}

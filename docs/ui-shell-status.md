@@ -404,3 +404,26 @@ Fixtures are unchanged (first paint 108 vs 108-112 ms, interleaved). Known limit
 **Adapter clean-up (`apps/web/src/server`).** One request path in `ServerClient` (`send`, `stream`, `json`) instead of eight `fetch` wrappers; one error type (`ServerError`, with `AuthError` removed) worded by `say.ts` everywhere; the account, passkey, machines and people routes all use `server.json`; `spaces.load()` is the only place the space list is read (the Threads adapter had its own); `capabilities` is reactive. Size: `auth.ts` 20 lines shorter, the machines panel 5, `say.ts` 1; `client.ts` gains the shared helpers (26 net), so the total is about the same with one path instead of eight, not a large cut.
 
 Missing now: delete-for-everyone accounts, directory groups from outside (shown read-only), the invite link's address on the preview host (the server builds it from its own origin: `/invites/<secret>` at the root, which Caddy must route to the app under `/ai/`).
+
+## Question for the owner: where the default wallpapers come from (2026-11-18)
+
+Building the web app (`npm run build`, step `prepare:assets` → `apps/web/scripts/wallpapers.mjs`) downloads the eight default photographs from Unsplash's download links and has the image host resize them. Unsplash refuses some machines (dev-01 gets a 401 from its anti-bot page), and a build that needs a third-party host at build time breaks for that reason alone. A machine that fails gets no photographs; the app then offers only the generated looks, and the browser gate refuses to start. Until you decide, the build keeps fetching, remembers what it fetched in `~/.cache/calternal-ai/wallpapers`, and takes missing files from there (copy that folder from a machine that fetched them, as the build's warning says).
+
+What the files are (all eight photographs, measured on dev-02):
+
+| Rendition | Size for all eight | Used for |
+| --- | --- | --- |
+| 1600 px dark | about 4.0 MB (0.5 MB each) | the wallpaper |
+| 1600 px light | about 3.1 MB | the wallpaper in the light scheme |
+| 360 px thumbnail | about 0.25 MB | the picker |
+| 96 px blurred (dark, light) | 4 KB each | the first paint of the default photograph |
+
+About 7.3 MB in all. Licence: Unsplash's licence (docs/settings.md, "Default wallpapers") allows free commercial use and redistribution without permission and forbids only selling unaltered copies and compiling a competing image service; the photographers are credited in a tooltip (`credits.json`). The renditions are resized and brightened, so they are altered copies. Nothing in that licence stops us from committing or hosting them, but docs/settings.md says they are "release assets, never committed to git".
+
+Options:
+1. **Release assets of this repository** (what docs/settings.md already says): publish the 7.3 MB once as a release asset; the build downloads them from our own host with a checksum. One fetch for everyone, no Unsplash at build time; a release step to remember when the list changes.
+2. **Commit the renditions** (7.3 MB of JPEG, added once, rarely changed): a clean checkout builds anywhere with no network; the repository grows by 7.3 MB per change of the list. This contradicts the "never committed" line, so it needs your sign-off.
+3. **Host them ourselves** (for example on the preview host, a plain static directory): the build fetches from our server; same as option 1 without release tooling, but one more thing that must be up for a build.
+4. **Keep fetching from Unsplash** with the cache fallback: no work, but the first build on a refused machine needs a manual copy.
+
+Recommendation: option 1 (it matches the recorded decision, keeps git small and removes the third party from the build).

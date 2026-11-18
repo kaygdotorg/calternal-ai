@@ -142,6 +142,7 @@ impl Content {
                         Some(cutoff),
                         Request {
                             account,
+                            via: None,
                             id: &rid,
                             operation,
                             fingerprint: &rid,
@@ -215,7 +216,7 @@ impl Content {
                 request.fingerprint,
                 id.to_string(),
                 revision,
-                response.to_string(),
+                request.outbox_result(&response),
             ],
         )
         .map_err(internal)?;

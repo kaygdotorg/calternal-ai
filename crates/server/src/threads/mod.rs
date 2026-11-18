@@ -28,6 +28,7 @@ pub(crate) async fn dispatch<D: Directory>(
     who: Identity,
     session: Session,
     agent: Option<Authority>,
+    actor: calternal_types::Actor,
     rid: &str,
     op: &str,
     input: JsonObject,
@@ -67,10 +68,7 @@ pub(crate) async fn dispatch<D: Directory>(
     let (st, operation, request_id, data) =
         (state.clone(), op.to_owned(), rid.to_owned(), input.clone());
     let caller = who.clone();
-    let actor = agent
-        .as_ref()
-        .map(|a| a.actor.clone())
-        .unwrap_or_else(|| calternal_types::Actor::account(who.id));
+    let message_actor = actor.clone();
     let value = blocking(move || {
         operations::apply(
             &st,
@@ -80,7 +78,7 @@ pub(crate) async fn dispatch<D: Directory>(
             &request_id,
             &data,
             id,
-            &actor,
+            &message_actor,
         )
     })
     .await?;
@@ -111,6 +109,7 @@ pub(crate) async fn dispatch<D: Directory>(
             &state,
             who,
             session,
+            actor,
             rid,
             i,
             generation,

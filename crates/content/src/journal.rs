@@ -123,6 +123,7 @@ impl Journals {
         &self,
         store: &SpaceStore,
         account: AccountId,
+        via: Option<&calternal_types::Via>,
         id: &str,
         operation: &str,
         fingerprint: &str,
@@ -137,7 +138,11 @@ impl Journals {
                 }
                 return Ok(());
             }
-            let mut data = serde_json::json!({ "revision": revision });
+            let actor = calternal_types::Actor {
+                account,
+                via: via.cloned(),
+            };
+            let mut data = serde_json::json!({ "revision": revision, "actor": actor });
             if operation == "threads.checkpoint"
                 && let Some(append) = result.get("append")
             {

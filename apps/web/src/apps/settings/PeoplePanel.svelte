@@ -1,9 +1,8 @@
 <script lang="ts">
   // Admin: every account on this server with its role, and Disable (ends its sessions; no one is deleted). Only people who may manage people see this page.
-  import { Button } from "@calternal/ui";
+  import { Button , VirtualList } from "@calternal/ui";
   import * as people from "../../server/people";
   import { say } from "../../server/say";
-  import { reach } from "./reach";
   import "./panel.css";
   let pg = $state<people.Pager<people.Person> | null>(null), loading = false;
   let list = $state<people.Person[]>([]), error = $state(""), busy = $state(false), loaded = $state(false);
@@ -14,11 +13,13 @@
 </script>
 
 <div class="sp">
-  {#each list as p (p.account_id)}
+  <VirtualList inside count={list.length} estimate={64} overscan={600} label="People" onrange={(_, end) => { if (end >= list.length - 20) void more(); }}>
+    {#snippet row(ix)}{@const p = list[ix]}{#if p}
     <div class="r" data-setting="server.person.{p.account_id}"><span class="n"><span class="t">{p.name}</span><span class="h">{p.role === "admin" ? "Operator" : "Member"}{p.disabled ? " · Disabled" : ""}</span></span>
       {#if !p.disabled}<Button text="Disable" variant="quiet" disabled={busy} onclick={() => disable(p)} />{/if}</div>
-  {/each}
-  {#if pg && !pg.done}<div class="r" use:reach={more}><span class="h">Loading more…</span></div>{/if}
+    {/if}{/snippet}
+  </VirtualList>
+  {#if pg && !pg.done}<div class="r"><span class="h">Loading more…</span></div>{/if}
   {#if loaded && !list.length && !error}<div class="r"><span class="h">No accounts.</span></div>{/if}
   {#if error}<p class="e" role="alert">{error}</p>{/if}
 </div>

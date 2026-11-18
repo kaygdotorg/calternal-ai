@@ -225,6 +225,27 @@ impl MachineService {
             .ok_or_else(|| Error::not_found("machine not found"))
     }
 
+    /// Authorize one exact target for verification, independent of pool entitlement.
+    /// Cost is one registry lookup. Returns whether it is a pool diagnostic.
+    pub(crate) fn verify_target(
+        &self,
+        account: AccountId,
+        id: Uuid,
+        pool_admin: bool,
+    ) -> Result<bool, Error> {
+        let st = self.lock()?;
+        match st
+            .machines
+            .get(&id)
+            .filter(|m| !m.row.revoked)
+            .map(|m| m.row.owner)
+        {
+            Some(Owner::Account { id }) if id == account => Ok(false),
+            Some(Owner::Pool) if pool_admin => Ok(true),
+            _ => Err(Error::not_found("machine not found")),
+        }
+    }
+
     /// Cache a bounded Check event only while the same account still holds the
     /// current machine lease. One registry lock, zero flushes.
     pub(crate) fn record_check(
@@ -248,6 +269,7 @@ impl MachineService {
             .get(&machine)
             .is_some_and(|m| m.row.owner == Owner::Pool)
             && !st.pool_grants.contains(&account)
+            && !st.leases.get(&lease).is_some_and(|l| l.pool_diagnostic)
         {
             return Ok(());
         }

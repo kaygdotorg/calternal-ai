@@ -167,6 +167,7 @@ struct Active {
     operation: String,
     runs: u32,
     parent: Option<String>,
+    diagnostic: bool,
 }
 
 impl Jobs {
@@ -191,7 +192,7 @@ impl Jobs {
         for space in spaces {
             let woken = self.tx(&space, |tx| {
                 let mut st = tx
-                    .prepare(&format!("SELECT id,state,plugin,operation,runs,parent FROM jobs WHERE state IN {ACTIVE}"))
+                    .prepare(&format!("SELECT id,state,plugin,operation,runs,parent,json_extract(input,'$.verify') IS 1 FROM jobs WHERE state IN {ACTIVE}"))
                     .map_err(db_err)?;
                 let rows = st
                     .query_map([], |r| {
@@ -202,6 +203,7 @@ impl Jobs {
                             operation: r.get(3)?,
                             runs: r.get(4)?,
                             parent: r.get(5)?,
+                            diagnostic: r.get(6)?,
                         })
                     })
                     .map_err(db_err)?
@@ -209,9 +211,11 @@ impl Jobs {
                     .map_err(db_err)?;
                 drop(st);
                 let mut wake = vec![];
-                for Active { id, state, plugin, operation, runs, parent } in rows {
+                for Active { id, state, plugin, operation, runs, parent, diagnostic } in rows {
                     if operation == "agent.turn" {
-                        if !matches!(state.as_str(), "retry_waiting" | "waiting") {
+                        if diagnostic {
+                            set_state(tx, &id, JobState::OutcomeUnknown, "null")?;
+                        } else if !matches!(state.as_str(), "retry_waiting" | "waiting") {
                             tx.execute(
                                 "UPDATE jobs SET state='interrupted',checkpoint=json_set(coalesce(nullif(checkpoint,'null'),'{}'),'$.interruption',json_object('why','server_restarted')) WHERE id=?1",
                                 [&id],

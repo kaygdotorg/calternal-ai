@@ -44,6 +44,7 @@ fn expired_control_receipt_allows_a_new_request_after_restart() {
             space,
             Request {
                 account,
+                via: None,
                 id: "reusable",
                 operation: "plugins.enable",
                 fingerprint: "old-input",
@@ -77,6 +78,7 @@ fn expired_control_receipt_allows_a_new_request_after_restart() {
         space,
         Request {
             account,
+            via: None,
             id: "reusable",
             operation: "plugins.disable",
             fingerprint: "new-input",
@@ -230,6 +232,7 @@ fn held_space_write_does_not_stall_another_space_and_stale_base_loses() {
     }
     let request = |id| Request {
         account,
+        via: None,
         id,
         operation: "notes.create",
         fingerprint: id,
@@ -356,6 +359,7 @@ fn concurrent_first_open_and_cache_pressure_preserve_a_pinned_journal() {
                         id.as_bytes(),
                         Request {
                             account,
+                            via: None,
                             id: &id,
                             operation: "notes.create",
                             fingerprint: &id,

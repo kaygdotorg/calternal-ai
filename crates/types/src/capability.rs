@@ -46,11 +46,13 @@ pub enum Capability {
     InviteRedeem = 1 << 16,
     /// Inspect the built-in space role definitions.
     RolesList = 1 << 17,
+    /// Manage server settings, including named diagnostics on the operator pool.
+    ServerSettings = 1 << 18,
 }
 
 impl Capability {
     /// Every defined capability, for coverage tests and closed-set decoding.
-    pub const ALL: [Self; 18] = [
+    pub const ALL: [Self; 19] = [
         Self::SpaceRead,
         Self::ContentWrite,
         Self::PluginsUse,
@@ -69,6 +71,7 @@ impl Capability {
         Self::AccountProfile,
         Self::InviteRedeem,
         Self::RolesList,
+        Self::ServerSettings,
     ];
 
     /// The stored and wire name, as written in `auth.db` role rows and manifests.
@@ -92,6 +95,7 @@ impl Capability {
             Self::AccountProfile => "account.profile",
             Self::InviteRedeem => "invites.redeem",
             Self::RolesList => "roles.list",
+            Self::ServerSettings => "server.settings",
         }
     }
 

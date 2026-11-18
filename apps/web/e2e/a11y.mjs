@@ -32,7 +32,10 @@ const stop = await serve();
 const browser = await launch();
 let bad = 0;
 try {
-  for (const device of ["desktop", "phone"]) for (const scheme of ["light", "dark"]) for (const [name, path] of screens) {
+  // `node e2e/a11y.mjs [device [scheme]]` checks one part (the gate runs the four parts at once); no arguments checks all four.
+const [onlyDevice, onlyScheme] = process.argv.slice(2);
+for (const device of ["desktop", "phone"]) for (const scheme of ["light", "dark"]) for (const [name, path] of screens) {
+    if ((onlyDevice && device !== onlyDevice) || (onlyScheme && scheme !== onlyScheme)) continue;
     const { page, ctx } = await open(browser, device, scheme, path);
     const r = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21aa", "best-practice"]).analyze();
     const v = r.violations.map((x) => `${x.id} (${x.nodes.length}): ${x.nodes[0].target.join(" ")} :: ${x.nodes[0].failureSummary?.split("\n")[1] ?? ""}`);

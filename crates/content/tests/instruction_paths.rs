@@ -59,6 +59,7 @@ fn kinds_cannot_claim_write_or_replay_the_reserved_instruction_path() {
             b"Editor content",
             Request {
                 account,
+                via: None,
                 id: title,
                 operation: "scratch.write",
                 fingerprint: title,
@@ -78,6 +79,7 @@ fn kinds_cannot_claim_write_or_replay_the_reserved_instruction_path() {
             b"ordinary",
             Request {
                 account,
+                via: None,
                 id: "ordinary",
                 operation: "scratch.write",
                 fingerprint: "ordinary",

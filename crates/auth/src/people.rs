@@ -370,6 +370,13 @@ fn apply_group(c: &Connection, actor: AccountId, change: GroupChange) -> Result<
 }
 
 impl Auth {
+    /// Check a server-wide capability from its current role. One indexed worker read.
+    pub fn has_server_capability(&self, actor: AccountId, capability: Capability) -> Result<bool> {
+        self.inner
+            .db
+            .read_blocking(move |c| has(c, actor, capability))
+    }
+
     /// Check whether an account can authenticate using an explicit development token.
     /// Cost: one indexed lookup on the bounded auth worker.
     pub async fn development_account_active(&self, account: AccountId) -> bool {

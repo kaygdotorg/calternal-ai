@@ -68,6 +68,11 @@ pub struct AgentInput {
 /// Manual provider operations. This table feeds discovery, policy and instruction indexes.
 pub const AGENT_OPERATIONS: &[(&str, &str, bool)] = &[
     (
+        crate::MACHINES_VERIFY,
+        "Verify a selected machine and provider sign-in",
+        true,
+    ),
+    (
         crate::AGENT_READINESS,
         "Read your machine and provider readiness in a space",
         false,

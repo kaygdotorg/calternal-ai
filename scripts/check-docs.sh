@@ -15,5 +15,7 @@ fi
   --all-features --target-dir reference-docs/rust
 # TypeScript reference checks resolve workspace packages through their built type output.
 npm run build:plugins --silent
+npm ci --prefix apps/docs --ignore-scripts --no-audit --no-fund
+node scripts/docs-site/generate.mjs --check
 npm run check --prefix scripts/docs-tools
 node packages/genui/scripts/check-docs.mjs

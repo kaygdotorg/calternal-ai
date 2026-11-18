@@ -354,6 +354,7 @@ impl Content {
             self.journals.publish(
                 &s.journal,
                 request.account,
+                request.via,
                 request.id,
                 request.operation,
                 request.fingerprint,

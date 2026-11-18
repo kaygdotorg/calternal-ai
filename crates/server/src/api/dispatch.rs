@@ -285,9 +285,12 @@ pub(super) async fn run_admitted_operation<D: Directory>(
         };
         return crate::plugins::job_api::dispatch(state, p, op, space, input).await;
     }
+    let actor = agent
+        .as_ref()
+        .map(|scope| scope.actor.clone())
+        .unwrap_or_else(|| calternal_types::Actor::account(p.id));
     if op.starts_with("secrets.") {
-        let via = agent.as_ref().and_then(|a| a.actor.via.clone());
-        return crate::secrets::dispatch(state, p, policy, input, via).await;
+        return crate::secrets::dispatch(state, p, policy, input, actor.via).await;
     }
     if let Some(operation) = calternal_core::PeopleOperation::from_id(op)
         && !op.starts_with("spaces.")
@@ -295,7 +298,7 @@ pub(super) async fn run_admitted_operation<D: Directory>(
         return super::people::dispatch(state, p, operation, request_id.to_owned(), input).await;
     }
     if op.starts_with("spaces.") {
-        return super::spaces::dispatch(state, p, request_id, op, input).await;
+        return super::spaces::dispatch(state, p, actor, request_id, op, input).await;
     }
     if state
         .registry
@@ -308,6 +311,7 @@ pub(super) async fn run_admitted_operation<D: Directory>(
             p.clone(),
             session,
             agent,
+            actor,
             request_id,
             op,
             input.clone(),
@@ -317,13 +321,13 @@ pub(super) async fn run_admitted_operation<D: Directory>(
         return Ok(result);
     }
     if policy.constraint == Constraint::PluginInvocation {
-        return invoke_plugin(state, p, session, request_id, op, policy, input).await;
+        return invoke_plugin(state, p, session, actor, request_id, op, policy, input).await;
     }
     let delivery_space = input
         .get("space_id")
         .and_then(Value::as_str)
         .and_then(|s| SpaceId::parse(s).ok());
-    let value = dispatch_checked(state.clone(), p.clone(), request_id, op, input).await?;
+    let value = dispatch_checked(state.clone(), p.clone(), actor, request_id, op, input).await?;
     if let Some(space) = delivery_space {
         policy.check(super::authorization::capabilities(&state, p.id, space).await?)?;
     }
@@ -336,6 +340,7 @@ pub(super) async fn run_admitted_operation<D: Directory>(
 pub(super) async fn dispatch_checked<D: Directory>(
     state: Shared<D>,
     p: Identity,
+    actor: calternal_types::Actor,
     request_id: &str,
     op: &str,
     input: JsonObject,
@@ -350,9 +355,9 @@ pub(super) async fn dispatch_checked<D: Directory>(
             to_value(NoteResult { note })
         }
         "notes.delete" | "notes.restore" | "trash.purge" | "notes.rename" => {
-            super::notes::mutate(&state, p, request_id, op, input).await
+            super::notes::mutate(&state, actor, request_id, op, input).await
         }
-        "notes.create" | "notes.update" => mutate_note(state, p, request_id, op, input).await,
+        "notes.create" | "notes.update" => mutate_note(state, actor, request_id, op, input).await,
         "plugins.list" => {
             let i: PluginsListInput = decode(input)?;
             let space = space_of(&i.space_id)?;
@@ -397,14 +402,14 @@ pub(super) async fn dispatch_checked<D: Directory>(
                         .collect();
                     s.provision_plugin(
                         space,
-                        principal,
+                        actor.clone(),
                         &plugin.kind_registrations(),
                         &collections,
                     )?;
                 }
                 let manifest = plugin.manifest.clone();
                 s.set_plugin_enabled(
-                    principal,
+                    actor,
                     &rid,
                     &op,
                     &fp,
@@ -485,7 +490,7 @@ pub(super) fn replay_receipt(
 /// Cost: one hash task followed by the store's receipt/read/durability work.
 pub(super) async fn mutate_note<D: Directory>(
     state: Shared<D>,
-    p: Identity,
+    actor: calternal_types::Actor,
     request_id: &str,
     op: &str,
     input: JsonObject,
@@ -500,7 +505,7 @@ pub(super) async fn mutate_note<D: Directory>(
     };
     let rid = request_id.to_string();
     let op = op.to_string();
-    let principal = p.id;
+    let principal = actor.account;
     let space = space_of(
         create
             .as_ref()
@@ -513,11 +518,11 @@ pub(super) async fn mutate_note<D: Directory>(
             return Ok(v);
         }
         let note = if let Some(i) = create {
-            s.create(principal, &rid, &op, &fp, space, &i.title, &i.markdown)?
+            s.create(actor, &rid, &op, &fp, space, &i.title, &i.markdown)?
         } else {
             let i = update.expect("update input");
             s.update(
-                principal,
+                actor,
                 &rid,
                 &op,
                 &fp,

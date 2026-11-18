@@ -63,6 +63,14 @@ seven days. The journal's operator-configured receipt retention bounds deduplica
 
 ### Read one checkpoint addition
 
+Content journal entries identify the acting account in `author` and carry
+its attribution in `data.actor`. That record has `account` and `via`.
+`via` is null for a person and `{"Agent":{"thread":"THREAD_UUID"}}` for an
+agent, including saved turn checkpoints. A plugin invocation carries
+`{"Plugin":{"plugin":"PLUGIN_ID"}}`. The server derives this from admitted
+authority. A retry or replay of an unpublished journal entry keeps the first
+writer's attribution.
+
 A `threads.checkpoint` entry carries the target `data.revision` and
 `data.append` with `base_revision`, `offset`, `start` and `length`.
 Pass the entry's `data` as `since` to `threads.get` with the thread ID.
@@ -79,6 +87,8 @@ applying the insertion. The first checkpoint includes a new message's markers.
 Later checkpoints can insert before its closing marker, which rules out a
 message index or a whole-file suffix as the cursor. `start` and `length` are
 the byte range in the target revision and are echoed from the journal entry.
+Clients can copy `data` into `since` as before. The read uses the revision
+and append range, and ignores the accompanying actor.
 A session-only checkpoint has a zero-byte addition. A full get still returns
 the document, metadata and active job.
 

@@ -2,13 +2,18 @@
 // The list is wallpapers.json (photo IDs and photographers, from docs/settings.md). Each photo is downloaded through its Unsplash page's download
 // link, then resized by the image host (a 2400 px picture for the wallpaper, 360 px for the picker, and a lighter 2400 px one for the light scheme). Already fetched files are kept; a failed
 // download is reported and skipped, so an offline build still works (the app then offers only the generated looks).
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+// A machine the image host refuses (some dev VMs) takes the files from a cache folder (`CAL_WALLPAPER_CACHE`, default ~/.cache/calternal-ai/wallpapers), which every successful fetch refreshes:
+// copy that folder from a machine that fetched them (the browser gate, `npm run e2e:gate`, needs them).
+import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const out = join(here, "..", "public", "wallpapers");
 mkdirSync(out, { recursive: true });
+const cache = process.env.CAL_WALLPAPER_CACHE ?? join(homedir(), ".cache", "calternal-ai", "wallpapers");
+if (existsSync(cache)) cpSync(cache, out, { recursive: true, force: false }); // what is already here is kept; what is missing comes from the cache
 const list = JSON.parse(readFileSync(join(here, "..", "wallpapers.json"), "utf8"));
 const credits = [];
 
@@ -52,5 +57,6 @@ for (const p of list) {
     console.warn(`wallpapers: skipped ${p.id}: ${e.message}`);
   }
 }
-writeFileSync(join(out, "credits.json"), JSON.stringify(credits, null, 1));
+if (credits.length) { writeFileSync(join(out, "credits.json"), JSON.stringify(credits, null, 1)); try { cpSync(out, cache, { recursive: true }); } catch { /* the cache is a convenience */ } }
 console.log(`wallpapers: ${credits.length} of ${list.length} available`);
+if (credits.length < list.length) console.warn(`wallpapers: ${list.length - credits.length} are missing, so the default wallpaper and the picker are incomplete and the browser gate (npm run e2e:gate) will refuse to start. If the image host refuses this machine (a 401 above), copy the folder from a machine that has them and build again:\n  rsync -a ubuntu@calternal-dev-02-std:.cache/calternal-ai/wallpapers/ ~/.cache/calternal-ai/wallpapers/ && npm run build -w apps/web`);

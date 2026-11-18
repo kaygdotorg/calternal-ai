@@ -1,10 +1,11 @@
 /**
- * Reactive state for the Notes app: the current space's note list (the newest page, a tag filter), the open note and its save state (saved, saving, conflict, offline), the Trash, and the private draft, kept current by
+ * Reactive state for the Notes app: the current space's note list (read a page at a time as it is scrolled, a tag filter), the open note and its save state (saved, saving, conflict, offline), the Trash, and the private draft, kept current by
  * the backend's change feed. The backend is the fixture by default and the real server in server mode (server/client.ts). A save never touches what the editor shows (`view`), so typing is never overwritten.
  */
 import { spaces as shellSpaces } from "../../shell/spaces.svelte";
 import { server, serverMode } from "../../server/client";
-import { FixtureNotes, ServerNotes, type Note, type NoteSummary, type NotesClient, type Space, type TagInfo } from "./client";
+import { Paged } from "./paged.svelte";
+import { FixtureNotes, ServerNotes, type Change, type Note, type NoteSummary, type NotesClient, type Space, type TagInfo } from "./client";
 import { FixtureInput, ServerInput, type Draft, type InputClient, type PendingWrite } from "./input";
 import { ServerError } from "../../server/client";
 import { say } from "../../server/say";
@@ -22,12 +23,17 @@ class NotesStore {
   readonly live = serverMode();
   spaces = $state<Space[]>([]);
   space = $state<Space | null>(null);
-  list = $state<NoteSummary[]>([]);
+  /** The space's notes (newest first, filtered by `tag`), tags and Trash, a page at a time: `pages.next()` reads the next page when the list is scrolled near its end. */
+  readonly notePages = new Paged<NoteSummary>((c) => this.client.list(this.space!.id, this.tag ?? undefined, c), (n) => n.id, (e) => say(e, "load more notes"));
+  readonly tagPages = new Paged<TagInfo>((c) => this.client.tags(this.space!.id, c), (t) => t.name, (e) => say(e, "load more tags"));
+  readonly trashPages = new Paged<NoteSummary>((c) => this.client.trash(this.space!.id, c), (n) => n.id, (e) => say(e, "load more of the Trash"));
+  /** The notes read so far. */
+  get list(): NoteSummary[] { return this.notePages.items; }
   /** The tags in use in the space, and the one the list is filtered by (null: all notes). */
-  tags = $state<TagInfo[]>([]);
+  get tags(): TagInfo[] { return this.tagPages.items; }
   tag = $state<string | null>(null);
   /** The space's Trash (loaded when the Trash view opens, and after a delete or restore). */
-  trashed = $state<NoteSummary[]>([]);
+  get trashed(): NoteSummary[] { return this.trashPages.items; }
   /** The saved note: the revision the next save is checked against. What the editor shows is `view`, which a save never touches (so typing during a save is never overwritten). */
   note = $state<Note | null>(null);
   /** What the editor shows: set when a note is opened, replaced from elsewhere, or when the person takes the other version; `seq` says it is new. */
@@ -66,14 +72,16 @@ class NotesStore {
     const next = this.spaces.find((s) => s.id === id);
     if (!next || next.id === this.space?.id) return;
     this.space = next;
+    void this.tagPages.reset().catch(() => {}); this.trashPages.clear();
     this.stop?.();
-    this.stop = this.client.watch(next.id, () => void this.follow());
-    await this.refresh();
+    this.stop = this.client.watch(next.id, (c) => void this.follow(c));
+    await this.notePages.reset();
   }
   /**
    * A change came from elsewhere (the space journal, no polling): refresh the list, and if the open note changed there, show it (nothing being typed), or remember it as the conflict the next save will meet.
    */
-  async follow(): Promise<void> {
+  async follow(change?: Change): Promise<void> {
+    await this.settle(change);
     await this.refresh().catch(() => {});
     const n = this.note;
     if (!n || !this.space) return;
@@ -90,20 +98,31 @@ class NotesStore {
     this.typing = true; if (this.saveState === "saved" || this.saveState === "failed" || this.saveState === "waiting") this.saveState = "dirty"; }
   async refresh(): Promise<void> {
     if (!this.space) return;
-    this.list = await this.client.list(this.space.id, this.tag ?? undefined);
-    void this.client.tags(this.space.id).then((t) => (this.tags = t), () => {});
+    await this.notePages.refresh();
+    void this.tagPages.refresh().catch(() => {});
+  }
+  /** A journal entry about a note the list already holds (scrolled past, so the first-page read will not show it): ask about that one note. Gone or in the Trash, it leaves the list; otherwise its row takes the new title. */
+  private async settle(change?: Change): Promise<void> {
+    if (!change || !this.space || !this.notePages.has(change.item)) return;
+    try {
+      const n = await this.client.get(this.space.id, change.item);
+      this.notePages.replace(n.id, { id: n.id, spaceId: n.spaceId, title: n.title, updatedAt: n.updatedAt, revision: n.revision });
+    } catch (e) {
+      if (e instanceof ServerError && e.code === "not_found") { this.notePages.drop(change.item); if (this.trashPages.items.length) void this.trashPages.refresh().catch(() => {}); }
+    }
   }
   /** Filters the list by a tag (null: all notes). */
-  async filter(tag: string | null): Promise<void> { this.tag = tag; await this.refresh(); }
+  async filter(tag: string | null): Promise<void> { this.tag = tag; await this.notePages.reset(); }
   /** Reads the Trash. */
   async loadTrash(): Promise<void> {
     if (!this.space) return;
-    try { this.trashed = await this.client.trash(this.space.id); this.error = ""; } catch (e) { this.error = say(e, "load the Trash"); }
+    try { await this.trashPages.refresh(); this.error = ""; } catch (e) { this.error = say(e, "load the Trash"); }
   }
   /** Moves a note to the Trash with an Undo; if it is the open note the card goes back to the list. */
   async remove(id: string, title: string): Promise<void> {
     try {
       await this.client.remove(id);
+      this.notePages.drop(id);
       await this.refresh();
       if (segments()[0] === "notes" && segments()[1] === id) navigate("/notes");
       undoable("note.trash", id, `Moved \u201c${title}\u201d to the Trash`, async () => { try { await this.client.restore(id); await this.refresh(); return true; } catch { return false; } });
@@ -111,11 +130,11 @@ class NotesStore {
   }
   /** Brings a note back from the Trash. */
   async restore(id: string): Promise<void> {
-    try { await this.client.restore(id); await Promise.all([this.refresh(), this.loadTrash()]); } catch (e) { failed(say(e, "restore the note"), () => void this.restore(id)); }
+    try { await this.client.restore(id); this.trashPages.drop(id); await Promise.all([this.refresh(), this.loadTrash()]); } catch (e) { failed(say(e, "restore the note"), () => void this.restore(id)); }
   }
   /** Deletes a trashed note for good. */
   async purge(id: string): Promise<void> {
-    try { await this.client.purge(id); await this.loadTrash(); } catch (e) { failed(say(e, "delete the note"), () => void this.purge(id)); }
+    try { await this.client.purge(id); this.trashPages.drop(id); await this.loadTrash(); } catch (e) { failed(say(e, "delete the note"), () => void this.purge(id)); }
   }
   /** Renames a note from the list (the revision is the list's: a stale one is a conflict, said in words). */
   async rename(n: NoteSummary, title: string): Promise<void> {

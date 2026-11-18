@@ -5,6 +5,7 @@ use super::*;
 pub(super) async fn dispatch<D: Directory>(
     state: Shared<D>,
     p: Identity,
+    actor: calternal_types::Actor,
     request_id: &str,
     op: &str,
     input: JsonObject,
@@ -31,7 +32,8 @@ pub(super) async fn dispatch<D: Directory>(
                 st.store.content().admit(
                     space,
                     calternal_content::Request {
-                        account: p.id,
+                        account: actor.account,
+                        via: actor.via.as_ref(),
                         id: &rid,
                         operation: &operation,
                         fingerprint: &fp,

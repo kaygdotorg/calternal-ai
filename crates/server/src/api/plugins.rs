@@ -90,6 +90,7 @@ pub(super) async fn invoke_plugin<D: Directory>(
     state: Shared<D>,
     p: Identity,
     session: Session,
+    actor: calternal_types::Actor,
     request_id: &str,
     op: &str,
     policy: authz::Policy,
@@ -170,7 +171,6 @@ pub(super) async fn invoke_plugin<D: Directory>(
                 .with_details(serde_json::json!({ "reason": "plugin_generation_changed" })),
         );
     }
-    let caller = p.id;
     policy.check(super::authorization::capabilities(&state, p.id, space).await?)?;
     let value = outcome_value(outcome)?;
     check_view(&plugin, &value)?;
@@ -178,7 +178,7 @@ pub(super) async fn invoke_plugin<D: Directory>(
         // Only a delivered result is receipted: a refused or failed call may be
         // retried, and its brokered writes replay by their own receipts.
         let (principal, rid, op, result) =
-            (caller, request_id.to_owned(), op.to_owned(), value.clone());
+            (actor, request_id.to_owned(), op.to_owned(), value.clone());
         blocking(&state, move |s| {
             s.record_plugin_receipt(principal, &rid, &op, &fp, space, result)
         })
