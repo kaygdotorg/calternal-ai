@@ -544,6 +544,7 @@ name = "calternal-perf"
 version = "0.1.0"
 dependencies = [
  "calternal-cli",
+ "calternal-server",
  "calternal-types",
  "clap",
  "reqwest",

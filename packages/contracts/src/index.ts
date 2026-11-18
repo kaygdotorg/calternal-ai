@@ -686,6 +686,52 @@ folder: string, } | {
  */
 hidden: boolean, };
 /**
+ * Search visible items by title and body. An omitted space searches all readable spaces.
+ */
+
+export type SearchInput = {
+/**
+ * Text typed into the palette.
+ */
+query: string,
+/**
+ * Optional space UUID.
+ */
+space_id?: string,
+/**
+ * Kind filter. An empty list selects all opted-in kinds.
+ */
+kinds?: Array<string>,
+/**
+ * Maximum rows to return, from 1 to 50. Defaults to 20.
+ */
+limit?: number,
+/**
+ * Opaque continuation from this operation and filter set.
+ */
+cursor?: string, };
+/**
+ * Picker filter for cross-space item and thread lookups.
+ */
+
+export type LookupInput = {
+/**
+ * Literal title prefix.
+ */
+prefix: string,
+/**
+ * Optional space UUID.
+ */
+space_id?: string,
+/**
+ * Maximum rows, from 1 to 50. Defaults to 20.
+ */
+limit?: number,
+/**
+ * Opaque continuation from the same lookup and filters.
+ */
+cursor?: string, };
+/**
  * Picker filter within one space.
  */
 
@@ -698,6 +744,61 @@ space_id: string,
  * Literal display-name prefix. Omit to browse.
  */
 prefix?: string, };
+/**
+ * One plain-text excerpt segment. Render its text literally.
+ */
+
+export type SearchSegment = {
+/**
+ * Literal display text.
+ */
+text: string,
+/**
+ * Whether the segment matches the search.
+ */
+matched: boolean, };
+/**
+ * One indexed item in its visible space.
+ */
+
+export type SearchHit = {
+/**
+ * Stable item address.
+ */
+address: string,
+/**
+ * Manifest kind identifier.
+ */
+kind: string,
+/**
+ * Owning space UUID.
+ */
+space_id: string,
+/**
+ * Display title.
+ */
+title: string,
+/**
+ * Short title or body excerpt with structured highlights.
+ */
+excerpt: Array<SearchSegment>, };
+/**
+ * Visible results in deterministic order.
+ */
+
+export type SearchResult = {
+/**
+ * The current page.
+ */
+hits: Array<SearchHit>,
+/**
+ * Opaque continuation, omitted at the end.
+ */
+next_cursor?: string,
+/**
+ * A readable selected index is catching up, rebuilding, or has reached its coverage limit.
+ */
+partial: boolean, };
 /**
  * A named account or group directly granted access to the selected space.
  */
@@ -840,6 +941,10 @@ manifests: Array<PaletteManifest>, };
  */
 
 export type ManifestKind = {
+/**
+ * Opt in to indexing the title and Markdown body for space search.
+ */
+searchable?: boolean,
 /**
  * Placement within the selected per-space userdata tree; never an appdata database path.
  */

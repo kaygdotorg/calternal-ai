@@ -470,6 +470,13 @@
         "schema": {
           "description": "JSON Schema for the kind content; no executable code."
         },
+        "searchable": {
+          "description": "Opt in to indexing the title and Markdown body for space search.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
         "storage": {
           "description": "Placement within the selected per-space userdata tree; never an appdata database path.",
           "allOf": [

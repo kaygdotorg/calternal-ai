@@ -227,7 +227,11 @@ pub fn policy(operation: &str) -> Option<&'static Policy> {
             .map(|op| Policy {
                 operation: Cow::Borrowed(op.id()),
                 required: calternal_core::SearchOperation::CAPABILITY,
-                scope: Scope::Space,
+                scope: if op.target() == calternal_core::PeopleTarget::Space {
+                    Scope::Space
+                } else {
+                    Scope::Account
+                },
                 constraint: Constraint::None,
             })
             .collect()

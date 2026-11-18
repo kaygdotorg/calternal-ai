@@ -17,7 +17,7 @@ pub(crate) fn metadata(title: &str, markdown: &str) -> Result<Value, calternal_t
 
 /// Fold each title scalar independently so lookup prefixes are literal.
 pub(crate) fn title_key(title: &str) -> String {
-    title.chars().flat_map(char::to_lowercase).collect()
+    calternal_content::fold_title(title)
 }
 
 /// Look up a Notes address's lifecycle state after its owning-space check.

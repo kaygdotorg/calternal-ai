@@ -108,6 +108,7 @@ uses them. Human invite output shows expiry in the local time zone.
 | `people delete [--account ACCOUNT_UUID]` | Permanently erase your account or delete another as a server administrator. | Account UUID and deletion status. | `account_id`, `deleted` |
 | `people roles` | Show role definitions for a space. | Role labels and capability tables. | `roles` |
 | `people set-profile NAME` | Update your own display name. | Account ID and name. | `account_id`, `name` |
+| `people set-time-zone [ZONE]` | Save your IANA time zone or follow this device. | Account ID and time-zone preference. | `account_id`, `time_zone` |
 | `people list [--cursor CURSOR]` | List server accounts with the people administration capability. | ID, name, role, state. | `people` |
 | `people disable ACCOUNT` | Disable the account and sign out its sessions. | Account ID and disable confirmation. | `account_id`, `disabled` |
 | `groups list [--group GROUP] [--cursor CURSOR]` | List server groups and current member IDs. | Group and member tables. | `groups` |
@@ -285,6 +286,9 @@ seven-day confirmation, examples and operator safety ceilings.
 
 | Arguments | Purpose | Human output | JSON data |
 | --- | --- | --- | --- |
+| `search query TEXT [--kind KIND] [--space UUID] [--limit N] [--cursor TOKEN]` | Search titles and bodies across readable spaces. | Matches and optional continuation. | `hits`, `partial`, optional `next_cursor` |
+| `search items PREFIX [--space UUID] [--limit N] [--cursor TOKEN]` | Look up items by title prefix. | Item table and optional continuation. | `hits`, `partial`, optional `next_cursor` |
+| `search threads PREFIX [--space UUID] [--limit N] [--cursor TOKEN]` | Look up threads by title prefix. | Thread table and optional continuation. | `hits`, `partial`, optional `next_cursor` |
 | `search people --space UUID [PREFIX]` | Find accounts and groups to mention. | Name, subject type and ID. | `people` |
 | `search skills --space UUID [PREFIX]` | List space skill names and descriptions. | Skill table. | `skills` |
 | `search manifests --space UUID` | Read enabled plugin palette contributions. | Plugin, command and Settings tables. | `manifests` |

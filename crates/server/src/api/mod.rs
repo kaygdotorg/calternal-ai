@@ -80,7 +80,7 @@ pub struct AppState<D: Directory = StoredDirectory> {
     /// space keeps its own store and journal. See the auth database worker's
     /// documentation for the exact serialized interval.
     pub directory: D,
-    /// Immutable registry of trusted plugins and their manifest-derived policy rows.
+    /// Atomically published snapshots of trusted plugins and their derived policies.
     pub registry: Registry,
     /// Bounded pool of long-lived (plugin, space) workers routed through enrolled
     /// machines; explicit direct adapters serve disposable development and tests.
@@ -93,6 +93,20 @@ pub struct AppState<D: Directory = StoredDirectory> {
 
 /// Reference-counted host state; cloning never clones the directory or its grants.
 pub type Shared<D = StoredDirectory> = Arc<AppState<D>>;
+
+/// Start the background search worker against the live plugin catalog.
+/// The worker only holds a weak state reference and exits after the state drops.
+/// Startup spawns one thread and performs no content I/O.
+pub fn configure_search<D: Directory>(
+    state: &Shared<D>,
+) -> Result<std::thread::JoinHandle<()>, Error> {
+    let owner = Arc::downgrade(state);
+    let source: calternal_content::SearchConfigSource = Box::new(move || {
+        let state = owner.upgrade()?;
+        Some(state.registry.snapshot().search_configuration().clone())
+    });
+    state.store.shared_content().configure_search(source)
+}
 
 /// Construct the exact loopback hostnames accepted for a bound listener port.
 pub fn allowed_hosts(port: u16) -> Vec<String> {

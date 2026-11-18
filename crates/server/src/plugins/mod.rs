@@ -245,6 +245,7 @@ pub struct Catalog {
     plugins: Vec<Arc<Plugin>>,
     retained: BTreeMap<(String, u32), Arc<Plugin>>,
     tool_index: std::sync::OnceLock<String>,
+    search: std::sync::OnceLock<Arc<calternal_content::SearchConfig>>,
     slots: slots::SlotIndex,
     /// Operation ID -> (owning plugin index, derived policy).
     operations: BTreeMap<String, (usize, Policy)>,
@@ -327,6 +328,40 @@ impl Registry {
 }
 
 impl Catalog {
+    /// Derive the search view once per immutable snapshot. Builds from trusted,
+    /// available packages, with no storage access on subsequent requests.
+    pub(crate) fn search_configuration(&self) -> &Arc<calternal_content::SearchConfig> {
+        self.search.get_or_init(|| {
+            let kinds = self
+                .plugins()
+                .iter()
+                .filter(|plugin| plugin.unavailable.is_none())
+                .flat_map(|plugin| {
+                    let default = default_row(plugin);
+                    plugin.manifest.kinds.iter().filter_map(move |kind| {
+                        (kind.searchable == Some(true)).then(|| calternal_content::SearchKind {
+                            kind: kind.id.clone(),
+                            control: crate::store::plugin_key(&plugin.manifest.id),
+                            default_enabled: default.enabled,
+                            approval: default.approval,
+                            space: {
+                                #[cfg(feature = "dev-plugin-drafts")]
+                                {
+                                    plugin.draft_space
+                                }
+                                #[cfg(not(feature = "dev-plugin-drafts"))]
+                                {
+                                    None
+                                }
+                            },
+                        })
+                    })
+                })
+                .collect();
+            Arc::new(calternal_content::SearchConfig::new(kinds))
+        })
+    }
+
     /// Generated one-line operation index, built once after registry construction.
     /// Includes manifest operations as well as host operations; never grants access.
     pub fn tool_index(&self) -> &str {
