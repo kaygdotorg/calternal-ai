@@ -35,6 +35,7 @@ pub struct AgentInput {
     /// Check an entitled pool machine without exposing its identity.
     pub pool: bool,
     /// Use the caller's machine and login for this turn in a configured shared space.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub personal_machine: bool,
     /// Thread UUID for check/run; no thread file is created in step one.
     pub thread_id: String,

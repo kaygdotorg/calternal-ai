@@ -434,7 +434,7 @@ mod tests {
         migrate_release(&conn, upgrade_schema(), true).unwrap();
         assert_eq!(calternal_store::migrations::inspect(&conn, previous).unwrap(), upgrade_schema().version());
         assert_eq!(super::lease(&conn, lease).unwrap().unwrap().shared_sponsor, None);
-        let stored: usize = conn.query_row("SELECT count(*) FROM space_execution", [], |row| row.get(0)).unwrap();
+        let stored: i64 = conn.query_row("SELECT count(*) FROM space_execution", [], |row| row.get(0)).unwrap();
         assert_eq!(stored, 0);
     }
 

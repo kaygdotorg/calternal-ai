@@ -309,3 +309,19 @@ keep the credential directory outside tool reach. The initial shared adapter
 uses the existing tool-free Claude CLI mode, on a sandboxed machine. Personal
 execution keeps its normal tools. The settings response carries the notice
 “Personal subscriptions are licensed for use by one person.”
+
+Call `space.machine.get` with `space_id` to read the setting and the license
+notice. Call `space.machine.set` with `space_id` and `machine_id` to select a
+machine, or send `machine_id: null` to clear it. Only people with
+`space.settings` see the selected machine ID. Start the existing
+`provider.sign_in.start` flow with `shared: true`, `space_id`, and
+`provider_id: "calternal-claude-code"`. Its browser challenge and answer stay
+private to the account that started the flow. Both `threads.send` and
+`agent.run` accept `personal_machine: true` for a single turn.
+
+Shared login requires a current Podman machine role and a provider image with
+the dedicated shared Claude entry point. Older roles can still serve personal
+turns. Shared turns start a new provider session with an ephemeral home and no
+executable tools, hooks, or MCP servers. The machine keeps the shared login
+under the enrolling Owner's space directory until that Owner removes it or
+erases the account.
