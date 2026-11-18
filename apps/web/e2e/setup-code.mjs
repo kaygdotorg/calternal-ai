@@ -1,7 +1,7 @@
 // The first screen of a fresh installation: no owner yet (`auth/status` says `setup: true`) and a well-formed code the server does not know. The server answers that with `invite_invalid`
 // (the invitation code), and the first owner must still see the first owner's message, naming the command that makes a code, never the invitation words and never a file. The server is mocked
 // at the HTTP edge (only status, describe and the refusal), so this runs on the built app alone. Usage: node e2e/with-preview.mjs e2e/setup-code.mjs
-import { BASE, launch, serve } from "./lib.mjs";
+import { BASE, fillWho, launch, serve } from "./lib.mjs";
 const stop = await serve(); const browser = await launch();
 let bad = 0;
 const ok = (c, m, note = "") => { console.log(`${c ? "PASS" : "FAIL"}  ${m}${note ? "  " + note : ""}`); if (!c) bad++; };
@@ -18,9 +18,8 @@ try {
     await p.waitForSelector("html[data-ready]");
     await p.locator("form input").first().waitFor({ timeout: 8000 });
     ok(/Set up|owner/i.test(await p.locator("main, body").first().innerText()), `${device}: setup is pending, so the first-owner form shows`);
-    const inputs = p.locator("form input");
-    await inputs.nth(0).fill("ABCD-EFGH-JKLM"); if ((await inputs.count()) > 1) await inputs.nth(1).fill("Kay");
-    await p.getByRole("button", { name: /Create passkey|Set up/ }).click();
+    await fillWho(p, "ABCD-EFGH-JKLM", "Kay");
+    await p.getByRole("button", { name: "Create passkey" }).click();
     await p.waitForTimeout(600);
     const text = await p.locator("form").innerText();
     ok(/podman exec calternal-ai \/usr\/local\/bin\/calternal setup-code --appdata \/data\/appdata/.test(text), `${device}: an unknown well-formed code shows the setup-code command`, text.slice(-160).replace(/\n/g, " "));

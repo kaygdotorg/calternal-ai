@@ -1,0 +1,14 @@
+/* The provider mark of an agent message is part of its first line, not a column: no indent hangs under it. The message body uses the full width from the second line on. Three cases, chosen in
+   MessageRow.svelte / StreamRow.svelte by what the message starts with (`lead-text`, `lead-row`, `lead-work`, `lead-own` on `.lead-host`):
+   - text: the mark is placed over the start of the first paragraph's first line, which is indented by the mark's width (`text-indent` indents only the first line);
+   - a reasoning or tool row: the mark sits inside the row, before its label (the row's start padding grows by the mark's width);
+   - the working row of a running turn: the same, before "Working";
+   - anything else (a list, a code block, a picture first): the mark has a line of its own above the body.
+   The mark's box is one line of the message's own font tall (`1lh` in ProviderMark.svelte), so its centre is the first line's x-height centre at every text size and zoom. */
+.lead-host { position: relative; --lead-w: calc(var(--s-8) + var(--s-3)); }
+.lead-host > .lead { position: absolute; z-index: 1; top: 0; left: 0; font-size: var(--text-ui); line-height: 1.55; font-weight: var(--body-weight); }
+.lead-host > .lead.row { left: var(--s-3); height: calc(var(--s-9) + var(--s-3)); display: grid; align-items: center; line-height: 1; }
+.lead-host.lead-text > .lead + .md > p:first-child { text-indent: var(--lead-w); }
+.lead-host.lead-row > .lead + * .block-head { padding-inline-start: calc(var(--s-3) + var(--lead-w)); }
+.lead-host.lead-work > .lead + .working { padding-inline-start: calc(var(--s-3) + var(--lead-w)); }
+.lead-host.lead-own > .lead { position: static; }
