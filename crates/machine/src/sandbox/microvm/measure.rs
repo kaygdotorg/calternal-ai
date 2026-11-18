@@ -136,15 +136,19 @@ async fn compare_microvm_and_podman_under_perf_lock() {
     let config = std::env::var_os("CALTERNAL_MICROVM_TEST_CONFIG").unwrap();
     let mut config = Config::load(Path::new(&config)).await.unwrap();
     let root = tempfile::tempdir().unwrap();
-    let image = "localhost/calternal-standard:current";
-    let podman = PodmanBackend::new("podman", root.path().join("podman"), image);
-    starts(&podman).await;
-    podman_density(
-        &podman,
-        config.max_guests,
-        (1024 + u64::from(config.memory_mib)) * 1024,
-    )
-    .await;
+    // The TAP namespace can have only the invoking mapped UID. Measure the
+    // host Podman control outside that namespace with the same perf lock.
+    if config.network_policy.is_none() {
+        let image = "localhost/calternal-standard:current";
+        let podman = PodmanBackend::new("podman", root.path().join("podman"), image);
+        starts(&podman).await;
+        podman_density(
+            &podman,
+            config.max_guests,
+            (1024 + u64::from(config.memory_mib)) * 1024,
+        )
+        .await;
+    }
     let desired_pool = config.warm_guests;
     config.warm_guests = 0;
     let backend = MicrovmBackend::new(root.path().join("starts"), config.clone());
@@ -210,6 +214,43 @@ async fn compare_microvm_and_podman_under_perf_lock() {
             "{}",
             json!({"backend":"microvm","warm_guests":desired_pool,"preboot_ms":time.elapsed().as_secs_f64()*1000.0})
         );
+        let spec = spec();
+        let time = Instant::now();
+        let picked_up = pool.start(&spec).await.unwrap();
+        command(&*picked_up).await;
+        let warm_pickup_ms = time.elapsed().as_secs_f64() * 1000.0;
+        picked_up.release().await.unwrap();
+        drop(picked_up);
+
+        // Advance the idle timestamp while exercising the actual sweep path
+        // and persisted disk. The benchmark times the wake, not the wait.
+        let slot = pool.0.account(spec.account_id);
+        slot.lock().await.last_used = Instant::now() - super::IDLE;
+        drop(slot);
+        tokio::time::timeout(Duration::from_secs(90), async {
+            loop {
+                if pool.0.account(spec.account_id).lock().await.vm.is_none() {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
+        })
+        .await
+        .unwrap();
+        let time = Instant::now();
+        let restarted = pool.start(&spec).await.unwrap();
+        command(&*restarted).await;
+        let idle_wake_ms = time.elapsed().as_secs_f64() * 1000.0;
+        println!(
+            "{}",
+            json!({
+                "backend":"microvm",
+                "warm_pickup_ms":warm_pickup_ms,
+                "idle_wake_ms":idle_wake_ms
+            })
+        );
+        restarted.release().await.unwrap();
+        pool.erase(spec.account_id, None).await.unwrap();
         pool.shutdown().await.unwrap();
     }
 }

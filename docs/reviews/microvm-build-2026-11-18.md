@@ -120,6 +120,60 @@ The Podman and Firecracker leak checks passed. A restricted PATH test also
 confirmed that the Firecracker check still detects a fixture leak when the
 host has no Podman.
 
+The fixed native suite passed eight machine cases and ignored the
+perf-only benchmark. All three live HTTP conformance cases passed
+in 16.76 seconds. Both leak checks passed. The full backend run after the
+`45fa2c0` merge passed the plugin build, test-plugin server build,
+workspace, integration, plugin, GenUI, contract, docs and publication
+checks. Ordinary conformance passed 119 of 120 cases. The failing
+`filesystem_modes_and_complete_sql_inventory` case found mode 0755 on
+`userdata-ssd/spaces` and one space directory. The newly merged Notes
+rebuild calls the directory-creating `Folder::open` on its read path.
+This was reported for the search lane to resolve.
+
+## Locked performance run
+
+The artifact was built on dev-01 and run on `calternal-perf-02-backup01`
+with a 512 MiB guest, two vCPUs, a 4 GiB ext4 account disk and one warm
+guest. Firecracker was 1.16.1. The host's existing ext4 formatter was
+1.47.2. The TAP and nftables policy ran in a private namespace with a
+synthetic upstream. Timing ends with completion of a `true` command.
+The new MicroVM run ended in 140.76 seconds and left no scoped
+Firecracker processes or scratch directories.
+
+```sh
+# Development VM
+nix develop -c npm run build:plugins
+nix develop .#deploy -c cargo test --locked -j6 --target x86_64-unknown-linux-musl \
+  -p calternal-machine --lib --no-run --message-format=json
+
+# Perf-02, in ~/calternal-ai-microvm-51/stage5 with the dev-built image and test binary
+/usr/local/bin/perf-lock.sh env PATH="/usr/sbin:/sbin:$PATH" \
+  ./tests/support/microvm-perf.sh config.json ./calternal-microvm-bench-fixed
+```
+
+| Metric, milliseconds | Samples | Current Firecracker p50 / p95 | Earlier host Podman p50 / p95 |
+| --- | ---: | ---: | ---: |
+| Cold first thread | 10 | 1,039.85 / 1,104.98 | 609.25 / 639.00 |
+| Second thread in the same account | 10 | 129.44 / 153.47 | 558.18 / 604.65 |
+| One command after startup | 300 | 85.50 / 100.36 | 298.99 / 320.93 |
+
+One preboot took 4,824.01 ms from role initialization, and one warm pickup
+took 169.81 ms. One wake after the idle sweep took 1,010.36 ms. The harness
+advanced the account's idle timestamp to trigger the production sweep and
+then timed the restart from the persisted disk. Warm pickup met the 2 s
+target in this observation. Wake exceeded the 1 s target by 10.36 ms.
+
+With 3,661.95 MiB initially available, the 8 GB host admitted 17 idle
+accounts before the configured 1 GiB host reserve plus one 512 MiB guest
+reservation prevented the next admission. Across five settled samples,
+the host available-memory delta averaged 127.89 MiB per account and VMM
+PSS averaged 128.52 MiB. Both were below the 150 MiB idle target. The
+earlier host Podman run reached its configured cap of 20 at 14.02 MiB
+per account. Its results are the earlier locked control from the same
+host, so the table compares separate runs. Raw current results are in
+`~/calternal-ai-microvm-51/stage5/perf-512-tap-fixed.log`.
+
 ## Backend gate commands
 
 Run these in the development VM lane. Each cargo build or test uses six jobs.
