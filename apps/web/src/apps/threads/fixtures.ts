@@ -174,7 +174,7 @@ export class FixtureClient implements ThreadsClient {
         }
       }
     }
-    return hits.sort((a, b) => b.at - a.at).slice(0, limit);
+    return hits.sort((a, b) => (b.at ?? 0) - (a.at ?? 0)).slice(0, limit);
   }
   async messageIndex(threadId: string, messageId: string): Promise<number | undefined> {
     const t = this.threadList.find((x) => x.id === threadId);

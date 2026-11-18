@@ -83,6 +83,8 @@ export interface ThreadsClient extends ChoicesClient, RequestsClient, PanelsClie
   searchMessages?(query: string, limit?: number): Promise<MessageHit[]>;
   /** Where a message is in its thread (its index among the thread's messages), so a list can jump to it without loading what is between; undefined when it is not there. */
   messageIndex?(threadId: string, messageId: string): Promise<number | undefined>;
+  /** The picker and search lookups when the server has them (search.query, people.lookup, skills.list, threads.lookup, items.lookup): the composer's `@` and `/` and message search use these instead of the fixtures. */
+  lookups?: Lookups;
   /** Follows a thread while it is open. Returns the unsubscribe. */
   watch(threadId: string, events: ThreadEvents): () => void;
   /** Sends a message (steers a running turn). `requestId` makes a retry safe. */
@@ -99,4 +101,20 @@ export interface ThreadsClient extends ChoicesClient, RequestsClient, PanelsClie
   archive(threadId: string): Promise<void>;
   /** Takes back the last archive of this thread (and the finished children that went with it). Resolves false if it cannot. */
   unarchive(threadId: string): Promise<boolean>;
+}
+
+/** One row of a picker lookup: a thread or an item. */
+export interface PickerHit { id: string; title: string; kind: string; space: string }
+/** The lookups behind message search and the composer's pickers. Each is one request; none throws for "no match" (an empty list). */
+export interface Lookups {
+  /** Messages (or threads, where the index is per thread) that match, newest first. */
+  searchMessages(query: string, limit?: number): Promise<MessageHit[]>;
+  /** People and groups of the current space whose display name starts with `prefix` (empty browses). */
+  people(prefix: string): Promise<{ id: string; name: string; kind: string }[]>;
+  /** The current space's skills whose name starts with `prefix`. */
+  skills(prefix: string): Promise<{ name: string; description: string }[]>;
+  /** Threads by title prefix across the spaces the person can read. */
+  threads(prefix: string): Promise<PickerHit[]>;
+  /** Items (notes and the like) by title prefix across the spaces the person can read. */
+  items(prefix: string): Promise<PickerHit[]>;
 }

@@ -71,14 +71,14 @@ export interface ThreadSummary {
 
 /** One message that matched a search in the threads: where it is, when it was written and the line that matched, so a result can open the thread scrolled to it. */
 export interface MessageHit {
-  /** The message's id (stable across reloads; `?m=<id>` on a thread's address scrolls to it). */
-  messageId: string;
+  /** The message's id (stable across reloads; `?m=<id>` on a thread's address scrolls to it). Absent when the index is per thread, as the server's is: the thread then opens at its end. */
+  messageId?: string;
   /** The thread it is in. */
   threadId: string;
   /** That thread's title, for the result row. */
   threadTitle: string;
-  /** Milliseconds since the epoch the message was written; results are newest first. */
-  at: number;
+  /** Milliseconds since the epoch the message was written; results are newest first. Absent when the index does not carry it. */
+  at?: number;
   /** The line of the message that matched, trimmed. */
   line: string;
   /** Where the match is in `line` (start inclusive, end exclusive), for highlighting. */
