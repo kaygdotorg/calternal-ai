@@ -201,7 +201,7 @@
     {#if showLeft}<div class="edge l">{#if shell.narrow}<Pill icon="sidebar" label="Show the sidebar" aria-keyshortcuts={ariaKeys(shortcuts.chordFor("sidebar"))} onclick={() => shell.toggleSidebar()} />{:else}<CollapsedPill {app} />{/if}</div>{/if}
     {#if showRight}<div class="edge r"><Pill icon="sidebar-right" label="Show the side panel" aria-keyshortcuts={ariaKeys(shortcuts.chordFor("panel"))} onclick={() => shell.toggleRight()} /></div>{/if}
     {#if canvasEnabled}
-      <!-- The canvas experiment (canvas/Canvas.svelte): no card round it; the area between the sidebars is the canvas and each window is a middle card. The app switcher floats over the windows in one slot at the area's bottom centre (`.area > .appbar`). -->
+      <!-- The canvas experiment (canvas/Canvas.svelte): no card round it; the area between the sidebars is the canvas and each window is a middle card. The app switcher is in the sidebar's footer. -->
       <div class="area" role="region" aria-label={app.name}>
         <div class="app"><Canvas /></div>
       </div>
@@ -259,7 +259,6 @@
   .col { position: relative; height: 100%; display: flex; flex-direction: column; }
   .app { flex: 1; min-height: 0; position: relative; }
   /* The canvas experiment: the area has no card of its own; its windows run to the bottom edge (the app switcher is in the sidebar's footer). */
-     rule is the only place that says where it is). */
   .area { position: relative; height: 100%; }
   .area > .app { position: absolute; inset: 0; }
   .mid.cv { padding: 0; }
