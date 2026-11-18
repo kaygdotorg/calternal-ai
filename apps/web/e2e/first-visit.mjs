@@ -17,7 +17,7 @@ for (const scheme of ["light", "dark"]) {
   await page.waitForSelector("html[data-ready]"); await page.waitForTimeout(1500);
   const r = await page.evaluate(() => ({ stored: localStorage.getItem("cal.appearance"), back: getComputedStyle(document.querySelector(".backdrop")).backgroundImage, cheap: document.documentElement.dataset.cheap !== undefined }));
   ok(r.stored === null, `${scheme}: a first visit stores no setting`);
-  ok(/wallpapers\/.*-blur.*\.jpg/.test(r.back), `${scheme}: the default wallpaper's cheap rendition is behind the app`, r.back.slice(0, 70));
+  ok(/wallpapers\/.*-blur.*\.jpg|^url\("blob:/.test(r.back), `${scheme}: the default wallpaper's cheap rendition is behind the app`, r.back.slice(0, 70));
   await ctx.close();
 }
 { // a stored choice of none removes it

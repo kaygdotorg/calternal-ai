@@ -4,7 +4,7 @@
 import { spawn } from "node:child_process";
 import { createServer } from "node:net";
 import { cpus } from "node:os";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 
 /** The suites: file, extra arguments, and a timeout in seconds (default 150; `a11y` walks every screen in four device-and-scheme combinations and takes about two minutes alone). */
 const SUITES = [
@@ -15,6 +15,9 @@ const SUITES = [
 const free = () => new Promise((res, rej) => { const s = createServer(); s.listen(0, "127.0.0.1", () => { const { port } = s.address(); s.close(() => res(port)); }); s.on("error", rej); });
 
 try { readFileSync("dist/index.html"); } catch { console.error("No dist/ yet: run `npm run build -w apps/web` first."); process.exit(2); }
+// The suites look at the default photographs: a build without them would fail for the wrong reason, so say so first.
+const wanted = JSON.parse(readFileSync("wallpapers.json", "utf8")).filter((w) => !existsSync(`dist/wallpapers/${w.id}.jpg`));
+if (wanted.length) { console.error(`dist/ lacks ${wanted.length} default wallpapers (the image host refused this machine). Copy ~/.cache/calternal-ai/wallpapers from a machine that has them (dev-02), run \`npm run build\` again, then retry.`); process.exit(2); }
 const only = process.argv.slice(2);
 const list = only.length ? SUITES.filter((s) => only.includes(s.name)) : SUITES;
 const port = await free();
