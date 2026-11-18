@@ -177,6 +177,20 @@ pub trait Backend: Send + Sync + 'static {
     /// Start a sandbox using the existing mounted workspace for the thread.
     fn start<'a>(&'a self, spec: &'a SandboxSpec)
     -> BoxFuture<'a, SandboxResult<Arc<dyn Sandbox>>>;
+
+    /// Start a harness under the requested provider isolation. Unsupported
+    /// backends fail before mounting any profile or starting its adapter.
+    fn start_harness<'a>(
+        &'a self,
+        _spec: &'a SandboxSpec,
+        _harness: &'a crate::protocol::HarnessSandbox,
+    ) -> BoxFuture<'a, SandboxResult<Arc<dyn Sandbox>>> {
+        Box::pin(async {
+            Err(SandboxError(
+                "backend does not support isolated harnesses".into(),
+            ))
+        })
+    }
 }
 
 /// One thread's sandbox.

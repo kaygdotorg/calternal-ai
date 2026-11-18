@@ -72,6 +72,8 @@ const THREAD_SNOOZE: &str = "
         BEGIN SELECT RAISE(ABORT, 'invalid thread snooze timestamp'); END;
 ";
 
+const COLLECTION_MEMBERS: &str = include_str!("collection_members.sql");
+
 const SPACE_INITIAL: &[&str] = &[
     SPACE_BASE,
     crate::linked_write::SCHEMA,
@@ -79,8 +81,10 @@ const SPACE_INITIAL: &[&str] = &[
 ];
 const SPACE_CHANGES: &[&str] = &[
     THREAD_SNOOZE,
-    include_str!("collection_members.sql"),
+    COLLECTION_MEMBERS,
     crate::rooms::SCHEMA,
+    crate::trash_job::SCHEMA,
+    crate::rename_job::SCHEMA,
     crate::storage_usage::MIGRATION,
     crate::plugin_state::MIGRATION,
 ];
@@ -273,7 +277,7 @@ mod tests {
     #[test]
     fn storage_migration_backfills_current_bodies_from_the_preceding_writer() {
         let conn = Connection::open_in_memory().unwrap();
-        migrate_release(&conn, through(6), false).unwrap();
+        migrate_release(&conn, through(8), false).unwrap();
         conn.execute_batch(r#"
             INSERT INTO kinds VALUES ('notes','[null,{"format":"markdown"}]');
             INSERT INTO items VALUES ('a','notes','{}','v2',2,'now','a.md','a.md',NULL,'current',NULL);
@@ -282,10 +286,10 @@ mod tests {
             INSERT INTO versions VALUES ('a',2,'v2','{}',X'41','now','owner');
             INSERT INTO versions VALUES ('b',1,'v3','{}',X'4141','now','owner');
         "#).unwrap();
-        migrate_release(&conn, through(7), true).unwrap();
+        migrate_release(&conn, through(9), true).unwrap();
         assert_eq!(
-            calternal_store::migrations::inspect(&conn, through(6)).unwrap(),
-            7
+            calternal_store::migrations::inspect(&conn, through(8)).unwrap(),
+            9
         );
         let usage = crate::storage_usage::read(&conn).unwrap();
         assert_eq!((usage.text_bytes, usage.binary_bytes), (1, 2));
@@ -294,16 +298,16 @@ mod tests {
     #[test]
     fn package_state_migration_preserves_existing_storage_policy() {
         let conn = Connection::open_in_memory().unwrap();
-        migrate_release(&conn, through(7), false).unwrap();
+        migrate_release(&conn, through(9), false).unwrap();
         conn.execute(
             "UPDATE storage_usage SET total_limit=19 WHERE singleton=1",
             [],
         )
         .unwrap();
-        migrate_release(&conn, through(8), true).unwrap();
+        migrate_release(&conn, through(10), true).unwrap();
         assert_eq!(
-            calternal_store::migrations::inspect(&conn, through(7)).unwrap(),
-            8
+            calternal_store::migrations::inspect(&conn, through(9)).unwrap(),
+            10
         );
         let limit: i64 = conn
             .query_row("SELECT total_limit FROM storage_usage", [], |row| {
@@ -481,5 +485,56 @@ mod tests {
             [], |r| r.get(0),
         ).unwrap();
         assert_eq!(body, b"B");
+    }
+
+    #[test]
+    fn empty_trash_migration_preserves_an_existing_deleted_note() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate_release(&conn, through(6), false).unwrap();
+        conn.execute_batch(
+            "INSERT INTO items VALUES ('note','notes','{}','v1',1,'now','.trash/note.md','.trash/note.md',NULL,'materialized',NULL);
+             INSERT INTO versions VALUES ('note',1,'v1','{}',X'41','now','owner');
+             INSERT INTO trash_origins VALUES ('note','Notes/Saved.md');",
+        )
+        .unwrap();
+        migrate_release(&conn, through(7), true).unwrap();
+        assert_eq!(
+            calternal_store::migrations::inspect(&conn, through(6)).unwrap(),
+            7
+        );
+        let note: (String, Vec<u8>, i64) = conn
+            .query_row(
+                "SELECT path,bytes,(SELECT count(*) FROM notes_trash_jobs)
+                 FROM trash_origins JOIN versions USING(item) WHERE item='note'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(note, ("Notes/Saved.md".to_owned(), vec![b'A'], 0));
+    }
+
+    #[test]
+    fn rename_migration_preserves_an_admitted_empty_trash_job() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate_release(&conn, through(7), false).unwrap();
+        conn.execute_batch(
+            "INSERT INTO notes_trash_jobs(id,actor,count,bytes) VALUES('job','owner',1,1);
+             INSERT INTO notes_trash_targets VALUES('job','note','v1');",
+        )
+        .unwrap();
+        migrate_release(&conn, through(8), true).unwrap();
+        assert_eq!(
+            calternal_store::migrations::inspect(&conn, through(7)).unwrap(),
+            8
+        );
+        let pending: (String, String, i64) = conn
+            .query_row(
+                "SELECT item,revision,(SELECT count(*) FROM notes_rename_steps)
+                 FROM notes_trash_targets WHERE job='job'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(pending, ("note".to_owned(), "v1".to_owned(), 0));
     }
 }

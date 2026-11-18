@@ -21,6 +21,7 @@ use super::{LeaseState, MachineView, RunView, Settings, db, workers::WorkerStop}
 pub(super) struct Live {
     pub session: [u8; 32],
     pub direct: bool,
+    pub harness_protocol: bool,
     pub kvm_fallback: bool,
     pub guest_memory_mib: Option<u32>,
     pub guest_resources: HashMap<AccountId, calternal_machine::protocol::GuestResources>,
@@ -235,23 +236,47 @@ impl State {
         let guest_idle_seconds = resource_owner
             .and_then(|owner| self.compute_limits.get(&owner))
             .and_then(|limits| limits.idle_seconds);
-        let msg = Down::Assign {
-            lease_id: lease,
-            fence: l.row.fence,
-            space_id: l.row.space,
-            account_id: l.row.account,
-            spec: SandboxSpec {
-                space_id: Some(l.row.space),
-                provider_login: l.provider_login,
-                code_directory: None,
-                worker: self.workers.get(&lease).cloned(),
-                account_id: l.row.account.as_uuid(),
-                thread_id: l.row.thread,
-                image: l.row.image.clone(),
-                limits: settings.limits,
-                resource_owner,
-                guest_idle_seconds,
-                resource_assignment: None,
+        let lease_id = l.row.id;
+        let fence = l.row.fence;
+        let space_id = l.row.space;
+        let account_id = l.row.account;
+        let spec = SandboxSpec {
+            space_id: Some(space_id),
+            provider_login: l.provider_login,
+            code_directory: None,
+            worker: self.workers.get(&lease).cloned(),
+            account_id: account_id.as_uuid(),
+            thread_id: l.row.thread,
+            image: l.row.image.clone(),
+            limits: settings.limits,
+            resource_owner,
+            guest_idle_seconds,
+            resource_assignment: None,
+        };
+        let msg = match &l.row.harness {
+            Some(harness) => {
+                if !self
+                    .machines
+                    .get(&machine)
+                    .is_some_and(Self::harness_machine)
+                {
+                    return;
+                }
+                Down::AssignHarness {
+                    lease_id,
+                    fence,
+                    space_id,
+                    account_id,
+                    spec,
+                    harness: harness.clone(),
+                }
+            }
+            None => Down::Assign {
+                lease_id,
+                fence,
+                space_id,
+                account_id,
+                spec,
             },
         };
         self.push(machine, msg);
@@ -435,6 +460,13 @@ impl State {
             Owner::Account { id } => id == account,
             Owner::Pool => self.pool_grants.contains(&account),
         }
+    }
+
+    pub(super) fn harness_machine(machine: &Machine) -> bool {
+        machine
+            .live
+            .as_ref()
+            .is_some_and(|live| live.harness_protocol && !live.direct)
     }
 
     /// Assign waiting leases in arrival order. Preference: the machine that held

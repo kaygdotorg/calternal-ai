@@ -276,64 +276,15 @@ impl Backend for MicrovmBackend {
         &'a self,
         spec: &'a SandboxSpec,
     ) -> BoxFuture<'a, SandboxResult<Arc<dyn Sandbox>>> {
-        Box::pin(async {
-            let space = spec
-                .space_id
-                .ok_or_else(|| SandboxError("missing sandbox space".into()))?;
-            let slot = self.0.account(spec.account_id);
-            let mut account = slot.lock().await;
-            if account.resource_owner != spec.resource_owner && account.vm.is_some() {
-                // The registry and this new request each own a reference. A
-                // thread still holding its guest must finish before rebinding.
-                if Arc::strong_count(&slot) != 2 {
-                    return Err(SandboxError("previous guest scope is still active".into()));
-                }
-                if let Some(vm) = account.vm.take() {
-                    vm.stop().await?;
-                }
-            }
-            account.resource_owner = spec.resource_owner;
-            account.idle_after = spec
-                .guest_idle_seconds
-                .map(|seconds| Duration::from_secs(u64::from(seconds)))
-                .unwrap_or(IDLE);
-            let vm = self.0.ensure_guest(spec.account_id, &mut account).await?;
-            let generation = vm.generation;
-            if vm.clock.is_none()
-                && let (Some(resource_owner), Some(assignment), Some(journal)) = (
-                    spec.resource_owner,
-                    spec.resource_assignment,
-                    self.0.runtime.get(),
-                )
-            {
-                let account_id = calternal_types::AccountId::from_uuid(spec.account_id)
-                    .map_err(SandboxError::new)?;
-                let clock = runtime::Clock::begin(
-                    GuestRuntime {
-                        account_id,
-                        generation,
-                        resource_owner: Some(resource_owner),
-                        assignment,
-                        started_at_ms: calternal_types::now_ms(),
-                        running_ns: 0,
-                        state: RuntimeState::Running,
-                    },
-                    journal.clone(),
-                )
-                .await?;
-                account.vm.as_mut().expect("bound guest").clock = Some(clock);
-            }
-            let vm = account.vm.as_ref().expect("bound guest");
-            vm.control(&Request::Start(space, spec.clone())).await?;
-            let thread = Thread::new(
-                slot.clone(),
-                vm.socket.clone(),
-                vm.key.clone(),
-                spec.thread_id,
-                spec.worker.is_some(),
-            );
-            Ok(Arc::new(thread) as Arc<dyn Sandbox>)
-        })
+        self.start_thread(spec, None)
+    }
+
+    fn start_harness<'a>(
+        &'a self,
+        spec: &'a SandboxSpec,
+        harness: &'a crate::protocol::HarnessSandbox,
+    ) -> BoxFuture<'a, SandboxResult<Arc<dyn Sandbox>>> {
+        self.start_thread(spec, Some(harness))
     }
 
     fn discard(&self, account: Uuid, thread: Uuid) -> BoxFuture<'_, SandboxResult<()>> {
@@ -682,5 +633,83 @@ async fn maintain(backend: Weak<State>) {
             () = state.stop.notified() => return,
             () = tokio::time::sleep(SWEEP) => {}
         }
+    }
+}
+
+impl MicrovmBackend {
+    fn start_thread<'a>(
+        &'a self,
+        spec: &'a SandboxSpec,
+        harness: Option<&'a crate::protocol::HarnessSandbox>,
+    ) -> BoxFuture<'a, SandboxResult<Arc<dyn Sandbox>>> {
+        Box::pin(async move {
+            let space = spec
+                .space_id
+                .ok_or_else(|| SandboxError("missing sandbox space".into()))?;
+            if let Some(harness) = harness
+                && harness.guest_image_digest.as_deref() != Some(&self.0.config.image_digest)
+            {
+                return Err(SandboxError(
+                    "installed harness requires a different guest image".into(),
+                ));
+            }
+            let slot = self.0.account(spec.account_id);
+            let mut account = slot.lock().await;
+            if account.resource_owner != spec.resource_owner && account.vm.is_some() {
+                // The registry and this new request each own a reference. A
+                // thread still holding its guest must finish before rebinding.
+                if Arc::strong_count(&slot) != 2 {
+                    return Err(SandboxError("previous guest scope is still active".into()));
+                }
+                if let Some(vm) = account.vm.take() {
+                    vm.stop().await?;
+                }
+            }
+            account.resource_owner = spec.resource_owner;
+            account.idle_after = spec
+                .guest_idle_seconds
+                .map(|seconds| Duration::from_secs(u64::from(seconds)))
+                .unwrap_or(IDLE);
+            let vm = self.0.ensure_guest(spec.account_id, &mut account).await?;
+            let generation = vm.generation;
+            if vm.clock.is_none()
+                && let (Some(resource_owner), Some(assignment), Some(journal)) = (
+                    spec.resource_owner,
+                    spec.resource_assignment,
+                    self.0.runtime.get(),
+                )
+            {
+                let account_id = calternal_types::AccountId::from_uuid(spec.account_id)
+                    .map_err(SandboxError::new)?;
+                let clock = runtime::Clock::begin(
+                    GuestRuntime {
+                        account_id,
+                        generation,
+                        resource_owner: Some(resource_owner),
+                        assignment,
+                        started_at_ms: calternal_types::now_ms(),
+                        running_ns: 0,
+                        state: RuntimeState::Running,
+                    },
+                    journal.clone(),
+                )
+                .await?;
+                account.vm.as_mut().expect("bound guest").clock = Some(clock);
+            }
+            let vm = account.vm.as_ref().expect("bound guest");
+            let request = match harness {
+                Some(harness) => Request::StartHarness(space, spec.clone(), harness.clone()),
+                None => Request::Start(space, spec.clone()),
+            };
+            vm.control(&request).await?;
+            let thread = Thread::new(
+                slot.clone(),
+                vm.socket.clone(),
+                vm.key.clone(),
+                spec.thread_id,
+                spec.worker.is_some(),
+            );
+            Ok(Arc::new(thread) as Arc<dyn Sandbox>)
+        })
     }
 }

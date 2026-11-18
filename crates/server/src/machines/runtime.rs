@@ -328,6 +328,7 @@ mod tests {
             worker: false,
             background_title: false,
             image: None,
+            harness: None,
             machine: Some(machine),
             last_machine: Some(machine),
             pinned_machine: None,

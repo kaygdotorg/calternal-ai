@@ -16,6 +16,7 @@ Paths are plain (no `#/`), rooted at `/`.
 | A file or a folder | `/files/<id>`; a folder is an item of kind `files` and is never addressed by path |
 | A block in an item | `/<kind>/<item-id>/<block-id>` |
 | A collection (a list of things) | `/collections/<collection-id>` |
+| A public share | `/s/<secret>` |
 | A space | `/spaces/<space-id>` |
 | Space administration | `/spaces/<space-id>/members`, `/spaces/<space-id>/plugins/<plugin-id>`, `/spaces/<space-id>/settings` |
 | A person | `/people/<account-id>` |

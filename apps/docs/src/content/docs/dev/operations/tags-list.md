@@ -8,13 +8,14 @@ title: "tags.list"
 
 List a page of up to 100 tags and their current note counts
 
-Capability: not declared in this catalogue; the host policy remains authoritative.
+Capability: space.read.
 
 ## Declaration
 
 ```json
 {
   "risk": "read",
+  "required_capability": "space.read",
   "id": "tags.list",
   "description": "List a page of up to 100 tags and their current note counts",
   "mutates": false

@@ -40,6 +40,7 @@ struct Slot {
     lease_id: Uuid,
     fence: AtomicU64,
     spec: SandboxSpec,
+    harness: Option<crate::protocol::HarnessSandbox>,
     // Execs hold a read guard until output upload ends. An idle pass takes an
     // uncontended write guard so it cannot remove a container during exec.
     sandbox: RwLock<SandboxCell>,
@@ -206,6 +207,72 @@ impl Runner {
         self.slots.lock().expect("slots").get(&lease).cloned()
     }
 
+    fn assign(
+        self: &Arc<Self>,
+        lease_id: Uuid,
+        fence: u64,
+        space_id: calternal_types::SpaceId,
+        mut spec: SandboxSpec,
+        harness: Option<crate::protocol::HarnessSandbox>,
+    ) {
+        spec.space_id = Some(space_id);
+        spec.resource_assignment = Some(crate::protocol::ResourceAssignment { lease_id, fence });
+        let slot = {
+            let mut slots = self.slots.lock().expect("slots");
+            let closing_workspace = slots.iter().any(|(id, slot)| {
+                *id != lease_id
+                    && slot.spec.account_id == spec.account_id
+                    && slot.spec.thread_id == spec.thread_id
+            });
+            let held = slots
+                .values()
+                .filter(|s| {
+                    s.stop.get().is_none()
+                        && !s
+                            .sandbox
+                            .try_read()
+                            .ok()
+                            .as_deref()
+                            .and_then(OnceCell::get)
+                            .is_some_and(Result::is_err)
+                })
+                .count();
+            let denied = if closing_workspace {
+                Some("previous sandbox is still closing")
+            } else if held >= self.max_sandboxes as usize {
+                Some("machine sandbox capacity exhausted")
+            } else {
+                None
+            };
+            slots
+                .entry(lease_id)
+                .or_insert_with(|| {
+                    Arc::new(Slot {
+                        lease_id,
+                        fence: AtomicU64::new(fence),
+                        spec,
+                        harness,
+                        sandbox: RwLock::new(OnceCell::new_with(
+                            denied.map(|reason| Err(reason.into())),
+                        )),
+                        last_use: Mutex::new(Instant::now()),
+                        removed: AtomicBool::new(false),
+                        stop: OnceCell::new(),
+                        keep_files: AtomicBool::new(false),
+                        execs: Mutex::new(HashSet::new()),
+                        inputs: Mutex::new(HashMap::new()),
+                    })
+                })
+                .clone()
+        };
+        slot.fence.fetch_max(fence, Ordering::AcqRel);
+        let me = self.clone();
+        tokio::spawn(async move {
+            let sandbox = slot.sandbox.read().await;
+            let _ = me.sandbox(&slot, &sandbox).await;
+        });
+    }
+
     /// Apply one message. Starting sandboxes and execs run on their own tasks, so
     /// assignments and execs return at once. Stop awaits cleanup before a later
     /// assignment can reuse the same workspace.
@@ -215,66 +282,17 @@ impl Runner {
                 lease_id,
                 fence,
                 space_id,
-                mut spec,
+                spec,
                 ..
-            } => {
-                spec.space_id = Some(space_id);
-                spec.resource_assignment =
-                    Some(crate::protocol::ResourceAssignment { lease_id, fence });
-                let slot = {
-                    let mut slots = self.slots.lock().expect("slots");
-                    let closing_workspace = slots.iter().any(|(id, slot)| {
-                        *id != lease_id
-                            && slot.spec.account_id == spec.account_id
-                            && slot.spec.thread_id == spec.thread_id
-                    });
-                    let held = slots
-                        .values()
-                        .filter(|s| {
-                            s.stop.get().is_none()
-                                && !s
-                                    .sandbox
-                                    .try_read()
-                                    .ok()
-                                    .as_deref()
-                                    .and_then(OnceCell::get)
-                                    .is_some_and(Result::is_err)
-                        })
-                        .count();
-                    let denied = if closing_workspace {
-                        Some("previous sandbox is still closing")
-                    } else if held >= self.max_sandboxes as usize {
-                        Some("machine sandbox capacity exhausted")
-                    } else {
-                        None
-                    };
-                    slots
-                        .entry(lease_id)
-                        .or_insert_with(|| {
-                            Arc::new(Slot {
-                                lease_id,
-                                fence: AtomicU64::new(fence),
-                                spec,
-                                sandbox: RwLock::new(OnceCell::new_with(
-                                    denied.map(|reason| Err(reason.into())),
-                                )),
-                                last_use: Mutex::new(Instant::now()),
-                                removed: AtomicBool::new(false),
-                                stop: OnceCell::new(),
-                                keep_files: AtomicBool::new(false),
-                                execs: Mutex::new(HashSet::new()),
-                                inputs: Mutex::new(HashMap::new()),
-                            })
-                        })
-                        .clone()
-                };
-                slot.fence.fetch_max(fence, Ordering::AcqRel);
-                let me = self.clone();
-                tokio::spawn(async move {
-                    let sandbox = slot.sandbox.read().await;
-                    let _ = me.sandbox(&slot, &sandbox).await;
-                });
-            }
+            } => self.assign(lease_id, fence, space_id, spec, None),
+            Down::AssignHarness {
+                lease_id,
+                fence,
+                space_id,
+                spec,
+                harness,
+                ..
+            } => self.assign(lease_id, fence, space_id, spec, Some(harness)),
             Down::Exec {
                 interactive,
                 lease_id,
@@ -442,7 +460,11 @@ impl Runner {
                 if slot.spec.worker.is_some() && self.backend.preference() == "direct" {
                     return Err("plugin workers require the container backend; run this machine with --backend auto or podman".into());
                 }
-                let result = self.backend.start(&slot.spec).await.map_err(|e| {
+                let started = match &slot.harness {
+                    Some(harness) => self.backend.start_harness(&slot.spec, harness).await,
+                    None => self.backend.start(&slot.spec).await,
+                };
+                let result = started.map_err(|e| {
                     tracing::warn!(lease = %slot.lease_id, error = %e, "sandbox start failed");
                     e.0
                 });

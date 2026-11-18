@@ -52,6 +52,13 @@ pub enum ProviderCommand {
         /// New message, bounded by the command budget.
         prompt: String,
     },
+    /// Resolve one live native approval after the host checks its scope.
+    Approve {
+        /// Opaque ID emitted by this run's adapter.
+        request_id: String,
+        /// Authorize this request within the existing sandbox boundary.
+        approved: bool,
+    },
     /// Stop active work; do not report completion as success.
     Stop,
 }
@@ -143,6 +150,14 @@ pub enum ProviderEventKind {
     },
     /// An action is waiting for an authorized person; the adapter cannot approve it.
     ApprovalRequest {
+        /// ID of an interactive, run-scoped approval. Legacy notices omit it.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        request_id: Option<String>,
+        /// Whether an interactive confirmation can proceed within the tool sandbox.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        can_approve: Option<bool>,
         /// Short action description, at most 4 KiB.
         summary: String,
     },
@@ -233,7 +248,11 @@ impl ProviderEvent {
                 ..
             } => tool(id, name, summary) && short(detail, 4096),
             ProviderEventKind::Question { text } => short(text, 4096),
-            ProviderEventKind::ApprovalRequest { summary } => short(summary, 4096),
+            ProviderEventKind::ApprovalRequest {
+                summary,
+                request_id,
+                ..
+            } => short(summary, 4096) && request_id.as_deref().is_none_or(|id| short(id, 128)),
             ProviderEventKind::Usage {
                 input_tokens,
                 output_tokens,

@@ -10,8 +10,9 @@ use base64::Engine;
 use base64::engine::general_purpose::STANDARD as B64;
 use calternal_auth::token::{hash32, normalize_setup_token, random32};
 use calternal_machine::protocol::{
-    Capacity, ChunkEvent, Down, EnrolRequest, EnrolResponse, Envelope, OutputAck, OutputPost,
-    Owner, PROTOCOL_VERSION, SessionFinish, SessionGranted, SyncRequest, session_message,
+    Capacity, ChunkEvent, Down, EnrolRequest, EnrolResponse, Envelope, HARNESS_PROTOCOL_VERSION,
+    OutputAck, OutputPost, Owner, PROTOCOL_VERSION, SessionFinish, SessionGranted, SyncRequest,
+    session_message,
 };
 use tokio::sync::Notify;
 use uuid::Uuid;
@@ -150,7 +151,7 @@ impl MachineService {
     /// unfinished exec. A new `boot_id` means the machine role restarted: execs it
     /// was running are reported lost.
     pub fn session_finish(&self, f: &SessionFinish) -> Result<SessionGranted, Error> {
-        if f.protocol != PROTOCOL_VERSION {
+        if !(5..=PROTOCOL_VERSION).contains(&f.protocol) {
             return Err(Error::invalid_input("unsupported machine protocol version"));
         }
         let mut st = self.lock()?;
@@ -206,6 +207,7 @@ impl MachineService {
         machine.live = Some(Live {
             session: hash,
             direct: backend == "direct",
+            harness_protocol: f.protocol >= HARNESS_PROTOCOL_VERSION,
             kvm_fallback,
             guest_memory_mib,
             guest_resources: Default::default(),
@@ -382,6 +384,7 @@ impl MachineService {
         for envelope in queued {
             let lease = match &envelope.message {
                 Down::Assign { lease_id, .. }
+                | Down::AssignHarness { lease_id, .. }
                 | Down::Exec { lease_id, .. }
                 | Down::Input { lease_id, .. } => Some(lease_id),
                 _ => None,

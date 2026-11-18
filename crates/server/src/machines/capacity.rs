@@ -77,6 +77,7 @@ impl State {
             .pinned_machine
             .is_some_and(|id| id != machine.row.id)
             || (lease.row.worker && !Self::worker_machine(machine, settings))
+            || (lease.row.harness.is_some() && !Self::harness_machine(machine))
         {
             return 0;
         }

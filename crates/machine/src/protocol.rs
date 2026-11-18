@@ -28,7 +28,10 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 /// Protocol version spoken by this build; the server refuses other versions.
-pub const PROTOCOL_VERSION: u32 = 5;
+pub const PROTOCOL_VERSION: u32 = 6;
+
+/// Protocol version that introduced isolated harness assignments.
+pub const HARNESS_PROTOCOL_VERSION: u32 = 6;
 
 /// Path prefix of every machine-facing endpoint. The server's account guard
 /// skips it: these endpoints authenticate the machine themselves.
@@ -135,7 +138,7 @@ pub struct SessionFinish {
     /// Random id chosen when the machine role process starts. A new value tells
     /// the server that every exec that was running before is gone.
     pub boot_id: Uuid,
-    /// Must equal [`PROTOCOL_VERSION`].
+    /// Machine protocol version negotiated when opening this session.
     pub protocol: u32,
     /// Requested backend, or auto for the owner's setting; direct requires owner consent.
     pub backend: String,
@@ -394,6 +397,37 @@ pub struct SandboxSpec {
     pub resource_assignment: Option<ResourceAssignment>,
 }
 
+/// Owner of a provider login. Distinct from the person who requested a turn
+/// or who may receive a sign-in notice.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "scope", content = "id", rename_all = "snake_case")]
+pub enum ProviderLoginScope {
+    /// Login authorized only for this person's turns.
+    Account(AccountId),
+    /// Login authorized by the space for its configured provider.
+    Space(SpaceId),
+}
+
+/// Machine-enforced placement and mount policy for an installed harness.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HarnessSandbox {
+    /// Validated plugin ID. Only this provider's account profile is mounted.
+    pub provider_id: String,
+    /// Authorized owner of the login mounted for this assignment.
+    pub login_scope: ProviderLoginScope,
+    /// Whether the backend must mount the thread workspace read-only.
+    pub workspace_read_only: bool,
+    /// Mount a disposable empty profile within the scratch workspace for a smoke test.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub disposable_profile: bool,
+    /// Reuse the migrated bundled provider's established on-disk login layout.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub legacy_profile: bool,
+    /// Pinned guest digest when the runtime has a verified MicroVM build.
+    pub guest_image_digest: Option<String>,
+}
+
 /// A single verified, self-contained JavaScript bundle, never a host path.
 /// Limited to 1 MiB; transferred over the authenticated machine connection.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -438,6 +472,21 @@ pub enum Down {
         account_id: AccountId,
         /// Sandbox to start.
         spec: SandboxSpec,
+    },
+    /// Run a harness with the provider-specific account profile and constraints.
+    AssignHarness {
+        /// The lease.
+        lease_id: Uuid,
+        /// Fencing token; output with an older fence is refused.
+        fence: u64,
+        /// Space the work belongs to.
+        space_id: SpaceId,
+        /// Account the work runs for.
+        account_id: AccountId,
+        /// Base sandbox with the installed image and resource limits.
+        spec: SandboxSpec,
+        /// Required machine enforcement for this harness.
+        harness: HarnessSandbox,
     },
     /// Run a command in the lease's sandbox and stream its output.
     Exec {

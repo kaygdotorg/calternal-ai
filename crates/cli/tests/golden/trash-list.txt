@@ -1,4 +1,4 @@
-ID                                    TITLE     DELETED                     REVISION
-019aabb0-1100-7111-8111-111111111111  New Plan  2026-11-17 06:12:03 +00:00  v2.preview
+ID                                    TITLE     DELETED                     REVISION    DAYS LEFT
+019aabb0-1100-7111-8111-111111111111  New Plan  2026-11-17 06:12:03 +00:00  v2.preview  29
 
 next cursor:  c-next

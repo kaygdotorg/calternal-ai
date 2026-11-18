@@ -6,7 +6,7 @@ title: "sharing.shared_with_me"
 
 > **Preview: the app is not released.** This site describes a development preview and accepted designs; it does not establish production readiness.
 
-List items shared with the signed-in account
+List items shared with the signed-in account, including membership edit access for collections
 
 Capability: not declared in this catalogue; the host policy remains authoritative.
 
@@ -16,7 +16,7 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
 {
   "risk": "read",
   "id": "sharing.shared_with_me",
-  "description": "List items shared with the signed-in account",
+  "description": "List items shared with the signed-in account, including membership edit access for collections",
   "mutates": false
 }
 ```

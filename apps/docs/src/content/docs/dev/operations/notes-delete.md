@@ -8,13 +8,14 @@ title: "notes.delete"
 
 Move a note to its space's Trash
 
-Capability: not declared in this catalogue; the host policy remains authoritative.
+Capability: content.write.
 
 ## Declaration
 
 ```json
 {
   "risk": "reversible",
+  "required_capability": "content.write",
   "id": "notes.delete",
   "description": "Move a note to its space's Trash",
   "mutates": true
