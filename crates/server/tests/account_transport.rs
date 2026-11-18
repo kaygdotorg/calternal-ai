@@ -358,8 +358,13 @@ async fn no_mail_first_owner_can_enroll_and_later_receives_the_email_prompt() {
             .unwrap()
     };
     let before = schema();
-    let App { dir, auth, router } = app;
-    drop((auth, router));
+    let App {
+        dir,
+        auth,
+        router,
+        state,
+    } = app;
+    drop((auth, router, state));
     let app = app_in(dir, |config| config.email_required = true);
     let later = login(&app, &mut first).await;
     assert_eq!(later.status, 200, "{}", later.body);
