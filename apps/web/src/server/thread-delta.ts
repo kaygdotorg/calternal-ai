@@ -17,11 +17,12 @@ const MARK = enc.encode("<!-- message:");
 
 /** Splits a full Markdown document into its frontmatter (through the closing `---` line) and its body bytes. A document with no frontmatter is all body. */
 export function bodyOf(markdown: string): Body {
-  if (!markdown.startsWith("---\n")) { const all = enc.encode(markdown); return { front: "", buf: all, len: all.length }; }
-  const end = markdown.indexOf("\n---\n", 3);
-  const cut = end < 0 ? 0 : end + 5;
-  const b = enc.encode(markdown.slice(cut));
-  return { front: markdown.slice(0, cut), buf: b, len: b.length };
+  const front = markdown.startsWith("---\n") ? markdown.slice(0, Math.max(0, markdown.indexOf("\n---\n", 3) + 5)) : "";
+  const bytes = enc.encode(markdown.slice(front.length));
+  // Spare room from the start (a quarter and 64 KiB), so the first checkpoint of a turn does not have to move a 5 MB body into a bigger buffer.
+  const buf = new Uint8Array(bytes.length + (bytes.length >> 2) + 65536);
+  buf.set(bytes);
+  return { front, buf, len: bytes.length };
 }
 
 /** Where the message marker at or before byte `at` begins, or 0 when none does (parsing then starts at the top). */
