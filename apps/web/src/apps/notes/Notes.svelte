@@ -6,7 +6,7 @@
   import ShareHost from "./share/ShareHost.svelte";
   import { openShare } from "./share/share.svelte";
   import { incoming } from "./share/incoming.svelte";
-  import { live, liveOn } from "./live/live.svelte";
+  import { liveNotice, liveOf, liveOn, settleOwedNow } from "./live/live.svelte";
   import Presence from "./live/Presence.svelte";
   import { shell } from "../../shell/shell.svelte";
   import NoteEditor from "./NoteEditor.svelte";
@@ -23,12 +23,21 @@
   let { id }: { id?: string } = $props();
   // Live editing (`?live=1`): the note is a room, other people's cursors and presence show, and the room (not an HTTP save) keeps the text. Off by default; nothing of it loads when off.
   const liveMode = liveOn();
+  // Edits owed to the personal space after access ended are sent now and whenever the browser comes back online.
+  $effect(() => {
+    const go = () => void settleOwedNow();
+    go(); addEventListener("online", go);
+    return () => removeEventListener("online", go);
+  });
   const noteId = $derived(notes.note?.id);
+  /** This note's room: a window in the canvas has its own, so several notes can be live at once. */
+  const live = $derived(liveOf(noteId ?? ""));
   $effect(() => {
     const nid = noteId;
     if (!liveMode || !nid) return;
-    untrack(() => void live.open(notes.note!.spaceId, nid, notes.note!.markdown));
-    return () => live.close();
+    const room = liveOf(nid);
+    untrack(() => void room.open(notes.note!.spaceId, nid, notes.note!.markdown));
+    return () => room.close();
   });
   let moreOpen = $state(false);
   let moreEl = $state<HTMLButtonElement>();
@@ -90,7 +99,7 @@
   <header class="nc-head" class:windowed>
     {#if shell.narrow && !windowed}<IconButton icon="sidebar" label="Show notes" onclick={() => shell.toggleSidebar()} />{/if}
     <span class="grow"></span>
-    {#if liveMode && live.session}<Presence here={live.here} />{/if}
+    {#if liveMode && live.session && !windowed}<Presence here={live.here} />{/if}
     {#if notes.note}<span class="state" role="status" aria-live="polite" data-state={liveMode ? undefined : notes.saveState}>{liveMode ? live.save : STATE[notes.saveState]}</span>{/if}
     {#if !windowed && notes.note}
       {#if sharedBy}
@@ -123,7 +132,7 @@
         <p class="draft" role="alert">Someone changed this note while you were editing it. Your text is kept here. <Button variant="primary" text="Keep mine" onclick={() => notes.keepMine(titleOf(editor?.current() ?? latest), editor?.current() ?? latest)} /> <Button variant="quiet" text="Use theirs" onclick={() => notes.takeTheirs()} /></p>
       {/if}
       {#if notes.error}<p class="err" role="alert">{notes.error}</p>{/if}
-      {#if liveMode && live.notice}<p class="err" role="alert">{live.notice}</p>{/if}
+      {#if liveNotice.text}<p class="err" role="alert">{liveNotice.text}</p>{/if}
     {:else}
       <h1>{notes.error ? (notes.errorCode === "unavailable" ? "Can't reach the server" : notes.errorCode === "forbidden" ? "You can't open this note" : id ? "Note not found" : "Notes") : id ? "Note not found" : "Notes"}</h1>
       <p class="lede">{notes.error || (id ? "It may have been removed, or you may not have access." : notes.list.length ? "Choose a note on the left, or make a new one." : "A note is a page of Markdown that you and your agents can read and edit. This space has none yet.")}</p>
