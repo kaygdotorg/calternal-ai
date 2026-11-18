@@ -8,6 +8,7 @@ fn installed_package_v2_opts_in_only_the_original_seed_and_preserves_rollback() 
     let v1 = Schema::new("installed-plugins.sqlite3", 1, &[PACKAGE_SCHEMA], &[]);
     let seeded = include_bytes!("notes_before_live_editing.calplugin").as_slice();
     let mut custom = decode(seeded.to_vec(), super::super::sha256_hex(seeded)).unwrap();
+    let id = custom.manifest.id.clone();
     custom.manifest.name = "Personal Notes".into();
     let custom = custom.archive().unwrap();
     for (original, approval, live) in [(seeded, 0, true), (seeded, 9, false), (&custom, 0, false)] {
@@ -15,8 +16,8 @@ fn installed_package_v2_opts_in_only_the_original_seed_and_preserves_rollback() 
         migrate_release(&db, v1, false).unwrap();
         let checksum = super::super::sha256_hex(original);
         db.execute(
-            "INSERT INTO installed_plugins VALUES (2,'calternal-notes',?1,?2,0,?3)",
-            params![original, checksum, approval],
+            "INSERT INTO installed_plugins VALUES (2,?1,?2,?3,0,?4)",
+            params![id, original, checksum, approval],
         )
         .unwrap();
         db.execute(
