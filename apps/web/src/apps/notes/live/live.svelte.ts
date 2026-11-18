@@ -5,9 +5,9 @@
 import { serverMode } from "../../../server/client";
 import { account } from "../../../server/auth";
 import { grants } from "../../../server/people";
-import { say } from "../../../server/say";
 import { sharing } from "../share/sharing";
-import { changedBlocks, rescueLine, textKey } from "../share/rescue";
+import { textKey } from "../share/rescue";
+import { rescueEdits, settleOwed } from "../share/owed";
 import { notes } from "../store.svelte";
 import type { NoteSession } from "../../../../../../packages/editor/src/note";
 import type { Person } from "../../../../../../packages/editor/src/live/extension";
@@ -105,12 +105,14 @@ class LiveNotes {
   private async revoked(noteId: string): Promise<void> {
     const session = this.session;
     if (!session || noteId !== this.id) return;
-    const title = notes.note?.title ?? "this note";
     const text = session.text.toString();
-    const blocks = changedBlocks(this.base, text);
-    if (!blocks.length) { this.notice = `You can no longer open “${title}”. You had changed nothing in it.`; return; }
-    try { this.notice = rescueLine(title, (await sharing.rescue(title, blocks, `${noteId}:${textKey(text)}`)).note.title); }
-    catch (e) { this.notice = `${say(e, "keep your edits")} Your text is still here.`; }
+    this.notice = await rescueEdits(noteId, notes.note?.title ?? "this note", this.base, text, `${noteId}:${textKey(text)}`);
+  }
+
+  /** Sends every rescue still owed (see share/owed.ts); the line for each one that went through is shown, whichever note is open. Called when Notes loads and whenever the browser comes back online. */
+  async settleOwed(): Promise<void> {
+    const lines = await settleOwed().catch(() => []);
+    if (lines.length) this.notice = lines.at(-1)!;
   }
 
   private async loadNames(spaceId: string): Promise<void> {

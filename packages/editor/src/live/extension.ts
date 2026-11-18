@@ -7,7 +7,7 @@
  * (`NoteSession.gate`, which `SyncClient` honours), so a phone keyboard's composition is never disturbed.
  */
 import { EditorState, Prec, type Extension } from '@codemirror/state'
-import { EditorView, keymap, type KeyBinding } from '@codemirror/view'
+import { EditorView, ViewPlugin, keymap, type KeyBinding } from '@codemirror/view'
 import { yCollab, yUndoManagerKeymap as shared, ySyncAnnotation } from 'y-codemirror.next'
 import type { Awareness } from 'y-protocols/awareness'
 import * as Y from 'yjs'
@@ -59,10 +59,60 @@ const composition = (session: NoteSession): Extension => EditorView.domEventHand
   },
 })
 
+/** The event the header's presence avatars send to show every name until the next press elsewhere. */
+export const SHOW_LABELS = 'calternal-live-labels'
+/** How long a person's name stays beside their cursor after it moves (a touch screen has no hover). */
+const LABEL_MS = 2000
+
+/**
+ * Names beside other people's cursors on a screen with no hover: a name shows for two seconds whenever somebody's cursor or selection moves, then fades (the theme's transition uses the motion tokens, so under reduced motion it
+ * simply goes). Pressing the presence avatars shows every name until the next press anywhere else. A pointer still shows a name on hover (the cursor plugin's own rule). The state is one attribute on the editor, `data-labels`
+ * (`move` or `all`), so it costs nothing per keystroke: it listens to presence changes only.
+ */
+const labels = (presence: Awareness | null): Extension => ViewPlugin.fromClass(class {
+  private seen = new Map<number, string>()
+  private timer = 0
+  private all = false
+  private readonly onChange = ({ added, updated }: { added: number[]; updated: number[] }) => {
+    const a = presence!
+    let moved = false
+    for (const id of [...added, ...updated]) {
+      if (id === a.doc.clientID) continue
+      const now = JSON.stringify(a.getStates().get(id)?.cursor ?? null)
+      if (this.seen.get(id) !== now) { this.seen.set(id, now); if (now !== 'null') moved = true }
+    }
+    if (moved) this.flash()
+  }
+  private readonly onShowAll = () => { this.all = true; this.view.dom.dataset.labels = 'all' }
+  private readonly onPress = (e: Event) => {
+    if (!this.all || (e.target as Element | null)?.closest?.('[data-presence]')) return
+    this.all = false
+    delete this.view.dom.dataset.labels
+  }
+  constructor(private readonly view: EditorView) {
+    presence?.on('change', this.onChange)
+    addEventListener(SHOW_LABELS, this.onShowAll)
+    addEventListener('pointerdown', this.onPress, true)
+  }
+  private flash() {
+    if (this.all) return
+    this.view.dom.dataset.labels = 'move'
+    clearTimeout(this.timer)
+    this.timer = window.setTimeout(() => { if (!this.all) delete this.view.dom.dataset.labels }, LABEL_MS)
+  }
+  destroy() {
+    presence?.off('change', this.onChange)
+    removeEventListener(SHOW_LABELS, this.onShowAll)
+    removeEventListener('pointerdown', this.onPress, true)
+    clearTimeout(this.timer)
+  }
+})
+
 /** The look of another person's cursor, in the app's own type and radii (the plugin's defaults are serif and black). */
 const theme = EditorView.baseTheme({
   '.cm-ySelectionCaret': { borderLeftWidth: '2px', borderRightWidth: '0', marginRight: '0' },
-  '.cm-ySelectionInfo': { fontFamily: 'inherit', fontSize: '11px', fontWeight: '600', lineHeight: '1.3', padding: '1px 6px', borderRadius: '6px 6px 6px 0', top: '-1.5em', left: '-2px', whiteSpace: 'nowrap' },
+  '&[data-labels] .cm-ySelectionInfo': { opacity: '1', transitionDelay: '0s' },
+  '.cm-ySelectionInfo': { transition: 'opacity var(--dur-base) var(--ease-out)', fontFamily: 'inherit', fontSize: '11px', fontWeight: '600', lineHeight: '1.3', padding: '1px 6px', borderRadius: '6px 6px 6px 0', top: '-1.5em', left: '-2px', whiteSpace: 'nowrap' },
 })
 
 /**
@@ -85,6 +135,7 @@ export function liveExtension(session: NoteSession, resolve: (account: string) =
       // Once the room has ended for lack of access, nothing more is typed into the note (what was written is kept by the host).
       EditorState.transactionFilter.of((tr) => (session.readOnly && tr.docChanged && tr.annotation(ySyncAnnotation) == null ? [] : tr)),
       composition(session),
+      labels(session.awareness),
       theme,
     ],
   }

@@ -65,5 +65,6 @@ function collaborator(room: Room): void {
     awareness.setLocalStateField("cursor", { anchor: at(from), head: at(step % 3 === 0 ? from + 12 : from) });
   };
   setInterval(move, 2500);
-  setTimeout(() => { move(); if (text.length) { const line = text.toString().indexOf("\n\n"); text.insert(line < 0 ? text.length : line, " (Maya: checked)"); } }, 3000);
+  // She types at the end of the first paragraph, not in the title.
+  setTimeout(() => { move(); if (text.length) { const t = text.toString(); const first = t.indexOf("\n\n"); const line = first < 0 ? -1 : t.indexOf("\n\n", first + 2); text.insert(line < 0 ? text.length : line, " (Maya: checked)"); } }, 3000);
 }
