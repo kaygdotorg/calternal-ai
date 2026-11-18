@@ -63,8 +63,9 @@ the structured outcome.
   successful poll parks provider containers idle for a lease TTL, 90 seconds by default.
   Startup sweeps orphan containers scoped to the locked sandbox directory. The direct
   backend runs as the machine user with no isolation, only after the
-  account owner marks that machine direct. Pool machines refuse direct execution. A microVM backend would implement
-  the same trait.
+  account owner marks that machine direct. Pool machines refuse direct execution.
+  The microVM backend implements the same trait through an authenticated vsock
+  channel to a per-account Firecracker guest.
 - **Back-pressure**: at most 256 KiB per exec in the channel and 256 KiB unacknowledged
   on the machine, plus at most 1 MiB unread on the server. When the reader stops, the
   process blocks on its next write.
@@ -119,6 +120,7 @@ when the binary is outside PATH.
 
 The opt-in `microvm` pool backend runs this same rootless Podman implementation
 inside a Firecracker guest per account. It uses the same isolated space homes
-and Claude login directory in the guest's account disk. See the
-deployment guide
-for the offline preview, KVM privileges and pinned image.
+and Claude login directory in the guest's account disk. The guest boots
+offline by default. An operator can attach a TAP with explicit egress
+rules. The deployment guide covers the preview, KVM privileges, pinned
+image, and firewall. Deployment guide
