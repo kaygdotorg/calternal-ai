@@ -76,6 +76,17 @@ Global options on every command: `--json`, `--no-hints`.
 | `machine verify MACHINE_UUID --space-id SPACE_UUID [--provider ID] [--token-file FILE]` | Run one provider diagnostic on your machine or a pool machine you administer. | Sandbox status, provider installation and sign-in, and the provider's sign-in command. | `sandbox_started`, `provider` |
 | `machine run [--dir DIR] [--backend podman\|process] [--image REF] [--podman PATH] [--max-sandboxes N]` | Connect to the server and run assigned threads until stopped (SIGINT/SIGTERM). Logs to stderr. | On clean stop: `Machine stopped.` Revoked: error `revoked`, exit 3. | `stopped` |
 
+Use `calternal plugin new NAME --sdk-root DIR` to start a TypeScript package.
+`plugin check`, `plugin test` and `plugin bench` use the current directory unless
+given another one. Use `plugin review SOURCE` to get the package's approval
+checksum, optionally with `--appdata DIR` to compare with the installed version.
+`plugin pack DIR FILE.calplugin` writes a portable package. `plugin install`
+and `plugin update` accept the source, `--appdata DIR` and `--approve SHA256`.
+`plugin remove ID --appdata DIR` stages removal. Start the server again to apply
+catalog changes. `plugin enable ID --space UUID` and `plugin disable ID --space UUID`
+use the server credential and change activation immediately. See the
+plugin authoring guide.
+
 People, groups, and invitations use the HTTP session in an owner-only file
 supplied with `--token-file` or `CALTERNAL_TOKEN_FILE`. Use `--base-url` to choose
 the server and keep the same `--request-id` when retrying an uncertain write.

@@ -48,7 +48,9 @@ pub(super) async fn spawn(
         .start(&SandboxSpec {
             space_id: Some(space),
             provider_login: false,
-            code_directory: (backend.name() != "machine")
+            // Operator-installed packages always start from the private copy of
+            // verified bytes. Explicit in-memory fixtures can supply test assets.
+            code_directory: (plugin.revision == 0 && backend.name() != "machine")
                 .then(|| bundle.parent().unwrap_or(Path::new("/")).to_path_buf()),
             account_id: account.as_uuid(),
             thread_id: uuid::Uuid::new_v4(),

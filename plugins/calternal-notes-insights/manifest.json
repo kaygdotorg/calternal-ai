@@ -73,6 +73,14 @@
   ],
   "collections": [],
   "views": [],
+  "slots": [
+    {
+      "id": "note-statistics",
+      "label": "Note statistics",
+      "slot": "card_window",
+      "renderer": { "type": "generated", "operation": "notes-insights.summarize" }
+    }
+  ],
   "attention": [],
   "settings": [],
   "schedules": [],
