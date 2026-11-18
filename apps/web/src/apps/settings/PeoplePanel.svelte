@@ -3,7 +3,7 @@
   import { Button } from "@calternal/ui";
   import * as people from "../../server/people";
   import { say } from "../../server/say";
-  import { reach } from "./reach";
+  import { reach } from "../../lib/reach";
   import "./panel.css";
   let pg = $state<people.Pager<people.Person> | null>(null), loading = false;
   let list = $state<people.Person[]>([]), error = $state(""), busy = $state(false), loaded = $state(false);

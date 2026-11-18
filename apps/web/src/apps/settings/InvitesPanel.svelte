@@ -5,7 +5,7 @@
   import * as people from "../../server/people";
   import { say } from "../../server/say";
   import { spaces } from "../../shell/spaces.svelte";
-  import { reach } from "./reach";
+  import { reach } from "../../lib/reach";
   import { capitalise, copyText, shortDate } from "../../lib/format";
   import "./panel.css";
   let list = $state<people.Invite[]>([]), error = $state(""), busy = $state(false), loaded = $state(false), role = $state<people.GrantRole>("editor"), days = $state("7"), copied = $state("");
