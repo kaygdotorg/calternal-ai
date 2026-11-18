@@ -1,0 +1,47 @@
+{
+  "id": "calternal-codex",
+  "name": "Codex",
+  "icon": "terminal",
+  "version": "0.1.0",
+  "api_version": 1,
+  "provider": {
+    "protocol_version": 1,
+    "sign_in": true,
+    "executable": "calternal-provider-codex",
+    "default_model": "gpt-5.5",
+    "models": [
+      {
+        "id": "gpt-5.5",
+        "name": "GPT-5.5",
+        "reasoning_levels": [
+          "low",
+          "medium",
+          "high",
+          "xhigh"
+        ]
+      },
+      {
+        "id": "gpt-6-luna",
+        "name": "GPT-6 Luna",
+        "reasoning_levels": [
+          "low",
+          "medium",
+          "high",
+          "xhigh"
+        ]
+      }
+    ]
+  },
+  "kinds": [],
+  "operations": [],
+  "collections": [],
+  "views": [],
+  "attention": [],
+  "settings": [],
+  "schedules": [],
+  "webhooks": [],
+  "secrets": [],
+  "hooks": [],
+  "themes": [],
+  "host_calls": []
+}

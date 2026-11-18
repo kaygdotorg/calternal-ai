@@ -10,7 +10,7 @@ const hosts = new Set(['claude.ai', 'claude.com', 'platform.claude.com', 'consol
 
 function paths() {
   const home = process.env.HOME;
-  const login = process.env.CALTERNAL_CLAUDE_LOGIN_DIR;
+  const login = process.env.CALTERNAL_PROVIDER_LOGIN_DIR ?? process.env.CALTERNAL_CLAUDE_LOGIN_DIR;
   if (!home || !login) return;
   const config = join(home, '.claude');
   return { config, local: join(config, credentialName), shared: join(login, credentialName) };
