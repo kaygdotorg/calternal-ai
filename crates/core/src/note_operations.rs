@@ -121,6 +121,103 @@ pub struct PurgeResult {
     pub state: ItemState,
 }
 
+/// One trashed note and its remaining whole-day retention, rounded up.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS)]
+pub struct TrashedNote {
+    /// Stable note identity and deletion timestamp.
+    #[serde(flatten)]
+    pub note: NoteSummary,
+    /// Days until eligibility for automatic purge. Zero means eligible now.
+    pub days_remaining: u32,
+}
+
+/// One page of notes eligible for restore or purge, newest deletion first.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(deny_unknown_fields)]
+pub struct TrashListResult {
+    /// At most 100 notes with their remaining retention.
+    pub notes: Vec<TrashedNote>,
+    /// Opaque next-page cursor, omitted when there are no more notes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub next_cursor: Option<String>,
+}
+
+/// Selects the Trash of one space for an irreversible-action preview.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(deny_unknown_fields)]
+pub struct TrashScope {
+    /// UUID of the owning space.
+    pub space_id: String,
+}
+
+/// Confirmation for exactly the current set of trashed revisions.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS)]
+pub struct TrashEmptyPreview {
+    /// Number of selected notes.
+    pub count: u32,
+    /// Logical UTF-8 bytes in all retained versions of the selected notes.
+    #[ts(type = "number")]
+    pub bytes: u64,
+    /// Opaque set fingerprint required when starting the job.
+    pub confirmation: String,
+}
+
+/// Confirm the irreversible deletion of a previewed Trash selection.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(deny_unknown_fields)]
+pub struct TrashEmptyInput {
+    /// UUID of the owning space.
+    pub space_id: String,
+    /// Confirmation from a fresh preview for the same space.
+    pub confirmation: String,
+}
+
+/// Select one previously admitted job in its owning space.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(deny_unknown_fields)]
+pub struct NoteJobInput {
+    /// UUID of the owning space.
+    pub space_id: String,
+    /// Job UUID returned on admission.
+    pub job_id: String,
+}
+
+/// Durable progress of one irreversible Empty Trash job.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS)]
+pub struct TrashJob {
+    /// Stable job UUID.
+    pub job_id: String,
+    /// Number of notes selected at confirmation.
+    pub count: u32,
+    /// Logical version bytes selected at confirmation.
+    #[ts(type = "number")]
+    pub bytes: u64,
+    /// Number of selected revisions permanently removed by this job.
+    pub purged: u32,
+    /// Number of selected revisions restored, replaced, blocked or already removed.
+    pub skipped: u32,
+    /// `pending` while work remains, `done` after all selected revisions are examined.
+    pub state: String,
+}
+
+/// Progress of an authorized Notes rename or its inverse.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS)]
+pub struct NoteRenameJob {
+    /// Job UUID returned by the rename.
+    pub job_id: String,
+    /// Stable identity of the renamed note.
+    pub note_id: String,
+    /// Original number of candidate linking notes.
+    pub total: u32,
+    /// Number of source files still to inspect in the current direction.
+    pub remaining: u32,
+    /// Number of conflicts skipped in the current direction.
+    pub skipped: u32,
+    /// `pending`, `done`, `undoing`, `undone`, or `blocked`.
+    pub state: String,
+}
+
 /// Authority and wire metadata shared by Notes admission and discovery.
 pub struct NoteOperation {
     /// Stable operation name.
@@ -151,7 +248,7 @@ impl NoteOperation {
 fn schemas<I: JsonSchema, O: JsonSchema>(op: &NoteOperation) -> OperationDescription {
     let object = |value| serde_json::from_value(value).expect("schema is object");
     OperationDescription {
-        required_capability: None,
+        required_capability: Some(op.capability.name().into()),
         target: None,
         id: op.id.into(),
         description: op.description.into(),
@@ -193,6 +290,27 @@ fn space_input(input: &JsonObject) -> Result<(), Error> {
     let i: SpaceDirectoryPageInput = crate::validation::decode(input)?;
     i.cursor.as_deref().map(validate_page_cursor).transpose()?;
     scope(&i.space_id)
+}
+
+fn trash_scope(input: &JsonObject) -> Result<(), Error> {
+    scope(&crate::validation::decode::<TrashScope>(input)?.space_id)
+}
+
+fn empty_trash(input: &JsonObject) -> Result<(), Error> {
+    let i: TrashEmptyInput = crate::validation::decode(input)?;
+    scope(&i.space_id)?;
+    if i.confirmation.len() != 64 || !i.confirmation.bytes().all(|c| c.is_ascii_hexdigit()) {
+        return Err(Error::invalid_input(
+            "invalid Trash confirmation; preview it again",
+        ));
+    }
+    Ok(())
+}
+
+fn note_job(input: &JsonObject) -> Result<(), Error> {
+    let i: NoteJobInput = crate::validation::decode(input)?;
+    scope(&i.space_id)?;
+    validate_resource_id(&i.job_id)
 }
 
 // Dispatch injects space_id only after validating these item input schemas.
@@ -264,18 +382,48 @@ pub static NOTE_OPERATIONS: &[NoteOperation] = &[
         Read,
         false,
         SpaceDirectoryPageInput,
-        NotesListResult,
+        TrashListResult,
         space_input
     ),
     operation!(
         "trash.purge",
         "Permanently delete a note from Trash",
-        ContentWrite,
+        ContentPurge,
         Irreversible,
         true,
         NoteTarget,
         PurgeResult,
         target
+    ),
+    operation!(
+        "trash.empty.preview",
+        "Count notes and retained version bytes before emptying Trash",
+        ContentPurge,
+        Read,
+        false,
+        TrashScope,
+        TrashEmptyPreview,
+        trash_scope
+    ),
+    operation!(
+        "trash.empty",
+        "Start a resumable job to permanently purge the confirmed Trash selection",
+        ContentPurge,
+        Irreversible,
+        false,
+        TrashEmptyInput,
+        TrashJob,
+        empty_trash
+    ),
+    operation!(
+        "trash.empty.status",
+        "Read progress of an Empty Trash job",
+        ContentPurge,
+        Read,
+        false,
+        NoteJobInput,
+        TrashJob,
+        note_job
     ),
     operation!(
         "notes.rename",
@@ -286,6 +434,26 @@ pub static NOTE_OPERATIONS: &[NoteOperation] = &[
         NoteRenameInput,
         NoteResult,
         rename
+    ),
+    operation!(
+        "notes.rename.status",
+        "Read progress of a Notes rename or its inverse",
+        SpaceRead,
+        Read,
+        false,
+        NoteJobInput,
+        NoteRenameJob,
+        note_job
+    ),
+    operation!(
+        "notes.rename.undo",
+        "Restore the original name and linked revisions from a completed rename",
+        ContentWrite,
+        Reversible,
+        false,
+        NoteJobInput,
+        NoteRenameJob,
+        note_job
     ),
     operation!(
         "notes.lookup",

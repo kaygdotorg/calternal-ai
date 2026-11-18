@@ -21,7 +21,6 @@ const SCHEMA: &str = include_str!("schema.sql");
 const MIGRATIONS: calternal_store::migrations::Schema<'_> =
     calternal_store::migrations::Schema::new("message search projection", 1, &[SCHEMA], &[]);
 const SECONDARY: &str = "CREATE UNIQUE INDEX IF NOT EXISTS locations_id ON locations(thread,id);
-    CREATE INDEX IF NOT EXISTS locations_thread ON locations(thread,position);
     CREATE INDEX IF NOT EXISTS postings_newest ON postings(term,stamp DESC,newest DESC,block);";
 
 pub(in crate::search) enum Progress {
@@ -62,19 +61,23 @@ pub(in crate::search) fn advance(
     if schema.as_ref().is_none_or(|s| !s.matches(head)) {
         db.pragma_update(None, "journal_mode", "DELETE")
             .map_err(internal)?;
-        db.execute_batch(
-            "BEGIN;
-            DROP INDEX IF EXISTS locations_id;
-            DROP TABLE postings; DROP TABLE blocks; DROP TABLE terms; DROP TABLE locations; DROP TABLE threads;
-            DELETE FROM build_state; COMMIT;",
+        let tx = db.transaction().map_err(internal)?;
+        tx.execute_batch(
+            "DROP TABLE IF EXISTS postings;
+             DROP TABLE IF EXISTS blocks;
+             DROP TABLE IF EXISTS terms;
+             DROP TABLE IF EXISTS locations;
+             DROP TABLE IF EXISTS threads;
+             DELETE FROM build_state;",
         )
         .map_err(internal)?;
-        db.execute_batch(SCHEMA).map_err(internal)?;
-        db.execute(
+        tx.execute_batch(SCHEMA).map_err(internal)?;
+        tx.execute(
             "INSERT INTO build_state VALUES(1,?1,?2,?3,0,0,0)",
             params![GENERATION, head.epoch, head.seq],
         )
         .map_err(internal)?;
+        tx.commit().map_err(internal)?;
         return Ok(Progress::More);
     }
     let mut state = schema.expect("matching state");

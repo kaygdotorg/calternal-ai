@@ -146,85 +146,77 @@ impl Content {
         request: Request<'_>,
     ) -> Result<Value> {
         let _actor = self.lifecycle.step(request.account.as_uuid())?;
-        self.with_space(space, |s| self.purge_selected(s, kind, item, None, request))
+        self.with_space(space, |s| {
+            self.purge_selected(s, kind, item, None, None, request)
+        })
     }
 
-    /// Sweep one physical space in bounded pages, unblocking other requests
-    /// between items. The cutoff is rechecked under the lock before each purge so
-    /// a restore followed by another delete cannot inherit the old deadline.
-    /// Cost: indexed pages plus the ordinary purge cost per expired item.
+    /// Purge at most 16 expired items and release the space writer between
+    /// items. Rechecks the deletion deadline at placement so a restored and
+    /// re-deleted item keeps its own retention. True means to schedule another turn.
     pub fn expire_trash(
         &self,
         space: SpaceId,
         kind: &str,
         cutoff: &str,
         operation: &str,
-    ) -> Result<()> {
-        let mut cursor = (String::new(), String::new());
-        loop {
-            let rows = self.with_space(space, |s| {
-                let mut stmt = s
-                    .conn
-                    .prepare_cached(
-                        "SELECT i.updated_at,i.id,v.author
-                     FROM items i JOIN versions v ON v.item=i.id AND v.seq=i.seq
-                     WHERE i.kind=?1 AND substr(i.path,1,7) = '.trash/'
-                     AND i.mat_state NOT IN ('purged','blocked') AND i.updated_at < ?2
-                     AND (i.updated_at,i.id) > (?3,?4)
-                     ORDER BY i.updated_at,i.id LIMIT 100",
-                    )
-                    .map_err(internal)?;
-                let rows = stmt
-                    .query_map(params![kind, cutoff, cursor.0, cursor.1], |r| {
-                        Ok((
-                            r.get::<_, String>(0)?,
-                            r.get::<_, String>(1)?,
-                            r.get::<_, String>(2)?,
-                        ))
-                    })
-                    .map_err(internal)?;
-                rows.collect::<rusqlite::Result<Vec<_>>>().map_err(internal)
-            })?;
-            if rows.is_empty() {
-                return Ok(());
-            }
-            for (at, id, author) in rows {
-                let item = Uuid::parse_str(&id).map_err(internal)?;
-                let account = AccountId::parse(&author).map_err(internal)?;
-                // Recovery retains the admitted ID in the outbox. A fresh sweep
-                // can generate a fresh ID because a purged item is never eligible.
-                let rid = Uuid::now_v7().to_string();
-                let result = self.with_space(space, |s| {
-                    self.purge_selected(
-                        s,
-                        kind,
-                        item,
-                        Some(cutoff),
-                        Request {
-                            account,
-                            via: None,
-                            id: &rid,
-                            operation,
-                            fingerprint: &rid,
-                        },
-                    )
-                });
-                if let Err(e) = result
-                    && !matches!(e.code, ErrorCode::NotFound | ErrorCode::Conflict)
-                {
-                    return Err(e);
-                }
-                cursor = (at, id);
+    ) -> Result<bool> {
+        const PAGE: usize = 16;
+        let rows = self.with_space(space, |s| {
+            let mut stmt = s
+                .conn
+                .prepare_cached(
+                    "SELECT i.id,v.author
+                 FROM items i JOIN versions v ON v.item=i.id AND v.seq=i.seq
+                 WHERE i.kind=?1 AND substr(i.path,1,7) = '.trash/'
+                 AND i.mat_state NOT IN ('purged','blocked') AND i.updated_at < ?2
+                 ORDER BY i.updated_at,i.id LIMIT ?3",
+                )
+                .map_err(internal)?;
+            stmt.query_map(params![kind, cutoff, PAGE as i64], |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+            })
+            .map_err(internal)?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(internal)
+        })?;
+        let more = rows.len() == PAGE;
+        for (id, author) in rows {
+            let item = Uuid::parse_str(&id).map_err(internal)?;
+            let account = AccountId::parse(&author).map_err(internal)?;
+            let rid = Uuid::now_v7().to_string();
+            let result = self.with_space(space, |s| {
+                self.purge_selected(
+                    s,
+                    kind,
+                    item,
+                    Some(cutoff),
+                    None,
+                    Request {
+                        account,
+                        via: None,
+                        id: &rid,
+                        operation,
+                        fingerprint: &rid,
+                    },
+                )
+            });
+            if let Err(e) = result
+                && !matches!(e.code, ErrorCode::NotFound | ErrorCode::Conflict)
+            {
+                return Err(e);
             }
         }
+        Ok(more)
     }
 
-    fn purge_selected(
+    pub(crate) fn purge_selected(
         &self,
         s: &mut Space,
         kind: &str,
         id: Uuid,
         cutoff: Option<&str>,
+        expected_revision: Option<&str>,
         request: Request<'_>,
     ) -> Result<Value> {
         self.publish_pending(s)?;
@@ -241,8 +233,8 @@ impl Content {
             .conn
             .query_row(
                 "SELECT path,mat_state,revision FROM items WHERE id=?1 AND kind=?2
-             AND (?3 IS NULL OR updated_at < ?3)",
-                params![id.to_string(), kind, cutoff],
+             AND (?3 IS NULL OR updated_at < ?3) AND (?4 IS NULL OR revision=?4)",
+                params![id.to_string(), kind, cutoff, expected_revision],
                 |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
             )
             .optional()
@@ -318,6 +310,7 @@ impl Space {
         id: &str,
         account: &str,
         request: &str,
+        operation: &str,
         fault: fn(FaultPoint),
     ) -> Result<bool> {
         let intent: Option<(String, Option<String>)> = self
@@ -383,6 +376,7 @@ impl Space {
             "UPDATE items SET metadata='{}',file_hash=NULL,old_path=NULL,mat_state='purged' WHERE id=?1",
             [id],
         ).map_err(internal)?;
+        crate::trash_job::retire_purge(&tx, operation, request, id)?;
         tx.commit().map_err(internal)?;
         Ok(true)
     }

@@ -15,6 +15,12 @@ const ACCOUNTS_RELEASE: Schema<'_> = Schema::new(
 
 #[test]
 fn auth_13_to_14_preserves_accounts_and_covers_sharing_erasure() {
+    let sharing_release = Schema::new(
+        "auth.db",
+        11,
+        &[include_str!("../schema.sql")],
+        &AUTH_CHANGES[..3],
+    );
     let connection = Connection::open_in_memory().unwrap();
     connection
         .pragma_update(None, "foreign_keys", true)
@@ -37,11 +43,11 @@ fn auth_13_to_14_preserves_accounts_and_covers_sharing_erasure() {
     connection
         .execute("CREATE TABLE item_grants(collision TEXT)", [])
         .unwrap();
-    assert!(migrate(&connection, MIGRATIONS).is_err());
+    assert!(migrate(&connection, sharing_release).is_err());
     assert_eq!(inspect(&connection, ACCOUNTS_RELEASE).unwrap(), 13);
     connection.execute("DROP TABLE item_grants", []).unwrap();
-    migrate(&connection, MIGRATIONS).unwrap();
-    assert_eq!(inspect(&connection, MIGRATIONS).unwrap(), 14);
+    migrate(&connection, sharing_release).unwrap();
+    assert_eq!(inspect(&connection, sharing_release).unwrap(), 14);
     let username: String = connection
         .query_row("SELECT username FROM users WHERE id='owner'", [], |row| {
             row.get(0)

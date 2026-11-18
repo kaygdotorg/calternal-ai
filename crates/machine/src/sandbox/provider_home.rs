@@ -39,6 +39,66 @@ pub(super) async fn prepare(
     .map_err(SandboxError::new)
 }
 
+pub(super) async fn prepare_harness(
+    account: PathBuf,
+    work: &Path,
+    spec: &SandboxSpec,
+    harness: &crate::protocol::HarnessSandbox,
+) -> SandboxResult<(PathBuf, PathBuf)> {
+    let provider = &harness.provider_id;
+    if spec.worker.is_some()
+        || provider.is_empty()
+        || provider.len() > 80
+        || !provider
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
+    {
+        return Err(SandboxError("invalid harness sandbox".into()));
+    }
+    let space = spec
+        .space_id
+        .ok_or_else(|| SandboxError("missing sandbox space".into()))?;
+    let home = if spec.provider_login {
+        work.join("login-home")
+    } else {
+        account
+            .join("spaces")
+            .join(space.to_string())
+            .join("provider-homes")
+            .join(provider)
+    };
+    use crate::protocol::ProviderLoginScope;
+    let scope_id = match harness.login_scope {
+        ProviderLoginScope::Account(id) if id.as_uuid() == spec.account_id => id.as_uuid(),
+        ProviderLoginScope::Account(_) => {
+            return Err(SandboxError("provider login scope mismatches owner".into()));
+        }
+        ProviderLoginScope::Space(_) => {
+            return Err(SandboxError(
+                "space-scoped provider login is not enabled".into(),
+            ));
+        }
+    };
+    if harness.legacy_profile && !harness.disposable_profile {
+        return prepare(account, work, spec).await;
+    }
+    let profiles = if harness.disposable_profile {
+        work.join("smoke-profile")
+    } else {
+        account.join("provider-profiles").join(scope_id.to_string())
+    };
+    let login = profiles.join(provider);
+    tokio::task::spawn_blocking(move || {
+        for path in [&account, &profiles, &login, &home] {
+            private::directory(path)?;
+        }
+        Ok::<_, io::Error>((home, login))
+    })
+    .await
+    .map_err(SandboxError::new)?
+    .map_err(SandboxError::new)
+}
+
 fn import_existing(account: &Path, login: &Path) -> io::Result<()> {
     let target = login.join(CREDENTIALS);
     if target.try_exists()? {

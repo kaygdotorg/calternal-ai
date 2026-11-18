@@ -85,7 +85,6 @@ async fn manage_item<D: Directory>(
     {
         return Err(Error::forbidden("sharing requires a space Editor"));
     }
-    validate_item(state, space, item).await?;
     Ok(space)
 }
 
@@ -107,12 +106,9 @@ pub(super) async fn dispatch<D: Directory>(
     if operation == "sharing.rescue" {
         return rescue::dispatch(state, actor, request_id, input).await;
     }
-    if operation.starts_with("collections.") {
-        return collections::dispatch(state, actor, request_id, operation, input).await;
-    }
     if matches!(
         operation,
-        "sharing.list" | "sharing.audiences" | "sharing.shared_with_me"
+        "sharing.list" | "sharing.audiences" | "sharing.shared_with_me" | "collections.list"
     ) {
         let (scope, input) = {
             let state = state.clone();
@@ -140,9 +136,13 @@ pub(super) async fn dispatch<D: Directory>(
         .map_err(|_| Error::internal("cursor task failed"))?;
         return Ok(value);
     }
+    if operation.starts_with("collections.") {
+        return collections::dispatch(state, actor, request_id, operation, input).await;
+    }
     if operation == "sharing.link_copy" {
         let input: ShareGrantTarget = dispatch::decode(input)?;
         let space = manage_item(&state, actor, &input.item).await?;
+        validate_item(&state, space, &input.item).await?;
         let http = state
             .directory
             .http_auth()
@@ -247,6 +247,13 @@ pub(super) async fn dispatch<D: Directory>(
         };
         let kind = item.kind;
         let id = item.id;
+        // Revocation only removes existing authority. It must also work in Trash
+        // so that restore cannot re-enable a link the issuer meant to revoke.
+        if let Mutation::Revoke(grant) = change {
+            return spaces
+                .revoke_item(actor.id, space, id, grant, receipt)
+                .map_err(auth_error);
+        }
         store
             .content()
             .with_live_metadata(space, &kind, id, |metadata| {
@@ -263,9 +270,6 @@ pub(super) async fn dispatch<D: Directory>(
                         edit,
                         receipt,
                     ),
-                    Mutation::Revoke(grant) => {
-                        spaces.revoke_item(actor.id, space, id, grant, receipt)
-                    }
                     Mutation::Link(edit) => directory
                         .directory
                         .http_auth()
@@ -275,7 +279,7 @@ pub(super) async fn dispatch<D: Directory>(
                         .auth
                         .change_item_link(actor.id, space, id, kind.clone(), edit, receipt),
                     Mutation::Seen => spaces.mark_shared_item_seen(actor.id, space, id, receipt),
-                    Mutation::Policy(_) => unreachable!("item-scoped change"),
+                    Mutation::Policy(_) | Mutation::Revoke(_) => unreachable!("separate change"),
                 }
                 .map_err(auth_error)
             })
@@ -293,6 +297,9 @@ async fn read<D: Directory>(
     operation: &str,
     input: JsonObject,
 ) -> Result<Value, Error> {
+    if operation == "collections.list" {
+        return collections::list(state, actor, dispatch::decode(input)?).await;
+    }
     let directory = state
         .directory
         .protected_spaces()
@@ -341,6 +348,7 @@ async fn read<D: Directory>(
                 }
             })?;
             let space = manage_item(state, actor, &input.item).await?;
+            validate_item(state, space, &input.item).await?;
             directory
                 .item_audiences_page(actor.id, space, input.query.trim().to_owned(), input.cursor)
                 .await
@@ -410,7 +418,11 @@ async fn received<D: Directory>(
         if let Some(caps) =
             caps.filter(|caps| caps.contains(calternal_types::Capability::SpaceRead))
         {
-            rows.push(json!({"item":{"kind":item.kind,"id":id},"title":title,"shared_by":sharer,"permission":permission(caps),"unread":unread}));
+            let mut row = json!({"item":{"kind":item.kind,"id":id},"title":title,"shared_by":sharer,"permission":permission(caps),"unread":unread});
+            if item.kind == "collections" {
+                row["can_edit"] = json!(collections::editable(state, actor.id, space, caps).await?);
+            }
+            rows.push(row);
         }
     }
     Ok(json!({"items":rows,"next_cursor":next}))

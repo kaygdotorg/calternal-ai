@@ -2,13 +2,13 @@
 use crate::{Content, FaultPoint, Item, Request, Result, db::Space, now_rfc3339, types::internal};
 use calternal_types::Error;
 use rusqlite::{Transaction, params};
-use serde_json::{Value, json};
+use serde_json::Value;
 use uuid::Uuid;
 
 pub(crate) type Retarget<'a> = dyn Fn(&Item, &str, &str) -> Result<Option<(Value, Vec<u8>)>> + 'a;
 
-const MAX_RELATED: usize = 1000;
-const MAX_RELATED_BYTES: usize = 32 * 1024 * 1024;
+pub(crate) const BATCH: usize = 8;
+const MAX_RELATED: usize = 250_000;
 
 pub(crate) struct Staged {
     pub(crate) item: Item,
@@ -83,6 +83,22 @@ impl Staged {
         .map_err(internal)?;
         Ok(())
     }
+    pub(crate) fn require_placement(
+        &self,
+        tx: &Transaction<'_>,
+        request: Request<'_>,
+    ) -> Result<()> {
+        tx.execute(
+            "INSERT INTO outbox_placement VALUES(?1,?2,?3)",
+            params![
+                request.account.to_string(),
+                request.id,
+                self.item.id.to_string()
+            ],
+        )
+        .map_err(internal)?;
+        Ok(())
+    }
 }
 
 pub(crate) const SCHEMA: &str = "CREATE TABLE IF NOT EXISTS outbox_placement(
@@ -92,97 +108,86 @@ pub(crate) const SCHEMA: &str = "CREATE TABLE IF NOT EXISTS outbox_placement(
         ) WITHOUT ROWID, STRICT;";
 
 impl Space {
-    pub(crate) fn stage_related(
-        &mut self,
-        root: &mut Staged,
+    pub(crate) fn related_revisions(
+        &self,
+        root: &Staged,
         old: &str,
-        retarget: &Retarget<'_>,
+    ) -> Result<Vec<(String, String)>> {
+        let mut stmt = self
+            .conn
+            .prepare_cached(
+                "SELECT i.id,i.revision FROM item_terms t JOIN items i ON i.id=t.item
+             WHERE t.kind=?1 AND t.category='link' AND t.name=?2 AND t.item<>?3
+             ORDER BY t.item LIMIT ?4",
+            )
+            .map_err(internal)?;
+        let rows = stmt
+            .query_map(
+                params![
+                    root.item.kind,
+                    calternal_fsio::names::fold(old),
+                    root.item.id.to_string(),
+                    (MAX_RELATED + 1) as i64
+                ],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .map_err(internal)?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(internal)?;
+        if rows.len() > MAX_RELATED {
+            return Err(Error::unavailable("rename exceeds the related-note limit"));
+        }
+        Ok(rows)
+    }
+
+    pub(crate) fn stage_link_edit(
+        &mut self,
+        id: Uuid,
+        base: &str,
+        edit: impl FnOnce(&Item) -> Result<Option<(Value, Vec<u8>)>>,
         fault: fn(FaultPoint),
-    ) -> Result<Vec<Staged>> {
-        let ids = {
-            let mut stmt = self
-                .conn
-                .prepare_cached(
-                    "SELECT item FROM item_terms WHERE kind=?1 AND category='link' AND name=?2
-                 AND item<>?3 ORDER BY item LIMIT ?4",
-                )
-                .map_err(internal)?;
-            let rows = stmt
-                .query_map(
-                    params![
-                        root.item.kind,
-                        calternal_fsio::names::fold(old),
-                        root.item.id.to_string(),
-                        (MAX_RELATED + 1) as i64,
-                    ],
-                    |r| r.get::<_, String>(0),
-                )
-                .map_err(internal)?;
-            rows.collect::<rusqlite::Result<Vec<_>>>()
-                .map_err(internal)?
-        };
-        if ids.len() > MAX_RELATED {
-            return Err(Error::unavailable(
-                "rename has too many links for one durable write",
+    ) -> Result<Option<Staged>> {
+        let mut head = self.header(id)?;
+        if head.kind != "notes" || head.path.starts_with(".trash/") || head.revision != base {
+            return Err(Error::conflict(
+                "a note changed since the rename was planned",
             ));
         }
-        if let Some((metadata, bytes)) = retarget(&root.item, old, &root.path)? {
-            Content::validate_write_size(&metadata, &bytes)?;
-            if let Some(room) = root.room.take() {
-                root.room = Some(room.rewrite(&bytes)?);
-            }
-            root.item.metadata = metadata;
-            root.item.bytes = bytes;
+        let mut source = self.get_selected(id, true)?;
+        let Some((mut metadata, mut bytes)) = edit(&source)? else {
+            return Ok(None);
+        };
+        Content::validate_write_size(&metadata, &bytes)?;
+        if head.state == "pending" {
+            self.place_header(id, head, Some(&source), fault)?;
+            head = self.header(id)?;
         }
-        let mut staged = Vec::with_capacity(ids.len());
-        let mut bytes_total = 0;
-        for id in ids {
-            let (seq, path): (i64, String) = self
-                .conn
-                .query_row("SELECT seq,path FROM items WHERE id=?1", [&id], |r| {
-                    Ok((r.get(0)?, r.get(1)?))
-                })
-                .map_err(internal)?;
-            let id = Uuid::parse_str(&id).map_err(internal)?;
-            let mut source = self.get_selected(id, true)?;
-            let Some((mut metadata, mut bytes)) = retarget(&source, old, &root.path)? else {
-                continue;
-            };
-            Content::validate_write_size(&metadata, &bytes)?;
-            bytes_total += bytes.len() + metadata.to_string().len();
-            if bytes_total > MAX_RELATED_BYTES {
-                return Err(Error::unavailable(
-                    "rename link edits exceed the durable write budget",
-                ));
-            }
-            self.place(id, fault)?;
-            let expected = self.check_file(id)?;
-            let room = if self.live_editing(&source.kind)? {
-                let (merged, checkpoint, _) = self.merge_room_write(
-                    &source,
-                    seq,
-                    &source.revision,
-                    &mut metadata,
-                    crate::rooms::Body::Replace(&bytes),
-                )?;
-                bytes = merged;
-                Some(checkpoint)
-            } else {
-                None
-            };
-            source.metadata = metadata;
-            source.bytes = bytes;
-            source.revision = Staged::version(seq + 1);
-            source.updated_at = now_rfc3339();
-            staged.push(Staged {
-                item: source,
-                seq: seq + 1,
-                path,
-                expected,
-                room,
-            });
-        }
-        Ok(staged)
+        let expected = self.check_header(id, &head)?;
+        let room = if self.live_editing(&source.kind)? {
+            let (merged, checkpoint, _) = self.merge_room_write(
+                &source,
+                head.seq,
+                base,
+                &mut metadata,
+                crate::rooms::Body::Replace(&bytes),
+            )?;
+            Content::validate_write_size(&metadata, &merged)?;
+            bytes = merged;
+            Some(checkpoint)
+        } else {
+            None
+        };
+        source.metadata = metadata;
+        source.bytes = bytes;
+        source.revision = Staged::version(head.seq + 1);
+        source.updated_at = now_rfc3339();
+        Ok(Some(Staged {
+            item: source,
+            seq: head.seq + 1,
+            path: head.path,
+            expected,
+            room,
+        }))
     }
 
     pub(crate) fn place_related(
@@ -194,7 +199,10 @@ impl Space {
         let ids = {
             let mut stmt = self
                 .conn
-                .prepare_cached("SELECT item FROM outbox_placement WHERE account=?1 AND request=?2")
+                .prepare_cached(
+                    "SELECT p.item FROM outbox_placement p JOIN outbox o USING(account,request)
+                     WHERE p.account=?1 AND p.request=?2 ORDER BY p.item<>o.item,p.item",
+                )
                 .map_err(internal)?;
             let rows = stmt
                 .query_map(params![account, request], |r| r.get::<_, String>(0))
@@ -207,37 +215,4 @@ impl Space {
         }
         Ok(())
     }
-}
-
-pub(crate) fn stage_related_outbox(
-    tx: &Transaction<'_>,
-    root: &Staged,
-    sources: &[Staged],
-    request: Request<'_>,
-) -> Result<()> {
-    if sources.is_empty() {
-        return Ok(());
-    }
-    let account = request.account.to_string();
-    for item in sources.iter().chain(std::iter::once(root)) {
-        tx.execute(
-            "INSERT INTO outbox_placement VALUES(?1,?2,?3)",
-            params![account, request.id, item.item.id.to_string()],
-        )
-        .map_err(internal)?;
-    }
-    for source in sources {
-        source.write(tx, None, &account)?;
-        let rid = Uuid::now_v7().to_string();
-        source.outbox(
-            tx,
-            Request {
-                id: &rid,
-                fingerprint: &rid,
-                ..request
-            },
-            &json!({"id":source.item.id}),
-        )?;
-    }
-    Ok(())
 }

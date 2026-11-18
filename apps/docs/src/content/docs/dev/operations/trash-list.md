@@ -8,13 +8,14 @@ title: "trash.list"
 
 List a page of up to 100 notes in the space's Trash
 
-Capability: not declared in this catalogue; the host policy remains authoritative.
+Capability: space.read.
 
 ## Declaration
 
 ```json
 {
   "risk": "read",
+  "required_capability": "space.read",
   "id": "trash.list",
   "description": "List a page of up to 100 notes in the space's Trash",
   "mutates": false
@@ -55,10 +56,15 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
   "$schema": "http://json-schema.org/draft-07/schema#",
   "additionalProperties": false,
   "definitions": {
-    "NoteSummary": {
-      "additionalProperties": false,
-      "description": "Metadata returned by `notes.list`; excludes Markdown to bound listing payloads.",
+    "TrashedNote": {
+      "description": "One trashed note and its remaining whole-day retention, rounded up.",
       "properties": {
+        "days_remaining": {
+          "description": "Days until eligibility for automatic purge. Zero means eligible now.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
         "id": {
           "description": "Stable UUID note identity; access is checked against the accompanying space.",
           "type": "string"
@@ -86,6 +92,7 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
         }
       },
       "required": [
+        "days_remaining",
         "id",
         "revision",
         "space_id",
@@ -95,19 +102,19 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
       "type": "object"
     }
   },
-  "description": "Result for `notes.list`, containing at most 100 current note summaries.",
+  "description": "One page of notes eligible for restore or purge, newest deletion first.",
   "properties": {
     "next_cursor": {
-      "description": "Opaque continuation for the next page, omitted at the end.",
+      "description": "Opaque next-page cursor, omitted when there are no more notes.",
       "type": [
         "string",
         "null"
       ]
     },
     "notes": {
-      "description": "At most 100 current summaries, ordered by descending update timestamp then resource ID.",
+      "description": "At most 100 notes with their remaining retention.",
       "items": {
-        "$ref": "#/definitions/NoteSummary"
+        "$ref": "#/definitions/TrashedNote"
       },
       "type": "array"
     }
@@ -115,7 +122,7 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
   "required": [
     "notes"
   ],
-  "title": "NotesListResult",
+  "title": "TrashListResult",
   "type": "object"
 }
 ```

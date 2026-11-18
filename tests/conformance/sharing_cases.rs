@@ -5,6 +5,7 @@ use super::*;
 pub(super) const OPERATIONS: &[&str] = &[
     "collections.create",
     "collections.get",
+    "collections.list",
     "collections.set_members",
     "sharing.audiences",
     "sharing.grant",
@@ -82,6 +83,224 @@ async fn bearer_open_discloses_item_address_only_to_an_independently_authorized_
     );
     assert_eq!(get(Some(2)).await, (200, anonymous));
     assert_eq!(get(Some(1)).await.1["item"], item);
+}
+
+#[tokio::test]
+async fn collection_lists_are_space_scoped_and_membership_editing_is_owner_only() {
+    let f = Fixture::new().await;
+    let space = &f.spaces[0];
+    let first = data(
+        f.op(
+            1,
+            "collections.create",
+            json!({
+                "space_id":space,"title":"First saved set","members":[]
+            }),
+        )
+        .await,
+    );
+    let second = data(
+        f.op(
+            1,
+            "collections.create",
+            json!({
+                "space_id":space,"title":"Second saved set","members":[]
+            }),
+        )
+        .await,
+    );
+    let one = data(
+        f.op(1, "collections.list", json!({"space_id":space,"limit":1}))
+            .await,
+    );
+    assert_eq!(one["items"].as_array().unwrap().len(), 1);
+    assert_eq!(one["items"][0]["can_edit"], true);
+    let cursor = one["next_cursor"].as_str().unwrap();
+    let two = data(
+        f.op(
+            1,
+            "collections.list",
+            json!({
+                "space_id":space,"limit":1,"cursor":cursor
+            }),
+        )
+        .await,
+    );
+    assert!(two.get("next_cursor").is_none());
+    let ids = [&one["items"][0]["id"], &two["items"][0]["id"]];
+    assert_ne!(ids[0], ids[1]);
+    assert!(ids.contains(&&first["id"]) && ids.contains(&&second["id"]));
+    let wrong_scope = f
+        .op(
+            1,
+            "collections.list",
+            json!({
+                "space_id":f.spaces[2],"limit":1,"cursor":cursor
+            }),
+        )
+        .await;
+    assert_eq!(wrong_scope.status, 400);
+
+    let group = data(
+        f.op(
+            0,
+            "groups.create",
+            json!({"name":"Collection test recipients"}),
+        )
+        .await,
+    );
+    for account in [&f.ids[1], &f.ids[2]] {
+        f.op(
+            0,
+            "groups.add_member",
+            json!({"group_id":group["group_id"],"account_id":account}),
+        )
+        .await
+        .ok();
+    }
+    let id = &first["id"];
+    f.op(
+        1,
+        "sharing.grant",
+        json!({
+            "item":{"kind":"collections","id":id},
+            "audience":{"account_id":f.ids[2]},
+            "permission":"edit"
+        }),
+    )
+    .await
+    .ok();
+    let owner = data(f.op(1, "collections.get", json!({"id":id})).await);
+    let recipient = data(f.op(2, "collections.get", json!({"id":id})).await);
+    assert_eq!(owner["can_edit"], true);
+    assert_eq!(recipient["can_edit"], false);
+    let shared = data(
+        f.op(2, "sharing.shared_with_me", json!({"kind":"collections"}))
+            .await,
+    );
+    assert_eq!(shared["items"][0]["item"]["id"], *id);
+    assert_eq!(shared["items"][0]["permission"], "edit");
+    assert_eq!(shared["items"][0]["can_edit"], false);
+    let private = f.op(2, "collections.list", json!({"space_id":space})).await;
+    assert_eq!(private.status, 404);
+}
+
+#[tokio::test]
+async fn collection_guest_member_addresses_never_retarget_and_revoke_with_the_root() {
+    let f = Fixture::new().await;
+    let space = &f.spaces[0];
+    let make_note = |title| {
+        let f = &f;
+        async move {
+            data(
+                f.op(
+                    1,
+                    "notes.create",
+                    json!({
+                        "space_id":space, "title":title, "markdown":"Shared collection member"
+                    }),
+                )
+                .await,
+            )["note"]["id"]
+                .clone()
+        }
+    };
+    let first = make_note("Original member").await;
+    let second = make_note("Replacement member").await;
+    let collection = data(
+        f.op(
+            1,
+            "collections.create",
+            json!({
+                "space_id":space,"title":"A guest collection","members":[first,second]
+            }),
+        )
+        .await,
+    );
+    let item = json!({"kind":"collections","id":collection["id"]});
+    let link = data(
+        f.op(
+            1,
+            "sharing.link_create",
+            json!({"item":item,"label":"Guest"}),
+        )
+        .await,
+    );
+    let copy = data(
+        f.op(
+            1,
+            "sharing.link_copy",
+            json!({
+                "item":item, "grant_id":link["grant_id"]
+            }),
+        )
+        .await,
+    );
+    let root = url::Url::parse(copy["url"].as_str().unwrap())
+        .unwrap()
+        .path()
+        .to_owned();
+    let get = |path: &str, signed_in: bool| {
+        let mut req = f
+            .client
+            .get(format!("{}{path}", f.base))
+            .header("host", "localhost:18080")
+            .header("accept", "application/json");
+        if signed_in {
+            req = req.header("cookie", &f.cookies[1]);
+        }
+        async move {
+            let reply = req.send().await.unwrap();
+            if reply.status().is_success() {
+                Ok(reply.json::<Value>().await.unwrap())
+            } else {
+                Err(reply.status().as_u16())
+            }
+        }
+    };
+    let guest = get(&root, false).await.unwrap();
+    assert_eq!(guest["title"], "A guest collection");
+    assert!(guest.get("item").is_none());
+    assert_eq!(get(&root, true).await.unwrap()["item"], item);
+    let original = guest["members"][0]["href"].as_str().unwrap();
+    assert_eq!(
+        get(original, false).await.unwrap(),
+        json!({
+            "title":"Original member", "markdown":"Shared collection member","back":root
+        })
+    );
+    assert_eq!(
+        get(original, true).await.unwrap()["item"],
+        json!({"kind":"notes","id":first})
+    );
+    assert!(!original.contains(first.as_str().unwrap()));
+
+    f.op(
+        1,
+        "collections.set_members",
+        json!({
+            "id":collection["id"],"base_revision":collection["revision"],"members":[second]
+        }),
+    )
+    .await
+    .ok();
+    assert_eq!(get(original, false).await, Err(404));
+    let current = get(&root, false).await.unwrap();
+    let replacement = current["members"][0]["href"].as_str().unwrap();
+    assert_eq!(
+        get(replacement, false).await.unwrap()["title"],
+        "Replacement member"
+    );
+
+    f.op(
+        1,
+        "sharing.revoke",
+        json!({"item":item, "grant_id":link["grant_id"]}),
+    )
+    .await
+    .ok();
+    assert_eq!(get(&root, false).await, Err(404));
+    assert_eq!(get(replacement, false).await, Err(404));
 }
 
 #[tokio::test]
