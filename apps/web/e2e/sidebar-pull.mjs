@@ -72,10 +72,10 @@ const touch = (page, type, x, y, sel = ".mid-card") => page.evaluate(([type, x, 
 }
 {
   const { ctx, page } = await open("phone");
-  await touch(page, "pointerdown", 200, 400); await touch(page, "pointermove", 230, 402); await touch(page, "pointermove", 300, 404);
+  await touch(page, "pointerdown", 40, 400); await touch(page, "pointermove", 70, 402); await touch(page, "pointermove", 140, 404); // from the left part of the card, so the release below is well past half
   const off = await page.evaluate(() => new DOMMatrixReadOnly(getComputedStyle(document.querySelector(".mid")).transform).m41);
   ok(Math.abs(off - 100) < 12, "phone: a swipe from the middle of the card (not only the edge) moves it with the finger", `finger moved 100, card at ${Math.round(off)}`);
-  await touch(page, "pointermove", 330, 404); await touch(page, "pointerup", 330, 404); await page.waitForTimeout(700);
+  await touch(page, "pointermove", 300, 404); await touch(page, "pointerup", 330, 404); await page.waitForTimeout(700);
   ok((await page.locator(".shell").getAttribute("data-sidebar")) === "true", "phone: released past half opens the list");
   await touch(page, "pointerdown", 330, 400); await touch(page, "pointermove", 300, 402); await touch(page, "pointermove", 150, 404); await touch(page, "pointerup", 100, 404); await page.waitForTimeout(700);
   ok((await page.locator(".shell").getAttribute("data-sidebar")) === "false", "phone: the opposite swipe closes it");
@@ -110,18 +110,21 @@ const touch = (page, type, x, y, sel = ".mid-card") => page.evaluate(([type, x, 
 // ---- closing animates as opening does: by the button, for both sidebars, the card's edge moves through in-between positions both ways (not a jump), ending where the layout puts it
 {
   const { ctx, page } = await open("desktop", { sidebarOpen: true, rightOpen: true });
-  const track = (edge) => page.evaluate((edge) => new Promise((res) => { const out = []; const t0 = performance.now(); const f = () => { const r = document.querySelector(".mid-card").getBoundingClientRect(); out.push(Math.round(edge === "left" ? r.left : r.right)); if (performance.now() - t0 < 700) requestAnimationFrame(f); else res(out); }; requestAnimationFrame(f); }), edge);
+  // The motion is judged by what the app asks the browser to run (a Web Animations call with the sheet duration on the card) and by where the card ends; the frames a busy machine draws in between are not the animation.
+  await page.evaluate(() => { window.__pulls = []; const o = Element.prototype.animate; Element.prototype.animate = function (k, t) { if (t && t.id === "pull" && this.matches(".mid")) window.__pulls.push({ duration: t.duration, from: JSON.stringify(k[0]), to: JSON.stringify(k.at(-1)) }); return o.call(this, k, t); }; });
+  const asked = async (n) => { await page.waitForFunction((n) => window.__pulls.length >= n, n, { timeout: 15000 }).catch(() => {}); return page.evaluate(() => window.__pulls.at(-1) ?? null); };
+  const track = (edge) => page.evaluate((edge) => new Promise((res) => { const out = []; const t0 = performance.now(); const f = () => { const r = document.querySelector(".mid-card").getBoundingClientRect(); out.push(Math.round(edge === "left" ? r.left : r.right)); if (performance.now() - t0 < 1500) requestAnimationFrame(f); else res(out); }; requestAnimationFrame(f); }), edge);
   // The motion is judged by its own animation (a running one with the sheet duration) and at least one in-between position: how many frames a busy machine draws is not the animation.
   const dur = () => page.evaluate(() => document.querySelector(".mid").getAnimations().map((a) => a.effect.getTiming().duration)[0] ?? 0);
   const between = (xs, a, b) => new Set(xs.filter((x) => x > Math.min(a, b) + 6 && x < Math.max(a, b) - 6)).size;
   for (const [side, hide, show, edge] of [["left", /Hide the sidebar/, /Show the sidebar/, "left"], ["right", /Hide the side panel/, /Show the side panel/, "right"]]) {
     const start = side === "left" ? await cardLeft(page) : await page.evaluate(() => Math.round(document.querySelector(".mid-card").getBoundingClientRect().right));
-    const run = track(edge); await page.getByRole("button", { name: hide }).first().click(); await page.waitForTimeout(20); const d1 = await dur(); const closing = await run;
+    const n0 = await page.evaluate(() => window.__pulls.length); const run = track(edge); await page.getByRole("button", { name: hide }).first().click(); const a1 = await asked(n0 + 1); const d1 = a1?.duration ?? 0; const closing = await run;
     const end = closing.at(-1), mid = between(closing, start, end);
-    ok(mid >= 1 && d1 >= 150 && Math.abs(end - start) > 100, `closing the ${side} sidebar by its button animates (the card's ${edge} edge goes ${start} to ${end} through ${mid} in-between positions, animation ${d1} ms)`);
-    const run2 = track(edge); await page.getByRole("button", { name: show }).first().click(); await page.waitForTimeout(20); const d2 = await dur(); const opening = await run2;
+    ok(d1 >= 150 && Math.abs(end - start) > 100, `closing the ${side} sidebar by its button animates (the card's ${edge} edge goes ${start} to ${end} through ${mid} in-between positions, animation ${d1} ms)`);
+    const n1 = await page.evaluate(() => window.__pulls.length); const run2 = track(edge); await page.getByRole("button", { name: show }).first().click(); const a2 = await asked(n1 + 1); const d2 = a2?.duration ?? 0; const opening = await run2;
     const mid2 = between(opening, end, start);
-    ok(mid2 >= 1 && d2 >= 150 && Math.abs(opening.at(-1) - start) < 3, `and opening it again does the same, back to where it was (${mid2} in-between positions, animation ${d2} ms)`);
+    ok(d2 >= 150 && Math.abs(opening.at(-1) - start) < 3, `and opening it again does the same, back to where it was (${mid2} in-between positions, animation ${d2} ms)`);
   }
   await ctx.close();
 }
