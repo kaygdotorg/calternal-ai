@@ -4,7 +4,8 @@
 //!
 //! The crate does no file or database I/O and depends only on `serde`,
 //! `serde_json` and `uuid` (plus `schemars`/`ts-rs` behind the `contract`
-//! feature for the wire contract exporter). Crates that need an identifier or
+//! feature for the wire contract exporter and `rustix` behind `perf-clock`).
+//! Crates that need an identifier or
 //! a caller-facing error import it from here instead of defining their own.
 #![deny(missing_docs, rustdoc::broken_intra_doc_links)]
 
@@ -37,4 +38,13 @@ pub fn now_ms() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.as_millis() as i64)
+}
+
+/// Nanoseconds on the host monotonic clock, shared by processes in the same
+/// time namespace. Use differences within one boot for performance measurements.
+/// Reads the clock once without allocating or taking a lock.
+#[cfg(feature = "perf-clock")]
+pub fn perf_monotonic_ns() -> u64 {
+    let time = rustix::time::clock_gettime(rustix::time::ClockId::Monotonic);
+    time.tv_sec as u64 * 1_000_000_000 + time.tv_nsec as u64
 }

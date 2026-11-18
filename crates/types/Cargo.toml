@@ -9,8 +9,11 @@ publish = false
 [features]
 # Derives JSON Schema and TypeScript declarations for the wire contract exporter.
 contract = ["dep:schemars", "dep:ts-rs"]
+# Same-host monotonic timestamps for isolated performance measurements.
+perf-clock = ["dep:rustix"]
 
 [dependencies]
+rustix = { workspace = true, features = ["time"], optional = true }
 serde.workspace = true
 serde_json.workspace = true
 uuid = { workspace = true, features = ["v7"] }

@@ -6,6 +6,6 @@ there is no async runtime to block. Builds and unit tests belong on dev-01.
 
 The driver also provides a separate `--fsync-probe` diagnostic, read-only startup
 writer-count evidence, post-acknowledgement file-durability observations, and
-collection of debug-only test-plugin stage markers. See [the harness guide](../../perf/README.md)
-for conditions, precision and exclusions; instrumented timings never replace the
-plain release matrix. No accepted ceiling is increased.
+collection of debug test-plugin stage markers. The focused release delivery
+gate uses nanosecond observations from an opt-in server build and keeps the
+plain release matrix for the full round trip. See [the harness guide](../../perf/README.md).
