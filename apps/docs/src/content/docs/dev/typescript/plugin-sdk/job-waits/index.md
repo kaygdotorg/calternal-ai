@@ -17,6 +17,7 @@ title: "plugin-sdk: job-waits/README"
 ## Interfaces
 
 - [JobPark](/docs/dev/typescript/plugin-sdk/job-waits/interfaces/jobpark/)
+- [ParkedJob](/docs/dev/typescript/plugin-sdk/job-waits/interfaces/parkedjob/)
 
 ## Type Aliases
 

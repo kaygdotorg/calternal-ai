@@ -20,7 +20,73 @@ Signal delivered with the checkpoint on the next invocation.
 
 ## Type Parameters
 
-| Type Parameter | Default type |
-| ------ | ------ |
-| <a id="type-parameter-answer"></a> `Answer` | `unknown` |
-| <a id="type-parameter-webhook"></a> `Webhook` | `unknown` |
+| Type Parameter | Default type | Description |
+| ------ | ------ | ------ |
+| <a id="type-parameter-answer"></a> `Answer` | `unknown` | Payload accepted by the question's declared schema. |
+| <a id="type-parameter-webhook"></a> `Webhook` | `unknown` | Payload accepted by the webhook's declared schema. |
+
+## Union Members
+
+### Type Literal
+
+\{ `kind`: `"deadline"`; \}
+
+#### kind
+
+> **kind**: `"deadline"`
+
+The deadline passed before the job accepted a signal.
+
+***
+
+### Type Literal
+
+\{ `approved`: `boolean`; `kind`: `"approval"`; \}
+
+#### approved
+
+> **approved**: `boolean`
+
+Whether the person approved continuing with the job.
+
+#### kind
+
+> **kind**: `"approval"`
+
+The person made a one-time decision about this job.
+
+***
+
+### Type Literal
+
+\{ `kind`: `"answer"`; `value`: `Answer`; \}
+
+#### kind
+
+> **kind**: `"answer"`
+
+The person answered the Inbox form.
+
+#### value
+
+> **value**: `Answer`
+
+The validated answers for its declared fields.
+
+***
+
+### Type Literal
+
+\{ `kind`: `"webhook"`; `value`: `Webhook`; \}
+
+#### kind
+
+> **kind**: `"webhook"`
+
+The host accepted a signed webhook delivery.
+
+#### value
+
+> **value**: `Webhook`
+
+The validated payload of the accepted delivery.

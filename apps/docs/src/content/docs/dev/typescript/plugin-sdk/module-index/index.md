@@ -95,6 +95,12 @@ Re-exports [MAX_V2_PENDING](/docs/dev/typescript/plugin-sdk/worker-v2/variables/
 
 ***
 
+### ParkedJob
+
+Re-exports [ParkedJob](/docs/dev/typescript/plugin-sdk/job-waits/interfaces/parkedjob/)
+
+***
+
 ### parkJob
 
 Re-exports [parkJob](/docs/dev/typescript/plugin-sdk/job-waits/functions/parkjob/)

@@ -14,7 +14,7 @@ title: "plugin-sdk: job-waits/functions/parkJob"
 
 # Function: parkJob()
 
-> **parkJob**\<`Checkpoint`\>(`wait`): `object`
+> **parkJob**\<`Checkpoint`\>(`wait`): [`ParkedJob`](/docs/dev/typescript/plugin-sdk/job-waits/interfaces/parkedjob/)\<`Checkpoint`\>
 
 Return this result from a replayable job handler. The host validates and parks
 the job before releasing its run slot. O(1), with no I/O in the SDK.
@@ -27,18 +27,12 @@ the job before releasing its run slot. O(1), with no I/O in the SDK.
 
 ## Parameters
 
-| Parameter | Type |
-| ------ | ------ |
-| `wait` | [`JobPark`](/docs/dev/typescript/plugin-sdk/job-waits/interfaces/jobpark/)\<`Checkpoint`\> |
+| Parameter | Type | Description |
+| ------ | ------ | ------ |
+| `wait` | [`JobPark`](/docs/dev/typescript/plugin-sdk/job-waits/interfaces/jobpark/)\<`Checkpoint`\> | Checkpoint and signal contract validated by the host. |
 
 ## Returns
 
-`object`
+[`ParkedJob`](/docs/dev/typescript/plugin-sdk/job-waits/interfaces/parkedjob/)\<`Checkpoint`\>
 
-### status
-
-> **status**: `"parked"`
-
-### wait
-
-> **wait**: [`JobPark`](/docs/dev/typescript/plugin-sdk/job-waits/interfaces/jobpark/)\<`Checkpoint`\>
+A job completion envelope to return to the host.

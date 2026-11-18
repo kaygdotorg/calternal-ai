@@ -310,4 +310,4 @@ export { typedHandlers } from "./typed-handlers.js";
 /** Durably park a replayable job on a typed signal or deadline. */
 export { parkJob } from "./job-waits.js";
 /** Signal and checkpoint contracts used by durable job handlers. */
-export type { JobPark, JobSignal, JobWaitSource } from "./job-waits.js";
+export type { JobPark, JobSignal, JobWaitSource, ParkedJob } from "./job-waits.js";
