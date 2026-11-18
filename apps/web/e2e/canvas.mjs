@@ -1,8 +1,7 @@
 // The canvas (docs/ui-shell-status.md, "The rules"), behind ?canvas=1 in the fixtures build. Usage: CAL_URL=... node e2e/canvas.mjs
 // niri's structure (a single window fills and is centred, two share, a new one opens beside the focused column, presets, resize between neighbours), the chrome (nothing but the capsule and the sidebar pills; one title pill and one pill of three buttons per window,
 // every control with its tooltip), the wallpaper sharp and the wallpaper-derived colour, the old Calternal's frost, input (wheel rule, lock, trackpad never opens a sidebar, two fingers on a phone), motion (pointer animates, keyboard is instant) and frame times.
-import { cpus, loadavg } from "node:os";
-import { launch, open, serve } from "./lib.mjs";
+import { busyNow, judgeTimings, launch, open, serve } from "./lib.mjs";
 const stop = await serve(); const browser = await launch();
 let bad = 0;
 const ok = (c, m, note = "") => { console.log(`${c ? "PASS" : "FAIL"}  ${m}${note ? "  " + note : ""}`); if (!c) bad++; };
@@ -246,7 +245,7 @@ try {
     const dt = await p.evaluate(() => { cancelAnimationFrame(window.__r); return window.__f.slice(5); });
     const s = [...dt].sort((a, b) => a - b); const p95 = s[Math.floor(s.length * 0.95)], max = s.at(-1), late = dt.filter((v) => v > 24).length;
     console.log(`INFO  frame times while panning, 4x CPU, ${total} windows, ${clear ? "all transparent" : "cards"}: n=${dt.length} p50=${s[s.length >> 1].toFixed(1)}ms p95=${p95.toFixed(1)}ms max=${max.toFixed(1)}ms late(>24ms)=${late}`);
-    if (loadavg()[0] > cpus().length) console.log(`SKIP  p95 judgement: the VM is busy (load ${loadavg()[0].toFixed(0)} on ${cpus().length} cores)`);
+    if (!judgeTimings()) console.log(`SKIP  p95 judgement (recorded above, not judged): the machine is busy (${busyNow().why}); the quiet list judges it: npm run e2e:quiet`);
     else ok(p95 < 24, `panning six ${clear ? "transparent " : ""}windows at 4x CPU keeps the p95 frame under 24 ms`, `p95=${p95.toFixed(1)}`);
     await cdp.send("Emulation.setCPUThrottlingRate", { rate: 1 });
     if (!clear) {
