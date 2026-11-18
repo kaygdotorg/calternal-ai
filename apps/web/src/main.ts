@@ -6,6 +6,7 @@ import { interceptLinks } from "./lib/route.svelte";
 import { shell } from "./shell/shell.svelte";
 import { appearance } from "./appearance/prefs.svelte";
 import { serverMode } from "./server/client";
+import { startChrome } from "./shell/chrome";
 
 registerFonts(import.meta.env.BASE_URL);
 initInputModality();
@@ -20,7 +21,7 @@ void appearance.start();
 const boot = serverMode() ? import("./server/boot").then((m) => ({ m, s: m.start() })) : null;
 Promise.race([loadFonts(currentScheme()).catch(() => {}), new Promise((r) => setTimeout(r, 2000))]).then(async () => {
   const target = document.getElementById("app")!;
-  const ready = () => { document.documentElement.dataset.ready = ""; };
+  const ready = () => { document.documentElement.dataset.ready = ""; startChrome(); };
   const gate = async (b: Exclude<import("./server/boot").Boot, { screen: "app" }>) => {
     const { default: Gate } = await import("./shell/SignIn.svelte");
     return mount(Gate, { target, props: b.screen === "signin" ? { needsSetup: b.needsSetup, invite: b.invite } : b.screen === "offline" ? { offline: true } : { version: b } });

@@ -8,6 +8,15 @@
     <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f7f7f7" />
     <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#1f1f1f" />
     <title>Calternal</title>
+    <!-- Installable: the manifest for Android and desktop, and Apple's own tags for iOS, which runs a home-screen app full screen with the page under a translucent status bar (the shell paints the wallpaper there and pads
+         the content by the safe areas: docs/ui-shell.md "Safe areas"). -->
+    <link rel="manifest" href="%BASE_URL%manifest.webmanifest" />
+    <link rel="icon" href="%BASE_URL%icons/icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="%BASE_URL%icons/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Calternal" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <!-- The scheme and the font preload run from a same-origin classic script (public/boot.js): the server allows no inline script. -->
     <script src="%BASE_URL%boot.js"></script>
     <style>html:not([data-ready]) body { visibility: hidden; } html { background: #efe6dc; } html[data-scheme="dark"] { background: #25222a; }</style>
