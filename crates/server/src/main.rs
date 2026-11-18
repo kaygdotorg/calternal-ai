@@ -681,6 +681,7 @@ async fn serve(
     let served = tokio::select! {
         status = &mut server => status,
         () = shutdown_signal() => {
+            let started = std::time::Instant::now();
             shutdown.begin();
             if let Some(task) = colocated {
                 task.abort();
@@ -698,6 +699,7 @@ async fn serve(
                     tracing::warn!("machine leases could not be fenced before shutdown");
                 }
                 let _ = tokio::fs::remove_file(&startup_path).await;
+                tracing::info!(elapsed_ms = started.elapsed().as_millis(), "server drain finished");
                 status
             }).await;
             drained.map_err(|_| boot(

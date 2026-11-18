@@ -182,6 +182,22 @@ try {
     assert.equal(imageId(), previous);
     execFileSync("podman", ["tag", evidence.candidate, `localhost/${unit}:${tag}`]);
     await wait("old machine online", async () => (await op("machines.onboarding")).ready);
+    await page.evaluate(async space => {
+      const query = new URLSearchParams({ subscriptions: JSON.stringify([{ space_id: space, bookmark: null }]) });
+      const streams = ["/api/v1/account/live", `/api/v1/live?${query}`].map(path => new EventSource(path));
+      window.rehearsalEventStreams = streams;
+      await Promise.all(streams.map(stream => new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error("authenticated event stream did not become ready")), 10000);
+        const ready = event => {
+          if (JSON.parse(event.data).type !== "ready") return;
+          clearTimeout(timer);
+          stream.removeEventListener("message", ready);
+          resolve();
+        };
+        stream.addEventListener("message", ready);
+      })));
+    }, space);
+    console.log("Authenticated account and space event streams are open.");
     const samples = [];
     let deployResult;
     let deployError;

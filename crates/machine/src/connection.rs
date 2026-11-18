@@ -72,6 +72,7 @@ pub(crate) async fn run_at(
         () = shutdown => None,
         result = session_loop(&creds, &link, &runner, boot_id, ready, &mut ack) => Some(result),
     };
+    let started = Instant::now();
     let drained = tokio::time::timeout(Duration::from_millis(1750), async {
         if result.is_none() {
             announce_drain(&link, &runner, ack).await;
@@ -93,6 +94,9 @@ pub(crate) async fn run_at(
     .unwrap_or_else(|_| Err(Error::Protocol(
         "machine did not drain within 1750 ms; restart it to sweep its sandboxes".into(),
     )));
+    if result.is_none() && drained.is_ok() {
+        tracing::info!(elapsed_ms = started.elapsed().as_millis(), "machine drain finished");
+    }
     result.unwrap_or(Ok(())).and(drained)
 }
 
