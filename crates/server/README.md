@@ -270,3 +270,9 @@ measurements retain that qualification. A matching HTTP receipt replay checks
 permanent-deletion state without forcing file placement: purge suppresses prior
 body receipts, while later outside-file conflicts do not revoke an acknowledged
 SSD result. The shared content receipt type carries the existing item UUID.
+
+Native operation admission and delivery checks await the existing auth worker directly.
+Item resolution offloads only its catalog lookup before awaiting the same current-grant
+query. There is no cross-request capability cache: each check observes the existing
+auth-worker publication barrier, including removals, role edits and account disable.
+Synchronous test directories use the blocking adapter.

@@ -35,6 +35,7 @@ use crate::plugins::{
 use crate::store::{PluginRow, Store, sha256_hex};
 use calternal_types::{AccountId, Error, SpaceId};
 
+pub(crate) mod authorization;
 mod dispatch;
 mod guard;
 mod notes;

@@ -256,19 +256,26 @@ impl Policy {
         principal: &Identity,
         input: &JsonObject,
     ) -> Result<(), Error> {
+        match self.scope_space(input)? {
+            Some(space) => self.authorize_space(directory, principal, space),
+            None => Ok(()),
+        }
+    }
+
+    /// Extract the already declared policy scope without copying the body or
+    /// reading authority. Missing/malformed IDs preserve the synchronous errors.
+    pub(crate) fn scope_space(&self, input: &JsonObject) -> Result<Option<SpaceId>, Error> {
         if matches!(
             self.scope,
             Scope::Account | Scope::Server | Scope::Invitation
         ) {
-            return Ok(());
+            return Ok(None);
         }
         let space = input
             .get("space_id")
             .and_then(|v| v.as_str())
             .ok_or_else(|| Error::invalid_input("input does not match operation schema"))?;
-        // A malformed ID names no space: the same answer as one the caller cannot see.
-        let space = SpaceId::parse(space).map_err(|_| self.hidden())?;
-        self.authorize_space(directory, principal, space)
+        SpaceId::parse(space).map(Some).map_err(|_| self.hidden())
     }
 
     /// The not-found answer for this scope, identical for absent and inaccessible targets.

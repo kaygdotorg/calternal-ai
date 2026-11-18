@@ -170,11 +170,8 @@ pub(super) async fn invoke_plugin<D: Directory>(
                 .with_details(serde_json::json!({ "reason": "plugin_generation_changed" })),
         );
     }
-    let st = state.clone();
     let caller = p.id;
-    tokio::task::spawn_blocking(move || policy.authorize_space(&st.directory, &p, space))
-        .await
-        .map_err(|_| Error::internal("directory task failed"))??;
+    policy.check(super::authorization::capabilities(&state, p.id, space).await?)?;
     let value = outcome_value(outcome)?;
     check_view(&plugin, &value)?;
     if mutates {

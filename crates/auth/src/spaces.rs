@@ -1,6 +1,7 @@
 //! Stored space authority, adapted from the source auth roles and people actions.
 //!
-//! All APIs block on SQLite and must run on a blocking host thread. Mutations
+//! Synchronous APIs block on SQLite and belong on blocking host threads. Async
+//! grant reads await the same bounded authority worker directly. Mutations
 //! acquire an IMMEDIATE transaction before checking current capability rows.
 //! State commits optionally pass through a protected recovery barrier before acknowledgement.
 use crate::{AccountId, Error, ErrorCode, Result, SpaceId};
@@ -469,28 +470,22 @@ impl Spaces {
     /// or disabled account and a missing membership all return `None`.
     /// Cost: one worker round trip and one indexed query on a cached statement.
     pub fn capabilities(&self, actor: AccountId, space: SpaceId) -> Result<Option<CapabilitySet>> {
-        self.db.read_blocking(move |c| {
-            let mut st = c
-                .prepare_cached(
-                    "SELECT DISTINCT rc.capability FROM space_account_roles m
-                 LEFT JOIN space_role_capabilities rc ON rc.role=m.role
-                 WHERE m.account_id=?1 AND m.space_id=?2",
-                )
-                .map_err(sql)?;
-            let mut rows = st
-                .query(params![actor.to_string(), space.to_string()])
-                .map_err(sql)?;
-            let mut set = None;
-            while let Some(row) = rows.next().map_err(sql)? {
-                let caps = set.get_or_insert_with(CapabilitySet::empty);
-                if let Some(name) = row.get::<_, Option<String>>(0).map_err(sql)?
-                    && let Some(capability) = Capability::from_name(&name)
-                {
-                    *caps = caps.with(capability);
-                }
-            }
-            Ok(set)
-        })
+        self.db
+            .read_blocking(move |c| current_capabilities(c, actor, space))
+    }
+    /// Read fresh grants on the same bounded authority worker without taking a
+    /// general blocking-pool slot. Missing/disabled accounts and absent membership
+    /// return None; worker/SQL failures propagate. Cost: one boxed job, one bounded
+    /// mailbox/oneshot round trip and the same cached indexed query as the sync API.
+    /// No grant is cached across calls; protected publication ordering is unchanged.
+    pub async fn capabilities_async(
+        &self,
+        actor: AccountId,
+        space: SpaceId,
+    ) -> Result<Option<CapabilitySet>> {
+        self.db
+            .read(move |c| current_capabilities(c, actor, space))
+            .await
     }
     /// Executes a mutation with fresh capability and target checks under a write lock.
     pub fn change(

@@ -37,7 +37,7 @@ pub(super) fn to_value<T: serde::Serialize>(v: T) -> Result<Value, Error> {
 /// Plugin operations carry `session` into every worker host call, which rechecks it;
 /// in-process callers without a revocable sign-in pass [`Session::Static`].
 /// Summarize additionally rechecks membership after the worker before delivery.
-/// Stored directory lookups run on blocking tasks; identities contain no grants.
+/// Stored directory checks await their authority worker; identities contain no grants.
 pub async fn dispatch<D: Directory>(
     state: Shared<D>,
     p: Identity,
@@ -110,25 +110,17 @@ pub(super) async fn dispatch_scoped<D: Directory>(
             .policy(op)
             .map(|p| p.required)
             .unwrap_or(calternal_types::Capability::SpaceRead);
-        let st = state.clone();
-        let account = p.clone();
-        let resolve_address = op == "resolve";
-        let (resolved, caps) = tokio::task::spawn_blocking(move || {
-            let (mut resolved, caps) = crate::resolve::resolve_for(
-                &st.directory,
-                &st.store,
-                &account,
-                &kind,
-                &id,
-                op_required,
-            )?;
-            if resolve_address && kind == "notes" {
+        let (mut resolved, caps) =
+            crate::resolve::resolve_for(&state, &p, &kind, &id, op_required).await?;
+        if op == "resolve" && kind == "notes" {
+            let st = state.clone();
+            resolved = tokio::task::spawn_blocking(move || {
                 resolved.state = Some(crate::notes::state(&st.store, &resolved)?);
-            }
-            Ok::<_, Error>((resolved, caps))
-        })
-        .await
-        .map_err(|_| Error::internal("resolver task failed"))??;
+                Ok::<_, Error>(resolved)
+            })
+            .await
+            .map_err(|_| Error::internal("resolver task failed"))??;
+        }
         granted = Some(caps);
         if op == "resolve" {
             return to_value(resolved);
@@ -170,12 +162,7 @@ pub(super) async fn dispatch_scoped<D: Directory>(
     match granted {
         Some(caps) => policy.check(Some(caps))?,
         None => {
-            let st = state.clone();
-            let checked = input.clone();
-            let admission = policy.clone();
-            tokio::task::spawn_blocking(move || admission.authorize(&st.directory, &p, &checked))
-                .await
-                .map_err(|_| Error::internal("directory task failed"))??;
+            super::authorization::authorize(&state, &p, &policy, &input).await?;
         }
     }
     #[cfg(all(feature = "test-plugins", debug_assertions))]
@@ -367,10 +354,7 @@ pub(super) async fn admitted_operation<D: Directory>(
             input.clone(),
         )
         .await?;
-        let (st, checked) = (state.clone(), input.clone());
-        tokio::task::spawn_blocking(move || policy.authorize(&st.directory, &p, &checked))
-            .await
-            .map_err(|_| Error::internal("delivery check failed"))??;
+        super::authorization::authorize(&state, &p, &policy, &input).await?;
         return Ok(result);
     }
     if policy.constraint == Constraint::PluginInvocation {
@@ -382,10 +366,7 @@ pub(super) async fn admitted_operation<D: Directory>(
         .and_then(|s| SpaceId::parse(s).ok());
     let value = dispatch_checked(state.clone(), p.clone(), request_id, op, input).await?;
     if let Some(space) = delivery_space {
-        let st = state.clone();
-        tokio::task::spawn_blocking(move || policy.authorize_space(&st.directory, &p, space))
-            .await
-            .map_err(|_| Error::internal("directory task failed"))??;
+        policy.check(super::authorization::capabilities(&state, p.id, space).await?)?;
     }
     Ok(value)
 }

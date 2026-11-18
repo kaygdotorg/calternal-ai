@@ -224,3 +224,32 @@ impl Spaces {
         })
     }
 }
+
+/// Read current grants once on the owning auth connection; shared by async and
+/// synchronous adapters. A cached statement does not cache any authority rows.
+pub(super) fn current_capabilities(
+    c: &Connection,
+    actor: AccountId,
+    space: SpaceId,
+) -> Result<Option<CapabilitySet>> {
+    let mut st = c
+        .prepare_cached(
+            "SELECT DISTINCT rc.capability FROM space_account_roles m
+                 LEFT JOIN space_role_capabilities rc ON rc.role=m.role
+                 WHERE m.account_id=?1 AND m.space_id=?2",
+        )
+        .map_err(sql)?;
+    let mut rows = st
+        .query(params![actor.to_string(), space.to_string()])
+        .map_err(sql)?;
+    let mut set = None;
+    while let Some(row) = rows.next().map_err(sql)? {
+        let caps = set.get_or_insert_with(CapabilitySet::empty);
+        if let Some(name) = row.get::<_, Option<String>>(0).map_err(sql)?
+            && let Some(capability) = Capability::from_name(&name)
+        {
+            *caps = caps.with(capability);
+        }
+    }
+    Ok(set)
+}
