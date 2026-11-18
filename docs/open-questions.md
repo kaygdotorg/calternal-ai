@@ -2,7 +2,13 @@
 
 Decisions waiting on kayg, most blocking first. Answer here or in chat; answered items
 move to the decision record they belong to and leave this list. Terms: see
-[glossary](glossary.md). Updated 2026-11-20 00:30 IST.
+[glossary](glossary.md). Updated 2026-11-20 05:00 IST.
+
+## To try on the morning of 2026-11-20
+
+- Sign up on https://calternal.cloud/ (release 4735733eeb09, updated in the night without a reinstall). Setup code: `ssh calternal@calternal-cloud podman exec calternal-ai /usr/local/bin/calternal setup-code --appdata /data/appdata`. Then: add an email, dismiss the second-passkey prompt, add a second passkey, regenerate recovery codes, change the username. Two of these failed on the earlier build once an email existed; fixed and proven against a live server.
+- On a phone, https://preview.calternal.cloud/ai/ (fixtures): Settings, Appearance (flat pages); the composer and keyboard in Safari and as a home-screen app; the sticky header pill; long-press on a thread or note row (lift follows the finger, slide to choose); Share on a note (people, links, collections); a collection page; Skills and Automations in Settings; landscape with a request card.
+- The canvas with `?canvas=1` until the default is flipped: windows, the header pill in a Settings window, presence avatars in a note window's actions.
 
 ## Waiting now
 
@@ -12,6 +18,16 @@ move to the decision record they belong to and leave this list. Terms: see
 | 67 | Remove what my lane start-up left in the existing app's repository: twelve bb worktrees and their branches, the branch lane/perf-2 and three extra refs (nothing was pushed, its files and dev branch are unchanged) | Yes, once those lanes have finished | Housekeeping |
 | 65 | Using Codex's own cloud sandboxes for people with no machine and no paid plan: only through what OpenAI officially supports from another program; being researched | Decide after the research | Harnesses |
 | 10 | Native font: system or Google Sans Flex | Decide after seeing both on a Mac and an iPhone | Native apps |
+| 68 | Approve three incompatible updates, each needing a full restore point first: (a) receipt deltas, which shrink the security log (bytes written per change 1.30 MB to 0.34 MB, warm start at 1,000 spaces 371 ms to 280 ms; gated, on `lane/receipt-deltas`); (b) editing a message as a fork (calternal-thread/v2); (c) loosening the sign-in database's recovery inventory so that later sign-in database changes become ordinary updates | Yes to all three, in the order c, a, b, once restore points preserve links (upgrades lane) | Upgrades |
+| 69 | Signing up through a sign-in provider (not just signing in or linking): allowed for an invited person, or passkey sign-up only? Linking by a signed-in person is decided and built; sign-up is not built | Allow it for an invited person on the hosted service; the provider's verified email becomes the account email | Accounts |
+| 70 | Apple and Google sign-in need real provider credentials to be proven before they are switched on (the generic flow passes against a local provider). Setup steps are in `docs/account-onboarding.md`; Google's proof of a recent sign-in needs a published, verified app | kayg creates the two provider apps and hands the secrets through the secure prompt | Accounts |
+| 71 | Saving a note at 100,000 notes measures 75 ms p95 against the 40 ms gate; the guest trace shows one 28 ms forced 4 KiB write at the virtual disk. Telling QEMU from its storage needs timings on the Proxmox host and the disk's cache mode, which only kayg can read | kayg runs the two host commands in `docs/performance.md` (operator inputs) on a disposable volume | Performance |
+| 72 | Moving production from containers to a microVM per person needs one step as root on the production VM | kayg runs the script once; until then containers stay | Sandboxes |
+| 73 | Plans, choices the billing lane could not settle: how a group's storage is split between members, the billing day boundary (UTC or the person's zone), whether bought hours expire, a trial, and the payment provider | UTC; hours expire with the month, top-ups after twelve months; no trial while invitation only; decide the provider with kayg | Plans |
+| 74 | Shared spaces: the first version runs the shared login with tools switched off. Should a shared space's agent have tools, and with whose approval? | Tools on once a boundary is proven: today a tool runs as the same user as the harness and could read the Owner's login, so another member could ask the agent for it. The lane is designing a broker that keeps the login outside the sandbox | Shared spaces |
+| 75 | Old-menu behaviours not carried over: submenus opening in place, the row of icon buttons, shortcut chips, the pill morph, drag and drop. Also to confirm on a real phone: sliding a held finger onto a menu item (passes in the browser test; the Simulator cannot do it) | Port submenus and shortcut chips; leave the rest until asked | Interface |
+| 76 | 178 GB under `~/Developer/Worktrees` on dev-01 is not ours (the existing app's work in the shared account); the disk fell to 20 GB free in the night | kayg prunes it, or says we may | Machines |
+| 77 | Plugin jobs that wait for a person: where a standalone question or approval shows in the Inbox (built now: its own row above the threads, counted in the tab), and whether parked jobs must be drained before the server is downgraded | Keep the row above the threads; refuse a downgrade while jobs are parked and say which | Plugins |
 
 ## In progress, no decision needed
 

@@ -8,14 +8,14 @@ title: "trash.empty"
 
 Start a resumable job to permanently purge the confirmed Trash selection
 
-Capability: content.purge.
+Capability: space.settings.
 
 ## Declaration
 
 ```json
 {
   "risk": "irreversible",
-  "required_capability": "content.purge",
+  "required_capability": "space.settings",
   "id": "trash.empty",
   "description": "Start a resumable job to permanently purge the confirmed Trash selection",
   "mutates": true

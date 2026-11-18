@@ -59,6 +59,8 @@ pub use people::*;
 
 mod provider_sign_in;
 pub use provider_sign_in::*;
+mod web_push;
+pub use web_push::*;
 mod requests;
 pub use requests::*;
 

@@ -22,6 +22,7 @@ pub(super) struct Live {
     pub session: [u8; 32],
     pub direct: bool,
     pub harness_protocol: bool,
+    pub shared_provider: bool,
     pub kvm_fallback: bool,
     pub guest_size: Option<calternal_machine::protocol::GuestSize>,
     /// Reservations against the current memory sample, including releases
@@ -181,14 +182,18 @@ impl State {
     pub(super) fn lease_steps(
         &self,
         row: &db::LeaseRow,
-    ) -> Result<Option<(calternal_types::OwnerStep, calternal_types::OwnerStep)>, Error> {
+    ) -> Result<Option<[Option<calternal_types::OwnerStep>; 3]>, Error> {
         self.lifecycle
             .get()
             .map(|owners| {
-                Ok((
-                    owners.step(row.account.as_uuid())?,
-                    owners.step(row.space.as_uuid())?,
-                ))
+                Ok([
+                    Some(owners.step(row.account.as_uuid())?),
+                    Some(owners.step(row.space.as_uuid())?),
+                    row.shared_sponsor
+                        .filter(|sponsor| *sponsor != row.account)
+                        .map(|sponsor| owners.step(sponsor.as_uuid()))
+                        .transpose()?,
+                ])
             })
             .transpose()
     }
@@ -225,6 +230,15 @@ impl State {
             return;
         };
         let Some(machine) = l.row.machine else { return };
+        if l.row.shared_sponsor.is_some()
+            && !self
+                .machines
+                .get(&machine)
+                .and_then(|m| m.live.as_ref())
+                .is_some_and(|live| live.shared_provider)
+        {
+            return;
+        }
         let lease_id = l.row.id;
         let fence = l.row.fence;
         let space_id = l.row.space;
@@ -242,6 +256,7 @@ impl State {
         let spec = SandboxSpec {
             space_id: Some(space_id),
             provider_login: l.provider_login,
+            shared_provider_sponsor: l.row.shared_sponsor,
             code_directory: None,
             worker: self.workers.get(&lease).cloned(),
             account_id: account_id.as_uuid(),
@@ -479,6 +494,23 @@ impl State {
         waiting.sort_unstable();
         for (_, _, lease) in waiting {
             let l = &self.leases[&lease];
+            let sponsor = l.row.shared_sponsor.unwrap_or(l.row.account);
+            let shared =
+                l.row
+                    .shared_sponsor
+                    .zip(l.row.pinned_machine)
+                    .map(
+                        |(sponsor, machine)| super::space_execution::SpaceExecution {
+                            sponsor,
+                            machine,
+                        },
+                    );
+            if let Some(target) = shared
+                && self.require_execution(l.row.space, target).is_err()
+            {
+                self.end_for_placement(lease, "shared space machine changed", false);
+                continue;
+            }
             let mut memory_blocked = false;
             let best = self
                 .machines
@@ -488,12 +520,11 @@ impl State {
                 .filter(|m| l.row.harness.is_none() || Self::harness_machine(m))
                 .filter(|m| l.row.pinned_machine.is_none_or(|id| id == m.row.id))
                 .filter(|m| {
-                    self.may_use(m, l.row.account)
-                        || (l.pool_diagnostic && m.row.owner == Owner::Pool)
+                    self.may_use(m, sponsor) || (l.pool_diagnostic && m.row.owner == Owner::Pool)
                 })
                 .filter(|m| super::readiness::connected(m, settings))
                 .map(|m| {
-                    let free = self.free_for(m, l.row.account, settings);
+                    let free = self.free_for(m, sponsor, settings);
                     memory_blocked |= free == 0 && self.free_slots(m) > 0;
                     (m, free)
                 })
@@ -520,9 +551,9 @@ impl State {
         let Some(l) = self.leases.get(&lease) else {
             return;
         };
+        let sponsor = l.row.shared_sponsor.unwrap_or(l.row.account);
         if self.machines.get(&machine).is_none_or(|m| {
-            !super::readiness::connected(m, settings)
-                || self.free_for(m, l.row.account, settings) == 0
+            !super::readiness::connected(m, settings) || self.free_for(m, sponsor, settings) == 0
         }) {
             return;
         }
@@ -583,7 +614,7 @@ impl State {
                 .get_mut(&r.lease_id)
                 .expect("existing lease under registry lock");
             let keep_files = !l.row.worker && !l.row.background_title;
-            let account = l.row.account;
+            let sponsor = l.row.shared_sponsor.unwrap_or(l.row.account);
             let current = l.row.machine == Some(machine)
                 && l.row.fence == r.fence
                 && !matches!(l.state, LeaseState::Ended | LeaseState::Stopping);
@@ -609,7 +640,7 @@ impl State {
                 && self
                     .machines
                     .get(&machine)
-                    .is_some_and(|m| self.free_for(m, account, settings) > 0)
+                    .is_some_and(|m| self.free_for(m, sponsor, settings) > 0)
             {
                 self.assign(r.lease_id, machine, settings);
             } else {
