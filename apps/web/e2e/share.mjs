@@ -86,6 +86,26 @@ try {
     ok(/Storage layout and 1 more/.test(await sheet(p).locator("h2").textContent()), `${device}: Share makes a collection of the picked notes and opens its sheet`);
     await p.keyboard.press("Escape"); await ctx.close();
   }
+  // Move to Trash from the bar: the picked notes go together, one toast says so.
+  { const { page: p, ctx } = await open(browser, "desktop", "light", "/notes/n-1?firstrun=0");
+    await p.getByRole("button", { name: "Actions for Reading list" }).click(); await p.getByRole("menuitem", { name: "Select" }).click();
+    await p.locator("[data-select-id]", { hasText: "Rich note" }).click();
+    await p.getByRole("toolbar", { name: "Selected notes" }).getByRole("button", { name: "Move to Trash" }).click();
+    await p.getByText("Moved 2 notes to the Trash").waitFor({ timeout: 5000 });
+    ok(await p.locator("[data-select-id]", { hasText: "Rich note" }).count() === 0 && await p.locator("[data-select-id]", { hasText: "Reading list" }).count() === 0, "bulk: the picked notes leave the list together, with one toast");
+    await ctx.close(); }
+  // Two fingers swiped down over the list start selecting and pick the rows they cross (phone).
+  { const { page: p, ctx } = await open(browser, "phone", "light", "/notes/n-1?firstrun=0");
+    await p.getByRole("button", { name: /Show notes/ }).first().click(); await p.waitForTimeout(700);
+    const rows = await p.locator("[data-select-id]").evaluateAll((els) => els.slice(0, 4).map((e) => { const r = e.getBoundingClientRect(); return { x: r.x + 120, y: r.y + r.height / 2 }; }));
+    const cdp = await ctx.newCDPSession(p);
+    const pts = (y) => [{ x: rows[0].x, y, id: 1 }, { x: rows[0].x + 12, y, id: 2 }];
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: pts(rows[0].y) });
+    for (let i = 1; i <= 8; i++) await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: pts(rows[0].y + ((rows[3].y - rows[0].y) * i) / 8) });
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    const n = await p.getByRole("status").filter({ hasText: "selected" }).textContent();
+    ok(/^[3-4] selected/.test(n), "two fingers down the list select the rows they cross", n);
+    await ctx.close(); }
   // Access ended while writing: the edits are kept and the person is told in one line where they went.
   { const { page: p, ctx } = await open(browser, "desktop", "light", "/notes/n-2?firstrun=0&revoked=1");
     await p.locator(".cm-content").click(); await p.keyboard.press("End"); await p.keyboard.type("\n\nA new paragraph of mine."); 

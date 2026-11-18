@@ -122,6 +122,26 @@ class NotesStore {
     try { await this.trashPages.refresh(); this.error = ""; } catch (e) { this.error = say(e, "load the Trash"); }
   }
   /** Moves a note to the Trash with an Undo; if it is the open note the card goes back to the list. */
+  /**
+   * Moves several notes to the Trash at once (the multi-select bar): one request each, one list read after, one toast with one Undo that brings them all back. A note that fails stays where it is and is named in one failure toast. Cost: n requests, one refresh.
+   */
+  async removeMany(items: { id: string; title: string }[]): Promise<void> {
+    const done: string[] = [], bad: string[] = [];
+    for (const n of items) {
+      try { await this.client.remove(n.id); this.notePages.drop(n.id); done.push(n.id); } catch { bad.push(n.title); }
+    }
+    if (done.length) {
+      await this.refresh();
+      if (segments()[0] === "notes" && done.includes(segments()[1] ?? "")) navigate("/notes");
+      undoable("note.trash.bulk", "bulk", `Moved ${done.length} ${done.length === 1 ? "note" : "notes"} to the Trash`, async () => {
+        let ok = true;
+        for (const id of done) { try { await this.client.restore(id); } catch { ok = false; } }
+        await this.refresh();
+        return ok;
+      }, true);
+    }
+    if (bad.length) failed(`Couldn't move ${bad.length === 1 ? `\u201c${bad[0]}\u201d` : `${bad.length} notes`} to the Trash. Nothing else changed.`);
+  }
   async remove(id: string, title: string): Promise<void> {
     try {
       await this.client.remove(id);

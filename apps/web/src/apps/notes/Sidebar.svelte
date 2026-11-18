@@ -1,6 +1,6 @@
 <script lang="ts">
   // Notes sidebar: the current space's notes (the fixture's, or the server's in server mode), newest first, and a way to make a new one.
-  import { Button, Icon, IconButton, Menu, Row, VirtualList, failed, type MenuItem } from "@calternal/ui";
+  import { Button, Icon, IconButton, Menu, Panel, Row, VirtualList, failed, type MenuItem } from "@calternal/ui";
   import { say } from "../../server/say";
   import { href, navigate, route, segments } from "../../lib/route.svelte";
   import { spaces } from "../../shell/spaces.svelte";
@@ -10,6 +10,7 @@
   import { incoming } from "./share/incoming.svelte";
   import { beginSelect, endSelect, selectAll, allPicked, selection, selecting, toggleId, pickRange, provideList, setPicked } from "../../lib/select.svelte";
   import { collectionTitle, createCollection } from "./share/collections";
+  import { twoFinger } from "../../lib/two-finger";
   import ShareHost from "./share/ShareHost.svelte";
   import { openShare, shareUi } from "./share/share.svelte";
     // What others have shared with the person, read once (the live stream refreshes it when the sharing lane publishes it).
@@ -48,6 +49,12 @@
     const row = (document.activeElement as HTMLElement | null)?.closest<HTMLElement>("[data-select-id]");
     if (e.key === " " && row) { e.preventDefault(); toggleId(row.dataset.selectId!, true); }
   }
+  /** The picked notes go to the Trash together (one toast, one Undo). */
+  async function trashSelection() {
+    const picked = [...selection.ids].map((id) => notes.list.find((n) => n.id === id)).filter((n): n is NonNullable<typeof n> => !!n);
+    endSelect();
+    await notes.removeMany(picked.map((n) => ({ id: n.id, title: n.title })));
+  }
   /** One picked note is shared as itself; several become a collection (`collections.create`) that is shared. */
   async function shareSelection(from: HTMLElement) {
     const ids = [...selection.ids];
@@ -74,7 +81,7 @@
 </script>
 
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions: one delegated listener for every row (the rows are the interactive elements) -->
-<nav aria-label="Notes" onclickcapture={pickClick} onkeydown={selectKey}>
+<nav aria-label="Notes" onclickcapture={pickClick} onkeydown={selectKey} use:twoFinger={{ kind: "note" }}>
   {#if notes.space}<p class="section-heading first">{notes.space.name}</p>{/if}
   {#if notes.tags.length}
     <div class="tags" role="group" aria-label="Filter by tag">
@@ -85,12 +92,13 @@
     </div>
   {/if}
   {#if picking}
-    <div class="bulk" role="toolbar" aria-label="Selected notes">
+    <Panel class="bulk" radius="card" dense floating role="toolbar" aria-label="Selected notes">
       <span class="cnt" role="status">{selection.ids.size} selected</span>
       <Button variant="primary" text="Share" disabled={!selection.ids.size} onclick={(e) => void shareSelection(e.currentTarget)} />
+      <Button variant="destructive" text="Move to Trash" disabled={!selection.ids.size} onclick={() => void trashSelection()} />
       <Button variant="quiet" text={allPicked() ? "Deselect all" : "Select all"} onclick={() => (allPicked() ? setPicked([]) : selectAll())} />
       <Button variant="quiet" text="Done" onclick={endSelect} />
-    </div>
+    </Panel>
   {/if}
   <input class="find" type="search" aria-label="Find a note by title" placeholder="Find a note" bind:value={q} autocomplete="off" />
   {#if hits}
@@ -153,7 +161,8 @@
   /* The group is a grid like the nav, so its heading keeps the shared distances (the nav gap above it is part of the space above). */
   .grp { display: grid; gap: var(--s-2); }
   .later { margin-top: calc(var(--section-above) - var(--s-2)); }
-  .bulk { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-1); padding: 0 var(--s-5) var(--s-2); }
+  /* The bar stays in reach while a long list scrolls: stuck above the bottom tier, on the shared glass. */
+  nav :global(.bulk) { position: sticky; bottom: calc(var(--foot-h) + var(--s-2)); z-index: 2; display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-1); padding: var(--s-3) var(--s-4); }
   .cnt { flex: 1 1 100%; font-size: var(--text-label); font-weight: var(--strong-weight); color: var(--ink-2); }
   .li[data-picked] :global(.row) { background: var(--accent-soft); }
   .dot { width: var(--s-3); height: var(--s-3); border-radius: 50%; background: var(--accent); }
