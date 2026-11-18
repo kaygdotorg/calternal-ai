@@ -14,7 +14,7 @@ title: "plugin-sdk: index/type-aliases/ProviderEventKind"
 
 # Type Alias: ProviderEventKind
 
-> **ProviderEventKind** = `object` & `ProviderCheck` \| \{ `session_id`: `string`; `type`: `"session"`; \} \| \{ `text`: `string`; `type`: `"text_delta"`; \} \| \{ `id`: `string`; `name`: `string`; `summary`: `string`; `type`: `"tool_started"`; \} \| \{ `bytes`: `number`; `id`: `string`; `name`: `string`; `summary`: `string`; `type`: `"tool_output"`; \} \| \{ `detail`: `string`; `failed`: `boolean`; `id`: `string`; `name`: `string`; `summary`: `string`; `type`: `"tool_finished"`; \} \| \{ `text`: `string`; `type`: `"question"`; \} \| \{ `summary`: `string`; `type`: `"approval_request"`; \} \| \{ `input_tokens`: `number`; `output_tokens`: `number`; `type`: `"usage"`; \} \| \{ `billing`: [`ProviderBilling`](/docs/dev/typescript/plugin-sdk/module-index/type-aliases/providerbilling/); `class`: [`ProviderFailureClass`](/docs/dev/typescript/plugin-sdk/module-index/type-aliases/providerfailureclass/); `code`: `string`; `message`: `string`; `reset_at_ms?`: `number`; `type`: `"error"`; \} \| \{ `outcome`: `string`; `type`: `"done"`; \}
+> **ProviderEventKind** = `object` & `ProviderCheck` \| \{ `session_id`: `string`; `type`: `"session"`; \} \| \{ `text`: `string`; `type`: `"text_delta"`; \} \| \{ `type`: `"reasoning_started"`; \} \| \{ `text`: `string`; `type`: `"reasoning_delta"`; \} \| \{ `duration_ms`: `number`; `type`: `"reasoning_finished"`; \} \| \{ `id`: `string`; `name`: `string`; `summary`: `string`; `type`: `"tool_started"`; \} \| \{ `bytes`: `number`; `id`: `string`; `name`: `string`; `summary`: `string`; `type`: `"tool_output"`; \} \| \{ `detail`: `string`; `failed`: `boolean`; `id`: `string`; `name`: `string`; `summary`: `string`; `type`: `"tool_finished"`; \} \| \{ `text`: `string`; `type`: `"question"`; \} \| \{ `summary`: `string`; `type`: `"approval_request"`; \} \| \{ `input_tokens`: `number`; `output_tokens`: `number`; `type`: `"usage"`; \} \| \{ `billing`: [`ProviderBilling`](/docs/dev/typescript/plugin-sdk/module-index/type-aliases/providerbilling/); `class`: [`ProviderFailureClass`](/docs/dev/typescript/plugin-sdk/module-index/type-aliases/providerfailureclass/); `code`: `string`; `message`: `string`; `reset_at_ms?`: `number`; `type`: `"error"`; \} \| \{ `outcome`: `string`; `type`: `"done"`; \}
 
 Normalized provider output. Untrusted provider text conveys no authority.
 
@@ -53,6 +53,44 @@ At most 4 KiB of UTF-8 text.
 #### type
 
 > **type**: `"text_delta"`
+
+***
+
+### Type Literal
+
+\{ `type`: `"reasoning_started"`; \}
+
+***
+
+### Type Literal
+
+\{ `text`: `string`; `type`: `"reasoning_delta"`; \}
+
+#### text
+
+> **text**: `string`
+
+Text the official provider chose to expose.
+
+#### type
+
+> **type**: `"reasoning_delta"`
+
+***
+
+### Type Literal
+
+\{ `duration_ms`: `number`; `type`: `"reasoning_finished"`; \}
+
+#### duration\_ms
+
+> **duration\_ms**: `number`
+
+Monotonic elapsed milliseconds observed by the adapter.
+
+#### type
+
+> **type**: `"reasoning_finished"`
 
 ***
 

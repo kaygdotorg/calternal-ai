@@ -590,6 +590,7 @@ Machine-side provider declaration; executable is installed in the sandbox image 
 | --- | --- | --- | --- |
 | `default_model` | yes | string | Default installed-CLI model identifier, at most 128 UTF-8 bytes. |
 | `executable` | yes | string | Basename resolved inside the sandbox's PATH; no shell, path or arguments. |
+| `models` | yes | array | Models offered by this adapter, validated and cached with the manifest. |
 | `protocol_version` | yes | integer | Version of the bounded stdio contract, currently one. |
 
 ```json
@@ -599,6 +600,7 @@ Machine-side provider declaration; executable is installed in the sandbox image 
   "required": [
     "default_model",
     "executable",
+    "models",
     "protocol_version"
   ],
   "properties": {
@@ -609,6 +611,13 @@ Machine-side provider declaration; executable is installed in the sandbox image 
     "executable": {
       "description": "Basename resolved inside the sandbox's PATH; no shell, path or arguments.",
       "type": "string"
+    },
+    "models": {
+      "description": "Models offered by this adapter, validated and cached with the manifest.",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/ProviderModel"
+      }
     },
     "protocol_version": {
       "description": "Version of the bounded stdio contract, currently one.",
@@ -954,5 +963,45 @@ Declared risk class, evaluated in addition to capabilities and token scope.
       ]
     }
   ]
+}
+```
+
+## ProviderModel
+
+One selectable provider model and the explicit reasoning levels it accepts.
+
+| Field | Required | Type / reference | Description |
+| --- | --- | --- | --- |
+| `id` | yes | string | Stable model identifier passed to the adapter. |
+| `name` | yes | string | Short display name for the model picker. |
+| `reasoning_levels` | yes | array | Ordered reasoning levels. Empty means the model accepts no explicit level. |
+
+```json
+{
+  "description": "One selectable provider model and the explicit reasoning levels it accepts.",
+  "type": "object",
+  "required": [
+    "id",
+    "name",
+    "reasoning_levels"
+  ],
+  "properties": {
+    "id": {
+      "description": "Stable model identifier passed to the adapter.",
+      "type": "string"
+    },
+    "name": {
+      "description": "Short display name for the model picker.",
+      "type": "string"
+    },
+    "reasoning_levels": {
+      "description": "Ordered reasoning levels. Empty means the model accepts no explicit level.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "additionalProperties": false
 }
 ```

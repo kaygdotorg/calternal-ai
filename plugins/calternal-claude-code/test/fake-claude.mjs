@@ -19,6 +19,19 @@ if(!args.includes('--append-system-prompt')||!args.includes('--disallowedTools')
 if(args.includes('--resume')&&!existsSync(join(process.cwd(),'.fake-session')))process.exit(87);
 writeFileSync(join(process.cwd(),'.fake-session'),'fixture session');
 emit({type:'system',subtype:'init',session_id:'11111111-1111-4111-8111-111111111111'});
+if (prompt.includes('scripted-reasoning')) {
+  if (args[args.indexOf('--effort') + 1] !== 'xhigh' ||
+      args[args.indexOf('--model') + 1] !== 'claude-sonnet-5-5') process.exit(94);
+  const event = event => emit({type:'stream_event',event});
+  event({type:'content_block_start',index:0,content_block:{type:'thinking',thinking:''}});
+  const token = process.env.CALTERNAL_AGENT_TOKEN ?? 'fixture-thinking';
+  const cut = Math.floor(token.length / 2);
+  event({type:'content_block_delta',index:0,delta:{type:'thinking_delta',thinking:'Inspecting ' + token.slice(0,cut)}});
+  await new Promise(resolve => setTimeout(resolve, 30));
+  event({type:'content_block_delta',index:0,delta:{type:'thinking_delta',thinking:token.slice(cut)}});
+  event({type:'content_block_delta',index:0,delta:{type:'signature_delta',signature:'PRIVATE_LOGIN_SENTINEL'}});
+  event({type:'content_block_stop',index:0});
+}
 emit({type:'stream_event',event:{type:'content_block_delta',delta:{type:'text_delta',text:'Hello 🌏\n'}}});
 const scenarioFile=join(process.cwd(),'.fake-scenario');
 if(/transient-|usage-limit|auth-failure/.test(prompt))writeFileSync(scenarioFile,prompt);
@@ -56,6 +69,10 @@ if (prompt.includes('thread-size-limit')) {
     if(prompt.includes('hang'))await new Promise(()=>setInterval(()=>{},1000));
     result('step-2', 'File unavailable', true);
   }
+}
+if (prompt.includes('scripted-person-wait')) {
+  const form = {form:{genui_version:2,source:'$release=""\nForm([Input($release,"Which release?")], "Release selection")'}};
+  execFileSync('calternal', ['invoke', 'requests.ask', '--input', JSON.stringify(form)], {stdio:'ignore'});
 }
 if(prompt.includes('oversized'))process.stdout.write('x'.repeat(1024*1024+1));
 emit({type:'result',subtype:prompt.includes('fail')?'error_during_execution':'success',is_error:prompt.includes('fail'),usage:{input_tokens:10,output_tokens:3}});

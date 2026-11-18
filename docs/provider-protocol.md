@@ -2,7 +2,8 @@
 
 A provider plugin declares an optional `provider` entry in manifest v1:
 `protocol_version`, an executable basename resolved inside the sandbox, and a
-`default_model`. The host validates it without running code. The machine launches
+`default_model` and `models` containing IDs, display names and reasoning
+levels. The host validates and caches it at startup without running code. The machine launches
 the executable in the thread workspace. Providers have no server-side process.
 The Claude provider is `calternal-claude-code`; Threads is `calternal-orchestrator`.
 
@@ -19,7 +20,8 @@ are permitted; source labels are at most 128 bytes.
 
 Each stdout line is `{version:1,seq,event}`. Event numbers start at one per adapter
 process, independently of machine exec and job stream sequence numbers. Events:
-check, session, text_delta, tool_started, tool_output, tool_finished, question,
+check, session, text_delta, reasoning_started, reasoning_delta,
+reasoning_finished, tool_started, tool_output, tool_finished, question,
 approval_request, usage, error, done. Lines are at most 12 KiB including newline.
 Text and tool detail are at most 4 KiB; IDs and tool names 128 bytes; summaries and
 safe error messages 512 bytes. JSON integers must be exactly representable in JS.
@@ -27,6 +29,16 @@ Unknown versions, malformed frames, sequence gaps and partial final lines fail
 closed. Error classes distinguish transient, usage_limit, authentication,
 refusal, permanent and unknown. Billing is api, subscription or unknown. A reset,
 when reported, is Unix milliseconds. It is not guessed from error prose.
+
+A reasoning block is ordered and non-overlapping. A start precedes deltas,
+and a finish carries the elapsed millisecond count observed by the adapter.
+No thinking event is fabricated when the program supplies no block. Claude
+Code maps print-mode partial streams from `content_block_start` with a
+`thinking` block, `thinking_delta` and the corresponding block stop. It omits
+signatures and encrypted block payloads. The host applies the same issued-token scrub
+as text output, with an independent streaming redactor for reasoning deltas.
+Claude Code receives the chosen reasoning level as its documented
+`--effort` option. The profile's own setting applies when the option is absent.
 
 All tool events carry the same step ID, tool name and short target or
 description. The Claude Code adapter emits `tool_output` for a nonempty tool

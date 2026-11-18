@@ -285,6 +285,8 @@ impl Jobs {
         job: &super::jobs::Job,
         publish: impl FnOnce() -> Result<String, Error>,
     ) -> Result<String, Error> {
+        let phase = crate::turns::phases::event("waiting_on_person", calternal_types::now_ms());
+        let saved_thread = job.input.get("thread_request").is_some();
         let id = self.tx(&job.space, |tx| {
             let changed = tx.execute(
                 "UPDATE jobs SET checkpoint=json_set(checkpoint,'$.request_machine',json_extract(checkpoint,'$.machine_id'))
@@ -295,12 +297,16 @@ impl Jobs {
                 return Err(Error::conflict("turn is no longer running on its machine"));
             }
             let request = publish()?;
-            tx.execute("UPDATE jobs SET state='waiting',checkpoint=json_set(checkpoint,'$.person_request',?2) WHERE id=?1",
-                params![job.id,request],
+            tx.execute("UPDATE jobs SET state='waiting',checkpoint=CASE WHEN ?3 THEN json_set(checkpoint,'$.person_request',?2,'$.turn_phase',json(?4)) ELSE json_set(checkpoint,'$.person_request',?2) END WHERE id=?1",
+                params![job.id,request,saved_thread,phase.to_string()],
             ).map_err(db_err)?;
             Ok(request)
         })?;
-        self.settle_run(&job.id, job.runs);
+        if saved_thread {
+            self.settle_for_person(&job.id, job.runs, &phase);
+        } else {
+            self.settle_run(&job.id, job.runs);
+        }
         Ok(id)
     }
 

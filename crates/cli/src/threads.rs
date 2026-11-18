@@ -57,6 +57,12 @@ pub enum Command {
         #[arg(long, value_parser = crate::parse_cursor, allow_hyphen_values = true)]
         cursor: Option<String>,
     },
+    /// List installed models and accepted reasoning levels in a space.
+    Models {
+        /// Owning space UUID.
+        #[arg(long)]
+        space_id: String,
+    },
     /// Read the Markdown conversation or a saved checkpoint addition.
     Get {
         /// Thread UUID.
@@ -78,6 +84,9 @@ pub enum Command {
         /// Model for this turn; omitted uses provider default.
         #[arg(long)]
         model: Option<String>,
+        /// Explicit reasoning level for this turn. Omit to use the provider's settings.
+        #[arg(long)]
+        reasoning: Option<String>,
         /// Mode for this and later sends; applies directly without another passkey check.
         #[arg(long)]
         mode: Option<String>,
@@ -144,6 +153,7 @@ impl Command {
                 }
                 ("threads.list", v)
             }
+            Self::Models { space_id } => ("threads.models", json!({"space_id":space_id})),
             Self::Get { id, since } => {
                 let mut input = json!({"id":id});
                 if let Some(since) = since {
@@ -161,10 +171,16 @@ impl Command {
                 message,
                 provider,
                 model,
+                reasoning,
                 mode,
             } => {
                 let mut v = json!({"id":id,"message":message});
-                for (key, value) in [("provider", provider), ("model", model), ("mode", mode)] {
+                for (key, value) in [
+                    ("provider", provider),
+                    ("model", model),
+                    ("reasoning", reasoning),
+                    ("mode", mode),
+                ] {
                     if let Some(value) = value {
                         v[key] = json!(value);
                     }
@@ -187,6 +203,58 @@ fn lifecycle(metadata: &Value) -> &'static str {
 /// Render server thread data with shared width adaptation, stable JSON and hints.
 /// Cost: O(returned rows or document bytes); no I/O. Unknown shapes fail visibly.
 pub fn reply(out: &Output, data: Value) -> Reply {
+    if let Some(providers) = data["providers"].as_array() {
+        let mut result = Reply::new(data.clone());
+        if providers.is_empty() {
+            result = result.line("No providers are enabled in this space.");
+        }
+        for (index, provider) in providers.iter().enumerate() {
+            if index != 0 {
+                result = result.blank();
+            }
+            let rows = provider["models"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .map(|model| {
+                    let field = |key: &str| model[key].as_str().unwrap_or("").to_owned();
+                    let levels = model["reasoning_levels"]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .filter_map(Value::as_str)
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    vec![
+                        field("id"),
+                        field("name"),
+                        if levels.is_empty() {
+                            "Provider default".into()
+                        } else {
+                            levels
+                        },
+                        if model["id"] == provider["default_model"] {
+                            "Yes"
+                        } else {
+                            "No"
+                        }
+                        .into(),
+                    ]
+                })
+                .collect();
+            result = result
+                .fields([
+                    ("Provider", provider["name"].as_str().unwrap_or("")),
+                    ("Provider ID", provider["id"].as_str().unwrap_or("")),
+                ])
+                .table(
+                    &["MODEL ID", "MODEL", "REASONING", "DEFAULT"],
+                    rows,
+                    "No models declared.",
+                );
+        }
+        return result.hint("Next: calternal threads send --help");
+    }
     if let Some(rows) = data["threads"].as_array() {
         let rows = rows
             .iter()

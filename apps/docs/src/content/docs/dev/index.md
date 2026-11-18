@@ -9,6 +9,7 @@ title: "Developer reference"
 - [Operations](./operations/)
 - [Notes operations](./notes-operations/)
 - [Manifest schema](./manifest/)
+- [Provider adapter protocol](./provider-protocol/)
 - [Plugin SDK](./typescript/plugin-sdk/)
 - [GenUI API](./typescript/genui/)
 - [Rust crates](./crates/)

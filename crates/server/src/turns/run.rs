@@ -156,6 +156,8 @@ async fn execute<D: Directory>(
     } else {
         Some(super::launch::prepare_authority(state, job, &i, thread).await?)
     };
+    let saved_thread = job.input.get("thread_request").is_some();
+    let mut phases = saved_thread.then(|| super::phases::Phases::queued(job, live));
     let mut checkpoint = super::lease::prepare(state, machines, job, live, space, thread).await?;
     let lease_id = checkpoint["lease_id"]
         .as_str()
@@ -166,7 +168,7 @@ async fn execute<D: Directory>(
         .get("machine_id")
         .and_then(Value::as_str)
         .and_then(|s| Uuid::parse_str(s).ok());
-    let (machine_id, _permit) = match super::progress::place(
+    let (machine_id, personal_machine, _permit) = match super::progress::place(
         state,
         machines,
         job,
@@ -176,11 +178,20 @@ async fn execute<D: Directory>(
     )
     .await?
     {
-        super::progress::Placement::Ready(machine, permit) => (machine, permit),
+        super::progress::Placement::Ready(machine, personal, permit) => (machine, personal, permit),
         super::progress::Placement::Ended(end) => return Ok(end),
     };
     checkpoint["placement"] = Value::Null;
     checkpoint["machine_id"] = json!(machine_id);
+    if let Some(phases) = &mut phases {
+        checkpoint["message_machine"] = Value::Null;
+        checkpoint["message_id"] = if job.runs == 1 {
+            json!(job.id)
+        } else {
+            json!(Uuid::now_v7())
+        };
+        phases.switch("starting_sandbox", job, live, &mut checkpoint);
+    }
     let mut local_session = if previous_machine == Some(machine_id) {
         checkpoint
             .get("session_id")
@@ -200,7 +211,14 @@ async fn execute<D: Directory>(
             }
         }
     }
-    super::lease::publish_placement(state, job, live, &mut checkpoint).await?;
+    super::lease::publish_placement(
+        state,
+        job,
+        live,
+        &mut checkpoint,
+        (saved_thread && personal_machine).then_some((thread, machine_id)),
+    )
+    .await?;
     let mut context = i.context.clone();
     if job.runs > 1 && local_session.is_none() {
         context.push(calternal_core::ProviderContext {
@@ -265,7 +283,7 @@ async fn execute<D: Directory>(
         let token = blocking(move || st.jobs.agent_token(&scope, issuing_run)).await?;
         (
             vec![("CALTERNAL_AGENT_TOKEN".into(), token.clone())],
-            Some(super::redact::Redactor::new(token)),
+            Some(super::redact::Channels::new(token)),
         )
     } else {
         (Vec::new(), None)
@@ -293,7 +311,6 @@ async fn execute<D: Directory>(
     let mut sign_in_command = None;
     let mut failure = None;
     let mut retry_forbidden = false;
-    let saved_thread = job.input.get("thread_request").is_some();
     let mut pending_tools = std::collections::HashSet::new();
     let mut text_flush = Instant::now();
     let deadline = Instant::now()
@@ -379,20 +396,9 @@ async fn execute<D: Directory>(
                         if verify && !matches!(e.event, ProviderEventKind::Check(_) | ProviderEventKind::Done { .. }) {
                             continue;
                         }
-                        let first = redactor.as_mut().and_then(|redactor| {
-                            redactor.event(&mut e.event).or_else(|| {
-                                if matches!(e.event, ProviderEventKind::Done { .. }) {
-                                    redactor.finish()
-                                } else {
-                                    None
-                                }
-                            })
-                        });
-                        let flush = first.map(|text| ProviderEvent {
-                            version: 1,
-                            seq: 0,
-                            event: ProviderEventKind::TextDelta { text },
-                        });
+                        let flush = redactor.as_mut()
+                            .and_then(|redactor| redactor.event(&mut e.event))
+                            .map(|event| ProviderEvent {version: 1, seq: 0, event});
                         for mut e in flush.into_iter().chain(std::iter::once(e)) {
                             let mut thread_session = None;
                             match &e.event {
@@ -464,6 +470,12 @@ async fn execute<D: Directory>(
                             }
                             if verify {
                                 continue;
+                            }
+                            if let Some(phases) = &mut phases {
+                                phases.observe(&e.event, !pending_tools.is_empty(), job, live, &mut checkpoint)?;
+                                if matches!(e.event, ProviderEventKind::Done { .. }) {
+                                    phases.finish(&mut checkpoint);
+                                }
                             }
                             if matches!(
                                 e.event,
@@ -545,6 +557,9 @@ async fn execute<D: Directory>(
                             return Ok(RunEnd::RetryWaiting);
                         }
                     }
+                    if let Some(phases) = &mut phases {
+                        phases.finish(&mut checkpoint);
+                    }
                     checkpoint["provider_seq"] = json!(published_seq);
                     if let Some(redactor) = &redactor {
                         redactor.checkpoint(&mut checkpoint);
@@ -570,6 +585,9 @@ async fn execute<D: Directory>(
         .is_some_and(|text| !text.is_empty())
         && !result.as_ref().is_err_and(super::progress::thread_full)
     {
+        if let Some(phases) = &mut phases {
+            phases.finish(&mut checkpoint);
+        }
         checkpoint["provider_seq"] = json!(published_seq);
         if let Some(redactor) = &redactor {
             redactor.checkpoint(&mut checkpoint);

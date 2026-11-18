@@ -22,15 +22,8 @@ pub(super) async fn read<D: Directory>(
             .map_err(|_| Error::not_found("thread not found"))?;
         let (pin, controls) =
             crate::threads::index::readiness_context(&state, space, thread, who.id)?;
-        let active = |plugin: &crate::plugins::Plugin| -> Result<bool, Error> {
-            let key = crate::store::plugin_key(&plugin.manifest.id);
-            let enabled = if let Some(control) = controls.get(&key) {
-                crate::store::plugin_row(control.clone())?.enabled
-            } else {
-                crate::plugins::default_row(plugin).enabled
-            };
-            Ok(enabled && plugin.unavailable.is_none())
-        };
+        let active =
+            |plugin: &crate::plugins::Plugin| crate::threads::index::enabled(&controls, plugin);
         let orchestrator = state
             .registry
             .get("calternal-orchestrator")

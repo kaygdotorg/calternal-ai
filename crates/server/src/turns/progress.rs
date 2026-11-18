@@ -90,7 +90,7 @@ pub(super) async fn finish_full<D: Directory>(
 }
 
 pub(super) enum Placement {
-    Ready(Uuid, OwnedSemaphorePermit),
+    Ready(Uuid, bool, OwnedSemaphorePermit),
     Ended(RunEnd),
 }
 
@@ -139,7 +139,7 @@ pub(super) async fn place<D: Directory>(
         }
         if let Some(machine) = view.machine_id {
             tokio::select! {
-                permit=&mut acquire=>return Ok(Placement::Ready(machine,permit.map_err(|_|Error::unavailable("turn execution stopped"))?)),
+                permit=&mut acquire=>return Ok(Placement::Ready(machine,view.personal_machine,permit.map_err(|_|Error::unavailable("turn execution stopped"))?)),
                 _=tokio::time::sleep(Duration::from_secs(1))=>continue,
             }
         }

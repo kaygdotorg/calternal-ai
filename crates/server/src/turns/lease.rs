@@ -78,9 +78,10 @@ pub(super) async fn publish_placement<D: Directory>(
     job: &Job,
     live: &Arc<crate::plugins::live::Live>,
     checkpoint: &mut Value,
+    personal: Option<(Uuid, Uuid)>,
 ) -> Result<(), Error> {
     checkpoint["thread_text"] = json!("");
-    let (s, space, id, run, live, checkpoint) = (
+    let (s, space, id, run, live, mut placed) = (
         state.clone(),
         job.space.clone(),
         job.id.clone(),
@@ -88,9 +89,16 @@ pub(super) async fn publish_placement<D: Directory>(
         live.clone(),
         checkpoint.clone(),
     );
-    blocking(move || {
-        s.jobs
-            .start_placed_turn(&space, &id, run, &live, &checkpoint)
+    let account = job.account;
+    *checkpoint = blocking(move || {
+        if let Some((thread, machine)) = personal {
+            placed["message_machine"] = json!(crate::threads::provider_session::binding(
+                account, thread, machine
+            ));
+        }
+        s.jobs.start_placed_turn(&space, &id, run, &live, &placed)?;
+        Ok(placed)
     })
-    .await
+    .await?;
+    Ok(())
 }

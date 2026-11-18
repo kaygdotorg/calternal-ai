@@ -13,7 +13,7 @@
       "version": "0.1.0",
       "manifest": "calternal-notes-insights/manifest.json",
       "worker": "calternal-notes-insights/dist/worker.js",
-      "worker_sha256": "ce9ec5b040859b7d398178b147d6811ea5988a08a577027657f8ff9c01a220a4",
+      "worker_sha256": "808f20b027fc96cc5c7002e6d17d766ad3f1edcceaa47b363cfd8e3343721c21",
       "default_enabled": false
     },
     {

@@ -51,6 +51,7 @@ function section(text, heading) {
 
 const copies = {
   'dev/plugin-api': ['Plugin API decisions', 'docs/plugin-api.md'],
+  'dev/provider-protocol': ['Provider adapter protocol', 'docs/provider-protocol.md'],
   'user/people': ['People and access', 'docs/people.md'],
   'user/owner-erasure': ['Owner erasure', 'docs/owner-erasure.md'],
   'dev/addresses': ['Addresses', 'docs/addresses.md'],
@@ -112,7 +113,8 @@ for (const [command, shape] of Object.entries(commands)) {
   commandIds.push(id);
   const key = command === 'calternal notes list' ? 'calternal-notes-list' : command.replace(/^(?:cl|calternal) /, '').replaceAll(' ', '-');
   const human = goldens.find(file => path.basename(file) === `${key}.txt`)
-    ?? goldens.find(file => path.basename(file) === `${key}-width-120.txt`);
+    ?? goldens.find(file => path.basename(file) === `${key}-width-120.txt`)
+    ?? goldens.find(file => path.basename(file) === `${key}-120.txt`);
   const machine = goldens.find(file => path.basename(file) === `${key}.json`);
   const shortCommand = command.replace(/^(?:cl|calternal) /, '');
   const commandSource = shortCommand === 'notes list' ? section(cli, '`' + command.split(' ')[0] + '`') : cli;
@@ -203,7 +205,7 @@ await rm(scratch, { recursive: true, force: true });
 for (const [id, title, body] of [
   ['user/index', 'Using Calternal', '- [Spaces and roles](./spaces-and-roles/)\n- [People and access](./people/)\n- [Owner erasure](./owner-erasure/)\n- [Threads](./threads/)\n- [Permission modes](./permissions-modes/)'],
   ['admin/index', 'Administration', '- [CLI conventions](./cli/)\n- [Commands](./commands/)\n- [Storage](./storage/)\n- [Machines](./machines/)\n- [Secrets](./secrets/)\n- [Recovery and backups](./recovery/)'],
-  ['dev/index', 'Developer reference', '- [Operations](./operations/)\n- [Notes operations](./notes-operations/)\n- [Manifest schema](./manifest/)\n- [Plugin SDK](./typescript/plugin-sdk/)\n- [GenUI API](./typescript/genui/)\n- [Rust crates](./crates/)\n- [Plugin decisions](./plugin-api/)\n- [Addresses](./addresses/)\n- [Agent instructions](./agent-instructions/)\n- [Composer](./composer/)\n- [Glossary](./glossary/)'],
+  ['dev/index', 'Developer reference', '- [Operations](./operations/)\n- [Notes operations](./notes-operations/)\n- [Manifest schema](./manifest/)\n- [Provider adapter protocol](./provider-protocol/)\n- [Plugin SDK](./typescript/plugin-sdk/)\n- [GenUI API](./typescript/genui/)\n- [Rust crates](./crates/)\n- [Plugin decisions](./plugin-api/)\n- [Addresses](./addresses/)\n- [Agent instructions](./agent-instructions/)\n- [Composer](./composer/)\n- [Glossary](./glossary/)'],
   ['index', 'Calternal documentation', `[User guide](${base}user/) · [Administration](${base}admin/) · [Developer reference](${base}dev/)\n\nGenerated from repository contracts, command fixtures and API comments. Each page includes a source-file comment. Append \`.md\` to a page address for its Markdown source (both \`page.md\` and \`page/.md\` are emitted).\n\n[LLM index](${base}llms.txt) · [Complete Markdown documentation](${base}llms-full.txt)`],
 ]) page(id, title, ['scripts/docs-site/generate.mjs'], body);
 

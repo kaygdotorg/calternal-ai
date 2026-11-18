@@ -35,17 +35,26 @@ impl Jobs {
     /// Stop a job's stream after its run ended: wake subscribers and drop the buffer
     /// once nobody is subscribed. Cost: two map/stream locks.
     pub(super) fn settle(&self, id: &str) {
-        self.settle_inner(id, None)
+        self.settle_inner(id, None, None)
     }
 
     /// Settle only a matching live run; late completion cannot stop its successor.
     pub(super) fn settle_run(&self, id: &str, run: u32) {
-        self.settle_inner(id, Some(run))
+        self.settle_inner(id, Some(run), None)
     }
 
-    fn settle_inner(&self, id: &str, expected: Option<u32>) {
+    /// Publish the committed person-wait phase to the current stream before
+    /// settling it. Reuses the settlement's map lock without creating a stream.
+    pub(super) fn settle_for_person(&self, id: &str, run: u32, phase: &serde_json::Value) {
+        self.settle_inner(id, Some(run), Some(phase))
+    }
+
+    fn settle_inner(&self, id: &str, expected: Option<u32>, phase: Option<&serde_json::Value>) {
         let mut live = self.live.lock().unwrap_or_else(|p| p.into_inner());
         if let Some(l) = live.get(id).cloned() {
+            if let (Some(run), Some(phase)) = (expected, phase) {
+                l.publish(run, phase);
+            }
             let idle = {
                 let mut b = l.lock();
                 if expected.is_some_and(|run| b.run != run) {

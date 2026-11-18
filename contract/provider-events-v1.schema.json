@@ -137,6 +137,66 @@
           "additionalProperties": false
         },
         {
+          "description": "A provider exposed the start of an observable reasoning block.",
+          "type": "object",
+          "required": [
+            "type"
+          ],
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": [
+                "reasoning_started"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "Incremental provider-visible reasoning text, at most 4 KiB.",
+          "type": "object",
+          "required": [
+            "text",
+            "type"
+          ],
+          "properties": {
+            "text": {
+              "description": "Text the official provider chose to expose.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "reasoning_delta"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "The observed reasoning block ended.",
+          "type": "object",
+          "required": [
+            "duration_ms",
+            "type"
+          ],
+          "properties": {
+            "duration_ms": {
+              "description": "Monotonic elapsed milliseconds observed by the adapter.",
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "reasoning_finished"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
           "description": "A tool step began with a short target or description.",
           "type": "object",
           "required": [

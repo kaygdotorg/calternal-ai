@@ -81,6 +81,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ManifestHook,
         ManifestTheme,
         ManifestProvider,
+        ProviderModel,
         ManifestV1,
         OperationRisk,
         AgentMode,

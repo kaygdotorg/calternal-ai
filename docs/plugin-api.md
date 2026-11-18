@@ -155,7 +155,8 @@ the matrix in [manual turns](agent-turns.md), with a seam for a future model
 reviewer restricted to irreversible actions.
 
 A provider plugin additionally declares `provider` with protocol version one,
-an executable basename inside the sandbox and its default model. See
+an executable basename inside the sandbox, its default model, and a bounded
+model catalog with display names and accepted reasoning levels. See
 [provider protocol](provider-protocol.md). This is machine-side metadata; the
 server never launches or signs in to a provider. The first provider is
 `calternal-claude-code`.
