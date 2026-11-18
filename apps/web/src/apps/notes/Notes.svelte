@@ -1,11 +1,13 @@
 <script lang="ts">
   // The note: the block editor in a narrow centred column with no inner card, and a thin rail at the card's left edge that expands into a small contents card (hover, focus or press;
   // Escape folds it). The document is the note's Markdown (the fixture's or the server's); every edit is kept as the note's private draft after a short pause and saved after a longer one.
-  import { getContext } from "svelte";
+  import { getContext, untrack } from "svelte";
   import { Avatar, Button, IconButton, Menu, Panel, Pill, tip } from "@calternal/ui";
   import ShareHost from "./share/ShareHost.svelte";
   import { openShare } from "./share/share.svelte";
   import { incoming } from "./share/incoming.svelte";
+  import { live, liveOn } from "./live/live.svelte";
+  import Presence from "./live/Presence.svelte";
   import { shell } from "../../shell/shell.svelte";
   import NoteEditor from "./NoteEditor.svelte";
   import TrashView from "./TrashView.svelte";
@@ -19,6 +21,15 @@
   // Fixture words for the # picker; in server mode the editor asks the space's tag index instead.
   const TAGS = ["design", "journal", "release", "storage", "reading"];
   let { id }: { id?: string } = $props();
+  // Live editing (`?live=1`): the note is a room, other people's cursors and presence show, and the room (not an HTTP save) keeps the text. Off by default; nothing of it loads when off.
+  const liveMode = liveOn();
+  const noteId = $derived(notes.note?.id);
+  $effect(() => {
+    const nid = noteId;
+    if (!liveMode || !nid) return;
+    untrack(() => void live.open(notes.note!.spaceId, nid, notes.note!.markdown));
+    return () => live.close();
+  });
   let moreOpen = $state(false);
   let moreEl = $state<HTMLButtonElement>();
   let shareEl = $state<HTMLButtonElement>();
@@ -79,7 +90,8 @@
   <header class="nc-head" class:windowed>
     {#if shell.narrow && !windowed}<IconButton icon="sidebar" label="Show notes" onclick={() => shell.toggleSidebar()} />{/if}
     <span class="grow"></span>
-    {#if notes.note}<span class="state" role="status" aria-live="polite" data-state={notes.saveState}>{STATE[notes.saveState]}</span>{/if}
+    {#if liveMode && live.session}<Presence here={live.here} />{/if}
+    {#if notes.note}<span class="state" role="status" aria-live="polite" data-state={liveMode ? undefined : notes.saveState}>{liveMode ? live.save : STATE[notes.saveState]}</span>{/if}
     {#if !windowed && notes.note}
       {#if sharedBy}
         <button type="button" class="owner" bind:this={shareEl} aria-label="Shared by {sharedBy.shared_by}. Who can see this" aria-haspopup="dialog" use:tip={{ label: `Shared by ${sharedBy.shared_by}`, side: "bottom" }} onclick={() => openShare({ kind: "notes", id: notes.note!.id }, notes.note!.title, shareEl ?? null)}><Avatar name={sharedBy.shared_by} size="md" /></button>
@@ -101,7 +113,12 @@
       {#if notes.draft}
         <p class="draft" role="status">You have an unsent draft of this note. <Button variant="quiet" text="Restore" onclick={() => { editor?.setText(notes.draft!.text); edited(notes.draft!.text); }} /> <Button variant="quiet" text="Discard" onclick={async () => { await notes.input.dropDraft(notes.note!.spaceId, notes.note!.id); await notes.reloadInput(); }} /></p>
       {/if}
-      <NoteEditor bind:this={editor} id={notes.view.id} text={notes.view.text} onedit={edited} onheadings={(h) => (heads = h)} label={notes.note.title} readOnly={sharedBy?.permission === "view"} notes={notes.list} threads={threadStore.threads.map((t) => ({ id: t.id, title: t.title }))} agents={threadStore.providers.map((p) => p.name)} tags={TAGS} />
+      {#snippet editorEl(room?: { extension: import("@codemirror/state").Extension }, text?: string)}
+        <NoteEditor bind:this={editor} id={notes.view.id} text={text ?? notes.view.text} live={room} onedit={edited} onheadings={(h) => (heads = h)} label={notes.note!.title} readOnly={sharedBy?.permission === "view"} notes={notes.list} threads={threadStore.threads.map((t) => ({ id: t.id, title: t.title }))} agents={threadStore.providers.map((p) => p.name)} tags={TAGS} />
+      {/snippet}
+      {#if !liveMode}{@render editorEl()}
+      {:else if live.binding && live.session}{#key live.epoch}{@render editorEl(live.binding, live.session.text.toString())}{/key}
+      {:else}<p class="lede" role="status">Opening the note…</p>{/if}
       {#if notes.conflict}
         <p class="draft" role="alert">Someone changed this note while you were editing it. Your text is kept here. <Button variant="primary" text="Keep mine" onclick={() => notes.keepMine(titleOf(editor?.current() ?? latest), editor?.current() ?? latest)} /> <Button variant="quiet" text="Use theirs" onclick={() => notes.takeTheirs()} /></p>
       {/if}
