@@ -185,7 +185,7 @@
 
 <Backdrop />
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<div class="shell" class:narrow={shell.narrow} use:wheelAction data-pull={wp?.side} onpointerdown={gdown} onpointermove={gmove} onpointerup={gup} onpointercancel={gup} data-sidebar={shell.sidebarOpen} data-right={rightOpen}>
+<div class="shell" class:narrow={shell.narrow} style:--pull-x={shell.narrow ? (dragMode === "card" && drag !== null ? `translateX(${drag}px)` : shell.sidebarOpen ? "translateX(calc(100% - var(--peek)))" : undefined) : undefined} use:wheelAction data-pull={wp?.side} onpointerdown={gdown} onpointermove={gmove} onpointerup={gup} onpointercancel={gup} data-sidebar={shell.sidebarOpen} data-right={rightOpen}>
   <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
   <aside class="side" class:pulled={wp?.side === "left"} style:--vis={wp?.side === "left" ? `${wp.vis}px` : undefined} style:--w={wp?.side === "left" ? `${wp.w}px` : undefined} bind:this={sideEl} onclick={choose} data-ink={surfaces.left ?? undefined} aria-label="{app.name} sidebar" inert={!shell.sidebarOpen}><Sidebar {app} /></aside>
 
@@ -206,10 +206,9 @@
   {#if shell.narrow && (rightOpen || dragMode === "panel")}<button type="button" class="scrim" aria-label="Close the side panel" style:opacity={dragMode === "panel" && drag !== null ? 1 - drag / panelWidth() : undefined} style:animation={dragMode === "panel" && drag !== null ? "none" : undefined} onclick={tap}></button>{/if}
 
   {#if hasRight}<aside class="right" class:pulled={wp?.side === "right"} style:--vis={wp?.side === "right" ? `${wp.vis}px` : undefined} style:--w={wp?.side === "right" ? `${wp.w}px` : undefined} bind:this={rightEl} class:dragging={dragMode === "panel" && drag !== null} style:transform={dragMode === "panel" && drag !== null ? `translateX(${drag}px)` : undefined} data-ink={surfaces.right ?? undefined} aria-label="{app.name} side panel" inert={!rightOpen}><RightSidebar {app} {id} /></aside>{/if}
+  <!-- The phone's bottom bar is the app's panels: an app with none (Settings), or with nothing open (no thread), has no bar. It rides with the card (the list is under it), so it slides away with it. -->
+  {#if shell.narrow && app.panels.length && id}<PhoneTabs {app} />{/if}
 </div>
-<!-- The phone's bottom bar is the app's panels: an app with none (Settings) has no bar, and its pages use the whole height. -->
-{#if shell.narrow && !shell.sidebarOpen && app.panels.length && id}<PhoneTabs {app} />{/if}
-
 <style>
   /* Wide chat (the plugin's default, Settings, Appearance, Chat layout): on a desktop the thread's column is the whole card, with room on the left for a contents rail and a margin on the right. */
   @media (min-width: 760px) { :global(html[data-chat-wide]) { --msg-w: 100%; --msg-inner: none; --msg-pad-l: 3.25rem; --msg-pad-r: 1.5rem; } }
