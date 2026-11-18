@@ -16,8 +16,9 @@ const BY_CODE: Record<string, string> = {
   // Sign-in (auth routes use their own codes).
   cancelled: "The passkey prompt was closed or timed out. Try again, and choose a passkey when your device asks.",
   passkey_failed: "That passkey was not recognised. Use the passkey you made for this server, or ask for a new setup link if this is a new installation.",
-  setup_token_invalid: "That setup code is wrong or already used. Ask for a new setup link and paste its code.",
-  invite_invalid: "That setup code is wrong or already used. Ask for a new setup link and paste its code.",
+  // No owner exists yet: the code is the first owner's, and nobody can send a new link, so say where the current one is (the server writes a new setup.token every time it starts).
+  setup_token_invalid: "That setup code is wrong or has expired. The current one is in the server's setup.token file (a new one is written each time the server starts).",
+  invite_invalid: "That invitation is wrong, expired or already used. Ask whoever invited you for a new link and paste its code.",
   too_many_requests: "Too many tries. Wait a minute and try again.",
   last_passkey: "Keep at least one passkey, or you could not sign in again. Add another first.",
   passkey_reverification_required: "Confirm with your passkey, then try again.",

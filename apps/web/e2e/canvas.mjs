@@ -15,9 +15,9 @@ const rects = (p) => p.evaluate(() => [...document.querySelectorAll("[data-win]"
 const canvasBox = (p) => p.locator("[data-canvas]").boundingBox();
 const animating = (p, wait = 600) => p.waitForFunction(() => [...document.querySelectorAll("[data-col]")].some((c) => c.getAnimations().length > 0), null, { timeout: wait }).then(() => true, () => false);
 const item = (p, re) => p.locator("[role^=menuitem]", { hasText: re }).first();
-/** Every pixel outside the windows (and the app switcher, which floats over them) is the same with and without the windows: two screenshots, the second with the strip hidden, compared outside the windows' boxes. Returns how many pixels differ by more than 3 in a channel. */
+/** Every pixel outside the windows  is the same with and without the windows: two screenshots, the second with the strip hidden, compared outside the windows' boxes. Returns how many pixels differ by more than 3 in a channel. */
 async function seam(p) {
-  const rs = await p.evaluate(() => [...document.querySelectorAll("[data-win]")].map((w) => w.getBoundingClientRect()).concat(document.querySelector(".appbar") ? [document.querySelector(".appbar").getBoundingClientRect()] : []).map((r) => [r.left, r.top, r.right, r.bottom]));
+  const rs = await p.evaluate(() => [...document.querySelectorAll("[data-win]")].map((w) => w.getBoundingClientRect()).map((r) => [r.left, r.top, r.right, r.bottom]));
   const a = (await p.screenshot()).toString("base64");
   await p.addStyleTag({ content: ".strip { visibility: hidden !important; }" });
   await p.waitForTimeout(200);
@@ -47,8 +47,8 @@ try {
     ok((await wins(p).count()) === 3, "a fresh visit seeds a thread, another thread and a note", String(await wins(p).count()));
     // ---- chrome ----
     ok((await p.locator("[data-canvas]").getByText(/\d+ windows?/).count()) === 0 && (await p.getByRole("button", { name: "Open another window" }).count()) === 0, "the canvas carries no counter and no plus");
-    const g = await p.evaluate(() => { const c = document.querySelector("[data-canvas]").getBoundingClientRect(), bar = document.querySelector(".appbar")?.getBoundingClientRect(); const wb = Math.max(...[...document.querySelectorAll("[data-win]")].map((w) => w.getBoundingClientRect().bottom)); const bodyB = Math.max(...[...document.querySelectorAll("[data-win] > .body")].map((w) => w.getBoundingClientRect().bottom)); return { cb: c.bottom, bt: bar?.top, wb, bodyB, hasCard: !!document.querySelector(".mid-card") }; });
-    ok(g.bt < g.cb && Math.abs(g.wb - g.cb) < 1 && g.bodyB <= g.bt + 1, "the windows run to the bottom edge, the capsule floats over them, and their content stops above it", JSON.stringify(g));
+    const g = await p.evaluate(() => { const c = document.querySelector("[data-canvas]").getBoundingClientRect(); const wb = Math.max(...[...document.querySelectorAll("[data-win]")].map((w) => w.getBoundingClientRect().bottom)); const bodyB = Math.max(...[...document.querySelectorAll("[data-win] > .body")].map((w) => w.getBoundingClientRect().bottom)); return { cb: c.bottom, wb, bodyB, capsule: !!document.querySelector(".mid nav.switcher, .appbar") }; });
+    ok(Math.abs(g.wb - g.cb) < 1 && Math.abs(g.bodyB - g.wb) < 1 && !g.capsule, "the windows and their content run to the bottom edge; the app switcher is in the sidebar, not over them", JSON.stringify(g));
     for (const [i, w] of (await wins(p).all()).entries()) {
       const titles = await w.evaluate((e) => [...e.querySelectorAll(".wt, header .title")].filter((t) => t.getClientRects().length).length);
       const buttons = await w.locator(".tr button").evaluateAll((b) => b.map((x) => x.getAttribute("aria-label")));
