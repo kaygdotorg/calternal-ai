@@ -11,7 +11,6 @@
   import { spaces } from "./shell/spaces.svelte";
   import Unknown from "./shell/Unknown.svelte";
   import SettingsSheet from "./appearance/SettingsSheet.svelte";
-  import FirstRun from "./appearance/FirstRun.svelte";
   import { shortcuts } from "./lib/shortcuts.svelte";
   import ShortcutsSheet from "./shell/ShortcutsSheet.svelte";
   import { client, store } from "./apps/threads/store.svelte";
@@ -72,6 +71,5 @@
 <LinkBanner />
 <ThreadSearch />
 <Toasts bottom={shell.narrow ? "calc(var(--bar-h) + env(safe-area-inset-bottom) + 12px)" : 24} />
-<FirstRun />
 <SettingsSheet open={settings && shell.narrow} onclose={() => navigate("/settings/appearance")} />
 <ShortcutsSheet open={shell.helpOpen} onclose={() => (shell.helpOpen = false)} />

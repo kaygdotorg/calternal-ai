@@ -23,7 +23,6 @@ const screens = [
   ["settings pool", "/settings/pool"],
   ["settings storage", "/settings/storage"],
   ["appearance sheet", "/settings/appearance?sheet=1"],
-  ["first run", "/threads/t-idle?firstrun=1"],
   ["notes empty", "/notes"],
   ["threads list", "/threads"],
   ["not found", "/nothing/here"],

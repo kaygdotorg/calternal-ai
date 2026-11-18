@@ -1,5 +1,5 @@
 /**
- * The in-page benchmark for browsers that cannot be driven from outside (iOS Safari in the Simulator). Load the app with `?bench=1&firstrun=0&test=1` on `/notes/n-1`: after a short settle it runs the
+ * The in-page benchmark for browsers that cannot be driven from outside (iOS Safari in the Simulator). Load the app with `?bench=1&test=1` on `/notes/n-1`: after a short settle it runs the
  * editor scenarios of `e2e/editor-perf.mjs` (open a short and the long note, type in the long note and in the composer, scroll the long note) and prints the results on screen and in `window.__bench`.
  * Typing goes through `execCommand("insertText")` on the focused field, which is the browser's own text-input path (beforeinput, DOM change, input), not a synthetic call into the editor.
  * No CPU slowdown exists in WebKit, so the numbers are the device's own. Loaded lazily from `main.ts` only when `bench=1` is in the address; nothing of it is in the first paint.
@@ -83,7 +83,7 @@ async function run() {
   out.scroll = { ...stats(deltas), over50: deltas.filter((d) => d > 50).length };
   show();
   // 4. Typing in the composer (a plain field with the palette engine on it).
-  history.pushState({}, "", "/threads/t-idle?bench=1&firstrun=0&test=1");
+  history.pushState({}, "", "/threads/t-idle?bench=1&test=1");
   dispatchEvent(new PopStateEvent("popstate"));
   await until(() => !!document.querySelector("textarea"));
   await sleep(800);

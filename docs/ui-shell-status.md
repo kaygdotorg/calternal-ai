@@ -232,7 +232,6 @@ Notes (2026-11-17): the default photographs are fetched when the app is built (`
 | Changes, Files and Run rows share one anatomy; four right tabs with icon and label | yes | `PanelRow.svelte`, `panel-*` shots |
 | Default wallpaper EX_STserBZM; lighter renditions for the light scheme | yes | `scripts/wallpapers.mjs`, grids on #15 |
 | Stray underline: the active-children bar drawn bare; now a glass pill | yes | #15 comment |
-| First-run gallery reachable with `?firstrun=1`, tested | yes | `e2e/firstrun.mjs` |
 | Auto-hide setting for the card switcher (off by default) | yes | `appearance.app-switcher-auto-hide` |
 | Composer palette: plan, ported recogniser, search, palette surface | yes (the thread composer now uses the engine) | `docs/ui-composer-palette.md`, `e2e/palette.mjs` |
 | Veil from the study's function, on rendered pixels | yes | `e2e/veil-pixels.mjs` 16 of 16 |

@@ -272,8 +272,11 @@ try {
     await touch("touchEnd", []);
     await p.waitForTimeout(600);
     ok(x0 - (await stripX(p)) > 80, "two fingers moving left bring the next window in", `${x0} -> ${await stripX(p)}`);
-    await touch("touchStart", [[60, 300]]);
-    for (let i = 1; i <= 10; i++) await touch("touchMove", [[60 + i * 20, 300]]);
+    // Where the one-finger swipe starts: a spot that belongs to no control. The strip coasts to a different offset each run, so a fixed point sometimes lands on a window's resize handle (`.rz`) or a message row, whose own handlers
+    // stop the event from reaching the shell (Svelte delegates pointer events to the root: a handler that stops propagation keeps the sidebar pull from ever seeing the touch). That is the intended rule (a control keeps its own gesture), so the test must not depend on luck.
+    const start = await p.evaluate(() => { for (let x = 40; x <= 140; x += 6) for (let y = 260; y <= 380; y += 20) { const e = document.elementFromPoint(x, y); if (e && !e.closest(".rz, .msg, button, a, input, textarea, [data-win] header, .tr")) return [x, y]; } return [60, 300]; });
+    await touch("touchStart", [start]);
+    for (let i = 1; i <= 10; i++) await touch("touchMove", [[start[0] + i * 20, start[1]]]);
     await touch("touchEnd", []);
     await p.waitForTimeout(700);
     const open1 = await p.locator(".shell").getAttribute("data-sidebar");

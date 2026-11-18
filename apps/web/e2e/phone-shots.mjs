@@ -31,5 +31,4 @@ await shot("settings-list", "light", "/settings", (p) => tap(p, /Show settings|S
 await shot("settings-page", "light", "/settings/agents");
 await shot("notes", "light", "/notes/n-1");
 await shot("appearance-sheet", "light", "/settings/appearance?sheet=1");
-await shot("first-run", "light", "/threads?firstrun=1");
 await b.close(); stop();
