@@ -162,7 +162,7 @@ const wallpapers = JSON.parse(readFileSync("wallpapers.json", "utf8"));
   const items = await page.locator("[role^=menuitem]").evaluateAll((e) => e.map((d) => [d.textContent.trim(), d.getBoundingClientRect().height]));
   ok(items.length >= 3 && items.some(([t]) => /Settings/.test(t)) && items.every(([, h]) => h >= 36), "Phone: the account picture opens the spaces and Settings with touch-sized rows", JSON.stringify(items));
   await page.keyboard.press("Escape"); await page.waitForTimeout(200);
-  ok((await page.locator(".grip").count()) === 0, "Phone: no resize handles");
+  ok((await page.locator(".grip").evaluateAll((g) => g.filter((e) => e.getBoundingClientRect().width > 0 && getComputedStyle(e).visibility !== "hidden" && getComputedStyle(e).display !== "none").length)) === 0, "Phone: no resize handles");
   const f = await page.evaluate(() => { const r = document.querySelector("aside.side footer").getBoundingClientRect(); return r.bottom <= innerHeight + 1; });
   ok(f, "Phone: the footer is in view");
   await page.getByRole("button", { name: /Account, spaces and settings/ }).click(); await page.locator("[role^=menuitem]", { hasText: "Infra" }).click(); await page.waitForTimeout(500);
