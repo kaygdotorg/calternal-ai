@@ -63,6 +63,8 @@ impl Store {
                         let Some(space) = id.to_str().and_then(|id| SpaceId::parse(id).ok()) else {
                             continue;
                         };
+                        let lifecycle = content.lifecycle();
+                        let Ok(_probe) = lifecycle.step(space.as_uuid()) else { continue };
                         match has_expired(&entry.path().join("content.db"), &cutoff) {
                             Ok(false) => continue,
                             Ok(true) => {},
