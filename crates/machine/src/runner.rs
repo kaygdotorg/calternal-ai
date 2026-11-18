@@ -8,7 +8,6 @@
 //! bounded by about 256 KiB in the channel plus 256 KiB here.
 
 mod erasure;
-mod memory;
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -147,7 +146,7 @@ impl Runner {
     /// platform memory query on macOS, plus reading the local slot count.
     /// Call from a blocking worker.
     pub fn capacity(&self) -> Capacity {
-        let (memory_bytes, available_memory_bytes) = memory::sample();
+        let (memory_bytes, available_memory_bytes) = crate::memory::sample();
         Capacity {
             cpus: std::thread::available_parallelism().map_or(1, |n| n.get() as u32),
             memory_bytes,
