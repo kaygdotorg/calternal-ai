@@ -58,6 +58,7 @@ impl Entry {
             id: self.id.to_string(),
             space_id: Some(self.target.space.to_string()),
             thread_id: self.target.thread.map(|thread| thread.to_string()),
+            job_id: None,
             detail: RequestDetail::ProviderSignIn {
                 provider_id: self.target.provider.clone(),
                 label: if self.target.retry {

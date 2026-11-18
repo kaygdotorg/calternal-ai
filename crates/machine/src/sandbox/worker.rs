@@ -5,6 +5,8 @@ use std::path::Path;
 
 /// Maximum size of a verified, self-contained JavaScript worker bundle.
 pub const MAX_SOURCE_BYTES: usize = 1024 * 1024;
+/// Maximum stderr bytes forwarded when an isolated plugin worker crashes.
+pub const STDERR_TAIL_BYTES: usize = 4096;
 /// Worker container image; operators must provision it on enrolled machines.
 pub const IMAGE: &str = "docker.io/library/node:24-alpine";
 /// Fixed worker resource ceiling: 256 MiB, one CPU and 64 processes.

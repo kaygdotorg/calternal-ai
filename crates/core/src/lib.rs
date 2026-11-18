@@ -31,8 +31,10 @@ pub use calternal_types::ErrorCode;
 pub use models::*;
 pub use validation::*;
 
+mod plugin_diagnostics;
 mod plugin_manifest;
 mod plugin_settings;
+pub use plugin_diagnostics::*;
 pub use plugin_manifest::*;
 pub use plugin_settings::*;
 
@@ -64,5 +66,10 @@ pub const ACCOUNT_ERASURE_PATH: &str = "/api/v1/auth/account/delete";
 /// CLI and HTTP action identity for permanent account erasure.
 pub const ACCOUNT_ERASURE_ACTION: &str = "account.delete";
 
+/// Deterministic parsing and evaluation of automation schedules.
+pub mod automation_schedule;
 /// IANA time-zone validation and civil offsets for account settings and clients.
 pub mod time_zone;
+
+mod automation_operations;
+pub use automation_operations::*;

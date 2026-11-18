@@ -21,10 +21,12 @@ try {
   const sent = []; p.on("request", (r) => { if (/operate|\/api\//.test(r.url())) sent.push(r.url()); });
   // frames and long tasks during the open
   await p.evaluate(() => { window.__fr = []; window.__lt = []; let last = performance.now(); const tick = () => { const t = performance.now(); window.__fr.push(t - last); last = t; requestAnimationFrame(tick); }; requestAnimationFrame(tick); try { new PerformanceObserver((l) => window.__lt.push(...l.getEntries().map((e) => e.duration))).observe({ type: "longtask" }); } catch {} });
+  const title = (await row.innerText()).split("\n")[0].trim().replace(/…$/, "");
   // 1. a hold opens it
   await touch("touchStart", x, y);
   await p.waitForTimeout(350);
-  ok((await p.locator(".card[role=presentation]").count()) === 0, "before the half second nothing is open");
+  ok((await p.locator(".card[role=presentation]:visible").count()) === 0 && (await p.locator("[role=menu]").count()) === 0, "before the half second nothing is open (the card is built, unseen, and the row stands lifted over its place)");
+  ok((await p.locator(".card[role=presentation]").count()) === 1, "the card is staged during the hold, so opening is only a reveal");
   await p.waitForTimeout(700);
   ok((await p.locator("[role=presentation].scrim").count()) === 1 && (await p.locator("[role=presentation] .face").count()) === 1, "held for half a second: the page is dimmed and the preview card is up");
   const card = await p.locator(".card[role=presentation]").boundingBox();
@@ -35,13 +37,22 @@ try {
   ok(await p.evaluate(({ x, y }) => !!document.elementFromPoint(x, y)?.closest("[role=menu]"), { x: mb.x + mb.width / 2, y: mb.y + 10 }), "the menu is above the dimming (what is at its place is the menu, not the scrim)");
   const names = await menu.getByRole("menuitem").allInnerTexts();
   ok(names.some((n) => /Rename/.test(n)) && names.some((n) => /Archive/.test(n)), "it has the same items as the three dots", names.join(" | "));
-  const title = (await row.innerText()).split("\n")[0].trim().replace(/…$/, ""); const face = await p.locator(".face").innerText();
+  const face = await p.locator(".face").innerText();
   ok(face.includes(title.slice(0, 12)), "the card shows the thread", `row "${title}" card "${face.replace(/\n/g, " | ").slice(0, 120)}"`);
   await touch("touchEnd", x, y); await p.waitForTimeout(300);
   ok((await p.locator("[role=presentation].scrim").count()) === 1, "lifting the finger leaves it open");
   ok(sent.length === 0, "nothing was requested from the server on the press", sent.join(","));
   const cost = await p.evaluate(() => { const f = window.__fr; return { maxFrame: Math.round(Math.max(...f.slice(2))), longTasks: window.__lt.length, longest: Math.round(Math.max(0, ...window.__lt)) }; });
   timing(cost.maxFrame < 80 && cost.longest < 120, "opening it costs the main thread little: no frame over 80 ms, no long task over 120 ms (the hold, the look-alike, the card)", JSON.stringify(cost));
+  // 1b. sliding the held finger onto an item chooses it on release (Copy link: nothing to undo)
+  await p.mouse.click(8, 8); await p.waitForTimeout(500);
+  await touch("touchStart", x, y); await p.waitForTimeout(800);
+  const items = await p.getByRole("menu", { name: /Thread:/ }).getByRole("menuitem").all();
+  const copyItem = items[2]; const cb = await copyItem.boundingBox();
+  await touch("touchMove", cb.x + 20, cb.y + cb.height / 2); await p.waitForTimeout(150);
+  ok(await copyItem.evaluate((e) => e.hasAttribute("data-hot")), "sliding the held finger onto a menu item lights it");
+  await touch("touchEnd", cb.x + 20, cb.y + cb.height / 2); await p.waitForTimeout(600);
+  ok((await p.locator("[role=presentation].scrim").count()) === 0, "lifting there chooses it and puts the press away");
   // 2. a tap outside puts it away
   await p.mouse.click(8, 8); await p.waitForTimeout(500);
   ok((await p.locator("[role=presentation].scrim").count()) === 0 && (await menu.count()) === 0, "a tap outside puts it away (the opening played backwards)");

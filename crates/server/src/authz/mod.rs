@@ -250,9 +250,22 @@ pub fn policy(operation: &str) -> Option<&'static Policy> {
             })
             .collect()
     });
+    static AUTOMATION: std::sync::OnceLock<Vec<Policy>> = std::sync::OnceLock::new();
+    let automation = AUTOMATION.get_or_init(|| {
+        calternal_core::AUTOMATION_OPERATIONS
+            .iter()
+            .map(|op| Policy {
+                operation: Cow::Borrowed(op.id),
+                required: op.capability,
+                scope: Scope::Space,
+                constraint: Constraint::None,
+            })
+            .collect()
+    });
     POLICIES
         .iter()
         .chain(search)
+        .chain(automation)
         .chain(sharing_policies())
         .chain(notes)
         .chain(account)

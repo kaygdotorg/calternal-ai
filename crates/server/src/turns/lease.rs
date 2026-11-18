@@ -45,6 +45,7 @@ pub(super) async fn prepare<D: Directory>(
         fields.remove("message_outcome");
         fields.remove("message_timing");
     }
+    let automation = job.input["thread_request"]["automation_run"].is_object();
     let checkpoint = blocking(move || {
         let mut lease = None;
         let result = s.jobs.checkpoint_prepared(&sp, &id, run, &l, || {
@@ -57,6 +58,9 @@ pub(super) async fn prepare<D: Directory>(
             } else {
                 m.request_run_on(space, account, thread, None, pin)?
             };
+            if automation {
+                crate::fault::hit(crate::fault::FaultPoint::AutomationAfterMachineLease);
+            }
             lease = Some(admitted.lease_id);
             initial["lease_id"] = json!(admitted.lease_id);
             initial["shared_sponsor"] = json!(shared.map(|target| target.sponsor));
@@ -75,6 +79,10 @@ pub(super) async fn prepare<D: Directory>(
         result
     })
     .await?;
+    crate::fault::automation_turn(
+        &job.input,
+        crate::fault::FaultPoint::AutomationAfterLeaseCheckpoint,
+    );
     Ok(checkpoint)
 }
 
@@ -107,5 +115,9 @@ pub(super) async fn publish_placement<D: Directory>(
         Ok(placed)
     })
     .await?;
+    crate::fault::automation_turn(
+        &job.input,
+        crate::fault::FaultPoint::AutomationAfterPlacement,
+    );
     Ok(())
 }

@@ -8,7 +8,10 @@ await ctx.addInitScript(() => localStorage.setItem("cal.firstrun", "1"));
 const page = await ctx.newPage(); await page.goto(`${BASE}/threads/t-run`); await page.waitForSelector("html[data-ready]"); await page.waitForTimeout(700);
 await page.getByRole("button", { name: "Thread actions" }).tap(); await page.waitForTimeout(500);
 const m = await page.evaluate(() => { const e = document.querySelector('[role=menu]'); const t = document.querySelector('button[aria-label="Thread actions"]').getBoundingClientRect(); const r = e?.getBoundingClientRect(); return { menu: !!e, sheet: !!document.querySelector(".sheet.bottom"), nearButton: r ? Math.abs(r.right - t.right) < 60 && r.top >= t.top : false }; });
-ok(m.menu && !m.sheet && m.nearButton, "the three-dot menu is a dropdown at its button, not a sheet", JSON.stringify(m));
+// With windows the three-dot menu is the window menu (the window's own items and the thread's, more than eight rows): a sheet by the menu rule (docs/ui-design-system.md); with one card it is the short thread menu, a dropdown at its button.
+const windowed = (await page.locator("[data-win]").count()) > 0;
+if (windowed) ok(m.menu && m.sheet, "windows: the three-dot menu is the window menu, more than eight rows, so a sheet", JSON.stringify(m));
+else ok(m.menu && !m.sheet && m.nearButton, "the three-dot menu is a dropdown at its button, not a sheet", JSON.stringify(m));
 await page.keyboard.press("Escape"); await page.waitForTimeout(300);
 const w = 390;
 ok((await page.locator(".edge.r").count()) === 0, "there is no side-panel button on a phone (it overlaid a window's top-right pills)");
