@@ -55,6 +55,13 @@ successful deploy retains one previous release under `:rollback`.
 `deploy/rollback.sh --target deploy/cloud.conf` swaps the releases and checks
 health. Add `--dry-run` to see the SSH calls before running either script.
 
+Provider sign-in needs a matching Claude sandbox image. Build the plugins and
+run `deploy/build-provider.sh` on the build VM from the same revision as the
+server and machine binary. Stage the rebuilt sandbox image on the target before
+activating the release. The account's login stays on the machine under
+`sandboxes/accounts/<account>/provider-login`, and its transcript home is
+scoped to the space.
+
 Deploy and rollback reuse the three data roots. A schema mismatch can refuse
 startup, including when an older binary opens data initialized by a newer one.
 Per-space stores that open lazily may first report a mismatch when used.

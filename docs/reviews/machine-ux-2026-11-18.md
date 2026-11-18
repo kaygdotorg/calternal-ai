@@ -7,6 +7,9 @@ generates the signing key on the host and publishes only its UUID and public
 key. Onboarding reports placement availability. `machines.verify` runs the
 sandbox and provider diagnostic.
 
+The [provider sign-in follow-up](provider-sign-in-2026-11-18.md) records the
+subsequent home-scoping decision, implementation and verification.
+
 The personal installer uses the existing enrollment path and a 15-minute code.
 It copies a platform-matched binary supplied by the person and starts a user
 service with the configured image. It consumes the code through stdin and
