@@ -214,6 +214,10 @@ impl Device {
 
     /// Answers a `setup/start` reply like `navigator.credentials.create`.
     pub fn create(&mut self, start: &Res) -> Value {
+        self.create_at(ORIGIN, start)
+    }
+
+    pub fn create_at(&mut self, origin: &str, start: &Res) -> Value {
         let mut opts = start.body["options"].clone();
         let sel = &mut opts["publicKey"]["authenticatorSelection"];
         assert_eq!(
@@ -233,7 +237,7 @@ impl Device {
         );
         let cred = self
             .key
-            .do_registration(Url::parse(ORIGIN).unwrap(), ccr)
+            .do_registration(Url::parse(origin).unwrap(), ccr)
             .unwrap();
         let v = serde_json::to_value(&cred).unwrap();
         self.cred_id = Some(v["rawId"].as_str().unwrap().to_owned());
@@ -244,13 +248,17 @@ impl Device {
     /// software key can't discover its own credentials, so the test tells it
     /// which one to use and adds the user handle a real passkey would send.
     pub fn sign(&mut self, start: &Res) -> Value {
+        self.sign_at(ORIGIN, start)
+    }
+
+    pub fn sign_at(&mut self, origin: &str, start: &Res) -> Value {
         let mut opts = start.body["options"].clone();
         opts["publicKey"]["allowCredentials"] =
             json!([{ "type": "public-key", "id": self.cred_id.clone().unwrap() }]);
         let rcr: RequestChallengeResponse = serde_json::from_value(opts).unwrap();
         let cred = self
             .key
-            .do_authentication(Url::parse(ORIGIN).unwrap(), rcr)
+            .do_authentication(Url::parse(origin).unwrap(), rcr)
             .unwrap();
         let mut v = serde_json::to_value(&cred).unwrap();
         v["response"]["userHandle"] = json!(self.user.clone().unwrap());

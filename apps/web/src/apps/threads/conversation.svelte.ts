@@ -38,6 +38,17 @@ function carry(m: Message, t: Turn): Message {
   return { ...m, blocks, by: { ...t.by, ...(m.by ?? {}), ms: m.by?.ms ?? ms } };
 }
 
+/** The last messages of threads that were open, for the row press's preview (no fetch on a press: what was read is what it shows). At most `RECENT_THREADS` threads, `RECENT_MESSAGES` each, the oldest threads dropped first. */
+export const RECENT_THREADS = 40, RECENT_MESSAGES = 4;
+export const recent = new Map<string, Message[]>();
+function noteRecent(id: string, count: number, at: (i: number) => Message | undefined): void {
+  const last: Message[] = [];
+  for (let i = Math.max(0, count - RECENT_MESSAGES); i < count; i++) { const m = at(i); if (!m) return; last.push(m); }
+  if (!last.length) return;
+  recent.delete(id); recent.set(id, last);
+  if (recent.size > RECENT_THREADS) recent.delete(recent.keys().next().value!);
+}
+
 /** One open thread. Call `dispose` when leaving it. */
 export class Conversation {
   /** Messages in the file, not counting a message still streaming. */
@@ -105,6 +116,7 @@ export class Conversation {
       this.loading.add(p);
       void this.client.messages(this.id, p * PAGE, (p + 1) * PAGE).then((ms) => {
         ms.forEach((m, k) => this.cache.set(p * PAGE + k, m));
+        noteRecent(this.id, this.count, (i) => this.cache.get(i));
         this.rev++;
       });
     }

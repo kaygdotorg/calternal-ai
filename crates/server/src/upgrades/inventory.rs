@@ -134,6 +134,7 @@ fn databases(appdata: &Path) -> io::Result<Vec<Database>> {
     };
     for (relative, schema) in [
         ("system/auth.db", calternal_auth::db::MIGRATIONS),
+        ("system/appearance.db", crate::api::appearance::SCHEMA),
         ("system/machines.db", machines::db::upgrade_schema()),
         ("system/content-index.db", calternal_content::ROUTE_SCHEMA),
         (
@@ -149,6 +150,7 @@ fn databases(appdata: &Path) -> io::Result<Vec<Database>> {
             [
                 Some(("content.db", calternal_content::SPACE_SCHEMA)),
                 Some(("index.db", calternal_store::JOURNAL_SCHEMA)),
+                Some(("network.db", plugins::network::db::SCHEMA)),
                 Some(("jobs.db", plugins::jobs::upgrade_schema())),
                 None,
                 Some(("secrets.db", calternal_secrets::OWNER_SCHEMA)),
@@ -159,6 +161,7 @@ fn databases(appdata: &Path) -> io::Result<Vec<Database>> {
             [
                 Some(("content.db", calternal_content::ACCOUNT_SCHEMA)),
                 Some(("input.db", account_input::UPGRADE_SCHEMA)),
+                None,
                 Some(("agent-settings.db", plugins::AGENT_SETTINGS_SCHEMA)),
                 Some(("onboarding.db", crate::onboarding::SCHEMA)),
                 Some(("secrets.db", calternal_secrets::OWNER_SCHEMA)),
