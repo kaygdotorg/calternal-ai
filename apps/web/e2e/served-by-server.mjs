@@ -14,7 +14,7 @@ const srv = spawn(BIN, ["serve", "--create", "--installation-id", crypto.randomU
 const stop = () => { srv.kill(); rmSync(data, { recursive: true, force: true }); };
 process.on("exit", stop);
 let bad = 0; const ok = (c, m, note = "") => { console.log(`${c ? "PASS" : "FAIL"}  ${m}${note ? "  " + note : ""}`); if (!c) bad++; };
-const url = `http://127.0.0.1:${PORT}`;
+const url = `http://localhost:${PORT}`; // the server checks Host against its own address: localhost, not 127.0.0.1
 for (let i = 0; i < 120; i++) { try { if ((await fetch(`${url}/api/v1/auth/status`)).ok) break; } catch { /* not yet */ } await new Promise((r) => setTimeout(r, 250)); }
 const b = await chromium.launch();
 for (const scheme of ["light", "dark"]) for (const [name, path] of [["fixtures", "/?server=0"], ["deep link", "/threads/t-run?server=0"], ["sign-in", "/?server=1"]]) {
