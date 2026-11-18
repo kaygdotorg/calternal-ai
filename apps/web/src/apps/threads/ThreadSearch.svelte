@@ -48,8 +48,8 @@
   }
 </script>
 
-<Sheet open={messageSearch.open} label="Search messages" onclose={() => close(true)} side={shell.narrow ? "bottom" : "top"} wide={!shell.narrow}>
-  <div class="in">
+<Sheet open={messageSearch.open} label="Search messages" onclose={() => close(true)} side="top" wide={!shell.narrow}>
+  <div class="in" class:phone={shell.narrow}>
     <div class="field">
       <Icon inline name="search" />
       <InlineEditor class="msg-search-input" label="Search messages in every thread" bind:value={text} placeholder="Search messages…" autoselect onsubmit={() => open(hits[sel])} onkeydown={key} />
@@ -75,6 +75,8 @@
   .field { display: flex; align-items: center; gap: var(--s-4); min-height: var(--pill-h); padding: 0 var(--s-6); border-radius: var(--r-pill); background: rgb(var(--ink-rgb) / 0.08); color: var(--ink-3); }
   :global(.msg-search-input) { position: relative; width: 100%; height: var(--pill-h); }
   .none { padding: 0 var(--s-4); font-size: var(--text-label); color: var(--ink-3); }
+  /* On a phone the keyboard covers the lower half: the panel is anchored to the top (a bottom sheet would sit behind the keyboard) and the list fits above it. */
+  .phone ul { max-height: 36dvh; }
   ul { display: grid; gap: var(--s-1); max-height: min(60vh, 28rem); overflow-y: auto; scrollbar-width: none; }
   li { display: grid; gap: 2px; padding: var(--s-3) var(--s-5); border-radius: var(--r-select); cursor: pointer; min-width: 0; }
   li.on { background: var(--accent-soft); }
