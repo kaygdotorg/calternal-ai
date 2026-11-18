@@ -11,5 +11,5 @@ const make = async (file, size, maskable = false) => {
   await p.screenshot({ path: `public/icons/${file}`, omitBackground: !maskable });
   await p.close();
 };
-await make("icon-192.png", 192); await make("icon-512.png", 512); await make("maskable-512.png", 512, true); await make("apple-touch-icon.png", 180);
+await make("icon-192.png", 192); await make("icon-512.png", 512); await make("maskable-512.png", 512, true); await make("apple-touch-icon.png", 180, true); // Apple rounds it itself: full bleed, no transparent corners
 await b.close();
