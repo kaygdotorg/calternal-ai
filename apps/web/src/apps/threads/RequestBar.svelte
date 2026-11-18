@@ -102,7 +102,7 @@
 {/if}
 
 <style>
-  :global(.bar) { color: var(--ink); max-height: min(26rem, 52dvh); overflow: auto; flex: 0 1 auto; }
+  :global(.bar) { color: var(--ink); max-height: min(26rem, 52dvh, 60cqh); overflow: auto; flex: 0 1 auto; }
   :global(.bar[data-kind="approval"]), :global(.bar[data-kind="secret"]), :global(.bar[data-kind="signin"]) { box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--accent-base) 38%, transparent); }
   .head { display: flex; align-items: center; gap: var(--s-4); padding: var(--s-2) var(--s-2) 0 var(--s-6); }
   .kind { flex: 1; display: inline-flex; align-items: center; gap: var(--s-3); font-size: var(--text-label); font-weight: var(--strong-weight); color: var(--ink-2); }

@@ -68,7 +68,8 @@
   .col { display: grid; gap: var(--s-1); max-width: 82%; }
   .col.end { justify-items: end; }
   .col .bubble { max-width: none; }
-  .agent { display: grid; gap: var(--s-5); min-width: 0; width: 100%; }
+  /* One column that can shrink below its content (`minmax(0, 1fr)`): an `auto` track grew to the widest child (a code line, a long word) and pushed the steps and text past the right edge on a narrow screen. */
+  .agent { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s-5); min-width: 0; width: 100%; }
   .file { display: inline-flex; align-items: center; gap: var(--s-3); margin-bottom: var(--s-2); padding: var(--s-1) var(--s-4); border-radius: var(--r-pill); background: rgb(var(--ink-rgb) / 0.08); font-size: var(--text-label); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .child { display: inline-flex; align-items: center; gap: var(--s-4); padding: var(--s-3) var(--s-5); border-radius: var(--r-pill); background: var(--accent-soft); color: var(--accent); font-size: var(--text-label); font-weight: var(--strong-weight); justify-self: start; }
   .child small { color: var(--ink-3); font-weight: var(--ui-weight); }

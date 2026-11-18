@@ -25,7 +25,7 @@
   .msg { width: 100%; max-width: var(--msg-w); margin: 0 auto; padding: var(--s-4) var(--msg-pad-r, var(--pad-region)) var(--s-4) var(--msg-pad-l, var(--pad-region)); display: grid; grid-template-columns: var(--s-8) minmax(0, 1fr); column-gap: var(--s-4); }
   /* The mark sits in a line of the message's own font and line height, so its centre is the first line's x-height centre at every text size and zoom (ProviderMark.svelte). */
   .lead { font-size: var(--text-ui); line-height: 1.55; font-weight: var(--body-weight); }
-  .agent { display: grid; gap: var(--s-5); min-width: 0; }
+  .agent { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s-5); min-width: 0; }
   .working { display: flex; align-items: baseline; gap: var(--s-3); color: var(--ink-3); font-size: var(--text-ui); min-height: var(--s-9); }
   .word { font-weight: var(--strong-weight); color: var(--ink-2); }
   .phase { font-size: var(--text-label); }

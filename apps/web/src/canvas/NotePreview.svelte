@@ -21,7 +21,7 @@
 </div>
 
 <style>
-  .np { height: 100%; overflow: auto; padding: var(--s-6) var(--s-7); font-size: var(--text-ui); }
+  .np { height: 100%; overflow: auto; padding: calc(var(--pill-h) + var(--s-8)) var(--s-7) var(--s-6); font-size: var(--text-ui); }
   .q, .hint { color: var(--ink-3); font-size: var(--text-label); }
   .hint { margin-top: var(--s-6); }
 </style>

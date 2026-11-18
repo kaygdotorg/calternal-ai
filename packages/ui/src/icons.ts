@@ -54,6 +54,8 @@ export const ICONS = {
   archive: "M4 4h16a1 1 0 0 1 1 1v3H3V5a1 1 0 0 1 1-1zM4.5 8v11a1 1 0 0 0 1 1h13a1 1 0 0 0 1-1V8M10 12.5h4",
   image: "M5 4h14a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1zM4 16l5-5 4 4 2-2 5 5M15 8.5a1 1 0 1 0 0 .01",
   rail: "M5 6h10M5 12h14M5 18h8",
+  expand: "M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5",
+  restore: "M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5",
   codex: "M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3zM9 10l2.5 2L9 14M13.5 14.5H16",
   claude: "M12 3v18M3 12h18M5.6 5.6l12.8 12.8M18.4 5.6L5.6 18.4",
   quote: "M6 6v12M10 8h9M10 12h9M10 16h6",

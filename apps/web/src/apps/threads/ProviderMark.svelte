@@ -47,7 +47,7 @@
 <button type="button" class="mark" aria-label={label} aria-describedby={open ? `mc-${by?.model ?? id}` : undefined} bind:this={btn}
   onpointerenter={(e) => { if (e.pointerType !== "touch") show(); }} onpointerleave={() => hide(120)}
   onfocus={(e) => { if ((e.currentTarget as HTMLElement).matches(":focus-visible")) show(true); }} onblur={() => hide()}
-  onclick={(e) => { if ((e as PointerEvent).pointerType === "touch" || (e as PointerEvent).detail === 0) { open ? hide() : show(true); } }}><Icon name={icon} inline /></button>
+  onclick={(e) => { const ev = e as unknown as PointerEvent; if (ev.pointerType === "touch" || ev.detail === 0) { open ? hide() : show(true); } }}><Icon name={icon} inline /></button>
 
 {#if open}
   <div class="host" use:toBody onpointerenter={() => clearTimeout(timer)} onpointerleave={() => hide(120)} role="tooltip" id="mc-{by?.model ?? id}">
