@@ -20,11 +20,13 @@ interceptLinks();
 // for more than two seconds, after which the app paints with whatever has arrived (still only the app's own families).
 void appearance.start();
 // The real server's start-up checks (server/boot.ts) begin at once, in parallel with the fonts, so their chunk and their requests are not queued behind the two-second font wait; fixtures never load any of it.
-const boot = serverMode() ? import("./server/boot").then((m) => ({ m, s: m.start() })) : null;
+// A guest link (`/s/<secret>`) is its own page, before and without any sign-in: the start-up checks (and their clean-up of other installations' leftovers) do not run for it, so nothing can reload or wipe the visit.
+const guestPage = /^\/s\//.test(location.pathname.slice(import.meta.env.BASE_URL.replace(/\/$/, "").length));
+const boot = serverMode() && !guestPage ? import("./server/boot").then((m) => ({ m, s: m.start() })) : null;
 Promise.race([loadFonts(currentScheme()).catch(() => {}), new Promise((r) => setTimeout(r, 2000))]).then(async () => {
   const target = document.getElementById("app")!;
   // A link someone shared (`/s/<secret>`) is the guest page: only that item, read-only, before and without any sign-in.
-  if (/^\/s\//.test(location.pathname.slice(import.meta.env.BASE_URL.replace(/\/$/, "").length))) {
+  if (guestPage) {
     const { default: Guest } = await import("./guest/Guest.svelte");
     mount(Guest, { target }); document.documentElement.dataset.ready = ""; return;
   }
