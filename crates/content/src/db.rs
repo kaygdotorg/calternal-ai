@@ -58,6 +58,19 @@ const SPACE_BASE: &str = "
             CREATE TABLE IF NOT EXISTS controls(key TEXT PRIMARY KEY,value TEXT NOT NULL) STRICT;
             CREATE UNIQUE INDEX IF NOT EXISTS standard_collections ON items(json_extract(metadata,'$.item_kind'),json_extract(metadata,'$.standard_key')) WHERE kind='collections' AND json_extract(metadata,'$.standard_key') IS NOT NULL;
 ";
+const THREAD_SNOOZE: &str = "
+        CREATE TRIGGER thread_snooze_insert BEFORE INSERT ON items
+        WHEN NEW.kind='threads' AND json_type(NEW.metadata,'$.snoozed_until_ms') IS NOT NULL
+             AND (json_type(NEW.metadata,'$.snoozed_until_ms') != 'integer'
+               OR json_extract(NEW.metadata,'$.snoozed_until_ms') NOT BETWEEN 1 AND 253402300799999)
+        BEGIN SELECT RAISE(ABORT, 'invalid thread snooze timestamp'); END;
+        CREATE TRIGGER thread_snooze_update BEFORE UPDATE OF metadata ON items
+        WHEN NEW.kind='threads' AND json_type(NEW.metadata,'$.snoozed_until_ms') IS NOT NULL
+             AND (json_type(NEW.metadata,'$.snoozed_until_ms') != 'integer'
+               OR json_extract(NEW.metadata,'$.snoozed_until_ms') NOT BETWEEN 1 AND 253402300799999)
+        BEGIN SELECT RAISE(ABORT, 'invalid thread snooze timestamp'); END;
+";
+
 pub(crate) const SPACE_SCHEMA: calternal_store::migrations::Schema<'_> =
     calternal_store::migrations::Schema::new(
         "space content.db",
@@ -67,7 +80,7 @@ pub(crate) const SPACE_SCHEMA: calternal_store::migrations::Schema<'_> =
             crate::linked_write::SCHEMA,
             crate::trash::SCHEMA,
         ],
-        &[],
+        &[THREAD_SNOOZE],
     );
 
 pub(crate) fn database(
@@ -232,4 +245,88 @@ pub(crate) fn bookkeeping(conn: &Connection, run: impl FnOnce() -> Result<()>) -
         .pragma_update(None, "synchronous", "FULL")
         .map_err(internal);
     restored.and(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use calternal_store::migrations::{Schema, migrate_release};
+
+    #[test]
+    fn baseline_threads_survive_the_snooze_migration_and_rollback_writer() {
+        let conn = Connection::open_in_memory().unwrap();
+        let previous = Schema::new(
+            "space content.db",
+            3,
+            &[
+                SPACE_BASE,
+                crate::linked_write::SCHEMA,
+                crate::trash::SCHEMA,
+            ],
+            &[],
+        );
+        migrate_release(&conn, previous, false).unwrap();
+        conn.execute_batch(
+            "INSERT INTO items VALUES ('thread','threads','{\"title\":\"Existing\"}', 'v1',1,'now','thread.md','thread.md',NULL,'current',NULL);
+             INSERT INTO versions VALUES ('thread',1,'v1','{\"title\":\"Existing\"}',X'41','now','owner');",
+        )
+        .unwrap();
+
+        conn.execute_batch(
+            "CREATE TRIGGER thread_snooze_update BEFORE UPDATE ON items BEGIN SELECT 1; END;",
+        )
+        .unwrap();
+        assert!(migrate_release(&conn, SPACE_SCHEMA, true).is_err());
+        assert_eq!(
+            calternal_store::migrations::inspect(&conn, previous).unwrap(),
+            3
+        );
+        let inserted_trigger: bool = conn
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM sqlite_schema WHERE name='thread_snooze_insert')",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert!(!inserted_trigger);
+        conn.execute_batch("DROP TRIGGER thread_snooze_update;")
+            .unwrap();
+
+        migrate_release(&conn, SPACE_SCHEMA, true).unwrap();
+        let original: Vec<u8> = conn
+            .query_row("SELECT bytes FROM versions WHERE revision='v1'", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(original, b"A");
+        assert!(
+            conn.execute(
+                "UPDATE items SET metadata=json_set(metadata,'$.snoozed_until_ms','invalid')",
+                []
+            )
+            .is_err()
+        );
+        assert_eq!(
+            calternal_store::migrations::inspect(&conn, previous).unwrap(),
+            4
+        );
+        conn.execute(
+            "UPDATE items SET metadata=json_set(metadata,'$.snoozed_until_ms',5000)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "UPDATE items SET metadata=json_set(metadata,'$.title','Renamed')",
+            [],
+        )
+        .unwrap();
+        let deadline: i64 = conn
+            .query_row(
+                "SELECT json_extract(metadata,'$.snoozed_until_ms') FROM items",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(deadline, 5000);
+    }
 }

@@ -135,7 +135,7 @@ export class FixtureClient implements ThreadsClient {
   async getThread(threadId: string): Promise<ThreadSummary | undefined> {
     return this.threadList.find((t) => t.id === threadId);
   }
-  async createThread(title: string, o: { provider?: ThreadSummary["provider"]; parentId?: string } = {}): Promise<ThreadSummary> {
+  async createThread(title = "New thread", o: { provider?: ThreadSummary["provider"]; parentId?: string } = {}): Promise<ThreadSummary> {
     const t: ThreadSummary = { id: `t-new-${this.threadList.length}`, spaceId: FIXTURE_SPACES[0]!.id, title, parentId: o.parentId ?? null, state: "idle", workspace: "calternal-ai", updatedAt: Date.now(), provider: o.provider ?? "claude", model: "sonnet-5-5", permission: "approve", runsOn: { machine: "Automatic", mode: "sandboxed" }, messageCount: 0 };
     this.threadList = [t, ...this.threadList];
     for (const w of this.threadWatchers) w(this.threadList);

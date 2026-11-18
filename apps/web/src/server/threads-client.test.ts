@@ -303,6 +303,30 @@ describe("ServerThreads", () => {
     expect(d.calls.find((c) => c.operation === "threads.create")!.input).toEqual({ space_id: SPACE, title: "Plan", provider: "calternal-claude-code", parent_thread: T2 });
     expect(t.id).toBe(T1);
   });
+  test("create preserves the difference between an untitled thread and a typed default title", async () => {
+    const d = double({ "threads.create": () => thread([]) });
+    await d.client.createThread();
+    await d.client.createThread("New thread");
+    expect(d.ops("threads.create").map(({ input }) => input)).toEqual([
+      { space_id: SPACE }, { space_id: SPACE, title: "New thread" },
+    ]);
+  });
+  test("snooze sends the shared deadline and the list carries it into the Inbox", async () => {
+    let deadline: number | null = null;
+    const d = double({
+      "threads.snooze": ({ until_ms }) => {
+        deadline = until_ms;
+        return { id: T1, snoozed_until_ms: deadline };
+      },
+      "threads.list": () => ({ threads: [row(T1, "failed", deadline === null ? {} : { snoozed_until_ms: deadline })] }),
+    });
+    const until = Date.now() + 60_000;
+    await d.client.snooze(T1, until);
+    expect(d.ops("threads.snooze")[0]!.input).toEqual({ id: T1, space_id: SPACE, until_ms: until });
+    expect((await d.client.listThreads())[0]!.snoozedUntil).toBe(until);
+    await d.client.snooze(T1, null);
+    expect((await d.client.listThreads())[0]!.snoozedUntil).toBeUndefined();
+  });
   test("what the server cannot do says so", async () => {
     const d = double({});
     expect(await d.client.machines()).toEqual([]);

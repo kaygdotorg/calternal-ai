@@ -8,7 +8,7 @@ use std::path::Path;
 use std::time::Duration;
 
 use crate::identity::{Credentials, MachineKey};
-use crate::link::Link;
+use crate::link::{ConnectAddress, Link};
 use crate::protocol::{EnrolRequest, EnrolResponse};
 use crate::{Error, Result};
 
@@ -23,6 +23,17 @@ pub async fn enroll(
     name: &str,
     direct: bool,
 ) -> Result<Credentials> {
+    enroll_at(server, code, dir, name, direct, None).await
+}
+
+pub(crate) async fn enroll_at(
+    server: &str,
+    code: &str,
+    dir: &Path,
+    name: &str,
+    direct: bool,
+    address: Option<&ConnectAddress>,
+) -> Result<Credentials> {
     if Credentials::path(dir).exists() {
         return Err(Error::Protocol(format!(
             "already enrolled: {} exists",
@@ -30,7 +41,7 @@ pub async fn enroll(
         )));
     }
     let key = MachineKey::generate()?;
-    let link = Link::new(server)?;
+    let link = Link::with_connect_address(server, address)?;
     let req = EnrolRequest {
         code: code.trim().to_owned(),
         public_key: key.public_key_b64(),

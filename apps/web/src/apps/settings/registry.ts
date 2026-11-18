@@ -56,7 +56,7 @@ export interface Setting {
 /** A card of rows with an optional header; `danger` puts it last, under the Danger area header. */
 export interface Group { title?: string; settings: Setting[]; danger?: boolean }
 /** One Settings page: its address id (`/settings/<id>`), sidebar name and icon, a one-line purpose, and its groups. */
-export interface Page { id: string; name: string; icon: IconName; blurb: string; groups: Group[]; /** Show the groups as sections: a list beside the selected section where the card is wide, the list then the section (drill-in) where it is narrow. Every group needs a title. */ split?: boolean }
+export interface Page { id: string; name: string; icon: IconName; blurb: string; groups: Group[] }
 /** A sidebar section: `user` (this person), `space` (the current space) or `server` (Admin). Which sections and pages exist depends on the source and the capabilities, so read them through `visibleSections`. */
 export interface Section { id: "user" | "space" | "server"; name: string; pages: Page[] }
 
@@ -71,7 +71,7 @@ const signOutAction = (): void => {
 const confirmLater = (what: string) => () => alert(`${what}\n\nThis is a fixture: nothing is changed. The real action asks for confirmation (and a passkey when it changes access).`);
 
 const appearancePage: Page = {
-  id: "appearance", name: "Appearance", icon: "image", blurb: "How the app looks. Everything applies at once.", split: true,
+  id: "appearance", name: "Appearance", icon: "image", blurb: "How the app looks. Everything applies at once.",
   groups: [
     { title: "Colour", settings: [
       { id: "appearance.scheme", label: "Colour scheme", help: "Auto follows the system.", control: { type: "scheme" }, get: () => A.scheme, set: (v) => A.setScheme(v as never) },
@@ -95,8 +95,8 @@ const appearancePage: Page = {
       { id: "appearance.wordmark", label: "Name", help: "The name at the top of the sidebar.", control: { type: "text", placeholder: "Calternal" }, get: () => A.prefs.brand, set: (v) => ap((p) => (p.brand = String(v).slice(0, 24))) },
       { id: "appearance.wordmark-font", label: "Font", help: "The wordmark's own typeface.", control: { type: "custom", load: () => import("../../appearance/FontsWordmark.svelte") } },
     ] },
-    { title: "Chat", settings: [
-      { id: "appearance.chat-width", label: "Layout", help: "Wide: messages and the composer use the whole card, yours on the right, the agent's from the left. Centred: a readable column.", control: { type: "segmented", options: [{ id: "wide", label: "Wide" }, { id: "centered", label: "Centred" }] }, get: () => A.prefs.chatWidth, set: (v) => ap((p) => (p.chatWidth = v === "centered" ? "centered" : "wide")) },
+    { title: "Layout", settings: [
+      { id: "appearance.chat-width", label: "Width", help: "One choice for every page: Wide (the default on a desktop) uses the whole card, for chat and for Settings, with descriptions kept to a readable line; Centred keeps a readable column.", control: { type: "segmented", options: [{ id: "wide", label: "Wide" }, { id: "centered", label: "Centred" }] }, get: () => A.prefs.chatWidth, set: (v) => ap((p) => (p.chatWidth = v === "centered" ? "centered" : "wide")) },
     ] },
     { title: "Windows", settings: [
       { id: "appearance.window-look", label: "Window look", help: "How every window on the canvas looks: the middle card as it is, a transparent card, or a solid one.", control: { type: "segmented", options: LOOKS.map((l) => ({ id: l.value, label: l.label })) }, get: () => canvasPrefs.look, set: (v) => canvasPrefs.setLook(v as Look) },
