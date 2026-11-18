@@ -339,6 +339,23 @@ pub(super) async fn run_admitted_operation<D: Directory>(
         }
         return Ok(value);
     }
+    if calternal_core::automation_operation(op).is_some() {
+        let space = policy.scope_space(&input)?;
+        let result = crate::automations::dispatch(
+            state.clone(),
+            p.clone(),
+            session,
+            actor,
+            request_id,
+            op,
+            input,
+        )
+        .await?;
+        if let Some(space) = space {
+            policy.check(super::authorization::capabilities(&state, p.id, space).await?)?;
+        }
+        return Ok(result);
+    }
     let delivery_space = input
         .get("space_id")
         .and_then(Value::as_str)

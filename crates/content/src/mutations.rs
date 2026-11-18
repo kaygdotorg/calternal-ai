@@ -231,6 +231,71 @@ impl Content {
             result,
             Destination::Current,
             None,
+            None,
+            None,
+            || Ok(()),
+        )
+    }
+
+    /// Create one item under a hard live-item cap checked within the space
+    /// writer lock. The count stops after the supplied bound using the kind
+    /// index. Commit, placement and replay follow the ordinary write path.
+    #[allow(clippy::too_many_arguments)]
+    pub fn create_bounded(
+        &self,
+        space: SpaceId,
+        kind: &str,
+        limit: u32,
+        metadata: Value,
+        bytes: &[u8],
+        request: Request<'_>,
+        result: impl FnOnce(&Item) -> Value,
+    ) -> Result<Item> {
+        self.write_placed(
+            space,
+            None,
+            kind,
+            None,
+            metadata,
+            bytes,
+            request,
+            result,
+            Destination::Current,
+            None,
+            Some(limit),
+            None,
+            || Ok(()),
+        )
+    }
+
+    /// Create an item with an identity reserved by a durable host outbox.
+    /// The ID is checked under the space writer lock before the normal write.
+    /// A previously committed identity cannot be allocated again, even after
+    /// the request receipt expires. Callers must supply a host-generated UUID.
+    #[allow(clippy::too_many_arguments)]
+    pub fn create_assigned(
+        &self,
+        space: SpaceId,
+        id: Uuid,
+        kind: &str,
+        metadata: Value,
+        bytes: &[u8],
+        request: Request<'_>,
+        result: impl FnOnce(&Item) -> Value,
+    ) -> Result<Item> {
+        self.write_placed(
+            space,
+            None,
+            kind,
+            None,
+            metadata,
+            bytes,
+            request,
+            result,
+            Destination::Current,
+            None,
+            None,
+            Some(id),
             || Ok(()),
         )
     }
@@ -266,6 +331,8 @@ impl Content {
             result,
             Destination::Trash,
             None,
+            None,
+            None,
             guard,
         )
     }
@@ -289,6 +356,8 @@ impl Content {
             request,
             result,
             Destination::Restore,
+            None,
+            None,
             None,
             || Ok(()),
         )
@@ -324,6 +393,8 @@ impl Content {
             result,
             Destination::Current,
             Some(&retarget),
+            None,
+            None,
             || Ok(()),
         )
     }
@@ -350,6 +421,8 @@ impl Content {
         result: impl FnOnce(&Item) -> Value,
         destination: Destination,
         retarget: Option<&Retarget<'_>>,
+        limit: Option<u32>,
+        assigned: Option<Uuid>,
         guard: impl FnOnce() -> Result<()>,
     ) -> Result<Item> {
         let _actor = self.lifecycle.step(request.account.as_uuid())?;
@@ -363,6 +436,16 @@ impl Content {
             // maximum; the lifecycle worker continues retrying durable intents.
             if s.pending_since.is_some_and(|at| at.elapsed() >= Duration::from_secs(1)) {
                 return Err(Error::unavailable("userdata materialization exceeded one second; check the SSD root and retry"));
+            }
+            if let Some(limit) = limit {
+                let count: u32 = s.conn.query_row(
+                    "SELECT COUNT(*) FROM (SELECT 1 FROM items WHERE kind=?1
+                        AND path NOT LIKE '.trash/%' AND mat_state NOT IN ('purged','purging') LIMIT ?2)",
+                    params![kind,limit], |row| row.get(0),
+                ).map_err(internal)?;
+                if count >= limit {
+                    return Err(Error::conflict("the space has reached its limit for this item kind"));
+                }
             }
             s.validate_bytes(kind,bytes)?;
             self.publish_pending(s)?;
@@ -395,7 +478,17 @@ impl Content {
                 let sha = s.check_header(id,&head)?;
                 let (seq,path) = (head.seq,head.path);
                 (id,seq+1,Some(path),sha)
-            }else{(Uuid::now_v7(),1,None,None)};
+            }else{
+                if let Some(id) = assigned {
+                    let exists: bool = s.conn.query_row(
+                        "SELECT EXISTS(SELECT 1 FROM items WHERE id=?1)", [id.to_string()], |row| row.get(0),
+                    ).map_err(internal)?;
+                    if exists {
+                        return Err(Error::conflict("item identity is already assigned"));
+                    }
+                }
+                (assigned.unwrap_or_else(Uuid::now_v7),1,None,None)
+            };
             #[cfg(feature = "perf-timings")]
             file_guard.finish();
             guard()?;

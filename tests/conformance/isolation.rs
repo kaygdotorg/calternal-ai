@@ -18,6 +18,7 @@ use webauthn_authenticator_rs::{WebauthnAuthenticator, softpasskey::SoftPasskey}
 use webauthn_rs::prelude::{CreationChallengeResponse, RequestChallengeResponse};
 
 mod agent_cases;
+mod automation_cases;
 /// Plugin job cases: streams, restart, cancellation, sign-out and space isolation.
 #[path = "jobs_cases.rs"]
 mod jobs_cases;

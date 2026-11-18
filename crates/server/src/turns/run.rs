@@ -124,6 +124,14 @@ async fn execute<D: Directory>(
         .map_err(|_| Error::internal("invalid turn input"))?;
     let account = job.account;
     let space = SpaceId::parse(&job.space).map_err(|_| Error::not_found("turn not found"))?;
+    if job.runs == 1 && job.input["thread_request"]["automation_run"].is_object() {
+        let (state, job) = (state.clone(), job.clone());
+        if !blocking(move || crate::automations::scheduling::check_launch(&state, &job, space))
+            .await?
+        {
+            return Ok(RunEnd::Failed);
+        }
+    }
     let check = job.input["check"] == true;
     let verify = job.input["verify"] == true;
     let thread = Uuid::parse_str(if check { &job.id } else { &i.thread_id })

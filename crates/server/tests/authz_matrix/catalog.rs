@@ -128,6 +128,41 @@ async fn every_registered_operation_has_an_independent_matrix_row() {
         );
         assert!(!declaration.mutates, "{id}");
     }
+    for id in [
+        "skills.read",
+        "skills.create",
+        "skills.update",
+        "skills.remove",
+        "automations.preview_schedule",
+        "automations.list",
+        "automations.read",
+        "automations.create",
+        "automations.update",
+        "automations.enable",
+        "automations.pause",
+        "automations.remove",
+        "automations.run_now",
+        "automations.next_run",
+        "automations.last_run",
+    ] {
+        assert!(
+            stored_rows.insert(id),
+            "duplicate automation operation {id}"
+        );
+        let catalog = fixture.state.registry.snapshot();
+        let policy = catalog.policy(id).unwrap();
+        assert_eq!(policy.scope, Scope::Space, "{id}");
+        let expected = match id {
+            "skills.read"
+            | "automations.preview_schedule"
+            | "automations.list"
+            | "automations.read"
+            | "automations.next_run"
+            | "automations.last_run" => Capability::SpaceRead,
+            _ => Capability::ContentWrite,
+        };
+        assert_eq!(policy.required, expected, "{id}");
+    }
     let rows: BTreeSet<_> = rows.union(&stored_rows).copied().collect();
     assert_eq!(
         rows.iter()
@@ -182,6 +217,11 @@ async fn every_registered_operation_has_an_independent_matrix_row() {
                 .iter()
                 .map(|op| op.id().to_owned()),
         )
+        .chain(
+            calternal_core::AUTOMATION_OPERATIONS
+                .iter()
+                .map(|op| op.id.to_owned()),
+        )
         .chain(plugin_rows.iter().map(|p| (*p).to_owned()))
         .collect();
     assert_eq!(
@@ -198,6 +238,7 @@ async fn every_registered_operation_has_an_independent_matrix_row() {
             + calternal_server::authz::people_policies().len()
             + calternal_core::NOTE_OPERATIONS.len()
             + calternal_core::SearchOperation::ALL.len()
+            + calternal_core::AUTOMATION_OPERATIONS.len()
             + plugin_rows.len(),
         MATRIX.len() + stored_rows.len(),
         "duplicate policy"

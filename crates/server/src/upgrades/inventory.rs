@@ -130,6 +130,10 @@ fn databases(appdata: &Path) -> io::Result<Vec<Database>> {
     for (relative, schema) in [
         ("system/auth.db", calternal_auth::db::MIGRATIONS),
         ("system/machines.db", machines::db::upgrade_schema()),
+        (
+            crate::automations::scheduling::PATH,
+            crate::automations::scheduling::SCHEMA,
+        ),
         ("system/content-index.db", calternal_content::ROUTE_SCHEMA),
         (
             "installed-plugins.sqlite3",

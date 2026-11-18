@@ -499,6 +499,7 @@ async fn serve(
     calternal_server::turns::retry::recover(&state, &machines)
         .await
         .map_err(|e| boot(1, "failed", e.message, DATA_HINT))?;
+    api::configure_automations(&state);
     let _notes_retention = state.store.start_notes_retention().map_err(|e| {
         boot(
             2,

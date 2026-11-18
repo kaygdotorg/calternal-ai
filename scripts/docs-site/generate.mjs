@@ -52,6 +52,7 @@ function section(text, heading) {
 const copies = {
   'dev/plugin-api': ['Plugin API decisions', 'docs/plugin-api.md'],
   'dev/provider-protocol': ['Provider adapter protocol', 'docs/provider-protocol.md'],
+  'user/automations': ['Skills and automations', 'docs/automations.md'],
   'user/people': ['People and access', 'docs/people.md'],
   'user/owner-erasure': ['Owner erasure', 'docs/owner-erasure.md'],
   'dev/addresses': ['Addresses', 'docs/addresses.md'],
@@ -137,7 +138,7 @@ const savedThreads = await read('docs/threads.md');
 page('user/threads', 'Threads', ['docs/threads.md', 'docs/orchestrator-proposal.md'],
   '## Client reads and live updates\n' + section(savedThreads, 'Client reads and live updates')
     .replace('[machine and provider readiness](agent-turns.md#machine-and-provider-readiness)', 'the machine and provider readiness reference') +
-  '\n## CLI\n' + section(savedThreads, 'CLI') +
+  '\n## CLI\n' + links(section(savedThreads, 'CLI'), 'docs/threads.md') +
   '\n## Snoozing the Inbox\n' + section(savedThreads, 'Snoozing the Inbox') +
   '\n## Automatic thread title\n' + section(savedThreads, 'Automatic thread title')
     .replace('[Claude Code model configuration] [Claude Code managed settings]', '') +
@@ -207,7 +208,7 @@ for (const pkg of ['plugin-sdk', 'genui']) {
 }
 await rm(scratch, { recursive: true, force: true });
 for (const [id, title, body] of [
-  ['user/index', 'Using Calternal', '- [Spaces and roles](./spaces-and-roles/)\n- [People and access](./people/)\n- [Owner erasure](./owner-erasure/)\n- [Threads](./threads/)\n- [Permission modes](./permissions-modes/)'],
+  ['user/index', 'Using Calternal', '- [Spaces and roles](./spaces-and-roles/)\n- [People and access](./people/)\n- [Owner erasure](./owner-erasure/)\n- [Threads](./threads/)\n- [Skills and automations](./automations/)\n- [Permission modes](./permissions-modes/)'],
   ['admin/index', 'Administration', '- [CLI conventions](./cli/)\n- [Commands](./commands/)\n- [Storage](./storage/)\n- [Machines](./machines/)\n- [Secrets](./secrets/)\n- [Recovery and backups](./recovery/)'],
   ['dev/index', 'Developer reference', '- [Operations](./operations/)\n- [Notes operations](./notes-operations/)\n- [Search and palette lookups](./search/)\n- [Manifest schema](./manifest/)\n- [Provider adapter protocol](./provider-protocol/)\n- [Plugin SDK](./typescript/plugin-sdk/)\n- [GenUI API](./typescript/genui/)\n- [Rust crates](./crates/)\n- [Plugin decisions](./plugin-api/)\n- [Addresses](./addresses/)\n- [Agent instructions](./agent-instructions/)\n- [Composer](./composer/)\n- [Glossary](./glossary/)'],
   ['index', 'Calternal documentation', `[User guide](${base}user/) · [Administration](${base}admin/) · [Developer reference](${base}dev/)\n\nGenerated from repository contracts, command fixtures and API comments. Each page includes a source-file comment. Append \`.md\` to a page address for its Markdown source (both \`page.md\` and \`page/.md\` are emitted).\n\n[LLM index](${base}llms.txt) · [Complete Markdown documentation](${base}llms-full.txt)`],

@@ -31,7 +31,7 @@ fn hash(path: &Path) -> Result<Option<String>> {
 }
 pub(crate) fn validate_kind(kind: &str) -> Result<()> {
     if !kind.is_empty()
-        && kind.len() <= 64
+        && (kind.len() <= 64 || (kind.starts_with("skill-") && kind.len() <= 70))
         && kind
             .bytes()
             .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
@@ -89,6 +89,14 @@ fn folder(placement: &Placement, kind: &str) -> String {
         Placement::Hidden { plugin_id } => format!(".calternal/{plugin_id}/{kind}"),
     }
 }
+fn skill_bundle(placement: &Placement) -> bool {
+    matches!(
+        placement,
+        Placement::VisibleTree { folder, subdirectories }
+            if folder == "AI" && subdirectories.len() == 2 && subdirectories[0] == "Skills"
+    )
+}
+
 const MARKDOWN_FORMAT: &str = "format: calternal-note/v1\n";
 
 pub(crate) fn encoded(item: &Item, format: &FileFormat) -> Result<Vec<u8>> {
@@ -154,7 +162,10 @@ impl Space {
     }
     /// UUID names avoid Trash collisions; placement remains the existing guarded move.
     pub(crate) fn trash_path(&self, kind: &str, id: Uuid) -> Result<String> {
-        let (_, format) = self.registration(kind)?;
+        let (placement, format) = self.registration(kind)?;
+        if skill_bundle(&placement) {
+            return Ok(format!(".trash/skill-{id}/SKILL.md"));
+        }
         let extension = match format {
             FileFormat::Markdown => "md".to_owned(),
             FileFormat::Opaque { extension } => extension,
@@ -201,6 +212,17 @@ impl Space {
             let (parent, name) = path.rsplit_once('/')?;
             (parent == folder && name.ends_with(&suffix)).then_some(name.to_owned())
         };
+        // A portable skill bundle has a fixed entry point. A competing
+        // SKILL.md belongs to the directory's existing owner.
+        if skill_bundle(&placement) {
+            let path = format!("{folder}/SKILL.md");
+            if taken("skill.md")? {
+                return Err(Error::conflict(
+                    "this skill directory already contains SKILL.md",
+                ));
+            }
+            return Ok(path);
+        }
         // Keep a collision suffix once assigned. A later save must not quietly
         // change a readable path merely because an earlier filename was freed.
         if let Some(path) = current
@@ -327,15 +349,24 @@ impl Space {
             loaded = self.get(id)?;
             &loaded
         };
-        let (_, format) = self.registration(&item.kind)?;
+        let (placement, format) = self.registration(&item.kind)?;
         let bytes = encoded(item, &format)?;
         let new_hash = file_hash(&bytes);
         ensure_item_path(&path)?;
         let path = self.files.join(path);
         let dir = path.parent().ok_or_else(|| internal("parent"))?;
-        // Normally prepared by `choose_path`; recreate only if it vanished since.
-        if !fs::symlink_metadata(dir).is_ok_and(|metadata| metadata.is_dir()) {
-            calternal_fsio::private::directory(dir).map_err(internal)?;
+        let bundle_move = skill_bundle(&placement)
+            && old
+                .as_deref()
+                .is_some_and(|old| self.files.join(old).parent() != Some(dir));
+        // A bundle move claims the destination directory itself.
+        let prepare = if bundle_move {
+            dir.parent().ok_or_else(|| internal("parent"))?
+        } else {
+            dir
+        };
+        if !fs::symlink_metadata(prepare).is_ok_and(|metadata| metadata.is_dir()) {
+            calternal_fsio::private::directory(prepare).map_err(internal)?;
         }
         let result = (|| {
             let moved_from = old.as_deref();
@@ -343,10 +374,34 @@ impl Space {
             if let Some(old) = &old {
                 ensure_item_path(old)?;
                 let old = self.files.join(old);
+                if bundle_move {
+                    let source = old.parent().ok_or_else(|| internal("bundle parent"))?;
+                    if hash(&old)? == expected && expected.is_some() {
+                        fault(FaultPoint::BeforePlacement);
+                        rename_safely(source, dir).map_err(|error| {
+                            if error.kind() == std::io::ErrorKind::AlreadyExists {
+                                blocked()
+                            } else {
+                                internal(error)
+                            }
+                        })?;
+                    } else if !fs::symlink_metadata(source).is_ok_and(|entry| entry.is_dir())
+                        && hash(&path)?.as_deref() == Some(&new_hash)
+                    {
+                        calternal_fsio::sync_dir(prepare).map_err(internal)?;
+                        calternal_fsio::sync_dir(
+                            source.parent().ok_or_else(|| internal("bundle parent"))?,
+                        )
+                        .map_err(internal)?;
+                    } else {
+                        return Err(blocked());
+                    }
+                    moved = true;
+                }
                 let moving = dir.join(format!(".calternal-move-{id}"));
                 // A fixed private staging name makes both halves of case-only
                 // rename replayable. Every move refuses an occupied destination.
-                if old != path && hash(&old)? == expected && expected.is_some() {
+                if !bundle_move && old != path && hash(&old)? == expected && expected.is_some() {
                     if names::fold(old.to_str().unwrap_or(""))
                         == names::fold(path.to_str().unwrap_or(""))
                     {

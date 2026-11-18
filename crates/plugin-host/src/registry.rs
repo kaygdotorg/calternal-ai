@@ -252,7 +252,9 @@ pub fn validate_manifest_detailed(m: &ManifestV1) -> Result<(), String> {
     crate::slots::validate(m)?;
     let op = |id: &str| m.operations.iter().any(|x| x.id == id);
     for (index, x) in m.kinds.iter().enumerate() {
-        if x.searchable == Some(true) && !x.claimed_text
+        if x.id == "automations"
+            || x.id.starts_with("skill-")
+            || x.searchable == Some(true) && !x.claimed_text
             || !extension(x.claimed_text, x.extension.as_deref())
             || !schema(&x.schema)
             || !match &x.storage {
@@ -262,6 +264,11 @@ pub fn validate_manifest_detailed(m: &ManifestV1) -> Result<(), String> {
                     subdirectories,
                 } => {
                     folder_name(folder)
+                        && !(folder.eq_ignore_ascii_case("AI")
+                            && subdirectories.first().is_some_and(|name| {
+                                name.eq_ignore_ascii_case("Skills")
+                                    || name.eq_ignore_ascii_case("Automations")
+                            }))
                         && !subdirectories.is_empty()
                         && subdirectories.len() <= 8
                         && subdirectories.iter().all(|s| folder_name(s))

@@ -496,6 +496,27 @@ impl Content {
             Ok(s.files.join(path))
         })
     }
+    /// Verify the current file of one live item before using it as executable
+    /// configuration. Cost: one per-space lock, indexed head lookup, and file
+    /// hash. A pending write is placed first using the ordinary recovery path.
+    /// External changes fail closed and are preserved by the normal file guard.
+    pub fn verify_file(&self, space: SpaceId, kind: &str, id: Uuid, revision: &str) -> Result<()> {
+        self.with_space(space, |s| {
+            let mut head = s.header(id)?;
+            if head.kind != kind || head.path.starts_with(".trash/") {
+                return Err(missing());
+            }
+            if head.revision != revision {
+                return Err(Error::conflict("item has a newer revision"));
+            }
+            if head.state == "pending" {
+                s.place_header(id, head, None, self.fault)?;
+                head = s.header(id)?;
+            }
+            s.check_header(id, &head).map(|_| ())
+        })
+    }
+
     /// Finishes pending file placement without changing the committed revision.
     /// Cost: cache/space locks, head bytes/hash allocation; pending placement reads
     /// at most the old/new file, then fsio fsyncs file and parent plus one NORMAL replayable SQL
