@@ -2,7 +2,7 @@
 
 Decisions waiting on kayg, most blocking first. Answer here or in chat; answered items
 move to the decision record they belong to and leave this list. Terms: see
-[glossary](glossary.md). Updated 2026-11-18 17:30 IST.
+[glossary](glossary.md). Updated 2026-11-18 17:45 IST.
 
 ## Waiting now
 
@@ -10,6 +10,7 @@ move to the decision record they belong to and leave this list. Terms: see
 | --- | --- | --- | --- |
 | 25 | Composer chips, one point left: is a chip always shown, or hidden while it is at its default value? (kayg's answer was cut off) | Always show | Composer |
 | 45 | Editing a message that was already sent: what happens to the rest of the thread (replaced, forked, kept as a branch) | To grill; options being written up | Threads |
+| 52 | Sharing: what the share button on a note, thread or window offers beyond Copy link (people, groups, public links, the system share sheet) | To grill | Sharing |
 | 24 | Materials: how far the middle card separates from the sidebars, the readability floor for text over a wallpaper, and how much photo shows in light mode. Rebuilt from the calternal-ui plugin's defaults with a five-step Clear-to-Tinted slider | Review on the preview | Appearance |
 | 30 | Should the composer double as the command palette, or stay separate from Cmd-K? | Stay separate | Composer |
 | 31 | Thread rows: hover hides the time and state mark for the three actions; swipe right shows only Copy link; touch has no long-press menu, "More" sits in the swipe tray | Keep all three; try on a phone | Threads |
@@ -38,7 +39,7 @@ move to the decision record they belong to and leave this list. Terms: see
 - **Pricing**: plans are listed at calternal.com/pricing; storage is bought separately; what the sizes, hours and storage steps are.
 - **Upgrades with real data**: decided 2026-11-18 that updates are automatic and a failed one rolls back without the person or admin noticing. Open: how data moves across a schema change (kayg asked for the options to be explained again).
 - **MicroVMs**: one per person with a container per thread is decided and not built; all our VMs are Proxmox VMs, so nested virtualisation is available. Starts when a backend lane frees up.
-- **The canvas experiment** (kayg, 2026-11-18; still an experiment behind `?canvas=1`): no outer card; the area between the sidebars is the canvas and each window is a middle card, so one window looks exactly like the app today and a second animates as a split; structured columns as in niri; windows touch the top; one continuous veiled background behind them, as under the sidebars; windows opaque or transparent with no blur of their own; both sidebars follow the focused window's app; on a phone one window at a time. Open: where the app switcher belongs (bottom centre for now, auto-hide available and off by default, never hidden on a phone).
+- **The canvas experiment** (kayg, 2026-11-18; still an experiment behind `?canvas=1`): no outer card; the area between the sidebars is the canvas and each window is a middle card, so one window looks exactly like the app today and a second animates as a split; structured columns as in niri; windows touch the top; one continuous veiled background behind them, as under the sidebars; windows opaque or transparent with no blur of their own; both sidebars follow the focused window's app; on a phone one window at a time. Open: where the app switcher belongs (bottom centre for now, auto-hide available and off by default, never hidden on a phone). Feedback 2026-11-18 17:00, being fixed by the Threads lane: one window must match the app without the canvas exactly (fonts, spacing, animations); no fade on a half-scrolled window; windows are neutral dark or light, never tinted by the wallpaper's accent; no accent border on the selected window (inactive windows dim instead, to be judged); the fullscreen icon is two diagonal chevrons and the link icon becomes a real share menu.
 
 ## Queued, no decision needed
 
