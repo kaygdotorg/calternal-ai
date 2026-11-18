@@ -246,7 +246,9 @@ heartbeat, including during continuous writes; actual content operations always
 recheck current authority. An idle-feed test advances the seven-day confirmation
 state without issuing another operation.
 
-Saved conversations are described in [threads](../../docs/threads.md). The orchestrator manifest owns their operations; the host reuses generic content storage and the existing turn engine. Active-turn steering and large-thread indexing remain named gaps there.
+The orchestrator manifest owns saved-thread operations. The host reuses generic
+content storage and the turn engine for checkpoint ranges, live tool steps and
+saved Markdown. See [saved threads](../../docs/threads.md).
 
 Canonical request fingerprinting for Notes, plugin activation and plugin calls
 uses the existing blocking pool. The parsed input moves into that task and returns

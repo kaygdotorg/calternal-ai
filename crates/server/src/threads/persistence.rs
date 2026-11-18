@@ -2,10 +2,13 @@
 use super::delta::Append;
 use super::provider_session::{KEY, ProviderSession};
 use crate::{api::Shared, auth::Directory, plugins::jobs::Job};
-use calternal_content::Request;
+use calternal_content::{MAX_DOCUMENT_BYTES, Request};
 use calternal_types::{Error, SpaceId};
 use serde_json::{Value, json};
 use uuid::Uuid;
+
+/// Stable reason for a saved turn whose next checkpoint cannot fit.
+pub(crate) const THREAD_FULL: &str = "thread_full";
 
 /// Flush at most 32 KiB of scrubbed output and any new provider session. The
 /// content CAS serializes this against sends. A superseded turn cannot replace
@@ -87,6 +90,14 @@ pub(crate) fn checkpoint<D: Directory>(
             append_output(&mut metadata, &mut body, job, id, seq, text)?
         };
         let bytes = super::document::encode(&metadata, &body);
+        if bytes.len() > MAX_DOCUMENT_BYTES {
+            return Err(Error {
+                details: Some(json!({"reason":THREAD_FULL})),
+                ..Error::conflict(
+                    "Thread reached its 2 MiB limit. Earlier output is saved; the latest output was not saved. Start a new thread to continue.",
+                )
+            });
+        }
         let append = json!(Append {
             base_revision: item.revision.clone(),
             offset: range.start,

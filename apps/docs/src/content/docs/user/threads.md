@@ -92,6 +92,27 @@ job lookups and flushes. The checkpoint derives the range from its existing
 body and write buffer. Publication reuses the outbox payload and existing
 journal commit, with no additional reads or flushes per event.
 
+### Tool steps and the saved output limit
+
+Tool starts, output notices and completions carry the tool name and short
+target or description. Claude Code uses the executable name for a Bash
+command and a bounded path for a file operation. The adapter publishes tool
+output as a byte count. The saved message records the step and status in
+Markdown blockquotes. The adapter and host scrub the issued Calternal
+credential before the step reaches a client or the file.
+
+The existing content limit accepts at most 2 MiB of submitted Markdown,
+before placement adds the host-owned identity line. Previously an oversized
+checkpoint was rejected atomically and the turn ended with a generic
+outcome-unknown state. A saved turn now fails with `thread_full` on the job
+stream and `turn_reason.why` on reload. Earlier checkpoints remain readable.
+The failure message explains that the latest checkpoint was not saved and that
+the person can start a new thread. The turn does not automatically retry.
+
+The accepted design keeps long tool output in separate, linked storage.
+The thread format has no artifact address, link grammar, or lifetime yet.
+Until those are defined, the preview keeps only the tool status and byte count.
+
 ## CLI
 
 ```sh

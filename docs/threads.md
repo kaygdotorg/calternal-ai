@@ -105,9 +105,10 @@ userdata placement with file and directory fsyncs and a NORMAL bookkeeping
 update. Send adds one FULL job admission transaction and one FULL admission
 journal transaction. The journal witness retains its durability work.
 
-Live output stays on the existing job stream. Scrubbed text is appended at session,
-tool-finish and turn-end checkpoints, at three seconds of emitted output, or
-when 16 KiB accumulates, whichever comes first. A pending chunk is bounded to 32 KiB;
+Live output stays on the existing job stream. Scrubbed text and tool statuses
+are appended at session, tool-start, tool-finish and turn-end checkpoints, at
+three seconds of emitted output, or when 16 KiB accumulates, whichever comes
+first. A pending chunk is bounded to 32 KiB;
 job checkpoints retain their existing bounded tail. Each nonempty output flush
 loads the thread body once, then uses the content write's header read, receipt
 lookup and userdata hash check. It adds the same three FULL content boundaries
@@ -214,10 +215,30 @@ job lookups and flushes. The checkpoint derives the range from its existing
 body and write buffer. Publication reuses the outbox payload and existing
 journal commit, with no additional reads or flushes per event.
 
+### Tool steps and the saved output limit
+
+Tool starts, output notices and completions carry the tool name and short
+target or description. Claude Code uses the executable name for a Bash
+command and a bounded path for a file operation. The adapter publishes tool
+output as a byte count. The saved message records the step and status in
+Markdown blockquotes. The adapter and host scrub the issued Calternal
+credential before the step reaches a client or the file.
+
+The existing content limit accepts at most 2 MiB of submitted Markdown,
+before placement adds the host-owned identity line. Previously an oversized
+checkpoint was rejected atomically and the turn ended with a generic
+outcome-unknown state. A saved turn now fails with `thread_full` on the job
+stream and `turn_reason.why` on reload. Earlier checkpoints remain readable.
+The failure message explains that the latest checkpoint was not saved and that
+the person can start a new thread. The turn does not automatically retry.
+
+The accepted design keeps long tool output in separate, linked storage.
+The thread format has no artifact address, link grammar, or lifetime yet.
+Until those are defined, the preview keeps only the tool status and byte count.
+
 ## Bounds and remaining integration
 
-The existing content ceiling is 2 MiB per thread file. Growth fails visibly and
-preserves the saved head. Prompts are at most 16 KiB, titles 256 bytes, provider
+Prompts are at most 16 KiB, titles 256 bytes, provider
 IDs 80 bytes, models 128 bytes. List is one bounded page of at most 1,000 content
 rows (100 by default); filters run within that page. Owned conversation files and
 Trash have no automatic time expiry; receipts, jobs and streams retain their
@@ -259,7 +280,7 @@ following reason payloads use Unix milliseconds for timestamps.
 | `provider_signed_out` | `provider` and the reported `sign_in_command` |
 | `waiting_on_person` | Private `request_id` visible to the turn account |
 | `retrying` | `attempt`, `next_attempt_ms`, and `rule` (`provider_backoff`, `api_availability`, or `subscription_reset`) |
-| `failed` | `class` (`transient`, `usage_limit`, or `permanent`) and `reset_at_ms` when the provider reports it. |
+| `failed` | `class` (`transient`, `usage_limit`, or `permanent`) and `reset_at_ms` when the provider reports it. A storage-limit failure includes `why: "thread_full"` and its `message`. |
 | `interrupted` | `resumable`, `why`, and the last machine contact `since_ms` when known. Uncertain outcomes are nonresumable. |
 
 The account that submitted a turn receives its private machine and sign-in
