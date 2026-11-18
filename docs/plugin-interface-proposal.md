@@ -321,100 +321,184 @@ including stopping leases. Revocation does not attest that a disconnected
 machine physically stopped its containers. Restart must reconcile these
 states before reusing capacity.
 
-### Brokered outbound connections
+A placement question remains. The host can reuse the negotiated backend and
+first start result, or require a positive engine check cached per machine
+session. A proactive check adds readiness traffic and detects a missing
+engine before a plugin starts.
 
-Workers have no direct network access. Every revision declares the
-outbound access it needs in the manifest. A Manager reviews that access
-when enabling the plugin in a space. The server brokers outbound I/O and
-checks the live space grant and revision's declaration before opening a
-connection or forwarding more data. An update that widens access requires
-approval. Revocation fences the session and closes active handles.
-Official and community packages use the same policy and transport.
+### Brokered network capabilities
 
-| Need | What a plugin declares and how the broker authorizes it |
+Every worker has no direct network. Its manifest declares the request classes
+it needs, and the enabling review shows one line per class with its scope.
+The broker checks the live space grant and revision declaration before
+starting a request and before forwarding additional data on an open handle.
+A widening update requires approval. Revocation closes or fences active
+handles. The same declarations and checks apply to every publisher.
+
+| Class | Capability and what the approver sees |
 | --- | --- |
-| Fixed endpoints for banks, brokers or workout services | Declare the purpose, protocol, hostname and port. Display those in the enabling review. Broker HTTPS with per-hop checks for redirects. Reference credentials through protected host handles where available. Permission to connect does not authorize a trade or other privileged action. |
-| Mail and other provider endpoints a person enters | Declare a setting that can supply a destination and constrain the allowed protocols and ports. Review the exact destination at that point, before it becomes usable. Bind the grant to the space, plugin and declared setting. A change of hostname, protocol or port requires a new approval. |
-| IMAP, SMTP and other non-HTTP services | Use a broker-owned TCP connection to the approved host and port. Expose an expiring, bounded handle scoped to the invocation or job. The broker owns address validation, connect and teardown. Typed TLS and STARTTLS adapters can enforce protocol behavior. A generic byte stream can carry proxy commands to an approved server, so its review must reflect the broader authority. |
-| Orchestrator and shell | Orchestrator operations use the same per-space grants and audit records as any other package. Shell contributions use host components and plugin operations. A mount point grants no network or browser session access. |
+| A. Named connections (`network.named`) | “Connect to these services” shows purpose, exact hosts or reviewed settings, protocols, ports and credential handles. A Manager approves the envelope on enable. Review a person-supplied destination when entered and before it takes effect. A wider host, port or protocol requires another approval. |
+| B. Content fetch (`network.content_fetch`) | “Load remote images and fonts referenced by this content” shows the content kinds and host profile. The Manager approves the declared feature. Each person chooses Ask, Always or Never for fetches on their behalf. The content can reference arbitrary public hosts, so this class has no list of approved domains. |
+| C. Open internet (`network.open_internet`) | “Make arbitrary HTTP requests to any public host. This can send space data off the server.” An Owner or a Manager approves this broad capability separately. |
+| D. Private network (`network.private`) | “Reach private destinations from this server or machine” shows the originating network, approved destinations, ports and protocols. A Manager approves the plugin's per-space capability and the origin owner separately approves exposing that origin. |
 
-### Private destinations and execution origin
+These are proposed manifest IDs. Each class needs its own grant. A named
+connection or content fetch cannot provide open internet access.
 
-Public egress originates at the server by default. Private destinations
-require a separate grant in addition to the Manager's per-space plugin
-approval. The grant identifies the origin, plugin, space, protocol, ports
-and destination scope. The approver sees the originating server or named
-machine, the exact destination scope and whether access is read-only or
-can change the external system. The latter distinction should come from
-host-enforced operations where available.
+#### A. Named connections
 
-| Origin | Private-network authority |
+A public bank, broker, workout or provider API declares exact hosts and
+protocols. For IMAP or SMTP, the manifest can identify a destination setting
+and bound its protocol and ports. The grant binds the exact configured host
+and port to the setting, package and space. Endpoint discovery and redirects
+must stay within the approved service envelope. Protected credential handles
+let the host attach credentials without returning them to plugin code.
+
+For non-HTTP protocols, a broker-owned, expiring TCP handle provides bounded
+reads and writes to the approved address and port. The host owns connect,
+backpressure, timeout and teardown. Typed adapters can require verified TLS
+and safe STARTTLS transitions. An opaque byte stream can send arbitrary
+commands to the approved service, so its approval must describe that power.
+Sending mail and making a trade remain separate effect permissions.
+
+#### B. Content fetch
+
+Port the existing mail content proxy as the default profile. A plugin submits
+content for host cleaning. It cannot pass a URL directly to the proxy. The host
+stores the cleaned content and its generated references, then fetches eligible
+assets by reference after checking the viewer and preference. This works for
+HTML mail images and fonts, favicons, preview images and image or font feed
+enclosures within the same profile. Fetching a linked HTML page or playing an
+arbitrary audio enclosure requires a broader reviewed profile or class C.
+[Mail architecture, remote content](https://git.kayg.org/kayg/calternal/src/commit/ea57b84b9c9e40e8b67b7d1e1f1805915123b040/docs/plans/mail-architecture.md#11-remote-content-and-network-safety)
+
+- Use GET over HTTPS on port 443. Strip cookies, Referer and credential
+  headers, use a generic User-Agent and never attach space data or a person's
+  identity. Apply netguard on every hop, refuse IP-literal hosts in any
+  spelling, and connect only to public addresses.
+  Accept images and fonts by an allow-list, excluding SVG. Bound transfer to
+  10 MB, redirects to three, connections to 5 seconds and total time to 10
+  seconds. Start with two concurrent fetches per host and 16 globally, and
+  enforce a per-space rate cap.
+- Store bytes without host decoding. Serve from a per-person proxy URL that
+  resolves only through that person's asset reference and rechecks access to
+  the source content. Use `nosniff`, a strict CSP and a bounded per-person
+  LRU, starting with the inherited 2 GB ceiling. Return a placeholder on
+  policy, cache or fetch failure.
+- Clean HTML at ingest with an allow-list. Rewrite or remove every URL
+  position, including `srcset`, CSS URLs and imports, font declarations,
+  SVG URL attributes and inline attachment references. Put the cleaned result
+  in a sealed frame without scripts or same-origin access, inside the host's
+  opaque card. Its CSP permits only authorized proxied assets. The person can still open an
+  ordinary external link through a host-controlled navigation action.
+- The ingest queue owns scheduled fetches. Opening the content shows cached
+  assets or placeholders. An automatic fetch on open would give the sender
+  the reading time. With Ask, wait for the person's
+  decision about loading remote content. With Always, fetch at ingest for
+  eligible items, dropping known tracker forms. With Never, show placeholders.
+  Ask can disclose the time of the person's explicit approval. Backfill,
+  out-of-window items and junk need the policy below.
+
+URLs are a data channel. A plugin with access to space data could put text,
+identifiers or encoded bytes in a URL inside the content it submits. The
+remote server can see that URL and the proxy's source IP and fetch time.
+The proxy accepts only host-issued references from stored, cleaned content,
+caps URL length and fetch rates, and records the package, source reference
+and destination hostname in the audit log. These limits make bulk transfer
+harder and attributable. They cannot prove where a URL came from or keep
+arbitrary encoded data out of it. Keeping B separate from C and requiring a
+named capability makes this residual risk visible at review. Avoid putting
+full URL paths and queries in logs.
+
+#### C. Open internet
+
+Use an explicit broad grant when the plugin must construct arbitrary HTTP
+requests to public destinations at runtime. Examples include reading a
+person's subscriptions, scraping a page or calling an arbitrary API in an
+automation. Require the Owner's or a Manager's affirmative approval of the
+public-network and data-disclosure scope. Each request still passes netguard,
+response and time bounds, and per-space rate and concurrency controls. Host
+credential injection stays with a named service grant. Private destinations
+need the separate private capability even when C is approved.
+
+#### D. Private network and execution origin
+
+Public egress originates at the server by default. A private grant identifies
+the origin, plugin, space, protocol, ports and destination scope. Show whether
+the operation can make changes where the host enforces that distinction.
+
+| Origin | Approver and dialer |
 | --- | --- |
-| Server | A server administrator approves access from the server because it exposes the operator's network. |
-| Explicitly chosen enrolled machine | The machine's owner approves access from their machine. An operator approves for a pool machine. The server authorizes each request and sends it to a broker on that machine, which applies the same dialing policy locally. The plugin worker still has no network. |
+| Server | A server administrator approves access because the connection exposes the operator's network. The server broker dials from that network. |
+| Chosen enrolled machine | The machine owner approves their machine as the origin. An operator approves a pool machine. The server checks the invocation and sends the bounded request to that machine's broker, which validates and dials locally. The worker remains on eligible operator pool machines. |
 
-A grant can name hosts, CIDRs, or the machines enrolled and authorized for
-that space. Named-host grants must carry an approved address scope,
-including explicit treatment of private addresses obtained through DNS.
-CIDRs remain bounded by protocol and port. A space-machines selector
-authorizes only endpoints mapped by the host to current eligible
-enrollments. A removed machine stops matching immediately. A private
-route is bound to its approved origin, with no automatic fallback to a
-different network. A member-owned machine acting as an egress broker does
-not become eligible to run shared-space workers. Before any forwarding,
-verify that the invocation can share the data being sent with that
-machine and apply the existing space and machine permissions.
+A grant can name hosts with approved address scopes, CIDRs limited by protocol
+and port, or endpoints mapped to current enrolled and space-authorized
+machines. Revocation removes an enrollment from that scope immediately.
+The broker checks whether the caller may disclose the input to the chosen
+machine. The grant stays bound to its chosen origin and cannot fall back to
+another network.
 
-Reuse the existing app's ADR 0071 `netguard` resolution and dialing
-contract. Normalize and validate the destination before resolving it.
-Resolve once per connection attempt, reject any disallowed address in
-the answer set and dial a checked address using the original hostname
-for TLS identity and HTTP routing. Apply the check to HTTP redirects,
-protocol discovery and reconnects. Refuse private networks by default
-and permit only destinations covered by the separate grant at the chosen
-origin. Normalize literal addresses before checking CIDRs. Always refuse
-cloud metadata endpoints, including metadata hostnames, aliases and
-IPv4-mapped forms, even when a grant's scope would otherwise cover them.
-Keep certificate validation mandatory. [Calternal ADR 0071](https://git.kayg.org/kayg/calternal/src/commit/ea57b84b9/docs/adr/0071-mail-architecture.md)
+#### Shared guard, limits and inbound routes
 
-Apply per-space concurrency, request and connection rates, byte limits,
-timeouts and stream backpressure. Count idle open streams against capacity
-until closed. Keep a bounded audit log of space, actor, package revision,
-approval, execution origin, destination hostname and port, protocol,
-outcome, duration and byte counts. Record creation, widening and
-revocation of private grants and distinguish their traffic in the audit
-view. Display the approved scope to the Manager and origin owner. Exclude
-credentials, headers, URL paths and queries, payloads and response
-content. Authorization failures should surface a safe reason and the
-next action.
+Port the existing app's ADR 0071 `netguard` for every outbound connection.
+Normalize names, reject ambiguous address representations, resolve once and
+check every answer, then dial a checked address with the original TLS server
+name and HTTP Host. Repeat for redirects, protocol discovery and reconnects.
+Use the inherited checks for embedded IPv4 and public address classes.
+The default rejects private destinations, and class B always does. Always
+refuse cloud metadata, including aliases and mapped forms, even for an
+approved private scope. Keep certificate validation mandatory.
+[Calternal ADR 0071](https://git.kayg.org/kayg/calternal/src/commit/ea57b84b9c9e40e8b67b7d1e1f1805915123b040/docs/adr/0071-mail-architecture.md)
+[Mail security summary](https://git.kayg.org/kayg/calternal/src/commit/ea57b84b9c9e40e8b67b7d1e1f1805915123b040/docs/plans/mail-architecture.md#19-security-summary)
 
-### Integration walkthroughs
+Bound per-space request and connection rates, byte volumes and concurrency.
+An idle open stream still consumes capacity. Audit the class, space, actor,
+package revision, approval, origin, destination host and port, protocol,
+outcome, elapsed time and byte counts. Audit grant creation, widening and
+revocation. Keep a bounded retention window and omit credentials, headers,
+URL paths and queries, request bodies and response content.
 
-| Plugin shape | How the design handles it |
+Inbound webhooks have a separate manifest declaration and review line.
+The host binds a route to a space, enabled package and operation, verifies
+the signature, and bounds request size, rate and replay handling. It
+passes the authorized payload to the operation. The worker has no listener.
+Registering a callback with a remote service or emitting a subsequent
+request uses the appropriate outbound grant.
+
+#### Integration walkthroughs
+
+| Plugin | Classes and behavior |
 | --- | --- |
-| Mail | Public IMAP and SMTP use exact hosts entered in settings. An internal mail server needs a private grant from the selected origin. Broker TLS and authentication without giving the worker the person's credentials. |
-| Money | Public bank and broker APIs use approved HTTPS endpoints, with protected credential handles. Account reads and transactions remain separate permissions. |
-| VPN manager | Public NetBird or Tailscale control APIs use HTTPS grants. An overlay management endpoint needs an explicit private grant from a server or chosen machine already on that network. Installing a VPN or changing the origin machine's own configuration would need a separate host service. |
-| Home automation bridge | Select an enrolled machine on the LAN and approve the controller's hostname or network scope and port. The same host policy applies to every new connection. Discovery and multicast would need their own reviewed broker contract. |
-| Webhook receiver | Register an inbound host route with its own signature verification, rate limits and declared operation. The receiver does not give the worker a listening socket. Installation-specific callback registration or replies to an external service use the outbound rules above. |
+| Mail | A connects to the IMAP, SMTP or JMAP endpoints entered in settings and uses brokered credentials. B renders remote images and fonts from cleaned mail through per-person proxy references without a host list. An internal provider also needs D from its chosen origin. Open internet access is unnecessary for those actions. |
+| Money | A connects to approved bank and broker APIs. Reads and transactions use separate host permissions. An on-premises brokerage endpoint also needs D. |
+| VPN manager | A reaches a named public NetBird or Tailscale management API. D reaches a controller on an overlay network from an origin that is already on that network. Reconfiguring an enrolled machine's own network requires a separate host operation. |
+| Home automation bridge | D reaches an approved LAN controller from an enrolled machine on that LAN. A can cover its public cloud service. Discovery or multicast requires its own reviewed broker contract. |
+| Webhook receiver | An inbound declaration owns the route, verification, limits and target operation. A can register the route with a named provider. Reply or follow-up calls need the appropriate outbound class. |
+| Feed reader | C fetches subscriptions whose hosts are chosen at runtime. B can load supported feed artwork and media references from stored entries. Hosting over a private network additionally needs D. |
+| Link-preview plugin | B fetches an image or favicon referenced by stored content. Producing a title or description by fetching arbitrary linked HTML needs C or a separately reviewed host-owned preview profile. Running on every pasted URL cannot silently broaden B. |
+| Workout, orchestrator and shell plugins | A covers an approved fitness service. Orchestrator integrations declare each applicable network class. The shell uses host components and operations, and a mount point carries no network grant. |
 
-These are design walkthroughs. Each requires its own fixture before
-shipping.
+These are design walkthroughs. Each needs a fixture before shipment.
 
-### Open choices
+#### Open choices
 
 | Choice | Options and costs |
 | --- | --- |
-| Container readiness | Reuse the negotiated backend and the first start result, or require a cached positive container-engine check tied to the machine session. A check adds readiness traffic and makes a missing engine distinguishable before a plugin times out. |
-| Destination breadth | Start with exact host grants and approval for each new destination, or explicitly allow bounded domain patterns. Exact hosts incur review when providers add endpoints. Patterns grant access to more endpoints and need clear ownership and redirect rules. |
-| Setting approvals and credential scope | A Manager can approve each exact destination, or can delegate approval within a manifest's reviewed protocol and port envelope. Delegation reduces mail setup friction and increases authority. Decide with it which endpoints and credentials are private to the person and which are shared in the space. |
-| Non-HTTP scope | Start with typed mail adapters, or also expose generic bounded TCP behind explicit approval. Typed adapters cost engineering per protocol and can own TLS and STARTTLS. Generic TCP serves more integrations and cannot enforce the semantics of traffic at the approved endpoint. |
-| Private route scope | Start with named hosts and explicit address ranges, or also offer the space-machines selector. A selector avoids repeated approval when enrolled hosts change and requires a host-maintained endpoint mapping and visible membership changes. Decide which plugin input and payload scopes may be sent through a member-owned origin. |
-| Budgets and visibility | Set per-space quotas, retention and audit visibility after measuring realistic mail sync, finance polling and interactive loads. Test hard ceilings, backpressure and revocation on long-lived streams. Long-lived streams can crowd out interactive calls without separate concurrency budgets. |
+| Named endpoints | Start with exact hosts and approve each change, or add bounded domain patterns. Exact hosts expose the smallest scope. Patterns simplify service discovery and need ownership, redirect and port rules. |
+| Destination setting and credential scope | Require a Manager to approve each endpoint, or delegate approvals inside a reviewed envelope. Delegation reduces setup work and widens what a person may authorize. Decide when an endpoint and credential belong to a person or to the space. |
+| Content preference and backfill | Ask first exposes the choice early. Always retains the earlier mail default and sends public fetches automatically. Never starts with placeholders. The inherited ingest window uses 90 days or 5,000 threads and excludes junk. Decide whether to load older items only on explicit request or during bounded backfill. Explicit load can disclose reading time. |
+| Content fetch profiles | Ship the existing image/font profile first. Review HTML metadata, audio and other enclosures independently. More types cover more view and feed cases and increase what the proxy must validate, cache and serve. |
+| Open internet limits | Choose whether a separate permission is needed for credential-free request bodies or mutation-capable methods. One broad class is easier to review and provides less control over what leaves the server. |
+| Non-HTTP handles | Start with typed IMAP/SMTP adapters, or also grant generic bounded TCP. Typed adapters enforce TLS and protocol rules. Generic handles cover more systems with less knowledge of the effect. |
+| Private route scope | Begin with named hosts and explicit ranges, or also allow the space-machines selector. The selector reduces repeated approvals and needs endpoint ownership and live enrollment tracking. Decide which payloads may be sent through a member-owned origin. |
+| Budgets and visibility | Measure mail sync, finance polling and interactive loads to set per-space caps and retention. Choose how Managers and origin owners see the audit and test revocation with long-lived connections. |
+| Inbound verification | Choose supported signature profiles and retry identity rules before exposing routes. A common profile gives one enforcement point. Provider adapters increase compatibility and review cost. |
 
-`netguard` should remain the common address and dialing layer. Exact
-hosts, explicit per-setting approval and typed mail adapters are the
-recommended first network contract. Network support is a design proposal.
+Start with named service connections and the inherited content-fetch profile.
+Add the separately approved open internet, private routing and inbound paths
+when their limits and fixtures are ready. This section specifies a proposed
+broker contract.
 
 ## Swift clients
 
@@ -520,11 +604,17 @@ the server PID, starting space UUID, initial package catalog, command output
 and full transcript. Use a separate passkey account without access for the
 isolation checks.
 
+Prepare the built SDK with `npm run build:plugins`. The disposable server's
+binary needs the `dev-plugin-drafts` feature, `--development` and an enrolled
+container-capable pool runner. Supply `CALTERNAL_SDK_ROOT`, `APPDATA`,
+`SPACE_ID`, `ACCOUNT_ID` and the normal CLI connection for its Manager.
+Offer the bundled plugin authoring skill and the request paragraph.
+
 | Request paragraph | Observable success |
 | --- | --- |
 | Create a reading-list plugin with a readable Markdown kind and a generated list that shows the items in this space. | The package is active, the authored kind stores a fixture item, and the view operation renders that item. Another space cannot list it. |
 | Create a checklist runner with a start operation that launches a durable job, streams its progress and returns a final count. | Starting through the ordinary operation path produces ordered progress and the final count. A foreign account cannot read the job. |
-| Create a composer chip with a configurable label, exposed as a plugin setting. | The slot listing resolves the chip in the enabled space and the generated view reflects the setting. An unrelated space sees no resolved chip. |
+| Create a composer chip with a configurable label, exposed as a plugin setting. | The slot listing resolves the chip in the enabled space. Check the default label, set a distinct value as Manager and invoke the view again. An unrelated space sees no resolved chip. |
 
 Each session must scaffold, implement, run check and tests, and live-load
 its package. Invoke through the normal authenticated operations route.
@@ -577,7 +667,7 @@ contains the detailed constraints for the 24 previously adopted capabilities.
 | bb reusable app components and hooks for chat, source, diff, Info, model picker, icons, navigation and composer | Decided, unbuilt | Reuse production components with host focus, theme and state. Static GenUI has a smaller catalog. |
 | bb browser extension state, query/mutation caching and tab-context hooks | Proposed | Bind a control to typed scoped host state and invalidate its query on change. |
 | bb theme tokens, theme preview, code colors and fonts; bb-lite theme bundles and author reload | Decided, unbuilt as a plugin lifecycle | Test a complete theme, including native tokens and a code palette, before enabling it. |
-| bb and bb-lite typed settings, pickers, scoped values and on-change handlers | Decided, unbuilt in full | Declare a validated per-person choice, project selector or multiline editor. |
+| bb and bb-lite typed settings, pickers, scoped values and on-change handlers | Typed shared settings, worker reads and scoped journal invalidation built. Per-person pickers and subscriptions for slot owners remain unbuilt. | Declare a per-person selector or react to another plugin's contribution through a live subscription. |
 | bb and bb-lite install/setup and teardown lifecycle | Decided, unbuilt for authored handlers | Seed package defaults during activation and dispose a watcher when disabled. |
 | bb typed RPC and bb-lite operations, client/CLI/agent doors and breaking-change lock | Built for public operations | Expose one schema-checked operation. Typed cross-plugin RPC and consumer compatibility ranges remain unbuilt. |
 | bb hand-written plugin CLI commands and bb-lite combined CLI routes | Proposed | Group several operations under a plugin-owned command with help and completion. Currently use `calternal invoke`. |
