@@ -6,7 +6,7 @@ title: "machines.install"
 
 > **Preview: the app is not released.** This site describes a development preview and accepted designs; it does not establish production readiness.
 
-Create a single-use personal machine enrollment script
+Create a single-use personal machine enrollment command
 
 Capability: not declared in this catalogue; the host policy remains authoritative.
 
@@ -16,7 +16,7 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
 {
   "risk": "reversible",
   "id": "machines.install",
-  "description": "Create a single-use personal machine enrollment script",
+  "description": "Create a single-use personal machine enrollment command",
   "mutates": true
 }
 ```
@@ -39,7 +39,7 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "additionalProperties": false,
-  "description": "The enrollment script and the deadline for redeeming its one-time code.",
+  "description": "The enrollment command and the deadline for redeeming its one-time code.",
   "properties": {
     "expires_ms": {
       "description": "Unix milliseconds when the code expires if unused.",
@@ -47,7 +47,7 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
       "type": "integer"
     },
     "script": {
-      "description": "Readable shell script containing the private enrollment code.",
+      "description": "One-line shell command containing the private enrollment code.",
       "type": "string"
     }
   },

@@ -26,12 +26,16 @@ def sign(key, manifest):
     )
 
 
-def setup(root):
-    key = root / "development-only"
+def development_key(key):
     subprocess.run(
         ["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", key],
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True,
     )
+    return key
+
+
+def setup(root):
+    key = development_key(root / "development-only")
     public_key = " ".join(key.with_suffix(".pub").read_text().split()[:2])
     script = SOURCE.read_text().replace("release_key=\n", f"release_key='{public_key}'\n", 1)
     mirror = root / "releases"
@@ -127,13 +131,15 @@ def main():
 
         home, install = fixture("wrong signature")
         signed = signature.read_bytes()
-        signature.write_bytes(b"invalid signature")
+        signature.unlink()
+        untrusted = development_key(root / "untrusted-development-only")
+        sign(untrusted, binary.with_name("manifest"))
         result = install("--yes")
         assert result.returncode != 0 and "signature is invalid" in result.stderr
         assert "/calternal" not in (home / "trace").read_text()
         assert not (home / prefix).exists()
         signature.write_bytes(signed)
-        print("PASS invalid signature stops before downloading or executing the program")
+        print("PASS a valid signature from a different key cannot install a program")
 
         home, install = fixture("wrong digest")
         payload = binary.read_bytes()
