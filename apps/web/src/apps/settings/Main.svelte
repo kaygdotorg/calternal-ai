@@ -2,15 +2,24 @@
   // A Settings page: the title, one line of purpose, then groups of rows in a centred column (at most 560 px, like Notes). `/settings/<section>/<setting-id>`
   // opens the page with that row highlighted for a moment and scrolled into view. Admin pages end with a Danger area.
   import { tick } from "svelte";
-  import { navigate, route, segments } from "../../lib/route.svelte";
-  import SettingsSheet from "../../appearance/SettingsSheet.svelte";
-  import { shell } from "../../shell/shell.svelte";
+  import { SplitView } from "@calternal/ui";
+  import { route, segments } from "../../lib/route.svelte";
   import SettingGroup from "./SettingGroup.svelte";
   import SettingRow from "./SettingRow.svelte";
   import { pageById, visibleSections } from "./registry";
   let { id }: { id?: string } = $props();
   const page = $derived(pageById(id));
   const target = $derived(segments()[0] === "settings" ? segments()[2] : undefined);
+  // A page shown as sections: the section on the right is the selected one; wide, the first is selected until the person picks; narrow, nothing is (the list shows first). The address's setting id selects its section.
+  let sel = $state<number | null>(null), width = $state(0);
+  const wide = $derived(width >= 640);
+  $effect(() => { void page?.id; sel = null; });
+  $effect(() => {
+    if (!page?.split) return;
+    const t = target;
+    const i = t ? page.groups.findIndex((g) => g.settings.some((x) => x.id === t)) : -1;
+    if (i >= 0) sel = i; else if (wide && sel === null) sel = 0;
+  });
   let lit = $state<string | undefined>();
   $effect(() => {
     const t = target;
@@ -24,10 +33,31 @@
   });
 </script>
 
-<div class="scroller edge-fade" style:--fade-t="calc(var(--safe-top) + var(--bar-h))" style:--fade-b="var(--s-8)">
-{#if !shell.narrow && route.query.get("sheet") === "1"}
-  <!-- A desktop has no sheet for settings: wallpaper and fonts are a page of the Settings app (a phone keeps its bottom sheet, mounted by App). -->
-  <SettingsSheet inline open onclose={() => navigate("/settings/appearance")} />
+<div class="scroller edge-fade" style:--fade-t="calc(var(--safe-top) + var(--bar-h))" style:--fade-b="var(--s-8)" bind:clientWidth={width}>
+{#if page?.split}
+  <div class="page split">
+    <h1>{page.name}</h1>
+    <p class="blurb">{page.blurb}</p>
+    <div class="sp">
+      <SplitView selected={sel !== null} onback={() => (sel = null)} listLabel="{page.name} sections" backLabel={page.name}>
+        {#snippet list()}
+          <ul class="sections">
+            {#each page.groups as g, i (g.title)}
+              <li><button type="button" class="sec" aria-current={sel === i ? "true" : undefined} onclick={() => (sel = i)}>{g.title}</button></li>
+            {/each}
+          </ul>
+        {/snippet}
+        {#snippet detail()}
+          {#if sel !== null && page.groups[sel]}
+            {@const g = page.groups[sel]!}
+            <SettingGroup title={g.title} danger={g.danger}>
+              {#each g.settings as s (s.id)}<SettingRow {s} highlighted={lit === s.id} />{/each}
+            </SettingGroup>
+          {/if}
+        {/snippet}
+      </SplitView>
+    </div>
+  </div>
 {:else}
 <div class="page">
   {#if page}
@@ -52,6 +82,12 @@
   .scroller { position: absolute; inset: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; }
   .page { box-sizing: border-box; min-width: 0; overflow-x: clip; width: 100%; max-width: 35rem; margin: 0 auto; padding: calc(var(--safe-top) + var(--bar-h) + var(--s-6)) var(--s-6) var(--s-10); }
   h1 { font-size: var(--text-title); font-weight: var(--strong-weight); }
+  .page.split { max-width: 60rem; }
+  .sp { margin-top: var(--s-6); min-height: 30rem; }
   .blurb { margin-top: var(--s-3); color: var(--ink-2); }
+  .sections { display: grid; gap: var(--s-1); }
+  .sec { width: 100%; min-height: var(--row-h-settings); padding: 0 var(--s-5); border-radius: var(--r-select); text-align: start; font-size: var(--text-ui); color: var(--ink-2); }
+  .sec[aria-current="true"] { background: var(--accent-soft); color: var(--accent); font-weight: var(--strong-weight); }
+  @media (hover: hover) and (pointer: fine) { .sec:not([aria-current="true"]):hover { background: var(--hover); color: var(--ink); } }
   .soft { margin-top: var(--s-4); color: var(--ink-3); font-size: var(--text-label); }
 </style>

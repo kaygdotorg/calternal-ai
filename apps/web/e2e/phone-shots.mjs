@@ -30,5 +30,5 @@ await shot("account", "light", "/threads/t-run", async (p) => { await p.getByRol
 await shot("settings-list", "light", "/settings", (p) => tap(p, /Show settings|Show threads|sidebar/i).catch(() => {}));
 await shot("settings-page", "light", "/settings/agents");
 await shot("notes", "light", "/notes/n-1");
-await shot("appearance-sheet", "light", "/settings/appearance?sheet=1");
+await shot("appearance-sheet", "light", "/settings/appearance/appearance.wallpaper");
 await b.close(); stop();

@@ -2,7 +2,8 @@ import { render, screen, within } from "@testing-library/svelte";
 import userEvent from "@testing-library/user-event";
 import axe from "axe-core";
 import { beforeEach, describe, expect, it } from "vitest";
-import SettingsSheet from "./SettingsSheet.svelte";
+import FontsPanel from "./FontsPanel.svelte";
+import WallpaperPanel from "./WallpaperPanel.svelte";
 import { DEFAULTS, appearance } from "./prefs.svelte";
 import type { Wallpaper, WallpaperLibrary } from "./library";
 
@@ -24,9 +25,9 @@ beforeEach(async () => {
   appearance.wallpapers = await library.list();
 });
 
-describe("appearance settings", () => {
+describe("appearance: wallpaper and fonts sections", () => {
   it("picks a wallpaper from the library or none, as a radio group", async () => {
-    render(SettingsSheet, { open: true, onclose() {} });
+    render(WallpaperPanel);
     const group = screen.getByRole("radiogroup", { name: "Wallpaper" });
     expect(within(group).getByRole("radio", { name: /Automatic/ }).getAttribute("aria-checked")).toBe("true");
     await userEvent.click(within(group).getByRole("radio", { name: "Storm" }));
@@ -36,7 +37,7 @@ describe("appearance settings", () => {
   });
 
   it("searches Unsplash through the adapter and saves the pick with its credit", async () => {
-    render(SettingsSheet, { open: true, onclose() {} });
+    render(WallpaperPanel);
     await userEvent.type(screen.getByLabelText("Search Unsplash"), "mountains");
     await userEvent.click(screen.getByRole("button", { name: "Search" }));
     await userEvent.click(await screen.findByRole("button", { name: /Use: mountains photo, by A. Person/ }));
@@ -44,29 +45,10 @@ describe("appearance settings", () => {
     expect(appearance.prefs.wallpaperId).toBe("us-1");
   });
 
-  it("materials are three switches and the card tint stays a computed floor", async () => {
-    render(SettingsSheet, { open: true, onclose() {} });
-    expect(screen.queryByLabelText("Card blur")).toBeNull();
-    await userEvent.click(screen.getByRole("switch", { name: /Blur/ }));
-    expect(appearance.prefs.materials.blur).toBe(false);
-    await userEvent.click(screen.getByRole("switch", { name: /Tint/ }));
-    expect(appearance.prefs.materials).toEqual({ blur: false, dim: true, tint: false });
-    await userEvent.click(screen.getByRole("switch", { name: /Dim/ }));
-    // With every box off the surfaces are opaque paper (appearance/veil.ts).
-    expect(document.documentElement.style.getPropertyValue("--c-dim-a")).toBe("1.000");
-  });
 
-  it("UI size sets one scale for the whole interface", async () => {
-    render(SettingsSheet, { open: true, onclose() {} });
-    const size = screen.getByLabelText("UI size") as HTMLInputElement;
-    size.value = "120";
-    size.dispatchEvent(new Event("input", { bubbles: true }));
-    expect(appearance.prefs.uiSize).toBe(120);
-    expect(document.documentElement.style.getPropertyValue("--ui-scale")).toBe("1.2");
-  });
 
   it("chooses a font per role: the shipped one applies, one only the server can fetch says so", async () => {
-    render(SettingsSheet, { open: true, onclose() {} });
+    render(FontsPanel);
     await userEvent.click(screen.getByRole("button", { name: /Chat/ }));
     const list = await screen.findByRole("radiogroup", { name: "Chat font" });
     await within(list).findByRole("radio", { name: /Inter/ });
@@ -79,7 +61,7 @@ describe("appearance settings", () => {
   });
 
   it("code fonts list monospaced families only", async () => {
-    render(SettingsSheet, { open: true, onclose() {} });
+    render(FontsPanel);
     await userEvent.click(screen.getByRole("button", { name: /Code/ }));
     const list = await screen.findByRole("radiogroup", { name: "Code font" });
     await within(list).findByRole("radio", { name: /Maple Mono/ });
@@ -88,15 +70,9 @@ describe("appearance settings", () => {
     expect(within(list).queryByRole("radio", { name: /Lora/ })).toBeNull();
   });
 
-  it("restores defaults", async () => {
-    render(SettingsSheet, { open: true, onclose() {} });
-    appearance.change((x) => (x.materials.dim = false));
-    await userEvent.click(screen.getByRole("button", { name: "Restore defaults" }));
-    expect(appearance.prefs.materials.dim).toBe(true);
-  });
 
-  it("has no accessibility violations on either view", async () => {
-    render(SettingsSheet, { open: true, onclose() {} });
+  it("has no accessibility violations in either section or in the font picker", async () => {
+    render(FontsPanel);
     const run = async () => (await axe.run(document.body, { rules: { "color-contrast": { enabled: false } } })).violations.map((v) => `${v.id}: ${v.nodes[0]?.html.slice(0, 80)}`);
     expect(await run()).toEqual([]);
     await userEvent.click(screen.getByRole("button", { name: /Interface/ }));

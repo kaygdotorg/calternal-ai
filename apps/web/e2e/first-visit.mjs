@@ -49,8 +49,8 @@ for (const scheme of ["light", "dark"]) {
   ok((await page.getByRole("menuitemradio", { name: "Infra" }).count()) === 1 && (await page.getByRole("menuitem", { name: "Settings" }).count()) === 1, "the account picture opens a menu with the spaces and Settings");
   await page.getByRole("menuitem", { name: "Settings" }).click(); await page.waitForTimeout(500);
   ok(page.url().includes("/settings/") && (await page.locator('[role="dialog"]').count()) === 0, "…and Settings opens the Settings app, not a sheet", page.url());
-  await page.goto(BASE + "/settings/appearance?sheet=1&firstrun=0"); await page.waitForSelector("html[data-ready]"); await page.waitForTimeout(800);
-  ok((await page.locator('[role="dialog"]').count()) === 0 && (await page.getByText("Wallpaper and fonts").count()) > 0, "wallpaper and fonts are a page of the Settings app on a desktop, not a sheet");
+  await page.goto(BASE + "/settings/appearance/appearance.wallpaper?firstrun=0"); await page.waitForSelector("html[data-ready]"); await page.waitForTimeout(800);
+  ok((await page.locator('[role="dialog"]').count()) === 0 && (await page.getByRole("radiogroup", { name: "Wallpaper" }).count()) === 1, "the wallpaper is a section of the Appearance page in the Settings app, not a sheet");
   await ctx.close();
 }
 await b.close(); stop();

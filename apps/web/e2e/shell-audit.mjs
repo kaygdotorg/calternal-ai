@@ -130,7 +130,7 @@ const wallpapers = JSON.parse(readFileSync("wallpapers.json", "utf8"));
   const doc = readFileSync("../../docs/settings.md", "utf8");
   const ids = [...doc.matchAll(/\| ([^|]+) \| `([A-Za-z0-9_-]{11})` \|/g)].map((m) => m[2]);
   ok(ids.length === 8 && ids.every((i) => wallpapers.some((w) => w.id === i)), "Default wallpapers: the eight photographs of docs/settings.md", `${ids.length} listed`);
-  const { ctx, page } = await fresh(DEVICES.desktop, "/settings/appearance?sheet=1&firstrun=0");
+  const { ctx, page } = await fresh(DEVICES.desktop, "/settings/appearance/appearance.wallpaper?firstrun=0");
   const tiles = await page.locator("button.tile[role=radio]").count();
   ok(tiles >= 8, "The wallpaper picker offers the built-in set", String(tiles));
   await ctx.close();
