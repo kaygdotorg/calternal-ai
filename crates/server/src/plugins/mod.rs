@@ -27,6 +27,7 @@ pub mod jobs;
 pub mod live;
 pub mod live_catalog;
 mod machine_worker;
+pub(crate) mod network;
 pub mod package_store;
 mod requests;
 pub(crate) use requests::OnceAdmission;
@@ -556,7 +557,13 @@ pub fn activation(store: &Store, space: SpaceId, plugin: &Plugin) -> Result<Plug
 /// Row used before a space stores any activation for `plugin`.
 pub fn default_row(plugin: &Plugin) -> PluginRow {
     PluginRow {
-        enabled: plugin.entry.default_enabled && plugin.unavailable.is_none(),
+        enabled: plugin.entry.default_enabled
+            && plugin.unavailable.is_none()
+            && plugin
+                .manifest
+                .network
+                .as_ref()
+                .is_none_or(|network| network.content_fetch.is_none()),
         generation: 1,
         approval: plugin.activation_approval,
     }

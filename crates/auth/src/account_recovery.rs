@@ -433,8 +433,16 @@ impl Auth {
                 "account_recovery_codes","account_recovery_flows","account_email_challenges","setup_tokens"] {
                 tx.execute(&format!("DELETE FROM {table} WHERE user_id=?1"),[&user]).map_err(sql)?;
             }
-            tx.execute("INSERT INTO account_details(user_id,replacement_pending,prompt_dismissed) VALUES(?1,1,0)
-                ON CONFLICT(user_id) DO UPDATE SET replacement_pending=1,prompt_dismissed=0", [&user]).map_err(sql)?;
+            // Keep the recovery trigger's dirty-key deduplication on repeat writes.
+            if tx.execute(
+                "UPDATE account_details SET replacement_pending=1,prompt_dismissed=0 WHERE user_id=?1",
+                [&user],
+            ).map_err(sql)? == 0 {
+                tx.execute(
+                    "INSERT INTO account_details(user_id,replacement_pending,prompt_dismissed) VALUES(?1,1,0)",
+                    [&user],
+                ).map_err(sql)?;
+            }
             audit(&tx,r.user,&method,"completed","recovery",now)?;
             let mail = verified_address(&tx,r.user)?.map(|to| notice(to,"Calternal account recovery completed",None));
             spaces::commit_with(tx,|| inner.sessions.forget_installations(installations))?;

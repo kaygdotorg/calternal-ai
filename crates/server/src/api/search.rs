@@ -1,4 +1,5 @@
 //! Authorized palette queries and the indexed mention pickers.
+mod shared;
 #[cfg(test)]
 mod tests;
 
@@ -110,9 +111,12 @@ impl QueryPlan {
         store: &Store,
         spaces: &[SpaceId],
         input: &SearchInput,
+        roots: &[shared::Root],
     ) -> Result<SearchResult, Error> {
         match self {
-            Self::Projected { config, prefix } => collect(store, spaces, input, *prefix, config),
+            Self::Projected { config, prefix } => {
+                collect(store, spaces, input, *prefix, config, roots)
+            }
             Self::ThreadTitles(plugin) => thread_titles(store, spaces, input, plugin.as_deref()),
         }
     }
@@ -131,40 +135,38 @@ async fn search<D: Directory>(
             .await
             .map_err(crate::auth::auth_error)
     };
-    let spaces = load().await?;
-    let selected_spaces = spaces.clone();
-    let selected_plan = plan.clone();
-    let (input, page) = blocking(state, move |store| {
-        let page = selected_plan.collect(store, &selected_spaces, &input);
-        Ok((input, page))
-    })
-    .await?;
-    let current = load().await?;
-    if spaces == current {
-        return page;
+    let shares = selected.is_none()
+        && matches!(plan, QueryPlan::Projected { .. })
+        && (input.kinds.is_empty() || input.kinds.iter().any(|kind| kind == "notes"));
+    let mut scope = load().await?;
+    let mut input = input;
+    for _ in 0..2 {
+        let roots = if shares {
+            auth.search_share_roots(account)
+                .await
+                .map_err(crate::auth::auth_error)?
+        } else {
+            Vec::new()
+        };
+        let authorized = scope.clone();
+        let selected_plan = plan.clone();
+        let (next_input, page) = blocking(state, move |store| {
+            let page = selected_plan.collect(store, &authorized, &input, &roots);
+            Ok((input, page))
+        })
+        .await?;
+        let current = load().await?;
+        if scope == current {
+            let mut page = page?;
+            if shares {
+                shared::recheck(state, account, &scope, &mut page).await?;
+            }
+            return Ok(page);
+        }
+        scope = current;
+        input = next_input;
     }
-    // Recompute ordering, coverage and continuation if a grant changed.
-    retry(state, account, input, current, plan).await
-}
-
-async fn retry<D: Directory>(
-    state: &Shared<D>,
-    account: AccountId,
-    input: SearchInput,
-    spaces: Vec<SpaceId>,
-    plan: QueryPlan,
-) -> Result<SearchResult, Error> {
-    let filter = input.space_id.as_deref().map(space_of).transpose()?;
-    let selected = spaces.clone();
-    let result = blocking(state, move |store| plan.collect(store, &selected, &input)).await?;
-    let current = directory(state)?
-        .search_spaces(account, filter, SearchOperation::CAPABILITY)
-        .await
-        .map_err(crate::auth::auth_error)?;
-    if current != spaces {
-        return Err(Error::unavailable("space access changed; retry the search"));
-    }
-    Ok(result)
+    Err(Error::unavailable("space access changed; retry the search"))
 }
 
 // Threads keep title lookup available before message indexing is enabled. Use
@@ -231,6 +233,7 @@ fn collect(
     input: &SearchInput,
     prefix: bool,
     config: &SearchConfig,
+    roots: &[shared::Root],
 ) -> Result<SearchResult, Error> {
     let words: Vec<_> = input
         .query
@@ -255,18 +258,27 @@ fn collect(
     let folded = calternal_content::fold_title(input.query.trim());
     let limit = input.limit.unwrap_or(20) as usize;
     let mut hits = Vec::new();
-    let mut partial = false;
+    let (shared_ids, mut partial) = shared::collect_ids(store, spaces, roots)?;
     let probe = |matching: SearchMatch<'_>,
                  hits: &mut Vec<(SpaceId, IndexedHit)>,
                  partial: &mut bool|
      -> Result<(), Error> {
-        for &space in spaces {
+        for (space, item_ids) in spaces.iter().map(|space| (*space, None)).chain(
+            shared_ids
+                .iter()
+                .map(|(space, ids)| (*space, Some(ids.as_str()))),
+        ) {
             let page = store.content().search_page(
                 config,
                 space,
                 &SearchProbe {
                     matching,
-                    kinds: &kinds,
+                    kinds: if item_ids.is_some() {
+                        "[\"notes\"]"
+                    } else {
+                        &kinds
+                    },
+                    item_ids,
                     after: after.as_ref(),
                     limit: limit + 1,
                 },
