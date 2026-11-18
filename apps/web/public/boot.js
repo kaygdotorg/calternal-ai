@@ -17,5 +17,4 @@
   function pre(f) { var l = document.createElement("link"); l.rel = "preload"; l.as = "font"; l.type = "font/woff2"; l.crossOrigin = "anonymous"; l.href = new URL("fonts/" + f, here || location.href).href; document.head.appendChild(l); }
   pre("google-sans-flex-latin-" + (s === "dark" ? "opsz-grad" : "opsz") + "-normal.woff2");
   pre("google-sans-flex-latin-rond-normal.woff2");
-  pre("maple-mono-latin-400-normal.woff2");
 })();

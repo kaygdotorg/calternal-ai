@@ -70,7 +70,7 @@ looking at the screenshot only, which is not a pixel measurement (`docs/native-u
 
 | Check | Method | Thread (desktop) | Request bar | Long thread | Notes | Phone (thread, bar, sidebar, right card) |
 | --- | --- | --- | --- | --- | --- | --- |
-| Only the three families are drawn (Google Sans Flex, its Dark and Rounded, Maple Mono) | Script | ✔ | ✔ | ✔ | ✔ | ✔ |
+| Only the three families are drawn (Google Sans Flex, its Dark and Rounded, Cascadia Code) | Script | ✔ | ✔ | ✔ | ✔ | ✔ |
 | Only the token type scale (desktop 11, 12, 13, 15, 22; phone 11, 13, 15, 17, 20, 34) and the three weights (440, 460, 620) | Script | ✔ | ✔ | ✔ | ✔ | ✔ |
 | Every padding, margin and gap is on the `s-1`..`s-10` scale | Script | ✔ | ✔ | ✔ | ✔ | ✔ except two token-derived values (bottom inset 72, notes bottom 120, both built from tokens) |
 | Hit targets at least 44 px on touch | Script | n/a (desktop 28) | n/a | n/a | n/a | ✔ |

@@ -99,7 +99,7 @@ Measured: drag and settle at 4x CPU in Chromium: 56 frames, every one 16.7 ms (n
 - The background behind both sidebars is a wallpaper: the person's own picture, one from
   a good built-in set, or one from Unsplash. It is blurred once when chosen, never per
   frame, so scrolling stays smooth.
-- Fonts are a personal choice with a polished default (Google Sans Flex, Maple Mono):
+- Fonts are a personal choice with a polished default (Google Sans Flex, Cascadia Code):
   from Google Fonts, Fontsource, Fontshare, the person's own files, or the system font.
   Chosen fonts and wallpapers are stored on the server; pages never load from those
   services while in use.

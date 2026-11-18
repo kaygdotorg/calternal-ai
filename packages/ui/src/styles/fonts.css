@@ -1,10 +1,11 @@
 /* Font roles. The faces themselves are registered by lib/fonts.ts (registerFonts), because their URLs depend on where the app is mounted
-   (the preview host serves it under /ai/). Google Sans Flex for all UI text and Maple Mono for code are the defaults; the person can choose
-   others per role (interface, chat, code). No system font appears in any default stack. */
+   (the preview host serves it under /ai/). Google Sans Flex for all UI text and Cascadia Code for code and the terminal are the defaults; the person can choose
+   others per role (interface, chat, code, terminal). No system font appears in any default stack. */
 :root {
   --font-ui: "Google Sans Flex";
   --font-chat: var(--font-ui);
-  --font-mono: "Maple Mono";
+  --font-mono: "Cascadia Code";
+  --font-terminal: "Cascadia Code";
   --font-rounded: "Google Sans Flex Rounded", "Google Sans Flex";
   --font-brand: "Dancing Script";
 }

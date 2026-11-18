@@ -1,17 +1,26 @@
 /**
- * Font choice as a setting, after the owner's calternal-ui plugin (`shared/fonts.ts`, `server/fonts-*.ts`): a family per role (interface, chat, code)
+ * Font choice as a setting, after the owner's calternal-ui plugin (`shared/fonts.ts`, `server/fonts-*.ts`): a family per role (interface, chat, code, terminal and the wordmark)
  * from Google Fonts, Fontsource, Fontshare, the person's own files, or the system font. The server will download a chosen family once, store its
  * files and serve them from its own storage, so pages never load from those sites. `FixtureFonts` stands in: its catalogues are short hand-written
  * lists, and only families that ship with the app (or that the person uploads) can actually be drawn without the server.
- * Defaults: Google Sans Flex for the interface and chat, Maple Mono for code.
+ * Defaults: Google Sans Flex for the interface and chat, Cascadia Code for code and the terminal (Maple Mono is selectable and never preloaded).
  */
 import { all, tx } from "./idb";
 
 /** Where a family comes from. */
 export type FontSource = "google" | "fontsource" | "fontshare" | "upload" | "system";
 
-/** The three places a font applies. */
-export type FontRole = "ui" | "chat" | "code" | "brand";
+/** The places a font applies: interface, chat, code, terminal, and the wordmark. */
+export type FontRole = "ui" | "chat" | "code" | "terminal" | "brand";
+
+/** Every role, in the order Settings lists them, with the CSS variable each one sets and whether it takes monospaced families only. The one table the loader and the picker both read. */
+export const ROLES: { role: FontRole; label: string; variable: string; mono: boolean }[] = [
+  { role: "ui", label: "Interface", variable: "--font-ui", mono: false },
+  { role: "chat", label: "Chat", variable: "--font-chat", mono: false },
+  { role: "code", label: "Code", variable: "--font-mono", mono: true },
+  { role: "terminal", label: "Terminal", variable: "--font-terminal", mono: true },
+  { role: "brand", label: "Wordmark", variable: "--font-brand", mono: false },
+];
 
 /** A choice for one role. */
 export interface FontChoice {
@@ -21,14 +30,15 @@ export interface FontChoice {
   source: FontSource;
 }
 
-/** The person's three choices. */
+/** The person's choices, one per role. */
 export type FontPrefs = Record<FontRole, FontChoice>;
 
 /** The defaults: the existing app's own faces. */
 export const DEFAULT_FONTS: FontPrefs = {
   ui: { family: "Google Sans Flex", source: "google" },
   chat: { family: "Google Sans Flex", source: "google" },
-  code: { family: "Maple Mono", source: "fontsource" },
+  code: { family: "Cascadia Code", source: "fontsource" },
+  terminal: { family: "Cascadia Code", source: "fontsource" },
   /** The wordmark at the top of the sidebar: a cursive face, as in the owner's calternal-ui plugin. */
   brand: { family: "Dancing Script", source: "google" },
 };
@@ -64,12 +74,12 @@ export const systemStack = (mono: boolean): string =>
 /** How each source is named in the picker. */
 export const SOURCE_LABEL: Record<FontSource, string> = { google: "Google", fontsource: "Fontsource", fontshare: "Fontshare", upload: "Upload", system: "System" };
 
-const BUNDLED = new Set(["Google Sans Flex", "Maple Mono", "Dancing Script"]);
+const BUNDLED = new Set(["Google Sans Flex", "Cascadia Code", "Maple Mono", "Dancing Script"]);
 const CATALOGUE: Omit<FontInfo, "ready">[] = [
   ...["Google Sans Flex", "Inter", "Roboto", "Source Serif 4", "Lora", "Dancing Script", "Pacifico", "Caveat", "Nunito", "DM Sans"].map((family) => ({ family, source: "google" as const, mono: false })),
   ...["JetBrains Mono", "Fira Code", "Source Code Pro", "IBM Plex Mono"].map((family) => ({ family, source: "google" as const, mono: true })),
   ...["Geist Sans", "iA Writer Quattro", "Open Runde"].map((family) => ({ family, source: "fontsource" as const, mono: false })),
-  ...["Maple Mono", "Monaspace Neon", "Iosevka", "Geist Mono"].map((family) => ({ family, source: "fontsource" as const, mono: true })),
+  ...["Cascadia Code", "Maple Mono", "Monaspace Neon", "Iosevka", "Geist Mono"].map((family) => ({ family, source: "fontsource" as const, mono: true })),
   ...["Satoshi", "General Sans", "Switzer", "Clash Display"].map((family) => ({ family, source: "fontshare" as const, mono: false })),
 ];
 
@@ -132,7 +142,7 @@ export async function loadOwn(family: string): Promise<void> {
 }
 
 /**
- * Applies the choices as CSS variables on the root (`--font-ui`, `--font-chat`, `--font-mono`). The defaults remove the overrides, so the
+ * Applies the choices as CSS variables on the root, one per role (the `ROLES` table: `--font-ui`, `--font-chat`, `--font-mono`, `--font-terminal`, `--font-brand`). The defaults remove the overrides, so the
  * scheme's own family stack (light, or Dark with its GRAD axis) applies. A chosen family is used for both schemes. Own fonts are registered first.
  */
 export async function applyFonts(p: FontPrefs): Promise<void> {
@@ -142,7 +152,7 @@ export async function applyFonts(p: FontPrefs): Promise<void> {
     const def = DEFAULT_FONTS[role];
     if (c.family === def.family && c.source === def.source) return void st.removeProperty(name);
     if (c.source === "upload") await loadOwn(c.family);
-    st.setProperty(name, c.source === "system" ? systemStack(role === "code") : `"${c.family}"`);
+    st.setProperty(name, c.source === "system" ? systemStack(ROLES.find((r) => r.role === role)!.mono) : `"${c.family}"`);
   };
-  await Promise.all([set("ui", "--font-ui"), set("chat", "--font-chat"), set("code", "--font-mono"), set("brand", "--font-brand")]);
+  await Promise.all(ROLES.map((r) => set(r.role, r.variable)));
 }

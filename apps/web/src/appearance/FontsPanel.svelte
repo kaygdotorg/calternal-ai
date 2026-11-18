@@ -3,22 +3,25 @@
   // The roles are rows in the page at every width; a row opens its picker (a search and a long list), as a sheet on touch and as a dropdown beside the row otherwise: no nested page, no Back.
   // Everything goes through the adapters in fonts.ts, so the real server plugs in without changes here.
   import { Button, Icon, Popover, Row, Selector, Sheet, currentForm, textField } from "@calternal/ui";
-  import { SOURCE_LABEL, type FontInfo, type FontRole, type FontSource } from "./fonts";
+  import { serverMode } from "../server/client";
+  import { ROLES, SOURCE_LABEL, type FontInfo, type FontRole, type FontSource } from "./fonts";
   import { appearance as A } from "./prefs.svelte";
   let error = $state("");
   let source = $state<FontSource>("google");
   let fq = $state("");
   let fonts = $state<FontInfo[]>([]);
   let ownName = $state("");
-  const ROLE: Record<FontRole, string> = { ui: "Interface", chat: "Chat", code: "Code", brand: "Wordmark" };
-  const ROLES = ["ui", "chat", "code", "brand"] as const;
+  const ROLE = Object.fromEntries(ROLES.map((r) => [r.role, r.label])) as Record<FontRole, string>;
+  const mono = (r: FontRole) => ROLES.find((x) => x.role === r)!.mono;
+  /** Against the real server the catalogues, installs and uploads have no endpoint yet (docs/ui-shell.md, "Fonts"): only the shipped families and the system font are offered there. */
+  const SOURCES: FontSource[] = serverMode() ? ["fontsource", "system"] : ["google", "fontsource", "fontshare", "upload", "system"];
   /** The role whose picker is open, and the row it opened from (the dropdown anchors to it). */
   let view = $state<FontRole | null>(null);
   let anchor = $state<HTMLElement | undefined>();
   $effect(() => {
     if (!view) return;
-    const s = source, q = fq, mono = view === "code";
-    void A.fonts.search(s, q, mono).then((r) => (fonts = r));
+    const s = source, q = fq, onlyMono = mono(view);
+    void A.fonts.search(s, q, onlyMono).then((r) => (fonts = r));
   });
   async function pick(role: FontRole, f: FontInfo) {
     error = "";
@@ -50,7 +53,7 @@
 {#snippet picker()}
       {#if view}
         <h2>{ROLE[view]} font</h2>
-        <Selector class="sources row-selector" label="Font source" options={(["google", "fontsource", "fontshare", "upload", "system"] as const).map((s) => ({ value: s, label: SOURCE_LABEL[s] }))} value={source} onchange={(v) => { source = v as FontSource; fq = ""; error = ""; }} />
+        <Selector class="sources row-selector" label="Font source" options={SOURCES.map((s) => ({ value: s, label: SOURCE_LABEL[s] }))} value={source} onchange={(v) => { source = v as FontSource; fq = ""; error = ""; }} />
         {#if source !== "system" && source !== "upload"}
           <label class="visually-hidden" for="f-q">Search fonts</label>
           <input id="f-q" class="field" type="search" use:textField={{ kind: "search" }} placeholder="Search {SOURCE_LABEL[source]}" bind:value={fq} autocomplete="off" />
@@ -80,10 +83,10 @@
     {/snippet}
 
 <div class="fp">
-  {#each ROLES as r (r)}
+  {#each ROLES as { role: r } (r)}
     <Row tall title={ROLE[r]} sub={label(r)} selected={view === r} onclick={(e) => choose(r, e.currentTarget as HTMLElement)}>{#snippet trailing()}<Icon name="chevron" inline />{/snippet}</Row>
   {/each}
-  <p class="note">Google Sans Flex and Maple Mono are the defaults. A font from a catalogue is downloaded and stored by the server once, so pages never load from those sites.</p>
+  <p class="note">Google Sans Flex and Cascadia Code are the defaults (Maple Mono is there to choose). A font from a catalogue is downloaded and stored by the server once, so pages never load from those sites.</p>
   {#if view}
     {#if currentForm() === "touch"}
       <Sheet open label="{ROLE[view]} font" onclose={() => choose(null)}><div class="sh">{@render picker()}</div></Sheet>

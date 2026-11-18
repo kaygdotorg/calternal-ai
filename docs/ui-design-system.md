@@ -21,7 +21,7 @@ its README lists what matches this system exactly, what differs because the plat
   target 28 against 44, blur scale 1 against 0.7, their own text sizes.
 - **Fonts, only these:** Google Sans Flex for all UI text (the `Dark` family adds the GRAD axis for light-on-
   dark ink with identical advance widths; the Rounded variant is used for the app name and avatar initials),
-  Maple Mono for code. No system font is in any stack. Files are the subset latin and latin-ext woff2s, the
+  Cascadia Code (one variable file) for code and the terminal; Maple Mono is selectable and never preloaded. No system font is in any stack. Files are the subset latin and latin-ext woff2s, the
   page head preloads only the active scheme's file, and nothing paints until it has loaded (`font-display:
   block`, `lib/fonts.ts`, `apps/web/src/main.ts`).
 - **Type scale:** `text-title`, `text-heading`, `text-body`, `text-ui`, `text-label`, `text-code`,
@@ -98,7 +98,7 @@ one needs the server's access key and returns the photo's credit, which the sett
 ## Fonts
 
 Defaults, exactly as the existing app: Google Sans Flex for all UI text, in its light family (weight and optical size) or, in the dark scheme, its
-Dark family (the same plus GRAD 30: more ink, identical advance widths); Maple Mono (400, 500) for code. Weights 440 (UI), 460 (reading text) and 620
+Dark family (the same plus GRAD 30: more ink, identical advance widths); Cascadia Code (weights 200 to 700, one variable file) for code and the terminal. Weights 440 (UI), 460 (reading text) and 620
 (emphasis); optical size follows the font size (`font-optical-sizing: auto`). The Rounded family is used only where the existing app uses it, with
 `font-variation-settings: "ROND" 100`: the app name in the sidebar header. No system font is in any default stack, nothing paints until the
 active family is loaded, and `registerFonts` (`packages/ui`) adds the faces under the app's mount path.
@@ -109,7 +109,7 @@ through this app. The glyphs and advance widths are identical; the faces are the
 and fixed: the Rounded family was drawn without `"ROND" 100`, so the app name was not rounded at all; Rounded was also applied to the avatar
 initial, where the existing app does not use it; and the text sat at 14 to 15 px with the heavier 620 weight in more places than the existing app
 (the owner's 13 px and the existing weights are now the only ones). A browser that fails to load the font (a wrong base path, a blocked file) would
-show a system face; `e2e/preview-check.mjs` checks on the deployed copy that Google Sans Flex and Maple Mono are loaded.
+show a system face; `e2e/preview-check.mjs` checks on the deployed copy that Google Sans Flex and Cascadia Code are loaded.
 
 Font choice is a setting per role (interface, chat, code): sources Google Fonts, Fontsource, Fontshare, own files and System. The server will
 download a chosen family once and serve it from its own storage; `FontLibrary.install` is that call. Own files are registered in the browser

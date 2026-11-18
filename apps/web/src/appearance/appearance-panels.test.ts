@@ -64,7 +64,7 @@ describe("appearance: wallpaper and fonts sections", () => {
     render(FontsPanel);
     await userEvent.click(screen.getByRole("button", { name: /Code/ }));
     const list = await screen.findByRole("radiogroup", { name: "Code font" });
-    await within(list).findByRole("radio", { name: /Maple Mono/ });
+    await within(list).findByRole("radio", { name: /Cascadia Code/ });
     await userEvent.click(screen.getByRole("tab", { name: "Google" }));
     await within(await screen.findByRole("radiogroup", { name: "Code font" })).findByRole("radio", { name: /JetBrains Mono/ });
     expect(within(list).queryByRole("radio", { name: /Lora/ })).toBeNull();

@@ -302,8 +302,8 @@ licence text and NOTICE preserved).
 ### Proposed Calternal preset anatomy
 
 `backdrop recipe + scheme palette (8 colours) + accent + reading face + material`, plus whether it flips between
-schemes. Fonts stay Google Sans Flex and Maple Mono by default (owner decision); a preset may pick one reading face from a
-short list (Google Sans Flex, a serif, Maple Mono) but never a font file we do not ship. Material is `glass` (the
+schemes. Fonts stay Google Sans Flex and Cascadia Code by default (owner decision); a preset may pick one reading face from a
+short list (Google Sans Flex, a serif, Cascadia Code) but never a font file we do not ship. Material is `glass` (the
 shell's pane) or `paper` (Craft's opaque card), nothing else.
 
 Gallery tile = a 4:3 miniature of the actual three-region shell (flat sidebars on the backdrop, dimmed card), the
@@ -322,10 +322,10 @@ first, a search field. The miniature renders from the same tokens, so it cannot 
 | 6 | **Dusk** | `dusk` | indigo-rose | rose | Google Sans Flex | glass | flips |
 | 7 | **Catppuccin** | derived mesh | Latte / Mocha | mauve | Google Sans Flex | paper | flips |
 | 8 | **Rosé Pine** | derived mesh | Dawn / main | iris | Google Sans Flex | paper | flips |
-| 9 | **Tokyo Night** | derived mesh | Day / Night | blue | Maple Mono | paper | flips |
+| 9 | **Tokyo Night** | derived mesh | Day / Night | blue | Cascadia Code | paper | flips |
 | 10 | **Nord** | derived mesh | Snow Storm / Nord | frost | Google Sans Flex | paper | flips |
-| 11 | **Gruvbox** | derived mesh | light / dark | orange | Maple Mono | paper | flips |
-| 12 | **Mono** | none | grey scale | ink | Maple Mono | paper | flips |
+| 11 | **Gruvbox** | derived mesh | light / dark | orange | Cascadia Code | paper | flips |
+| 12 | **Mono** | none | grey scale | ink | Cascadia Code | paper | flips |
 
 Community-palette presets use the palette's own paper and a mesh derived from it (rule above), so Catppuccin Mocha has
 no stock wallpaper behind it; its look is its colours. Every preset is twin-capable because every row has both
