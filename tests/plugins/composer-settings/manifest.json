@@ -1,0 +1,47 @@
+{
+  "id": "composer-settings",
+  "name": "Composer settings example",
+  "icon": "puzzle",
+  "version": "0.1.0",
+  "api_version": 1,
+  "kinds": [],
+  "operations": [
+    {
+      "id": "composer-settings.label",
+      "input_schema": {
+        "type": "object",
+        "properties": { "key": { "type": "string" } },
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": { "view": { "type": "object" } },
+        "required": ["view"]
+      },
+      "required_capability": "space.read",
+      "mutates": false,
+      "idempotency": "read_only",
+      "risk": "read"
+    }
+  ],
+  "collections": [],
+  "views": [],
+  "slots": [
+    {
+      "id": "composer-label",
+      "label": "Composer label",
+      "slot": "composer_row",
+      "renderer": { "type": "generated", "operation": "composer-settings.label" }
+    }
+  ],
+  "attention": [],
+  "settings": [
+    { "id": "label", "value_type": "string", "default": "Quick note" }
+  ],
+  "schedules": [],
+  "webhooks": [],
+  "secrets": [],
+  "hooks": [],
+  "themes": [],
+  "host_calls": ["read_setting_v1"]
+}

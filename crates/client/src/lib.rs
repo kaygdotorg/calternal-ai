@@ -67,7 +67,12 @@ impl ClientError {
             Self::Validation(e) => ApiError {
                 code: e.code,
                 message: e.message.clone(),
-                details: None,
+                details: e.details.as_ref().and_then(Value::as_object).map(|fields| {
+                    fields
+                        .iter()
+                        .map(|(key, value)| (key.clone(), value.clone()))
+                        .collect()
+                }),
             },
             Self::Api { error, .. } => error.clone(),
             Self::ReauthenticationRequired => ApiError {

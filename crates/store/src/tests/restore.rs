@@ -630,7 +630,26 @@ async fn save_activity_marks_the_witness_dirty() {
     assert_ne!(idle.last_save_ns, 0);
 }
 
-/// A direct journal commit only publishes the head, leaving flush timing outside the writer.
+/// A commit opens no save scope. Only the flusher stamps the quiet window, when it
+/// next observes the new head, so wait for that stamp rather than asserting it has
+/// not happened yet, which would race the flusher's poll.
+async fn assert_flusher_alone_stamps(s: &SpaceStore, before: crate::shared::FlushSnapshot) {
+    let active = || s.inner.shared.flush_activity.snapshot().active_saves;
+    assert_eq!(active(), before.active_saves);
+    let mut stamped = false;
+    for _ in 0..2000 {
+        if s.inner.shared.flush_activity.snapshot().last_save_ns != before.last_save_ns {
+            stamped = true;
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+    }
+    assert!(stamped, "the flusher never observed the committed head");
+    assert_eq!(active(), before.active_saves);
+}
+
+/// A direct journal commit only publishes the head: it opens no save scope, and the
+/// flusher alone stamps the quiet window once it observes the new head.
 #[tokio::test]
 async fn a_store_commit_does_not_update_flush_activity() {
     let site = Site::new();
@@ -645,9 +664,7 @@ async fn a_store_commit_does_not_update_flush_activity() {
     .await
     .unwrap();
 
-    let after = s.inner.shared.flush_activity.snapshot();
-    assert_eq!(after.active_saves, before.active_saves);
-    assert_eq!(after.last_save_ns, before.last_save_ns);
+    assert_flusher_alone_stamps(&s, before).await;
 }
 
 /// A durable commit does not do witness bookkeeping in the commit path.
@@ -665,9 +682,7 @@ async fn a_durable_commit_does_not_update_flush_activity() {
     .await
     .unwrap();
 
-    let after = s.inner.shared.flush_activity.snapshot();
-    assert_eq!(after.active_saves, before.active_saves);
-    assert_eq!(after.last_save_ns, before.last_save_ns);
+    assert_flusher_alone_stamps(&s, before).await;
 }
 
 /// The flush worker, rather than a journal commit, publishes the cached check used by the witness.

@@ -70,6 +70,13 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
           "type": "string"
         },
         {
+          "description": "Read the effective value of a setting declared by the calling package.",
+          "enum": [
+            "read_setting_v1"
+          ],
+          "type": "string"
+        },
+        {
           "description": "Write an authorized item.",
           "enum": [
             "write_item"

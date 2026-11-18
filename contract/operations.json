@@ -914,6 +914,13 @@
               "type": "string"
             },
             {
+              "description": "Read the effective value of a setting declared by the calling package.",
+              "enum": [
+                "read_setting_v1"
+              ],
+              "type": "string"
+            },
+            {
               "description": "Write an authorized item.",
               "enum": [
                 "write_item"
@@ -1562,7 +1569,8 @@
               "type": "string"
             },
             "kinds": {
-              "description": "Kinds offered by this plugin.",
+              "default": [],
+              "description": "Kinds offered by this plugin. An omitted list declares no kinds.",
               "items": {
                 "$ref": "#/definitions/ManifestKind"
               },
@@ -1677,7 +1685,6 @@
             "host_calls",
             "icon",
             "id",
-            "kinds",
             "name",
             "operations",
             "schedules",
@@ -2343,6 +2350,13 @@
               "type": "string"
             },
             {
+              "description": "Read the effective value of a setting declared by the calling package.",
+              "enum": [
+                "read_setting_v1"
+              ],
+              "type": "string"
+            },
+            {
               "description": "Write an authorized item.",
               "enum": [
                 "write_item"
@@ -2991,7 +3005,8 @@
               "type": "string"
             },
             "kinds": {
-              "description": "Kinds offered by this plugin.",
+              "default": [],
+              "description": "Kinds offered by this plugin. An omitted list declares no kinds.",
               "items": {
                 "$ref": "#/definitions/ManifestKind"
               },
@@ -3106,7 +3121,6 @@
             "host_calls",
             "icon",
             "id",
-            "kinds",
             "name",
             "operations",
             "schedules",
@@ -3693,6 +3707,13 @@
               "type": "string"
             },
             {
+              "description": "Read the effective value of a setting declared by the calling package.",
+              "enum": [
+                "read_setting_v1"
+              ],
+              "type": "string"
+            },
+            {
               "description": "Write an authorized item.",
               "enum": [
                 "write_item"
@@ -4341,7 +4362,8 @@
               "type": "string"
             },
             "kinds": {
-              "description": "Kinds offered by this plugin.",
+              "default": [],
+              "description": "Kinds offered by this plugin. An omitted list declares no kinds.",
               "items": {
                 "$ref": "#/definitions/ManifestKind"
               },
@@ -4456,7 +4478,6 @@
             "host_calls",
             "icon",
             "id",
-            "kinds",
             "name",
             "operations",
             "schedules",
@@ -10021,6 +10042,147 @@
         }
       },
       "title": "AccountInputResult",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "read",
+    "id": "plugins.settings.get",
+    "description": "Read a declared space plugin setting",
+    "mutates": false,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Read one manifest-declared setting as a Manager of the addressed space.",
+      "properties": {
+        "key": {
+          "description": "Stable setting key from that package's manifest.",
+          "type": "string"
+        },
+        "plugin_id": {
+          "description": "Installed package ID.",
+          "type": "string"
+        },
+        "space_id": {
+          "description": "Space UUID.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "key",
+        "plugin_id",
+        "space_id"
+      ],
+      "title": "PluginSettingAddress",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "description": "Current values for a setting. The worker receives only its effective value.",
+      "properties": {
+        "alternatives": {
+          "description": "Concurrent alternatives preserved until explicit resolution.",
+          "items": true,
+          "type": "array"
+        },
+        "effective": {
+          "description": "Value the package sees, using the manifest default when needed."
+        },
+        "repair": {
+          "description": "Caller-safe description of the file and line to repair, when applicable.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "value": {
+          "description": "Stored override for the next edit's base. Null indicates no override."
+        },
+        "writable": {
+          "description": "True when the current settings file can be changed through the API.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "alternatives",
+        "effective",
+        "value",
+        "writable"
+      ],
+      "title": "PluginSettingValue",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "reversible",
+    "id": "plugins.settings.set",
+    "description": "Edit a declared space plugin setting",
+    "mutates": true,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Edit one setting while retaining edits from other devices.",
+      "properties": {
+        "base": {
+          "description": "Override last read for this key. Null means no override."
+        },
+        "key": {
+          "description": "Stable setting key from that package's manifest.",
+          "type": "string"
+        },
+        "plugin_id": {
+          "description": "Installed package ID.",
+          "type": "string"
+        },
+        "resolve": {
+          "description": "Explicit conflict resolution echoes every alternative the caller saw.",
+          "items": true,
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "space_id": {
+          "description": "Space UUID.",
+          "type": "string"
+        },
+        "value": {
+          "description": "New override of the declared type. Null clears the override."
+        }
+      },
+      "required": [
+        "base",
+        "key",
+        "plugin_id",
+        "space_id",
+        "value"
+      ],
+      "title": "PluginSettingEdit",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "description": "Durable receipt and scoped invalidation for a setting write.",
+      "properties": {
+        "conflicted": {
+          "description": "True when manual resolution is needed.",
+          "type": "boolean"
+        },
+        "key": {
+          "description": "Changed manifest key.",
+          "type": "string"
+        },
+        "plugin_id": {
+          "description": "Package whose setting should be re-read.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "conflicted",
+        "key",
+        "plugin_id"
+      ],
+      "title": "PluginSettingChange",
       "type": "object"
     }
   },

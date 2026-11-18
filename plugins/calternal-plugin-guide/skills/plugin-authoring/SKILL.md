@@ -1,34 +1,84 @@
 ---
 name: calternal-plugin-authoring
-description: Scaffold, implement, test and document a TypeScript Calternal plugin.
+description: Scaffold, implement, test and live-load a TypeScript Calternal plugin.
 ---
 
-Read the current desired behavior, stable addresses and space scope. Call
-`calternal-plugin-guide.explain` with the `reference` and `walkthrough` topics.
-Scaffold with `calternal plugin new` in the author's checkout. Use
-`calternal-plugin-guide.scaffold` if you need a starter manifest and command
-before choosing a checkout.
+## Start in the development shell
 
-Keep product logic in the worker. Make durable changes through declared broker
-calls. Use request identities for retriable mutations. Add an accessible GenUI
-view through the existing catalog where the feature needs an interface.
+If the task supplies an environment file and project directory, first source
+that file on the development machine, then change into the supplied project
+directory. Every SSH command starts a fresh shell. Source the file again in
+each block that uses the tools. Check `command -v calternal node npm` in that
+same shell before proceeding. The env file supplies the tool PATH, SDK root
+and server connection. Avoid guessing binary paths or printing credentials.
+Use a quoted here-document into the remote shell for multiline source so
+local quoting does not rewrite the code.
 
-Document each operation and its risk. Run `calternal plugin check`,
-`calternal plugin test` and, when relevant, `calternal plugin bench`. Verify
-both the expected result and a denied callback using disposable fixtures.
-Present the exact capabilities to the administrator for review.
+Outside a prepared environment, install Node.js 22.13 or later and npm,
+put `calternal` on PATH, and use a built Calternal SDK. In a full Calternal
+checkout, `nix develop` supplies the Node toolchain. The SDK is built by
+`npm run build:plugins` in that checkout.
 
-For live testing, use the disposable development server and space supplied with
-the task. Its server and CLI must be built with the `dev-plugin-drafts`
-feature and the server must already be running with `--development` and an
-enrolled worker machine. Run:
+From the project directory, run `calternal plugin new my-plugin`. It creates
+`./my-plugin` relative to your current directory. Change into it and run
+`npm install`. The starter's `worker.ts`, `worker.test.mjs`, `manifest.json`
+and README are in the package root. Build generates
+`manifest.generated.ts` and `dist/worker.js`. Change the manifest and worker
+together and update the tests when operation IDs or output contracts change.
+
+## Work from the public contracts
+
+Read the bundled reference at `../../reference.md` and walkthrough at
+`../../walkthrough.md`, relative to this skill's directory. They cover
+broker calls, GenUI, jobs, settings and the fixture protocol. You can also
+invoke the guide in the selected space.
 
 ```sh
-calternal plugin dev . --appdata "$APPDATA" --space "$SPACE_ID" --account "$ACCOUNT_ID" --once
-calternal invoke my-plugin.hello --input "{\"space_id\":\"$SPACE_ID\"}"
+calternal invoke calternal-plugin-guide.explain --input "{\"space_id\":\"$SPACE_ID\",\"topic\":\"reference\"}"
 ```
 
-Use the session connection supplied with the task. Confirm the response has
-the expected generated view. Use continuous `plugin dev` by omitting
-`--once`. A failed check or readiness response leaves the last ready draft
-in place. Read its diagnostic and try the edit again.
+A space-targeted plugin invocation includes `space_id` in its HTTP or CLI
+input. The host resolves it and removes it before invoking your handler.
+Your handler reads fields declared in the operation schema. Item-targeted
+operations can resolve the space from the item ID. For a job returned as
+`JOB_ID`, use `calternal invoke jobs.get --json --input "{\"job_id\":\"$JOB_ID\"}"`. `calternal describe --json` shows the schemas for
+the host operations.
+
+Declare capabilities and broker calls in the manifest. Durable writes
+need a mutating operation, the matching capability and a risk description.
+Keep fixture tests in step with the handler inputs and outputs. Use portable
+GenUI with its required labels, and encode dynamic text with `JSON.stringify`.
+
+## Check and use the running server
+
+Run `calternal plugin check .` and `calternal plugin test .`. Install
+dependencies if a required package is missing. If the fixture worker
+exited, read its reported status or signal and stderr. If the worker
+reported a handler failure, check the operation name, input shape and
+callback fixtures. An unhandled host callback is denied. A thrown handler
+error yields a failed invocation.
+
+With the development env sourced, run `calternal plugin dev . --once`.
+Without env defaults, pass `--appdata PATH --space UUID --account UUID`.
+Use the supplied server built for development drafts and its enrolled
+worker machine. Confirm Ready, invoke the authored operation through the
+supplied connection and verify its effect or generated view. Omit
+`--once` to watch the package. A rejected build leaves the last ready
+draft available. If an invocation reports a busy worker, wait for its
+current invocations to finish. Reuse the request ID when retrying the
+same durable write. If an operation returns `committed_write`, the
+save happened. Use its ID and string revision to reconcile the result.
+
+## Shared settings and generated contributions
+
+Declare the key, primitive `value_type` and default in `settings`. Declare
+`read_setting_v1` in `host_calls`, call `readSetting(context, key)` from the
+worker and narrow the result to the declared type. A generated
+`composer_row` slot targets the operation that returns the view. The
+reference describes the slot and the GenUI grammar.
+
+Use `plugins.settings.get` as Manager with `space_id`, `plugin_id` and
+`key`. For `plugins.settings.set`, include those fields, the read
+result's stored `value` as `base`, and the new `value`. Reset with null
+and check the result's `conflicted` flag. Invoke the view again and check
+`plugins.list` for its resolved contribution.

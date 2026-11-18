@@ -59,6 +59,13 @@ The only broker methods a worker may request.
       ]
     },
     {
+      "description": "Read the effective value of a setting declared by the calling package.",
+      "type": "string",
+      "enum": [
+        "read_setting_v1"
+      ]
+    },
+    {
       "description": "Write an authorized item.",
       "type": "string",
       "enum": [

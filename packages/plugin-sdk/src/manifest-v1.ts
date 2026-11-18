@@ -9,7 +9,7 @@ const id = /^[a-z0-9][a-z0-9._-]{0,79}$/;
 const capabilities = new Set(["space.read", "content.write", "plugins.use", "plugins.manage", "members.invite", "members.manage", "managers.manage", "space.settings", "space.transfer", "space.delete", "spaces.list", "spaces.create"]);
 /** Closed broker method vocabulary; declaration never grants permission. */
 export type { HostCallKind } from "@calternal/contracts";
-const hostCalls = new Set<HostCallKind>(["read_item", "list_items_v1", "write_item", "list_collection", "emit_event", "start_job", "checkpoint_job", "request_secret_handle"]);
+const hostCalls = new Set<HostCallKind>(["read_item", "list_items_v1", "read_setting_v1", "write_item", "list_collection", "emit_event", "start_job", "checkpoint_job", "request_secret_handle"]);
 
 /** Check a manifest or frame's method against the same closed vocabulary. No I/O. */
 export function isHostCallKind(value: unknown): value is HostCallKind {
@@ -40,7 +40,7 @@ function schema(v: unknown): void { if (typeof v !== "boolean" && (!v || typeof 
  */
 export function validateManifestV1(value: unknown): ManifestV1 {
   if (new TextEncoder().encode(JSON.stringify(value)).length > 256 * 1024) fail();
-  const m = record(value, ["id", "name", "icon", "version", "api_version", "kinds", "operations", "collections", "views", "attention", "settings", "schedules", "webhooks", "secrets", "hooks", "themes", "host_calls"], ["provider", "slots", "owned_slots", "palette"]);
+  const m = record(value, ["id", "name", "icon", "version", "api_version", "operations", "collections", "views", "attention", "settings", "schedules", "webhooks", "secrets", "hooks", "themes", "host_calls"], ["provider", "slots", "owned_slots", "palette", "kinds"]);
   if (m.provider !== undefined) {
     const p = record(m.provider, ["protocol_version", "executable", "default_model", "models", "sign_in"]);
     if (p.sign_in !== undefined && typeof p.sign_in !== "boolean") throw new Error("invalid provider sign_in");
@@ -63,7 +63,7 @@ export function validateManifestV1(value: unknown): ManifestV1 {
   identifier(m.id); identifier(m.icon); text(m.name); text(m.version, 80);
   if (m.api_version !== 1) fail();
   function rows(key: string, keys: string[], visit: (r: Record<string, unknown>) => void, optional: string[] = []): void {
-    const list = m[key]; if (!Array.isArray(list) || list.length > 128) return fail();
+    const list = key === "kinds" && !Object.hasOwn(m, key) ? [] : m[key]; if (!Array.isArray(list) || list.length > 128) return fail();
     const seen = new Set<string>();
     for (const v of list) { const r = record(v, keys, optional); const key = identifier(r.id); if (seen.has(key)) fail(); seen.add(key); visit(r); }
   }
@@ -181,5 +181,5 @@ export function validateManifestV1(value: unknown): ManifestV1 {
   rows("hooks", ["id", "mode", "patterns", "operation"], r => { op(r); if (!["watch", "block"].includes(String(r.mode)) || !Array.isArray(r.patterns) || !r.patterns.length || r.patterns.length > 128) fail(); for (const p of r.patterns as unknown[]) identifier(typeof p === "string" && p.endsWith(".*") ? p.slice(0, -2) : p); });
   rows("themes", ["id", "stylesheet"], r => { const p = text(r.stylesheet, 4096); if (!p.endsWith(".css") || /[:\\]/.test(p) || p.split("/").some(x => !x || x === "." || x === "..")) fail(); });
   for (const key of ["secrets", "host_calls"]) { const list = m[key]; if (!Array.isArray(list) || list.length > 128 || new Set(list).size !== list.length) fail(); for (const v of list as unknown[]) { identifier(v); if (key === "host_calls" && !isHostCallKind(v)) fail(); } }
-  return value as ManifestV1;
+  return (Object.hasOwn(m, "kinds") ? m : { ...m, kinds: [] }) as ManifestV1;
 }

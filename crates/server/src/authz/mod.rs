@@ -297,7 +297,7 @@ impl Policy {
         let space = input
             .get("space_id")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| Error::invalid_input("input does not match operation schema"))?;
+            .ok_or_else(|| Error::input_field("/space_id", "expected a space UUID string"))?;
         SpaceId::parse(space).map(Some).map_err(|_| self.hidden())
     }
 
