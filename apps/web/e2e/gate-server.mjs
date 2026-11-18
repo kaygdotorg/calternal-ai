@@ -12,7 +12,7 @@ const free = () => new Promise((res, rej) => { const s = createServer(); s.liste
 
 /** Suite, the environment variable that holds its port, extra arguments, timeout in seconds. */
 const SUITES = [
-  ["sign-in", "CAL_SIGNIN_PORT"], ["a11y-server", "CAL_A11Y_PORT"], ["people-server", "CAL_PEOPLE_PORT"], ["machines-server", "CAL_MACH_PORT"], ["startup-server", "CAL_START_PORT", ["3"]],
+  ["sign-in", "CAL_SIGNIN_PORT"], ["a11y-server", "CAL_A11Y_PORT"], ["people-server", "CAL_PEOPLE_PORT"], ["machines-server", "CAL_MACH_PORT"], ["startup-server", "CAL_START_PORT", ["3"]], ["served-by-server", "CAL_SERVED_UNUSED"],
 ].map(([name, port, args = [], timeout = 240]) => ({ name, port, args, timeout }));
 
 console.log("building the server and the app ...");

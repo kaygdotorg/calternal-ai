@@ -10,12 +10,12 @@
  *   - the pixels under each surface (the two sidebars and the card), from which `veil.ts` solves how much veil the text needs (`updateVeil`).
  * Cost: two canvas draws and one 24 by 14 read per change of wallpaper, blur or window size (resize is debounced 400 ms); nothing per frame.
  */
-import { cssPx, luminance, scheduleMaterial, setBackdropField, currentScheme, type Field } from "@calternal/ui";
+import { cssPx, luminance, scheduleMaterial, setBackdropField, setMaterialSource, currentScheme, type Field } from "@calternal/ui";
 import tokens from "../../../../packages/ui/tokens/tokens.json" with { type: "json" };
 import { surfaces } from "./surfaces.svelte";
 import { blurRgba, saturateRgba } from "./blur";
 import { setThemeColor } from "../shell/chrome";
-import { over, scaled, solve, type Flags, type Ink, type RGB, type Role, type Scheme, type Veil } from "./veil";
+import { over, p01, lum, ratio, TARGET, scaled, solve, type Flags, type Ink, type RGB, type Role, type Scheme, type Veil } from "./veil";
 
 type Layer = "side" | "card";
 const SATURATE: Record<Layer, number> = { side: 120, card: 140 };
@@ -252,6 +252,25 @@ export function updateVeil(want: Flags): void {
   const flip = (v: Veil | undefined) => (v && v.scheme !== scheme ? v.scheme : null);
   surfaces.left = flip(out.l);
   surfaces.right = flip(out.r);
+  // Floating surfaces (menus, popovers, pickers, sheets, dialogs, tooltips, toasts, pills) read what is really behind them from the same pictures and veils and are tinted just enough for their ink to reach the same
+  // readability floor as the sidebars (packages/ui lib/material.ts, docs/ui-design-system.md "One material for floating surfaces").
+  const vl = out.l, vc = out.c, cardFrac = r.card;
+  setMaterialSource((rect, sch) => {
+    if (sch !== scheme || !copies || !vl || !vc) return null;
+    const w = innerWidth || 1, h = innerHeight || 1;
+    const clamp = (v: number) => Math.min(1, Math.max(0, v));
+    const f: Frac = { x0: clamp(rect.left / w), y0: clamp(rect.top / h), x1: clamp(rect.right / w), y1: clamp(rect.bottom / h) };
+    if (f.x1 - f.x0 < 0.002 || f.y1 - f.y0 < 0.002) return null;
+    const onCard = (f.x0 + f.x1) / 2 > cardFrac.x0 && (f.x0 + f.x1) / 2 < cardFrac.x1 && (f.y0 + f.y1) / 2 > cardFrac.y0 && (f.y0 + f.y1) / 2 < cardFrac.y1;
+    const veil = onCard ? vc : vl;
+    const behind = sample(onCard ? copies.card : copies.side, f).map((p) => over(over(p, veil.tint.rgb, veil.tint.a), veil.dim.rgb, veil.dim.a));
+    const ok = (a: number) => p01(behind.map((g) => ratio(lum(over(g, T.paper, a)), lum(T.ink)))) >= TARGET.ink + 0.35;
+    if (ok(0)) return 0;
+    let lo = 0, hi = 0.9;
+    if (!ok(hi)) return hi;
+    for (let i = 0; i < 14; i++) { const m = (lo + hi) / 2; if (ok(m)) hi = m; else lo = m; }
+    return hi;
+  });
   scheduleMaterial();
 }
 
