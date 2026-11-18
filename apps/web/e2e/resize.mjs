@@ -30,7 +30,7 @@ const r0 = await w("aside.right"); const rb = await R.boundingBox();
 await page.mouse.move(rb.x + rb.width / 2, 450); await page.mouse.down(); await page.mouse.move(rb.x + rb.width / 2 - 80, 450, { steps: 6 }); await page.mouse.up(); await page.waitForTimeout(200);
 ok(Math.abs((await w("aside.right")) - (r0 + 80)) <= 3, "Dragging the right handle (leftwards) widens the side panel", `${r0} -> ${await w("aside.right")}`);
 await R.focus(); await page.keyboard.press("Home"); await page.waitForTimeout(300);
-const fit = await page.evaluate(() => { const c = document.querySelector("aside.right .tabs .selector").getBoundingClientRect(), a = document.querySelector("aside.right").getBoundingClientRect(); return c.left >= a.left - 1 && c.right <= a.right + 1 && document.querySelector("aside.right .tabs .cap").scrollWidth <= document.querySelector("aside.right .tabs .cap").clientWidth + 1; });
+const fit = await page.evaluate(() => { const c = document.querySelector("aside.right .tabs .selector").getBoundingClientRect(), a = document.querySelector("aside.right").getBoundingClientRect(); return c.left >= a.left - 1 && c.right <= a.right + 1 && document.querySelector("aside.right .tabs .selector").scrollWidth <= document.querySelector("aside.right .tabs .selector").clientWidth + 1; });
 ok(fit, "At the narrowest the side panel's tab capsule still fits inside it");
 await b.close(); stop();
 console.log(bad ? `${bad} FAIL` : "all pass"); process.exit(bad ? 1 : 0);

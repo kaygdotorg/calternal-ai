@@ -29,7 +29,7 @@
   h2 { font-size: var(--text-heading); font-weight: var(--strong-weight); }
   .content { position: absolute; inset: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; padding: calc(var(--safe-top) + var(--bar-h) + var(--s-4)) var(--s-4) var(--foot-h); --fade-t: calc(var(--safe-top) + var(--bar-h)); --fade-b: var(--foot-h); }
   .tabs { position: absolute; z-index: 2; left: 0; right: 0; bottom: 0; display: flex; justify-content: center; padding: 0 var(--s-4) var(--foot-inset); }
-  .tabs :global(.cap) { width: 100%; }
+  .tabs :global(.selector) { width: 100%; }
   /* Four tabs, each with its icon and its label: a tab keeps the width of its content and the capsule shares what is left. */
   .tabs :global(.cap .seg) { flex: 1 1 auto; min-width: 0; padding-inline: var(--s-3); } /* shrinks with the sidebar (its labels end in an ellipsis): the capsule never runs out of the sidebar */
 </style>
