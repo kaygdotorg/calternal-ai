@@ -40,6 +40,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         AccountInputResult,
         AccountInputListResult,
         AccountFrame,
+        MachineVerifyInput,
+        MachineVerifyResult,
         ReadinessInput,
         ReadinessResult,
         MachineReadiness,

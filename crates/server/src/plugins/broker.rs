@@ -56,6 +56,7 @@ pub trait InvocationHost: Send + Sync {
 pub struct SpaceHost<D: Directory> {
     state: Shared<D>,
     identity: Identity,
+    actor: Actor,
     session: Session,
     runtime: Handle,
     space: SpaceId,
@@ -96,9 +97,11 @@ impl<D: Directory> SpaceHost<D> {
         generation: u32,
         request_id: String,
     ) -> Self {
+        let actor = Actor::plugin(identity.id, plugin.manifest.id.clone());
         Self {
             state,
             identity,
+            actor,
             session,
             runtime: Handle::current(),
             space,
@@ -239,23 +242,24 @@ impl<D: Directory> SpaceHost<D> {
         Ok(json!({ "checkpoint_seq": run.live.next_seq() }))
     }
 
-    fn agent_kind_allowed(&self, kind: &str, write: bool) -> bool {
+    fn kind_actor(&self, kind: &str, write: bool) -> Option<Actor> {
         let Session::Agent {
             space,
             job,
             token_hash,
         } = &self.session
         else {
-            return true;
+            return Some(self.actor.clone());
         };
         let Ok(Some(a)) = self.state.jobs.agent_current(space, job, token_hash) else {
-            return false;
+            return None;
         };
-        a.mode != calternal_core::AgentMode::LeastAccess
+        (a.mode != calternal_core::AgentMode::LeastAccess
             || a.source_app == kind
             || a.grants
                 .iter()
-                .any(|g| g.app == kind && g.action_hash.is_none() && (!write || g.write))
+                .any(|g| g.app == kind && g.action_hash.is_none() && (!write || g.write)))
+        .then_some(a.actor)
     }
 
     fn has(&self, capability: Capability) -> bool {
@@ -267,7 +271,7 @@ impl<D: Directory> SpaceHost<D> {
 
     fn read_item(&self, input: &Value) -> Result<Value, Error> {
         let (kind, id) = item_target(input, &["kind", "item_id"])?;
-        if !self.agent_kind_allowed(kind, false) {
+        if self.kind_actor(kind, false).is_none() {
             return Err(Error::Refused);
         }
         let item = self
@@ -284,9 +288,7 @@ impl<D: Directory> SpaceHost<D> {
             &["kind", "item_id", "base_revision", "metadata", "text"],
         )?;
         let kind = str_field(object, "kind")?.ok_or(Error::Invalid)?;
-        if !self.agent_kind_allowed(kind, true) {
-            return Err(Error::Refused);
-        }
+        let actor = self.kind_actor(kind, true).ok_or(Error::Refused)?;
         let text = object
             .get("text")
             .and_then(Value::as_str)
@@ -313,7 +315,7 @@ impl<D: Directory> SpaceHost<D> {
             .state
             .store
             .write_item(
-                self.identity.id,
+                actor,
                 &receipt,
                 &fingerprint,
                 self.space,

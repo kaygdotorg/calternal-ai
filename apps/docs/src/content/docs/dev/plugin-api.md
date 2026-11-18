@@ -110,6 +110,9 @@ Working record of what kayg has decided; the design itself is still being settle
 - Clients do not sync. All state lives on the server; a client subscribes to a space's
   journal over one live connection, shows it, and caches what it needs (the existing app's
   model: `/api/v1/live`, resume with a bookmark, reload when the bookmark has expired).
+  Content writes carry `data.actor`, the authenticated account and its delegated
+  route (agent thread or plugin, if any). Clients render this attribution using
+  the admitted actor rather than inferring it from the operation or its payload.
   Drafts work the same way. The only things a client holds that the server lacks are
   edits typed while offline, which it sends on reconnect.
 - Agent questions and approvals appear in the same sticky bar as secret requests and do

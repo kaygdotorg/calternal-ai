@@ -34,15 +34,15 @@ impl Jobs {
             RunEnd::Failed => (JobState::Failed, "null".into()),
         };
         let wake = self.tx(space, |tx| {
-            let current: Option<(String, u32, Option<String>, String)> = tx
+            let current: Option<(String, u32, Option<String>, String, bool)> = tx
                 .query_row(
-                    "SELECT state,runs,parent,operation FROM jobs WHERE id=?1",
+                    "SELECT state,runs,parent,operation,json_extract(input,'$.verify') IS 1 FROM jobs WHERE id=?1",
                     [id],
-                    |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+                    |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
                 )
                 .optional()
                 .map_err(db_err)?;
-            let Some((s, runs, parent, operation)) = current else {
+            let Some((s, runs, parent, operation, diagnostic)) = current else {
                 return Ok(vec![]);
             };
             if !matches!(s.as_str(), "placing" | "running") || runs != run {
@@ -59,7 +59,7 @@ impl Jobs {
                     state = JobState::Failed;
                 }
             }
-            if operation == "agent.turn" && state.is_final() && self.security.is_some() {
+            if operation == "agent.turn" && !diagnostic && state.is_final() && self.security.is_some() {
                 let (space, id) = (space.to_owned(), id.to_owned());
                 self.security_change(move |auth| cancel_pending_requests(auth, &space, &id))?;
             }

@@ -71,6 +71,7 @@ Generated operation schemas. Capability and risk are shown only when the catalog
 - [requests.approve](./requests-approve/): Approve with a fresh verified passkey
 - [requests.deny](./requests-deny/): Decline a pending approval
 - [space.instructions](./space-instructions/): Read or replace standing space instructions
+- [machines.verify](./machines-verify/): Verify a selected machine and provider sign-in
 - [agent.readiness](./agent-readiness/): Read your machine and provider readiness in a space
 - [agent.settings](./agent-settings/): Read or set your account defaults or thread retry settings
 - [machines.resume](./machines-resume/): Explicitly resume your interrupted machine lease

@@ -1,5 +1,5 @@
 //! The one machine-output reader for each turn; fans out through the existing job live buffer.
-use super::{access::Authority, blocking, progress::save};
+use super::{blocking, progress::save};
 use crate::{
     api::Shared,
     auth::{Directory, Identity},
@@ -9,8 +9,7 @@ use crate::{
 };
 use base64::{Engine, engine::general_purpose::STANDARD as B64};
 use calternal_core::{
-    AgentInput, PROVIDER_COMMAND_BYTES, PROVIDER_EVENT_BYTES, ProviderCommand, ProviderEvent,
-    ProviderEventKind, ProviderRequest,
+    AgentInput, PROVIDER_EVENT_BYTES, ProviderCommand, ProviderEvent, ProviderEventKind,
 };
 use calternal_machine::protocol::{ChunkEvent, Stream};
 use calternal_types::SpaceId;
@@ -68,9 +67,14 @@ fn schedule_checked<D: Directory>(
             return;
         };
         claimed.live.retain_for_subscriber();
+        let verify = claimed.job.input["verify"] == true;
         let end = execute(&st, &svc, &claimed.job, &claimed.live)
             .await
             .unwrap_or(RunEnd::OutcomeUnknown);
+        let end = match end {
+            RunEnd::Interrupted if verify => RunEnd::Failed,
+            end => end,
+        };
         let (s, sp, jid, run) = (st.clone(), space, id.clone(), claimed.job.runs);
         let waiting = matches!(end, RunEnd::RetryWaiting);
         if !waiting {
@@ -84,7 +88,10 @@ fn schedule_checked<D: Directory>(
         let wait_id = jid.clone();
         let finished = blocking(move || {
             s.jobs.finish(&sp, &jid, run, end)?;
-            s.jobs.agent_revoke_run(&sp, &jid, run)
+            if !verify {
+                s.jobs.agent_revoke_run(&sp, &jid, run)?;
+            }
+            Ok(())
         })
         .await;
         if waiting && finished.is_ok() {
@@ -104,6 +111,7 @@ async fn execute<D: Directory>(
     let account = job.account;
     let space = SpaceId::parse(&job.space).map_err(|_| Error::not_found("turn not found"))?;
     let check = job.input["check"] == true;
+    let verify = job.input["verify"] == true;
     let thread = Uuid::parse_str(if check { &job.id } else { &i.thread_id })
         .map_err(|_| Error::invalid_input("invalid thread id"))?;
     let who = Identity { id: job.account };
@@ -142,29 +150,12 @@ async fn execute<D: Directory>(
         Ok(row.generation)
     })
     .await?;
-    let (s, sp, id, a) = (
-        state.clone(),
-        job.space.clone(),
-        job.id.clone(),
-        Authority {
-            actor: calternal_types::Actor::agent(job.account, thread),
-            space: job.space.clone(),
-            job: job.id.clone(),
-            mode: i.mode,
-            source_app: i.source_app.clone(),
-            grants: vec![],
-        },
-    );
     let issuing_run = job.runs;
-    let scope = blocking(move || {
-        let scope = if s.jobs.get(&sp, &id)?.is_some_and(|j| j.runs > 1) {
-            s.jobs.agent_scope(&sp, &id)?
-        } else {
-            a
-        };
-        s.jobs.agent_prepare_scope(&scope, issuing_run)
-    })
-    .await?;
+    let scope = if verify {
+        None
+    } else {
+        Some(super::launch::prepare_authority(state, job, &i, thread).await?)
+    };
     let mut checkpoint = super::lease::prepare(state, machines, job, live, space, thread).await?;
     let lease_id = checkpoint["lease_id"]
         .as_str()
@@ -228,16 +219,19 @@ async fn execute<D: Directory>(
             });
         }
     }
-    let instructions = super::instructions::build(state, &i, &job.space, &scope).await?;
-    if instructions.contains("[Space instructions truncated at 16 KiB.]") {
-        live.publish(
-            job.runs,
-            &json!({"type":"notice","message":"Space instructions truncated at 16 KiB."}),
-        );
-    }
     let commands = if check {
         vec![ProviderCommand::Check]
     } else {
+        let scope = scope
+            .as_ref()
+            .ok_or_else(|| Error::internal("missing turn authority"))?;
+        let instructions = super::instructions::build(state, &i, &job.space, scope).await?;
+        if instructions.contains("[Space instructions truncated at 16 KiB.]") {
+            live.publish(
+                job.runs,
+                &json!({"type":"notice","message":"Space instructions truncated at 16 KiB."}),
+            );
+        }
         vec![
             ProviderCommand::Start {
                 model: if i.model.is_empty() {
@@ -265,30 +259,19 @@ async fn execute<D: Directory>(
             },
         ]
     };
-    let mut stdin = String::new();
-    for (seq, command) in commands.into_iter().enumerate() {
-        let line = serde_json::to_string(&ProviderRequest {
-            version: 1,
-            seq: seq as u64 + 1,
-            command,
-        })
-        .map_err(|_| Error::internal("provider encoding"))?;
-        if line.len() + 1 > PROVIDER_COMMAND_BYTES {
-            return Err(Error::invalid_input(
-                "provider instructions exceed command budget",
-            ));
-        }
-        stdin.push_str(&line);
-        stdin.push('\n');
-    }
-    let (st, scope) = (state.clone(), scope.clone());
-    let token = blocking(move || st.jobs.agent_token(&scope, issuing_run)).await?;
-    let mut redactor = super::redact::Redactor::new(token.clone());
+    let stdin = super::launch::encode(commands)?;
+    let (env, mut redactor) = if let Some(scope) = scope {
+        let st = state.clone();
+        let token = blocking(move || st.jobs.agent_token(&scope, issuing_run)).await?;
+        (
+            vec![("CALTERNAL_AGENT_TOKEN".into(), token.clone())],
+            Some(super::redact::Redactor::new(token)),
+        )
+    } else {
+        (Vec::new(), None)
+    };
     let mut published_seq = 0;
-    let (m, env) = (
-        machines.clone(),
-        vec![("CALTERNAL_AGENT_TOKEN".into(), token)],
-    );
+    let m = machines.clone();
     if !live.is_current(job.runs) || !super::session_live(state, job).await? {
         return Ok(RunEnd::Failed);
     }
@@ -313,7 +296,12 @@ async fn execute<D: Directory>(
     let saved_thread = job.input.get("thread_request").is_some();
     let mut pending_tools = std::collections::HashSet::new();
     let mut text_flush = Instant::now();
-    let deadline = Instant::now() + Duration::from_secs(600);
+    let deadline = Instant::now()
+        + if verify {
+            super::verify::PHASE_TIMEOUT
+        } else {
+            Duration::from_secs(600)
+        };
     let result = async { loop {
         if !live.is_current(job.runs) || !super::session_live(state, job).await? {
             return Ok(RunEnd::Failed);
@@ -344,6 +332,9 @@ async fn execute<D: Directory>(
         }
         let (m, l) = (machines.clone(), lease_id);
         let view = blocking(move || m.run(account, l)).await?;
+        if verify && view.state == LeaseState::Running {
+            checkpoint["sandbox_started"] = json!(true);
+        }
         if view.state == LeaseState::Interrupted {
             let m = machines.clone();
             let since = blocking(move || m.interrupted_at(account, lease_id)).await?;
@@ -385,13 +376,17 @@ async fn execute<D: Directory>(
                             return Err(Error::invalid_input("provider event sequence failed"));
                         }
                         provider_seq = e.seq;
-                        let first = redactor.event(&mut e.event);
-                        let first = first.or_else(|| {
-                            if matches!(e.event, ProviderEventKind::Done { .. }) {
-                                redactor.finish()
-                            } else {
-                                None
-                            }
+                        if verify && !matches!(e.event, ProviderEventKind::Check(_) | ProviderEventKind::Done { .. }) {
+                            continue;
+                        }
+                        let first = redactor.as_mut().and_then(|redactor| {
+                            redactor.event(&mut e.event).or_else(|| {
+                                if matches!(e.event, ProviderEventKind::Done { .. }) {
+                                    redactor.finish()
+                                } else {
+                                    None
+                                }
+                            })
                         });
                         let flush = first.map(|text| ProviderEvent {
                             version: 1,
@@ -452,6 +447,10 @@ async fn execute<D: Directory>(
                                 ProviderEventKind::Done { outcome: o } => outcome = Some(o.clone()),
                                 ProviderEventKind::Check(status) => {
                                     checked = true;
+                                    if verify {
+                                        checkpoint["sandbox_started"] = json!(true);
+                                        checkpoint["provider_check"] = json!(status);
+                                    }
                                     sign_in_command = Some(status.sign_in_command.clone());
                                     let (m, provider, status) = (machines.clone(), provider_id.to_owned(), status.clone());
                                     blocking(move || m.record_check(account, lease_id, machine_id, provider, status)).await?;
@@ -462,6 +461,9 @@ async fn execute<D: Directory>(
                                     }
                                 }
                                 _ => {}
+                            }
+                            if verify {
+                                continue;
                             }
                             if matches!(
                                 e.event,
@@ -475,7 +477,9 @@ async fn execute<D: Directory>(
                                 || text_flush.elapsed() >= Duration::from_secs(3)
                             {
                                 checkpoint["provider_seq"] = json!(published_seq + 1);
-                                redactor.checkpoint(&mut checkpoint);
+                                if let Some(redactor) = &redactor {
+                                    redactor.checkpoint(&mut checkpoint);
+                                }
                                 save(state, job, live, &mut checkpoint, thread_session).await?;
                                 text_flush = Instant::now();
                             }
@@ -506,7 +510,7 @@ async fn execute<D: Directory>(
                     if !pending.is_empty() {
                         return Ok(RunEnd::OutcomeUnknown);
                     }
-                    if outcome.as_deref() == Some("failed")
+                    if !verify && outcome.as_deref() == Some("failed")
                         && pending_tools.is_empty()
                         && !retry_forbidden
                         && let Some((class, billing, reset)) = failure
@@ -534,13 +538,17 @@ async fn execute<D: Directory>(
                             crate::plugins::job_sql::now_ms(),
                         ) {
                             checkpoint["retry"] = wait;
-                            redactor.checkpoint(&mut checkpoint);
+                            if let Some(redactor) = &redactor {
+                                redactor.checkpoint(&mut checkpoint);
+                            }
                             save(state, job, live, &mut checkpoint, None).await?;
                             return Ok(RunEnd::RetryWaiting);
                         }
                     }
                     checkpoint["provider_seq"] = json!(published_seq);
-                    redactor.checkpoint(&mut checkpoint);
+                    if let Some(redactor) = &redactor {
+                        redactor.checkpoint(&mut checkpoint);
+                    }
                     save(state, job, live, &mut checkpoint, None).await?;
                     return Ok(if exit.code == Some(0) && check && checked {
                         RunEnd::Done(json!({"checked":true}))
@@ -563,7 +571,9 @@ async fn execute<D: Directory>(
         && !result.as_ref().is_err_and(super::progress::thread_full)
     {
         checkpoint["provider_seq"] = json!(published_seq);
-        redactor.checkpoint(&mut checkpoint);
+        if let Some(redactor) = &redactor {
+            redactor.checkpoint(&mut checkpoint);
+        }
         save(state, job, live, &mut checkpoint, None)
             .await
             .and(result)

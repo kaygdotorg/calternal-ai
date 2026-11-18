@@ -125,6 +125,10 @@
             "type": "object",
             "properties": {
               "revision": { "type": "string", "minLength": 1, "maxLength": 80 },
+              "actor": {
+                "type": "object",
+                "description": "Journal attribution can accompany the checkpoint range. It does not select or authorize the read."
+              },
               "append": {
                 "type": "object",
                 "properties": {

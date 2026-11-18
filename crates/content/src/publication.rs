@@ -1,9 +1,11 @@
 //! Identifier routing and idempotent outbox publication after a content commit.
 use crate::{Content, Result, db::Space, instructions, journal::lock, types::internal};
-use calternal_types::SpaceId;
+use calternal_types::{SpaceId, Via};
 use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::Value;
 use uuid::Uuid;
+pub(crate) const OUTBOX_VIA: &str = "_calternal_outbox_via";
+
 impl Content {
     /// Records the global route of item `id`, once. An existing route (every update)
     /// is a pooled read only; a new item takes the catalog writer for one FULL insert.
@@ -72,7 +74,18 @@ impl Content {
             } else {
                 None
             };
-            let payload = serde_json::from_str(&result).map_err(internal)?;
+            let mut payload: Value = serde_json::from_str(&result).map_err(internal)?;
+            let via: Option<Via> =
+                if let Some(marker) = payload.as_object_mut().and_then(|o| o.remove(OUTBOX_VIA)) {
+                    let via = serde_json::from_value(marker).map_err(internal)?;
+                    payload = payload
+                        .as_object_mut()
+                        .and_then(|o| o.remove("payload"))
+                        .ok_or_else(|| internal("attributed outbox lacks result"))?;
+                    via
+                } else {
+                    None
+                };
             let payload = if revision == instructions::INTENT {
                 self.place_instructions(space.id, &payload)?;
                 Value::Null
@@ -82,6 +95,7 @@ impl Content {
             self.journals.publish(
                 &space.journal,
                 account.parse().map_err(internal)?,
+                via.as_ref(),
                 &request,
                 &op,
                 &fp,

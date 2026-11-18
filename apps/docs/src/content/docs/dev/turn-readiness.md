@@ -26,6 +26,23 @@ check contains only `installed`, `signed_in` and `sign_in_command`.
 The provider's official program owns the login.
 
 Use a cached read with `calternal agent readiness --space-id SPACE_UUID`.
+After enrollment, use `machines.verify` with the exact `machine_id` and a
+`space_id` where you can use plugins. The machine's account owner can verify
+it. A server administrator can verify a pool machine, even without an
+execution grant. A pool execution grant does not give this verification access.
+The optional `provider_id` defaults to Claude Code.
+
+Verification runs a single Check job through the machine channel using the
+same provider probe and cache as `agent.check`. The HTTP result contains
+`sandbox_started` and a `provider` object with `installed`, `signed_in`, and
+`sign_in_command`. The provider is `null` if the machine could not report
+a check, including when a sandbox could not start. The result carries no job
+ID or logs. Placement and probe each have a six-second wait. A retry with the
+same request ID returns the same check.
+
+Run it with `calternal machine verify MACHINE_UUID --space-id SPACE_UUID
+--token-file PERSON_TOKEN`. Add `--json` for the same fields in the CLI envelope.
+
 Refresh a provider with `calternal agent check --space-id SPACE_UUID
 --machine-id MACHINE_UUID --provider PROVIDER_ID`. `--pool` checks an
 available entitled pool machine. A Check job is private to its admitting

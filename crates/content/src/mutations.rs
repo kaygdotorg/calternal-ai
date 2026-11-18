@@ -61,7 +61,7 @@ impl Content {
                     request.id,
                     request.operation,
                     request.fingerprint,
-                    response.to_string()
+                    request.outbox_result(&response)
                 ],
             )
             .map_err(internal)?;
@@ -120,6 +120,7 @@ impl Content {
                 self.journals.publish(
                     &s.journal,
                     request.account,
+                    request.via,
                     request.id,
                     request.operation,
                     request.fingerprint,
@@ -153,6 +154,7 @@ impl Content {
             self.journals.publish(
                 &s.journal,
                 request.account,
+                request.via,
                 request.id,
                 request.operation,
                 request.fingerprint,

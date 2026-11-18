@@ -305,6 +305,7 @@ impl MachineService {
                             row,
                             state: LeaseState::Stopping,
                             order: 0,
+                            pool_diagnostic: false,
                         },
                     );
                 } else {
@@ -317,7 +318,12 @@ impl MachineService {
             st.threads.insert(row.thread, row.id);
             let state = LeaseState::parse(&row.state);
             let order = st.next_order;
-            let lease = Lease { row, state, order };
+            let lease = Lease {
+                row,
+                state,
+                order,
+                pool_diagnostic: false,
+            };
             st.take_slot(lease.assigned_machine());
             st.leases.insert(lease.row.id, lease);
         }

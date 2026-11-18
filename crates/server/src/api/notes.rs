@@ -3,7 +3,7 @@ use super::*;
 
 pub(super) async fn mutate<D: Directory>(
     state: &Shared<D>,
-    actor: Identity,
+    actor: calternal_types::Actor,
     rid: &str,
     op: &str,
     input: JsonObject,
@@ -30,11 +30,11 @@ pub(super) async fn mutate<D: Directory>(
     let (rid, op) = (rid.to_owned(), op.to_owned());
     blocking(state, move |s| {
         let content = s.content();
-        let request = calternal_content::Request { account: actor.id, id: &rid, operation: &op, fingerprint: &fp };
+        let request = calternal_content::Request { account: actor.account, via: actor.via.as_ref(), id: &rid, operation: &op, fingerprint: &fp };
         if op == "trash.purge" {
             return content.purge(space, "notes", id, request);
         }
-        if let Some(v) = replay_receipt(s, actor.id, space, &rid, &op, &fp)? {
+        if let Some(v) = replay_receipt(s, actor.account, space, &rid, &op, &fp)? {
             return Ok(v);
         }
         let item = if op == "notes.restore" { content.get(space, id)? } else { content.get_live(space, id)? };

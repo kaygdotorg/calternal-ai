@@ -144,6 +144,36 @@ bookmark: string, } } | { "Ready": {
  */
 bookmark: string, } } | "ReadinessChanged" | "Reset";
 /**
+ * Select the space for the diagnostic job and the exact enrolled machine.
+ */
+
+export type MachineVerifyInput = {
+/**
+ * A space where the caller can use plugins.
+ */
+space_id: string,
+/**
+ * Enrolled machine UUID. Pool machines require server settings authority.
+ */
+machine_id: string,
+/**
+ * Optional provider plugin. An empty or absent value checks Claude Code.
+ */
+provider_id: string, };
+/**
+ * The bounded result of one diagnostic. No job IDs or machine logs are returned.
+ */
+
+export type MachineVerifyResult = {
+/**
+ * Whether the machine confirmed that its execution environment started.
+ */
+sandbox_started: boolean,
+/**
+ * The provider's check, absent if it did not report an outcome.
+ */
+provider: ProviderCheck | null, };
+/**
  * Select the space and optionally a saved thread's placement constraint.
  */
 

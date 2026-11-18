@@ -29,7 +29,8 @@ pub(super) fn apply<D: Directory>(
     }
     let fp = crate::api::fingerprint(operation, data);
     let request = Request {
-        account: who.id,
+        account: actor.account,
+        via: actor.via.as_ref(),
         id: request_id,
         operation: operation,
         fingerprint: &fp,

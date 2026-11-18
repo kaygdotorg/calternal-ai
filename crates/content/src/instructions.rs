@@ -93,7 +93,7 @@ impl Content {
                         request.operation,
                         request.fingerprint,
                         INTENT,
-                        Value::String(markdown.to_owned()).to_string()
+                        request.outbox_result(&Value::String(markdown.to_owned()))
                     ],
                 )
                 .map_err(internal)?;

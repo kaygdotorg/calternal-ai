@@ -6,7 +6,7 @@ use uuid::Uuid;
 /// The acting account, and how it acted when not directly.
 ///
 /// Authority always comes from `account`: `via` only says which route acted on its
-/// behalf, and never adds access. Secrets audit, turn records and (later) content
+/// behalf, and never adds access. Secrets audit, turn records and content
 /// journals all record this type, so they read alike: "<account>", "an agent for
 /// <account>, in thread <id>", "plugin <id> for <account>".
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
@@ -53,6 +53,13 @@ impl Actor {
                 plugin: plugin.into(),
             }),
         }
+    }
+}
+
+impl From<AccountId> for Actor {
+    /// Treat an account without a delegated path as a person.
+    fn from(account: AccountId) -> Self {
+        Self::account(account)
     }
 }
 

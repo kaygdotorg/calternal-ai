@@ -51,6 +51,7 @@ fn wait_for_placement(path: &Path, space: SpaceId, item: uuid::Uuid) {
 fn request(account: AccountId, id: &str) -> Request<'_> {
     Request {
         account,
+        via: None,
         id,
         operation: "example.create",
         fingerprint: id,
@@ -144,6 +145,9 @@ fn restart_finishes_content_commit_before_file_placement_and_receipt() {
     let dir = tempfile::tempdir().unwrap();
     let a = SpaceId::new();
     let actor = AccountId::new();
+    let via = calternal_types::Via::Agent {
+        thread: uuid::Uuid::now_v7(),
+    };
     let content = open(dir.path(), interrupt);
     content
         .register_kind(
@@ -163,7 +167,10 @@ fn restart_finishes_content_commit_before_file_placement_and_receipt() {
             None,
             json!({}),
             b"durable",
-            request(actor, "save"),
+            Request {
+                via: Some(&via),
+                ..request(actor, "save")
+            },
             |i| json!({"id":i.id}),
         )
     }));
@@ -176,8 +183,17 @@ fn restart_finishes_content_commit_before_file_placement_and_receipt() {
         std::fs::read_to_string(content.file_path(a, &item.kind, item.id).unwrap()).unwrap(),
         format!("---\ncalternal-id: {}\n---\ndurable", item.id)
     );
-    assert!(content.receipt(a, actor, "save").unwrap().is_some());
-    assert_eq!(content.journal(a).unwrap().len(), 1);
+    let receipt = content.receipt(a, actor, "save").unwrap().unwrap();
+    assert_eq!(receipt.result, json!({"id":item.id}));
+    let journal = content.journal(a).unwrap();
+    assert_eq!(journal.len(), 1);
+    assert_eq!(
+        journal[0].data["actor"],
+        json!(calternal_types::Actor {
+            account: actor,
+            via: Some(via)
+        })
+    );
 }
 
 #[test]
@@ -470,6 +486,7 @@ fn a_request_id_is_new_again_after_receipt_retention() {
             text,
             Request {
                 account: actor,
+                via: None,
                 id: "same",
                 operation: "example.create",
                 fingerprint: std::str::from_utf8(text).unwrap(),

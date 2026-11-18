@@ -1,6 +1,8 @@
 //! Non-interactive provider commands for `calternal`, using the shared output module.
 use crate::output::{CliError, Output};
 use calternal_client::{CancellationToken, Client};
+/// Operation used by the machine CLI's bounded diagnostic.
+pub use calternal_core::MACHINES_VERIFY;
 use calternal_core::{AgentInput, AgentMode, OperationRequest};
 use clap::{Args as ClapArgs, Subcommand};
 use serde_json::{Value, json};
@@ -169,9 +171,14 @@ pub(crate) async fn call(
                 .ok()
                 .and_then(|v| v.as_str().map(str::to_owned))
                 .unwrap_or_else(|| "internal".into());
+            let hint = if operation == MACHINES_VERIFY {
+                "Use a person token and check the machine UUID and connection before retrying."
+            } else {
+                "Check current access and inspect the turn before retrying."
+            };
             let mut failure = CliError::new(code, api.message)
                 .request_id(request.request_id.clone())
-                .hint("Check current access and inspect the turn before retrying.");
+                .hint(hint);
             if let Some(details) = api.details {
                 failure = failure.details(json!(details));
             }
@@ -377,10 +384,36 @@ pub fn invoke(
             )
             .map_err(|_| error("Cannot decode discovery."))?
         };
-        if let Some(op) = operation
-            && calternal_core::note_operation(&op).is_some()
+        if let Some(op) = &operation
+            && calternal_core::note_operation(op).is_some()
         {
-            return Ok(crate::notes::reply(out, &op, value));
+            return Ok(crate::notes::reply(out, op, value));
+        }
+        if operation.as_deref() == Some(calternal_core::MACHINES_VERIFY) {
+            let yes = |b: &Value| match b.as_bool() {
+                Some(true) => "Yes",
+                Some(false) => "No",
+                None => "Unknown",
+            };
+            let check = &value["provider"];
+            let mut reply = crate::output::Reply::new(value.clone()).fields([
+                ("Sandbox started", yes(&value["sandbox_started"])),
+                ("Provider installed", yes(&check["installed"])),
+                ("Provider signed in", yes(&check["signed_in"])),
+            ]);
+            if let Some(command) = check["sign_in_command"].as_str().filter(|s| !s.is_empty()) {
+                reply = reply.fields([("Sign-in command", command)]);
+            }
+            let hint = if value["sandbox_started"] != true {
+                "Check that the machine is online and has sandbox capacity, then retry."
+            } else if check["installed"] != true {
+                "Check the provider installation in the sandbox, then retry."
+            } else if check["signed_in"] != true {
+                "Run the sign-in command inside the machine's sandbox, then retry."
+            } else {
+                "The machine and provider are ready."
+            };
+            return Ok(reply.hint(hint));
         }
         Ok(crate::output::Reply::new(value.clone())
             .text(serde_json::to_string_pretty(&value).unwrap_or_default()))
