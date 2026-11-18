@@ -1,6 +1,7 @@
 //! Disposable real-server benchmark runner. Never links the server or changes product code.
 #![deny(missing_docs)]
 #![deny(rustdoc::broken_intra_doc_links)]
+mod concurrency;
 mod fixtures;
 mod fsync_probe;
 mod http;
@@ -58,6 +59,12 @@ struct Args {
     startup_only: bool,
     #[arg(long)]
     jobs_only: bool,
+    /// Measure protected directory reads/writes with closed-loop client waves.
+    #[arg(long)]
+    concurrency_only: bool,
+    /// Client wave sizes; each client owns a separate space (maximum 128).
+    #[arg(long, default_value = "8,32,128")]
+    clients: String,
     #[arg(long)]
     prepare_only: bool,
     #[arg(long)]
@@ -95,6 +102,7 @@ fn run(a: &Args) -> Result<i32> {
         a.idle_only,
         a.fsync_probe,
         a.startup_only,
+        a.concurrency_only,
     ]
     .into_iter()
     .filter(|v| *v)
@@ -102,7 +110,7 @@ fn run(a: &Args) -> Result<i32> {
         > 1
     {
         return Err(
-            "choose one of --prepare-only, --jobs-only, --idle-only, --fsync-probe or --startup-only".into(),
+            "choose one measurement mode: --prepare-only, --jobs-only, --idle-only, --fsync-probe, --startup-only or --concurrency-only".into(),
         );
     }
     if a.startup_timeout_seconds == 0 || a.startup_timeout_seconds > 300 {
@@ -120,6 +128,9 @@ fn run(a: &Args) -> Result<i32> {
     if a.idle_only {
         return idle::run(a);
     }
+    if a.concurrency_only {
+        return concurrency::run(a);
+    }
     if a.samples < 20 || a.pairs < 3 {
         return Err("at least 20 samples and three interleaved pairs are required".into());
     }
@@ -127,18 +138,8 @@ fn run(a: &Args) -> Result<i32> {
         return Err("work directory already exists; choose a fresh --work".into());
     }
     std::fs::create_dir_all(&a.work)?;
-    let machine = std::process::Command::new("sh")
-        .args([
-            "-c",
-            "uname -a; lscpu; free -b; findmnt -T .; lsblk -o NAME,SIZE,ROTA,FSTYPE,MOUNTPOINTS",
-        ])
-        .output()?;
-    let hashes = std::process::Command::new("sha256sum")
-        .arg(&a.bin)
-        .arg(&a.baseline)
-        .arg(std::env::current_exe()?)
-        .output()?;
-    let run_info = json!({"commit":a.commit,"baseline_commit":a.baseline_commit,"plugins":a.plugins,"baseline_plugins":a.baseline_plugins.as_ref().unwrap_or(&a.plugins),"seed":a.seed,"sizes":a.sizes,"spaces":a.spaces,"warm_pairs":a.pairs,"cold_pairs":a.cold_pairs,"samples":a.samples,"machine":String::from_utf8_lossy(&machine.stdout),"binary_sha256":String::from_utf8_lossy(&hashes.stdout)});
+    let (machine, hashes) = environment(a)?;
+    let run_info = json!({"commit":a.commit,"baseline_commit":a.baseline_commit,"plugins":a.plugins,"baseline_plugins":a.baseline_plugins.as_ref().unwrap_or(&a.plugins),"seed":a.seed,"sizes":a.sizes,"spaces":a.spaces,"warm_pairs":a.pairs,"cold_pairs":a.cold_pairs,"samples":a.samples,"machine":machine,"binary_sha256":hashes});
     std::fs::write(
         a.work.join("run-info.json"),
         serde_json::to_vec_pretty(&run_info)?,
@@ -299,7 +300,7 @@ fn run(a: &Args) -> Result<i32> {
             (k, pct)
         })
         .collect();
-    let report = json!({"commit":a.commit,"baseline_commit":a.baseline_commit,"plugins":a.plugins,"baseline_plugins":a.baseline_plugins.as_ref().unwrap_or(&a.plugins),"binary_sha256":String::from_utf8_lossy(&hashes.stdout),"machine":String::from_utf8_lossy(&machine.stdout),"noise_pct":noise,"qualification":"incomplete: admission, commit timestamp and three-host-call worker; see separate job and idle suites","seed":a.seed,"operation_concurrency":1,"subscriptions":2,"cache":"cold pairs drop OS caches; warm pairs retain OS caches","warm_pairs":a.pairs,"cold_pairs":a.cold_pairs,"reproduced_breach":reproduced,"runs":all,"failures":failures});
+    let report = json!({"commit":a.commit,"baseline_commit":a.baseline_commit,"plugins":a.plugins,"baseline_plugins":a.baseline_plugins.as_ref().unwrap_or(&a.plugins),"binary_sha256":hashes,"machine":machine,"noise_pct":noise,"qualification":"incomplete: admission, commit timestamp and three-host-call worker; see separate job and idle suites","seed":a.seed,"operation_concurrency":1,"subscriptions":2,"cache":"cold pairs drop OS caches; warm pairs retain OS caches","warm_pairs":a.pairs,"cold_pairs":a.cold_pairs,"reproduced_breach":reproduced,"runs":all,"failures":failures});
     std::fs::write(
         a.work.join("summary.json"),
         serde_json::to_vec_pretty(&report)?,
@@ -441,4 +442,61 @@ fn scenario(
         vec![server.rss()?],
     );
     Ok(samples)
+}
+
+#[cfg(test)]
+mod cli_tests {
+    use super::*;
+
+    #[test]
+    fn concurrency_mode_accepts_the_requested_bounded_wave_configuration() {
+        let args = Args::try_parse_from([
+            "calternal-perf",
+            "--bin",
+            "/head",
+            "--baseline",
+            "/before",
+            "--work",
+            "/disposable",
+            "--baseline-commit",
+            "before",
+            "--concurrency-only",
+            "--clients",
+            "8,32,128",
+            "--samples",
+            "20",
+            "--pairs",
+            "3",
+            "--cold-pairs",
+            "0",
+            "--json",
+        ])
+        .expect("the concurrency harness must accept the requested wave sizes");
+        assert_eq!(args.samples, 20);
+        assert_eq!(args.pairs, 3);
+        assert_eq!(args.cold_pairs, 0);
+    }
+}
+
+/// Capture the same machine and binary provenance for every measurement mode.
+/// Two bounded child commands; missing tools/binaries fail before timed work.
+fn environment(a: &Args) -> Result<(String, String)> {
+    let machine = std::process::Command::new("sh")
+        .args([
+            "-c",
+            "uname -a; lscpu; free -b; findmnt -T .; lsblk -o NAME,SIZE,ROTA,FSTYPE,MOUNTPOINTS",
+        ])
+        .output()?;
+    let hashes = std::process::Command::new("sha256sum")
+        .arg(&a.bin)
+        .arg(&a.baseline)
+        .arg(std::env::current_exe()?)
+        .output()?;
+    if !machine.status.success() || !hashes.status.success() {
+        return Err("unable to capture machine/binary provenance".into());
+    }
+    Ok((
+        String::from_utf8_lossy(&machine.stdout).into_owned(),
+        String::from_utf8_lossy(&hashes.stdout).into_owned(),
+    ))
 }

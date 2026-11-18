@@ -65,7 +65,7 @@ pub struct NodeRuntime {
 /// Cost: one blocking path lookup and one `node --version` process.
 pub async fn resolve_node(explicit: Option<&Path>) -> Result<NodeRuntime, String> {
     let explicit = explicit.map(Path::to_path_buf);
-    let abs = tokio::task::spawn_blocking(move || {
+    let abs = crate::blocking::spawn(move || {
         let candidate = match explicit {
             Some(path) => path,
             None => {

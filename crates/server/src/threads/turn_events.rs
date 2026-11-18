@@ -176,7 +176,7 @@ fn read_page(conn: &JobDatabase) -> Result<Vec<Event>, rusqlite::Error> {
 async fn blocking<T: Send + 'static, E: std::fmt::Display>(
     run: impl FnOnce() -> Result<T, E> + Send + 'static,
 ) -> Result<T, String> {
-    tokio::task::spawn_blocking(move || run().map_err(|e| e.to_string()))
+    crate::blocking::spawn(move || run().map_err(|e| e.to_string()))
         .await
         .map_err(|e| e.to_string())?
 }

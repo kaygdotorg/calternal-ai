@@ -107,7 +107,7 @@ impl Session {
                 job.clone(),
                 token_hash.clone(),
             );
-            return tokio::task::spawn_blocking(move || {
+            return crate::blocking::spawn(move || {
                 st.jobs
                     .agent_current(&space, &job, &hash)
                     .ok()

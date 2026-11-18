@@ -2,8 +2,8 @@
 //! A catalog lookup selects a space; current authority is checked before any
 //! content database is opened. No list or membership-count-dependent probe runs.
 use crate::{
+    api::{Shared, authorization},
     auth::{Directory, Identity},
-    store::Store,
 };
 use calternal_core::ResolveResult;
 use calternal_types::{Capability, CapabilitySet, Error};
@@ -13,10 +13,11 @@ use calternal_types::{Capability, CapabilitySet, Error};
 /// lookup (`required` = content.write) permits write authority without read.
 /// Returns the caller's capabilities in the owning space so admission needs no second
 /// lookup. Cost: one indexed global route, one authority check and a small access vector;
-/// no content database or file I/O and no work proportional to membership count.
-pub(crate) fn resolve_for(
-    directory: &impl Directory,
-    store: &Store,
+/// no content database or userdata-file I/O, and no membership-count-dependent work.
+/// Routing runs on a blocking task; native authority awaits its existing worker
+/// outside the general blocking pool, retaining the publication barrier.
+pub(crate) async fn resolve_for<D: Directory>(
+    state: &Shared<D>,
     account: &Identity,
     kind: &str,
     id: &str,
@@ -27,9 +28,15 @@ pub(crate) fn resolve_for(
             || (required == Capability::ContentWrite && caps.contains(Capability::ContentWrite))
     };
     let missing = || Error::not_found("item not found");
-    let space = store.locate(kind, id)?.ok_or_else(missing)?;
-    let caps = directory
-        .capabilities(account.id, space)
+    let st = state.clone();
+    let route_kind = kind.to_owned();
+    let route_id = id.to_owned();
+    let space = crate::blocking::spawn(move || st.store.locate(&route_kind, &route_id))
+        .await
+        .map_err(|_| Error::internal("resolver task failed"))??
+        .ok_or_else(missing)?;
+    let caps = authorization::capabilities(state, account.id, space)
+        .await?
         .filter(|c| visible(*c))
         .ok_or_else(missing)?;
     let resolved = ResolveResult {

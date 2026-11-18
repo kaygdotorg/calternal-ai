@@ -48,6 +48,7 @@ pub fn app_with(tweak: impl FnOnce(&mut AuthConfig)) -> App {
     let auth = tokens.http_auth().unwrap().auth.clone();
     let router = api::router(
         Arc::new(AppState {
+            blocking: calternal_server::blocking::RequestWorkers::new().unwrap(),
             inputs: store.account_inputs(),
             store,
             directory: tokens,

@@ -49,6 +49,7 @@ pub(crate) async fn events<D: Directory>(
     Query(q): Query<FollowQuery>,
     req: Request,
 ) -> Response {
+    let read_workers = state.blocking.clone();
     let Some(p) = req.extensions().get::<Identity>().cloned() else {
         return error_response(Error::unauthorized("sign in required"));
     };
@@ -71,7 +72,7 @@ pub(crate) async fn events<D: Directory>(
         .flatten();
     let st = state.clone();
     let identity = p.clone();
-    let head = tokio::task::spawn_blocking(move || {
+    let head = crate::blocking::spawn(move || {
         let mut c = st.inputs.open(identity.id)?;
         st.inputs.clean(&mut c, &st.directory, &identity)?;
         let head = Inputs::head(&c)?;
@@ -105,107 +106,113 @@ pub(crate) async fn events<D: Directory>(
         readiness,
         readiness_pending: false,
     };
-    let body = Body::from_stream(futures_util::stream::unfold(follow, |mut f| async move {
-        if f.done {
-            return None;
-        }
-        loop {
-            if !f.session.is_live(&f.state.directory).await {
+    let body = Body::from_stream(read_workers.read_stream(futures_util::stream::unfold(
+        follow,
+        |mut f| async move {
+            if f.done {
                 return None;
             }
-            if f.readiness_pending
-                || f.readiness
-                    .as_ref()
-                    .is_some_and(|listener| listener.changes.has_changed().unwrap_or(false))
-            {
-                if let Some(listener) = &mut f.readiness {
-                    listener.changes.borrow_and_update();
+            loop {
+                if !f.session.is_live(&f.state.directory).await {
+                    return None;
                 }
-                f.readiness_pending = false;
-                return Some((Ok(encode(AccountFrame::ReadinessChanged)), f));
-            }
-            if let Some(bookmark) = f.page.pop_front() {
-                f.after = bookmark.clone();
-                return Some((
-                    Ok::<_, std::convert::Infallible>(encode(AccountFrame::Changed { bookmark })),
-                    f,
-                ));
-            }
-            while matches!(
-                f.wake.receiver.try_recv(),
-                Ok(_) | Err(tokio::sync::broadcast::error::TryRecvError::Lagged(_))
-            ) {}
-            let p = f.p.clone();
-            let after = f.after.clone();
-            let maintenance = f.maintenance
-                || tokio::time::Instant::now() >= f.maintenance_at
-                || f.changes
-                    .iter()
-                    .any(|change| change.has_changed().unwrap_or(true));
-            if maintenance {
-                for change in &mut f.changes {
-                    let _ = change.borrow_and_update();
+                if f.readiness_pending
+                    || f.readiness
+                        .as_ref()
+                        .is_some_and(|listener| listener.changes.has_changed().unwrap_or(false))
+                {
+                    if let Some(listener) = &mut f.readiness {
+                        listener.changes.borrow_and_update();
+                    }
+                    f.readiness_pending = false;
+                    return Some((Ok(encode(AccountFrame::ReadinessChanged)), f));
+                }
+                if let Some(bookmark) = f.page.pop_front() {
+                    f.after = bookmark.clone();
+                    return Some((
+                        Ok::<_, std::convert::Infallible>(encode(AccountFrame::Changed {
+                            bookmark,
+                        })),
+                        f,
+                    ));
+                }
+                while matches!(
+                    f.wake.receiver.try_recv(),
+                    Ok(_) | Err(tokio::sync::broadcast::error::TryRecvError::Lagged(_))
+                ) {}
+                let p = f.p.clone();
+                let after = f.after.clone();
+                let maintenance = f.maintenance
+                    || tokio::time::Instant::now() >= f.maintenance_at
+                    || f.changes
+                        .iter()
+                        .any(|change| change.has_changed().unwrap_or(true));
+                if maintenance {
+                    for change in &mut f.changes {
+                        let _ = change.borrow_and_update();
+                    }
+                }
+                let mut reader = f.reader.take()?;
+                let (reader, page) = crate::blocking::spawn(move || {
+                    let page = reader.page(&p, &after, maintenance);
+                    (reader, page)
+                })
+                .await
+                .ok()?;
+                f.reader = Some(reader);
+                if maintenance {
+                    f.maintenance_at =
+                        tokio::time::Instant::now() + std::time::Duration::from_secs(1);
+                }
+                f.maintenance = false;
+                let page = page.ok()?;
+                let Some(page) = page else {
+                    f.done = true;
+                    return Some((Ok(encode(AccountFrame::Reset)), f));
+                };
+                if !page.is_empty() {
+                    f.page = page.into();
+                    f.ready = false;
+                    continue;
+                }
+                if !f.ready {
+                    f.ready = true;
+                    let bookmark = f.after.clone();
+                    return Some((Ok(encode(AccountFrame::Ready { bookmark })), f));
+                }
+                let authority = async {
+                    if f.changes.is_empty() {
+                        std::future::pending::<()>().await;
+                    }
+                    let _ = futures_util::future::select_all(
+                        f.changes.iter_mut().map(|c| Box::pin(c.changed())),
+                    )
+                    .await;
+                };
+                let readiness = async {
+                    match &mut f.readiness {
+                        Some(listener) => listener.changes.changed().await,
+                        None => std::future::pending().await,
+                    }
+                };
+                tokio::select! {
+                    result = readiness => {
+                        if result.is_err() { return None; }
+                        // Loop through current-session validation before emitting.
+                        f.readiness_pending = true;
+                    },
+                    _ = f.wake.receiver.recv() => {},
+                    _ = authority => { f.maintenance = true; },
+                    _ = tokio::time::sleep_until(f.maintenance_at) => {
+                        f.maintenance = true;
+                        // Bounds session expiry and age-based confirmation checks;
+                        // commits wake immediately, independently of this keepalive.
+                        return Some((Ok(": keepalive\n\n".into()), f));
+                    }
                 }
             }
-            let mut reader = f.reader.take()?;
-            let (reader, page) = tokio::task::spawn_blocking(move || {
-                let page = reader.page(&p, &after, maintenance);
-                (reader, page)
-            })
-            .await
-            .ok()?;
-            f.reader = Some(reader);
-            if maintenance {
-                f.maintenance_at = tokio::time::Instant::now() + std::time::Duration::from_secs(1);
-            }
-            f.maintenance = false;
-            let page = page.ok()?;
-            let Some(page) = page else {
-                f.done = true;
-                return Some((Ok(encode(AccountFrame::Reset)), f));
-            };
-            if !page.is_empty() {
-                f.page = page.into();
-                f.ready = false;
-                continue;
-            }
-            if !f.ready {
-                f.ready = true;
-                let bookmark = f.after.clone();
-                return Some((Ok(encode(AccountFrame::Ready { bookmark })), f));
-            }
-            let authority = async {
-                if f.changes.is_empty() {
-                    std::future::pending::<()>().await;
-                }
-                let _ = futures_util::future::select_all(
-                    f.changes.iter_mut().map(|c| Box::pin(c.changed())),
-                )
-                .await;
-            };
-            let readiness = async {
-                match &mut f.readiness {
-                    Some(listener) => listener.changes.changed().await,
-                    None => std::future::pending().await,
-                }
-            };
-            tokio::select! {
-                result = readiness => {
-                    if result.is_err() { return None; }
-                    // Loop through current-session validation before emitting.
-                    f.readiness_pending = true;
-                },
-                _ = f.wake.receiver.recv() => {},
-                _ = authority => { f.maintenance = true; },
-                _ = tokio::time::sleep_until(f.maintenance_at) => {
-                    f.maintenance = true;
-                    // Bounds session expiry and age-based confirmation checks;
-                    // commits wake immediately, independently of this keepalive.
-                    return Some((Ok(": keepalive\n\n".into()), f));
-                }
-            }
-        }
-    }));
+        },
+    )));
     (
         StatusCode::OK,
         [

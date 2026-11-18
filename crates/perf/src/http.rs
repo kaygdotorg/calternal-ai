@@ -11,6 +11,7 @@ pub(crate) struct Http {
     pub(crate) client: Client,
     pub(crate) base: String,
     pub(crate) cookie: String,
+    pub(crate) bearer: Option<String>,
     counter: u64,
     // A fresh namespace prevents copied fixture receipts from colliding with
     // subsequent client mutations whose local counter starts at zero.
@@ -25,6 +26,7 @@ impl Http {
                 .build()?,
             base: format!("http://127.0.0.1:{port}"),
             cookie: String::new(),
+            bearer: None,
             counter: 0,
             nonce: uuid::Uuid::new_v4(),
         })
@@ -35,10 +37,13 @@ impl Http {
         } else {
             self.client.get(format!("{}{path}", self.base))
         };
-        r = r
-            .header("host", "localhost:18080")
-            .header("origin", ORIGIN)
-            .header("cookie", &self.cookie);
+        r = r.header("host", "localhost:18080");
+        r = if let Some(token) = &self.bearer {
+            // Match the people-lane development fixture: no cookie or Origin.
+            r.bearer_auth(token)
+        } else {
+            r.header("origin", ORIGIN).header("cookie", &self.cookie)
+        };
         if let Some(body) = body {
             r = r.json(&body);
         }

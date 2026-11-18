@@ -41,7 +41,7 @@ pub(crate) async fn dispatch<D: Directory>(
     }
     let st = state.clone();
     let operation = op.to_owned();
-    let prepared = tokio::task::spawn_blocking(move || prepare(st, p, operation, parsed))
+    let prepared = crate::blocking::spawn(move || prepare(st, p, operation, parsed))
         .await
         .map_err(internal)??;
     if !matches!(op, "pending.submit" | "pending.confirm") {
@@ -70,7 +70,7 @@ pub(crate) async fn dispatch<D: Directory>(
         request.input,
     ))
     .await?;
-    tokio::task::spawn_blocking(move || {
+    crate::blocking::spawn(move || {
         let mut c = state.inputs.open(p.id)?;
         let before = c.total_changes();
         let tx = c

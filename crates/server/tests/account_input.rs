@@ -66,6 +66,7 @@ impl Fixture {
         let clock = Arc::new(AtomicI64::new(1_800_000_000_000));
         let injected = clock.clone();
         let state = Arc::new(AppState {
+            blocking: calternal_server::blocking::RequestWorkers::new().unwrap(),
             inputs: Inputs::with_clock(
                 dir.path(),
                 Limits {

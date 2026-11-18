@@ -45,6 +45,7 @@ async fn disable_during_invocation_discards_result() {
     let data = roots.appdata;
     let node = resolve_node(None).await.expect("node >= 22.13");
     let state = Arc::new(AppState {
+        blocking: calternal_server::blocking::RequestWorkers::new().unwrap(),
         inputs: store.account_inputs(),
         store,
         directory: StoredDirectory::load_or_create(&data).unwrap(),

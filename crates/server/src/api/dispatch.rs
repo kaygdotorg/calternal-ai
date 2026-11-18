@@ -17,7 +17,7 @@ pub(super) async fn blocking<D: Directory, T: Send + 'static>(
     f: impl FnOnce(&Store) -> Result<T, Error> + Send + 'static,
 ) -> Result<T, Error> {
     let state = state.clone();
-    tokio::task::spawn_blocking(move || f(&state.store))
+    crate::blocking::spawn(move || f(&state.store))
         .await
         .map_err(|_| Error::internal("storage task failed"))?
 }
@@ -37,7 +37,7 @@ pub(super) fn to_value<T: serde::Serialize>(v: T) -> Result<Value, Error> {
 /// Plugin operations carry `session` into every worker host call, which rechecks it;
 /// in-process callers without a revocable sign-in pass [`Session::Static`].
 /// Summarize additionally rechecks membership after the worker before delivery.
-/// Stored directory lookups run on blocking tasks; identities contain no grants.
+/// Stored directory checks await their authority worker; identities contain no grants.
 pub async fn dispatch<D: Directory>(
     state: Shared<D>,
     p: Identity,
@@ -50,6 +50,26 @@ pub async fn dispatch<D: Directory>(
 }
 
 pub(super) async fn dispatch_scoped<D: Directory>(
+    state: Shared<D>,
+    p: Identity,
+    session: Session,
+    request_id: &str,
+    op: &str,
+    input: JsonObject,
+    agent: Option<crate::turns::access::Authority>,
+    machines: Option<std::sync::Arc<crate::machines::MachineService>>,
+) -> Result<Value, Error> {
+    let workers = state.blocking.clone();
+    let mutates = super::operation_mutates(&state, op);
+    workers
+        .scope(
+            mutates,
+            dispatch_scoped_inner(state, p, session, request_id, op, input, agent, machines),
+        )
+        .await
+}
+
+pub(super) async fn dispatch_scoped_inner<D: Directory>(
     state: Shared<D>,
     p: Identity,
     session: Session,
@@ -110,25 +130,17 @@ pub(super) async fn dispatch_scoped<D: Directory>(
             .policy(op)
             .map(|p| p.required)
             .unwrap_or(calternal_types::Capability::SpaceRead);
-        let st = state.clone();
-        let account = p.clone();
-        let resolve_address = op == "resolve";
-        let (resolved, caps) = tokio::task::spawn_blocking(move || {
-            let (mut resolved, caps) = crate::resolve::resolve_for(
-                &st.directory,
-                &st.store,
-                &account,
-                &kind,
-                &id,
-                op_required,
-            )?;
-            if resolve_address && kind == "notes" {
+        let (mut resolved, caps) =
+            crate::resolve::resolve_for(&state, &p, &kind, &id, op_required).await?;
+        if op == "resolve" && kind == "notes" {
+            let st = state.clone();
+            resolved = crate::blocking::spawn(move || {
                 resolved.state = Some(crate::notes::state(&st.store, &resolved)?);
-            }
-            Ok::<_, Error>((resolved, caps))
-        })
-        .await
-        .map_err(|_| Error::internal("resolver task failed"))??;
+                Ok::<_, Error>(resolved)
+            })
+            .await
+            .map_err(|_| Error::internal("resolver task failed"))??;
+        }
         granted = Some(caps);
         if op == "resolve" {
             return to_value(resolved);
@@ -170,12 +182,7 @@ pub(super) async fn dispatch_scoped<D: Directory>(
     match granted {
         Some(caps) => policy.check(Some(caps))?,
         None => {
-            let st = state.clone();
-            let checked = input.clone();
-            let admission = policy.clone();
-            tokio::task::spawn_blocking(move || admission.authorize(&st.directory, &p, &checked))
-                .await
-                .map_err(|_| Error::internal("directory task failed"))??;
+            super::authorization::authorize(&state, &p, &policy, &input).await?;
         }
     }
     #[cfg(all(feature = "test-plugins", debug_assertions))]
@@ -184,7 +191,7 @@ pub(super) async fn dispatch_scoped<D: Directory>(
         let request = request_id.to_owned();
         // Debug diagnostics may write stderr; keep that I/O off the async task.
         // Awaiting bounds diagnostic work by the existing admitted requests.
-        tokio::task::spawn_blocking(move || {
+        crate::blocking::spawn(move || {
             calternal_store::timings::emit("admission", &request, Some(elapsed));
         })
         .await
@@ -211,7 +218,7 @@ pub(super) async fn dispatch_scoped<D: Directory>(
             op.to_owned(),
             request_id.to_owned(),
         );
-        let verdict = tokio::task::spawn_blocking(move || {
+        let verdict = crate::blocking::spawn(move || {
             scope.check_operation(&operation, &checked, &retry_id, mutates, risk)
         })
         .await
@@ -236,7 +243,7 @@ pub(super) async fn dispatch_scoped<D: Directory>(
                 input.clone(),
                 request_id.to_owned(),
             );
-            let approval = tokio::task::spawn_blocking(move || {
+            let approval = crate::blocking::spawn(move || {
                 let create = || {
                     st.jobs
                         .agent_action_request(&a, &op, &input, &rid, risk, mutates)
@@ -291,69 +298,7 @@ pub(super) async fn run_admitted_operation<D: Directory>(
         return super::people::dispatch(state, p, operation, request_id.to_owned(), input).await;
     }
     if op.starts_with("spaces.") {
-        let st = state.clone();
-        let rid = request_id.to_owned();
-        let operation = op.to_owned();
-        return tokio::task::spawn_blocking(move || {
-            // Accounts this change removes lose their private input for the space.
-            let removed =
-                crate::account_input::revoked_targets(&st.directory, &p, &operation, &input)?;
-            let space = input
-                .get("space_id")
-                .and_then(Value::as_str)
-                .map(space_of)
-                .transpose()?;
-            let change = || st.directory.space_operation(&p, &rid, &operation, &input);
-            let result = match space {
-                // A write in a space is admitted through that space's receipts, the
-                // one admission every write there uses: one request ID cannot run
-                // both a content and a directory write in a space. The directory's
-                // own atomic receipt replays a change committed before a crash.
-                Some(space) if !matches!(operation.as_str(), "spaces.members") => {
-                    let fp = fingerprint(&operation, &input);
-                    st.store.content().admit(
-                        space,
-                        calternal_content::Request {
-                            account: actor.account,
-                            via: actor.via.as_ref(),
-                            id: &rid,
-                            operation: &operation,
-                            fingerprint: &fp,
-                        },
-                        change,
-                    )
-                }
-                // Reads, and account-level writes (spaces.create), whose receipt
-                // scope is the acting account.
-                _ => change(),
-            };
-            if result.is_ok()
-                && let Some(space) = space
-            {
-                if operation == "spaces.delete" {
-                    st.store
-                        .secrets()
-                        .erase_owner(&calternal_secrets::Owner::Space(space))
-                        .map_err(|e| Error::unavailable(e.to_string()))?;
-                }
-                for account in removed {
-                    if st
-                        .directory
-                        .capabilities(account, space)
-                        .is_some_and(|caps| caps.contains(calternal_types::Capability::SpaceRead))
-                    {
-                        continue;
-                    }
-                    st.jobs
-                        .interrupt_revoked_account(&space.to_string(), account)?;
-                    st.inputs.erase_space(account, space)?;
-                    st.inputs.invalidate(account)?;
-                }
-            }
-            result
-        })
-        .await
-        .map_err(|_| Error::internal("directory task failed"))?;
+        return super::spaces::dispatch(state, p, actor, request_id, op, input).await;
     }
     if state
         .registry
@@ -372,10 +317,7 @@ pub(super) async fn run_admitted_operation<D: Directory>(
             input.clone(),
         )
         .await?;
-        let (st, checked) = (state.clone(), input.clone());
-        tokio::task::spawn_blocking(move || policy.authorize(&st.directory, &p, &checked))
-            .await
-            .map_err(|_| Error::internal("delivery check failed"))??;
+        super::authorization::authorize(&state, &p, &policy, &input).await?;
         return Ok(result);
     }
     if policy.constraint == Constraint::PluginInvocation {
@@ -387,10 +329,7 @@ pub(super) async fn run_admitted_operation<D: Directory>(
         .and_then(|s| SpaceId::parse(s).ok());
     let value = dispatch_checked(state.clone(), p.clone(), actor, request_id, op, input).await?;
     if let Some(space) = delivery_space {
-        let st = state.clone();
-        tokio::task::spawn_blocking(move || policy.authorize_space(&st.directory, &p, space))
-            .await
-            .map_err(|_| Error::internal("directory task failed"))??;
+        policy.check(super::authorization::capabilities(&state, p.id, space).await?)?;
     }
     Ok(value)
 }

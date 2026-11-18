@@ -277,3 +277,32 @@ measurements retain that qualification. A matching HTTP receipt replay checks
 permanent-deletion state without forcing file placement: purge suppresses prior
 body receipts, while later outside-file conflicts do not revoke an acknowledged
 SSD result. The shared content receipt type carries the existing item UUID.
+
+Native operation admission and delivery checks await the existing auth worker directly.
+Item resolution offloads only its catalog lookup before awaiting the same current-grant
+query. There is no cross-request capability cache: each check observes the existing
+auth-worker publication barrier, including removals, role edits and account disable.
+Synchronous test directories use the blocking adapter.
+
+Foreground operation callbacks use the operation catalog/manifest's `mutates`
+flag to select scheduling. Separate lazy current-thread Tokio drivers supply two
+blocking readers and up to 32 blocking writers. Each lane admits at most 64
+running/queued callbacks; further callers await permits on the async executor.
+The listener's two unscoped blocking slots remain separate for authentication
+adapters, startup and background tasks. Thus foreground reads never join the
+writer or background queue. There can be 36 blocking threads across these three
+executors, versus the previous eight shared foreground/background slots; all
+new lane threads retire after ten idle seconds. Performance ceilings, auth
+batch width, the 64-space cache and retention are unchanged.
+
+A caller that disconnects before admission drops its waiter; a started durable
+callback finishes as before. No per-space state is stored in the scheduler.
+SSE bodies retain read scheduling on every body poll after the HTTP handler
+returns, using one pinned stream wrapper per connection and the existing
+listener/page limits. Async spawned background tasks do not inherit request
+scope. Non-operation HTTP
+mutations also use writer scheduling; operation requests derive their class
+from their declaration after parsing. Authentication runs before that scope.
+These scheduling reservations do not bypass a space's locks or the auth
+worker's mandatory publication barrier. A read blocked on those resources can
+still delay other reads within the bounded reader lane.

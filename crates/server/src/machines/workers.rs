@@ -45,7 +45,7 @@ impl MachineService {
             tokio::pin!(changed);
             changed.as_mut().enable();
             let service = self.clone();
-            if tokio::task::spawn_blocking(move || service.worker_stopped(lease))
+            if crate::blocking::spawn(move || service.worker_stopped(lease))
                 .await
                 .map_err(|_| Error::internal("worker teardown check failed"))??
             {

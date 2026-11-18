@@ -145,3 +145,28 @@ therefore include every space in the enrolled account. Historical schema-5
 binaries cannot read schema-6 roots; keep the pinned pre-integration comparison
 and use schema-compatible controls for an integrated release. No old-schema
 reader or migration is added to make a benchmark comparison run.
+
+`--concurrency-only --clients 1,8,32,128 --samples 20 --pairs 3` measures protected
+`spaces.members` reads, alternating `spaces.set_role` writes, and mixed waves.
+It uses explicit development Owner/Guest bearer credentials, no browser cookie
+or Origin, matching `people-development.py`; this is not browser-session
+qualification. Each caller has its own connection and fresh UUID target space.
+Additional development account/shared spaces are counted separately. Warm-up is
+one untimed operation per caller; mixed rounds synchronize outside RPC timers so
+fast readers continue overlapping writers. At 128 write callers, the target
+working set exceeds the unchanged 64-space content cache, including reopen and
+eviction costs. No memory/cache budget is raised to conceal that effect.
+
+The mode uses fresh copied fixtures per arm and syncs them before startup, then
+interleaves AB/BA pairs. Counts are bounded to 128 callers, 100 samples/caller,
+and the global pair limit. Warm-up/request failures remain failed arms; they do
+not disappear into successful latency samples. Partial fixture credential roots
+are cleaned on normal error returns, and retained raw evidence has a 30-day
+policy. Reuse the same driver and fixture policy for before/after binaries.
+There is no accepted concurrency ceiling in the budget catalog; this mode exits
+2 for observations with incomplete qualification, or 1 for failed arms.
+
+Concurrency summaries use the range of per-arm p50s divided by the median p50
+for `noise_pct`, matching the main suite. The `327b9f9` driver used per-arm p95s
+for that diagnostic field; its pinned intermediate summaries retain that field
+unchanged, and their p50/p95 latency observations remain valid.

@@ -8,6 +8,9 @@ use ring::hmac;
 use serde_json::{Value, json};
 
 /// Scope cursors after admission and seal returned positions after delivery checks.
+/// Encoding and MAC verification/signing use bounded request workers. Cost: two
+/// blocking callbacks for a paged result, no additional SQL or durability work;
+/// malformed tokens retain their caller-safe refusal and task failures are internal.
 pub(super) async fn admitted_operation<D: Directory>(
     state: Shared<D>,
     p: Identity,
@@ -31,10 +34,21 @@ pub(super) async fn admitted_operation<D: Directory>(
                 .get("properties")
                 .is_some_and(|p| p.get("cursor").is_some())
         });
-    let scope = paged
-        .then(|| CursorScope::open(&state.store.cursor_key, p.id, op, &mut input))
-        .transpose()?;
     let account = p.id;
+    // Canonical filter encoding and cursor MAC work stay off async workers.
+    // Move the parsed input through the task; do not copy the request body.
+    let (input, scope) = if paged {
+        let st = state.clone();
+        let operation = op.to_owned();
+        crate::blocking::spawn(move || {
+            let scope = CursorScope::open(&st.store.cursor_key, account, &operation, &mut input)?;
+            Ok::<_, Error>((input, Some(scope)))
+        })
+        .await
+        .map_err(|_| Error::internal("cursor task failed"))??
+    } else {
+        (input, None)
+    };
     let mut result = run_admitted_operation(
         state.clone(),
         p,
@@ -48,15 +62,21 @@ pub(super) async fn admitted_operation<D: Directory>(
     )
     .await?;
     if let Some(scope) = scope {
-        scope.finish(account, op, &mut result);
+        let operation = op.to_owned();
+        result = crate::blocking::spawn(move || {
+            scope.finish(account, &operation, &mut result);
+            result
+        })
+        .await
+        .map_err(|_| Error::internal("cursor task failed"))?;
     }
     Ok(result)
 }
 
 /// One bounded token scope. A cursor carries only a previously delivered key;
 /// account, operation and filter values are authenticated without being encoded.
-struct CursorScope<'a> {
-    key: &'a hmac::Key,
+struct CursorScope {
+    key: hmac::Key,
     scope: String,
 }
 
@@ -64,11 +84,11 @@ fn invalid() -> Error {
     Error::invalid_input("invalid page cursor")
 }
 
-impl<'a> CursorScope<'a> {
+impl CursorScope {
     /// Open an authenticated cursor in-place after normal operation admission.
     /// No storage reads or writes, and no issuer detail on invalid input.
     fn open(
-        key: &'a hmac::Key,
+        key: &hmac::Key,
         account: AccountId,
         op: &str,
         input: &mut JsonObject,
@@ -83,18 +103,18 @@ impl<'a> CursorScope<'a> {
         Ok(scope)
     }
 
-    fn new(key: &'a hmac::Key, account: AccountId, op: &str, input: &JsonObject) -> Self {
+    fn new(key: &hmac::Key, account: AccountId, op: &str, input: &JsonObject) -> Self {
         let mut filters = input.clone();
         // Page size does not change the ordered result set.
         filters.remove("limit");
         Self {
-            key,
+            key: key.clone(),
             scope: format!("{account}\n{op}\n{}\n", canonical_request_input(&filters)),
         }
     }
 
     fn mac(&self, position: &[u8]) -> hmac::Tag {
-        hmac::sign(self.key, &self.message(position))
+        hmac::sign(&self.key, &self.message(position))
     }
 
     fn message(&self, position: &[u8]) -> Vec<u8> {
@@ -110,7 +130,7 @@ impl<'a> CursorScope<'a> {
         let (signature, position) = bytes.split_at(32);
         // The scope is the first part of the signed message. A mismatch reveals
         // neither the issuer nor whether the order key is still present.
-        hmac::verify(self.key, &self.message(position), signature).map_err(|_| invalid())?;
+        hmac::verify(&self.key, &self.message(position), signature).map_err(|_| invalid())?;
         String::from_utf8(position.to_owned()).map_err(|_| invalid())
     }
 
@@ -135,7 +155,7 @@ impl<'a> CursorScope<'a> {
             for group in groups {
                 if group["members_next_cursor"].is_string() {
                     let input = JsonObject::from([("group_id".into(), json!(group["group_id"]))]);
-                    Self::new(self.key, account, op, &input)
+                    Self::new(&self.key, account, op, &input)
                         .seal(&mut group["members_next_cursor"]);
                 }
             }

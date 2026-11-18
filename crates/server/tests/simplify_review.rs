@@ -502,6 +502,7 @@ fn manager_can_cancel_another_accounts_job_without_blocking_the_async_worker() {
         })
         .unwrap();
     let state = Arc::new(AppState {
+        blocking: calternal_server::blocking::RequestWorkers::new().unwrap(),
         inputs: store.account_inputs(),
         store,
         directory,
