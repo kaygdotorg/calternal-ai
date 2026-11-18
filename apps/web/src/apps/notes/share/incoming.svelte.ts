@@ -15,8 +15,13 @@ class IncomingNotes {
   get unread(): number { return this.items.filter((i) => i.unread).length; }
   /** The share a note arrived by, or undefined when the note is the person's own. */
   of(id: string | undefined): Incoming | undefined { return id ? this.items.find((i) => i.item.id === id) : undefined; }
-  /** Marks a note read in the list. */
-  read(id: string): void { const i = this.of(id); if (i?.unread) this.pages.replace(id, { ...i, unread: false }); }
+  /** Marks a note read: the dot goes at once, and the server is told (`sharing.mark_seen`); a failure leaves the server's mark, which the next read of the list brings back. */
+  read(id: string): void {
+    const i = this.of(id);
+    if (!i?.unread) return;
+    this.pages.replace(id, { ...i, unread: false });
+    void sharing.mark_seen(i.item).catch(() => {});
+  }
 }
 
 /** The one list. */

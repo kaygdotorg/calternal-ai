@@ -57,6 +57,8 @@ export interface SharingClient {
   revoke(item: ItemRef, grant_id: string): Promise<void>;
   shared_with_me(kind: ItemRef["kind"], cursor?: string): Promise<{ items: Incoming[]; next_cursor?: string }>;
   set_link_policy(space_id: string, editors_can_manage_links: boolean): Promise<void>;
+  /** Clears the item's unread mark in "Shared with me": called when the person opens it. */
+  mark_seen(item: ItemRef): Promise<{ seen: true }>;
   /** Reads a link's address (`/s/<secret>` or a member's `href`) without signing in: just that item, read-only. */
   guest(path: string): Promise<Guest>;
 }
@@ -152,6 +154,7 @@ export class FixtureSharing implements SharingClient {
   async revoke(item: ItemRef, grant_id: string): Promise<void> { this.grants.set(this.key(item), this.of(item).filter((g) => g.grant_id !== grant_id)); }
   async shared_with_me(_kind: ItemRef["kind"]) { return { items: this.incoming }; }
   async set_link_policy(): Promise<void> {}
+  async mark_seen(item: ItemRef) { this.incoming = this.incoming.map((i) => (i.item.id === item.id ? { ...i, unread: false } : i)); return { seen: true as const }; }
   async guest(path: string): Promise<Guest> {
     const g = await this.guestAnon(path);
     return new URLSearchParams(location.search).has("signedin") ? g : { ...g, item: undefined }; // only a signed-in account is told which item it is
