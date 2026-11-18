@@ -12,7 +12,8 @@ millisecond clock and shared worker-frame bound.
 
 The crate does no file or database I/O and depends only on `serde`,
 `serde_json` and `uuid` (plus `schemars`/`ts-rs` behind the `contract`
-feature for the wire contract exporter). Crates that need an identifier or
+feature for the wire contract exporter and `rustix` behind `perf-clock`).
+Crates that need an identifier or
 a caller-facing error import it from here instead of defining their own.
 
 [Full Rust API reference](/docs/dev/rust/calternal_types/index.html). Generated with stable `cargo doc --workspace --no-deps`; dependency documentation is omitted.
