@@ -15,9 +15,9 @@ use uuid::Uuid;
 pub(super) use query::search;
 pub(super) use writer::{Progress, advance};
 const WIDTH: usize = 16_384;
-/// Generation of the message postings and thread-location rows. Bump it when what
-/// they mean changes; a mismatch rebuilds the space's index from saved threads.
-const GENERATION: &str = "2";
+/// Stored message projection layout. A generation mismatch rebuilds the space
+/// from saved threads before publishing search results.
+const GENERATION: &str = "3";
 
 /// One record in a validated immutable thread revision. Ranges address that exact
 /// revision's staged Markdown, excluding any materialization-only identity line.

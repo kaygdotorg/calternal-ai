@@ -11,7 +11,7 @@ pub(crate) use plugin_items::PluginItemWrite;
 
 use crate::fault::{self, FaultPoint};
 use calternal_content::{Content, Item, Request};
-use calternal_core::{Note, NoteSummary, NoteVersion};
+use calternal_core::{Note, NoteResult, NoteSummary, NoteVersion};
 use calternal_types::Error;
 use calternal_types::{AccountId, SpaceId};
 use std::time::Duration;
@@ -33,6 +33,8 @@ pub struct Store {
     roots: calternal_roots::Roots,
     secrets: std::sync::Arc<calternal_secrets::LocalStore>,
     installation: Uuid,
+    pub(crate) notes_trash_days: std::sync::OnceLock<u32>,
+    pub(crate) notes_maintenance_wake: std::sync::Arc<tokio::sync::Notify>,
     /// Account appearance service and bounded installation font cache.
     pub(crate) appearance: std::sync::Arc<crate::api::appearance::Appearance>,
     machines: std::sync::OnceLock<std::sync::Weak<crate::machines::MachineService>>,
@@ -238,6 +240,8 @@ impl Store {
             roots: roots.clone(),
             secrets: std::sync::Arc::new(secrets),
             installation,
+            notes_trash_days: std::sync::OnceLock::new(),
+            notes_maintenance_wake: std::sync::Arc::new(tokio::sync::Notify::new()),
             machines: std::sync::OnceLock::new(),
             _roots: locks,
         })
@@ -376,8 +380,8 @@ impl Store {
     /// without its previous body. Cost: one metadata read plus one shared write
     /// header, and two checked file reads (admission and deferred placement).
     /// Three FULL SSD commits precede acknowledgment; file/directory syncs follow
-    /// within one second. A linked rename reads its bounded indexed source set
-    /// and completes guarded placement synchronously.
+    /// within one second. A title change places its root and returns the durable
+    /// job ID for bounded source edits and undo.
     #[allow(clippy::too_many_arguments)]
     pub fn update(
         &self,
@@ -392,7 +396,7 @@ impl Store {
         markdown: &str,
         allow_link_rewrites: bool,
         shared_authority: Option<&calternal_auth::spaces::Spaces>,
-    ) -> Result<Note, Error> {
+    ) -> Result<NoteResult, Error> {
         let id = item_id(id)?;
         let current = self.content.live_metadata(space_id, "notes", id)?;
         let old_title = current["title"].as_str().unwrap_or("");
@@ -421,8 +425,8 @@ impl Store {
                 "renaming a shared note requires space edit access",
             ));
         }
-        let updated = if let Some(authority) = shared_authority {
-            self.content.write_shared_note(
+        if let Some(authority) = shared_authority {
+            let updated = self.content.write_shared_note(
                 space_id,
                 id,
                 base_revision,
@@ -440,9 +444,13 @@ impl Store {
                         Err(Error::not_found("item not found"))
                     }
                 },
-            )?
+            )?;
+            Ok(NoteResult {
+                note: note(&updated),
+                job_id: None,
+            })
         } else if title == old_title {
-            self.content.write(
+            let updated = self.content.write(
                 space_id,
                 Some(id),
                 "notes",
@@ -451,9 +459,15 @@ impl Store {
                 markdown.as_bytes(),
                 request,
                 |i| serde_json::json!({"note":note(i)}),
-            )?
+            )?;
+            Ok(NoteResult {
+                note: note(&updated),
+                job_id: None,
+            })
         } else {
-            self.content.write_with_links(
+            let job = Uuid::now_v7();
+            let updated = self.content.write_with_links(
+                job,
                 space_id,
                 id,
                 "notes",
@@ -461,12 +475,26 @@ impl Store {
                 serde_json::json!({"title":title}),
                 markdown.as_bytes(),
                 request,
-                |i| serde_json::json!({"note":note(i)}),
+                |i| serde_json::json!({"note":note(i),"job_id":job}),
                 |item, old, new| crate::notes::retarget(item, old, new, old_title, title, id),
-            )?
-        };
-        Ok(note(&updated))
+            )?;
+            self.advance_note_rename_job(space_id, job);
+            Ok(NoteResult {
+                note: note(&updated),
+                job_id: Some(job.to_string()),
+            })
+        }
     }
+    pub(crate) fn advance_note_rename_job(&self, space: SpaceId, job: Uuid) {
+        if let Err(error) = self
+            .content
+            .rename_job_batch(space, Some(job), crate::notes::retarget)
+        {
+            tracing::warn!(%space, %job, code=?error.code, "Notes rename first batch deferred");
+        }
+        self.notes_maintenance_wake.notify_one();
+    }
+
     /// Provisions a plugin in one space: registers each declared kind's placement
     /// and format, then creates (or returns) each standard collection with its
     /// stable ID. Idempotent; a changed placement for an existing kind is refused.

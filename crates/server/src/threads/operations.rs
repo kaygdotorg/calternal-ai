@@ -136,10 +136,11 @@ pub(super) fn apply<D: Directory>(
         let (_, account_zone) = super::headings::profile(st, who.id)?;
         let (zone, offset) = display_zone(account_zone, data);
         let now = super::headings::now(zone.as_deref(), offset)?;
+        let catalog = st.registry.snapshot();
         let provider = data
             .get("provider")
             .and_then(Value::as_str)
-            .unwrap_or("calternal-claude-code");
+            .unwrap_or_else(|| catalog.default_provider());
         let mut metadata = json!({
             "title": data.get("title").cloned().unwrap_or(json!("New thread")),
             "title_source": if data.contains_key("title") { "manual" } else { "pending" },

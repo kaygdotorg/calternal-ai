@@ -28,6 +28,7 @@ fn command(args: &[&str]) -> Command {
         .env("NO_COLOR", "1")
         .env("RUST_LOG", "off")
         .env_remove("COLUMNS")
+        .env_remove("CALTERNAL_STARTUP_TIMINGS")
         .env_remove("CALTERNAL_FAULT");
     c
 }
@@ -355,6 +356,10 @@ fn machine_status_and_enroll_failures_say_what_to_do() {
 }
 
 fn serve_start(extra: &[&str], json: bool) -> (String, Option<i32>) {
+    serve_start_with_timings(extra, json, false)
+}
+
+fn serve_start_with_timings(extra: &[&str], json: bool, timings: bool) -> (String, Option<i32>) {
     let d = tempfile::tempdir().unwrap();
     let dir = data(&d.path().join("appdata"));
     let (ssd, hdd) = (
@@ -382,7 +387,11 @@ fn serve_start(extra: &[&str], json: bool) -> (String, Option<i32>) {
     if json {
         args.push("--json");
     }
-    let mut child = command(&args)
+    let mut cmd = command(&args);
+    if timings {
+        cmd.env("CALTERNAL_STARTUP_TIMINGS", "1");
+    }
+    let mut child = cmd
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -423,6 +432,28 @@ fn serve_start(extra: &[&str], json: bool) -> (String, Option<i32>) {
         None => text,
     };
     (transcript(exit, &text, &err), exit)
+}
+
+#[cfg(feature = "perf-timings")]
+#[test]
+fn startup_timing_opt_in_reports_bind_and_publication() {
+    let (output, exit) = serve_start_with_timings(&[], true, true);
+    assert_eq!(exit, Some(0));
+    let stderr = output.split_once("--- stderr ---\n").unwrap().1;
+    for label in [
+        "listener_bind_us",
+        "startup_publish_us",
+        "pre_announce_total_us",
+    ] {
+        assert!(
+            stderr.lines().any(|line| {
+                line.strip_prefix("STARTUP ")
+                    .and_then(|line| line.split_once(' '))
+                    .is_some_and(|(name, micros)| name == label && micros.parse::<u64>().is_ok())
+            }),
+            "missing {label}: {stderr}"
+        );
+    }
 }
 
 #[test]

@@ -56,22 +56,27 @@ impl Content {
             else {
                 return Ok(());
             };
-            if place_related {
-                let result = space.place_related(&account, &request, self.fault);
+            if place_related && let Err(error) = space.place_related(&account, &request, self.fault)
+            {
                 #[cfg(target_os = "linux")]
-                if result
-                    .as_ref()
-                    .is_err_and(|error| error.code == calternal_types::ErrorCode::Conflict)
+                if error.code == calternal_types::ErrorCode::Conflict
                     && let Some(id) = id.as_deref()
                     && space.abort_thread_patch(&account, &request, id, &revision)?
                 {
                     continue;
                 }
-                result?;
+                if crate::files::destination_occupied(&error)
+                    && let Some(id) = &id
+                {
+                    crate::rename_job::cancel_occupied_root(
+                        space, id, &revision, &op, &account, &request,
+                    )?;
+                }
+                return Err(error);
             }
             let item = if let Some(id) = id {
                 if state.as_deref() == Some("purging")
-                    && !space.finish_purge(&id, &account, &request, self.fault)?
+                    && !space.finish_purge(&id, &account, &request, &op, self.fault)?
                 {
                     continue;
                 }

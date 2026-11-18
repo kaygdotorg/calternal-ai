@@ -35,7 +35,7 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
     },
     "provider_id": {
       "default": "",
-      "description": "Optional provider plugin. An empty or absent value checks Claude Code.",
+      "description": "Optional provider plugin. An empty or absent value checks the installation's default provider.",
       "type": "string"
     },
     "space_id": {

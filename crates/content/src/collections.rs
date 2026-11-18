@@ -164,6 +164,32 @@ impl Content {
             collection: serde_json::from_value(item.metadata).map_err(internal)?,
         })
     }
+    /// Read a live space collection's definition and revision from the same
+    /// head. Cost: one indexed head/version join, without loading the body.
+    pub fn live_collection(&self, space: SpaceId, id: Uuid) -> Result<StoredCollection> {
+        self.with_space(space, |s| {
+            let (metadata, revision): (String, String) = s
+                .conn
+                .prepare_cached(
+                    "SELECT v.metadata,v.revision FROM items i
+                 JOIN versions v ON v.item=i.id AND v.seq=i.seq
+                 WHERE i.id=?1 AND i.kind='collections'
+                 AND i.mat_state NOT IN ('purged','purging') AND substr(i.path,1,7) <> '.trash/'",
+                )
+                .map_err(internal)?
+                .query_row([id.to_string()], |row| Ok((row.get(0)?, row.get(1)?)))
+                .optional()
+                .map_err(internal)?
+                .ok_or_else(missing)?;
+            let collection = serde_json::from_str(&metadata).map_err(internal)?;
+            Ok(StoredCollection {
+                id,
+                collection,
+                revision,
+            })
+        })
+    }
+
     /// Look up the live saved Notes collections explicitly including a note
     /// in this space. Reads only the requested note's indexed range.
     pub fn sharing_collections(&self, space: SpaceId, note: Uuid) -> Result<Vec<Uuid>> {

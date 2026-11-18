@@ -104,6 +104,12 @@ impl Agent {
                 self.threads.lock().await.insert(spec.thread_id, sandbox);
                 Ok(())
             }
+            Request::StartHarness(space, mut spec, harness) => {
+                spec.space_id = Some(space);
+                let sandbox = self.backend.start_harness(&spec, &harness).await?;
+                self.threads.lock().await.insert(spec.thread_id, sandbox);
+                Ok(())
+            }
             Request::Freeze(thread) => self.sandbox(thread).await?.freeze().await,
             Request::Resume(thread) => self.sandbox(thread).await?.resume().await,
             Request::Release(thread, keep_files) => {

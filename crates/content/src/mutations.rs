@@ -1,7 +1,7 @@
 //! Content/control mutation admission, shared receipts and guarded Trash placement.
 use super::*;
 use crate::db::Space;
-use crate::linked_write::{self, Retarget, Staged};
+use crate::linked_write::{Retarget, Staged};
 use crate::rooms::Body;
 use rusqlite::TransactionBehavior;
 use std::time::{Duration, Instant};
@@ -521,15 +521,15 @@ impl Content {
         )
     }
 
-    /// Commit a title edit and any same-kind links to its former path in a single
-    /// per-space content transaction. The supplied transform receives only the
-    /// indexed source snapshots and selected paths and may not re-enter content.
-    /// Placement completes before publishing the root receipt when sources are
-    /// rewritten. Each changed source incurs one checked file read and its
-    /// ordinary placement and journal costs. Oversized groups fail before commit.
+    /// Commit a planned rename and freeze its inbound link revisions for replay.
+    /// Places the root before admitting any dependent edit. Link edits and
+    /// the inverse use bounded worker turns. The transform receives exact source
+    /// snapshots and must not re-enter content. Each changed file uses guarded
+    /// placement and one journal event. The job records revisions for undo.
     #[allow(clippy::too_many_arguments)]
     pub fn write_with_links(
         &self,
+        job: Uuid,
         space: SpaceId,
         id: Uuid,
         kind: &str,
@@ -550,7 +550,7 @@ impl Content {
             request,
             result,
             Destination::Current,
-            Some(&retarget),
+            Some((job, &retarget)),
             None,
             None,
             || Ok(()),
@@ -582,7 +582,7 @@ impl Content {
         request: Request<'_>,
         result: impl FnOnce(&Item) -> Value,
         destination: Destination,
-        retarget: Option<&Retarget<'_>>,
+        retarget: Option<(Uuid, &Retarget<'_>)>,
         limit: Option<u32>,
         assigned: Option<Uuid>,
         guard: impl FnOnce() -> Result<()>,
@@ -632,7 +632,8 @@ impl Content {
                 if head.kind != kind || head.state == "purged" || head.state == "purging" {
                     return Err(missing());
                 }
-                let merge_stale = live && destination == Destination::Current
+                // Undo needs the exact pre-rename revision, including any room writes.
+                let merge_stale = live && destination == Destination::Current && retarget.is_none()
                     && (base.is_some() || matches!(body, Body::Live(LiveEdit::Append(_)) | Body::Wire { .. }));
                 if !merge_stale && base != Some(head.revision.as_str()) {
                     return Err(Error {code:ErrorCode::Conflict,message:"item has a newer revision".into(),details:Some(serde_json::json!({"reason":"stale_revision","current_revision":head.revision}))});
@@ -722,11 +723,19 @@ impl Content {
                 room = Some(s.seed_checkpoint(&item)?);
             }
             let mut root = Staged {item,seq,path,expected,room};
-            let related = if let (Some(edit), Some(old)) = (retarget, old_path.as_deref()) {
-                s.stage_related(&mut root,old,edit,self.fault)?
-            } else {
-                Vec::new()
-            };
+            let mut candidates = Vec::new();
+            if let (Some((_, edit)), Some(old)) = (retarget, old_path.as_deref()) {
+                crate::rename_job::ensure_idle(&s.conn)?;
+                candidates = s.related_revisions(&root, old)?;
+                if let Some((metadata, bytes)) = edit(&root.item, old, &root.path)? {
+                    Self::validate_write_size(kind, &metadata, &bytes)?;
+                    if let Some(room) = root.room.take() {
+                        root.room = Some(room.rewrite(&bytes)?);
+                    }
+                    root.item.metadata = metadata;
+                    root.item.bytes = bytes;
+                }
+            }
             let response=result(&root.item);
             let tx=s.conn.transaction_with_behavior(TransactionBehavior::Immediate).map_err(internal)?;
             root.write(&tx, old_path.as_deref(), &request.account.to_string())?;
@@ -740,7 +749,11 @@ impl Content {
                 Destination::Current => {}
             }
             root.outbox(&tx,request,&response)?;
-            linked_write::stage_related_outbox(&tx,&root,&related,request)?;
+            if let (Some((job, _)), Some(old), Some(base)) = (retarget, old_path.as_deref(), base) {
+                crate::rename_job::record(&tx, job, &root, old, base, &candidates, request,
+                    self.receipt_retention())?;
+                root.require_placement(&tx,request)?;
+            }
             if let (Body::Wire { preview, .. }, Some(update)) = (body, preview_update) {
                 preview(&update)?;
                 (self.fault)(FaultPoint::BeforeRoomCommit);
@@ -752,9 +765,9 @@ impl Content {
             commit.finish();
             (self.fault)(FaultPoint::AfterCommit);
             self.publish_pending(s)?;
-            if destination != Destination::Current || retarget.is_some() {
+            if destination != Destination::Current {
                 s.place_snapshot(id,Some(&root.item),self.fault)?;
-            } else {
+            } else if retarget.is_none() {
                 s.pending_since.get_or_insert_with(Instant::now);
             }
             Ok(root.item)

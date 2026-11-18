@@ -43,6 +43,7 @@ mod pool;
 mod publication;
 mod recovery;
 pub use recovery::ReceiptPruningIssue;
+mod rename_job;
 mod search;
 pub use search::{
     IndexedHit, IndexedPage, MessageDecoder, MessageRecord, SearchConfig, SearchConfigSource,
@@ -54,6 +55,7 @@ use lifecycle::{Cache, Slot, spawn_sweeper, sweep};
 pub use rooms::{LiveEdit, LiveTextEdit, RoomSnapshot};
 mod thread_append;
 mod trash;
+mod trash_job;
 mod types;
 use calternal_roots::Roots;
 use calternal_types::{AccountId, Error, ErrorCode, SpaceId};
