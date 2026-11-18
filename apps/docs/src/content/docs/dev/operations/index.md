@@ -56,6 +56,9 @@ Generated operation schemas. Capability and risk are shown only when the catalog
 - [notes.lookup](./notes-lookup/): Find a page of up to 100 notes by title prefix
 - [tags.list](./tags-list/): List a page of up to 100 tags and their current note counts
 - [tags.lookup](./tags-lookup/): Find a page of up to 100 tags by name prefix
+- [people.lookup](./people-lookup/): Find mentionable accounts and groups in a space.
+- [skills.list](./skills-list/): List visible space skills and their descriptions.
+- [plugins.manifests](./plugins-manifests/): List palette contributions from enabled plugins.
 - [drafts.save](./drafts-save/): drafts save
 - [drafts.list](./drafts-list/): drafts list
 - [drafts.get](./drafts-get/): drafts get

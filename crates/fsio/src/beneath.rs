@@ -163,6 +163,33 @@ impl Folder {
         self.sync()
     }
 
+    /// Read UTF-8 immediate entry names through the open directory descriptor.
+    /// Fails when more than `limit` entries exist. Does not follow symlinks
+    /// or open any children. Cost is bounded by the supplied entry count.
+    pub fn entry_names(&self, limit: usize) -> io::Result<Vec<String>> {
+        let mut entries = rustix::fs::Dir::read_from(&self.fd)?;
+        let mut names = Vec::new();
+        let mut count = 0;
+        while let Some(entry) = entries.read() {
+            let entry = entry?;
+            let name = entry.file_name();
+            if matches!(name.to_bytes(), b"." | b"..") {
+                continue;
+            }
+            count += 1;
+            if count > limit {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "directory entry limit reached",
+                ));
+            }
+            if let Ok(name) = name.to_str() {
+                names.push(name.to_owned());
+            }
+        }
+        Ok(names)
+    }
+
     /// Flushes this folder's entries (new names) to disk.
     pub fn sync(&self) -> io::Result<()> {
         rustix::fs::fsync(&self.fd).map_err(Into::into)
