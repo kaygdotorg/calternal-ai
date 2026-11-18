@@ -12,7 +12,8 @@
     "preview": "vite preview --host 0.0.0.0",
     "check": "npm run prepare:assets && svelte-check --tsconfig ./tsconfig.json",
     "test": "npm run prepare:assets && vitest run",
-    "e2e": "node e2e/run.mjs"
+    "e2e:gate": "node e2e/gate.mjs",
+    "e2e:server": "node e2e/gate-server.mjs"
   },
   "dependencies": {
     "@calternal/genui": "*",
