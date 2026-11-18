@@ -14,8 +14,8 @@ The added instrumentation is not separable from run-to-run noise at p95.
 Each run is 30 measured edits after two warm-ups. Edit to ready at p95 and
 the other phases are in [the samples](plugin-readiness-2026-11-18.json). Ready
 to first result stayed at 6.7 to 8.6 ms p95 in both. The "with diagnostics" set
-includes its first, unscored-order run (named `new-probe`) because it passed the
-same assertions. The after-run p95 rose with run order for both servers
+includes a first run (`new-probe`) taken before the alternating series, because
+it passed the same assertions. The after-run p95 rose with run order for both servers
 (runs 1 to 3 interleaved base, new), so the 925 ms is partly drift on the
 machine. A single run's p95 is the 29th of 30 samples and is itself noisy.
 
