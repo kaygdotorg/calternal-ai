@@ -8,7 +8,7 @@ const b = await chromium.launch(); let bad = 0;
 const ok = (c, m, note = "") => { console.log(`${c ? "PASS" : "FAIL"}  ${m}${note ? "  " + note : ""}`); if (!c) bad++; };
 const ctx = await b.newContext({ viewport: { width: 1440, height: 900 }, storageState: { cookies: state.cookies, origins: [] } });
 const page = await ctx.newPage();
-await page.goto(`${url}/notes`); await page.waitForSelector("html[data-ready]");
+await page.goto(`${url}/notes?server=1`); await page.waitForSelector("html[data-ready]");
 await page.locator('nav[aria-label="Notes"] a.row').first().waitFor({ timeout: 20000 });
 // Scroll down until at least four pages (400 rows) are loaded, then park on a row far from the top.
 for (let i = 0; i < 60; i++) { await page.evaluate(() => { const e = document.querySelector("aside.side .scroll"); e.scrollTop = e.scrollHeight; }); await page.waitForTimeout(150); if (await page.evaluate(() => Math.max(0, ...[...document.querySelectorAll("[aria-setsize]")].map((e) => +e.getAttribute("aria-setsize"))) >= 400)) break; }
