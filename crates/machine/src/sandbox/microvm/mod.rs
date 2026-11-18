@@ -198,23 +198,15 @@ impl Backend for MicrovmBackend {
         &'a self,
         spec: &'a SandboxSpec,
     ) -> BoxFuture<'a, SandboxResult<Arc<dyn Sandbox>>> {
-        Box::pin(async {
-            let space = spec
-                .space_id
-                .ok_or_else(|| SandboxError("missing sandbox space".into()))?;
-            let slot = self.0.account(spec.account_id);
-            let mut account = slot.lock().await;
-            let vm = self.0.ensure_guest(spec.account_id, &mut account).await?;
-            vm.control(&Request::Start(space, spec.clone())).await?;
-            let thread = Thread::new(
-                slot.clone(),
-                vm.socket.clone(),
-                vm.key.clone(),
-                spec.thread_id,
-                spec.worker.is_some(),
-            );
-            Ok(Arc::new(thread) as Arc<dyn Sandbox>)
-        })
+        self.start_thread(spec, None)
+    }
+
+    fn start_harness<'a>(
+        &'a self,
+        spec: &'a SandboxSpec,
+        harness: &'a crate::protocol::HarnessSandbox,
+    ) -> BoxFuture<'a, SandboxResult<Arc<dyn Sandbox>>> {
+        self.start_thread(spec, Some(harness))
     }
 
     fn discard(&self, account: Uuid, thread: Uuid) -> BoxFuture<'_, SandboxResult<()>> {
@@ -557,5 +549,42 @@ async fn maintain(backend: Weak<State>) {
             () = state.stop.notified() => return,
             () = tokio::time::sleep(SWEEP) => {}
         }
+    }
+}
+
+impl MicrovmBackend {
+    fn start_thread<'a>(
+        &'a self,
+        spec: &'a SandboxSpec,
+        harness: Option<&'a crate::protocol::HarnessSandbox>,
+    ) -> BoxFuture<'a, SandboxResult<Arc<dyn Sandbox>>> {
+        Box::pin(async move {
+            let space = spec
+                .space_id
+                .ok_or_else(|| SandboxError("missing sandbox space".into()))?;
+            if let Some(harness) = harness
+                && harness.guest_image_digest.as_deref() != Some(&self.0.config.image_digest)
+            {
+                return Err(SandboxError(
+                    "installed harness requires a different guest image".into(),
+                ));
+            }
+            let slot = self.0.account(spec.account_id);
+            let mut account = slot.lock().await;
+            let vm = self.0.ensure_guest(spec.account_id, &mut account).await?;
+            let request = match harness {
+                Some(harness) => Request::StartHarness(space, spec.clone(), harness.clone()),
+                None => Request::Start(space, spec.clone()),
+            };
+            vm.control(&request).await?;
+            let thread = Thread::new(
+                slot.clone(),
+                vm.socket.clone(),
+                vm.key.clone(),
+                spec.thread_id,
+                spec.worker.is_some(),
+            );
+            Ok(Arc::new(thread) as Arc<dyn Sandbox>)
+        })
     }
 }

@@ -192,7 +192,7 @@ space_id: string,
  */
 machine_id: string,
 /**
- * Optional provider plugin. An empty or absent value checks Claude Code.
+ * Optional provider plugin. An empty or absent value checks the installation's default provider.
  */
 provider_id: string, };
 /**
@@ -336,6 +336,11 @@ signed_in: boolean,
  */
 sign_in_command: string, };
 /**
+ * Why the caller cannot currently start a provider turn on one machine.
+ */
+
+export type ProviderBlocked = "disabled" | "machine_offline" | "machine_busy" | "check_required" | "check_stale" | "runtime_unavailable" | "sign_in_required";
+/**
  * A machine's readiness for one provider in this space.
  */
 
@@ -352,6 +357,10 @@ check: ProviderCheck | null,
  * The machine has capacity and the enabled provider reports a login.
  */
 ready: boolean,
+/**
+ * The first unmet readiness condition. A fresh verified provider omits it.
+ */
+blocked?: ProviderBlocked,
 /**
  * Safe reason an automatic title was skipped on this machine, when observed.
  */
@@ -2305,7 +2314,7 @@ model: string,
  */
 options: { [key in string]?: unknown },
 /**
- * Enabled provider plugin; empty selects calternal-claude-code.
+ * Enabled provider plugin; empty selects the installation's default provider.
  */
 provider_id: string,
 /**
@@ -2316,6 +2325,14 @@ mode: AgentMode,
  * Per-thread recovery override; absent uses the account defaults.
  */
 retry_settings: AgentRetrySettings | null,
+/**
+ * Native provider approval received from this active run.
+ */
+approval_id: string,
+/**
+ * Allow the named native approval for this run.
+ */
+approve: boolean,
 /**
  * Originating app operation prefix; empty grants no originating-app access.
  */
@@ -2410,7 +2427,15 @@ context: Array<ProviderContext>, } | { "type": "steer",
 /**
  * New message, bounded by the command budget.
  */
-prompt: string, } | { "type": "stop" };
+prompt: string, } | { "type": "approve",
+/**
+ * Opaque ID emitted by this run's adapter.
+ */
+request_id: string,
+/**
+ * Authorize this request within the existing sandbox boundary.
+ */
+approved: boolean, } | { "type": "stop" };
 /**
  * A command envelope. `seq` starts at one and increases exactly once per command.
  */
@@ -2501,6 +2526,14 @@ detail: string, } | { "type": "question",
  * Short question, at most 4 KiB.
  */
 text: string, } | { "type": "approval_request",
+/**
+ * ID of an interactive, run-scoped approval. Legacy notices omit it.
+ */
+request_id?: string,
+/**
+ * Whether an interactive confirmation can proceed within the tool sandbox.
+ */
+can_approve?: boolean,
 /**
  * Short action description, at most 4 KiB.
  */

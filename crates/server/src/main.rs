@@ -280,6 +280,7 @@ async fn serve(
             receipt_retention,
             plugin_root,
             test_plugin_root,
+            development,
         )
     })
     .await

@@ -144,6 +144,26 @@ async fn every_registered_operation_has_an_independent_matrix_row() {
             "{op}"
         );
     }
+    // Owner-only installation policy is exercised in conformance/harness_admin_cases.rs.
+    for op in [
+        "harnesses.list",
+        "harnesses.stage",
+        "harnesses.activate",
+        "harnesses.rollback",
+    ] {
+        assert!(stored_rows.insert(op), "duplicate harness operation {op}");
+        assert_eq!(
+            fixture
+                .state
+                .registry
+                .snapshot()
+                .policy(op)
+                .unwrap()
+                .required,
+            Capability::ServerSettings,
+            "{op}"
+        );
+    }
     // Manual-turn controls are covered by provider_turns.rs and agent_cases conformance.
     stored_rows.extend(
         calternal_core::AGENT_OPERATIONS

@@ -213,7 +213,7 @@ async fn start<D: Directory>(
     let label = plugin.manifest.name.clone();
     let s = state.clone();
     let name = provider.clone();
-    blocking(move || {
+    let policy = blocking(move || {
         if !allowed(&s, account, space) {
             return Err(missing());
         }
@@ -228,7 +228,12 @@ async fn start<D: Directory>(
         if !crate::plugins::activation(&s.store, space, plugin)?.enabled {
             return Err(missing());
         }
-        Ok(())
+        crate::plugins::package_store::provider_runtime::SignInPolicy::read(
+            s.store.appdata(),
+            &name,
+        )
+        .map_err(|_| Error::unavailable("Provider sign-in registration could not be read."))?
+        .ok_or_else(|| Error::unavailable("Provider sign-in is not configured."))
     })
     .await?;
     let target = Target {
@@ -237,6 +242,8 @@ async fn start<D: Directory>(
         machine,
         provider,
         label,
+        login_scope: calternal_machine::protocol::ProviderLoginScope::Account(account),
+        policy,
         retry,
     };
     let (id, answer) = state.inputs.sign_ins.insert(account, target.clone(), job)?;
@@ -274,11 +281,12 @@ async fn typing<D: Directory>(
     {
         return offer_failed(state, machines, session, job).await;
     }
+    let catalog = state.registry.snapshot();
     let provider = job
         .as_ref()
         .and_then(|job| job.input["request"]["provider_id"].as_str())
         .filter(|id| !id.is_empty())
-        .unwrap_or("calternal-claude-code")
+        .unwrap_or_else(|| catalog.default_provider())
         .to_owned();
     let svc = machines.clone();
     let name = provider.clone();

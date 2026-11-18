@@ -43,7 +43,16 @@ impl Redactor {
                 *detail = detail.replace(char::is_control, " ");
             }
             Question { text } => self.string(text),
-            ApprovalRequest { summary } => self.string(summary),
+            ApprovalRequest {
+                summary,
+                request_id,
+                ..
+            } => {
+                self.string(summary);
+                if let Some(id) = request_id {
+                    self.string(id);
+                }
+            }
             Error { code, message, .. } => {
                 self.string(code);
                 self.string(message);

@@ -30,6 +30,13 @@ probe. The final image has no shell, Node runtime or package manager. The
 web build's optional downloaded wallpaper assets depend on its cache and
 availability at build time.
 
+The packaged `trusted-plugins.json` drives the first installation's plugin
+catalog. Subsequent starts load the approved package archives from appdata.
+Install additional provider manifests through the same package review and
+installation flow used for other plugins.
+Development servers can use the source checkout's trusted catalog with a
+separate directory of replacement packages.
+
 The machine runs the same static Calternal binary on the host. It starts
 sandbox containers with Podman and provides only the assigned workspace and
 provider home to an agent. The server's roots, the old app's files and the

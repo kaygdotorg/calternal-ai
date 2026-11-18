@@ -80,6 +80,7 @@ pub(super) fn open_stores(
     receipt_retention: std::time::Duration,
     plugin_root: Option<std::path::PathBuf>,
     test_plugin_root: Option<std::path::PathBuf>,
+    development: bool,
 ) -> Result<
     (
         calternal_server::store::Store,
@@ -113,14 +114,19 @@ pub(super) fn open_stores(
         )
     })?;
     let test_root = test_plugin_root.map(|r| std::fs::canonicalize(&r).unwrap_or(r));
-    let registry = package_store::load(&data_dir, plugin_root.as_deref(), test_root.as_deref())
-        .map_err(|why| {
-            boot(
-                1,
-                "plugin_store",
-                why,
-                "Check the installation's plugin packages and appdata.",
-            )
-        })?;
+    let registry = package_store::load(
+        &data_dir,
+        plugin_root.as_deref(),
+        test_root.as_deref(),
+        development,
+    )
+    .map_err(|why| {
+        boot(
+            1,
+            "plugin_store",
+            why,
+            "Check the installation's plugin packages and appdata.",
+        )
+    })?;
     Ok((store, data_dir, recovery, registry))
 }

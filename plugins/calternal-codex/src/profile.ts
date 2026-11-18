@@ -1,0 +1,108 @@
+/** Construct the private profile and effective Codex sandbox policy. */
+import { lstat, mkdir, readlink, symlink } from 'node:fs/promises';
+import { isAbsolute, join, resolve } from 'node:path';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+
+const run = promisify(execFile);
+
+/** Member-selected mode supplied by the Calternal host, never by the prompt. */
+export type AgentMode = 'least_access' | 'approve_for_me' | 'full_access';
+
+/** Absolute official binary and environment owned by this sandbox. */
+export interface Profile {
+  /** The documented executable installed in the immutable image. */
+  binary: string;
+  /** CLI config overrides for the two confined permission profiles. */
+  args: string[];
+  /** The CLI environment with provider auth ingress limited to the private home. */
+  env: NodeJS.ProcessEnv;
+  /** Named permission profile selected for this turn. */
+  permissions: string;
+  /** Native approval setting selected by the mode. */
+  approvalPolicy: 'on-request' | 'never';
+}
+
+/** Find the exact executable version, discarding vendor stderr. */
+export async function version(binary: string): Promise<string> {
+  const { stdout } = await run(binary, ['--version'], {timeout: 3_000, maxBuffer: 4096});
+  const match = /^codex-cli ([a-z0-9.+-]+)\s*$/i.exec(stdout);
+  if (!match) throw new Error('missing official Codex CLI version');
+  return match[1];
+}
+
+async function sameLink(target: string, path: string) {
+  try {
+    await symlink(target, path);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'EEXIST' || await readlink(path) !== target) {
+      throw new Error('unsafe provider login path');
+    }
+  }
+}
+
+/** Bind only Codex's own auth and lock files into the current per-space home.
+ * Codex resolves the auth link for atomic refresh and locks the shared target.
+ * Regular command tools are denied reads of both the link and its destination.
+ */
+export async function prepareProfile(workspace: string, mode: AgentMode, withBroker = false): Promise<Profile> {
+  const login = process.env.CALTERNAL_PROVIDER_LOGIN_DIR;
+  const home = process.env.HOME;
+  if (!login || !home || !isAbsolute(login) || !isAbsolute(home)) throw new Error('isolated provider profile is unavailable');
+  const loginStat = await lstat(login);
+  if (!loginStat.isDirectory() || (loginStat.mode & 0o077) !== 0) throw new Error('provider login directory is not private');
+  const codexHome = join(home, '.codex');
+  try {
+    await mkdir(codexHome, { mode: 0o700 });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+  }
+  const homeStat = await lstat(codexHome);
+  if (!homeStat.isDirectory() || (homeStat.mode & 0o077) !== 0) throw new Error('unsafe Codex home');
+  for (const name of ['auth.json', 'auth.lock']) {
+    await sameLink(join(login, name), join(codexHome, name));
+  }
+  const binary = process.env.CALTERNAL_CODEX_BINARY ?? '/usr/local/bin/codex';
+  // Named permission profiles are supported by the pinned App Server schema.
+  // Fixed low-level capabilities stay inside the Calternal sandbox.
+  const quote = JSON.stringify;
+  const cwd = resolve(workspace);
+  const files = [
+    '":minimal" = "read"',
+    `${quote(cwd)} = "${mode === 'least_access' ? 'read' : 'write'}"`,
+    `${quote(login)} = "deny"`,
+    `${quote(codexHome)} = "deny"`,
+    '"/usr/local/bin/calternal" = "read"',
+    '"/nix/store" = "read"',
+  ];
+  const env: NodeJS.ProcessEnv = { CODEX_HOME: codexHome };
+  for (const key of ['PATH', 'HOME', 'LANG', 'TMPDIR', 'CALTERNAL_URL', 'CALTERNAL_AGENT_TOKEN',
+    'SSL_CERT_FILE', 'SSL_CERT_DIR', 'CODEX_CA_CERTIFICATE']) {
+    if (process.env[key]) env[key] = process.env[key];
+  }
+  const permissions = 'calternal-workspace';
+  const broker = withBroker && env.CALTERNAL_URL ? new URL(env.CALTERNAL_URL) : undefined;
+  if (broker && (!['http:', 'https:'].includes(broker.protocol) || broker.username || broker.password)) {
+    throw new Error('invalid Calternal broker URL');
+  }
+  const network = broker ? [
+    `permissions.${permissions}.network.enabled=true`,
+    `permissions.${permissions}.network.mode="full"`,
+    `permissions.${permissions}.network.domains={${quote(broker.hostname)}="allow"}`,
+  ] : [];
+  const args = [
+    'cli_auth_credentials_store="file"',
+    `default_permissions="${permissions}"`,
+    `permissions.${permissions}.filesystem={${files.join(',')}}`,
+    `projects.${quote(cwd)}.trust_level="untrusted"`,
+    'allow_login_shell=false',
+    'shell_environment_policy={inherit="all",ignore_default_excludes=true,include_only=["PATH","HOME","LANG","TMPDIR","CALTERNAL_URL","CALTERNAL_AGENT_TOKEN","SSL_CERT_FILE","SSL_CERT_DIR"]}',
+    ...network,
+    'features.hooks=false',
+    'features.plugins=false',
+    'features.apps=false',
+    'features.multi_agent=false',
+    'web_search="disabled"',
+  ].flatMap(value => ['-c', value]);
+  return { binary, args, env, permissions, approvalPolicy: mode === 'approve_for_me' ? 'on-request' : 'never' };
+}

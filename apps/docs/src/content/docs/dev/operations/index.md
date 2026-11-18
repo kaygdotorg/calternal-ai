@@ -121,6 +121,10 @@ Generated operation schemas. Capability and risk are shown only when the catalog
 - [plugins.personal_settings.set](./plugins-personal-settings-set/): Edit your own declared plugin setting
 - [plugins.settings.get](./plugins-settings-get/): Read a declared space plugin setting
 - [plugins.settings.set](./plugins-settings-set/): Edit a declared space plugin setting
+- [harnesses.list](./harnesses-list/): List installed harnesses and their tested updates
+- [harnesses.stage](./harnesses-stage/): Smoke-test a candidate harness runtime in a disposable sandbox
+- [harnesses.activate](./harnesses-activate/): Select an exact smoke-tested harness runtime for new work
+- [harnesses.rollback](./harnesses-rollback/): Restore a previously tested harness runtime
 - [provider.sign_in.start](./provider-sign-in-start/): Start a private provider sign-in
 - [provider.sign_in.answer](./provider-sign-in-answer/): Supply a code to the official provider login
 - [provider.sign_in.status](./provider-sign-in-status/): Read a private provider sign-in result
@@ -142,6 +146,8 @@ Generated operation schemas. Capability and risk are shown only when the catalog
 - [agent.run](./agent-run/): Send a prompt to the selected provider in a machine sandbox
 - [agent.events](./agent-events/): Read ordered live turn events and the durable checkpoint
 - [agent.discard](./agent-discard/): Explicitly discard a stopped turn workspace, retaining its account home
+- [agent.steer](./agent-steer/): Add input to the current interactive provider turn
+- [agent.approval](./agent-approval/): Resolve an approval from the current interactive provider turn
 - [agent.stop](./agent-stop/): Cancel your turn, or a turn you can manage
 - [agent.resume](./agent-resume/): Explicitly resume an interrupted turn from its checkpoint
 - [agent.mode](./agent-mode/): Change a thread permission mode and rotate its token
