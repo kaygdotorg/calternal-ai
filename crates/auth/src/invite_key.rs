@@ -10,9 +10,12 @@ pub(crate) struct Key {
 }
 
 impl Key {
-    pub(crate) fn open(path: &Path, invites_exist: impl FnOnce() -> Result<bool>) -> Result<Self> {
+    pub(crate) fn open(
+        path: &Path,
+        credentials_exist: impl FnOnce() -> Result<bool>,
+    ) -> Result<Self> {
         if !path.try_exists().map_err(Error::internal)? {
-            if invites_exist()? {
+            if credentials_exist()? {
                 return Err(Error::internal(
                     "restore the missing system/invite.key from backup",
                 ));
@@ -39,6 +42,15 @@ impl Key {
         })
     }
 
+    /// Derive isolated keys for item links from the backed-up installation key.
+    /// Neither key permits opening or looking up an invite.
+    pub(crate) fn item_links(&self) -> Self {
+        Self {
+            encryption: blake3::derive_key("calternal item link encryption v1", &self.encryption),
+            lookup: blake3::derive_key("calternal item link lookup v1", &self.encryption),
+        }
+    }
+
     pub(crate) fn lookup(&self, secret: &str) -> blake3::Hash {
         blake3::keyed_hash(&self.lookup, secret.as_bytes())
     }
@@ -55,13 +67,13 @@ impl Key {
             secret.as_bytes(),
             &mut tag,
         )
-        .map_err(|_| Error::internal("could not encrypt invite"))?;
+        .map_err(|_| Error::internal("could not encrypt bearer secret"))?;
         Ok([nonce, &tag, &encrypted].concat())
     }
 
     pub(crate) fn decrypt(&self, bytes: &[u8], id: &str) -> Result<String> {
         if bytes.len() < 28 {
-            return Err(Error::internal("invalid encrypted invite"));
+            return Err(Error::internal("invalid encrypted bearer secret"));
         }
         let plain = decrypt_aead(
             Cipher::aes_256_gcm(),
@@ -71,7 +83,7 @@ impl Key {
             &bytes[28..],
             &bytes[12..28],
         )
-        .map_err(|_| Error::internal("could not decrypt invite"))?;
-        String::from_utf8(plain).map_err(|_| Error::internal("invalid invite encoding"))
+        .map_err(|_| Error::internal("could not decrypt bearer secret"))?;
+        String::from_utf8(plain).map_err(|_| Error::internal("invalid bearer secret encoding"))
     }
 }

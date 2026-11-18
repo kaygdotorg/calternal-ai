@@ -63,6 +63,20 @@ Generated operation schemas. Capability and risk are shown only when the catalog
 - [people.lookup](./people-lookup/): Find mentionable accounts and groups in a space.
 - [skills.list](./skills-list/): List visible space skills and their descriptions.
 - [plugins.manifests](./plugins-manifests/): List palette contributions from enabled plugins.
+- [collections.get](./collections-get/): Open a saved notes collection
+- [collections.create](./collections-create/): Save an explicit set of notes in one space
+- [collections.set_members](./collections-set-members/): Replace a saved collection's explicit notes
+- [sharing.mark_seen](./sharing-mark-seen/): Mark a received item share as seen
+- [sharing.rescue](./sharing-rescue/): Save the caller's blocked offline edits as a private note
+- [sharing.list](./sharing-list/): List sharing controls and grants for an item
+- [sharing.audiences](./sharing-audiences/): Find visible people or groups to share an item with
+- [sharing.shared_with_me](./sharing-shared-with-me/): List items shared with the signed-in account
+- [sharing.grant](./sharing-grant/): Set view or edit access for one named audience
+- [sharing.revoke](./sharing-revoke/): Remove one item grant
+- [sharing.link_create](./sharing-link-create/): Issue a read-only public link
+- [sharing.link_update](./sharing-link-update/): Change a public link's label or expiry
+- [sharing.link_copy](./sharing-link-copy/): Retrieve an authorized public link URL
+- [sharing.set_link_policy](./sharing-set-link-policy/): Set the authority needed to manage public links
 - [drafts.save](./drafts-save/): drafts save
 - [drafts.list](./drafts-list/): drafts list
 - [drafts.get](./drafts-get/): drafts get

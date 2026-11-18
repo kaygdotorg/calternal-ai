@@ -96,6 +96,15 @@ unsent edits can be lost during a system crash or power loss.
    The test-only `upgrade_schema()` step in `machines/db.rs` shows the shape of
    a real step and how the fixture tests drive it.
 
+### Item sharing
+
+Item sharing appends an auth migration for grant authority, link policy and
+private recipient marks, plus a space-content migration for derived collection
+membership. The existing `system/invite.key` backup also protects public link
+credentials through independently derived keys. The previous release's closed
+recovery table inventory rejects these new auth tables. The release needs an
+incompatible upgrade approval and full restore point under the deployment gate.
+
 ## Release handoff
 
 Unattended updates allow additive changes with proof that release N can run

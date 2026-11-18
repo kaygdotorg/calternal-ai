@@ -16,6 +16,7 @@ pub mod db;
 pub mod erasure;
 mod http_facing;
 mod invite_key;
+
 pub mod invites;
 pub mod limit;
 pub mod machines;
@@ -25,6 +26,8 @@ pub mod people;
 mod secret_keys;
 mod session;
 mod setup;
+/// Protected item sharing and link authorization.
+pub mod sharing;
 pub mod spaces;
 use calternal_types::{AccountId, InstallationId, SpaceId};
 pub mod token;

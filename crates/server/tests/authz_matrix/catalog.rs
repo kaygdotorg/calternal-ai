@@ -34,6 +34,21 @@ async fn every_registered_operation_has_an_independent_matrix_row() {
         "trash.list",
         "trash.purge",
         "resolve", // dedicated address matrix in resolver.rs
+        // Dedicated item sharing fixtures in resolver.rs.
+        "collections.get",
+        "collections.create",
+        "collections.set_members",
+        "sharing.list",
+        "sharing.mark_seen",
+        "sharing.rescue",
+        "sharing.audiences",
+        "sharing.shared_with_me",
+        "sharing.grant",
+        "sharing.revoke",
+        "sharing.link_create",
+        "sharing.link_update",
+        "sharing.link_copy",
+        "sharing.set_link_policy",
         "spaces.list",
         "wallpapers.list", // signed-in installation catalog in conformance/wallpaper_cases.rs
         "spaces.create",
@@ -182,6 +197,11 @@ async fn every_registered_operation_has_an_independent_matrix_row() {
                 .iter()
                 .map(|op| op.id().to_owned()),
         )
+        .chain(
+            calternal_server::authz::sharing_policies()
+                .iter()
+                .map(|p| p.operation.to_string()),
+        )
         .chain(plugin_rows.iter().map(|p| (*p).to_owned()))
         .collect();
     assert_eq!(
@@ -198,6 +218,7 @@ async fn every_registered_operation_has_an_independent_matrix_row() {
             + calternal_server::authz::people_policies().len()
             + calternal_core::NOTE_OPERATIONS.len()
             + calternal_core::SearchOperation::ALL.len()
+            + calternal_server::authz::sharing_policies().len()
             + plugin_rows.len(),
         MATRIX.len() + stored_rows.len(),
         "duplicate policy"

@@ -17,7 +17,12 @@ mod role_batch;
 
 /// Auth store descriptor shared with the locked deployment coordinator. No I/O.
 pub const MIGRATIONS: calternal_store::migrations::Schema<'_> =
-    calternal_store::migrations::Schema::new("auth.db", 11, &[include_str!("schema.sql")], &[]);
+    calternal_store::migrations::Schema::new(
+        "auth.db",
+        11,
+        &[include_str!("schema.sql")],
+        &[include_str!("sharing.sql")],
+    );
 
 /// A handle to the dedicated auth.db worker. Its bounded mailbox serializes
 /// authority reads, authentication writes and recovery publication for this
@@ -459,3 +464,41 @@ pub(crate) fn sql(e: rusqlite::Error) -> crate::Error {
 
 #[cfg(test)]
 mod role_batch_tests;
+
+#[cfg(test)]
+mod sharing_upgrade_tests {
+    use super::*;
+
+    #[test]
+    fn version_eleven_accounts_survive_the_sharing_migration() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("auth.db");
+        let old = Connection::open(&path).unwrap();
+        old.execute_batch(include_str!("schema.sql")).unwrap();
+        old.pragma_update(None, "user_version", 11).unwrap();
+        old.execute(
+            "INSERT INTO users(id,name,username,created_at) VALUES('original','Original','original',100)",
+            [],
+        ).unwrap();
+        drop(old);
+
+        let db = Db::open(&path).unwrap();
+        let result = db
+            .read_blocking(|connection| {
+                let version: i64 = connection
+                    .query_row("PRAGMA user_version", [], |r| r.get(0))
+                    .map_err(sql)?;
+                let name: String = connection
+                    .query_row("SELECT name FROM users WHERE id='original'", [], |r| {
+                        r.get(0)
+                    })
+                    .map_err(sql)?;
+                let grants: i64 = connection
+                    .query_row("SELECT count(*) FROM item_grants", [], |r| r.get(0))
+                    .map_err(sql)?;
+                Ok((version, name, grants))
+            })
+            .unwrap();
+        assert_eq!(result, (12, "Original".to_owned(), 0));
+    }
+}

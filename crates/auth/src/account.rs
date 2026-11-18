@@ -29,7 +29,7 @@ impl Auth {
     /// The host must validate and lock its state root first; this creates missing
     /// database parents and does not implement recovery of lost security state.
     /// Initializes the private invite key if there are no stored invites.
-    /// A missing key with stored invites is an error. This startup does not
+    /// A missing key with stored invites or public item links is an error. This startup does not
     /// provision any accounts or spaces.
     pub fn open(state: &Path, config: AuthConfig) -> Result<Self> {
         let webauthn = crate::passkey::build(&config)?;
@@ -37,7 +37,7 @@ impl Auth {
         let db = crate::db::Db::open(&database)?;
         let invite_key = crate::invite_key::Key::open(&state.join("system/invite.key"), || {
             crate::db::open_conn(&database)?
-                .query_row("SELECT EXISTS(SELECT 1 FROM invites)", [], |r| r.get(0))
+                .query_row("SELECT EXISTS(SELECT 1 FROM invites) OR EXISTS(SELECT 1 FROM item_grants WHERE link_hash IS NOT NULL)", [], |r| r.get(0))
                 .map_err(crate::db::sql)
         })?;
         Ok(Self {

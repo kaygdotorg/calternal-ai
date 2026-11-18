@@ -388,6 +388,10 @@ async fn serve(
             .purge_invites()
             .await
             .map_err(|e| boot(1, "failed", format!("invite cleanup: {e}"), DATA_HINT))?;
+        invite_tasks.spawn(people_maintenance::sweep_purged_sharing(
+            auth.spaces(),
+            store.shared_content(),
+        ));
         invite_tasks.spawn(people_maintenance::sweep_invites(auth, backlog));
     }
     let owner_setup = calternal_server::auth::Directory::http_auth(&directory).map(|service| {

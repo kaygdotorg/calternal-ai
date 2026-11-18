@@ -358,6 +358,8 @@ impl Store {
         base_revision: &str,
         title: Option<&str>,
         markdown: &str,
+        allow_link_rewrites: bool,
+        shared_authority: Option<&calternal_auth::spaces::Spaces>,
     ) -> Result<Note, Error> {
         let id = item_id(id)?;
         let current = self.content.live_metadata(space_id, "notes", id)?;
@@ -382,7 +384,32 @@ impl Store {
         };
         calternal_core::validate_title(title)?;
         calternal_core::validate_markdown(&markdown)?;
-        let updated = if title == old_title {
+        if title != old_title && !allow_link_rewrites {
+            return Err(Error::forbidden(
+                "renaming a shared note requires space edit access",
+            ));
+        }
+        let updated = if let Some(authority) = shared_authority {
+            self.content.write_shared_note(
+                space_id,
+                id,
+                base_revision,
+                crate::notes::metadata(title, &markdown)?,
+                markdown.as_bytes(),
+                request,
+                |i| serde_json::json!({"note":note(i)}),
+                |collections| {
+                    if authority
+                        .can_edit_shared_item(actor.account, space_id, id, collections)
+                        .map_err(crate::auth::auth_error)?
+                    {
+                        Ok(())
+                    } else {
+                        Err(Error::not_found("item not found"))
+                    }
+                },
+            )?
+        } else if title == old_title {
             self.content.write(
                 space_id,
                 Some(id),

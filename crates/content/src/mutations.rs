@@ -232,6 +232,39 @@ impl Content {
             Destination::Current,
             None,
             || Ok(()),
+            |_| Ok(()),
+        )
+    }
+
+    /// Write one shared note after rechecking live collection and directory
+    /// authority under the space lock. The callback may consult the auth worker
+    /// after reading this note's indexed memberships and must not re-enter
+    /// content. It runs before exposing receipt or revision conflict details.
+    #[allow(clippy::too_many_arguments)]
+    pub fn write_shared_note(
+        &self,
+        space: SpaceId,
+        id: Uuid,
+        base: &str,
+        metadata: Value,
+        bytes: &[u8],
+        request: Request<'_>,
+        result: impl FnOnce(&Item) -> Value,
+        authorize: impl FnOnce(Vec<Uuid>) -> Result<()>,
+    ) -> Result<Item> {
+        self.write_placed(
+            space,
+            Some(id),
+            "notes",
+            Some(base),
+            metadata,
+            bytes,
+            request,
+            result,
+            Destination::Current,
+            None,
+            || Ok(()),
+            |space| authorize(space.sharing_collections(id)?),
         )
     }
 
@@ -267,6 +300,7 @@ impl Content {
             Destination::Trash,
             None,
             guard,
+            |_| Ok(()),
         )
     }
 
@@ -291,6 +325,7 @@ impl Content {
             Destination::Restore,
             None,
             || Ok(()),
+            |_| Ok(()),
         )
     }
 
@@ -325,6 +360,7 @@ impl Content {
             Destination::Current,
             Some(&retarget),
             || Ok(()),
+            |_| Ok(()),
         )
     }
 
@@ -351,6 +387,7 @@ impl Content {
         destination: Destination,
         retarget: Option<&Retarget<'_>>,
         guard: impl FnOnce() -> Result<()>,
+        authorize: impl FnOnce(&crate::db::Space) -> Result<()>,
     ) -> Result<Item> {
         let _actor = self.lifecycle.step(request.account.as_uuid())?;
         Self::validate_write_size(&metadata, bytes)?;
@@ -364,6 +401,7 @@ impl Content {
             if s.pending_since.is_some_and(|at| at.elapsed() >= Duration::from_secs(1)) {
                 return Err(Error::unavailable("userdata materialization exceeded one second; check the SSD root and retry"));
             }
+            authorize(s)?;
             s.validate_bytes(kind,bytes)?;
             self.publish_pending(s)?;
             // Request IDs are unique per (account, space): the host replays a matching

@@ -46,6 +46,7 @@ mod plugins;
 mod request;
 mod search;
 mod search_skills;
+mod sharing;
 
 mod request_action;
 mod spaces;
@@ -145,6 +146,7 @@ pub fn router<D: Directory>(state: Shared<D>, web_dir: Option<PathBuf>) -> Route
     let mut app = Router::new().merge(api);
     if let Some(service) = &http_auth {
         app = app.merge(crate::account_http::routes(service.clone()));
+        app = app.merge(sharing::routes::<D>());
         app = app.merge(Router::new().route(
             calternal_core::ACCOUNT_ERASURE_PATH,
             post(crate::account_http::erasure::delete::<D>),

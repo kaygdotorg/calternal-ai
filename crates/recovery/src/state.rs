@@ -31,6 +31,9 @@ const SPECS: &[(&str, char, &str)] = &[
     ("machines", '1', "owner_account"),
     ("machine_pool_grants", '1', "account"),
     ("spaces", '2', "id"),
+    ("item_grants", '2', "space_id"),
+    ("item_link_policies", '2', "space_id"),
+    ("item_share_seen", '1', "account_id"),
     ("space_group_memberships", '2', "space_id"),
     ("space_memberships", '2', "space_id"),
     ("groups", '3', "id"),
@@ -99,6 +102,9 @@ pub(crate) fn initialize(c: &Connection) -> Result<()> {
         CREATE TABLE IF NOT EXISTS security_recovery_dirty(key TEXT PRIMARY KEY) STRICT;
         CREATE INDEX IF NOT EXISTS security_recovery_setup_user ON setup_tokens(user_id);").map_err(err)?;
     for (table, kind, owner) in SPECS {
+        if !names.iter().any(|name| name == table) {
+            continue;
+        }
         for event in ["INSERT", "UPDATE", "DELETE"] {
             let mut exprs = Vec::new();
             if event != "INSERT" {

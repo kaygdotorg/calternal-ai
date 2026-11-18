@@ -8,6 +8,7 @@ use crate::{
 };
 use rusqlite::{OptionalExtension, params};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use uuid::Uuid;
 
 pub(crate) const ACCOUNT_SCHEMA: calternal_store::migrations::Schema<'_> =
@@ -102,6 +103,53 @@ impl Content {
             Err(e) => existing()?.ok_or(e),
         }
     }
+    /// Save a hand-picked Notes collection in its own space. The caller
+    /// authorizes the space and each member. Cost: kind provisioning and one
+    /// ordinary content write with the shared journal and receipt.
+    pub fn create_notes_collection(
+        &self,
+        space: SpaceId,
+        title: String,
+        members: Vec<Uuid>,
+        request: Request<'_>,
+    ) -> Result<Value> {
+        if members.len() > 10_000 {
+            return Err(Error::invalid_input("collection membership is too large"));
+        }
+        self.register_kind(
+            space,
+            "collections",
+            crate::Placement::Hidden {
+                plugin_id: "collections".into(),
+            },
+            crate::FileFormat::Opaque {
+                extension: "json".into(),
+            },
+        )?;
+        let definition = Collection {
+            owner: CollectionOwner::Space(space),
+            title,
+            item_kind: "notes".into(),
+            standard_key: None,
+            members,
+        };
+        let metadata = serde_json::to_value(definition).map_err(internal)?;
+        let bytes = collection_file(metadata.clone())?;
+        let response =
+            |item: &crate::Item| serde_json::json!({"id":item.id,"revision":item.revision});
+        let item = self.write(
+            space,
+            None,
+            "collections",
+            None,
+            metadata,
+            &bytes,
+            request,
+            response,
+        )?;
+        Ok(response(&item))
+    }
+
     /// Reads one space collection after the host authorizes that space. Member IDs
     /// are references: the caller must check current access before loading them.
     /// Cost: [`Self::get`] plus bounded metadata deserialization; no extra fsync.
@@ -116,6 +164,29 @@ impl Content {
             collection: serde_json::from_value(item.metadata).map_err(internal)?,
         })
     }
+    /// Look up the live saved Notes collections explicitly including a note
+    /// in this space. Reads only the requested note's indexed range.
+    pub fn sharing_collections(&self, space: SpaceId, note: Uuid) -> Result<Vec<Uuid>> {
+        self.with_space(space, |s| s.sharing_collections(note))
+    }
+
+    /// Read one live saved collection's explicit note IDs for recipient search.
+    /// Uses the derived membership index and returns at most the requested count.
+    pub fn search_collection_members(
+        &self,
+        space: SpaceId,
+        id: Uuid,
+        limit: usize,
+    ) -> Result<Vec<String>> {
+        self.with_space(space, |s| {
+            let mut statement = s.conn.prepare_cached(
+                "SELECT note_id FROM note_collection_members WHERE collection_id=?1 ORDER BY note_id LIMIT ?2",
+            ).map_err(internal)?;
+            let rows = statement.query_map(params![id.to_string(), limit.min(10_001) as i64], |r| r.get::<_, String>(0)).map_err(internal)?;
+            rows.collect::<rusqlite::Result<_>>().map_err(internal)
+        })
+    }
+
     /// Replaces explicit membership as one ordinary versioned space-item mutation.
     /// The host authorizes collection editing; membership never grants item access.
     /// Cost: [`Self::get`], bounded JSON allocation and [`Self::write`] durability.
@@ -276,5 +347,19 @@ impl Content {
             return Err(internal("wrong account binding"));
         }
         Ok(step.hold(conn))
+    }
+}
+
+impl crate::db::Space {
+    pub(crate) fn sharing_collections(&self, note: Uuid) -> Result<Vec<Uuid>> {
+        let mut statement = self
+            .conn
+            .prepare_cached("SELECT collection_id FROM note_collection_members WHERE note_id=?1")
+            .map_err(internal)?;
+        let rows = statement
+            .query_map([note.to_string()], |r| r.get::<_, String>(0))
+            .map_err(internal)?;
+        rows.map(|row| Uuid::parse_str(&row.map_err(internal)?).map_err(internal))
+            .collect()
     }
 }
