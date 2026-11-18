@@ -67,7 +67,7 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
           "type": "string"
         },
         {
-          "description": "Parked without a process until its child jobs report or its person request is resolved.",
+          "description": "Parked without a process until its child jobs report, a signal arrives or a deadline passes.",
           "enum": [
             "waiting"
           ],
@@ -146,7 +146,7 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
           "type": "string"
         },
         "result": {
-          "description": "Final result of a `done` job, or null."
+          "description": "Final result, a caller-safe wait rejection, or null."
         },
         "space_id": {
           "description": "Space UUID that owns the job.",
@@ -159,6 +159,17 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
             }
           ],
           "description": "Current lifecycle state."
+        },
+        "wait": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/JobWait"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Public summary while a plugin job waits for a signal."
         }
       },
       "required": [
@@ -169,6 +180,26 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
         "result",
         "space_id",
         "state"
+      ],
+      "type": "object"
+    },
+    "JobWait": {
+      "additionalProperties": false,
+      "description": "Public summary of a parked plugin job with no signal payload or credentials.",
+      "properties": {
+        "deadline_ms": {
+          "description": "Unix milliseconds when the wait ends if no signal arrives.",
+          "format": "int64",
+          "type": "integer"
+        },
+        "reason": {
+          "description": "Why the job is waiting, supplied by the worker at the checkpoint.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "deadline_ms",
+        "reason"
       ],
       "type": "object"
     }
