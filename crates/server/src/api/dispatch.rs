@@ -95,6 +95,17 @@ pub(super) async fn dispatch_scoped_inner<D: Directory>(
         })
         .await;
     }
+    if calternal_core::is_appearance_operation(op) {
+        if agent.is_some() {
+            return Err(Error::forbidden(
+                "thread credentials cannot manage account appearance",
+            ));
+        }
+        if !session.is_live(&state.directory).await {
+            return Err(Error::unauthorized("session expired or revoked"));
+        }
+        return super::appearance::operation(state, p, op, input).await;
+    }
     if calternal_core::is_account_input_operation(op) {
         if agent.is_some() {
             return Err(Error::forbidden(

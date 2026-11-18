@@ -173,7 +173,7 @@ pub(super) async fn guard<D: Directory>(
             && (response.status().is_success()
                 || response
                     .extensions()
-                    .get::<super::wallpapers::ImageResponse>()
+                    .get::<super::assets::CacheResponse>()
                     .is_some())
             && !(agent_admitted.is_some()
                 && response
@@ -219,9 +219,9 @@ pub(super) async fn guard<D: Directory>(
         response
     };
     let mut resp = resp;
-    let cacheable_image = resp
+    let cacheable_asset = resp
         .extensions()
-        .get::<super::wallpapers::ImageResponse>()
+        .get::<super::assets::CacheResponse>()
         .is_some();
     let h = resp.headers_mut();
     h.insert(
@@ -237,7 +237,7 @@ pub(super) async fn guard<D: Directory>(
         HeaderValue::from_static("no-referrer"),
     );
     h.insert(header::X_FRAME_OPTIONS, HeaderValue::from_static("DENY"));
-    if api && !cacheable_image {
+    if api && !cacheable_asset {
         h.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
     }
     resp

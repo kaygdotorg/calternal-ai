@@ -2,10 +2,10 @@
 //! evicts obsolete slots and abandoned staging files left by interrupted writes.
 
 use super::{catalog, upstream};
+use crate::api::assets::{self, io_job};
 use calternal_types::Error;
 use std::{
-    fs::{self, File},
-    io::{self, Read},
+    fs,
     path::{Path, PathBuf},
 };
 
@@ -56,21 +56,16 @@ fn max_bytes(name: &str) -> usize {
 
 pub(super) async fn read(path: PathBuf, cap: usize) -> Result<Option<Image>, Error> {
     io_job(move || {
-        let file = match File::open(path) {
-            Ok(file) => file,
-            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
-            Err(e) => return Err(e),
-        };
-        let mut bytes = Vec::new();
-        file.take(cap as u64 + 1).read_to_end(&mut bytes)?;
-        Ok((bytes.len() <= cap && upstream::jpeg(&bytes)).then(|| Image::new(bytes)))
+        Ok(assets::read(&path, cap)?
+            .filter(|bytes| upstream::jpeg(bytes))
+            .map(Image::new))
     })
     .await
 }
 
 pub(super) async fn put(path: PathBuf, bytes: Vec<u8>) -> Result<Image, Error> {
     io_job(move || {
-        calternal_fsio::write_atomic(&path, &bytes)?;
+        assets::write(&path, &bytes)?;
         Ok(Image::new(bytes))
     })
     .await
@@ -79,28 +74,9 @@ pub(super) async fn put(path: PathBuf, bytes: Vec<u8>) -> Result<Image, Error> {
 const TRACKED: &[u8] = b"tracked: true\n";
 
 pub(super) async fn tracked(path: PathBuf) -> Result<bool, Error> {
-    io_job(move || match File::open(path) {
-        Ok(file) => {
-            let mut marker = Vec::new();
-            file.take(TRACKED.len() as u64 + 1)
-                .read_to_end(&mut marker)?;
-            Ok(marker == TRACKED)
-        }
-        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(false),
-        Err(e) => Err(e),
-    })
-    .await
+    io_job(move || Ok(assets::read(&path, TRACKED.len())?.as_deref() == Some(TRACKED))).await
 }
 
 pub(super) async fn mark_tracked(path: PathBuf) -> Result<(), Error> {
-    io_job(move || calternal_fsio::write_atomic(&path, TRACKED)).await
-}
-
-async fn io_job<T: Send + 'static>(
-    f: impl FnOnce() -> io::Result<T> + Send + 'static,
-) -> Result<T, Error> {
-    tokio::task::spawn_blocking(f)
-        .await
-        .map_err(|_| Error::internal("wallpaper cache task stopped"))?
-        .map_err(|_| Error::internal("wallpaper cache could not be accessed"))
+    io_job(move || assets::write(&path, TRACKED)).await
 }

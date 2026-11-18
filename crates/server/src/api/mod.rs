@@ -47,6 +47,8 @@ mod request;
 mod search;
 mod search_skills;
 
+pub(crate) mod appearance;
+pub(crate) mod assets;
 mod request_action;
 mod spaces;
 pub mod wallpapers;
@@ -137,6 +139,7 @@ pub fn router<D: Directory>(state: Shared<D>, web_dir: Option<PathBuf>) -> Route
         )
         .merge(crate::machines::http::routes::<D>())
         .route(wallpapers::ROUTE, get(wallpapers::image))
+        .merge(appearance::routes::<D>())
         .route("/api", any(api_not_found))
         .route("/api/", any(api_not_found))
         .route("/api/{*rest}", any(api_not_found))

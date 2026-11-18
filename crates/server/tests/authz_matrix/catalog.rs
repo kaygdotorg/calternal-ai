@@ -38,6 +38,15 @@ async fn every_registered_operation_has_an_independent_matrix_row() {
         "onboarding.state", // account isolation in conformance/onboarding_cases.rs
         "onboarding.finish",
         "wallpapers.list", // signed-in installation catalog in conformance/wallpaper_cases.rs
+        // Account or installation scope, covered by the font conformance cases.
+        "appearance.get",
+        "appearance.patch",
+        "fonts.catalogue",
+        "fonts.install",
+        "fonts.status",
+        "fonts.faces",
+        "fonts.list",
+        "fonts.remove",
         "spaces.create",
         "spaces.members",
         // People directory and group grants are exercised by conformance/people_cases.rs.

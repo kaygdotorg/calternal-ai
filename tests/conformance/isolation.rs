@@ -43,6 +43,7 @@ mod plugin_parity_cases;
 mod plugin_settings_cases;
 mod plugin_slot_cases;
 
+mod font_cases;
 mod onboarding_cases;
 mod search_cases;
 mod setup_code_cases;
@@ -210,6 +211,9 @@ impl Fixture {
             .unwrap_or_else(|| repo.join("plugins"));
         let mut command = Command::new(binary);
         command.env_clear();
+        if self.dir.path().join("fonts-off").is_file() {
+            command.env("CALTERNAL_FONT_DOWNLOADS", "off");
+        }
         if self.dir.path().join("wallpaper-cache-case").is_file() {
             command.env("CALTERNAL_UNSPLASH_KEY", "fixture-only");
         }
