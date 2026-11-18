@@ -76,6 +76,12 @@ pub(super) enum PluginCommand {
         #[command(flatten)]
         args: dev::Args,
     },
+    /// Inspect a development revision and this caller's recent operation errors.
+    #[cfg(feature = "dev-plugin-drafts")]
+    Diagnostics {
+        #[command(flatten)]
+        args: dev::DiagnosticsArgs,
+    },
     /// Validate a plugin manifest and its package documentation.
     Check {
         /// Plugin package directory.
@@ -170,6 +176,8 @@ fn run(command: PluginCommand) -> Result<Reply, CliError> {
         PluginCommand::New { name, sdk_root } => scaffold(&name, &sdk_root),
         #[cfg(feature = "dev-plugin-drafts")]
         PluginCommand::Dev { .. } => unreachable!("handled before local commands"),
+        #[cfg(feature = "dev-plugin-drafts")]
+        PluginCommand::Diagnostics { args } => dev::diagnostics(args),
         PluginCommand::Check { dir } => check(&dir),
         PluginCommand::Test { dir } => {
             check(&dir)?;

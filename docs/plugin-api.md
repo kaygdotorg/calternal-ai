@@ -294,6 +294,25 @@ does not describe later callbacks or carry a generated view. A retry with the
 same request ID and input replays the durable result. Changed input conflicts.
 The usual receipt retention and authorization checks apply.
 
+On a server built for development drafts, run
+`calternal plugin diagnostics <package> <operation>` from the sourced
+development environment. It shows the current ready revision, validation,
+handshake and publication timing, and the latest five errors for that
+operation and caller. Input error paths point into the submitted input.
+Output error paths point into the declared JSON Schema. A published draft
+revision keeps up to 64 caller-operation histories in memory. Publishing a
+new revision starts a new history.
+
+The same view reports the last candidate that failed before publication:
+its phase (`validation`, `handshake` or `publication`), a message cut to 300
+characters, and elapsed time. A failed candidate never replaces the ready
+revision, so the state stays `ready` while an earlier revision keeps serving.
+Before any revision loads, the state is `failed`. The server keeps one failed
+candidate per package in the development space, for at most 16 packages, and
+clears it on the next successful publication. Nothing in diagnostics is
+written to disk, so it follows no database or file format and needs no
+migration. A restart drops it. A production server has no diagnostics view.
+
 ## Page a plugin's own kinds
 
 Declare `list_items_v1` in `host_calls`. In a worker handler, call
