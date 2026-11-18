@@ -9,6 +9,7 @@ title: "Command reference"
 - [calternal-resources-set-hook](./calternal-resources-set-hook/)
 - [calternal-resources-set-compute](./calternal-resources-set-compute/)
 - [calternal-resources-runtime-usage](./calternal-resources-runtime-usage/)
+- [calternal-resources-set-group-storage](./calternal-resources-set-group-storage/)
 - [calternal-resources-set-storage](./calternal-resources-set-storage/)
 - [calternal-resources-storage-usage](./calternal-resources-storage-usage/)
 - [calternal-resources-set-group](./calternal-resources-set-group/)

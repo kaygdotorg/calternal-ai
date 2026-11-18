@@ -50,6 +50,7 @@ pub use search::{
 };
 mod revision_slice;
 use lifecycle::{Cache, Slot, spawn_sweeper, sweep};
+mod group_storage;
 mod plugin_state;
 mod storage_usage;
 mod trash;
@@ -86,6 +87,7 @@ pub struct Content {
     search_writers: search::Writers,
     search_worker: std::sync::OnceLock<std::sync::mpsc::SyncSender<SpaceId>>,
     lifecycle: calternal_types::OwnerLifecycle,
+    storage_groups: group_storage::Groups,
     index: Mutex<Connection>,
     catalog: ReadPool,
     // Declared before `journals`: open stores drain before the driver stops.
@@ -192,6 +194,7 @@ impl Content {
             search_worker: std::sync::OnceLock::new(),
             roots,
             lifecycle,
+            storage_groups: group_storage::Groups::default(),
             index: Mutex::new(index),
             catalog,
             spaces,
@@ -246,6 +249,7 @@ impl Content {
             let journal = self.journals.open_store(id, self.lifecycle.clone())?;
             let mut opened =
                 Space::open(&self.roots.appdata, &self.roots.userdata_ssd, id, journal)?;
+            opened.group_storage = self.storage_groups.for_space(id);
             self.recover_space(&mut opened)?;
             *held = Some(opened);
             slot.visibility
@@ -279,6 +283,7 @@ impl Content {
     /// witness publication. Call from a blocking worker.
     pub fn retire_space(&self, space: SpaceId) {
         self.lifecycle.drain(space.as_uuid());
+        self.storage_groups.retire(space);
         self.search_readers.forget(space);
         self.search_writers.forget(space);
         let slot = lock(&self.spaces).remove(&space);

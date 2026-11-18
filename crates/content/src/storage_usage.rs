@@ -70,12 +70,28 @@ impl Content {
 }
 
 pub(crate) fn read(conn: &rusqlite::Connection) -> Result<StorageUsage> {
+    read_query(
+        conn,
+        "SELECT text_bytes,binary_bytes FROM storage_usage WHERE singleton=1",
+    )
+}
+
+pub(crate) fn read_sibling(conn: &rusqlite::Connection) -> Result<StorageUsage> {
+    let has_counter = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_schema WHERE type='table' AND name='storage_usage')",
+        [],
+        |row| row.get::<_, bool>(0),
+    ).map_err(internal)?;
+    if has_counter {
+        read(conn)
+    } else {
+        read_query(conn, include_str!("storage_usage_from_revisions.sql"))
+    }
+}
+
+fn read_query(conn: &rusqlite::Connection, query: &str) -> Result<StorageUsage> {
     let (text, binary): (i64, i64) = conn
-        .query_row(
-            "SELECT text_bytes,binary_bytes FROM storage_usage WHERE singleton=1",
-            [],
-            |row| Ok((row.get(0)?, row.get(1)?)),
-        )
+        .query_row(query, [], |row| Ok((row.get(0)?, row.get(1)?)))
         .map_err(internal)?;
     Ok(StorageUsage {
         text_bytes: u64::try_from(text).map_err(internal)?,
@@ -106,4 +122,10 @@ pub(crate) fn write_error(error: rusqlite::Error) -> crate::Error {
         .with_details(serde_json::json!({"kind":kind}))
 }
 
-pub(crate) const MIGRATION: &str = include_str!("storage_usage.sql");
+pub(crate) const MIGRATION: &str = concat!(
+    include_str!("storage_usage.sql"),
+    "INSERT INTO storage_usage(singleton,text_bytes,binary_bytes) SELECT 1, * FROM (",
+    include_str!("storage_usage_from_revisions.sql"),
+    ");\n",
+    include_str!("storage_usage_triggers.sql"),
+);

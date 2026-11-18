@@ -27,6 +27,7 @@ pub(crate) struct Header {
 
 pub(crate) struct Space {
     pub(crate) id: SpaceId,
+    pub(crate) group_storage: Option<crate::group_storage::PoolRef>,
     /// This space's journal and receipts; dropped (and drained) with the space.
     pub(crate) journal: calternal_store::SpaceStore,
     pub(crate) conn: Connection,
@@ -127,6 +128,7 @@ impl Space {
         crate::discovery::install(&conn)?;
         Ok(Self {
             id,
+            group_storage: None,
             journal,
             conn,
             files: userdata_ssd.join("spaces").join(id.to_string()),

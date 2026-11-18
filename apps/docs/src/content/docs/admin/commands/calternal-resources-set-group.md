@@ -8,7 +8,7 @@ title: "calternal resources set-group"
 
 | Arguments | Purpose | Human output | JSON data |
 | --- | --- | --- | --- |
-| `resources set-compute --account UUID --hosted BOOL` | Set hosted access for an account or `--group UUID` and optional `--memory-mib`, `--active-threads`, `--queue-bound`, `--idle-seconds`, and paired `--runtime-seconds` and `--reset-seconds`. Pass `--clear` to restore default admission. Uses the same installation arguments as `resources set-group`. | One sentence. | `owner`, `limits` |
+| `resources set-group-storage GROUP [--text-bytes BYTES] [--binary-bytes BYTES] [--total-bytes BYTES]` | Replace one allocation shared by all spaces assigned to the group. Existing contents remain readable when above a ceiling. Omit a ceiling to clear it. | One sentence. | `group_id`, `limits` |
 
 ## JSON data shape
 

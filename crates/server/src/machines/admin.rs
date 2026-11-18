@@ -60,6 +60,13 @@ pub enum Request {
         /// Current-head storage ceilings by kind.
         limits: StorageLimits,
     },
+    /// Replace one allocation shared by an accounting group's spaces.
+    GroupStorageLimits {
+        /// Accounting group UUID.
+        group: GroupId,
+        /// Current-head ceilings pooled across its member spaces.
+        limits: StorageLimits,
+    },
     /// Read a space's current committed body bytes by storage kind.
     StorageUsage {
         /// Space UUID.
@@ -263,6 +270,15 @@ pub fn execute(
             content.set_storage_limits(space, limits)?;
             Response::StorageLimits
         }
+        Request::GroupStorageLimits { group, limits } => {
+            let authority = svc.lock()?.authority.clone();
+            authority
+                .require_resource_owner(calternal_types::ResourceOwner::Group(group))
+                .map_err(super::compute::authority_error)?;
+            content
+                .set_group_storage_limits(group, limits, || svc.set_group_storage(group, limits))?;
+            Response::StorageLimits
+        }
         Request::StorageUsage { space } => Response::StorageUsage {
             owner: svc.resource_owner(space)?,
             usage: content.storage_usage(space)?,
@@ -279,7 +295,16 @@ pub fn execute(
             Response::ComputeLimits
         }
         Request::ResourceGroup { space, group } => {
-            svc.set_resource_group(space, group)?;
+            let authority = svc.lock()?.authority.clone();
+            authority
+                .require_resource_space(space)
+                .map_err(super::compute::authority_error)?;
+            if let Some(group) = group {
+                authority
+                    .require_resource_owner(calternal_types::ResourceOwner::Group(group))
+                    .map_err(super::compute::authority_error)?;
+            }
+            content.bind_group_storage(space, group, || svc.set_resource_group(space, group))?;
             Response::ResourceGroup
         }
         Request::Revoke { machine } => Response::Revoke {
@@ -336,6 +361,7 @@ pub fn open_offline(
         calternal_content::DEFAULT_RECEIPT_RETENTION,
     )?;
     let svc = service_for(&store)?;
+    svc.restore_group_storage(store.content())?;
     Ok((store, svc))
 }
 

@@ -346,3 +346,40 @@ async fn package_state_acknowledges_a_commit_even_if_worker_output_is_invalid() 
     assert_eq!(record["state"]["value"], json!({"value":"saved"}));
     assert_eq!(record["state"]["revision"], "1");
 }
+
+#[tokio::test]
+async fn an_operator_group_allocation_survives_restart_and_covers_both_spaces() {
+    use crate::erasure_cases::operator_admin;
+
+    let mut f = Fixture::new().await;
+    let group = data(
+        f.op(0, "groups.create", json!({"name":"Shared storage fixture"}))
+            .await,
+    );
+    let group = group["group_id"].as_str().unwrap();
+    let first = f.spaces[0].clone();
+    let second = f.spaces[2].clone();
+    operator_admin(
+        &f,
+        "resources",
+        &["set-group-storage", group, "--text-bytes", "5"],
+    );
+    for space in [&first, &second] {
+        operator_admin(&f, "resources", &["set-group", space, group]);
+    }
+    f.op(
+        1,
+        "notes.create",
+        json!({"space_id":first,"title":"One","markdown":"abcd"}),
+    )
+    .await
+    .ok();
+    f.stop();
+    f.start().await;
+    let input = json!({"space_id":second,"title":"Two","markdown":"xy"});
+    let refused = f.op(1, "notes.create", input.clone()).await;
+    assert_eq!(refused.status, 409, "{}", refused.body);
+    assert_eq!(refused.body["error"]["details"]["scope"], "group");
+    operator_admin(&f, "resources", &["set-group-storage", group]);
+    f.op(1, "notes.create", input).await.ok();
+}

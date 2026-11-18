@@ -774,3 +774,92 @@ fn committed_usage_counts_current_bodies_through_trash_and_reopen() {
         }
     );
 }
+
+#[test]
+fn competing_spaces_can_only_consume_one_group_allocation() {
+    use calternal_content::StorageLimits;
+    use calternal_types::GroupId;
+
+    let dir = tempfile::tempdir().unwrap();
+    let content = open(dir.path(), |_| {});
+    let account = AccountId::new();
+    let group = GroupId::new();
+    let spaces = [SpaceId::new(), SpaceId::new()];
+    let limits = StorageLimits {
+        text_bytes: Some(4),
+        ..StorageLimits::default()
+    };
+    content
+        .set_group_storage_limits(group, limits, || Ok(()))
+        .unwrap();
+    for space in spaces {
+        content
+            .bind_group_storage(space, Some(group), || Ok(()))
+            .unwrap();
+        content
+            .register_kind(
+                space,
+                "notes",
+                Placement::Visible {
+                    folder: "Notes".into(),
+                },
+                FileFormat::Markdown,
+            )
+            .unwrap();
+    }
+    let start = std::sync::Barrier::new(2);
+    let outcomes = std::thread::scope(|scope| {
+        let write = |space| {
+            start.wait();
+            content.write(
+                space,
+                None,
+                "notes",
+                None,
+                json!({"title":"One"}),
+                b"abc",
+                request(account, "write"),
+                |_| json!({}),
+            )
+        };
+        let first = scope.spawn(move || write(spaces[0]));
+        let second = scope.spawn(move || write(spaces[1]));
+        [first.join().unwrap(), second.join().unwrap()]
+    });
+    let [first, second] = outcomes;
+    let (committed, refused, remaining) = match (first, second) {
+        (Ok(item), Err(error)) => (item, error, spaces[1]),
+        (Err(error), Ok(item)) => (item, error, spaces[0]),
+        _ => panic!("one transaction must observe the other space's committed bytes"),
+    };
+    assert_eq!(refused.message, "group text storage byte limit reached");
+    drop(content);
+    let content = open(dir.path(), |_| {});
+    content.restore_group_storage(spaces.map(|space| (space, group)), [(group, limits)]);
+    assert_eq!(content.storage_usage(remaining).unwrap().text_bytes, 0);
+    let reduced = content
+        .write(
+            committed.space,
+            Some(committed.id),
+            "notes",
+            Some(&committed.revision),
+            json!({"title":"One"}),
+            b"a",
+            request(account, "shrink"),
+            |_| json!({}),
+        )
+        .unwrap();
+    assert_eq!(reduced.bytes, b"a");
+    content
+        .write(
+            remaining,
+            None,
+            "notes",
+            None,
+            json!({"title":"Two"}),
+            b"xyz",
+            request(account, "retry"),
+            |_| json!({}),
+        )
+        .unwrap();
+}

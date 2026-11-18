@@ -424,6 +424,7 @@ const MACHINE_CHANGES: &[&str] = &[
     super::compute::MIGRATION,
     super::runtime::MIGRATION,
     super::resource_hooks::MIGRATION,
+    super::group_storage::MIGRATION,
 ];
 
 /// Return the machine registry schema shared by normal startup and upgrade admission.
@@ -440,6 +441,7 @@ pub(crate) fn upgrade_schema() -> calternal_store::migrations::Schema<'static> {
                 super::compute::MIGRATION,
                 super::runtime::MIGRATION,
                 super::resource_hooks::MIGRATION,
+                super::group_storage::MIGRATION,
                 "CREATE TABLE upgrade_fixture (id INTEGER PRIMARY KEY) STRICT;",
             ],
         );
@@ -537,6 +539,42 @@ mod tests {
         conn.execute("UPDATE guest_runtime SET running_ns=1500", [])
             .unwrap();
         assert!(before > 0 && read_cursor() > before);
+    }
+
+    #[test]
+    fn group_storage_allocation_migration_preserves_existing_bindings() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate_release(&conn, through(10), false).unwrap();
+        conn.execute(
+            "INSERT INTO space_resource_groups VALUES('first','group'),('second','group')",
+            [],
+        )
+        .unwrap();
+        migrate_release(&conn, through(11), true).unwrap();
+        assert_eq!(
+            calternal_store::migrations::inspect(&conn, through(10)).unwrap(),
+            11
+        );
+        let members: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM space_resource_groups WHERE group_id='group'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(members, 2);
+        conn.execute(
+            "INSERT INTO group_storage_limits VALUES('group',10,20,NULL)",
+            [],
+        )
+        .unwrap();
+        assert!(
+            conn.execute(
+                "INSERT INTO group_storage_limits VALUES('group',10,20,NULL)",
+                []
+            )
+            .is_err()
+        );
     }
 
     #[test]

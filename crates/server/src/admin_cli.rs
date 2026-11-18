@@ -132,6 +132,22 @@ pub enum ResourcesCmd {
         /// Maximum combined text and binary bytes. Omit for no ceiling.
         total_bytes: Option<u64>,
     },
+    /// Replace the byte ceilings shared across all spaces of an accounting group.
+    SetGroupStorage {
+        #[command(flatten)]
+        installation: Installation,
+        /// Accounting group UUID.
+        group: String,
+        #[arg(long)]
+        /// Maximum logical text bytes across the group. Omit to clear this ceiling.
+        text_bytes: Option<u64>,
+        #[arg(long)]
+        /// Maximum logical binary bytes across the group. Omit to clear this ceiling.
+        binary_bytes: Option<u64>,
+        #[arg(long)]
+        /// Maximum combined logical bytes across the group. Omit to clear this ceiling.
+        total_bytes: Option<u64>,
+    },
     /// Read retained confirmed runtime of hosted guests for one scope.
     RuntimeUsage {
         #[command(flatten)]
@@ -291,6 +307,27 @@ pub fn resources(cmd: ResourcesCmd) -> Result<Reply, CliError> {
             };
             Ok(Reply::new(json!({ "space_id": space, "limits": limits }))
                 .line("Saved storage byte ceilings."))
+        }
+        ResourcesCmd::SetGroupStorage {
+            installation,
+            group,
+            text_bytes,
+            binary_bytes,
+            total_bytes,
+        } => {
+            let group = calternal_types::GroupId::parse(&group).map_err(|_| bad_uuid("group"))?;
+            let limits = calternal_content::StorageLimits {
+                text_bytes,
+                binary_bytes,
+                total_bytes,
+            };
+            let Response::StorageLimits =
+                run(installation, Request::GroupStorageLimits { group, limits })?
+            else {
+                return Err(unexpected());
+            };
+            Ok(Reply::new(json!({"group_id":group,"limits":limits}))
+                .line("Saved the group storage allocation."))
         }
         ResourcesCmd::RuntimeUsage {
             installation,

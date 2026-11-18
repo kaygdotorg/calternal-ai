@@ -48,6 +48,7 @@ pub mod admin;
 mod admission;
 mod capacity;
 mod compute;
+mod group_storage;
 pub(crate) mod resource_hooks;
 pub use resource_hooks::ResourceHookBinding;
 mod runtime;
