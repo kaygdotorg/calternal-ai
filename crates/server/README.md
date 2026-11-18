@@ -42,15 +42,19 @@ filters. Cursors carry a signed position and expire on restart. Approval entries
 in the private request inbox and feed carry the lifetimes the host accepts for
 that action.
 
-The listener binds `127.0.0.1`. `appdata/startup.json` (0600) reports `base_url`,
+The listener defaults to `127.0.0.1`. Use `--bind-ip` to configure an isolated container listener. `appdata/startup.json` (0600) reports `base_url`,
 `passkey_origin`, `setup_token_file`, `development_tokens`, `pid`, and token file
 paths. The default passkey origin is `http://localhost:<bound-port>`: WebAuthn
 needs a hostname. Use the reported URL and preserve the port across restarts to
-preserve the passkey origin. `--origin https://example.org` selects an exact
-public origin behind a TLS proxy. `--trusted-proxies` accepts explicit CIDRs;
+preserve the passkey origin. `--origin https://example.org` (or `CALTERNAL_ORIGIN`) selects an exact
+public origin behind a TLS proxy. `--trusted-proxies` (or `CALTERNAL_TRUSTED_PROXIES`) accepts explicit CIDRs;
 without it, forwarded client addresses never influence rate-limit buckets.
 Only the configured public authority and the listener's loopback authorities
 are accepted as Host values. TLS is supplied by the deployment proxy.
+
+`--machine-sandbox-cpu-millis` sets a per-agent CPU ceiling on machines
+that enforce sandbox CPU limits. The default leaves CPU uncapped. See the
+[deployment runbook](../../docs/deploy.md) for the packaged limits.
 
 With no accounts, the privileged local setup token is written to `setup.token`
 (mode 0600) and its path appears in startup metadata. Its value is never logged.

@@ -28,6 +28,7 @@ mod requests_review_cases;
 mod threads_cases;
 
 mod cursor_cases;
+mod deploy_cases;
 mod drafts_cases;
 mod erasure_cases;
 #[path = "live_cases.rs"]
@@ -142,6 +143,7 @@ struct Fixture {
     spaces: Vec<String>,
     development: bool,
     remote_workers: bool,
+    bind_ip: Option<&'static str>,
 }
 impl Drop for Fixture {
     fn drop(&mut self) {
@@ -185,6 +187,9 @@ impl Fixture {
         }
         if !self.remote_workers {
             command.env("CALTERNAL_WORKER_TEST_BACKEND", "direct");
+        }
+        if let Some(ip) = self.bind_ip {
+            command.arg("--bind-ip").arg(ip);
         }
         if self.development {
             command.arg("--development");
@@ -246,7 +251,8 @@ impl Fixture {
                     // Connect to actual ephemeral listener; Host/Origin are the explicitly configured RP.
                     // startup base_url is public origin, so discover bound port from /proc socket tables below.
                     self.base = format!(
-                        "http://127.0.0.1:{}",
+                        "http://{}:{}",
+                        self.bind_ip.unwrap_or("127.0.0.1"),
                         listener_port(self.child.as_ref().unwrap().id())
                     );
                     return;
@@ -386,8 +392,8 @@ impl Fixture {
         self.ids
             .push(me.body["user"]["id"].as_str().unwrap().into());
     }
-    async fn new() -> Self {
-        let mut f = Self {
+    fn empty() -> Self {
+        Self {
             dir: tempfile::tempdir().unwrap(),
             child: None,
             client: Client::builder()
@@ -402,7 +408,11 @@ impl Fixture {
             spaces: vec![],
             development: false,
             remote_workers: false,
-        };
+            bind_ip: None,
+        }
+    }
+    async fn new() -> Self {
+        let mut f = Self::empty();
         f.start().await;
         let token = std::fs::read_to_string(f.appdata().join("setup.token")).unwrap();
         f.enroll(&token).await;
