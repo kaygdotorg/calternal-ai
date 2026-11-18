@@ -213,6 +213,30 @@ operations behind the same public checks, then move Notes and Threads one
 contract at a time. Notes listing and lifecycle go first. Threads wait for
 the thread file work in #46.
 
+The owner requested mechanical parity on 2026-11-18. Distribution and
+publisher metadata may affect discoverability. Every grant and operation must
+use the same rules and dispatch regardless of either field. Current native
+exceptions become API requirements.
+
+| Current exception | Contract needed to remove it |
+| --- | --- |
+| The server matches the orchestrator ID to native thread operations and native turn jobs | A public engine service selection contract with thread append/checkpoint and turn admission, lease, retry and request operations |
+| Notes calls its Rust store and lifecycle handlers directly | Public kind listing, lifecycle and data mutation contracts over the existing engine, with the same isolation and receipts |
+| The orchestrator's core skill is embedded by path and reused at startup as a named fallback | Declare packaged instruction and skill sources and distribute defaults through the package seed; keep host security instructions in the protected core |
+| Server, CLI and browser recognize a provider package ID when resolving defaults and thread files | Resolve an enabled provider by configuration or service selection and carry provider metadata through the thread protocol |
+| Browser defaults and palette entries name particular apps | Discover enabled apps and contributions from the manifest and active service slots |
+
+At cutover, install each official package and a separately published package
+with a different ID in parallel disposable installations. Use the same logical
+operation, kind and slot names to check behavior. Separate installations avoid
+global declaration collisions between the two packages. Assert the same
+capability review, space grants, listing, worker outcomes and isolation
+denials. A publisher field, if added, is provenance only. Add a source check
+that derives the official IDs from the distribution seed and rejects their
+use in host, broker, registry and client code. Public operation and kind IDs
+remain valid. Run the source check and the renamed-package conformance suite
+together, with no exception list for official code paths.
+
 **Interface today.** Every package can declare the same portable view slots.
 The current web shell and orchestrator visuals are client code. They cannot
 ship unchanged as ordinary plugin contributions. The host component catalog
