@@ -34,7 +34,7 @@ A grant row has `grant_id` and `permission`. Named grants also have `audience` a
 | `sharing.mark_seen` | `item` | `seen` for the signed-in recipient. |
 | `sharing.rescue` | `title, changed_blocks` | `note` in the signed-in account's personal space. The client sends only its own changed Markdown blocks. The server uses the local title and supplied blocks to create the copy. |
 
-Putting a note in Trash suspends existing links and grants. Owners and authorized Managers can revoke a suspended link. Restoring the note makes surviving grants active again. Permanent purge removes authority. Losing group membership or revoking an individual grant removes only the access gained through that grant. Item-only editors can edit the note's Markdown. Renaming uses the space's linked rewrite operation and requires space Edit. Shared Notes search reuses the source space's index with allowed item IDs and checks current access before sending matches.
+Putting a note in Trash suspends existing links and grants. Someone with link management permission can revoke a suspended link. Restoring the note makes surviving grants active again. Permanent purge removes authority. Losing group membership or revoking an individual grant removes only the access gained through that grant. Item-only editors can edit the note's Markdown. Renaming uses the space's linked rewrite operation and requires space Edit. Shared Notes search reuses the source space's index with allowed item IDs and checks current access before sending matches.
 
 ## Guest reads
 
@@ -57,9 +57,11 @@ The room service calls `resolve::authorize_item_access` for the current View or 
 ## Custom share domains
 
 Keep the canonical link on the installation origin. An optional verified host
-can serve the same `/s/<secret>` and its member addresses. Losing the custom
-hostname leaves the canonical link usable. Revocation and expiry use the same
-grant on both hosts.
+can serve `/s/<secret>` and its member addresses using a separate bearer bound
+to the verified hostname claim. A request to an expired or transferred
+hostname must never disclose a bearer that also works on the installation
+origin. Losing the custom hostname leaves the canonical link usable.
+Revocation and expiry use the same grant on both hosts.
 
 Start with one exact HTTPS hostname per space, approved by its Owner and
 provisioned by the operator. Verify control using a DNS TXT challenge before

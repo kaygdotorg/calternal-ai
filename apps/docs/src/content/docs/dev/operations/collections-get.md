@@ -6,7 +6,7 @@ title: "collections.get"
 
 > **Preview: the app is not released.** This site describes a development preview and accepted designs; it does not establish production readiness.
 
-Open a saved notes collection
+Read a saved notes collection and its current revision
 
 Capability: not declared in this catalogue; the host policy remains authoritative.
 
@@ -16,7 +16,7 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
 {
   "risk": "read",
   "id": "collections.get",
-  "description": "Open a saved notes collection",
+  "description": "Read a saved notes collection and its current revision",
   "mutates": false
 }
 ```

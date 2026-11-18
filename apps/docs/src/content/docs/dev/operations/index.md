@@ -65,7 +65,7 @@ Generated operation schemas. Capability and risk are shown only when the catalog
 - [people.lookup](./people-lookup/): Find mentionable accounts and groups in a space.
 - [skills.list](./skills-list/): List visible space skills and their descriptions.
 - [plugins.manifests](./plugins-manifests/): List palette contributions from enabled plugins.
-- [collections.get](./collections-get/): Open a saved notes collection
+- [collections.get](./collections-get/): Read a saved notes collection and its current revision
 - [collections.create](./collections-create/): Save an explicit set of notes in one space
 - [collections.set_members](./collections-set-members/): Replace a saved collection's explicit notes
 - [sharing.mark_seen](./sharing-mark-seen/): Mark a received item share as seen
@@ -74,7 +74,7 @@ Generated operation schemas. Capability and risk are shown only when the catalog
 - [sharing.audiences](./sharing-audiences/): Find visible people or groups to share an item with
 - [sharing.shared_with_me](./sharing-shared-with-me/): List items shared with the signed-in account
 - [sharing.grant](./sharing-grant/): Set view or edit access for one named audience
-- [sharing.revoke](./sharing-revoke/): Remove one item grant
+- [sharing.revoke](./sharing-revoke/): Revoke one item grant, including while the item is in Trash
 - [sharing.link_create](./sharing-link-create/): Issue a read-only public link
 - [sharing.link_update](./sharing-link-update/): Change a public link's label or expiry
 - [sharing.link_copy](./sharing-link-copy/): Retrieve an authorized public link URL
@@ -97,6 +97,9 @@ Generated operation schemas. Capability and risk are shown only when the catalog
 - [fonts.faces](./fonts-faces/): Generate same-origin face rules
 - [fonts.list](./fonts-list/): List shared and caller-owned fonts
 - [fonts.remove](./fonts-remove/): Remove a caller-owned family
+- [plugins.network.content.get](./plugins-network-content-get/): Get a prepared sealed content frame
+- [plugins.network.content.preference.get](./plugins-network-content-preference-get/): Read your remote content preference
+- [plugins.network.content.preference.set](./plugins-network-content-preference-set/): Set your remote content preference
 - [plugins.settings.get](./plugins-settings-get/): Read a declared space plugin setting
 - [plugins.settings.set](./plugins-settings-set/): Edit a declared space plugin setting
 - [provider.sign_in.start](./provider-sign-in-start/): Start a private provider sign-in
