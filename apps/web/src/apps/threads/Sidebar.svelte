@@ -127,7 +127,6 @@
   let said = $state("");
   function keyRow(e: KeyboardEvent, t: ThreadSummary, c: Container, i: number, n: number) {
     if (e.key === "F2") { e.preventDefault(); return edit("thread", t.id, t.title); }
-    if (e.key === "ContextMenu" || (e.shiftKey && e.key === "F10")) { const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); e.preventDefault(); ctx = { x: r.left + 24, y: r.bottom, thread: t }; return; }
     if (!e.altKey || (e.key !== "ArrowUp" && e.key !== "ArrowDown")) return;
     e.preventDefault();
     const up = e.key === "ArrowUp";
