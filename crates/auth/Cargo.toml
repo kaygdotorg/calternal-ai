@@ -7,6 +7,7 @@ license.workspace = true
 description = "Protected account, space, and group authority"
 
 [dependencies]
+calternal-secrets.workspace = true
 calternal-types.workspace = true
 calternal-core.workspace = true
 calternal-fsio.workspace = true

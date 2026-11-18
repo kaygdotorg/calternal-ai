@@ -51,3 +51,17 @@ pub(crate) async fn sweep_purged_sharing(
         tokio::time::sleep(std::time::Duration::from_secs(60)).await;
     }
 }
+
+pub(crate) async fn sweep_account_security(auth: calternal_auth::Auth) {
+    loop {
+        match auth.purge_account_security().await {
+            Ok(true) => tokio::task::yield_now().await,
+            outcome => {
+                if outcome.is_err() {
+                    tracing::warn!("could not prune expired account security records");
+                }
+                tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+            }
+        }
+    }
+}

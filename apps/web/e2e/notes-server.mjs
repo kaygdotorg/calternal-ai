@@ -1,3 +1,4 @@
+import { signUp } from "./lib.mjs";
 // Notes on a real server (empty installation, virtual authenticator): create, type, saving states, rename by the heading, changes from elsewhere without polling, the conflict choice, offline,
 // and a 10,000-line note: typing with the keystroke probe while saves run, and save round trips. Development-host numbers. Env: CAL_BIN, CAL_DIST, CAL_NOTES_PORT.
 import { spawn } from "node:child_process";
@@ -24,7 +25,7 @@ try {
   await cdp.send("WebAuthn.enable"); await cdp.send("WebAuthn.addVirtualAuthenticator", { options: { protocol: "ctap2", transport: "internal", hasResidentKey: true, hasUserVerification: true, isUserVerified: true, automaticPresenceSimulation: true } });
   if (process.env.HACK_TYPING) await ctx.addInitScript(() => { const f = window.addEventListener; window.addEventListener = function (t, fn, o) { if (t === "keydown" && String(fn).includes("isComposing")) return; return f.call(this, t, fn, o); }; });
   await page.goto(`${url}/?server=1`); await page.waitForSelector("html[data-ready]");
-  await page.fill('input[name="token"]', token); await page.fill('input[name="name"]', "Tester"); await page.getByRole("button", { name: "Create passkey" }).click();
+  await signUp(page, token, "Tester");
   await page.waitForFunction(() => !document.querySelector("h1")?.textContent?.includes("Set up"), null, { timeout: 15000 });
   const api = (op, input) => page.evaluate(async ([op, input]) => (await (await fetch("/api/v1/operations", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ request_id: crypto.randomUUID(), operation: op, input }) })).json()), [op, input]);
   const space = (await api("spaces.list", {})).data.spaces[0].id;

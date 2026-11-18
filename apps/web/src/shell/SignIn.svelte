@@ -43,6 +43,8 @@
   <Card label={needsSetup ? "Set up Calternal" : joining ? "Join Calternal" : "Sign in"} variant="solid" class="card">
     <form class="in" onsubmit={(e) => { e.preventDefault(); void run(needsSetup || joining ? () => setup(token, name) : signIn); }}>
       <h1>{needsSetup ? "Set up Calternal" : joining ? "Join Calternal" : "Sign in"}</h1>
+      <!-- Room for the sign-in providers an admin configures (Apple, Google, a generic one): a button each, above the passkey button; either one signs you in. Nothing is built for them until the server offers them. -->
+      <div class="providers" data-slot="providers"></div>
       {#if joining}
         <p class="note">You were invited. Say who you are and create a passkey on this device; that makes your account. If you already have one, sign in first, then open the link again.</p>
         <label>Your name<input name="name" bind:value={name} autocomplete="name" required /></label>
@@ -65,6 +67,7 @@
 </main>
 
 <style>
+  .providers:empty { display: none; }
   .wrap { min-height: 100dvh; display: grid; place-content: center; justify-items: center; gap: var(--s-6); padding: var(--s-6); background: linear-gradient(rgb(var(--tint) / 0.55) 0 0), var(--wall-cheap, none) center / cover no-repeat; }
   .mark { font-family: var(--font-brand, inherit); font-size: var(--text-title); font-weight: var(--strong-weight); color: var(--ink); }
   .wrap :global(.card) { width: min(26rem, 100%); }

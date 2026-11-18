@@ -19,6 +19,15 @@ pub(crate) const OWNER_TABLES: &[(char, &str)] = &[
 // owner mapping here, or recovery configuration refuses the database.
 const SPECS: &[(&str, char, &str)] = &[
     ("users", '1', "id"),
+    ("oidc_providers", '0', ""),
+    ("oidc_links", '1', "user_id"),
+    ("oidc_sessions", '1', "user_id"),
+    ("account_details", '1', "user_id"),
+    ("account_recovery_codes", '1', "user_id"),
+    ("account_email_challenges", '1', "user_id"),
+    ("account_recovery_flows", '1', "user_id"),
+    ("account_recovery_grants", '1', "user_id"),
+    ("account_security_events", '1', "user_id"),
     ("passkeys", '1', "user_id"),
     ("setup_tokens", '1', "user_id"),
     ("installations", '1', "user_id"),
@@ -102,9 +111,6 @@ pub(crate) fn initialize(c: &Connection) -> Result<()> {
         CREATE TABLE IF NOT EXISTS security_recovery_dirty(key TEXT PRIMARY KEY) STRICT;
         CREATE INDEX IF NOT EXISTS security_recovery_setup_user ON setup_tokens(user_id);").map_err(err)?;
     for (table, kind, owner) in SPECS {
-        if !names.iter().any(|name| name == table) {
-            continue;
-        }
         for event in ["INSERT", "UPDATE", "DELETE"] {
             let mut exprs = Vec::new();
             if event != "INSERT" {

@@ -10,7 +10,7 @@ const stray = (p) => p.evaluate(() => {
   const ok = new Set([px("var(--glyph)"), px("var(--glyph-inline)")].map((w) => Math.round(w * 10) / 10));
   const out = [];
   for (const s of document.querySelectorAll("svg")) {
-    if (s.closest("[data-art], .md img, [aria-hidden=true] > svg.art") || s.hasAttribute("data-art")) continue;
+    if (s.closest(".pv, [data-art], .md img, [aria-hidden=true] > svg.art") || s.hasAttribute("data-art")) continue;
     const r = s.getBoundingClientRect(); if (!r.width) continue;
     const w = Math.round(r.width * 10) / 10;
     if (!ok.has(w)) { let e = s.parentElement; while (e && !(typeof e.className === "string" && e.className)) e = e.parentElement; out.push(`${w}x${Math.round(r.height * 10) / 10} in ${(e?.className ?? "").slice(0, 40)} (${(s.closest("[role^=menuitem]")?.innerText ?? s.parentElement?.innerText ?? "").slice(0, 30)})`); }
@@ -25,7 +25,7 @@ try {
     let s = await stray(p);
     ok(s.length === 0, `${device}: every icon in the canvas windows and the sidebar is a token size`, s.join("; "));
     // menus
-    await p.locator("[data-win]").first().getByRole("button", { name: "More" }).click(); await p.waitForTimeout(900);
+    await p.locator("[data-win]").first().getByRole("button", { name: /^(Thread actions|Note actions|More)$/ }).click(); await p.waitForTimeout(900);
     s = await stray(p); ok(s.length === 0, `${device}: and in the window menu`, s.join("; "));
     await p.keyboard.press("Escape");
     await p.locator("[data-win]").first().getByRole("button", { name: "Share" }).click(); await p.waitForTimeout(900);
