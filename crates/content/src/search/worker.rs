@@ -1,6 +1,8 @@
 //! One bounded maintenance lane, independent of request read/write admission.
+#[cfg(test)]
+mod tests;
 use super::{
-    Result, SCHEMA, SearchConfig, SearchConfigSource, internal, register_functions, source,
+    Result, SCHEMA, SearchConfig, SearchConfigSource, internal, register_functions, source, wal,
 };
 use crate::{Content, journal::lock};
 use calternal_store::{ProjectionJournal, SyncToken};
@@ -174,22 +176,28 @@ fn project(
         Some(index) => index,
         None => open_writer(&path)?,
     };
-    let result = advance(
-        content,
-        config,
-        space,
-        &journal,
-        &head,
-        &source_path,
-        &mut index,
-    );
+    let result = checkpoint_if_needed(&index, &path).and_then(|room| {
+        if room {
+            advance(
+                content,
+                config,
+                space,
+                &journal,
+                &head,
+                &source_path,
+                &mut index,
+            )
+        } else {
+            Ok(Progress::Idle)
+        }
+    });
     content.search_writers.keep(space, index);
     result
 }
 
 fn open_writer(path: &std::path::Path) -> Result<Connection> {
     calternal_fsio::private::file(path).map_err(internal)?;
-    let index = Connection::open(path).map_err(internal)?;
+    let index = wal::open(path).map_err(internal)?;
     index.busy_timeout(POLL).map_err(internal)?;
     index
         .execute_batch(
@@ -199,6 +207,25 @@ fn open_writer(path: &std::path::Path) -> Result<Connection> {
     register_functions(&index)?;
     index.execute_batch(SCHEMA).map_err(internal)?;
     Ok(index)
+}
+
+fn checkpoint_if_needed(index: &Connection, path: &std::path::Path) -> Result<bool> {
+    let bytes = match std::fs::metadata(path.with_extension("db-wal")) {
+        Ok(info) => info.len(),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => 0,
+        Err(error) => return Err(internal(error)),
+    };
+    if bytes < wal::CHECKPOINT_AT {
+        return Ok(true);
+    }
+    // Runs only on the maintenance thread. A reader that pins the WAL leaves
+    // this turn idle. Foreground work can continue and the worker retries.
+    index
+        .query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |row| {
+            row.get::<_, i64>(0)
+        })
+        .map(|busy| busy == 0)
+        .map_err(internal)
 }
 
 fn advance(
@@ -216,12 +243,11 @@ fn advance(
     };
     let mut source = crate::pool::open_reader(source_path).map_err(internal)?;
     if let Some(after) = current.scan_after {
-        let root = content
-            .roots
-            .userdata_ssd
-            .join("spaces")
-            .join(space.to_string());
-        let folder = calternal_fsio::beneath::Folder::open(&root).ok();
+        // An empty space can have content metadata before it has a userdata
+        // directory. Only the content writer provisions that private directory.
+        let folder = calternal_fsio::beneath::Folder::open(&content.roots.userdata_ssd)
+            .and_then(|root| root.open_sub(&format!("spaces/{space}"), false))
+            .ok();
         let snapshot = source.transaction().map_err(internal)?;
         let heads = source::scan(&snapshot, folder.as_ref(), &config.kinds, after, PAGE)?;
         snapshot.commit().map_err(internal)?;
@@ -362,10 +388,11 @@ fn reset(
 ) -> Result<State> {
     let tx = index.transaction().map_err(internal)?;
     tx.execute_batch(
-        "DELETE FROM search_docs; DELETE FROM search_text;
-                      DELETE FROM search_title_grams; DELETE FROM search_configuration;",
+        "DROP TABLE search_text; DROP TABLE search_title_grams;
+           DELETE FROM search_docs; DELETE FROM search_configuration;",
     )
     .map_err(internal)?;
+    tx.execute_batch(SCHEMA).map_err(internal)?;
     tx.execute(
         "INSERT INTO search_configuration VALUES(1,?1,?2,?3,?4,?5,0,0)",
         params![

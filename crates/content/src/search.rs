@@ -2,6 +2,7 @@
 mod fuzzy;
 mod readers;
 mod source;
+mod wal;
 mod worker;
 use crate::{Content, Result, discovery::prefix_end, types::internal};
 use calternal_types::{Error, SpaceId};

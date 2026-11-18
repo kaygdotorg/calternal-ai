@@ -93,6 +93,12 @@ scalars, bodies at 8,192 scalars, and the worker reads only the first 64 KiB
 of each staged body for keyword indexing. The frontmatter delimiter must be
 within those bytes. A space beyond the slot ceiling sets `partial: true`.
 
+The live search writer caps its WAL at 64 MiB per space. At 48 MiB the
+background worker attempts a truncated checkpoint before another turn. A
+reader that pins the WAL can delay search catch-up. Foreground notes and
+journal writes keep their existing admission and durability. An oversized
+uncommitted index write fails and leaves the watermark unchanged.
+
 ## Pending product decisions
 
 - Ranking within each match tier could use UUID order, cross-space relevance
