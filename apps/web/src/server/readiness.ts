@@ -4,6 +4,7 @@
  * (`account/live?readiness=true`) says when to read again. The types are the generated ones from `packages/contracts`.
  */
 import type { PersonalMachineReadiness, ProviderCheck, ProviderReadiness, ReadinessResult } from "../../../../packages/contracts/src/index";
+import { capitalise } from "../lib/format";
 import { server } from "./client";
 
 export type { ProviderCheck, ProviderReadiness };
@@ -18,7 +19,7 @@ export const readiness = (space_id: string): Promise<Readiness> => server.operat
 export const checkProvider = (space_id: string, machine_id: string, provider_id: string) => server.operate("agent.check", { space_id, machine_id, provider_id });
 
 /** A provider's name for a person: `calternal-claude-code` → "Claude Code". */
-export const providerName = (id: string): string => id.replace(/^calternal-/, "").split("-").map((w) => w[0]!.toUpperCase() + w.slice(1)).join(" ");
+export const providerName = (id: string): string => id.replace(/^calternal-/, "").split("-").map(capitalise).join(" ");
 
 /**
  * Follows the account feed for readiness changes: calls `onChange` for each (and once at the start, to read), reconnecting after a drop until stopped. Returns the stop function. A server without the feed simply

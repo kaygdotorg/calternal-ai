@@ -6,6 +6,7 @@
   import NoteEditor from "./NoteEditor.svelte";
   import TrashView from "./TrashView.svelte";
   import { notes } from "./store.svelte";
+  import "./column.css";
   import { store as threadStore } from "../threads/store.svelte";
   import { navigate, route } from "../../lib/route.svelte";
   import { serverMode } from "../../server/client";
@@ -64,13 +65,13 @@
   </div>
 
   <div class="scroll">
-  <header>
+  <header class="nc-head">
     {#if shell.narrow}<IconButton icon="sidebar" label="Show notes" onclick={() => shell.toggleSidebar()} />{/if}
     <span class="grow"></span>
     {#if notes.note}<span class="state" role="status" aria-live="polite" data-state={notes.saveState}>{STATE[notes.saveState]}</span>{/if}
   </header>
 
-  <article>
+  <article class="nc-article">
     {#if notes.note}
       {#if notes.draft}
         <p class="draft" role="status">You have an unsent draft of this note. <Button variant="quiet" text="Restore" onclick={() => { editor?.setText(notes.draft!.text); edited(notes.draft!.text); }} /> <Button variant="quiet" text="Discard" onclick={async () => { await notes.input.dropDraft(notes.note!.spaceId, notes.note!.id); await notes.reloadInput(); }} /></p>
@@ -94,9 +95,7 @@
 <style>
   .note { position: absolute; inset: 0; }
   .scroll { position: absolute; inset: 0; overflow-y: auto; }
-  header { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: var(--s-4); min-height: calc(var(--bar-h) + var(--safe-top)); padding: var(--safe-top) var(--s-5) 0 calc(var(--s-5) + var(--edge-l, 0px)); }
   .grow { flex: 1; }
-  article { max-width: 40rem; margin: 0 auto; padding: var(--s-5) var(--pad-region) calc(var(--s-10) + var(--bottom-inset, 0px)); display: grid; gap: var(--s-5); }
   .draft { padding: var(--s-3) var(--s-5); border-radius: var(--r-card); background: var(--accent-soft); font-size: var(--text-label); display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); }
   .state { font-size: var(--text-label); color: var(--ink-3); }
   .state[data-state="conflict"], .state[data-state="failed"] { color: var(--danger); }
