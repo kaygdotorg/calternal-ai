@@ -396,7 +396,7 @@ async fn reverification_requires_the_current_accounts_passkey() {
             .await
             .unwrap_err()
             .code(),
-        ErrorCode::Forbidden
+        ErrorCode::PasskeyReverificationRequired
     );
     let (id, options) = app
         .auth

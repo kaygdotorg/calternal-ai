@@ -57,6 +57,38 @@ pub(super) async fn save<D: Directory>(
     .await
 }
 
+/// Identify a rejected thread checkpoint that would exceed the document limit.
+pub(super) fn thread_full(error: &Error) -> bool {
+    error
+        .details
+        .as_ref()
+        .is_some_and(|details| details["reason"] == crate::threads::persistence::THREAD_FULL)
+}
+
+/// Preserve the storage failure in the jobs checkpoint and publish it to
+/// active subscribers. Do not send the rejected bytes back through content.
+pub(super) async fn finish_full<D: Directory>(
+    state: &Shared<D>,
+    job: &Job,
+    live: &Arc<Live>,
+    checkpoint: &mut Value,
+    published_seq: u64,
+    error: &Error,
+) -> Result<RunEnd, Error> {
+    let code = crate::threads::persistence::THREAD_FULL;
+    checkpoint["thread_text"] = json!("");
+    checkpoint["text_tail"] = Value::Null;
+    checkpoint["error"] = json!({
+        "code":code,"class":"permanent","message":error.message,"origin":"thread_storage"
+    });
+    save(state, job, live, checkpoint, None).await?;
+    live.publish(job.runs, &json!({
+        "version":1,"seq":published_seq + 1,
+        "event":{"type":"error","class":"permanent","billing":"unknown","code":code,"message":error.message}
+    }));
+    Ok(RunEnd::Failed)
+}
+
 pub(super) enum Placement {
     Ready(Uuid, OwnedSemaphorePermit),
     Ended(RunEnd),

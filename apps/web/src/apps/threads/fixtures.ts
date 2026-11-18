@@ -60,7 +60,7 @@ const STREAM_TEXT =
 
 /**
  * Fixture scenarios for the screens that only show when something is wrong or missing, picked with `?scenario=` (fixtures only; tests and review): `empty` (a fresh account with no thread and no
- * request), `no-machine`, `offline`, `signin`, `failed`, `usage-limit`, `permanent`, `queued`, `retrying`, `retrying-api`, `retrying-plan`, `interrupted` and `interrupted-unsure` (the thread `t-idle` carries that notice).
+ * request), `no-machine`, `offline`, `signin`, `failed`, `usage-limit`, `permanent`, `queued`, `retrying`, `retrying-api`, `retrying-plan`, `interrupted`, `interrupted-unsure` and `full` (a thread at the size limit; the thread `t-idle` carries that notice).
  */
 function applyScenario(threads: ThreadSummary[], requests: Request[]): void {
   let s: string | null = null;
@@ -78,6 +78,7 @@ function applyScenario(threads: ThreadSummary[], requests: Request[]): void {
     "usage-limit": { kind: "failed", failure: "usage_limit", resetAtMs: Date.now() + 3 * 3600_000 },
     permanent: { kind: "failed", failure: "permanent", reason: "The provider stopped with an error that retrying will not change" },
     queued: { kind: "waiting-capacity", queuePosition: 2 },
+    full: { kind: "thread-full" },
     retrying: { kind: "retrying", rule: "provider_backoff", reason: "The provider answered that it was overloaded", attempt: 3, of: 5, nextAt: Date.now() + 2 * 60_000 },
     "retrying-api": { kind: "retrying", rule: "api_availability", reason: "The provider is not answering", nextAt: Date.now() + 3 * 3600_000 },
     "retrying-plan": { kind: "retrying", rule: "subscription_reset", reason: "Your plan's limit is reached", nextAt: Date.now() + 90 * 60_000 },

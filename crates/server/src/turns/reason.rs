@@ -55,6 +55,10 @@ pub(crate) fn describe(state: Option<JobState>, c: &Value, private: bool) -> Val
             "provider":c["error"]["provider"],
             "sign_in_command":c["error"]["sign_in_command"],
         }),
+        Some(Failed) if c["error"]["origin"] == "thread_storage" => json!({
+            "code":"failed","class":"permanent",
+            "why":c["error"]["code"],"message":c["error"]["message"]
+        }),
         Some(Failed) => {
             let class = match c["error"]["class"].as_str() {
                 Some("transient") => "transient",

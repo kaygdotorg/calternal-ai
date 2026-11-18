@@ -873,7 +873,7 @@ pool: boolean,
  */
 thread_id: string,
 /**
- * Job UUID for events/stop/resume/mode/access operations.
+ * Job UUID for job operations. A thread credential can omit it for access.request.
  */
 job_id: string,
 /**
@@ -1040,11 +1040,35 @@ name: string,
 /**
  * Short description, at most 512 bytes.
  */
-summary: string, } | { "type": "tool_finished",
+summary: string, } | { "type": "tool_output",
 /**
  * Provider-issued step identity.
  */
 id: string,
+/**
+ * Tool name, at most 128 bytes.
+ */
+name: string,
+/**
+ * Short target or description, at most 512 bytes.
+ */
+summary: string,
+/**
+ * UTF-8 bytes of tool text identified by the adapter.
+ */
+bytes: number, } | { "type": "tool_finished",
+/**
+ * Provider-issued step identity.
+ */
+id: string,
+/**
+ * Tool name, at most 128 bytes.
+ */
+name: string,
+/**
+ * Short target or description, at most 512 bytes.
+ */
+summary: string,
 /**
  * Whether the tool reported failure.
  */
@@ -1193,7 +1217,7 @@ input: { [key in string]?: unknown }, };
  * Stable error categories used by every operation failure; each maps to one HTTP status.
  */
 
-export type ErrorCode = "unauthorized" | "forbidden" | "not_found" | "conflict" | "invalid_input" | "too_large" | "unavailable" | "internal";
+export type ErrorCode = "unauthorized" | "forbidden" | "passkey_reverification_required" | "not_found" | "conflict" | "invalid_input" | "too_large" | "unavailable" | "internal";
 /**
  * Safe error payload for all operations; messages must not contain credentials or private diagnostics.
  */

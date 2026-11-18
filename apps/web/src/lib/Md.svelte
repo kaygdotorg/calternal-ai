@@ -1,8 +1,10 @@
 <script lang="ts">
   // Draws parsed Markdown (lib/md.ts). Links open in a new tab with noopener. Code blocks scroll sideways, never wrap.
-  import { parse, type Inline } from "./md";
+  import { parseMore, type Inline, type Parsed } from "./md";
   let { text, caret = false }: { text: string; caret?: boolean } = $props();
-  const blocks = $derived(parse(text));
+  // A message that grows (a streaming one) keeps the blocks it has finished and parses only its last, unfinished block again.
+  let kept: Parsed | undefined;
+  const blocks = $derived((kept = parseMore(kept, text)).blocks);
 </script>
 
 {#snippet inl(xs: Inline[])}

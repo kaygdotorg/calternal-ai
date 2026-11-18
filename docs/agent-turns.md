@@ -34,7 +34,7 @@ port that thread storage will later implement. Each space's jobs SQLite file
 holds the turn and checkpoints. Token hashes, scopes, modes, approvals and
 discard authorizations live in auth.db and commit through its recovery barrier. Text is live output, not one
 file write per delta. Checkpoints store session identity, lease, last sequence and
-a bounded 16 KiB text tail after session discovery, every tool finish, at turn end
+a bounded 16 KiB text tail after session discovery, each tool start or finish, at turn end
 and at least every three seconds of emitted output. Each such checkpoint is one
 FULL transaction. Live buffers hold at most 256 chunks / 1 MiB per job. Completed
 buffers last 30 seconds, with at most 64 retained completed streams.
@@ -132,7 +132,10 @@ holds its space's jobs lock across the authority commit to fence stop/resume;
 auth callbacks never acquire job or content locks. Worker callbacks recheck that hash, expiry and active turn,
 and least-access content calls remain inside the granted kind scope.
 
-`access.request` creates a bounded pending approval. Denied sensitive operations
+`access.request` creates a bounded pending approval. An agent can call it with
+`{"app":"notes"}` and an optional `write` flag. Its thread credential supplies
+the job ID. An explicit ID must match that credential. A person supplies
+`job_id`. Denied sensitive operations
 create an approval and return its ID. The recipient lists it through
 `calternal requests list` and approves with `calternal requests approve ID`
 and the chosen lifetime, using an installation session with a fresh passkey

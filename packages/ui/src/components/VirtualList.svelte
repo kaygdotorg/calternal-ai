@@ -164,7 +164,7 @@
 {/if}
 
 <style>
-  .scroller { position: absolute; inset: 0; border-radius: var(--r-card); overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; contain: strict; }
+  .scroller { position: absolute; inset: 0; border-radius: var(--r-card); overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; scrollbar-width: none; contain: strict; }
   .sizer { position: relative; width: 100%; }
   .window { position: absolute; top: 0; left: 0; right: 0; will-change: transform; }
   .row { contain: layout style; }

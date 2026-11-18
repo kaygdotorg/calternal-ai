@@ -938,6 +938,13 @@
           ]
         },
         {
+          "description": "An authenticated action needs a fresh passkey proof (HTTP 403).",
+          "type": "string",
+          "enum": [
+            "passkey_reverification_required"
+          ]
+        },
+        {
           "description": "The requested resource or operation is unavailable (HTTP 404).",
           "type": "string",
           "enum": [

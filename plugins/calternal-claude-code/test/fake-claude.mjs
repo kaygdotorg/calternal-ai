@@ -31,9 +31,31 @@ if(scenario.includes('transient-always')||(scenario.includes('transient-once')&&
  emit({type:'assistant',error:scenario.includes('usage-limit')?'rate_limit':scenario.includes('auth-failure')?'authentication_failed':'server_error',message:{content:[]}});
  emit({type:'result',subtype:'error_during_execution',is_error:true,usage:{input_tokens:0,output_tokens:0}});process.exit(0);
 }
-emit({type:'assistant',message:{content:[{type:'tool_use',id:'step-1',name:prompt.includes('question')?'AskUserQuestion':'Read',input:{secret:'PRIVATE_LOGIN_SENTINEL'}}]}});
-if(prompt.includes('crash'))process.exit(71);
-if(prompt.includes('hang'))await new Promise(()=>setInterval(()=>{},1000));
-emit({type:'user',message:{content:[{type:'tool_result',tool_use_id:'step-1',content:'PRIVATE_LOGIN_SENTINEL',is_error:false}]}});
+if (prompt.includes('thread-size-limit')) {
+  for (let i = 0; i < 33; i++) {
+    const text = `overflow-segment-${i}:
+` + 'x'.repeat(64 * 1024);
+    emit({type:'stream_event',event:{type:'content_block_delta',delta:{type:'text_delta',text}}});
+  }
+} else {
+  const scripted = prompt.includes('scripted-tool-steps');
+  const step = (id, name, input) =>
+    emit({type:'assistant',message:{content:[{type:'tool_use',id,name,input}]}});
+  const result = (id, content, is_error) =>
+    emit({type:'user',message:{content:[{type:'tool_result',tool_use_id:id,content,is_error}]}});
+  step('step-1', scripted ? 'Bash' : prompt.includes('question') ? 'AskUserQuestion' : 'Read',
+    scripted ? {command:'ls -la'} : {file_path:'README.md',secret:'PRIVATE_LOGIN_SENTINEL'});
+  if(prompt.includes('crash'))process.exit(71);
+  if(!scripted && prompt.includes('hang'))await new Promise(()=>setInterval(()=>{},1000));
+  result('step-1', scripted && prompt.includes('long-output')
+    ? 'PRIVATE_LOGIN_SENTINEL' + 'x'.repeat(96 * 1024)
+    : 'PRIVATE_LOGIN_SENTINEL', false);
+  if (scripted) {
+    const token = process.env.CALTERNAL_AGENT_TOKEN ?? 'private-path';
+    step('step-2', 'Read', {file_path:`./missing/${token}`});
+    if(prompt.includes('hang'))await new Promise(()=>setInterval(()=>{},1000));
+    result('step-2', 'File unavailable', true);
+  }
+}
 if(prompt.includes('oversized'))process.stdout.write('x'.repeat(1024*1024+1));
 emit({type:'result',subtype:prompt.includes('fail')?'error_during_execution':'success',is_error:prompt.includes('fail'),usage:{input_tokens:10,output_tokens:3}});

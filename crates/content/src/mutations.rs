@@ -300,7 +300,9 @@ impl Content {
     }
 
     pub(crate) fn validate_write_size(metadata: &Value, bytes: &[u8]) -> Result<()> {
-        if bytes.len() > 2 * 1024 * 1024 || metadata.to_string().len() > crate::MAX_METADATA_BYTES {
+        if bytes.len() > crate::MAX_DOCUMENT_BYTES
+            || metadata.to_string().len() > crate::MAX_METADATA_BYTES
+        {
             return Err(Error::invalid_input("content input is too large"));
         }
         Ok(())

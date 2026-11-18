@@ -29,3 +29,21 @@ pub mod notes;
 
 /// Account requests and trusted person decisions.
 pub mod requests;
+
+/// Validate an opaque page cursor, reading one bounded value from stdin for `-`.
+pub(crate) fn parse_cursor(argument: &str) -> Result<String, String> {
+    use std::io::Read;
+
+    if argument != "-" {
+        calternal_core::validate_page_cursor(argument).map_err(|error| error.message)?;
+        return Ok(argument.to_owned());
+    }
+    let mut token = String::new();
+    std::io::stdin()
+        .take(calternal_core::MAX_PAGE_CURSOR_BYTES as u64 + 2)
+        .read_to_string(&mut token)
+        .map_err(|_| "cannot read a cursor from stdin")?;
+    let token = token.trim_end_matches(['\r', '\n']);
+    calternal_core::validate_page_cursor(token).map_err(|error| error.message)?;
+    Ok(token.to_owned())
+}

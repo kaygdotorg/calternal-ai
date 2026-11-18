@@ -53,11 +53,17 @@ pub enum Command {
         /// Maximum rows, from 1 to 1000.
         #[arg(long, default_value_t = 100)]
         limit: u32,
+        /// Continuation from the previous page, or - to read it from stdin.
+        #[arg(long, value_parser = crate::parse_cursor, allow_hyphen_values = true)]
+        cursor: Option<String>,
     },
-    /// Read the Markdown conversation and its metadata.
+    /// Read the Markdown conversation or a saved checkpoint addition.
     Get {
         /// Thread UUID.
         id: String,
+        /// JSON data from a threads.checkpoint journal entry.
+        #[arg(long, value_parser = |text: &str| text.parse::<Value>())]
+        since: Option<Value>,
     },
     /// Save your message and admit a provider turn; reuse request-id after failure.
     Send {
@@ -127,14 +133,24 @@ impl Command {
                 archived,
                 parent_thread,
                 limit,
+                cursor,
             } => {
                 let mut v = json!({"space_id":space_id,"archived":archived,"limit":limit});
                 if let Some(parent) = parent_thread {
                     v["parent_thread"] = json!(parent);
                 }
+                if let Some(cursor) = cursor {
+                    v["cursor"] = json!(cursor);
+                }
                 ("threads.list", v)
             }
-            Self::Get { id } => ("threads.get", json!({"id":id})),
+            Self::Get { id, since } => {
+                let mut input = json!({"id":id});
+                if let Some(since) = since {
+                    input["since"] = since;
+                }
+                ("threads.get", input)
+            }
             Self::Stop { id } => ("threads.stop", json!({"id":id})),
             Self::Archive { id } => ("threads.archive", json!({"id":id})),
             Self::Rename { id, title } => ("threads.rename", json!({"id":id,"title":title})),
@@ -192,6 +208,7 @@ pub fn reply(out: &Output, data: Value) -> Reply {
                 ]
             })
             .collect();
+        let has_next = data["next_cursor"].is_string();
         return Reply::new(data)
             .table(
                 &[
@@ -210,7 +227,35 @@ pub fn reply(out: &Output, data: Value) -> Reply {
                 rows,
                 "No threads in this space.",
             )
-            .hint("Next: calternal threads create --help");
+            .page_cursor()
+            .hint(if has_next {
+                "Next: repeat calternal threads list with the same filters and --cursor."
+            } else {
+                "Next: calternal threads create --help"
+            });
+    }
+    if let Some(delta) = data.get("delta") {
+        return Reply::new(data.clone())
+            .fields([
+                ("Thread", delta["id"].as_str().unwrap_or("").to_owned()),
+                (
+                    "Base revision",
+                    delta["base_revision"].as_str().unwrap_or("").to_owned(),
+                ),
+                (
+                    "Revision",
+                    delta["revision"].as_str().unwrap_or("").to_owned(),
+                ),
+                (
+                    "Body offset (bytes)",
+                    delta["offset"].as_u64().unwrap_or(0).to_string(),
+                ),
+            ])
+            .blank()
+            .text(delta["markdown"].as_str().unwrap_or(""))
+            .hint(
+                "Next: use calternal threads get without --since to reload the full conversation.",
+            );
     }
     let thread = &data["thread"];
     let fields = vec![

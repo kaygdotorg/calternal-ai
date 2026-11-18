@@ -4,7 +4,8 @@ import { describe, expect, test } from "vitest";
 import { ServerClient } from "./client";
 import { ServerThreads } from "./threads-client";
 import { lifetimesOf } from "./requests";
-import { parseMessages, readinessNotice, reasonNotice, stateOfTurn, summaryOf, type WireMachine, type WireReadiness } from "./thread-file";
+import { applyAppend, bodyOf } from "./thread-delta";
+import { blocksOf, parseMessages, readinessNotice, reasonNotice, stateOfTurn, summaryOf, type WireMachine, type WireReadiness } from "./thread-file";
 import type { ThreadEvents } from "../apps/threads/client";
 
 const SPACE = "0197f3a2-5c1e-7b4d-9a60-3d2e8f1c4b11";
@@ -46,6 +47,13 @@ function double(handlers: Record<string, (input: any, requestId: string) => unkn
   const push = (kind: string, item: string, data?: object) => live!.enqueue(frame("message", { type: "entry", space_id: SPACE, entry: { kind, item, data } }));
   return { client, calls, reverified, eventUrls, hasFeed: () => live !== null, push, setEvents: (r: Response) => (events = r), ops: (name: string) => calls.filter((c) => c.operation === name) };
 }
+
+describe("thread_full", () => {
+  test("a turn that failed because the thread reached its size limit says so and offers a new thread", async () => {
+    const { reasonNotice } = await import("./thread-file");
+    expect(reasonNotice({ code: "thread_full" })).toEqual({ kind: "thread-full" });
+  });
+});
 
 describe("the saved thread's Markdown", () => {
   test("messages are read in order, with roles and ids; unclosed ones run to the next marker", () => {
@@ -233,9 +241,10 @@ describe("ServerThreads", () => {
     expect(d.eventUrls[0]).toContain(JOB);
   });
   test("send carries the composer's mode, provider and model, with the caller's request id, and follows the job: steps, then the saved answer", async () => {
-    let revision = 0;
+    const offset = new TextEncoder().encode(md().split("\n---\n")[1]!).length;
     const d = double({
-      "threads.get": () => (revision ? thread(md(agent), "r2") : thread(md(), "r1")),
+      // The first read is the whole thread; the saved answer arrives as a checkpoint addition (`since`), never as a second whole read.
+      "threads.get": (i) => (i.since ? { delta: { id: T1, base_revision: "r1", revision: "r2", offset, markdown: agent } } : thread(md(), "r1")),
       "threads.send": () => ({ ...thread(md(), "r1b"), job: { id: JOB, state: "queued" } }),
     });
     d.setEvents(sse([
@@ -249,12 +258,15 @@ describe("ServerThreads", () => {
     const ev: ThreadEvents = { onMessage: (m, i) => got.push(`message ${i} ${m.role}`), onStreamStart: () => got.push("start"), onDelta: (t) => got.push(`delta ${t}`), onStep: (s) => got.push(`step ${s.title} ${s.status}`), onSummary: () => {}, onStreamEnd: () => got.push("end") };
     await d.client.getThread(T1);
     const off = d.client.watch(T1, ev);
-    await until(() => d.ops("threads.get").length >= 2, "the thread's first read");
+    await until(() => d.hasFeed(), "the space feed"); // the header's read is the one the open starts from
     await d.client.setPermission(T1, "full");
     await d.client.setProvider(T1, "claude", "sonnet-5-5");
     await d.client.send(T1, "Inspect this workspace.", "req-1");
-    revision = 1; // the server's file has the answer from here on; the stream ends 150 ms after it was built, and the client reads the file then
+    await until(() => got.includes("end"), "the end of the stream");
+    d.push("threads.checkpoint", T1, { revision: "r2", append: { base_revision: "r1", offset, start: 0, length: agent.length } });
     await until(() => got.includes("message 1 agent"), "the saved answer");
+    expect(d.ops("threads.get").filter((c) => c.input.since)).toHaveLength(1);
+    expect(d.ops("threads.get").filter((c) => !c.input.since).length).toBeLessThanOrEqual(3); // the test's own read, the open, and one after the send dropped the cache: none for the checkpoint
     off();
     const send = d.ops("threads.send")[0]!;
     expect(send.requestId).toBe("req-1");
@@ -286,8 +298,8 @@ describe("ServerThreads", () => {
 describe("requests (docs/requests.md, crates/core/src/requests.rs)", () => {
   const list = { requests: [
     { id: "q1", space_id: SPACE, thread_id: T1, detail: { kind: "question", label: "Before I open the pull request", form: { genui_version: 2, source: "Form([],\"x\")" } } },
-    { id: "a1", space_id: SPACE, thread_id: T1, detail: { kind: "approval", app: "calternal-notes", write: true, action: { operation: "threads.delete", input: { id: T2 }, request_id: "r", risk: "irreversible" } } },
-    { id: "a2", space_id: SPACE, thread_id: T1, detail: { kind: "approval", app: "calternal-notes", write: false, action: { operation: "notes.get", input: { id: "n" }, request_id: "r", risk: "read" } } },
+    { id: "a1", space_id: SPACE, thread_id: T1, detail: { kind: "approval", app: "calternal-notes", write: true, action: { operation: "threads.delete", input: { id: T2 }, request_id: "r" }, lifetimes: ["once"] } },
+    { id: "a2", space_id: SPACE, thread_id: T1, detail: { kind: "approval", app: "calternal-notes", write: false, action: { operation: "notes.get", input: { id: "n" }, request_id: "r" }, lifetimes: ["once", "this_thread"] } },
     { id: "s1", space_id: null, thread_id: T2, detail: { kind: "secret", name: "FORGEJO_TOKEN", label: "Forgejo token", reason: "To publish", expires_at_ms: 1_800_000 } },
     { id: "z", space_id: SPACE, thread_id: T1, detail: { kind: "something-new" } },
   ] };
@@ -299,13 +311,12 @@ describe("requests (docs/requests.md, crates/core/src/requests.rs)", () => {
     expect(r[3]).toMatchObject({ name: "FORGEJO_TOKEN", expiresAt: 1_800_000, scope: "personal" });
     expect(d.ops("requests.list")[0]!.input).toEqual({});
   });
-  test("an irreversible or access-widening approval is single-use; the rest may last for the thread; a server list wins", async () => {
+  test("the lifetimes come from the server's list, in its order; none listed means once only", async () => {
     const d = double({ "requests.list": () => list });
     const r = (await d.client.requests()).filter((x) => x.kind === "approval") as { lifetimes: string[] }[];
     expect(r.map((x) => x.lifetimes)).toEqual([["once"], ["once", "thread"]]);
-    expect(lifetimesOf({ kind: "approval", app: "a", write: true, action: { risk: "widens_access" } })).toEqual(["once"]);
-    expect(lifetimesOf({ kind: "approval", app: "a", write: true, action: { risk: "read" }, lifetimes: ["once"] })).toEqual(["once"]);
-    expect(lifetimesOf({ kind: "approval", app: "a", write: true, lifetimes: ["once", "this_thread"] })).toEqual(["once", "thread"]);
+    expect(lifetimesOf({ kind: "approval", app: "a", write: true, lifetimes: ["this_thread", "once"] })).toEqual(["thread", "once"]);
+    expect(lifetimesOf({ kind: "approval", app: "a", write: true, lifetimes: [] })).toEqual(["once"]);
   });
   test("answers become the real operations: answer, approve once or this_thread, deny", async () => {
     const d = double({ "requests.list": () => ({ requests: [] }), "requests.answer": () => ({}), "requests.approve": () => ({}), "requests.deny": () => ({}) });
@@ -352,5 +363,36 @@ describe("requests (docs/requests.md, crates/core/src/requests.rs)", () => {
     await d.client.answer("a1", { kind: "approval", decision: "once" });
     expect(d.reverified).toHaveLength(1);
     expect(d.ops("requests.approve")).toHaveLength(2);
+  });
+});
+
+describe("checkpoint additions", () => {
+  const body = (s: string) => new TextEncoder().encode(s.split("\n---\n")[1]!).length;
+  test("an addition inside a message and one that opens a new message are spliced by byte offset, multi-byte text included", () => {
+    const open = `---\ntitle: "x"\n---\n\n<!-- message:${M1} role:person time:2026-11-17T12:01:00.000Z actor:x -->\nhéllo 🌏\n<!-- /message -->\n`;
+    const b = bodyOf(open);
+    const first = parseMessages(open);
+    // a new agent message at the end of the body
+    const start = `\n<!-- message:${M2} role:agent time:2026-11-17T12:04:00.000Z turn:${JOB} actor:y -->\nPart one`;
+    const r1 = applyAppend(b, first, b.len, start, 0, 0)!;
+    expect(r1.messages.map((m) => m.id)).toEqual([M1, M2]);
+    expect((r1.messages[1]!.blocks[0] as { text: string }).text).toBe("Part one");
+    // then text inside that message, before its (not yet written) end
+    const r2 = applyAppend(r1.body, r1.messages, r1.body.len, " and two.\n<!-- /message -->\n", 0, 0)!;
+    expect((r2.messages[1]!.blocks[0] as { text: string }).text).toBe("Part one and two.");
+    expect((r2.messages[0]!.blocks[0] as { text: string }).text).toBe("héllo 🌏");
+    // the same file read whole gives the same messages
+    const whole = parseMessages(open + start + " and two.\n<!-- /message -->\n");
+    expect(r2.messages.map((m) => m.blocks)).toEqual(whole.map((m) => m.blocks));
+    expect(applyAppend(b, first, 9999, "x", 0, 0)).toBeNull();
+    void body;
+  });
+  test("saved tool lines become one steps group with the tool and its target; words between steps split the group", () => {
+    const m = blocksOf("m", "Hello\n\n> Tool Bash · Run ls (started)\n\n> Tool Bash · Run ls (22 bytes of tool output)\n\n> Tool Bash · Run ls (finished)\n\n> Tool Read · Read ./a (started)\n\n> Tool Read · Read ./a (failed)\n\nThen this.\n\n> Tool Grep · Search x (started)");
+    expect(m.map((b) => b.type)).toEqual(["text", "steps", "text", "steps"]);
+    const g1 = (m[1] as { steps: { title: string; detail?: string; status: string; kind: string; output?: string }[] }).steps;
+    expect(g1.map((s) => [s.detail, s.title, s.status, s.kind])).toEqual([["Bash", "Run ls", "ok", "run"], ["Read", "Read ./a", "failed", "read"]]);
+    expect(g1[0]!.output).toBe("22 bytes of output");
+    expect((m[3] as { steps: { status: string }[] }).steps[0]!.status).toBe("running");
   });
 });

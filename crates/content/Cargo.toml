@@ -11,7 +11,7 @@ calternal-types.workspace = true
 calternal-fsio.workspace = true
 calternal-roots.workspace = true
 calternal-store.workspace = true
-rusqlite.workspace = true
+rusqlite = { workspace = true, features = ["blob"] }
 serde.workspace = true
 serde_json.workspace = true
 uuid = { workspace = true, features = ["v7"] }
