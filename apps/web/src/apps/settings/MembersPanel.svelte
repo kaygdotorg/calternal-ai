@@ -6,7 +6,7 @@
   import * as people from "../../server/people";
   import { say } from "../../server/say";
   import { spaces } from "../../shell/spaces.svelte";
-  import { reach } from "./reach";
+  import { reach } from "../../lib/reach";
   import { capitalise } from "../../lib/format";
   import "./panel.css";
   let g = $state<people.SpaceGrants>({ members: [], groups: [] }), me = $state(""), error = $state(""), busy = $state(false), loaded = $state(false);

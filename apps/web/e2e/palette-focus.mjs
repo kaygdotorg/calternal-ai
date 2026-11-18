@@ -27,3 +27,4 @@ const lateAtVisible = res.filter((r) => r.atVisible && !r.atVisible.field).lengt
 const f = res.map((r) => r.focusedAt).filter((x) => x !== null).sort((a, c) => a - c);
 console.log(JSON.stringify({ runs: N, cpuSlowdown: RATE, neverFocused: never, notFocusedWhenDialogAppeared: lateAtVisible, focusLostAfterGaining: res.filter((r) => r.stolen).length, focusMs: { median: +f[f.length >> 1]?.toFixed(1), worst: +f.at(-1)?.toFixed(1) } }));
 await b.close(); stop();
+if (never || lateAtVisible || res.some((r) => r.stolen)) process.exitCode = 1; // the gate fails on a field that never took focus, or lost it again
