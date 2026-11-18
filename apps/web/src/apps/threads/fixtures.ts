@@ -13,7 +13,7 @@ import type { Answer, Attachment, Change, Message, MessageHit, Permission, Step,
 const BASE = Date.UTC(2026, 10, 17, 6, 0, 0);
 const MIN = 60_000;
 
-/** The id of the 10,000 message thread used by the performance script. */
+/** The id of the largest thread: 12,000 messages, about 16 MiB of record text (the thread file limit, owner decision 2026-11-18; the generator's messages average 1.4 KB). The performance scripts and the `thread-size` quiet check use it. */
 export const LONG_THREAD = "t-long";
 
 const PROVIDERS: ProviderOption[] = [
@@ -33,7 +33,7 @@ function seedThreads(): ThreadSummary[] {
     thread("t-wait", "Open the pull request for invites", "waiting", "calternal-ai", 4, 10),
     thread("t-secret", "Publish docs to the Forgejo wiki", "waiting", "calternal-ai", 12, 6),
     thread("t-fail", "Conformance run on dev-02", "failed", "calternal-ai", 40, 12),
-    thread(LONG_THREAD, "Journal replay is slow after restart", "idle", "calternal-ai", 95, 10_000, null, "claude", "opus-5-5"),
+    thread(LONG_THREAD, "Journal replay is slow after restart", "idle", "calternal-ai", 95, 12_000, null, "claude", "opus-5-5"),
     { ...thread("t-idle", "Expired invite test", "idle", "calternal-ai", 180, 8, null, "codex", "gpt-6-1-sol"), permission: "least" as const },
     thread("t-mesh-plan", "Plan the mesh rollout", "done", "infraternal", 400, 9),
     { ...thread("t-mesh", "Mesh idle-peer RSS guard", "idle", "infraternal", 320, 12), permission: "full" as const, runsOn: { machine: "kayg-laptop", mode: "direct" as const } },

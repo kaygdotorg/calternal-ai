@@ -21,3 +21,4 @@ apps/docs/src/presets.generated.json
 # iPhone Simulator frames and videos (apps/web/scripts/ios-sim.sh): evidence goes on the lane issue, never in the repository
 apps/web/scripts/sim-shots/
 /sim-shots/
+apps/web/sim-shots/

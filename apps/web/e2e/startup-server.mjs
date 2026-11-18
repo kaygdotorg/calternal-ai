@@ -1,3 +1,4 @@
+import { signUp } from "./lib.mjs";
 // Start-up in server mode: a real server with an owner; cold (this browser has never opened the app: no device cache) and warm (a second visit in the same browser), with no added latency and with 100 ms of network
 // round trip each way added (a phone on a normal connection). Reports, per scenario, the median of N loads: ready (the shell is painted: `data-ready`) and settled (the last API answer is in). Env: CAL_BIN, CAL_DIST.
 import { spawn } from "node:child_process";
@@ -22,7 +23,7 @@ try {
   await c.send("WebAuthn.enable"); await c.send("WebAuthn.addVirtualAuthenticator", { options: { protocol: "ctap2", transport: "internal", hasResidentKey: true, hasUserVerification: true, isUserVerified: true, automaticPresenceSimulation: true } });
   await sp.addInitScript(() => localStorage.setItem("cal.firstrun", "1"));
   await sp.goto(`${url}/?server=1`); await sp.waitForSelector("html[data-ready]");
-  await sp.fill('input[name="token"]', token); await sp.fill('input[name="name"]', "Starter"); await sp.getByRole("button", { name: "Create passkey" }).click();
+  await signUp(sp, token, "Starter");
   await sp.waitForFunction(() => !document.querySelector("h1")?.textContent?.includes("Set up"), null, { timeout: 15000 });
   await sp.waitForTimeout(1500);
   const state = await setup.storageState(); // the session cookie (and, once it exists, the device cache)

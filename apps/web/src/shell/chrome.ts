@@ -74,10 +74,18 @@ export function startChrome(): void {
   }
   const vv = window.visualViewport;
   if (vv && matchMedia("(pointer: coarse)").matches) {
+    let full = innerHeight; // the layout viewport's height with no keyboard
     const kb = () => {
       const field = document.activeElement && /^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName) || (document.activeElement as HTMLElement | null)?.isContentEditable;
       const covered = field ? Math.max(0, Math.round(innerHeight - vv.height - vv.offsetTop)) : 0;
       setRootVar("--kb", covered > 80 ? `${covered}px` : null); // under 80 px is the browser's own bar, not a keyboard
+      // A Safari tab keeps the layout viewport under the keyboard and pans the visual viewport instead (`offsetTop` grows, the page scrolls), so a fixed box stays where it was and its header scrolls out
+      // of sight. While a field is focused under a keyboard the shell is therefore sized to the visual viewport itself (`--vvt`, `--vvh`; `data-kb` on the root selects the rule in Shell.svelte).
+      if (!field) full = innerHeight;
+      const up = !!field && full - vv.height > 80;
+      document.documentElement.toggleAttribute("data-kb", up);
+      setRootVar("--vvt", up ? `${Math.round(vv.offsetTop)}px` : null);
+      setRootVar("--vvh", up ? `${Math.round(vv.height)}px` : null);
     };
     vv.addEventListener("resize", kb, { passive: true });
     vv.addEventListener("scroll", kb, { passive: true });
