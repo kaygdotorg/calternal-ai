@@ -35,6 +35,16 @@ try {
     ok(/Look/.test(await cur(p)), `${device}: Skip is explicit and goes on`);
     await ctx.close();
   }
+  // a server with no mail (tonight's production): the plain copy, no verification, recovery codes and a second passkey named as the way back
+  { const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 } }); const p = await ctx.newPage();
+    await p.addInitScript(() => localStorage.setItem("cal.firstrun", "1"));
+    await p.goto(BASE + "/?onboarding=1&mail=0"); await p.waitForSelector("html[data-ready]"); await p.locator("main ol.steps").waitFor();
+    await p.getByLabel("Your name").fill("Kay"); await p.getByLabel("Username").fill("kay-g"); await btn(p, "Continue").click();
+    const t = await p.locator("form").innerText();
+    ok(/cannot send email, so an address cannot be verified here/.test(t) && /Recovery codes and a second passkey are the way back in/.test(t) && !/administrator/.test(t), "no mail: the copy says the server cannot send email, and that recovery codes and a second passkey are the way back (never admin-only)");
+    await p.getByLabel(/^Email/).fill("kay@example.com");
+    ok(await btn(p, "Continue").isVisible(), "no mail: an address is simply saved, no code is asked for");
+    await ctx.close(); }
   // required email, the code typed back
   { const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 } }); const p = await ctx.newPage();
     await p.addInitScript(() => localStorage.setItem("cal.firstrun", "1"));

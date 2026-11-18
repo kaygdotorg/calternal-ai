@@ -28,7 +28,7 @@
 <form onsubmit={(e) => { e.preventDefault(); if (sub === "email") void send(); else void confirm(); }}>
   {#if sub === "email"}
     <label>Email<input name="email" type="email" bind:value={email} autocomplete="email" inputmode="email" autocapitalize="none" spellcheck="false" /></label>
-    {#if !mail}<p class="note">This server cannot send email, so an address cannot be verified here. It is saved as given.</p>{/if}
+    {#if !mail}<p class="note">This server cannot send email, so an address cannot be verified here. It is saved as given. Recovery codes and a second passkey are the way back in.</p>{/if}
     <div class="go"><Button class="settings-action" type="submit" variant="primary" text={mail ? "Send the code" : "Save"} disabled={busy || !email.trim()} />{#if oncancel}<Button variant="quiet" text="Cancel" onclick={oncancel} />{/if}</div>
   {:else}
     <p class="note">We sent an eight-digit code to <strong>{email.trim()}</strong>. Type it here; it works for ten minutes.</p>

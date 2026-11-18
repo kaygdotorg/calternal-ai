@@ -12,7 +12,7 @@
   // svelte-ignore state_referenced_locally
   let token = $state(initial), name = $state(""), username = $state(""), email = $state(""), code = $state(""), sub = $state<"who" | "email" | "code" | "passkey">("who");
   let challenge = $state(""), verification = $state<string | undefined>(), busy = $state(false), error = $state(""), touched = $state(false);
-  let flags = $state<Pick<AuthStatus, "email_required" | "mail_available">>(demo ? { email_required: new URLSearchParams(location.search).get("email_required") === "1", mail_available: true } : {});
+  let flags = $state<Pick<AuthStatus, "email_required" | "mail_available">>(demo ? { email_required: new URLSearchParams(location.search).get("email_required") === "1", mail_available: new URLSearchParams(location.search).get("mail") !== "0" } : {});
   $effect(() => { if (!demo) void status().then((s) => (flags = { email_required: !!s.email_required, mail_available: s.mail_available !== false }), () => {}); });
   const required = $derived(!!flags.email_required), canMail = $derived(flags.mail_available !== false);
   const userProblem = $derived(usernameProblem(username));
@@ -62,8 +62,8 @@
   {:else if sub === "email"}
     <p class="note">{required ? "An email address is required here. We send a code to it to check it is yours." : "An email address is optional. It lets you recover the account if you lose your passkey and your recovery codes."}</p>
     <label>Email{required ? "" : " (optional)"}<input name="email" type="email" bind:value={email} autocomplete="email" inputmode="email" autocapitalize="none" spellcheck="false" /></label>
-    {#if !required && !email.trim()}<p class="note">Without an email, recovery goes through this server's administrator.</p>{/if}
-    {#if email.trim() && !canMail}<p class="note">This server cannot send mail, so the address is saved unconfirmed.</p>{/if}
+    {#if !canMail}<p class="note">This server cannot send email, so an address cannot be verified here{email.trim() ? "; it is saved as given" : ""}. Recovery codes and a second passkey are the way back in.</p>
+    {:else if !required && !email.trim()}<p class="note">Without an email, recovery goes through this server's administrator.</p>{/if}
     <div class="go"><Button class="settings-action" type="submit" variant="primary" text={email.trim() && canMail ? "Send the code" : "Continue"} disabled={busy || (required && !email.trim())} /><Button variant="quiet" text="Back" onclick={() => (sub = "who")} /></div>
   {:else if sub === "code"}
     <p class="note">We sent an eight-digit code to <strong>{email.trim()}</strong>. Type it here; it works for ten minutes.</p>
