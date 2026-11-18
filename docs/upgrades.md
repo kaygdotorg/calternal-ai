@@ -192,9 +192,8 @@ additive update. On the locked perf-01 VM, ten prebuilt-binary handoffs on the
 small fixture measured 164.9–200.0 ms from the last old acknowledgement to the
 first new acknowledgement, with a 178.7 ms median. This includes graceful
 process stop, snapshot, migration, verification, commit, and process startup.
-The measurement covers the server process and storage. Measuring Quadlet,
-machine drain, Podman, and proxy overhead remains part of qualifying the
-full deployment budget.
+That measurement covers server process and storage only. The deployment
+rehearsal below measures the full write gap through the front proxy.
 
 ### Deployment rehearsal on dev-01
 
@@ -211,14 +210,26 @@ nix develop -c deploy/rehearse-upgrade.sh "$name" "$dev01_netbird_ip" \
 
 The script creates ten disposable installations. Each run uses the deployment
 driver, rootless Podman, user Quadlet and a live enrolled machine service. A
-local HTTPS proxy forwards the signed-in browser's requests. The fixture
-uses a private loopback listener for the machine and starts with no job in
-flight. It records the last old-release and first new-release acknowledged
-write, then checks rollback retains the candidate's write.
+local HTTPS proxy forwards the signed-in browser's requests. The driver uses
+a same-VM substitute for its SSH hop. The machine uses a private loopback
+listener and starts with no job in flight. The probe records the interval from
+the last old-release note write acknowledgement to the first candidate
+acknowledgement. The run also checks that a refused proof leaves the original
+container and session reachable, and that an untimed rollback retains the
+candidate's acknowledged write.
 
-During a reconnect, the client retains queued sends and delivers them after
-the server is reachable again. Requests that already received a durable
-receipt replay using the same request ID.
+Podman waited for the configured 90-second stop deadline with the signed-in
+tab open, then sent SIGKILL to the old server. The server's graceful
+shutdown fences workers and machine leases, but does not end the live
+account, space and job event streams. Closing the tab before the untimed
+rollback let the server stop promptly.
+
+End those streams on SIGTERM, preserve their resume cursors, and let
+in-flight writes finish through their durable acknowledgement fences.
+Measure the remaining Podman, machine and proxy handoff with the same
+ten-run probe. During the outage, treat proxy 502, 503 and 504 responses as
+temporary unavailability so the interface can show the reconnect state and
+retry queued operations with their original request IDs.
 
 ## Account onboarding and recovery
 
