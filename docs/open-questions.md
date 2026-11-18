@@ -2,7 +2,7 @@
 
 Decisions waiting on kayg, most blocking first. Answer here or in chat; answered items
 move to the decision record they belong to and leave this list. Terms: see
-[glossary](glossary.md). Updated 2026-11-19 03:10 IST.
+[glossary](glossary.md). Updated 2026-11-19 06:20 IST.
 
 ## Waiting now
 
@@ -30,6 +30,11 @@ Decided 2026-11-18: a person never signs in twice and no API key is used. The ti
 - **The canvas experiment** (kayg, 2026-11-18; still an experiment behind `?canvas=1`): no outer card; the area between the sidebars is the canvas and each window is a middle card, so one window looks exactly like the app today and a second animates as a split; structured columns as in niri; windows touch the top; one continuous veiled background behind them, as under the sidebars; windows opaque or transparent with no blur of their own; both sidebars follow the focused window's app; on a phone one window at a time. The app switcher is no longer part of the canvas (it moved to the left sidebar's footer). Feedback 2026-11-18 17:00, being fixed by the Threads lane: one window must match the app without the canvas exactly (fonts, spacing, animations); no fade on a half-scrolled window; windows are neutral dark or light, never tinted by the wallpaper's accent; no accent border on the selected window (inactive windows dim instead, to be judged); the fullscreen icon is two diagonal chevrons and the link icon becomes a real share menu.
 
 ## Queued, no decision needed
+
+- An incompatible update cannot be applied yet: the full restore point refuses symbolic links, which every coding workspace contains. Additive updates are unaffected. Fix: store links as links in the restore point (a format change, to review first).
+- Update downtime is measured only for the server process (about 180 ms); the full path through the container restart and the proxy is unmeasured.
+- The plugin-worker sandbox probe test times out when the whole workspace suite runs in parallel on a loaded machine (twice so far) and passes alone; make the container tests serial or give the probe a load-aware wait.
+- Production runs sandboxes in containers; the per-person microVM backend is merged and opt-in, and needs the operator network set-up on the production VM before it is switched on.
 
 - Codex reached its usage limit on 2026-11-19 (resets 2026-11-24). Backend lanes fall back to Claude per the standing rule: upgrades and plugins restarted; performance, search and microVM follow-ups parked until the first deploy is out.
 - Parked performance work: the cost of the smaller security-log compaction threshold (warm start 328 to 120 ms), the perf VM's own fsync tail against the 40 ms save budget at 100,000 notes, a health reason for a receipt pinned past retention.
