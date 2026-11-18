@@ -223,6 +223,10 @@ See the [interface proposal](plugin-interface-proposal.md).
 
 ## Palette discovery
 
+A Markdown kind can declare `searchable: true` to index its title and body.
+An approved package update can change this opt-in live. Search coverage is
+derived and changing it leaves the stored kind and collections intact.
+
 A plugin can declare `palette.commands` for commands with optional matching
 phrases in `words`, and `palette.settings_sections` for Settings links. The
 host projects these declarations once per loaded manifest version. Settings
@@ -230,3 +234,4 @@ sections enter the command list as navigation commands in the Settings group.
 `plugins.manifests` presents the enabled contributions in the selected space
 from the current catalog snapshot. Live install, update, disable and removal
 take effect on the next request.
+See [Search and palette lookups](search.md).

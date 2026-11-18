@@ -170,6 +170,12 @@ file reads (admission and later placement) remain; only repeated SQL header
 reads were removed. Linked path edits and Trash/restore finish placement before
 returning, and purge finishes removal before publishing its receipt.
 
+An opted-in Markdown kind is searchable through a separate per-space database.
+A bounded worker advances its projection and journal watermark outside the
+acknowledgment path. A new generation becomes visible when it has scanned
+the retained heads and caught up. List and ID reads use the retained metadata.
+See [search and palette lookups](/docs/dev/search/).
+
 
 ## Preview durability
 

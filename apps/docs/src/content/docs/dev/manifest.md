@@ -392,6 +392,7 @@ Kind identity remains independent of plugin identity.
 | `extension` | no | string, null | Lowercase ASCII file extension without the dot (1 to 16 letters or digits). Claimed-text kinds are Markdown: absent or `md`. Other kinds must declare one; the host stores their bytes unparsed under it. |
 | `id` | yes | string | Stable kind name used in item addresses. |
 | `schema` | yes | schema | JSON Schema for the kind content; no executable code. |
+| `searchable` | no | boolean, null | Opt in to indexing the title and Markdown body for space search. |
 | `storage` | yes | #/definitions/ManifestPlacement | Placement within the selected per-space userdata tree; never an appdata database path. |
 
 ```json
@@ -422,6 +423,13 @@ Kind identity remains independent of plugin identity.
     },
     "schema": {
       "description": "JSON Schema for the kind content; no executable code."
+    },
+    "searchable": {
+      "description": "Opt in to indexing the title and Markdown body for space search.",
+      "type": [
+        "boolean",
+        "null"
+      ]
     },
     "storage": {
       "description": "Placement within the selected per-space userdata tree; never an appdata database path.",

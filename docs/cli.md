@@ -280,6 +280,9 @@ seven-day confirmation, examples and operator safety ceilings.
 
 | Arguments | Purpose | Human output | JSON data |
 | --- | --- | --- | --- |
+| `search query TEXT [--kind KIND] [--space UUID] [--limit N] [--cursor TOKEN]` | Search titles and bodies across readable spaces. | Matches and optional continuation. | `hits`, `partial`, optional `next_cursor` |
+| `search items PREFIX [--space UUID] [--limit N] [--cursor TOKEN]` | Look up items by title prefix. | Item table and optional continuation. | `hits`, `partial`, optional `next_cursor` |
+| `search threads PREFIX [--space UUID] [--limit N] [--cursor TOKEN]` | Look up threads by title prefix. | Thread table and optional continuation. | `hits`, `partial`, optional `next_cursor` |
 | `search people --space UUID [PREFIX]` | Find accounts and groups to mention. | Name, subject type and ID. | `people` |
 | `search skills --space UUID [PREFIX]` | List space skill names and descriptions. | Skill table. | `skills` |
 | `search manifests --space UUID` | Read enabled plugin palette contributions. | Plugin, command and Settings tables. | `manifests` |

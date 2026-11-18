@@ -105,6 +105,9 @@ async fn every_registered_operation_has_an_independent_matrix_row() {
     // HTTP behavior is covered with real directory grants in conformance/search_cases.rs.
     use calternal_server::authz::Scope;
     for (id, scope) in [
+        ("search.query", Scope::Account),
+        ("items.lookup", Scope::Account),
+        ("threads.lookup", Scope::Account),
         ("people.lookup", Scope::Space),
         ("skills.list", Scope::Space),
         ("plugins.manifests", Scope::Space),

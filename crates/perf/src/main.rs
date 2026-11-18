@@ -1,4 +1,4 @@
-//! Disposable real-server benchmark runner. Never links the server or changes product code.
+//! Disposable real-server benchmark runner. HTTP scenarios use a separate server process.
 #![deny(missing_docs)]
 #![deny(rustdoc::broken_intra_doc_links)]
 mod concurrency;
@@ -9,7 +9,10 @@ mod idle;
 mod jobs;
 mod live;
 mod materialization;
+mod rebuild;
 mod report;
+mod search;
+mod search_stage;
 mod server;
 mod stats;
 mod timings;
@@ -65,6 +68,25 @@ struct Args {
     /// Client wave sizes; each client owns a separate space (maximum 128).
     #[arg(long, default_value = "8,32,128")]
     clients: String,
+    /// Keep the save matrix and add online search probes. Both arms use the
+    /// same binary. The baseline manifest must disable the Notes index.
+    #[arg(long, requires = "baseline_plugins")]
+    paired_search: bool,
+    /// Queue zero, one or two online rebuilds and probe healthy-space requests.
+    #[arg(long, requires = "paired_search")]
+    search_queue: bool,
+    /// Measure authorized first-page search and same-space note saves.
+    #[arg(long)]
+    search_only: bool,
+    /// Measure staged file-origin and actual first-use index rebuilding.
+    #[arg(long)]
+    rebuild_only: bool,
+    /// A stopped, 100,000-note, one-space search benchmark fixture.
+    #[arg(long)]
+    rebuild_source: Option<PathBuf>,
+    /// Measure the selected rebuild sizes without re-running the admission waves.
+    #[arg(long, requires = "rebuild_only")]
+    rebuild_no_admission: bool,
     #[arg(long)]
     prepare_only: bool,
     #[arg(long)]
@@ -93,6 +115,9 @@ fn run(a: &Args) -> Result<i32> {
     if std::env::var("CALTERNAL_PERF_HELD").as_deref() != Ok("1") {
         return Err("run under /usr/local/bin/perf-lock.sh on the perf VM".into());
     }
+    if a.paired_search && a.bin != a.baseline {
+        return Err("paired search requires the same binary in both arms".into());
+    }
     if a.samples > 10_000 || a.pairs > 20 || a.cold_pairs > 5 {
         return Err("limit samples to 10000, warm pairs to 20 and cold pairs to 5".into());
     }
@@ -103,6 +128,9 @@ fn run(a: &Args) -> Result<i32> {
         a.fsync_probe,
         a.startup_only,
         a.concurrency_only,
+        a.search_only,
+        a.search_queue,
+        a.rebuild_only,
     ]
     .into_iter()
     .filter(|v| *v)
@@ -110,7 +138,7 @@ fn run(a: &Args) -> Result<i32> {
         > 1
     {
         return Err(
-            "choose one measurement mode: --prepare-only, --jobs-only, --idle-only, --fsync-probe, --startup-only or --concurrency-only".into(),
+            "choose one measurement mode: --prepare-only, --jobs-only, --idle-only, --fsync-probe, --startup-only, --concurrency-only, --search-only or --rebuild-only".into(),
         );
     }
     if a.startup_timeout_seconds == 0 || a.startup_timeout_seconds > 300 {
@@ -130,6 +158,15 @@ fn run(a: &Args) -> Result<i32> {
     }
     if a.concurrency_only {
         return concurrency::run(a);
+    }
+    if a.rebuild_only {
+        return rebuild::run(a);
+    }
+    if a.search_queue {
+        return search_stage::queue::run(a);
+    }
+    if a.search_only {
+        return search::run(a);
     }
     if a.samples < 20 || a.pairs < 3 {
         return Err("at least 20 samples and three interleaved pairs are required".into());
@@ -210,6 +247,9 @@ fn run(a: &Args) -> Result<i32> {
                     return Err(format!("refusing reused roots: {}", root.display()).into());
                 }
                 fixtures::copy(&seed_root, &root)?;
+                if a.paired_search {
+                    fixtures::reset_search_catalog(&root)?;
+                }
                 if pair < a.cold_pairs
                     && !std::process::Command::new("sudo")
                         .args(["-n", "/usr/local/sbin/perf-drop-caches"])
@@ -345,6 +385,13 @@ fn scenario(
     if a.startup_only {
         return Ok(samples);
     }
+    if a.paired_search {
+        search_stage::first_use(&server, &mut h, root, &space, &mut first, &mut samples)?;
+        let enabled = samples["search.rebuild.index_on"][0] == 1.0;
+        if enabled != (plugins == a.plugins) {
+            return Err("search opt-in did not match the paired arm".into());
+        }
+    }
     let mut live = live::Live::open(
         &h,
         "/api/v1/live",
@@ -429,6 +476,9 @@ fn scenario(
             .entry("account.draft_write_to_feed".into())
             .or_default()
             .push(t.elapsed().as_secs_f64() * 1000.);
+    }
+    if a.paired_search {
+        search_stage::lag(&mut h, &placement, &space, &mut first, &mut samples)?;
     }
     timings::collect(&root.join("server.log"), &deliveries, &mut samples)?;
     drop(live);
