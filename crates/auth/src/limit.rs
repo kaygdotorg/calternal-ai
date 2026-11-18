@@ -6,7 +6,8 @@ use std::time::{Duration, Instant};
 /// Source-keyed per-minute admission/failure buckets, bounded to 10,000 keys.
 /// Live least-recently-used entries may be evicted to admit new sources.
 pub struct Limiter {
-    per_minute: u32,
+    maximum: u32,
+    window: Duration,
     state: Mutex<Buckets>,
     /// When expired buckets were last dropped. Sweeping every call would
     /// scan the whole map under the lock on the hottest path.
@@ -22,8 +23,13 @@ struct Buckets {
 impl Limiter {
     /// Creates independent buckets allowing `per_minute` attempts per 60 s window.
     pub fn new(per_minute: u32) -> Self {
+        Self::with_window(per_minute, Duration::from_secs(60))
+    }
+
+    pub(crate) fn with_window(maximum: u32, window: Duration) -> Self {
         Self {
-            per_minute,
+            maximum,
+            window,
             state: Mutex::new(Buckets::default()),
             swept: Mutex::new(Instant::now()),
         }
@@ -44,7 +50,7 @@ impl Limiter {
     pub fn has_room(&self, key: &str) -> bool {
         let state = self.state.lock().unwrap_or_else(|p| p.into_inner());
         match state.entries.get(key) {
-            Some((at, n, _)) if at.elapsed() < Duration::from_secs(60) => *n < self.per_minute,
+            Some((at, n, _)) if at.elapsed() < self.window => *n < self.maximum,
             _ => true,
         }
     }
@@ -67,7 +73,7 @@ impl Limiter {
         if sweep {
             state
                 .entries
-                .retain(|_, (at, _, _)| at.elapsed() < Duration::from_secs(60));
+                .retain(|_, (at, _, _)| at.elapsed() < self.window);
             let Buckets { entries, used } = &mut *state;
             used.retain(|(_, key)| entries.contains_key(key));
         }
@@ -88,13 +94,13 @@ impl Limiter {
                 .entries
                 .entry(key.to_owned())
                 .or_insert((Instant::now(), 0, Instant::now()));
-        if entry.0.elapsed() >= Duration::from_secs(60) {
+        if entry.0.elapsed() >= self.window {
             // Expired but not swept yet: a new minute starts.
             *entry = (Instant::now(), 0, Instant::now());
         }
         entry.2 = now;
         let first = entry.1 == 0;
-        if entry.1 >= self.per_minute {
+        if entry.1 >= self.maximum {
             return (false, false);
         }
         entry.1 += 1;

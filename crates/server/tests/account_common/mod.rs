@@ -29,7 +29,10 @@ pub fn app() -> App {
     app_with(|_| {})
 }
 pub fn app_with(tweak: impl FnOnce(&mut AuthConfig)) -> App {
-    let dir = tempfile::tempdir().unwrap();
+    app_in(tempfile::tempdir().unwrap(), tweak)
+}
+
+pub fn app_in(dir: tempfile::TempDir, tweak: impl FnOnce(&mut AuthConfig)) -> App {
     let mut config = AuthConfig::new(ORIGIN).unwrap();
     tweak(&mut config);
     let roots = calternal_roots::Roots {
