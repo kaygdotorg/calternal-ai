@@ -17,7 +17,7 @@ let bad = 0; const ok = (c, m, note = "") => { console.log(`${c ? "PASS" : "FAIL
 const url = `http://localhost:${PORT}`; // the server checks Host against its own address: localhost, not 127.0.0.1
 for (let i = 0; i < 120; i++) { try { if ((await fetch(`${url}/api/v1/auth/status`)).ok) break; } catch { /* not yet */ } await new Promise((r) => setTimeout(r, 250)); }
 const b = await chromium.launch();
-for (const scheme of ["light", "dark"]) for (const [name, path] of [["fixtures", "/?server=0"], ["deep link", "/threads/t-run?server=0"], ["sign-in", "/?server=1"]]) {
+for (const scheme of ["light", "dark"]) for (const [name, path] of [["fixtures", "/?server=0"], ["deep link (a UUID, as the server allows)", "/threads/0197f3a2-5c1e-7b4d-9a60-3d2e8f1c4b11?server=0"], ["sign-in", "/?server=1"]]) {
   const ctx = await b.newContext({ viewport: { width: 1440, height: 900 }, colorScheme: scheme }); await ctx.addInitScript(() => { localStorage.setItem("cal.firstrun", "1"); window.__csp = []; document.addEventListener("securitypolicyviolation", (e) => window.__csp.push(`${e.violatedDirective} ${e.blockedURI}`)); });
   const page = await ctx.newPage(); const errors = [], failed = [];
   page.on("pageerror", (e) => errors.push(e.message.slice(0, 120))); page.on("console", (m) => { if (m.type() === "error" && !/401|Unauthorized/.test(m.text())) errors.push(m.text().slice(0, 160)); });
