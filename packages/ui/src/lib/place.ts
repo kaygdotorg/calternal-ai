@@ -66,10 +66,13 @@ function placeBlind(el: HTMLElement, a: { left: number; top: number; right: numb
   el.style.setProperty("--room", `${Math.max(96, room(side))}px`);
   el.style.maxWidth = `${innerWidth - 2 * margin}px`;
   el.style.overflowY = "auto";
+  // An anchor in the window's right half whose right edge leaves room for the surface's least width: the surface hangs from that edge (its own width, `100%`, is subtracted by the browser, so nothing is measured), and
+  // a surface wider than the least width still ends inside the window. Otherwise it starts at the anchor and is kept inside by the least width.
+  const rightHalf = a.left > innerWidth / 2 && a.right - minWidth >= margin;
   const left = Math.min(Math.max(a.left, margin), Math.max(margin, innerWidth - margin - minWidth));
-  el.style.translate = `${left}px 0`;
+  el.style.translate = rightHalf ? `calc(${Math.min(a.right, innerWidth - margin)}px - 100%) 0` : `${left}px 0`;
   if (side === "top") { el.style.top = "auto"; el.style.bottom = `${innerHeight - (a.top - gap)}px`; }
   else { el.style.bottom = "auto"; el.style.top = `${a.bottom + gap}px`; }
-  el.style.setProperty("--origin", `${side === "top" ? "bottom" : "top"} left`);
+  el.style.setProperty("--origin", `${side === "top" ? "bottom" : "top"} ${rightHalf ? "right" : "left"}`);
   return side;
 }

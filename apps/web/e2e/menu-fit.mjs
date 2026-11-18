@@ -38,6 +38,13 @@ try {
     const r = await p.evaluate(() => { const m = document.querySelector("[role=menu]"); const b = m.getBoundingClientRect(); return { left: Math.round(b.left), right: Math.round(b.right), top: Math.round(b.top), bottom: Math.round(b.bottom), vw: innerWidth, vh: innerHeight }; });
     ok(r.left >= 7.5 && r.right <= r.vw - 7.5 && r.top >= 0 && r.bottom <= r.vh, "a row's menu in the sidebar at 393 pt stays inside the screen with a margin", JSON.stringify(r));
     await ctx.close(); }
+  // a blind-placed dropdown (the Share menu) in a canvas window at 402 pt ends inside the screen with a margin, not flush with its edge
+  { const { page: p, ctx } = await open(browser, "phone", "light", "/threads/t-idle?canvas=1");
+    await p.setViewportSize({ width: 402, height: 874 }); await p.waitForTimeout(2200);
+    await p.locator("[data-win]").first().getByRole("button", { name: "Share" }).click(); await p.waitForTimeout(900);
+    const r = await p.evaluate(() => { const m = document.querySelector("[role=menu], [role=dialog]"); const b = m.getBoundingClientRect(); return { left: Math.round(b.left), right: Math.round(b.right), vw: innerWidth }; });
+    ok(r.left >= 7.5 && r.right <= r.vw - 7.5, "the Share dropdown in a canvas window at 402 pt keeps its margin from the screen edge", JSON.stringify(r));
+    await ctx.close(); }
 } catch (err) { console.log("FAIL  " + err.message); bad++; }
 await browser.close(); await stop();
 process.exit(bad ? 1 : 0);
