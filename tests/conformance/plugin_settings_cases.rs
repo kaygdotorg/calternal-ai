@@ -2,7 +2,12 @@
 use super::*;
 use crate::live_cases::Live;
 
-pub(super) const OPERATIONS: &[&str] = &["plugins.settings.get", "plugins.settings.set"];
+pub(super) const OPERATIONS: &[&str] = &[
+    "plugins.settings.get",
+    "plugins.settings.set",
+    "plugins.personal_settings.get",
+    "plugins.personal_settings.set",
+];
 const PLUGIN: &str = "composer-settings";
 const VIEW: &str = "composer-settings.label";
 
@@ -406,4 +411,50 @@ async fn an_operator_group_allocation_survives_restart_and_covers_both_spaces() 
     f.op(1, "notes.create", input).await.ok();
     let group_usage = data(f.op(1, "composer-settings.usage", owner_usage).await);
     assert_eq!(group_usage["text_bytes"], "6");
+}
+
+#[tokio::test]
+async fn personal_plugin_settings_follow_only_the_signed_in_account() {
+    let mut f = Fixture::new().await;
+    let space = f.spaces[2].clone();
+    install(&f, &space).await;
+    let address = json!({"space_id":space,"plugin_id":PLUGIN,"key":"personal-label"});
+    let read = "plugins.personal_settings.get";
+    let write = "plugins.personal_settings.set";
+    let mut edit = address.clone();
+    edit["base"] = Value::Null;
+    edit["value"] = json!("My private label");
+
+    assert_eq!(
+        data(f.op(2, read, address.clone()).await)["effective"],
+        "My note"
+    );
+    let first = data(f.op_id(2, write, edit.clone(), "personal-edit").await);
+    assert_eq!(first["effective"], "My private label");
+    assert_eq!(
+        data(f.op(1, read, address.clone()).await)["effective"],
+        "My note"
+    );
+    assert_eq!(f.op(3, read, address.clone()).await.status, 404);
+    assert_eq!(
+        data(
+            f.op(2, VIEW, json!({"space_id":space,"key":"personal-label"}))
+                .await
+        )["view"]["source"],
+        r#"Badge("My private label")"#
+    );
+    assert_eq!(
+        f.op(1, "plugins.settings.get", address.clone())
+            .await
+            .status,
+        404
+    );
+
+    f.stop();
+    f.start().await;
+    assert_eq!(
+        data(f.op(2, read, address).await)["effective"],
+        "My private label"
+    );
+    assert_eq!(data(f.op_id(2, write, edit, "personal-edit").await), first);
 }

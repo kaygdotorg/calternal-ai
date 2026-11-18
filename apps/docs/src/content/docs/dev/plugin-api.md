@@ -189,6 +189,54 @@ a bounded capacity. A package can have up to 128 keys in a space and
 each value can hold up to 64 KiB. An optional operator-controlled state
 space supplies a read-only, scope-keyed record to an admission hook.
 
+## Durable job waits
+
+The author reference
+shows how a replayable job run returns a checkpoint and waits for an
+Inbox answer, an approval, a webhook delivery or its deadline. The
+worker invocation ends while the job waits. Interactive operations
+return a job ID from the existing `start_job` broker call to use waits.
+
+Park, cancellation and delivery use the same jobs.db connection and
+state fence. The first signal commits with the transition to admitted
+and, for Inbox decisions and webhooks, with the replay receipt.
+Duplicate deliveries cannot win the same wait again. The normal job
+scheduler rechecks the original sign-in, capability, package revision
+and activation. Once admitted, ordinary job restart and effect-receipt
+rules apply. After a later checkpoint the signal is no longer included.
+Signal payloads are limited to 16 KiB and are retained with the owning
+job. Job retention and account erasure also remove their waits.
+
+### Signed webhook delivery
+
+Declare a webhook `id` and schema `operation` in `webhooks`, and include
+the same `id` in `secrets`. Configure at least 32 random key bytes for the
+package's space secret of that name through the trusted secret flow. The
+host uses the declared operation's cached input schema for the delivery.
+It hands the payload to the resumed run.
+
+Park with `{kind: "webhook", route, correlation}` using a fresh UUID for
+each wait. The sender posts JSON to
+`/api/v1/plugin-webhooks/<space>/<package>/<route>/<job>/<correlation>`.
+Set `X-Calternal-Timestamp` to Unix seconds and `X-Calternal-Signature`
+to the hexadecimal HMAC-SHA256 of the timestamp, LF, `POST`, LF,
+exact path, LF and raw body bytes. Requests accept a five-minute clock
+skew and up to 16 KiB of body bytes. Verification has a short body
+timeout and a 60 attempts/minute budget per cached space. A 202
+acknowledges the first accepted delivery or an identical replay.
+Keep signing keys out of worker state and logs.
+
+## Personal plugin settings
+
+A package may declare `scope: "personal"` on a typed setting. A signed-in
+space member can read and edit only their own override through
+`plugins.personal_settings.get` and `plugins.personal_settings.set`.
+Address the space UUID, package and key. For edits submit the last stored
+`base`, the next `value` and a request ID. Null restores the manifest
+default. A stale base conflicts and an identical retry replays its receipt.
+The worker’s existing setting broker resolves the authenticated person's
+value. An edit wakes that person's account feed without publishing the value.
+
 ## Space plugin settings
 
 Declare a key in the manifest's `settings`, including its primitive type and
@@ -214,6 +262,20 @@ intent. Syntax damage returns defaults with a file-and-line repair hint.
 Once the file is valid, recovery reapplies the pending key and keeps other
 edits. A competing edit to the same key becomes a conflict. Unrelated
 operations stay available during repair.
+
+## Installed plugin diagnostics
+
+A space Owner or Manager can call `plugins.diagnostics` with the space UUID
+and an installed package ID. The response reports the selected revision,
+its last observed readiness, recent reason codes, and up to 4 KiB of the
+last failed worker’s stderr from that space. Readiness is observed when the
+worker starts and stops. The endpoint does not start a worker.
+
+Diagnostics retain up to eight failures and one stderr tail per space and
+up to 64 spaces per package revision. Records expire after an hour and
+are cleared when the server restarts. The host never records operation
+inputs or outputs in the error history. Worker stderr is private to the
+space's managers. Authors should keep secrets and personal data out of it.
 
 ## Author diagnostics
 

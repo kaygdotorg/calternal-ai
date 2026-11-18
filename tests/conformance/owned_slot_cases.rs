@@ -312,3 +312,73 @@ async fn measure_fixed_and_owned_slot_listings() {
         }
     }
 }
+
+#[tokio::test]
+async fn owned_slot_stream_delivers_grant_filtered_replacements_and_removals() {
+    let f = Fixture::new().await;
+    let space = &f.spaces[2];
+    let owner = "live-slot-owner";
+    let contributor = "live-slot-contributor";
+    let host = package(
+        &f,
+        owner,
+        json!([mount("public", "space.read")]),
+        json!([]),
+        "space.read",
+    );
+    let extension = package(
+        &f,
+        contributor,
+        json!([]),
+        json!([contribution(
+            contributor,
+            "addition",
+            owner,
+            "public",
+            "generated"
+        )]),
+        "space.read",
+    );
+    install(&f, &host, space);
+    install(&f, &extension, space);
+    set(&f, space, owner, true).await;
+    let connect = |who: usize| {
+        f.client
+            .get(format!("{}/api/v1/plugin-slots/live", f.base))
+            .header("host", "localhost:18080")
+            .header("origin", ORIGIN)
+            .header("cookie", &f.cookies[who])
+            .query(&[
+                ("space_id", space.as_str()),
+                ("plugin_id", owner),
+                ("slot_id", "public"),
+            ])
+            .send()
+    };
+    let response = connect(2).await.unwrap();
+    assert_eq!(response.status(), 200);
+    let mut live = crate::live_cases::Live {
+        response,
+        buffer: Vec::new(),
+    };
+    let initial = live.next().await.unwrap();
+    assert_eq!(initial["active"], true);
+    assert_eq!(initial["contributions"], json!([]));
+    assert_eq!(connect(3).await.unwrap().status(), 404);
+
+    set(&f, space, contributor, true).await;
+    let added = live.next().await.unwrap();
+    assert_eq!(added["contributions"][0]["contribution"]["id"], "addition");
+
+    let removed = cli(&[
+        "plugin",
+        "remove",
+        contributor,
+        "--appdata",
+        f.appdata().to_str().unwrap(),
+    ]);
+    assert!(removed.status.success(), "{removed:?}");
+    assert_eq!(live.next().await.unwrap()["contributions"], json!([]));
+    set(&f, space, owner, false).await;
+    assert_eq!(live.next().await.unwrap()["active"], false);
+}

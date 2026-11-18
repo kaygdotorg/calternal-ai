@@ -728,7 +728,7 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
     },
     "ManifestSetting": {
       "additionalProperties": false,
-      "description": "Typed space setting; secrets use separate handles.",
+      "description": "Typed plugin setting; secrets use separate handles.",
       "properties": {
         "default": {
           "description": "Default setting value."
@@ -736,6 +736,17 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
         "id": {
           "description": "Stable setting identifier.",
           "type": "string"
+        },
+        "scope": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ManifestSettingScope"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Override owner. Omission selects the shared space setting."
         },
         "value_type": {
           "allOf": [
@@ -752,6 +763,25 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
         "value_type"
       ],
       "type": "object"
+    },
+    "ManifestSettingScope": {
+      "description": "Owner of an override for a declared plugin setting.",
+      "oneOf": [
+        {
+          "description": "Each person in the space can have their own value.",
+          "enum": [
+            "personal"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Space managers can change the shared value.",
+          "enum": [
+            "space"
+          ],
+          "type": "string"
+        }
+      ]
     },
     "ManifestSettingType": {
       "description": "Primitive setting value type.",

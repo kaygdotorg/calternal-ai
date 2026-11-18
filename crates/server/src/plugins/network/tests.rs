@@ -3,6 +3,7 @@ use crate::{
     api::{AppState, allowed_hosts, router},
     auth::StoredDirectory,
     plugins::{Jobs, Registry, TrustedEntry, WorkerPool, default_row},
+    store::PluginItemWrite,
 };
 use axum::{
     body::Body,
@@ -89,8 +90,10 @@ fn sealed_frame_is_per_person_and_dies_when_the_source_head_changes() {
             "mail-fixture",
             None,
             None,
-            json!({}),
-            r#"<p>hello</p><img src="https://example.com/image.png?key=hidden">"#,
+            PluginItemWrite::Replace {
+                metadata: json!({}),
+                text: r#"<p>hello</p><img src="https://example.com/image.png?key=hidden">"#,
+            },
         )
         .unwrap();
     let id = saved["id"].as_str().unwrap();
@@ -167,8 +170,10 @@ fn sealed_frame_is_per_person_and_dies_when_the_source_head_changes() {
             "mail-fixture",
             Some(Uuid::parse_str(id).unwrap()),
             Some(revision),
-            json!({}),
-            "<p>replacement</p>",
+            PluginItemWrite::Replace {
+                metadata: json!({}),
+                text: "<p>replacement</p>",
+            },
         )
         .unwrap();
     assert_eq!(

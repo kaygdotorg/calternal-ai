@@ -138,6 +138,11 @@ fn main() {
             &reason,
             identity_verified,
         )),
+        Cmd::MailTest {
+            recipient,
+            appdata,
+            installation_id,
+        } => out.finish(admin_cli::mail_test(&appdata, &installation_id, &recipient)),
         Cmd::ReceiptStatus {
             appdata,
             installation_id,
@@ -345,6 +350,18 @@ async fn serve(
                 "invalid_input",
                 "invalid account email policy",
                 DATA_HINT,
+            ));
+        }
+    };
+    config.oidc_enabled = match std::env::var("CALTERNAL_ACCOUNT_OIDC_ENABLED").as_deref() {
+        Ok("1" | "true") => true,
+        Ok("0" | "false") | Err(std::env::VarError::NotPresent) => false,
+        _ => {
+            return Err(boot(
+                1,
+                "invalid_input",
+                "invalid CALTERNAL_ACCOUNT_OIDC_ENABLED setting",
+                "Set it to true or false.",
             ));
         }
     };
@@ -556,6 +573,7 @@ async fn serve(
     calternal_server::turns::retry::recover(&state, &machines)
         .await
         .map_err(|e| boot(1, "failed", e.message, DATA_HINT))?;
+    api::configure_automations(&state);
     let _notes_retention = state.store.start_notes_retention().map_err(|e| {
         boot(
             2,

@@ -114,7 +114,8 @@
   ],
   "attention": [],
   "settings": [
-    { "id": "label", "value_type": "string", "default": "Quick note" }
+    { "id": "label", "value_type": "string", "default": "Quick note" },
+    { "id": "personal-label", "value_type": "string", "default": "My note", "scope": "personal" }
   ],
   "schedules": [],
   "webhooks": [],

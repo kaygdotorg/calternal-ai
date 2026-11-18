@@ -426,7 +426,7 @@ async fn palette_results_and_picker_operations_hide_other_spaces() {
     let skills = data(f.op(2, "skills.list", json!({"space_id":shared})).await);
     assert_eq!(
         skills,
-        json!({"skills":[{"name":"review","description":"Review a draft."}]})
+        json!({"skills":[{"name":"review","description":"Review a draft.","agents":[],"path":"AI/Skills/review/SKILL.md"}]})
     );
     let catalogue = data(
         f.op(2, "plugins.manifests", json!({"space_id":shared}))

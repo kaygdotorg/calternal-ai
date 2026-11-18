@@ -46,6 +46,11 @@ pub enum Request {
         /// Out-of-band verification reason from the operator.
         reason: String,
     },
+    /// Send a test message through the running server's account SMTP transport.
+    MailTest {
+        /// The mailbox that should receive the test message.
+        recipient: String,
+    },
     /// Inspect receipt pruning in a single space through the running server.
     ReceiptStatus {
         /// Space UUID to inspect, including dormant spaces.
@@ -174,6 +179,11 @@ pub enum Response {
         /// Public origin for signing in.
         url: String,
     },
+    /// The result of the server's bounded SMTP attempt.
+    MailTest {
+        /// True after SMTP acceptance, false when unconfirmed, absent without SMTP.
+        accepted: Option<bool>,
+    },
     /// Receipt-pruning health for the requested space.
     ReceiptStatus {
         /// Reason for impaired pruning, if observed.
@@ -248,6 +258,11 @@ pub fn execute(
         Request::SetupCode | Request::AccountRecover { .. } => {
             return Err(Error::unavailable(
                 "start this server before requesting a setup code",
+            ));
+        }
+        Request::MailTest { .. } => {
+            return Err(Error::unavailable(
+                "start this server before sending a test message",
             ));
         }
         Request::ReceiptStatus { .. } => {
@@ -536,6 +551,16 @@ async fn answer(
                     url: setup.url().to_owned(),
                 }),
             None => Err(Error::unavailable("account recovery is unavailable")),
+        },
+        Ok(Envelope {
+            request: Request::MailTest { recipient },
+            ..
+        }) => match owner_setup {
+            Some(setup) => setup
+                .mail_test(&recipient)
+                .await
+                .map(|accepted| Response::MailTest { accepted }),
+            None => Ok(Response::MailTest { accepted: None }),
         },
         Ok(e) => crate::blocking::spawn(move || match e.request {
             Request::ReceiptStatus { space } => content

@@ -934,17 +934,18 @@ Schedule declaration; durable execution belongs to the host.
 
 ## ManifestSetting
 
-Typed space setting; secrets use separate handles.
+Typed plugin setting; secrets use separate handles.
 
 | Field | Required | Type / reference | Description |
 | --- | --- | --- | --- |
 | `default` | yes | schema | Default setting value. |
 | `id` | yes | string | Stable setting identifier. |
+| `scope` | no | schema | Override owner. Omission selects the shared space setting. |
 | `value_type` | yes | #/definitions/ManifestSettingType | Primitive type of the default and stored values. |
 
 ```json
 {
-  "description": "Typed space setting; secrets use separate handles.",
+  "description": "Typed plugin setting; secrets use separate handles.",
   "type": "object",
   "required": [
     "default",
@@ -959,6 +960,17 @@ Typed space setting; secrets use separate handles.
       "description": "Stable setting identifier.",
       "type": "string"
     },
+    "scope": {
+      "description": "Override owner. Omission selects the shared space setting.",
+      "anyOf": [
+        {
+          "$ref": "#/definitions/ManifestSettingScope"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "value_type": {
       "description": "Primitive type of the default and stored values.",
       "allOf": [
@@ -969,6 +981,36 @@ Typed space setting; secrets use separate handles.
     }
   },
   "additionalProperties": false
+}
+```
+
+## ManifestSettingScope
+
+Owner of an override for a declared plugin setting.
+
+| Field | Required | Type / reference | Description |
+| --- | --- | --- | --- |
+
+
+```json
+{
+  "description": "Owner of an override for a declared plugin setting.",
+  "oneOf": [
+    {
+      "description": "Each person in the space can have their own value.",
+      "type": "string",
+      "enum": [
+        "personal"
+      ]
+    },
+    {
+      "description": "Space managers can change the shared value.",
+      "type": "string",
+      "enum": [
+        "space"
+      ]
+    }
+  ]
 }
 ```
 

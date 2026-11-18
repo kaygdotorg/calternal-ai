@@ -3124,7 +3124,7 @@
       "additionalProperties": false
     },
     "ManifestSetting": {
-      "description": "Typed space setting; secrets use separate handles.",
+      "description": "Typed plugin setting; secrets use separate handles.",
       "type": "object",
       "required": [
         "default",
@@ -3139,6 +3139,17 @@
           "description": "Stable setting identifier.",
           "type": "string"
         },
+        "scope": {
+          "description": "Override owner. Omission selects the shared space setting.",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ManifestSettingScope"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "value_type": {
           "description": "Primitive type of the default and stored values.",
           "allOf": [
@@ -3149,6 +3160,25 @@
         }
       },
       "additionalProperties": false
+    },
+    "ManifestSettingScope": {
+      "description": "Owner of an override for a declared plugin setting.",
+      "oneOf": [
+        {
+          "description": "Each person in the space can have their own value.",
+          "type": "string",
+          "enum": [
+            "personal"
+          ]
+        },
+        {
+          "description": "Space managers can change the shared value.",
+          "type": "string",
+          "enum": [
+            "space"
+          ]
+        }
+      ]
     },
     "ManifestSettingType": {
       "description": "Primitive setting value type.",

@@ -21,8 +21,8 @@ query for cold spaces that predate byte counters.
 
 ## Upgrade
 
-The production baseline is c98705d7. Content.db steps 6 and 7 follow sharing
-at version 5. Machines.db version 7 comes from the threads backend title-lease
+The production baseline is c98705d7. Content.db steps 7 and 8 follow live rooms
+at version 6. Machines.db version 7 comes from the threads backend title-lease
 change at 3da9cfcf. This lane adds versions 8 through 11 and introduces machine
 runtime store version 1. The auth schema stays at 14. Each new transition runs
 through the shared migration runner and has a transition fixture.

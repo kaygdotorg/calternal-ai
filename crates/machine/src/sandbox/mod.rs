@@ -208,15 +208,11 @@ pub(crate) fn spawn_streaming(
     mut cmd: tokio::process::Command,
     input: String,
     interactive: bool,
-    discard_stderr: bool,
+    worker_output: bool,
 ) -> SandboxResult<(Exec, Option<u32>)> {
     cmd.stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(if discard_stderr {
-            Stdio::null()
-        } else {
-            Stdio::piped()
-        });
+        .stderr(Stdio::piped());
     let mut child = cmd
         .spawn()
         .map_err(|e| SandboxError(format!("cannot start command: {}", e.kind())))?;
@@ -245,10 +241,18 @@ pub(crate) fn spawn_streaming(
         .stdout
         .take()
         .map(|p| tokio::spawn(pump(p, Stream::Stdout, tx.clone())));
-    let err = child
-        .stderr
-        .take()
-        .map(|p| tokio::spawn(pump(p, Stream::Stderr, tx.clone())));
+    let stderr = child.stderr.take();
+    let (err, worker_tail) = if worker_output {
+        (
+            None,
+            stderr.map(|pipe| tokio::spawn(capture_worker_stderr(pipe))),
+        )
+    } else {
+        (
+            stderr.map(|pipe| tokio::spawn(pump(pipe, Stream::Stderr, tx.clone()))),
+            None,
+        )
+    };
     tokio::spawn(async move {
         let status = child.wait().await;
         // Drain both pipes before announcing the exit so it is the last event.
@@ -269,6 +273,13 @@ pub(crate) fn spawn_streaming(
                 ..ExitInfo::default()
             },
         };
+        if let Some(tail) = worker_tail
+            && let Ok(bytes) = tail.await
+            && info.code != Some(0)
+            && !bytes.is_empty()
+        {
+            let _ = tx.send(OutputEvent::Data(Stream::Stderr, bytes)).await;
+        }
         let _ = tx.send(OutputEvent::Exit(info)).await;
     });
     Ok((
@@ -278,6 +289,22 @@ pub(crate) fn spawn_streaming(
         },
         pid,
     ))
+}
+
+// Worker stderr has no live fanout. Drain the pipe continuously and disclose
+// only its bounded tail on a failed exit, before the terminal event.
+async fn capture_worker_stderr(mut pipe: impl tokio::io::AsyncRead + Unpin) -> Vec<u8> {
+    let mut tail = Vec::new();
+    let mut chunk = vec![0; CHUNK_BYTES.min(worker::STDERR_TAIL_BYTES)];
+    while let Ok(n) = pipe.read(&mut chunk).await {
+        if n == 0 {
+            break;
+        }
+        let discard = (tail.len() + n).saturating_sub(worker::STDERR_TAIL_BYTES);
+        tail.drain(..discard);
+        tail.extend_from_slice(&chunk[..n]);
+    }
+    tail
 }
 
 async fn pump(

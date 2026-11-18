@@ -15,6 +15,7 @@ pub(crate) struct Staged {
     pub(crate) seq: i64,
     pub(crate) path: String,
     pub(crate) expected: Option<String>,
+    pub(crate) room: Option<crate::rooms::Checkpoint>,
 }
 
 impl Staged {
@@ -35,7 +36,7 @@ impl Staged {
              VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,'pending',?10)
              ON CONFLICT(id) DO UPDATE SET metadata=excluded.metadata,revision=excluded.revision,
                seq=excluded.seq,updated_at=excluded.updated_at,path=excluded.path,
-               folded_path=excluded.folded_path,old_path=excluded.old_path,mat_state='pending'",
+               folded_path=excluded.folded_path,old_path=excluded.old_path,mat_state='pending',file_hash=excluded.file_hash",
             params![
                 item.id.to_string(),item.kind,metadata,item.revision,self.seq,item.updated_at,
                 self.path,calternal_fsio::names::fold(&self.path),
@@ -55,6 +56,9 @@ impl Staged {
             ],
         )
         .map_err(crate::storage_usage::write_error)?;
+        if let Some(room) = &self.room {
+            room.write(tx, item.id, self.seq)?;
+        }
         Ok(())
     }
 
@@ -124,6 +128,9 @@ impl Space {
         }
         if let Some((metadata, bytes)) = retarget(&root.item, old, &root.path)? {
             Content::validate_write_size(&metadata, &bytes)?;
+            if let Some(room) = root.room.take() {
+                root.room = Some(room.rewrite(&bytes)?);
+            }
             root.item.metadata = metadata;
             root.item.bytes = bytes;
         }
@@ -138,7 +145,7 @@ impl Space {
                 .map_err(internal)?;
             let id = Uuid::parse_str(&id).map_err(internal)?;
             let mut source = self.get_selected(id, true)?;
-            let Some((metadata, bytes)) = retarget(&source, old, &root.path)? else {
+            let Some((mut metadata, mut bytes)) = retarget(&source, old, &root.path)? else {
                 continue;
             };
             Content::validate_write_size(&metadata, &bytes)?;
@@ -150,6 +157,19 @@ impl Space {
             }
             self.place(id, fault)?;
             let expected = self.check_file(id)?;
+            let room = if self.live_editing(&source.kind)? {
+                let (merged, checkpoint, _) = self.merge_room_write(
+                    &source,
+                    seq,
+                    &source.revision,
+                    &mut metadata,
+                    crate::rooms::Body::Replace(&bytes),
+                )?;
+                bytes = merged;
+                Some(checkpoint)
+            } else {
+                None
+            };
             source.metadata = metadata;
             source.bytes = bytes;
             source.revision = Staged::version(seq + 1);
@@ -159,6 +179,7 @@ impl Space {
                 seq: seq + 1,
                 path,
                 expected,
+                room,
             });
         }
         Ok(staged)

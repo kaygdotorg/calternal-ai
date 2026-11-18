@@ -195,6 +195,9 @@ pub(super) async fn invoke_plugin<D: Directory>(
         check_view(&plugin, &value)?;
         Ok(value)
     });
+    if let Err(error) = &value {
+        plugin.installed_diagnostics.failure(space, op, error);
+    }
     #[cfg(feature = "dev-plugin-drafts")]
     if let Err(error) = &value {
         plugin.record_draft_error(space, p.id, op, error, invocation_started.elapsed());

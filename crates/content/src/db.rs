@@ -80,6 +80,7 @@ const SPACE_INITIAL: &[&str] = &[
 const SPACE_CHANGES: &[&str] = &[
     THREAD_SNOOZE,
     include_str!("collection_members.sql"),
+    crate::rooms::SCHEMA,
     crate::storage_usage::MIGRATION,
     crate::plugin_state::MIGRATION,
 ];
@@ -272,7 +273,7 @@ mod tests {
     #[test]
     fn storage_migration_backfills_current_bodies_from_the_preceding_writer() {
         let conn = Connection::open_in_memory().unwrap();
-        migrate_release(&conn, through(5), false).unwrap();
+        migrate_release(&conn, through(6), false).unwrap();
         conn.execute_batch(r#"
             INSERT INTO kinds VALUES ('notes','[null,{"format":"markdown"}]');
             INSERT INTO items VALUES ('a','notes','{}','v2',2,'now','a.md','a.md',NULL,'current',NULL);
@@ -281,10 +282,10 @@ mod tests {
             INSERT INTO versions VALUES ('a',2,'v2','{}',X'41','now','owner');
             INSERT INTO versions VALUES ('b',1,'v3','{}',X'4141','now','owner');
         "#).unwrap();
-        migrate_release(&conn, through(6), true).unwrap();
+        migrate_release(&conn, through(7), true).unwrap();
         assert_eq!(
-            calternal_store::migrations::inspect(&conn, through(5)).unwrap(),
-            6
+            calternal_store::migrations::inspect(&conn, through(6)).unwrap(),
+            7
         );
         let usage = crate::storage_usage::read(&conn).unwrap();
         assert_eq!((usage.text_bytes, usage.binary_bytes), (1, 2));
@@ -293,16 +294,16 @@ mod tests {
     #[test]
     fn package_state_migration_preserves_existing_storage_policy() {
         let conn = Connection::open_in_memory().unwrap();
-        migrate_release(&conn, through(6), false).unwrap();
+        migrate_release(&conn, through(7), false).unwrap();
         conn.execute(
             "UPDATE storage_usage SET total_limit=19 WHERE singleton=1",
             [],
         )
         .unwrap();
-        migrate_release(&conn, through(7), true).unwrap();
+        migrate_release(&conn, through(8), true).unwrap();
         assert_eq!(
-            calternal_store::migrations::inspect(&conn, through(6)).unwrap(),
-            7
+            calternal_store::migrations::inspect(&conn, through(7)).unwrap(),
+            8
         );
         let limit: i64 = conn
             .query_row("SELECT total_limit FROM storage_usage", [], |row| {
@@ -433,5 +434,52 @@ mod tests {
         conn.execute("UPDATE items SET path='.trash/collection.json'", [])
             .unwrap();
         assert!(member().is_none());
+    }
+
+    #[test]
+    fn room_migration_preserves_prior_writer_and_is_atomic() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate_release(&conn, through(5), false).unwrap();
+        conn.execute_batch(
+            "INSERT INTO kinds VALUES('documents','[]');
+             INSERT INTO items VALUES ('item','documents','{}','v1',1,'now','Doc.md','doc.md',NULL,'materialized',NULL);
+             INSERT INTO versions VALUES ('item',1,'v1','{}',X'41','now','owner');
+             CREATE TABLE room_checkpoints(conflicts_with_migration INT);",
+        ).unwrap();
+        assert!(migrate_release(&conn, through(6), true).is_err());
+        assert_eq!(
+            calternal_store::migrations::inspect(&conn, through(5)).unwrap(),
+            5
+        );
+        let flag_table: bool = conn
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM sqlite_schema WHERE name='room_kinds')",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert!(!flag_table);
+        conn.execute_batch("DROP TABLE room_checkpoints").unwrap();
+        migrate_release(&conn, through(6), true).unwrap();
+        assert_eq!(
+            calternal_store::migrations::inspect(&conn, through(6)).unwrap(),
+            6
+        );
+        assert_eq!(
+            calternal_store::migrations::inspect(&conn, through(5)).unwrap(),
+            6
+        );
+        conn.execute_batch(
+            "INSERT INTO room_kinds VALUES('documents');
+             INSERT INTO room_checkpoints VALUES('item',1,'lineage',X'0000');
+             INSERT INTO versions VALUES ('item',2,'v2','{}',X'42','now','owner');
+             UPDATE items SET revision='v2',seq=2 WHERE id='item';",
+        )
+        .unwrap();
+        let body: Vec<u8> = conn.query_row(
+            "SELECT bytes FROM versions JOIN items ON versions.item=items.id AND versions.seq=items.seq",
+            [], |r| r.get(0),
+        ).unwrap();
+        assert_eq!(body, b"B");
     }
 }

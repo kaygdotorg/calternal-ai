@@ -1,6 +1,6 @@
 use jiff::{Timestamp, tz::TimeZone};
 
-fn named(name: &str) -> Option<TimeZone> {
+pub(crate) fn named(name: &str) -> Option<TimeZone> {
     if name.len() > 128
         || !name.split('/').all(|part| {
             !part.is_empty()

@@ -32,6 +32,10 @@ async fn a_provider_credential_is_sealed_and_an_unknown_subject_requires_an_invi
         )
         .await
         .unwrap();
+    app.auth
+        .set_oidc_provider_state(caller, "company", "enable", false)
+        .await
+        .unwrap();
     let (p, revision) = app.auth.oidc_provider("company").await.unwrap();
     assert_eq!(
         app.auth
@@ -75,6 +79,10 @@ async fn only_a_fresh_settings_link_allows_provider_signin_and_unlink_revokes_it
             provider(),
             Some(SecretValue::new(b"private".to_vec()).unwrap()),
         )
+        .await
+        .unwrap();
+    app.auth
+        .set_oidc_provider_state(admin, "company", "enable", false)
         .await
         .unwrap();
     let (p, revision) = app.auth.oidc_provider("company").await.unwrap();
@@ -201,6 +209,10 @@ async fn invited_oidc_signup_offers_a_passkey_and_has_a_last_method_guard() {
             provider(),
             Some(SecretValue::new(b"private".to_vec()).unwrap()),
         )
+        .await
+        .unwrap();
+    app.auth
+        .set_oidc_provider_state(admin, "company", "enable", false)
         .await
         .unwrap();
     let (p, revision) = app.auth.oidc_provider("company").await.unwrap();

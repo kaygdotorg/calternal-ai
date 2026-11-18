@@ -108,6 +108,9 @@ export function validateManifestV1(value: unknown): ManifestV1 {
   rows("kinds", ["id", "schema", "storage", "claimed_text"], r => {
     schema(r.schema); if (typeof r.claimed_text !== "boolean") fail();
     if (r.searchable !== undefined && (typeof r.searchable !== "boolean" || (r.searchable && !r.claimed_text))) fail();
+    const live = typeof r.schema === "object" && r.schema !== null
+      ? (r.schema as Record<string, unknown>)["x-calternal-live-editing"] : undefined;
+    if (live !== undefined && (typeof live !== "boolean" || (live && !r.claimed_text))) fail();
     // Claimed text is Markdown; other kinds name a safe lowercase extension.
     if (r.extension === undefined ? !r.claimed_text : typeof r.extension !== "string" || !/^[a-z0-9]{1,16}$/.test(r.extension) || (r.claimed_text && r.extension !== "md")) fail();
     if (!r.storage || typeof r.storage !== "object" || Array.isArray(r.storage)) fail();
@@ -193,7 +196,10 @@ export function validateManifestV1(value: unknown): ManifestV1 {
     });
   }
   rows("attention", ["id", "operation"], op);
-  rows("settings", ["id", "value_type", "default"], r => { if (!["string", "boolean", "number"].includes(String(r.value_type)) || typeof r.default !== r.value_type || (typeof r.default === "number" && !Number.isFinite(r.default))) fail(); });
+  rows("settings", ["id", "value_type", "default"], r => {
+    if (!["string", "boolean", "number"].includes(String(r.value_type)) || typeof r.default !== r.value_type || (typeof r.default === "number" && !Number.isFinite(r.default))) fail();
+    if (r.scope != null && r.scope !== "space" && r.scope !== "personal") fail();
+  }, ["scope"]);
   rows("schedules", ["id", "operation", "expression"], r => { op(r); text(r.expression); });
   rows("webhooks", ["id", "operation"], op);
   rows("hooks", ["id", "mode", "patterns", "operation"], r => { op(r); if (!["watch", "block"].includes(String(r.mode)) || !Array.isArray(r.patterns) || !r.patterns.length || r.patterns.length > 128) fail(); for (const p of r.patterns as unknown[]) identifier(typeof p === "string" && p.endsWith(".*") ? p.slice(0, -2) : p); });

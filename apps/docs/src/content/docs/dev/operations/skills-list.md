@@ -58,12 +58,32 @@ Capability: space.read.
     "SkillMatch": {
       "description": "One externally placed space skill.",
       "properties": {
+        "agents": {
+          "default": [],
+          "description": "Harness labels selecting the skill. Empty means all eligible agents.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "description": {
           "description": "One-line description declared in the file.",
           "type": "string"
         },
+        "id": {
+          "description": "Stable content item for an application-managed skill.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "name": {
           "description": "Skill directory name.",
+          "type": "string"
+        },
+        "path": {
+          "default": "",
+          "description": "Path to SKILL.md relative to the space.",
           "type": "string"
         }
       },
