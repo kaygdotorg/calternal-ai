@@ -18,6 +18,7 @@ import type { ThreadEvents, ThreadsClient } from "../apps/threads/client";
 import type { Answer, Change, Message, Permission, ProviderOption, Request, RunInfo, RunsOn, Step, ThreadState, ThreadSummary } from "../apps/threads/model";
 import { ServerClient, ServerError } from "./client";
 import { ServerRequests } from "./requests";
+import { applyAppend, bodyOf, type Body } from "./thread-delta";
 import { SpaceFeed, type FeedEntry } from "./space-feed";
 import { parseMessages, providerPlugin, readinessNotice, reasonNotice, stateOfTurn, summaryOf, updatedAtOf, wireMode, type WireReadiness, type WireReason, type WireRow, type WireThread, type WireJob } from "./thread-file";
 
@@ -28,7 +29,12 @@ const trace = (...a: unknown[]) => { if (TRACE) console.debug(`[threads +${Date.
 
 const PROVIDERS: ProviderOption[] = [{ id: "claude", name: "Claude Code", models: [{ id: "default", name: "Default" }] }];
 
-interface Open { thread: WireThread; messages: Message[]; summary: ThreadSummary }
+/** One thread held in memory: the last read (its revision), its parsed messages, its summary and the Markdown as `Body` (bytes, so the next addition can be spliced in; the string is not kept). */
+interface Open { thread: WireThread; messages: Message[]; summary: ThreadSummary; body: Body; at: number }
+/** A checkpoint journal entry's `data`: the revision it reached and the addition (`threads.checkpoint`, docs/threads.md). */
+interface CheckpointData { revision: string; append: { base_revision: string; offset: number; start: number; length: number } }
+/** The answer to `threads.get` with `since`: the bytes to insert at `offset` of the body, taking `base_revision` to `revision`. */
+interface WireDelta { id: string; base_revision: string; revision: string; offset: number; markdown: string }
 /** The composer's choices for the next send, kept per thread on this page. */
 type Choices = Partial<Pick<ThreadSummary, "provider" | "model" | "permission" | "runsOn">>;
 
@@ -162,9 +168,37 @@ export class ServerThreads implements ThreadsClient {
       if (state === "waiting" || before === "waiting") void this.asks.refresh();
       return;
     }
-    if (e.kind === "threads.checkpoint" || e.kind === "threads.send") { if (this.follows.has(id)) this.later(`pull:${id}`, () => void this.pull(id)); }
+    const append = e.kind === "threads.checkpoint" ? (e.data as CheckpointData | undefined) : undefined;
+    // A checkpoint carries the bytes it added: apply it in order, no whole-file read; anything else that changed the thread says to read it.
+    if (append?.append && this.follows.has(id)) this.chain(id, () => this.advance(id, append));
     else if (this.follows.has(id)) this.later(`pull:${id}`, () => void this.pull(id));
     this.later("list", () => void this.refreshList());
+  }
+
+  /** Checkpoint additions of one thread are applied one at a time, in the order the journal gave them. */
+  private chains = new Map<string, Promise<void>>();
+  private chain(id: string, f: () => Promise<void>): void {
+    this.chains.set(id, (this.chains.get(id) ?? Promise.resolve()).then(f, f).catch(() => {}));
+  }
+  /**
+   * Brings the held thread to the revision a checkpoint reached by reading only what it added (`threads.get` with `since`). When the held revision is not the checkpoint's base, or the server says the
+   * addition is unavailable (`conflict`), or it cannot be placed, the whole thread is read once instead. Cost: one request of the added bytes; a decode and parse from the touched message to the end.
+   */
+  private async advance(id: string, data: CheckpointData): Promise<void> {
+    const have = this.opened.get(id);
+    if (!this.follows.has(id)) return;
+    if (!have || have.thread.revision === data.revision) { if (!have) await this.pull(id); return; }
+    if (have.thread.revision !== data.append.base_revision) return this.pull(id, true);
+    let delta: WireDelta | undefined;
+    try { delta = (await this.server.operate<{ delta?: WireDelta }>("threads.get", { id, space_id: this.space(), since: data })).delta; } catch { /* conflict, or the server is away: the whole read below */ }
+    if (!delta || delta.base_revision !== have.thread.revision || this.opened.get(id) !== have) return this.pull(id, true);
+    const next = applyAppend(have.body, have.messages, delta.offset, delta.markdown, have.summary.updatedAt, have.summary.updatedAt);
+    if (!next) return this.pull(id, true);
+    have.body = next.body; have.messages = next.messages;
+    have.thread = { ...have.thread, revision: delta.revision };
+    have.summary = { ...have.summary, messageCount: next.messages.length };
+    trace("delta", id.slice(0, 8), "rev", delta.revision.slice(0, 8), "bytes", delta.markdown.length, "messages", next.messages.length);
+    this.publish(id, have);
   }
 
   // ---- one thread ----
@@ -181,10 +215,10 @@ export class ServerThreads implements ThreadsClient {
     const base = this.summary(thread.id, thread.space_id, thread);
     if (job && !isFinal(job.state)) this.turns.set(id, { state: base.state, job: job.id });
     const have = this.opened.get(id);
-    if (have && have.thread.revision === thread.revision && !force) { have.summary = { ...base, messageCount: have.messages.length }; return have; }
+    if (have && have.thread.revision === thread.revision && !force) { have.at = Date.now(); have.summary = { ...base, messageCount: have.messages.length }; return have; }
     const updatedAt = updatedAtOf(thread.markdown ?? "", base.updatedAt);
     const messages = parseMessages(thread.markdown ?? "", base.updatedAt, updatedAt);
-    const open = { thread, messages, summary: { ...base, updatedAt: Math.max(base.updatedAt, updatedAt), messageCount: messages.length } };
+    const open: Open = { at: Date.now(), thread: { ...thread, markdown: undefined }, body: bodyOf(thread.markdown ?? ""), messages, summary: { ...base, updatedAt: Math.max(base.updatedAt, updatedAt), messageCount: messages.length } };
     this.opened.set(id, open);
     return open;
   }
@@ -194,7 +228,7 @@ export class ServerThreads implements ThreadsClient {
     return open.messages.slice(from, to);
   }
 
-  private texts = (ms: Message[]) => ms.map((m) => m.blocks.map((b) => (b.type === "text" ? b.text : "")).join(""));
+  private texts = (ms: Message[]) => ms.map((m) => m.blocks.map((b) => (b.type === "text" ? b.text : b.type === "steps" ? b.steps.map((x) => x.status + x.title + (x.output ?? "")).join("|") : "")).join("\u0001"));
   private seen = new Map<string, string[]>();
   /** Re-reads the thread and tells the view about every message that is new or changed since the last read. */
   private async pull(id: string, force = false): Promise<void> {
@@ -203,9 +237,15 @@ export class ServerThreads implements ThreadsClient {
     let open: Open;
     trace("pull start", id.slice(0, 8), force ? "forced" : "");
     try { open = await this.load(id, force); } catch { return; }
+    this.publish(id, open);
+  }
+  /** Tells the view about every message that is new or changed since it was last told, and the summary. */
+  private publish(id: string, open: Open): void {
+    const f = this.follows.get(id);
+    if (!f) return;
     const before = this.seen.get(id) ?? [];
     const now = this.texts(open.messages);
-    trace("pull read", id.slice(0, 8), "rev", open.thread.revision.slice(0, 8), "messages", now.length, "state", open.summary.state);
+    trace("publish", id.slice(0, 8), "rev", open.thread.revision.slice(0, 8), "messages", now.length, "state", open.summary.state);
     open.messages.forEach((m, i) => { if (now[i] !== before[i]) f.ev.onMessage(m, i); });
     this.seen.set(id, now);
     f.ev.onSummary({ ...open.summary, ...this.known(id) } as ThreadSummary);
@@ -218,11 +258,12 @@ export class ServerThreads implements ThreadsClient {
     // Opening (or reloading mid-turn): read the thread, and follow the turn it says is running.
     void (async () => {
       try {
-        const o = await this.load(id, true);
+        // A read the page made a moment ago (the header's) is the one to start from: opening reads the whole thread once, not once per component.
+        const known = this.opened.get(id);
+        const o = known && Date.now() - known.at < 3000 ? known : await this.load(id, true);
         const t = this.turns.get(id);
         if (t?.state === "running" && t.job && !this.streams.has(id)) void this.follow(id, t.job);
-        await this.pull(id);
-        void o;
+        this.publish(id, o);
       } catch { /* the view shows what it has */ }
     })();
     return () => { this.follows.delete(id); this.seen.delete(id); this.streams.get(id)?.abort(); this.streams.delete(id); clearTimeout(this.timers.get(`pull:${id}`)); this.maybeStopFeed(); };
@@ -260,7 +301,7 @@ export class ServerThreads implements ThreadsClient {
     // The turn ended (or the stream did): the saved file has the answer, and the journal has said what state it is in.
     this.streams.delete(id);
     this.follows.get(id)?.ev.onStreamEnd?.();
-    await this.pull(id, true);
+    // The saved checkpoints reach the page as additions through the journal, in order; the end of the stream needs no read of its own.
   }
 
   async send(id: string, text: string, requestId: string): Promise<void> {
