@@ -86,6 +86,15 @@ pub enum People {
         /// Account UUID of the new owner.
         account: String,
     },
+    /// Permanently erase your account or, as a server admin, another account.
+    #[command(
+        after_help = "Verify your passkey in a browser or native installation before deleting an account. Transfer shared spaces with calternal people transfer first."
+    )]
+    Delete {
+        /// Omit to delete your own account.
+        #[arg(long)]
+        account: Option<String>,
+    },
     /// Show the available space roles and their capabilities.
     Roles,
     /// Change your own account display name.
@@ -215,6 +224,10 @@ impl People {
             Self::Transfer { space, account } => (
                 Op::TransferOwnership.id(),
                 json!({"space_id":space,"account_id":account}),
+            ),
+            Self::Delete { account } => (
+                calternal_core::ACCOUNT_ERASURE_ACTION,
+                json!({"account_id":account}),
             ),
             Self::Roles => (Op::ListRoles.id(), json!({})),
             Self::SetProfile { name } => (Op::SetProfile.id(), json!({"name":name})),

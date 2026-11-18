@@ -28,8 +28,8 @@ resolution sequence/hash (the current resolved chain head).
 The existing transactional dirty-owner triggers and indexed capture remain.
 Account records contain credentials, enrollment-token hashes, installations and
 revocations, server roles, group membership and retry receipts.
-Space records contain only space metadata and memberships. Groups/invites have
-separate records; global policy holds the closed schema/role inventory and unbound
+Space records contain only space metadata and memberships. Groups, invites and
+owner erasure markers have separate records; global policy holds the closed schema/role inventory and unbound
 enrollment tokens. Unknown auth tables refuse configuration. AccountId and SpaceId
 remain distinct; a snapshot refuses accounts and spaces sharing a UUID.
 
@@ -95,6 +95,13 @@ can leave an unused segment, but never require selecting a fallback generation.
 Admission removes unused segments under root locks after replay succeeds.
 A missing snapshot or selected segment refuses, even if obsolete segments remain.
 Atomic snapshot-write interiors use the ported fsio durability primitive.
+
+Owner erasure forces the existing compaction path before clearing its protected
+pending flag. The old generation can contain previous authority records for the
+erased owner. Recovery keeps the minimal erased UUID and key fingerprint,
+while the replacement snapshot captures only current authority. The auth WAL
+is checkpointed and truncated before the completion marker. Startup retries
+cleanup if that marker is still pending.
 
 Integrity and freshness limits
 ------------------------------

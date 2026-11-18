@@ -73,6 +73,7 @@ impl MachineService {
                 "no execution machine has capacity for this plugin worker",
             ));
         }
+        let _steps = st.lease_steps(&st.leases[&lease].row)?;
         let id = Uuid::new_v4();
         let mut exec = Exec::new(lease, account, argv, vec![], ExecState::Queued);
         exec.interactive = true;
@@ -101,6 +102,7 @@ impl MachineService {
             .ok_or_else(|| Error::not_found("worker exec not found"))?;
         let lease = e.lease;
         let l = &st.leases[&lease];
+        let _steps = st.lease_steps(&l.row)?;
         let machine = l
             .row
             .machine

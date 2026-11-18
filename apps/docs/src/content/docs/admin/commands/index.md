@@ -13,6 +13,7 @@ title: "Command reference"
 - [calternal-people-add](./calternal-people-add/)
 - [calternal-people-set-role](./calternal-people-set-role/)
 - [calternal-people-remove](./calternal-people-remove/)
+- [calternal-people-delete](./calternal-people-delete/)
 - [calternal-people-transfer](./calternal-people-transfer/)
 - [calternal-people-disable](./calternal-people-disable/)
 - [calternal-groups-list](./calternal-groups-list/)

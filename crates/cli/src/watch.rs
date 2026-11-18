@@ -70,7 +70,14 @@ pub async fn run(
                 ("Change", entry["kind"].as_str().unwrap_or("change").into()),
                 ("Item", entry["item"].as_str().unwrap_or("").into()),
                 ("Sequence", entry["seq"].to_string()),
-                ("Author", entry["author"].as_str().unwrap_or("").into()),
+                (
+                    "Author",
+                    entry["author_label"]
+                        .as_str()
+                        .or_else(|| entry["author"].as_str())
+                        .unwrap_or("")
+                        .into(),
+                ),
                 (
                     "Time",
                     entry["at_ms"]

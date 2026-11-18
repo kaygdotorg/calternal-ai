@@ -31,7 +31,11 @@ fn connection<D: Directory>(
     space: SpaceId,
 ) -> Result<std::sync::Arc<JobDatabase>, Error> {
     let conn = state.jobs.conn(&space.to_string())?;
-    if !is_attached(&conn.lock().unwrap_or_else(|p| p.into_inner())) {
+    let attached = {
+        let locked = conn.lock().map_err(index_error)?;
+        is_attached(&locked)
+    };
+    if !attached {
         // Initialize the content schema before attaching. Release the jobs lock
         // above first: writer paths acquire content before jobs.
         state.store.content().live_journal(space)?;
@@ -110,7 +114,7 @@ pub(super) fn page<D: Directory>(
     // RFC 3339 timestamps sort before the first-page bound.
     let (updated_at, id) = position.unwrap_or_else(|| ("~".into(), String::new()));
     let conn = connection(state, space)?;
-    let conn = conn.lock().unwrap_or_else(|p| p.into_inner());
+    let conn = conn.lock().map_err(index_error)?;
     attach(&conn)?;
     let mut stmt = conn.prepare_cached(summaries()).map_err(index_error)?;
     let rows = stmt
@@ -166,7 +170,7 @@ pub(crate) fn readiness_context<D: Directory>(
     account: calternal_types::AccountId,
 ) -> Result<(Option<Uuid>, Value), Error> {
     let conn = connection(state, space)?;
-    let conn = conn.lock().unwrap_or_else(|p| p.into_inner());
+    let conn = conn.lock().map_err(index_error)?;
     attach(&conn)?;
     let mut stmt = conn.prepare_cached(
         "SELECT i.id, (

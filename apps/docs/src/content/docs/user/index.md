@@ -8,5 +8,6 @@ title: "Using Calternal"
 
 - [Spaces and roles](./spaces-and-roles/)
 - [People and access](./people/)
+- [Owner erasure](./owner-erasure/)
 - [Threads](./threads/)
 - [Permission modes](./permissions-modes/)

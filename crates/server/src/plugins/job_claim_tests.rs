@@ -51,6 +51,23 @@ fn native_claim_checks_operation_and_account_in_the_claim_transaction() {
     let running = jobs.get(&space, &native).unwrap().unwrap().view();
     assert_eq!(running.state, calternal_core::JobState::Running);
     assert_eq!(running.checkpoint, placement);
+
+    let queued = admit("fixture.run", "erase-queued", "fixture");
+    jobs.lifecycle.close(account.as_uuid());
+    jobs.lifecycle.drain(account.as_uuid());
+    assert_eq!(
+        jobs.claim(&space, &queued).err().unwrap().code,
+        calternal_types::ErrorCode::NotFound
+    );
+    assert_eq!(
+        jobs.get(&space, &queued).unwrap().unwrap().state,
+        calternal_core::JobState::Admitted
+    );
+    jobs.retire_account(account).unwrap();
+    assert_eq!(
+        jobs.get(&space, &queued).unwrap().unwrap().state,
+        calternal_core::JobState::Cancelled
+    );
 }
 
 #[test]

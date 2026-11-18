@@ -150,7 +150,8 @@ impl Auth {
     }
 
     /// Lists one UUID-ordered invitation page in an authorized snapshot.
-    /// Managers see their own ordinary grants. The Owner can see all grants.
+    /// Managers see their own ordinary grants and invites revoked by account erasure.
+    /// The Owner can see all grants.
     /// The server decrypts only usable links on the returned page.
     pub fn list_invites(
         &self,
@@ -171,12 +172,14 @@ impl Auth {
                                     WHERE editor.role='editor' AND editor.capability=r.capability)
                  )
                  SELECT id,space_role,created_at,expires_at,used_at,revoked_at,secret
-                 FROM invites WHERE space_id=?1 AND id>?5 AND expires_at>?2
-                   AND (?3 OR (created_by=?4 AND space_role NOT IN (SELECT role FROM privileged)))
+                 FROM invites WHERE space_id=?1 AND id>?5
+                   AND ((expires_at>?2 AND (?3 OR (created_by=?4 AND space_role NOT IN (SELECT role FROM privileged))))
+                     OR (created_by IS NULL AND revoked_at IS NOT NULL
+                         AND min(expires_at,coalesce(used_at,expires_at),revoked_at)>?7))
                  ORDER BY id LIMIT ?6",
             ).map_err(sql)?;
             let after = after.map_or_else(String::new, |id| id.to_string());
-            let mut rows = stmt.query(params![space.to_string(), now, owner, actor.to_string(), after, take_one_more() as i64]).map_err(sql)?;
+            let mut rows = stmt.query(params![space.to_string(), now, owner, actor.to_string(), after, take_one_more() as i64, now.saturating_sub(i64::try_from(inner.config.invite_retention.as_millis()).unwrap_or(i64::MAX))]).map_err(sql)?;
             let mut invites = Vec::new();
             while let Some(row) = rows.next().map_err(sql)? {
                 let id: String = row.get(0).map_err(sql)?;
@@ -233,11 +236,11 @@ impl Auth {
     ) -> Result<Value> {
         self.spaces().mutate(actor, Some(space), Some(receipt), move |tx| {
             require(tx, actor, space, PeopleOperation::RevokeInvite.capability().name())?;
-            let (creator, role): (String, String) = tx.query_row(
+            let (creator, role): (Option<String>, String) = tx.query_row(
                 "SELECT created_by,space_role FROM invites WHERE space_id=?1 AND id=?2",
                 params![space.to_string(),id.to_string()], |r| Ok((r.get(0)?,r.get(1)?)),
             ).optional().map_err(sql)?.ok_or_else(missing)?;
-            if !is_owner(tx, actor, space)? && (creator != actor.to_string() || privileged(tx, &role)?) {
+            if !is_owner(tx, actor, space)? && (creator.as_deref() != Some(&actor.to_string()) || privileged(tx, &role)?) {
                 return Err(missing());
             }
             Ok(move |tx: &rusqlite::Transaction<'_>| {

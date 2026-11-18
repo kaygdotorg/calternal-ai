@@ -10,6 +10,7 @@ pub mod api;
 pub mod auth;
 pub mod authz;
 pub mod blocking;
+pub mod erasure;
 pub mod fault;
 pub mod machines;
 mod notes;

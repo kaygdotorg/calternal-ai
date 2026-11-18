@@ -15,9 +15,9 @@ impl Jobs {
         value: Option<AgentRetrySettings>,
         defaults: AgentRetrySettings,
     ) -> Result<AgentRetrySettings, Error> {
-        if calternal_types::AccountId::parse(account).is_err() {
-            return Err(Error::not_found("account not found"));
-        }
+        let account_id = calternal_types::AccountId::parse(account)
+            .map_err(|_| Error::not_found("account not found"))?;
+        let _step = self.lifecycle.step(account_id.as_uuid())?;
         let root = self
             .root
             .as_ref()

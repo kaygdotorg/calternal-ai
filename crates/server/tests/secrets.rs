@@ -490,3 +490,51 @@ async fn protected_key_records_refuse_missing_keys_and_finish_erasure() {
     .await
     .unwrap();
 }
+
+#[tokio::test]
+async fn stale_space_writer_cannot_reopen_after_http_delete() {
+    let fixture = Fixture::new(Some("reader")).await;
+    let space = calternal_types::SpaceId::parse(&fixture.shared).unwrap();
+    let id = fixture
+        .state
+        .directory
+        .authenticate(fixture.owner.as_bytes())
+        .unwrap()
+        .id;
+    let state = fixture.state.clone();
+    let stale = tokio::task::spawn_blocking(move || state.store.content().live_journal(space))
+        .await
+        .unwrap()
+        .unwrap();
+    let (status, response) = fixture
+        .call(&fixture.owner, "spaces.delete", json!({"space_id":space}))
+        .await;
+    assert_eq!(status, StatusCode::OK, "{response}");
+    let state = fixture.state.clone();
+    let error = tokio::task::spawn_blocking(move || {
+        state.store.create(
+            id,
+            "stale-owner-write",
+            "notes.create",
+            "stale",
+            space,
+            "Stale",
+            "body",
+        )
+    })
+    .await
+    .unwrap()
+    .unwrap_err();
+    assert_eq!(error.code, calternal_types::ErrorCode::NotFound);
+    assert!(
+        stale
+            .commit(calternal_store::Commit {
+                events: vec![],
+                idempotency: None,
+                durable: true
+            })
+            .await
+            .is_err()
+    );
+    assert!(!fixture.root.join("spaces").join(space.to_string()).exists());
+}

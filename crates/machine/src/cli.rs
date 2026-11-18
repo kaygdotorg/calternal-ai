@@ -238,20 +238,39 @@ fn fail(command: &str, e: Error) -> CliError {
 }
 
 /// The identity block shared by `enroll` and `status`.
-fn identity(c: &Credentials, dir: &std::path::Path) -> Reply {
-    Reply::new(json!({
+fn identity(
+    c: &Credentials,
+    dir: &std::path::Path,
+    status: Option<(&str, Option<u64>, &str)>,
+) -> Reply {
+    let mut data = json!({
         "machine_id": c.machine_id,
         "owner": owner_label(c.owner),
         "server": c.server,
         "credentials_file": Credentials::path(dir),
-    }))
-    .fields([
+    });
+    if let Some((state, count, _)) = status {
+        data["erasure_status"] = json!(state);
+        if let Some(count) = count {
+            data["pending_erasures"] = json!(count);
+        }
+    }
+    let reply = Reply::new(data).fields([
         ("machine", c.machine_id.to_string()),
         ("owner", owner_label(c.owner)),
         ("server", c.server.clone()),
         ("credentials", Credentials::path(dir).display().to_string()),
-    ])
-    .hint("Next: run `calternal machine run` to accept assigned threads.")
+    ]);
+    if let Some((state, count, hint)) = status {
+        reply
+            .fields([(
+                "pending erasures",
+                count.map_or_else(|| state.replace('_', " "), |n| n.to_string()),
+            )])
+            .hint(hint)
+    } else {
+        reply.hint("Next: run `calternal machine run` to accept assigned threads.")
+    }
 }
 
 async fn run(cmd: Command) -> Result<Reply, CliError> {
@@ -279,7 +298,7 @@ async fn run(cmd: Command) -> Result<Reply, CliError> {
             let creds = enroll::enroll(&server, &code, &dir, &name, direct)
                 .await
                 .map_err(|e| fail("machine enroll", e))?;
-            Ok(identity(&creds, &dir))
+            Ok(identity(&creds, &dir, None))
         }
         Command::Discard {
             account_id,
@@ -321,7 +340,34 @@ async fn run(cmd: Command) -> Result<Reply, CliError> {
                 .hint("Run `calternal machine enroll --server URL --code CODE`, or pass the right --dir."),
                 _ => fail("machine status", e),
             })?;
-            Ok(identity(&creds, &dir))
+            let status = match connection::erasure_status(&creds).await {
+                Ok(status) if status.pending_erasures == 0 => (
+                    "clear",
+                    Some(0),
+                    "Run calternal machine run to accept work.",
+                ),
+                Ok(status) => (
+                    "pending",
+                    Some(status.pending_erasures),
+                    "Run calternal machine run to apply and acknowledge erasures.",
+                ),
+                Err(error)
+                    if matches!(error, Error::Revoked)
+                        || matches!(error.status(), Some(403 | 404)) =>
+                {
+                    (
+                        "operator_wipe",
+                        None,
+                        "Ask the operator to check calternal machines list and wipe the machine-role data.",
+                    )
+                }
+                Err(_) => (
+                    "unavailable",
+                    None,
+                    "Reconnect to the server or ask the operator to check calternal machines list.",
+                ),
+            };
+            Ok(identity(&creds, &dir, Some(status)))
         }
         Command::Run {
             dir,
@@ -417,14 +463,24 @@ mod tests {
         let r = identity(
             &creds(),
             Path::new("/home/u/.local/share/calternal/machine"),
+            None,
         );
         let text = Output::fixed(false, None, UtcOffset::UTC).render(&r);
         assert!(
             !text.to_lowercase().contains("key"),
             "no key material: {text}"
         );
-        both("machine-enroll", "calternal machine enroll", Ok(r.clone()));
-        both("machine-status", "calternal machine status", Ok(r));
+        both("machine-enroll", "calternal machine enroll", Ok(r));
+        let status = identity(
+            &creds(),
+            Path::new("/home/u/.local/share/calternal/machine"),
+            Some((
+                "pending",
+                Some(2),
+                "Run calternal machine run to apply and acknowledge erasures.",
+            )),
+        );
+        both("machine-status", "calternal machine status", Ok(status));
     }
     #[test]
     fn run_and_revoked_outcomes() {
@@ -481,6 +537,7 @@ mod tests {
         let reply = identity(
             &creds(),
             Path::new("/home/u/.local/share/calternal/machine"),
+            None,
         );
         let terminal = Output::fixed_terminal(false, 120, UtcOffset::UTC, true);
         let no_hints = Output::fixed_terminal(false, 120, UtcOffset::UTC, false);

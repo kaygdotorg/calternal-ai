@@ -169,7 +169,7 @@ pub fn machines(cmd: MachinesCmd, out: &Output) -> Result<Reply, CliError> {
             .hint("Next: run `calternal machine enroll` on that computer."))
         }
         MachinesCmd::List { installation } => {
-            let Response::List { machines } = run(installation, Request::List)? else {
+            let Response::List { machines, erasures } = run(installation, Request::List)? else {
                 return Err(unexpected());
             };
             let state = |m: &admin::MachineSummary| {
@@ -201,11 +201,33 @@ pub fn machines(cmd: MachinesCmd, out: &Output) -> Result<Reply, CliError> {
                 })
                 .collect();
             let empty = machines.is_empty();
-            let reply = Reply::new(json!({ "machines": listed })).table(
-                &["ID", "OWNER", "NAME", "PLATFORM", "STATE"],
-                rows,
-                "No machines are enrolled yet. Run `calternal machines code` to add one.",
-            );
+            let mut reply = Reply::new(json!({ "machines": listed, "pending_erasures": erasures }))
+                .table(
+                    &["ID", "OWNER", "NAME", "PLATFORM", "STATE"],
+                    rows,
+                    "No machines are enrolled yet. Run `calternal machines code` to add one.",
+                );
+            if !erasures.is_empty() {
+                reply = reply.blank().line("Pending machine erasures").table(
+                    &["MACHINE", "PENDING", "ACTION"],
+                    erasures
+                        .iter()
+                        .map(|entry| {
+                            vec![
+                                entry.machine_id.to_string(),
+                                entry.pending.to_string(),
+                                if entry.operator_wipe {
+                                    "Operator wipe"
+                                } else {
+                                    "Awaiting machine acknowledgement"
+                                }
+                                .to_owned(),
+                            ]
+                        })
+                        .collect(),
+                    "",
+                );
+            }
             Ok(if empty {
                 reply.hint("Next: run `calternal machines code --help`.")
             } else {

@@ -29,6 +29,7 @@ pub struct Store {
     roots: calternal_roots::Roots,
     secrets: std::sync::Arc<calternal_secrets::LocalStore>,
     installation: Uuid,
+    machines: std::sync::OnceLock<std::sync::Weak<crate::machines::MachineService>>,
     /// Process-lifetime key for authenticated, stateless list cursors.
     pub(crate) cursor_key: ring::hmac::Key,
     // Dropped last: every database and file handle above closes first.
@@ -115,6 +116,21 @@ impl Store {
     pub fn appdata(&self) -> &std::path::Path {
         &self.appdata
     }
+    /// Borrow the locked roots for resumable owner removal. Cost: no I/O.
+    pub(crate) fn roots(&self) -> &calternal_roots::Roots {
+        &self.roots
+    }
+
+    /// Attach placement needed for owner cleanup before erasure replay.
+    /// The weak handle leaves machine ownership with the host runtime.
+    pub fn bind_machines(&self, machines: &std::sync::Arc<crate::machines::MachineService>) {
+        let _ = self.machines.set(std::sync::Arc::downgrade(machines));
+    }
+
+    pub(crate) fn machines(&self) -> Option<std::sync::Arc<crate::machines::MachineService>> {
+        self.machines.get().and_then(std::sync::Weak::upgrade)
+    }
+
     /// Opens the installation's protected security log in userdata-ssd
     /// (`.calternal/recovery`), bound to the pinned installation ID. `create`
     /// provisions its directory at first setup; otherwise a missing log is refused,
@@ -186,7 +202,8 @@ impl Store {
         // Owner keys are opened on access. The host attaches recovery and validates
         // protected fingerprints before admission through secrets::configure_keys.
         let secrets = calternal_secrets::LocalStore::open(&root)
-            .map_err(|e| Error::unavailable(e.to_string()))?;
+            .map_err(|e| Error::unavailable(e.to_string()))?
+            .with_owner_lifecycle(content.lifecycle());
         let cursor_key =
             ring::hmac::Key::generate(ring::hmac::HMAC_SHA256, &ring::rand::SystemRandom::new())
                 .map_err(|_| Error::unavailable("cursor entropy unavailable"))?;
@@ -197,6 +214,7 @@ impl Store {
             roots: roots.clone(),
             secrets: std::sync::Arc::new(secrets),
             installation,
+            machines: std::sync::OnceLock::new(),
             _roots: locks,
         })
     }

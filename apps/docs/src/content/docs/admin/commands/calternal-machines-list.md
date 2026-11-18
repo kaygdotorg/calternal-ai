@@ -23,6 +23,13 @@ title: "calternal machines list"
       "arch": "string",
       "state": "string"
     }
+  ],
+  "pending_erasures": [
+    {
+      "machine_id": "string",
+      "pending": "integer",
+      "operator_wipe": "bool"
+    }
   ]
 }
 ```
@@ -66,7 +73,8 @@ exit: 0
         "owner": "account:cccccccc-cccc-7ccc-8ccc-cccccccccccc",
         "state": "enrolled"
       }
-    ]
+    ],
+    "pending_erasures": []
   },
   "ok": true
 }

@@ -63,6 +63,7 @@ impl Content {
         request: Request<'_>,
         markdown: &str,
     ) -> Result<()> {
+        let _actor = self.lifecycle.step(request.account.as_uuid())?;
         if markdown.len() > LIMIT {
             return Err(Error::invalid_input("standing instructions exceed 16 KiB"));
         }

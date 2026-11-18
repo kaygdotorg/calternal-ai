@@ -11,7 +11,7 @@ use calternal_machine::protocol::{
     Capacity, Chunk, ChunkEvent, Down, Envelope, ExitInfo, LeaseReport, Owner, SandboxSpec,
     SandboxState,
 };
-use calternal_types::AccountId;
+use calternal_types::{AccountId, Error};
 use tokio::sync::Notify;
 use uuid::Uuid;
 
@@ -145,7 +145,10 @@ impl Exec {
 /// Everything the registry knows. Bounded: challenges by `MAX_CHALLENGES`,
 /// finished execs by ten minutes, sessions by one per machine.
 pub(super) struct State {
+    pub lifecycle: Arc<std::sync::OnceLock<calternal_types::OwnerLifecycle>>,
     pub db: rusqlite::Connection,
+    /// Machines with at least one durable erasure. Idle syncs need no SQL read.
+    pub pending_erasure_machines: HashSet<Uuid>,
     /// Recovery-protected machine authority in `auth.db`.
     pub authority: calternal_auth::machines::Machines,
     pub machines: HashMap<Uuid, Machine>,
@@ -163,6 +166,22 @@ pub(super) struct State {
 }
 
 impl State {
+    /// Pin durable work or message delivery to both principals of the lease.
+    pub(super) fn lease_steps(
+        &self,
+        row: &db::LeaseRow,
+    ) -> Result<Option<(calternal_types::OwnerStep, calternal_types::OwnerStep)>, Error> {
+        self.lifecycle
+            .get()
+            .map(|owners| {
+                Ok((
+                    owners.step(row.account.as_uuid())?,
+                    owners.step(row.space.as_uuid())?,
+                ))
+            })
+            .transpose()
+    }
+
     pub fn push(&mut self, machine: Uuid, message: Down) {
         if let Some(live) = self
             .machines
@@ -191,6 +210,9 @@ impl State {
         let Some(l) = self.leases.get(&lease) else {
             return;
         };
+        let Ok(_steps) = self.lease_steps(&l.row) else {
+            return;
+        };
         let Some(machine) = l.row.machine else { return };
         let msg = Down::Assign {
             lease_id: lease,
@@ -212,6 +234,9 @@ impl State {
     /// Send every unfinished exec of an assigned lease; the machine ignores repeats.
     pub fn send_execs(&mut self, lease: Uuid) {
         let Some(l) = self.leases.get(&lease) else {
+            return;
+        };
+        let Ok(_steps) = self.lease_steps(&l.row) else {
             return;
         };
         let (Some(machine), fence) = (l.row.machine, l.row.fence) else {
@@ -433,16 +458,29 @@ impl State {
 
     /// Give a lease to a machine with a new fence. One commit.
     fn assign(&mut self, lease: Uuid, machine: Uuid, settings: &Settings) {
-        let Some(l) = self.leases.get_mut(&lease) else {
+        let Some(l) = self.leases.get(&lease) else {
             return;
         };
-        l.row.fence += 1;
-        l.row.machine = Some(machine);
-        l.row.last_machine = Some(machine);
-        l.row.reason = None;
+        let Ok(_steps) = self.lease_steps(&l.row) else {
+            return;
+        };
+        let mut row = l.row.clone();
+        row.fence += 1;
+        row.machine = Some(machine);
+        row.last_machine = Some(machine);
+        row.reason = None;
+        row.state = LeaseState::Assigned.as_str().into();
+        if let Err(error) = db::put_assignment(&mut self.db, &row) {
+            tracing::error!(%lease, %error, "cannot persist machine assignment");
+            return;
+        }
+        let l = self
+            .leases
+            .get_mut(&lease)
+            .expect("existing lease under registry lock");
+        l.row = row;
         l.state = LeaseState::Assigned;
         self.take_slot(Some(machine));
-        self.persist(lease);
         self.send_assign(lease, settings);
         self.send_execs(lease);
     }
@@ -452,7 +490,7 @@ impl State {
     /// its sandbox, and stop everything else.
     pub fn reconcile(&mut self, machine: Uuid, reports: &[LeaseReport], settings: &Settings) {
         for r in reports {
-            let Some(l) = self.leases.get_mut(&r.lease_id) else {
+            let Some(l) = self.leases.get(&r.lease_id) else {
                 self.push(
                     machine,
                     Down::Stop {
@@ -463,6 +501,21 @@ impl State {
                 );
                 continue;
             };
+            let Ok(_steps) = self.lease_steps(&l.row) else {
+                self.push(
+                    machine,
+                    Down::Stop {
+                        lease_id: r.lease_id,
+                        reason: "owner erased".into(),
+                        keep_files: !l.row.worker,
+                    },
+                );
+                continue;
+            };
+            let l = self
+                .leases
+                .get_mut(&r.lease_id)
+                .expect("existing lease under registry lock");
             let keep_files = !l.row.worker;
             let current = l.row.machine == Some(machine)
                 && l.row.fence == r.fence

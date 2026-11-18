@@ -1,8 +1,10 @@
 {
   "data": {
     "credentials_file": "/home/u/.local/share/calternal/machine/credentials",
+    "erasure_status": "pending",
     "machine_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
     "owner": "pool",
+    "pending_erasures": 2,
     "server": "https://cal.example.org"
   },
   "ok": true

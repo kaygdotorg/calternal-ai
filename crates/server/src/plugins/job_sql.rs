@@ -15,6 +15,7 @@ pub(super) const SCHEMA: &str = "BEGIN IMMEDIATE;
 CREATE TABLE IF NOT EXISTS jobs(id TEXT PRIMARY KEY,plugin TEXT NOT NULL,account TEXT NOT NULL,session TEXT NOT NULL,operation TEXT NOT NULL,input TEXT NOT NULL,parent TEXT,state TEXT NOT NULL,checkpoint TEXT NOT NULL,checkpoint_seq INTEGER NOT NULL,checkpoints INTEGER NOT NULL,result TEXT NOT NULL,runs INTEGER NOT NULL,generation INTEGER NOT NULL,request_key TEXT UNIQUE,finished_ms INTEGER) STRICT;
 CREATE INDEX IF NOT EXISTS jobs_thread ON jobs(json_extract(input,'$.request.thread_id')) WHERE operation='agent.turn';
 CREATE INDEX IF NOT EXISTS jobs_state ON jobs(state);
+CREATE INDEX IF NOT EXISTS jobs_account_state ON jobs(account,state);
 CREATE INDEX IF NOT EXISTS jobs_parent ON jobs(parent);
 CREATE INDEX IF NOT EXISTS jobs_finished ON jobs(finished_ms) WHERE finished_ms IS NOT NULL;
 CREATE TABLE IF NOT EXISTS child_results(parent TEXT NOT NULL,child TEXT NOT NULL,state TEXT NOT NULL,result TEXT NOT NULL,PRIMARY KEY(parent,child)) STRICT;
@@ -256,7 +257,7 @@ impl Jobs {
     /// Child results recorded for `parent`, in report order. Cost: one indexed scan.
     pub fn children(&self, space: &str, parent: &str) -> Result<Vec<ChildResult>, Error> {
         let conn = self.conn(space)?;
-        let c = conn.lock().unwrap_or_else(|p| p.into_inner());
+        let c = conn.lock().map_err(db_err)?;
         let mut st = c
             .prepare("SELECT child,state,result FROM child_results WHERE parent=?1 ORDER BY rowid")
             .map_err(db_err)?;
