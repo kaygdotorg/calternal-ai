@@ -15,7 +15,9 @@ use uuid::Uuid;
 pub(super) use query::search;
 pub(super) use writer::{Progress, advance};
 const WIDTH: usize = 16_384;
-const GENERATION: &str = concat!("1/", env!("CARGO_PKG_VERSION"));
+/// Generation of the message postings and thread-location rows. Bump it when what
+/// they mean changes; a mismatch rebuilds the space's index from saved threads.
+const GENERATION: &str = "1";
 
 /// One record in a validated immutable thread revision. Ranges address that exact
 /// revision's staged Markdown, excluding any materialization-only identity line.
