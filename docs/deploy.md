@@ -102,16 +102,44 @@ resolver. The allowlist starts empty. List public control-plane and other
 operator-managed service ranges in `deny` before adding any allowed ranges. The host firewall drops incoming guest
 connections, traffic between guests, host-local access, private destinations
 and metadata traffic. It permits replies to authorized egress and NATs approved
-traffic on the uplink. The operator owns changes to provider and package IPs.
+traffic on the uplink.
+
+List the approved addresses for these HTTPS endpoints on TCP 443:
+
+| Workload | Endpoints |
+| --- | --- |
+| Direct Claude Code turns | `api.anthropic.com`. |
+| Claude subscription sign-in and refresh | `platform.claude.com` for OAuth token exchange and refresh. The browser performing sign-in also needs `claude.com` and `claude.ai`, plus `sso.claude.com` where the organization uses SSO. Apply the browser requirements wherever the browser runs. |
+| npm package installs | `registry.npmjs.org` or the configured registry or mirror. Include approved tarball hosts, Git sources, or binary download hosts required by the project's lockfile and install scripts. |
+| Python installs from public PyPI | `pypi.org` for the index and `files.pythonhosted.org` for distributions. |
+| Rust installs from the public sparse registry | `index.crates.io` for the index and `static.crates.io` for crates. |
+
+For other package managers, list the approved index and artifact download
+hosts for the registries the project uses. The guest image already includes
+the pinned Claude Code binary. Add endpoints for optional Claude Code
+features only when the operator enables those features.
+[Claude Code network requirements](https://code.claude.com/docs/en/network-config#network-access-requirements)
+[npm registry documentation](https://docs.npmjs.com/cli/v11/using-npm/registry/)
+[PyPI index API](https://docs.pypi.org/api/index-api/)
+[Cargo registry configuration](https://index.crates.io/config.json)
+
+Resolve approved hostnames using the configured guest resolver and record the
+reviewed IPv4 addresses or published destination CIDRs in `allow`. The firewall
+matches IPs and ports. Refresh the same JSON file when DNS answers, provider
+ranges, registry configuration, or package download sources change. Remove
+superseded entries and retain the explicit `deny` ranges.
 
 With the role stopped, run `deploy/microvm/install-egress.py POLICY.json`
 as the namespace operator. It installs the firewall transaction and writes
-a bounded receipt beside the policy. Set `network_policy` in the machine
-config to the absolute JSON path and run the unprivileged machine role in the
-same namespace. The role verifies that the receipt matches the policy,
-namespace and current host boot before opening a TAP. Missing or mismatched
-files prevent networked startup. Guests run without a NIC when the setting
-is omitted. A KVM fallback uses network-disabled Podman containers.
+a bounded receipt beside the policy. Use the same stop, install, and restart
+sequence after each update. Set `network_policy` in the machine config to the
+absolute JSON path and run the unprivileged machine role in the same
+namespace. The role verifies that the receipt matches the policy, namespace
+and current host boot before opening a TAP. Missing or mismatched files
+prevent networked startup. After restart, verify a disposable Claude turn and
+a package download through the updated policy. Guests run without a NIC
+when the setting is omitted. A KVM fallback uses network-disabled Podman
+containers.
 
 To roll back, stop the machine role, remove its policy receipt, and remove
 `network_policy` before restarting offline. Remove the dedicated namespace
