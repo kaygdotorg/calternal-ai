@@ -69,6 +69,23 @@ export interface ThreadSummary {
   notice?: ThreadNotice;
 }
 
+/** One message that matched a search in the threads: where it is, when it was written and the line that matched, so a result can open the thread scrolled to it. */
+export interface MessageHit {
+  /** The message's id (stable across reloads; `?m=<id>` on a thread's address scrolls to it). */
+  messageId: string;
+  /** The thread it is in. */
+  threadId: string;
+  /** That thread's title, for the result row. */
+  threadTitle: string;
+  /** Milliseconds since the epoch the message was written; results are newest first. */
+  at: number;
+  /** The line of the message that matched, trimmed. */
+  line: string;
+  /** Where the match is in `line` (start inclusive, end exclusive), for highlighting. */
+  start: number;
+  end: number;
+}
+
 /** A provider and the models it offers. Switching is a composer control and never creates a thread or a visible message. */
 export interface ProviderOption {
   /** The provider's id, as the thread summary names it. */
@@ -100,6 +117,8 @@ export interface Step {
   status: "ok" | "failed" | "running";
   /** How long the tool ran in milliseconds, measured by this client from the start and end events it saw. */
   ms: number;
+  /** Pictures and files the tool produced or read, each a real link: an image shows as a thumbnail that opens it, any other file as a named link (a new tab). Not on the wire yet (the thread format has no artifact address); the fixtures carry them. */
+  files?: { name: string; url: string; kind: "image" | "file" }[];
 }
 
 /** A file or picture the person attached to the message they sent (`file`). `thought` is the provider's reasoning, shown folded as "Thought for 4 s". `card` carries a generated-UI description (packages/genui) drawn by the client; `thread` links a child. */
