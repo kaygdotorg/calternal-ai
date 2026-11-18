@@ -56,6 +56,8 @@ export type Incoming =
   /** The answer to our step 1: everything the server has that we lack. */
   | { kind: 'step2'; update: Uint8Array }
   | { kind: 'update'; update: Uint8Array }
+  /** Presence from the room: an awareness update (who is here, and where their cursor is). */
+  | { kind: 'awareness'; update: Uint8Array }
   | { kind: 'saved'; id: number }
   | { kind: 'refused'; code: string }
   | { kind: 'retry'; code: string }
@@ -76,6 +78,7 @@ export function decodeMessage(data: Uint8Array): Incoming {
     const buf = decoding.readVarUint8Array(d)
     return { kind: 'saved', id: decoding.readVarUint(decoding.createDecoder(buf)) }
   }
+  if (type === MSG_AWARENESS) return { kind: 'awareness', update: decoding.readVarUint8Array(d) }
   if (type !== MSG_SYNC) return { kind: 'other' }
   const sub = decoding.readVarUint(d)
   const payload = decoding.readVarUint8Array(d)
@@ -102,6 +105,14 @@ export function encodeUpdate(update: Uint8Array): Uint8Array {
   const e = encoding.createEncoder()
   encoding.writeVarUint(e, MSG_SYNC)
   syncProtocol.writeUpdate(e, update)
+  return encoding.toUint8Array(e)
+}
+
+/** An awareness update (y-protocols tag 1) for the room. */
+export function encodeAwareness(update: Uint8Array): Uint8Array {
+  const e = encoding.createEncoder()
+  encoding.writeVarUint(e, MSG_AWARENESS)
+  encoding.writeVarUint8Array(e, update)
   return encoding.toUint8Array(e)
 }
 

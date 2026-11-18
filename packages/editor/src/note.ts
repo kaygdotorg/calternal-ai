@@ -8,6 +8,7 @@
  * the note's metadata on this device, beside the document.
  */
 
+import type { Awareness } from 'y-protocols/awareness'
 import * as Y from 'yjs'
 import { LocalCopy } from './offline/local-copy'
 import { type MetaStore, type NoteMeta, type RecoveryIntent, idbMetaStore, memoryMetaStore } from './offline/meta'
@@ -35,6 +36,8 @@ export interface OpenNoteOptions {
   /** Local changes that couldn't be merged safely; the app keeps them as a copy. */
   onConflictCopy?: (text: string) => void
   checkDelayMs?: number
+  /** Presence for this note's room: made for each document the session holds (a replaced document gets a new one). */
+  awareness?: (doc: Y.Doc) => Awareness
 }
 
 /** Every open note editor in this page (shared-copy.ts reads it). */
@@ -114,6 +117,8 @@ export class NoteSession {
   /** Save status that survives the document being replaced. */
   readonly status = new StatusBox()
   doc!: Y.Doc
+  /** This document's presence, when the host asked for it (`OpenNoteOptions.awareness`). */
+  awareness: Awareness | null = null
   client!: SyncClient
   private persistence: LocalCopy | null = null
   private meta!: MetaStore
@@ -340,8 +345,10 @@ export class NoteSession {
       // Only edits made here mark the copy unconfirmed, never the server's or another tab's.
       this.persistence.isLocal = (origin) => origin !== this.client && origin !== TAB_ORIGIN
     }
+    this.awareness = this.opts.awareness?.(doc) ?? null
     this.client = new SyncClient({
       doc,
+      awareness: this.awareness ?? undefined,
       transport: this.opts.transport(
         () => this.lineage,
         (l) => this.learnLineage(l),

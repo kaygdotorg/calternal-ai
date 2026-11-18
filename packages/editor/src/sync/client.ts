@@ -21,12 +21,14 @@
  * - Never seeds the document from file text: only the server does that.
  */
 
+import * as awarenessProtocol from 'y-protocols/awareness'
 import * as Y from 'yjs'
 import type { ImeGate } from './gate'
 import {
   CLOSE_LINEAGE,
   MAX_ROOM_MESSAGE,
   decodeMessage,
+  encodeAwareness,
   encodeSaveCheck,
   encodeStep1,
   encodeStep2,
@@ -86,6 +88,11 @@ export interface SyncOptions {
   onConfirmed?: () => void
   onSynced?: () => void
   onLineageMismatch?: (serverLineage: string) => void
+  /**
+   * Presence in this room (y-protocols awareness, tag 1): the local state is sent on every join and whenever it changes, other people's are applied, and everyone but this client is dropped when the
+   * connection does. Cleared (`setLocalState(null)`) on `destroy`, so others see this person leave.
+   */
+  awareness?: awarenessProtocol.Awareness
 }
 
 /** Longest a collaborator's change waits before this device asks for its receipt. */
@@ -227,6 +234,7 @@ export class SyncClient {
     this.transport.onClose(this.onClose)
     this.transport.onMessage(this.onMessage)
     this.transport.onError?.(this.onError)
+    opts.awareness?.on('update', this.onAwarenessUpdate)
     this.openTabs()
     this.publish()
   }
@@ -278,6 +286,8 @@ export class SyncClient {
     this.wanted = false
     if (this.retryTimer) clearTimeout(this.retryTimer)
     this.doc.off('afterTransaction', this.onTransaction)
+    this.opts.awareness?.setLocalState(null)
+    this.opts.awareness?.off('update', this.onAwarenessUpdate)
     this.doc.off('update', this.onDocUpdate)
     this.transport.disconnect()
     this.bc?.close()
@@ -519,6 +529,14 @@ export class SyncClient {
     if (this.isConfirmed && this.synced) this.opts.onConfirmed?.()
   }
 
+  /** Local presence changed: tell the room (only this client's own entry travels; remote ones were applied from it). */
+  private onAwarenessUpdate = ({ added, updated, removed }: { added: number[]; updated: number[]; removed: number[] }, origin: unknown) => {
+    const a = this.opts.awareness
+    if (!a || origin === 'remote' || !this.transport.connected) return
+    const own = [...added, ...updated, ...removed].filter((id) => id === this.doc.clientID)
+    if (own.length) this.transport.send(encodeAwareness(awarenessProtocol.encodeAwarenessUpdate(a, own)))
+  }
+
   private onOpen = () => {
     this.connection++
     this.asked = 0
@@ -527,6 +545,8 @@ export class SyncClient {
     this.synced = false
     this.receipts.beginConnection()
     this.transport.send(encodeStep1(this.doc))
+    const a = this.opts.awareness
+    if (a?.getLocalState()) this.transport.send(encodeAwareness(awarenessProtocol.encodeAwarenessUpdate(a, [this.doc.clientID])))
     this.publish()
   }
   private onClose = (code: number, reason: string) => {
@@ -538,6 +558,8 @@ export class SyncClient {
     if (this.checkTimer) clearTimeout(this.checkTimer)
     if (this.baseTimer) clearTimeout(this.baseTimer)
     this.checkTimer = this.baseTimer = null
+    const a = this.opts.awareness
+    if (a) awarenessProtocol.removeAwarenessStates(a, [...a.getStates().keys()].filter((id) => id !== this.doc.clientID), 'remote')
     this.publish()
     if (code === CLOSE_LINEAGE && !this.destroyed) this.opts.onLineageMismatch?.(reason)
   }
@@ -590,6 +612,9 @@ export class SyncClient {
         })
         break
       }
+      case 'awareness':
+        if (this.opts.awareness) awarenessProtocol.applyAwarenessUpdate(this.opts.awareness, msg.update, 'remote')
+        break
       case 'refused':
         this.onError(msg.code)
         break

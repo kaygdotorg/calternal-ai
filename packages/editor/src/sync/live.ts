@@ -57,8 +57,8 @@ export class LiveSocket {
   private readonly closeFns = new Set<() => void>()
   private readonly rooms = new Map<string, RoomTransport>()
 
-  /** `url` is asked on every (re)connect, so it can carry a fresh `since`. */
-  constructor(private readonly url: () => string) {}
+  /** `url` is asked on every (re)connect, so it can carry a fresh `since`. `protocols` is the subprotocol offered on the upgrade (`calternal-live-rooms.v1`). */
+  constructor(private readonly url: () => string, private readonly protocols?: string | string[]) {}
 
   get open(): boolean {
     return this.ws?.readyState === WebSocket.OPEN
@@ -123,7 +123,7 @@ export class LiveSocket {
   private dial() {
     this.timer = null
     if (!this.wanted) return
-    const ws = new WebSocket(this.url())
+    const ws = new WebSocket(this.url(), this.protocols)
     ws.binaryType = 'arraybuffer'
     this.ws = ws
     ws.onopen = () => {

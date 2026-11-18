@@ -9,6 +9,8 @@
  * - save checks (`100` → `101`) answered in order;
  * - a change with a gap is not applied: the room asks for a resend (step 1)
  *   and holds save checks until a sync step 2 fills it (`resync.ts`);
+ * - presence (awareness, tag 1) is relayed to everyone else, a joiner is told who is here, and a client
+ *   that leaves is removed from everyone's view;
  * - a client holding another lineage is refused (close 4409);
  * - only the server seeds a document from text;
  * - the lineage travels with the join answer only, never inside the
@@ -18,9 +20,10 @@
 
 import * as decoding from 'lib0/decoding'
 import * as encoding from 'lib0/encoding'
+import * as awarenessProtocol from 'y-protocols/awareness'
 import * as syncProtocol from 'y-protocols/sync'
 import * as Y from 'yjs'
-import { CLOSE_LINEAGE, MSG_SYNC, decodeSaveCheck, encodeSaved, encodeUpdate } from '../src/sync/protocol'
+import { CLOSE_LINEAGE, MSG_AWARENESS, MSG_SYNC, decodeSaveCheck, encodeAwareness, encodeSaved, encodeUpdate } from '../src/sync/protocol'
 import { followsOn, hasMissing } from './resync'
 
 export interface Conn {
@@ -32,6 +35,9 @@ export class Room {
   doc = new Y.Doc()
   lineage = ''
   readonly conns = new Set<Conn>()
+  /** The room's view of presence, and which client ids each connection owns. */
+  private presence = new awarenessProtocol.Awareness(new Y.Doc())
+  private owns = new Map<Conn, Set<number>>()
   /** Extra delay before answering save checks, to test "Saving…". */
   checkDelayMs = 0
   /** While true, save checks wait (as during a history outage) until `releaseChecks`. */
@@ -63,6 +69,7 @@ export class Room {
 
   constructor(text = '') {
     this.seed(text)
+    this.presence.setLocalState(null)
   }
 
   get text(): string {
@@ -91,6 +98,8 @@ export class Room {
       return false
     }
     this.conns.add(conn)
+    const here = [...this.presence.getStates().keys()]
+    if (here.length) conn.send(encodeAwareness(awarenessProtocol.encodeAwarenessUpdate(this.presence, here)))
     const step1 = encoding.createEncoder()
     encoding.writeVarUint(step1, MSG_SYNC)
     syncProtocol.writeSyncStep1(step1, this.doc)
@@ -103,6 +112,13 @@ export class Room {
   }
 
   leave(conn: Conn): void {
+    const ids = [...(this.owns.get(conn) ?? [])]
+    this.owns.delete(conn)
+    if (ids.length) {
+      awarenessProtocol.removeAwarenessStates(this.presence, ids, 'room')
+      const gone = encodeAwareness(awarenessProtocol.encodeAwarenessUpdate(this.presence, ids))
+      this.conns.forEach((c) => c !== conn && c.send(gone))
+    }
     this.conns.delete(conn)
     this.resyncs.delete(conn)
     this.answers.delete(conn)
@@ -124,7 +140,17 @@ export class Room {
       return
     }
     const d = decoding.createDecoder(data)
-    if (decoding.readVarUint(d) !== MSG_SYNC) return
+    const tag = decoding.readVarUint(d)
+    if (tag === MSG_AWARENESS) {
+      const own = this.owns.get(conn) ?? this.owns.set(conn, new Set()).get(conn)!
+      const onUpdate = ({ added, updated }: { added: number[]; updated: number[] }) => [...added, ...updated].forEach((id) => own.add(id))
+      this.presence.on('update', onUpdate)
+      awarenessProtocol.applyAwarenessUpdate(this.presence, decoding.readVarUint8Array(d), conn)
+      this.presence.off('update', onUpdate)
+      this.conns.forEach((c) => c !== conn && c.send(data))
+      return
+    }
+    if (tag !== MSG_SYNC) return
     const type = decoding.readVarUint(d)
     if (type === syncProtocol.messageYjsSyncStep1) {
       const e = encoding.createEncoder()
