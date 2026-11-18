@@ -11,7 +11,7 @@ use std::{
 use serde_json::{Value, json};
 use tungstenite::{Message as Frame, WebSocket, client::IntoClientRequest, stream::MaybeTlsStream};
 use yrs::{
-    Doc, GetString, ReadTxn, Text, Transact, Update,
+    Doc, GetString, Text, Transact, Update,
     encoding::{
         read::{Cursor, Read},
         write::Write,
