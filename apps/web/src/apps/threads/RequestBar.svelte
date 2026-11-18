@@ -85,12 +85,14 @@
             <p class="exp">This request expired.</p>
             <div class="foot"><Button variant="primary" text="Ask again" onclick={() => answer({ kind: "secret-skip" })} /></div>
           {:else}
+            <div class="act">
             <form onsubmit={(e) => { e.preventDefault(); if (secret) answer({ kind: "secret", value: secret }); }}>
               <label class="visually-hidden" for="secret">{cur.label}</label>
               <input id="secret" type="password" autocomplete="off" spellcheck="false" bind:value={secret} aria-describedby="why" placeholder="Paste the value" />
               <Button variant="primary" text="Save" disabled={!secret} type="submit" />
             </form>
             <div class="foot"><Button variant="quiet" text={cur.required ? "Not now" : "Skip"} onclick={() => answer({ kind: "secret-skip" })} /></div>
+            </div>
           {/if}
           <details class="more">
             <summary>Why, and where it goes</summary>
@@ -104,7 +106,9 @@
 {/if}
 
 <style>
-  :global(.bar) { color: var(--ink); max-height: min(26rem, 52dvh, 60cqh); overflow: auto; flex: 0 1 auto; }
+  :global(.bar) { color: var(--ink); max-height: min(26rem, 52dvh, 60cqh); overflow: auto; overscroll-behavior: contain; flex: 0 1 auto; }
+  /* A window only about 400 px high (a phone on its side) shares it with the header and the composer: the card takes what is left of it, never more. */
+  @media (max-height: 520px) { :global(.bar) { max-height: max(9rem, calc(100dvh - var(--bar-h) - 8.5rem)); } }
   :global(.bar[data-kind="approval"]), :global(.bar[data-kind="secret"]), :global(.bar[data-kind="signin"]) { box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--accent-base) 38%, transparent); }
   .head { display: flex; align-items: center; gap: var(--s-4); padding: var(--s-2) var(--s-2) 0 var(--s-6); }
   .kind { flex: 1; display: inline-flex; align-items: center; gap: var(--s-3); font-size: var(--text-label); font-weight: var(--strong-weight); color: var(--ink-2); }
@@ -115,6 +119,10 @@
   p { color: var(--ink-2); font-size: var(--text-ui); }
   .trusted { display: inline-flex; align-items: center; gap: var(--s-3); font-size: var(--text-label); color: var(--ink-2); }
   pre { margin: 0; padding: var(--s-4) var(--s-5); border-radius: var(--r-select); background: rgb(var(--ink-rgb) / 0.08); overflow-x: auto; font-size: var(--text-label); }
+  /* On a short screen (a phone on its side) the card scrolls inside itself and its actions stay in view: the buttons (a form's answer, the secret's field and its Save, Deny and Allow) are pinned to the card's bottom edge over a soft fade. */
+  .foot, .act { position: sticky; bottom: 0; z-index: 1; margin: 0 calc(var(--s-6) * -1) calc(var(--s-6) * -1); padding: var(--s-3) var(--s-6) var(--s-5); background: linear-gradient(to bottom, transparent, color-mix(in oklab, var(--paper) 90%, transparent) 30%); }
+  .act { display: grid; gap: var(--s-3); }
+  .act .foot { position: static; margin: 0; padding: 0; background: none; }
   .foot, form { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: var(--s-3); }
   form input { flex: 1 1 12rem; min-height: var(--pill-h); padding: 0 var(--s-5); border: 0; border-radius: var(--r-pill); background: rgb(var(--ink-rgb) / 0.08); color: var(--ink); font-size: var(--text-ui); }
   .meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-3); }
