@@ -229,22 +229,13 @@ async fn microvm_pool_keeps_account_execs_and_boot_instances_separate() {
     interrupted.ok();
     assert_eq!(interrupted.body["state"], "interrupted");
 
-    // Close the interrupted direct machine run before opening the same thread.
-    // Provider jobs use their separate explicit checkpoint resume operation.
-    f.req(
-        "POST",
-        &format!("/api/v1/machines/runs/{a}/stop"),
-        Some(&f.cookies[1]),
-        json!({}),
-        Some(ORIGIN),
-    )
-    .await
-    .ok();
-    let recovered = run_thread(&f, 1, 0, thread).await;
+    let foreign = f.op(2, "machines.resume", json!({"lease_id":a})).await;
+    assert_eq!(foreign.status, 404);
+    f.op(1, "machines.resume", json!({"lease_id":a})).await.ok();
     let read_back = exec(
         &f,
         1,
-        &recovered,
+        &a,
         "cat /work/file; cat /proc/sys/kernel/random/boot_id",
     )
     .await;

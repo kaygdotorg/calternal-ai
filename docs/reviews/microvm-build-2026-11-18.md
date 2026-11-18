@@ -88,7 +88,8 @@ all three filtered HTTP conformance cases passed. Both leak checks passed.
 The HTTP fixture now verifies that two accounts have different boot IDs
 while their sibling threads share only their account's kernel. It kills the
 first account's exact Firecracker process during a leased command, waits for
-the interrupted state and reopens the same workspace with a different boot
+the interrupted state and calls `machines.resume`. It checks foreign resume
+is refused and the owner sees the retained workspace with a different boot
 ID. It then deletes the account through the public account operation and
 checks that the durable machine erasure queue completes and the disk is
 removed. The untouched account keeps its original boot ID. The capacity
@@ -97,7 +98,69 @@ fixture also cancels a waiting lease and checks that it never gets assigned.
 The dev-01 command used `scripts/check-podman-tests.sh cargo test --locked
 -j6 --manifest-path tests/conformance/Cargo.toml --test isolation microvm_cases --
 --test-threads=1 --show-output` with the absolute stage 3 guest configuration.
-All three cases passed in 11.39 seconds. Both leak checks passed. This
-exercises the retained workspace behind the provider checkpoint flow.
+The run after merging `45fa2c0` passed all three cases in 17.23 seconds.
+Both leak checks passed. This exercises the retained workspace behind the
+provider checkpoint flow.
 The full provider resume example in ordinary conformance uses its separate
 fixture.
+
+## Backend gate commands
+
+Run these in the development VM lane. Each cargo build or test uses six jobs.
+The gate runner prints the ordinary conformance skip reason and keeps each
+command's output in `apps/docs/.cache/gates/`.
+
+```sh
+nix develop -c npm run build:plugins
+nix develop -c cargo build --locked -j6 -p calternal-server -p calternal-cli --features test-plugins
+nix develop -c ./scripts/check-podman-tests.sh cargo test --locked --workspace --all-features -j6
+nix develop -c env CARGO_TARGET_DIR="$PWD/target" CALTERNAL_SERVER_BIN="$PWD/target/debug/calternal" \
+  ./scripts/check-podman-tests.sh cargo test --locked --manifest-path tests/conformance/Cargo.toml -j6 \
+  --test isolation -- --test-threads=1 --show-output
+nix develop -c npm run test:integration
+nix develop -c npm run test:plugins
+nix develop -c npm test --workspace @calternal/genui
+nix develop -c cargo run --locked -j6 -p calternal-core --bin export-contract -- --check
+nix develop -c sh scripts/check-docs.sh
+nix develop -c node --test scripts/docs-site/publication.test.mjs
+nix develop -c cargo fmt --all -- --check
+nix develop -c rustfmt --edition 2024 --check tests/conformance/microvm_cases.rs
+```
+
+The supplementary serial KVM run exports `CALTERNAL_MICROVM_TEST_CONFIG`
+as an absolute operator config path. It runs the same isolation command with
+the `microvm_cases` filter and this machine-side case group.
+
+```sh
+nix develop -c ./scripts/check-podman-tests.sh cargo test --locked -j6 \
+  -p calternal-machine --lib sandbox::microvm -- --nocapture
+```
+
+## Review gate
+
+| Item | Verification |
+| --- | --- |
+| 1. Shared types | Uses existing account, space and thread IDs, machine lease and output types, and readiness contracts. |
+| 2. Dependencies | Uses dependencies already available to the existing machine and server crates. New operator tooling uses Python's standard library and nftables. |
+| 3. Lock scope | The server uses the existing installation-wide machine registry. One account's guest lock spans disk binding and release to keep a single disk owner. TAP and account maps hold short in-memory locks. |
+| 4. Async I/O | Host file and process operations use Tokio. Policy verification, image hashing, directory sync and durable rename run on blocking tasks. |
+| 5. Reads and flushes | Warm exec uses one authenticated vsock channel with no explicit host filesystem reads or flushes. The capacity check adds in-memory lookups and no SQL. Disk binding flushes the new disk and affected directories. |
+| 6. Constant work | The role verifies and loads the immutable image and network policy at startup. Slots are in memory. The size table is constant. |
+| 7. Bounds | The writable disk is capped per account, the config bounds guest count and the warm pool has at most two entries. Image operations retain one active and one rollback root. Account erasure removes its durable disk. |
+| 8. Compatibility | The pool uses the current machine protocol. There are no database migrations or alternate image readers. |
+| 9. Space identity | Space homes, account disks and thread workspaces use the existing UUID identities. |
+| 10. Single declaration | The size profile declares the 512 MiB limit. The machine and server both read it. One policy supplies DNS, allowed destinations and TAP slots. |
+| 11. Callers | Machine CLI selects the backend. The server uses its existing admission, readiness and erasure paths. |
+| 12. Reuse | Uses the existing queue and lease fence, durable fsio rename and directory sync, provider-home logic, and Podman exec. |
+| 13. Public docs | The docs gate checks Cargo and TypeScript references. Public configuration fields document units, bounds and startup handling. |
+| 14. Documentation | Deployment covers rollback, image updates, KVM access and operator-managed firewall policy. Live proof is recorded here and on issue 51. |
+| 15. Formatting and size | The machine workspace and the changed conformance fixture have explicit formatting gates. Capacity accounting moved out of the server's state module. |
+
+## Simplification opportunities
+
+Keep the immutable root shared across all guests and ship a new image as one
+operator update. The writable account disk and existing lease queue are
+sufficient for workspace recovery and admission. The firewall receipt lets
+the machine role open its assigned TAPs without running a firewall manager.
+Installing the provider adapter under the standard executable path could
+remove the extra PATH entry from both the OCI image and guest launcher.
