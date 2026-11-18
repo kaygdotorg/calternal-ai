@@ -95,7 +95,7 @@ const wallpapers = JSON.parse(readFileSync("wallpapers.json", "utf8"));
   ok(foot, "The sidebar's footer (account, spaces, search) is in view in the Settings app too");
   const groups = await page.locator("aside.side nav h2").allInnerTexts();
   ok(groups.length === 3 && /^User/.test(groups[0]) && /^Admin/.test(groups[1]) && /^Space/.test(groups[2]), "Settings: User, Admin, then the current space (owner decision C)", groups.join(" / "));
-  ok((await page.locator("aside.side input[type=search], .page input[type=search]:not([aria-label^='Search Unsplash'])").count()) === 0, "No search box inside Settings");
+  ok((await page.locator("aside.side input[type=search], .page input[type=search]:not(#u-q)").count()) === 0, "No search box inside Settings");
   const rows = await page.locator(".page [data-setting]").evaluateAll((e) => e.map((x) => x.dataset.setting)); // the page is flat: every section is on it
   ok(["appearance.blur", "appearance.dim", "appearance.tint"].every((s) => rows.includes(s)), "Materials are three checkboxes: Blur, Dim, Tint");
   ok(rows.includes("appearance.ui-size") && rows.includes("appearance.wordmark"), "One UI size slider; the wordmark and its font are set here");
