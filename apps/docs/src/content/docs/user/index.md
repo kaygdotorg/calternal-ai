@@ -10,4 +10,5 @@ title: "Using Calternal"
 - [People and access](./people/)
 - [Owner erasure](./owner-erasure/)
 - [Threads](./threads/)
+- [Skills and automations](./automations/)
 - [Permission modes](./permissions-modes/)

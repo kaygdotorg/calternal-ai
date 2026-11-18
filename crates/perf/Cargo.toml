@@ -21,6 +21,8 @@ calternal-cli.workspace = true
 calternal-fsio.workspace = true
 calternal-types = { workspace = true, features = ["perf-clock"] }
 rusqlite.workspace = true
+tungstenite = "0.29.0"
+yrs = { version = "0.28", features = ["sync"] }
 
 [dev-dependencies]
 calternal-cli = { workspace = true, features = ["testing"] }

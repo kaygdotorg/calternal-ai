@@ -31,6 +31,10 @@ impl Jobs {
             RunEnd::RetryWaiting => (JobState::RetryWaiting, "null".into()),
             RunEnd::Interrupted => (JobState::Interrupted, "null".into()),
             RunEnd::OutcomeUnknown => (JobState::OutcomeUnknown, "null".into()),
+            RunEnd::WaitRejected(message) => (
+                JobState::Failed,
+                serde_json::json!({"wait_error": message}).to_string(),
+            ),
             RunEnd::Failed => (JobState::Failed, "null".into()),
         };
         let wake = self.tx(space, |tx| {
@@ -161,6 +165,7 @@ impl Jobs {
     /// One existing live-stream lookup per job, with no store I/O.
     pub(super) fn stop_live(&self, cancelled: Vec<String>) {
         for job in cancelled {
+            self.stop_job_wait_timers(&job);
             let live = self
                 .live
                 .lock()
@@ -189,6 +194,10 @@ impl Jobs {
             .collect();
         for space in spaces {
             let cancelled = match self.tx(&space, |tx| {
+                tx.execute(
+                    "DELETE FROM plugin_waits WHERE job IN (SELECT id FROM jobs WHERE account=?1)",
+                    [account.to_string()],
+                ).map_err(db_err)?;
                 let mut update = tx.prepare_cached(&format!(
                     "UPDATE jobs SET state='cancelled',finished_ms=?2,
                         checkpoint=json_remove(checkpoint,'$.person_request','$.retry'),result='null'

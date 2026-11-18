@@ -7,6 +7,7 @@
 //! [`Store::open`] validates and locks the three roots through `calternal-roots`
 //! before it creates or opens anything, and holds those locks for its lifetime.
 mod plugin_items;
+pub(crate) use plugin_items::PluginItemWrite;
 
 use crate::fault::{self, FaultPoint};
 use calternal_content::{Content, Item, Request};
@@ -25,6 +26,7 @@ use uuid::Uuid;
 pub struct Store {
     /// Shared with live streams and account inputs; never behind a store-wide lock.
     content: std::sync::Arc<Content>,
+    live_rooms: crate::live_rooms::Hub,
     /// The appdata root (account-input databases live under it).
     appdata: std::path::PathBuf,
     /// The three roots this store validated and locked.
@@ -68,6 +70,7 @@ fn io_err(context: &'static str, e: std::io::Error) -> Error {
 }
 fn content_fault(point: calternal_content::FaultPoint) {
     fault::hit(match point {
+        calternal_content::FaultPoint::BeforeRoomCommit => FaultPoint::BeforeRoomCommit,
         calternal_content::FaultPoint::AfterCommit => FaultPoint::AfterCommit,
         calternal_content::FaultPoint::AfterJournalCommit => FaultPoint::AfterJournalCommit,
         calternal_content::FaultPoint::BeforePlacement => FaultPoint::BeforePlacement,
@@ -260,6 +263,7 @@ impl Store {
             plugin_frames: Default::default(),
             appearance,
             content: std::sync::Arc::new(content),
+            live_rooms: crate::live_rooms::Hub::default(),
             appdata: root.clone(),
             roots: roots.clone(),
             secrets: std::sync::Arc::new(secrets),
@@ -268,6 +272,24 @@ impl Store {
             _roots: locks,
         })
     }
+    pub(crate) fn live_rooms(&self) -> &crate::live_rooms::Hub {
+        &self.live_rooms
+    }
+
+    /// Evict all of an account's live sessions on an item after its last
+    /// effective read grant is revoked. Call after the grant commits.
+    /// Cost: bounded registry and participant lookups, no storage or awaits.
+    pub fn evict_live_room_account(
+        &self,
+        space: SpaceId,
+        kind: &str,
+        item: Uuid,
+        account: AccountId,
+    ) {
+        self.live_rooms
+            .evict_item_account(space, kind, item, account);
+    }
+
     /// Returns the generic item service for trusted host integrations such as
     /// plugin kind/standard-collection provisioning. Every caller must enforce
     /// current authority before opening a selected account or space.
@@ -488,14 +510,18 @@ impl Store {
             String,
             calternal_content::Placement,
             calternal_content::FileFormat,
+            bool,
         )],
         collections: &[(String, String, String)],
     ) -> Result<(), Error> {
         let space = space_id;
         let actor = actor.into();
-        for (kind, placement, format) in kinds {
+        for (kind, placement, format, live_editing) in kinds {
             self.content
                 .register_kind(space, kind, placement.clone(), format.clone())?;
+            if *live_editing {
+                self.content.enable_live_editing(space, kind)?;
+            }
         }
         if collections.is_empty() {
             return Ok(());
@@ -558,6 +584,7 @@ impl Store {
             operation,
             fingerprint,
         };
+        let _room_activation_edit = self.live_rooms.begin_activation_edit(space_id);
         self.content
             .set_control(space_id, request, &plugin_key(plugin_id), |current| {
                 let current = current.map(plugin_row).transpose()?.unwrap_or(default);

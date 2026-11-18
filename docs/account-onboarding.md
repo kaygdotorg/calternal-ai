@@ -85,8 +85,11 @@ enrollment. Give the grant to the verified owner over the trusted channel.
 
 ## Core OpenID Connect
 
-The fresh baseline includes the provider tables. Its server keeps the OIDC
-transport disabled. The following contract is for the provider rollout.
+OIDC is off by default. To make the host routes available, set
+`CALTERNAL_ACCOUNT_OIDC_ENABLED=1` for the server and restart it. The
+existing auth schema already includes provider tables. A new provider is
+disabled until a server admin explicitly enables it. Apple and Google may
+be configured for future testing and cannot be enabled in this release.
 
 These routes share the protected auth prefix and use the same private
 response and JSON mutation rules as passkey sign-in.
@@ -116,18 +119,63 @@ that same method. A provider-first success can offer the first passkey and
 the person can skip it.
 
 An admin configures `{id, preset, label, issuer, client_id, scopes,
-display_name_claim?}`. The Apple and Google presets supply their issuers.
-The generic preset supports Authentik and other HTTPS issuers with
-same-origin authorization, token and JWKS endpoints and advertised S256
-PKCE. Apple uses its documented confidential-client code flow with state,
-browser binding and a signed nonce. Supply the current Apple client-secret
-JWT through the admin secret field. The host seals client credentials,
-owns the token exchange and emits only identity and the host session.
-The scope and display-name mapping never grant local permissions. [Apple
-discovery metadata](https://appleid.apple.com/.well-known/openid-configuration)
+display_name_claim?}` with a fresh sign-in check. Supply the client secret
+through the private admin secret input over HTTPS. The host seals it using
+the deployment secrets service and omits it from reads. Enable the saved
+provider by sending `{provider_id, action:"enable"}` to `/oidc/admin/state`.
+The public provider list contains enabled definitions only.
+
+For Authentik or another generic provider, create a confidential web
+client with authorization code flow, S256 PKCE and the exact callback
+`https://<calternal-host>/api/v1/auth/oidc/callback`. Use that provider's
+exact HTTPS issuer, including any path and trailing slash. Discovery,
+authorization, token and JWKS endpoints stay on the issuer's origin.
+The host always requests `openid`. Add `profile` if you want to suggest a
+display name. The scope and display-name mapping grant no local authority.
+For a private CA, make its PEM bundle available to the server and set
+`CALTERNAL_OIDC_CA_FILE` to its path. TLS still verifies the hostname.
+
+A provider session can read the account immediately. For sensitive
+actions the generic flow requests `prompt=login` and `max_age=0`. The
+signed ID token must include `auth_time` within the preceding two minutes
+with at most 30 seconds of future clock skew. The same issuer and subject
+must match the original session. A missing or stale claim does not renew
+the proof.
 
 Provider changes expire in-flight flows. Disablement revokes sessions
 minted through the provider. Removal also deletes identity links and the
 sealed credential. A provider-only account needs another sign-in method
 or an explicit operator recovery path before disabling or removing its
 provider. No plugin manifest or worker participates in this flow.
+
+### Owner setup for Apple and Google testing
+
+Use a disposable Calternal HTTPS origin for real-provider testing. For the
+production origin, the exact registered redirect is
+`https://calternal.cloud/api/v1/auth/oidc/callback`. Each provider needs
+the exact callback for whichever origin runs the test.
+
+- **Apple** — In Apple Developer, enable Sign in with Apple on a primary
+  App ID. Create a **Services ID** for the web client, select that primary
+  App ID, and register the app domain and the exact return URL. The
+  Services ID is the client ID. Create a Sign in with Apple key for the
+  same primary App ID. Keep the downloaded key private and use it to sign
+  an ES256 JWT. Set `kid` in the header to the key ID, `iss` to the
+  Team ID, `sub` to the Services ID, `aud` to `https://appleid.apple.com`,
+  and `iat` and `exp` to Unix seconds with a lifetime under six months.
+  Supply this JWT through the private admin secret input. Leave the
+  preset's additional scopes empty. Calternal asks for its recovery
+  email separately. Apple web reverification still needs a real proof of
+  recent authentication. [Web configuration](https://developer.apple.com/help/account/capabilities/configure-sign-in-with-apple-for-the-web/)
+  · [Client authentication setup](https://developer.apple.com/documentation/signinwithapple/configuring-your-environment-for-sign-in-with-apple)
+- **Google** — In Google Auth Platform, select a project, configure consent
+  and use a test user if the application is in Testing. Create an OAuth
+  client of type **Web application**. Register the exact callback under
+  **Authorized redirect URIs**. Request `openid profile` and supply the
+  client ID and secret through the admin inputs. A sign-in smoke test can
+  use Testing. To receive the signed `auth_time` claim, publish and verify
+  the app, then enable **Settings → Advanced Settings → Session age
+  claims**. The real-provider check requests the claim and must show that
+  Google returns a current value before the preset can be enabled.
+  [Google OpenID Connect setup](https://developers.google.com/identity/openid-connect/openid-connect)
+  · [Session age claim setup](https://developers.google.com/identity/siwg/security-bundle)
