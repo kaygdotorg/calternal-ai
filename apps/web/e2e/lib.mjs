@@ -50,6 +50,8 @@ export const DEVICES = {
 export async function open(browser, device, scheme, path) {
   const ctx = await browser.newContext({ ...DEVICES[device], colorScheme: scheme, reducedMotion: "no-preference" });
   if (!process.env.CAL_FIRSTRUN) await ctx.addInitScript(() => { try { localStorage.setItem("cal.firstrun", "1"); } catch { /* none */ } });
+  // CAL_CANVAS=1 runs any suite with the canvas on (the fixtures build's `?canvas=1` is remembered for the visit in sessionStorage): the same checks, windows instead of one card.
+  if (process.env.CAL_CANVAS === "1") await ctx.addInitScript(() => { try { sessionStorage.setItem("cal.canvas.on", "1"); } catch { /* none */ } });
   const page = await ctx.newPage();
   await page.goto(BASE + path);
   await page.waitForSelector("html[data-ready]");
