@@ -24,6 +24,7 @@ try {
     if (!r) { ok(false, `${h}: has a page`); continue; }
     ok(r.backs === 0 && !r.split, `${h}: one flat page, no Back control, no split`, `backs ${r.backs}`);
     ok(r.groups.every((w) => w >= r.inner - 2), `${h}: every section fills the content width`, `${r.groups.join(",")} of ${r.inner}`);
+    ok(r.sels.every((w) => w >= Math.min(r.inner - 2 * 24, 448) - 4 && w <= 449), `${h}: a Selector that is its own row's control fills the row up to 28 rem`, r.sels.join(","));
     ok(r.inner >= r.vw - 2 * 40 && r.left <= 40 && r.over <= 0, `${h}: inside the gutters, nothing wider than the screen`, `content ${r.inner}, left ${r.left}, over ${r.over}`);
   }
   await p.goto(new URL("/settings/appearance", p.url()).href); await p.waitForTimeout(700);

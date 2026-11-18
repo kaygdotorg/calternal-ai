@@ -69,3 +69,7 @@ input, textarea, [contenteditable], .selectable, .selectable * { -webkit-user-se
 :root { --section-pad: calc((var(--row-h) - var(--section-h)) / 2); }
 .section-heading { box-sizing: border-box; min-height: var(--section-h); margin: var(--section-above) 0 var(--section-below); padding: 0 var(--s-5); display: flex; align-items: center; font-size: var(--text-label); font-weight: var(--strong-weight); line-height: 1.25; color: var(--ink-3); }
 .section-heading.first { margin-top: 0; }
+
+/* A Selector that is the control of its own row fills the row (its default) up to a readable maximum, so three options never stretch across a wide pane (docs/ui-design-system.md, "Selectors fill their row"). */
+:root { --selector-row-max: 28rem; }
+.row-selector { max-width: var(--selector-row-max); }
