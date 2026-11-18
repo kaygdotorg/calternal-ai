@@ -22,6 +22,7 @@ pub(super) struct Live {
     pub session: [u8; 32],
     pub direct: bool,
     pub harness_protocol: bool,
+    pub shared_provider: bool,
     pub kvm_fallback: bool,
     pub thread_limit: Option<usize>,
     pub outbox: VecDeque<Envelope>,
@@ -178,14 +179,18 @@ impl State {
     pub(super) fn lease_steps(
         &self,
         row: &db::LeaseRow,
-    ) -> Result<Option<(calternal_types::OwnerStep, calternal_types::OwnerStep)>, Error> {
+    ) -> Result<Option<[Option<calternal_types::OwnerStep>; 3]>, Error> {
         self.lifecycle
             .get()
             .map(|owners| {
-                Ok((
-                    owners.step(row.account.as_uuid())?,
-                    owners.step(row.space.as_uuid())?,
-                ))
+                Ok([
+                    Some(owners.step(row.account.as_uuid())?),
+                    Some(owners.step(row.space.as_uuid())?),
+                    row.shared_sponsor
+                        .filter(|sponsor| *sponsor != row.account)
+                        .map(|sponsor| owners.step(sponsor.as_uuid()))
+                        .transpose()?,
+                ])
             })
             .transpose()
     }
@@ -222,6 +227,15 @@ impl State {
             return;
         };
         let Some(machine) = l.row.machine else { return };
+        if l.row.shared_sponsor.is_some()
+            && !self
+                .machines
+                .get(&machine)
+                .and_then(|m| m.live.as_ref())
+                .is_some_and(|live| live.shared_provider)
+        {
+            return;
+        }
         let lease_id = l.row.id;
         let fence = l.row.fence;
         let space_id = l.row.space;
@@ -229,6 +243,7 @@ impl State {
         let spec = SandboxSpec {
             space_id: Some(space_id),
             provider_login: l.provider_login,
+            shared_provider_sponsor: l.row.shared_sponsor,
             code_directory: None,
             worker: self.workers.get(&lease).cloned(),
             account_id: account_id.as_uuid(),
@@ -466,6 +481,23 @@ impl State {
         waiting.sort_unstable();
         for (background, _, lease) in waiting {
             let l = &self.leases[&lease];
+            let sponsor = l.row.shared_sponsor.unwrap_or(l.row.account);
+            let shared =
+                l.row
+                    .shared_sponsor
+                    .zip(l.row.pinned_machine)
+                    .map(
+                        |(sponsor, machine)| super::space_execution::SpaceExecution {
+                            sponsor,
+                            machine,
+                        },
+                    );
+            if let Some(target) = shared
+                && self.require_execution(l.row.space, target).is_err()
+            {
+                self.end_for_placement(lease, "shared space machine changed", false);
+                continue;
+            }
             let best = self
                 .machines
                 .values()
@@ -474,10 +506,14 @@ impl State {
                 .filter(|m| l.row.harness.is_none() || Self::harness_machine(m))
                 .filter(|m| l.row.pinned_machine.is_none_or(|id| id == m.row.id))
                 .filter(|m| {
-                    self.may_use(m, l.row.account)
-                        || (l.pool_diagnostic && m.row.owner == Owner::Pool)
+                    self.may_use(m, sponsor) || (l.pool_diagnostic && m.row.owner == Owner::Pool)
                 })
-                .map(|m| (m, self.free_for(m, l.row.account)))
+                .map(|m| {
+                    (
+                        m,
+                        self.free_for(m, l.row.shared_sponsor.unwrap_or(l.row.account)),
+                    )
+                })
                 .filter(|(_, free)| *free > 0)
                 .max_by_key(|(m, free)| {
                     (
@@ -495,7 +531,7 @@ impl State {
                         let id = title.assigned_machine()?;
                         let m = self.machines.get(&id)?;
                         (l.row.pinned_machine.is_none_or(|pin| pin == id)
-                            && self.may_use(m, l.row.account)
+                            && self.may_use(m, sponsor)
                             && m.live.as_ref().is_some_and(|live| {
                                 !live.draining && live.capacity.max_sandboxes as usize >= m.assigned
                             })
@@ -528,7 +564,7 @@ impl State {
         if self
             .machines
             .get(&machine)
-            .is_none_or(|m| self.free_for(m, l.row.account) == 0)
+            .is_none_or(|m| self.free_for(m, l.row.shared_sponsor.unwrap_or(l.row.account)) == 0)
         {
             return;
         }

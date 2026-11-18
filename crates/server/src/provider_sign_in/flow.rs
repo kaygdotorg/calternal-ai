@@ -51,34 +51,42 @@ pub(super) async fn run<D: Directory>(
     let appdata = state.store.appdata().to_owned();
     let provider = target.provider.clone();
     let login_scope = target.login_scope;
-    let lease =
-        blocking(move || {
-            match crate::plugins::package_store::provider_runtime::read_pin(&appdata, &provider)
-                .map_err(|_| failed())?
-            {
-                Some((pin, legacy)) => {
-                    let mut sandbox = crate::plugins::package_store::provider_runtime::sandbox(
-                        &pin,
-                        provider,
-                        login_scope,
-                        false,
-                    );
-                    sandbox.legacy_profile = legacy;
-                    svc.request_harness(
-                        space,
-                        account,
-                        Uuid::new_v4(),
-                        Some(machine),
-                        pin.image,
-                        sandbox,
-                        true,
-                        false,
-                    )
+    let shared = target.shared;
+    let lease = match current(&state, &machines, account, &session, &target).await {
+        Ok(()) => {
+            blocking(move || {
+                if let Some(shared) = shared {
+                    return svc.request_shared(space, account, Uuid::new_v4(), shared, true);
                 }
-                None => svc.request_sign_in(space, account, machine),
-            }
-        })
-        .await;
+                match crate::plugins::package_store::provider_runtime::read_pin(&appdata, &provider)
+                    .map_err(|_| failed())?
+                {
+                    Some((pin, legacy)) => {
+                        let mut sandbox = crate::plugins::package_store::provider_runtime::sandbox(
+                            &pin,
+                            provider,
+                            login_scope,
+                            false,
+                        );
+                        sandbox.legacy_profile = legacy;
+                        svc.request_harness(
+                            space,
+                            account,
+                            Uuid::new_v4(),
+                            Some(machine),
+                            pin.image,
+                            sandbox,
+                            true,
+                            false,
+                        )
+                    }
+                    None => svc.request_sign_in(space, account, machine),
+                }
+            })
+            .await
+        }
+        Err(error) => Err(error),
+    };
     let done = match lease {
         Ok(lease) => {
             let lease = lease.lease_id;
@@ -151,7 +159,7 @@ async fn relay<D: Directory>(
     mut answer: mpsc::Receiver<String>,
 ) -> Result<(), Error> {
     loop {
-        current(state, account, session, target).await?;
+        current(state, machines, account, session, target).await?;
         let svc = machines.clone();
         let run = blocking(move || svc.run(account, lease)).await?;
         match run.state {
@@ -168,7 +176,7 @@ async fn relay<D: Directory>(
     let mut frame = Vec::new();
     let mut prompted = false;
     loop {
-        current(state, account, session, target).await?;
+        current(state, machines, account, session, target).await?;
         tokio::select! {
             code = answer.recv() => {
                 let mut code = code.ok_or_else(failed)?.into_bytes();
@@ -203,6 +211,9 @@ async fn relay<D: Directory>(
                 }
                 if let Some(exit) = batch.exit {
                     if exit.code != Some(0) || !frame.is_empty() { return Err(failed()); }
+                    if target.shared.is_some() {
+                        return Ok(());
+                    }
                     let svc = machines.clone();
                     let (machine, provider) = (target.machine, target.provider.clone());
                     let sign_in_command = target.policy.command.clone();
@@ -235,6 +246,7 @@ fn parse(
 
 async fn current<D: Directory>(
     state: &Shared<D>,
+    machines: &Arc<MachineService>,
     account: AccountId,
     session: &Session,
     target: &Target,
@@ -242,7 +254,18 @@ async fn current<D: Directory>(
     if !session.is_live_in(state).await {
         return Err(failed());
     }
-    authorize(state, account, target.space).await
+    authorize(state, account, target.space).await?;
+    if let Some(shared) = target.shared {
+        let (state, machines, space) = (state.clone(), machines.clone(), target.space);
+        blocking(move || {
+            if super::shared_target(&state, &machines, account, space)? != shared {
+                return Err(failed());
+            }
+            Ok(())
+        })
+        .await?;
+    }
+    Ok(())
 }
 
 async fn invalidate<D: Directory>(state: &Shared<D>, account: AccountId) {

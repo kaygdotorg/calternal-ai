@@ -20,6 +20,9 @@ pub struct ProviderSignInStart {
     /// Use an entitled anonymous pool machine. Mutually exclusive with machine_id.
     #[serde(default)]
     pub pool: bool,
+    /// Sign in to the configured space login using space.settings authority.
+    #[serde(default)]
+    pub shared: bool,
 }
 
 /// Supply a browser authorization code to the original official process.

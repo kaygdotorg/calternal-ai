@@ -46,6 +46,11 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
       "description": "Installed provider plugin ID.",
       "type": "string"
     },
+    "shared": {
+      "default": false,
+      "description": "Sign in to the configured space login using space.settings authority.",
+      "type": "boolean"
+    },
     "space_id": {
       "description": "Space UUID in which the caller may use this provider.",
       "type": "string"
