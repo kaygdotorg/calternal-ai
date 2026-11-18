@@ -59,3 +59,4 @@ for (const p of list) {
 }
 if (credits.length) { writeFileSync(join(out, "credits.json"), JSON.stringify(credits, null, 1)); try { cpSync(out, cache, { recursive: true }); } catch { /* the cache is a convenience */ } }
 console.log(`wallpapers: ${credits.length} of ${list.length} available`);
+if (credits.length < list.length) console.warn(`wallpapers: ${list.length - credits.length} are missing, so the default wallpaper and the picker are incomplete and the browser gate (npm run e2e:gate) will refuse to start. If the image host refuses this machine (a 401 above), copy the folder from a machine that has them and build again:\n  rsync -a ubuntu@calternal-dev-02-std:.cache/calternal-ai/wallpapers/ ~/.cache/calternal-ai/wallpapers/ && npm run build -w apps/web`);

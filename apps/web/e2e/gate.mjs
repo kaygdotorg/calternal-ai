@@ -17,7 +17,7 @@ const free = () => new Promise((res, rej) => { const s = createServer(); s.liste
 try { readFileSync("dist/index.html"); } catch { console.error("No dist/ yet: run `npm run build -w apps/web` first."); process.exit(2); }
 // The suites look at the default photographs: a build without them would fail for the wrong reason, so say so first.
 const wanted = JSON.parse(readFileSync("wallpapers.json", "utf8")).filter((w) => !existsSync(`dist/wallpapers/${w.id}.jpg`));
-if (wanted.length) { console.error(`dist/ lacks ${wanted.length} default wallpapers (the image host refused this machine). Copy ~/.cache/calternal-ai/wallpapers from a machine that has them (dev-02), run \`npm run build\` again, then retry.`); process.exit(2); }
+if (wanted.length) { console.error(`dist/ lacks ${wanted.length} default wallpapers (the image host refused this machine). Copy them from a machine that has them, build again, then retry:\n  rsync -a ubuntu@calternal-dev-02-std:.cache/calternal-ai/wallpapers/ ~/.cache/calternal-ai/wallpapers/ && npm run build -w apps/web`); process.exit(2); }
 const only = process.argv.slice(2);
 const list = only.length ? SUITES.filter((s) => only.includes(s.name)) : SUITES;
 const port = await free();

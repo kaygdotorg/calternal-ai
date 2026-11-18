@@ -44,7 +44,7 @@
 
 <div class="sp">
   <VirtualList inside count={g.members.length} estimate={64} overscan={600} label="People" onrange={(_, end) => { if (end >= g.members.length - 20) void more(); }}>
-    {#snippet row(i)}{@const m = g.members[i]}{#if m}
+    {#snippet row(ix)}{@const m = g.members[ix]}{#if m}
     <div class="r" class:col={canManage && m.role !== "owner" && m.account_id !== me} data-setting="space.member.{m.account_id}">
       <span class="n"><span class="t">{m.account_id === me ? `${m.name} (you)` : m.name}</span><span class="h">{capitalise(m.role)}</span></span>
       {#if canManage && m.role !== "owner" && m.account_id !== me}

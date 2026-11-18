@@ -39,7 +39,7 @@
     <Capsule label="Lasts" kind="radio" glass={false} items={WHEN} value={days} onchange={(v) => (days = v)} /></span>
     <Button text="Make an invitation" variant="primary" disabled={busy} onclick={() => act(() => people.createInvite(space, role, Date.now() + Number(days) * 86400000))} /></div>
   <VirtualList inside count={shown.length} estimate={90} overscan={600} label="Invitations" onrange={(_, end) => { if (end >= shown.length - 20) void more(); }}>
-    {#snippet row(i)}{@const i = shown[i]}{#if i}
+    {#snippet row(ix)}{@const i = shown[ix]}{#if i}
     <div class="r" data-setting="space.invite.{i.invite_id}">
       <span class="n"><span class="t">{capitalise(i.role)}</span><span class="h">{standing(i)}</span>{#if i.link}<code class="cmd">{i.link}</code>{/if}</span>
       <span class="a">{#if i.link}<Button text={copied === i.invite_id ? "Copied" : "Copy link"} variant="secondary" onclick={() => copy(i)} /><Button text="Revoke" variant="quiet" disabled={busy} onclick={() => confirm("Revoke this invitation? The link stops working.") && act(() => people.revokeInvite(space, i.invite_id))} />{/if}</span>
