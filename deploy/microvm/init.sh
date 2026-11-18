@@ -5,7 +5,10 @@ set -eu
 export PATH=/usr/bin:/bin:/sbin
 mount -t proc proc /proc
 mount -t sysfs sysfs /sys
-mount -t devtmpfs devtmpfs /dev
+# The pinned Firecracker kernel mounts devtmpfs before launching PID 1.
+if ! awk '$2 == "/dev" && $3 == "devtmpfs" { found=1 } END { exit !found }' /proc/mounts; then
+  mount -t devtmpfs devtmpfs /dev
+fi
 mkdir -p /dev/pts /dev/shm
 mount -t devpts devpts /dev/pts
 mount -t tmpfs tmpfs /dev/shm
