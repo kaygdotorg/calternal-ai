@@ -65,15 +65,15 @@ try {
     ok(/Alt|⌥/.test(await (async () => { await w0.getByRole("button", { name: "Full screen" }).hover(); await p.waitForTimeout(700); return p.locator(".warm-tip").innerText().catch(() => ""); })()), "the tooltip of full screen shows its shortcut");
     await p.mouse.move(5, 5);
     // ---- the wallpaper and the colour ----
-    ok(!(await p.evaluate(() => !!document.querySelector(".mid-card"))) && await p.evaluate(() => { const c = getComputedStyle(document.querySelector("[data-canvas]")); const b = getComputedStyle(document.querySelector("[data-canvas]"), "::before"); return c.backgroundImage === "none" && c.backgroundColor === "rgba(0, 0, 0, 0)" && (b.content === "none" || b.content === "normal"); }), "there is no card round the canvas and the area paints nothing itself (the sidebars' background shows through)");
-    ok(await p.evaluate(() => [...document.querySelectorAll("[data-win]")].every((w) => w.dataset.look === "card" && !!w.querySelector(".fg .pic"))), "every window is a middle card by default: the wallpaper's card copy under the card veil");
-    // the looks: Solid is the wallpaper-derived colour with ink at 7:1; Transparent is a tint over the background with no blurred copy and no backdrop filter
+    ok(!(await p.evaluate(() => !!document.querySelector("[data-canvas]").closest(".mid-card"))) && await p.evaluate(() => { const c = getComputedStyle(document.querySelector("[data-canvas]")); const b = getComputedStyle(document.querySelector("[data-canvas]"), "::before"); return c.backgroundImage === "none" && c.backgroundColor === "rgba(0, 0, 0, 0)" && (b.content === "none" || b.content === "normal"); }), "there is no card round the canvas and the area paints nothing itself (the sidebars' background shows through)");
+    ok(await p.evaluate(() => [...document.querySelectorAll("[data-win]")].every((w) => w.dataset.look === "card" && !!w.querySelector(":scope > .pic"))), "every window is the shared middle card (class mid-card) by default: the wallpaper's card copy under the card veil");
+    // the looks (all neutral, nothing tinted with the wallpaper): Solid is the page paper; Transparent is the paper at a density with no blurred copy and no backdrop filter
     await wins(p).nth(0).getByRole("button", { name: "More" }).click(); await item(p, /Look: Solid/).click(); await p.waitForTimeout(300);
-    const c = await p.evaluate(() => { const w = document.querySelectorAll("[data-win]")[0]; const s = getComputedStyle(w); return { bg: s.backgroundColor, ink: s.color, look: w.dataset.look }; });
-    ok(c.look === "solid" && ratio(rgbOf(c.bg), rgbOf(c.ink)) >= 7, "Solid: the ink reaches 7:1 on the wallpaper-derived colour", `${c.bg} / ${c.ink}`);
-    ok(scheme === "dark" ? Math.max(...rgbOf(c.bg)) < 80 : Math.min(...rgbOf(c.bg)) > 200, `the solid colour is ${scheme === "dark" ? "a deep" : "a pale"} tone`, c.bg);
+    const c = await p.evaluate(() => { const w = document.querySelectorAll("[data-win]")[0]; const probe = document.createElement("i"); probe.style.cssText = "position:absolute;background:var(--paper)"; document.body.append(probe); const paper = getComputedStyle(probe).backgroundColor; probe.remove(); return { bg: getComputedStyle(w).backgroundColor, paper, look: w.dataset.look }; });
+    ok(c.look === "solid" && c.bg === c.paper, "Solid is the page paper, a neutral surface (never tinted with the wallpaper)", `${c.bg} / ${c.paper}`);
+
     await wins(p).nth(0).getByRole("button", { name: "More" }).click(); await item(p, /Look: Transparent/).click(); await p.waitForTimeout(300);
-    const cl = await p.evaluate(() => { const w = document.querySelectorAll("[data-win]")[0]; const g = w.querySelector(".fg"); const after = getComputedStyle(g, "::after"); return { look: w.dataset.look, pic: !!g.querySelector(".pic"), f: getComputedStyle(g).backdropFilter, bg: after.backgroundColor, d: getComputedStyle(w).getPropertyValue("--fd") }; });
+    const cl = await p.evaluate(() => { const w = document.querySelectorAll("[data-win]")[0]; return { look: w.dataset.look, pic: !!w.querySelector(":scope > .pic"), f: getComputedStyle(w).backdropFilter, bg: getComputedStyle(w).backgroundColor, d: getComputedStyle(w).getPropertyValue("--fd") }; });
     ok(cl.look === "clear" && !cl.pic && (cl.f === "none" || cl.f === "") && /oklab|color\(|rgba?\(/.test(cl.bg) && +cl.d > 0 && +cl.d <= 1, "Transparent: only a tint over the background (no blurred copy, no backdrop filter), at the least density that reads", JSON.stringify(cl));
     await wins(p).nth(0).getByRole("button", { name: "More" }).click(); await item(p, /Look: Card/).click(); await p.waitForTimeout(300);
     // ---- niri's structure ----
@@ -195,12 +195,18 @@ try {
     const go = (id) => p.evaluate((i) => { history.pushState(null, "", "/threads/" + i); dispatchEvent(new PopStateEvent("popstate")); }, id);
     await go(items[0]); await p.waitForTimeout(400); await go(items[1]); await p.waitForTimeout(400); await go(items[0]); await p.waitForTimeout(500);
     ok((await wins(p).count()) === n && (await p.locator("[data-win][data-focused]").getAttribute("data-item")) === items[0], "opening an address that has a window focuses it and makes no second one", `${n} -> ${await wins(p).count()}`);
-    // edge fade
+    // the rest rule: no fade strips; at rest the focused window is fully in view (a neighbour may peek, cut by the canvas edge)
     await p.mouse.wheel(0, -5000); await p.waitForTimeout(300);
-    const fadeAt = () => p.evaluate(() => [".fade.l", ".fade.r"].map((q) => 1 - +getComputedStyle(document.querySelector(q)).opacity));
-    ok((await fadeAt())[0] === 1, "no fade at the left edge when no window crosses it");
-    const e0 = await wins(p).nth(1).boundingBox(); await p.mouse.move(e0.x + e0.width / 2, e0.y + e0.height / 2); await p.mouse.wheel(0, 120); await p.waitForTimeout(400);
-    ok((await fadeAt())[0] < 1, "a window leaving through the left edge fades it", String(await fadeAt()));
+    ok((await p.locator(".fade").count()) === 0, "there are no edge fade strips: a window is cut cleanly by the canvas edge");
+    const e0 = await wins(p).nth(1).boundingBox(); await p.mouse.move(e0.x + e0.width / 2, e0.y + e0.height / 2); await p.mouse.wheel(0, 90); await p.waitForTimeout(900);
+    const inView = await p.evaluate(() => { const c = document.querySelector("[data-canvas]").getBoundingClientRect(), f = document.querySelector("[data-win][data-focused]").getBoundingClientRect(); return f.left >= c.left - 1 && f.right <= c.right + 1; });
+    ok(inView, "after a gesture the focused window is fully in view (snapped on the motion tokens)");
+    const st = await p.evaluate(() => { const fw = document.querySelector("[data-win][data-focused]"), ow = [...document.querySelectorAll("[data-win]")].find((w) => !w.hasAttribute("data-focused")); return { ring: getComputedStyle(fw).boxShadow, dimF: +getComputedStyle(fw.querySelector(".dim")).opacity, dimO: +getComputedStyle(ow.querySelector(".dim")).opacity, rec: +getComputedStyle(ow.querySelector(".tr")).opacity }; });
+    ok(st.ring === "none" && st.dimF === 0 && st.dimO === 1 && st.rec < 1, "the focused window has no ring; an inactive one is dimmed by a neutral veil and its controls recede", JSON.stringify(st));
+    await wins(p).nth(0).getByRole("button", { name: "Share" }).click(); await p.waitForTimeout(300);
+    ok((await item(p, /Copy link/).count()) === 1, "Share opens a menu with Copy link (and the system share where the browser has one)");
+    await p.keyboard.press("Escape");
+    ok(await p.evaluate(() => document.querySelector("[data-win] .tr button svg path")?.getAttribute("d")?.startsWith("M14 10l6-6")), "the full screen icon is two outward chevrons");
     await ctx.close();
   }
   // ---- the card's wallpaper layer is a picture that stays still behind the moving cards ----
@@ -208,14 +214,14 @@ try {
     const { page: p, ctx } = await open(browser, "desktop", "dark", "/threads?canvas=1");
     await p.waitForTimeout(2200);
     await key(p, "Alt+Shift+KeyN"); await key(p, "Alt+Shift+KeyN");
-    const origin = () => p.evaluate(() => { const g = document.querySelector(".win .pic"); const r = g.getBoundingClientRect(); return [Math.round(r.left), Math.round(r.top)]; });
+    const origin = () => p.evaluate(() => { const g = document.querySelector(".win > .pic"); const r = g.getBoundingClientRect(); return [Math.round(r.left), Math.round(r.top)]; });
     for (let i = 0; i < 6; i++) await key(p, "Alt+Shift+ArrowLeft");
     await p.waitForTimeout(300);
     const o0 = await origin();
     const wb = await wins(p).nth(1).boundingBox(); await p.mouse.move(wb.x + wb.width / 2, wb.y + wb.height / 2); await p.mouse.wheel(0, 260); await p.waitForTimeout(500);
     const o1 = await origin();
     ok(Math.abs(o0[0]) <= 1 && Math.abs(o0[1]) <= 1 && Math.abs(o1[0]) <= 1 && Math.abs(o1[1]) <= 1, "each card's wallpaper picture stays at the viewport's origin while the strip scrolls (only transforms move)", `${o0} -> ${o1}`);
-    ok(await p.evaluate(() => getComputedStyle(document.querySelector(".win .fg")).backdropFilter === "none"), "no window has a live backdrop filter");
+    ok(await p.evaluate(() => getComputedStyle(document.querySelector(".win")).backdropFilter === "none"), "no window has a live backdrop filter");
     await ctx.close();
   }
   // ---- six windows: frame times at 4x CPU, as cards and with every window transparent ----
