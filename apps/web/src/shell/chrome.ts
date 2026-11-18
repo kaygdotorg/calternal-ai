@@ -33,7 +33,7 @@ export function setThemeColor(color: string): void {
   for (const m of document.querySelectorAll('meta[name="theme-color"]')) if (m.getAttribute("content") !== color) m.setAttribute("content", color);
   // iOS 26 and 27 Safari ignore `theme-color` and tint the status bar and toolbar from the page's own background at the edges (checked on the Simulator: a body background reaches under the status bar and the bars take it),
   // so the root's background is the same solved colour: the app runs edge to edge with no separate band.
-  if (root().style.backgroundColor !== color) root().style.backgroundColor = color;
+  setRootVar("--bars", color); // read by `:root:root { background-color: var(--bars) }` (styles/base.css); the page's own `body` background would otherwise colour the canvas and show as a band
 }
 
 /** The screen's own height when the app covers the whole screen (under the status bar, or turned on its side), else 0. */

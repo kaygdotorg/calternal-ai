@@ -73,3 +73,6 @@ input, textarea, [contenteditable], .selectable, .selectable * { -webkit-user-se
 /* A Selector that is the control of its own row fills the row (its default) up to a readable maximum, so three options never stretch across a wide pane (docs/ui-design-system.md, "Selectors fill their row"). */
 :root { --selector-row-max: 28rem; }
 .row-selector { max-width: var(--selector-row-max); }
+
+/* The canvas behind the page is what Safari 26+ tints its status bar and toolbar with (it ignores `theme-color`, and the page's layout viewport starts below the status bar): the solved top colour of the wallpaper under its veil (shell/chrome.ts), so the app runs edge to edge. */
+:root:root { background-color: var(--bars, var(--paper)); }
