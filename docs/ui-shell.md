@@ -92,7 +92,7 @@ Measured: drag and settle at 4x CPU in Chromium: 56 frames, every one 16.7 ms (n
 
 - Each sidebar has a handle at the vertical centre of the gap beside the card: a slim bar that shows on hover, focus or drag. Drag it, or focus it and use Left/Right (16 px, Shift 64 px), Home/End, Enter or a double-click to reset. Left sidebar 200 to 420 px, right 260 to 560 px (unscaled); the width is kept per device. Code: `shell/ResizeHandle.svelte`, `e2e/resize.mjs`.
 - Chat is wide on a desktop by default (the calternal-ui plugin's wide chat): the column fills the card with a 3.25 rem left gutter (room for a contents rail) and a 1.5 rem right margin; your messages are bubbles on the right with an iMessage tail, the agent writes from the left across the full width. Appearance > Chat layout returns to a centred column.
-- The first-run chooser is a window-level dialog, not part of a sidebar.
+- The look chooser is step 2 of the onboarding (Look); there is no separate first-visit dialog (owner decision #28, 2026-11-18).
 
 ## Backgrounds and fonts
 
