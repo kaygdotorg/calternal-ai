@@ -9,7 +9,7 @@ impl Auth {
         self.inner
             .db
             .run(|c| {
-                c.query_row("SELECT NOT EXISTS(SELECT 1 FROM passkeys) AND NOT EXISTS(SELECT 1 FROM oidc_links)", [], |r| r.get(0))
+                c.query_row("SELECT COUNT(*) = 0 FROM passkeys", [], |r| r.get(0))
                     .map_err(crate::db::sql)
             })
             .await
@@ -22,16 +22,10 @@ impl Auth {
         ceremony: &str,
         credential: Value,
         device: &str,
-    ) -> Result<(AccountId, InstallationId, String, Vec<String>)> {
+    ) -> Result<(AccountId, InstallationId, String)> {
         let account = self.inner.ceremonies.setup_account(ceremony)?;
-        crate::passkey::finish_registration(
-            &self.inner,
-            account,
-            ceremony,
-            credential,
-            device.to_owned(),
-        )
-        .await
+        self.finish_setup(account, ceremony, credential, device)
+            .await
     }
 
     /// Admits an HTTP login start before reading its body, using a transport-derived source.
@@ -77,7 +71,7 @@ impl Auth {
         ceremony: &str,
         credential: Value,
         device: &str,
-    ) -> Result<(AccountId, InstallationId, String, Vec<String>)> {
+    ) -> Result<(AccountId, InstallationId, String)> {
         crate::passkey::finish_login_inner(
             &self.inner,
             ceremony,

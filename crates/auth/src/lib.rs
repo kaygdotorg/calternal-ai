@@ -9,9 +9,6 @@
 #![deny(rustdoc::broken_intra_doc_links)]
 
 mod account;
-mod account_details;
-mod account_email;
-mod account_recovery;
 pub mod agents;
 mod ceremony;
 mod config;
@@ -19,8 +16,6 @@ pub mod db;
 pub mod erasure;
 mod http_facing;
 mod invite_key;
-mod oidc;
-pub use oidc::{OidcProvider, OidcSession, OidcSignup};
 pub mod invites;
 pub mod limit;
 pub mod machines;
@@ -34,7 +29,6 @@ pub mod spaces;
 use calternal_types::{AccountId, InstallationId, SpaceId};
 pub mod token;
 pub use account::{Auth, LoginPurpose};
-pub use account_email::AccountMail;
 pub use config::{AuthConfig, Clock};
 pub use passkeys::PasskeyInfo;
 pub use session::{Installation, InstallationKind};
@@ -51,8 +45,6 @@ struct Inner {
     setup_failures: limit::Limiter,
     setup_targets: limit::TargetLimiter,
     login_starts: limit::Limiter,
-    email_sends: limit::Limiter,
-    recovery_proofs: limit::Limiter,
 }
 
 /// Stable refusal categories for account and stored-space operations.

@@ -13,7 +13,6 @@ pub struct OwnerSetup {
     path: PathBuf,
     url: String,
     publish: tokio::sync::Mutex<()>,
-    mail: Option<crate::account_http::mail::Mailer>,
 }
 
 impl OwnerSetup {
@@ -24,38 +23,7 @@ impl OwnerSetup {
             path: appdata.join("setup.token"),
             url: format!("{}/", origin.trim_end_matches('/')),
             publish: tokio::sync::Mutex::new(()),
-            mail: None,
         }
-    }
-
-    /// Shares the host's private account-notice queue with local administration.
-    pub fn with_account_mail(mut self, http: &crate::account_http::HttpAuth) -> Self {
-        self.mail = http.mail.clone();
-        self
-    }
-
-    /// Issues an enrollment grant through authorized local operator transport.
-    /// The operator verifies identity out of band before invoking this path.
-    pub async fn recover(
-        &self,
-        account: calternal_types::AccountId,
-        reason: &str,
-    ) -> Result<String, Error> {
-        let grant = self
-            .auth
-            .operator_recovery(account, reason)
-            .await
-            .map_err(|_| Error::invalid_input("could not issue an account recovery grant"))?;
-        if let Some(mail) = &self.mail
-            && let Ok(Some(to)) = self.auth.security_email(account).await
-        {
-            mail.notice(calternal_auth::AccountMail {
-                to,
-                subject: "Calternal operator recovery started",
-                code: None,
-            });
-        }
-        Ok(grant)
     }
 
     /// Path of the private file published by this service. No I/O.

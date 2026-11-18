@@ -17,8 +17,16 @@ pub(crate) enum Pending {
     /// Registering a passkey with a setup token.
     Setup {
         state: PasskeyRegistration,
-        /// Checked enrollment target and grant binding.
-        request: crate::setup::Redeemable,
+        /// Hash of the setup token being redeemed.
+        token_hash: Vec<u8>,
+        /// The user the passkey belongs to (new for a first owner).
+        user: AccountId,
+        /// The name for a new first owner.
+        name: String,
+        /// Whether this creates the first owner.
+        first_owner: bool,
+        /// Whether enrollment consumes a space invitation.
+        invite: bool,
     },
     /// A signed-in person adding another passkey in Settings.
     Add {
@@ -105,9 +113,7 @@ impl Ceremonies {
     pub(crate) fn setup_account(&self, id: &str) -> Result<AccountId> {
         let open = self.open.lock().unwrap_or_else(|p| p.into_inner());
         match open.get(id) {
-            Some((at, Pending::Setup { request, .. })) if at.elapsed() < self.ttl => {
-                Ok(request.user)
-            }
+            Some((at, Pending::Setup { user, .. })) if at.elapsed() < self.ttl => Ok(*user),
             _ => Err(Error::new(ErrorCode::PasskeyFailed, "no such prompt")),
         }
     }
@@ -147,9 +153,9 @@ impl Ceremonies {
     }
 
     /// Takes enrollment only for its bound account, preserving foreign prompts.
-    pub fn take_setup_for(&self, id: &str, user: AccountId, replacement: bool) -> Result<Pending> {
+    pub fn take_setup(&self, id: &str, user: AccountId) -> Result<Pending> {
         let mut open = self.open.lock().unwrap_or_else(|p| p.into_inner());
-        if !matches!(open.get(id), Some((_, Pending::Setup { request, .. })) if request.user == user && request.replacement == replacement)
+        if !matches!(open.get(id), Some((_, Pending::Setup { user: owner, .. })) if *owner == user)
         {
             return Err(Error::new(ErrorCode::PasskeyFailed, "no such prompt"));
         }

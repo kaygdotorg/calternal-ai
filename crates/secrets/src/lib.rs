@@ -25,8 +25,6 @@ pub trait KeyLifecycle: Send + Sync {
     fn record(&self, owner: &Owner, fingerprint: &[u8; 32], erasing: bool) -> Result<()>;
 }
 
-mod deployment;
-pub use deployment::DeploymentCipher;
 mod key;
 mod lifecycle;
 mod local;

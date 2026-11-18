@@ -175,12 +175,15 @@ pub(crate) async fn call(
                 .and_then(|v| v.as_str().map(str::to_owned))
                 .unwrap_or_else(|| "internal".into());
             let reason = api.details.as_ref().and_then(|d| d.get("reason")).and_then(Value::as_str);
+            let output_diagnostic = matches!(reason, Some("output_schema" | "view_schema"));
             let space_not_found = api.code == calternal_types::ErrorCode::NotFound
                 && api.message == "space not found";
             let hint = if space_not_found {
                 "Check the space shown by plugin dev or spaces.list. In SSH, expand SPACE_ID in the shell where you sourced the env file."
             } else if api.code == calternal_types::ErrorCode::InvalidInput {
                 "Correct the field shown above. Check the plugin manifest or run `calternal describe --json` for host operation schemas."
+            } else if output_diagnostic {
+                "Compare the worker result with the operation's output schema or generated-view contract."
             } else if reason == Some("worker_busy") {
                 "Retry when the current invocations finish. For a write, repeat with the same request ID."
             } else if operation == MACHINES_VERIFY {
@@ -214,6 +217,11 @@ pub(crate) async fn call(
                 .request_id(request.request_id.clone())
                 .hint(hint);
             if let Some(details) = api.details {
+                if output_diagnostic
+                    && let Some(path) = details["path"].as_str()
+                {
+                    failure = failure.human_message(format!("The extension returned invalid output at {path}."));
+                }
                 failure = failure.details(json!(details));
             }
             failure

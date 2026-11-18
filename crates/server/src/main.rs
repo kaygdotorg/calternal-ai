@@ -62,6 +62,12 @@ fn main() {
         Cmd::Describe { connection } => {
             calternal_cli::agent::invoke(connection, None, "{}".into(), &out)
         }
+        Cmd::Onboarding { connection, cmd } => out.finish(calternal_cli::account_input::run(
+            connection,
+            cmd.operation(),
+            serde_json::json!({}),
+            &out,
+        )),
         Cmd::Drafts { connection, cmd } => {
             let (op, input) = cmd.operation();
             out.finish(calternal_cli::account_input::run(
@@ -118,18 +124,14 @@ fn main() {
             appdata,
             installation_id,
         } => out.finish(admin_cli::setup_code(&appdata, &installation_id)),
-        Cmd::AccountRecover {
-            account,
-            reason,
-            identity_verified,
+        Cmd::ReceiptStatus {
             appdata,
             installation_id,
-        } => out.finish(admin_cli::account_recover(
+            space,
+        } => out.finish(admin_cli::receipt_status(
             &appdata,
             &installation_id,
-            &account,
-            &reason,
-            identity_verified,
+            &space,
         )),
         Cmd::Serve {
             appdata,
@@ -320,18 +322,6 @@ async fn serve(
             ));
         }
     };
-    config.email_required = match std::env::var("CALTERNAL_ACCOUNT_EMAIL_REQUIRED").as_deref() {
-        Ok("1" | "true") => true,
-        Ok("0" | "false") | Err(std::env::VarError::NotPresent) => false,
-        _ => {
-            return Err(boot(
-                1,
-                "invalid_input",
-                "invalid account email policy",
-                DATA_HINT,
-            ));
-        }
-    };
     // Directory receipts follow the same retention as space receipts.
     config.receipt_retention = receipt_retention;
     config.invite_retention = invite_retention;
@@ -344,7 +334,7 @@ async fn serve(
         ));
     }
     let directory_root = data_dir.clone();
-    let mut directory = tokio::task::spawn_blocking(move || {
+    let directory = tokio::task::spawn_blocking(move || {
         let data_dir = directory_root;
         let directory =
             match StoredDirectory::open(&data_dir, config, development, Some(Arc::new(recovery))) {
@@ -362,9 +352,6 @@ async fn serve(
     })
     .await
     .map_err(|e| boot(1, "failed", e.to_string(), DATA_HINT))??;
-    directory
-        .configure_account_mail()
-        .map_err(|e| boot(1, "invalid_input", e.to_string(), DATA_HINT))?;
     let (store, pending_erasure) = {
         let spaces = directory.spaces.clone();
         let root = data_dir.clone();
@@ -416,18 +403,14 @@ async fn serve(
             .purge_invites()
             .await
             .map_err(|e| boot(1, "failed", format!("invite cleanup: {e}"), DATA_HINT))?;
-        invite_tasks.spawn(people_maintenance::sweep_account_security(auth.clone()));
         invite_tasks.spawn(people_maintenance::sweep_invites(auth, backlog));
     }
     let owner_setup = calternal_server::auth::Directory::http_auth(&directory).map(|service| {
-        Arc::new(
-            calternal_server::owner_setup::OwnerSetup::new(
-                service.auth.clone(),
-                &data_dir,
-                &public_origin,
-            )
-            .with_account_mail(&service),
-        )
+        Arc::new(calternal_server::owner_setup::OwnerSetup::new(
+            service.auth.clone(),
+            &data_dir,
+            &public_origin,
+        ))
     });
     let setup_file = if let Some(setup) = &owner_setup {
         setup
@@ -503,12 +486,14 @@ async fn serve(
     // Operator commands reach this server here instead of writing behind it.
     let admin_root = data_dir.clone();
     let admin_machines = machines.clone();
+    let admin_content = state.store.shared_content();
     let _admin = tokio::task::spawn_blocking(move || {
         calternal_server::machines::admin::serve_socket(
             &admin_root,
             installation,
             admin_machines,
             owner_setup,
+            admin_content,
         )
     })
     .await

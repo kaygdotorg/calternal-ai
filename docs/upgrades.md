@@ -18,6 +18,7 @@ database until checkpointed. SQLite SHM, locks and sockets are runtime state.
 | Appdata `spaces/<id>/index.db`, `secrets/spaces/<id>/head` | Authority | Space journal, SQLite 2 and binary CHW2. Journal, epoch, receipts and independent head witness. Receipts are pruned after the operator's retention (7 days by default) only on content's command, with every receipt of a surviving outbox intent pinned. The fence adds no stored state. |
 | Appdata `spaces/<id>/jobs.db` | Authority | Jobs, SQLite 2. Admission, retry and in-flight state, checkpoints, event outbox and retention. |
 | Appdata `accounts/<id>/input.db`, `content.db`, `agent-settings.db` | Authority | Account input, content and jobs. SQLite 2 for drafts and pending input, 1 for protected collections and 1 for retry settings. |
+| Appdata `accounts/<id>/onboarding.db` | Authority | Account onboarding, new SQLite 1 baseline through the shared runner. The production baseline has no marker. Missing files read as unfinished. The completion marker rides with account settings and is removed by account erasure. |
 | Appdata `accounts/<id>/secrets.db`, `spaces/<id>/secrets.db` | Authority | Secrets, SQLite 1. Sealed values, pending prompts, audit and key state. |
 | Appdata `system/invite.key`, account and space `secret.key` | Authority | Auth and secrets. Fixed 32-byte payloads with v1 key derivation and ciphertext binding. Preserve bytes, ownership and mode with their database. |
 | Appdata `installed-plugins.sqlite3` and `installed-plugin-workers/` | Mixed | Package store, SQLite 1. Installed and retained archives, digests, approvals and revision counters are authoritative. Manifest API version 1 describes the package contract. Extracted worker copies are a cache reused across restarts only when they match the archive bytes, so they carry no version. Development drafts are disposable. |
@@ -149,23 +150,3 @@ full deployment budget.
 During a reconnect, the client retains queued sends and delivers them after
 the server is reachable again. Requests that already received a durable
 receipt replay using the same request ID.
-
-## Account onboarding and recovery
-
-Auth schema 12 adds account-owned email state, challenges, recovery
-proofs and grants, and audit history through the shared runner. Account
-erasure cascades to these rows. The protected recovery inventory captures
-the new tables under their account UUIDs. Invite-bound email challenges
-without an account expire after ten minutes and are owned by the
-installation until consumed or pruned. Preserve `system/invite.key`,
-which also provides separate derived keys for account proofs and sealed
-provider credentials. Auth schema 13 adds provider definitions with
-sealed credentials, issuer-bound identity links and session origins.
-Definitions belong to the installation. Links and session origins belong
-to the account.
-
-This upgrade is incompatible with the schema-11 protected recovery
-writer because its table inventory is closed. Take the full restore
-point with explicit owner approval and use the locked deployment
-coordinator. A v11 process must refuse the newer authority rather than
-discard unknown records.

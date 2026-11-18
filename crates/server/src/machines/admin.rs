@@ -1,4 +1,5 @@
-//! Operator machine administration, behind `calternal machines …`.
+//! Private operator socket for machine administration, first-owner setup and
+//! receipt-pruning diagnostics.
 //!
 //! Machine authority commits through the recovery barrier, and one installation's
 //! recovery log has one writer: the process holding the root locks. So an
@@ -18,8 +19,9 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
+use calternal_content::{Content, ReceiptPruningIssue};
 use calternal_machine::protocol::Owner;
-use calternal_types::{AccountId, Error};
+use calternal_types::{AccountId, Error, SpaceId};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -37,12 +39,10 @@ const IO_TIMEOUT: Duration = Duration::from_secs(30);
 pub enum Request {
     /// Rotate the first-owner code through the running server.
     SetupCode,
-    /// Issue an account replacement grant through privileged local transport.
-    AccountRecover {
-        /// Immutable account identity, never a display name.
-        account: AccountId,
-        /// Out-of-band verification reason from the operator.
-        reason: String,
+    /// Inspect receipt pruning in a single space through the running server.
+    ReceiptStatus {
+        /// Space UUID to inspect, including dormant spaces.
+        space: SpaceId,
     },
     /// Issue a one-time enrolment code for `owner`, valid for `minutes`.
     Code {
@@ -110,17 +110,15 @@ pub enum Response {
         /// Public origin for registration.
         url: String,
     },
-    /// A one-time, enrollment-only grant shown privately to the operator.
-    AccountRecovery {
-        /// Secret to present at the account recovery enrollment screen.
-        enrollment_grant: String,
-        /// Public origin at which this grant can be used.
-        url: String,
-    },
     /// Registration has already been completed.
     SetupComplete {
         /// Public origin for signing in.
         url: String,
+    },
+    /// Receipt-pruning health for the requested space.
+    ReceiptStatus {
+        /// Reason for impaired pruning, if observed.
+        issue: Option<ReceiptPruningIssue>,
     },
     /// A new code and its expiry in Unix milliseconds.
     Code {
@@ -164,9 +162,14 @@ struct Reply {
 /// commit; call on a blocking thread.
 pub fn execute(svc: &MachineService, request: Request) -> Result<Response, Error> {
     Ok(match request {
-        Request::SetupCode | Request::AccountRecover { .. } => {
+        Request::SetupCode => {
             return Err(Error::unavailable(
                 "start this server before requesting a setup code",
+            ));
+        }
+        Request::ReceiptStatus { .. } => {
+            return Err(Error::unavailable(
+                "start this server before inspecting receipt pruning",
             ));
         }
         Request::Code { owner, minutes } => {
@@ -310,6 +313,7 @@ pub fn ask_server(
 /// recovery are set up; a stale socket file is replaced (the guard proves no other
 /// server owns this appdata). Each connection: peer UID check, one bounded line
 /// read with a timeout, [`execute`] on a blocking task, one line written.
+/// Receipt status uses the live content service for a read-only inspection.
 ///
 /// # Errors
 /// I/O errors binding the socket or setting its mode.
@@ -318,6 +322,7 @@ pub fn serve_socket(
     installation: Uuid,
     svc: Arc<MachineService>,
     owner_setup: Option<Arc<crate::owner_setup::OwnerSetup>>,
+    content: Arc<Content>,
 ) -> std::io::Result<tokio::task::JoinHandle<()>> {
     use std::os::unix::fs::PermissionsExt;
     let path = socket_path(appdata);
@@ -343,8 +348,9 @@ pub fn serve_socket(
             }
             let svc = svc.clone();
             let owner_setup = owner_setup.clone();
+            let content = content.clone();
             tokio::spawn(async move {
-                if let Err(e) = answer(stream, installation, svc, owner_setup).await {
+                if let Err(e) = answer(stream, installation, svc, owner_setup, content).await {
                     tracing::warn!(error = %e, "admin socket request failed");
                 }
             });
@@ -357,6 +363,7 @@ async fn answer(
     installation: Uuid,
     svc: Arc<MachineService>,
     owner_setup: Option<Arc<crate::owner_setup::OwnerSetup>>,
+    content: Arc<Content>,
 ) -> std::io::Result<()> {
     use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt};
     let (read, mut write) = stream.into_split();
@@ -388,22 +395,14 @@ async fn answer(
                 "passkey onboarding is unavailable on this server",
             )),
         },
-        Ok(Envelope {
-            request: Request::AccountRecover { account, reason },
-            ..
-        }) => match owner_setup {
-            Some(setup) => setup
-                .recover(account, &reason)
-                .await
-                .map(|enrollment_grant| Response::AccountRecovery {
-                    enrollment_grant,
-                    url: setup.url().to_owned(),
-                }),
-            None => Err(Error::unavailable("account recovery is unavailable")),
-        },
-        Ok(e) => crate::blocking::spawn(move || execute(&svc, e.request))
-            .await
-            .unwrap_or_else(|_| Err(Error::internal("admin task failed"))),
+        Ok(e) => crate::blocking::spawn(move || match e.request {
+            Request::ReceiptStatus { space } => content
+                .receipt_pruning_issue(space)
+                .map(|issue| Response::ReceiptStatus { issue }),
+            request => execute(&svc, request),
+        })
+        .await
+        .unwrap_or_else(|_| Err(Error::internal("admin task failed"))),
     };
     let reply = match result {
         Ok(data) => Reply {

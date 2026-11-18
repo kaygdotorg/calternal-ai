@@ -46,7 +46,7 @@ serde_json = { workspace = true, features = ["raw_value"] }
 uuid.workspace = true
 clap.workspace = true
 tokio = { workspace = true, features = ["process", "sync", "signal", "fs"] }
-axum = { version = "0.8", default-features = false, features = ["http1", "tokio", "json", "query", "form"] }
+axum = { version = "0.8", default-features = false, features = ["http1", "tokio", "json", "query"] }
 tower-http = { version = "0.7", features = ["fs"] }
 rusqlite.workspace = true
 hex.workspace = true
@@ -61,8 +61,6 @@ base64.workspace = true
 tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "env-filter", "ansi"] }
 
 reqwest.workspace = true
-openidconnect = { version = "4", default-features = false, features = ["reqwest", "rustls-tls"] }
-lettre = { version = "0.11", default-features = false, features = ["builder", "smtp-transport", "tokio1-native-tls"] }
 
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }

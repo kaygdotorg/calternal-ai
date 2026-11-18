@@ -2,6 +2,7 @@
 //! API host. All failures leaving this module use fixed caller-safe messages.
 
 use super::catalog::Rendition;
+use crate::netguard;
 use calternal_types::Error;
 use reqwest::{Url, header};
 use serde::Deserialize;
@@ -129,34 +130,42 @@ impl Upstream {
             }
             requests.push_back(now);
         }
-        let api = url.host_str() == Some(API);
-        #[cfg(test)]
-        let (url, client) = if let Some(origin) = &self.stand_in {
-            let mut local = origin.clone();
-            local.set_path(url.path());
-            local.set_query(url.query());
-            (
-                local,
-                reqwest::Client::builder()
-                    .no_proxy()
-                    .redirect(reqwest::redirect::Policy::none())
-                    .build()
-                    .expect("stand-in client"),
-            )
-        } else {
-            (url, self.client.clone())
-        };
-        #[cfg(not(test))]
-        let client = &self.client;
-        let mut request = client.get(url);
-        if api {
-            request = request
-                .header(header::AUTHORIZATION, self.authorization.clone())
-                .header("Accept-Version", "v1");
-        }
-        let mut reply = request.send().await.map_err(|_| unavailable())?;
+        let reply = netguard::get_with_redirects(
+            url,
+            0,
+            async |_| Ok(()),
+            |url| {
+                let api = url.host_str() == Some(API);
+                #[cfg(test)]
+                let (url, client) = if let Some(origin) = &self.stand_in {
+                    let mut local = origin.clone();
+                    local.set_path(url.path());
+                    local.set_query(url.query());
+                    (
+                        local,
+                        reqwest::Client::builder()
+                            .no_proxy()
+                            .redirect(reqwest::redirect::Policy::none())
+                            .build()
+                            .expect("stand-in client"),
+                    )
+                } else {
+                    (url, self.client.clone())
+                };
+                #[cfg(not(test))]
+                let client = &self.client;
+                let mut request = client.get(url);
+                if api {
+                    request = request
+                        .header(header::AUTHORIZATION, self.authorization.clone())
+                        .header("Accept-Version", "v1");
+                }
+                request
+            },
+        )
+        .await
+        .map_err(|_| unavailable())?;
         if reply.status() != reqwest::StatusCode::OK
-            || reply.content_length().is_some_and(|n| n > cap as u64)
             || (jpeg
                 && reply
                     .headers()
@@ -166,30 +175,14 @@ impl Upstream {
         {
             return Err(unavailable());
         }
-        let mut bytes = Vec::new();
-        while let Some(chunk) = reply.chunk().await.map_err(|_| unavailable())? {
-            if chunk.len() > cap - bytes.len() {
-                return Err(unavailable());
-            }
-            bytes.extend_from_slice(&chunk);
-        }
-        Ok(bytes)
+        netguard::read_bounded(reply, cap)
+            .await
+            .map_err(|_| unavailable())
     }
 }
 
 fn checked_url(text: &str, host: &str) -> Result<Url, Error> {
-    let url = Url::parse(text).map_err(|_| unavailable())?;
-    if text.len() > 2048
-        || url.scheme() != "https"
-        || url.host_str() != Some(host)
-        || url.port().is_some()
-        || !url.username().is_empty()
-        || url.password().is_some()
-        || url.fragment().is_some()
-    {
-        return Err(unavailable());
-    }
-    Ok(url)
+    netguard::checked_url(text, &[host]).ok_or_else(unavailable)
 }
 
 /// JPEG marker check for trusted image-service output. We serve only a fixed

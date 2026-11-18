@@ -17,15 +17,7 @@ mod role_batch;
 
 /// Auth store descriptor shared with the locked deployment coordinator. No I/O.
 pub const MIGRATIONS: calternal_store::migrations::Schema<'_> =
-    calternal_store::migrations::Schema::new(
-        "auth.db",
-        11,
-        &[include_str!("schema.sql")],
-        &[
-            include_str!("account_details.sql"),
-            include_str!("oidc.sql"),
-        ],
-    );
+    calternal_store::migrations::Schema::new("auth.db", 11, &[include_str!("schema.sql")], &[]);
 
 /// A handle to the dedicated auth.db worker. Its bounded mailbox serializes
 /// authority reads, authentication writes and recovery publication for this

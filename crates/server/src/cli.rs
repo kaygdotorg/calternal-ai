@@ -87,6 +87,13 @@ pub(super) enum Cmd {
         #[command(flatten)]
         connection: calternal_cli::agent::Connection,
     },
+    /// Read or record onboarding completion for the signed-in account.
+    Onboarding {
+        #[command(flatten)]
+        connection: calternal_cli::account_input::Connection,
+        #[command(subcommand)]
+        cmd: calternal_cli::onboarding::Onboarding,
+    },
     /// Save, read and erase private account compositions.
     Drafts {
         #[command(flatten)]
@@ -151,16 +158,10 @@ pub(super) enum Cmd {
         #[arg(long, env = "CALTERNAL_INSTALLATION_ID")]
         installation_id: String,
     },
-    /// Issue an enrollment grant after verifying an account owner's identity.
-    AccountRecover {
-        /// Account UUID from the operator directory.
-        account: String,
-        /// Operator audit reason: lost_passkeys, compromised, or mail_unavailable.
-        #[arg(long)]
-        reason: String,
-        /// Confirms that the operator verified the caller's identity out of band.
-        #[arg(long, required = true)]
-        identity_verified: bool,
+    /// Inspect receipt-pruning health for one space through the private admin socket.
+    ReceiptStatus {
+        /// Space UUID to inspect.
+        space: String,
         /// The running server's appdata directory.
         #[arg(long)]
         appdata: PathBuf,

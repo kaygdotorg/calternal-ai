@@ -122,18 +122,9 @@ impl StoredDirectory {
         let auth =
             calternal_auth::Auth::open(data, config.clone()).map_err(std::io::Error::other)?;
         let mut table = Self::with_spaces(data, auth.spaces(), development, recovery)?;
-        table.http = Some(crate::account_http::HttpAuth::new(auth, config));
+        table.http = Some(crate::account_http::HttpAuth { auth, config });
         Ok(table)
     }
-    /// Configures the private SMTP worker from runtime operator settings.
-    /// No configured SMTP host leaves account mail disabled.
-    pub fn configure_account_mail(&mut self) -> std::io::Result<()> {
-        if let Some(http) = &mut self.http {
-            http.mail = crate::account_http::mail::Mailer::from_environment()?;
-        }
-        Ok(())
-    }
-
     /// Attaches `recovery`, then (when `development`) seeds the fixtures and opens
     /// their bearer token files.
     fn with_spaces(

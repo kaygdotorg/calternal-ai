@@ -43,20 +43,6 @@ impl Key {
         blake3::keyed_hash(&self.lookup, secret.as_bytes())
     }
 
-    /// Domain-separated lookup for account codes and short-lived proofs.
-    pub(crate) fn account_proof(&self, purpose: &str, secret: &str) -> Vec<u8> {
-        let key = blake3::derive_key("calternal account proofs v1", &self.encryption);
-        let mut h = blake3::Hasher::new_keyed(&key);
-        h.update(purpose.as_bytes())
-            .update(b"\0")
-            .update(secret.as_bytes());
-        h.finalize().as_bytes().to_vec()
-    }
-
-    pub(crate) fn oidc_cipher(&self) -> calternal_secrets::DeploymentCipher {
-        calternal_secrets::DeploymentCipher::oidc(&self.encryption)
-    }
-
     pub(crate) fn encrypt(&self, secret: &str, id: &str) -> Result<Vec<u8>> {
         let random = crate::token::random32()?;
         let nonce = &random[..12];
