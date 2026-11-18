@@ -73,9 +73,9 @@ unsent edits can be lost during a system crash or power loss.
    store, find its `calternal_store::migrations::Schema` declaration. The
    writer and the deployment inventory must use that same descriptor. Keep
    the baseline number, initial batches, and previously shipped steps fixed.
-2. Append one SQL batch for the next version. The runner derives the version
-   from the number of steps and writes `PRAGMA user_version` in the same
-   immediate transaction as the batch. Leave transaction control and version
+2. Append a `(version, SQL batch)` entry to that store's descriptor. The
+   runner checks for consecutive versions and writes `PRAGMA user_version`
+   in the same immediate transaction as the batch. Leave transaction control and version
    writes to the runner. Include any required deterministic backfill and
    preserve ownership, references, and receipt replay. A new store starts
    with an explicit baseline and an inventory row.
@@ -97,6 +97,12 @@ unsent edits can be lost during a system crash or power loss.
    below and check reads, acknowledged writes, and rollback against that data.
    The test-only `upgrade_schema()` step in `machines/db.rs` shows the shape of
    a real step and how the fixture tests drive it.
+
+**Claiming a version.** Choose the next number in the store's numbered list
+on your branch. The number becomes fixed when the migration merges into
+`dev`. If another lane has already taken it, keep the merged entry and
+renumber your pending step to the next free number when merging. The shared
+descriptor rejects duplicate numbers and gaps.
 
 ## Release handoff
 

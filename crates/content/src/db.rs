@@ -80,7 +80,7 @@ pub(crate) const SPACE_SCHEMA: calternal_store::migrations::Schema<'_> =
             crate::linked_write::SCHEMA,
             crate::trash::SCHEMA,
         ],
-        &[THREAD_SNOOZE],
+        &[(4, THREAD_SNOOZE)],
     );
 
 pub(crate) fn database(

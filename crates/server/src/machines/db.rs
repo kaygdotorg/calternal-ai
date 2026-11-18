@@ -385,19 +385,27 @@ pub(crate) fn last_thread_machine(
 /// Return the machine registry schema shared by normal startup and upgrade admission.
 /// Baseline 6 is the first production schema, including durable erased-worker stops.
 pub(crate) fn upgrade_schema() -> calternal_store::migrations::Schema<'static> {
+    use calternal_store::migrations::Schema;
+
+    const TITLES: (i64, &str) = (7, TITLE_LEASES);
+    const CURRENT: Schema<'static> = Schema::new("machines.db", 6, &[SCHEMA], &[TITLES]);
     #[cfg(feature = "test-plugins")]
     if option_env!("CALTERNAL_RELEASE_TEST_MIGRATION") == Some("v7") {
-        return calternal_store::migrations::Schema::new(
+        const FIXTURE: Schema<'static> = Schema::new(
             "machines.db",
             6,
             &[SCHEMA],
             &[
-                TITLE_LEASES,
-                "CREATE TABLE upgrade_fixture (id INTEGER PRIMARY KEY) STRICT;",
+                TITLES,
+                (
+                    8,
+                    "CREATE TABLE upgrade_fixture (id INTEGER PRIMARY KEY) STRICT;",
+                ),
             ],
         );
+        return FIXTURE;
     }
-    calternal_store::migrations::Schema::new("machines.db", 6, &[SCHEMA], &[TITLE_LEASES])
+    CURRENT
 }
 
 #[cfg(test)]
