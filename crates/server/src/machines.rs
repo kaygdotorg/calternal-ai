@@ -68,6 +68,7 @@ mod owners;
 pub mod provider;
 pub(crate) mod readiness;
 mod sessions;
+pub(crate) mod space_execution;
 mod state;
 mod workers;
 

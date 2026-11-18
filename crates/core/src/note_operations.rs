@@ -1,6 +1,10 @@
 //! Native Notes operation declarations and bounded picker payloads.
 use crate::*;
-use calternal_types::{Capability, Error, SpaceId};
+use calternal_types::{
+    Capability,
+    Capability::{ContentWrite, SpaceRead},
+    Error, SpaceId,
+};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -329,12 +333,15 @@ fn rename(input: &JsonObject) -> Result<(), Error> {
     Ok(())
 }
 
+// Permanent removal administers the space and uses the existing Manager/Owner capability.
+const TRASH_ADMINISTRATION: Capability = Capability::SpaceSettings;
+
 macro_rules! operation {
-    ($id:literal, $description:literal, $capability:ident, $risk:ident, $item:literal, $in:ty, $out:ty, $validate:ident) => {
+    ($id:literal, $description:literal, $capability:expr, $risk:ident, $item:literal, $in:ty, $out:ty, $validate:ident) => {
         NoteOperation {
             id: $id,
             description: $description,
-            capability: Capability::$capability,
+            capability: $capability,
             risk: OperationRisk::$risk,
             item: $item,
             schemas: schemas::<$in, $out>,
@@ -388,7 +395,7 @@ pub static NOTE_OPERATIONS: &[NoteOperation] = &[
     operation!(
         "trash.purge",
         "Permanently delete a note from Trash",
-        ContentPurge,
+        TRASH_ADMINISTRATION,
         Irreversible,
         true,
         NoteTarget,
@@ -398,7 +405,7 @@ pub static NOTE_OPERATIONS: &[NoteOperation] = &[
     operation!(
         "trash.empty.preview",
         "Count notes and retained version bytes before emptying Trash",
-        ContentPurge,
+        TRASH_ADMINISTRATION,
         Read,
         false,
         TrashScope,
@@ -408,7 +415,7 @@ pub static NOTE_OPERATIONS: &[NoteOperation] = &[
     operation!(
         "trash.empty",
         "Start a resumable job to permanently purge the confirmed Trash selection",
-        ContentPurge,
+        TRASH_ADMINISTRATION,
         Irreversible,
         false,
         TrashEmptyInput,
@@ -418,7 +425,7 @@ pub static NOTE_OPERATIONS: &[NoteOperation] = &[
     operation!(
         "trash.empty.status",
         "Read progress of an Empty Trash job",
-        ContentPurge,
+        TRASH_ADMINISTRATION,
         Read,
         false,
         NoteJobInput,

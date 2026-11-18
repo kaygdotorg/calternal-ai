@@ -8142,7 +8142,7 @@
   },
   {
     "risk": "irreversible",
-    "required_capability": "content.purge",
+    "required_capability": "space.settings",
     "id": "trash.purge",
     "description": "Permanently delete a note from Trash",
     "mutates": true,
@@ -8218,7 +8218,7 @@
   },
   {
     "risk": "read",
-    "required_capability": "content.purge",
+    "required_capability": "space.settings",
     "id": "trash.empty.preview",
     "description": "Count notes and retained version bytes before emptying Trash",
     "mutates": false,
@@ -8270,7 +8270,7 @@
   },
   {
     "risk": "irreversible",
-    "required_capability": "content.purge",
+    "required_capability": "space.settings",
     "id": "trash.empty",
     "description": "Start a resumable job to permanently purge the confirmed Trash selection",
     "mutates": true,
@@ -8346,7 +8346,7 @@
   },
   {
     "risk": "read",
-    "required_capability": "content.purge",
+    "required_capability": "space.settings",
     "id": "trash.empty.status",
     "description": "Read progress of an Empty Trash job",
     "mutates": false,
@@ -17258,6 +17258,11 @@
           "description": "Installed provider plugin ID.",
           "type": "string"
         },
+        "shared": {
+          "default": false,
+          "description": "Sign in to the configured space login using space.settings authority.",
+          "type": "boolean"
+        },
         "space_id": {
           "description": "Space UUID in which the caller may use this provider.",
           "type": "string"
@@ -18002,6 +18007,112 @@
     }
   },
   {
+    "risk": "read",
+    "id": "space.machine.get",
+    "description": "Read the execution setting for a space",
+    "mutates": false,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Input for reading the execution setting.",
+      "properties": {
+        "space_id": {
+          "description": "Space UUID.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "space_id"
+      ],
+      "title": "SpaceMachineGet",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "description": "Current space execution setting and the notice shown during setup.",
+      "properties": {
+        "configured": {
+          "description": "Whether a shared machine is configured.",
+          "type": "boolean"
+        },
+        "machine_id": {
+          "description": "Selected machine UUID, visible only with permission to change it.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "notice": {
+          "description": "Notice for the person configuring the provider account.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "configured",
+        "notice"
+      ],
+      "title": "SpaceMachineResult",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "widens_access",
+    "id": "space.machine.set",
+    "description": "Set the shared execution machine for a space",
+    "mutates": true,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Input for setting the shared execution machine.",
+      "properties": {
+        "machine_id": {
+          "description": "Owner's sandbox machine UUID or null to clear the setting.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "space_id": {
+          "description": "Shared space UUID.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "machine_id",
+        "space_id"
+      ],
+      "title": "SpaceMachineSet",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "description": "Current space execution setting and the notice shown during setup.",
+      "properties": {
+        "configured": {
+          "description": "Whether a shared machine is configured.",
+          "type": "boolean"
+        },
+        "machine_id": {
+          "description": "Selected machine UUID, visible only with permission to change it.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "notice": {
+          "description": "Notice for the person configuring the provider account.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "configured",
+        "notice"
+      ],
+      "title": "SpaceMachineResult",
+      "type": "object"
+    }
+  },
+  {
     "risk": "reversible",
     "id": "machines.install",
     "description": "Create a single-use personal machine enrollment script",
@@ -18655,6 +18766,10 @@
           "description": "Options declared by the selected provider, bounded by the command budget.",
           "type": "object"
         },
+        "personal_machine": {
+          "description": "Use the caller's machine and login for this turn in a configured shared space.",
+          "type": "boolean"
+        },
         "pool": {
           "default": false,
           "description": "Check an entitled pool machine without exposing its identity.",
@@ -18868,6 +18983,10 @@
           "default": {},
           "description": "Options declared by the selected provider, bounded by the command budget.",
           "type": "object"
+        },
+        "personal_machine": {
+          "description": "Use the caller's machine and login for this turn in a configured shared space.",
+          "type": "boolean"
         },
         "pool": {
           "default": false,
@@ -19083,6 +19202,10 @@
           "description": "Options declared by the selected provider, bounded by the command budget.",
           "type": "object"
         },
+        "personal_machine": {
+          "description": "Use the caller's machine and login for this turn in a configured shared space.",
+          "type": "boolean"
+        },
         "pool": {
           "default": false,
           "description": "Check an entitled pool machine without exposing its identity.",
@@ -19296,6 +19419,10 @@
           "default": {},
           "description": "Options declared by the selected provider, bounded by the command budget.",
           "type": "object"
+        },
+        "personal_machine": {
+          "description": "Use the caller's machine and login for this turn in a configured shared space.",
+          "type": "boolean"
         },
         "pool": {
           "default": false,
@@ -19511,6 +19638,10 @@
           "description": "Options declared by the selected provider, bounded by the command budget.",
           "type": "object"
         },
+        "personal_machine": {
+          "description": "Use the caller's machine and login for this turn in a configured shared space.",
+          "type": "boolean"
+        },
         "pool": {
           "default": false,
           "description": "Check an entitled pool machine without exposing its identity.",
@@ -19724,6 +19855,10 @@
           "default": {},
           "description": "Options declared by the selected provider, bounded by the command budget.",
           "type": "object"
+        },
+        "personal_machine": {
+          "description": "Use the caller's machine and login for this turn in a configured shared space.",
+          "type": "boolean"
         },
         "pool": {
           "default": false,
@@ -19939,6 +20074,10 @@
           "description": "Options declared by the selected provider, bounded by the command budget.",
           "type": "object"
         },
+        "personal_machine": {
+          "description": "Use the caller's machine and login for this turn in a configured shared space.",
+          "type": "boolean"
+        },
         "pool": {
           "default": false,
           "description": "Check an entitled pool machine without exposing its identity.",
@@ -20152,6 +20291,10 @@
           "default": {},
           "description": "Options declared by the selected provider, bounded by the command budget.",
           "type": "object"
+        },
+        "personal_machine": {
+          "description": "Use the caller's machine and login for this turn in a configured shared space.",
+          "type": "boolean"
         },
         "pool": {
           "default": false,
@@ -20367,6 +20510,10 @@
           "description": "Options declared by the selected provider, bounded by the command budget.",
           "type": "object"
         },
+        "personal_machine": {
+          "description": "Use the caller's machine and login for this turn in a configured shared space.",
+          "type": "boolean"
+        },
         "pool": {
           "default": false,
           "description": "Check an entitled pool machine without exposing its identity.",
@@ -20580,6 +20727,10 @@
           "default": {},
           "description": "Options declared by the selected provider, bounded by the command budget.",
           "type": "object"
+        },
+        "personal_machine": {
+          "description": "Use the caller's machine and login for this turn in a configured shared space.",
+          "type": "boolean"
         },
         "pool": {
           "default": false,
@@ -20795,6 +20946,10 @@
           "description": "Options declared by the selected provider, bounded by the command budget.",
           "type": "object"
         },
+        "personal_machine": {
+          "description": "Use the caller's machine and login for this turn in a configured shared space.",
+          "type": "boolean"
+        },
         "pool": {
           "default": false,
           "description": "Check an entitled pool machine without exposing its identity.",
@@ -21009,6 +21164,10 @@
           "description": "Options declared by the selected provider, bounded by the command budget.",
           "type": "object"
         },
+        "personal_machine": {
+          "description": "Use the caller's machine and login for this turn in a configured shared space.",
+          "type": "boolean"
+        },
         "pool": {
           "default": false,
           "description": "Check an entitled pool machine without exposing its identity.",
@@ -21222,6 +21381,10 @@
           "default": {},
           "description": "Options declared by the selected provider, bounded by the command budget.",
           "type": "object"
+        },
+        "personal_machine": {
+          "description": "Use the caller's machine and login for this turn in a configured shared space.",
+          "type": "boolean"
         },
         "pool": {
           "default": false,

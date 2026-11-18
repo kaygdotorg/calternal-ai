@@ -313,6 +313,45 @@ sandbox_started: boolean,
  */
 provider: ProviderCheck | null, };
 /**
+ * Input for reading the execution setting.
+ */
+
+export type SpaceMachineGet = {
+/**
+ * Space UUID.
+ */
+space_id: string, };
+/**
+ * Input for setting the shared execution machine.
+ */
+
+export type SpaceMachineSet = {
+/**
+ * Shared space UUID.
+ */
+space_id: string,
+/**
+ * Owner's sandbox machine UUID or null to clear the setting.
+ */
+machine_id: string | null, };
+/**
+ * Current space execution setting and the notice shown during setup.
+ */
+
+export type SpaceMachineResult = {
+/**
+ * Whether a shared machine is configured.
+ */
+configured: boolean,
+/**
+ * Selected machine UUID, visible only with permission to change it.
+ */
+machine_id: string | null,
+/**
+ * Notice for the person configuring the provider account.
+ */
+notice: string, };
+/**
  * Select the space and optionally a saved thread's placement constraint.
  */
 
@@ -518,7 +557,11 @@ machine_id: string | null,
 /**
  * Use an entitled anonymous pool machine. Mutually exclusive with machine_id.
  */
-pool: boolean, };
+pool: boolean,
+/**
+ * Sign in to the configured space login using space.settings authority.
+ */
+shared: boolean, };
 /**
  * Supply a browser authorization code to the original official process.
  */
@@ -2393,6 +2436,10 @@ direct: boolean,
  * Check an entitled pool machine without exposing its identity.
  */
 pool: boolean,
+/**
+ * Use the caller's machine and login for this turn in a configured shared space.
+ */
+personal_machine: boolean,
 /**
  * Thread UUID for check/run; no thread file is created in step one.
  */

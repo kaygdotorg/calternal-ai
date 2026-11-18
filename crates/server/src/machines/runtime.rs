@@ -323,6 +323,7 @@ mod tests {
             id: Uuid::new_v4(),
             space: SpaceId::new(),
             account,
+            shared_sponsor: None,
             resource_owner: Some(owner),
             thread: Uuid::new_v4(),
             worker: false,

@@ -208,6 +208,9 @@ impl MachineService {
             session: hash,
             direct: backend == "direct",
             harness_protocol: f.protocol >= HARNESS_PROTOCOL_VERSION,
+            shared_provider: f.protocol
+                >= calternal_machine::protocol::SHARED_PROVIDER_PROTOCOL_VERSION
+                && backend == "podman",
             kvm_fallback,
             guest_memory_mib,
             guest_resources: Default::default(),
@@ -231,6 +234,18 @@ impl MachineService {
             .map(|l| l.row.id)
             .collect();
         for lease in held {
+            if st.leases[&lease].row.shared_sponsor.is_some()
+                && (f.protocol < calternal_machine::protocol::SHARED_PROVIDER_PROTOCOL_VERSION
+                    || backend != "podman")
+            {
+                st.end_with_files(
+                    lease,
+                    "shared provider login requires current Podman machine",
+                    &self.settings,
+                    true,
+                );
+                continue;
+            }
             if rebooted && (super::microvm::is_requested(&backend) || kvm_fallback) {
                 let keep_files = !st.leases[&lease].row.worker;
                 super::microvm::lost(st, f.machine_id, lease, &self.settings, keep_files);

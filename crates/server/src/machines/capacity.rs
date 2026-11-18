@@ -81,9 +81,19 @@ impl State {
         {
             return 0;
         }
+        let sponsor = lease.row.shared_sponsor.unwrap_or(lease.row.account);
+        if lease.row.shared_sponsor.is_some()
+            && (!self.may_use(machine, sponsor)
+                || !machine
+                    .live
+                    .as_ref()
+                    .is_some_and(|live| live.shared_provider))
+        {
+            return 0;
+        }
         let mut free = self.free_for(machine, lease.row.account);
         if machine.row.owner != Owner::Pool {
-            return if self.may_use(machine, lease.row.account) {
+            return if self.may_use(machine, sponsor) {
                 free
             } else {
                 0
@@ -115,7 +125,7 @@ impl State {
             .resource_owner
             .and_then(|owner| self.compute_limits.get(&owner));
         let Some(limits) = policy else {
-            return if lease.pool_diagnostic || self.may_use(machine, lease.row.account) {
+            return if lease.pool_diagnostic || self.may_use(machine, sponsor) {
                 free
             } else {
                 0

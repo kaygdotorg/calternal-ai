@@ -191,3 +191,7 @@ A thread file may be up to 16 MiB (owner decision, 2026-11-18). The fixture `t-l
 - **Open at the end.** The list starts stuck to the end; nothing walks the earlier messages. Open to the last message shown and the composer usable is judged under 4 s (development host; typically under 1 s).
 - **Scroll.** 120 steps of 900 px and 40 jumps keep the 95th percentile of frame times under 40 ms and 60 ms.
 - **Search hits and the header.** A hit opens the thread framed around that message (a bounded open, then a scroll and a brief mark); the header title is a shell line, independent of how many messages exist.
+
+## Plugin prompts in the Inbox
+
+A plugin's durable job can wait on the person (docs/plugin-api.md, "Durable job waits"): a question (a GenUI form) or an approval. The server lists these in the same account request list as the thread requests, with a `job_id` and no thread. In the Inbox they are rows of their own, above the threads: a spark mark, the question's title (or the approval's action), the reason mark (Question, Approval), counted in the tab with the threads. Pressing the row opens the prompt in a sheet drawn by the same request bar a thread's requests use (the shell draws approvals, never generated UI); answering sends the answer by the same `requests.answer` / approve / deny operations and the row leaves when the server's list says so. Built against fixtures (`r-jq`, `r-ja`); the server adapter maps `job_id` to `jobId` already. A webhook or deadline wait has no prompt and shows nothing here.

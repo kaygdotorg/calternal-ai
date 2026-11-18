@@ -23,6 +23,7 @@ pub(super) struct Target {
     pub login_scope: calternal_machine::protocol::ProviderLoginScope,
     pub policy: crate::plugins::package_store::provider_runtime::SignInPolicy,
     pub retry: bool,
+    pub shared: Option<crate::machines::space_execution::SpaceExecution>,
 }
 
 #[derive(serde::Deserialize)]
@@ -111,6 +112,7 @@ impl Inbox {
             if let Some(entry) = entries.iter_mut().find(|e| {
                 e.outcome.is_none()
                     && e.target.machine == target.machine
+                    && e.target.shared == target.shared
                     && e.target.provider == target.provider
                     && e.target.login_scope == target.login_scope
             }) {

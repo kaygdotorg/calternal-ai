@@ -22,6 +22,7 @@ pub(super) struct Live {
     pub session: [u8; 32],
     pub direct: bool,
     pub harness_protocol: bool,
+    pub shared_provider: bool,
     pub kvm_fallback: bool,
     pub guest_memory_mib: Option<u32>,
     pub guest_resources: HashMap<AccountId, calternal_machine::protocol::GuestResources>,
@@ -184,14 +185,18 @@ impl State {
     pub(super) fn lease_steps(
         &self,
         row: &db::LeaseRow,
-    ) -> Result<Option<(calternal_types::OwnerStep, calternal_types::OwnerStep)>, Error> {
+    ) -> Result<Option<[Option<calternal_types::OwnerStep>; 3]>, Error> {
         self.lifecycle
             .get()
             .map(|owners| {
-                Ok((
-                    owners.step(row.account.as_uuid())?,
-                    owners.step(row.space.as_uuid())?,
-                ))
+                Ok([
+                    Some(owners.step(row.account.as_uuid())?),
+                    Some(owners.step(row.space.as_uuid())?),
+                    row.shared_sponsor
+                        .filter(|sponsor| *sponsor != row.account)
+                        .map(|sponsor| owners.step(sponsor.as_uuid()))
+                        .transpose()?,
+                ])
             })
             .transpose()
     }
@@ -228,6 +233,15 @@ impl State {
             return;
         };
         let Some(machine) = l.row.machine else { return };
+        if l.row.shared_sponsor.is_some()
+            && !self
+                .machines
+                .get(&machine)
+                .and_then(|m| m.live.as_ref())
+                .is_some_and(|live| live.shared_provider)
+        {
+            return;
+        }
         let hosted = self
             .machines
             .get(&machine)
@@ -243,6 +257,7 @@ impl State {
         let spec = SandboxSpec {
             space_id: Some(space_id),
             provider_login: l.provider_login,
+            shared_provider_sponsor: l.row.shared_sponsor,
             code_directory: None,
             worker: self.workers.get(&lease).cloned(),
             account_id: account_id.as_uuid(),
@@ -484,6 +499,23 @@ impl State {
         waiting.sort_unstable();
         for (background, _, lease) in waiting {
             let l = &self.leases[&lease];
+            let sponsor = l.row.shared_sponsor.unwrap_or(l.row.account);
+            let shared =
+                l.row
+                    .shared_sponsor
+                    .zip(l.row.pinned_machine)
+                    .map(
+                        |(sponsor, machine)| super::space_execution::SpaceExecution {
+                            sponsor,
+                            machine,
+                        },
+                    );
+            if let Some(target) = shared
+                && self.require_execution(l.row.space, target).is_err()
+            {
+                self.end_for_placement(lease, "shared space machine changed", false);
+                continue;
+            }
             let best = self
                 .machines
                 .values()
@@ -505,7 +537,7 @@ impl State {
                         let id = title.assigned_machine()?;
                         let m = self.machines.get(&id)?;
                         (l.row.pinned_machine.is_none_or(|pin| pin == id)
-                            && self.may_use(m, l.row.account)
+                            && self.may_use(m, sponsor)
                             && m.live.as_ref().is_some_and(|live| {
                                 !live.draining && live.capacity.max_sandboxes as usize >= m.assigned
                             })

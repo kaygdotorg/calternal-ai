@@ -35,6 +35,7 @@ fn spec() -> SandboxSpec {
         resource_assignment: None,
         space_id: Some(SpaceId::new()),
         provider_login: false,
+        shared_provider_sponsor: None,
         account_id: Uuid::new_v4(),
         thread_id: Uuid::new_v4(),
         code_directory: None,

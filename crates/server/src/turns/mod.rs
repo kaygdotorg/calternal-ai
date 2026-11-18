@@ -14,6 +14,7 @@ pub(crate) mod reason;
 mod redact;
 pub mod retry;
 mod run;
+pub(crate) mod space_execution;
 mod thread_admission;
 mod tool_steps;
 mod verify;
@@ -91,6 +92,15 @@ pub async fn dispatch<D: Directory>(
             return Err(Error::forbidden("a person must check machine onboarding"));
         }
         return crate::machines::colocated::onboarding(state, machines, who.id).await;
+    }
+    if space_execution::is_setting(op) {
+        if agent.is_some() {
+            return Err(Error::forbidden("a person must manage space execution"));
+        }
+        if !session.is_live(&state.directory).await {
+            return Err(Error::unauthorized("sign in again first"));
+        }
+        return space_execution::dispatch(state, machines, who, op, input).await;
     }
     let verify = op == calternal_core::MACHINES_VERIFY;
     if verify {

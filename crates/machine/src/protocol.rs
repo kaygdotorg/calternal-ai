@@ -28,7 +28,10 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 /// Protocol version spoken by this build; the server refuses other versions.
-pub const PROTOCOL_VERSION: u32 = 6;
+pub const PROTOCOL_VERSION: u32 = 7;
+
+/// First machine protocol that supports an isolated shared Claude login directory.
+pub const SHARED_PROVIDER_PROTOCOL_VERSION: u32 = 7;
 
 /// Protocol version that introduced isolated harness assignments.
 pub const HARNESS_PROTOCOL_VERSION: u32 = 6;
@@ -376,6 +379,9 @@ pub struct SandboxSpec {
     /// Start a disposable login home with write access to shared provider login state.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub provider_login: bool,
+    /// The Owner of the isolated space login directory, when using a shared login.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shared_provider_sponsor: Option<AccountId>,
     /// Account owning the persistent shared login; validated UUID from the server.
     pub account_id: Uuid,
     /// The thread; one sandbox per thread, reused across leases.

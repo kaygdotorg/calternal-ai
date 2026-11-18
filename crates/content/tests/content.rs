@@ -481,7 +481,6 @@ fn a_slow_write_in_one_space_does_not_delay_other_spaces() {
 fn a_request_id_is_new_again_after_receipt_retention() {
     let dir = tempfile::tempdir().unwrap();
     let (space, actor) = (SpaceId::new(), AccountId::new());
-    let retention = Duration::from_millis(50);
     let write = |content: &Content, text: &[u8]| {
         content.write(
             space,
@@ -500,7 +499,7 @@ fn a_request_id_is_new_again_after_receipt_retention() {
             |_| json!({}),
         )
     };
-    let content = open_retaining(dir.path(), |_| {}, retention);
+    let content = open(dir.path(), |_| {});
     content
         .register_kind(
             space,
@@ -517,8 +516,17 @@ fn a_request_id_is_new_again_after_receipt_retention() {
         ErrorCode::Conflict
     );
     drop(content);
-    std::thread::sleep(retention * 4);
-    let content = open_retaining(dir.path(), |_| {}, retention);
+    // Age the single completed receipt after closing the writer. Scheduling
+    // delays should not determine whether the fresh request conflicts.
+    let journal = dir.path().join(format!("appdata/spaces/{space}/index.db"));
+    assert_eq!(
+        rusqlite::Connection::open(journal)
+            .unwrap()
+            .execute("UPDATE idempotency SET at_ms=0", [])
+            .unwrap(),
+        1
+    );
+    let content = open(dir.path(), |_| {});
     write(&content, b"second\n").expect("a pruned receipt makes the ID new again");
 }
 

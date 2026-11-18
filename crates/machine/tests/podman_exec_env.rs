@@ -34,6 +34,7 @@ async fn podman_exec_keeps_environment_values_out_of_host_argv() {
             resource_assignment: None,
             space_id: Some(calternal_types::SpaceId::new()),
             provider_login: false,
+            shared_provider_sponsor: None,
             code_directory: None,
             worker: None,
             account_id: Uuid::new_v4(),
