@@ -8,13 +8,14 @@ title: "tags.lookup"
 
 Find a page of up to 100 tags by name prefix
 
-Capability: not declared in this catalogue; the host policy remains authoritative.
+Capability: space.read.
 
 ## Declaration
 
 ```json
 {
   "risk": "read",
+  "required_capability": "space.read",
   "id": "tags.lookup",
   "description": "Find a page of up to 100 tags by name prefix",
   "mutates": false

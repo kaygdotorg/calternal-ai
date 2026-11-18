@@ -40,6 +40,7 @@ pub(super) struct Buffer {
 pub struct Live {
     buffer: Mutex<Buffer>,
     changed: watch::Sender<u64>,
+    pub(crate) provider_control: Mutex<Option<crate::turns::control::Control>>,
     pub(crate) once_action: Arc<tokio::sync::Mutex<()>>,
 }
 
@@ -68,6 +69,7 @@ impl Live {
                 retain_until: None,
             }),
             changed: watch::channel(0).0,
+            provider_control: Mutex::new(None),
             once_action: Arc::new(tokio::sync::Mutex::new(())),
         }
     }

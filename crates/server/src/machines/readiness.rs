@@ -1,8 +1,8 @@
 //! Caller-scoped placement and provider observations from the existing registry.
 use super::{LeaseState, Machine, MachineService, Settings, State, db};
 use calternal_core::{
-    MachineExecution, MachineReadiness, PersonalMachineReadiness, ProviderCheck, ProviderReadiness,
-    ReadinessResult,
+    MachineExecution, MachineReadiness, PersonalMachineReadiness, ProviderBlocked, ProviderCheck,
+    ProviderReadiness, ReadinessResult,
 };
 use calternal_machine::protocol::Owner;
 use calternal_types::{AccountId, Error, SpaceId};
@@ -182,21 +182,29 @@ impl MachineService {
             let providers = providers
                 .iter()
                 .map(|(provider, enabled)| {
-                    let check = checks
-                        .and_then(|checks| checks.get(*provider))
+                    let observation = checks.and_then(|checks| checks.get(*provider));
+                    let check = observation
                         .filter(|check| check.at.elapsed() < CHECK_TTL)
                         .map(|check| check.value.clone());
-                    let ready = available
-                        && *enabled
-                        && check
-                            .as_ref()
-                            .is_some_and(|check| check.installed && check.signed_in);
+                    let blocked = match &check {
+                        _ if !*enabled => Some(ProviderBlocked::Disabled),
+                        _ if !online => Some(ProviderBlocked::MachineOffline),
+                        _ if !available => Some(ProviderBlocked::MachineBusy),
+                        None if observation.is_some() => Some(ProviderBlocked::CheckStale),
+                        None => Some(ProviderBlocked::CheckRequired),
+                        Some(check) if !check.installed => {
+                            Some(ProviderBlocked::RuntimeUnavailable)
+                        }
+                        Some(check) if !check.signed_in => Some(ProviderBlocked::SignInRequired),
+                        Some(_) => None,
+                    };
                     (
                         (*provider).to_owned(),
                         ProviderReadiness {
                             enabled: *enabled,
                             check,
-                            ready,
+                            ready: blocked.is_none(),
+                            blocked,
                             title_blocked: machine
                                 .title_blocked
                                 .as_ref()
@@ -304,6 +312,51 @@ impl MachineService {
             Some(Owner::Pool) if pool_admin => Ok(true),
             _ => Err(Error::not_found("machine not found")),
         }
+    }
+
+    /// Drop observations made against a prior version of one provider.
+    /// One registry lock and no disk writes.
+    pub(crate) fn invalidate_harness_checks(&self, id: &str) -> Result<(), Error> {
+        let mut st = self.lock()?;
+        let mut accounts = std::collections::HashSet::new();
+        for machine in st.machines.values_mut() {
+            for (account, providers) in &mut machine.checks {
+                if providers.remove(id).is_some() {
+                    accounts.insert(*account);
+                }
+            }
+        }
+        for account in accounts {
+            st.readiness.change(account);
+        }
+        Ok(())
+    }
+
+    /// Require the selected diagnostic machine to report the candidate's
+    /// backend and the isolated harness protocol. No machine-side calls.
+    pub(crate) fn verify_harness_target(
+        &self,
+        account: AccountId,
+        id: Uuid,
+        guest: bool,
+    ) -> Result<bool, Error> {
+        let pool = self.verify_target(account, id, true)?;
+        let st = self.lock()?;
+        let matches = st
+            .machines
+            .get(&id)
+            .and_then(|machine| machine.live.as_ref())
+            .is_some_and(|live| {
+                live.harness_protocol
+                    && !live.direct
+                    && (live.thread_limit.is_some() && !live.kvm_fallback) == guest
+            });
+        if !matches {
+            return Err(Error::unavailable(
+                "the selected machine does not support the candidate backend",
+            ));
+        }
+        Ok(pool)
     }
 
     /// Cache a bounded Check event only while the same account still holds the

@@ -128,6 +128,13 @@ pub(crate) const TRASH_EXPIRY_EVENT: &str = "trash.expire";
 
 /// Identify item-bearing Notes journal entries, including operations in Trash.
 pub(crate) fn journal_kind(event: &str) -> Option<&'static str> {
-    (event == TRASH_EXPIRY_EVENT || calternal_core::note_operation(event).is_some_and(|op| op.item))
-        .then_some("notes")
+    (matches!(
+        event,
+        TRASH_EXPIRY_EVENT
+            | "trash.empty.item"
+            | "notes.rename.item"
+            | "notes.rename.undo"
+            | "notes.rename.undo.item"
+    ) || calternal_core::note_operation(event).is_some_and(|op| op.item))
+    .then_some("notes")
 }

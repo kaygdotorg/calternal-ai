@@ -107,6 +107,16 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
       "description": "Requested app prefix for an access request.",
       "type": "string"
     },
+    "approval_id": {
+      "default": "",
+      "description": "Native provider approval received from this active run.",
+      "type": "string"
+    },
+    "approve": {
+      "default": false,
+      "description": "Allow the named native approval for this run.",
+      "type": "boolean"
+    },
     "context": {
       "default": [],
       "description": "Labelled context contributions, bounded by the provider command budget.",
@@ -172,7 +182,7 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
     },
     "provider_id": {
       "default": "",
-      "description": "Enabled provider plugin; empty selects calternal-claude-code.",
+      "description": "Enabled provider plugin; empty selects the installation's default provider.",
       "type": "string"
     },
     "retry_failed": {

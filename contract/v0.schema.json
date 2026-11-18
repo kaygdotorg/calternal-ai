@@ -3493,6 +3493,13 @@
         "note"
       ],
       "properties": {
+        "job_id": {
+          "description": "Durable link rewrite job when this write changes the note's title.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "note": {
           "description": "Current note snapshot visible to the authenticated caller.",
           "allOf": [

@@ -148,6 +148,32 @@
           "additionalProperties": false
         },
         {
+          "description": "Resolve one live native approval after the host checks its scope.",
+          "type": "object",
+          "required": [
+            "approved",
+            "request_id",
+            "type"
+          ],
+          "properties": {
+            "approved": {
+              "description": "Authorize this request within the existing sandbox boundary.",
+              "type": "boolean"
+            },
+            "request_id": {
+              "description": "Opaque ID emitted by this run's adapter.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "approve"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
           "description": "Stop active work; do not report completion as success.",
           "type": "object",
           "required": [

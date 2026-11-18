@@ -8,13 +8,14 @@ title: "trash.purge"
 
 Permanently delete a note from Trash
 
-Capability: not declared in this catalogue; the host policy remains authoritative.
+Capability: content.purge.
 
 ## Declaration
 
 ```json
 {
   "risk": "irreversible",
+  "required_capability": "content.purge",
   "id": "trash.purge",
   "description": "Permanently delete a note from Trash",
   "mutates": true

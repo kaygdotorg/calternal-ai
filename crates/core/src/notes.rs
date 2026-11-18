@@ -202,6 +202,10 @@ pub struct NotesListResult {
 pub struct NoteResult {
     /// Current note snapshot visible to the authenticated caller.
     pub note: Note,
+    /// Durable link rewrite job when this write changes the note's title.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub job_id: Option<String>,
 }
 /// Result for `notes.history`; snapshots are paginated without exposing storage paths.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, TS)]

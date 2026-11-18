@@ -51,6 +51,12 @@ pub(crate) async fn dispatch<D: Directory>(
     if row.id.starts_with("push.") {
         return crate::web_push::operation(state, person.id, session, row.id, input).await;
     }
+    if row.id.starts_with("harnesses.") {
+        return crate::plugins::harness_admin::dispatch(
+            state, machines, person.id, session, row.id, input,
+        )
+        .await;
+    }
     if row.id.starts_with("provider.sign_in.") {
         let machines = machines.ok_or_else(|| Error::unavailable("machines are not enabled"))?;
         return crate::provider_sign_in::dispatch(state, machines, person, session, row.id, input)

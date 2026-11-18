@@ -145,6 +145,30 @@ def smoke(data_dir, spawn):
         cl('plugins', 'enable', 'calternal-notes-insights', '--space', shared, principal='guest', error='forbidden')
         assert cl('notes', 'list', '--space', shared, principal='guest')['ok']
         assert cl('plugins', 'list', '--space', private)['ok']
+        if spawn:
+            def notes_cli(*command):
+                return account_cli(*command, connection_after=1)
+
+            sample = cl('notes', 'create', '--space', private, '--title', 'CLI job sample',
+                        '--markdown', '# CLI job sample')['data']['note']
+            renamed = notes_cli('notes', 'rename', sample['id'], '--base-revision',
+                                  sample['revision'], '--title', 'CLI job renamed')
+            job = renamed['job_id']
+            assert notes_cli('notes', 'rename-status', '--space', private, job)['state'] == 'done'
+            assert notes_cli('notes', 'undo-rename', '--space', private, job)['state'] == 'undone'
+            notes_cli('notes', 'delete', sample['id'])
+            assert notes_cli('trash', 'list', '--space', private)['notes'][0]['days_remaining'] == 30
+            preview = notes_cli('trash', 'empty', '--space', private)
+            assert preview['count'] == 1 and preview['bytes'] > 0
+            purge = notes_cli('trash', 'empty', '--space', private, '--confirm', preview['confirmation'])
+            deadline = time.monotonic() + 10
+            while True:
+                report = notes_cli('trash', 'status', '--space', private, purge['job_id'])
+                if report['state'] == 'done':
+                    assert report['purged'] == 1 and report['skipped'] == 0
+                    break
+                assert time.monotonic() < deadline, 'Empty Trash did not finish'
+                time.sleep(0.025)
         saved = cl('drafts', 'save', note_id, '--space', private, '--text', 'Private unsent text')['data']['record']
         assert account_cli('drafts', 'get', note_id, '--space', private)['record'] == saved
         assert any(r['id'] == note_id for r in account_cli('drafts', 'list')['records'])

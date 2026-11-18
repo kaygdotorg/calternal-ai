@@ -8,8 +8,58 @@ use calternal_core::JobState;
 use calternal_types::Error;
 use rusqlite::OptionalExtension;
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::plugins::{Session, jobs::Admission};
+    use calternal_types::{AccountId, SpaceId};
+    use serde_json::json;
+
+    #[test]
+    fn late_finish_cannot_hide_a_committed_person_wait_phase() {
+        let dir = tempfile::tempdir().unwrap();
+        let jobs = Jobs::open(dir.path()).unwrap();
+        let space = SpaceId::new().to_string();
+        let id = jobs
+            .admit(Admission {
+                space: space.clone(),
+                account: AccountId::new(),
+                session: Session::Static,
+                plugin: "calternal-orchestrator".into(),
+                operation: "agent.turn".into(),
+                input: json!({"request":{"thread_id":uuid::Uuid::now_v7()}}),
+                parent: None,
+                generation: 1,
+                request_key: "person-wait-fence".into(),
+            })
+            .unwrap();
+        let claim = jobs.claim_turn(&space, &id, None).unwrap().unwrap();
+        let run = claim.job.runs;
+        claim.live.retain_for_subscriber();
+        let placement = json!({"machine_id":uuid::Uuid::new_v4()});
+        jobs.start_placed_turn(&space, &id, run, &claim.live, &placement)
+            .unwrap();
+        // The request committed the wait but has yet to publish the phase.
+        jobs.tx(&space, |tx| {
+            tx.execute("UPDATE jobs SET state='waiting' WHERE id=?1", [&id])
+                .map_err(db_err)
+        })
+        .unwrap();
+        jobs.finish(&space, &id, run, RunEnd::Failed).unwrap();
+        let phase = json!({"type":"turn_phase","phase":"waiting_on_person","at_ms":1});
+        jobs.settle_for_person(&id, run, &phase);
+        let batch = claim.live.read(0);
+        assert_eq!(batch.chunks.len(), 1);
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&batch.chunks[0].data).unwrap(),
+            phase
+        );
+    }
+}
+
 impl Jobs {
-    /// Finish run `run`. Late reports (cancelled job, superseded run) change nothing.
+    /// Finish run `run`. A parked, cancelled or superseded run owns its own
+    /// stream settlement and ignores late reports.
     /// A final job reports exactly once to its parent; a parent whose children have all
     /// reported is re-admitted. Returns the jobs to schedule.
     /// Cost: one FULL jobs transaction with a few indexed reads and writes.
@@ -37,7 +87,7 @@ impl Jobs {
             ),
             RunEnd::Failed => (JobState::Failed, "null".into()),
         };
-        let (wake, notification) = self.tx(space, |tx| {
+        let finished = self.tx(space, |tx| {
             let current: Option<(String, u32, Option<String>, String, bool, String, Option<String>)> = tx
                 .query_row(
                     "SELECT state,runs,parent,operation,json_extract(input,'$.verify') IS 1,account,CASE WHEN operation='agent.turn' AND json_extract(input,'$.check') IS NOT 1 AND json_type(input,'$.request.thread_id')='text' THEN json_extract(input,'$.request.thread_id') END FROM jobs WHERE id=?1",
@@ -47,10 +97,10 @@ impl Jobs {
                 .optional()
                 .map_err(db_err)?;
             let Some((s, runs, parent, operation, diagnostic, account, thread)) = current else {
-                return Ok((vec![], None));
+                return Ok(None);
             };
             if !matches!(s.as_str(), "placing" | "running") || runs != run {
-                return Ok((vec![], None));
+                return Ok(None);
             }
             let mut state = state;
             if state == JobState::Waiting {
@@ -82,8 +132,11 @@ impl Jobs {
             let notification = (operation == "agent.turn" && !diagnostic && state == JobState::Done)
                 .then(|| thread.and_then(|thread| calternal_types::AccountId::parse(&account).ok().map(|account| (account, thread))))
                 .flatten();
-            Ok((wake, notification))
+            Ok(Some((wake, notification)))
         })?;
+        let Some((wake, notification)) = finished else {
+            return Ok(Vec::new());
+        };
         self.settle_run(id, run);
         if let Some((account, thread)) = notification
             && let Some(push) = self.push.get()

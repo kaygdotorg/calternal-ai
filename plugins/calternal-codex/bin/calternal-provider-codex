@@ -1,0 +1,7 @@
+#!/bin/sh
+# The sandbox image installs the adapter beside this launcher.
+if [ ! -f "$(dirname "$0")/../dist/main.js" ]; then
+    printf '%s\n' '{"version":1,"seq":1,"event":{"type":"error","code":"adapter_not_built","class":"permanent","billing":"unknown","message":"The Codex adapter must be built and installed in the sandbox."}}' '{"version":1,"seq":2,"event":{"type":"done","outcome":"failed"}}'
+    exit 1
+fi
+exec node "$(dirname "$0")/../dist/main.js" "$@"
