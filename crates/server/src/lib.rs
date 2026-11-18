@@ -7,6 +7,7 @@
 
 pub mod account_http;
 pub mod api;
+mod asset_cache;
 pub mod auth;
 pub mod authz;
 pub mod blocking;
@@ -29,6 +30,7 @@ mod live_rooms;
 
 pub mod account_input;
 mod netguard;
+mod onboarding;
 mod provider_sign_in;
 mod requests;
 

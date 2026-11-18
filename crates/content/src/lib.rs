@@ -42,6 +42,7 @@ mod mutations;
 mod pool;
 mod publication;
 mod recovery;
+pub use recovery::ReceiptPruningIssue;
 mod search;
 pub use search::{
     IndexedHit, IndexedPage, MessageDecoder, MessageRecord, SearchConfig, SearchConfigSource,

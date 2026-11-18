@@ -533,6 +533,21 @@ fn crash_points_recover_without_duplicates() {
             serde_json::from_str::<Value>(&raw).unwrap()["payload"].clone()
         });
         let srv = start(&d.0, None);
+        if original_reply.is_some() {
+            let output = Command::new(env!("CARGO_BIN_EXE_calternal"))
+                .args(["--json", "receipt-status", &personal, "--appdata"])
+                .arg(d.0.join("appdata"))
+                .args(["--installation-id", INSTALLATION])
+                .output()
+                .unwrap();
+            assert!(output.status.success(), "{output:?}");
+            let status: Value = serde_json::from_slice(&output.stdout).unwrap();
+            calternal_cli::testing::assert_shape("calternal receipt-status", &status);
+            let data = &status["data"];
+            assert_eq!(data["space_id"], personal);
+            assert_eq!(data["issue"]["reason"], "expired_pin");
+            assert!(data["issue"]["age_ms"].as_i64().unwrap() > 7 * 86_400_000);
+        }
         // Lazy first-use recovery places the committed revision before exposure.
         let recovered = op(
             &srv,
