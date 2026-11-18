@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { chromium } from "playwright";
 import { checkMessageActions } from "./actions-check.mjs";
+import { expandComposer } from "./lib.mjs";
 
 const PORT = Number(process.env.CAL_STEPS_PORT ?? 3413);
 const BIN = process.env.CAL_BIN ?? `${process.env.HOME}/Developer/lanes/ui-threads/target/debug/calternal`;
@@ -86,6 +87,37 @@ try {
   const id2 = await run("scripted-tool-steps long-output");
   ok(await until(/Worked for|tools?\b/i, 30000), "a 96 KiB tool output turn finishes");
   console.log("   long-output file bytes:", (await raw(id2)).length);
+
+  // the model picker, the Working phases and the reasoning block against the server's own shapes (threads.models, turn_phase, reasoning_*) with the scripted fixture provider
+  {
+    const t = (await op(p, "threads.create", { space_id: space, title: "Reasoning run" })).data.thread;
+    await p.goto(`${url}/threads/${t.id}?server=1`); await p.waitForSelector("html[data-ready]"); await p.waitForSelector("#composer-field"); await p.waitForTimeout(800);
+    const cat = (await op(p, "threads.models", { space_id: space })).data?.providers ?? [];
+    ok(cat.length >= 1 && (cat[0].models?.length ?? 0) >= 1, "threads.models lists the provider's models", cat.map((c) => `${c.name}: ${c.models.map((m) => `${m.id}[${(m.reasoning_levels ?? []).join("/")}]`).join(" ")}`).join(" | ").slice(0, 160));
+    await expandComposer(p);
+    await p.locator(".composer .chip[data-chip=model] .pill").click();
+    const labels = (await p.getByRole("menuitemradio").allInnerTexts()).map((x) => x.replace(/\s+/g, " ").trim());
+    console.log("   picker rows:", labels.join(" | ").slice(0, 300));
+    ok(labels.length > 1 && !labels.some((l) => /not listed/.test(l)), "the picker lists the models (not an empty search, not 'not listed')");
+    await p.getByRole("menuitemradio", { name: /Sonnet 5.5/ }).click(); await p.waitForTimeout(400);
+    await expandComposer(p);
+    await p.locator(".composer .chip[data-chip=model] .pill").click();
+    const labels2 = (await p.getByRole("menuitemradio").allInnerTexts()).map((x) => x.replace(/\s+/g, " ").trim());
+    ok(labels2.some((l) => /Xhigh reasoning/.test(l)), "and, for the model chosen, the reasoning levels it accepts", labels2.filter((l) => /reasoning/.test(l)).join(", "));
+    await p.getByRole("menuitemradio", { name: /Xhigh reasoning/ }).click(); await p.waitForTimeout(400);
+    ok((await p.locator(".composer .chip[data-chip=model] .lvl").count()) === 1, "the model chip shows the chosen reasoning level as a mark");
+    await p.keyboard.press("Escape");
+    const f = p.locator("#composer-field"); await f.click(); await f.fill("scripted-reasoning"); await p.keyboard.press("Enter");
+    const phases = new Set(); let thought = false;
+    for (let i = 0; i < 150 && (await p.locator(".working").count() || i < 5); i++) { phases.add((await p.locator(".working .phase").innerText().catch(() => "")).trim()); if (await p.locator(".thought").count()) thought = true; await p.waitForTimeout(120); }
+    console.log("   phases:", [...phases].filter(Boolean).join(" -> "));
+    ok([...phases].some((x) => /Starting the machine|Waiting to start|Thinking|Starting/.test(x)), "the Working row shows the server's phases from the send");
+    await p.waitForSelector(".msg.agent-row", { timeout: 20000 }).catch(() => {});
+    await p.waitForTimeout(800);
+    const txt = (await p.locator(".msg.agent-row").last().innerText().catch(() => "")).replace(/\s+/g, " ");
+    ok(thought || /Thought for/.test(txt), "the reasoning shows as a folded block, then as Thought for", txt.slice(0, 100));
+    ok(/Hello/.test(txt), "and the turn's answer follows");
+  }
 
   // 3. stop mid-step
   const id3 = await run("scripted-tool-steps hang");

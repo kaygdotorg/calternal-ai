@@ -48,6 +48,8 @@ export class Conversation {
   stream = $state<Turn | null>(null);
   summary = $state<ThreadSummary>();
 
+  /** The turn whose job stream just ended, until its saved message arrives (`onMessage`). */
+  private ended: { turn: Turn; at: number } | null = null;
   private cache = new Map<number, Message>();
   private loading = new Set<number>();
   /** The rows last asked for, so rows that arrive later (the count grew) are read without waiting for a scroll. */
@@ -64,7 +66,9 @@ export class Conversation {
     this.off = client.watch(id, {
       onMessage: (m, i) => {
         // The turn's own message ends the working row (and keeps what only this page saw of the turn: how long it worked, what it thought); the person's message does not.
-        if (m.role === "agent" && this.stream) { m = carry(m, this.stream); this.stream = null; }
+        // (The job stream may end before the saved message arrives: the turn it ended is kept for a few seconds so its reasoning and duration still reach the message.)
+        const turn = this.stream ?? (this.ended && Date.now() - this.ended.at < 15_000 ? this.ended.turn : null);
+        if (m.role === "agent" && turn) { m = carry(m, turn); this.stream = null; this.ended = null; }
         this.cache.set(i, m);
         this.count = Math.max(this.count, i + 1);
         this.rev++;
@@ -80,7 +84,7 @@ export class Conversation {
         if (this.stream) this.stream.steps = [...this.stream.steps, s];
       },
       onSummary: (s) => { this.summary = s; if (s.messageCount > this.count) { this.count = s.messageCount; this.rev++; this.ensure(...this.want); } },
-      onStreamEnd: () => (this.stream = null),
+      onStreamEnd: () => { if (this.stream) this.ended = { turn: this.stream, at: Date.now() }; this.stream = null; },
     });
     // The list does not know a thread's message count: ask once (the fixtures answer at once, the server reads the file).
     void client.getThread(id).then((s) => { if (!s) return; this.summary = s; this.count = Math.max(this.count, s.messageCount); this.rev++; this.ensure(...this.want); });
