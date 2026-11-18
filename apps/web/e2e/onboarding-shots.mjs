@@ -11,10 +11,10 @@ for (const [dev, vp, mobile] of [["desktop", { width: 1280, height: 860 }, false
   await snap("1-you");
   await page.getByLabel("Your name").fill("Kay"); await page.getByRole("button", { name: "Create passkey" }).click(); await page.waitForFunction(() => document.querySelector("main h1")?.textContent === "Choose a look"); await snap("2-look");
   await page.getByRole("radio").nth(1).click(); await page.waitForFunction(() => document.querySelector("main h1")?.textContent === "Your machine"); await snap("3-machine");
-  await page.getByRole("button", { name: "Show the command" }).click(); await page.waitForTimeout(2200); await snap("3b-command");
+  await page.getByRole("button", { name: "Show the script" }).click(); await page.waitForTimeout(2200); await snap("3b-command");
   await page.getByText("dev-machine").waitFor({ timeout: 20000 }); await snap("3c-connected");
   await page.getByRole("button", { name: "Continue" }).click(); await page.waitForFunction(() => document.querySelector("main h1")?.textContent === "Sign in to a provider"); await snap("4-provider");
-  await page.getByRole("button", { name: "Check again" }).click(); await page.waitForTimeout(900); await page.getByRole("button", { name: "Check again" }).click(); await page.getByText("Signed in").first().waitFor({ timeout: 15000 }); await snap("4b-signed-in");
+  await page.getByRole("button", { name: "Sign in", exact: true }).click(); await page.getByRole("link", { name: /sign-in page/ }).waitFor({ timeout: 10000 }); await snap("4a-link-and-code"); await page.getByLabel("Paste the code it gives you").fill("XYZ"); await page.getByRole("button", { name: "Send the code" }).click(); await page.getByText("Signed in").first().waitFor({ timeout: 15000 }); await snap("4b-signed-in");
   await page.getByRole("button", { name: "Continue" }).click(); await page.waitForFunction(() => document.querySelector("main h1")?.textContent === "You are set up"); await snap("5-done");
   await ctx.close();
 }

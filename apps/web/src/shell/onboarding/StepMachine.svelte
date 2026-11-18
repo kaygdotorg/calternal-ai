@@ -1,33 +1,37 @@
 <script lang="ts">
-  // Step three: a machine, the computer the threads run on. If the instance already has one (set up when it was deployed) it shows as ready and there is nothing to do. Otherwise this makes a one-use code and prints the command that
-  // connects a machine with it; the screen looks again every two seconds and the step confirms the moment the machine is there (a count-up says how long it has waited; nothing is invented).
+  // Step three: a machine, the computer the threads run on. If the instance already has one (set up when it was deployed) it shows as ready and there is nothing to do. Otherwise this makes the install script (single use, 15 minutes) and prints it
+  // adds a machine; the screen looks again every two seconds and the step confirms the moment the machine is there (a count-up says how long it has waited; nothing is invented). `machines.onboarding` says whether one is ready; `machines.install` makes the script.
   import { Button, Tick } from "@calternal/ui";
   import { say } from "../../server/say";
-  import type { EnrolCode, MachineInfo, OnboardingApi } from "./api";
+  import type { Install, MachineStatus, OnboardingApi } from "./api";
   import CopyButton from "./CopyButton.svelte";
   import Waiting from "./Waiting.svelte";
   let { api, ondone }: { api: OnboardingApi; ondone: () => void } = $props();
-  let machines = $state<MachineInfo[] | null>(null), code = $state<EnrolCode | null>(null), error = $state(""), busy = $state(false);
-  const online = $derived(machines?.find((m) => m.online) ?? null);
-  async function look() { try { machines = await api.machines(); error = ""; } catch (e) { error = say(e, "look for machines"); machines ??= []; } }
+  let status = $state<MachineStatus | null>(null), script = $state<Install | null>(null), error = $state(""), busy = $state(false);
+  const online = $derived(status?.ready ? status.machine : null);
+  async function look() { try { status = await api.machineStatus(); error = ""; } catch (e) { error = say(e, "look for machines"); status ??= { attached: false, ready: false, machine: null }; } }
   $effect(() => { void look(); const t = setInterval(() => void look(), 2000); return () => clearInterval(t); });
-  async function make() { busy = true; try { code = await api.makeCode(); error = ""; } catch (e) { error = say(e, "make a code"); } busy = false; }
+  async function make() { busy = true; try { script = await api.install(); error = ""; } catch (e) { error = say(e, "make the script"); } busy = false; }
 </script>
 
 <div class="in">
-  {#if machines === null}
+  {#if status === null}
     <Waiting label="Looking for your machine" />
   {:else if online}
-    <p class="ready"><Tick checked animate size="var(--s-9)" /><span><strong>{online.name}</strong><small>Connected, {online.os} {online.arch}. Threads can run here.</small></span></p>
-    <div class="go"><Button variant="primary" text="Continue" onclick={ondone} /></div>
+    <p class="ready"><Tick checked animate size="var(--s-9)" /><span><strong>{online.name}</strong><small>{status?.attached ? "Set up with this instance and connected." : "Connected"}{online.os ? `, ${online.os} ${online.arch}` : ""}. Threads can run here.</small></span></p>
+    <div class="go"><Button variant="primary" text="Continue" onclick={ondone} />{#if !script}<Button variant="quiet" text="Add another machine" disabled={busy} onclick={make} />{/if}</div>
+    {#if script}
+      <p class="note">Run this on the other machine. One use, valid for 15 minutes.</p>
+      <div class="cmd"><code>{script.script}</code><CopyButton text={script.script} label="Copy the script" onfail={() => (error = "Could not copy. Select the script and copy it.")} /></div>
+    {/if}
   {:else}
-    <p class="note">A machine is a computer your threads run on: a Mac or Linux box of your own, or a cloud server. Run this on it, as the user that should run the agents:</p>
-    {#if code}
-      <div class="cmd"><code>{code.command}</code><CopyButton text={code.command} onfail={() => (error = "Could not copy. Select the command and copy it.")} /></div>
+    <p class="note">A machine is a computer your threads run on: a Mac or Linux box of your own, or a cloud server. Run this script on it, as the user that should run the agents:</p>
+    {#if script}
+      <div class="cmd"><code>{script.script}</code><CopyButton text={script.script} label="Copy the script" onfail={() => (error = "Could not copy. Select the script and copy it.")} /></div>
       <p class="note">One use, valid for 15 minutes.</p>
       <Waiting label="Waiting for the machine to connect" />
     {:else}
-      <div class="go"><Button variant="primary" text="Show the command" disabled={busy} onclick={make} /></div>
+      <div class="go"><Button variant="primary" text="Show the script" disabled={busy} onclick={make} /></div>
     {/if}
   {/if}
   {#if error}<p class="error" role="alert">{error}</p>{/if}

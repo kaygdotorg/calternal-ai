@@ -11,7 +11,7 @@ const axe = async (p, tag) => { await p.waitForTimeout(600); /* the step has fin
 const open = async (query, reduced = false) => { const ctx = await b.newContext({ viewport: { width: 1280, height: 860 }, reducedMotion: reduced ? "reduce" : "no-preference", permissions: ["clipboard-read", "clipboard-write"] }); const page = await ctx.newPage(); await page.goto(`${BASE}/?server=0&${query}`); await page.waitForSelector("html[data-ready]"); await page.waitForTimeout(500); return { ctx, page }; };
 {
   const { ctx, page } = await open("onboarding=1");
-  ok((await page.locator("ol.steps li").count()) === 5, "the owner has five numbered steps");
+  ok((await page.locator("ol.steps li").count()) === 5, "one path of five numbered steps (a switch adds three)");
   ok((await heading(page)) === "Who you are" && (await page.locator("footer").getByRole("button", { name: "Skip" }).count()) === 0, "step 1 is who you are, and it cannot be skipped");
   ok(await page.evaluate(() => document.activeElement?.tagName === "H1"), "the step's heading takes focus when it appears");
   await axe(page, "step 1");
@@ -26,20 +26,22 @@ const open = async (query, reduced = false) => { const ctx = await b.newContext(
   await page.getByRole("radio").nth(1).click();
   await waitHeading(page, "Your machine");
   await axe(page, "step 3 before the command");
-  await page.getByRole("button", { name: "Show the command" }).click();
+  await page.getByRole("button", { name: "Show the script" }).click();
   await page.locator("code").first().waitFor();
-  ok(/calternal machine enroll/.test(await page.locator("code").first().textContent()), "the machine step prints the command to run");
+  ok(/install\.sh/.test(await page.locator("code").first().textContent()), "the machine step prints the install script");
   await page.waitForFunction(() => document.querySelector(".wait"), null, { timeout: 5000 });
   ok(/s$/.test((await page.locator(".wait .n").first().textContent()).trim()), "a wait shows a count-up in seconds (after 400 ms, no spinner)");
-  await page.getByRole("button", { name: /Copy the command/ }).click(); await page.waitForTimeout(350);
+  await page.getByRole("button", { name: /Copy the script/ }).click(); await page.waitForTimeout(350);
   ok((await page.locator(".cb .tk.on").count()) === 1, "copying turns the button's icon into the tick");
   await page.getByText("dev-machine").waitFor({ timeout: 20000 });
   ok(true, "the step sees the machine connect by itself");
   await axe(page, "step 3 connected");
   await page.getByRole("button", { name: "Continue" }).click(); await waitHeading(page, "Sign in to a provider");
-  ok(/Not signed in/.test(await page.locator("section ul li").first().textContent()), "the provider shows not signed in, with the sign-in command to copy");
-  await page.getByRole("button", { name: "Check again" }).click(); await page.waitForTimeout(900);
-  await page.getByRole("button", { name: "Check again" }).click();
+  ok(/Not signed in/.test(await page.locator("section ul li").first().textContent()), "the provider shows not signed in, with a Sign in button");
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  const link = page.getByRole("link", { name: /sign-in page/ }); await link.waitFor({ timeout: 10000 });
+  ok(/claude\.ai/.test(await link.getAttribute("href")) && (await page.getByText("ABCD-1234").count()) === 1, "the machine's link and code are shown here, nothing to run in a terminal");
+  await page.getByLabel("Paste the code it gives you").fill("XYZ"); await page.getByRole("button", { name: "Send the code" }).click();
   await page.getByText("Signed in", { exact: false }).first().waitFor({ timeout: 15000 });
   await axe(page, "step 4");
   await page.getByRole("button", { name: "Continue" }).click(); await waitHeading(page, "You are set up");
@@ -49,11 +51,25 @@ const open = async (query, reduced = false) => { const ctx = await b.newContext(
   await ctx.close();
 }
 {
-  const { ctx, page } = await open("onboarding=invited");
-  ok((await page.locator("ol.steps li").count()) === 3, "an invited person has the shorter path: you, look, done");
-  await page.getByLabel("Your name").fill("Sam"); await page.getByRole("button", { name: "Create passkey" }).click(); await waitHeading(page, "Choose a look");
-  await page.getByRole("button", { name: "Skip" }).click(); await waitHeading(page, "You are set up");
+  const { ctx, page } = await open("onboarding=invited&attached=1");
+  ok((await page.locator("ol.steps li").count()) === 5, "an invited person has the same five steps");
+  await page.getByLabel("Your name").fill("Sam");
+  await page.getByRole("switch", { name: "I write code" }).click(); await page.waitForTimeout(300);
+  ok((await page.locator("ol.steps li").count()) === 8, "the I write code switch adds three steps (repositories, the CLI, direct mode)");
+  await page.getByRole("button", { name: "Create passkey" }).click(); await waitHeading(page, "Choose a look");
+  await page.getByRole("button", { name: "Skip" }).click(); await waitHeading(page, "Your machine");
   ok((await page.locator("ol.steps li").nth(1).textContent()).includes("skipped"), "a skipped step is marked skipped, not ticked");
+  ok((await page.getByText("Set up with this instance and connected").count()) === 1, "an instance machine set up at deploy shows as connected, with nothing to do");
+  await page.getByRole("button", { name: "Continue" }).click(); await waitHeading(page, "Sign in to a provider");
+  await page.getByRole("button", { name: "Skip" }).click(); await waitHeading(page, "Your repositories");
+  await page.getByLabel("Repository address").fill("https://git.example.org/me/app.git"); await page.getByRole("button", { name: "Add", exact: true }).click();
+  await page.getByText("app", { exact: true }).waitFor();
+  await page.getByRole("button", { name: "Continue" }).click(); await waitHeading(page, "The command line");
+  ok((await page.getByRole("button", { name: /Copy: Install it/ }).count()) === 1, "the CLI step has the install and sign-in commands to copy");
+  await page.getByRole("button", { name: "Continue" }).click(); await waitHeading(page, "Direct mode");
+  await page.getByRole("switch", { name: /Run threads directly/ }).click(); await page.waitForTimeout(600);
+  ok((await page.getByRole("switch", { name: /Run threads directly/ }).getAttribute("aria-checked")) === "true", "direct mode switches on for the machine");
+  await page.getByRole("button", { name: "Continue" }).click(); await waitHeading(page, "You are set up");
   await ctx.close();
 }
 {

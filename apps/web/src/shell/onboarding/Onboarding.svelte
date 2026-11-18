@@ -4,13 +4,16 @@
   // resumes. Keyboard: Tab and Enter do everything; the heading of each step takes focus when it appears and a live line says which step it is. Reduced motion: no slide, no swell, only fades. Motion is the shell's tokens.
   import { Button, Card, Tick } from "@calternal/ui";
   import Backdrop from "../Backdrop.svelte";
-  import { after, before, clear, load, NAMES, path, save, skippable, SKIP_NOTE, type Saved, type StepId, type Who } from "./flow";
+  import { after, before, clear, load, NAMES, path, save, skippable, SKIP_NOTE, type StepId, type Who } from "./flow";
   import { fixtureApi, serverApi, type OnboardingApi } from "./api";
+  import StepCli from "./StepCli.svelte";
+  import StepDirect from "./StepDirect.svelte";
   import StepLook from "./StepLook.svelte";
   import StepMachine from "./StepMachine.svelte";
   import StepProvider from "./StepProvider.svelte";
+  import StepRepos from "./StepRepos.svelte";
   import StepYou from "./StepYou.svelte";
-  let { who: whoProp = "owner", token = "", demo = false }: { who?: Who; token?: string; demo?: boolean } = $props();
+  let { who: whoProp = "owner", token = "", demo = false, attached = false }: { who?: Who; token?: string; demo?: boolean; attached?: boolean } = $props();
   // svelte-ignore state_referenced_locally
   // A pretended run (fixtures) keeps its place in the tab's session storage, so it never leaves anything for the real onboarding to resume.
   // svelte-ignore state_referenced_locally
@@ -20,15 +23,15 @@
   // svelte-ignore state_referenced_locally
   const who: Who = saved?.who ?? whoProp;
   // svelte-ignore state_referenced_locally
-  let step = $state<StepId>(saved?.step ?? "you"), done = $state<StepId[]>(saved?.done ?? []), skipped = $state<StepId[]>(saved?.skipped ?? []), confirming = $state<StepId | null>(null), keyed = $state(false);
+  let coder = $state(saved?.coder ?? false), step = $state<StepId>(saved?.step ?? "you"), done = $state<StepId[]>(saved?.done ?? []), skipped = $state<StepId[]>(saved?.skipped ?? []), confirming = $state<StepId | null>(null), keyed = $state(false);
   // svelte-ignore state_referenced_locally
-  const api: OnboardingApi = demo ? fixtureApi() : serverApi;
-  const steps = $derived(path(who));
-  const TITLE: Record<StepId, string> = { you: "Who you are", look: "Choose a look", machine: "Your machine", provider: "Sign in to a provider", done: "You are set up" };
+  const api: OnboardingApi = demo ? fixtureApi(attached) : serverApi;
+  const steps = $derived(path(coder));
+  const TITLE: Record<StepId, string> = { you: "Who you are", look: "Choose a look", machine: "Your machine", provider: "Sign in to a provider", repos: "Your repositories", cli: "The command line", direct: "Direct mode", done: "You are set up" };
   let heading = $state<HTMLElement>();
   const reduced = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
-  const persist = () => save({ who, step, done, skipped }, store);
-  $effect(() => { void step; persist(); queueMicrotask(() => heading?.focus({ preventScroll: true })); });
+  const persist = () => save({ who, coder, step, done, skipped }, store);
+  $effect(() => { void step; void coder; persist(); queueMicrotask(() => heading?.focus({ preventScroll: true })); });
   // A key-driven finish shows its tick at once (a keyboard user is not made to watch); a pointer-driven one draws it on.
   const onKey = () => (keyed = true), onPointer = () => (keyed = false);
   /** The step is answered: its tick draws on, then (after a beat) the next step takes the card. */
@@ -36,10 +39,10 @@
     if (confirming) return;
     if (!done.includes(s)) done = [...done, s];
     confirming = s;
-    setTimeout(() => { confirming = null; const n = after(who, s); if (n) step = n; }, reduced() ? 0 : 520);
+    setTimeout(() => { confirming = null; const n = after(coder, s); if (n) step = n; }, reduced() ? 0 : 520);
   }
-  function skip(s: StepId) { if (!skipped.includes(s)) skipped = [...skipped, s]; const n = after(who, s); if (n) step = n; }
-  function back() { const p = before(who, step); if (p) step = p; }
+  function skip(s: StepId) { if (!skipped.includes(s)) skipped = [...skipped, s]; const n = after(coder, s); if (n) step = n; }
+  function back() { const p = before(coder, step); if (p) step = p; }
   function start() {
     clear(store);
     try { localStorage.setItem("cal.firstrun", "1"); } catch { /* none */ }
@@ -52,7 +55,7 @@
 <Backdrop />
 <main class="wrap">
   <p class="mark" aria-hidden="true">Calternal</p>
-  <ol class="steps" aria-label="Setup steps">
+  <ol class="steps" class:many={steps.length > 5} aria-label="Setup steps">
     {#each steps as s, i (s)}
       <li class:now={s === step} class:ok={done.includes(s)} aria-current={s === step ? "step" : undefined}>
         <span class="dot">{#if done.includes(s)}<Tick checked animate={!keyed} size="var(--s-9)" />{:else}<span class="num">{i + 1}</span>{/if}</span>
@@ -64,17 +67,20 @@
     {#key step}
       <section class="in">
         <h1 bind:this={heading} tabindex="-1">{TITLE[step]}</h1>
-        {#if step === "you"}<StepYou {who} {token} {demo} ondone={() => finish("you")} />
+        {#if step === "you"}<StepYou {who} {token} {demo} bind:coder ondone={() => finish("you")} />
         {:else if step === "look"}<StepLook ondone={() => finish("look")} />
         {:else if step === "machine"}<StepMachine {api} ondone={() => finish("machine")} />
         {:else if step === "provider"}<StepProvider {api} ondone={() => finish("provider")} />
+        {:else if step === "repos"}<StepRepos {api} ondone={() => finish("repos")} />
+        {:else if step === "cli"}<StepCli ondone={() => finish("cli")} />
+        {:else if step === "direct"}<StepDirect {api} ondone={() => finish("direct")} />
         {:else}
           <p class="ready"><Tick checked animate={!keyed} size="var(--s-10)" /><span>{who === "owner" ? "Your instance is ready. Start the first thread." : "You have joined. Start your first thread."}</span></p>
           <div class="go"><Button variant="primary" text="Start the first thread" onclick={start} /></div>
         {/if}
         {#if step !== "done"}
           <footer>
-            {#if before(who, step) && step !== "you"}<Button variant="quiet" text="Back" onclick={back} />{/if}
+            {#if before(coder, step) && step !== "you"}<Button variant="quiet" text="Back" onclick={back} />{/if}
             {#if skippable[step]}<span class="skip"><Button variant="quiet" text="Skip" onclick={() => skip(step)} /><small>{SKIP_NOTE[step]}</small></span>{/if}
           </footer>
         {/if}
@@ -95,6 +101,11 @@
   .now .dot { background: var(--accent-soft, rgb(var(--ink-rgb) / 0.16)); }
   .ok .dot { background: transparent; }
   .lab { font-size: var(--text-label); text-align: center; }
+  /* The longer path (eight steps): only the current name is shown, under its number. */
+  .many { gap: var(--s-4); padding-bottom: var(--s-6); }
+  .many li { width: 3rem; }
+  .many .lab { display: none; }
+  .many li.now .lab { display: block; position: absolute; top: calc(var(--s-9) + var(--s-2)); white-space: nowrap; }
   @media (max-width: 520px) { .steps { gap: var(--s-4); } .steps li { width: 3.2rem; } .lab { display: none; } .steps li.now .lab { display: block; position: absolute; top: calc(var(--s-9) + var(--s-2)); white-space: nowrap; } .steps { padding-bottom: var(--s-6); } }
   .wrap :global(.card) { width: min(30rem, 100%); }
   .in { display: grid; gap: var(--s-5); padding: var(--s-7); animation: enter var(--dur-slow) var(--ease-out); }

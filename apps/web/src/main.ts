@@ -36,7 +36,7 @@ Promise.race([loadFonts(currentScheme()).catch(() => {}), new Promise((r) => set
     const demo = new URLSearchParams(location.search).get("onboarding");
     if (demo === "1" || demo === "invited") {
       const { default: Onboarding } = await import("./shell/onboarding/Onboarding.svelte");
-      mount(Onboarding, { target, props: { who: demo === "invited" ? "invited" : "owner", demo: true } }); ready(); return;
+      mount(Onboarding, { target, props: { who: demo === "invited" ? "invited" : "owner", demo: true, attached: new URLSearchParams(location.search).has("attached") } }); ready(); return;
     }
     mount(App, { target }); ready(); return;
   }
