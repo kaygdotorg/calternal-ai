@@ -14,7 +14,7 @@ const wallpapers = JSON.parse(readFileSync("wallpapers.json", "utf8"));
   const t = (s) => page.locator(s);
   ok((await t("aside.side header .mark").innerText()) === "Calternal" && (await t("aside.side header svg").count()) <= 1, "Sidebar header: the app's name as a wordmark, no icon (the only svg is the hide button)");
   ok((await page.evaluate(() => getComputedStyle(document.querySelector("aside.side header .mark")).fontFamily)).length > 0 && (await t("aside.side header .mark").evaluate((e) => e.tagName)) === "P", "The header's name is a label, not a control");
-  ok((await t("aside.side [aria-label='Apps']").count()) === 0 && (await t("aside.side header [role=tablist]").count()) === 0, "No horizontal app strip in the sidebar");
+  ok((await t("aside.side header [aria-label='Apps']").count()) === 0 && (await t("aside.side header [role=tablist]").count()) === 0 && (await t("aside.side footer nav[aria-label='Apps']").count()) === 1, "No app strip in the sidebar's header; the icon-only capsule is in its footer");
   ok((await t("aside.side").getByText("Needs you").count()) === 0 && (await t("aside.side .att").count()) === 0, "No Needs-you card: the Threads sidebar has an Inbox tab instead");
   ok((await t("aside.side [role=tab]").allInnerTexts()).map((x) => x.replace(/\d+/g, "").trim()).join("|") === "Inbox|All Threads", "The list has two tabs, Inbox and All Threads");
   await t("aside.side [role=tab]").filter({ hasText: "All Threads" }).click();
