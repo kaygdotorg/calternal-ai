@@ -4,6 +4,63 @@ The release delivery gate and current profiles are tracked in
 [the November 18 report](reviews/perf-profile-2026-11-18.md). The measurements
 under November 17 qualification describe that day's artifacts and budgets.
 
+## Notes acknowledgment and guest storage
+
+The product gate is **40 ms p95**. For 100,000 Notes warm on perf-02,
+**75 ms p95** is the working expectation from a measured worst warm arm
+p95 of 70.92 ms. A workload WAL sync reached 76.45 ms, compared with
+zero isolated syncs at or above 65 ms in 20,000 samples.
+
+Six subsequent warm arms of 150 saves captured 2,733 successful WAL
+syncs. The maximum was 42.16 ms. In a fully correlated 36.17 ms sync,
+the ext4 ordered journal commit occupied 35.80 ms. The underlying
+virtio-SCSI device took 7.41 ms for `SYNCHRONIZE CACHE` and 28.15 ms
+for a 4 KiB force-unit-access (FUA) write. The slow part that reproduced
+was in guest-visible virtual-device completion. The earlier 65–76 ms
+tail did not recur, and the trace ring overwrote some early events.
+Raw measurements and analysis are recorded on the performance issue.
+[Benchmark and trace details](reviews/perf-compaction-and-storage-2026-11-18.md) · [Issue #52](https://git.kayg.org/kayg/calternal-ai/issues/52)
+
+For an operator comparison, use a disposable guest or blank volume
+with the production storage class and the same guest filesystem and mount
+options. Collect these parameters and timestamps for the perf and matching disks.
+
+- Record the QEMU block driver and image format, backing storage class and
+  pool, `cache.direct`, `cache.no-flush`, guest write-cache setting,
+  AIO mode, controller, queue count, I/O thread mapping and I/O throttling.
+- Correlate one guest SCSI command by LUN, opcode, LBA, length and FUA
+  flag. Timestamp virtqueue submission, QEMU request acceptance, backend
+  submission, host block issue and completion, backend flush or FUA
+  completion, and guest completion notification. Align guest and host
+  clocks or use a shared correlation marker. Record queue depth and
+  hypervisor CPU scheduling delay across the same interval.
+- Repeat the 100,000-Note warm workload and isolated WAL-sized syncs on
+  the disposable filesystem. Keep FULL SQLite durability and disk barriers.
+
+The guest advertises write-back with FUA support. That flag is shared by
+multiple QEMU cache settings, so the host configuration is needed to
+identify which one actually ran. [QEMU disk invocation reference](https://www.qemu.org/docs/master/system/invocation.html)
+
+## Disk-cold startup with jobs and worker prototypes
+
+Five paired cold starts on perf-02 combined the archived empty-jobs-inventory
+and verified-worker-reuse prototypes. Both arms used the same instrumented v3
+binary, a stopped 1,000-space seed with one Note per space, and an identical
+61.09 MB active security segment. Disk-cold runs dropped the guest page cache
+before launch.
+
+| Median phase | Control | Both prototypes |
+| --- | ---: | ---: |
+| Plugins | 71.23 ms | 36.51 ms |
+| Jobs inventory | 5.95 ms | <0.001 ms |
+| Snapshot and segment reads | 136.47 ms | 138.66 ms |
+| Readiness | 531.67 ms | 545.41 ms |
+
+Both arms missed 300 ms in all five trials. The plugin and empty
+jobs phases improved in every pair. The rest of cold readiness varied
+enough to reverse the median result. This profile used the jobs inventory
+prototype with no live jobs. [Issue #52](https://git.kayg.org/kayg/calternal-ai/issues/52)
+
 ## MicroVM plan sizing — 2026-11-18
 
 On locked perf-02, each trial started a fresh Firecracker guest with 1,024 MiB
