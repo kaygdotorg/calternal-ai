@@ -53,7 +53,7 @@ const wallpapers = JSON.parse(readFileSync("wallpapers.json", "utf8"));
   // composer menus: pickers with icons and search
   await expandComposer(page);
   await page.getByRole("button", { name: /GPT|Claude|Sonnet|Opus|Codex/ }).first().click(); await page.waitForTimeout(300);
-  const picker = page.getByRole("dialog", { name: "Provider and model" }); // a menu with a search field is a dialog holding the search and the menu
+  const picker = page.getByRole("dialog", { name: /Provider/ }); // a menu with a search field is a dialog holding the search and the menu
   ok((await picker.locator("input[type=search]").count()) > 0 && (await picker.locator("svg").count()) > 0, "Pickers show an icon per provider and have an inline search field"); await page.keyboard.press("Escape");
   // message actions
   await page.locator(".msg").nth(2).hover(); await page.waitForTimeout(300);

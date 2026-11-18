@@ -13,7 +13,7 @@ const settle = (p) => p.evaluate(() => new Promise((res) => { const t0 = perform
   still = quiet ? still + 1 : 0;
   if (still >= 4 || now - t0 > 8000) res(); else requestAnimationFrame(tick);
 }; tick(); }));
-const chip = (i) => async (p) => { await expandComposer(p); await p.locator(".composer .chips .pill").nth(i).click(); };
+const chip = (i) => async (p) => { await expandComposer(p); await p.locator(`.composer .chip[data-chip=${["model", "perm", "where"][i]}] .pill`).click(); };
 const states = [
   ["list and a thread", "/threads/t-run", null],
   ["thread with steps open", "/threads/t-run", async (p) => { await p.locator("button[aria-expanded]").first().click().catch(() => {}); }],

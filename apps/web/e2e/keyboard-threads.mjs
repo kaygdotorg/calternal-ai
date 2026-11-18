@@ -15,19 +15,19 @@ async function tabTo(p, test, max = 60) { for (let i = 0; i < max; i++) { if (aw
   ok("Enter sends the message", (await page.locator(".msg", { hasText: "hello from the keyboard" }).count()) >= 1);
   // Chips: Tab from the field to each chip, Enter opens, arrows move, Enter chooses, Escape returns focus
   for (const [name, i] of [["provider and model", 0], ["permission mode", 1]]) {
-    await page.locator(".composer .chips .pill").nth(i).focus(); await page.keyboard.press("Enter"); await page.waitForTimeout(500);
+    await page.locator(`.composer .chip[data-chip=${["model", "perm", "where"][i]}] .pill`).focus(); await page.keyboard.press("Enter"); await page.waitForTimeout(500);
     const inMenu = await page.evaluate(() => !!document.activeElement?.closest("[role=menu], [role=dialog]"));
     await page.keyboard.press("ArrowDown"); await page.keyboard.press("Escape"); await page.waitForTimeout(450);
-    ok(`${name}: Enter opens the menu with focus inside, Escape closes it and returns focus to the chip`, inMenu && (await page.evaluate((i) => document.activeElement === document.querySelectorAll(".composer .chips .pill")[i], i)), await active(page));
+    ok(`${name}: Enter opens the menu with focus inside, Escape closes it and returns focus to the chip`, inMenu && (await page.evaluate((i) => document.activeElement === document.querySelector(`.composer .chip[data-chip=${["model", "perm", "where"][i]}] .pill`), i)), await active(page));
   }
-  await page.locator(".composer .chips .pill").nth(1).focus(); await page.keyboard.press("Enter"); await page.waitForTimeout(500);
-  const before = await page.locator(".composer .chips .pill").nth(1).getAttribute("aria-label");
+  await page.locator(".composer .chip[data-chip=perm] .pill").focus(); await page.keyboard.press("Enter"); await page.waitForTimeout(500);
+  const before = await page.locator(".composer .chip[data-chip=perm] .pill").getAttribute("aria-label");
   await page.keyboard.press("ArrowDown"); await page.keyboard.press("Enter"); await page.waitForTimeout(450);
-  ok("a permission mode is chosen with arrows and Enter", (await page.locator(".composer .chips .pill").nth(1).getAttribute("aria-label")) !== before || true, `${before} -> ${await page.locator(".composer .chips .pill").nth(1).getAttribute("aria-label")}`);
-  await page.locator(".composer .chips .pill").nth(2).focus(); await page.keyboard.press("Enter"); await page.waitForTimeout(500);
+  ok("a permission mode is chosen with arrows and Enter", (await page.locator(".composer .chip[data-chip=perm] .pill").getAttribute("aria-label")) !== before || true, `${before} -> ${await page.locator(".composer .chip[data-chip=perm] .pill").getAttribute("aria-label")}`);
+  await page.locator(".composer .chip[data-chip=where] .pill").focus(); await page.keyboard.press("Enter"); await page.waitForTimeout(500);
   const dlg = await page.evaluate(() => !!document.activeElement?.closest("[role=dialog]") || !!document.querySelector("[role=dialog] input"));
   await page.keyboard.press("Tab"); await page.keyboard.press("Tab"); await page.keyboard.press("Escape"); await page.waitForTimeout(450);
-  ok("machine popover: opens, can be tabbed through, Escape closes it and focus returns to the chip", dlg && (await page.evaluate(() => document.activeElement === document.querySelectorAll(".composer .chips .pill")[2])), await active(page));
+  ok("machine popover: opens, can be tabbed through, Escape closes it and focus returns to the chip", dlg && (await page.evaluate(() => document.activeElement === document.querySelector(".composer .chip[data-chip=where] .pill"))), await active(page));
   // Rows: F2 renames, the context-menu key opens the menu, Archive then Undo
   const row = page.locator("nav[aria-label=Threads] a.row").nth(1);
   await row.focus(); await page.keyboard.press("F2"); await page.waitForTimeout(300);
@@ -67,7 +67,7 @@ async function tabTo(p, test, max = 60) { for (let i = 0; i < max; i++) { if (aw
   const ctx = await b.newContext({ ...DEVICES.desktop, reducedMotion: "reduce" }); await ctx.addInitScript(() => localStorage.setItem("cal.firstrun", "1"));
   const page = await ctx.newPage(); await page.goto(BASE + "/threads/t-idle"); await page.waitForSelector("html[data-ready]"); await page.waitForTimeout(800);
   await expandComposer(page);
-  await page.locator(".composer .chips .pill").nth(2).click(); await page.waitForTimeout(100);
+  await page.locator(".composer .chip[data-chip=where] .pill").click(); await page.waitForTimeout(100);
   const clip = await page.evaluate(() => { const g = document.querySelector(".pop .glass"); return g ? getComputedStyle(g).clipPath : "gone"; });
   const anims = await page.evaluate(() => document.getAnimations().filter((a) => a.playState === "running" && !(a instanceof CSSTransition && a.effect?.getTiming().duration <= 1)).length);
   ok("reduced motion: the popover opens without the morph (no clip)", clip === "none" || clip === "gone", `clip=${clip}`);
@@ -79,7 +79,7 @@ for (const [name, vp] of [["desktop 200%", { width: 720, height: 450 }], ["phone
   const ctx = await b.newContext({ viewport: vp, deviceScaleFactor: 2, isMobile: name.startsWith("phone"), hasTouch: name.startsWith("phone") }); await ctx.addInitScript(() => localStorage.setItem("cal.firstrun", "1"));
   const page = await ctx.newPage(); await page.goto(BASE + "/threads/t-idle"); await page.waitForSelector("html[data-ready]"); await page.waitForTimeout(800);
   await expandComposer(page); // the chips are drawn once the composer has focus
-  const m = await page.evaluate(() => { const c = document.querySelector(".composer")?.getBoundingClientRect(); const chips = [...document.querySelectorAll(".composer .chips .pill")].map((e) => e.getBoundingClientRect()); return { sw: document.documentElement.scrollWidth, iw: innerWidth, composer: c && { l: c.left, r: c.right }, chipsInside: c ? chips.every((r) => r.left >= c.left - 1 && r.right <= c.right + 1) : false, send: !!document.querySelector("[aria-label='Send message']") }; });
+  const m = await page.evaluate(() => { const c = document.querySelector(".composer")?.getBoundingClientRect(); const chips = [...document.querySelectorAll(".composer .chips .row > .chip .pill")].map((e) => e.getBoundingClientRect()); return { sw: document.documentElement.scrollWidth, iw: innerWidth, composer: c && { l: c.left, r: c.right }, chipsInside: c ? chips.every((r) => r.left >= c.left - 1 && r.right <= c.right + 1) : false, send: !!document.querySelector("[aria-label='Send message']") }; });
   ok(`${name}: no horizontal scrolling, the composer fits, its chips stay inside it, the send button is there`, m.sw <= m.iw + 1 && m.composer && m.composer.r <= m.iw + 1 && m.chipsInside && m.send, JSON.stringify(m));
   await page.screenshot({ path: `/tmp/zoom-${name.split(" ")[0]}.png` });
   await ctx.close();

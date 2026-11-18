@@ -26,7 +26,7 @@ await page.mouse.move(5, 5);
 await rows.first().click();
 await page.waitForSelector("h1");
 await expandComposer(page);
-const pill = page.locator(".composer .chip.prov button").first();
+const pill = page.locator(".composer .chip[data-chip=model] button").first();
 await pill.click();
 await page.waitForTimeout(60);
 const running = await pill.evaluate((el) => el.getAnimations().filter((a) => !(a instanceof CSSTransition)).length);

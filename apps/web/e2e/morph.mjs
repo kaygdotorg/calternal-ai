@@ -7,10 +7,10 @@ const stop = await serve(); const b = await chromium.launch();
 let bad = 0;
 const ok = (n, p, note = "") => { console.log(`${p ? "PASS" : "FAIL"}  ${n}${note ? "  " + note : ""}`); if (!p) bad++; };
 const { page, ctx } = await open(b, "desktop", "dark", "/threads/t-idle");
-const sample = (ms, idx = 2) => page.evaluate(([ms, idx]) => new Promise((res) => { const out = []; const t0 = performance.now(); const f = () => { const pop = document.querySelector(".pop"); const g = pop?.hasAttribute("data-ready") ? pop.querySelector(".glass") : null; const pill = document.querySelectorAll(".composer .chips .pill")[idx]; out.push({ t: Math.round(performance.now() - t0), clip: g ? getComputedStyle(g).clipPath : "gone", pill: getComputedStyle(pill).opacity, box: g ? JSON.stringify(g.getBoundingClientRect()) : "" }); if (performance.now() - t0 < ms) requestAnimationFrame(f); else res(out); }; f(); }), [ms, idx]);
+const sample = (ms, idx = 2) => page.evaluate(([ms, idx]) => new Promise((res) => { const out = []; const t0 = performance.now(); const f = () => { const pop = document.querySelector(".pop"); const g = pop?.hasAttribute("data-ready") ? pop.querySelector(".glass") : null; const pill = document.querySelector(`.composer .chip[data-chip=${["model", "perm", "where"][idx]}] .pill`); out.push({ t: Math.round(performance.now() - t0), clip: g ? getComputedStyle(g).clipPath : "gone", pill: getComputedStyle(pill).opacity, box: g ? JSON.stringify(g.getBoundingClientRect()) : "" }); if (performance.now() - t0 < ms) requestAnimationFrame(f); else res(out); }; f(); }), [ms, idx]);
 for (const [i, name] of [[0, "provider"], [1, "permission"], [2, "where"]]) {
   await expandComposer(page);
-  const chip = page.locator(".composer .chips .pill").nth(i);
+  const chip = page.locator(`.composer .chip[data-chip=${["model", "perm", "where"][i]}] .pill`);
   const r = await chip.boundingBox();
   const run = sample(900, i);
   await chip.click();
@@ -30,7 +30,7 @@ for (const [i, name] of [[0, "provider"], [1, "permission"], [2, "where"]]) {
 }
 // Interrupt: open, close after 120 ms (mid-grow): the first shrink frame continues from the grown clip, never jumping to full size or to the chip.
 await expandComposer(page);
-const chip = page.locator(".composer .chips .pill").nth(2);
+const chip = page.locator(".composer .chip[data-chip=where] .pill");
 const run3 = sample(900);
 await chip.click();
 await page.waitForTimeout(120);

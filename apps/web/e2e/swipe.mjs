@@ -40,7 +40,7 @@ ok("a swipe left closes it", (await page.locator(".shell").getAttribute("data-si
 await page.keyboard.press("Escape"); await page.waitForTimeout(300);
 await page.goto(page.url().replace(/\/threads.*$/, "/threads/t-run")); await page.waitForSelector("h1");
 await expandComposer(page);
-await page.locator(".chip.prov button").click();
+await page.locator(".chip[data-chip=model] button").click();
 await page.waitForSelector(".sheet.bottom");
 await page.waitForTimeout(500);
 const grab = page.locator(".grab").last();
