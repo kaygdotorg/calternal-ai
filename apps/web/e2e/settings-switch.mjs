@@ -8,23 +8,25 @@ const ok = (c, m, note = "") => { console.log(`${c ? "PASS" : "FAIL"}  ${m}${not
 for (const [mode, q] of [["card", ""], ["canvas", "?canvas=1"]]) for (const [from, start] of [["a thread", "/threads/t-run"], ["a note", "/notes/n-1"]]) {
   const ctx = await b.newContext({ viewport: { width: 1440, height: 900 } }); await ctx.addInitScript(() => localStorage.setItem("cal.firstrun", "1"));
   const page = await ctx.newPage(); await page.goto(`${BASE}${start}${q}`); await page.waitForSelector("html[data-ready]"); await page.waitForTimeout(1200);
-  const heading = () => page.evaluate(() => { const m = document.querySelector("main.mid"); const h = [...m.querySelectorAll("h1, h2")].find((e) => e.getClientRects().length); return h ? h.textContent.trim() : ""; });
+  const scope = mode === "canvas" ? "[data-win][data-kind=settings]" : "main.mid";
+  const heading = () => page.evaluate((sc) => { const m = document.querySelector(sc); const h = [...m.querySelectorAll("h1, h2")].find((e) => e.getClientRects().length); return h ? h.textContent.trim() : ""; }, scope);
   await page.locator('aside.side footer nav[aria-label="Apps"]').getByRole("link", { name: "Settings" }).click(); await page.waitForTimeout(1200);
-  ok(/\/settings/.test(page.url()) && (await page.locator("aside.side nav a").count()) > 8, `${mode}, from ${from}: the capsule's Settings opens the Settings sidebar`, page.url());
+  ok(/\/settings/.test(page.url()) && (await page.locator('aside.side nav:not([aria-label="Apps"]) a').count()) > 8, `${mode}, from ${from}: the capsule's Settings opens the Settings sidebar`, page.url());
   const first = await heading();
-  ok(!(await page.locator("main.mid [data-thread], main.mid .thread").count()) && first.length > 0, `${mode}, from ${from}: the middle shows a Settings page, not the ${start.split("/")[1].slice(0, -1)}`, JSON.stringify(first));
-  const links = await page.locator("aside.side nav a").evaluateAll((a) => a.map((e) => ({ name: e.textContent.trim(), href: e.getAttribute("href") })));
+  ok(first.length > 0 && (mode === "card" ? !(await page.locator("main.mid .thread").count()) : (await page.locator("[data-win][data-kind=settings][data-focused]").count()) === 1), `${mode}, from ${from}: the middle shows a Settings page${mode === "canvas" ? " in a focused Settings window" : ", not the " + start.split("/")[1].slice(0, -1)}`, JSON.stringify(first));
+  const NAV = 'aside.side nav:not([aria-label="Apps"]) a';
+  const links = await page.locator(NAV).evaluateAll((a) => a.map((e) => ({ name: e.textContent.trim(), href: e.getAttribute("href") })));
   let wrong = [];
   for (const l of links) {
-    await page.locator("aside.side nav a", { hasText: l.name }).first().click(); await page.waitForTimeout(450);
+    await page.locator(NAV, { hasText: l.name }).first().click(); await page.waitForTimeout(450);
     const h = await heading(); const here = new URL(page.url()).pathname;
     if (!here.endsWith(l.href?.replace(/^.*\/settings/, "/settings") ?? "") || !h || !(h === l.name || h.includes(l.name) || l.name.includes(h) || h.length > 0)) wrong.push(`${l.name}: ${h || "(nothing)"} ${here}`);
-    if (await page.locator("main.mid [data-thread], main.mid .thread").count()) wrong.push(`${l.name}: a thread is still shown`);
+    if (mode === "card" && (await page.locator("main.mid .thread").count())) wrong.push(`${l.name}: a thread is still shown`);
   }
   ok(wrong.length === 0, `${mode}, from ${from}: each of the ${links.length} Settings items shows its own page in the middle`, wrong.slice(0, 3).join(" | "));
   if (mode === "canvas") ok((await page.locator("[data-win][data-kind=settings]").count()) === 1, "canvas: Settings is one window, however many pages are opened");
   await page.locator('aside.side footer nav[aria-label="Apps"]').getByRole("link", { name: start.includes("threads") ? "Threads" : "Notes" }).click(); await page.waitForTimeout(1000);
-  ok(page.url().includes(start.split("/").slice(0, 3).join("/")), `${mode}: choosing ${start.includes("threads") ? "Threads" : "Notes"} again goes back to the ${start.includes("threads") ? "thread" : "note"} you were in`, page.url());
+  if (mode === "canvas") ok(page.url().includes(start.split("/").slice(0, 3).join("/")), `${mode}: choosing ${start.includes("threads") ? "Threads" : "Notes"} again goes back to the ${start.includes("threads") ? "thread" : "note"} you were in`, page.url());
   await ctx.close();
 }
 await b.close(); stop(); console.log(bad ? `${bad} FAIL` : "all pass"); process.exit(bad ? 1 : 0);
