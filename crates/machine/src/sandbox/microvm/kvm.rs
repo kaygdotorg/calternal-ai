@@ -12,8 +12,11 @@ unsafe extern "C" {
 
 pub(super) fn check(path: &Path) -> io::Result<()> {
     let device = OpenOptions::new().read(true).write(true).open(path)?;
-    // SAFETY: these KVM ioctls accept no pointer; CREATE_VM returns an owned fd.
-    let api = unsafe { ioctl(device.as_raw_fd(), 0xae00) };
+    // Both requests require an explicit zero-valued third argument. The C
+    // variadic wrapper reads that argument even when there is no user buffer.
+    let zero = std::ptr::null_mut::<std::ffi::c_void>();
+    // SAFETY: GET_API_VERSION takes a zero argument with no user buffer.
+    let api = unsafe { ioctl(device.as_raw_fd(), 0xae00, zero) };
     if api < 0 {
         return Err(io::Error::last_os_error());
     }
@@ -21,7 +24,7 @@ pub(super) fn check(path: &Path) -> io::Result<()> {
         return Err(io::Error::other("the KVM API version is not 12"));
     }
     // SAFETY: VM type 0 selects the default architecture VM type.
-    let vm = unsafe { ioctl(device.as_raw_fd(), 0xae01, 0 as c_ulong) };
+    let vm = unsafe { ioctl(device.as_raw_fd(), 0xae01, zero) };
     if vm < 0 {
         return Err(io::Error::last_os_error());
     }

@@ -39,9 +39,10 @@ and formatting gates passed. The serial conformance rerun passed 117 cases
 with the live KVM case visibly skipped when no image was configured. An
 explicit 512 MiB image run under the leak checker passed all three
 microVM conformance cases in 12.23 seconds. An earlier traced run also
-passed. Two preceding live attempts failed with ENOENT at sandbox start
-and the cause was not isolated. The machine-level live suite passed
-five cases and ignored the perf-only benchmark. Both leak checks passed.
+passed. Two preceding live attempts failed with ENOENT at sandbox start.
+A later reproduction traced the same symptom to a garbage-collected ext4
+formatter path. The machine-level live suite passed five cases and ignored
+the perf-only benchmark. Both leak checks passed.
 
 ## Stage 3
 
@@ -103,6 +104,21 @@ Both leak checks passed. This exercises the retained workspace behind the
 provider checkpoint flow.
 The full provider resume example in ordinary conformance uses its separate
 fixture.
+
+## Release artifact checks
+
+The first locked perf attempt stopped at KVM probing. The dev-built static
+binary reproduced the failure under `strace -f -e trace=ioctl` on dev-01:
+`KVM_GET_API_VERSION(0x1)` returned `EINVAL`. Passing an explicit zero in
+both variadic KVM calls returned API version 12 and created a VM.
+
+A separate `strace` reproduction traced the sandbox start `ENOENT` to
+`execve` of a garbage-collected Nix ext4 formatter. The deployment command
+now roots a dedicated Nix runtime profile. With that profile and the fixed
+static test binary, the live isolation and lifecycle case passed on dev-01.
+The Podman and Firecracker leak checks passed. A restricted PATH test also
+confirmed that the Firecracker check still detects a fixture leak when the
+host has no Podman.
 
 ## Backend gate commands
 

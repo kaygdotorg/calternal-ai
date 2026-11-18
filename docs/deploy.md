@@ -133,14 +133,16 @@ podman save --format docker-archive -o standard.tar localhost/calternal-standard
 nix develop .#microvm -c deploy/microvm/build-image.sh \
   target/x86_64-unknown-linux-musl/debug/calternal-microvm-agent \
   target/x86_64-unknown-linux-musl/debug/calternal standard.tar guest-image
-nix develop .#microvm -c sh -c 'command -v firecracker mkfs.ext4'
+nix develop .#microvm --profile "$PWD/guest-runtime" \
+  -c sh -c 'command -v firecracker mkfs.ext4'
 ```
 
 Use one private machine directory per enrolled identity. Put the machine-wide
-settings in an operator-owned JSON file. Replace the three absolute paths
-with the Nix store paths and `image_digest` with the SHA-256 value printed by
-the image build. Keep the store artifact rooted and immutable for the duration
-of the machine role.
+settings in an operator-owned JSON file. Use the executable paths printed
+by the runtime shell and the absolute guest image path. Set `image_digest`
+to the SHA-256 value printed by the image build. Keep the runtime profile
+and image rooted for the lifetime of the machine role so Nix garbage
+collection leaves their store paths available.
 
 ```json
 {
