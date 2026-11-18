@@ -2926,6 +2926,35 @@ base_revision: string,
  */
 title: string, };
 /**
+ * Progress of an authorized Notes rename or its inverse.
+ */
+
+export type NoteRenameJob = {
+/**
+ * Job UUID returned by the rename.
+ */
+job_id: string,
+/**
+ * Stable identity of the renamed note.
+ */
+note_id: string,
+/**
+ * Original number of candidate linking notes.
+ */
+total: number,
+/**
+ * Number of source files still to inspect in the current direction.
+ */
+remaining: number,
+/**
+ * Number of conflicts skipped in the current direction.
+ */
+skipped: number,
+/**
+ * `pending`, `done`, `undoing`, `undone`, or `blocked`.
+ */
+state: string, };
+/**
  * A single note UUID targeted by a lifecycle operation.
  */
 
@@ -2961,6 +2990,129 @@ id: string,
  * Deleted state of the address.
  */
 state: ItemState, };
+/**
+ * One trashed note and its remaining whole-day retention, rounded up.
+ */
+
+export type TrashedNote = {
+/**
+ * Days until eligibility for automatic purge. Zero means eligible now.
+ */
+days_remaining: number,
+/**
+ * Stable UUID note identity; access is checked against the accompanying space.
+ */
+id: string,
+/**
+ * Owning/access space identifier: 1..80 ASCII letters, digits or `_.:-`; never proof of authority.
+ */
+space_id: string,
+/**
+ * Display title, nonblank, at most 256 Unicode scalars and without control characters.
+ */
+title: string,
+/**
+ * Opaque nonempty server revision; compare for equality, never infer order or parse it.
+ */
+revision: string,
+/**
+ * Server-authored UTC RFC 3339 timestamp for this snapshot.
+ */
+updated_at: string, };
+/**
+ * One page of notes eligible for restore or purge, newest deletion first.
+ */
+
+export type TrashListResult = {
+/**
+ * At most 100 notes with their remaining retention.
+ */
+notes: Array<TrashedNote>,
+/**
+ * Opaque next-page cursor, omitted when there are no more notes.
+ */
+next_cursor?: string, };
+/**
+ * Selects the Trash of one space for an irreversible-action preview.
+ */
+
+export type TrashScope = {
+/**
+ * UUID of the owning space.
+ */
+space_id: string, };
+/**
+ * Confirmation for exactly the current set of trashed revisions.
+ */
+
+export type TrashEmptyPreview = {
+/**
+ * Number of selected notes.
+ */
+count: number,
+/**
+ * Logical UTF-8 bytes in all retained versions of the selected notes.
+ */
+bytes: number,
+/**
+ * Opaque set fingerprint required when starting the job.
+ */
+confirmation: string, };
+/**
+ * Confirm the irreversible deletion of a previewed Trash selection.
+ */
+
+export type TrashEmptyInput = {
+/**
+ * UUID of the owning space.
+ */
+space_id: string,
+/**
+ * Confirmation from a fresh preview for the same space.
+ */
+confirmation: string, };
+/**
+ * Select one previously admitted job in its owning space.
+ */
+
+export type NoteJobInput = {
+/**
+ * UUID of the owning space.
+ */
+space_id: string,
+/**
+ * Job UUID returned on admission.
+ */
+job_id: string, };
+/**
+ * Durable progress of one irreversible Empty Trash job.
+ */
+
+export type TrashJob = {
+/**
+ * Stable job UUID.
+ */
+job_id: string,
+/**
+ * Number of notes selected at confirmation.
+ */
+count: number,
+/**
+ * Logical version bytes selected at confirmation.
+ */
+bytes: number,
+/**
+ * Number of selected revisions permanently removed by this job.
+ */
+purged: number,
+/**
+ * Number of selected revisions restored, replaced, blocked or already removed.
+ */
+skipped: number,
+/**
+ * `pending` while work remains, `done` after all selected revisions are examined.
+ */
+state: string, };
 /**
  * Bounded tag lookup result.
  */
@@ -3109,7 +3261,11 @@ export type NoteResult = {
 /**
  * Current note snapshot visible to the authenticated caller.
  */
-note: Note, };
+note: Note,
+/**
+ * Durable link rewrite job when this write changes the note's title.
+ */
+job_id?: string, };
 /**
  * Result for `notes.history`; snapshots are paginated without exposing storage paths.
  */

@@ -75,11 +75,16 @@ async fn every_registered_operation_has_an_independent_matrix_row() {
         "notes.delete",
         "notes.restore",
         "notes.rename",
+        "notes.rename.status",
+        "notes.rename.undo",
         "notes.lookup",
         "tags.list",
         "tags.lookup",
         "trash.list",
         "trash.purge",
+        "trash.empty.preview",
+        "trash.empty",
+        "trash.empty.status",
         "resolve", // dedicated address matrix in resolver.rs
         // Dedicated item sharing fixtures in resolver.rs.
         "collections.get",

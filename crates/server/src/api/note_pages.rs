@@ -4,6 +4,7 @@ use calternal_content::ItemOrder;
 use calternal_core::{
     NoteMatch, NotePrefixInput, NotesHistoryInput, NotesHistoryResult, NotesListInput,
     NotesListResult, NotesLookupResult, SpaceDirectoryPageInput, TagCount, TagsResult,
+    TrashListResult, TrashedNote,
 };
 
 const PAGE_SIZE: usize = 100;
@@ -23,7 +24,7 @@ pub(super) async fn discover<D: Directory>(
                 let i: NotesListInput = decode(input)?;
                 (space_of(&i.space_id)?, i.tag, i.cursor)
             };
-            let page = blocking(state, move |s| {
+            blocking(state, move |s| {
                 let order = if trashed {
                     ItemOrder::Trash
                 } else {
@@ -31,18 +32,32 @@ pub(super) async fn discover<D: Directory>(
                         label: tag.as_deref(),
                     }
                 };
-                s.content()
-                    .item_page(space, "notes", order, cursor.as_deref(), PAGE_SIZE)
+                let page =
+                    s.content()
+                        .item_page(space, "notes", order, cursor.as_deref(), PAGE_SIZE)?;
+                let notes = page.rows.into_iter().map(crate::store::note_summary);
+                if trashed {
+                    let now = time::OffsetDateTime::now_utc();
+                    to_value(TrashListResult {
+                        notes: notes
+                            .map(|note| {
+                                Ok(TrashedNote {
+                                    days_remaining: s
+                                        .trash_days_remaining(&note.updated_at, now)?,
+                                    note,
+                                })
+                            })
+                            .collect::<Result<Vec<_>, Error>>()?,
+                        next_cursor: page.next,
+                    })
+                } else {
+                    to_value(NotesListResult {
+                        notes: notes.collect(),
+                        next_cursor: page.next,
+                    })
+                }
             })
-            .await?;
-            to_value(NotesListResult {
-                notes: page
-                    .rows
-                    .into_iter()
-                    .map(crate::store::note_summary)
-                    .collect(),
-                next_cursor: page.next,
-            })
+            .await
         }
         "notes.lookup" => {
             let i: NotePrefixInput = decode(input)?;

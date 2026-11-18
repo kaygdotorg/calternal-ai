@@ -55,7 +55,12 @@ Generated operation schemas. Capability and risk are shown only when the catalog
 - [notes.restore](./notes-restore/): Restore a note from its space's Trash
 - [trash.list](./trash-list/): List a page of up to 100 notes in the space's Trash
 - [trash.purge](./trash-purge/): Permanently delete a note from Trash
+- [trash.empty.preview](./trash-empty-preview/): Count notes and retained version bytes before emptying Trash
+- [trash.empty](./trash-empty/): Start a resumable job to permanently purge the confirmed Trash selection
+- [trash.empty.status](./trash-empty-status/): Read progress of an Empty Trash job
 - [notes.rename](./notes-rename/): Rename a note at its current revision
+- [notes.rename.status](./notes-rename-status/): Read progress of a Notes rename or its inverse
+- [notes.rename.undo](./notes-rename-undo/): Restore the original name and linked revisions from a completed rename
 - [notes.lookup](./notes-lookup/): Find a page of up to 100 notes by title prefix
 - [tags.list](./tags-list/): List a page of up to 100 tags and their current note counts
 - [tags.lookup](./tags-lookup/): Find a page of up to 100 tags by name prefix

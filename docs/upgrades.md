@@ -65,6 +65,16 @@ schema and every shipped step fixed. A version outside the declared range
 fails before schema changes. The deployment gate will admit a newer version
 for an older release only under the explicit, tested compatibility policy.
 
+Production image `c98705d74bcf` has auth version 14, content version 5
+and machines version 6. After live rooms at content version 6, Empty Trash
+and rename queues follow at versions 7 and 8. Auth version 15 adds the
+Manager and Owner purge grant.
+The prior writer still allows Editors to purge. Treat this rollout as
+incompatible and use the owner-approved restore point for rollback.
+
+Message search generation 2 drops the redundant thread-location index and
+rebuilds under the projection worker. Its SQLite schema version stays 1.
+
 Owned tags put the name before the version, as in `calternal-thread/v1`.
 Binary formats retain the version markers listed above.
 An unknown version of a recognized format stays untouched. File readers
