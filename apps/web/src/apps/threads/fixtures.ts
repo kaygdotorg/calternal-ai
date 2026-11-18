@@ -72,6 +72,7 @@ function applyScenario(threads: ThreadSummary[], requests: Request[]): void {
   try { s = new URLSearchParams(location.search).get("scenario"); } catch { /* not in a page */ }
   if (!s) return;
   if (s === "empty") { threads.length = 0; requests.length = 0; return; }
+  if (s === "empty-with-prompt") { threads.length = 0; const keep = requests.filter((r) => r.jobId && !r.threadId); requests.length = 0; requests.push(...keep); return; } // no thread, but a plugin job waits on the person
   if (s === "quiet") { requests.length = 0; for (const x of threads) { x.notice = undefined; if (x.state === "failed" || x.state === "waiting") x.state = "idle"; } return; }
   const t = threads.find((x) => x.id === "t-idle");
   if (!t) return;

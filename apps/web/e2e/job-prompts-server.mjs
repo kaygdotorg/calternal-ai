@@ -34,10 +34,12 @@ try {
   console.log("   jobs:", JSON.stringify(q).slice(0, 140), JSON.stringify(a).slice(0, 140));
   let wire = []; for (let i = 0; i < 60; i++) { wire = (await op(p, "requests.list", {})).data?.requests ?? []; if (wire.filter((r) => r.job_id).length >= 2) break; await p.waitForTimeout(500); }
   ok(wire.filter((r) => r.job_id && !r.thread_id).length === 2, "the server lists both waits as requests with a job and no thread", JSON.stringify(wire.map((r) => [r.detail?.kind, !!r.job_id, r.thread_id])));
+  p.on("pageerror", (e) => console.log("   pageerror:", String(e).slice(0, 300))); p.on("console", (m) => { console.log("   console." + m.type() + ":", m.text().slice(0, 300)); });
   await p.goto(`${url}/threads?server=1`); await p.waitForSelector("html[data-ready]"); await p.waitForTimeout(2500);
   const rows = p.locator("[role=tabpanel] ul[aria-label='Waiting for you'] li[data-job]");
-  for (let i = 0; i < 20 && (await rows.count()) < 2; i++) await p.waitForTimeout(500);
-  ok((await rows.count()) === 2, "the Inbox shows both as rows of their own", String(await rows.count()));
+  for (let i = 0; i < 24 && (await rows.count()) < 2; i++) await p.waitForTimeout(500);
+  
+  ok((await rows.count()) === 2, "the Inbox shows both as rows of their own", `${await rows.count()} | ${(await p.locator("aside.side").innerText().catch(() => "")).replace(/\s+/g, " ").slice(0, 200)}`);
   const question = rows.filter({ hasText: /Release selection|Which release/ }).first();
   await question.locator("button, a").first().click();
   const sheet = p.getByRole("dialog", { name: /from a plugin/ });
