@@ -6,7 +6,7 @@
   // canvas; a horizontal wheel over the focused window pans the canvas when nothing under it can scroll that way. While a window holds the input lock the canvas never moves. Touch: two fingers pan the canvas, one finger scrolls the window under it and a horizontal
   // swipe is the shell's sidebar pull. Pointer-initiated adds, closes, width presets and maximise animate on the motion tokens, interruptibly, by FLIP (transform only); the same actions from the keyboard are instant.
   import { onMount, tick, untrack } from "svelte";
-  import { currentScheme, Menu, onScheme, toast, type MenuItem } from "@calternal/ui";
+  import { currentScheme, Menu, onScheme, toast, tokenEase, tokenMs, type MenuItem } from "@calternal/ui";
   import { appFor } from "../apps/registry";
   import { store } from "../apps/threads/store.svelte";
   import { notes } from "../apps/notes/store.svelte";
@@ -118,8 +118,6 @@
   });
   /** Whether an action started now animates: a pointer drove it (not the keyboard) and motion is allowed. */
   const animates = (source: "pointer" | "key") => source === "pointer" && last === "pointer" && !reduced();
-  const tokenMs = (name: string, fallback: number) => Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue(name)) || fallback;
-  const tokenEase = (name: string, fallback: string) => getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
   /** Eases the strip to `to` over the motion token (interruptible: a pan or another call cancels it); instant when not animated. */
   function glide(to: number, animate: boolean) {
     cancelAnimationFrame(tween); to = clamp(to);

@@ -18,6 +18,7 @@ export { default as Selector } from "./components/selector/Selector.svelte";
 export type { SelectorOption } from "./components/selector/edges";
 export { tip, type Tip } from "./lib/tooltip";
 export { cssPx } from "./lib/css";
+export { cssMs, tokenEase, tokenMs } from "./lib/motion";
 export { default as InlineEditor } from "./components/InlineEditor.svelte";
 export { default as Switch } from "./components/Switch.svelte";
 export { default as SplitView } from "./components/SplitView.svelte";

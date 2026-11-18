@@ -4,7 +4,7 @@
   // app list needs: scrolling, keeping the current app in view, and the hint that more apps exist. The current app is centred when it can be (at an end the strip rests flush) on mount and whenever it changes by any route (centring
   // is an animation of `scrollLeft` over `--dur-base` on an out curve, cancelled by the next touch, wheel or key, instant under reduced motion). The strip shows exactly three whole icons; when more apps exist on a side, the outer
   // icon on that side is drawn smaller and fainter (the page-indicator pattern: no clipped icon, no gradient); with three or fewer all are full size and nothing scrolls. Apps from plugins are data (switcherApps.svelte.ts).
-  import { Icon, Selector, tip } from "@calternal/ui";
+  import { Icon, Selector, tip, tokenMs } from "@calternal/ui";
   import { navigate } from "../lib/route.svelte";
   import { letterOf, switcherApps } from "./switcherApps.svelte";
   let { current }: { current: string } = $props();
@@ -24,7 +24,8 @@
   function glide(left: number) {
     const el = scroller();
     if (!el) return;
-    const ms = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--dur-base")) || 220;
+    const ms = tokenMs("--dur-base", 220);
+    el.dataset.glideMs = String(ms); // read by e2e/app-switcher.mjs: the glide is a scroll, which Element.animate cannot record
     cancelAnimationFrame(glideId);
     if (reduced() || ms <= 1) { el.scrollLeft = left; return; }
     const from = el.scrollLeft, t0 = performance.now();
