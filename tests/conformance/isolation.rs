@@ -33,6 +33,7 @@ mod drafts_cases;
 mod erasure_cases;
 #[path = "live_cases.rs"]
 mod live_cases;
+mod microvm_cases;
 mod notes_cases;
 mod perf_cases;
 mod simplify_review_cases;
