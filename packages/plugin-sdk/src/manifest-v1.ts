@@ -37,9 +37,22 @@ export function validateManifestV1(value: unknown): ManifestV1 {
   if (new TextEncoder().encode(JSON.stringify(value)).length > 256 * 1024) fail();
   const m = record(value, ["id", "name", "icon", "version", "api_version", "kinds", "operations", "collections", "views", "attention", "settings", "schedules", "webhooks", "secrets", "hooks", "themes", "host_calls"], ["provider"]);
   if (m.provider !== undefined) {
-    const p = record(m.provider, ["protocol_version", "executable", "default_model"]);
+    const p = record(m.provider, ["protocol_version", "executable", "default_model", "models"]);
     if (p.protocol_version !== 1 || typeof p.executable !== "string" || !/^[a-z0-9][a-z0-9_-]{0,79}$/.test(p.executable)) fail();
-    text(p.default_model, 128);
+    const modelId = /^[a-zA-Z0-9][a-zA-Z0-9._:@/-]{0,127}$/;
+    const ids = new Set<string>();
+    if (!Array.isArray(p.models) || p.models.length > 128) fail();
+    for (const value of p.models) {
+      const model = record(value, ["id", "name", "reasoning_levels"]);
+      const name = text(model.name, 128);
+      const id = text(model.id, 128);
+      const levels = model.reasoning_levels;
+      if (!modelId.test(id) || ids.has(id) || /\p{Cc}/u.test(name) ||
+          !Array.isArray(levels) || levels.length > 16 || new Set(levels).size !== levels.length ||
+          levels.some(level => typeof level !== "string" || level.length > 32 || !modelId.test(level))) fail();
+      ids.add(id);
+    }
+    if (!ids.has(text(p.default_model, 128))) fail();
   }
   identifier(m.id); identifier(m.icon); text(m.name); text(m.version, 80);
   if (m.api_version !== 1) fail();

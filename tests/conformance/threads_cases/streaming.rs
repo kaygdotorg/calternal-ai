@@ -162,7 +162,7 @@ async fn checkpoint_replay_reads_only_its_own_append_and_stop_keeps_the_step() {
 
     let mut live_job = Sse::open(&f, &f.cookies[2], job, None).await.unwrap();
     let mut saw_step = false;
-    for _ in 0..8 {
+    for _ in 0..16 {
         let (kind, _, chunk) = live_job.next().await.expect("job chunk");
         if kind == "chunk" && chunk["data"]["event"]["type"] == "tool_started" {
             assert_eq!(chunk["data"]["event"]["name"], "Bash");
@@ -215,4 +215,184 @@ async fn checkpoint_replay_reads_only_its_own_append_and_stop_keeps_the_step() {
     assert!(!cached_body.contains("(failed)"));
     f.op(1, "threads.delete", json!({"id":thread})).await.ok();
     assert_eq!(f.op(2, "threads.get", saved_step_input).await.status, 409);
+}
+
+#[tokio::test]
+async fn provider_selection_reasoning_and_timing_survive_live_and_delta_reads() {
+    let f = Fixture::new().await;
+    let _machine = direct_fixture(&f).await;
+    let space = &f.spaces[2];
+    let created = f
+        .op(
+            1,
+            "threads.create",
+            json!({"space_id":space,"title":"Reasoning"}),
+        )
+        .await;
+    created.ok();
+    let thread = &created.body["data"]["thread"]["id"];
+    let mut journal = Live::open(&f, 2, json!([{"space_id":space}]))
+        .await
+        .unwrap();
+    journal.next().await.unwrap();
+
+    let sent = f
+        .op(
+            1,
+            "threads.send",
+            json!({"id":thread,"message":"scripted-reasoning scripted-tool-steps",
+        "model":"claude-sonnet-5-5","reasoning":"xhigh"}),
+        )
+        .await;
+    sent.ok();
+    let job = sent.body["data"]["job"]["id"].as_str().unwrap();
+    assert!(Sse::open(&f, &f.cookies[3], job, None).await.is_err());
+    let mut feed = Sse::open(&f, &f.cookies[2], job, None).await.unwrap();
+    let mut phases = Vec::new();
+    let mut events = Vec::new();
+    let mut thinking_text = String::new();
+    let mut thinking_ms = 0;
+    for _ in 0..80 {
+        let (kind, _, frame) = feed.next().await.expect("turn stream");
+        if kind == "end" {
+            break;
+        }
+        if kind != "chunk" {
+            continue;
+        }
+        let data = &frame["data"];
+        if data["type"] == "turn_phase" {
+            phases.push(data["phase"].as_str().unwrap().to_owned());
+            assert!(data["at_ms"].as_i64().unwrap() > 0);
+        }
+        if let Some(kind) = data["event"]["type"]
+            .as_str()
+            .filter(|kind| kind.starts_with("reasoning_"))
+        {
+            events.push(kind.to_owned());
+            if kind == "reasoning_delta" {
+                thinking_text.push_str(data["event"]["text"].as_str().unwrap());
+            }
+            if kind == "reasoning_finished" {
+                thinking_ms = data["event"]["duration_ms"].as_u64().unwrap();
+            }
+        }
+    }
+    assert!(
+        phases.starts_with(&[
+            "queued".into(),
+            "starting_sandbox".into(),
+            "running".into(),
+            "thinking".into()
+        ]),
+        "{phases:?}"
+    );
+    assert!(phases.iter().any(|phase| phase == "running_tool"));
+    assert_eq!(events.first().unwrap(), "reasoning_started");
+    assert_eq!(events.last().unwrap(), "reasoning_finished");
+    assert_eq!(thinking_text, "Inspecting [redacted]");
+    assert!(thinking_ms >= 15);
+
+    let mut cached_body = body(&sent.body["data"]["thread"]).to_owned();
+    let mut revision = sent.body["data"]["thread"]["revision"].clone();
+    for _ in 0..32 {
+        let frame = journal.next().await.expect("checkpoint journal entry");
+        if frame["entry"]["kind"] != "threads.checkpoint" || frame["entry"]["item"] != *thread {
+            continue;
+        }
+        let delta = f
+            .op(
+                2,
+                "threads.get",
+                json!({"id":thread,"since":frame["entry"]["data"]}),
+            )
+            .await;
+        delta.ok();
+        let delta = &delta.body["data"]["delta"];
+        assert_eq!(delta["base_revision"], revision);
+        revision = delta["revision"].clone();
+        cached_body.insert_str(
+            delta["offset"].as_u64().unwrap() as usize,
+            delta["markdown"].as_str().unwrap(),
+        );
+        if cached_body.contains("<!-- turn-timing ") {
+            break;
+        }
+    }
+    let saved = f.op(2, "threads.get", json!({"id":thread})).await;
+    saved.ok();
+    assert_eq!(body(&saved.body["data"]["thread"]), cached_body);
+    let status = f.op(1, "agent.events", json!({"job_id":job})).await;
+    status.ok();
+    let machine = status.body["data"]["job"]["checkpoint"]["machine_id"]
+        .as_str()
+        .unwrap();
+    assert!(uuid::Uuid::parse_str(machine).is_ok());
+    assert!(!cached_body.contains(machine));
+    let retained = cached_body
+        .lines()
+        .find_map(|line| line.strip_prefix("<!-- message:")?.split_once(" machine:"))
+        .map(|(marker, reference)| (marker, reference.split_whitespace().next().unwrap()))
+        .expect("assistant marker has a machine reference");
+    assert!(
+        retained
+            .0
+            .contains("provider:calternal-claude-code model:claude-sonnet-5-5 reasoning:xhigh")
+    );
+    assert_eq!(retained.1.len(), 64);
+    assert!(retained.1.bytes().all(|b| b.is_ascii_hexdigit()));
+    assert!(cached_body.contains("duration-ms:"));
+    assert!(cached_body.contains(&format!("reasoning-ms:{thinking_ms} ")));
+    assert!(!cached_body.contains("Inspecting"));
+}
+
+#[tokio::test]
+async fn person_wait_phase_is_shared_and_request_details_stay_private() {
+    let f = Fixture::new().await;
+    let _machine = direct_fixture(&f).await;
+    let created = f
+        .op(
+            1,
+            "threads.create",
+            json!({"space_id":f.spaces[2],"title":"Person wait"}),
+        )
+        .await;
+    created.ok();
+    let thread = &created.body["data"]["thread"]["id"];
+    let sent = f
+        .op(
+            1,
+            "threads.send",
+            json!({"id":thread,"message":"scripted-person-wait"}),
+        )
+        .await;
+    sent.ok();
+    let job = sent.body["data"]["job"]["id"].as_str().unwrap();
+    let mut stream = Sse::open(&f, &f.cookies[2], job, None).await.unwrap();
+    let phase = tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            let (kind, _, data) = stream.next().await.expect("turn stream");
+            if kind == "chunk" && data["data"]["phase"] == "waiting_on_person" {
+                break data["data"].clone();
+            }
+            assert_ne!(kind, "end", "turn ended before parking");
+        }
+    })
+    .await
+    .expect("the fixture did not park the turn");
+    assert_eq!(phase.as_object().unwrap().len(), 3);
+    assert_eq!(phase["type"], "turn_phase");
+    assert!(phase["at_ms"].as_i64().unwrap() > 0);
+    let peer = f.op(2, "threads.get", json!({"id":thread})).await;
+    peer.ok();
+    assert_eq!(peer.body["data"]["job"]["checkpoint"]["turn_phase"], phase);
+    assert!(
+        peer.body["data"]["job"]["checkpoint"]
+            .get("person_request")
+            .is_none()
+    );
+    let owner = f.op(1, "threads.get", json!({"id":thread})).await;
+    owner.ok();
+    assert!(owner.body["data"]["job"]["checkpoint"]["person_request"].is_string());
+    f.op(1, "threads.stop", json!({"id":thread})).await.ok();
 }

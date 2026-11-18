@@ -3,6 +3,7 @@
 mod delta;
 mod document;
 pub(crate) mod index;
+mod models;
 mod operations;
 pub(crate) mod persistence;
 pub(crate) mod provider_session;
@@ -65,6 +66,9 @@ pub(crate) async fn dispatch<D: Directory>(
             ));
         }
     }
+    if op == "threads.models" {
+        return blocking(move || models::list(&state, space, &who)).await;
+    }
     let (st, operation, request_id, data) =
         (state.clone(), op.to_owned(), rid.to_owned(), input.clone());
     let caller = who.clone();
@@ -97,11 +101,15 @@ pub(crate) async fn dispatch<D: Directory>(
                 .into(),
             mode: serde_json::from_value(value["thread"]["metadata"]["mode"].clone())
                 .map_err(|_| Error::internal("saved mode invalid"))?,
-            model: input
-                .get("model")
-                .and_then(Value::as_str)
-                .unwrap_or("")
+            model: value["thread"]["metadata"]["model"]
+                .as_str()
+                .ok_or_else(|| Error::internal("saved model missing"))?
                 .into(),
+            options: input
+                .get("reasoning")
+                .cloned()
+                .map(|level| [("effort".into(), level)].into_iter().collect())
+                .unwrap_or_default(),
             source_app: "threads".into(),
             ..Default::default()
         };

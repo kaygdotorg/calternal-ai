@@ -89,6 +89,19 @@ pub enum ProviderEventKind {
         /// At most 4 KiB of UTF-8 text.
         text: String,
     },
+    /// A provider exposed the start of an observable reasoning block.
+    ReasoningStarted,
+    /// Incremental provider-visible reasoning text, at most 4 KiB.
+    ReasoningDelta {
+        /// Text the official provider chose to expose.
+        text: String,
+    },
+    /// The observed reasoning block ended.
+    ReasoningFinished {
+        /// Monotonic elapsed milliseconds observed by the adapter.
+        #[ts(type = "number")]
+        duration_ms: u64,
+    },
     /// A tool step began with a short target or description.
     ToolStarted {
         /// Provider-issued step identity.
@@ -200,7 +213,11 @@ impl ProviderEvent {
             ProviderEventKind::Session { session_id } => {
                 !session_id.is_empty() && short(session_id, 128)
             }
-            ProviderEventKind::TextDelta { text } => short(text, 4096),
+            ProviderEventKind::TextDelta { text } | ProviderEventKind::ReasoningDelta { text } => {
+                short(text, 4096)
+            }
+            ProviderEventKind::ReasoningStarted => true,
+            ProviderEventKind::ReasoningFinished { duration_ms } => safe(*duration_ms),
             ProviderEventKind::ToolStarted { id, name, summary } => tool(id, name, summary),
             ProviderEventKind::ToolOutput {
                 id,

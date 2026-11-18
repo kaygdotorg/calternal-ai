@@ -1,0 +1,12 @@
+Provider:     Claude Code
+Provider ID:  calternal-claude-code
+MODEL ID: claude-sonnet-5-5
+MODEL: Sonnet 5.5
+REASONING: low, medium, high, xhigh, max
+DEFAULT: Yes
+
+MODEL ID: claude-haiku-4-5-20251001
+MODEL: Haiku 4.5
+REASONING: Provider default
+DEFAULT: No
+Next: calternal threads send --help

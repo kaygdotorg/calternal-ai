@@ -1266,6 +1266,13 @@
               "description": "Basename resolved inside the sandbox's PATH; no shell, path or arguments.",
               "type": "string"
             },
+            "models": {
+              "description": "Models offered by this adapter, validated and cached with the manifest.",
+              "items": {
+                "$ref": "#/definitions/ProviderModel"
+              },
+              "type": "array"
+            },
             "protocol_version": {
               "description": "Version of the bounded stdio contract, currently one.",
               "format": "uint32",
@@ -1276,6 +1283,7 @@
           "required": [
             "default_model",
             "executable",
+            "models",
             "protocol_version"
           ],
           "type": "object"
@@ -1678,6 +1686,33 @@
             "enabled",
             "generation",
             "manifest"
+          ],
+          "type": "object"
+        },
+        "ProviderModel": {
+          "additionalProperties": false,
+          "description": "One selectable provider model and the explicit reasoning levels it accepts.",
+          "properties": {
+            "id": {
+              "description": "Stable model identifier passed to the adapter.",
+              "type": "string"
+            },
+            "name": {
+              "description": "Short display name for the model picker.",
+              "type": "string"
+            },
+            "reasoning_levels": {
+              "description": "Ordered reasoning levels. Empty means the model accepts no explicit level.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "id",
+            "name",
+            "reasoning_levels"
           ],
           "type": "object"
         }
@@ -2170,6 +2205,13 @@
               "description": "Basename resolved inside the sandbox's PATH; no shell, path or arguments.",
               "type": "string"
             },
+            "models": {
+              "description": "Models offered by this adapter, validated and cached with the manifest.",
+              "items": {
+                "$ref": "#/definitions/ProviderModel"
+              },
+              "type": "array"
+            },
             "protocol_version": {
               "description": "Version of the bounded stdio contract, currently one.",
               "format": "uint32",
@@ -2180,6 +2222,7 @@
           "required": [
             "default_model",
             "executable",
+            "models",
             "protocol_version"
           ],
           "type": "object"
@@ -2582,6 +2625,33 @@
             "enabled",
             "generation",
             "manifest"
+          ],
+          "type": "object"
+        },
+        "ProviderModel": {
+          "additionalProperties": false,
+          "description": "One selectable provider model and the explicit reasoning levels it accepts.",
+          "properties": {
+            "id": {
+              "description": "Stable model identifier passed to the adapter.",
+              "type": "string"
+            },
+            "name": {
+              "description": "Short display name for the model picker.",
+              "type": "string"
+            },
+            "reasoning_levels": {
+              "description": "Ordered reasoning levels. Empty means the model accepts no explicit level.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "id",
+            "name",
+            "reasoning_levels"
           ],
           "type": "object"
         }
@@ -3075,6 +3145,13 @@
               "description": "Basename resolved inside the sandbox's PATH; no shell, path or arguments.",
               "type": "string"
             },
+            "models": {
+              "description": "Models offered by this adapter, validated and cached with the manifest.",
+              "items": {
+                "$ref": "#/definitions/ProviderModel"
+              },
+              "type": "array"
+            },
             "protocol_version": {
               "description": "Version of the bounded stdio contract, currently one.",
               "format": "uint32",
@@ -3085,6 +3162,7 @@
           "required": [
             "default_model",
             "executable",
+            "models",
             "protocol_version"
           ],
           "type": "object"
@@ -3487,6 +3565,33 @@
             "enabled",
             "generation",
             "manifest"
+          ],
+          "type": "object"
+        },
+        "ProviderModel": {
+          "additionalProperties": false,
+          "description": "One selectable provider model and the explicit reasoning levels it accepts.",
+          "properties": {
+            "id": {
+              "description": "Stable model identifier passed to the adapter.",
+              "type": "string"
+            },
+            "name": {
+              "description": "Short display name for the model picker.",
+              "type": "string"
+            },
+            "reasoning_levels": {
+              "description": "Ordered reasoning levels. Empty means the model accepts no explicit level.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "id",
+            "name",
+            "reasoning_levels"
           ],
           "type": "object"
         }
@@ -8708,7 +8813,7 @@
         },
         "model": {
           "default": "",
-          "description": "Official CLI model; empty uses `sonnet`.",
+          "description": "Official CLI model; empty uses the selected provider manifest default.",
           "type": "string"
         },
         "options": {
@@ -8912,7 +9017,7 @@
         },
         "model": {
           "default": "",
-          "description": "Official CLI model; empty uses `sonnet`.",
+          "description": "Official CLI model; empty uses the selected provider manifest default.",
           "type": "string"
         },
         "options": {
@@ -9116,7 +9221,7 @@
         },
         "model": {
           "default": "",
-          "description": "Official CLI model; empty uses `sonnet`.",
+          "description": "Official CLI model; empty uses the selected provider manifest default.",
           "type": "string"
         },
         "options": {
@@ -9320,7 +9425,7 @@
         },
         "model": {
           "default": "",
-          "description": "Official CLI model; empty uses `sonnet`.",
+          "description": "Official CLI model; empty uses the selected provider manifest default.",
           "type": "string"
         },
         "options": {
@@ -9524,7 +9629,7 @@
         },
         "model": {
           "default": "",
-          "description": "Official CLI model; empty uses `sonnet`.",
+          "description": "Official CLI model; empty uses the selected provider manifest default.",
           "type": "string"
         },
         "options": {
@@ -9728,7 +9833,7 @@
         },
         "model": {
           "default": "",
-          "description": "Official CLI model; empty uses `sonnet`.",
+          "description": "Official CLI model; empty uses the selected provider manifest default.",
           "type": "string"
         },
         "options": {
@@ -9932,7 +10037,7 @@
         },
         "model": {
           "default": "",
-          "description": "Official CLI model; empty uses `sonnet`.",
+          "description": "Official CLI model; empty uses the selected provider manifest default.",
           "type": "string"
         },
         "options": {
@@ -10136,7 +10241,7 @@
         },
         "model": {
           "default": "",
-          "description": "Official CLI model; empty uses `sonnet`.",
+          "description": "Official CLI model; empty uses the selected provider manifest default.",
           "type": "string"
         },
         "options": {
@@ -10340,7 +10445,7 @@
         },
         "model": {
           "default": "",
-          "description": "Official CLI model; empty uses `sonnet`.",
+          "description": "Official CLI model; empty uses the selected provider manifest default.",
           "type": "string"
         },
         "options": {
@@ -10544,7 +10649,7 @@
         },
         "model": {
           "default": "",
-          "description": "Official CLI model; empty uses `sonnet`.",
+          "description": "Official CLI model; empty uses the selected provider manifest default.",
           "type": "string"
         },
         "options": {
@@ -10748,7 +10853,7 @@
         },
         "model": {
           "default": "",
-          "description": "Official CLI model; empty uses `sonnet`.",
+          "description": "Official CLI model; empty uses the selected provider manifest default.",
           "type": "string"
         },
         "options": {

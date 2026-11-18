@@ -96,7 +96,9 @@ Every public code change includes matching reference comments. Run `npm run chec
 large-output storage and the public TypeScript product bridge still unfinished.
 The private [request inbox](docs/requests.md) lists agent questions, approvals and
 secret prompts through `calternal requests` and the account feed.
-See [manual turns](docs/agent-turns.md) and [threads](docs/threads.md). Voice and
+The saved Threads preview includes a provider model catalog, live work phases,
+and per-message history. See [manual turns](docs/agent-turns.md) and
+[saved threads](docs/threads.md). Voice and
 memory integration remain unfinished.
 - UniFFI exposes async operations and cancellable journal following; subscribe/cancel is exercised by XCTest on the authorized Mac Studio. Platform persistence, Keychain integration and the native app remain unfinished. The preview HTTP client accepts loopback origins only.
 - Two low-severity npm audit findings affect a build-tool dependency; the UI report records their review. No production-readiness claim is made.

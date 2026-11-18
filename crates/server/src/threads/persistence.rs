@@ -75,6 +75,16 @@ pub(crate) fn checkpoint<D: Directory>(
         if item.kind != "threads" || item.metadata["deleted"] == true {
             return Err(Error::not_found("item not found"));
         }
+        if item.metadata["pending"] != job.input["thread_request"]
+            || item.metadata["output"]["job_id"] == job.id
+                && item.metadata["output"]["run"]
+                    .as_u64()
+                    .is_some_and(|run| run > u64::from(job.runs))
+        {
+            return Err(Error::conflict(
+                "this turn no longer owns the thread output",
+            ));
+        }
         let mut metadata = item.metadata.clone();
         let new_session = !session.is_null()
             && metadata["pending"] == job.input["thread_request"]
@@ -88,7 +98,7 @@ pub(crate) fn checkpoint<D: Directory>(
         let range = if text.is_empty() {
             body.len()..body.len()
         } else {
-            append_output(&mut metadata, &mut body, job, id, seq, text)?
+            append_output(&mut metadata, &mut body, job, id, seq, text, checkpoint)?
         };
         let bytes = super::document::encode(&metadata, &body);
         if bytes.len() > MAX_DOCUMENT_BYTES {
@@ -145,10 +155,11 @@ fn append_output(
     id: Uuid,
     seq: u64,
     text: &str,
+    checkpoint: &Value,
 ) -> Result<std::ops::Range<usize>, Error> {
     let now = calternal_content::now_rfc3339();
     let output = &metadata["output"];
-    let (end, range) = if output["job_id"] == job.id {
+    let (end, range) = if output["job_id"] == job.id && output["run"] == job.runs {
         let offset = output["end"]
             .as_u64()
             .and_then(|v| usize::try_from(v).ok())
@@ -160,9 +171,20 @@ fn append_output(
         (end, offset..end)
     } else {
         let start = body.len();
+        let request = &job.input["request"];
+        let provider = request["provider_id"]
+            .as_str()
+            .ok_or_else(|| Error::internal("saved provider missing"))?;
+        let model = request["model"]
+            .as_str()
+            .ok_or_else(|| Error::internal("saved model missing"))?;
+        let reasoning = request["options"]["effort"].as_str().unwrap_or("-");
+        let machine = checkpoint["message_machine"].as_str().unwrap_or("-");
+        let message_id = checkpoint["message_id"]
+            .as_str()
+            .ok_or_else(|| Error::internal("saved assistant message ID missing"))?;
         body.push_str(&format!(
-            "\n<!-- message:{} role:agent turn:{} actor:{} time:{now} -->\n",
-            job.id,
+            "\n<!-- message:{message_id} role:agent turn:{} actor:{} provider:{provider} model:{model} reasoning:{reasoning} machine:{machine} time:{now} -->\n",
             job.id,
             calternal_types::Actor::agent(job.account, id)
         ));

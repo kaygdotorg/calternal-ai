@@ -1,5 +1,9 @@
 //! Human/JSON output goldens share the real thread renderer and width adapter.
-use calternal_cli::{output::Output, testing::assert_golden, threads::reply};
+use calternal_cli::{
+    output::Output,
+    testing::{assert_golden, assert_shape},
+    threads::reply,
+};
 use serde_json::json;
 use time::UtcOffset;
 #[test]
@@ -21,6 +25,13 @@ fn thread_results_have_readable_width_adaptation_and_stable_json() {
             "unarchive",
             json!({"thread":{"id":"019a8c00-0000-7000-8000-000000000001","address":"/threads/019a8c00-0000-7000-8000-000000000001","metadata":{"title":"Renamed plan","archived":false,"deleted":false},"markdown":"---\ntitle: Renamed plan\narchived: false\n---\n"}}),
         ),
+        (
+            "models",
+            json!({"providers":[{"id":"calternal-claude-code","name":"Claude Code","default_model":"claude-sonnet-5-5","models":[
+                {"id":"claude-sonnet-5-5","name":"Sonnet 5.5","reasoning_levels":["low","medium","high","xhigh","max"]},
+                {"id":"claude-haiku-4-5-20251001","name":"Haiku 4.5","reasoning_levels":[]}
+            ]}]}),
+        ),
         ("empty", json!({"threads":[]})),
     ];
     for (name, value) in samples {
@@ -33,10 +44,17 @@ fn thread_results_have_readable_width_adaptation_and_stable_json() {
             );
         }
         let output = Output::fixed(true, None, UtcOffset::UTC);
+        let json = output.render(&reply(&output, value));
+        if name == "models" {
+            assert_shape(
+                "calternal threads models",
+                &serde_json::from_str(&json).unwrap(),
+            );
+        }
         assert_golden(
             &std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
                 .join(format!("tests/golden/threads-{name}.json")),
-            &output.render(&reply(&output, value.clone())),
+            &json,
         );
     }
 }

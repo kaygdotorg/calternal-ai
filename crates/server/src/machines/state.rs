@@ -570,6 +570,11 @@ impl State {
             thread_id: l.row.thread,
             state: l.state,
             machine_id: l.row.machine.filter(|_| l.state != LeaseState::Waiting),
+            personal_machine: l
+                .row
+                .machine
+                .and_then(|id| self.machines.get(&id))
+                .is_some_and(|machine| machine.row.owner == Owner::Account { id: l.row.account }),
             reason: l.row.reason.clone(),
             queue_position,
         }

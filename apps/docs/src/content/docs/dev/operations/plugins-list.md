@@ -490,6 +490,13 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
           "description": "Basename resolved inside the sandbox's PATH; no shell, path or arguments.",
           "type": "string"
         },
+        "models": {
+          "description": "Models offered by this adapter, validated and cached with the manifest.",
+          "items": {
+            "$ref": "#/definitions/ProviderModel"
+          },
+          "type": "array"
+        },
         "protocol_version": {
           "description": "Version of the bounded stdio contract, currently one.",
           "format": "uint32",
@@ -500,6 +507,7 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
       "required": [
         "default_model",
         "executable",
+        "models",
         "protocol_version"
       ],
       "type": "object"
@@ -902,6 +910,33 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
         "enabled",
         "generation",
         "manifest"
+      ],
+      "type": "object"
+    },
+    "ProviderModel": {
+      "additionalProperties": false,
+      "description": "One selectable provider model and the explicit reasoning levels it accepts.",
+      "properties": {
+        "id": {
+          "description": "Stable model identifier passed to the adapter.",
+          "type": "string"
+        },
+        "name": {
+          "description": "Short display name for the model picker.",
+          "type": "string"
+        },
+        "reasoning_levels": {
+          "description": "Ordered reasoning levels. Empty means the model accepts no explicit level.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "reasoning_levels"
       ],
       "type": "object"
     }

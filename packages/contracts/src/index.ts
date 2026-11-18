@@ -779,7 +779,28 @@ executable: string,
 /**
  * Default installed-CLI model identifier, at most 128 UTF-8 bytes.
  */
-default_model: string, };
+default_model: string,
+/**
+ * Models offered by this adapter, validated and cached with the manifest.
+ */
+models: Array<ProviderModel>, };
+/**
+ * One selectable provider model and the explicit reasoning levels it accepts.
+ */
+
+export type ProviderModel = {
+/**
+ * Stable model identifier passed to the adapter.
+ */
+id: string,
+/**
+ * Short display name for the model picker.
+ */
+name: string,
+/**
+ * Ordered reasoning levels. Empty means the model accepts no explicit level.
+ */
+reasoning_levels: Array<string>, };
 /**
  * Plugin menu read without running plugin code. Every top-level field is required;
  * only the documented optional fields inside declarations may be omitted.
@@ -915,7 +936,7 @@ prompt: string,
  */
 context: Array<ProviderContext>,
 /**
- * Official CLI model; empty uses `sonnet`.
+ * Official CLI model; empty uses the selected provider manifest default.
  */
 model: string,
 /**
@@ -1058,7 +1079,15 @@ session_id: string, } | { "type": "text_delta",
 /**
  * At most 4 KiB of UTF-8 text.
  */
-text: string, } | { "type": "tool_started",
+text: string, } | { "type": "reasoning_started" } | { "type": "reasoning_delta",
+/**
+ * Text the official provider chose to expose.
+ */
+text: string, } | { "type": "reasoning_finished",
+/**
+ * Monotonic elapsed milliseconds observed by the adapter.
+ */
+duration_ms: number, } | { "type": "tool_started",
 /**
  * Provider-issued step identity.
  */

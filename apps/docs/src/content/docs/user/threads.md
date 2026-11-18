@@ -106,6 +106,58 @@ job lookups and flushes. The checkpoint derives the range from its existing
 body and write buffer. Publication reuses the outbox payload and existing
 journal commit, with no additional reads or flushes per event.
 
+### Models, phases and turn history
+
+Call `threads.models` with `{"space_id":"SPACE_UUID"}` and the space's
+`plugins.use` capability. Each response has a `providers` array.
+
+```json
+{"providers":[{"id":"calternal-claude-code","name":"Claude Code","default_model":"claude-sonnet-5-5","models":[{"id":"claude-sonnet-5-5","name":"Sonnet 5.5","reasoning_levels":["low","medium","high","xhigh","max"]}]}]}
+```
+
+Each provider supplies its own stable model IDs, display names and ordered effort
+levels. The server validates and caches the trusted manifests until restart. A
+read applies current space activation in one indexed query. It does not contact
+a machine or use a person's login. Use `agent.readiness` for capacity and sign-in.
+Provider versions, model releases, account entitlements and organization effort
+caps can change separately from the installed manifest.
+
+Send a model ID from that provider and optionally `reasoning` from that model.
+Omit `model` for the provider's catalog default. Omit `reasoning` to retain
+the provider's settings. Unknown choices are rejected before committing the
+message. An explicit level records the requested choice. Claude Code does
+not report whether organization settings capped the effective effort.
+
+Job stream chunks with `data.type == "turn_phase"` have a `phase` and Unix
+`at_ms`. Phases are `queued`, `starting_sandbox`, `running`, `thinking`,
+`running_tool`, and `waiting_on_person`. The last means the host parked the
+job for a trusted request. Its ID and content use the existing private request
+path. The current phase is also included as `job.checkpoint.turn_phase` when
+saved. Provider frames retain `{version, seq, event}`. A reasoning block emits
+`reasoning_started`, zero or more `reasoning_delta` frames with `text`, and
+`reasoning_finished` with monotonic `duration_ms`. Stream time measures
+observed work and can include transport or back-pressure.
+
+The terminal checkpoint adds one short `turn-timing` comment before the agent
+message's closing marker, at most one per attempt. The worked duration excludes
+queue time, person waits and retry delays. The marker also records observed
+reasoning, queue, sandbox and tool durations in milliseconds. Abrupt stops may
+leave a checkpoint without final timing. Claude exposes thinking as provider
+text on the live stream. The file retains timing only. Both reads expose the
+same opening and timing markers in Markdown. Apply checkpoint deltas in order
+before parsing message markers. Ordinary assistant Markdown is untrusted display
+content.
+
+Send checks the loaded manifest, placement adds a fixed-size hash on its existing
+blocking worker, and live phases reuse the job buffer. These add zero indexed reads and zero
+flushes. Timing piggybacks on the terminal checkpoint with no added job flush.
+If the terminal checkpoint otherwise had no Markdown to save, the timing
+marker makes it one content checkpoint. That adds the usual capability check,
+one activation read, one receipt lookup, and one content head read, followed by
+the normal indexed write checks and three FULL commits
+(content, journal and outbox retirement), plus the normal file and directory
+syncs. No per-frame filesystem work is added.
+
 ### Tool steps and the saved output limit
 
 Tool starts, output notices and completions carry the tool name and short
@@ -132,10 +184,11 @@ Until those are defined, the preview keeps only the tool status and byte count.
 ```sh
 calternal threads --token-file person.token create --space-id <uuid> --title Plan
 calternal threads --token-file person.token list --space-id <uuid>
+calternal threads --token-file person.token models --space-id <uuid>
 calternal threads --token-file person.token list --space-id <uuid> --cursor <cursor>
 calternal threads --token-file person.token get <thread-uuid>
 calternal threads --token-file person.token get <thread-uuid> --since '<checkpoint journal data JSON>'
-calternal threads --token-file person.token --request-id <stable-id> send <thread-uuid> --message 'Inspect this workspace'
+calternal threads --token-file person.token --request-id <stable-id> send <thread-uuid> --message 'Inspect this workspace' --model claude-sonnet-5-5 --reasoning high
 calternal threads --token-file person.token stop <thread-uuid>
 calternal threads --token-file person.token rename <thread-uuid> --title "New title"
 calternal threads --token-file person.token archive <thread-uuid>

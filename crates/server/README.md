@@ -184,6 +184,16 @@ Code: `src/plugins/` (registry, `broker.rs`, `worker.rs`) over the `calternal-pl
 - **Test plugins.** `tests/plugins/jobs-demo` is trusted only by a build with the `test-plugins` feature and `--test-plugin-root tests/plugins`.
 - **Boundary.** Container probes establish this development profile’s OS restrictions; they do not qualify multi-tenant microVM placement or production readiness. Explicit direct development mode has no OS isolation. Workers retain in-memory state within their (plugin, space).
 
+## Saved turns
+
+`threads.models` reads the calling space's enabled provider manifests from
+the startup registry and its indexed activation records. `threads.send`
+validates the selected model and reasoning level before writing the message.
+The existing job stream carries phase changes and redacted reasoning events.
+Provider provenance and timing travel in Markdown through both full and delta
+reads. See [saved threads](../../docs/threads.md) for the wire shapes and
+checkpoint costs.
+
 ## Machines
 
 Agent threads run on enrolled machines that connect out to this server; the server
