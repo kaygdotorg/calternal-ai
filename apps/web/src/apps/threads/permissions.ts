@@ -16,4 +16,5 @@ export const PERMISSIONS: { id: Permission; label: string; sub: string; icon: Ic
 export const permissionLabel = (p: Permission): string => PERMISSIONS.find((x) => x.id === p)!.label;
 
 /** "calternal-dev-02-std · Sandboxed". */
-export const runsOnLabel = (r: RunsOn): string => `${r.machine} · ${r.mode === "sandboxed" ? "Sandboxed" : "Direct"}`;
+/** The machine and how it runs, in words for a tooltip or an accessible name (no middle dots: a second fact is a comma away). */
+export const runsOnLabel = (r: RunsOn): string => `${r.machine}, ${r.mode === "sandboxed" ? "sandboxed" : "direct"}`;

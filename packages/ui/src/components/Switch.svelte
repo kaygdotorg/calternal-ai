@@ -13,23 +13,31 @@
   const x = new Spring(0, { stiffness: 170, damping: 21.5, mass: 0.9 });
   const flow = new Spring(0, { stiffness: 320, damping: 40, mass: 0.6 });
   const STRETCH = 0.36, MAX_STRETCH = 0.4, STRETCH_SPEED = 600;
-  let lastOn = checked, mounted = false, raf = 0, last = 0, target = 0, travel = 0;
+  let lastOn = checked, mounted = false, raf = 0, last = 0, target = 0, travel = 0, peak = 1;
   let grip: { id: number; grab: number | null; moved: boolean; startX: number; onAtPress: boolean; slop: number } | null = null;
   let dragging = $state(false), skipClick = false;
   const reduced = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
   const measure = () => { if (track && thumb) travel = track.offsetWidth - thumb.offsetWidth - 2 * thumb.offsetLeft; return travel; };
+  // The speed is taken as if the travel were the original's 38 px (our knob travels about a third of that), so the squish is as visible on a small switch.
+  const stretchOf = () => 1 + Math.min(MAX_STRETCH, (Math.abs(flow.value) * (38 / Math.max(8, travel))) / STRETCH_SPEED) * STRETCH;
   const paint = () => {
     if (!thumb) return;
-    // The speed is taken as if the travel were the original's 38 px (our knob travels about a third of that), so the squish is as visible on a small switch.
-    const s = 1 + Math.min(MAX_STRETCH, (Math.abs(flow.value) * (38 / Math.max(8, travel))) / STRETCH_SPEED) * STRETCH;
+    const s = stretchOf();
     thumb.style.transform = `translateX(${x.value}px) scale(${s}, ${1 / s})`;
   };
-  const rest = () => { cancelAnimationFrame(raf); raf = 0; if (thumb) thumb.style.transform = ""; };
+  // At rest the CSS position takes over; the largest stretch of the motion that just ended is kept on the knob (`data-peak`) so a test can read what the motion did without having to catch it in a frame.
+  const rest = () => { cancelAnimationFrame(raf); raf = 0; if (thumb) { thumb.style.transform = ""; thumb.dataset.peak = peak.toFixed(3); } peak = 1; };
   function tick(now: number) {
     const dt = last ? (now - last) / 1000 : 1 / 60;
     last = now;
-    if (!dragging) x.step(target, dt);
-    flow.step(x.velocity, dt);
+    // Both springs advance together in 1/240 s steps, the soft one chasing the knob's speed at every step, so how much it stretches does not depend on how often the screen is drawn (a slow frame must not miss the peak).
+    for (let left = Math.min(dt, 0.25); left > 1e-9; left -= 1 / 240) {
+      const h = Math.min(left, 1 / 240);
+      if (!dragging) x.step(target, h);
+      flow.step(x.velocity, h);
+      const s = stretchOf();
+      if (s > peak) peak = s;
+    }
     paint();
     if (!dragging && x.atRest(target) && Math.abs(flow.value) < 1) { x.value = target; rest(); last = 0; return; }
     raf = requestAnimationFrame(tick);

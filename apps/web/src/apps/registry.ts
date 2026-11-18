@@ -49,7 +49,7 @@ export interface AppDef {
   panels: PanelDef[];
   /** Reactive: read inside markup so the card follows the data. */
   attention?: () => AttentionItem[];
-  /** One-time loading, run when the app is first opened (Threads at start-up: its attention list shows in every app). */
+  /** One-time loading, run when the app is first opened (Threads at start-up). */
   start?: () => Promise<void>;
   /** Reloads what the sidebar lists (pull to refresh on a phone). Absent when there is nothing to reload. */
   refresh?: () => Promise<unknown>;
@@ -70,14 +70,6 @@ export const APPS: AppDef[] = [
       { id: "run", label: "Run", icon: "pulse", component: ThreadsPanels, props: { kind: "run" } },
       { id: "files", label: "Files", icon: "files", component: ThreadsPanels, props: { kind: "files" } },
     ],
-    attention: () =>
-      threads.attention.map(({ thread, kinds }) => ({
-        id: thread.id,
-        icon: kinds.includes("approval") ? "shield" : kinds.includes("secret") ? "key" : "question",
-        title: thread.title,
-        sub: kinds.map((k) => ({ question: "Question", approval: "Approval", secret: "Secret" })[k]).filter((v, i, a) => a.indexOf(v) === i).join(" and ").toLowerCase().replace(/^./, (c) => c.toUpperCase()),
-        href: `/threads/${thread.id}`,
-      })),
     start: () => threads.start(),
     refresh: () => threads.refresh(),
   },

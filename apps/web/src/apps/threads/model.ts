@@ -61,6 +61,8 @@ export interface ThreadSummary {
   permission: Permission;
   /** Where its turns run (see `RunsOn`). */
   runsOn: RunsOn;
+  /** The reasoning level chosen for the next turn, one of the model's `levels`; absent means the provider's own default. */
+  reasoning?: string;
   /** Total messages in the thread's file. The list never loads them all. */
   messageCount: number;
   /** What needs the person's attention before or after a turn (see `ThreadNotice`); absent when nothing does. */
@@ -74,7 +76,7 @@ export interface ProviderOption {
   /** The provider's display name in the picker. */
   name: string;
   /** The models the composer offers for this provider, in picker order. */
-  models: { id: string; name: string }[];
+  models: { id: string; name: string; /** The reasoning levels this model accepts, lowest first; absent when it has no such setting (or the server does not list them yet). */ levels?: string[]; /** The provider's own default model: a chip showing it is not showing a choice the person made. */ default?: boolean }[];
   /** False when the server has no list of this provider's models yet: `models` is then only the default, and the picker says so instead of answering a search with nothing. */
   listed?: boolean;
 }
@@ -100,11 +102,12 @@ export interface Step {
   ms: number;
 }
 
-/** A piece of a message. `thought` is the provider's reasoning, shown folded as "Thought for 4 s". `card` carries a generated-UI description (packages/genui) drawn by the client; `thread` links a child. */
+/** A file or picture the person attached to the message they sent (`file`). `thought` is the provider's reasoning, shown folded as "Thought for 4 s". `card` carries a generated-UI description (packages/genui) drawn by the client; `thread` links a child. */
 export type Block =
   | { type: "text"; text: string }
   | { type: "steps"; steps: Step[]; ms: number }
   | { type: "thought"; text: string; ms: number }
+  | { type: "file"; name: string; kind: "image" | "file"; size: number; url?: string }
   | { type: "card"; source: string }
   | { type: "thread"; threadId: string };
 
@@ -230,4 +233,21 @@ export interface RunInfo {
   tokens: string;
   /** The thread state in words. */
   state: string;
+}
+
+/** Something being attached in the composer, before it is sent: a picture or a file, with how far its upload has got. */
+export interface Attachment {
+  /** Unique in this composer. */
+  id: string;
+  kind: "image" | "file";
+  name: string;
+  /** Bytes. */
+  size: number;
+  /** A local address of the picture, for its thumbnail (revoked when it is removed or sent). */
+  url?: string;
+  /** 0 to 1 while `status` is "uploading". */
+  progress: number;
+  /** `failed` carries `error`, in plain words; the person can remove it. */
+  status: "uploading" | "ready" | "failed";
+  error?: string;
 }
