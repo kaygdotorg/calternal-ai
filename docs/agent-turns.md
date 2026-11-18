@@ -324,8 +324,8 @@ private to the account that started the flow. Both `threads.send` and
 
 Shared login requires a current Podman machine role and a provider image with
 the dedicated shared Claude entry point. Older roles can still serve personal
-turns. Shared turns start a new provider session with an ephemeral home and no
-executable tools, hooks, or MCP servers. The machine keeps the shared login
+turns. Shared Claude turns using the native login start a new provider session
+with an ephemeral home and no executable tools, hooks, or MCP servers. The machine keeps the shared login
 under the enrolling Owner's space directory until that Owner removes it or
 erases the account.
 
