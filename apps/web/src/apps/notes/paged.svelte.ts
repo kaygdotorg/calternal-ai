@@ -11,7 +11,7 @@ export type ReadPage<T> = (cursor?: string) => Promise<Page<T>>;
 /** A paged list of rows of type `T`; reactive (`items`, `more`, `error`). One read per call; see the file header for what is kept across reads. */
 export class Paged<T> {
   /** The rows read so far, in the server's order. */
-  items = $state<T[]>([]);
+  items = $state.raw<T[]>([]);
   /** There is another page to read. */
   more = $state(false);
   /** The words for a failed read (empty when none); `next` does nothing until `retry`. */
