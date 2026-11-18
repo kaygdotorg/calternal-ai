@@ -32,6 +32,7 @@ move to the decision record they belong to and leave this list. Terms: see
 | 40 | Performance decisions left by the fix lane: how to shorten security-log replay at start (1,000 spaces still start in 320 to 860 ms against 300 ms), whether to keep an inherited root-layout check, how to close the cold save tail (one arm at 49.9 ms against 40 ms), how to cut the draft-save tail; and what the 10 ms "write reaches a subscribed client" ceiling measures, since it includes the durable save itself | See the lane report; decide the measure first | Performance gate |
 | 41 | Building the web app downloads the eight default wallpapers from Unsplash, which refuses one of our dev VMs; a clean build depends on a third-party host. Commit small renditions to the repository, host them on our side, or keep fetching with a local cache | Host them on our side | Build |
 | 42 | A tool step's output: the saved thread file keeps only its size, so a reloaded thread shows "N bytes of output". Where long output lives (its address, how the thread links to it, how long it is kept) is undecided | To grill with long-output storage | Threads |
+| 43 | Deleting an account that is the only Owner of a space other people are in. Being built: refuse until ownership is transferred, naming the spaces. Alternatives: archive the space with a custodian and a retention period, or delete the shared content | Refuse until transferred | Accounts |
 
 ## Design rounds
 
