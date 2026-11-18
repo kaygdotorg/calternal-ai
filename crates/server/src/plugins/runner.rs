@@ -3,9 +3,10 @@
 //! A run invokes the job's declared run operation with
 //! `{ job_id, input, checkpoint, children }`, where `checkpoint` is the last durable
 //! checkpoint (null on the first run) and `children` the reports of finished child
-//! jobs. The operation answers `{ "status": "done", "result": … }` or
-//! `{ "status": "waiting" }` (parked until all its children have reported); anything
-//! else fails the job. Every host call, chunk and the completion are checked against
+//! jobs. The operation can finish, wait for its children, or return a durable
+//! park result with a checkpoint and signal source. A resumed signal wait
+//! receives its accepted `signal` alongside the saved checkpoint. Every host
+//! call, chunk and the completion are checked against
 //! the starting account's sign-in, its current capability in the space, the plugin's
 //! activation at the admitted generation, and the run still being current.
 //!
@@ -20,6 +21,8 @@ use std::time::Duration;
 
 use calternal_core::{ManifestIdempotency, ManifestV1};
 use serde_json::{Value, json};
+
+mod waits;
 
 use super::broker::{Run, SpaceHost};
 use super::jobs::RunEnd;
@@ -60,8 +63,9 @@ pub fn schedule<D: Directory>(state: &Shared<D>, space: String, job: String) {
 }
 
 /// After a restart: mark interrupted runs for resumption (or `outcome_unknown`) and
-/// schedule every admitted job. Call once at startup inside the runtime.
-/// Cost: see [`super::jobs::Jobs::recover`], on a blocking task.
+/// schedule every admitted job. Restore timers for jobs parked on signals.
+/// Call once at startup inside the runtime. Costs the existing jobs recovery
+/// transaction and one indexed pending-wait scan per space, on a blocking task.
 pub async fn recover<D: Directory>(state: &Shared<D>) -> Result<usize, Error> {
     let st = state.clone();
     let woken = crate::blocking::spawn(move || {
@@ -77,6 +81,10 @@ pub async fn recover<D: Directory>(state: &Shared<D>) -> Result<usize, Error> {
     })
     .await
     .map_err(|_| Error::internal("job recovery task failed"))??;
+    let st = state.clone();
+    for timer in blocking(move || st.jobs.wait_timers()).await? {
+        waits::schedule_deadline(state, timer);
+    }
     let n = woken.len();
     for (space, job) in woken {
         schedule(state, space, job);
@@ -150,7 +158,8 @@ async fn execute<D: Directory>(
         job.id.clone(),
         job.space.clone(),
     );
-    let (generation, children) = blocking(move || {
+    let continuation_job = job.clone();
+    let (generation, children, continuation) = blocking(move || {
         if !st
             .directory
             .capabilities(account, space)
@@ -159,7 +168,11 @@ async fn execute<D: Directory>(
             return Err(refused());
         }
         let row = activation(&st.store, space, &p2)?;
-        Ok((row, st.jobs.children(&sp, &jid)?))
+        Ok((
+            row,
+            st.jobs.children(&sp, &jid)?,
+            st.jobs.continuation(&continuation_job)?,
+        ))
     })
     .await?;
     if !generation.enabled
@@ -183,12 +196,15 @@ async fn execute<D: Directory>(
         live: live.clone(),
         checkpoints: AtomicU32::new(job.checkpoints),
     });
-    let input = json!({
+    let mut input = json!({
         "job_id": job.id,
         "input": job.input,
         "checkpoint": job.checkpoint,
         "children": children,
     });
+    if let Some(continuation) = continuation {
+        input["signal"] = continuation;
+    }
     let outcome = state
         .workers
         .invoke(
@@ -205,8 +221,22 @@ async fn execute<D: Directory>(
             },
         )
         .await;
+    if let Outcome::InvalidInput(error) | Outcome::Failed(error) = &outcome {
+        plugin
+            .installed_diagnostics
+            .failure(space, &job.operation, error);
+    }
     Ok(match outcome {
         Outcome::Cancelled => None,
+        Outcome::Complete(value) if value["status"] == "parked" => {
+            match waits::park(state, job, live, &plugin, value).await {
+                Ok(()) => None,
+                Err(error) => {
+                    tracing::warn!(job = %job.id, reason = %error.message, "job wait refused");
+                    Some(RunEnd::WaitRejected(error.message))
+                }
+            }
+        }
         Outcome::Complete(value) => Some(end_of(value)),
         Outcome::InvalidInput(error) => {
             tracing::warn!(plugin = %job.plugin, operation = %job.operation, reason = %error.message, "job run input rejected");

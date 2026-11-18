@@ -16,6 +16,7 @@ calternal-auth = { path = "../../crates/auth" }
 calternal-machine = { path = "../../crates/machine" }
 serde_json = "1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "time"] }
+ring = "0.17"
 reqwest = { version = "0.12", default-features = false, features = ["json"] }
 rusqlite = { version = "0.41", features = ["bundled"] }
 tempfile = "3.27"
