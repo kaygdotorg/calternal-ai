@@ -1,11 +1,23 @@
 <script lang="ts">
   // The preset gallery: one tile per preset (backdrop and palette together). Used by the appearance settings and by the Look step of the onboarding.
   import tokens from "../../../../packages/ui/tokens/tokens.json" with { type: "json" };
+  import { accentFor } from "./accent";
   import { PRESETS } from "./presets";
+  import { coloursOfImage } from "./wallpaper";
   import { appearance as A } from "./prefs.svelte";
   let { onpick }: { onpick?: (id: string) => void } = $props();
   const p = $derived(A.prefs);
   $effect(() => { void A.ensureThumbs(); });
+  /** The accent a wallpaper preset really produces (read from its picture, as the app does when the preset is applied), by preset id; until it is read the tile shows the shell's own. */
+  let accents = $state<Record<string, string>>({});
+  const wallpaperOf = (pr: (typeof PRESETS)[number]) => pr.wallpaper === "none" ? null : A.wallpapers.find((w) => w.id === pr.wallpaper) ?? (pr.wallpaper === "Nkwrpa_v0WA" ? A.wallpapers.find((w) => w.id === "haze") : undefined) ?? null;
+  $effect(() => {
+    for (const pr of PRESETS) {
+      if (!pr.accentFromWallpaper || accents[pr.id]) continue;
+      const w = wallpaperOf(pr), src = w ? A.thumbOf(w) : "";
+      if (src) void coloursOfImage(src).then((c) => { accents = { ...accents, [pr.id]: accentFor(c.hue?.h ?? null, c.hue?.c ?? null).hex }; }, () => {});
+    }
+  });
   /** The shell's own paper, ink and accent per scheme, for presets that keep its tokens. */
   const own = { light: { paper: tokens.light.paper, ink: tokens.light.ink, accent: tokens.base["accent-base"] }, dark: { paper: tokens.dark.paper, ink: tokens.dark.ink, accent: tokens.base["accent-base"] } };
 </script>
@@ -13,9 +25,10 @@
 <div class="presets" role="radiogroup" aria-label="Theme presets">
   {#each PRESETS as pr (pr.id)}
     {@const th = pr.theme ? pr.theme[A.drawn] : own[A.drawn]}
+    {@const accent = accents[pr.id] ?? th.accent}
     {@const wp = pr.wallpaper === "none" ? null : A.wallpapers.find((w) => w.id === (pr.wallpaper === "none" ? "" : pr.wallpaper)) ?? (pr.wallpaper === "Nkwrpa_v0WA" ? A.wallpapers.find((w) => w.id === "haze") : undefined)}
     <button type="button" role="radio" class="preset" aria-checked={p.presetId === pr.id} aria-label={pr.name} onclick={() => { A.applyPreset(pr.id); onpick?.(pr.id); }}>
-      <span class="mini" style:--paper={th.paper} style:--ink={th.ink} style:--acc={th.accent} style:background-image={wp ? `url(${A.thumbOf(wp)})` : undefined} aria-hidden="true">
+      <span class="mini" style:--paper={th.paper} style:--ink={th.ink} style:--acc={accent} style:background-image={wp ? `url(${A.thumbOf(wp)})` : undefined} aria-hidden="true">
         <i class="ms"></i><i class="mc"><em class="ctl"></em><b></b><b></b></i>
       </span>
       <span class="pn">{pr.name}</span>

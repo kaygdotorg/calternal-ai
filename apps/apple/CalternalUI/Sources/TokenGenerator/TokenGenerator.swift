@@ -14,6 +14,19 @@ public enum TokenGenerator {
         "text-grad": "variable-font GRAD axis of the web font",
         "safe-top": "CSS env(); the safe area comes from the system",
         "safe-bottom": "CSS env(); the safe area comes from the system",
+        "safe-left": "CSS env(); the safe area comes from the system",
+        "safe-right": "CSS env(); the safe area comes from the system",
+        "foot-inset": "web layout or motion token (CSS); the native client has its own",
+        "r-menu": "web layout or motion token (CSS); the native client has its own",
+        "ease-morph": "web layout or motion token (CSS); the native client has its own",
+        "dur-morph": "web layout or motion token (CSS); the native client has its own",
+        "section-above": "web layout or motion token (CSS); the native client has its own",
+        "section-h": "web layout or motion token (CSS); the native client has its own",
+        "section-below": "web layout or motion token (CSS); the native client has its own",
+        "sheet-inset": "web sheet geometry (a CSS custom property); native sheets are the system's",
+        "sheet-r-top": "web sheet geometry (a CSS custom property); native sheets are the system's",
+        "sheet-r-bottom": "web sheet geometry (a CSS custom property); native sheets are the system's",
+        "sheet-corners": "web sheet geometry (a CSS custom property); native sheets are the system's",
         "msg-w": "message column width; a layout rule of the web client",
         "glass-edge": "CSS inset highlight; the system's glass draws its own edge",
         "ink-rgb": "carried into line, hover, press",
@@ -61,7 +74,7 @@ public enum TokenGenerator {
         o += "    }\n    /// Font weights, in the web scale (100...900); the native weight is the nearest.\n    public enum Weight {\n"
         for (swift, k) in [("ui", "ui-weight"), ("body", "body-weight"), ("strong", "strong-weight")] { o += "        public static let \(swift): Int = \(try CSS.number(b(k)).rounded().asInt)\n" }
         o += "    }\n    /// The design's font families; the native default is the system font, these are what a font setting can name.\n    public enum Family {\n"
-        for (swift, k) in [("ui", "font-ui"), ("rounded", "font-rounded"), ("mono", "font-mono")] {
+        for (swift, k) in [("ui", "font-ui"), ("rounded", "font-rounded"), ("mono", "font-mono"), ("terminal", "font-terminal")] {
             let name = try b(k).split(separator: ",")[0].trimmingCharacters(in: CharacterSet(charactersIn: "\" "))
             o += "        public static let \(swift) = \"\(name)\"\n"
         }

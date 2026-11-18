@@ -21,7 +21,7 @@ its README lists what matches this system exactly, what differs because the plat
   target 28 against 44, blur scale 1 against 0.7, their own text sizes.
 - **Fonts, only these:** Google Sans Flex for all UI text (the `Dark` family adds the GRAD axis for light-on-
   dark ink with identical advance widths; the Rounded variant is used for the app name and avatar initials),
-  Maple Mono for code. No system font is in any stack. Files are the subset latin and latin-ext woff2s, the
+  Cascadia Code (one variable file) for code and the terminal; Maple Mono is selectable and never preloaded. No system font is in any stack. Files are the subset latin and latin-ext woff2s, the
   page head preloads only the active scheme's file, and nothing paints until it has loaded (`font-display:
   block`, `lib/fonts.ts`, `apps/web/src/main.ts`).
 - **Type scale:** `text-title`, `text-heading`, `text-body`, `text-ui`, `text-label`, `text-code`,
@@ -98,7 +98,7 @@ one needs the server's access key and returns the photo's credit, which the sett
 ## Fonts
 
 Defaults, exactly as the existing app: Google Sans Flex for all UI text, in its light family (weight and optical size) or, in the dark scheme, its
-Dark family (the same plus GRAD 30: more ink, identical advance widths); Maple Mono (400, 500) for code. Weights 440 (UI), 460 (reading text) and 620
+Dark family (the same plus GRAD 30: more ink, identical advance widths); Cascadia Code (weights 200 to 700, one variable file) for code and the terminal. Weights 440 (UI), 460 (reading text) and 620
 (emphasis); optical size follows the font size (`font-optical-sizing: auto`). The Rounded family is used only where the existing app uses it, with
 `font-variation-settings: "ROND" 100`: the app name in the sidebar header. No system font is in any default stack, nothing paints until the
 active family is loaded, and `registerFonts` (`packages/ui`) adds the faces under the app's mount path.
@@ -109,7 +109,7 @@ through this app. The glyphs and advance widths are identical; the faces are the
 and fixed: the Rounded family was drawn without `"ROND" 100`, so the app name was not rounded at all; Rounded was also applied to the avatar
 initial, where the existing app does not use it; and the text sat at 14 to 15 px with the heavier 620 weight in more places than the existing app
 (the owner's 13 px and the existing weights are now the only ones). A browser that fails to load the font (a wrong base path, a blocked file) would
-show a system face; `e2e/preview-check.mjs` checks on the deployed copy that Google Sans Flex and Maple Mono are loaded.
+show a system face; `e2e/preview-check.mjs` checks on the deployed copy that Google Sans Flex and Cascadia Code are loaded.
 
 Font choice is a setting per role (interface, chat, code): sources Google Fonts, Fontsource, Fontshare, own files and System. The server will
 download a chosen family once and serve it from its own storage; `FontLibrary.install` is that call. Own files are registered in the browser
@@ -333,3 +333,8 @@ A menu is a **dropdown**, on a phone too: anchored to the button (or the point, 
 One behaviour, no comparison toggles: the veil is solved to a **7:1** readability floor (secondary ink 5.5:1, tertiary 4.5:1) with text that flips between light and dark where it must, and the light scheme's surfaces are the **lighter copy of the photo** under the solved veil. The "Compare" section, its readability-floor and light-surface toggles, the 4.5:1 floor and the Craft 0.92-white path (and their code and tests) are gone. **Clear to tinted** (five steps: Clear, Light, Balanced, Dense, Tinted; Balanced is the solved veil) is a normal setting in Materials, starting from the system's reduced-transparency and contrast settings.
 
 **What a step costs.** A step of the slider changes one number (`setClarity`) and solves the veil again from the two blurred copies of the picture that already exist (`updateVeil`: sampling 48 by 48 pixels per surface and writing a few custom properties). It never decodes or re-blurs the picture: `setWallpaper` is a no-op for the same picture with the same blur radii (it was not: every preference change re-blurred it, which made each step a 400 to 780 ms main-thread task at 4x CPU). Writing the preferences to storage waits 300 ms after the last change (and happens at once when the page is hidden), so a drag writes once and the visual never waits for storage. Gate: `e2e/clarity-perf.mjs` drives all five steps by keyboard, up and down, and by a pointer drag along the rail at 4x CPU throttling, in both colour schemes, and fails on a main-thread task over 50 ms, on rebuilt wallpaper blob URLs, and on a step that is not on screen within a few frames.
+
+
+### Buttons in Settings (2026-11-18)
+
+One rule: the action button of a row or page (`Add a machine…`, `New skill`, `New automation`, `Add a person…`, `Make an invitation`, every `button` setting) is its natural width at the start edge where the card is at least 40 rem wide, and the full row width where it is narrower (a phone). It carries the class `settings-action`; the width is decided by a container query on Settings' scroller (`settings-page`), so it follows the card, not the window. Actions inside a list row (Open file, Run now, Pause, Change) are the standard secondary or quiet button, never borderless dim text with an indent of their own, and a Settings panel's rows take the card's inset and no more (`.row.col:has(> .sp)` has no padding of its own). A custom panel's group has a title like every other page's (`Skills in this space`, `Scheduled prompts`).

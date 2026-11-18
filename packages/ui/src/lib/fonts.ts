@@ -17,7 +17,7 @@ const SYMBOLS = "U+2190-21FF, U+2300-23FF, U+2460-24FF, U+25A0-27BF";
 
 /**
  * The shipped faces. Google Sans Flex (light: weight + optical size; Dark: the same plus GRAD for more ink with identical advance widths;
- * Rounded: weight + ROND, used only where the existing app uses it, with `font-variation-settings: "ROND" 100`) and Maple Mono.
+ * Rounded: weight + ROND, used only where the existing app uses it, with `font-variation-settings: "ROND" 100`), Cascadia Code (the monospace default, variable weight) and Maple Mono (selectable, fetched only if chosen).
  */
 const FACES: Face[] = [
   { family: "Google Sans Flex", file: "google-sans-flex-latin-opsz-normal.woff2", weight: "1 1000", range: LATIN, display: "block" },
@@ -28,6 +28,7 @@ const FACES: Face[] = [
   { family: "Google Sans Flex Dark", file: "google-sans-flex-symbols-opsz-normal.woff2", weight: "1 1000", range: SYMBOLS, display: "block" },
   { family: "Google Sans Flex Rounded", file: "google-sans-flex-latin-rond-normal.woff2", weight: "1 1000", display: "block" },
   { family: "Dancing Script", file: "dancing-script-latin-wght-normal.woff2", weight: "400 700", display: "block" },
+  { family: "Cascadia Code", file: "cascadia-code-latin-wght-normal.woff2", weight: "200 700", range: LATIN, display: "block" },
   { family: "Maple Mono", file: "maple-mono-latin-400-normal.woff2", weight: "400", display: "block", mono: true },
   { family: "Maple Mono", file: "maple-mono-latin-500-normal.woff2", weight: "500", display: "block", mono: true },
 ];

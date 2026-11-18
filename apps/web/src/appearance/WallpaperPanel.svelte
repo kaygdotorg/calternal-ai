@@ -92,8 +92,8 @@
 <section aria-labelledby="s-wall">
   
   <div class="grid" role="radiogroup" aria-label="Wallpaper">
-    <button type="button" role="radio" class="tile none" aria-checked={p.wallpaperId === "auto"} aria-label="Automatic: follows the colour scheme" onclick={() => A.change((x) => (x.wallpaperId = "auto"))}><Icon name="sun" /></button>
-    <button type="button" role="radio" class="tile none" aria-checked={p.wallpaperId === null} aria-label="No wallpaper" onclick={() => A.change((x) => (x.wallpaperId = null))}><Icon name="image" /></button>
+    <button type="button" role="radio" class="tile none" aria-checked={p.wallpaperId === "auto"} aria-label="Automatic: follows the colour scheme" onclick={() => A.change((x) => (x.wallpaperId = "auto"))}><Icon name="sun" /><span class="tl">Automatic</span></button>
+    <button type="button" role="radio" class="tile none" aria-checked={p.wallpaperId === null} aria-label="None: no wallpaper" onclick={() => A.change((x) => (x.wallpaperId = null))}><Icon name="image" /><span class="tl">None</span></button>
     {#each A.wallpapers as w (w.id)}
       <button type="button" role="radio" class="tile" aria-checked={p.wallpaperId === w.id} aria-label={w.name} use:tip={{ label: w.credit ? `Photo by ${w.credit.author} on Unsplash` : "" }} style:background-image="url({A.thumbOf(w)})" onclick={() => A.change((x) => (x.wallpaperId = w.id))}></button>
     {/each}
@@ -133,6 +133,8 @@
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(5.5rem, 1fr)); gap: var(--s-3); }
   .grid li .tile { width: 100%; }
   .tile { aspect-ratio: 8 / 5; border-radius: var(--r-card); background: rgb(var(--ink-rgb) / 0.08) center / cover no-repeat; display: grid; place-items: center; color: var(--ink-3); transition: scale var(--dur-fast) var(--ease-out); }
+  .tile.none { align-content: center; gap: var(--s-1); }
+  .tl { font-size: var(--text-label); font-weight: var(--strong-weight); color: var(--ink-2); }
   .tile:active { scale: var(--press-scale); }
   .tile[aria-checked="true"] { outline: 2px solid var(--accent); outline-offset: 2px; }
   .actions, .search { display: flex; flex-wrap: wrap; gap: var(--s-3); align-items: center; }

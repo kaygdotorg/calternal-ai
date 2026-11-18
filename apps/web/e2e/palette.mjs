@@ -27,7 +27,7 @@ ok("Enter runs the chosen row and closes", (await dlg.count()) === 0);
 await page.keyboard.press("Control+k"); await dlg.waitFor();
 await page.keyboard.press("Escape"); await page.waitForTimeout(300);
 ok("Esc closes", (await dlg.count()) === 0);
-// Keystroke cost. The budget is the owner's per-key rule for typing surfaces: 8 ms of main-thread work per key at normal speed, so at 6x CPU slowdown (what a slow phone is) at most 48 ms, and no missed frames. The work is measured directly:
+// Keystroke cost. The owner's rule for typing surfaces is 8 ms of main-thread work per key at normal speed and the palette is held to a quarter of it, 2 ms, so at 6x CPU slowdown (what a slow phone is) 12 ms for the median and 24 ms for the p95. The work is measured directly:
 // the input event, the framework's update (a microtask) and the style and layout a read of the page forces. Waiting for the next frame is NOT part of it (that wait is up to 16.7 ms by itself, which is what the old "a frame or less" number mostly was); it is printed as info.
 await page.keyboard.press("Control+k"); await dlg.waitFor();
 const cdp = await ctx.newCDPSession(page);
@@ -48,8 +48,8 @@ const res = await page.evaluate(async () => {
 await cdp.send("Emulation.setCPUThrottlingRate", { rate: 1 });
 const stat = (a) => { const s = [...a].sort((x, y) => x - y); return { med: s[Math.floor(s.length / 2)], p95: s[Math.floor(s.length * 0.95)] }; };
 const w = stat(res.work), f = stat(res.toFrame);
-const BUDGET_MS = 8 * 6;
-console.log(`keystroke main-thread work at 6x CPU: median ${w.med.toFixed(1)} ms, p95 ${w.p95.toFixed(1)} ms (budget ${BUDGET_MS} ms = 8 ms per key at 1x); to the next frame: median ${f.med.toFixed(1)} ms, p95 ${f.p95.toFixed(1)} ms (a frame is 16.7 ms)`);
+const PER_KEY_MS = 2, BUDGET_MS = PER_KEY_MS * 6; // 2 ms of main-thread work per key at normal speed: the owner's rule is 8 ms and the standing instruction is to beat budgets (measured: 0.7 ms)
+console.log(`keystroke main-thread work at 6x CPU: median ${w.med.toFixed(1)} ms, p95 ${w.p95.toFixed(1)} ms (budget ${BUDGET_MS} ms median, ${BUDGET_MS * 2} ms p95 = ${PER_KEY_MS} ms per key at 1x); to the next frame: median ${f.med.toFixed(1)} ms, p95 ${f.p95.toFixed(1)} ms (a frame is 16.7 ms)`);
 if (process.env.CAL_GATE) console.log(`info  keystroke cost at 6x is a measurement; on a loaded or slower machine it says nothing about a regression, so the gate does not fail on it (${w.med < BUDGET_MS ? "within" : "over"} the ${BUDGET_MS} ms budget)`);
-else ok(`keystroke cost: main-thread work per key within ${BUDGET_MS} ms at 6x slowdown (8 ms per key at normal speed)`, w.med < BUDGET_MS && w.p95 < BUDGET_MS * 2);
+else ok(`keystroke cost: main-thread work per key within ${BUDGET_MS} ms median and ${BUDGET_MS * 2} ms p95 at 6x slowdown (${PER_KEY_MS} ms per key at normal speed)`, w.med < BUDGET_MS && w.p95 < BUDGET_MS * 2);
 await ctx.close(); await b.close(); stop(); process.exit(bad ? 1 : 0);

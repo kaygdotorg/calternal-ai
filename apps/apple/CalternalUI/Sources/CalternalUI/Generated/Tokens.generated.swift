@@ -19,8 +19,8 @@ public enum Tokens {
     /// Corner radii, points. `pill` is larger than any control, so it always draws a capsule.
     public enum Radius {
         public static let pill: Double = 999.0
-        public static let card: Double = 14.0
-        public static let pane: Double = 20.0
+        public static let card: Double = 20.0
+        public static let pane: Double = 28.0
         public static let select: Double = 8.0
     }
     /// Durations in seconds, the two curves' control points, the one spring and the press and enter scales.
@@ -30,7 +30,7 @@ public enum Tokens {
         public static let slow: Double = 0.3
         public static let leave: Double = 0.2
         public static let pulse: Double = 1.8
-        public static let pressScale: Double = 0.96
+        public static let pressScale: Double = 0.97
         public static let enterScale: Double = 0.94
         public static let easeOut = Bezier(0.23, 1.0, 0.32, 1.0)
         /// Damping ratio and response in seconds of the one spring.
@@ -55,7 +55,8 @@ public enum Tokens {
     public enum Family {
         public static let ui = "Google Sans Flex"
         public static let rounded = "Google Sans Flex Rounded"
-        public static let mono = "Maple Mono"
+        public static let mono = "Cascadia Code"
+        public static let terminal = "Cascadia Code"
     }
     /// Saturation multiplier behind glass surfaces (1.8 is 180 %).
     public static let glassSaturation: Double = 1.8

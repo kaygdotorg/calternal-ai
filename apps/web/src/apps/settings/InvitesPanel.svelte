@@ -37,7 +37,7 @@
   <div class="r"><span class="n"><span class="t">Invite someone</span><span class="h">They open the link, make a passkey, and join with this role.</span>
     <Selector class="row-selector" label="Role" options={ROLES.map((r) => ({ value: r.id, label: r.label }))} value={role} onchange={(v) => (role = v as people.GrantRole)} />
     <Selector class="row-selector" label="Lasts" options={WHEN.map((r) => ({ value: r.id, label: r.label }))} value={days} onchange={(v) => (days = v)} /></span>
-    <Button text="Make an invitation" variant="primary" disabled={busy} onclick={() => act(() => people.createInvite(space, role, Date.now() + Number(days) * 86400000))} /></div>
+    <Button class="settings-action" text="Make an invitation" variant="primary" disabled={busy} onclick={() => act(() => people.createInvite(space, role, Date.now() + Number(days) * 86400000))} /></div>
   <VirtualList inside count={shown.length} estimate={90} overscan={600} label="Invitations" onrange={(_, end) => { if (end >= shown.length - 20) void more(); }}>
     {#snippet row(ix)}{@const i = shown[ix]}{#if i}
     <div class="r" data-setting="space.invite.{i.invite_id}">

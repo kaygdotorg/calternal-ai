@@ -54,10 +54,10 @@
     {#each list as a (a.id)}
       <div class="r col">
         <span class="n"><span class="t">{a.name}</span><span class="h">Runs {a.human} · {a.enabled ? `next ${a.next}` : "paused"}</span><span class="h">{a.last ? `Last run ${a.last.when}: ${a.last.ok ? "done" : "failed"}` : "Not run yet"} · <code>{a.path}</code></span></span>
-        <span class="a"><Button variant="quiet" text="Run now" onclick={() => run(a.id)} /><Button variant="quiet" text={a.enabled ? "Pause" : "Resume"} onclick={() => skillsStore.setEnabled(space, a.id, !a.enabled)} /><Button variant="quiet" text="Open file" onclick={() => navigate("/notes")} /></span>
+        <span class="a"><Button variant="secondary" text="Run now" onclick={() => run(a.id)} /><Button variant="secondary" text={a.enabled ? "Pause" : "Resume"} onclick={() => skillsStore.setEnabled(space, a.id, !a.enabled)} /><Button variant="secondary" text="Open file" onclick={() => navigate("/notes")} /></span>
       </div>
     {/each}
     {#if !list.length}<div class="r"><span class="n"><span class="t">No automations yet</span><span class="h">An automation starts a thread on a schedule.</span></span></div>{/if}
-    <div class="r"><span class="n"><span class="h">Schedules are stored as systemd timer expressions, with a time zone.</span></span><span class="a"><Button variant="primary" text="New automation" onclick={begin} /></span></div>
+    <div class="r"><span class="n"><span class="h">Schedules are stored as systemd timer expressions, with a time zone.</span></span><span class="a"><Button class="settings-action" variant="primary" text="New automation" onclick={begin} /></span></div>
   {/if}
 </div>

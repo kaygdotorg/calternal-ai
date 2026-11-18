@@ -24,7 +24,7 @@
     </li>
   {/each}
 </ul>
-<div class="add"><span class="l"><span class="t">Add a machine</span><span class="h">By SSH. The server never keeps your key.</span></span><Button text="Add a machine…" variant="secondary" onclick={() => (open = true)} /></div>
+<div class="add"><span class="l"><span class="t">Add a machine</span><span class="h">By SSH. The server never keeps your key.</span></span><Button class="settings-action" text="Add a machine…" variant="secondary" onclick={() => (open = true)} /></div>
 
 <Sheet {open} label="Add a machine" onclose={() => { open = false; step = 0; }} side={typeof matchMedia !== "undefined" && matchMedia("(max-width: 759px)").matches ? "bottom" : "center"}>
   <div class="flow">

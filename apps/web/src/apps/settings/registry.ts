@@ -231,9 +231,9 @@ const storagePage: Page = {
 };
 
 /** The Skills page of the current space: the list and the guided way to write one. */
-const skillsPage = (): Page => ({ id: "skills", name: "Skills", icon: "spark", blurb: "What agents in this space know how to do: each skill is a SKILL.md file.", groups: [lazy("space.skills", "Skills", () => import("./SkillsPanel.svelte"))] });
+const skillsPage = (): Page => ({ id: "skills", name: "Skills", icon: "spark", blurb: "What agents in this space know how to do: each skill is a SKILL.md file.", groups: [{ title: "Skills in this space", ...lazy("space.skills", "Skills", () => import("./SkillsPanel.svelte")) }] });
 /** The Automations page of the current space: the list and the guided way to make one. */
-const automationsPage = (): Page => ({ id: "automations", name: "Automations", icon: "clock", blurb: "Prompts that run on a schedule, each run its own thread.", groups: [lazy("space.automations", "Automations", () => import("./AutomationsPanel.svelte"))] });
+const automationsPage = (): Page => ({ id: "automations", name: "Automations", icon: "clock", blurb: "Prompts that run on a schedule, each run its own thread.", groups: [{ title: "Scheduled prompts", ...lazy("space.automations", "Automations", () => import("./AutomationsPanel.svelte")) }] });
 const lazy = (id: string, label: string, load: () => Promise<{ default: Component<any> }>, help?: string): Group => ({ settings: [{ id, label, help, control: { type: "custom", load } }] });
 
 /** The sidebar's groups, in order (docs/ui-craft-and-settings-study.md 11.1). */
