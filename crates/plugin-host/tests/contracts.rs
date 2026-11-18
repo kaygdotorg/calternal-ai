@@ -5,6 +5,12 @@ use calternal_types::{AccountId, SpaceId};
 use serde_json::{Value, json};
 
 fn manifest() -> ManifestV1 {
+    let mut manifest = manifest_with_slots();
+    manifest.slots = None;
+    manifest
+}
+
+fn manifest_with_slots() -> ManifestV1 {
     parse_manifest(include_bytes!(
         "../../../plugins/calternal-notes-insights/manifest.json"
     ))
@@ -71,7 +77,7 @@ fn call(id: &str, method: HostCallKind) -> Frame {
 
 #[test]
 fn manifest_validation_vectors() {
-    let m = manifest();
+    let m = manifest_with_slots();
     let valid = serde_json::to_value(&m).unwrap();
     assert_eq!(
         parse_manifest(&serde_json::to_vec(&valid).unwrap()).unwrap(),
@@ -93,6 +99,13 @@ fn manifest_validation_vectors() {
         ("/operations/0/mutates", json!(true)),
         ("/operations/0/idempotency", json!("never")),
         ("/operations/0/id", json!("")),
+        ("/slots/0/renderer/operation", json!("foreign.render")),
+        ("/slots/0/slot", json!("palette_commands")),
+        ("/slots/0/label", json!("")),
+        (
+            "/slots/0/renderer",
+            json!({"type":"sealed","asset":"../escape.html"}),
+        ),
         // A target must name a required string property of the input schema.
         (
             "/operations/0/target",
@@ -755,4 +768,37 @@ fn operation_risk_is_required_closed_and_consistent_with_effects() {
 fn new_session(manifest: ManifestV1) -> Result<WorkerSession, calternal_plugin_host::Error> {
     let schemas = std::sync::Arc::new(CompiledSchemas::compile(&manifest)?);
     WorkerSession::new(manifest, schemas, authority().space_id)
+}
+
+#[test]
+fn owned_slot_validation_rejects_foundation_targets_and_invalid_bounds() {
+    let mut candidate = serde_json::to_value(manifest_with_slots()).unwrap();
+    candidate["owned_slots"] = json!([{
+        "id": "stats", "required_capability": "space.read", "accepts": ["generated"],
+        "max_contributions": 2
+    }]);
+    candidate["slots"][0]["slot"] = json!({"plugin_id":candidate["id"],"id":"stats"});
+    let parse = |value: &Value| parse_manifest(&serde_json::to_vec(value).unwrap());
+    assert!(parse(&candidate).is_ok());
+    for (pointer, input) in [
+        ("/owned_slots/0/required_capability", json!("spaces.list")),
+        ("/owned_slots/0/max_contributions", json!(0)),
+        ("/owned_slots/0/max_contributions", json!(33)),
+        ("/owned_slots/0/accepts", json!(["generated", "generated"])),
+        ("/owned_slots/0/accepts", json!(["sealed"])),
+        ("/slots/0/slot", json!("approvals")),
+        ("/slots/0/slot/plugin_id", json!("../host")),
+        (
+            "/slots/0/slot",
+            json!({"plugin_id":"host","id":"approvals","foundation":true}),
+        ),
+        (
+            "/slots/0/renderer",
+            json!({"type":"sealed","asset":"panel.html"}),
+        ),
+    ] {
+        let mut invalid = candidate.clone();
+        *invalid.pointer_mut(pointer).unwrap() = input;
+        assert!(parse(&invalid).is_err(), "{pointer}: {invalid}");
+    }
 }

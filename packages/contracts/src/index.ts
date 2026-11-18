@@ -686,6 +686,156 @@ folder: string, } | {
  */
 hidden: boolean, };
 /**
+ * Picker filter within one space.
+ */
+
+export type SpaceLookupInput = {
+/**
+ * Selected space UUID.
+ */
+space_id: string,
+/**
+ * Literal display-name prefix. Omit to browse.
+ */
+prefix?: string, };
+/**
+ * A named account or group directly granted access to the selected space.
+ */
+
+export type PersonMatch = {
+/**
+ * Account or group UUID.
+ */
+id: string,
+/**
+ * Display name.
+ */
+name: string,
+/**
+ * Subject type, either account or group.
+ */
+kind: string, };
+/**
+ * The first page of matching mention subjects.
+ */
+
+export type PeopleLookupResult = {
+/**
+ * Matching direct accounts and groups.
+ */
+people: Array<PersonMatch>, };
+/**
+ * One externally placed space skill.
+ */
+
+export type SkillMatch = {
+/**
+ * Skill directory name.
+ */
+name: string,
+/**
+ * One-line description declared in the file.
+ */
+description: string, };
+/**
+ * Bounded skill matches for the selected space.
+ */
+
+export type SkillsResult = {
+/**
+ * Skill descriptors, ordered by name.
+ */
+skills: Array<SkillMatch>, };
+/**
+ * One palette command, in the web palette's command shape.
+ */
+
+export type PaletteCommand = {
+/**
+ * Stable, globally unique command identifier.
+ */
+id: string,
+/**
+ * Searchable command label.
+ */
+label: string,
+/**
+ * Display group.
+ */
+group: string,
+/**
+ * Extra phrases that match this command.
+ */
+words?: Array<string>,
+/**
+ * Navigation address, if this command navigates.
+ */
+go?: string,
+/**
+ * Named host action, if the command invokes one.
+ */
+op?: string, };
+/**
+ * A discoverable Settings section.
+ */
+
+export type PaletteSettingsSection = {
+/**
+ * Stable section identifier.
+ */
+id: string,
+/**
+ * Section label.
+ */
+label: string,
+/**
+ * Settings address.
+ */
+go: string, };
+/**
+ * Optional palette declarations in a plugin manifest.
+ */
+
+export type PaletteDeclaration = {
+/**
+ * Commands with their extra search phrases.
+ */
+commands: Array<PaletteCommand>,
+/**
+ * Settings sections that the plugin contributes.
+ */
+settings_sections: Array<PaletteSettingsSection>, };
+/**
+ * A registered palette contribution in the web palette's manifest shape.
+ */
+
+export type PaletteManifest = {
+/**
+ * Owning plugin identifier.
+ */
+plugin: string,
+/**
+ * Exact package version.
+ */
+version: string,
+/**
+ * Commands with their extra search phrases.
+ */
+commands: Array<PaletteCommand>,
+/**
+ * Settings sections provided by this plugin.
+ */
+settings_sections: Array<PaletteSettingsSection>, };
+/**
+ * Palette declarations visible in the selected space.
+ */
+
+export type PaletteResult = {
+/**
+ * Enabled plugins with palette contributions.
+ */
+manifests: Array<PaletteManifest>, };
+/**
  * Kind identity remains independent of plugin identity.
  */
 
@@ -938,15 +1088,148 @@ name: string,
  */
 reasoning_levels: Array<string>, };
 /**
+ * Host-defined mount point for an activated plugin contribution.
+ */
+
+export type PluginSlot = "sidebar_section" | "card_window" | "composer_row" | "message_decoration" | "thread_edge" | "settings_section" | "palette_commands" | "toasts";
+/**
+ * A package-qualified slot. Its namespace cannot address a host surface.
+ */
+
+export type OwnedPluginSlotId = {
+/**
+ * Registered package that declares the slot.
+ */
+plugin_id: string,
+/**
+ * Local slot ID in that package.
+ */
+id: string, };
+/**
+ * Mount addressed either by the fixed host vocabulary or a package-qualified name.
+ */
+
+export type PluginSlotTarget = PluginSlot | OwnedPluginSlotId;
+/**
+ * Operation-backed contribution types available to a package-owned mount.
+ */
+
+export type OwnedPluginSlotKind = "generated" | "command";
+/**
+ * One package-owned slot, with explicit visibility, accepted renderers and capacity.
+ */
+
+export type OwnedPluginSlot = {
+/**
+ * Stable local name; the host obtains the owner ID from the enclosing manifest.
+ */
+id: string,
+/**
+ * Space capability a caller must hold to resolve this slot.
+ */
+required_capability: ManifestCapability,
+/**
+ * Nonempty set of operation-backed renderer types. Duplicates are invalid.
+ */
+accepts: Array<OwnedPluginSlotKind>,
+/**
+ * Maximum visible contributions per listing, between 1 and 32.
+ */
+max_contributions: number, };
+/**
+ * An owned mount available in the caller's selected space.
+ */
+
+export type ResolvedOwnedPluginSlot = {
+/**
+ * Owner package. Pair it with the local ID from the definition.
+ */
+plugin_id: string,
+/**
+ * Current owner activation generation, used to invalidate a mounted slot.
+ */
+generation: number,
+/**
+ * The validated declaration, including renderer and capacity constraints.
+ */
+definition: OwnedPluginSlot, };
+/**
+ * A portable operation-backed contribution or a reference to a sealed web bundle.
+ */
+
+export type PluginSlotRenderer = { "type": "generated",
+/**
+ * Plugin-local operation declaration to dispatch with current authority.
+ */
+operation: string, } | { "type": "sealed",
+/**
+ * Relative HTML asset path. The prototype does not serve or mount this asset.
+ */
+asset: string, } | { "type": "command",
+/**
+ * Operation to dispatch with current authority and normal approval checks.
+ */
+operation: string, };
+/**
+ * One plugin-owned contribution that the host can resolve without running code.
+ */
+
+export type PluginSlotContribution = {
+/**
+ * Stable identifier unique within this manifest.
+ */
+id: string,
+/**
+ * Accessible name and visible label, bounded to 128 UTF-8 bytes.
+ */
+label: string,
+/**
+ * Extensible host mount or package-owned target, independent of the renderer.
+ */
+slot: PluginSlotTarget,
+/**
+ * Renderer or command to resolve.
+ */
+renderer: PluginSlotRenderer, };
+/**
+ * An available contribution resolved for the caller and selected space.
+ */
+
+export type ResolvedPluginSlot = {
+/**
+ * Owning package identifier; pair with the local contribution ID.
+ */
+plugin_id: string,
+/**
+ * Space activation generation to invalidate stale mounts.
+ */
+generation: number,
+/**
+ * Validated declaration; it conveys no authority to dispatch or mount code.
+ */
+contribution: PluginSlotContribution, };
+/**
  * Plugin menu read without running plugin code. Every top-level field is required;
  * only the documented optional fields inside declarations may be omitted.
  */
 
 export type ManifestV1 = {
 /**
+ * Optional commands, extra phrases and Settings sections for the palette.
+ */
+palette?: PaletteDeclaration,
+/**
  * Machine-side provider adapter; omitted by plugins that offer no provider.
  */
 provider?: ManifestProvider,
+/**
+ * Optional contributions to host slots, validated without running code.
+ */
+slots?: Array<PluginSlotContribution>,
+/**
+ * Up to 32 mounts owned by this package, resolved only while enabled.
+ */
+owned_slots?: Array<OwnedPluginSlot>,
 /**
  * Stable plugin identifier.
  */
@@ -1895,7 +2178,15 @@ export type PluginsListResult = {
 /**
  * Registered plugins and their space-scoped activation state.
  */
-plugins: Array<PluginState>, };
+plugins: Array<PluginState>,
+/**
+ * Available contributions in slot, package ID and local ID order.
+ */
+slots?: Array<ResolvedPluginSlot>,
+/**
+ * Available owned mounts, ordered by owner package and local slot ID.
+ */
+owned_slots?: Array<ResolvedOwnedPluginSlot>, };
 /**
  * Result for `plugins.enable` and `plugins.disable` after the state transition.
  */
@@ -2273,6 +2564,28 @@ account_id: string,
  * The normalized name.
  */
 name: string, };
+/**
+ * The caller's IANA time zone preference. Null follows the device.
+ */
+
+export type TimeZoneInput = {
+/**
+ * IANA time zone name, or null to clear the stored preference.
+ */
+time_zone: string | null, };
+/**
+ * The caller's saved time-zone preference.
+ */
+
+export type TimeZoneResult = {
+/**
+ * The unchanged account UUID.
+ */
+account_id: string,
+/**
+ * Canonically cased IANA name, or null when following the device.
+ */
+time_zone: string | null, };
 /**
  * Target of a server people operation.
  */

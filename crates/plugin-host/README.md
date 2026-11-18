@@ -18,7 +18,7 @@ invocations before worker rotation. IDs cannot be reused within a session.
 
 A process adapter owns exactly one long-lived worker for each (plugin, space),
 pins its code/config version, supervises exit and deadlines, and drains both
-queues. It compiles the per-operation input/output schemas once per session;
+queues. The server shares compiled per-operation input/output schemas across sessions;
 validation is synchronous and must run off an async event loop when necessary.
 Schema HTTP/file retrieval is disabled. Schema evaluation complexity depends on
 the schema; admission/compilation and runtime execution require external CPU and
@@ -84,3 +84,11 @@ operation takes a lock, performs filesystem I/O, fsyncs, starts a process or ope
 a network connection. Each accepted callback performs one broker operation;
 its adapter defines transaction/fsync/round-trip costs. SDK send promises carry
 transport back pressure and pending callback/handler maps are bounded.
+
+
+The optional `slots` field declares up to 32 contributions. A contribution
+has its own ID and accessible label. Generated renderers name a declared,
+read-only operation that returns a required view. Palette commands name a
+declared operation. Sealed renderer paths are metadata for the interface
+prototype. The host checks activation and caller authority before listing
+operation-backed contributions.

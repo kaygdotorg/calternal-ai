@@ -109,6 +109,9 @@ def smoke(data_dir, spawn):
         assert cl('notes', 'get', note_id)['data']['note'] == first
         listed = cl('notes', 'list', '--space', private)['data']['notes']
         assert any(note['id'] == note_id for note in listed)
+        menus = account_cli('search', 'manifests', '--space', private)
+        assert any(menu['plugin'] == 'calternal-notes' for menu in menus['manifests'])
+
         update = ['--request-id', f'cli-smoke-update-{run_id}', 'notes', 'update', note_id, '--base-revision', first['revision'], '--markdown', 'Updated Markdown\n']
         updated = cl(*update)['data']['note']
         assert updated['revision'] != first['revision']

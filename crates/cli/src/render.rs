@@ -59,6 +59,9 @@ pub fn operation(out: &Output, operation: &str, request_id: &str, data: Value) -
     if operation != "notes.list" && calternal_core::note_operation(operation).is_some() {
         return calternal_cli::notes::reply(out, operation, data).request_id(request_id);
     }
+    if let Some(op) = calternal_core::SearchOperation::from_id(operation) {
+        return calternal_cli::search::reply(op, data).request_id(request_id);
+    }
     let reply = Reply::new(data.clone()).request_id(request_id);
     match operation {
         "notes.list" => {

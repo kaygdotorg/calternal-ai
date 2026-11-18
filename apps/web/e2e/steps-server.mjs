@@ -27,7 +27,7 @@ try {
   await cdp.send("WebAuthn.enable"); await cdp.send("WebAuthn.addVirtualAuthenticator", { options: { protocol: "ctap2", transport: "internal", hasResidentKey: true, hasUserVerification: true, isUserVerified: true, automaticPresenceSimulation: true } });
   await p.goto(`${url}/?server=1`); await p.waitForSelector("html[data-ready]");
   await p.fill('input[name="token"]', token); await p.fill('input[name="name"]', "Steps Owner"); await p.getByRole("button", { name: "Create passkey" }).click();
-  await p.waitForFunction(() => !document.querySelector("h1")?.textContent?.includes("Set up"), null, { timeout: 15000 }); await p.waitForSelector("html[data-ready]"); await p.waitForTimeout(1200);
+  await p.waitForTimeout(2500); await p.evaluate(() => localStorage.removeItem("cal.onboarding")); /* the first owner lands in the onboarding (shell lane): the account exists, leave the wizard */ await p.waitForSelector("html[data-ready]"); await p.waitForTimeout(1200);
   const space = (await op(p, "spaces.list", {})).data.spaces.find((s) => s.personal).id;
   for (const id of ["calternal-claude-code", "calternal-orchestrator"]) await op(p, "plugins.enable", { space_id: space, plugin_id: id });
   const t = (await op(p, "threads.create", { space_id: space, title: "Readiness run" })).data.thread;
@@ -38,7 +38,7 @@ try {
 
   // machine
   const home = join(data, "machine"); const bin = join(data, "bin"); mkdirSync(bin); mkdirSync(join(data, "fakehome")); writeFileSync(join(data, "fakehome", "signed-in"), "");
-  await p.goto(`${url}/settings/machines?server=1`); await p.waitForSelector("html[data-ready]");
+  await p.evaluate(() => localStorage.removeItem("cal.onboarding")); await p.goto(`${url}/settings/machines?server=1`); await p.waitForSelector("html[data-ready]");
   await p.getByRole("button", { name: "Make a code" }).click();
   const code = /--code\s+(\S+)/.exec((await p.locator("code.cmd").first().innerText()).trim())?.[1];
   const launcher = resolve(process.env.CAL_PLUGINS ?? "../../plugins", "calternal-claude-code/bin/calternal-provider-claude-code");
@@ -66,6 +66,8 @@ try {
   const id1 = await run("scripted-tool-steps");
   ok(await until(/Worked for|tools?\b/i, 30000), "a turn with tool steps finishes and shows the steps group", (await text()).slice(100, 300));
   console.log("   saved file (body):\n" + (await raw(id1)).split("\n").slice(0, 40).map((l) => "   | " + l.slice(0, 160)).join("\n"));
+  // The turn is over when the Working row has gone; the last checkpoint (heading, duration, reasoning time) is a whole refresh a moment after it, so the page is compared once that has had time to land.
+  await p.waitForFunction(() => !document.querySelector(".working"), null, { timeout: 30000 }).catch(() => {}); await p.waitForTimeout(2500);
   const before = (await p.locator(".msg").allInnerTexts()).map((t) => t.replace(/\s+/g, " ").replace(/\d\d:\d\d$/, "").trim());
   console.log("   threads.get calls so far:", gets.join(","));
   const open = p.locator(".steps .head").first(); if (await open.count()) await open.click().catch(() => {}); await p.waitForTimeout(500);
@@ -74,7 +76,7 @@ try {
   await p.reload(); await p.waitForSelector("html[data-ready]"); await p.waitForTimeout(1500);
   if (await p.locator(".steps .head").count()) await p.locator(".steps .head").first().click().catch(() => {}); await p.waitForTimeout(400);
   const after = (await p.locator(".msg").allInnerTexts()).map((t) => t.replace(/\s+/g, " ").replace(/\d\d:\d\d$/, "").trim());
-  ok(JSON.stringify(before.map((t) => t.replace(/Worked.*?tools?/, "")))  === JSON.stringify(after.map((t) => t.replace(/Worked.*?tools?/, ""))), "what the page built from checkpoint additions equals what a whole read shows", `before=${JSON.stringify(before).slice(0, 160)} after=${JSON.stringify(after).slice(0, 160)}`);
+  ok(JSON.stringify(before.map((t) => t.replace(/Worked.*?tools?/, "")))  === JSON.stringify(after.map((t) => t.replace(/Worked.*?tools?/, ""))), "what the page built from checkpoint additions equals what a whole read shows", `before=${JSON.stringify(before).slice(0, 700)} after=${JSON.stringify(after).slice(0, 700)}`);
   console.log("   after reload steps:", (await p.locator(".steps").allInnerTexts()).join(" || ").replace(/\s+/g, " ").slice(0, 400));
   ok(/Bash|ls/i.test((await p.locator(".steps").allInnerTexts()).join(" ")), "after a reload the saved steps show the tool and target");
 

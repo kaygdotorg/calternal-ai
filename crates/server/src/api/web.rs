@@ -16,6 +16,7 @@ use uuid::Uuid;
 pub(super) fn assets(dir: PathBuf, registry: &Registry) -> ServeDir<Router> {
     let kinds: Arc<HashSet<_>> = Arc::new(
         registry
+            .snapshot()
             .plugins()
             .iter()
             .flat_map(|plugin| plugin.manifest.kinds.iter().map(|kind| kind.id.clone()))

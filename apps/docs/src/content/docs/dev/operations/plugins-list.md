@@ -721,6 +721,28 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
           },
           "type": "array"
         },
+        "owned_slots": {
+          "description": "Up to 32 mounts owned by this package, resolved only while enabled.",
+          "items": {
+            "$ref": "#/definitions/OwnedPluginSlot"
+          },
+          "maxItems": 32,
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "palette": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PaletteDeclaration"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Optional commands, extra phrases and Settings sections for the palette."
+        },
         "provider": {
           "anyOf": [
             {
@@ -752,6 +774,16 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
             "$ref": "#/definitions/ManifestSetting"
           },
           "type": "array"
+        },
+        "slots": {
+          "description": "Optional contributions to host slots, validated without running code.",
+          "items": {
+            "$ref": "#/definitions/PluginSlotContribution"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
         },
         "themes": {
           "description": "Packaged theme declarations.",
@@ -887,6 +919,366 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
         }
       ]
     },
+    "OwnedPluginSlot": {
+      "additionalProperties": false,
+      "description": "One package-owned slot, with explicit visibility, accepted renderers and capacity.",
+      "properties": {
+        "accepts": {
+          "description": "Nonempty set of operation-backed renderer types. Duplicates are invalid.",
+          "items": {
+            "$ref": "#/definitions/OwnedPluginSlotKind"
+          },
+          "maxItems": 2,
+          "minItems": 1,
+          "type": "array"
+        },
+        "id": {
+          "description": "Stable local name; the host obtains the owner ID from the enclosing manifest.",
+          "type": "string"
+        },
+        "max_contributions": {
+          "description": "Maximum visible contributions per listing, between 1 and 32.",
+          "format": "uint8",
+          "maximum": 32,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "required_capability": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/ManifestCapability"
+            }
+          ],
+          "description": "Space capability a caller must hold to resolve this slot."
+        }
+      },
+      "required": [
+        "accepts",
+        "id",
+        "max_contributions",
+        "required_capability"
+      ],
+      "type": "object"
+    },
+    "OwnedPluginSlotId": {
+      "additionalProperties": false,
+      "description": "A package-qualified slot. Its namespace cannot address a host surface.",
+      "properties": {
+        "id": {
+          "description": "Local slot ID in that package.",
+          "type": "string"
+        },
+        "plugin_id": {
+          "description": "Registered package that declares the slot.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "plugin_id"
+      ],
+      "type": "object"
+    },
+    "OwnedPluginSlotKind": {
+      "description": "Operation-backed contribution types available to a package-owned mount.",
+      "oneOf": [
+        {
+          "description": "A read-only operation yielding a portable generated view.",
+          "enum": [
+            "generated"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "An operation invoked through the host's normal command and approval path.",
+          "enum": [
+            "command"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "PaletteCommand": {
+      "additionalProperties": false,
+      "description": "One palette command, in the web palette's command shape.",
+      "properties": {
+        "go": {
+          "description": "Navigation address, if this command navigates.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "group": {
+          "description": "Display group.",
+          "type": "string"
+        },
+        "id": {
+          "description": "Stable, globally unique command identifier.",
+          "type": "string"
+        },
+        "label": {
+          "description": "Searchable command label.",
+          "type": "string"
+        },
+        "op": {
+          "description": "Named host action, if the command invokes one.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "words": {
+          "description": "Extra phrases that match this command.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "group",
+        "id",
+        "label"
+      ],
+      "type": "object"
+    },
+    "PaletteDeclaration": {
+      "additionalProperties": false,
+      "description": "Optional palette declarations in a plugin manifest.",
+      "properties": {
+        "commands": {
+          "description": "Commands with their extra search phrases.",
+          "items": {
+            "$ref": "#/definitions/PaletteCommand"
+          },
+          "type": "array"
+        },
+        "settings_sections": {
+          "description": "Settings sections that the plugin contributes.",
+          "items": {
+            "$ref": "#/definitions/PaletteSettingsSection"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "commands",
+        "settings_sections"
+      ],
+      "type": "object"
+    },
+    "PaletteSettingsSection": {
+      "additionalProperties": false,
+      "description": "A discoverable Settings section.",
+      "properties": {
+        "go": {
+          "description": "Settings address.",
+          "type": "string"
+        },
+        "id": {
+          "description": "Stable section identifier.",
+          "type": "string"
+        },
+        "label": {
+          "description": "Section label.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "go",
+        "id",
+        "label"
+      ],
+      "type": "object"
+    },
+    "PluginSlot": {
+      "description": "Host-defined mount point for an activated plugin contribution.",
+      "oneOf": [
+        {
+          "description": "A section in the single navigation sidebar.",
+          "enum": [
+            "sidebar_section"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Content within a host-managed card or window.",
+          "enum": [
+            "card_window"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Accessory row beside the host-owned composer.",
+          "enum": [
+            "composer_row"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Generated decoration within a message row.",
+          "enum": [
+            "message_decoration"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Bounded panel along a thread edge.",
+          "enum": [
+            "thread_edge"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Section outside protected account controls.",
+          "enum": [
+            "settings_section"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Command discoverable in the host action palette.",
+          "enum": [
+            "palette_commands"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Host-timed notification content.",
+          "enum": [
+            "toasts"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "PluginSlotContribution": {
+      "additionalProperties": false,
+      "description": "One plugin-owned contribution that the host can resolve without running code.",
+      "properties": {
+        "id": {
+          "description": "Stable identifier unique within this manifest.",
+          "type": "string"
+        },
+        "label": {
+          "description": "Accessible name and visible label, bounded to 128 UTF-8 bytes.",
+          "type": "string"
+        },
+        "renderer": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/PluginSlotRenderer"
+            }
+          ],
+          "description": "Renderer or command to resolve."
+        },
+        "slot": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/PluginSlotTarget"
+            }
+          ],
+          "description": "Extensible host mount or package-owned target, independent of the renderer."
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "renderer",
+        "slot"
+      ],
+      "type": "object"
+    },
+    "PluginSlotRenderer": {
+      "description": "A portable operation-backed contribution or a reference to a sealed web bundle.",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "description": "Resolve through a declared read-only operation returning a generated view.",
+          "properties": {
+            "operation": {
+              "description": "Plugin-local operation declaration to dispatch with current authority.",
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "generated"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "operation",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Advertise a packaged entry point for a sealed web renderer.",
+          "properties": {
+            "asset": {
+              "description": "Relative HTML asset path. The prototype does not serve or mount this asset.",
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "sealed"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "asset",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Register a named palette action targeting a declared operation.",
+          "properties": {
+            "operation": {
+              "description": "Operation to dispatch with current authority and normal approval checks.",
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "command"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "operation",
+            "type"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "PluginSlotTarget": {
+      "anyOf": [
+        {
+          "allOf": [
+            {
+              "$ref": "#/definitions/PluginSlot"
+            }
+          ],
+          "description": "One extensible host mount point."
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/definitions/OwnedPluginSlotId"
+            }
+          ],
+          "description": "A slot defined by an installed package."
+        }
+      ],
+      "description": "Mount addressed either by the fixed host vocabulary or a package-qualified name."
+    },
     "PluginState": {
       "additionalProperties": false,
       "description": "Space-scoped activation snapshot returned by `plugins.list`, `plugins.enable` and `plugins.disable`.",
@@ -943,16 +1335,96 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
         "reasoning_levels"
       ],
       "type": "object"
+    },
+    "ResolvedOwnedPluginSlot": {
+      "additionalProperties": false,
+      "description": "An owned mount available in the caller's selected space.",
+      "properties": {
+        "definition": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/OwnedPluginSlot"
+            }
+          ],
+          "description": "The validated declaration, including renderer and capacity constraints."
+        },
+        "generation": {
+          "description": "Current owner activation generation, used to invalidate a mounted slot.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "plugin_id": {
+          "description": "Owner package. Pair it with the local ID from the definition.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "definition",
+        "generation",
+        "plugin_id"
+      ],
+      "type": "object"
+    },
+    "ResolvedPluginSlot": {
+      "additionalProperties": false,
+      "description": "An available contribution resolved for the caller and selected space.",
+      "properties": {
+        "contribution": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/PluginSlotContribution"
+            }
+          ],
+          "description": "Validated declaration; it conveys no authority to dispatch or mount code."
+        },
+        "generation": {
+          "description": "Space activation generation to invalidate stale mounts.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "plugin_id": {
+          "description": "Owning package identifier; pair with the local contribution ID.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "contribution",
+        "generation",
+        "plugin_id"
+      ],
+      "type": "object"
     }
   },
   "description": "Result for `plugins.list`, including registered manifests and activation state.",
   "properties": {
+    "owned_slots": {
+      "description": "Available owned mounts, ordered by owner package and local slot ID.",
+      "items": {
+        "$ref": "#/definitions/ResolvedOwnedPluginSlot"
+      },
+      "type": [
+        "array",
+        "null"
+      ]
+    },
     "plugins": {
       "description": "Registered plugins and their space-scoped activation state.",
       "items": {
         "$ref": "#/definitions/PluginState"
       },
       "type": "array"
+    },
+    "slots": {
+      "description": "Available contributions in slot, package ID and local ID order.",
+      "items": {
+        "$ref": "#/definitions/ResolvedPluginSlot"
+      },
+      "type": [
+        "array",
+        "null"
+      ]
     }
   },
   "required": [

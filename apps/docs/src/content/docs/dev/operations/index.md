@@ -35,6 +35,7 @@ Generated operation schemas. Capability and risk are shown only when the catalog
 - [spaces.remove_member](./spaces-remove-member/): Remove a direct account or group grant.
 - [roles.list](./roles-list/): List the space roles and their capabilities.
 - [account.set_profile](./account-set-profile/): Change your own display name.
+- [account.set_time_zone](./account-set-time-zone/): Choose your time zone or follow the device.
 - [people.list](./people-list/): List server accounts.
 - [people.disable](./people-disable/): Disable an account and revoke its sessions.
 - [groups.list](./groups-list/): List server groups.
@@ -56,6 +57,9 @@ Generated operation schemas. Capability and risk are shown only when the catalog
 - [notes.lookup](./notes-lookup/): Find a page of up to 100 notes by title prefix
 - [tags.list](./tags-list/): List a page of up to 100 tags and their current note counts
 - [tags.lookup](./tags-lookup/): Find a page of up to 100 tags by name prefix
+- [people.lookup](./people-lookup/): Find mentionable accounts and groups in a space.
+- [skills.list](./skills-list/): List visible space skills and their descriptions.
+- [plugins.manifests](./plugins-manifests/): List palette contributions from enabled plugins.
 - [drafts.save](./drafts-save/): drafts save
 - [drafts.list](./drafts-list/): drafts list
 - [drafts.get](./drafts-get/): drafts get

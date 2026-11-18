@@ -70,6 +70,22 @@ Global options on every command: `--json`, `--no-hints`.
 | `machine verify MACHINE_UUID --space-id SPACE_UUID [--provider ID] [--token-file FILE]` | Run one provider diagnostic on your machine or a pool machine you administer. | Sandbox status, provider installation and sign-in, and the provider's sign-in command. | `sandbox_started`, `provider` |
 | `machine run [--dir DIR] [--backend podman\|process] [--image REF] [--podman PATH] [--max-sandboxes N]` | Connect to the server and run assigned threads until stopped (SIGINT/SIGTERM). Logs to stderr. | On clean stop: `Machine stopped.` Revoked: error `revoked`, exit 3. | `stopped` |
 
+Use `calternal plugin new NAME --sdk-root DIR` to start a TypeScript package.
+`plugin check`, `plugin test` and `plugin bench` use the current directory unless
+given another one. Use `plugin review SOURCE` to get the package's approval
+checksum, optionally with `--appdata DIR` to compare with the installed version.
+`plugin pack DIR FILE.calplugin` writes a portable package. `plugin install`
+and `plugin update` accept the source, `--appdata DIR` and `--approve SHA256`.
+For packages with workers, supply `--space UUID` and `--account UUID` for
+sandbox readiness. The running server applies successful catalog changes,
+including `plugin remove ID --appdata DIR`. `plugin enable ID --space UUID`
+and `plugin disable ID --space UUID` use the server credential and change
+space activation immediately.
+
+The development-only build adds `plugin dev DIR --appdata DIR --space UUID
+--account UUID`, with `--once` for one attempt. Its continuous mode emits one
+JSON record per attempt with `--json`. See the [plugin authoring guide](plugin-authoring.md).
+
 People, groups, and invitations use the HTTP session in an owner-only file
 supplied with `--token-file` or `CALTERNAL_TOKEN_FILE`. Use `--base-url` to choose
 the server and keep the same `--request-id` when retrying an uncertain write.
@@ -86,6 +102,7 @@ uses them. Human invite output shows expiry in the local time zone.
 | `people delete [--account ACCOUNT_UUID]` | Permanently erase your account or delete another as a server administrator. | Account UUID and deletion status. | `account_id`, `deleted` |
 | `people roles` | Show role definitions for a space. | Role labels and capability tables. | `roles` |
 | `people set-profile NAME` | Update your own display name. | Account ID and name. | `account_id`, `name` |
+| `people set-time-zone [ZONE]` | Save your IANA time zone or follow this device. | Account ID and time-zone preference. | `account_id`, `time_zone` |
 | `people list [--cursor CURSOR]` | List server accounts with the people administration capability. | ID, name, role, state. | `people` |
 | `people disable ACCOUNT` | Disable the account and sign out its sessions. | Account ID and disable confirmation. | `account_id`, `disabled` |
 | `groups list [--group GROUP] [--cursor CURSOR]` | List server groups and current member IDs. | Group and member tables. | `groups` |
@@ -258,3 +275,13 @@ See [account input](account-input.md) for queue files, stable nested request IDs
 seven-day confirmation, examples and operator safety ceilings.
 
 `calternal threads create|list|get|send|stop|rename|archive|unarchive|delete` operates on saved conversations using manifest-backed operations. See [threads](threads.md) for arguments, file format, retry behavior and current limits. Every subcommand supports `--json` and shared terminal hints.
+
+### Palette search and lookups
+
+| Arguments | Purpose | Human output | JSON data |
+| --- | --- | --- | --- |
+| `search people --space UUID [PREFIX]` | Find accounts and groups to mention. | Name, subject type and ID. | `people` |
+| `search skills --space UUID [PREFIX]` | List space skill names and descriptions. | Skill table. | `skills` |
+| `search manifests --space UUID` | Read enabled plugin palette contributions. | Plugin, command and Settings tables. | `manifests` |
+
+Use the normal Calternal connection flags and `--json` for structured results.

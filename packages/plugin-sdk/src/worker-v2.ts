@@ -101,7 +101,11 @@ export function parseWorkerFrameV2(input: Uint8Array | string): WorkerFrameV2 {
   const bytes = typeof input === "string" ? new TextEncoder().encode(input) : input;
   const body = bytes[bytes.length - 1] === 10 ? bytes.subarray(0, -1) : bytes;
   if (body.length > MAX_V2_FRAME_BYTES) invalid();
-  const frame = exact(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(body)), ["protocol_version", "invocation_id", "message"]);
+  return validateFrame(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(body)));
+}
+
+function validateFrame(value: unknown): WorkerFrameV2 {
+  const frame = exact(value, ["protocol_version", "invocation_id", "message"]);
   if (frame.protocol_version !== 2 || typeof frame.invocation_id !== "string" || !id.test(frame.invocation_id)) invalid();
   const raw = frame.message as Record<string, unknown> | null;
   const fields: Record<string, string[]> = { invoke: ["operation", "input", "authority"], host_call: ["call_id", "method", "input", "authority"], host_reply: ["call_id", "ok", "data"], chunk: ["job_id", "sequence", "data"], complete: ["data"], failed: [], cancel: [] };
@@ -116,10 +120,15 @@ export function parseWorkerFrameV2(input: Uint8Array | string): WorkerFrameV2 {
   return frame as unknown as WorkerFrameV2;
 }
 /** Encode one strict frame including its newline, respecting the byte budget.
- * Cost: O(frame bytes), serialization/parsing allocations, no I/O.
+ * Cost: O(frame bytes), serialization and UTF-8 allocation, no I/O.
  * @returns JSON line suitable for a back-pressure-aware transport.
  */
-export function encodeWorkerFrameV2(frame: WorkerFrameV2): string { const text = JSON.stringify(frame); parseWorkerFrameV2(text); return text + "\n"; }
+export function encodeWorkerFrameV2(frame: WorkerFrameV2): string {
+  validateFrame(frame);
+  const text = JSON.stringify(frame);
+  if (new TextEncoder().encode(text).byteLength > MAX_V2_FRAME_BYTES) invalid();
+  return text + "\n";
+}
 /** Safe broker/stream context passed to a TypeScript operation handler. */
 export interface WorkerContextV2 {
   /** Local cancellation signal; effects still require host reconciliation. */
@@ -127,6 +136,9 @@ export interface WorkerContextV2 {
   /** Cost: one bounded RPC round trip and pending promise; no direct I/O outside transport.
    * Call a declared broker method; the host rechecks live authority and targets. */
   call(method: HostCallKind, input: unknown): Promise<unknown>;
+  /** Submit independent calls together. Every call retains its own live host authorization and reply.
+   * Costs one existing wire round trip per call. Limited to MAX_V2_PENDING entries. */
+  callAll(calls: ReadonlyArray<readonly [HostCallKind, unknown]>): Promise<unknown[]>;
   /** Cost: one bounded transport write, O(chunk bytes); waits for transport back pressure.
    * Emit one ordered chunk for a job admitted through start_job, or for the job a run
    * invocation names in `input.job_id`; await before emitting another. */
@@ -142,10 +154,20 @@ export class WorkerRuntimeV2 {
   private space: string | undefined;
   private seen = new Set<string>();
   private sending = 0;
+  private manifest: ManifestV1;
   /** Cost: O(menu bytes), bounded state allocation, no I/O. Validate the menu and bind declared handlers to a bounded transport. */
-  constructor(private manifest: ManifestV1, private handlers: Record<string, WorkerHandlerV2>, private send: (frame: WorkerFrameV2) => Promise<void>) { validateManifestV1(manifest); }
+  constructor(manifest: unknown, private handlers: Record<string, WorkerHandlerV2>, private send: (frame: WorkerFrameV2) => Promise<void>) {
+    this.manifest = validateManifestV1(manifest);
+  }
+  /** Verify that every declared operation has a handler before activation. Cost: O(operations). */
+  assertReady(): void {
+    for (const { id } of this.manifest.operations) {
+      if (!Object.hasOwn(this.handlers, id) || typeof this.handlers[id] !== "function") {
+        throw new Error(`Missing worker handler for ${id}`);
+      }
+    }
+  }
   private async emit(frame: WorkerFrameV2): Promise<void> {
-    encodeWorkerFrameV2(frame);
     if (this.sending >= MAX_V2_PENDING) throw new Error("worker back pressure");
     this.sending++; try { await this.send(frame); } finally { this.sending--; }
   }
@@ -154,7 +176,7 @@ export class WorkerRuntimeV2 {
    * @returns When admission/control processing has completed; handler results use the send callback.
    */
   async receive(frame: WorkerFrameV2): Promise<void> {
-    parseWorkerFrameV2(JSON.stringify(frame));
+    validateFrame(frame);
     const id = frame.invocation_id; const m = frame.message;
     if (m.type === "cancel") { const state = this.active.get(id); if (!state) return; state.controller.abort(); for (const p of state.pending.values()) p.reject(new Error("cancelled")); this.active.delete(id); return; }
     if (m.type === "host_reply") { const pending = this.active.get(id)?.pending; const p = pending?.get(m.call_id); if (!p) invalid(); pending!.delete(m.call_id); if (m.ok) p.resolve(m.data); else p.reject(new Error("host call refused")); return; }
@@ -178,6 +200,13 @@ export class WorkerRuntimeV2 {
         const result = await new Promise<unknown>((resolve, reject) => { state.pending.set(callId, { resolve, reject }); void this.emit({ protocol_version: 2, invocation_id: id, message: { type: "host_call", call_id: callId, method, input, authority: m.authority } }).catch(error => { state.pending.delete(callId); reject(error); }); });
         if (method === "start_job" && result && typeof result === "object" && "job_id" in result && typeof result.job_id === "string" && /^[a-z0-9][a-z0-9._-]{0,79}$/.test(result.job_id)) jobs.add(result.job_id);
         return result;
+      },
+      callAll: async batch => {
+        ensure();
+        if (batch.length > MAX_V2_PENDING - state.pending.size || batch.length > 128 - calls) {
+          throw new Error("host call batch is too large");
+        }
+        return await Promise.all(batch.map(([method, input]) => context.call(method, input)));
       },
       chunk: async (jobId, data) => {
         ensure(); if (chunkPending || !jobs.has(jobId)) throw new Error("chunk refused");

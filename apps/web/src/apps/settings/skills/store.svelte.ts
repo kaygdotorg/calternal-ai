@@ -10,7 +10,7 @@ import { renderSkill, skillPath, type Skill } from "./skill";
 
 /** The server operations these pages need (none exists yet): the list the pages are built against. */
 export const NEEDS = [
-  "skills.list {space_id} -> [{name, description, agents, path}]: read from AI/Skills/*/SKILL.md frontmatter",
+  "skills.list {space_id} exists (name, description): it also needs the agents that use each skill and the file's note id so Open file works",
   "skills.create / skills.update / skills.delete {space_id, name, ...}: write AI/Skills/<name>/SKILL.md (a folder; optional scripts/, references/, assets/)",
   "agents.list {space_id} -> [{id, label}]: the agents a skill can be given to",
   "automations.list {space_id} -> [{id, name, schedule, timezone, enabled, next_run_ms, last:{ok, at_ms, thread_id}}]: read from AI/Automations/*.md",
@@ -36,8 +36,14 @@ const seed = (): { skills: Skill[]; automations: Automation[] } => {
 class SkillsStore {
   /** Each space's lists, made on first read (a plain map: a reactive one cannot be filled while a page is deriving from it); the lists inside are reactive. */
   private by = new Map<string, { skills: Skill[]; automations: Automation[] }>();
-  /** True on the real server, where the operations in `NEEDS` are still missing. */
+  /** True on the real server, where the automation operations in `NEEDS` are still missing (skills are listed with `skills.list`). */
   get unavailable(): boolean { return serverMode(); }
+  /** The real server's skills for a space (`skills.list`: name and one line each; the file is `AI/Skills/<name>/SKILL.md` by the standard). Throws the server's error. */
+  async loadSkills(space: string): Promise<Skill[]> {
+    const { server } = await import("../../../server/client");
+    const r = await server.operate<{ skills: { name: string; description: string }[] }>("skills.list", { space_id: space });
+    return r.skills.map((k) => ({ name: k.name, description: k.description, agents: [], path: skillPath(k.name) }));
+  }
   private of(space: string) { let v = this.by.get(space); if (!v) { const fresh = $state(seed()); v = fresh; this.by.set(space, v); } return v; }
   /** The space's skills. */ skills(space: string): Skill[] { return this.of(space).skills; }
   /** The space's automations. */ automations(space: string): Automation[] { return this.of(space).automations; }

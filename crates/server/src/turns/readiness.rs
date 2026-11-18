@@ -24,14 +24,13 @@ pub(super) async fn read<D: Directory>(
             crate::threads::index::readiness_context(&state, space, thread, who.id)?;
         let active =
             |plugin: &crate::plugins::Plugin| crate::threads::index::enabled(&controls, plugin);
-        let orchestrator = state
-            .registry
+        let catalog = state.registry.snapshot();
+        let orchestrator = catalog
             .get("calternal-orchestrator")
             .map(|p| active(p))
             .transpose()?
             .unwrap_or(false);
-        let providers = state
-            .registry
+        let providers = catalog
             .plugins()
             .iter()
             .filter(|plugin| plugin.manifest.provider.is_some())

@@ -160,7 +160,8 @@ fn find(root: &Path, name: &str) -> bool {
 #[test]
 fn policy_rows_are_derived_from_manifests() {
     let dir = tmp("policy");
-    let registry = Registry::from_plugins(vec![insights(&dir, "", ""), tagger(&dir.join("t"))]);
+    let registry =
+        Registry::from_plugins(vec![insights(&dir, "", ""), tagger(&dir.join("t"))]).snapshot();
     // No plugin row is written into the host table.
     assert!(authz::policy("notes-insights.summarize").is_none());
     assert!(
@@ -200,7 +201,7 @@ fn policy_rows_are_derived_from_manifests() {
         None,
         false,
     );
-    let registry = Registry::from_plugins(vec![shadow, account]);
+    let registry = Registry::from_plugins(vec![shadow, account]).snapshot();
     assert!(registry.plugins().is_empty());
     assert!(registry.owner_of_operation("notes.list").is_none());
     assert!(registry.policy("account.make").is_none());
@@ -480,7 +481,12 @@ async fn manifest_target_names_the_item_field_and_hides_foreign_items() {
     let plugin = support::plugin(manifest, Some(&worker), true);
     let f = fixture("target", vec![plugin], None).await;
     assert_eq!(
-        f.state.registry.policy("targeted.count").unwrap().scope,
+        f.state
+            .registry
+            .snapshot()
+            .policy("targeted.count")
+            .unwrap()
+            .scope,
         Scope::Item
     );
     let own = f.note(f.dev.personal, "one two three\n").await;

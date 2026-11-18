@@ -1,0 +1,4 @@
+// Serves bench/ui-tree/dist and apps/web/public/fonts (with CORS) on a port, for looking at frame.html in a real iPhone Simulator. Usage: node bench/ui-tree/serve-frame.mjs 4398
+import http from "node:http"; import fs from "node:fs"; import path from "node:path"; import { fileURLToPath } from "node:url";
+const here = path.dirname(fileURLToPath(import.meta.url)); const dist = path.join(here, "dist"), pub = path.join(here, "../../public");
+http.createServer((q, r) => { const u = decodeURIComponent(new URL(q.url, "http://x").pathname); const p = path.join(u.startsWith("/fonts/") ? pub : dist, u); if (!fs.existsSync(p) || fs.statSync(p).isDirectory()) { r.writeHead(404); return r.end(); } r.writeHead(200, { "content-type": p.endsWith(".html") ? "text/html" : p.endsWith(".woff2") ? "font/woff2" : "text/javascript", "access-control-allow-origin": "*" }); fs.createReadStream(p).pipe(r); }).listen(+process.argv[2], "::");

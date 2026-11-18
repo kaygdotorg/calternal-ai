@@ -1,10 +1,6 @@
 //! Manifest-declared plugin operations on their (plugin, space) worker, and previews.
 use super::*;
 
-pub(super) fn default_row(plugin: &Plugin) -> PluginRow {
-    crate::plugins::default_row(plugin)
-}
-
 pub(super) fn plugin_state(
     s: &Store,
     space: SpaceId,
@@ -95,12 +91,8 @@ pub(super) async fn invoke_plugin<D: Directory>(
     op: &str,
     policy: authz::Policy,
     input: JsonObject,
+    plugin: Arc<Plugin>,
 ) -> Result<Value, Error> {
-    let plugin = state
-        .registry
-        .owner_of_operation(op)
-        .ok_or_else(|| Error::not_found("unknown operation"))?
-        .clone();
     let (fp, mut input) = super::request::fingerprint(op, input).await?;
     let mutates = plugin.operation(op).is_some_and(|o| o.mutates);
     let space = match input.remove("space_id") {
@@ -165,7 +157,10 @@ pub(super) async fn invoke_plugin<D: Directory>(
     }
     let plugin2 = plugin.clone();
     let still = blocking(&state, move |s| activation(s, space, &plugin2)).await?;
-    if !still.enabled || still.generation != generation {
+    if !state.registry.snapshot().authorizes(&plugin)
+        || !still.enabled
+        || still.generation != generation
+    {
         return Err(
             Error::conflict("plugin state changed during invocation; result discarded")
                 .with_details(serde_json::json!({ "reason": "plugin_generation_changed" })),

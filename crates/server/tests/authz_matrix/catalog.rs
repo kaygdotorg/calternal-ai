@@ -6,7 +6,7 @@ async fn every_registered_operation_has_an_independent_matrix_row() {
     let fixture = Fixture::new(3, false).await;
     let rows: BTreeSet<_> = MATRIX.iter().map(|(op, _, _)| *op).collect();
     let mut registered: BTreeSet<_> = operation_catalog().into_iter().map(|op| op.id).collect();
-    for plugin in fixture.state.registry.plugins() {
+    for plugin in fixture.state.registry.snapshot().plugins() {
         registered.extend(plugin.manifest.operations.iter().map(|op| op.id.clone()));
     }
     assert_eq!(rows.len(), MATRIX.len(), "duplicate matrix row");
@@ -44,6 +44,7 @@ async fn every_registered_operation_has_an_independent_matrix_row() {
         "spaces.remove_member",
         "roles.list",
         "account.set_profile",
+        "account.set_time_zone",
         "people.list",
         "people.disable",
         "groups.list",
@@ -91,9 +92,35 @@ async fn every_registered_operation_has_an_independent_matrix_row() {
     ] {
         assert!(stored_rows.insert(id), "duplicate request operation {id}");
         assert_eq!(
-            fixture.state.registry.policy(id).unwrap().required,
+            fixture
+                .state
+                .registry
+                .snapshot()
+                .policy(id)
+                .unwrap()
+                .required,
             required
         );
+    }
+    // HTTP behavior is covered with real directory grants in conformance/search_cases.rs.
+    use calternal_server::authz::Scope;
+    for (id, scope) in [
+        ("people.lookup", Scope::Space),
+        ("skills.list", Scope::Space),
+        ("plugins.manifests", Scope::Space),
+    ] {
+        assert!(stored_rows.insert(id), "duplicate search operation {id}");
+        let catalog = fixture.state.registry.snapshot();
+        let policy = catalog.policy(id).unwrap();
+        assert_eq!(policy.required, Capability::SpaceRead, "{id}");
+        assert_eq!(policy.scope, scope, "{id}");
+        let declaration = calternal_core::cached_operation(id).unwrap();
+        assert_eq!(
+            declaration.risk,
+            calternal_core::OperationRisk::Read,
+            "{id}"
+        );
+        assert!(!declaration.mutates, "{id}");
     }
     let rows: BTreeSet<_> = rows.union(&stored_rows).copied().collect();
     assert_eq!(
@@ -104,9 +131,8 @@ async fn every_registered_operation_has_an_independent_matrix_row() {
         registered
     );
     // Host rows plus manifest-derived plugin rows cover every operation exactly once.
-    let plugin_rows: Vec<&str> = fixture
-        .state
-        .registry
+    let catalog = fixture.state.registry.snapshot();
+    let plugin_rows: Vec<&str> = catalog
         .plugin_policies()
         .map(|p| p.operation.as_ref())
         .collect();
@@ -139,11 +165,17 @@ async fn every_registered_operation_has_an_independent_matrix_row() {
             fixture
                 .state
                 .registry
+                .snapshot()
                 .policy(op.id)
                 .unwrap()
                 .operation
                 .to_string()
         }))
+        .chain(
+            calternal_core::SearchOperation::ALL
+                .iter()
+                .map(|op| op.id().to_owned()),
+        )
         .chain(plugin_rows.iter().map(|p| (*p).to_owned()))
         .collect();
     assert_eq!(
@@ -159,6 +191,7 @@ async fn every_registered_operation_has_an_independent_matrix_row() {
             + calternal_server::authz::agent_policies().len()
             + calternal_server::authz::people_policies().len()
             + calternal_core::NOTE_OPERATIONS.len()
+            + calternal_core::SearchOperation::ALL.len()
             + plugin_rows.len(),
         MATRIX.len() + stored_rows.len(),
         "duplicate policy"
@@ -177,11 +210,19 @@ async fn every_registered_operation_has_an_independent_matrix_row() {
         ("threads.unarchive", Capability::ContentWrite),
         ("threads.delete", Capability::ContentWrite),
     ];
+    // The guide's real session and activation matrix is in conformance/plugin_slot_cases.rs.
+    let guide = [
+        ("calternal-plugin-guide.explain", Capability::SpaceRead),
+        ("calternal-plugin-guide.scaffold", Capability::SpaceRead),
+        ("calternal-plugin-guide.check", Capability::SpaceRead),
+        ("calternal-plugin-guide.publish", Capability::ContentWrite),
+    ];
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../plugins");
-    let registry = Registry::load(&root);
+    let registry = Registry::load(&root).snapshot();
     for plugin in registry.plugins() {
         for op in &plugin.manifest.operations {
-            if let Some((_, capability)) = threads.iter().find(|(id, _)| *id == op.id) {
+            if let Some((_, capability)) = threads.iter().chain(&guide).find(|(id, _)| *id == op.id)
+            {
                 assert_eq!(
                     registry.policy(&op.id).unwrap().required,
                     *capability,
@@ -269,7 +310,8 @@ fn built_in_roles_cover_exact_documented_capabilities() {
     assert_eq!(Capability::from_name("unknown.permission"), None);
     assert_eq!(CapabilitySet::default(), CapabilitySet::empty());
     // Plugin rows come from the shipped manifests through the same lookup.
-    let registry = Registry::load(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../plugins"));
+    let registry =
+        Registry::load(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../plugins")).snapshot();
     for (op, capability, _) in MATRIX {
         assert_eq!(registry.policy(op).unwrap().required, *capability);
     }

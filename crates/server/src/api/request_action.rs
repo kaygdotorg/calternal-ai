@@ -22,6 +22,7 @@ pub(super) async fn once<D: Directory>(
     mutates: bool,
     risk: calternal_core::OperationRisk,
     job_scoped: bool,
+    catalog: std::sync::Arc<crate::plugins::Catalog>,
 ) -> Result<Option<Value>, Error> {
     if !a.can_request_action(op, input) {
         return Ok(None);
@@ -81,6 +82,7 @@ pub(super) async fn once<D: Directory>(
         Some(a.clone()),
         policy.clone(),
         job_scoped,
+        catalog,
     )
     .await?;
     let via = a.actor.via.clone();

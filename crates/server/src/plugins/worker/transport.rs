@@ -14,6 +14,7 @@ pub(super) async fn spawn(
     bundle: &Path,
     space: SpaceId,
     in_flight: Arc<AtomicUsize>,
+    requires_ready: bool,
 ) -> Result<Worker, Error> {
     use calternal_machine::{
         protocol::{PluginWorker, SandboxSpec},
@@ -48,7 +49,9 @@ pub(super) async fn spawn(
         .start(&SandboxSpec {
             space_id: Some(space),
             provider_login: false,
-            code_directory: (backend.name() != "machine")
+            // Operator-installed packages always start from the private copy of
+            // verified bytes. Explicit in-memory fixtures can supply test assets.
+            code_directory: (plugin.revision == 0 && backend.name() != "machine")
                 .then(|| bundle.parent().unwrap_or(Path::new("/")).to_path_buf()),
             account_id: account.as_uuid(),
             thread_id: uuid::Uuid::new_v4(),
@@ -96,6 +99,11 @@ pub(super) async fn spawn(
                 "plugin worker sandbox unavailable; check the enrolled machine runtime",
             )
         })?;
+    if requires_ready {
+        tokio::time::timeout(WORKER_START_TIMEOUT, readiness(&mut exec))
+            .await
+            .map_err(|_| Error::unavailable("plugin worker readiness timed out"))??;
+    }
     let input = exec
         .input
         .take()
@@ -140,10 +148,46 @@ pub(super) async fn spawn(
             events,
             alive,
             busy,
+            #[cfg(feature = "dev-plugin-drafts")]
+            retire_after_result: None,
         })
     })
     .await
     .map_err(|_| Error::internal("worker transport setup failed"))?
+}
+
+// The worker must echo the exact challenge before it receives an invocation.
+async fn readiness(exec: &mut calternal_machine::sandbox::Exec) -> Result<(), Error> {
+    use calternal_machine::{protocol::Stream, sandbox::OutputEvent};
+    let nonce = uuid::Uuid::new_v4();
+    let challenge =
+        format!("{{\"type\":\"ready\",\"protocol_version\":2,\"nonce\":\"{nonce}\"}}\n")
+            .into_bytes();
+    let invalid = || Error::unavailable("plugin worker did not answer its readiness challenge");
+    exec.input
+        .as_ref()
+        .ok_or_else(invalid)?
+        .send(challenge.clone())
+        .await
+        .map_err(|_| invalid())?;
+    let mut offset = 0;
+    while let Some(event) = exec.events.recv().await {
+        match event {
+            OutputEvent::Data(Stream::Stdout, bytes) => {
+                let end = offset + bytes.len();
+                if challenge.get(offset..end) != Some(bytes.as_slice()) {
+                    return Err(invalid());
+                }
+                offset = end;
+                if offset == challenge.len() {
+                    return Ok(());
+                }
+            }
+            OutputEvent::Exit(_) => break,
+            _ => {}
+        }
+    }
+    Err(invalid())
 }
 
 /// Read newline-delimited frames, never buffering more than one frame budget.

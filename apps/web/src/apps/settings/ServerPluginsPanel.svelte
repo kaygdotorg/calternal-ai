@@ -2,6 +2,7 @@
   // Which plugins are on in the current space, on the real server: one switch each (`plugins.enable` / `plugins.disable`). Turning one off or on needs the Manager role; a refusal is shown in words.
   import { Switch } from "@calternal/ui";
   import { server } from "../../server/client";
+  import { setPlugin } from "../../server/mutations";
   import { say } from "../../server/say";
   import { spaces } from "../../shell/spaces.svelte";
   import "./panel.css";
@@ -13,7 +14,7 @@
     catch (e) { error = say(e); }
   }
   async function set(p: Plugin, on: boolean) {
-    try { await server.operate(on ? "plugins.enable" : "plugins.disable", { space_id: space, plugin_id: p.manifest.id }); error = ""; }
+    try { await setPlugin(space, p.manifest.id, on); error = ""; }
     catch (e) { error = say(e); }
     await load();
   }

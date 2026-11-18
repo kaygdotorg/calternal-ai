@@ -17,7 +17,7 @@ use axum::routing::{any, get, post};
 use calternal_core::{
     ErrorCode, GENUI_VERSION, JsonObject, MAX_BODY_BYTES, NoteResult, NotesCreateInput,
     NotesGetInput, NotesUpdateInput, OperationResponse, PROTOCOL_VERSION, PluginInput,
-    PluginPreviewResult, PluginResult, PluginState, PluginsListInput, PluginsListResult, True,
+    PluginPreviewResult, PluginResult, PluginState, PluginsListInput, True,
     canonical_request_input, operation_catalog, parse_request,
 };
 use serde::de::DeserializeOwned;
@@ -31,7 +31,7 @@ use crate::plugins::{
     Call, Jobs, PREVIEW_ITEM_ID, Plugin, PreviewHost, Registry, Session, WorkerPool, activation,
     broker::SpaceHost,
 };
-use crate::store::{PluginRow, Store, sha256_hex};
+use crate::store::{Store, sha256_hex};
 use calternal_types::{AccountId, Error, SpaceId};
 
 pub(crate) mod authorization;
@@ -41,8 +41,12 @@ mod guard;
 mod note_pages;
 mod notes;
 pub(crate) mod people;
+mod plugin_slots;
 mod plugins;
 mod request;
+mod search;
+mod search_skills;
+
 mod request_action;
 mod spaces;
 pub mod wallpapers;
@@ -271,9 +275,8 @@ fn operation_catalog_json() -> &'static serde_json::value::RawValue {
 
 /// Scheduling derives from the same immutable operation declarations as policy.
 /// Unknown operations get writer scheduling until normal admission rejects them.
-fn operation_mutates<D: Directory>(state: &Shared<D>, op: &str) -> bool {
-    state
-        .registry
+fn operation_mutates(catalog: &crate::plugins::Catalog, op: &str) -> bool {
+    catalog
         .owner_of_operation(op)
         .and_then(|p| p.operation(op))
         .map(|p| p.mutates)
@@ -345,7 +348,8 @@ async fn operations<D: Directory>(State(state): State<Shared<D>>, req: Request) 
     let state_for_threads = state.clone();
     let thread_scheduler = machines.clone();
     let workers = state.blocking.clone();
-    let mutates = operation_mutates(&state, &request.operation);
+    let catalog = state.registry.snapshot();
+    let mutates = operation_mutates(&catalog, &request.operation);
     let result = workers
         .scope(mutates, async {
             let mut result =
@@ -382,7 +386,7 @@ async fn operations<D: Directory>(State(state): State<Shared<D>>, req: Request) 
                         None => Err(Error::unavailable("machines are not enabled")),
                     }
                 } else {
-                    dispatch_scoped(
+                    dispatch_scoped_inner(
                         state,
                         p,
                         session,
@@ -391,6 +395,7 @@ async fn operations<D: Directory>(State(state): State<Shared<D>>, req: Request) 
                         request.input,
                         agent,
                         machines,
+                        catalog,
                     )
                     .await
                 };

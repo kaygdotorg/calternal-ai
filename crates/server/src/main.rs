@@ -4,6 +4,7 @@ use std::sync::Arc;
 mod admin_cli;
 mod cli;
 mod people_maintenance;
+mod plugin_cli;
 mod startup_io;
 mod transport;
 use calternal_cli::output::{CliError, Output, Reply};
@@ -30,6 +31,15 @@ fn main() {
     let out = Output::detect_with_options(cli.json, cli.no_hints);
     let code = match cli.cmd {
         Cmd::Threads { args } => calternal_cli::threads::main(args, &out),
+        Cmd::Search { connection, cmd } => {
+            let (op, input) = cmd.operation();
+            let connection = calternal_cli::agent::Connection {
+                base_url: connection.base_url,
+                token_file: connection.token_file,
+                request_id: connection.request_id,
+            };
+            calternal_cli::agent::invoke(connection, Some(op.id().into()), input.to_string(), &out)
+        }
         Cmd::Notes { connection, cmd } => {
             let (op, input) = cmd.operation();
             calternal_cli::notes::run(connection, op, input, &out)
@@ -98,6 +108,7 @@ fn main() {
                 calternal_client::CancellationToken::new(),
             )))
         }
+        Cmd::Plugin { command } => plugin_cli::main(command, &out),
         Cmd::PluginDigest { plugin_root } => out.success(&admin_cli::plugin_digest(&plugin_root)),
         Cmd::Machine { cmd } => calternal_machine::cli::main(cmd, &out),
         Cmd::Machines { cmd } => out.finish(admin_cli::machines(cmd, &out)),
@@ -456,6 +467,8 @@ async fn serve(
     .await
     .map_err(|e| boot(1, "failed", e.to_string(), DATA_HINT))?
     .map_err(|e| boot(1, "io", format!("admin socket: {e}"), DATA_HINT))?;
+    let _plugin_admin = plugins::live_catalog::serve(data_dir.clone(), state.clone(), development)
+        .map_err(|e| boot(1, "io", format!("plugin admin socket: {e}"), DATA_HINT))?;
     match plugins::runner::recover(&state).await {
         Ok(0) => {}
         Ok(n) => tracing::info!(jobs = n, "resuming plugin jobs"),

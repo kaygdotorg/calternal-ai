@@ -389,6 +389,22 @@ pub fn invoke(
         {
             return Ok(crate::notes::reply(out, op, value));
         }
+        if matches!(
+            operation.as_deref(),
+            Some("plugins.enable" | "plugins.disable")
+        ) {
+            let plugin = &value["plugin"];
+            let id = plugin["manifest"]["id"].as_str().unwrap_or_default();
+            let version = plugin["manifest"]["version"].as_str().unwrap_or_default();
+            let status = if plugin["enabled"] == true {
+                "Enabled"
+            } else {
+                "Disabled"
+            };
+            return Ok(crate::output::Reply::new(value.clone())
+                .fields([("Plugin", id), ("Version", version), ("Status", status)])
+                .hint("Use `calternal plugin --help` for package and activation commands."));
+        }
         if operation.as_deref() == Some(calternal_core::MACHINES_INSTALL) {
             let script = value["script"]
                 .as_str()
@@ -410,6 +426,12 @@ pub fn invoke(
                 reply = reply.fields([("Machine ID", id)]);
             }
             return Ok(reply.hint(hint));
+        }
+        if let Some(op) = operation
+            .as_deref()
+            .and_then(calternal_core::SearchOperation::from_id)
+        {
+            return Ok(crate::search::reply(op, value));
         }
         if operation.as_deref() == Some(calternal_core::MACHINES_VERIFY) {
             let yes = |b: &Value| match b.as_bool() {

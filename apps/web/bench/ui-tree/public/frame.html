@@ -1,0 +1,38 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>sealed-frame bench</title>
+<style>
+@font-face { font-family: "Bench Sans"; src: url("/fonts/google-sans-flex-latin-opsz-normal.woff2") format("woff2"); font-display: block; }
+body { margin: 0; font: 15px/1.4 "Bench Sans", system-ui; }
+.stripes { position: fixed; inset: 0; background: repeating-linear-gradient(90deg, #d33 0 40px, #36c 40px 80px); }
+#host { position: relative; padding: 20px; }
+iframe { border: 0; width: 420px; height: 300px; background: transparent; }
+</style></head><body><div class="stripes"></div><div id="host"></div>
+<script>
+// The UI under test: a field, a list of 100 rows, a streaming message. Built by this function both in the page and, as text, inside the frame.
+function ui(root) {
+  root.innerHTML = '<input id="f" style="width:90%" placeholder="type here"><div id="m" style="height:3em;overflow:hidden"></div><ul id="l" style="margin:0;padding:0;list-style:none;height:150px;overflow:auto">' + Array.from({ length: 100 }, (_, i) => '<li style="padding:4px 8px">Row ' + i + ' a quiet line</li>').join("") + '</ul><div id="g" style="margin-top:6px;padding:8px;backdrop-filter:blur(20px);background:rgba(255,255,255,.2)">glass probe</div>';
+  let n = 0; return { tick() { document.getElementById("m").textContent += "The quick brown fox. "; n++; } };
+}
+const UI = ui.toString();
+addEventListener("message", (e) => { if (e.data && e.data.g) window.__g = { frame: [...document.querySelectorAll("iframe")].find((f) => f.contentWindow === e.source), g: e.data.g }; });
+const SRC = (fontCss) => `<!doctype html><html><head><meta charset="utf-8"><style>${fontCss}body{margin:0;font:15px/1.4 "Bench Sans",system-ui;background:transparent}</style></head><body><script>const ui=${UI};const h=ui(document.body);addEventListener("message",e=>{if(e.data==="tick")h.tick();if(e.data==="ping")parent.postMessage({pong:performance.now()},"*")});document.fonts.load('15px "Bench Sans"').then((f)=>parent.postMessage({fonts:performance.now(),n:f.length},"*"),()=>parent.postMessage({fonts:-1},"*"));requestAnimationFrame(()=>parent.postMessage({ready:performance.now(),g:document.getElementById("g").getBoundingClientRect().toJSON()},"*"));addEventListener("keydown",e=>parent.postMessage({key:e.key},"*"));<\/script></body></html>`;
+const FONT = '@font-face{font-family:"Bench Sans";src:url("' + location.origin + '/fonts/google-sans-flex-latin-opsz-normal.woff2") format("woff2");font-display:block}';
+window.bench = {
+  /** Mounts n frames (or n in-page copies); resolves with ms until every one has painted its first frame and, for frames, until its font is usable. */
+  async mount(n, sealed) {
+    const host = document.getElementById("host"); host.innerHTML = ""; const t0 = performance.now();
+    const waits = [];
+    for (let i = 0; i < n; i++) {
+      if (sealed) {
+        const f = document.createElement("iframe"); f.setAttribute("sandbox", "allow-scripts"); f.srcdoc = SRC(FONT); host.append(f);
+        waits.push(new Promise((res) => { const on = (e) => { if (e.source === f.contentWindow && e.data && e.data.fonts !== undefined) { removeEventListener("message", on); res(performance.now() - t0); } }; addEventListener("message", on); }));
+      } else { const d = document.createElement("div"); host.append(d); ui(d); waits.push(Promise.resolve(performance.now() - t0)); }
+    }
+    const t = await Promise.all(waits); await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    return { all: performance.now() - t0, firstFont: Math.min(...t), lastFont: Math.max(...t) };
+  },
+  frames: () => [...document.querySelectorAll("iframe")],
+  /** 60 Hz streaming into every mounted UI for `ms`; returns frame deltas. */
+  stream(ms, sealed) { return new Promise((res) => { const d = []; let last = performance.now(), end = last + ms; const hs = sealed ? bench.frames() : []; const inpage = !sealed ? [...document.querySelectorAll("#m")] : []; const loop = (t) => { d.push(t - last); last = t; if (sealed) hs.forEach((f) => f.contentWindow.postMessage("tick", "*")); else inpage.forEach((m) => (m.textContent += "The quick brown fox. ")); if (t < end) requestAnimationFrame(loop); else res(d); }; requestAnimationFrame(loop); }); },
+};
+{ const a = new URLSearchParams(location.search).get("auto"); if (a) addEventListener("load", () => bench.mount(1, a === "sealed")); }
+</script></body></html>

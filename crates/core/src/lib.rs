@@ -5,6 +5,10 @@ mod jobs;
 pub use jobs::*;
 mod models;
 mod note_operations;
+mod palette;
+mod search;
+pub use palette::*;
+pub use search::*;
 mod notes;
 pub use note_operations::*;
 pub use notes::*;
@@ -51,3 +55,6 @@ pub const ACCOUNT_ERASURE_PATH: &str = "/api/v1/auth/account/delete";
 
 /// CLI and HTTP action identity for permanent account erasure.
 pub const ACCOUNT_ERASURE_ACTION: &str = "account.delete";
+
+/// IANA time-zone validation and civil offsets for account settings and clients.
+pub mod time_zone;

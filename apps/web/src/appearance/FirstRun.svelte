@@ -29,13 +29,15 @@
   <div class="in">
     <h1>Choose a look</h1>
     <p class="note">A preset sets the backdrop and the colours together. You can change any part later in Appearance.</p>
-    <PresetGallery onpick={() => done()} />
+    <div class="gal"><PresetGallery onpick={() => done()} /></div>
     <footer><Button variant="quiet" text="Keep the default" onclick={done} /></footer>
   </div>
 </Sheet>
 
 <style>
-  .in { display: grid; gap: var(--s-5); padding: var(--s-6); }
+  /* The gallery scrolls inside the sheet; the title and "Keep the default" stay in view (on a phone the sheet is as tall as the screen allows, and a button scrolled to the very bottom sat under the rounded corner). */
+  .in { display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto; gap: var(--s-5); padding: var(--s-6) var(--s-6) var(--s-8); max-height: min(88dvh, 52rem); box-sizing: border-box; }
+  .gal { min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; }
   h1 { font-size: var(--text-heading); font-weight: var(--strong-weight); }
   .note { font-size: var(--text-label); color: var(--ink-3); }
   footer { display: flex; justify-content: flex-end; }

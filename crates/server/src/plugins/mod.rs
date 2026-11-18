@@ -1,12 +1,9 @@
 //! Trusted plugin registry over manifest v1, manifest-derived policy rows, and
 //! the long-lived worker pool.
 //!
-//! Only plugins listed in the compiled-in `trusted-plugins.json` can load. The
-//! browser can never supply code, paths or URLs. Each manifest is read once at
-//! startup, parsed and validated by [`calternal_plugin_host`] without running
-//! plugin code, and registered atomically (kind, operation, collection and folder
-//! collisions are refused). Worker bundle SHA-256 digests are pinned in the trusted
-//! file and checked again before every worker start.
+//! Startup loads an immutable snapshot of operator-reviewed packages. Shipped
+//! entries seed it on first start. Manifests are validated without running code,
+//! and worker bundle hashes are checked again before each worker start.
 //!
 //! Policy: every plugin operation's authorization row is derived from its manifest
 //! declaration ([`calternal_plugin_host::Registry::policy_rows`]) and checked through
@@ -25,11 +22,14 @@ pub mod job_sql;
 mod job_streams;
 pub mod jobs;
 pub mod live;
+pub mod live_catalog;
 mod machine_worker;
+pub mod package_store;
 mod requests;
 pub(crate) use requests::OnceAdmission;
 pub mod runner;
 pub mod session;
+mod slots;
 pub mod worker;
 
 use std::borrow::Cow;
@@ -90,12 +90,18 @@ pub struct Plugin {
     pub entry: TrustedEntry,
     /// Validated manifest v1; immutable for the server's lifetime.
     pub manifest: ManifestV1,
+    /// Palette data projected once from this immutable manifest version.
+    pub(crate) palette: Option<calternal_core::PaletteManifest>,
     /// Canonical absolute worker path, when the plugin has a built worker.
     pub worker: Option<PathBuf>,
     /// Why the plugin cannot execute or be enabled, if it cannot (digest mismatch etc).
     pub unavailable: Option<String>,
     /// Operation schemas compiled once, shared by every (plugin, space) worker.
     pub schemas: Arc<host::CompiledSchemas>,
+    revision: u32,
+    activation_approval: u32,
+    #[cfg(feature = "dev-plugin-drafts")]
+    draft_space: Option<SpaceId>,
 }
 
 impl Plugin {
@@ -118,13 +124,60 @@ impl Plugin {
                 manifest.id, manifest.version, entry.id, entry.version
             ));
         }
+        let palette = manifest
+            .palette
+            .as_ref()
+            .map(|menu| calternal_core::PaletteManifest {
+                plugin: manifest.id.clone(),
+                version: manifest.version.clone(),
+                commands: menu
+                    .commands
+                    .iter()
+                    .cloned()
+                    .chain(menu.settings_sections.iter().map(|section| {
+                        calternal_core::PaletteCommand {
+                            id: section.id.clone(),
+                            label: section.label.clone(),
+                            group: "Settings".into(),
+                            words: Vec::new(),
+                            go: Some(section.go.clone()),
+                            op: None,
+                        }
+                    }))
+                    .collect(),
+                settings_sections: menu.settings_sections.clone(),
+            });
         Ok(Self {
             entry,
             manifest,
+            palette,
             worker,
             unavailable: None,
             schemas,
+            revision: 0,
+            activation_approval: 0,
+            #[cfg(feature = "dev-plugin-drafts")]
+            draft_space: None,
         })
+    }
+
+    /// Whether this package is visible in the given space. Cost: one comparison.
+    pub(crate) fn available_in(&self, _space: SpaceId) -> bool {
+        #[cfg(feature = "dev-plugin-drafts")]
+        if let Some(scope) = self.draft_space {
+            return scope == _space;
+        }
+        true
+    }
+
+    /// Revision that durable jobs created by this worker must continue under.
+    /// Cost: one field access, without storage I/O.
+    fn job_revision(&self) -> u32 {
+        if self.worker.is_some() {
+            self.revision
+        } else {
+            0
+        }
     }
 
     /// The declared operation `id`, if this plugin declares it.
@@ -182,11 +235,17 @@ impl Plugin {
     }
 }
 
-/// Immutable registry of trusted plugins, with manifest-derived policy rows.
+/// Atomically published plugin catalog. Reader snapshots never lock the catalog writer.
 #[derive(Debug, Default)]
-pub struct Registry {
+pub struct Registry(arc_swap::ArcSwap<Catalog>);
+
+/// Immutable installed plugins and their derived operation policy.
+#[derive(Clone, Debug, Default)]
+pub struct Catalog {
     plugins: Vec<Arc<Plugin>>,
+    retained: BTreeMap<(String, u32), Arc<Plugin>>,
     tool_index: std::sync::OnceLock<String>,
+    slots: slots::SlotIndex,
     /// Operation ID -> (owning plugin index, derived policy).
     operations: BTreeMap<String, (usize, Policy)>,
 }
@@ -227,6 +286,47 @@ pub fn host_capability(capability: ManifestCapability) -> Option<Capability> {
 }
 
 impl Registry {
+    /// Pin the catalog for one admission or lookup. Cost: one atomic reference load.
+    pub fn snapshot(&self) -> Arc<Catalog> {
+        self.0.load_full()
+    }
+
+    /// Publish a fully validated snapshot. Existing references stay valid for admitted work.
+    fn publish(&self, catalog: Catalog) {
+        self.0.store(Arc::new(catalog));
+    }
+
+    /// Build the initial catalog from known packages. Cost: validates the supplied declarations.
+    pub fn from_plugins(plugins: Vec<Plugin>) -> Self {
+        Self(arc_swap::ArcSwap::from_pointee(Catalog::from_plugins(
+            plugins.into_iter().map(Arc::new).collect(),
+        )))
+    }
+
+    /// An empty registry: no plugin operations exist. Cost: none.
+    pub fn empty() -> Self {
+        Self::default()
+    }
+
+    /// Load the shipped fixture catalog directly for in-memory server fixtures.
+    /// The serving binary seeds and loads packages through [`package_store::load`].
+    /// Cost: one manifest read and optional bundle verification per shipped package.
+    pub fn load(plugin_root: &Path) -> Self {
+        let plugins = registry_entries()
+            .into_iter()
+            .filter_map(|entry| match load_one(plugin_root, &entry, None) {
+                Ok(plugin) => Some(plugin),
+                Err(why) => {
+                    tracing::warn!(plugin = %entry.id, reason = %why, "fixture plugin not loaded");
+                    None
+                }
+            })
+            .collect();
+        Self::from_plugins(plugins)
+    }
+}
+
+impl Catalog {
     /// Generated one-line operation index, built once after registry construction.
     /// Includes manifest operations as well as host operations; never grants access.
     pub fn tool_index(&self) -> &str {
@@ -244,59 +344,11 @@ impl Registry {
         })
     }
 
-    /// An empty registry: no plugin operations exist. Cost: none.
-    pub fn empty() -> Self {
-        Self::default()
-    }
-
-    /// Load every trusted entry from `plugin_root`. Plugins whose manifest is
-    /// missing, invalid or colliding are skipped with a warning; plugins whose worker
-    /// is missing or whose digest differs load but are marked unavailable.
-    /// Cost: one bounded manifest read and one bundle hash per entry, at startup only.
-    pub fn load(plugin_root: &Path) -> Self {
-        Self::load_with_tests(plugin_root, None)
-    }
-
-    /// [`Self::load`], plus the test-only plugins from `test_root` when the server was
-    /// built with the `test-plugins` feature (otherwise there are none to load).
-    /// Cost: as [`Self::load`], per test entry as well.
-    pub fn load_with_tests(plugin_root: &Path, test_root: Option<&Path>) -> Self {
-        Self::load_at(plugin_root, test_root, false)
-    }
-
-    /// Load ./plugins and use the shipped native Threads manifest when that
-    /// default directory lacks its copy. Explicit roots use `load_with_tests`.
-    /// Cost: normal startup registry reads and one embedded manifest parse on miss.
-    pub fn load_server_defaults(test_root: Option<&Path>) -> Self {
-        Self::load_at(Path::new("plugins"), test_root, true)
-    }
-
-    fn load_at(plugin_root: &Path, test_root: Option<&Path>, defaults: bool) -> Self {
-        let mut plugins = Vec::new();
-        let tests = test_root.map(|root| (root, test_entries()));
-        let all = std::iter::once((plugin_root, registry_entries())).chain(tests);
-        for (root, entry) in
-            all.flat_map(|(root, entries)| entries.into_iter().map(move |e| (root, e)))
-        {
-            let fallback = (defaults && entry.id == "calternal-orchestrator").then_some(
-                include_bytes!("../../../../plugins/calternal-orchestrator/manifest.json")
-                    .as_slice(),
-            );
-            match load_one(root, &entry, fallback) {
-                Ok(p) => plugins.push(p),
-                Err(why) => {
-                    tracing::warn!(plugin = %entry.id, reason = %why, "trusted plugin not loaded")
-                }
-            }
-        }
-        Self::from_plugins(plugins)
-    }
-
     /// Register already-built plugins in order, skipping (with a warning) any whose
     /// declarations collide with an earlier plugin or a host operation, or whose
     /// operations need an authority that is not space-scoped.
     /// Cost: O(declarations * log registered) plus schema compilation per plugin.
-    pub fn from_plugins(plugins: Vec<Plugin>) -> Self {
+    fn from_plugins(plugins: Vec<Arc<Plugin>>) -> Self {
         let mut index = host::Registry::default();
         let mut out = Self::default();
         for plugin in plugins {
@@ -317,7 +369,7 @@ impl Registry {
                     tracing::info!(plugin = %id, version = %plugin.manifest.version, "trusted plugin registered")
                 }
             }
-            out.plugins.push(Arc::new(plugin));
+            out.plugins.push(plugin);
         }
         // Policy rows come from the manifests, never from a hand-written table.
         for row in index.policy_rows() {
@@ -336,7 +388,27 @@ impl Registry {
             };
             out.operations.insert(row.operation.id, (slot, policy));
         }
+        out.slots = slots::SlotIndex::compile(&out);
         out
+    }
+
+    /// Whether there is any registered mount or compatible contribution.
+    /// Cost: two checks on the immutable index.
+    pub(crate) fn has_slots(&self) -> bool {
+        !self.slots.is_empty()
+    }
+
+    /// Resolve a listing from activation rows in catalog order. Invisible packages
+    /// occupy empty positions. Cost: one bounded scan, no I/O or package execution.
+    pub(crate) fn resolve_slots(
+        &self,
+        plugins: &[Option<calternal_core::PluginState>],
+        authority: calternal_types::CapabilitySet,
+    ) -> (
+        Vec<calternal_core::ResolvedPluginSlot>,
+        Vec<calternal_core::ResolvedOwnedPluginSlot>,
+    ) {
+        self.slots.resolve(plugins, authority)
     }
 
     /// Registered plugins in trusted-file order.
@@ -347,6 +419,32 @@ impl Registry {
     /// Look up a plugin by identifier. Cost: O(plugins), no allocation.
     pub fn get(&self, id: &str) -> Option<&Arc<Plugin>> {
         self.plugins.iter().find(|p| p.manifest.id == id)
+    }
+
+    /// Find code already pinned to an invocation or durable job. Removed and narrowed
+    /// revisions disappear at publication. Cost: one bounded lookup.
+    pub(crate) fn revision(&self, id: &str, revision: u32) -> Option<&Arc<Plugin>> {
+        self.get(id)
+            .filter(|plugin| plugin.revision == revision)
+            .or_else(|| self.retained.get(&(id.to_owned(), revision)))
+    }
+
+    /// Check that the current catalog still authorizes this immutable revision.
+    /// Cost: indexed in-memory lookups; per-space activation is checked separately.
+    pub(crate) fn authorizes(&self, plugin: &Plugin) -> bool {
+        self.revision(&plugin.manifest.id, plugin.revision)
+            .is_some()
+    }
+
+    /// Default persisted control used when a manager enables or disables a package.
+    /// Preserve the generation of implicitly enabled older revisions during approval.
+    /// Cost: bounded scan of retained declarations, only on an activation write.
+    pub(crate) fn control_default(&self, plugin: &Plugin) -> PluginRow {
+        let mut row = default_row(plugin);
+        row.enabled |= self.retained.values().any(|previous| {
+            previous.manifest.id == plugin.manifest.id && default_row(previous).enabled
+        });
+        row
     }
 
     /// The plugin that declares `operation`. Cost: O(log operations).
@@ -393,7 +491,9 @@ pub fn activation(store: &Store, space: SpaceId, plugin: &Plugin) -> Result<Plug
     let mut row = store
         .plugin_row(space, &plugin.manifest.id)?
         .unwrap_or_else(|| default_row(plugin));
-    row.enabled &= plugin.unavailable.is_none();
+    row.enabled &= plugin.available_in(space)
+        && plugin.unavailable.is_none()
+        && row.approval >= plugin.activation_approval;
     Ok(row)
 }
 
@@ -402,6 +502,7 @@ pub fn default_row(plugin: &Plugin) -> PluginRow {
     PluginRow {
         enabled: plugin.entry.default_enabled && plugin.unavailable.is_none(),
         generation: 1,
+        approval: plugin.activation_approval,
     }
 }
 

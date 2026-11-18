@@ -66,6 +66,9 @@ pub(super) fn row(space: &str, r: &rusqlite::Row<'_>) -> rusqlite::Result<Job> {
     let json = |i: usize| -> rusqlite::Result<Value> {
         Ok(serde_json::from_str(&r.get::<_, String>(i)?).unwrap_or(Value::Null))
     };
+    // Low bits preserve the per-space activation generation. High bits fence the
+    // installed package revision independently, including after server restart.
+    let generation = r.get::<_, i64>(13)?;
     Ok(Job {
         id: r.get(0)?,
         space: space.to_owned(),
@@ -87,7 +90,8 @@ pub(super) fn row(space: &str, r: &rusqlite::Row<'_>) -> rusqlite::Result<Job> {
         checkpoints: r.get(10)?,
         result: json(11)?,
         runs: r.get(12)?,
-        generation: r.get(13)?,
+        generation: (generation & i64::from(u32::MAX)) as u32,
+        package_revision: (generation >> 32) as u32,
     })
 }
 
@@ -169,6 +173,7 @@ struct Active {
     runs: u32,
     parent: Option<String>,
     diagnostic: bool,
+    package_revision: u32,
 }
 
 impl Jobs {
@@ -180,7 +185,7 @@ impl Jobs {
     /// indexed scans of its active jobs.
     pub fn recover(
         &self,
-        resumable: impl Fn(&str, &str) -> bool,
+        resumable: impl Fn(&str, &str, u32) -> bool,
     ) -> Result<Vec<(String, String)>, Error> {
         let spaces: Vec<String> = {
             let routes = self.routes.read().unwrap_or_else(|p| p.into_inner());
@@ -193,7 +198,7 @@ impl Jobs {
         for space in spaces {
             let woken = self.tx(&space, |tx| {
                 let mut st = tx
-                    .prepare(&format!("SELECT id,state,plugin,operation,runs,parent,json_extract(input,'$.verify') IS 1 FROM jobs WHERE state IN {ACTIVE}"))
+                    .prepare(&format!("SELECT id,state,plugin,operation,runs,parent,json_extract(input,'$.verify') IS 1,(generation >> 32) & 4294967295 FROM jobs WHERE state IN {ACTIVE}"))
                     .map_err(db_err)?;
                 let rows = st
                     .query_map([], |r| {
@@ -205,6 +210,7 @@ impl Jobs {
                             runs: r.get(4)?,
                             parent: r.get(5)?,
                             diagnostic: r.get(6)?,
+                            package_revision: r.get(7)?,
                         })
                     })
                     .map_err(db_err)?
@@ -212,7 +218,7 @@ impl Jobs {
                     .map_err(db_err)?;
                 drop(st);
                 let mut wake = vec![];
-                for Active { id, state, plugin, operation, runs, parent, diagnostic } in rows {
+                for Active { id, state, plugin, operation, runs, parent, diagnostic, package_revision } in rows {
                     if operation == "agent.turn" {
                         if diagnostic {
                             set_state(tx, &id, JobState::OutcomeUnknown, "null")?;
@@ -225,7 +231,7 @@ impl Jobs {
                         continue;
                     }
                     match state.as_str() {
-                        "running" if resumable(&plugin, &operation) && runs < MAX_RUNS => {
+                        "running" if resumable(&plugin, &operation, package_revision) && runs < MAX_RUNS => {
                             tx.execute("UPDATE jobs SET state='admitted' WHERE id=?1", [&id]).map_err(db_err)?;
                             wake.push(id);
                         }

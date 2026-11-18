@@ -9,7 +9,7 @@
   // The permission mode's own name is the last label to go. Every chip keeps its full name as its accessible name and tooltip.
   // The provider control changes nothing visible in the thread (the handover is internal), and never creates a thread.
   import { motionAllowed, snapshot, play, type FoldSnap } from "./fold";
-  import { Button, Icon, IconButton, InlineEditor, Menu, Panel, Pill, PillRow, Popover, Sheet, currentForm, type IconName, type MenuItem } from "@calternal/ui";
+  import { Button, Icon, InlineEditor, Menu, Panel, Pill, PillRow, Popover, Sheet, currentForm, type IconName, type MenuItem } from "@calternal/ui";
   import type { Attachment } from "./model";
   import type { FieldEditor, FieldTrigger } from "../../../../../packages/editor/src/index";
   import { marksOf } from "../../palette/engine";
@@ -20,6 +20,7 @@
   import RunsOnPicker from "./RunsOnPicker.svelte";
   import ActiveChildren from "./ActiveChildren.svelte";
   import LevelMark from "./LevelMark.svelte";
+  import SendControl from "./SendControl.svelte";
   import MentionPicker from "../../palette/MentionPicker.svelte";
   import { bridge } from "./compose.svelte";
   import { shell } from "../../shell/shell.svelte";
@@ -140,6 +141,11 @@
     const done = () => { removeEventListener("pointerup", done, true); removeEventListener("pointercancel", done, true); setTimeout(() => (pressing = false), 0); };
     addEventListener("pointerup", done, true); addEventListener("pointercancel", done, true);
   }
+  // A tap anywhere in the collapsed box that is not on a control focuses the field (ChatGPT's and bb's): the box is the field. A text field takes focus (and opens the keyboard) from the tap itself; `:focus-visible` is only the test for buttons.
+  function tapBox(e: MouseEvent) {
+    if ((e.target as HTMLElement).closest("button, a, [role=button], [contenteditable], textarea, input, [role=menu], [role=dialog]")) return;
+    field?.focus();
+  }
   const open = $derived(focused || pressing || menuOpen || permOpen || whereOpen || trig !== null);
   // The morph: the state above flips the layout at once; before the DOM changes the old look is read, after it the motion is played from it (fold.ts). Not for keyboard use or reduced motion, and the
   // list above is told (`cmp-fold`) so it keeps the last message above the composer and slides with it.
@@ -247,7 +253,7 @@
   }
 </script>
 
-<Panel class="composer" data-narrow={sheet ? "" : undefined} radius="pane" data-ring-host bind:el={panelEl} data-collapsed={open ? undefined : ""} onfocusin={(e) => { if ((e.target as HTMLElement).matches(":focus-visible")) focused = true; }} onfocusout={(e) => { if (e.relatedTarget instanceof Node && panelEl?.contains(e.relatedTarget)) return; queueMicrotask(() => (focused = !!panelEl?.contains(document.activeElement))); }} onpointerdown={press} {onpaste} {ondrop} {ondragover} ondragleave={() => (dropping = false)} data-dropping={dropping ? "" : undefined}>
+<Panel class="composer" data-narrow={sheet ? "" : undefined} radius="pane" data-ring-host bind:el={panelEl} data-collapsed={open ? undefined : ""} onfocusin={(e) => { const t = e.target as HTMLElement; if (t.matches(":focus-visible") || t.closest("[contenteditable], textarea, input:not([type=file])")) focused = true; }} onclick={tapBox} onfocusout={(e) => { if (e.relatedTarget instanceof Node && panelEl?.contains(e.relatedTarget)) return; queueMicrotask(() => (focused = !!panelEl?.contains(document.activeElement))); }} onpointerdown={press} {onpaste} {ondrop} {ondragover} ondragleave={() => (dropping = false)} data-dropping={dropping ? "" : undefined}>
   <div class="ctx" data-fold aria-label="Context">
     {#if thread.workspace}<span class="cx"><Icon inline name="folder" /><span>{thread.workspace}</span></span>{/if}
     <ActiveChildren id={thread.id} />
@@ -269,9 +275,9 @@
   <div class="field" data-fold-row bind:this={fieldBox}>
     <InlineEditor id="composer-field" class="field-input" multiline label="Message" bind:el={field} bind:editor bind:value={text} {marks} triggers={{ kinds: ["mention", "skill"], on: (t) => (trig = t) }} onkeydown={onkey} onsubmit={() => send()} placeholder={running ? "Steer the running turn…" : `Message ${provider?.name ?? "the agent"}…`} />
     {#if (running || parked) && !text.trim()}
-      <IconButton icon="stop" label="Stop the turn" tone="tint" onclick={onstop} />
+      <SendControl state="stop" label="Stop the turn" onclick={onstop} />
     {:else}
-      <IconButton icon="send" label={running ? "Steer the turn" : "Send message"} tone="accent" disabled={!canSend} onclick={send} />
+      <SendControl state={uploading ? "busy" : !canSend ? "idle" : running ? "steer" : "ready"} label={uploading ? "Uploading files" : running ? "Steer the turn" : "Send message"} onclick={send} />
     {/if}
   </div>
   <!-- The four chips (docs/composer.md, "Chips and adaptive rows"): the row measures its own room and gives up words in the stated order; every chip is icon and text or icon only, never two facts joined by a dot. -->
@@ -330,9 +336,11 @@
   .cx.on { background: color-mix(in oklab, var(--accent) 16%, transparent); color: var(--ink); }
   .x { display: inline-grid; place-items: center; color: var(--ink-3); border-radius: 50%; }
   .field { display: flex; align-items: flex-end; gap: var(--s-3); }
+  .field > :global(.go) { margin-bottom: 0; }
   /* The caret, the placeholder and the typed text are one box: same font, same line height, same inset, so the caret sits exactly on the text's baseline.
      The height is a whole number of lines plus the vertical padding, never a fixed pixel height that leaves the text off centre. */
-  :global(.field-input) { flex: 1; padding: var(--s-3) 0; overflow-y: auto; scrollbar-width: none; font-size: var(--text-ui); min-height: max(calc(1lh + 2 * var(--s-3)), var(--pill-h)); max-height: 9.5rem; }
+  :global(.field-input::placeholder) { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  :global(.field-input) { flex: 1; /* one line sits on the round control's centre: the padding is what is left of the control's height round the field's own line box (`1lh`), at every text size */ padding: max(var(--s-3), calc((var(--pill-h) - 1lh) / 2)) 0; overflow-y: auto; scrollbar-width: none; font-size: var(--text-ui); min-height: var(--pill-h); max-height: 9.5rem; }
     /* The chips row takes the composer's width; `PillRow` measures it. A chip is a quiet pill; Full access wears a warning tint so it is never hidden or mistaken. */
   .chips { min-width: 0; padding-right: var(--s-3); padding-top: var(--s-1); }
   .chip { position: relative; flex: none; display: inline-flex; }
