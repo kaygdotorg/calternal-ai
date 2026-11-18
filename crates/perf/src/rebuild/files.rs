@@ -102,6 +102,13 @@ pub(super) fn stage(userdata: &Path, db: &Path, docs: &[Document]) -> Result<()>
             if identity.strip_prefix("calternal-id: ") != Some(&doc.id) {
                 return Err("fixture file identity differs from retained content core".into());
             }
+            let properties = properties
+                .strip_prefix("format: calternal-note/v1")
+                .and_then(|tail| {
+                    tail.strip_prefix('\n')
+                        .or_else(|| tail.is_empty().then_some(tail))
+                })
+                .unwrap_or(properties);
             let canonical = if properties.is_empty() {
                 body.to_owned()
             } else {

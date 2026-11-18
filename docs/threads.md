@@ -508,7 +508,7 @@ per month.
 ```markdown
 ---
 calternal-id: 019a8c00-0000-7000-8000-000000000011
-format: calternal-thread
+format: calternal-thread/v1
 title: "Release checklist"
 date: 2026-11-18T19:30:00+05:30
 last edited: 2026-11-18T19:30:18+05:30
@@ -538,7 +538,7 @@ The accessibility review is the only open check.
 ```markdown
 ---
 calternal-id: 019a8c00-0000-7000-8000-000000000012
-format: calternal-thread
+format: calternal-thread/v1
 title: "Launch note"
 date: 2026-11-18T19:40:00+05:30
 last edited: 2026-11-18T19:42:09+05:30
@@ -578,7 +578,7 @@ The `## Changes` line belongs to Jules’s body. Its bytes are unchanged.
 ```markdown
 ---
 calternal-id: 019a8c00-0000-7000-8000-000000000013
-format: calternal-thread
+format: calternal-thread/v1
 title: "Compare onboarding notes"
 date: 2026-11-18T19:50:00+05:30
 last edited: 2026-11-18T19:50:21+05:30
@@ -602,7 +602,7 @@ The reference is missing the account setup step. See [Reference review](<Referen
 ```markdown
 ---
 calternal-id: 019a8c00-0000-7000-8000-000000000014
-format: calternal-thread
+format: calternal-thread/v1
 title: "Reference review"
 date: 2026-11-18T19:50:02+05:30
 last edited: 2026-11-18T19:50:19+05:30
@@ -629,7 +629,7 @@ The two attempts share a turn UUID. The placements are kept private.
 ```markdown
 ---
 calternal-id: 019a8c00-0000-7000-8000-000000000015
-format: calternal-thread
+format: calternal-thread/v1
 title: "Weekly release review"
 date: 2026-11-18T20:30:00+05:30
 last edited: 2026-11-18T20:30:41+05:30

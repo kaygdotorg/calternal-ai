@@ -9,6 +9,7 @@ use std::path::{Component, Path, PathBuf};
 use std::time::Duration;
 use uuid::Uuid;
 
+const FORMAT: &str = "calternal-install-root/v1";
 const MARKER: &str = ".calternal-install-id";
 const ROLES: [&str; 3] = ["userdata-ssd", "userdata-hdd", "appdata"];
 const RETRY: Duration = Duration::from_millis(100);
@@ -179,12 +180,20 @@ pub fn re_pair(roots: &Roots, installation: Uuid, confirmed: bool) -> io::Result
         if !probe.missing.is_empty() {
             return Err(invalid("re-pair requires existing mounted roots"));
         }
-        if let Some(record) = probe.marker()? {
+        if let Some(record) = probe.read_marker()? {
             let mut lines = record.lines();
-            if lines
-                .next()
-                .and_then(|id| Uuid::parse_str(id).ok())
-                .is_some()
+            let first = lines.next();
+            let id = if let Some(tag) = first.and_then(|line| line.strip_prefix("format: ")) {
+                if let Err(error) = calternal_fsio::format::require(tag, FORMAT)
+                    && error.kind() == io::ErrorKind::Unsupported
+                {
+                    return Err(error);
+                }
+                lines.next()
+            } else {
+                first
+            };
+            if id.and_then(|id| Uuid::parse_str(id).ok()).is_some()
                 && let Some(role) = lines.next()
                 && ROLES.contains(&role)
                 && role != ROLES[i]
@@ -258,7 +267,7 @@ fn invalid(message: impl Into<String>) -> io::Error {
 }
 
 fn marker(id: Uuid, role: &str) -> String {
-    format!("{id}\n{role}\n")
+    format!("format: {FORMAT}\n{id}\n{role}\n")
 }
 
 fn absolute_plain(path: &Path) -> io::Result<PathBuf> {
@@ -314,6 +323,18 @@ impl Probe {
     }
 
     fn marker(&self) -> io::Result<Option<String>> {
+        let record = self.read_marker()?;
+        if let Some(bytes) = &record {
+            let tag = bytes
+                .lines()
+                .next()
+                .and_then(|line| line.strip_prefix("format: "));
+            calternal_fsio::format::require(tag.unwrap_or_default(), FORMAT)?;
+        }
+        Ok(record)
+    }
+
+    fn read_marker(&self) -> io::Result<Option<String>> {
         if !self.missing.is_empty() {
             return Ok(None);
         }

@@ -445,11 +445,16 @@ pub struct OutputAck {
     pub retry_after_ms: Option<u64>,
 }
 
+/// Format of the private enrollment handoff and confirmation.
+pub const LOCAL_ENROLLMENT_FORMAT: &str = "calternal-machine-enrollment/v1";
+
 /// File written by the co-located machine before the first owner registers.
 /// The server receives only public material; the signing key stays on the host.
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct LocalEnrollment {
+    /// Durable handoff format tag.
+    pub format: String,
     /// Machine-generated UUID, persisted with its signing key before publication.
     pub machine_id: Uuid,
     /// Base64 Ed25519 public key.

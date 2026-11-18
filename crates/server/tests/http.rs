@@ -987,7 +987,7 @@ fn note_storage_is_physically_per_space_and_files_have_frontmatter_identity() {
     assert_eq!(path.file_name().unwrap(), "T.md");
     let bytes = std::fs::read_to_string(path).unwrap();
     assert!(bytes.starts_with(&format!(
-        "---\ncalternal-id: {}\n---\n",
+        "---\ncalternal-id: {}\nformat: calternal-note/v1\n---\n",
         a["id"].as_str().unwrap()
     )));
     assert!(

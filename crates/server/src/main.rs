@@ -519,6 +519,7 @@ async fn serve(
     };
     let startup = serde_json::json!({
         "profile": "development-preview",
+        "format": "calternal-startup/v1",
         "development_tokens": development,
         "setup_token_file": setup_file,
         "base_url": base_url,

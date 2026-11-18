@@ -2,7 +2,7 @@
 use super::*;
 use base64::{Engine, engine::general_purpose::STANDARD};
 use calternal_auth::machines::MachineRecord;
-use calternal_machine::protocol::LocalEnrollment;
+use calternal_machine::protocol::{LOCAL_ENROLLMENT_FORMAT, LocalEnrollment};
 use std::io::Read;
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
@@ -51,6 +51,7 @@ fn advance(svc: &MachineService, dir: &Path) -> std::io::Result<bool> {
         .take(4097)
         .read_to_end(&mut bytes)?;
     let request: LocalEnrollment = serde_json::from_slice(&bytes)?;
+    calternal_fsio::format::require(&request.format, LOCAL_ENROLLMENT_FORMAT)?;
     let public_key = STANDARD
         .decode(request.public_key)
         .ok()
@@ -80,7 +81,11 @@ fn advance(svc: &MachineService, dir: &Path) -> std::io::Result<bool> {
     {
         return Ok(false);
     }
-    calternal_fsio::write_atomic_mode(&dir.join("enrolled"), id.to_string().as_bytes(), 0o600)?;
+    calternal_fsio::write_atomic_mode(
+        &dir.join("enrolled"),
+        format!("format: {LOCAL_ENROLLMENT_FORMAT}\n{id}").as_bytes(),
+        0o600,
+    )?;
     Ok(true)
 }
 

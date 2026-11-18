@@ -62,6 +62,9 @@ activating the release. The account's login stays on the machine under
 `sandboxes/accounts/<account>/provider-login`, and its transcript home is
 scoped to the space.
 
+The production upgrade gate and durable inventory are tracked in
+[Data-preserving upgrades](upgrades.md).
+
 Deploy and rollback reuse the three data roots. A schema mismatch can refuse
 startup, including when an older binary opens data initialized by a newer one.
 Per-space stores that open lazily may first report a mismatch when used.
