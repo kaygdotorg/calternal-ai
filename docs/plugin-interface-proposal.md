@@ -329,7 +329,8 @@ engine before a plugin starts.
 ### Brokered network capabilities
 
 Every worker has no direct network. Its manifest declares the request classes
-it needs, and the enabling review shows one line per class with its scope.
+it needs. Installation review shows one line per declared class with its
+scope. Enabling the package grants only the classes approved for that space.
 The broker checks the live space grant and revision declaration before
 starting a request and before forwarding additional data on an open handle.
 A widening update requires approval. Revocation closes or fences active
@@ -337,29 +338,42 @@ handles. The same declarations and checks apply to every publisher.
 
 | Class | Capability and what the approver sees |
 | --- | --- |
-| A. Named connections (`network.named`) | “Connect to these services” shows purpose, exact hosts or reviewed settings, protocols, ports and credential handles. A Manager approves the envelope on enable. Review a person-supplied destination when entered and before it takes effect. A wider host, port or protocol requires another approval. |
-| B. Content fetch (`network.content_fetch`) | “Load remote images and fonts referenced by this content” shows the content kinds and host profile. The Manager approves the declared feature. Each person chooses Ask, Always or Never for fetches on their behalf. The content can reference arbitrary public hosts, so this class has no list of approved domains. |
+| A. Named connections (`network.named`) | “Connect to these services” shows purpose, fixed hosts, destination settings, protocols, ports and credential handles. A Manager approves the envelope once. People can add their own hosts within it. Widening the envelope requires another approval. |
+| B. Content fetch (`network.content_fetch`) | “Load remote images and fonts referenced by this content” appears at install for any plugin that declares the capability. It shows the content kinds and host profile. Each person chooses Ask, Always or Never for fetches on their behalf. The content can reference arbitrary public hosts, so this class has no list of approved domains. |
 | C. Open internet (`network.open_internet`) | “Make arbitrary HTTP requests to any public host. This can send space data off the server.” An Owner or a Manager approves this broad capability separately. |
 | D. Private network (`network.private`) | “Reach private destinations from this server or machine” shows the originating network, approved destinations, ports and protocols. A Manager approves the plugin's per-space capability and the origin owner separately approves exposing that origin. |
 
 These are proposed manifest IDs. Each class needs its own grant. A named
 connection or content fetch cannot provide open internet access.
 
+**Owner decision, 2026-11-18.** Community and official plugins can request
+all four classes. The broker should support integrations whose destinations
+are known at install, entered by a person, taken from content, or chosen at
+runtime. Scale the review with reusable envelopes, explicit broad grants,
+and destination selectors so a plugin can add services within its authority
+without sending a Manager back through approval for each host. Enforce the
+same network and disclosure checks regardless of who publishes the plugin.
+These are design decisions. The broker has yet to be implemented.
+
 #### A. Named connections
 
 A public bank, broker, workout or provider API declares exact hosts and
 protocols. For IMAP or SMTP, the manifest can identify a destination setting
 and bound its protocol and ports. The grant binds the exact configured host
-and port to the setting, package and space. Endpoint discovery and redirects
-must stay within the approved service envelope. Protected credential handles
-let the host attach credentials without returning them to plugin code.
+and port to the setting, package and space. A person may add or change a
+host inside the Manager-approved envelope without another Manager approval.
+The broker validates the entered host, port and protocol before use.
+Endpoint discovery and redirects must stay within the approved service
+envelope. Protected credential handles let the host attach credentials
+without returning them to plugin code.
 
-For non-HTTP protocols, a broker-owned, expiring TCP handle provides bounded
-reads and writes to the approved address and port. The host owns connect,
-backpressure, timeout and teardown. Typed adapters can require verified TLS
-and safe STARTTLS transitions. An opaque byte stream can send arbitrary
-commands to the approved service, so its approval must describe that power.
-Sending mail and making a trade remain separate effect permissions.
+The host provides built-in mail handling with verified TLS and safe STARTTLS
+transitions. Plugins can also request generic TCP to an approved host and
+port. A broker-owned, expiring handle bounds reads and writes. The host owns
+connect, backpressure, timeout and teardown. An opaque byte stream can send
+arbitrary commands to the approved service, so its approval must describe
+that power. Sending mail and making a trade remain separate effect
+permissions.
 
 #### B. Content fetch
 
@@ -412,7 +426,7 @@ full URL paths and queries in logs.
 
 #### C. Open internet
 
-Use an explicit broad grant when the plugin must construct arbitrary HTTP
+Use one broad grant when the plugin must construct arbitrary HTTP
 requests to public destinations at runtime. Examples include reading a
 person's subscriptions, scraping a page or calling an arbitrary API in an
 automation. Require the Owner's or a Manager's affirmative approval of the
@@ -433,8 +447,9 @@ the operation can make changes where the host enforces that distinction.
 | Chosen enrolled machine | The machine owner approves their machine as the origin. An operator approves a pool machine. The server checks the invocation and sends the bounded request to that machine's broker, which validates and dials locally. The worker remains on eligible operator pool machines. |
 
 A grant can name hosts with approved address scopes, CIDRs limited by protocol
-and port, or endpoints mapped to current enrolled and space-authorized
-machines. Revocation removes an enrollment from that scope immediately.
+and port, or “this space's machines.” The latter resolves to endpoints mapped
+to current enrolled and space-authorized machines. Revocation removes an
+enrollment from that scope immediately.
 The broker checks whether the caller may disclose the input to the chosen
 machine. The grant stays bound to its chosen origin and cannot fall back to
 another network.
@@ -485,20 +500,15 @@ These are design walkthroughs. Each needs a fixture before shipment.
 
 | Choice | Options and costs |
 | --- | --- |
-| Named endpoints | Start with exact hosts and approve each change, or add bounded domain patterns. Exact hosts expose the smallest scope. Patterns simplify service discovery and need ownership, redirect and port rules. |
-| Destination setting and credential scope | Require a Manager to approve each endpoint, or delegate approvals inside a reviewed envelope. Delegation reduces setup work and widens what a person may authorize. Decide when an endpoint and credential belong to a person or to the space. |
+| Endpoint and credential ownership | Decide when a configured endpoint and its credential belong to the person or the space. Personal scope isolates connections and credentials. Shared scope supports shared workflows and needs visibility and revocation rules. |
 | Content preference and backfill | Ask first exposes the choice early. Always retains the earlier mail default and sends public fetches automatically. Never starts with placeholders. The inherited ingest window uses 90 days or 5,000 threads and excludes junk. Decide whether to load older items only on explicit request or during bounded backfill. Explicit load can disclose reading time. |
 | Content fetch profiles | Ship the existing image/font profile first. Review HTML metadata, audio and other enclosures independently. More types cover more view and feed cases and increase what the proxy must validate, cache and serve. |
-| Open internet limits | Choose whether a separate permission is needed for credential-free request bodies or mutation-capable methods. One broad class is easier to review and provides less control over what leaves the server. |
-| Non-HTTP handles | Start with typed IMAP/SMTP adapters, or also grant generic bounded TCP. Typed adapters enforce TLS and protocol rules. Generic handles cover more systems with less knowledge of the effect. |
-| Private route scope | Begin with named hosts and explicit ranges, or also allow the space-machines selector. The selector reduces repeated approvals and needs endpoint ownership and live enrollment tracking. Decide which payloads may be sent through a member-owned origin. |
+| Private-origin payloads | Decide which payloads may be sent through a member-owned origin. Wider forwarding covers more local integrations and requires clear disclosure authority. |
 | Budgets and visibility | Measure mail sync, finance polling and interactive loads to set per-space caps and retention. Choose how Managers and origin owners see the audit and test revocation with long-lived connections. |
 | Inbound verification | Choose supported signature profiles and retry identity rules before exposing routes. A common profile gives one enforcement point. Provider adapters increase compatibility and review cost. |
 
-Start with named service connections and the inherited content-fetch profile.
-Add the separately approved open internet, private routing and inbound paths
-when their limits and fixtures are ready. This section specifies a proposed
-broker contract.
+The grant classes and approval flows above are the accepted design. Delivery
+order, benchmark thresholds and the remaining operational details are open.
 
 ## Swift clients
 
