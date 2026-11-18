@@ -51,7 +51,7 @@ try {
     const g = await p.evaluate(() => { const c = document.querySelector("[data-canvas]").getBoundingClientRect(); const wb = Math.max(...[...document.querySelectorAll("[data-win]")].map((w) => w.getBoundingClientRect().bottom)); const bodyB = Math.max(...[...document.querySelectorAll("[data-win] > .body")].map((w) => w.getBoundingClientRect().bottom)); return { cb: c.bottom, wb, bodyB, capsule: !!document.querySelector(".mid nav.switcher, .appbar") }; });
     ok(Math.abs(g.wb - g.cb) < 1 && Math.abs(g.bodyB - g.wb) < 1 && !g.capsule, "the windows and their content run to the bottom edge; the app switcher is in the sidebar, not over them", JSON.stringify(g));
     for (const [i, w] of (await wins(p).all()).entries()) {
-      const titles = await w.evaluate((e) => [...e.querySelectorAll(".wt, header .title")].filter((t) => t.getClientRects().length).length);
+      const titles = await w.evaluate((e) => [...e.querySelectorAll(".wt")].filter((t) => t.getClientRects().length).length);
       const buttons = await w.locator(".tr button").evaluateAll((b) => b.map((x) => x.getAttribute("aria-label")));
       ok(titles === 1 && buttons.join("|") === ["Full screen", "Share", "More"].join("|"), `window ${i + 1}: one title pill and one pill of exactly three buttons`, `${titles} / ${buttons.join(",")}`);
     }

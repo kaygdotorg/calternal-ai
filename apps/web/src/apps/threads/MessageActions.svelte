@@ -36,16 +36,18 @@
   </span>
 {/snippet}
 <div class="meta {message.role}">
+  <!-- One rule for both sides: the time sits at the message's own edge (left for the agent, right for you) and the actions follow it toward the middle, so the two sides are mirror images. -->
+  {#if message.role === "agent"}<span class="t">{time}</span>{@render acts()}{:else}{@render acts()}
   {#if message.version && message.version.of > 1}
-    <!-- The versions of an edited message (one shows at a time, the same for everyone): previous and next, with Alt+[ and Alt+] from anywhere in the message. -->
-    <span class="ver" role="group" aria-label="Versions of this message">
-      <button type="button" class="vb prev" aria-label="Previous version" disabled={message.version.n <= 1} onclick={() => onversion?.(message.version!.n - 1)}><Icon name="chevron" inline /></button>
-      <span class="vn" aria-live="polite">{message.version.n} / {message.version.of}</span>
-      <button type="button" class="vb" aria-label="Next version" disabled={message.version.n >= message.version.of} onclick={() => onversion?.(message.version!.n + 1)}><Icon name="chevron" inline /></button>
-    </span>
-    {#if message.version.n > 1}<span class="ed">Edited</span>{/if}
-  {/if}
-  {#if message.role === "agent"}{@render acts()}<span class="t">{time}</span>{:else}<span class="t">{time}</span>{@render acts()}{/if}
+      <!-- The versions of an edited message (one shows at a time, the same for everyone): previous and next, with Alt+[ and Alt+] from anywhere in the message. -->
+      <span class="ver" role="group" aria-label="Versions of this message">
+        <button type="button" class="vb prev" aria-label="Previous version" disabled={message.version.n <= 1} onclick={() => onversion?.(message.version!.n - 1)}><Icon name="chevron" inline /></button>
+        <span class="vn" aria-live="polite">{message.version.n} / {message.version.of}</span>
+        <button type="button" class="vb" aria-label="Next version" disabled={message.version.n >= message.version.of} onclick={() => onversion?.(message.version!.n + 1)}><Icon name="chevron" inline /></button>
+      </span>
+      {#if message.version.n > 1}<span class="ed">Edited</span>{/if}
+    {/if}
+  <span class="t">{time}</span>{/if}
   {#if armed}<Menu open={menu} {items} label="Message actions" trigger={more} onclose={() => (menu = false)} onpick={pick} />{/if}
 </div>
 
@@ -62,12 +64,12 @@
   .ed { margin-right: var(--s-3); }
   .acts { display: inline-flex; align-items: center; }
   /* A touch screen has no hover: the actions are always there, beside the time. */
-  @media (hover: none) { .acts { margin-inline: var(--s-4) 0; } .meta.agent .acts { margin-inline: 0 var(--s-4); } }
+  @media (hover: none) { .meta.agent .acts { margin-inline: var(--s-4) 0; } .meta.user .acts { margin-inline: 0 var(--s-4); } }
   /* A mouse: closed they take no room and are invisible; open they have their width (12rem at most) and margin beside the time. */
   @media (hover: hover) and (pointer: fine) {
     .acts { max-width: 0; overflow: hidden; opacity: 0; transition: max-width var(--dur-base) var(--ease-out), margin var(--dur-base) var(--ease-out), opacity var(--dur-base) var(--ease-out); }
     :global(.msg:hover) .acts, .acts:focus-within, .acts[data-open] { max-width: 12rem; opacity: 1; }
-    :global(.msg:hover) .meta.agent .acts, .meta.agent .acts:focus-within, .meta.agent .acts[data-open] { margin-right: var(--s-4); }
-    :global(.msg:hover) .meta.user .acts, .meta.user .acts:focus-within, .meta.user .acts[data-open] { margin-left: var(--s-4); }
+    :global(.msg:hover) .meta.agent .acts, .meta.agent .acts:focus-within, .meta.agent .acts[data-open] { margin-left: var(--s-4); }
+    :global(.msg:hover) .meta.user .acts, .meta.user .acts:focus-within, .meta.user .acts[data-open] { margin-right: var(--s-4); }
   }
 </style>

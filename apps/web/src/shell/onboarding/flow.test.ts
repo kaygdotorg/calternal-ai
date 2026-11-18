@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { after, before, clear, load, path, save, skippable } from "./flow";
+import { after, before, clear, load, path, reconcile, save, skippable } from "./flow";
 
 const store = () => { const m = new Map<string, string>(); return { getItem: (k: string) => m.get(k) ?? null, setItem: (k: string, v: string) => void m.set(k, v), removeItem: (k: string) => void m.delete(k) }; };
 
@@ -26,5 +26,20 @@ describe("resuming", () => {
   it("a damaged or foreign value is nothing", () => {
     const s = store(); s.setItem("cal.onboarding", "{oops"); expect(load(s)).toBeNull();
     s.setItem("cal.onboarding", JSON.stringify({ who: "owner", step: "elsewhere" })); expect(load(s)).toBeNull();
+  });
+});
+
+describe("a record belongs to an account", () => {
+  const rec = { who: "owner" as const, coder: false, step: "machine" as const, done: ["you" as const, "look" as const], skipped: [] };
+  it("resumes a record of the signed-in account and drops another account's", () => {
+    expect(reconcile({ ...rec, account: "a" }, "a")?.step).toBe("machine");
+    expect(reconcile({ ...rec, account: "old" }, "a")).toBeNull();
+    expect(reconcile(null, "a")).toBeNull();
+  });
+  it("a record with no account is believed only at the first step (the passkey was made, the page reloaded), and then who-you-are is done", () => {
+    const r = reconcile({ ...rec, step: "you", done: [] }, "a");
+    expect(r).toMatchObject({ account: "a", step: "look" });
+    expect(r?.done).toContain("you");
+    expect(reconcile({ ...rec }, "a")).toBeNull();
   });
 });

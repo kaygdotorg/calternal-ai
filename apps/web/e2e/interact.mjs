@@ -32,16 +32,17 @@ await page.waitForTimeout(60);
 const running = await pill.evaluate((el) => el.getAnimations().filter((a) => !(a instanceof CSSTransition)).length);
 ok("a pointer click starts no rebound on the pill (the press is CSS only)", running === 0, `animations=${running}`);
 await page.keyboard.press("Escape");
-// open a thread, rename by double-clicking the title
+// open a thread, rename it from its menu
 await rows.first().click();
 await page.waitForSelector("h1");
-await page.locator("h1").dblclick();
+await page.getByRole("button", { name: "Thread actions" }).click(); await page.getByRole("menuitem", { name: "Rename" }).click();
 const field = page.getByLabel("Rename thread");
-ok("double-clicking the title opens an inline editor", (await field.count()) === 1);
+ok("Rename in the thread menu opens an inline editor for the title", (await field.count()) === 1);
 await field.fill("Renamed here");
 await field.press("Enter");
 await page.waitForTimeout(100);
-ok("rename applies", (await page.locator("h1").innerText()) === "Renamed here");
+ok("rename applies", (await page.locator("main h1").first().textContent()) === "Renamed here");
+await page.waitForTimeout(500); // the thread menu finishes closing before the next menu opens
 // archive + undo
 await rows.first().click({ button: "right" });
 await page.getByRole("menuitem", { name: "Archive" }).click();

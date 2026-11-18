@@ -397,8 +397,9 @@ export class ServerThreads implements ThreadsClient {
     await this.server.operate("agent.resume", { space_id: this.space(), thread_id: id, job_id: t.job, retry_failed: t.state === "failed" });
   }
 
-  async createThread(title: string, o: { provider?: ThreadSummary["provider"]; parentId?: string } = {}): Promise<ThreadSummary> {
-    const input: Record<string, unknown> = { space_id: this.space(), title };
+  async createThread(title?: string, o: { provider?: ThreadSummary["provider"]; parentId?: string } = {}): Promise<ThreadSummary> {
+    const input: Record<string, unknown> = { space_id: this.space() };
+    if (title !== undefined) input.title = title;
     if (o.provider) input.provider = providerPlugin(o.provider);
     if (o.parentId) input.parent_thread = o.parentId;
     const { thread } = await this.server.operate<{ thread: WireThread }>("threads.create", input);
@@ -417,6 +418,11 @@ export class ServerThreads implements ThreadsClient {
     this.tellList();
     const o = this.opened.get(id);
     if (o) { o.summary = { ...o.summary, title: t }; this.follows.get(id)?.ev.onSummary(o.summary); }
+  }
+  /** Set or clear the shared Inbox deadline through the thread operation. */
+  async snooze(id: string, until: number | null): Promise<void> {
+    await this.server.operate("threads.snooze", { id, space_id: this.space(), until_ms: until });
+    void this.refreshList();
   }
   async archive(id: string): Promise<void> {
     trace("archive op start", id.slice(0, 8));

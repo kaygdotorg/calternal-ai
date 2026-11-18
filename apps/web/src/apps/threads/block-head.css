@@ -1,0 +1,5 @@
+/* The head of a folded block in an agent message ("Thought for 3 s", "Worked for 12 s · 6 tools"): one row, one look, on a desktop and a phone. The height comes from the spacing tokens (38 px), not from the touch row height (the phone's 48 px
+   made these rows visibly thicker than on a desktop); a finger still gets a 44 px target through a hit area that extends past the row (`::after`), which changes nothing visible. One weight and one tone for every block head (the quiet ink, the regular weight). */
+.block-head { position: relative; display: flex; align-items: center; gap: var(--s-4); width: 100%; min-height: calc(var(--s-9) + var(--s-3)); padding: 0 var(--s-5) 0 var(--s-4); border-radius: var(--r-select); color: var(--ink-3); font-size: var(--text-label); font-weight: var(--ui-weight); text-align: start; }
+.block-head:disabled { cursor: default; }
+@media (pointer: coarse) { .block-head::after { content: ""; position: absolute; inset: -3px 0; } }

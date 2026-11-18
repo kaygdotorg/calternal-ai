@@ -338,3 +338,12 @@ One behaviour, no comparison toggles: the veil is solved to a **7:1** readabilit
 ### Buttons in Settings (2026-11-18)
 
 One rule: the action button of a row or page (`Add a machine…`, `New skill`, `New automation`, `Add a person…`, `Make an invitation`, every `button` setting) is its natural width at the start edge where the card is at least 40 rem wide, and the full row width where it is narrower (a phone). It carries the class `settings-action`; the width is decided by a container query on Settings' scroller (`settings-page`), so it follows the card, not the window. Actions inside a list row (Open file, Run now, Pause, Change) are the standard secondary or quiet button, never borderless dim text with an indent of their own, and a Settings panel's rows take the card's inset and no more (`.row.col:has(> .sp)` has no padding of its own). A custom panel's group has a title like every other page's (`Skills in this space`, `Scheduled prompts`).
+
+
+### Headings and their rows (2026-11-18)
+
+A section heading and the row under it must not say the same thing. The heading names the group; the row says something the heading does not (`Chat` holds `Layout`; `Apps` holds `Order`; `Wordmark` holds `Name` and `Font`), and a button's text is the verb, not the row's own label (`Every appearance setting` with the button `Restore defaults`). Where a group has one row and nothing to add, the group takes the title and the row is the control, never both. `e2e/settings-phone.mjs` fails a page where a heading is repeated by one of its rows or a button by its row; all 16 Settings pages pass.
+
+### Appearance, grouped (2026-11-18)
+
+Appearance reads in the order a person decides things: **Colour** (scheme, preset, accent), **Wallpaper**, **Materials** (blur, dim, tint, clear to tinted), **Text** (UI size, the interface, chat, code and terminal fonts), **Wordmark** (its name and its font together), **Windows** (window look, new window width), **Chat**, **Motion**, **Apps**, **Reset**. A font row shows the family set in itself, so the row is its own preview; text fields start at the start edge everywhere.

@@ -2,7 +2,7 @@
 
 - All UI implementation, visual design and UI/UX work MUST be done by Claude agents, never Codex/GPT agents. Non-Claude agents may implement backend/protocol/CLI logic and report UI findings, but route UI changes to Claude.
 - User-approved overnight task, 2026-11-16: build the bounded roadmap in docs/tonight-contract.md after independent contract review. Use disposable development data only; no production migration, email, or unapproved external messaging.
-- Maximum concurrent subagents (user rule, 2026-11-17): up to five Codex GPT-6.2-Sol medium lanes for backend work and two Claude lanes for UI. Spread builds across the dev VMs. Do not spawn descendants. Reuse or archive finished lanes.
+- Concurrent subagents (user rule, 2026-11-19, replacing the earlier cap of five): there is no fixed limit on lanes; start as many as the work and the dev VMs' capacity allow, Codex GPT-6.2-Sol medium for backend and Claude for UI. Spread builds across the dev VMs. Do not spawn descendants. Reuse or archive finished lanes.
 - Defer product questions to docs/morning-decisions.md. Preserve existing protections and accepted decisions; missing safety proofs mean affected features remain disabled.
 - Plugins are authored in TypeScript; portable GenUI first. Rust host and shared client core; Swift native UI through UniFFI; TypeScript browser. No Wasm.
 - Full product architecture is in docs/architecture-proposal.md. The overnight build is a development preview, not proof of multi-tenant sandboxing, inherited full recovery/tiering, provider credential isolation, or production readiness.

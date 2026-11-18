@@ -351,7 +351,11 @@ check: ProviderCheck | null,
 /**
  * The machine has capacity and the enabled provider reports a login.
  */
-ready: boolean, };
+ready: boolean,
+/**
+ * Safe reason an automatic title was skipped on this machine, when observed.
+ */
+title_blocked?: string, };
 /**
  * A request is presented only to the authenticated recipient.
  */
@@ -1340,6 +1344,10 @@ executable: string,
  * Whether the executable implements the private `--sign-in` mode.
  */
 sign_in: boolean,
+/**
+ * Whether the adapter implements the private, stateless `--title` command.
+ */
+title_generation: boolean,
 /**
  * Default installed-CLI model identifier, at most 128 UTF-8 bytes.
  */

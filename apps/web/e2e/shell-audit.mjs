@@ -58,8 +58,9 @@ const wallpapers = JSON.parse(readFileSync("wallpapers.json", "utf8"));
   // message actions
   await page.locator(".msg").nth(2).hover(); await page.waitForTimeout(300);
   ok((await page.locator(".msg [aria-label='Copy message']").count()) > 0 && (await page.locator(".msg [aria-label='Reply in side chat']").count()) > 0, "Each message has small actions beside its time (copy, reply in side chat, more) on hover");
-  // selection actions
-  await page.evaluate(() => { const p = document.querySelector(".msg.assistant p, .agent p"); const r = document.createRange(); r.selectNodeContents(p); const s = getSelection(); s.removeAllRanges(); s.addRange(r); document.dispatchEvent(new Event("selectionchange")); });
+  // selection actions (after the composer's collapse has settled: a list that follows its end scrolls when the layout under it changes, and a scroll hides the selection toolbar)
+  await page.waitForTimeout(700);
+  await page.evaluate(() => { const p = [...document.querySelectorAll(".msg.assistant p, .agent .selectable p")].filter((e) => { const r = e.getBoundingClientRect(); return r.top > 120 && r.bottom < innerHeight - 160; }).at(-1); /* a paragraph in view (a thread opens at its true end now, so the first one in the DOM is overscan above the screen) */ const r = document.createRange(); r.selectNodeContents(p); const s = getSelection(); s.removeAllRanges(); s.addRange(r); document.dispatchEvent(new Event("selectionchange")); });
   await page.mouse.up(); await page.waitForTimeout(500);
   ok((await page.getByRole("button", { name: /Comment/ }).count()) > 0 && (await page.getByRole("button", { name: /Ask in side chat/i }).count()) > 0, "Selecting text offers Comment and Ask in Side Chat");
   const cap = await page.locator("aside.side footer nav[aria-label='Apps'] .opt").evaluateAll((l) => l.map((e) => e.getAttribute("aria-label")));
@@ -94,9 +95,8 @@ const wallpapers = JSON.parse(readFileSync("wallpapers.json", "utf8"));
   ok(foot, "The sidebar's footer (account, spaces, search) is in view in the Settings app too");
   const groups = await page.locator("aside.side nav h2").allInnerTexts();
   ok(groups.length === 3 && /^User/.test(groups[0]) && /^Admin/.test(groups[1]) && /^Space/.test(groups[2]), "Settings: User, Admin, then the current space (owner decision C)", groups.join(" / "));
-  ok((await page.locator("aside.side input[type=search], .page input[type=search]").count()) === 0, "No search box inside Settings");
-  const rows = [];
-  for (const n of await page.locator(".page .sec").allInnerTexts()) { await page.locator(".page .sec", { hasText: n }).first().click(); await page.waitForTimeout(150); rows.push(...(await page.locator(".page [data-setting]").evaluateAll((e) => e.map((x) => x.dataset.setting)))); }
+  ok((await page.locator("aside.side input[type=search], .page input[type=search]:not(#u-q)").count()) === 0, "No search box inside Settings");
+  const rows = await page.locator(".page [data-setting]").evaluateAll((e) => e.map((x) => x.dataset.setting)); // the page is flat: every section is on it
   ok(["appearance.blur", "appearance.dim", "appearance.tint"].every((s) => rows.includes(s)), "Materials are three checkboxes: Blur, Dim, Tint");
   ok(rows.includes("appearance.ui-size") && rows.includes("appearance.wordmark"), "One UI size slider; the wordmark and its font are set here");
   ok(rows.includes("appearance.motion") || (await page.getByText(/Reduce motion|Motion/i).count()) > 0, "Motion follows the system's reduce-motion setting, plus an off switch");

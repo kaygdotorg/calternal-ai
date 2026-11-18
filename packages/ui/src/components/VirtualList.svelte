@@ -44,6 +44,9 @@
   let total = $state(0);
   let stuck = true;
   let raf = 0;
+  /** When the list last scrolled itself (to the end), and when the person last moved it (wheel, finger, key, press): a scroll the list made, or one that followed content growing under it, must not un-stick it from the end; only the person does. */
+  let driven = 0, intent = 0;
+  const touch = () => { intent = performance.now(); };
   const rows = new Map<number, HTMLElement>();
 
   /** Rebuilds the tree for a new `count`, keeping every measured height. Called when the count changes. */
@@ -72,7 +75,9 @@
   function onscroll() {
     const v = view();
     if (!v) return;
-    stuck = inside ? false : v.scrollHeight - v.scrollTop - v.clientHeight < 24;
+    if (inside) stuck = false;
+    else if (v.scrollHeight - v.scrollTop - v.clientHeight < 24) stuck = true;
+    else if (performance.now() - intent < 800 && performance.now() - driven > 100) stuck = false;
     if (!raf) raf = requestAnimationFrame(() => { raf = 0; update(); });
   }
 
@@ -95,7 +100,7 @@
     }
     if (!changed) return;
     total = tree.prefix(count);
-    if (stuck) queueMicrotask(toBottom);
+    if (stuck) { queueMicrotask(toBottom); requestAnimationFrame(toBottom); } // twice: the sizer's height is written by the next state flush, and the end moves with it
     else if (shiftAbove) v.scrollTop = top + shiftAbove;
     update();
   });
@@ -106,7 +111,7 @@
   }
 
   function toBottom() {
-    if (scroller) scroller.scrollTop = scroller.scrollHeight;
+    if (scroller && stuck) { driven = performance.now(); scroller.scrollTop = scroller.scrollHeight; }
   }
 
   /**
@@ -131,10 +136,17 @@
     requestAnimationFrame(() => requestAnimationFrame(settle));
   }
 
+  /** Whether the list is within `px` of its end (the person is reading the latest, not an older part). */
+  export function nearEnd(px = 200): boolean {
+    const v = view();
+    return !v || v.scrollHeight - v.scrollTop - v.clientHeight < px;
+  }
+
   /** Scrolls to the end and keeps following it while the list grows. */
   export function scrollToBottom() {
     stuck = true;
     toBottom();
+    requestAnimationFrame(toBottom);
   }
 
   $effect(() => {
@@ -144,7 +156,7 @@
       const wasEmpty = heights.length === 0;
       resize(n);
       if (wasEmpty) stuck = !inside && startAtBottom;
-      if (wasEmpty && startAtBottom && scroller) scroller.scrollTop = total + topInset + bottomInset;
+      if (wasEmpty && startAtBottom && scroller) { driven = performance.now(); scroller.scrollTop = total + topInset + bottomInset; }
       update();
       onrange?.(first, last); // the count changed: a list read a page at a time asks again whether the window is near its end
     });
@@ -180,7 +192,7 @@
   <div bind:this={sizer} class="sizer" role="list" aria-label={label} style:height="{total}px">{@render windowed()}</div>
 {:else}
   <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-  <div bind:this={scroller} class="scroller edge-fade" style:--fade-t="{topInset}px" style:--fade-b="{bottomInset}px" role="feed" aria-label={label} aria-busy="false" tabindex="0" onscroll={onscroll}>
+  <div bind:this={scroller} class="scroller edge-fade" style:--fade-t="{topInset}px" style:--fade-b="{bottomInset}px" role="feed" aria-label={label} aria-busy="false" tabindex="0" onscroll={onscroll} onwheel={touch} ontouchstart={touch} ontouchmove={touch} onpointerdown={touch} onkeydown={touch}>
     <div class="sizer" style:height="{total + topInset + bottomInset}px">{@render windowed()}</div>
   </div>
 {/if}
