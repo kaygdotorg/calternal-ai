@@ -8,6 +8,7 @@ use crate::{AccountId, Error, ErrorCode, Result, SpaceId};
 use calternal_core::PeopleOperation;
 use calternal_types::{Capability, CapabilitySet, GroupId};
 mod development;
+mod erasure;
 mod membership;
 mod receipt;
 mod recovery;

@@ -151,6 +151,18 @@ impl Folder {
         Ok(())
     }
 
+    /// Remove a child tree without following symlinks, then sync its parent.
+    /// Repeating removal of an absent entry succeeds. Cost: a walk of the
+    /// selected tree and one directory sync.
+    pub fn remove_tree(&self, name: &str) -> io::Result<()> {
+        single(name)?;
+        let name_c = std::ffi::CString::new(name)
+            .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "invalid filename"))?;
+        remove_entry(&self.fd, &name_c)?;
+        crate::usage::changed(&self.path.join(name));
+        self.sync()
+    }
+
     /// Flushes this folder's entries (new names) to disk.
     pub fn sync(&self) -> io::Result<()> {
         rustix::fs::fsync(&self.fd).map_err(Into::into)
@@ -175,6 +187,28 @@ impl Folder {
             path: self.path.clone(),
         })
     }
+}
+
+fn remove_entry(dir: &OwnedFd, name: &std::ffi::CStr) -> io::Result<()> {
+    use rustix::io::Errno;
+    let directory = OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC;
+    match rustix::fs::openat(dir, name, directory, Mode::empty()) {
+        Ok(child) => {
+            let mut entries = rustix::fs::Dir::read_from(&child)?;
+            while let Some(entry) = entries.read() {
+                let entry = entry?;
+                let name = entry.file_name();
+                if name.to_bytes() != b"." && name.to_bytes() != b".." {
+                    remove_entry(&child, name)?;
+                }
+            }
+            rustix::fs::unlinkat(dir, name, AtFlags::REMOVEDIR)?;
+        }
+        Err(Errno::NOENT) => (),
+        Err(Errno::NOTDIR | Errno::LOOP) => rustix::fs::unlinkat(dir, name, AtFlags::empty())?,
+        Err(error) => return Err(error.into()),
+    }
+    Ok(())
 }
 
 /// A temporary file being filled. Dropping it removes it; [`Self::persist`]

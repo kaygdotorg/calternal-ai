@@ -130,6 +130,12 @@ impl Jobs {
             }
             Ok((ids, wake))
         })?;
+        self.stop_live(cancelled);
+        Ok(wake)
+    }
+    /// Settle routed jobs after durable cancellation or space retirement.
+    /// One existing live-stream lookup per job, with no store I/O.
+    pub(super) fn stop_live(&self, cancelled: Vec<String>) {
         for job in cancelled {
             let live = self
                 .live
@@ -145,6 +151,35 @@ impl Jobs {
             }
             self.settle(&job);
         }
-        Ok(wake)
+    }
+
+    /// End an erased account's active work in retained spaces. The route map
+    /// supplies only spaces with job stores. One indexed update per such space.
+    pub(crate) fn retire_account(&self, account: calternal_types::AccountId) -> Result<(), Error> {
+        let spaces: std::collections::BTreeSet<_> = self
+            .routes
+            .read()
+            .unwrap_or_else(|p| p.into_inner())
+            .values()
+            .cloned()
+            .collect();
+        for space in spaces {
+            let cancelled = match self.tx(&space, |tx| {
+                let mut update = tx.prepare_cached(&format!(
+                    "UPDATE jobs SET state='cancelled',finished_ms=?2,
+                        checkpoint=json_remove(checkpoint,'$.person_request','$.retry'),result='null'
+                     WHERE account=?1 AND state IN {ACTIVE} RETURNING id"
+                )).map_err(db_err)?;
+                update.query_map(rusqlite::params![account.to_string(), crate::plugins::job_sql::now_ms()],
+                    |row| row.get::<_,String>(0)).map_err(db_err)?
+                    .collect::<rusqlite::Result<Vec<_>>>().map_err(db_err)
+            }) {
+                Ok(cancelled) => cancelled,
+                Err(error) if error.code == calternal_types::ErrorCode::NotFound => continue,
+                Err(error) => return Err(error),
+            };
+            self.stop_live(cancelled);
+        }
+        Ok(())
     }
 }

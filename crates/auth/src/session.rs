@@ -10,7 +10,7 @@ use crate::Inner;
 use crate::db::{now_ms, sql};
 use crate::token::{hash, new_session_token, plausible_session_token};
 use crate::{AccountId, Error, ErrorCode, InstallationId, Result};
-use rusqlite::{OptionalExtension, Transaction, params};
+use rusqlite::{Connection, OptionalExtension, Transaction, params};
 use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::RwLock;
@@ -378,25 +378,36 @@ pub(crate) async fn require_fresh(
     if inner.sessions.is_revoked(installation) {
         return Err(Error::new(ErrorCode::Forbidden, "session revoked"));
     }
-    let id = installation.to_string();
-    let (kind, asserted, registration): (String, Option<i64>, bool) = inner
+    let config = inner.config.clone();
+    inner
         .db
-        .run(move |c| {
-            c.query_row(
-                "SELECT kind, assertion_at, registration_session FROM installations WHERE id = ?1 AND user_id = ?2 AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > ?3)",
-                params![id, user.to_string(), now_ms()],
-                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
-            )
-            .map_err(sql)
+        .run(move |connection| {
+            check_fresh(connection, &config, user, installation, registration_ok)
         })
-        .await?;
+        .await
+}
+
+/// Check the live installation and its passkey timestamp within the caller's
+/// existing authority transaction. One indexed row read and no flush.
+pub(crate) fn check_fresh(
+    connection: &Connection,
+    config: &crate::AuthConfig,
+    user: AccountId,
+    installation: InstallationId,
+    registration_ok: bool,
+) -> Result<()> {
+    let (kind, asserted, registration): (String, Option<i64>, bool) = connection.query_row(
+        "SELECT kind, assertion_at, registration_session FROM installations WHERE id=?1 AND user_id=?2 AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at>?3)",
+        params![installation.to_string(), user.to_string(), now_ms()],
+        |row| Ok((row.get(0)?,row.get(1)?,row.get(2)?)),
+    ).optional().map_err(sql)?.ok_or_else(|| Error::new(ErrorCode::Forbidden, "session revoked"))?;
     if !matches!(kind.as_str(), "browser" | "native") {
         return Err(Error::new(
             ErrorCode::PasskeyReverificationRequired,
             "this needs a signed-in browser or app",
         ));
     }
-    let window = i64::try_from(inner.config.app_password_fresh.as_millis()).unwrap_or(i64::MAX);
+    let window = i64::try_from(config.app_password_fresh.as_millis()).unwrap_or(i64::MAX);
     match asserted {
         Some(at)
             if (registration_ok || !registration)

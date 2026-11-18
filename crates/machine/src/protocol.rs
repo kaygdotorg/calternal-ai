@@ -1,4 +1,4 @@
-//! Wire protocol between the server role and the machine role, version 3.
+//! Wire protocol between the server role and the machine role, version 4.
 //!
 //! The machine always connects out; the server never opens a connection to a
 //! machine. Everything is plain JSON over HTTP(S) requests the machine makes:
@@ -28,7 +28,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 /// Protocol version spoken by this build; the server refuses other versions.
-pub const PROTOCOL_VERSION: u32 = 3;
+pub const PROTOCOL_VERSION: u32 = 4;
 
 /// Path prefix of every machine-facing endpoint. The server's account guard
 /// skips it: these endpoints authenticate the machine themselves.
@@ -185,7 +185,7 @@ pub struct SyncRequest {
     /// Highest [`Envelope::seq`] received in this session (0 before any).
     pub ack: u64,
     /// Completed explicit workspace deletions, retransmitted until a successful sync.
-    /// At most 128. An absent batch means no completed deletions.
+    /// At most [`MAX_DISCARD_REPORTS`]. An absent batch means no completed deletions.
     #[serde(default)]
     pub discards: Vec<DiscardReport>,
     /// Current capacity.
@@ -196,12 +196,41 @@ pub struct SyncRequest {
     pub leases: Vec<LeaseReport>,
 }
 
-/// A machine's result for a durable owner-requested workspace discard.
+/// Maximum retained owner erasures delivered alongside regular discards per sync.
+pub const OWNER_ERASURE_BATCH: usize = 16;
+/// Maximum regular workspace discards and owner erasure results in one sync.
+pub const MAX_DISCARD_REPORTS: usize = 128 + OWNER_ERASURE_BATCH;
+
+/// A signed, read-only status query for the enrolled machine.
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ErasureStatusRequest {
+    /// Enrolled machine UUID.
+    pub machine_id: Uuid,
+    /// Unused machine session challenge.
+    pub challenge: String,
+    /// Base64 Ed25519 signature for the status challenge domain.
+    pub signature: String,
+}
+
+/// Number of durable owner erasures still awaiting this machine.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ErasureStatus {
+    /// Pending erasure instructions, which survive disconnection.
+    pub pending_erasures: u64,
+}
+
+/// Sign a status challenge in a domain distinct from session establishment.
+pub fn erasure_status_message(machine_id: Uuid, challenge: &str) -> Vec<u8> {
+    format!("calternal-machine-erasure-status-v1\n{machine_id}\n{challenge}").into_bytes()
+}
+
+/// A machine's result for a durable workspace discard or owner erasure.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DiscardReport {
     /// Unique deletion attempt UUID; its session binds the target machine.
     pub request_id: Uuid,
-    /// True only after workspace/container removal completed; account home remains.
+    /// True after the requested workspace or account tree was removed.
     pub success: bool,
 }
 
@@ -274,6 +303,15 @@ pub enum Down {
         account_id: Uuid,
         /// Thread workspace to discard; its persistent account home is retained.
         thread_id: Uuid,
+    },
+    /// Remove a deleted owner's machine-role data and acknowledge durable completion.
+    Erase {
+        /// Durable request identity, scoped to this enrolled machine.
+        request_id: Uuid,
+        /// Account directory that contains the target.
+        account_id: Uuid,
+        /// A workspace within the account. Absent means the entire account tree.
+        thread_id: Option<Uuid>,
     },
     /// Run work for (space, account, thread) in a site-local sandbox.
     Assign {

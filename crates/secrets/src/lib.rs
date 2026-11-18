@@ -31,9 +31,10 @@ mod local;
 mod types;
 
 use calternal_types::Actor;
+pub use calternal_types::Owner;
 pub use local::{LocalStore, REQUEST_TTL_MS};
 pub use types::{
-    Action, AuditEntry, Consumer, Handle, HandleToken, Metadata, Owner, PendingRequest, RequestId,
+    Action, AuditEntry, Consumer, Handle, HandleToken, Metadata, PendingRequest, RequestId,
     SecretName, SecretValue,
 };
 

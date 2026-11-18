@@ -7,6 +7,8 @@
 //! the process (see [`crate::sandbox`]). Memory per running exec is therefore
 //! bounded by about 256 KiB in the channel plus 256 KiB here.
 
+mod erasure;
+
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -329,6 +331,14 @@ impl Runner {
                         Self::close(&slot, slot.spec.worker.is_none()).await;
                     }
                 }
+            }
+            Down::Erase {
+                request_id,
+                account_id,
+                thread_id,
+            } => {
+                self.erase_owner_data(request_id, account_id, thread_id)
+                    .await;
             }
             Down::Discard {
                 request_id,

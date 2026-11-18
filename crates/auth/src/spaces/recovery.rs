@@ -17,6 +17,12 @@ pub trait RecoverySink: Send + Sync {
     /// Publishes only a witnessed committed delta before acknowledgement; an
     /// empty token from prepare requires no filesystem publication.
     fn complete(&self, connection: &Connection, intent: &str) -> Result<()>;
+    /// Drop superseded generations after an erasure's authority is published.
+    /// The caller is outside a SQLite transaction and holds the same recovery
+    /// serialization guard. Stateless test sinks have no file history.
+    fn compact_erasure(&self, _connection: &Connection) -> Result<()> {
+        Ok(())
+    }
     /// Held from prepare through complete, so no other commit stages an intent while
     /// this one decides which witnesses are committed. It belongs to the sink, so
     /// database handles sharing a sink share it too.

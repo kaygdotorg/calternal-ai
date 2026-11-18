@@ -25,6 +25,13 @@ impl Backend for MachineBackend {
             ))
         })
     }
+    fn erase(&self, _: Uuid, _: Option<Uuid>) -> BoxFuture<'_, SandboxResult<()>> {
+        Box::pin(async {
+            Err(SandboxError(
+                "owner erasures use the durable machine channel".into(),
+            ))
+        })
+    }
     fn start<'a>(
         &'a self,
         spec: &'a SandboxSpec,

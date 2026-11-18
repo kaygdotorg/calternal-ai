@@ -8,7 +8,7 @@ title: "calternal machine status"
 
 | Arguments | Purpose | Human output | JSON data |
 | --- | --- | --- | --- |
-| `machine status [--dir DIR]` | Show this machine's identity and server. | Same block as `enroll`. Not enrolled: `not_found`. | as `enroll` |
+| `machine status [--dir DIR]` | Show this machine's identity, server, and erasure status. | Identity plus pending erasures or an operator-wipe indication. Not enrolled: `not_found`. | as `enroll`, plus `erasure_status` and the pending count when available |
 
 ## JSON data shape
 
@@ -17,7 +17,9 @@ title: "calternal machine status"
   "machine_id": "string",
   "owner": "string",
   "server": "string",
-  "credentials_file": "string"
+  "credentials_file": "string",
+  "erasure_status": "string",
+  "pending_erasures?": "integer"
 }
 ```
 
@@ -30,6 +32,7 @@ machine:      aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa
 owner:        pool
 server:       https://cal.example.org
 credentials:  $HOME/.local/share/calternal/machine/credentials
+pending erasures:  2
 ```
 
 ## JSON example
@@ -40,8 +43,10 @@ Recorded test fixture:
 {
   "data": {
     "credentials_file": "$HOME/.local/share/calternal/machine/credentials",
+    "erasure_status": "pending",
     "machine_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
     "owner": "pool",
+    "pending_erasures": 2,
     "server": "https://cal.example.org"
   },
   "ok": true

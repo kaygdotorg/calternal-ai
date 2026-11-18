@@ -29,6 +29,7 @@ mod threads_cases;
 
 mod cursor_cases;
 mod drafts_cases;
+mod erasure_cases;
 #[path = "live_cases.rs"]
 mod live_cases;
 mod notes_cases;
@@ -39,6 +40,7 @@ mod worker_cases;
 const ORIGIN: &str = "http://localhost:18080";
 const AUTH_ROUTES: &[(&str, &str)] = &[
     ("GET", "status"),
+    ("POST", "account/delete"),
     ("POST", "setup/start"),
     ("POST", "setup/finish"),
     ("POST", "login/start"),
@@ -62,6 +64,7 @@ struct Answer {
     micros: u128,
 }
 impl Answer {
+    #[track_caller]
     fn ok(&self) {
         assert_eq!(self.status, 200, "{}", self.body);
     }
@@ -161,6 +164,10 @@ impl Fixture {
     }
 
     async fn start_with_plugin_root(&mut self, explicit: bool) {
+        self.start_checked(explicit, false).await;
+    }
+
+    async fn start_checked(&mut self, explicit: bool, expect_crash: bool) {
         let path = self.appdata().join("startup.json");
         let _ = std::fs::remove_file(&path);
         let binary = std::env::var("CALTERNAL_SERVER_BIN")
@@ -222,12 +229,19 @@ impl Fixture {
                 .unwrap(),
         );
         for _ in 0..1000 {
-            assert!(
-                self.child.as_mut().unwrap().try_wait().unwrap().is_none(),
-                "server exited during startup"
-            );
+            if let Some(status) = self.child.as_mut().unwrap().try_wait().unwrap() {
+                assert!(
+                    expect_crash && !status.success(),
+                    "server exited during startup: {status}"
+                );
+                return;
+            }
             if let Ok(s) = std::fs::read(&path) {
                 if let Ok(v) = serde_json::from_slice::<Value>(&s) {
+                    assert!(
+                        !expect_crash,
+                        "server admitted requests before the startup crash"
+                    );
                     assert_eq!(v["development_tokens"], self.development);
                     // Connect to actual ephemeral listener; Host/Origin are the explicitly configured RP.
                     // startup base_url is public origin, so discover bound port from /proc socket tables below.
@@ -1129,6 +1143,10 @@ async fn account_routes_reject_foreign_resources_and_bad_sessions() {
     }
     for origin in [None, Some("https://evil.invalid"), Some("null")] {
         for (method, name) in AUTH_ROUTES {
+            // A valid deletion is covered by the dedicated erasure fixtures.
+            if *name == "account/delete" && origin.is_none() {
+                continue;
+            }
             let chosen = if *name == "logout" { &old } else { &second };
             let r = f
                 .req(
@@ -2310,6 +2328,14 @@ async fn anonymous_sessions_are_refused_on_every_protected_route_and_operation()
                 .and_then(|s| s.split('"').next())
         })
         .collect();
+    let erasure = include_str!("../../crates/core/src/lib.rs")
+        .lines()
+        .find_map(|line| {
+            line.strip_prefix("pub const ACCOUNT_ERASURE_PATH: &str = \"/api/v1/auth/")
+        })
+        .and_then(|line| line.split('"').next())
+        .unwrap();
+    registered.push(erasure);
     let mut covered: Vec<_> = AUTH_ROUTES.iter().map(|(_, name)| *name).collect();
     registered.sort_unstable();
     covered.sort_unstable();
@@ -2657,6 +2683,7 @@ const MACHINE_ROUTES: &[(&str, &str)] = &[
     ("POST", "/api/v1/machine/session/start"),
     ("POST", "/api/v1/machine/session/finish"),
     ("POST", "/api/v1/machine/sync"),
+    ("POST", "/api/v1/machine/status"),
     ("POST", "/api/v1/machine/output"),
     ("GET", "/api/v1/machines"),
     ("POST", "/api/v1/machines/codes"),

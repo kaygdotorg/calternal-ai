@@ -1,26 +1,35 @@
 //! One space's jobs connection and its journal publication scheduling state.
+use calternal_types::{OwnerLifecycle, OwnerScoped, SpaceId};
 use rusqlite::Connection;
-use std::sync::{LockResult, Mutex, MutexGuard};
+use std::sync::{Mutex, MutexGuard};
 
 /// Serializes SQLite work for one cached space. Publication scheduling holds
 /// a separate short lock that is never held across SQLite or journal work.
 pub(crate) struct JobDatabase {
     connection: Mutex<Connection>,
+    lifecycle: OwnerLifecycle,
+    space: SpaceId,
     publishing: Mutex<Option<bool>>,
 }
 
 impl JobDatabase {
     /// Wrap an open connection. Cost: no I/O or allocation.
-    pub(super) fn new(connection: Connection) -> Self {
+    pub(super) fn new(connection: Connection, lifecycle: OwnerLifecycle, space: SpaceId) -> Self {
         Self {
             connection: Mutex::new(connection),
+            lifecycle,
+            space,
             publishing: Mutex::new(None),
         }
     }
 
     /// Lock this space's connection for a short blocking query or transaction.
-    pub(crate) fn lock(&self) -> LockResult<MutexGuard<'_, Connection>> {
-        self.connection.lock()
+    pub(crate) fn lock(&self) -> rusqlite::Result<OwnerScoped<MutexGuard<'_, Connection>>> {
+        let step = self
+            .lifecycle
+            .step(self.space.as_uuid())
+            .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
+        Ok(step.hold(self.connection.lock().unwrap_or_else(|p| p.into_inner())))
     }
 
     /// Reserve a drain task, or signal the existing one to check for new work

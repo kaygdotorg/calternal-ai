@@ -28,6 +28,7 @@ impl Content {
         key: &str,
         change: impl FnOnce(Option<Value>) -> Result<(Value, Value)>,
     ) -> Result<Value> {
+        let _actor = self.lifecycle.step(request.account.as_uuid())?;
         self.with_space(space, |s| {
             self.publish_pending(s)?;
             if let Some(saved) = self.journals.receipt(&s.journal, request.account, request.id)? {
@@ -89,6 +90,30 @@ impl Content {
     ) -> Result<Value> {
         self.admit_checked(space, request, run)
     }
+    /// Authorize an irreversible directory erasure against this space's
+    /// existing receipt namespace. Reuses its lifecycle lock and closes it
+    /// through the callback. The removed journal receives no new receipt.
+    pub fn admit_erasure<T>(
+        &self,
+        space: SpaceId,
+        request: Request<'_>,
+        erase: impl FnOnce() -> Result<T>,
+    ) -> Result<T> {
+        let _actor = self.lifecycle.step(request.account.as_uuid())?;
+        self.with_space(space, |s| {
+            self.publish_pending(s)?;
+            if let Some(saved) = self
+                .journals
+                .receipt(&s.journal, request.account, request.id)?
+                && (saved.operation != request.operation
+                    || saved.fingerprint != request.fingerprint)
+            {
+                return Err(Error::request_reused());
+            }
+            erase()
+        })
+    }
+
     /// Admit a control mutation while holding the target item's space lock. The
     /// callback sees the current head before replay and may check its lifecycle;
     /// it must not re-enter content. A crash after its commit replays its own
@@ -104,6 +129,7 @@ impl Content {
         request: Request<'_>,
         run: impl FnOnce(&Item, Option<Value>) -> Result<Value>,
     ) -> Result<Value> {
+        let _actor = self.lifecycle.step(request.account.as_uuid())?;
         self.with_space(space, |s| {
             self.publish_pending(s)?;
             let current = s.get(id)?;
@@ -138,6 +164,7 @@ impl Content {
         request: Request<'_>,
         run: impl FnOnce() -> Result<Value>,
     ) -> Result<Value> {
+        let _actor = self.lifecycle.step(request.account.as_uuid())?;
         self.with_space(space, |s| {
             self.publish_pending(s)?;
             if let Some(saved) = self
@@ -325,6 +352,7 @@ impl Content {
         retarget: Option<&Retarget<'_>>,
         guard: impl FnOnce() -> Result<()>,
     ) -> Result<Item> {
+        let _actor = self.lifecycle.step(request.account.as_uuid())?;
         Self::validate_write_size(&metadata, bytes)?;
         if request.id.len() > 256 {
             return Err(Error::invalid_input("content input is too large"));

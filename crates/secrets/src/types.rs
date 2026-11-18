@@ -2,35 +2,8 @@
 //! except [`SecretValue`], which only exposes its bytes through an explicit call.
 
 use crate::{Error, Result};
-use calternal_types::{AccountId, SpaceId};
-
+use calternal_types::Owner;
 use zeroize::Zeroizing;
-
-/// The single account or space a secret belongs to.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum Owner {
-    /// Personal credentials owned only by the account. Provider CLI logins stay on machines.
-    Account(AccountId),
-    /// Shared by a space; authority comes from the space's capability sets.
-    Space(SpaceId),
-}
-
-impl Owner {
-    /// Storage kind word, also bound into every ciphertext.
-    pub fn kind(&self) -> &'static str {
-        match self {
-            Self::Account(_) => "account",
-            Self::Space(_) => "space",
-        }
-    }
-    /// The owner's UUID.
-    pub fn uuid(&self) -> uuid::Uuid {
-        match self {
-            Self::Account(id) => id.as_uuid(),
-            Self::Space(id) => id.as_uuid(),
-        }
-    }
-}
 
 /// Validated secret name: 1–96 bytes of `a-z 0-9 . _ - :`, starting with a letter
 /// or digit. Plugin secrets are named `plugin:<plugin-id>:<name>` by the host so

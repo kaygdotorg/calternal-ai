@@ -74,6 +74,37 @@ impl Backend for DirectBackend {
             Ok(())
         })
     }
+    fn erase(
+        &self,
+        account: uuid::Uuid,
+        thread: Option<uuid::Uuid>,
+    ) -> BoxFuture<'_, SandboxResult<()>> {
+        let root = self.root.clone();
+        Box::pin(async move {
+            tokio::task::spawn_blocking(move || {
+                use calternal_fsio::beneath::Folder;
+                let remove = || -> std::io::Result<()> {
+                    let root = Folder::open(&root)?;
+                    let accounts = root.child("accounts", false)?;
+                    let account = account.to_string();
+                    match thread {
+                        Some(thread) => accounts
+                            .child(&account, false)?
+                            .child("threads", false)?
+                            .remove_tree(&thread.to_string()),
+                        None => accounts.remove_tree(&account),
+                    }
+                };
+                match remove() {
+                    Ok(()) => Ok(()),
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+                    Err(error) => Err(SandboxError::new(error)),
+                }
+            })
+            .await
+            .map_err(SandboxError::new)?
+        })
+    }
     fn start<'a>(
         &'a self,
         spec: &'a SandboxSpec,
@@ -312,6 +343,44 @@ mod tests {
                 .join(s.thread_id.to_string())
                 .exists()
         );
+    }
+
+    #[tokio::test]
+    async fn erasure_keeps_other_accounts_and_never_traverses_sandbox_symlinks() {
+        let sandbox = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let target = spec();
+        let other = spec();
+        let backend = DirectBackend::new(sandbox.path());
+        let path = |id: uuid::Uuid| sandbox.path().join("accounts").join(id.to_string());
+        let workspace = path(target.account_id)
+            .join("threads")
+            .join(target.thread_id.to_string());
+        std::fs::create_dir_all(&workspace).unwrap();
+        std::fs::create_dir_all(path(target.account_id).join("home")).unwrap();
+        std::fs::create_dir_all(path(other.account_id).join("home")).unwrap();
+        let personal_file = outside.path().join("must-survive");
+        std::fs::write(&personal_file, "person's own file").unwrap();
+        std::os::unix::fs::symlink(outside.path(), workspace.join("link")).unwrap();
+        backend
+            .erase(target.account_id, Some(target.thread_id))
+            .await
+            .unwrap();
+        assert!(!workspace.exists());
+        assert!(path(target.account_id).join("home").exists());
+        backend.erase(target.account_id, None).await.unwrap();
+        backend.erase(target.account_id, None).await.unwrap();
+        assert!(!path(target.account_id).exists());
+        assert!(path(other.account_id).exists());
+        assert!(personal_file.exists());
+        std::os::unix::fs::symlink(outside.path(), path(target.account_id)).unwrap();
+        assert!(
+            backend
+                .erase(target.account_id, Some(target.thread_id))
+                .await
+                .is_err()
+        );
+        assert!(personal_file.exists());
     }
 
     #[tokio::test]

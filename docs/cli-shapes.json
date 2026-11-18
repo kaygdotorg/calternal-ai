@@ -13,6 +13,7 @@
     "calternal people add": {},
     "calternal people set-role": {},
     "calternal people remove": {},
+    "calternal people delete": {"account_id": "string", "deleted": "bool"},
     "calternal people transfer": {},
     "calternal people disable": {"account_id": "string", "disabled": "bool"},
     "calternal groups list": {"groups": [{"group_id": "string", "name": "string", "source": "string", "members": ["string"], "members_next_cursor?": "string"}], "next_cursor?": "string"},
@@ -81,12 +82,12 @@
     "calternal agent readiness": {"machines": [{"machine_id": "string", "name": "string", "enrolled": "bool", "connected": "bool", "available": "bool", "execution": "string", "last_seen_ms": "any", "providers": "any"}], "pool": [{"enrolled": "bool", "connected": "bool", "available": "bool", "execution": "string", "providers": "any"}], "check_ttl_ms": "integer"},
     "calternal serve": { "profile": "string", "url": "string", "token_files": "any", "startup_file": "string" },
     "calternal machines code": { "code": "string", "owner": "string", "expires_at": "string" },
-    "calternal machines list": { "machines": [{ "id": "string", "owner": "string", "name": "string", "os": "string", "arch": "string", "state": "string" }] },
+    "calternal machines list": { "machines": [{ "id": "string", "owner": "string", "name": "string", "os": "string", "arch": "string", "state": "string" }], "pending_erasures": [{"machine_id":"string", "pending":"integer", "operator_wipe":"bool"}] },
     "calternal machines revoke": { "machine": "string", "revoked": "bool" },
     "calternal machines pool-grant": { "account": "string", "pool_access": "bool" },
     "calternal plugin-digest": { "workers": [{ "id": "string", "worker": "string", "sha256": "string?", "pinned": "bool", "state": "string" }] },
     "calternal machine enroll": { "machine_id": "string", "owner": "string", "server": "string", "credentials_file": "string" },
-    "calternal machine status": { "machine_id": "string", "owner": "string", "server": "string", "credentials_file": "string" },
+    "calternal machine status": { "machine_id": "string", "owner": "string", "server": "string", "credentials_file": "string", "erasure_status":"string", "pending_erasures?":"integer" },
     "calternal machine verify": { "sandbox_started": "bool", "provider": "any" },
     "calternal machine run": { "stopped": "bool" }
   }

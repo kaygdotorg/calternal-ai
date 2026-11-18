@@ -73,6 +73,23 @@ impl Backend for ConfiguredBackend {
             }
         })
     }
+    fn erase(
+        &self,
+        account: uuid::Uuid,
+        thread: Option<uuid::Uuid>,
+    ) -> BoxFuture<'_, SandboxResult<()>> {
+        Box::pin(async move {
+            if self.podman.engine_available().await {
+                self.podman.erase(account, thread).await
+            } else if self.name() == "direct" {
+                self.direct.erase(account, thread).await
+            } else {
+                Err(SandboxError(
+                    "Podman is unavailable for owner erasure".into(),
+                ))
+            }
+        })
+    }
     fn start<'a>(
         &'a self,
         spec: &'a SandboxSpec,

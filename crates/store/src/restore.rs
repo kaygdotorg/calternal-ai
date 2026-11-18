@@ -219,12 +219,16 @@ pub(crate) fn write_now(conn: &Connection, shared: &Shared) -> Result<()> {
 /// that entry; only when all three miss does it open SQLite for one
 /// primary-key lookup.
 pub(crate) fn flush(shared: &Shared, store_path: &Path) -> Result<()> {
+    let _step = shared.step()?;
     flush_with_check(shared, |head| check_at_path(store_path, head))
 }
 
 /// Flushes after the writer drains, reusing its connection on a separate worker.
 /// This keeps shutdown from reopening SQLite after its final WAL cleanup.
 pub(crate) fn flush_after_writer(conn: &Connection, shared: &Shared) -> Result<()> {
+    let Ok(_step) = shared.step() else {
+        return Ok(());
+    };
     flush_with_check(shared, |head| Ok(check_at(conn, head)?.unwrap_or(0)))
 }
 

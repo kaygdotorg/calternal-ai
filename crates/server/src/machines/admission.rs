@@ -54,6 +54,16 @@ impl MachineService {
         pinned_machine: Option<Uuid>,
         pool_diagnostic: bool,
     ) -> Result<RunView, Error> {
+        let _account = self
+            .lifecycle
+            .get()
+            .map(|l| l.step(account.as_uuid()))
+            .transpose()?;
+        let _space = self
+            .lifecycle
+            .get()
+            .map(|l| l.step(space.as_uuid()))
+            .transpose()?;
         let mut st = self.lock()?;
         let st = &mut *st;
         if worker.is_some() && !st.recovery_stops.is_empty() {

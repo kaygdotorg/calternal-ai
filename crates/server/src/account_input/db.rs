@@ -12,6 +12,7 @@ impl Inputs {
     /// Append a content-free invalidation to the account feed. Opens only the
     /// recipient's database and commits one short transaction on a blocking worker.
     pub(crate) fn invalidate(&self, account: AccountId) -> Result<(), Error> {
+        let _step = self.step(account)?;
         let mut connection = self.open(account)?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
@@ -307,6 +308,7 @@ impl Inputs {
         {
             return Ok(());
         }
+        let _step = self.step(id)?;
         let mut c = self.open(id)?;
         let before = c.total_changes();
         let tx = c

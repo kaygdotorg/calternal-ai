@@ -63,6 +63,7 @@ pub fn routes<D: Directory>() -> Router<Shared<D>> {
         .route("/api/v1/machine/session/start", post(session_start))
         .route("/api/v1/machine/session/finish", post(session_finish))
         .route("/api/v1/machine/sync", post(sync))
+        .route("/api/v1/machine/status", post(erasure_status))
         .route("/api/v1/machine/output", post(output))
         .route("/api/v1/machines", get(list))
         .route("/api/v1/machines/codes", post(code))
@@ -135,6 +136,17 @@ async fn session_finish(svc: Svc, bytes: Bytes) -> Response {
             let svc = service(svc)?;
             let req: SessionFinish = body(&bytes)?;
             blocking(move || svc.session_finish(&req)).await
+        }
+        .await,
+    )
+}
+
+async fn erasure_status(svc: Svc, bytes: Bytes) -> Response {
+    reply(
+        async {
+            let svc = service(svc)?;
+            let request = body(&bytes)?;
+            blocking(move || svc.erasure_status(&request)).await
         }
         .await,
     )

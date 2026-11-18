@@ -56,6 +56,7 @@ pub(crate) fn sweep(spaces: &Cache, idle: Duration) -> usize {
 pub(crate) fn spawn_sweeper(
     spaces: &Cache,
     root_guard: &RootGuard,
+    lifecycle: calternal_types::OwnerLifecycle,
     idle: Duration,
     fault: fn(crate::FaultPoint),
 ) -> Result<std::thread::Thread> {
@@ -74,9 +75,13 @@ pub(crate) fn spawn_sweeper(
                 let _pin = lock(&guard).clone();
                 let Some(spaces) = weak.upgrade() else { return };
                 // Clone at most 64 slots; never hold the map lock across disk I/O.
-                let slots: Vec<_> = lock(&spaces).values().cloned().collect();
-                for slot in slots {
-                    if let Ok(mut space) = slot.space.try_lock()
+                let slots: Vec<_> = lock(&spaces)
+                    .iter()
+                    .map(|(id, slot)| (*id, slot.clone()))
+                    .collect();
+                for (id, slot) in slots {
+                    if let Ok(_step) = lifecycle.step(id.as_uuid())
+                        && let Ok(mut space) = slot.space.try_lock()
                         && let Some(space) = space.as_mut()
                         && space.pending_since.is_some()
                     {

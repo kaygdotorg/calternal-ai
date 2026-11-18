@@ -42,7 +42,7 @@ the structured outcome.
 
 ## Design
 
-- **Transport**: version 3 long-poll over HTTP(S) (`protocol`). There are no
+- **Transport**: version 4 long-poll over HTTP(S) (`protocol`). There are no
   new dependencies on either side, it passes any proxy in front of the server, and it
   reuses the server's request guard. Both directions carry sequence numbers and
   acknowledgements, so a dropped request loses nothing. The cost is one held request
