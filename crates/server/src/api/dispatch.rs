@@ -331,6 +331,14 @@ pub(super) async fn run_admitted_operation<D: Directory>(
         )
         .await;
     }
+    if let Some(operation) = calternal_core::SearchOperation::from_id(op) {
+        let delivery_space = policy.scope_space(&input)?;
+        let value = super::search::dispatch(&state, &p, operation, input).await?;
+        if let Some(space) = delivery_space {
+            policy.check(super::authorization::capabilities(&state, p.id, space).await?)?;
+        }
+        return Ok(value);
+    }
     let delivery_space = input
         .get("space_id")
         .and_then(Value::as_str)
@@ -368,22 +376,12 @@ pub(super) async fn dispatch_checked<D: Directory>(
         }
         "notes.create" | "notes.update" => mutate_note(state, actor, request_id, op, input).await,
         "plugins.list" => {
-            let i: PluginsListInput = decode(input)?;
-            let space = space_of(&i.space_id)?;
-            let catalog = state.registry.snapshot();
-            let declarations = catalog.clone();
-            let plugins = blocking(&state, move |s| {
-                declarations
-                    .plugins()
-                    .iter()
-                    .filter(|plugin| plugin.available_in(space))
-                    .map(|plugin| plugin_state(s, space, plugin))
-                    .collect::<Result<Vec<_>, _>>()
-            })
-            .await?;
-            let slots =
-                super::plugin_slots::resolve(&state, &catalog, p.id, space, &plugins).await?;
-            to_value(PluginsListResult { plugins, slots })
+            super::plugin_slots::list(
+                &state,
+                p.id,
+                space_of(&decode::<PluginsListInput>(input)?.space_id)?,
+            )
+            .await
         }
         "plugins.enable" | "plugins.disable" => {
             let (fp, input) = super::request::fingerprint(op, input).await?;

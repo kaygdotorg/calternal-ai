@@ -721,6 +721,28 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
           },
           "type": "array"
         },
+        "owned_slots": {
+          "description": "Up to 32 mounts owned by this package, resolved only while enabled.",
+          "items": {
+            "$ref": "#/definitions/OwnedPluginSlot"
+          },
+          "maxItems": 32,
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "palette": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PaletteDeclaration"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Optional commands, extra phrases and Settings sections for the palette."
+        },
         "provider": {
           "anyOf": [
             {
@@ -897,6 +919,179 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
         }
       ]
     },
+    "OwnedPluginSlot": {
+      "additionalProperties": false,
+      "description": "One package-owned slot, with explicit visibility, accepted renderers and capacity.",
+      "properties": {
+        "accepts": {
+          "description": "Nonempty set of operation-backed renderer types. Duplicates are invalid.",
+          "items": {
+            "$ref": "#/definitions/OwnedPluginSlotKind"
+          },
+          "maxItems": 2,
+          "minItems": 1,
+          "type": "array"
+        },
+        "id": {
+          "description": "Stable local name; the host obtains the owner ID from the enclosing manifest.",
+          "type": "string"
+        },
+        "max_contributions": {
+          "description": "Maximum visible contributions per listing, between 1 and 32.",
+          "format": "uint8",
+          "maximum": 32,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "required_capability": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/ManifestCapability"
+            }
+          ],
+          "description": "Space capability a caller must hold to resolve this slot."
+        }
+      },
+      "required": [
+        "accepts",
+        "id",
+        "max_contributions",
+        "required_capability"
+      ],
+      "type": "object"
+    },
+    "OwnedPluginSlotId": {
+      "additionalProperties": false,
+      "description": "A package-qualified slot. Its namespace cannot address a host surface.",
+      "properties": {
+        "id": {
+          "description": "Local slot ID in that package.",
+          "type": "string"
+        },
+        "plugin_id": {
+          "description": "Registered package that declares the slot.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "plugin_id"
+      ],
+      "type": "object"
+    },
+    "OwnedPluginSlotKind": {
+      "description": "Operation-backed contribution types available to a package-owned mount.",
+      "oneOf": [
+        {
+          "description": "A read-only operation yielding a portable generated view.",
+          "enum": [
+            "generated"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "An operation invoked through the host's normal command and approval path.",
+          "enum": [
+            "command"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "PaletteCommand": {
+      "additionalProperties": false,
+      "description": "One palette command, in the web palette's command shape.",
+      "properties": {
+        "go": {
+          "description": "Navigation address, if this command navigates.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "group": {
+          "description": "Display group.",
+          "type": "string"
+        },
+        "id": {
+          "description": "Stable, globally unique command identifier.",
+          "type": "string"
+        },
+        "label": {
+          "description": "Searchable command label.",
+          "type": "string"
+        },
+        "op": {
+          "description": "Named host action, if the command invokes one.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "words": {
+          "description": "Extra phrases that match this command.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "group",
+        "id",
+        "label"
+      ],
+      "type": "object"
+    },
+    "PaletteDeclaration": {
+      "additionalProperties": false,
+      "description": "Optional palette declarations in a plugin manifest.",
+      "properties": {
+        "commands": {
+          "description": "Commands with their extra search phrases.",
+          "items": {
+            "$ref": "#/definitions/PaletteCommand"
+          },
+          "type": "array"
+        },
+        "settings_sections": {
+          "description": "Settings sections that the plugin contributes.",
+          "items": {
+            "$ref": "#/definitions/PaletteSettingsSection"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "commands",
+        "settings_sections"
+      ],
+      "type": "object"
+    },
+    "PaletteSettingsSection": {
+      "additionalProperties": false,
+      "description": "A discoverable Settings section.",
+      "properties": {
+        "go": {
+          "description": "Settings address.",
+          "type": "string"
+        },
+        "id": {
+          "description": "Stable section identifier.",
+          "type": "string"
+        },
+        "label": {
+          "description": "Section label.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "go",
+        "id",
+        "label"
+      ],
+      "type": "object"
+    },
     "PluginSlot": {
       "description": "Host-defined mount point for an activated plugin contribution.",
       "oneOf": [
@@ -981,10 +1176,10 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
         "slot": {
           "allOf": [
             {
-              "$ref": "#/definitions/PluginSlot"
+              "$ref": "#/definitions/PluginSlotTarget"
             }
           ],
-          "description": "Host mount point, independent of renderer implementation."
+          "description": "Extensible host mount or package-owned target, independent of the renderer."
         }
       },
       "required": [
@@ -1063,6 +1258,27 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
         }
       ]
     },
+    "PluginSlotTarget": {
+      "anyOf": [
+        {
+          "allOf": [
+            {
+              "$ref": "#/definitions/PluginSlot"
+            }
+          ],
+          "description": "One extensible host mount point."
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/definitions/OwnedPluginSlotId"
+            }
+          ],
+          "description": "A slot defined by an installed package."
+        }
+      ],
+      "description": "Mount addressed either by the fixed host vocabulary or a package-qualified name."
+    },
     "PluginState": {
       "additionalProperties": false,
       "description": "Space-scoped activation snapshot returned by `plugins.list`, `plugins.enable` and `plugins.disable`.",
@@ -1120,6 +1336,36 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
       ],
       "type": "object"
     },
+    "ResolvedOwnedPluginSlot": {
+      "additionalProperties": false,
+      "description": "An owned mount available in the caller's selected space.",
+      "properties": {
+        "definition": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/OwnedPluginSlot"
+            }
+          ],
+          "description": "The validated declaration, including renderer and capacity constraints."
+        },
+        "generation": {
+          "description": "Current owner activation generation, used to invalidate a mounted slot.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "plugin_id": {
+          "description": "Owner package. Pair it with the local ID from the definition.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "definition",
+        "generation",
+        "plugin_id"
+      ],
+      "type": "object"
+    },
     "ResolvedPluginSlot": {
       "additionalProperties": false,
       "description": "An available contribution resolved for the caller and selected space.",
@@ -1153,6 +1399,16 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
   },
   "description": "Result for `plugins.list`, including registered manifests and activation state.",
   "properties": {
+    "owned_slots": {
+      "description": "Available owned mounts, ordered by owner package and local slot ID.",
+      "items": {
+        "$ref": "#/definitions/ResolvedOwnedPluginSlot"
+      },
+      "type": [
+        "array",
+        "null"
+      ]
+    },
     "plugins": {
       "description": "Registered plugins and their space-scoped activation state.",
       "items": {

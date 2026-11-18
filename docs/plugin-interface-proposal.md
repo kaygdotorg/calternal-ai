@@ -9,8 +9,7 @@ Add sealed components where they can stay within a bounded rectangle. This
 fits the decision against page-wide JavaScript in the [plugin API](plugin-api.md)
 and preserves the recovery surface described in the [architecture](architecture-proposal.md).
 Terms follow the [glossary](glossary.md). The foundation cannot be replaced or styled by any plugin. Sign-in, approvals,
-secrets and recovery are outside plugin reach. The slot contract below is a
-prototype.
+secrets and recovery are outside plugin reach. The server lists fixed and package-owned slots. Client mounting follows the renderer plan.
 
 ## What a plugin can contribute
 
@@ -32,6 +31,16 @@ identifies the item rather than its current renderer. Contributions never
 authorize an operation. A personal shell resolves contributions separately for
 each authorized space, with no shared worker across those spaces.
 [Addresses](addresses.md) · [Orchestrator decisions](orchestrator-proposal.md#decided-in-the-grill-2026-11-17)
+
+Owned mounts use a qualified `{plugin_id, id}` target. The owner declares
+visibility, renderer types and a maximum number of visible contributions.
+The server resolves only active owners and contributors whose corresponding
+capabilities the caller holds. Missing or incompatible targets stay dormant.
+Policy and capacity changes are reflected in subsequent listings. The next
+scoped reactive values contract must publish removals and updated resolved
+contributions to the owner under the same space and capability checks.
+See the [manifest contract](plugin-api.md#authoring-and-interface-prototype).
+
 
 ## Sealed components
 
@@ -339,7 +348,7 @@ contains the detailed constraints for the 24 previously adopted capabilities.
 
 | Extension point in the reference systems | Calternal status | What an author can do there today |
 | --- | --- | --- |
-| bb-lite plugin-declared typed slots and single or multiple selection | Decided, unbuilt | Let another package add a new kind of entry without changing the foundation. This prototype has fixed slots. |
+| bb-lite plugin-declared typed slots and single or multiple selection | Owner declarations, typed contributions, capacity and space-aware listing built | Have a slot owner receive changes through a live value and mount the result in the client. |
 | bb and bb-lite local install, hot reload and development inspection | Live install and scoped draft reload built. The enrolled-machine author loop measured 903 ms p95. Broader inspection remains unbuilt. | Follow readiness, logs and timing for an edited worker in one author-facing view. |
 | bb marketplace and bb-lite Git/local catalogs, dependency and engine ranges, upgrade rollback | Decided, unbuilt | Find packages by source, have compatibility checked and restore the last working activation. Local checksum review is built in this lane. |
 | bb-lite fork existing server, app or runner entry and profiles | Decided, unbuilt | Fork one part of a default feature and keep updating the other parts. |

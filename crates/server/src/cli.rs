@@ -38,6 +38,13 @@ pub(super) enum Cmd {
         #[command(flatten)]
         args: calternal_cli::threads::Args,
     },
+    /// Search readable spaces and browse palette suggestions.
+    Search {
+        #[command(flatten)]
+        connection: calternal_cli::account_input::Connection,
+        #[command(subcommand)]
+        cmd: calternal_cli::search::Command,
+    },
     /// Find, rename, delete and restore notes.
     Notes {
         #[command(flatten)]

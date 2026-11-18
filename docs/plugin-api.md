@@ -170,11 +170,63 @@ The server checks a candidate worker's readiness before publishing it, using
 a bounded challenge with no space data. The SDK transport handles it for
 authors. See the author workflow for active revision behavior during updates.
 
-Optional manifest `slots` declare a bounded set of local IDs, accessible
-labels, host slot IDs and renderer references. A generated renderer refers to
-a read operation declared by the same plugin whose output schema requires
-a `view`. Palette commands refer to declared operations. Sealed renderer
-paths are validated as metadata. The prototype omits them from the resolved
-listing pending the asset and frame isolation contracts. `plugins.list`
-returns resolved slots for active plugins whose operations the caller can
-invoke in the selected space. See the [interface proposal](plugin-interface-proposal.md).
+Optional manifest `owned_slots` declares up to 32 mounts owned by the
+package. A declaration names a local `id`, a space-level
+`required_capability`, a nonempty `accepts` set of `generated` and/or
+`command`, and a `max_contributions` between 1 and 32.
+
+```json
+"owned_slots": [
+  {
+    "id": "details",
+    "required_capability": "space.read",
+    "accepts": ["generated"],
+    "max_contributions": 4
+  }
+]
+```
+
+A package targets an owned mount in its `slots` list:
+
+```json
+{
+  "id": "summary",
+  "label": "Summary",
+  "slot": { "plugin_id": "my-app", "id": "details" },
+  "renderer": { "type": "generated", "operation": "my-extension.summary" }
+}
+```
+
+Each manifest declares up to 32 contributions. A generated renderer requires
+a declared read operation whose output schema requires a `view`. A command
+uses the declared operation and its normal approval path. The contributor
+declares its capability on that operation. Missing owners, missing local
+mounts and unaccepted renderer types remain dormant, so packages can
+install in either order. A qualified name always addresses a package mount.
+Foundation surfaces are absent from the fixed host targets.
+
+`plugins.list` returns visible declarations in `owned_slots` and resolved
+contributions in `slots`. The owner and contributor must both be enabled in
+the selected space. The caller needs both declared capabilities. Admission,
+approval, item and space checks still run when a rendered action invokes the
+operation. Where a slot fills, the first eligible contributions in package ID
+and local contribution ID order win. A disable or removal is reflected by the
+next listing. The planned scoped reactive values feed will deliver that change
+to the slot owner. The existing `plugins` array remains a manifest and
+activation inventory.
+
+Fixed host targets retain their string names. Sealed renderer paths at
+supported fixed targets are declaration metadata pending the asset and
+frame isolation contracts. Owned mounts accept only operation-backed
+contributions. Web and Swift mounting belong to the client renderers.
+See the [interface proposal](plugin-interface-proposal.md).
+
+## Palette discovery
+
+A plugin can declare `palette.commands` for commands with optional matching
+phrases in `words`, and `palette.settings_sections` for Settings links. The
+host projects these declarations once per loaded manifest version. Settings
+sections enter the command list as navigation commands in the Settings group.
+`plugins.manifests` presents the enabled contributions in the selected space
+from the current catalog snapshot. Live install, update, disable and removal
+take effect on the next request.

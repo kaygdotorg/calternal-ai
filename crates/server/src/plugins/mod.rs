@@ -29,6 +29,7 @@ mod requests;
 pub(crate) use requests::OnceAdmission;
 pub mod runner;
 pub mod session;
+mod slots;
 pub mod worker;
 
 use std::borrow::Cow;
@@ -89,6 +90,8 @@ pub struct Plugin {
     pub entry: TrustedEntry,
     /// Validated manifest v1; immutable for the server's lifetime.
     pub manifest: ManifestV1,
+    /// Palette data projected once from this immutable manifest version.
+    pub(crate) palette: Option<calternal_core::PaletteManifest>,
     /// Canonical absolute worker path, when the plugin has a built worker.
     pub worker: Option<PathBuf>,
     /// Why the plugin cannot execute or be enabled, if it cannot (digest mismatch etc).
@@ -121,9 +124,33 @@ impl Plugin {
                 manifest.id, manifest.version, entry.id, entry.version
             ));
         }
+        let palette = manifest
+            .palette
+            .as_ref()
+            .map(|menu| calternal_core::PaletteManifest {
+                plugin: manifest.id.clone(),
+                version: manifest.version.clone(),
+                commands: menu
+                    .commands
+                    .iter()
+                    .cloned()
+                    .chain(menu.settings_sections.iter().map(|section| {
+                        calternal_core::PaletteCommand {
+                            id: section.id.clone(),
+                            label: section.label.clone(),
+                            group: "Settings".into(),
+                            words: Vec::new(),
+                            go: Some(section.go.clone()),
+                            op: None,
+                        }
+                    }))
+                    .collect(),
+                settings_sections: menu.settings_sections.clone(),
+            });
         Ok(Self {
             entry,
             manifest,
+            palette,
             worker,
             unavailable: None,
             schemas,
@@ -218,6 +245,7 @@ pub struct Catalog {
     plugins: Vec<Arc<Plugin>>,
     retained: BTreeMap<(String, u32), Arc<Plugin>>,
     tool_index: std::sync::OnceLock<String>,
+    slots: slots::SlotIndex,
     /// Operation ID -> (owning plugin index, derived policy).
     operations: BTreeMap<String, (usize, Policy)>,
 }
@@ -360,7 +388,27 @@ impl Catalog {
             };
             out.operations.insert(row.operation.id, (slot, policy));
         }
+        out.slots = slots::SlotIndex::compile(&out);
         out
+    }
+
+    /// Whether there is any registered mount or compatible contribution.
+    /// Cost: two checks on the immutable index.
+    pub(crate) fn has_slots(&self) -> bool {
+        !self.slots.is_empty()
+    }
+
+    /// Resolve a listing from activation rows in catalog order. Invisible packages
+    /// occupy empty positions. Cost: one bounded scan, no I/O or package execution.
+    pub(crate) fn resolve_slots(
+        &self,
+        plugins: &[Option<calternal_core::PluginState>],
+        authority: calternal_types::CapabilitySet,
+    ) -> (
+        Vec<calternal_core::ResolvedPluginSlot>,
+        Vec<calternal_core::ResolvedOwnedPluginSlot>,
+    ) {
+        self.slots.resolve(plugins, authority)
     }
 
     /// Registered plugins in trusted-file order.

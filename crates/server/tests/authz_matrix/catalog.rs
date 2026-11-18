@@ -101,6 +101,26 @@ async fn every_registered_operation_has_an_independent_matrix_row() {
             required
         );
     }
+    // HTTP behavior is covered with real directory grants in conformance/search_cases.rs.
+    use calternal_server::authz::Scope;
+    for (id, scope) in [
+        ("people.lookup", Scope::Space),
+        ("skills.list", Scope::Space),
+        ("plugins.manifests", Scope::Space),
+    ] {
+        assert!(stored_rows.insert(id), "duplicate search operation {id}");
+        let catalog = fixture.state.registry.snapshot();
+        let policy = catalog.policy(id).unwrap();
+        assert_eq!(policy.required, Capability::SpaceRead, "{id}");
+        assert_eq!(policy.scope, scope, "{id}");
+        let declaration = calternal_core::cached_operation(id).unwrap();
+        assert_eq!(
+            declaration.risk,
+            calternal_core::OperationRisk::Read,
+            "{id}"
+        );
+        assert!(!declaration.mutates, "{id}");
+    }
     let rows: BTreeSet<_> = rows.union(&stored_rows).copied().collect();
     assert_eq!(
         rows.iter()
@@ -150,6 +170,11 @@ async fn every_registered_operation_has_an_independent_matrix_row() {
                 .operation
                 .to_string()
         }))
+        .chain(
+            calternal_core::SearchOperation::ALL
+                .iter()
+                .map(|op| op.id().to_owned()),
+        )
         .chain(plugin_rows.iter().map(|p| (*p).to_owned()))
         .collect();
     assert_eq!(
@@ -165,6 +190,7 @@ async fn every_registered_operation_has_an_independent_matrix_row() {
             + calternal_server::authz::agent_policies().len()
             + calternal_server::authz::people_policies().len()
             + calternal_core::NOTE_OPERATIONS.len()
+            + calternal_core::SearchOperation::ALL.len()
             + plugin_rows.len(),
         MATRIX.len() + stored_rows.len(),
         "duplicate policy"

@@ -1,0 +1,6 @@
+Plugin:   calternal-notes
+Version:  0.1.0
+COMMAND   ID         GROUP  ACTION    PHRASES
+New note  notes.new  Notes  note.new  create note
+SETTINGS  ID             ADDRESS
+Display   notes.display  /settings/notes.display

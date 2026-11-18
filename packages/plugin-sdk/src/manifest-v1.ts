@@ -35,7 +35,7 @@ function schema(v: unknown): void { if (typeof v !== "boolean" && (!v || typeof 
  */
 export function validateManifestV1(value: unknown): ManifestV1 {
   if (new TextEncoder().encode(JSON.stringify(value)).length > 256 * 1024) fail();
-  const m = record(value, ["id", "name", "icon", "version", "api_version", "kinds", "operations", "collections", "views", "attention", "settings", "schedules", "webhooks", "secrets", "hooks", "themes", "host_calls"], ["provider", "slots"]);
+  const m = record(value, ["id", "name", "icon", "version", "api_version", "kinds", "operations", "collections", "views", "attention", "settings", "schedules", "webhooks", "secrets", "hooks", "themes", "host_calls"], ["provider", "slots", "owned_slots", "palette"]);
   if (m.provider !== undefined) {
     const p = record(m.provider, ["protocol_version", "executable", "default_model", "models", "sign_in"]);
     if (p.sign_in !== undefined && typeof p.sign_in !== "boolean") throw new Error("invalid provider sign_in");
@@ -61,6 +61,43 @@ export function validateManifestV1(value: unknown): ManifestV1 {
     const list = m[key]; if (!Array.isArray(list) || list.length > 128) return fail();
     const seen = new Set<string>();
     for (const v of list) { const r = record(v, keys, optional); const key = identifier(r.id); if (seen.has(key)) fail(); seen.add(key); visit(r); }
+  }
+  if (m.palette !== undefined) {
+    const palette = record(m.palette, ["commands", "settings_sections"]);
+    const ids = new Set<string>();
+    const checkRows = (value: unknown, check: (v: unknown) => string): void => {
+      if (!Array.isArray(value) || value.length > 128) fail();
+      for (const row of value) {
+        const id = check(row);
+        if (ids.has(id)) fail();
+        ids.add(id);
+      }
+    };
+    const label = (value: unknown): string => {
+      const valueText = text(value);
+      if (/\p{Cc}/u.test(valueText)) fail();
+      return valueText;
+    };
+    const address = (value: unknown): void => {
+      if (!/^\/(?!\/)[^\\]*$/.test(label(value))) fail();
+    };
+    checkRows(palette.commands, value => {
+      const row = record(value, ["id", "label", "group"], ["words", "go", "op"]);
+      label(row.label); label(row.group);
+      if ((row.go === undefined) === (row.op === undefined)) fail();
+      if (row.go !== undefined) address(row.go);
+      if (row.op !== undefined) identifier(row.op);
+      if (row.words !== undefined) {
+        if (!Array.isArray(row.words) || row.words.length > 32) fail();
+        row.words.forEach(label);
+      }
+      return identifier(row.id);
+    });
+    checkRows(palette.settings_sections, value => {
+      const row = record(value, ["id", "label", "go"]);
+      label(row.label); address(row.go);
+      return identifier(row.id);
+    });
   }
   const operations = new Map<string, Record<string, unknown>>();
   rows("kinds", ["id", "schema", "storage", "claimed_text"], r => {
@@ -92,22 +129,38 @@ export function validateManifestV1(value: unknown): ManifestV1 {
   const op = (r: Record<string, unknown>): void => { if (!operations.has(String(r.operation))) fail(); };
   rows("collections", ["id", "kind", "name"], r => { identifier(r.kind); text(r.name); });
   rows("views", ["id", "region", "component"], r => { identifier(r.component); if (!["sidebar", "main", "right_card"].includes(String(r.region))) fail(); });
+  if (m.owned_slots != null) {
+    if (!Array.isArray(m.owned_slots) || m.owned_slots.length > 32) fail();
+    rows("owned_slots", ["id", "required_capability", "accepts", "max_contributions"], row => {
+      const capability = row.required_capability;
+      if (typeof capability !== "string" || !capabilities.has(capability) || capability.startsWith("spaces.")) fail();
+      const { accepts, max_contributions: limit } = row;
+      if (!Array.isArray(accepts) || !accepts.length || accepts.length > 2 ||
+          new Set(accepts).size !== accepts.length || accepts.some(kind => kind !== "generated" && kind !== "command")) fail();
+      if (typeof limit !== "number" || !Number.isInteger(limit) || limit < 1 || limit > 32) fail();
+    });
+  }
   if (m.slots != null) {
     if (!Array.isArray(m.slots) || m.slots.length > 32) fail();
     rows("slots", ["id", "label", "slot", "renderer"], row => {
       if (/\p{Cc}/u.test(text(row.label, 128))) fail();
       const slot = row.slot;
-      if (!["sidebar_section", "card_window", "composer_row", "message_decoration", "thread_edge", "settings_section", "palette_commands", "toasts"].includes(String(slot))) fail();
+      const owned = typeof slot !== "string";
+      if (owned) {
+        const target = record(slot, ["plugin_id", "id"]);
+        identifier(target.plugin_id);
+        identifier(target.id);
+      } else if (!["sidebar_section", "card_window", "composer_row", "message_decoration", "thread_edge", "settings_section", "palette_commands", "toasts"].includes(slot)) fail();
       const type = (row.renderer as { type?: unknown } | null)?.type;
       if (type === "sealed") {
         const renderer = record(row.renderer, ["type", "asset"]);
         const path = text(renderer.asset, 256);
-        if (["palette_commands", "message_decoration", "toasts"].includes(String(slot)) || !path.endsWith(".html") || !path.split("/").every(part => id.test(part))) fail();
+        if (owned || ["palette_commands", "message_decoration", "toasts"].includes(String(slot)) || !path.endsWith(".html") || !path.split("/").every(part => id.test(part))) fail();
       } else {
         const renderer = record(row.renderer, ["type", "operation"]);
         const operation = operations.get(identifier(renderer.operation));
         if (!operation) fail();
-        if (type === "command" && slot === "palette_commands") return;
+        if (type === "command" && (owned || slot === "palette_commands")) return;
         if (type !== "generated" || slot === "palette_commands" || operation.mutates) fail();
         const output = operation.output_schema as { properties?: { view?: unknown }; required?: unknown } | null;
         const view = output?.properties?.view;

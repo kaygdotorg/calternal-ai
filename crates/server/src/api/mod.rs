@@ -17,7 +17,7 @@ use axum::routing::{any, get, post};
 use calternal_core::{
     ErrorCode, GENUI_VERSION, JsonObject, MAX_BODY_BYTES, NoteResult, NotesCreateInput,
     NotesGetInput, NotesUpdateInput, OperationResponse, PROTOCOL_VERSION, PluginInput,
-    PluginPreviewResult, PluginResult, PluginState, PluginsListInput, PluginsListResult, True,
+    PluginPreviewResult, PluginResult, PluginState, PluginsListInput, True,
     canonical_request_input, operation_catalog, parse_request,
 };
 use serde::de::DeserializeOwned;
@@ -44,6 +44,9 @@ pub(crate) mod people;
 mod plugin_slots;
 mod plugins;
 mod request;
+mod search;
+mod search_skills;
+
 mod request_action;
 mod spaces;
 pub mod wallpapers;
