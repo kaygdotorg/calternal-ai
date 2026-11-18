@@ -4,7 +4,10 @@ use crate::{
     auth::{Directory, Identity},
     plugins::{
         Plugin, activation,
-        jobs::{Job, waits::{Decision, Resolution, WaitSource}},
+        jobs::{
+            Job,
+            waits::{Decision, Resolution, WaitSource},
+        },
     },
 };
 use calternal_core::{JsonObject, RequestResolution};
@@ -20,8 +23,14 @@ pub(crate) use webhook::{PATH, PREFIX, webhook};
 /// Cost: one indexed search per visible space with jobs and one FULL decision commit.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn inbox<D: Directory>(
-    state: &Shared<D>, person: &Identity, id: &str, required: Capability,
-    request: &str, fingerprint: &str, status: &str, value: Option<&JsonObject>,
+    state: &Shared<D>,
+    person: &Identity,
+    id: &str,
+    required: Capability,
+    request: &str,
+    fingerprint: &str,
+    status: &str,
+    value: Option<&JsonObject>,
     runtime: &tokio::runtime::Handle,
 ) -> Result<Option<RequestResolution>, Error> {
     if Uuid::parse_str(id).is_err() {
@@ -36,23 +45,44 @@ pub(crate) fn inbox<D: Directory>(
         };
         let plugin = enabled_plugin(state, &job, space_id)?;
         let (status, outcome) = match (source, status, value) {
-            (WaitSource::Question { schema_operation, .. }, "answered", Some(answer)) => {
+            (
+                WaitSource::Question {
+                    schema_operation, ..
+                },
+                "answered",
+                Some(answer),
+            ) => {
                 let answer = json!(answer);
-                plugin.schemas.validate_input(&schema_operation, &answer)
-                    .map_err(|_| Error::invalid_input("answer does not match the question schema"))?;
+                plugin
+                    .schemas
+                    .validate_input(&schema_operation, &answer)
+                    .map_err(|_| {
+                        Error::invalid_input("answer does not match the question schema")
+                    })?;
                 ("answered", json!({"kind": "answer", "value": answer}))
             }
-            (WaitSource::Approval, "once", _) => ("approved", json!({"kind": "approval", "approved": true})),
-            (WaitSource::Approval, "denied", _) => ("denied", json!({"kind": "approval", "approved": false})),
+            (WaitSource::Approval, "once", _) => {
+                ("approved", json!({"kind": "approval", "approved": true}))
+            }
+            (WaitSource::Approval, "denied", _) => {
+                ("denied", json!({"kind": "approval", "approved": false}))
+            }
             (WaitSource::Approval, "this_thread", _) => {
-                return Err(Error::invalid_input("this question allows a one-time decision"));
+                return Err(Error::invalid_input(
+                    "this question allows a one-time decision",
+                ));
             }
             _ => return Ok(None),
         };
-        let resolution = state.jobs.resolve_wait(&space.id, id, &job.id, Some(Decision {
-            outcome,
-            receipt: Some((request, fingerprint)),
-        }))?;
+        let resolution = state.jobs.resolve_wait(
+            &space.id,
+            id,
+            &job.id,
+            Some(Decision {
+                outcome,
+                receipt: Some((request, fingerprint)),
+            }),
+        )?;
         if let Err(error) = state.inputs.invalidate(person.id) {
             tracing::warn!(account = %person.id, reason = %error.message, "plugin Inbox invalidation failed");
         }
@@ -60,18 +90,33 @@ pub(crate) fn inbox<D: Directory>(
             let _runtime = runtime.enter();
             super::runner::schedule(state, space.id, job.id);
         }
-        return Ok(Some(RequestResolution { id: id.to_owned(), status: status.into() }));
+        return Ok(Some(RequestResolution {
+            id: id.to_owned(),
+            status: status.into(),
+        }));
     }
     Ok(None)
 }
 
-fn enabled_plugin<D: Directory>(state: &Shared<D>, job: &Job, space: SpaceId) -> Result<Arc<Plugin>, Error> {
+fn enabled_plugin<D: Directory>(
+    state: &Shared<D>,
+    job: &Job,
+    space: SpaceId,
+) -> Result<Arc<Plugin>, Error> {
     let hidden = || Error::not_found("wait not found");
     let catalog = state.registry.snapshot();
-    let plugin = catalog.revision(&job.plugin, job.package_revision).ok_or_else(hidden)?;
-    let required = plugin.operation(&job.operation)
-        .and_then(|op| super::host_capability(op.required_capability)).ok_or_else(hidden)?;
-    if !state.directory.capabilities(job.account, space).is_some_and(|caps| caps.contains(required)) {
+    let plugin = catalog
+        .revision(&job.plugin, job.package_revision)
+        .ok_or_else(hidden)?;
+    let required = plugin
+        .operation(&job.operation)
+        .and_then(|op| super::host_capability(op.required_capability))
+        .ok_or_else(hidden)?;
+    if !state
+        .directory
+        .capabilities(job.account, space)
+        .is_some_and(|caps| caps.contains(required))
+    {
         return Err(hidden());
     }
     let row = activation(&state.store, space, plugin)?;

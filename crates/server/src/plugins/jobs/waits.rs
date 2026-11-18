@@ -20,6 +20,10 @@ CREATE UNIQUE INDEX plugin_waits_webhook ON plugin_waits(
 CREATE TRIGGER plugin_waits_retain AFTER DELETE ON jobs BEGIN
     DELETE FROM plugin_waits WHERE job=OLD.id;
 END;
+CREATE TRIGGER plugin_waits_cancel AFTER UPDATE OF state ON jobs
+WHEN OLD.state='signal_waiting' AND NEW.state='cancelled' BEGIN
+    DELETE FROM plugin_waits WHERE job=NEW.id AND outcome IS NULL;
+END;
 ";
 
 const SPACE_LIMIT: u32 = 32;
@@ -108,13 +112,18 @@ impl Jobs {
         detail: Option<RequestDetail>,
     ) -> Result<Option<Timer>, Error> {
         if park.reason.trim().is_empty() || park.reason.len() > 256 {
-            return Err(Error::invalid_input("wait needs a reason of at most 256 bytes"));
+            return Err(Error::invalid_input(
+                "wait needs a reason of at most 256 bytes",
+            ));
         }
         if job.runs >= MAX_RUNS {
             return Err(Error::unavailable("job run limit reached"));
         }
         let checkpoint = bounded_json(&park.checkpoint, MAX_CHECKPOINT_BYTES)?;
-        let detail = bounded_json(&json!({"reason": park.reason, "request": detail}), SIGNAL_LIMIT)?;
+        let detail = bounded_json(
+            &json!({"reason": park.reason, "request": detail}),
+            SIGNAL_LIMIT,
+        )?;
         let source = bounded_json(&json!(park.source), SIGNAL_LIMIT)?;
         let id = Uuid::now_v7().to_string();
         let checkpoint_seq = live.next_seq() as i64;
@@ -177,32 +186,60 @@ impl Jobs {
         }
         let db = self.conn(&job.space)?;
         let conn = db.lock().map_err(db_err)?;
-        let outcome: Option<String> = conn.query_row(
-            "SELECT outcome FROM plugin_waits WHERE job=?1 AND checkpoint=?2",
-            params![job.id, job.checkpoints], |r| r.get(0),
-        ).optional().map_err(db_err)?.flatten();
-        outcome.map(|text| serde_json::from_str(&text).map_err(|_| Error::internal("stored wait outcome"))).transpose()
+        let outcome: Option<String> = conn
+            .query_row(
+                "SELECT outcome FROM plugin_waits WHERE job=?1 AND checkpoint=?2",
+                params![job.id, job.checkpoints],
+                |r| r.get(0),
+            )
+            .optional()
+            .map_err(db_err)?
+            .flatten();
+        outcome
+            .map(|text| {
+                serde_json::from_str(&text).map_err(|_| Error::internal("stored wait outcome"))
+            })
+            .transpose()
     }
 
     /// Read pending waits at startup for the existing durable job stores.
     /// One indexed walk of pending waits per space.
     pub(crate) fn wait_timers(&self) -> Result<Vec<Timer>, Error> {
-        let spaces: std::collections::BTreeSet<_> = self.routes.read()
-            .unwrap_or_else(|e| e.into_inner()).values().cloned().collect();
+        let spaces: std::collections::BTreeSet<_> = self
+            .routes
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .values()
+            .cloned()
+            .collect();
         let mut timers = Vec::new();
         for space in spaces {
             let db = self.conn(&space)?;
             let conn = db.lock().map_err(db_err)?;
-            let mut query = conn.prepare(
-                "SELECT w.job,w.id,w.deadline_ms,j.account FROM plugin_waits w
+            let mut query = conn
+                .prepare(
+                    "SELECT w.job,w.id,w.deadline_ms,j.account FROM plugin_waits w
                  JOIN jobs j ON j.id=w.job WHERE w.outcome IS NULL AND j.state='signal_waiting'",
-            ).map_err(db_err)?;
-            for timer in query.query_map([], |r| Ok(Timer {
-                space: space.clone(), job: r.get(0)?, id: r.get(1)?, deadline_ms: r.get(2)?,
-                account: r.get::<_, String>(3)?.parse().map_err(|error| rusqlite::Error::FromSqlConversionFailure(
-                    3, rusqlite::types::Type::Text, Box::new(error),
-                ))?,
-            })).map_err(db_err)? {
+                )
+                .map_err(db_err)?;
+            for timer in query
+                .query_map([], |r| {
+                    Ok(Timer {
+                        space: space.clone(),
+                        job: r.get(0)?,
+                        id: r.get(1)?,
+                        deadline_ms: r.get(2)?,
+                        account: r.get::<_, String>(3)?.parse().map_err(|error| {
+                            rusqlite::Error::FromSqlConversionFailure(
+                                3,
+                                rusqlite::types::Type::Text,
+                                Box::new(error),
+                            )
+                        })?,
+                    })
+                })
+                .map_err(db_err)?
+            {
                 timers.push(timer.map_err(db_err)?);
             }
         }
@@ -211,7 +248,11 @@ impl Jobs {
 
     /// Project account-owned pending prompts into the existing Inbox.
     /// One bounded query in the authorized space with no writes.
-    pub(crate) fn wait_requests(&self, space: &str, account: AccountId) -> Result<Vec<PersonRequest>, Error> {
+    pub(crate) fn wait_requests(
+        &self,
+        space: &str,
+        account: AccountId,
+    ) -> Result<Vec<PersonRequest>, Error> {
         if !self.has_job_store(space) {
             return Ok(Vec::new());
         }
@@ -222,39 +263,69 @@ impl Jobs {
              WHERE w.outcome IS NULL AND j.state='signal_waiting' AND j.account=?1 AND w.deadline_ms>?2
                AND json_type(w.detail,'$.request')='object'",
         ).map_err(db_err)?;
-        query.query_map(params![account.to_string(), now_ms()], |r| {
-            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?))
-        }).map_err(db_err)?.map(|row| {
-            let (id, job, detail) = row.map_err(db_err)?;
-            Ok(PersonRequest {
-                id, space_id: Some(space.to_owned()), thread_id: None, job_id: Some(job),
-                detail: serde_json::from_str(&detail).map_err(|_| Error::internal("stored wait request"))?,
+        query
+            .query_map(params![account.to_string(), now_ms()], |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, String>(2)?,
+                ))
             })
-        }).collect()
+            .map_err(db_err)?
+            .map(|row| {
+                let (id, job, detail) = row.map_err(db_err)?;
+                Ok(PersonRequest {
+                    id,
+                    space_id: Some(space.to_owned()),
+                    thread_id: None,
+                    job_id: Some(job),
+                    detail: serde_json::from_str(&detail)
+                        .map_err(|_| Error::internal("stored wait request"))?,
+                })
+            })
+            .collect()
     }
 
     fn has_job_store(&self, space: &str) -> bool {
-        self.root.as_ref().is_some_and(|root| root.join(space).join("jobs.db").is_file())
+        self.root
+            .as_ref()
+            .is_some_and(|root| root.join(space).join("jobs.db").is_file())
     }
 
     /// Find a wait in an authorized space without opening new stores. Reads one
     /// row and hides request IDs owned by other accounts.
     pub(crate) fn wait_source(
-        &self, space: &str, id: &str, account: Option<AccountId>,
+        &self,
+        space: &str,
+        id: &str,
+        account: Option<AccountId>,
     ) -> Result<Option<(Job, WaitSource)>, Error> {
         if !self.has_job_store(space) {
             return Ok(None);
         }
         let db = self.conn(space)?;
         let conn = db.lock().map_err(db_err)?;
-        let found: Option<(String, String)> = conn.query_row(
-            "SELECT w.job,w.signal FROM plugin_waits w JOIN jobs j ON j.id=w.job
+        let found: Option<(String, String)> = conn
+            .query_row(
+                "SELECT w.job,w.signal FROM plugin_waits w JOIN jobs j ON j.id=w.job
              WHERE w.id=?1 AND (?2 IS NULL OR j.account=?2)",
-            params![id, account.map(|id| id.to_string())], |r| Ok((r.get(0)?, r.get(1)?)),
-        ).optional().map_err(db_err)?;
-        let Some((id, source)) = found else { return Ok(None) };
-        let job = conn.query_row(&format!("SELECT {COLUMNS} FROM jobs WHERE id=?1"), [&id], |r| row(space, r)).map_err(db_err)?;
-        let source = serde_json::from_str(&source).map_err(|_| Error::internal("stored wait source"))?;
+                params![id, account.map(|id| id.to_string())],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()
+            .map_err(db_err)?;
+        let Some((id, source)) = found else {
+            return Ok(None);
+        };
+        let job = conn
+            .query_row(
+                &format!("SELECT {COLUMNS} FROM jobs WHERE id=?1"),
+                [&id],
+                |r| row(space, r),
+            )
+            .map_err(db_err)?;
+        let source =
+            serde_json::from_str(&source).map_err(|_| Error::internal("stored wait source"))?;
         Ok(Some((job, source)))
     }
 
@@ -262,11 +333,18 @@ impl Jobs {
     /// with the same receipt can acknowledge without scheduling another run.
     /// One FULL transaction; validation happens before this transition.
     pub(crate) fn resolve_wait(
-        &self, space: &str, id: &str, job: &str, decision: Option<Decision<'_>>,
+        &self,
+        space: &str,
+        id: &str,
+        job: &str,
+        decision: Option<Decision<'_>>,
     ) -> Result<Resolution, Error> {
         let timed = decision.is_none();
         let (outcome, receipt) = match decision {
-            Some(decision) => (bounded_json(&decision.outcome, SIGNAL_LIMIT)?, decision.receipt),
+            Some(decision) => (
+                bounded_json(&decision.outcome, SIGNAL_LIMIT)?,
+                decision.receipt,
+            ),
             None => (String::from(r#"{"kind":"deadline"}"#), None),
         };
         let cutoff = i64::try_from(self.receipt_retention.as_millis()).unwrap_or(i64::MAX);
@@ -308,8 +386,13 @@ impl Jobs {
     /// Cost: one short map lock.
     pub(crate) fn register_wait_timer(&self, timer: &Timer) -> Arc<tokio::sync::Notify> {
         let notify = Arc::new(tokio::sync::Notify::new());
-        let prior = self.wait_signals.lock().unwrap_or_else(|e| e.into_inner())
-            .entry(timer.job.clone()).or_default().insert(timer.id.clone(), notify.clone());
+        let prior = self
+            .wait_signals
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .entry(timer.job.clone())
+            .or_default()
+            .insert(timer.id.clone(), notify.clone());
         if let Some(prior) = prior {
             prior.notify_one();
         }
@@ -321,7 +404,10 @@ impl Jobs {
     pub(crate) fn forget_wait_timer(&self, timer: &Timer, notify: &Arc<tokio::sync::Notify>) {
         let mut signals = self.wait_signals.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(waits) = signals.get_mut(&timer.job) {
-            if waits.get(&timer.id).is_some_and(|current| Arc::ptr_eq(current, notify)) {
+            if waits
+                .get(&timer.id)
+                .is_some_and(|current| Arc::ptr_eq(current, notify))
+            {
                 waits.remove(&timer.id);
             }
             if waits.is_empty() {
@@ -340,7 +426,12 @@ impl Jobs {
     /// Stop deadline tasks after a job's cancellation or retirement.
     /// Cost: one short map lock and a notification per registered task.
     pub(super) fn stop_job_wait_timers(&self, job: &str) {
-        if let Some(waits) = self.wait_signals.lock().unwrap_or_else(|e| e.into_inner()).remove(job) {
+        if let Some(waits) = self
+            .wait_signals
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(job)
+        {
             for notify in waits.into_values() {
                 notify.notify_one();
             }
@@ -355,8 +446,10 @@ impl Jobs {
         conn.query_row(
             "SELECT EXISTS(SELECT 1 FROM plugin_waits w JOIN jobs j ON j.id=w.job
                  WHERE w.id=?1 AND w.job=?2 AND w.outcome IS NULL AND j.state='signal_waiting')",
-            params![timer.id, timer.job], |r| r.get(0),
-        ).map_err(db_err)
+            params![timer.id, timer.job],
+            |r| r.get(0),
+        )
+        .map_err(db_err)
     }
 }
 
@@ -364,7 +457,11 @@ impl Jobs {
     /// Look up an admitted job's exact webhook correlation. Unrelated routes
     /// and spaces do not open stores. One throttle check and two indexed reads.
     pub(crate) fn webhook_wait(
-        &self, space: &str, job: &str, route: &str, correlation: Uuid,
+        &self,
+        space: &str,
+        job: &str,
+        route: &str,
+        correlation: Uuid,
     ) -> Result<Option<(String, Job)>, Error> {
         if self.route(job).as_deref() != Some(space) {
             return Ok(None);
@@ -380,8 +477,14 @@ impl Jobs {
             params![job, route, correlation.to_string()], |r| r.get(0),
         ).optional().map_err(db_err)?;
         let Some(wait) = wait else { return Ok(None) };
-        conn.query_row(&format!("SELECT {COLUMNS} FROM jobs WHERE id=?1"), [job], |r| row(space, r))
-            .optional().map(|record| record.map(|record| (wait, record))).map_err(db_err)
+        conn.query_row(
+            &format!("SELECT {COLUMNS} FROM jobs WHERE id=?1"),
+            [job],
+            |r| row(space, r),
+        )
+        .optional()
+        .map(|record| record.map(|record| (wait, record)))
+        .map_err(db_err)
     }
 }
 

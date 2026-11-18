@@ -166,7 +166,11 @@ async fn execute<D: Directory>(
             return Err(refused());
         }
         let row = activation(&st.store, space, &p2)?;
-        Ok((row, st.jobs.children(&sp, &jid)?, st.jobs.continuation(&continuation_job)?))
+        Ok((
+            row,
+            st.jobs.children(&sp, &jid)?,
+            st.jobs.continuation(&continuation_job)?,
+        ))
     })
     .await?;
     if !generation.enabled

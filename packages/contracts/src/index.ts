@@ -374,6 +374,10 @@ space_id: string | null,
  */
 thread_id: string | null,
 /**
+ * Job UUID for a plugin wait addressed to this person.
+ */
+job_id?: string,
+/**
  * Question, approval or trusted secret prompt.
  */
 detail: RequestDetail, };
@@ -1915,6 +1919,19 @@ export type JobInput = {
  */
 job_id: string, };
 /**
+ * Public summary of a parked plugin job with no signal payload or credentials.
+ */
+
+export type JobWait = {
+/**
+ * Why the job is waiting, supplied by the worker at the checkpoint.
+ */
+reason: string,
+/**
+ * Unix milliseconds when the wait ends if no signal arrives.
+ */
+deadline_ms: number, };
+/**
  * What a client may see of a job: its durable record, never its stream.
  */
 
@@ -1940,6 +1957,10 @@ state: JobState,
  */
 parent_id?: string,
 /**
+ * Public summary while a plugin job waits for a signal.
+ */
+wait?: JobWait,
+/**
  * Last durable checkpoint written by the plugin, or null.
  */
 checkpoint: unknown,
@@ -1948,7 +1969,7 @@ checkpoint: unknown,
  */
 checkpoint_seq: bigint,
 /**
- * Final result of a `done` job, or null.
+ * Final result, a caller-safe wait rejection, or null.
  */
 result: unknown, };
 /**

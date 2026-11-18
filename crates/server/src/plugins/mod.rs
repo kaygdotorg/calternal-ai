@@ -33,8 +33,8 @@ pub(crate) use requests::OnceAdmission;
 pub mod runner;
 pub mod session;
 pub(crate) mod settings;
-mod slots;
 pub(crate) mod signals;
+mod slots;
 pub mod worker;
 
 use std::borrow::Cow;

@@ -92,7 +92,9 @@ pub(super) fn row(space: &str, r: &rusqlite::Row<'_>) -> rusqlite::Result<Job> {
         runs: r.get(12)?,
         generation: (generation & i64::from(u32::MAX)) as u32,
         package_revision: (generation >> 32) as u32,
-        wait: r.get::<_, Option<String>>(14)?.and_then(|text| serde_json::from_str(&text).ok()),
+        wait: r
+            .get::<_, Option<String>>(14)?
+            .and_then(|text| serde_json::from_str(&text).ok()),
     })
 }
 

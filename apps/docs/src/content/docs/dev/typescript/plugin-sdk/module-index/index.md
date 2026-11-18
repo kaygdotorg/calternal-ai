@@ -2,7 +2,7 @@
 title: "plugin-sdk: index/README"
 ---
 
-<!-- Generated from: packages/plugin-sdk/src/index.ts, packages/plugin-sdk/src/manifest-v1.ts, packages/plugin-sdk/src/space-paths.ts, packages/plugin-sdk/src/stdio-worker.ts, packages/plugin-sdk/src/testing.ts, packages/plugin-sdk/src/typed-handlers.ts, packages/plugin-sdk/src/worker-v2.ts. Rebuild: npm run docs:site -->
+<!-- Generated from: packages/plugin-sdk/src/index.ts, packages/plugin-sdk/src/job-waits.ts, packages/plugin-sdk/src/manifest-v1.ts, packages/plugin-sdk/src/space-paths.ts, packages/plugin-sdk/src/stdio-worker.ts, packages/plugin-sdk/src/testing.ts, packages/plugin-sdk/src/typed-handlers.ts, packages/plugin-sdk/src/worker-v2.ts. Rebuild: npm run docs:site -->
 
 > **Preview: the app is not released.** This site describes a development preview and accepted designs; it does not establish production readiness.
 
@@ -59,6 +59,24 @@ Re-exports [InvocationAuthority](/docs/dev/typescript/plugin-sdk/worker-v2/inter
 
 ***
 
+### JobPark
+
+Re-exports [JobPark](/docs/dev/typescript/plugin-sdk/job-waits/interfaces/jobpark/)
+
+***
+
+### JobSignal
+
+Re-exports [JobSignal](/docs/dev/typescript/plugin-sdk/job-waits/type-aliases/jobsignal/)
+
+***
+
+### JobWaitSource
+
+Re-exports [JobWaitSource](/docs/dev/typescript/plugin-sdk/job-waits/type-aliases/jobwaitsource/)
+
+***
+
 ### listItems
 
 Re-exports [listItems](/docs/dev/typescript/plugin-sdk/worker-v2/functions/listitems/)
@@ -74,6 +92,12 @@ Re-exports [MAX_V2_FRAME_BYTES](/docs/dev/typescript/plugin-sdk/worker-v2/variab
 ### MAX\_V2\_PENDING
 
 Re-exports [MAX_V2_PENDING](/docs/dev/typescript/plugin-sdk/worker-v2/variables/max_v2_pending/)
+
+***
+
+### parkJob
+
+Re-exports [parkJob](/docs/dev/typescript/plugin-sdk/job-waits/functions/parkjob/)
 
 ***
 

@@ -147,7 +147,15 @@ pub(crate) async fn dispatch<D: Directory>(
                     _ => return Err(Error::not_found("operation not found")),
                 };
                 if let Some(result) = crate::plugins::signals::inbox(
-                    &st, &person, &id, row.required, &rid, &decision_fingerprint, status, value.as_ref(), &runtime,
+                    &st,
+                    &person,
+                    &id,
+                    row.required,
+                    &rid,
+                    &decision_fingerprint,
+                    status,
+                    value.as_ref(),
+                    &runtime,
                 )? {
                     return Ok((json!(result), None));
                 }
@@ -261,7 +269,10 @@ fn list<D: Directory>(state: &Shared<D>, person: &Identity) -> Result<RequestsLi
             .is_some_and(|space| authorize(state, person.id, space, Capability::SpaceRead).is_ok())
     });
     let secrets = state.store.secrets();
-    let collect = |requests: &mut Vec<PersonRequest>, owner: Owner, space_id: Option<String>| -> Result<(), Error> {
+    let collect = |requests: &mut Vec<PersonRequest>,
+                   owner: Owner,
+                   space_id: Option<String>|
+     -> Result<(), Error> {
         for r in secrets
             .pending(&owner)
             .map_err(|_| Error::unavailable("secret requests unavailable"))?

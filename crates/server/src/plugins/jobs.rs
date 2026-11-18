@@ -386,6 +386,10 @@ impl Jobs {
         retain(&c)?;
         let c = Arc::new(JobDatabase::new(c, self.lifecycle.clone(), space_id));
         let mut spaces = self.spaces.lock().unwrap_or_else(|p| p.into_inner());
+        if let Some((cached, used)) = spaces.get_mut(space) {
+            *used = tick;
+            return Ok(cached.clone());
+        }
         if spaces.len() >= MAX_OPEN_SPACES
             && let Some(oldest) = spaces
                 .iter()

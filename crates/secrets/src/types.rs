@@ -141,7 +141,9 @@ impl Consumer {
     /// Check the consumer's shape so audit rows stay small and unambiguous.
     pub(crate) fn validate(&self) -> Result<()> {
         let ok = match self {
-            Self::WebhookSignature { package, route } => SecretName::for_plugin(package, route).is_ok(),
+            Self::WebhookSignature { package, route } => {
+                SecretName::for_plugin(package, route).is_ok()
+            }
             Self::SandboxEnv { variable, .. } => {
                 !variable.is_empty()
                     && variable.len() <= 64
@@ -168,7 +170,9 @@ impl Consumer {
     }
     pub(crate) fn describe(&self) -> String {
         match self {
-            Self::WebhookSignature { package, route } => format!("verify webhook {package}/{route}"),
+            Self::WebhookSignature { package, route } => {
+                format!("verify webhook {package}/{route}")
+            }
             Self::SandboxEnv { thread, variable } => format!("env {variable} in thread {thread}"),
             Self::RequestHeader { origin, header } => format!("header {header} to {origin}"),
         }

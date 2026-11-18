@@ -146,6 +146,43 @@ Working record of what kayg has decided; the design itself is still being settle
   instructions and starred prompts are the same files in their personal space.
 
 
+## Durable job waits
+
+The author reference
+shows how a replayable job run returns a checkpoint and waits for an
+Inbox answer, an approval, a webhook delivery or its deadline. The
+worker invocation ends while the job waits. Interactive operations
+return a job ID from the existing `start_job` broker call to use waits.
+
+Park, cancellation and delivery use the same jobs.db connection and
+state fence. The first signal commits with the transition to admitted
+and, for Inbox decisions and webhooks, with the replay receipt.
+Duplicate deliveries cannot win the same wait again. The normal job
+scheduler rechecks the original sign-in, capability, package revision
+and activation. Once admitted, ordinary job restart and effect-receipt
+rules apply. After a later checkpoint the signal is no longer included.
+Signal payloads are limited to 16 KiB and are retained with the owning
+job. Job retention and account erasure also remove their waits.
+
+### Signed webhook delivery
+
+Declare a webhook `id` and schema `operation` in `webhooks`, and include
+the same `id` in `secrets`. Configure at least 32 random key bytes for the
+package's space secret of that name through the trusted secret flow. The
+host uses the declared operation's cached input schema for the delivery.
+It hands the payload to the resumed run.
+
+Park with `{kind: "webhook", route, correlation}` using a fresh UUID for
+each wait. The sender posts JSON to
+`/api/v1/plugin-webhooks/<space>/<package>/<route>/<job>/<correlation>`.
+Set `X-Calternal-Timestamp` to Unix seconds and `X-Calternal-Signature`
+to the hexadecimal HMAC-SHA256 of the timestamp, LF, `POST`, LF,
+exact path, LF and raw body bytes. Requests accept a five-minute clock
+skew and up to 16 KiB of body bytes. Verification has a short body
+timeout and a 60 attempts/minute budget per cached space. A 202
+acknowledges the first accepted delivery or an identical replay.
+Keep signing keys out of worker state and logs.
+
 ## Space plugin settings
 
 Declare a key in the manifest's `settings`, including its primitive type and

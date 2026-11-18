@@ -31,7 +31,10 @@ impl Jobs {
             RunEnd::RetryWaiting => (JobState::RetryWaiting, "null".into()),
             RunEnd::Interrupted => (JobState::Interrupted, "null".into()),
             RunEnd::OutcomeUnknown => (JobState::OutcomeUnknown, "null".into()),
-            RunEnd::WaitRejected(message) => (JobState::Failed, serde_json::json!({"wait_error": message}).to_string()),
+            RunEnd::WaitRejected(message) => (
+                JobState::Failed,
+                serde_json::json!({"wait_error": message}).to_string(),
+            ),
             RunEnd::Failed => (JobState::Failed, "null".into()),
         };
         let wake = self.tx(space, |tx| {

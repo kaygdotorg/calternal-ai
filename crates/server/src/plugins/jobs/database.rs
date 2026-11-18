@@ -29,7 +29,10 @@ impl JobDatabase {
     /// space. A window expires without work; one short lock and no SQLite.
     pub(crate) fn admit_webhook(&self) -> bool {
         let minute = crate::plugins::job_sql::now_ms() / 60_000;
-        let mut window = self.webhook_messages.lock().unwrap_or_else(|e| e.into_inner());
+        let mut window = self
+            .webhook_messages
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         if window.0 != minute {
             *window = (minute, 0);
         }
