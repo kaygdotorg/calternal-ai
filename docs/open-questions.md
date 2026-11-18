@@ -11,7 +11,6 @@ move to the decision record they belong to and leave this list. Terms: see
 | 52 | Sharing: what the share button on a note, thread or window offers beyond Copy link (people, groups, public links, the system share sheet) | To grill | Sharing |
 | 24 | Materials: how far the middle card separates from the sidebars, the readability floor for text over a wallpaper, and how much photo shows in light mode. Rebuilt from the calternal-ui plugin's defaults with a five-step Clear-to-Tinted slider | Review on the preview | Appearance |
 | 31 | Thread rows: hover hides the time and state mark for the three actions; swipe right shows only Copy link; touch has no long-press menu, "More" sits in the swipe tray | Keep all three; try on a phone | Threads |
-| 42 | Long tool output: the thread file keeps only its size. Measured on 439 real coding sessions: tool output is 99 MiB against 29 MiB of message text, about 225 KiB a session; 11% of results are over 4 KiB and hold 63% of the bytes. Keep it for the thread's life, or 30 days? | Keep for the thread's life, in a hidden file beside it | Threads |
 | 28 | "Choose a look" exists twice: as a step in the onboarding stepper and as a separate centred dialog on first visit. Keep one? | Keep the stepper step, delete the dialog | Onboarding |
 | 33 | Plugin workers: where a space's workers run, sharing capacity (eight per machine today), a server with no container runtime, brokered network fetch, a lost machine | To grill | Plugins |
 | 34 | Requests: how a rotated token reaches the agent after a single-use approval; whether an unused approval belongs to the turn or the thread; dividing the limits (32 per thread, 256 per account); who may read `AI/AGENTS.md` | To grill | Requests |
@@ -41,6 +40,7 @@ Decided 2026-11-18: a person never signs in twice and no API key is used. The ti
 
 ## Recently decided (2026-11-17), now in the decision records
 
+- Long tool output is kept in full for the thread's life, in a hidden plain-text file beside the thread, and counts toward storage (#42, 2026-11-18; measured at about 225 KiB a coding session).
 - 2026-11-18 evening: composer chips are always shown, also at their default (#25). The palette and the composer stay two surfaces of one engine (#30 closed; `composer.md`). Editing a sent message forks inside the same thread: the old tail is kept and shown there, never as a second thread in the list (#45). Many spaces: a horizontal strip showing three dots at once, scrolling sideways, as Aside (#39). The page waits for its font before painting (#32). Readiness is checked on demand only (#37). Wallpapers are downloaded from Unsplash on first use and served from our own copy, as the existing app does. The thread file's hidden comment line stays. Canvas: no fade on a half-scrolled window; the share menu holds the system share sheet and Copy link until the sharing round (#52).
 
 - The composer and palette: see `composer.md`.
