@@ -1,7 +1,9 @@
 <script lang="ts">
   // One setting as a row: the label on the left with its help text under it, one control on the right edge. The control is chosen by the setting's data
   // (registry.ts), by the rules of docs/ui-craft-and-settings-study.md 11.2. Changes apply when made: there is no Save.
-  import { Button, Icon, InlineEditor, Menu, Pill, Selector, StepSlider, Switch } from "@calternal/ui";
+  import { Button, Icon, IconButton, InlineEditor, Menu, Pill, Selector, StepSlider, Switch } from "@calternal/ui";
+  import { APPS } from "../registry";
+  import { applyOrder, move } from "../../shell/appOrder";
   import PresetGallery from "../../appearance/PresetGallery.svelte";
   import Slider from "../../appearance/Slider.svelte";
   import type { Setting } from "./registry";
@@ -31,6 +33,17 @@
 {:else if c.type === "steps"}
   <div class="row col" class:hl={highlighted} data-setting={s.id}>
     <StepSlider label={s.label} steps={c.steps} value={Number(value)} onchange={(i) => s.set?.(i)} hint={s.help} />
+  </div>
+{:else if c.type === "order"}
+  <div class="row col" class:hl={highlighted} data-setting={s.id}>
+    <div class="l"><span class="t">{s.label}</span>{#if s.help}<span class="h">{s.help}</span>{/if}</div>
+    <ol class="order" aria-label={s.label}>
+      {#each applyOrder(APPS, (value as string[]) ?? []) as a, i (a.kind)}
+        <li><span class="n">{a.name}</span>
+          <IconButton icon="up" label="Move {a.name} up" disabled={i === 0} onclick={() => s.set?.(move(applyOrder(APPS, (value as string[]) ?? []).map((x) => x.kind), a.kind, -1))} />
+          <IconButton icon="down" label="Move {a.name} down" disabled={i === APPS.length - 1} onclick={() => s.set?.(move(applyOrder(APPS, (value as string[]) ?? []).map((x) => x.kind), a.kind, 1))} /></li>
+      {/each}
+    </ol>
   </div>
 {:else if c.type === "checkbox"}
   <div class="row" class:hl={highlighted} data-setting={s.id}><Switch label={s.label} hint={s.help} checked={!!value} onchange={(v) => s.set?.(v)} /></div>
@@ -84,4 +97,7 @@
   .drill { display: inline-flex; align-items: center; gap: var(--s-2); min-height: var(--pill-h); }
   /* A hairline between rows, inset from the label's edge. */
   :global(.sg > .row + .row)::before, :global(.sg > .row + .row)::before { content: ""; position: absolute; top: 0; left: var(--s-6); right: 0; height: 1px; background: var(--line); }
+  .order { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s-2); }
+  .order li { display: flex; align-items: center; gap: var(--s-3); }
+  .order .n { flex: 1; }
 </style>

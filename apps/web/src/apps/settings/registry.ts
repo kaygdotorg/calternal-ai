@@ -26,6 +26,8 @@ export type Control =
   | { type: "slider"; min: number; max: number; unit?: string }
   /** A slider with a few fixed positions, named; the value is the position's index. */
   | { type: "steps"; steps: string[] }
+  /** A list the person puts in order (Move up, Move down); the value is the ids in order. */
+  | { type: "order" }
   | { type: "scheme" }
   | { type: "presets" }
   | { type: "button"; text: string; danger?: boolean; run: () => void }
@@ -96,8 +98,7 @@ const appearancePage: Page = {
       { id: "appearance.compare-light", label: "Light mode surfaces", help: "Current: a lighter copy of the photo under the solved veil. Craft: the unchanged photo under a nearly opaque white (0.92) over the blur. Light scheme only.", control: { type: "segmented", options: [{ id: "derived", label: "Lighter photo" }, { id: "craft", label: "Craft, 0.92 white" }] }, get: () => A.prefs.compare.light, set: (v) => ap((p) => (p.compare.light = v === "craft" ? "craft" : "derived")) },
     ] },
     { title: "Layout", settings: [
-      { id: "appearance.app-switcher", label: "App switcher", help: "Where you switch between apps.", control: { type: "segmented", options: [{ id: "sidebar", label: "Sidebar" }, { id: "card", label: "Under the card" }] }, get: () => A.prefs.switcher, set: (v) => ap((p) => (p.switcher = v as never)) },
-      { id: "appearance.app-switcher-auto-hide", label: "Hide the switcher until needed", help: "Under the card only.", control: { type: "switch" }, get: () => A.prefs.switcherAutoHide, set: (v) => ap((p) => (p.switcherAutoHide = !!v)) },
+      { id: "appearance.app-order", label: "Apps", help: "The order of the apps in the switcher under the card (and the bottom bar on a phone). Move one up or down.", control: { type: "order" }, get: () => A.prefs.appOrder, set: (v) => ap((p) => (p.appOrder = (v as string[]).slice())) },
     ] },
   ],
 };

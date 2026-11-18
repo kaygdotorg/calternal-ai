@@ -12,18 +12,12 @@
   import { surfaces } from "../appearance/surfaces.svelte";
   import AppSwitcher from "./AppSwitcher.svelte";
   import Backdrop from "./Backdrop.svelte";
-  import PhoneTabs from "./PhoneTabs.svelte";
   import RightSidebar from "./RightSidebar.svelte";
   import ResizeHandle from "./ResizeHandle.svelte";
   import Sidebar from "./Sidebar.svelte";
   import { shell } from "./shell.svelte";
   import { leavesAlone, parseMs, pickTarget, settleOpen, visible, WheelSwipe, type Side, type Target } from "./pull";
   let { app, id }: { app: AppDef; id?: string } = $props();
-  // `?switcher=card|sidebar` picks where the app switcher lives (and is remembered), so both layouts can be compared live; Appearance has the same choice.
-  $effect(() => {
-    const q = route.query.get("switcher");
-    if ((q === "card" || q === "sidebar") && appearance.prefs.switcher !== q) appearance.change((x) => (x.switcher = q));
-  });
   // The sidebar pull (docs/ui-shell.md "Sidebar pull"; the rules are in ./pull.ts): a horizontal swipe anywhere over the middle card brings a closed sidebar into view, following the finger one to
   // one, and the opposite swipe closes it. One recogniser for every width. On a phone the card slides aside (the sidebar is underneath; the side panel slides over); on a wide screen the sidebar
   // slides in over the card's edge and the card moves with it, and a trackpad's horizontal two-finger swipe does the same through `wheel` events. On release the result goes through `shell.over` (a
@@ -201,8 +195,8 @@
   // A closed sidebar or side panel always has a way back: a button at the card's top corner on the same side, with the shortcut in its tooltip. (A phone has its own header button and the edge swipe.)
   // (A phone shows it for Settings only: Threads and Notes have their own header button, and the Settings page has no header.)
   const showLeft = $derived((!shell.narrow && !shell.sidebarOpen) || (shell.narrow && (app.kind === "settings" || !id) && !shell.sidebarOpen)); // a phone card with no header of its own (Settings, or an app with nothing open) still has a way to the list
-  const showRight = $derived(!shell.narrow && hasRight && !rightOpen);
-  const cardSwitcher = $derived(!shell.narrow && appearance.prefs.switcher === "card");
+  // The side panel's button at the card's corner: on a wide screen when it is closed; on a phone (where the bottom bar is the apps) whenever there is something open to show panels for and nothing else is over the card.
+  const showRight = $derived(hasRight && !rightOpen && (!shell.narrow || (!!id && !shell.sidebarOpen)));
 </script>
 
 <Backdrop />
@@ -219,7 +213,7 @@
     <Card label={app.name} class="mid-card">
       <div class="col">
         <div class="app"><app.Main {id} /></div>
-        {#if cardSwitcher}<div class="appbar" class:auto={appearance.prefs.switcherAutoHide}><AppSwitcher {app} /></div>{/if}
+        {#if !shell.narrow}<div class="appbar"><AppSwitcher {app} placement="card" /></div>{/if}
       </div>
     </Card>
   </main>
@@ -228,8 +222,8 @@
   {#if shell.narrow && (rightOpen || dragMode === "panel")}<button type="button" class="scrim" aria-label="Close the side panel" style:opacity={dragMode === "panel" && drag !== null ? 1 - drag / panelWidth() : undefined} style:animation={dragMode === "panel" && drag !== null ? "none" : undefined} onclick={tap}></button>{/if}
 
   {#if hasRight}<aside class="right" class:pulled={wp?.side === "right"} style:--vis={wp?.side === "right" ? `${wp.vis}px` : undefined} style:--w={wp?.side === "right" ? `${wp.w}px` : undefined} bind:this={rightEl} class:dragging={dragMode === "panel" && drag !== null} style:transform={dragMode === "panel" && drag !== null ? `translateX(${drag}px)` : undefined} data-ink={surfaces.right ?? undefined} aria-label="{app.name} side panel" inert={!rightOpen}><RightSidebar {app} {id} /></aside>{/if}
-  <!-- The phone's bottom bar is the app's panels: an app with none (Settings), or with nothing open (no thread), has no bar. It rides with the card (the list is under it), so it slides away with it. -->
-  {#if shell.narrow && app.panels.length && id}<PhoneTabs {app} />{/if}
+  <!-- The phone's bottom bar is the app switcher (the same component as under the card on a wide screen); it rides with the card, so it slides away with it. The panels are the side panel's (the button at the card's corner, or a swipe). -->
+  {#if shell.narrow}<AppSwitcher {app} placement="bar" />{/if}
 </div>
 <style>
   /* Wide chat (the plugin's default, Settings, Appearance, Chat layout): on a desktop the thread's column is the whole card, with room on the left for a contents rail and a margin on the right. */
@@ -271,10 +265,6 @@
   .col { position: relative; height: 100%; display: flex; flex-direction: column; }
   .app { flex: 1; min-height: 0; position: relative; }
   .appbar { flex: none; padding: var(--s-3) var(--s-6) var(--s-4); }
-  /* Hidden until needed: the bar takes no room; a thin hot zone at the card's bottom edge (and focus inside) brings it in, on the form's ease. */
-  .appbar.auto { position: absolute; z-index: 3; left: 0; right: 0; bottom: 0; height: var(--s-5); padding: 0; }
-  .appbar.auto > :global(.switcher) { position: absolute; left: var(--s-6); right: var(--s-6); bottom: var(--s-3); opacity: 0; translate: 0 var(--s-4); pointer-events: none; transition: opacity var(--dur-base) var(--ease-out), translate var(--dur-base) var(--ease-out); }
-  .appbar.auto:hover > :global(.switcher), .appbar.auto:focus-within > :global(.switcher) { opacity: 1; translate: 0 0; pointer-events: auto; }
   .right { min-width: 0; overflow: hidden; }
   .right > :global(.rs) { width: var(--right-w); }
 

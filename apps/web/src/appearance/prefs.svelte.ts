@@ -27,10 +27,8 @@ export interface Prefs {
   materials: { blur: boolean; dim: boolean; tint: boolean };
   /** The UI size, percent: one scale for type, spacing and controls together (`--ui-scale`). */
   uiSize: number;
-  /** Where the app switcher lives: in the sidebar's footer, or as a capsule at the bottom of the middle card (an experiment). */
-  switcher: "sidebar" | "card";
-  /** With the switcher under the card: hide it until the pointer or focus reaches the card's bottom edge. Off by default (always visible). */
-  switcherAutoHide: boolean;
+  /** The order the person chose for the apps in the switcher (app kinds, first to last); apps not listed follow in their own order. */
+  appOrder: string[];
   /** The theme (palette) in use: a preset id whose palette applies, or null for the built-in tokens. Independent of the wallpaper. */
   themeId: string | null;
   /** The preset last applied, for the gallery's selected tile. */
@@ -61,8 +59,7 @@ export const DEFAULTS: Prefs = {
   wallpaperId: "auto",
   materials: { blur: true, dim: true, tint: true },
   uiSize: 100,
-  switcher: "card",
-  switcherAutoHide: false,
+  appOrder: [],
   themeId: null,
   presetId: tokens.appearance["default-preset"],
   accent: "wallpaper",
