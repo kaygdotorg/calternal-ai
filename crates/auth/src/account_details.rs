@@ -128,12 +128,22 @@ impl Auth {
                 let tx = c
                     .transaction_with_behavior(TransactionBehavior::Immediate)
                     .map_err(sql)?;
-                tx.execute(
-                    "INSERT INTO account_details(user_id,prompt_dismissed) VALUES(?1,1)
-                ON CONFLICT(user_id) DO UPDATE SET prompt_dismissed=1",
-                    [user.to_string()],
-                )
-                .map_err(sql)?;
+                let user = user.to_string();
+                // UPSERT's update overrides the recovery trigger's OR IGNORE policy.
+                if tx
+                    .execute(
+                        "UPDATE account_details SET prompt_dismissed=1 WHERE user_id=?1",
+                        [&user],
+                    )
+                    .map_err(sql)?
+                    == 0
+                {
+                    tx.execute(
+                        "INSERT INTO account_details(user_id,prompt_dismissed) VALUES(?1,1)",
+                        [&user],
+                    )
+                    .map_err(sql)?;
+                }
                 spaces::commit(tx)
             })
             .await

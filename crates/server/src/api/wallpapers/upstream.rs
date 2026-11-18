@@ -2,14 +2,10 @@
 //! API host. All failures leaving this module use fixed caller-safe messages.
 
 use super::catalog::Rendition;
-use crate::netguard;
+use crate::{api::assets, netguard};
 use calternal_types::Error;
 use reqwest::{Url, header};
 use serde::Deserialize;
-use std::{
-    collections::VecDeque,
-    time::{Duration, Instant},
-};
 use tokio::sync::Mutex;
 
 const API: &str = "api.unsplash.com";
@@ -21,7 +17,7 @@ const MAX_JSON: usize = 128 * 1024;
 pub(super) struct Upstream {
     client: reqwest::Client,
     authorization: header::HeaderValue,
-    requests: Mutex<VecDeque<Instant>>,
+    requests: Mutex<assets::Budget<()>>,
     #[cfg(test)]
     pub stand_in: Option<Url>,
 }
@@ -41,7 +37,7 @@ impl Upstream {
         Ok(Self {
             client,
             authorization,
-            requests: Mutex::new(VecDeque::with_capacity(REQUESTS_PER_HOUR)),
+            requests: Mutex::new(assets::Budget::new()),
             #[cfg(test)]
             stand_in: None,
         })
@@ -116,19 +112,13 @@ impl Upstream {
     }
 
     async fn get(&self, url: Url, cap: usize, jpeg: bool) -> Result<Vec<u8>, Error> {
+        if !self
+            .requests
+            .lock()
+            .await
+            .admit((), REQUESTS_PER_HOUR, REQUESTS_PER_HOUR)
         {
-            let mut requests = self.requests.lock().await;
-            let now = Instant::now();
-            while requests
-                .front()
-                .is_some_and(|at| now.duration_since(*at) >= Duration::from_secs(3600))
-            {
-                requests.pop_front();
-            }
-            if requests.len() == REQUESTS_PER_HOUR {
-                return Err(Error::unavailable("wallpaper fetch limit reached"));
-            }
-            requests.push_back(now);
+            return Err(Error::unavailable("wallpaper fetch limit reached"));
         }
         let reply = netguard::get_with_redirects(
             url,
@@ -232,11 +222,12 @@ mod tests {
             service.get(url.clone(), 10, false).await.unwrap_err().code,
             ErrorCode::Unavailable
         );
-        *service.requests.lock().await.front_mut().unwrap() =
-            Instant::now() - Duration::from_secs(3600);
-        assert_eq!(
-            service.get(url, 10, false).await.unwrap_err().code,
-            ErrorCode::NotFound
-        );
+        let later = std::time::Instant::now() + std::time::Duration::from_secs(3600);
+        assert!(service.requests.lock().await.admit_at(
+            later,
+            (),
+            REQUESTS_PER_HOUR,
+            REQUESTS_PER_HOUR
+        ));
     }
 }

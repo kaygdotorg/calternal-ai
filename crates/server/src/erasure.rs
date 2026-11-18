@@ -74,6 +74,7 @@ pub(crate) fn finish(
                 &store.content().lifecycle(),
                 *account,
             )?;
+            store.appearance.erase(*account)?;
         }
         store.secrets().erase_owner(owner).map_err(|error| {
             tracing::warn!(%error, "owner key erasure failed");

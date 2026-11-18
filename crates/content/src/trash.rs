@@ -38,12 +38,59 @@ impl Content {
     /// Read a live item's metadata in an authorized space without loading its
     /// current body or reading the userdata file. Cost: one indexed head read.
     pub fn live_metadata(&self, space: SpaceId, kind: &str, item: Uuid) -> Result<Value> {
+        self.with_live_metadata(space, kind, item, Ok)
+    }
+
+    /// Run a bounded control mutation against a current item while holding its
+    /// space lock. The callback may commit authority using the auth worker and
+    /// must not re-enter content. Holding this lock across that commit fences
+    /// it against trash, restore and purge. Cost: one indexed metadata read
+    /// plus the callback's authority work.
+    pub fn with_live_metadata<T>(
+        &self,
+        space: SpaceId,
+        kind: &str,
+        item: Uuid,
+        run: impl FnOnce(Value) -> Result<T>,
+    ) -> Result<T> {
         self.with_space(space, |s| {
             let metadata: String = s.conn.query_row(
-                "SELECT metadata FROM items WHERE id=?1 AND kind=?2 AND substr(path,1,7) <> '.trash/'",
+                "SELECT metadata FROM items WHERE id=?1 AND kind=?2 AND mat_state NOT IN ('purged','purging') AND substr(path,1,7) <> '.trash/'",
                 params![item.to_string(),kind], |r| r.get(0),
             ).optional().map_err(internal)?.ok_or_else(missing)?;
-            serde_json::from_str(&metadata).map_err(internal)
+            run(serde_json::from_str(&metadata).map_err(internal)?)
+        })
+    }
+
+    /// Verify a known space and item kind, and read its inherited grant roots
+    /// under one space lock. The callback may use the auth worker and must not
+    /// re-enter content. This keeps lifecycle and collection membership stable
+    /// through authorization. Cost: one indexed live-head lookup, plus one
+    /// reverse membership lookup for Notes, with zero body reads or flushes.
+    pub fn with_live_share_scope<T>(
+        &self,
+        space: SpaceId,
+        kind: &str,
+        item: Uuid,
+        run: impl FnOnce(Vec<Uuid>) -> Result<T>,
+    ) -> Result<T> {
+        self.with_space(space, |s| {
+            s.conn
+                .prepare_cached(
+                    "SELECT 1 FROM items WHERE id=?1 AND kind=?2
+                 AND mat_state NOT IN ('purged','purging') AND substr(path,1,7) <> '.trash/'",
+                )
+                .map_err(internal)?
+                .query_row(params![item.to_string(), kind], |_| Ok(()))
+                .optional()
+                .map_err(internal)?
+                .ok_or_else(missing)?;
+            let collections = if kind == "notes" {
+                s.sharing_collections(item)?
+            } else {
+                Vec::new()
+            };
+            run(collections)
         })
     }
 
@@ -210,6 +257,7 @@ impl Content {
             ));
         }
         s.place(id, self.fault)?;
+        let _revision = calternal_types::begin_item_access_change();
         let response = json!({"id":id, "state":"deleted"});
         let tx = s
             .conn

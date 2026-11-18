@@ -91,6 +91,8 @@ nix develop -c sh -c 'npm run build -w apps/web && npm run e2e:gate -w apps/web'
 
 ## Reference documentation
 
+The [account appearance and font API](docs/fonts.md) saves personal settings across devices and serves installed and uploaded font faces locally.
+
 The optional [server wallpaper catalog](docs/wallpapers.md) provides same-origin
 Unsplash renditions for clients using the server contract.
 

@@ -13,6 +13,8 @@ database until checkpointed. SQLite SHM, locks and sockets are runtime state.
 | Root and relative paths | Class | Writer and baseline marker |
 | --- | --- | --- |
 | Appdata `system/auth.db` | Authority | Auth, SQLite 11. Accounts, passkeys, sessions, roles, memberships, invites, approvals, machine identity and grants, erasures, key fingerprints and protected receipts. |
+| Appdata `system/appearance.db` | Mixed | Appearance, new SQLite 1 baseline through the shared runner. Account preferences and original private uploads are authoritative. Shared manifests and eviction pins coordinate with the cache. The production baseline has no appearance database. |
+| Appdata `fonts-cache-v1/` | Derived | Version 1 directories of immutable WOFF2 bytes by family and digest. Startup verifies the published manifest and retires incomplete or orphan fills. |
 | Appdata `system/machines.db` | Authority | Machine placement, SQLite 6. Leases, fences, drain, work locations, discard and erase delivery, and the durable stop record that keeps an erased worker's machine slot reserved until its stop completes. |
 | Appdata `spaces/<id>/content.db` | Mixed | Content, SQLite 3. Item identity, revisions, pending placement, trash and tombstones, kinds, plugin controls. Listing, labels and links are derived. |
 | Appdata `spaces/<id>/index.db`, `secrets/spaces/<id>/head` | Authority | Space journal, SQLite 2 and binary CHW2. Journal, epoch, receipts and independent head witness. Receipts are pruned after the operator's retention (7 days by default) only on content's command, with every receipt of a surviving outbox intent pinned. The fence adds no stored state. |
@@ -97,6 +99,14 @@ unsent edits can be lost during a system crash or power loss.
    below and check reads, acknowledged writes, and rollback against that data.
    The test-only `upgrade_schema()` step in `machines/db.rs` shows the shape of
    a real step and how the fixture tests drive it.
+
+### Item sharing
+
+The fresh production baseline at `c98705d7` includes dormant sharing authority
+(`auth.db` 14) and the derived collection membership index (space
+`content.db` 5). The sharing feature uses these shipped schemas. The existing
+`system/invite.key` backup also protects public link credentials through
+independently derived keys.
 
 ## Release handoff
 

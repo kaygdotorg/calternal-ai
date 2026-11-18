@@ -129,6 +129,7 @@ fn databases(appdata: &Path) -> io::Result<Vec<Database>> {
     };
     for (relative, schema) in [
         ("system/auth.db", calternal_auth::db::MIGRATIONS),
+        ("system/appearance.db", crate::api::appearance::SCHEMA),
         ("system/machines.db", machines::db::upgrade_schema()),
         ("system/content-index.db", calternal_content::ROUTE_SCHEMA),
         (

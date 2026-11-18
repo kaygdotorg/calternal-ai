@@ -5,13 +5,27 @@
   "type": "object",
   "required": [
     "account_frame",
+    "appearance_get_input",
+    "appearance_patch",
+    "appearance_preferences",
     "describe",
+    "device_appearance_preferences",
     "directory_group",
     "directory_input",
     "directory_invite",
     "directory_page_input",
     "directory_person",
     "disabled_person",
+    "font_catalogue_input",
+    "font_catalogue_result",
+    "font_faces_input",
+    "font_faces_result",
+    "font_id_input",
+    "font_list_input",
+    "font_list_result",
+    "font_remove_result",
+    "font_status_result",
+    "font_stored_family",
     "group_create_input",
     "group_directory_page_input",
     "group_input",
@@ -85,11 +99,43 @@
         }
       ]
     },
+    "appearance_get_input": {
+      "description": "Schema representative for appearance get input.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/AppearanceGetInput"
+        }
+      ]
+    },
+    "appearance_patch": {
+      "description": "Schema representative for appearance patch.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/AppearancePatch"
+        }
+      ]
+    },
+    "appearance_preferences": {
+      "description": "Schema representative for appearance preferences.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/AppearancePreferences"
+        }
+      ]
+    },
     "describe": {
       "description": "Schema export representative for `describe`; not a field accepted by operation dispatch.",
       "allOf": [
         {
           "$ref": "#/definitions/DescribeResult"
+        }
+      ]
+    },
+    "device_appearance_preferences": {
+      "description": "Schema representative for the appearance overlay kept on each device.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/DeviceAppearancePreferences"
         }
       ]
     },
@@ -138,6 +184,86 @@
       "allOf": [
         {
           "$ref": "#/definitions/DisabledPerson"
+        }
+      ]
+    },
+    "font_catalogue_input": {
+      "description": "Schema representative for font catalogue input.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/FontCatalogueInput"
+        }
+      ]
+    },
+    "font_catalogue_result": {
+      "description": "Schema representative for font catalogue result.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/FontCatalogueResult"
+        }
+      ]
+    },
+    "font_faces_input": {
+      "description": "Schema representative for font faces input.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/FontFacesInput"
+        }
+      ]
+    },
+    "font_faces_result": {
+      "description": "Schema representative for font faces result.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/FontFacesResult"
+        }
+      ]
+    },
+    "font_id_input": {
+      "description": "Schema representative for font id input.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/FontIdInput"
+        }
+      ]
+    },
+    "font_list_input": {
+      "description": "Schema representative for font list input.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/FontListInput"
+        }
+      ]
+    },
+    "font_list_result": {
+      "description": "Schema representative for font list result.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/FontListResult"
+        }
+      ]
+    },
+    "font_remove_result": {
+      "description": "Schema representative for font remove result.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/FontRemoveResult"
+        }
+      ]
+    },
+    "font_status_result": {
+      "description": "Schema representative for font status result.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/FontStatusResult"
+        }
+      ]
+    },
+    "font_stored_family": {
+      "description": "Schema representative for font stored family.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/FontStoredFamily"
         }
       ]
     },
@@ -755,6 +881,416 @@
       },
       "additionalProperties": false
     },
+    "AppearanceAccent": {
+      "description": "Where the accent color is obtained.",
+      "oneOf": [
+        {
+          "description": "Derive it from the wallpaper.",
+          "type": "string",
+          "enum": [
+            "wallpaper"
+          ]
+        },
+        {
+          "description": "Use the person's custom hex color.",
+          "type": "string",
+          "enum": [
+            "custom"
+          ]
+        },
+        {
+          "description": "Use the selected preset's palette.",
+          "type": "string",
+          "enum": [
+            "theme"
+          ]
+        }
+      ]
+    },
+    "AppearanceChatWidth": {
+      "description": "Conversation column width in the desktop shell.",
+      "oneOf": [
+        {
+          "description": "Use the available width.",
+          "type": "string",
+          "enum": [
+            "wide"
+          ]
+        },
+        {
+          "description": "Center a readable-width column.",
+          "type": "string",
+          "enum": [
+            "centered"
+          ]
+        }
+      ]
+    },
+    "AppearanceFonts": {
+      "description": "The account's five font selections.",
+      "type": "object",
+      "required": [
+        "brand",
+        "chat",
+        "code",
+        "terminal",
+        "ui"
+      ],
+      "properties": {
+        "brand": {
+          "description": "Wordmark typeface.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/FontChoice"
+            }
+          ]
+        },
+        "chat": {
+          "description": "Conversation typeface.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/FontChoice"
+            }
+          ]
+        },
+        "code": {
+          "description": "Code typeface.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/FontChoice"
+            }
+          ]
+        },
+        "terminal": {
+          "description": "Terminal typeface.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/FontChoice"
+            }
+          ]
+        },
+        "ui": {
+          "description": "Interface typeface.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/FontChoice"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "AppearanceFontsPatch": {
+      "description": "Partial update of role selections.",
+      "type": "object",
+      "properties": {
+        "brand": {
+          "description": "Wordmark typeface.",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/FontChoice"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "chat": {
+          "description": "Conversation typeface.",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/FontChoice"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "code": {
+          "description": "Code typeface.",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/FontChoice"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "terminal": {
+          "description": "Terminal typeface.",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/FontChoice"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ui": {
+          "description": "Interface typeface.",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/FontChoice"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "AppearanceGetInput": {
+      "description": "Empty input for an account-bound read.",
+      "type": "object",
+      "additionalProperties": false
+    },
+    "AppearanceMaterials": {
+      "description": "The account's material effects.",
+      "type": "object",
+      "required": [
+        "blur",
+        "dim",
+        "tint"
+      ],
+      "properties": {
+        "blur": {
+          "description": "Blur backgrounds.",
+          "type": "boolean"
+        },
+        "dim": {
+          "description": "Dim backgrounds.",
+          "type": "boolean"
+        },
+        "tint": {
+          "description": "Tint backgrounds.",
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "AppearanceMaterialsPatch": {
+      "description": "Partial update of material switches.",
+      "type": "object",
+      "properties": {
+        "blur": {
+          "description": "Blur backgrounds.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "dim": {
+          "description": "Dim backgrounds.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "tint": {
+          "description": "Tint backgrounds.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "AppearancePatch": {
+      "description": "Apply only supplied fields. Explicit null clears nullable fields.",
+      "type": "object",
+      "properties": {
+        "accent": {
+          "description": "Accent color policy.",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/AppearanceAccent"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "accentColor": {
+          "description": "Custom accent color in #rrggbb form.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "brand": {
+          "description": "Sidebar wordmark text.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "fonts": {
+          "description": "Typeface selection per role.",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/AppearanceFontsPatch"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "materials": {
+          "description": "Material effects.",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/AppearanceMaterialsPatch"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "motion": {
+          "description": "Enable motion when the device permits it.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "presetId": {
+          "description": "Last applied look, or null.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "streamText": {
+          "description": "Show streamed conversation text.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "themeId": {
+          "description": "Palette preset, or null for the built-in palette.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "wallpaperId": {
+          "description": "Wallpaper library ID, auto for the default, or null for none.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "AppearancePreferences": {
+      "description": "The saved account appearance. A client overlays its local device settings for first paint.",
+      "type": "object",
+      "required": [
+        "accent",
+        "accentColor",
+        "brand",
+        "fonts",
+        "materials",
+        "motion",
+        "streamText"
+      ],
+      "properties": {
+        "accent": {
+          "description": "Accent color policy.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/AppearanceAccent"
+            }
+          ]
+        },
+        "accentColor": {
+          "description": "Custom accent color in #rrggbb form.",
+          "type": "string"
+        },
+        "brand": {
+          "description": "Sidebar wordmark text.",
+          "type": "string"
+        },
+        "fonts": {
+          "description": "Typeface selection per role.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/AppearanceFonts"
+            }
+          ]
+        },
+        "materials": {
+          "description": "Material effects.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/AppearanceMaterials"
+            }
+          ]
+        },
+        "motion": {
+          "description": "Enable motion when the device permits it.",
+          "type": "boolean"
+        },
+        "presetId": {
+          "description": "Last applied look, or null.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "streamText": {
+          "description": "Show streamed conversation text.",
+          "type": "boolean"
+        },
+        "themeId": {
+          "description": "Palette preset, or null for the built-in palette.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "wallpaperId": {
+          "description": "Wallpaper library ID, auto for the default, or null for none.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "AppearanceScheme": {
+      "description": "The user's light and dark appearance policy.",
+      "oneOf": [
+        {
+          "description": "Follow the device preference.",
+          "type": "string",
+          "enum": [
+            "system"
+          ]
+        },
+        {
+          "description": "Always light.",
+          "type": "string",
+          "enum": [
+            "light"
+          ]
+        },
+        {
+          "description": "Always dark.",
+          "type": "string",
+          "enum": [
+            "dark"
+          ]
+        }
+      ]
+    },
     "ContentFetchField": {
       "description": "Stored source fields supported by the content proxy.",
       "oneOf": [
@@ -840,6 +1376,56 @@
           "format": "uint32",
           "maximum": 1.0,
           "minimum": 1.0
+        }
+      },
+      "additionalProperties": false
+    },
+    "DeviceAppearancePreferences": {
+      "description": "Local overlay for appearance on a single device, independent of the signed-in account's server snapshot. Store it at the client per installation.",
+      "type": "object",
+      "required": [
+        "appOrder",
+        "chatWidth",
+        "scheme",
+        "uiSize"
+      ],
+      "properties": {
+        "appOrder": {
+          "description": "App kinds in this device's switcher order.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "chatWidth": {
+          "description": "Width of this device's conversation column.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/AppearanceChatWidth"
+            }
+          ]
+        },
+        "clarity": {
+          "description": "Backdrop clarity between zero and one, or null to follow the device.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "scheme": {
+          "description": "Light/dark policy. System follows the device's current color scheme.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/AppearanceScheme"
+            }
+          ]
+        },
+        "uiSize": {
+          "description": "UI size in percent, from 80 to 150.",
+          "type": "integer",
+          "format": "uint16",
+          "minimum": 0.0
         }
       },
       "additionalProperties": false
@@ -1109,6 +1695,431 @@
     "False": {
       "type": "boolean",
       "const": false
+    },
+    "FontCatalogueFamily": {
+      "description": "A merged catalogue row.",
+      "type": "object",
+      "required": [
+        "category",
+        "family",
+        "id",
+        "mono",
+        "source"
+      ],
+      "properties": {
+        "category": {
+          "description": "Source category normalized by the server.",
+          "type": "string"
+        },
+        "family": {
+          "description": "Display family name.",
+          "type": "string"
+        },
+        "id": {
+          "description": "Stable ID for installation.",
+          "type": "string"
+        },
+        "mono": {
+          "description": "Whether the provider classifies this as monospaced.",
+          "type": "boolean"
+        },
+        "source": {
+          "description": "Provider.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/FontSource"
+            }
+          ]
+        }
+      }
+    },
+    "FontCatalogueInput": {
+      "description": "Fetch a page of remote families using local search.",
+      "type": "object",
+      "properties": {
+        "cursor": {
+          "description": "Opaque next cursor from the same filters and cached snapshot.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "limit": {
+          "description": "Page size from 1 to 100. Defaults to 30.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint16",
+          "minimum": 0.0
+        },
+        "mono": {
+          "description": "Optionally filter by monospace classification.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "query": {
+          "description": "Case-insensitive substring, at most 120 characters.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "source": {
+          "description": "Optionally filter by a remote provider.",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/FontSource"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "FontCatalogueResult": {
+      "description": "A page of remote catalogue families.",
+      "type": "object",
+      "required": [
+        "families",
+        "partial"
+      ],
+      "properties": {
+        "families": {
+          "description": "Matching families in deterministic order.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/FontCatalogueFamily"
+          }
+        },
+        "next_cursor": {
+          "description": "Cursor for the next page, or null at the end.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "partial": {
+          "description": "Whether a source is unreachable, stale or disabled.",
+          "type": "boolean"
+        }
+      }
+    },
+    "FontChoice": {
+      "description": "A role's selected typeface. Bundled and System faces omit the library ID.",
+      "type": "object",
+      "required": [
+        "family",
+        "source"
+      ],
+      "properties": {
+        "family": {
+          "description": "Display family name.",
+          "type": "string"
+        },
+        "id": {
+          "description": "Opaque library ID returned by catalogue or list.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "source": {
+          "description": "Catalogue, upload or device source.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/FontSource"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "FontFacesInput": {
+      "description": "Generate CSS for the account's roles, or inspect one family for a preview.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "description": "Optional ID of a local family to preview.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "FontFacesResult": {
+      "description": "Local CSS with typeface aliases for clients' font stacks.",
+      "type": "object",
+      "required": [
+        "css",
+        "families"
+      ],
+      "properties": {
+        "css": {
+          "description": "Generated rules with same-origin URLs.",
+          "type": "string"
+        },
+        "families": {
+          "description": "Library ID to generated CSS family alias.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "FontIdInput": {
+      "description": "Opaque family identifier, resolved against the caller's permitted library.",
+      "type": "object",
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "description": "Family ID returned by the catalogue, list or upload reply.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "FontInstallState": {
+      "description": "Availability of one family at this installation.",
+      "oneOf": [
+        {
+          "description": "No published family or active fill.",
+          "type": "string",
+          "enum": [
+            "missing"
+          ]
+        },
+        {
+          "description": "A shared fill is in progress.",
+          "type": "string",
+          "enum": [
+            "installing"
+          ]
+        },
+        {
+          "description": "The requested local family is available.",
+          "type": "string",
+          "enum": [
+            "ready"
+          ]
+        }
+      ]
+    },
+    "FontListInput": {
+      "description": "Page of installed families and the authenticated account's own uploads.",
+      "type": "object",
+      "properties": {
+        "cursor": {
+          "description": "Opaque next cursor from a preceding page.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "limit": {
+          "description": "Page size from 1 to 100. Defaults to 30.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint16",
+          "minimum": 0.0
+        }
+      },
+      "additionalProperties": false
+    },
+    "FontListResult": {
+      "description": "The user's visible local font storage.",
+      "type": "object",
+      "required": [
+        "families"
+      ],
+      "properties": {
+        "families": {
+          "description": "Current page of installed or owned families.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/FontStoredFamily"
+          }
+        },
+        "next_cursor": {
+          "description": "Next cursor or null.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "FontRemoveResult": {
+      "description": "Successful removal of an uploaded family from the caller's library.",
+      "type": "object",
+      "required": [
+        "appearance"
+      ],
+      "properties": {
+        "appearance": {
+          "description": "Saved preferences after resetting the affected roles.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/AppearancePreferences"
+            }
+          ]
+        }
+      }
+    },
+    "FontRole": {
+      "description": "Each independent typography role in the shell.",
+      "oneOf": [
+        {
+          "description": "Interface labels and controls.",
+          "type": "string",
+          "enum": [
+            "ui"
+          ]
+        },
+        {
+          "description": "Conversation text.",
+          "type": "string",
+          "enum": [
+            "chat"
+          ]
+        },
+        {
+          "description": "Code.",
+          "type": "string",
+          "enum": [
+            "code"
+          ]
+        },
+        {
+          "description": "Terminal.",
+          "type": "string",
+          "enum": [
+            "terminal"
+          ]
+        },
+        {
+          "description": "Wordmark.",
+          "type": "string",
+          "enum": [
+            "brand"
+          ]
+        }
+      ]
+    },
+    "FontSource": {
+      "description": "Available catalogue and local font sources.",
+      "oneOf": [
+        {
+          "description": "Google Fonts.",
+          "type": "string",
+          "enum": [
+            "google"
+          ]
+        },
+        {
+          "description": "Fontsource.",
+          "type": "string",
+          "enum": [
+            "fontsource"
+          ]
+        },
+        {
+          "description": "Fontshare.",
+          "type": "string",
+          "enum": [
+            "fontshare"
+          ]
+        },
+        {
+          "description": "An account's own file.",
+          "type": "string",
+          "enum": [
+            "upload"
+          ]
+        },
+        {
+          "description": "The device's system typeface.",
+          "type": "string",
+          "enum": [
+            "system"
+          ]
+        }
+      ]
+    },
+    "FontStatusResult": {
+      "description": "Local install state and the installation's download policy.",
+      "type": "object",
+      "required": [
+        "downloads_enabled",
+        "state"
+      ],
+      "properties": {
+        "downloads_enabled": {
+          "description": "Whether remote requests are enabled.",
+          "type": "boolean"
+        },
+        "state": {
+          "description": "Family state.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/FontInstallState"
+            }
+          ]
+        }
+      }
+    },
+    "FontStoredFamily": {
+      "description": "Metadata for one locally usable family.",
+      "type": "object",
+      "required": [
+        "bytes",
+        "family",
+        "id",
+        "source",
+        "used_by"
+      ],
+      "properties": {
+        "bytes": {
+          "description": "Byte count of stored files.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "family": {
+          "description": "Display family name.",
+          "type": "string"
+        },
+        "id": {
+          "description": "Stable library ID.",
+          "type": "string"
+        },
+        "source": {
+          "description": "Provider or Upload.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/FontSource"
+            }
+          ]
+        },
+        "used_by": {
+          "description": "Roles in which the authenticated account uses this family.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/FontRole"
+          }
+        }
+      }
     },
     "GenUiView": {
       "description": "A generated-UI view: a program in the GenUI language (`crates/genui`, `packages/genui`) that each client compiles and evaluates with its own native components. The host compiles it before delivery and refuses a view with any diagnostic; actions in it describe operations, which dispatch checks again.",

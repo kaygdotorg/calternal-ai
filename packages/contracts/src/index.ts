@@ -2734,6 +2734,429 @@ default_id: string,
  */
 wallpapers: Array<WallpaperCredit>, };
 /**
+ * Empty input for an account-bound read.
+ */
+
+export type AppearanceGetInput = Record<string, never>;
+/**
+ * Apply only supplied fields. Explicit null clears nullable fields.
+ */
+
+export type AppearancePatch = {
+/**
+ * Wallpaper library ID, auto for the default, or null for none.
+ */
+wallpaperId?: string | null,
+/**
+ * Material effects.
+ */
+materials?: AppearanceMaterialsPatch,
+/**
+ * Palette preset, or null for the built-in palette.
+ */
+themeId?: string | null,
+/**
+ * Last applied look, or null.
+ */
+presetId?: string | null,
+/**
+ * Accent color policy.
+ */
+accent?: AppearanceAccent,
+/**
+ * Custom accent color in #rrggbb form.
+ */
+accentColor?: string,
+/**
+ * Sidebar wordmark text.
+ */
+brand?: string,
+/**
+ * Show streamed conversation text.
+ */
+streamText?: boolean,
+/**
+ * Typeface selection per role.
+ */
+fonts?: AppearanceFontsPatch,
+/**
+ * Enable motion when the device permits it.
+ */
+motion?: boolean, };
+/**
+ * The saved account appearance. A client overlays its local device settings for first paint.
+ */
+
+export type AppearancePreferences = {
+/**
+ * Wallpaper library ID, auto for the default, or null for none.
+ */
+wallpaperId: string | null,
+/**
+ * Material effects.
+ */
+materials: AppearanceMaterials,
+/**
+ * Palette preset, or null for the built-in palette.
+ */
+themeId: string | null,
+/**
+ * Last applied look, or null.
+ */
+presetId: string | null,
+/**
+ * Accent color policy.
+ */
+accent: AppearanceAccent,
+/**
+ * Custom accent color in #rrggbb form.
+ */
+accentColor: string,
+/**
+ * Sidebar wordmark text.
+ */
+brand: string,
+/**
+ * Show streamed conversation text.
+ */
+streamText: boolean,
+/**
+ * Typeface selection per role.
+ */
+fonts: AppearanceFonts,
+/**
+ * Enable motion when the device permits it.
+ */
+motion: boolean, };
+/**
+ * Local overlay for appearance on a single device, independent of the
+ * signed-in account's server snapshot. Store it at the client per installation.
+ */
+
+export type DeviceAppearancePreferences = {
+/**
+ * Light/dark policy. System follows the device's current color scheme.
+ */
+scheme: AppearanceScheme,
+/**
+ * UI size in percent, from 80 to 150.
+ */
+uiSize: number,
+/**
+ * App kinds in this device's switcher order.
+ */
+appOrder: Array<string>,
+/**
+ * Width of this device's conversation column.
+ */
+chatWidth: AppearanceChatWidth,
+/**
+ * Backdrop clarity between zero and one, or null to follow the device.
+ */
+clarity: number | null, };
+/**
+ * Opaque family identifier, resolved against the caller's permitted library.
+ */
+
+export type FontIdInput = {
+/**
+ * Family ID returned by the catalogue, list or upload reply.
+ */
+id: string, };
+/**
+ * Fetch a page of remote families using local search.
+ */
+
+export type FontCatalogueInput = {
+/**
+ * Case-insensitive substring, at most 120 characters.
+ */
+query?: string,
+/**
+ * Optionally filter by a remote provider.
+ */
+source?: FontSource,
+/**
+ * Optionally filter by monospace classification.
+ */
+mono?: boolean,
+/**
+ * Opaque next cursor from the same filters and cached snapshot.
+ */
+cursor?: string,
+/**
+ * Page size from 1 to 100. Defaults to 30.
+ */
+limit?: number, };
+/**
+ * A page of remote catalogue families.
+ */
+
+export type FontCatalogueResult = {
+/**
+ * Matching families in deterministic order.
+ */
+families: Array<FontCatalogueFamily>,
+/**
+ * Cursor for the next page, or null at the end.
+ */
+next_cursor: string | null,
+/**
+ * Whether a source is unreachable, stale or disabled.
+ */
+partial: boolean, };
+/**
+ * Local install state and the installation's download policy.
+ */
+
+export type FontStatusResult = {
+/**
+ * Family state.
+ */
+state: FontInstallState,
+/**
+ * Whether remote requests are enabled.
+ */
+downloads_enabled: boolean, };
+/**
+ * Generate CSS for the account's roles, or inspect one family for a preview.
+ */
+
+export type FontFacesInput = {
+/**
+ * Optional ID of a local family to preview.
+ */
+id?: string, };
+/**
+ * Local CSS with typeface aliases for clients' font stacks.
+ */
+
+export type FontFacesResult = {
+/**
+ * Generated rules with same-origin URLs.
+ */
+css: string,
+/**
+ * Library ID to generated CSS family alias.
+ */
+families: { [key in string]?: string }, };
+/**
+ * Page of installed families and the authenticated account's own uploads.
+ */
+
+export type FontListInput = {
+/**
+ * Opaque next cursor from a preceding page.
+ */
+cursor?: string,
+/**
+ * Page size from 1 to 100. Defaults to 30.
+ */
+limit?: number, };
+/**
+ * The user's visible local font storage.
+ */
+
+export type FontListResult = {
+/**
+ * Current page of installed or owned families.
+ */
+families: Array<FontStoredFamily>,
+/**
+ * Next cursor or null.
+ */
+next_cursor: string | null, };
+/**
+ * Successful removal of an uploaded family from the caller's library.
+ */
+
+export type FontRemoveResult = {
+/**
+ * Saved preferences after resetting the affected roles.
+ */
+appearance: AppearancePreferences, };
+/**
+ * Metadata for one locally usable family.
+ */
+
+export type FontStoredFamily = {
+/**
+ * Stable library ID.
+ */
+id: string,
+/**
+ * Display family name.
+ */
+family: string,
+/**
+ * Provider or Upload.
+ */
+source: FontSource,
+/**
+ * Byte count of stored files.
+ */
+bytes: number,
+/**
+ * Roles in which the authenticated account uses this family.
+ */
+used_by: Array<FontRole>, };
+/**
+ * The user's light and dark appearance policy.
+ */
+
+export type AppearanceScheme = "system" | "light" | "dark";
+/**
+ * Where the accent color is obtained.
+ */
+
+export type AppearanceAccent = "wallpaper" | "custom" | "theme";
+/**
+ * Conversation column width in the desktop shell.
+ */
+
+export type AppearanceChatWidth = "wide" | "centered";
+/**
+ * The account's material effects.
+ */
+
+export type AppearanceMaterials = {
+/**
+ * Blur backgrounds.
+ */
+blur: boolean,
+/**
+ * Dim backgrounds.
+ */
+dim: boolean,
+/**
+ * Tint backgrounds.
+ */
+tint: boolean, };
+/**
+ * Partial update of material switches.
+ */
+
+export type AppearanceMaterialsPatch = {
+/**
+ * Blur backgrounds.
+ */
+blur?: boolean,
+/**
+ * Dim backgrounds.
+ */
+dim?: boolean,
+/**
+ * Tint backgrounds.
+ */
+tint?: boolean, };
+/**
+ * The account's five font selections.
+ */
+
+export type AppearanceFonts = {
+/**
+ * Interface typeface.
+ */
+ui: FontChoice,
+/**
+ * Conversation typeface.
+ */
+chat: FontChoice,
+/**
+ * Code typeface.
+ */
+code: FontChoice,
+/**
+ * Terminal typeface.
+ */
+terminal: FontChoice,
+/**
+ * Wordmark typeface.
+ */
+brand: FontChoice, };
+/**
+ * Partial update of role selections.
+ */
+
+export type AppearanceFontsPatch = {
+/**
+ * Interface typeface.
+ */
+ui?: FontChoice,
+/**
+ * Conversation typeface.
+ */
+chat?: FontChoice,
+/**
+ * Code typeface.
+ */
+code?: FontChoice,
+/**
+ * Terminal typeface.
+ */
+terminal?: FontChoice,
+/**
+ * Wordmark typeface.
+ */
+brand?: FontChoice, };
+/**
+ * A role's selected typeface. Bundled and System faces omit the library ID.
+ */
+
+export type FontChoice = {
+/**
+ * Display family name.
+ */
+family: string,
+/**
+ * Catalogue, upload or device source.
+ */
+source: FontSource,
+/**
+ * Opaque library ID returned by catalogue or list.
+ */
+id?: string, };
+/**
+ * Each independent typography role in the shell.
+ */
+
+export type FontRole = "ui" | "chat" | "code" | "terminal" | "brand";
+/**
+ * Available catalogue and local font sources.
+ */
+
+export type FontSource = "google" | "fontsource" | "fontshare" | "upload" | "system";
+/**
+ * A merged catalogue row.
+ */
+
+export type FontCatalogueFamily = {
+/**
+ * Stable ID for installation.
+ */
+id: string,
+/**
+ * Display family name.
+ */
+family: string,
+/**
+ * Source category normalized by the server.
+ */
+category: string,
+/**
+ * Provider.
+ */
+source: FontSource,
+/**
+ * Whether the provider classifies this as monospaced.
+ */
+mono: boolean, };
+/**
+ * Availability of one family at this installation.
+ */
+
+export type FontInstallState = "missing" | "installing" | "ready";
+/**
  * Empty input for account-scoped space listing.
  */
 
