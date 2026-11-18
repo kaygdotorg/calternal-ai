@@ -47,7 +47,7 @@ try {
   const note = made.data?.note; ok(!!note, "setup: an owner, a second account and a note in the owner's space", "backend (accounts/notes)", JSON.stringify(made.error ?? ""));
   const grant = await op(A.p, "sharing.grant", { item: { kind: "notes", id: note.id }, audience: { account_id: gus.id }, permission: "edit" });
   ok(grant.ok, "setup: Edit on the note granted to the second account", "sharing backend", JSON.stringify(grant.error ?? ""));
-  const open = async (P, id = note.id) => { await P.p.goto(`${url}/notes/${id}?server=1&live=1`); await P.p.waitForSelector("html[data-ready]"); await P.p.locator(".cm-content").waitFor({ timeout: 20000 }); };
+  const open = async (P, id = note.id) => { await P.p.goto(`${url}/notes/${id}?server=1&live=1`); await P.p.waitForSelector("html[data-ready]"); await P.p.locator(".cm-content").waitFor({ timeout: 20000 }).catch(async (e) => { console.log(`   [${P.name}] no editor at ${P.p.url().slice(0, 80)}; the page says:`, (await P.p.evaluate(() => document.body.innerText)).replace(/\n+/g, " | ").slice(0, 260)); throw e; }); };
   const saved = (P) => P.p.getByText("Saved", { exact: true }).waitFor({ timeout: 15000 });
 
   await scenario("typing", "live-rooms backend or ui-notes", async () => {
