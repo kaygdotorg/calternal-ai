@@ -34,7 +34,16 @@ export class ServerError extends Error {
 const codeOfStatus = (s: number): string => (s === 401 ? "unauthorized" : s === 403 ? "forbidden" : s === 404 ? "not_found" : s === 409 ? "conflict" : s === 413 ? "too_large" : s === 429 ? "too_many_requests" : s < 500 ? "invalid_input" : "internal");
 
 /** How to build a `ServerClient`: `base` (default: same origin), `token` (the development bearer, or null for a cookie session) and an optional `fetch` (tests). */
-export interface ServerOptions { base?: string; token: () => string | null; fetch?: typeof fetch }
+export interface ServerOptions {
+  base?: string; token: () => string | null; fetch?: typeof fetch;
+  /** How an operation waits out the server being away (`unavailable`): the first pause, the longest pause and how long in all, in milliseconds. Tests shorten it. */
+  retry?: { first: number; max: number; total: number };
+}
+
+/** A proxy or gateway that answers while the server behind it is away (an update, a restart): temporary, never the server's own answer to the request. */
+const TEMPORARY = new Set([502, 503, 504]);
+/** The default patience: 250 ms, doubling to 3 s between tries, for up to two minutes. */
+const PATIENCE = { first: 250, max: 3000, total: 120_000 };
 
 /** The server's client. */
 export class ServerClient {
@@ -43,13 +52,15 @@ export class ServerClient {
   /** `fetch` without the link-state reporting (see `json`). */
   private plain: typeof fetch;
   private token: () => string | null;
+  private retry: { first: number; max: number; total: number };
   constructor(o: ServerOptions) {
     this.base = o.base ?? "";
+    this.retry = o.retry ?? PATIENCE;
     this.token = o.token;
     const raw = o.fetch ?? ((...a: Parameters<typeof fetch>) => fetch(...a));
     this.plain = raw;
     // Every call reports to the shared link state (reconnecting banner, expired session); a call the caller cancelled is not a failure.
-    this.f = (...a) => raw(...a).then((r) => { if (r.status === 401) link.expired(!!this.token()); else link.ok(); return r; }, (e: Error) => { if (e?.name !== "AbortError") link.failed(); throw e; });
+    this.f = (...a) => raw(...a).then((r) => { if (r.status === 401) link.expired(!!this.token()); else if (TEMPORARY.has(r.status)) link.failed(); else link.ok(); return r; }, (e: Error) => { if (e?.name !== "AbortError") link.failed(); throw e; });
   }
   /**
    * A call to a route that is not an operation (account, passkeys, machines): JSON in, JSON out (`{}` for 204), a failure as `ServerError` with the server's own code (or one from the status) and no server text
@@ -66,8 +77,12 @@ export class ServerClient {
   /** Every call goes through here: the session's headers, the link-state reporting (unless `plain`), and a transport failure as `ServerError("unavailable")`. */
   private async send(path: string, init: RequestInit = {}, plain = false, change = false): Promise<Response> {
     if (change && !plain) await link.mayWrite();
-    try { return await (plain ? this.plain : this.f)(`${this.base}${path}`, { ...init, headers: this.headers(init.headers as Record<string, string>) }); }
+    let res: Response;
+    try { res = await (plain ? this.plain : this.f)(`${this.base}${path}`, { ...init, headers: this.headers(init.headers as Record<string, string>) }); }
     catch { throw new ServerError("unavailable", "Can't reach the server."); }
+    // A proxy's 502, 503 or 504 is the server being away, whatever its body says (an HTML page, not our envelope): the same as a dropped connection.
+    if (TEMPORARY.has(res.status)) throw new ServerError("unavailable", "Can't reach the server.", res.status);
+    return res;
   }
   /** An event stream (SSE): the body to read, or `ServerError` when the server refuses it. */
   private async stream(path: string, signal?: AbortSignal): Promise<ReadableStream<Uint8Array>> {
@@ -81,7 +96,22 @@ export class ServerClient {
   }
   /** Calls one operation. `requestId` makes a retry the same request. */
   async operate<T>(operation: string, input: Record<string, unknown> = {}, requestId: string = crypto.randomUUID()): Promise<T> {
-    const res = await this.send("/api/v1/operations", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ request_id: requestId, operation, input }) }, false, !isRead(operation));
+    const init = { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ request_id: requestId, operation, input }) };
+    // While the server is away (a dropped connection, or a proxy's 502, 503 or 504) the call waits and tries again with the SAME request id, backing off, until it answers or the patience runs out: the server's receipts
+    // make a repeat of something it already did answer with the first result, so a retry is never a second change. The shell shows the reconnecting state meanwhile (`link`). Only the server being away is retried: its own refusal
+    // (any answer with an envelope) goes to the caller at once.
+    const { first, max, total } = this.retry;
+    const until = Date.now() + total;
+    let pause = first;
+    let res: Response;
+    for (;;) {
+      try { res = await this.send("/api/v1/operations", init, false, !isRead(operation)); break; }
+      catch (e) {
+        if (!(e instanceof ServerError) || e.code !== "unavailable" || Date.now() + pause > until) throw e;
+        await new Promise((r) => setTimeout(r, pause));
+        pause = Math.min(pause * 2, max);
+      }
+    }
     let body: OperationResponse<T>;
     try { body = (await res.json()) as OperationResponse<T>; } catch { throw new ServerError("internal", `unreadable answer (${res.status})`, res.status); }
     if (!body.ok) throw new ServerError(body.error.code, body.error.message, res.status);
