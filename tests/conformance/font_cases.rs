@@ -2,6 +2,18 @@
 
 use super::*;
 
+/// Account-scoped appearance and font operations covered by these fixtures.
+pub(super) const OPERATIONS: &[&str] = &[
+    "appearance.get",
+    "appearance.patch",
+    "fonts.catalogue",
+    "fonts.install",
+    "fonts.status",
+    "fonts.faces",
+    "fonts.list",
+    "fonts.remove",
+];
+
 #[tokio::test]
 async fn appearance_patch_is_private_and_survives_restart() {
     let mut f = Fixture::new().await;

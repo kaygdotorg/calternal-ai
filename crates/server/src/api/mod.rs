@@ -133,13 +133,25 @@ pub fn router<D: Directory>(state: Shared<D>, web_dir: Option<PathBuf>) -> Route
             get(crate::account_input::events::<D>),
         )
         .route("/api/v1/live", get(crate::live::events::<D>))
+        .route(
+            "/api/v1/plugin-slots/live",
+            get(plugin_slots::live::events::<D>),
+        )
         .route("/api/v1/operations", post(operations::<D>))
         .route(
             "/api/v1/jobs/{id}/events",
             get(crate::plugins::job_api::events::<D>),
         )
+        .route(
+            crate::plugins::signals::PATH,
+            post(crate::plugins::signals::webhook::<D>),
+        )
         .merge(crate::machines::http::routes::<D>())
         .route(wallpapers::ROUTE, get(wallpapers::image))
+        .route(
+            crate::plugins::network::http::FRAME_ROUTE,
+            get(crate::plugins::network::http::document::<D>),
+        )
         .merge(appearance::routes::<D>())
         .route("/api", any(api_not_found))
         .route("/api/", any(api_not_found))

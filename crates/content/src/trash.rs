@@ -94,6 +94,23 @@ impl Content {
         })
     }
 
+    /// Read a live item's current revision in an authorized space. Hides Trash
+    /// and purging or purged entries. Cost: one indexed head lookup without bytes.
+    pub fn live_revision(&self, space: SpaceId, kind: &str, item: Uuid) -> Result<String> {
+        self.with_space(space, |s| {
+            s.conn
+                .query_row(
+                    "SELECT revision FROM items WHERE id=?1 AND kind=?2
+                 AND substr(path,1,7) <> '.trash/' AND mat_state NOT IN ('purged','purging')",
+                    params![item.to_string(), kind],
+                    |row| row.get(0),
+                )
+                .optional()
+                .map_err(internal)?
+                .ok_or_else(missing)
+        })
+    }
+
     /// Read an item's state after authorization. The permanent identity remains
     /// routable after purge. Cost: one indexed head lookup without loading bytes.
     pub fn item_state(&self, space: SpaceId, item: Uuid) -> Result<&'static str> {

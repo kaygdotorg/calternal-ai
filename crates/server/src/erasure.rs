@@ -52,6 +52,7 @@ pub(crate) fn finish(
     fault::hit(FaultPoint::ErasureRecorded);
     for owner in &owners {
         store.content().lifecycle().drain(owner.uuid());
+        store.plugin_frames.erase(*owner);
         if let Some(machines) = store.machines() {
             machines.retire_owner(*owner)?;
         }
@@ -68,6 +69,11 @@ pub(crate) fn finish(
             jobs.retire_account(*account)?;
         }
         if let Owner::Account(account) = owner {
+            crate::plugins::network::db::erase_account(
+                store.appdata(),
+                &store.content().lifecycle(),
+                *account,
+            )?;
             store.appearance.erase(*account)?;
         }
         store.secrets().erase_owner(owner).map_err(|error| {

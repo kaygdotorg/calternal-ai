@@ -374,6 +374,10 @@ space_id: string | null,
  */
 thread_id: string | null,
 /**
+ * Job UUID for a plugin wait addressed to this person.
+ */
+job_id?: string,
+/**
  * Question, approval or trusted secret prompt.
  */
 detail: RequestDetail, };
@@ -660,7 +664,7 @@ export type ManifestCapability = "space.read" | "content.write" | "plugins.use" 
  * The only broker methods a worker may request.
  */
 
-export type HostCallKind = "read_item" | "list_items_v1" | "read_setting_v1" | "write_item" | "list_collection" | "emit_event" | "start_job" | "checkpoint_job" | "request_secret_handle";
+export type HostCallKind = "read_item" | "list_items_v1" | "read_setting_v1" | "content_prepare_v1" | "write_item" | "list_collection" | "emit_event" | "start_job" | "checkpoint_job" | "request_secret_handle";
 /**
  * Version-one worker request for an indexed page of its own kind.
  */
@@ -683,7 +687,7 @@ cursor?: string,
  */
 limit?: number, };
 /**
- * Read one manifest-declared setting as a Manager of the addressed space.
+ * Address one manifest-declared setting in an accessible space.
  */
 
 export type PluginSettingAddress = {
@@ -728,6 +732,86 @@ value: unknown,
  * Explicit conflict resolution echoes every alternative the caller saw.
  */
 resolve?: Array<unknown>, };
+/**
+ * Last observed state of an installed package in one space.
+ */
+
+export type PluginReadiness = "disabled" | "unavailable" | "not_started" | "ready" | "failed";
+/**
+ * One caller-safe runtime failure from this space.
+ */
+
+export type PluginRuntimeFailure = {
+/**
+ * Operation attempted, when the failure belongs to an invocation.
+ */
+operation: string | null,
+/**
+ * Stable reason code without private input or output values.
+ */
+reason: string,
+/**
+ * When the host observed the failure, in Unix milliseconds.
+ */
+at_ms: number, };
+/**
+ * Installed-package diagnostics exposed to authorized space managers.
+ */
+
+export type PluginDiagnostics = {
+/**
+ * Explicit space UUID.
+ */
+space_id: string,
+/**
+ * Installed package ID.
+ */
+plugin_id: string,
+/**
+ * Revision inspected by this read.
+ */
+revision: number,
+/**
+ * Last observed readiness in this space.
+ */
+readiness: PluginReadiness,
+/**
+ * Caller-safe reason when the package is unavailable or failed.
+ */
+reason: string | null,
+/**
+ * Up to eight recent failures, newest first.
+ */
+recent_errors: Array<PluginRuntimeFailure>,
+/**
+ * Up to 4 KiB from the last failed worker's own stderr in this space.
+ */
+stderr_tail: string | null, };
+/**
+ * Replace the caller's override if their observed value still matches.
+ */
+
+export type PluginPersonalSettingEdit = {
+/**
+ * Space UUID.
+ */
+space_id: string,
+/**
+ * Installed package ID.
+ */
+plugin_id: string,
+/**
+ * Personal setting key in that package's manifest.
+ */
+key: string,
+/**
+ * Last observed override. Null means no override.
+ */
+base: unknown,
+/**
+ * New override. Null restores the manifest default.
+ */
+value: unknown, };
 /**
  * Current values for a setting. The worker receives only its effective value.
  */
@@ -833,6 +917,11 @@ export type ManifestHookMode = "watch" | "block";
  */
 
 export type ManifestSettingType = "string" | "boolean" | "number";
+/**
+ * Owner of an override for a declared plugin setting.
+ */
+
+export type ManifestSettingScope = "personal" | "space";
 /**
  * Placement inside a space userdata tree; hidden files belong to the declaring plugin.
  */
@@ -1246,10 +1335,14 @@ id: string,
  */
 operation: string, };
 /**
- * Typed space setting; secrets use separate handles.
+ * Typed plugin setting; secrets use separate handles.
  */
 
 export type ManifestSetting = {
+/**
+ * Override owner. Omission selects the shared space setting.
+ */
+scope?: ManifestSettingScope,
 /**
  * Stable setting identifier.
  */
@@ -1495,11 +1588,171 @@ generation: number,
  */
 contribution: PluginSlotContribution, };
 /**
- * Plugin menu read without running plugin code. Every top-level field is required;
- * only the documented optional fields inside declarations may be omitted.
+ * Latest authorized projection for one package-owned slot on its live stream.
+ */
+
+export type OwnedSlotUpdate = {
+/**
+ * Space UUID whose slot is being followed.
+ */
+space_id: string,
+/**
+ * Package-qualified slot requested when opening the stream.
+ */
+target: OwnedPluginSlotId,
+/**
+ * Whether the recipient can still use the declared slot.
+ */
+active: boolean,
+/**
+ * Current visible contributions in declaration priority order.
+ */
+contributions: Array<ResolvedPluginSlot>, };
+/**
+ * Worker request to sanitize an exact stored content revision. Authority
+ * comes from invocation admission and the plugin's content declaration.
+ */
+
+export type ContentPrepareInput = {
+/**
+ * Plugin-owned kind named in its proxy profile.
+ */
+kind: string,
+/**
+ * Item UUID.
+ */
+item_id: string,
+/**
+ * Current opaque revision received from the item store.
+ */
+revision: string,
+/**
+ * Field containing the HTML source.
+ */
+field: ContentFetchField, };
+/**
+ * Prepared content reference for the acting person, valid briefly.
+ */
+
+export type ContentPrepareResult = {
+/**
+ * Opaque frame ID. Frame delivery checks the current viewer and source.
+ */
+frame_id: string, };
+/**
+ * Read a prepared sealed frame as the person it was created for.
+ */
+
+export type ContentFrameAddress = {
+/**
+ * Space UUID.
+ */
+space_id: string,
+/**
+ * Short-lived frame ID from content preparation.
+ */
+frame_id: string, };
+/**
+ * Trusted client data for mounting a sealed frame and for external navigation.
+ */
+
+export type ContentFrameView = {
+/**
+ * Relative trusted frame URL. Mount with an empty iframe sandbox.
+ */
+frame_url: string,
+/**
+ * External targets in the order of the frame's navigation references.
+ * Open only through the host's explicit navigation action.
+ */
+links: Array<string>,
+/**
+ * Current remote-content preference for the viewer.
+ */
+preference: ContentFetchPreference, };
+/**
+ * Stored source fields supported by the content proxy.
+ */
+
+export type ContentFetchField = "text";
+/**
+ * A stored field the broker may read to derive proxy references.
+ */
+
+export type ContentFetchSource = {
+/**
+ * The declaring package's own text kind.
+ */
+kind: string,
+/**
+ * The source field interpreted as HTML.
+ */
+field: ContentFetchField, };
+/**
+ * Host-owned remote media policy. Each additional profile requires review.
+ */
+
+export type ContentFetchProfile = "images_fonts";
+/**
+ * One person's policy for remote images and fonts in a space.
+ */
+
+export type ContentFetchPreference = "ask" | "always" | "never";
+/**
+ * Read the viewer's remote content policy in one space.
+ */
+
+export type ContentFetchPreferenceAddress = {
+/**
+ * Space UUID. The authenticated caller supplies the account identity.
+ */
+space_id: string, };
+/**
+ * Set the caller's own remote content policy in one space.
+ */
+
+export type ContentFetchPreferenceEdit = {
+/**
+ * Space UUID. The authenticated caller supplies the account identity.
+ */
+space_id: string,
+/**
+ * New choice applied at the next fetch and asset delivery.
+ */
+preference: ContentFetchPreference, };
+/**
+ * Anonymous content proxy scope shown during trusted installation review.
+ */
+
+export type ManifestContentFetch = {
+/**
+ * Host-enforced media and transport policy.
+ */
+profile: ContentFetchProfile,
+/**
+ * Up to 32 distinct text sources owned by the declaring package.
+ */
+sources: Array<ContentFetchSource>, };
+/**
+ * Network authority requested by a package. Each declaration has its own
+ * approval meaning and is subject to the live space activation.
+ */
+
+export type ManifestNetwork = {
+/**
+ * Anonymous remote assets from stored content. Omit for no proxy access.
+ */
+content_fetch?: ManifestContentFetch, };
+/**
+ * Plugin menu read without running plugin code. Only documented optional
+ * fields may be omitted.
  */
 
 export type ManifestV1 = {
+/**
+ * Optional outbound network declarations. Omit for no network access.
+ */
+network?: ManifestNetwork,
 /**
  * Optional commands, extra phrases and Settings sections for the palette.
  */
@@ -1915,6 +2168,19 @@ export type JobInput = {
  */
 job_id: string, };
 /**
+ * Public summary of a parked plugin job with no signal payload or credentials.
+ */
+
+export type JobWait = {
+/**
+ * Why the job is waiting, supplied by the worker at the checkpoint.
+ */
+reason: string,
+/**
+ * Unix milliseconds when the wait ends if no signal arrives.
+ */
+deadline_ms: number, };
+/**
  * What a client may see of a job: its durable record, never its stream.
  */
 
@@ -1940,6 +2206,10 @@ state: JobState,
  */
 parent_id?: string,
 /**
+ * Public summary while a plugin job waits for a signal.
+ */
+wait?: JobWait,
+/**
  * Last durable checkpoint written by the plugin, or null.
  */
 checkpoint: unknown,
@@ -1948,7 +2218,7 @@ checkpoint: unknown,
  */
 checkpoint_seq: bigint,
 /**
- * Final result of a `done` job, or null.
+ * Final result, a caller-safe wait rejection, or null.
  */
 result: unknown, };
 /**

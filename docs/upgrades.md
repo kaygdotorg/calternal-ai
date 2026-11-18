@@ -18,8 +18,9 @@ database until checkpointed. SQLite SHM, locks and sockets are runtime state.
 | Appdata `system/machines.db` | Authority | Machine placement, SQLite 6. Leases, fences, drain, work locations, discard and erase delivery, and the durable stop record that keeps an erased worker's machine slot reserved until its stop completes. |
 | Appdata `spaces/<id>/content.db` | Mixed | Content, SQLite 6. Item identity, revisions, pending placement, trash and tombstones, kinds, plugin controls. Listing, labels and links are derived. |
 | Appdata `spaces/<id>/index.db`, `secrets/spaces/<id>/head` | Authority | Space journal, SQLite 2 and binary CHW2. Journal, epoch, receipts and independent head witness. Receipts are pruned after the operator's retention (7 days by default) only on content's command, with every receipt of a surviving outbox intent pinned. The fence adds no stored state. |
-| Appdata `spaces/<id>/jobs.db` | Authority | Jobs, SQLite 3. Admission, retry and in-flight state, checkpoints, event outbox and retention. |
-| Appdata `accounts/<id>/input.db`, `content.db`, `agent-settings.db` | Authority | Account input, content and jobs. SQLite 2 for drafts and pending input, 1 for protected collections and 1 for retry settings. |
+| Appdata `spaces/<id>/network.db` | Authority | Plugin network, SQLite 1. Per-person remote content preferences and bounded outbound audit metadata. Absent databases use the default and are initialized by the shared runner on the first saved preference. |
+| Appdata `spaces/<id>/jobs.db` | Authority | Jobs, SQLite 4. Admission, retry and in-flight state, checkpoints, event outbox and retention. Version 3 adds plugin signal waits and decision receipts. Version 4 adds saved-thread admission receipts. |
+| Appdata `accounts/<id>/input.db`, `content.db`, `agent-settings.db` | Authority | Account input, content and jobs. SQLite 2 for drafts and pending input, 1 for protected collections and 1 for retry settings. Input version 3 adds private plugin settings and their receipts. |
 | Appdata `accounts/<id>/onboarding.db` | Authority | Account onboarding, new SQLite 1 baseline through the shared runner. The production baseline has no marker. Missing files read as unfinished. The completion marker rides with account settings and is removed by account erasure. |
 | Appdata `accounts/<id>/secrets.db`, `spaces/<id>/secrets.db` | Authority | Secrets, SQLite 1. Sealed values, pending prompts, audit and key state. |
 | Appdata `system/invite.key`, account and space `secret.key` | Authority | Auth and secrets. Fixed 32-byte payloads with v1 key derivation and ciphertext binding. Preserve bytes, ownership and mode with their database. |
@@ -99,6 +100,11 @@ unsent edits can be lost during a system crash or power loss.
    The test-only `upgrade_schema()` step in `machines/db.rs` shows the shape of
    a real step and how the fixture tests drive it.
 
+The jobs.db 2 → 3 change preserves existing rows and the original
+jobs-table writer shape. A release at version 2 cannot service parked
+plugin signal waits. Qualify downgrade semantics with the exact release
+pair before activating the feature on production data.
+
 ### Item sharing
 
 The fresh production baseline at `c98705d7` includes dormant sharing authority
@@ -117,7 +123,7 @@ their immutable base snapshot. The first new patch does require a writer
 that understands the new representation. The first patched commit retires a
 rollback marker that would let an older writer open those heads.
 
-The jobs migration from SQLite 2 to 3 adds `thread_send_receipts`. A saved
+The jobs migration from SQLite 3 to 4 adds `thread_send_receipts`. A saved
 thread turn and its admission receipt now share the job transaction. The
 receipt stores the request-key hash and job ID until the journal retention
 deadline, including after job history eviction. Earlier receipts remain

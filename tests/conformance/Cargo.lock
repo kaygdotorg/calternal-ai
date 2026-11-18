@@ -283,6 +283,7 @@ dependencies = [
  "calternal-auth",
  "calternal-machine",
  "reqwest",
+ "ring",
  "rusqlite",
  "serde_json",
  "tempfile",

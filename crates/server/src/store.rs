@@ -34,6 +34,8 @@ pub struct Store {
     /// Account appearance service and bounded installation font cache.
     pub(crate) appearance: std::sync::Arc<crate::api::appearance::Appearance>,
     machines: std::sync::OnceLock<std::sync::Weak<crate::machines::MachineService>>,
+    /// Bounded viewer-scoped references for sealed plugin content.
+    pub(crate) plugin_frames: crate::plugins::network::frames::Frames,
     /// Process-lifetime key for authenticated, stateless list cursors.
     pub(crate) cursor_key: ring::hmac::Key,
     // Dropped last: every database and file handle above closes first.
@@ -225,6 +227,7 @@ impl Store {
         )?);
         Ok(Self {
             cursor_key,
+            plugin_frames: Default::default(),
             appearance,
             content: std::sync::Arc::new(content),
             appdata: root.clone(),

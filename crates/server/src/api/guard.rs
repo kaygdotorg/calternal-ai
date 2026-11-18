@@ -46,7 +46,9 @@ pub(super) async fn guard<D: Directory>(
         }
         // Machine protocol routes authenticate the machine themselves.
         let account_route = path.starts_with("/api/v1/auth/")
-            || path.starts_with(calternal_machine::protocol::PATH_PREFIX);
+            || path.starts_with(calternal_machine::protocol::PATH_PREFIX)
+            || (*req.method() == axum::http::Method::POST
+                && path.starts_with(crate::plugins::signals::PREFIX));
         if api
             && !account_route
             && bearer(req.headers()).is_none()
@@ -240,8 +242,15 @@ pub(super) async fn guard<D: Directory>(
         .extensions()
         .get::<super::assets::CacheResponse>()
         .is_some();
+    let sealed = resp
+        .extensions()
+        .get::<crate::plugins::network::http::SealedFrame>()
+        .map(|frame| frame.0.clone());
+    let is_sealed = sealed.is_some();
     let h = resp.headers_mut();
-    if !h.contains_key(header::CONTENT_SECURITY_POLICY) {
+    if let Some(sealed) = sealed {
+        h.insert(header::CONTENT_SECURITY_POLICY, sealed);
+    } else if !h.contains_key(header::CONTENT_SECURITY_POLICY) {
         h.insert(
             header::CONTENT_SECURITY_POLICY,
             HeaderValue::from_static(CSP),
@@ -255,7 +264,10 @@ pub(super) async fn guard<D: Directory>(
         header::REFERRER_POLICY,
         HeaderValue::from_static("no-referrer"),
     );
-    h.insert(header::X_FRAME_OPTIONS, HeaderValue::from_static("DENY"));
+    h.insert(
+        header::X_FRAME_OPTIONS,
+        HeaderValue::from_static(if is_sealed { "SAMEORIGIN" } else { "DENY" }),
+    );
     if api && !cacheable_asset {
         h.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
     }

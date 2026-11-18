@@ -954,6 +954,53 @@
       "$schema": "http://json-schema.org/draft-07/schema#",
       "additionalProperties": false,
       "definitions": {
+        "ContentFetchField": {
+          "description": "Stored source fields supported by the content proxy.",
+          "oneOf": [
+            {
+              "description": "The item's UTF-8 text body.",
+              "enum": [
+                "text"
+              ],
+              "type": "string"
+            }
+          ]
+        },
+        "ContentFetchProfile": {
+          "description": "Host-owned remote media policy. Each additional profile requires review.",
+          "oneOf": [
+            {
+              "description": "Anonymous HTTPS GET for allowed image and font formats, excluding SVG.",
+              "enum": [
+                "images_fonts"
+              ],
+              "type": "string"
+            }
+          ]
+        },
+        "ContentFetchSource": {
+          "additionalProperties": false,
+          "description": "A stored field the broker may read to derive proxy references.",
+          "properties": {
+            "field": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/ContentFetchField"
+                }
+              ],
+              "description": "The source field interpreted as HTML."
+            },
+            "kind": {
+              "description": "The declaring package's own text kind.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "field",
+            "kind"
+          ],
+          "type": "object"
+        },
         "HostCallKind": {
           "description": "The only broker methods a worker may request.",
           "oneOf": [
@@ -975,6 +1022,13 @@
               "description": "Read the effective value of a setting declared by the calling package.",
               "enum": [
                 "read_setting_v1"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Prepare remote asset references from a declared, stored content revision.",
+              "enum": [
+                "content_prepare_v1"
               ],
               "type": "string"
             },
@@ -1154,6 +1208,34 @@
           ],
           "type": "object"
         },
+        "ManifestContentFetch": {
+          "additionalProperties": false,
+          "description": "Anonymous content proxy scope shown during trusted installation review.",
+          "properties": {
+            "profile": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/ContentFetchProfile"
+                }
+              ],
+              "description": "Host-enforced media and transport policy."
+            },
+            "sources": {
+              "description": "Up to 32 distinct text sources owned by the declaring package.",
+              "items": {
+                "$ref": "#/definitions/ContentFetchSource"
+              },
+              "maxItems": 32,
+              "minItems": 1,
+              "type": "array"
+            }
+          },
+          "required": [
+            "profile",
+            "sources"
+          ],
+          "type": "object"
+        },
         "ManifestHook": {
           "additionalProperties": false,
           "description": "Space-scoped hook enabled by a Manager; never a global interceptor.",
@@ -1279,6 +1361,24 @@
             "schema",
             "storage"
           ],
+          "type": "object"
+        },
+        "ManifestNetwork": {
+          "additionalProperties": false,
+          "description": "Network authority requested by a package. Each declaration has its own approval meaning and is subject to the live space activation.",
+          "properties": {
+            "content_fetch": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/ManifestContentFetch"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Anonymous remote assets from stored content. Omit for no proxy access."
+            }
+          },
           "type": "object"
         },
         "ManifestOperation": {
@@ -1495,7 +1595,7 @@
         },
         "ManifestSetting": {
           "additionalProperties": false,
-          "description": "Typed space setting; secrets use separate handles.",
+          "description": "Typed plugin setting; secrets use separate handles.",
           "properties": {
             "default": {
               "description": "Default setting value."
@@ -1503,6 +1603,17 @@
             "id": {
               "description": "Stable setting identifier.",
               "type": "string"
+            },
+            "scope": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/ManifestSettingScope"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Override owner. Omission selects the shared space setting."
             },
             "value_type": {
               "allOf": [
@@ -1519,6 +1630,25 @@
             "value_type"
           ],
           "type": "object"
+        },
+        "ManifestSettingScope": {
+          "description": "Owner of an override for a declared plugin setting.",
+          "oneOf": [
+            {
+              "description": "Each person in the space can have their own value.",
+              "enum": [
+                "personal"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Space managers can change the shared value.",
+              "enum": [
+                "space"
+              ],
+              "type": "string"
+            }
+          ]
         },
         "ManifestSettingType": {
           "description": "Primitive setting value type.",
@@ -1586,7 +1716,7 @@
         },
         "ManifestV1": {
           "additionalProperties": false,
-          "description": "Plugin menu read without running plugin code. Every top-level field is required; only the documented optional fields inside declarations may be omitted.",
+          "description": "Plugin menu read without running plugin code. Only documented optional fields may be omitted.",
           "properties": {
             "api_version": {
               "description": "Manifest API version, currently 1.",
@@ -1641,6 +1771,17 @@
             "name": {
               "description": "Human-readable plugin name.",
               "type": "string"
+            },
+            "network": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/ManifestNetwork"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional outbound network declarations. Omit for no network access."
             },
             "operations": {
               "description": "Public operation schemas and policy.",
@@ -2394,6 +2535,53 @@
       "$schema": "http://json-schema.org/draft-07/schema#",
       "additionalProperties": false,
       "definitions": {
+        "ContentFetchField": {
+          "description": "Stored source fields supported by the content proxy.",
+          "oneOf": [
+            {
+              "description": "The item's UTF-8 text body.",
+              "enum": [
+                "text"
+              ],
+              "type": "string"
+            }
+          ]
+        },
+        "ContentFetchProfile": {
+          "description": "Host-owned remote media policy. Each additional profile requires review.",
+          "oneOf": [
+            {
+              "description": "Anonymous HTTPS GET for allowed image and font formats, excluding SVG.",
+              "enum": [
+                "images_fonts"
+              ],
+              "type": "string"
+            }
+          ]
+        },
+        "ContentFetchSource": {
+          "additionalProperties": false,
+          "description": "A stored field the broker may read to derive proxy references.",
+          "properties": {
+            "field": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/ContentFetchField"
+                }
+              ],
+              "description": "The source field interpreted as HTML."
+            },
+            "kind": {
+              "description": "The declaring package's own text kind.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "field",
+            "kind"
+          ],
+          "type": "object"
+        },
         "HostCallKind": {
           "description": "The only broker methods a worker may request.",
           "oneOf": [
@@ -2415,6 +2603,13 @@
               "description": "Read the effective value of a setting declared by the calling package.",
               "enum": [
                 "read_setting_v1"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Prepare remote asset references from a declared, stored content revision.",
+              "enum": [
+                "content_prepare_v1"
               ],
               "type": "string"
             },
@@ -2594,6 +2789,34 @@
           ],
           "type": "object"
         },
+        "ManifestContentFetch": {
+          "additionalProperties": false,
+          "description": "Anonymous content proxy scope shown during trusted installation review.",
+          "properties": {
+            "profile": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/ContentFetchProfile"
+                }
+              ],
+              "description": "Host-enforced media and transport policy."
+            },
+            "sources": {
+              "description": "Up to 32 distinct text sources owned by the declaring package.",
+              "items": {
+                "$ref": "#/definitions/ContentFetchSource"
+              },
+              "maxItems": 32,
+              "minItems": 1,
+              "type": "array"
+            }
+          },
+          "required": [
+            "profile",
+            "sources"
+          ],
+          "type": "object"
+        },
         "ManifestHook": {
           "additionalProperties": false,
           "description": "Space-scoped hook enabled by a Manager; never a global interceptor.",
@@ -2719,6 +2942,24 @@
             "schema",
             "storage"
           ],
+          "type": "object"
+        },
+        "ManifestNetwork": {
+          "additionalProperties": false,
+          "description": "Network authority requested by a package. Each declaration has its own approval meaning and is subject to the live space activation.",
+          "properties": {
+            "content_fetch": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/ManifestContentFetch"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Anonymous remote assets from stored content. Omit for no proxy access."
+            }
+          },
           "type": "object"
         },
         "ManifestOperation": {
@@ -2935,7 +3176,7 @@
         },
         "ManifestSetting": {
           "additionalProperties": false,
-          "description": "Typed space setting; secrets use separate handles.",
+          "description": "Typed plugin setting; secrets use separate handles.",
           "properties": {
             "default": {
               "description": "Default setting value."
@@ -2943,6 +3184,17 @@
             "id": {
               "description": "Stable setting identifier.",
               "type": "string"
+            },
+            "scope": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/ManifestSettingScope"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Override owner. Omission selects the shared space setting."
             },
             "value_type": {
               "allOf": [
@@ -2959,6 +3211,25 @@
             "value_type"
           ],
           "type": "object"
+        },
+        "ManifestSettingScope": {
+          "description": "Owner of an override for a declared plugin setting.",
+          "oneOf": [
+            {
+              "description": "Each person in the space can have their own value.",
+              "enum": [
+                "personal"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Space managers can change the shared value.",
+              "enum": [
+                "space"
+              ],
+              "type": "string"
+            }
+          ]
         },
         "ManifestSettingType": {
           "description": "Primitive setting value type.",
@@ -3026,7 +3297,7 @@
         },
         "ManifestV1": {
           "additionalProperties": false,
-          "description": "Plugin menu read without running plugin code. Every top-level field is required; only the documented optional fields inside declarations may be omitted.",
+          "description": "Plugin menu read without running plugin code. Only documented optional fields may be omitted.",
           "properties": {
             "api_version": {
               "description": "Manifest API version, currently 1.",
@@ -3081,6 +3352,17 @@
             "name": {
               "description": "Human-readable plugin name.",
               "type": "string"
+            },
+            "network": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/ManifestNetwork"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional outbound network declarations. Omit for no network access."
             },
             "operations": {
               "description": "Public operation schemas and policy.",
@@ -3755,6 +4037,53 @@
       "$schema": "http://json-schema.org/draft-07/schema#",
       "additionalProperties": false,
       "definitions": {
+        "ContentFetchField": {
+          "description": "Stored source fields supported by the content proxy.",
+          "oneOf": [
+            {
+              "description": "The item's UTF-8 text body.",
+              "enum": [
+                "text"
+              ],
+              "type": "string"
+            }
+          ]
+        },
+        "ContentFetchProfile": {
+          "description": "Host-owned remote media policy. Each additional profile requires review.",
+          "oneOf": [
+            {
+              "description": "Anonymous HTTPS GET for allowed image and font formats, excluding SVG.",
+              "enum": [
+                "images_fonts"
+              ],
+              "type": "string"
+            }
+          ]
+        },
+        "ContentFetchSource": {
+          "additionalProperties": false,
+          "description": "A stored field the broker may read to derive proxy references.",
+          "properties": {
+            "field": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/ContentFetchField"
+                }
+              ],
+              "description": "The source field interpreted as HTML."
+            },
+            "kind": {
+              "description": "The declaring package's own text kind.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "field",
+            "kind"
+          ],
+          "type": "object"
+        },
         "HostCallKind": {
           "description": "The only broker methods a worker may request.",
           "oneOf": [
@@ -3776,6 +4105,13 @@
               "description": "Read the effective value of a setting declared by the calling package.",
               "enum": [
                 "read_setting_v1"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Prepare remote asset references from a declared, stored content revision.",
+              "enum": [
+                "content_prepare_v1"
               ],
               "type": "string"
             },
@@ -3955,6 +4291,34 @@
           ],
           "type": "object"
         },
+        "ManifestContentFetch": {
+          "additionalProperties": false,
+          "description": "Anonymous content proxy scope shown during trusted installation review.",
+          "properties": {
+            "profile": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/ContentFetchProfile"
+                }
+              ],
+              "description": "Host-enforced media and transport policy."
+            },
+            "sources": {
+              "description": "Up to 32 distinct text sources owned by the declaring package.",
+              "items": {
+                "$ref": "#/definitions/ContentFetchSource"
+              },
+              "maxItems": 32,
+              "minItems": 1,
+              "type": "array"
+            }
+          },
+          "required": [
+            "profile",
+            "sources"
+          ],
+          "type": "object"
+        },
         "ManifestHook": {
           "additionalProperties": false,
           "description": "Space-scoped hook enabled by a Manager; never a global interceptor.",
@@ -4080,6 +4444,24 @@
             "schema",
             "storage"
           ],
+          "type": "object"
+        },
+        "ManifestNetwork": {
+          "additionalProperties": false,
+          "description": "Network authority requested by a package. Each declaration has its own approval meaning and is subject to the live space activation.",
+          "properties": {
+            "content_fetch": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/ManifestContentFetch"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Anonymous remote assets from stored content. Omit for no proxy access."
+            }
+          },
           "type": "object"
         },
         "ManifestOperation": {
@@ -4296,7 +4678,7 @@
         },
         "ManifestSetting": {
           "additionalProperties": false,
-          "description": "Typed space setting; secrets use separate handles.",
+          "description": "Typed plugin setting; secrets use separate handles.",
           "properties": {
             "default": {
               "description": "Default setting value."
@@ -4304,6 +4686,17 @@
             "id": {
               "description": "Stable setting identifier.",
               "type": "string"
+            },
+            "scope": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/ManifestSettingScope"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Override owner. Omission selects the shared space setting."
             },
             "value_type": {
               "allOf": [
@@ -4320,6 +4713,25 @@
             "value_type"
           ],
           "type": "object"
+        },
+        "ManifestSettingScope": {
+          "description": "Owner of an override for a declared plugin setting.",
+          "oneOf": [
+            {
+              "description": "Each person in the space can have their own value.",
+              "enum": [
+                "personal"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Space managers can change the shared value.",
+              "enum": [
+                "space"
+              ],
+              "type": "string"
+            }
+          ]
         },
         "ManifestSettingType": {
           "description": "Primitive setting value type.",
@@ -4387,7 +4799,7 @@
         },
         "ManifestV1": {
           "additionalProperties": false,
-          "description": "Plugin menu read without running plugin code. Every top-level field is required; only the documented optional fields inside declarations may be omitted.",
+          "description": "Plugin menu read without running plugin code. Only documented optional fields may be omitted.",
           "properties": {
             "api_version": {
               "description": "Manifest API version, currently 1.",
@@ -4442,6 +4854,17 @@
             "name": {
               "description": "Human-readable plugin name.",
               "type": "string"
+            },
+            "network": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/ManifestNetwork"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional outbound network declarations. Omit for no network access."
             },
             "operations": {
               "description": "Public operation schemas and policy.",
@@ -5327,7 +5750,7 @@
               "type": "string"
             },
             {
-              "description": "Parked without a process until its child jobs report or its person request is resolved.",
+              "description": "Parked without a process until its child jobs report, a signal arrives or a deadline passes.",
               "enum": [
                 "waiting"
               ],
@@ -5406,7 +5829,7 @@
               "type": "string"
             },
             "result": {
-              "description": "Final result of a `done` job, or null."
+              "description": "Final result, a caller-safe wait rejection, or null."
             },
             "space_id": {
               "description": "Space UUID that owns the job.",
@@ -5419,6 +5842,17 @@
                 }
               ],
               "description": "Current lifecycle state."
+            },
+            "wait": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/JobWait"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Public summary while a plugin job waits for a signal."
             }
           },
           "required": [
@@ -5429,6 +5863,26 @@
             "result",
             "space_id",
             "state"
+          ],
+          "type": "object"
+        },
+        "JobWait": {
+          "additionalProperties": false,
+          "description": "Public summary of a parked plugin job with no signal payload or credentials.",
+          "properties": {
+            "deadline_ms": {
+              "description": "Unix milliseconds when the wait ends if no signal arrives.",
+              "format": "int64",
+              "type": "integer"
+            },
+            "reason": {
+              "description": "Why the job is waiting, supplied by the worker at the checkpoint.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "deadline_ms",
+            "reason"
           ],
           "type": "object"
         }
@@ -5494,7 +5948,7 @@
               "type": "string"
             },
             {
-              "description": "Parked without a process until its child jobs report or its person request is resolved.",
+              "description": "Parked without a process until its child jobs report, a signal arrives or a deadline passes.",
               "enum": [
                 "waiting"
               ],
@@ -5573,7 +6027,7 @@
               "type": "string"
             },
             "result": {
-              "description": "Final result of a `done` job, or null."
+              "description": "Final result, a caller-safe wait rejection, or null."
             },
             "space_id": {
               "description": "Space UUID that owns the job.",
@@ -5586,6 +6040,17 @@
                 }
               ],
               "description": "Current lifecycle state."
+            },
+            "wait": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/JobWait"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Public summary while a plugin job waits for a signal."
             }
           },
           "required": [
@@ -5596,6 +6061,26 @@
             "result",
             "space_id",
             "state"
+          ],
+          "type": "object"
+        },
+        "JobWait": {
+          "additionalProperties": false,
+          "description": "Public summary of a parked plugin job with no signal payload or credentials.",
+          "properties": {
+            "deadline_ms": {
+              "description": "Unix milliseconds when the wait ends if no signal arrives.",
+              "format": "int64",
+              "type": "integer"
+            },
+            "reason": {
+              "description": "Why the job is waiting, supplied by the worker at the checkpoint.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "deadline_ms",
+            "reason"
           ],
           "type": "object"
         }
@@ -12586,13 +13071,538 @@
   },
   {
     "risk": "read",
+    "id": "plugins.diagnostics",
+    "description": "Inspect an installed plugin's readiness and recent worker failures",
+    "mutates": false,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Input for `plugins.enable`, `plugins.disable` and `plugins.preview`.",
+      "properties": {
+        "plugin_id": {
+          "description": "Registered trusted-plugin identifier, not a package path or source of authority.",
+          "type": "string"
+        },
+        "space_id": {
+          "description": "Owning/access space identifier: 1..80 ASCII letters, digits or `_.:-`; never proof of authority.",
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[a-zA-Z0-9_.:-]+$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "plugin_id",
+        "space_id"
+      ],
+      "title": "PluginInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "definitions": {
+        "PluginReadiness": {
+          "description": "Last observed state of an installed package in one space.",
+          "oneOf": [
+            {
+              "description": "Disabled in this space.",
+              "enum": [
+                "disabled"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "A manifest or bundle verification problem prevents execution.",
+              "enum": [
+                "unavailable"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "The enabled worker starts on its first invocation.",
+              "enum": [
+                "not_started"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Native package or a worker whose last start completed.",
+              "enum": [
+                "ready"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "The last startup or running worker failed.",
+              "enum": [
+                "failed"
+              ],
+              "type": "string"
+            }
+          ]
+        },
+        "PluginRuntimeFailure": {
+          "description": "One caller-safe runtime failure from this space.",
+          "properties": {
+            "at_ms": {
+              "description": "When the host observed the failure, in Unix milliseconds.",
+              "format": "int64",
+              "type": "integer"
+            },
+            "operation": {
+              "description": "Operation attempted, when the failure belongs to an invocation.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "reason": {
+              "description": "Stable reason code without private input or output values.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "at_ms",
+            "reason"
+          ],
+          "type": "object"
+        }
+      },
+      "description": "Installed-package diagnostics exposed to authorized space managers.",
+      "properties": {
+        "plugin_id": {
+          "description": "Installed package ID.",
+          "type": "string"
+        },
+        "readiness": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/PluginReadiness"
+            }
+          ],
+          "description": "Last observed readiness in this space."
+        },
+        "reason": {
+          "description": "Caller-safe reason when the package is unavailable or failed.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "recent_errors": {
+          "description": "Up to eight recent failures, newest first.",
+          "items": {
+            "$ref": "#/definitions/PluginRuntimeFailure"
+          },
+          "type": "array"
+        },
+        "revision": {
+          "description": "Revision inspected by this read.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "space_id": {
+          "description": "Explicit space UUID.",
+          "type": "string"
+        },
+        "stderr_tail": {
+          "description": "Up to 4 KiB from the last failed worker's own stderr in this space.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "plugin_id",
+        "readiness",
+        "recent_errors",
+        "revision",
+        "space_id"
+      ],
+      "title": "PluginDiagnostics",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "read",
+    "id": "plugins.network.content.get",
+    "description": "Get a prepared sealed content frame",
+    "mutates": false,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Read a prepared sealed frame as the person it was created for.",
+      "properties": {
+        "frame_id": {
+          "description": "Short-lived frame ID from content preparation.",
+          "type": "string"
+        },
+        "space_id": {
+          "description": "Space UUID.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "frame_id",
+        "space_id"
+      ],
+      "title": "ContentFrameAddress",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "definitions": {
+        "ContentFetchPreference": {
+          "description": "One person's policy for remote images and fonts in a space.",
+          "oneOf": [
+            {
+              "description": "Request an explicit decision before downloading remote assets.",
+              "enum": [
+                "ask"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Fetch eligible assets at ingest, with the older-content fallback.",
+              "enum": [
+                "always"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Show placeholders for remote assets.",
+              "enum": [
+                "never"
+              ],
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "description": "Trusted client data for mounting a sealed frame and for external navigation.",
+      "properties": {
+        "frame_url": {
+          "description": "Relative trusted frame URL. Mount with an empty iframe sandbox.",
+          "type": "string"
+        },
+        "links": {
+          "description": "External targets in the order of the frame's navigation references. Open only through the host's explicit navigation action.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "preference": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/ContentFetchPreference"
+            }
+          ],
+          "description": "Current remote-content preference for the viewer."
+        }
+      },
+      "required": [
+        "frame_url",
+        "links",
+        "preference"
+      ],
+      "title": "ContentFrameView",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "read",
+    "id": "plugins.network.content.preference.get",
+    "description": "Read your remote content preference",
+    "mutates": false,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Read the viewer's remote content policy in one space.",
+      "properties": {
+        "space_id": {
+          "description": "Space UUID. The authenticated caller supplies the account identity.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "space_id"
+      ],
+      "title": "ContentFetchPreferenceAddress",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "description": "One person's policy for remote images and fonts in a space.",
+      "oneOf": [
+        {
+          "description": "Request an explicit decision before downloading remote assets.",
+          "enum": [
+            "ask"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Fetch eligible assets at ingest, with the older-content fallback.",
+          "enum": [
+            "always"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Show placeholders for remote assets.",
+          "enum": [
+            "never"
+          ],
+          "type": "string"
+        }
+      ],
+      "title": "ContentFetchPreference"
+    }
+  },
+  {
+    "risk": "reversible",
+    "id": "plugins.network.content.preference.set",
+    "description": "Set your remote content preference",
+    "mutates": true,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "definitions": {
+        "ContentFetchPreference": {
+          "description": "One person's policy for remote images and fonts in a space.",
+          "oneOf": [
+            {
+              "description": "Request an explicit decision before downloading remote assets.",
+              "enum": [
+                "ask"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Fetch eligible assets at ingest, with the older-content fallback.",
+              "enum": [
+                "always"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Show placeholders for remote assets.",
+              "enum": [
+                "never"
+              ],
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "description": "Set the caller's own remote content policy in one space.",
+      "properties": {
+        "preference": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/ContentFetchPreference"
+            }
+          ],
+          "description": "New choice applied at the next fetch and asset delivery."
+        },
+        "space_id": {
+          "description": "Space UUID. The authenticated caller supplies the account identity.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "preference",
+        "space_id"
+      ],
+      "title": "ContentFetchPreferenceEdit",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "description": "One person's policy for remote images and fonts in a space.",
+      "oneOf": [
+        {
+          "description": "Request an explicit decision before downloading remote assets.",
+          "enum": [
+            "ask"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Fetch eligible assets at ingest, with the older-content fallback.",
+          "enum": [
+            "always"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Show placeholders for remote assets.",
+          "enum": [
+            "never"
+          ],
+          "type": "string"
+        }
+      ],
+      "title": "ContentFetchPreference"
+    }
+  },
+  {
+    "risk": "read",
+    "id": "plugins.personal_settings.get",
+    "description": "Read your own declared plugin setting",
+    "mutates": false,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Address one manifest-declared setting in an accessible space.",
+      "properties": {
+        "key": {
+          "description": "Stable setting key from that package's manifest.",
+          "type": "string"
+        },
+        "plugin_id": {
+          "description": "Installed package ID.",
+          "type": "string"
+        },
+        "space_id": {
+          "description": "Space UUID.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "key",
+        "plugin_id",
+        "space_id"
+      ],
+      "title": "PluginSettingAddress",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "description": "Current values for a setting. The worker receives only its effective value.",
+      "properties": {
+        "alternatives": {
+          "description": "Concurrent alternatives preserved until explicit resolution.",
+          "items": true,
+          "type": "array"
+        },
+        "effective": {
+          "description": "Value the package sees, using the manifest default when needed."
+        },
+        "repair": {
+          "description": "Caller-safe description of the file and line to repair, when applicable.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "value": {
+          "description": "Stored override for the next edit's base. Null indicates no override."
+        },
+        "writable": {
+          "description": "True when the current settings file can be changed through the API.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "alternatives",
+        "effective",
+        "value",
+        "writable"
+      ],
+      "title": "PluginSettingValue",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "reversible",
+    "id": "plugins.personal_settings.set",
+    "description": "Edit your own declared plugin setting",
+    "mutates": true,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Replace the caller's override if their observed value still matches.",
+      "properties": {
+        "base": {
+          "description": "Last observed override. Null means no override."
+        },
+        "key": {
+          "description": "Personal setting key in that package's manifest.",
+          "type": "string"
+        },
+        "plugin_id": {
+          "description": "Installed package ID.",
+          "type": "string"
+        },
+        "space_id": {
+          "description": "Space UUID.",
+          "type": "string"
+        },
+        "value": {
+          "description": "New override. Null restores the manifest default."
+        }
+      },
+      "required": [
+        "base",
+        "key",
+        "plugin_id",
+        "space_id",
+        "value"
+      ],
+      "title": "PluginPersonalSettingEdit",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "description": "Current values for a setting. The worker receives only its effective value.",
+      "properties": {
+        "alternatives": {
+          "description": "Concurrent alternatives preserved until explicit resolution.",
+          "items": true,
+          "type": "array"
+        },
+        "effective": {
+          "description": "Value the package sees, using the manifest default when needed."
+        },
+        "repair": {
+          "description": "Caller-safe description of the file and line to repair, when applicable.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "value": {
+          "description": "Stored override for the next edit's base. Null indicates no override."
+        },
+        "writable": {
+          "description": "True when the current settings file can be changed through the API.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "alternatives",
+        "effective",
+        "value",
+        "writable"
+      ],
+      "title": "PluginSettingValue",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "read",
     "id": "plugins.settings.get",
     "description": "Read a declared space plugin setting",
     "mutates": false,
     "input_schema": {
       "$schema": "http://json-schema.org/draft-07/schema#",
       "additionalProperties": false,
-      "description": "Read one manifest-declared setting as a Manager of the addressed space.",
+      "description": "Address one manifest-declared setting in an accessible space.",
       "properties": {
         "key": {
           "description": "Stable setting key from that package's manifest.",
@@ -13012,6 +14022,13 @@
             "id": {
               "description": "Stable request UUID.",
               "type": "string"
+            },
+            "job_id": {
+              "description": "Job UUID for a plugin wait addressed to this person.",
+              "type": [
+                "string",
+                "null"
+              ]
             },
             "space_id": {
               "description": "Addressed space UUID, absent for personal secret requests.",

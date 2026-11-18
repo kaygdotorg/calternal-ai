@@ -188,6 +188,31 @@ pub fn validate_manifest_detailed(m: &ManifestV1) -> Result<(), String> {
     if m.host_calls.iter().collect::<BTreeSet<_>>().len() != m.host_calls.len() {
         return invalid("/host_calls", "host calls must be unique");
     }
+    let content_fetch = m
+        .network
+        .as_ref()
+        .and_then(|network| network.content_fetch.as_ref());
+    if m.host_calls.contains(&HostCallKind::ContentPrepareV1) != content_fetch.is_some() {
+        return invalid(
+            "/network/content_fetch",
+            "content preparation and the proxy profile must be declared together",
+        );
+    }
+    if let Some(fetch) = content_fetch
+        && (fetch.sources.is_empty()
+            || fetch.sources.len() > 32
+            || !unique(fetch.sources.iter().map(|source| source.kind.as_str()))
+            || fetch.sources.iter().any(|source| {
+                !m.kinds
+                    .iter()
+                    .any(|kind| kind.id == source.kind && kind.claimed_text)
+            }))
+    {
+        return invalid(
+            "/network/content_fetch/sources",
+            "expected 1 to 32 distinct text kinds declared by this package",
+        );
+    }
     if m.provider.as_ref().is_some_and(|p| {
         p.protocol_version != 1
             || !identifier(&p.executable)
