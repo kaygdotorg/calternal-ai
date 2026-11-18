@@ -159,9 +159,11 @@ ceilings and available guest capacity. An allow is consumed by the same
 placement attempt that received it. A failed or revoked hook keeps its
 hosted request queued. Existing running work retains its lease.
 
-The package may declare `read_space_usage_v1` for one authorized space,
-and `read_runtime_window_v1` or `read_runtime_observations_v1` under its
-exact operator binding. Decimal strings preserve exact bytes and
+The package may declare `read_space_usage_v1` for one authorized space.
+With `scope: "owner"` and an exact operator binding, the same call reads the
+combined bytes of spaces bound to the current owner group. A personal space
+still returns its own bytes. Runtime calls `read_runtime_window_v1` and
+`read_runtime_observations_v1` also require the exact operator binding. Decimal strings preserve exact bytes and
 nanoseconds on JavaScript clients. An optional `until_ms` closes a runtime
 window at a retained timestamp. The unresolved count then includes generations
 that started before the bound and still lack enough clock evidence to seal it.

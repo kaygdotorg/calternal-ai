@@ -85,6 +85,21 @@ impl Content {
         }
     }
 
+    /// Read the committed bytes of all spaces bound to an authorized group.
+    /// The caller authorizes the group. Costs one snapshot per member under
+    /// the group lock. An empty group has no stored bytes.
+    pub fn group_storage_usage(&self, group: GroupId) -> Result<StorageUsage> {
+        let pool = lock(&self.storage_groups.0).groups.get(&group).cloned();
+        let Some(pool) = pool else {
+            return Ok(StorageUsage::default());
+        };
+        let (text, binary) = lock(&pool).totals(&self.roots.appdata, None)?;
+        Ok(StorageUsage {
+            text_bytes: u64::try_from(text).map_err(internal)?,
+            binary_bytes: u64::try_from(binary).map_err(internal)?,
+        })
+    }
+
     /// Persist and apply a group's combined storage ceilings. Admission for
     /// this group waits for the change under its own mutex. The caller authorizes
     /// the group and supplies its durable commit. No other group waits on that I/O.
@@ -150,26 +165,9 @@ impl Pool {
         if !(growing_text || growing_binary || growing_total) {
             return Ok(());
         }
-        let mut text = u128::from(after.text_bytes);
-        let mut binary = u128::from(after.binary_bytes);
-        for member in self.members.iter().copied().filter(|id| *id != space) {
-            let path = crate::db::space_path(appdata, member);
-            match path.symlink_metadata() {
-                Ok(meta) if meta.is_file() => {}
-                Ok(_) => {
-                    return Err(Error::unavailable(
-                        "group storage needs a regular space database",
-                    ));
-                }
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
-                Err(e) => return Err(internal(e)),
-            }
-            let db = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)
-                .map_err(internal)?;
-            let usage = crate::storage_usage::read_sibling(&db)?;
-            text += u128::from(usage.text_bytes);
-            binary += u128::from(usage.binary_bytes);
-        }
+        let (sibling_text, sibling_binary) = self.totals(appdata, Some(space))?;
+        let text = sibling_text + u128::from(after.text_bytes);
+        let binary = sibling_binary + u128::from(after.binary_bytes);
         for (growing, used, limit, kind) in [
             (growing_text, text, self.limits.text_bytes, "text"),
             (growing_binary, binary, self.limits.binary_bytes, "binary"),
@@ -188,5 +186,29 @@ impl Pool {
             }
         }
         Ok(())
+    }
+
+    fn totals(&self, appdata: &Path, skip: Option<SpaceId>) -> Result<(u128, u128)> {
+        let mut text = 0;
+        let mut binary = 0;
+        for member in self.members.iter().copied().filter(|id| Some(*id) != skip) {
+            let path = crate::db::space_path(appdata, member);
+            match path.symlink_metadata() {
+                Ok(meta) if meta.is_file() => {}
+                Ok(_) => {
+                    return Err(Error::unavailable(
+                        "group storage needs a regular space database",
+                    ));
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
+                Err(e) => return Err(internal(e)),
+            }
+            let db = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)
+                .map_err(internal)?;
+            let usage = crate::storage_usage::read_sibling(&db)?;
+            text += u128::from(usage.text_bytes);
+            binary += u128::from(usage.binary_bytes);
+        }
+        Ok((text, binary))
     }
 }

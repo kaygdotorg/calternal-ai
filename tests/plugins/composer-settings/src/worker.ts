@@ -18,7 +18,10 @@ const handlers = {
     if (used > 1024n) return { decision: "refuse", reason: "Fixture byte ceiling reached" };
     return { decision: "queue", reason: "Fixture is waiting", retry_after_ms: 500 };
   },
-  "composer-settings.usage": async (_input, context) => readSpaceUsage(context),
+  "composer-settings.usage": async (input, context) => {
+    const { scope } = input as { scope?: "owner" };
+    return readSpaceUsage(context, scope);
+  },
   "composer-settings.label": async (input, context) => {
     const key = input && typeof input === "object" && "key" in input && typeof input.key === "string"
       ? input.key

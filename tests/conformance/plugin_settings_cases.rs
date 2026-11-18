@@ -359,6 +359,8 @@ async fn an_operator_group_allocation_survives_restart_and_covers_both_spaces() 
     let group = group["group_id"].as_str().unwrap();
     let first = f.spaces[0].clone();
     let second = f.spaces[2].clone();
+    let checksum = install(&f, &second).await;
+    let owner_usage = json!({"space_id":second,"scope":"owner"});
     operator_admin(
         &f,
         "resources",
@@ -376,10 +378,32 @@ async fn an_operator_group_allocation_survives_restart_and_covers_both_spaces() 
     .ok();
     f.stop();
     f.start().await;
+    let usage = f
+        .op(1, "composer-settings.usage", owner_usage.clone())
+        .await;
+    assert!(usage.status >= 400, "{}", usage.body);
+    operator_admin(
+        &f,
+        "resources",
+        &["set-hook", &second, PLUGIN, "--checksum", &checksum],
+    );
+    let group_usage = data(
+        f.op(1, "composer-settings.usage", owner_usage.clone())
+            .await,
+    );
+    assert_eq!(group_usage["text_bytes"], "4");
+    assert_eq!(group_usage["binary_bytes"], "0");
+    let space_usage = data(
+        f.op(1, "composer-settings.usage", json!({"space_id":second}))
+            .await,
+    );
+    assert_eq!(space_usage["text_bytes"], "0");
     let input = json!({"space_id":second,"title":"Two","markdown":"xy"});
     let refused = f.op(1, "notes.create", input.clone()).await;
     assert_eq!(refused.status, 409, "{}", refused.body);
     assert_eq!(refused.body["error"]["details"]["scope"], "group");
     operator_admin(&f, "resources", &["set-group-storage", group]);
     f.op(1, "notes.create", input).await.ok();
+    let group_usage = data(f.op(1, "composer-settings.usage", owner_usage).await);
+    assert_eq!(group_usage["text_bytes"], "6");
 }

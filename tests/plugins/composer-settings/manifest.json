@@ -25,7 +25,11 @@
     },
     {
       "id": "composer-settings.usage",
-      "input_schema": { "type": "object", "additionalProperties": false },
+      "input_schema": {
+        "type": "object",
+        "properties": { "scope": { "const": "owner" } },
+        "additionalProperties": false
+      },
       "output_schema": {
         "type": "object",
         "properties": {

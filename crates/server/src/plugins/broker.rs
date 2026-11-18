@@ -441,16 +441,54 @@ impl<D: Directory> InvocationHost for SpaceHost<D> {
                 Ok(super::settings::effective(setting, record).effective)
             }
             HostCallKind::ReadSpaceUsageV1 => {
-                exact(input, &[])?;
+                let object = exact(input, &["scope"])?;
+                let use_owner = match str_field(object, "scope")? {
+                    None => false,
+                    Some("owner") => true,
+                    Some(_) => return Err(Error::Invalid),
+                };
                 if !self.authorize(ManifestCapability::SpaceSettings) {
                     return Err(Error::Refused);
                 }
-                let usage = self
-                    .state
-                    .store
-                    .content()
-                    .storage_usage(self.space)
+                let content = self.state.store.content();
+                let usage = if use_owner {
+                    let checksum = self
+                        .plugin
+                        .review_checksum
+                        .as_deref()
+                        .ok_or(Error::Refused)?;
+                    let machines = self.state.store.machines().ok_or(Error::Refused)?;
+                    let package = &self.plugin.manifest.id;
+                    let binding = machines
+                        .resource_binding(self.space, package, checksum)
+                        .map_err(|_| Error::Refused)?;
+                    let owner = machines
+                        .resource_owner(self.space)
+                        .map_err(|_| Error::Refused)?;
+                    let usage = match owner {
+                        Some(calternal_types::ResourceOwner::Group(group)) => {
+                            content.group_storage_usage(group)
+                        }
+                        _ => content.storage_usage(self.space),
+                    }
                     .map_err(|_| Error::Refused)?;
+                    if machines
+                        .resource_owner(self.space)
+                        .map_err(|_| Error::Refused)?
+                        != owner
+                        || machines
+                            .resource_binding(self.space, package, checksum)
+                            .map_err(|_| Error::Refused)?
+                            != binding
+                    {
+                        return Err(Error::Refused);
+                    }
+                    usage
+                } else {
+                    content
+                        .storage_usage(self.space)
+                        .map_err(|_| Error::Refused)?
+                };
                 if !self.authorize(ManifestCapability::SpaceSettings) {
                     return Err(Error::Refused);
                 }

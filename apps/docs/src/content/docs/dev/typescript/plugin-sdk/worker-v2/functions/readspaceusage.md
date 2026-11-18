@@ -14,17 +14,19 @@ title: "plugin-sdk: worker-v2/functions/readSpaceUsage"
 
 # Function: readSpaceUsage()
 
-> **readSpaceUsage**(`context`): `Promise`\<[`SpaceUsage`](/docs/dev/typescript/plugin-sdk/worker-v2/interfaces/spaceusage/)\>
+> **readSpaceUsage**(`context`, `scope?`): `Promise`\<[`SpaceUsage`](/docs/dev/typescript/plugin-sdk/worker-v2/interfaces/spaceusage/)\>
 
-Read the current space's committed body bytes. The package declares
-`read_space_usage_v1` and the caller must hold `space.settings`.
-Costs one bounded broker round trip. No caller-supplied space is accepted.
+Read the current space's committed body bytes. Declare `read_space_usage_v1`
+and require `space.settings`. With `scope: "owner"`, an exact operator
+resource binding is also required. The host resolves the group and reads
+one snapshot per member. Personal spaces keep their own byte counts.
 
 ## Parameters
 
 | Parameter | Type |
 | ------ | ------ |
 | `context` | [`WorkerContextV2`](/docs/dev/typescript/plugin-sdk/worker-v2/interfaces/workercontextv2/) |
+| `scope?` | `"owner"` |
 
 ## Returns
 

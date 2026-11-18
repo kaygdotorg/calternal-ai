@@ -165,7 +165,7 @@ export async function readSetting(
   return context.call("read_setting_v1", { key } satisfies WorkerSettingInput);
 }
 
-/** Committed current-body bytes of the calling space, encoded without integer rounding. */
+/** Committed current-body bytes of a space or its owner group, without rounding. */
 export interface SpaceUsage {
   /** Decimal text bytes, including recoverable Trash. */
   text_bytes: string;
@@ -173,12 +173,16 @@ export interface SpaceUsage {
   binary_bytes: string;
 }
 
-/** Read the current space's committed body bytes. The package declares
- * `read_space_usage_v1` and the caller must hold `space.settings`.
- * Costs one bounded broker round trip. No caller-supplied space is accepted.
+/** Read the current space's committed body bytes. Declare `read_space_usage_v1`
+ * and require `space.settings`. With `scope: "owner"`, an exact operator
+ * resource binding is also required. The host resolves the group and reads
+ * one snapshot per member. Personal spaces keep their own byte counts.
  */
-export async function readSpaceUsage(context: WorkerContextV2): Promise<SpaceUsage> {
-  const value = await context.call("read_space_usage_v1", {});
+export async function readSpaceUsage(
+  context: WorkerContextV2,
+  scope?: "owner",
+): Promise<SpaceUsage> {
+  const value = await context.call("read_space_usage_v1", scope ? { scope } : {});
   if (!value || typeof value !== "object" || !("text_bytes" in value) || !("binary_bytes" in value)
     || typeof value.text_bytes !== "string" || !/^(0|[1-9][0-9]*)$/.test(value.text_bytes)
     || typeof value.binary_bytes !== "string" || !/^(0|[1-9][0-9]*)$/.test(value.binary_bytes)) {

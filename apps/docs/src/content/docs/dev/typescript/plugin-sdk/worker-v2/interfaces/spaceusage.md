@@ -14,7 +14,7 @@ title: "plugin-sdk: worker-v2/interfaces/SpaceUsage"
 
 # Interface: SpaceUsage
 
-Committed current-body bytes of the calling space, encoded without integer rounding.
+Committed current-body bytes of a space or its owner group, without rounding.
 
 ## Properties
 
