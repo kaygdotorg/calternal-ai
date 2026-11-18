@@ -221,6 +221,7 @@ exceptions become API requirements.
 | Current exception | Contract needed to remove it |
 | --- | --- |
 | The server matches the orchestrator ID to native thread operations and native turn jobs | A public engine service selection contract with thread append/checkpoint and turn admission, lease, retry and request operations |
+| The seed sets some packages enabled by default | A deployment profile selects default packages and activation policy by the same manifest rules available to any installed package |
 | Notes calls its Rust store and lifecycle handlers directly | Public kind listing, lifecycle and data mutation contracts over the existing engine, with the same isolation and receipts |
 | The orchestrator's core skill is embedded by path and reused at startup as a named fallback | Declare packaged instruction and skill sources and distribute defaults through the package seed; keep host security instructions in the protected core |
 | Server, CLI and browser recognize a provider package ID when resolving defaults and thread files | Resolve an enabled provider by configuration or service selection and carry provider metadata through the thread protocol |
