@@ -440,7 +440,7 @@
 
 <style>
   /* The area between the sidebars is the canvas and paints nothing: behind the windows is the one veiled wallpaper layer the sidebars sit on (shell/Backdrop.svelte), so every pixel outside the windows is the same with and without them. The windows are middle cards. */
-  .canvas { --switcher-clear: calc(var(--s-3) + var(--pill-h) + var(--s-4)); position: absolute; inset: 0; overflow: hidden; touch-action: pan-x pan-y; overscroll-behavior: contain; }
+  .canvas { position: absolute; inset: 0; overflow: hidden; touch-action: pan-x pan-y; overscroll-behavior: contain; }
   .view { position: absolute; inset: 0; z-index: 1; }
   .strip { position: absolute; top: 0; bottom: 0; left: 0; will-change: transform; }
   /* Columns run from the top to the bottom edge of the area as today's card does; the gap between stacked windows is the same 8 px. */

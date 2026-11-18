@@ -1,5 +1,6 @@
 // Side-by-side audit of canvas=0 and canvas=1 (a single window, the same thread, the same size): screenshots and every element whose computed type, spacing, radius or position differs.
-// Usage: CAL_URL=... node e2e/canvas-audit.mjs [outdir]  (evidence for the audit on issue #33; not part of the gate)
+// A permanent parity check in the gate: a thread in the canvas must look exactly like the same thread in the card, so any element that differs fails it (screenshots and the full list go to the outdir).
+// Usage: CAL_URL=... node e2e/canvas-audit.mjs [outdir]
 import { mkdirSync, writeFileSync } from "node:fs";
 import { chromium } from "playwright";
 import { serve, BASE } from "./lib.mjs";
@@ -41,5 +42,8 @@ for (const scheme of ["dark", "light"]) {
   report[scheme] = { card: { canvas0: a.card, canvas1: b.card }, count0: a.rows.length, count1: b.rows.length, diffs };
 }
 writeFileSync(`${dir}/audit.json`, JSON.stringify(report, null, 1));
+const nDiff = report.dark.diffs.length + report.light.diffs.length;
 console.log(JSON.stringify({ dark: { card: report.dark.card, n: report.dark.diffs.length }, light: { n: report.light.diffs.length } }));
-await browser.close(); await stop();
+for (const sch of ["dark", "light"]) for (const d of report[sch].diffs.slice(0, 12)) console.log(`   ${sch}: ${d.sig}${d.missing ? " " + d.missing : ""} ${d.boxd ?? ""} ${(d.d ?? []).join("; ")}`);
+console.log(`${nDiff ? "FAIL" : "PASS"}  a thread in the canvas matches the same thread in the card (${nDiff} differing elements; full list in ${dir}/audit.json)`);
+await browser.close(); await stop(); process.exit(nDiff ? 1 : 0);
