@@ -64,7 +64,8 @@ impl PodmanBackend {
         self
     }
 
-    /// Reuse rootless Podman inside a guest with the packaged image and no container networking.
+    /// Reuse rootless Podman and the packaged image. Guest init enables
+    /// networking for thread containers when the host attaches a TAP.
     #[cfg(target_os = "linux")]
     pub(super) fn in_microvm(root: PathBuf, image: String) -> Self {
         let mut backend = Self::new("podman", root, image);

@@ -5,7 +5,7 @@ use super::*;
 
 const ROUTE: &str = "account/delete";
 
-async fn reverify(fixture: &mut Fixture, who: usize) {
+pub(super) async fn reverify(fixture: &mut Fixture, who: usize) {
     let start = fixture
         .auth("reverify/start", Some(&fixture.cookies[who]), json!({}))
         .await;

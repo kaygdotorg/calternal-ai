@@ -76,3 +76,28 @@ bug and passed the Node test suite, which the harness reran independently.
 Both completed with zero cgroup OOM kills and no guest swap. These are
 development-host observations. The fixture provisioned the Firecracker TAP
 directly and exercised the shipped guest agent and container launcher.
+
+The ordinary dev-01 backend gate passed all ten checks, with 117 serial
+conformance cases and a visible skip for the hardware fixture when no
+guest config was supplied. With the absolute guest config, the machine
+microVM suite passed eight cases, with the perf benchmark ignored, and
+all three filtered HTTP conformance cases passed. Both leak checks passed.
+
+## Stage 4
+
+The HTTP fixture now verifies that two accounts have different boot IDs
+while their sibling threads share only their account's kernel. It kills the
+first account's exact Firecracker process during a leased command, waits for
+the interrupted state and reopens the same workspace with a different boot
+ID. It then deletes the account through the public account operation and
+checks that the durable machine erasure queue completes and the disk is
+removed. The untouched account keeps its original boot ID. The capacity
+fixture also cancels a waiting lease and checks that it never gets assigned.
+
+The dev-01 command used `scripts/check-podman-tests.sh cargo test --locked
+-j6 --manifest-path tests/conformance/Cargo.toml --test isolation microvm_cases --
+--test-threads=1 --show-output` with the absolute stage 3 guest configuration.
+All three cases passed in 11.39 seconds. Both leak checks passed. This
+exercises the retained workspace behind the provider checkpoint flow.
+The full provider resume example in ordinary conformance uses its separate
+fixture.
