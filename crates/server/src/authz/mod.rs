@@ -389,7 +389,9 @@ pub fn agent_policies() -> &'static [Policy] {
                 operation: Cow::Borrowed(*id),
                 required: if *id == calternal_core::MACHINES_ONBOARDING {
                     Capability::ServerSettings
-                } else if *id == "agent.events" {
+                } else if *id == calternal_core::SPACE_MACHINE_SET {
+                    Capability::SpaceSettings
+                } else if matches!(*id, "agent.events" | calternal_core::SPACE_MACHINE_GET) {
                     Capability::SpaceRead
                 } else {
                     Capability::PluginsUse
@@ -398,6 +400,8 @@ pub fn agent_policies() -> &'static [Policy] {
                     *id,
                     "agent.run"
                         | "agent.check"
+                        | calternal_core::SPACE_MACHINE_GET
+                        | calternal_core::SPACE_MACHINE_SET
                         | calternal_core::AGENT_READINESS
                         | calternal_core::MACHINES_VERIFY
                 ) {

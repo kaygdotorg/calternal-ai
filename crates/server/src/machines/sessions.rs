@@ -150,7 +150,7 @@ impl MachineService {
     /// unfinished exec. A new `boot_id` means the machine role restarted: execs it
     /// was running are reported lost.
     pub fn session_finish(&self, f: &SessionFinish) -> Result<SessionGranted, Error> {
-        if f.protocol != PROTOCOL_VERSION {
+        if !(5..=PROTOCOL_VERSION).contains(&f.protocol) {
             return Err(Error::invalid_input("unsupported machine protocol version"));
         }
         let mut st = self.lock()?;
@@ -206,6 +206,7 @@ impl MachineService {
         machine.live = Some(Live {
             session: hash,
             direct: backend == "direct",
+            shared_provider: f.protocol == PROTOCOL_VERSION && backend == "podman",
             kvm_fallback,
             thread_limit,
             outbox: VecDeque::new(),
@@ -228,6 +229,12 @@ impl MachineService {
             .map(|l| l.row.id)
             .collect();
         for lease in held {
+            if st.leases[&lease].row.shared_sponsor.is_some()
+                && (f.protocol != PROTOCOL_VERSION || backend != "podman")
+            {
+                st.end_with_files(lease, "shared provider login requires current Podman machine", &self.settings, true);
+                continue;
+            }
             if rebooted && (super::microvm::is_requested(&backend) || kvm_fallback) {
                 let keep_files = !st.leases[&lease].row.worker;
                 super::microvm::lost(st, f.machine_id, lease, &self.settings, keep_files);

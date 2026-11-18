@@ -1,5 +1,6 @@
 //! Shared fenced lease admission for agents and plugin workers.
 use super::*;
+use space_execution::SpaceExecution;
 
 impl MachineService {
     /// Ask to run work for (space, account, thread); blocks (one commit). Returns
@@ -36,6 +37,7 @@ impl MachineService {
             false,
             false,
             false,
+            None,
         )
     }
 
@@ -58,6 +60,7 @@ impl MachineService {
             true,
             false,
             false,
+            None,
         )
     }
 
@@ -79,6 +82,7 @@ impl MachineService {
             false,
             false,
             true,
+            None,
         )
     }
 
@@ -100,6 +104,23 @@ impl MachineService {
             false,
             true,
             false,
+            None,
+        )
+    }
+
+    /// Admit a fenced shared turn or private sign-in scratch lease.
+    /// Requires the current binding and uses the ordinary lease admission commit.
+    pub(crate) fn request_shared(
+        &self,
+        space: SpaceId,
+        actor: AccountId,
+        thread: Uuid,
+        target: SpaceExecution,
+        sign_in: bool,
+    ) -> Result<RunView, Error> {
+        self.request_work(
+            space, actor, thread, None, None, Some(target.machine),
+            false, sign_in, false, Some(target),
         )
     }
 
@@ -117,6 +138,7 @@ impl MachineService {
         pool_diagnostic: bool,
         provider_login: bool,
         background_title: bool,
+        shared: Option<SpaceExecution>,
     ) -> Result<RunView, Error> {
         let _account = self
             .lifecycle
@@ -128,8 +150,16 @@ impl MachineService {
             .get()
             .map(|l| l.step(space.as_uuid()))
             .transpose()?;
+        let _sponsor = shared
+            .filter(|target| target.sponsor != account)
+            .and_then(|target| self.lifecycle.get().map(|l| l.step(target.sponsor.as_uuid())))
+            .transpose()?;
         let mut st = self.lock()?;
         let st = &mut *st;
+        if let Some(target) = shared {
+            st.require_execution(space, target)?;
+        }
+        let shared_sponsor = shared.map(|target| target.sponsor);
         if background_title
             && !pinned_machine
                 .and_then(|id| st.machines.get(&id))
@@ -157,6 +187,7 @@ impl MachineService {
             if l.row.account != account
                 || l.row.space != space
                 || l.row.pinned_machine != pinned_machine
+                || l.row.shared_sponsor != shared_sponsor
             {
                 return Err(Error::conflict("thread is running for another context"));
             }
@@ -171,6 +202,7 @@ impl MachineService {
             id: Uuid::new_v4(),
             space,
             account,
+            shared_sponsor,
             thread,
             image,
             worker: is_worker,

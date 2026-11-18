@@ -19,6 +19,7 @@ use crate::{
     plugins::{Session, jobs::Job},
 };
 use inbox::Target;
+use crate::machines::space_execution::SpaceExecution;
 
 fn decode<T: serde::de::DeserializeOwned>(input: JsonObject) -> Result<T, Error> {
     serde_json::from_value(json!(input)).map_err(|_| Error::invalid_input("invalid sign-in input"))
@@ -72,14 +73,33 @@ pub(crate) fn list<D: Directory>(
     let pending = state.inputs.sign_ins.access(account, |entries| {
         Ok(entries
             .iter()
-            .filter_map(|entry| Some((entry.target.space, entry.request()?)))
+            .filter_map(|entry| Some((entry.target.space, entry.target.shared.is_some(), entry.request()?)))
             .collect::<Vec<_>>())
     })?;
     Ok(pending
         .into_iter()
-        .filter(|(space, _)| allowed(state, account, *space))
-        .map(|(_, prompt)| prompt)
+        .filter(|(space, shared, _)| {
+            allowed(state, account, *space) && (!shared || can_manage_shared(state, account, *space))
+        })
+        .map(|(_, _, prompt)| prompt)
         .collect())
+}
+
+fn can_manage_shared<D: Directory>(state: &Shared<D>, account: AccountId, space: SpaceId) -> bool {
+    state.directory.capabilities(account, space).is_some_and(|grants| grants.contains(Capability::SpaceSettings))
+}
+
+fn shared_target<D: Directory>(
+    state: &Shared<D>,
+    machines: &MachineService,
+    account: AccountId,
+    space: SpaceId,
+) -> Result<SpaceExecution, Error> {
+    if !can_manage_shared(state, account, space) {
+        return Err(missing());
+    }
+    crate::turns::space_execution::resolve(state, machines, space)?
+        .ok_or_else(|| Error::unavailable("configure a shared space machine first"))
 }
 
 fn result(id: Uuid, status: &str) -> Value {
@@ -101,7 +121,7 @@ pub(crate) async fn dispatch<D: Directory>(
     match operation {
         "provider.sign_in.start" => {
             let i: ProviderSignInStart = decode(input)?;
-            if i.pool && i.machine_id.is_some() {
+            if (i.shared && (i.pool || i.machine_id.is_some())) || (i.pool && i.machine_id.is_some()) {
                 return Err(Error::invalid_input(
                     "Select a personal machine or the pool.",
                 ));
@@ -116,7 +136,15 @@ pub(crate) async fn dispatch<D: Directory>(
                 pin.map(|_| false)
             };
             let m = machines.clone();
-            let machine = blocking(move || m.sign_in_target(account, pin, pool)).await?;
+            let st = state.clone();
+            let (machine, shared) = blocking(move || {
+                if i.shared {
+                    let binding = shared_target(&st, &m, account, target_space)?;
+                    Ok((binding.machine, Some(binding)))
+                } else {
+                    Ok((m.sign_in_target(account, pin, pool)?, None))
+                }
+            }).await?;
             start(
                 state,
                 machines,
@@ -126,6 +154,7 @@ pub(crate) async fn dispatch<D: Directory>(
                 thread,
                 machine,
                 i.provider_id,
+                shared,
                 false,
                 None,
             )
@@ -159,14 +188,23 @@ pub(crate) async fn dispatch<D: Directory>(
                 let input: ProviderSignInStatus = decode(input)?;
                 (uuid(&input.id)?, None)
             };
-            let target_space = state.inputs.sign_ins.access(account, |entries| {
+            let (target_space, shared) = state.inputs.sign_ins.access(account, |entries| {
                 entries
                     .iter()
                     .find(|e| e.id == id)
-                    .map(|e| e.target.space)
+                    .map(|e| (e.target.space, e.target.shared))
                     .ok_or_else(missing)
             })?;
             authorize(&state, account, target_space).await?;
+            if let Some(binding) = shared {
+                let state = state.clone();
+                blocking(move || {
+                    if shared_target(&state, &machines, account, target_space)? != binding {
+                        return Err(missing());
+                    }
+                    Ok(())
+                }).await?;
+            }
             state.inputs.sign_ins.access(account, |entries| {
                 let entry = entries
                     .iter_mut()
@@ -198,6 +236,7 @@ async fn start<D: Directory>(
     thread: Option<Uuid>,
     machine: Uuid,
     provider: String,
+    shared: Option<SpaceExecution>,
     retry: bool,
     job: Option<String>,
 ) -> Result<Value, Error> {
@@ -209,7 +248,14 @@ async fn start<D: Directory>(
         .as_ref()
         .filter(|p| p.sign_in)
         .ok_or_else(missing)?;
-    let executable = metadata.executable.clone();
+    let executable = if shared.is_some() {
+        if provider != "calternal-claude-code" {
+            return Err(Error::invalid_input("shared sign-in currently uses Claude Code"));
+        }
+        crate::turns::space_execution::SHARED_ADAPTER.into()
+    } else {
+        metadata.executable.clone()
+    };
     let label = plugin.manifest.name.clone();
     let s = state.clone();
     let name = provider.clone();
@@ -238,6 +284,7 @@ async fn start<D: Directory>(
         provider,
         label,
         retry,
+        shared,
     };
     let (id, answer) = state.inputs.sign_ins.insert(account, target.clone(), job)?;
     if let Some(answer) = answer {
@@ -258,16 +305,21 @@ async fn typing<D: Directory>(
 ) -> Result<Value, Error> {
     authorize(&state, account, space).await?;
     let s = state.clone();
-    let (job, pin) = blocking(move || {
+    let m = machines.clone();
+    let (job, pin, configured) = blocking(move || {
         let (pin, _) = crate::threads::index::readiness_context(&s, space, Some(thread), account)?;
         Ok((
             s.jobs
                 .thread_latest(&space.to_string(), &thread.to_string())?
                 .filter(|job| job.account == account),
             pin,
+            m.space_execution(space)?.is_some(),
         ))
     })
     .await?;
+    if configured && !job.as_ref().is_some_and(|job| job.input["request"]["personal_machine"] == true) {
+        return Ok(Value::Null);
+    }
     if let Some(job) = &job
         && job.state == calternal_core::JobState::Failed
         && job.checkpoint["error"]["class"] == "authentication"
@@ -294,6 +346,7 @@ async fn typing<D: Directory>(
         Some(thread),
         machine,
         provider,
+        None,
         true,
         None,
     )
@@ -308,6 +361,7 @@ pub(crate) async fn offer_failed<D: Directory>(
     job: &Job,
 ) -> Result<Value, Error> {
     if job.state != calternal_core::JobState::Failed
+        || !job.checkpoint["shared_sponsor"].is_null()
         || job.checkpoint["error"]["class"] != "authentication"
         || !session.is_live_in(&state).await
     {
@@ -340,6 +394,7 @@ pub(crate) async fn offer_failed<D: Directory>(
         thread,
         machine,
         provider,
+        None,
         true,
         Some(job.id.clone()),
     )
@@ -375,6 +430,7 @@ pub(crate) async fn offer_check<D: Directory>(
             None,
             machine,
             provider,
+            None,
             true,
             None,
         )

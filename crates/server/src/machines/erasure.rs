@@ -31,7 +31,7 @@ impl MachineService {
         let mut st = self.lock()?;
         let st = &mut *st;
         let matches = |row: &db::LeaseRow| match owner {
-            ErasedOwner::Account(id) => row.account == id,
+            ErasedOwner::Account(id) => row.account == id || row.shared_sponsor == Some(id),
             ErasedOwner::Space(id) => row.space == id,
         };
         let leases: Vec<_> = st
@@ -76,11 +76,13 @@ impl MachineService {
                     [id.to_string()],
                 )
                 .map_err(sql)?;
-                tx.execute("DELETE FROM leases WHERE account=?1", [id.to_string()])
+                tx.execute("DELETE FROM space_execution WHERE sponsor=?1", [id.to_string()]).map_err(sql)?;
+                tx.execute("DELETE FROM leases WHERE account=?1 OR shared_sponsor=?1", [id.to_string()])
                     .map_err(sql)?;
             }
             ErasedOwner::Space(id) => {
                 tx.execute("DELETE FROM workspace_discards WHERE lease IN (SELECT id FROM leases WHERE space=?1)", [id.to_string()]).map_err(sql)?;
+                tx.execute("DELETE FROM space_execution WHERE space=?1", [id.to_string()]).map_err(sql)?;
                 tx.execute("DELETE FROM leases WHERE space=?1", [id.to_string()])
                     .map_err(sql)?;
             }

@@ -26,12 +26,20 @@ pub(super) async fn prepare(
     } else {
         account.join("spaces").join(space.to_string()).join("home")
     };
-    let login = account.join("provider-login");
+    let shared = spec.shared_provider_sponsor;
+    let login = if let Some(sponsor) = shared {
+        let root = account.parent().ok_or_else(|| SandboxError("missing account root".into()))?;
+        root.join(sponsor.to_string()).join("spaces").join(space.to_string()).join("provider-login")
+    } else {
+        account.join("provider-login")
+    };
     tokio::task::spawn_blocking(move || {
         private::directory(&account)?;
         private::directory(&login)?;
         private::directory(&home)?;
-        import_existing(&account, &login)?;
+        if shared.is_none() {
+            import_existing(&account, &login)?;
+        }
         Ok::<_, io::Error>((home, login))
     })
     .await

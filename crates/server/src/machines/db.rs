@@ -76,6 +76,15 @@ CREATE TABLE title_leases(
 ) STRICT, WITHOUT ROWID;
 ";
 
+const SPACE_EXECUTION: &str = "
+CREATE TABLE space_execution (
+    space TEXT PRIMARY KEY,
+    sponsor TEXT NOT NULL,
+    machine TEXT NOT NULL
+) STRICT, WITHOUT ROWID;
+ALTER TABLE leases ADD COLUMN shared_sponsor TEXT;
+";
+
 pub(crate) use calternal_types::now_ms;
 
 /// Open the private placement database and apply any supported migrations.
@@ -193,6 +202,8 @@ pub struct LeaseRow {
     pub space: SpaceId,
     /// Account the work runs for.
     pub account: AccountId,
+    /// Space Owner sponsoring a shared lease. The actor remains in account.
+    pub shared_sponsor: Option<AccountId>,
     /// Thread.
     pub thread: Uuid,
     /// Ephemeral plugin worker; ended on server restart rather than adopted as an agent.
@@ -221,8 +232,8 @@ pub struct LeaseRow {
 pub fn put_lease(c: &Connection, l: &LeaseRow) -> rusqlite::Result<()> {
     let now = now_ms();
     c.execute(
-        "INSERT INTO leases (id, space, account, thread, image, machine, last_machine, fence, state, reason, created_ms, updated_ms, worker, pinned_machine)
-         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14)
+        "INSERT INTO leases (id, space, account, thread, image, machine, last_machine, fence, state, reason, created_ms, updated_ms, worker, pinned_machine, shared_sponsor)
+         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15)
          ON CONFLICT(id) DO UPDATE SET machine=excluded.machine, last_machine=excluded.last_machine,
            fence=excluded.fence, state=excluded.state, reason=excluded.reason, updated_ms=excluded.updated_ms",
         params![
@@ -240,7 +251,8 @@ pub fn put_lease(c: &Connection, l: &LeaseRow) -> rusqlite::Result<()> {
             now,
             // Older releases already fence worker rows on restart.
             l.worker || l.background_title,
-            l.pinned_machine.map(|machine| machine.to_string())
+            l.pinned_machine.map(|machine| machine.to_string()),
+            l.shared_sponsor.map(|sponsor| sponsor.to_string())
         ],
     )?;
     Ok(())
@@ -307,10 +319,11 @@ fn lease_from(r: &rusqlite::Row<'_>) -> rusqlite::Result<LeaseRow> {
         created_ms: r.get(10)?,
         pinned_machine: uuid(r.get(12)?),
         background_title,
+        shared_sponsor: r.get::<_, Option<String>>(14)?.map(|id| typed(14, id)).transpose()?,
     })
 }
 
-const LEASE_COLUMNS: &str = "id, space, account, thread, image, machine, last_machine, fence, state, reason, created_ms, worker, pinned_machine, EXISTS(SELECT 1 FROM title_leases WHERE lease=leases.id)";
+const LEASE_COLUMNS: &str = "id, space, account, thread, image, machine, last_machine, fence, state, reason, created_ms, worker, pinned_machine, EXISTS(SELECT 1 FROM title_leases WHERE lease=leases.id), shared_sponsor";
 
 /// Leases that have not ended, oldest first.
 pub fn active_leases(c: &Connection) -> rusqlite::Result<Vec<LeaseRow>> {
@@ -393,17 +406,37 @@ pub(crate) fn upgrade_schema() -> calternal_store::migrations::Schema<'static> {
             &[SCHEMA],
             &[
                 TITLE_LEASES,
+                SPACE_EXECUTION,
                 "CREATE TABLE upgrade_fixture (id INTEGER PRIMARY KEY) STRICT;",
             ],
         );
     }
-    calternal_store::migrations::Schema::new("machines.db", 6, &[SCHEMA], &[TITLE_LEASES])
+    calternal_store::migrations::Schema::new("machines.db", 6, &[SCHEMA], &[TITLE_LEASES, SPACE_EXECUTION])
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use calternal_store::migrations::{Schema, migrate_release};
+
+    #[test]
+    fn shared_execution_migrates_from_title_leases() {
+        let conn = Connection::open_in_memory().unwrap();
+        let previous = Schema::new("machines.db", 6, &[SCHEMA], &[TITLE_LEASES]);
+        migrate_release(&conn, previous, false).unwrap();
+        let space = SpaceId::new();
+        let actor = AccountId::new();
+        let lease = Uuid::new_v4();
+        conn.execute(
+            "INSERT INTO leases (id, space, account, thread, fence, state, created_ms, updated_ms, worker) VALUES (?1, ?2, ?3, ?4, 0, 'waiting', 1, 1, 0)",
+            params![lease.to_string(), space.to_string(), actor.to_string(), Uuid::new_v4().to_string()],
+        ).unwrap();
+        migrate_release(&conn, upgrade_schema(), true).unwrap();
+        assert_eq!(calternal_store::migrations::inspect(&conn, previous).unwrap(), upgrade_schema().version());
+        assert_eq!(super::lease(&conn, lease).unwrap().unwrap().shared_sponsor, None);
+        let stored: usize = conn.query_row("SELECT count(*) FROM space_execution", [], |row| row.get(0)).unwrap();
+        assert_eq!(stored, 0);
+    }
 
     #[test]
     fn title_leases_migrate_with_durable_classification_for_both_writers() {
@@ -414,6 +447,7 @@ mod tests {
             id: Uuid::new_v4(),
             space: SpaceId::new(),
             account: AccountId::new(),
+            shared_sponsor: None,
             thread: Uuid::new_v4(),
             worker: false,
             background_title: false,
@@ -426,7 +460,10 @@ mod tests {
             reason: None,
             created_ms: 1,
         };
-        put_lease(&conn, &existing).unwrap();
+        conn.execute(
+            "INSERT INTO leases (id, space, account, thread, fence, state, created_ms, updated_ms, worker) VALUES (?1, ?2, ?3, ?4, 0, 'waiting', 1, 1, 0)",
+            params![existing.id.to_string(), existing.space.to_string(), existing.account.to_string(), existing.thread.to_string()],
+        ).unwrap();
 
         let schema = upgrade_schema();
         migrate_release(&conn, schema, true).unwrap();

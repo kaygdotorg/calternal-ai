@@ -116,6 +116,9 @@ impl Backend for DirectBackend {
                 } else {
                     account.join("threads").join(spec.thread_id.to_string())
                 };
+                if spec.shared_provider_sponsor.is_some() {
+                    return Err(SandboxError("a shared provider login requires sandbox isolation".into()));
+                }
                 let (home, login) = super::provider_home::prepare(account, &dir, spec).await?;
                 let work = dir.join("work");
                 tokio::fs::create_dir_all(&work).await.map_err(|e| {
@@ -260,6 +263,7 @@ mod tests {
         SandboxSpec {
             space_id: Some(calternal_types::SpaceId::new()),
             provider_login: false,
+            shared_provider_sponsor: None,
             code_directory: None,
             worker: None,
             account_id: Uuid::new_v4(),

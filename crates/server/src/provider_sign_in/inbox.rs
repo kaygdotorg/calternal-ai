@@ -21,6 +21,7 @@ pub(super) struct Target {
     pub provider: String,
     pub label: String,
     pub retry: bool,
+    pub shared: Option<crate::machines::space_execution::SpaceExecution>,
 }
 
 #[derive(serde::Deserialize)]
@@ -108,6 +109,7 @@ impl Inbox {
             if let Some(entry) = entries.iter_mut().find(|e| {
                 e.outcome.is_none()
                     && e.target.machine == target.machine
+                    && e.target.shared == target.shared
                     && e.target.provider == target.provider
             }) {
                 if entry.target.space != target.space {

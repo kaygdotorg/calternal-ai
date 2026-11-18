@@ -147,7 +147,8 @@ async fn every_registered_operation_has_an_independent_matrix_row() {
     stored_rows.extend(
         calternal_core::AGENT_OPERATIONS
             .iter()
-            .map(|(id, _, _)| *id),
+            .map(|(id, _, _)| *id)
+            .filter(|id| !matches!(*id, "space.machine.get" | "space.machine.set")),
     );
     // Request isolation and the instructions role matrix use real passkey
     // sessions in conformance/requests_cases.rs.
@@ -174,6 +175,8 @@ async fn every_registered_operation_has_an_independent_matrix_row() {
         ("requests.approve", Capability::PluginsUse),
         ("requests.deny", Capability::PluginsUse),
         ("space.instructions", Capability::SpaceSettings),
+        ("space.machine.get", Capability::SpaceRead),
+        ("space.machine.set", Capability::SpaceSettings),
     ] {
         assert!(stored_rows.insert(id), "duplicate request operation {id}");
         assert_eq!(

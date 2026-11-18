@@ -108,6 +108,8 @@ fn schedule_checked<D: Directory>(
             && !verify
             && finished.is_ok()
             && claimed.job.input.get("thread_request").is_some()
+            && let Ok(job) = super::load(&st, &id).await
+            && job.checkpoint["shared_sponsor"].is_null()
         {
             crate::threads::title::schedule(st, svc, claimed.job);
         }
@@ -177,7 +179,16 @@ async fn execute<D: Directory>(
     };
     let saved_thread = job.input.get("thread_request").is_some();
     let mut phases = saved_thread.then(|| super::phases::Phases::queued(job, live));
-    let mut checkpoint = super::lease::prepare(state, machines, job, live, space, thread).await?;
+    let shared = if !check && !i.personal_machine {
+        let (s, m) = (state.clone(), machines.clone());
+        blocking(move || super::space_execution::resolve(&s, &m, space)).await?
+    } else {
+        None
+    };
+    if shared.is_some() && provider_id != "calternal-claude-code" {
+        return Err(Error::invalid_input("choose Claude Code or use your personal machine"));
+    }
+    let mut checkpoint = super::lease::prepare(state, machines, job, live, space, thread, shared).await?;
     let lease_id = checkpoint["lease_id"]
         .as_str()
         .and_then(|id| Uuid::parse_str(id).ok())
@@ -212,7 +223,10 @@ async fn execute<D: Directory>(
         };
         phases.switch("starting_sandbox", job, live, &mut checkpoint);
     }
-    let mut local_session = if previous_machine == Some(machine_id) {
+    let mut local_session = if shared.is_none()
+        && job.checkpoint["shared_sponsor"].is_null()
+        && previous_machine == Some(machine_id)
+    {
         checkpoint
             .get("session_id")
             .and_then(Value::as_str)
@@ -220,7 +234,7 @@ async fn execute<D: Directory>(
     } else {
         None
     };
-    if job.runs == 1
+    if shared.is_none() && job.runs == 1
         && let Some(session) = ProviderSession::owned(&job.input, account)
     {
         match session.resume(provider_id, thread, machine_id) {
@@ -236,7 +250,7 @@ async fn execute<D: Directory>(
         job,
         live,
         &mut checkpoint,
-        (saved_thread && personal_machine).then_some((thread, machine_id)),
+        (saved_thread && personal_machine && shared.is_none()).then_some((thread, machine_id)),
     )
     .await?;
     let mut context = i.context.clone();
@@ -294,7 +308,9 @@ async fn execute<D: Directory>(
         ]
     };
     let stdin = super::launch::encode(commands)?;
-    let (env, mut redactor) = if let Some(scope) = scope {
+    let (env, mut redactor) = if shared.is_some() {
+        (Vec::new(), None)
+    } else if let Some(scope) = scope {
         let st = state.clone();
         let token = blocking(move || st.jobs.agent_token(&scope, issuing_run)).await?;
         (
@@ -310,6 +326,9 @@ async fn execute<D: Directory>(
         return Ok(RunEnd::Failed);
     }
     let exec = blocking(move || {
+        if shared.is_some() {
+            return m.shared_turn_exec(account, lease_id, stdin);
+        }
         m.exec_input(
             account,
             lease_id,
@@ -480,7 +499,9 @@ async fn execute<D: Directory>(
                                     let needs_sign_in = check && status.installed && !status.signed_in;
 
                                     let (m, provider, status) = (machines.clone(), provider_id.to_owned(), status.clone());
-                                    blocking(move || m.record_check(account, lease_id, machine_id, provider, status)).await?;
+                                    if shared.is_none() {
+                                        blocking(move || m.record_check(account, lease_id, machine_id, provider, status)).await?;
+                                    }
                                     if needs_sign_in {
                                         let (s, svc, job, provider) = (state.clone(), machines.clone(), job.clone(), provider_id.to_owned());
                                         tokio::spawn(async move {

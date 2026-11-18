@@ -28,7 +28,7 @@ impl MachineService {
         env: Vec<(String, String)>,
         stdin: String,
     ) -> Result<Uuid, Error> {
-        self.exec_scoped(account, lease, argv, env, stdin, false)
+        self.exec_scoped(account, lease, argv, env, stdin, false, false)
     }
 
     /// Run the selected provider's title entry point without environment
@@ -47,7 +47,14 @@ impl MachineService {
             vec![],
             stdin,
             true,
+            false,
         )
+    }
+
+    /// Start only the image-owned tool-free adapter on a shared turn lease.
+    /// The shared provider credentials are never provided as command data.
+    pub(crate) fn shared_turn_exec(&self, account: AccountId, lease: Uuid, stdin: String) -> Result<Uuid, Error> {
+        self.exec_scoped(account, lease, vec![crate::turns::space_execution::SHARED_ADAPTER.into()], Vec::new(), stdin, false, true)
     }
 
     fn exec_scoped(
@@ -58,6 +65,7 @@ impl MachineService {
         env: Vec<(String, String)>,
         stdin: String,
         background_title: bool,
+        shared: bool,
     ) -> Result<Uuid, Error> {
         if stdin.len() > 128 * 1024 {
             return Err(Error::invalid_input("exec input exceeds 128 KiB"));
@@ -74,7 +82,8 @@ impl MachineService {
                 if l.row.account == account
                     && (l.row.worker
                         || l.provider_login
-                        || l.row.background_title != background_title) =>
+                        || l.row.background_title != background_title
+                        || l.row.shared_sponsor.is_some() != shared) =>
             {
                 return Err(Error::forbidden(
                     "internal machine execs are host-controlled",

@@ -207,6 +207,18 @@ pub fn validate_operation_input(operation: &str, input: &JsonObject) -> Result<(
             "machine_id must be a UUID",
         );
     }
+    if operation == crate::SPACE_MACHINE_GET {
+        return space(&decode::<crate::SpaceMachineGet>(input)?.space_id);
+    }
+    if operation == crate::SPACE_MACHINE_SET {
+        require(input.contains_key("machine_id"), "machine_id must be a UUID or null")?;
+        let request: crate::SpaceMachineSet = decode(input)?;
+        space(&request.space_id)?;
+        return require(
+            request.machine_id.is_none_or(|id| uuid::Uuid::parse_str(&id).is_ok()),
+            "machine_id must be a UUID or null",
+        );
+    }
     if operation == crate::AGENT_READINESS {
         let _: crate::ReadinessInput = decode(input)?;
         return Ok(());
@@ -576,6 +588,10 @@ pub fn operation_catalog() -> Vec<OperationDescription> {
             )
         } else if *id == crate::MACHINES_VERIFY {
             entry::<crate::MachineVerifyInput, crate::MachineVerifyResult>(id, text, *mutates)
+        } else if *id == crate::SPACE_MACHINE_GET {
+            entry::<crate::SpaceMachineGet, crate::SpaceMachineResult>(id, text, *mutates)
+        } else if *id == crate::SPACE_MACHINE_SET {
+            entry::<crate::SpaceMachineSet, crate::SpaceMachineResult>(id, text, *mutates)
         } else if *id == crate::AGENT_READINESS {
             entry::<crate::ReadinessInput, crate::ReadinessResult>(id, text, *mutates)
         } else {

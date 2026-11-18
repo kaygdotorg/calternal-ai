@@ -99,6 +99,7 @@ async fn kvm_separates_accounts_threads_and_spaces_and_persists_across_crash() {
     let first = SandboxSpec {
         space_id: Some(SpaceId::new()),
         provider_login: false,
+        shared_provider_sponsor: None,
         account_id: Uuid::new_v4(),
         thread_id: Uuid::new_v4(),
         code_directory: None,
@@ -257,6 +258,7 @@ async fn networked_guest_can_use_only_the_declared_egress() {
         .start(&SandboxSpec {
             space_id: Some(SpaceId::new()),
             provider_login: false,
+            shared_provider_sponsor: None,
             account_id: Uuid::new_v4(),
             thread_id: Uuid::new_v4(),
             code_directory: None,
