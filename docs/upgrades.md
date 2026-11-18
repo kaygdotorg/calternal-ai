@@ -44,6 +44,13 @@ The preceding writer ignores these tables. A head written without a
 checkpoint is a new lineage on the next live access. Older live bases cannot
 be merged automatically across that boundary.
 
+The installed package catalog advances from SQLite version 1 to 2. The
+shared runner adds live editing to the original bundled Notes archive
+and updates its archive checksum. The migration matches the exact
+pre-live archive bytes and checksum and preserves its activation and
+revision. It leaves explicitly approved packages and retained versions
+as stored. Fresh installs receive the opt-in from the shipped manifest.
+
 ## Forward changes
 
 The shared runner in `calternal-store` ports the existing app's

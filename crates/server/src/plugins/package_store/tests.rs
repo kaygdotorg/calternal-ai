@@ -2,6 +2,51 @@ use super::*;
 use std::os::unix::fs::{MetadataExt, PermissionsExt, symlink};
 
 #[test]
+fn installed_package_v2_opts_in_only_the_original_seed_and_preserves_rollback() {
+    use calternal_store::migrations::{Schema, inspect, migrate_release};
+
+    let v1 = Schema::new("installed-plugins.sqlite3", 1, &[PACKAGE_SCHEMA], &[]);
+    let seeded = include_bytes!("notes_before_live_editing.calplugin").as_slice();
+    let mut custom = decode(seeded.to_vec(), super::super::sha256_hex(seeded)).unwrap();
+    custom.manifest.name = "Personal Notes".into();
+    let custom = custom.archive().unwrap();
+    for (original, approval, live) in [(seeded, 0, true), (seeded, 9, false), (&custom, 0, false)] {
+        let db = Connection::open_in_memory().unwrap();
+        migrate_release(&db, v1, false).unwrap();
+        let checksum = super::super::sha256_hex(original);
+        db.execute(
+            "INSERT INTO installed_plugins VALUES (2,'calternal-notes',?1,?2,0,?3)",
+            params![original, checksum, approval],
+        )
+        .unwrap();
+        db.execute(
+            "INSERT INTO retained_plugins
+             SELECT 1,id,archive,checksum,default_enabled,approval FROM installed_plugins",
+            [],
+        )
+        .unwrap();
+        migrate_release(&db, UPGRADE_SCHEMA, true).unwrap();
+        assert_eq!(inspect(&db, UPGRADE_SCHEMA).unwrap(), 2);
+        assert_eq!(inspect(&db, v1).unwrap(), 2);
+        let (archive, checksum) = db
+            .query_row(
+                "SELECT archive,checksum FROM installed_plugins
+                 WHERE revision=2 AND default_enabled=0 AND approval=?1",
+                [approval],
+                |row| Ok((row.get::<_, Vec<u8>>(0)?, row.get::<_, String>(1)?)),
+            )
+            .unwrap();
+        let package = decode(archive.clone(), checksum).unwrap();
+        assert_eq!(package.manifest.kinds[0].live_editing(), live);
+        assert_eq!(archive == original, !live);
+        let retained: Vec<u8> = db
+            .query_row("SELECT archive FROM retained_plugins", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(retained, original);
+    }
+}
+
+#[test]
 fn startup_reuses_verified_current_and_retained_workers_and_prunes_stale_files() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
