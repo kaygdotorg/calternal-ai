@@ -113,7 +113,19 @@ fn safe_member(root: &Path, relative: &str, max: usize) -> Result<Vec<u8>, Strin
 }
 
 fn open(appdata: &Path) -> Result<Connection, String> {
-    let db = Connection::open(appdata.join("installed-plugins.sqlite3")).map_err(reason)?;
+    use std::os::unix::fs::OpenOptionsExt;
+    let path = appdata.join("installed-plugins.sqlite3");
+    match fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(&path)
+    {
+        Ok(_) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
+        Err(error) => return Err(reason(error)),
+    }
+    let db = Connection::open(path).map_err(reason)?;
     db.busy_timeout(Duration::from_secs(5)).map_err(reason)?;
     db.execute_batch(
         "CREATE TABLE IF NOT EXISTS installed_plugins (
@@ -379,7 +391,12 @@ pub fn load(
         seed_root.is_none(),
     )?;
     let cache = appdata.join("installed-plugin-workers");
-    fs::create_dir_all(&cache).map_err(reason)?;
+    use std::os::unix::fs::DirBuilderExt;
+    match fs::DirBuilder::new().mode(0o700).create(&cache) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
+        Err(error) => return Err(reason(error)),
+    }
     for file in fs::read_dir(&cache).map_err(reason)? {
         let file = file.map_err(reason)?;
         if file.file_type().map_err(reason)?.is_file()

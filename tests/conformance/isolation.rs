@@ -1443,6 +1443,7 @@ async fn filesystem_modes_and_complete_sql_inventory() {
         space_db.as_str(),
         "system/content-index.db",
         "system/auth.db",
+        "installed-plugins.sqlite3",
     ] {
         let c = Connection::open_with_flags(
             f.appdata().join(db),
