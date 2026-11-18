@@ -3,7 +3,8 @@ CREATE TABLE storage_usage(
     text_bytes INTEGER NOT NULL CHECK(text_bytes>=0),
     binary_bytes INTEGER NOT NULL CHECK(binary_bytes>=0),
     text_limit INTEGER CHECK(text_limit>=0),
-    binary_limit INTEGER CHECK(binary_limit>=0)
+    binary_limit INTEGER CHECK(binary_limit>=0),
+    total_limit INTEGER CHECK(total_limit>=0)
 ) STRICT;
 
 INSERT INTO storage_usage(singleton,text_bytes,binary_bytes)
@@ -57,7 +58,6 @@ BEGIN
     WHERE singleton=1;
 END;
 
-
 -- Existing data stays readable and deletable after an operator lowers a limit.
 -- Only positive deltas beyond the corresponding ceiling are refused.
 CREATE TRIGGER storage_usage_text_limit BEFORE UPDATE OF text_bytes ON storage_usage
@@ -66,3 +66,7 @@ BEGIN SELECT RAISE(ABORT, 'text storage byte limit'); END;
 CREATE TRIGGER storage_usage_binary_limit BEFORE UPDATE OF binary_bytes ON storage_usage
 WHEN NEW.binary_bytes>OLD.binary_bytes AND NEW.binary_bytes>OLD.binary_limit
 BEGIN SELECT RAISE(ABORT, 'binary storage byte limit'); END;
+CREATE TRIGGER storage_usage_total_limit BEFORE UPDATE OF text_bytes,binary_bytes ON storage_usage
+WHEN NEW.text_bytes+NEW.binary_bytes>OLD.text_bytes+OLD.binary_bytes
+ AND NEW.text_bytes+NEW.binary_bytes>OLD.total_limit
+BEGIN SELECT RAISE(ABORT, 'total storage byte limit'); END;

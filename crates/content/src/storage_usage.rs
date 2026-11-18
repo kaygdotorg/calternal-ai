@@ -20,6 +20,8 @@ pub struct StorageLimits {
     pub text_bytes: Option<u64>,
     /// Maximum logical binary bytes, or no configured ceiling.
     pub binary_bytes: Option<u64>,
+    /// Maximum combined text and binary bytes, or no configured ceiling.
+    pub total_bytes: Option<u64>,
 }
 
 impl Content {
@@ -53,12 +55,13 @@ impl Content {
         }
         let text = to_sql(limits.text_bytes)?;
         let binary = to_sql(limits.binary_bytes)?;
+        let total = to_sql(limits.total_bytes)?;
         self.with_space(space, |space| {
             space
                 .conn
                 .execute(
-                    "UPDATE storage_usage SET text_limit=?1,binary_limit=?2 WHERE singleton=1",
-                    rusqlite::params![text, binary],
+                    "UPDATE storage_usage SET text_limit=?1,binary_limit=?2,total_limit=?3 WHERE singleton=1",
+                    rusqlite::params![text, binary, total],
                 )
                 .map_err(internal)?;
             Ok(())
@@ -91,6 +94,11 @@ pub(crate) fn write_error(error: rusqlite::Error) -> crate::Error {
             if message == "binary storage byte limit" =>
         {
             "binary"
+        }
+        rusqlite::Error::SqliteFailure(_, Some(message))
+            if message == "total storage byte limit" =>
+        {
+            "total"
         }
         _ => return internal(error),
     };

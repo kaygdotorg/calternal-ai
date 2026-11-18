@@ -116,7 +116,7 @@ pub enum ResourcesCmd {
         /// Dedicated space where this package keeps resource state.
         state_space: Option<String>,
     },
-    /// Replace byte ceilings by kind for an existing space.
+    /// Replace an existing space's per-kind and combined byte ceilings.
     SetStorage {
         #[command(flatten)]
         installation: Installation,
@@ -128,6 +128,9 @@ pub enum ResourcesCmd {
         #[arg(long)]
         /// Maximum binary bytes. Omit for no ceiling.
         binary_bytes: Option<u64>,
+        #[arg(long)]
+        /// Maximum combined text and binary bytes. Omit for no ceiling.
+        total_bytes: Option<u64>,
     },
     /// Read retained confirmed runtime of hosted guests for one scope.
     RuntimeUsage {
@@ -273,11 +276,13 @@ pub fn resources(cmd: ResourcesCmd) -> Result<Reply, CliError> {
             space,
             text_bytes,
             binary_bytes,
+            total_bytes,
         } => {
             let space = parse_space(&space)?;
             let limits = calternal_content::StorageLimits {
                 text_bytes,
                 binary_bytes,
+                total_bytes,
             };
             let Response::StorageLimits =
                 run(installation, Request::StorageLimits { space, limits })?

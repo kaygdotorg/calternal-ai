@@ -700,7 +700,8 @@ fn committed_usage_counts_current_bodies_through_trash_and_reopen() {
             space,
             StorageLimits {
                 text_bytes: Some(5),
-                binary_bytes: Some(4),
+                binary_bytes: Some(7),
+                total_bytes: Some(9),
             },
         )
         .unwrap();
@@ -718,6 +719,19 @@ fn committed_usage_counts_current_bodies_through_trash_and_reopen() {
         .unwrap_err();
     assert_eq!(refused.code, ErrorCode::Conflict);
     assert_eq!(content.get(space, note.id).unwrap().revision, note.revision);
+    let refused = content
+        .write(
+            space,
+            None,
+            "files",
+            None,
+            json!({"title":"Crosses the combined ceiling"}),
+            &[0, 1, 2],
+            request(account, "combined"),
+            |_| json!({}),
+        )
+        .unwrap_err();
+    assert_eq!(refused.message, "total storage byte limit reached");
     let latest = content
         .write(
             space,
