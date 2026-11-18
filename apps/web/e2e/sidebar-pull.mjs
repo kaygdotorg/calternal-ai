@@ -1,5 +1,5 @@
 // The sidebar pull (docs/ui-shell.md "Sidebar pull", rules in src/shell/pull.ts): a horizontal swipe over the middle card brings a closed sidebar into view, following the finger one to one; release by
-// speed or half way; the opposite swipe closes it; and it leaves alone a swipe that starts on something that scrolls sideways. Desktop trackpad (wheel events) and touch (pointer events), and the phone.
+// speed or half way; the opposite swipe closes it; and it leaves alone a swipe that starts on something that scrolls sideways. Touch (pointer events) on a phone and a wide touch screen; a desktop trackpad's wheel does nothing.
 import { chromium } from "playwright";
 import { serve, BASE } from "./lib.mjs";
 const stop = await serve(); const b = await chromium.launch(); let bad = 0;
@@ -21,42 +21,13 @@ const wheel = (page, dx, n, at = [700, 450], mode = 0, dy = 0) => page.evaluate(
 }), [dx, n, at, mode, dy]);
 const sideRight = (page) => page.evaluate(() => document.querySelector("aside.side").firstElementChild.getBoundingClientRect().right);
 const cardLeft = (page) => page.evaluate(() => document.querySelector(".mid-card").getBoundingClientRect().left);
-// ---- desktop trackpad, both sidebars closed
-{
-  const { ctx, page } = await open("desktop", { sidebarOpen: false, rightOpen: false });
-  const w = await page.evaluate(() => document.querySelector("aside.side").firstElementChild.getBoundingClientRect().width);
-  const card0 = await cardLeft(page);
-  await wheel(page, 4, 25); // 100 px of finger travel as many small events; the swipe is still held (it ends after a quiet moment)
-  const vis = await sideRight(page), card = await cardLeft(page);
-  ok(Math.abs(vis - 100) < 6, "the sidebar's visible width tracks the pull one to one", `pulled 100, visible ${Math.round(vis)}`);
-  ok(Math.abs(card - card0 - 100) < 6, "the card moves with it", `card moved ${Math.round(card - card0)}`);
-  await page.waitForTimeout(900); // released below half: it goes back
-  ok((await page.locator(".shell").getAttribute("data-sidebar")) === "false", "released under half, slowly: it closes again");
-  await wheel(page, 60, 3); await page.waitForTimeout(1000); // 180 px as a few large events, past half
-  ok((await page.locator(".shell").getAttribute("data-sidebar")) === "true", "released past half: it opens", `width ${Math.round(w)}`);
-  ok(Math.abs((await sideRight(page)) - w) < 3 && Math.abs((await cardLeft(page)) - (w + (card0))) < 14, "and rests in its column");
-  await ctx.close();
-}
-// ---- the opposite swipe closes, and the right sidebar comes from the right
-{
-  const { ctx, page } = await open("desktop", { sidebarOpen: true, rightOpen: false });
-  await wheel(page, -1.5, 12, [700, 450], 1); // finger moves left, fed in lines (deltaMode 1: 12 x 1.5 x 16 px)
-  await page.waitForTimeout(1000);
-  ok((await page.locator(".shell").getAttribute("data-sidebar")) === "false", "the opposite swipe closes the open sidebar");
-  await wheel(page, -40, 7); // and again, in pixels, a few large events
-  await page.waitForTimeout(1000);
-  ok((await page.locator(".shell").getAttribute("data-right")) === "true", "a swipe left then brings the right sidebar in");
-  await ctx.close();
-}
-// ---- rules: a swipe over a sideways scroller is its own; a vertical scroll is not a pull
-{
-  const { ctx, page } = await open("desktop", { sidebarOpen: false, rightOpen: false });
-  await page.evaluate(() => { const d = document.createElement("div"); d.id = "wide"; d.style.cssText = "position:fixed;left:400px;top:200px;width:300px;height:60px;overflow-x:auto;z-index:50;background:#888"; d.innerHTML = '<div style="width:1200px;height:40px">x</div>'; document.querySelector(".mid").append(d); d.scrollLeft = 300; });
-  await wheel(page, 20, 8, [500, 230]); await page.waitForTimeout(700);
-  ok((await page.locator(".shell").getAttribute("data-sidebar")) === "false", "a swipe that starts on a code block or table that can still scroll that way scrolls it, not the card");
-  await wheel(page, 4, 8, [700, 450], 0, 60);
-  await page.waitForTimeout(700);
-  ok((await page.locator(".shell").getAttribute("data-sidebar")) === "false", "a mostly vertical scroll is not a pull");
+// ---- desktop trackpad: a horizontal wheel never moves a sidebar (owner decision, 2026-11-18)
+for (const [name, st] of [["both closed", { sidebarOpen: false, rightOpen: false }], ["left open", { sidebarOpen: true, rightOpen: false }]]) {
+  const { ctx, page } = await open("desktop", st);
+  const before = await cardLeft(page), l0 = await page.locator(".shell").getAttribute("data-sidebar"), r0 = await page.locator(".shell").getAttribute("data-right");
+  await wheel(page, 4, 25); await wheel(page, 60, 3); await wheel(page, -40, 7); await wheel(page, -1.5, 12, [700, 450], 1); // small events, large ones, both ways, in pixels and lines
+  await page.waitForTimeout(900);
+  ok((await page.locator(".shell").getAttribute("data-sidebar")) === l0 && (await page.locator(".shell").getAttribute("data-right")) === r0 && Math.abs((await cardLeft(page)) - before) < 1, `a horizontal wheel never moves a sidebar (${name})`, `card moved ${Math.round((await cardLeft(page)) - before)}`);
   await ctx.close();
 }
 // ---- touch (a wide screen with a touch panel and a phone): pointer events of type touch

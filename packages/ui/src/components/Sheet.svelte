@@ -69,7 +69,8 @@
   .scrim { position: fixed; inset: 0; z-index: 40; background: var(--scrim); }
   :global(.sheet:focus) { outline: none; }
   :global(.sheet) { position: fixed; z-index: 41; isolation: isolate; overflow: auto; max-height: 88dvh; color: var(--ink); overscroll-behavior: contain; }
-  :global(.sheet.bottom) { left: var(--inset); right: var(--inset); bottom: var(--inset); border-radius: var(--r-pane); --origin: bottom center; translate: 0 0; }
+  /* A bottom sheet is inset like an iPhone's: 8 in from the sides and the bottom, the bottom corners concentric with the display's (its radius less the inset) and smaller ones on top (lib/sheet-radius.ts; the pane radius all round elsewhere). */
+  :global(.sheet.bottom) { left: var(--sheet-inset); right: var(--sheet-inset); bottom: var(--sheet-inset); border-radius: var(--sheet-corners); --origin: bottom center; translate: 0 0; padding-bottom: calc(var(--safe-bottom, 0px) * 0.5); }
   :global(.sheet.right) { top: var(--inset); bottom: var(--inset); right: var(--inset); width: min(480px, 92vw); border-radius: var(--r-pane); --origin: right center; }
   /* The palette: centred under the top edge. */
   :global(.sheet.top) { top: 10dvh; left: 50%; width: min(40rem, calc(100vw - 2 * var(--inset))); border-radius: var(--r-pane); --origin: top center; translate: -50% 0; max-height: 80dvh; }
@@ -78,6 +79,7 @@
   :global(.sheet.center[data-surface]:not([data-ready])) { translate: -50% calc(-50% + var(--s-8)); }
   :global(.sheet.top[data-wide]) { top: calc(12dvh + var(--safe-top)); width: min(1120px, calc(100vw - 3rem)); max-height: calc(100dvh - 12dvh - var(--safe-top) - var(--inset)); }
   :global(.sheet.top[data-surface]:not([data-ready])) { translate: -50% calc(var(--s-8) * -1); }
+  :global(.sheet.bottom[data-surface]:not([data-ready])) { translate: 0 calc(100% + var(--sheet-inset)); scale: 1; }
   :global(.sheet[data-surface]:not([data-ready])) { translate: 0 var(--s-8); }
   :global(.sheet.right[data-surface]:not([data-ready])) { translate: var(--s-8) 0; }
 </style>

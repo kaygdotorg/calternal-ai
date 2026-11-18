@@ -1,6 +1,6 @@
 import { mount, unmount } from "svelte";
 import "@calternal/ui/styles";
-import { currentScheme, initInputModality, initScheme, loadFonts, registerFonts } from "@calternal/ui";
+import { applySheetRadius, currentScheme, initInputModality, initScheme, loadFonts, registerFonts } from "@calternal/ui";
 import App from "./App.svelte";
 import { interceptLinks } from "./lib/route.svelte";
 import { shell } from "./shell/shell.svelte";
@@ -10,6 +10,7 @@ import { startChrome } from "./shell/chrome";
 
 registerFonts(import.meta.env.BASE_URL);
 initInputModality();
+applySheetRadius(new URLSearchParams(location.search).get("sheetcorners") === "device"); // an iPhone gets its display corners on sheets; `?sheetcorners=device` shows them anywhere (preview, tests)
 initScheme();
 shell.start();
 interceptLinks();

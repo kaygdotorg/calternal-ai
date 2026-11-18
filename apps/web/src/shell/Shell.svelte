@@ -16,11 +16,11 @@
   import ResizeHandle from "./ResizeHandle.svelte";
   import Sidebar from "./Sidebar.svelte";
   import { shell } from "./shell.svelte";
-  import { leavesAlone, parseMs, pickTarget, settleOpen, visible, WheelSwipe, type Side, type Target } from "./pull";
+  import { leavesAlone, parseMs, pickTarget, settleOpen, visible, type Side, type Target } from "./pull";
   let { app, id }: { app: AppDef; id?: string } = $props();
   // The sidebar pull (docs/ui-shell.md "Sidebar pull"; the rules are in ./pull.ts): a horizontal swipe anywhere over the middle card brings a closed sidebar into view, following the finger one to
   // one, and the opposite swipe closes it. One recogniser for every width. On a phone the card slides aside (the sidebar is underneath; the side panel slides over); on a wide screen the sidebar
-  // slides in over the card's edge and the card moves with it, and a trackpad's horizontal two-finger swipe does the same through `wheel` events. On release the result goes through `shell.over` (a
+  // slides in over the card's edge and the card moves with it; a trackpad does not pull (a horizontal wheel never moves a sidebar). On release the result goes through `shell.over` (a
   // history entry on a phone: Back, Forward and the platform's own back gesture do the same thing) or `shell.setOpen` (a wide screen, remembered). It settles on the sheet motion tokens
   // (`--dur-sheet` on `--ease-sheet`) toward the rest state that the position and the release speed point at (a flick of 0.4 px/ms decides, else half way). Interruptible: a touch or swipe while
   // anything still settles takes hold of it where it is. The edge swipe of the first phone version is the same gesture started at the edge.
@@ -163,28 +163,7 @@
       settleWide(changedSide, w, moving(midEl) ? grabWide(changedSide) : open ? 0 : w, open);
     });
   });
-  // A trackpad's horizontal two-finger swipe over the app: the same pull, fed by `wheel` events (./pull.ts WheelSwipe). Only on a wide screen; the events are consumed (so the browser does not take
-  // the swipe as Back) only while a pull owns them.
-  const ws = new WheelSwipe();
-  let wheelTimer = 0, wheelFrom = 0;
-  function wheel(e: WheelEvent) {
-    if (shell.narrow || e.ctrlKey) return;
-    const r = ws.feed(e, (dir) => {
-      const t = pickTarget(dir, openness());
-      if (!t || leavesAlone(e.target as Element, dir, false)) return false;
-      tgt = t;
-      const w = sideWidth(t.side);
-      if (wp && moving(midEl)) wheelFrom = grabWide(t.side); else { wp = { side: t.side, vis: t.opening ? 0 : w, w, layoutOpen: t.side === "left" ? shell.sidebarOpen : rightOpen, settling: false }; wheelFrom = wp.vis; }
-      return true;
-    });
-    if (r === "leave") return;
-    e.preventDefault();
-    if (wp) wp.vis = visible(tgt!, wheelFrom, ws.dx, wp.w);
-    clearTimeout(wheelTimer);
-    wheelTimer = window.setTimeout(() => { const side = wp?.side; const v = ws.velocity(); ws.end(); tgt = null; if (wp && side) finishWide(side === "left" ? v : -v); }, WheelSwipe.IDLE + 30);
-  }
-  /** Adds the wheel listener non-passively (a passive one cannot cancel the swipe's default). */
-  const wheelAction = (node: HTMLElement) => { node.addEventListener("wheel", wheel, { passive: false }); return { destroy: () => node.removeEventListener("wheel", wheel) }; };
+  // A trackpad's horizontal swipe does nothing here (owner decision, 2026-11-18): on a desktop the sidebars have buttons, shortcuts and resize handles. Only touch pulls (one finger).
   /** A tap on the strip of card that stays visible, or on the scrim, closes what is over the card; the end of a drag that started there is not a tap. */
   const tap = () => { if (gmoved) { gmoved = false; return; } shell.dismiss(); };
   // Choosing something in the sidebar shows it: the list goes away without a history step, so Back brings the list back over what you came from.
@@ -201,7 +180,7 @@
 
 <Backdrop />
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<div class="shell" class:narrow={shell.narrow} style:--pull-x={shell.narrow ? (dragMode === "card" && drag !== null ? `translateX(${drag}px)` : shell.sidebarOpen ? "translateX(calc(100% - var(--peek)))" : undefined) : undefined} use:wheelAction data-pull={wp?.side} onpointerdown={gdown} onpointermove={gmove} onpointerup={gup} onpointercancel={gup} data-sidebar={shell.sidebarOpen} data-right={rightOpen}>
+<div class="shell" class:narrow={shell.narrow} style:--pull-x={shell.narrow ? (dragMode === "card" && drag !== null ? `translateX(${drag}px)` : shell.sidebarOpen ? "translateX(calc(100% - var(--peek)))" : undefined) : undefined} data-pull={wp?.side} onpointerdown={gdown} onpointermove={gmove} onpointerup={gup} onpointercancel={gup} data-sidebar={shell.sidebarOpen} data-right={rightOpen}>
   <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
   <aside class="side" class:pulled={wp?.side === "left"} style:--vis={wp?.side === "left" ? `${wp.vis}px` : undefined} style:--w={wp?.side === "left" ? `${wp.w}px` : undefined} bind:this={sideEl} onclick={choose} data-ink={surfaces.left ?? undefined} aria-label="{app.name} sidebar" inert={!shell.sidebarOpen}><Sidebar {app} /></aside>
 

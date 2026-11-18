@@ -172,7 +172,7 @@ Implementation and status: `docs/ui-shell-status.md`.
 
 ## Sidebar pull (2026-11-18)
 
-A horizontal swipe anywhere over the middle card brings a closed sidebar into view, following the finger one to one: the sidebar's visible width is the distance the finger (or the trackpad's two fingers) has travelled, clamped to the sidebar's width. The opposite swipe closes it. One recogniser (`apps/web/src/shell/Shell.svelte`, rules and helpers in `shell/pull.ts`, tested in `pull.test.ts` and `e2e/sidebar-pull.mjs`) serves the phone, a touch screen of any width and a trackpad; the phone's edge swipe is the same gesture started at the edge.
+A horizontal swipe anywhere over the middle card brings a closed sidebar into view, following the finger one to one: the sidebar's visible width is the distance the finger has travelled, clamped to the sidebar's width. The opposite swipe closes it. One recogniser (`apps/web/src/shell/Shell.svelte`, rules and helpers in `shell/pull.ts`, tested in `pull.test.ts` and `e2e/sidebar-pull.mjs`) serves the phone, a touch screen of any width and a trackpad; the phone's edge swipe is the same gesture started at the edge.
 
 **What a swipe does.** Finger right: closes the right sidebar if it is open, else opens the left one. Finger left: closes the left sidebar if it is open, else opens the right one (when the app has one). Otherwise nothing (swiping toward a sidebar that is already open does nothing).
 
@@ -187,11 +187,11 @@ A horizontal swipe anywhere over the middle card brings a closed sidebar into vi
 - A swipe that starts on a thread row's own swipe actions (`.ra`), in a dialog or sheet, or on anything marked `data-no-pull`.
 - A touch while text is selected (the selection handles drag the selection).
 - Movement that is not clearly sideways: it must be 10 px across and 1.5 times more across than down before it is a pull; a vertical scroll is never one.
-- A mouse. Only touch and the trackpad's `wheel` pull; a mouse drag keeps selecting text.
-- The browser's Back gesture: a trackpad swipe the pull consumes has its default cancelled (non-passive `wheel` listener), so the browser does not also take it as history navigation; one the pull does not take (vertical, or over a sideways scroller) is left to the browser. On a phone in the browser, the system's own back swipe from the very edge still wins on iOS Safari (it cannot be intercepted); installed as a home-screen app there is none, and the edge swipe is ours.
-- On a narrow window a trackpad does nothing (touch pulls; a narrow desktop window is rare and its sidebars have buttons).
+- A mouse or a trackpad. Only touch pulls (one finger); a mouse drag keeps selecting text, and a trackpad's horizontal swipe never moves a sidebar (owner decision, 2026-11-18, reversing the first version: on a desktop the sidebars have buttons, shortcuts and resize handles). Two fingers on a touch screen belong to the canvas when it is on.
 
-A trackpad swipe starts at the first horizontal `wheel` event after a quiet moment (120 ms) and ends after the next quiet moment; the inertia after the fingers lift is part of the swipe and keeps moving the sidebar, then the release rule applies.
+
+
+*(2026-11-18, later)* The trackpad pull was removed: `WheelSwipe` and the `wheel` listener are gone; `e2e/sidebar-pull.mjs` checks that a horizontal wheel, in pixels or lines, small events or large, in either direction, moves nothing.
 
 ## Safe areas (2026-11-18)
 
