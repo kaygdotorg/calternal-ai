@@ -152,6 +152,7 @@ impl Journals {
             let mut data = serde_json::json!({ "revision": revision, "actor": actor });
             let projection = match operation {
                 "threads.checkpoint" => Some("append"),
+                "threads.snooze" => Some("snoozed_until_ms"),
                 "threads.provider_sign_in" => Some("notice"),
                 "plugins.settings.set" => Some("plugin_id"),
                 _ => None,

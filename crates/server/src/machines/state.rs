@@ -37,6 +37,7 @@ pub(super) struct Machine {
     pub assigned: usize,
     pub boot_id: Option<Uuid>,
     pub checks: HashMap<AccountId, HashMap<String, super::readiness::Observation>>,
+    pub title_blocked: Option<(String, String)>,
     pub last_seen: Instant,
     pub last_seen_ms: Option<i64>,
     pub live: Option<Live>,
@@ -51,6 +52,7 @@ impl Machine {
             assigned: 0,
             boot_id: None,
             checks: HashMap::new(),
+            title_blocked: None,
             last_seen: now,
             last_seen_ms: None,
             live: None,
@@ -312,6 +314,11 @@ impl State {
         settings: &Settings,
         keep_files: bool,
     ) {
+        self.end_for_placement(lease, why, keep_files);
+        self.place_waiting(settings);
+    }
+
+    fn end_for_placement(&mut self, lease: Uuid, why: &str, keep_files: bool) {
         let Some(l) = self.leases.get_mut(&lease) else {
             return;
         };
@@ -369,7 +376,6 @@ impl State {
                 },
             );
         }
-        self.place_waiting(settings);
     }
 
     /// Fence the revoked session and release its reservations, including
@@ -419,14 +425,14 @@ impl State {
     /// restricted to operator pool machines pending their placement contract. Cost: waiting × machines, with an
     /// indexed load count; one commit per assignment.
     pub fn place_waiting(&mut self, settings: &Settings) {
-        let mut waiting: Vec<(u64, Uuid)> = self
+        let mut waiting: Vec<(bool, u64, Uuid)> = self
             .leases
             .values()
             .filter(|l| l.state == LeaseState::Waiting)
-            .map(|l| (l.order, l.row.id))
+            .map(|l| (l.row.background_title, l.order, l.row.id))
             .collect();
         waiting.sort_unstable();
-        for (_, lease) in waiting {
+        for (background, _, lease) in waiting {
             let l = &self.leases[&lease];
             let best = self
                 .machines
@@ -448,6 +454,33 @@ impl State {
                     )
                 })
                 .map(|(m, _)| m.row.id);
+            let preempt = if best.is_none() && !background && !l.row.worker {
+                self.leases
+                    .values()
+                    .filter(|title| title.row.background_title)
+                    .find_map(|title| {
+                        let id = title.assigned_machine()?;
+                        let m = self.machines.get(&id)?;
+                        (l.row.pinned_machine.is_none_or(|pin| pin == id)
+                            && self.may_use(m, l.row.account)
+                            && m.live.as_ref().is_some_and(|live| {
+                                !live.draining && live.capacity.max_sandboxes as usize >= m.assigned
+                            })
+                            && !m.row.draining
+                            && !m.row.revoked)
+                            .then_some((title.row.id, id))
+                    })
+            } else {
+                None
+            };
+            let best = if let Some((title, machine)) = preempt {
+                // The machine receives Stop before Assign. Foreground placement
+                // never waits for completion of a title or consumes its result.
+                self.end_for_placement(title, "foreground work took title capacity", false);
+                Some(machine)
+            } else {
+                best
+            };
             if let Some(machine) = best {
                 self.assign(lease, machine, settings);
             }
@@ -513,7 +546,7 @@ impl State {
                     Down::Stop {
                         lease_id: r.lease_id,
                         reason: "owner erased".into(),
-                        keep_files: !l.row.worker,
+                        keep_files: !l.row.worker && !l.row.background_title,
                     },
                 );
                 continue;
@@ -522,7 +555,7 @@ impl State {
                 .leases
                 .get_mut(&r.lease_id)
                 .expect("existing lease under registry lock");
-            let keep_files = !l.row.worker;
+            let keep_files = !l.row.worker && !l.row.background_title;
             let account = l.row.account;
             let current = l.row.machine == Some(machine)
                 && l.row.fence == r.fence

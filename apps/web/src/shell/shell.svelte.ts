@@ -17,7 +17,7 @@ export const WIDTHS: Record<Side, { def: number; min: number; max: number; prop:
 export type Over = "list" | "panel" | null;
 
 class Shell {
-  /** True under 760 px wide: sidebar and right card slide over the middle card instead of sitting beside it. */
+  /** True under 760 px wide, or on a touch device in landscape (under 500 px tall): sidebar and right card slide over the middle card instead of sitting beside it. */
   narrow = $state(false);
   sidebarOpen = $state(true);
   rightOpen = $state(true);
@@ -63,7 +63,8 @@ class Shell {
       this.sidebarOpen = o === "list";
       this.rightOpen = o === "panel";
     });
-    const mq = matchMedia("(max-width: 759px)");
+    // Narrow: under 760 px wide, or a touch device in landscape (a phone on its side is wide but only about 400 px tall: three panes would leave the card a sliver).
+    const mq = matchMedia("(max-width: 759px), (max-height: 500px) and (pointer: coarse)");
     const apply = () => {
       this.narrow = mq.matches;
       if (mq.matches) {

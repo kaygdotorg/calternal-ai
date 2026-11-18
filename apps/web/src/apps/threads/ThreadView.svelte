@@ -3,7 +3,7 @@
   // Messages are read a page at a time around what is on screen; the streaming message is one extra row at the end whose text is the
   // only thing that changes while it streams.
   import { getContext, untrack } from "svelte";
-  import { Button, cssPx, InlineEditor, Menu, Panel, Pill, toast } from "@calternal/ui";
+  import { Button, chromeHeader, cssPx, InlineEditor, Menu, Panel, Pill, toast } from "@calternal/ui";
   import { runThreadItem, threadItems } from "./thread-menu";
   import { appearance } from "../../appearance/prefs.svelte";
   import { hazards } from "../../lib/hazard";
@@ -14,7 +14,6 @@
   import { Conversation } from "./conversation.svelte";
   import SelectionActions from "./SelectionActions.svelte";
   import StreamRow from "./StreamRow.svelte";
-  import StateMark from "./StateMark.svelte";
   import Composer from "./Composer.svelte";
   import MessageRow from "./MessageRow.svelte";
   import ThreadNotices from "./ThreadNotices.svelte";
@@ -81,10 +80,9 @@
   $effect(() => {
     if (!listEl || !headerEl) return;
     const h = headerEl;
-    return hazards(listEl, () => [...h.querySelectorAll<HTMLElement>(".pill, .title")]);
+    return hazards(listEl, () => [...h.querySelectorAll<HTMLElement>(".pill, .title"), ...document.querySelectorAll<HTMLElement>(".hdr .hp")]);
   });
   const summary = $derived(conv?.summary ?? store.get(id));
-  const parent = $derived(summary?.parentId ? store.get(summary.parentId) : undefined);
   const reqs = $derived(store.requestsFor(id));
   /** Sign-ins for this thread, open or just ended: items at the end of the conversation (not part of it: the thread file carries one line). */
   const signIns = $derived<{ req: SignInRequest; state: "pending" | "done" | "failed" }[]>([
@@ -121,7 +119,7 @@
   let streamId = "";
   $effect(() => {
     const sid = conv?.stream?.id ?? "";
-    if (sid && sid !== streamId) list?.scrollToBottom();
+    if (sid && sid !== streamId && list?.nearEnd()) list?.scrollToBottom(); // a turn that starts follows the end only for someone reading the end: never yank a person who scrolled up to read
     streamId = sid;
   });
   // In a canvas window (canvas/WindowFrame.svelte) the window supplies the top right pill (full screen, share, the menu) and the sidebar's way back is the shell's: this view keeps only its title pill.
@@ -130,6 +128,8 @@
   let menuOpen = $state(false);
   let moreEl = $state<HTMLButtonElement>();
   let renaming = $state(false);
+  // The header line the shell draws beside the sidebar button is this thread's title while the view is open (a canvas window draws its own title pill).
+  $effect(() => { if (windowed) return; chromeHeader.pinned = summary?.title ?? ""; return () => { chromeHeader.pinned = ""; }; });
   let draftTitle = $state("");
   function startRename() { if (!summary) return; draftTitle = summary.title; renaming = true; }
   function commitTitle() {
@@ -143,17 +143,11 @@
 <div class="thread">
   <header bind:this={headerEl} class:windowed>
     {#if shell.narrow && !windowed}<Pill icon="sidebar" label="Show threads" onclick={() => shell.toggleSidebar()} />{/if}
-    <Panel class="title" radius="pill">
-      <div class="tt">
-        {#if parent}<a class="crumb" href={href(`/threads/${parent.id}`)}>{parent.title}</a>{/if}
-        {#if renaming}
-          <InlineEditor class="title-edit" label="Rename thread" bind:value={draftTitle} autoselect onsubmit={commitTitle} oncancel={() => (renaming = false)} onblur={commitTitle} />
-        {:else}
-          <h1 ondblclick={startRename}>{summary?.title ?? "Thread"}</h1>
-        {/if}
-      </div>
-      {#if summary && summary.state !== "idle" && summary.state !== "done"}<StateMark state={summary.state} form="word" />{/if}
-    </Panel>
+    <!-- The thread's title is the page's one heading (assistive technology reads this) and, drawn, the shell's shared header line (HeaderPill, pinned below) beside the sidebar button; in a canvas window the window's own title pill. A pill is drawn here only while renaming. -->
+    <h1 class="visually-hidden">{summary?.title ?? "Thread"}</h1>
+    {#if renaming}
+      <Panel class="title" radius="pill"><InlineEditor class="title-edit" label="Rename thread" bind:value={draftTitle} autoselect onsubmit={commitTitle} oncancel={() => (renaming = false)} onblur={commitTitle} /></Panel>
+    {/if}
     <span class="grow"></span>
     {#if summary && !windowed}
       <Pill icon="more" label="Thread actions" aria-haspopup="menu" aria-expanded={menuOpen} bind:el={moreEl} onclick={() => (menuOpen = !menuOpen)} />
@@ -210,14 +204,13 @@
   .blank { position: absolute; inset: 0; display: grid; align-content: center; justify-items: start; gap: var(--s-4); max-width: 30rem; margin: 0 auto; padding: 0 var(--pad-region); }
   .blank h2 { font-size: var(--text-heading); font-weight: var(--strong-weight); }
   .blank p { color: var(--ink-2); font-size: var(--text-ui); }
-  :global(.title) { display: flex; align-items: center; gap: var(--s-3); min-width: 0; max-width: 100%; height: var(--pill-h); padding: 0 var(--s-5); }
-  .tt { min-width: 0; display: grid; }
+  :global(.title) { display: flex; align-items: center; min-width: 0; max-width: 100%; height: var(--pill-h); padding: 0 var(--s-5); }
   :global(.title-edit) { font-size: var(--text-ui); font-weight: var(--strong-weight); width: 100%; min-width: 12ch; }
-  h1 { font-size: var(--text-ui); font-weight: var(--strong-weight); line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .crumb { font-size: var(--text-section); color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 1; }
   .list { position: absolute; inset: 0; }
   .signin { margin: var(--s-4) var(--pad-region); max-width: var(--msg-w, 100%); }
   .skeleton { height: 96px; margin: var(--s-4) var(--pad-region); border-radius: var(--r-card); background: rgb(var(--ink-rgb) / 0.05); }
-  .bottom { position: absolute; z-index: 3; left: 0; right: 0; bottom: 0; display: flex; justify-content: center; pointer-events: none; padding: var(--s-4) var(--msg-pad-r, var(--pad-region)) max(var(--pad-region), var(--safe-bottom), var(--bottom-inset, 0px)) var(--msg-pad-l, var(--pad-region)); }
+  .bottom { position: absolute; z-index: 3; left: 0; right: 0; bottom: 0; display: flex; justify-content: center; pointer-events: none; padding: var(--s-4) var(--msg-pad-r, var(--pad-region)) max(var(--s-4), calc(var(--safe-bottom) - var(--kb, 0px))) var(--msg-pad-l, var(--pad-region)); }
+  /* The composer floats at the bottom of the card above the safe area (the home indicator; none while the keyboard is up: `--kb`), over the scrolling messages, with nothing behind it but its own material. On a phone its box is the full content width. */
+  :global(.shell.narrow) .inner { max-width: 100%; }
   .inner { pointer-events: auto; display: flex; flex-direction: column; gap: var(--s-4); width: 100%; max-width: var(--msg-inner, calc(var(--msg-w) - 2 * var(--pad-region))); min-width: 0; }
 </style>

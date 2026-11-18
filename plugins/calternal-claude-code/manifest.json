@@ -19,6 +19,7 @@
   "provider": {
     "protocol_version": 1,
     "sign_in": true,
+    "title_generation": true,
     "executable": "calternal-provider-claude-code",
     "default_model": "claude-sonnet-5-5",
     "models": [

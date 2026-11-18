@@ -6,10 +6,10 @@ umask 077
 cd "$HOME"
 die() { printf '%s\n' "$*" >&2; exit 1; }
 log() { printf '%s\n' "$*"; }
-[[ $# -ge 9 && $(id -u) != 0 ]] || die 'Use the target’s non-root deployment account.'
+[[ $# -ge 10 && $(id -u) != 0 ]] || die 'Use the target’s non-root deployment account.'
 action=$1 name=$2 publish_ip=$3 publish_port=$4 root=$5 hdd=$6 hdd_mount=$7
-secrets=$HOME/$8 sandbox_image=$9
-shift 9
+secrets=$HOME/$8 sandbox_image=$9 machine_connect=${10}
+shift 10
 export XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}
 
 image=localhost/$name
@@ -98,6 +98,55 @@ wait_for_http() {
   return 1
 }
 
+# Older retained releases use Type=exec. A successful service start alone
+# cannot certify them, so check this invocation for its authenticated session.
+legacy_machine_ready() {
+  local invocation deadline=$((SECONDS + 35))
+  invocation=$(sysd show --property=InvocationID --value "$machine") || return 1
+  [[ $invocation =~ ^[a-f0-9]{32}$ ]] || return 1
+  while ((SECONDS < deadline)) && sysd is-active --quiet "$machine"; do
+    if [[ -f $root/machine/credentials ]]; then
+      if journalctl --user -u "$machine" "_SYSTEMD_INVOCATION_ID=$invocation" \
+           --output cat --no-pager 2>/dev/null | grep -E 'session open$' >/dev/null; then
+        return 0
+      fi
+    elif [[ -f $root/machine-handoff/request.json ]] &&
+         curl --noproxy '*' -fsS --max-time 3 "$origin/api/v1/auth/status" 2>/dev/null |
+           grep -E '"setup"[[:space:]]*:[[:space:]]*true' >/dev/null; then
+      return 0
+    fi
+    sleep 1
+  done
+  return 1
+}
+
+diagnose_machine_connection() {
+  local timings lookup connected curl_status=0
+  # Use the deployment host's public route even when the machine has an
+  # override. A response after TCP connect cannot diagnose a hairpin timeout.
+  timings=$(curl --noproxy '*' --silent --connect-timeout 5 --max-time 8 \
+    --output /dev/null --write-out '%{time_namelookup} %{time_connect}' "$origin/api/v1/auth/status") || curl_status=$?
+  read -r lookup connected <<< "$timings"
+  if [[ -n $lookup && $lookup != 0.000000 && $connected == 0.000000 && $curl_status == 28 ]]; then
+    log "The deployment host received no TCP answer from $origin. Check the route to the public address and set MACHINE_CONNECT to a reachable proxy address."
+  elif [[ $connected == 0.000000 && $curl_status == 7 ]]; then
+    log "The deployment host could not open a TCP connection to $origin. Check the route and MACHINE_CONNECT."
+  fi
+  log "The co-located machine did not become ready. Check its service journal and MACHINE_CONNECT."
+}
+
+start_machine() {
+  sysd enable "$machine" >/dev/null || return 1
+  if sysd is-failed --quiet "$machine"; then sysd reset-failed "$machine" || return 1; fi
+  local type
+  type=$(sysd show --property=Type --value "$machine") || return 1
+  if sysd start "$machine" && { [[ $type == notify ]] || legacy_machine_ready; }; then
+    return 0
+  fi
+  diagnose_machine_connection
+  return 1
+}
+
 activate() {
   local release=$1
   podman tag "$(<"$release/image.id")" "$image:current" &&
@@ -109,7 +158,7 @@ activate() {
   sysd start --no-block "$server" || return 1
   wait_for_http || { log 'The published HTTP listener did not become ready.'; return 1; }
   podman healthcheck run "$name" || { log 'The in-container health probe failed.'; return 1; }
-  sysd enable "$machine" >/dev/null && sysd start "$machine"
+  start_machine
 }
 
 restore() {
@@ -136,7 +185,10 @@ discard_candidate() {
 
 prepare_release() {
   local release=$1 id=$2
-  local created engine
+  local created engine connect_arg=
+  if [[ -n $machine_connect ]]; then
+    connect_arg=" --connect-address $machine_connect"
+  fi
   engine=$(command -v podman) || return 1
   # Use a stopped, uniquely named container to extract the same static binary.
   created=$(podman create --network=none "$id") || return 1
@@ -155,7 +207,7 @@ prepare_release() {
     -e "s|@SECRETS_FILE@|${secrets##*/}|g" <<< "$server_template" > "$release/server.container" &&
     sed -e "s|@NAME@|$name|g" -e "s|@ROOT@|$root|g" \
       -e "s|@SANDBOX_IMAGE@|$sandbox_image|g" -e "s|@PODMAN@|$engine|g" -e "s|@ORIGIN@|$origin|g" \
-      <<< "$machine_template" > "$release/machine.service"
+      -e "s|@MACHINE_CONNECT@|$connect_arg|g" <<< "$machine_template" > "$release/machine.service"
 }
 
 initialize_roots() {

@@ -13,7 +13,9 @@ use serde_json::json;
 
 use crate::connection::{self, Config};
 use crate::identity::Credentials;
+use crate::link::{ConnectAddress, Link};
 use crate::protocol::Owner;
+use crate::ready::Ready;
 use crate::sandbox::Backend;
 use crate::sandbox::direct::DirectBackend;
 use crate::sandbox::podman::PodmanBackend;
@@ -105,6 +107,9 @@ pub enum Command {
         after_help = "Examples:\n  calternal machine enroll --server https://cal.example.org --code CODE\n  calternal machine enroll --server https://cal.example.org --code - < code.txt\n\nSee also: calternal machines code, calternal machine status."
     )]
     Enroll {
+        /// Dial this private IP for the server's HOST:PORT while keeping the URL and TLS hostname.
+        #[arg(long, value_name = "HOST:PORT=IP")]
+        connect_address: Option<ConnectAddress>,
         /// Server base URL, for example `https://cal.example.org`.
         #[arg(long)]
         server: String,
@@ -128,6 +133,9 @@ pub enum Command {
         after_help = "Examples:\n  calternal machine run\n  calternal machine run --backend podman --max-sandboxes 4\n\nSee also: calternal machine status, calternal machine enroll."
     )]
     Run {
+        /// Dial this private IP for the server's HOST:PORT while keeping the URL and TLS hostname.
+        #[arg(long, value_name = "HOST:PORT=IP")]
+        connect_address: Option<ConnectAddress>,
         /// Share this private directory with the co-located server for first-owner enrollment.
         #[arg(long, requires = "bootstrap_server")]
         bootstrap_handoff: Option<PathBuf>,
@@ -159,6 +167,9 @@ pub enum Command {
         after_help = "Examples:\n  calternal machine status\n  calternal machine status --dir /var/lib/calternal-machine\n\nSee also: calternal machine enroll, calternal machine run."
     )]
     Status {
+        /// Dial this private IP for the server's HOST:PORT while keeping the URL and TLS hostname.
+        #[arg(long, value_name = "HOST:PORT=IP")]
+        connect_address: Option<ConnectAddress>,
         /// Directory containing this machine's credentials.
         #[arg(long)]
         dir: Option<PathBuf>,
@@ -322,6 +333,7 @@ async fn run(cmd: Command) -> Result<Reply, CliError> {
         | Command::Onboarding { .. }
         | Command::Install { .. } => unreachable!("handled before runtime"),
         Command::Enroll {
+            connect_address,
             server,
             code,
             dir,
@@ -340,9 +352,16 @@ async fn run(cmd: Command) -> Result<Reply, CliError> {
             } else {
                 code
             };
-            let creds = enroll::enroll(&server, &code, &dir, &name, direct)
-                .await
-                .map_err(|e| fail("machine enroll", e))?;
+            let creds = enroll::enroll_at(
+                &server,
+                &code,
+                &dir,
+                &name,
+                direct,
+                connect_address.as_ref(),
+            )
+            .await
+            .map_err(|e| fail("machine enroll", e))?;
             Ok(identity(&creds, &dir, None))
         }
         Command::Discard {
@@ -386,7 +405,10 @@ async fn run(cmd: Command) -> Result<Reply, CliError> {
             discarded.and(stopped).map_err(|_|CliError::new("cleanup","Workspace deletion failed.").hint("Stop active work and check the selected backend, directory and engine; then retry."))?;
             Ok(Reply::new(json!({"discarded":true,"account_id":account_id,"thread_id":thread_id,"account_home":"retained"})).fields([("workspace","discarded".to_owned()),("account home","retained".to_owned()),("account",account_id.to_string()),("thread",thread_id.to_string())]).hint("Run `calternal machine run` to accept new work."))
         }
-        Command::Status { dir } => {
+        Command::Status {
+            dir,
+            connect_address,
+        } => {
             let dir = dir.unwrap_or_else(connection::default_dir);
             let creds = Credentials::load(&dir).map_err(|e| match &e {
                 Error::Io(io) if io.kind() == std::io::ErrorKind::NotFound => CliError::new(
@@ -396,7 +418,8 @@ async fn run(cmd: Command) -> Result<Reply, CliError> {
                 .hint("Run `calternal machine enroll --server URL --code CODE`, or pass the right --dir."),
                 _ => fail("machine status", e),
             })?;
-            let status = match connection::erasure_status(&creds).await {
+            let status = match connection::erasure_status_at(&creds, connect_address.as_ref()).await
+            {
                 Ok(status) if status.pending_erasures == 0 => (
                     "clear",
                     Some(0),
@@ -426,6 +449,7 @@ async fn run(cmd: Command) -> Result<Reply, CliError> {
             Ok(identity(&creds, &dir, Some(status)))
         }
         Command::Run {
+            connect_address,
             bootstrap_handoff,
             bootstrap_server,
             dir,
@@ -474,9 +498,12 @@ async fn run(cmd: Command) -> Result<Reply, CliError> {
                     Arc::new(PodmanBackend::new(podman, root, image))
                 }
             };
+            let ready = Ready::from_env();
             if let (Some(handoff), Some(server)) = (bootstrap_handoff, bootstrap_server) {
+                let link = Link::with_connect_address(&server, connect_address.as_ref())
+                    .map_err(|error| fail("machine run", error))?;
                 tokio::select! {
-                    result = crate::bootstrap::wait(&dir, &handoff, &server) => {
+                    result = crate::bootstrap::wait(&dir, &handoff, &link, &ready) => {
                         result.map_err(|e| fail("machine run", e))?;
                     }
                     _ = shutdown_signal() => {
@@ -489,7 +516,7 @@ async fn run(cmd: Command) -> Result<Reply, CliError> {
                 backend,
                 max_sandboxes,
             };
-            connection::run(config, shutdown_signal())
+            connection::run_at(config, connect_address.as_ref(), &ready, shutdown_signal())
                 .await
                 .map_err(|e| fail("machine run", e))?;
             Ok(Reply::new(json!({"stopped": true})).line("The machine stopped cleanly."))

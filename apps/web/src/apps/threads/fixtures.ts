@@ -135,7 +135,7 @@ export class FixtureClient implements ThreadsClient {
   async getThread(threadId: string): Promise<ThreadSummary | undefined> {
     return this.threadList.find((t) => t.id === threadId);
   }
-  async createThread(title: string, o: { provider?: ThreadSummary["provider"]; parentId?: string } = {}): Promise<ThreadSummary> {
+  async createThread(title = "New thread", o: { provider?: ThreadSummary["provider"]; parentId?: string } = {}): Promise<ThreadSummary> {
     const t: ThreadSummary = { id: `t-new-${this.threadList.length}`, spaceId: FIXTURE_SPACES[0]!.id, title, parentId: o.parentId ?? null, state: "idle", workspace: "calternal-ai", updatedAt: Date.now(), provider: o.provider ?? "claude", model: "sonnet-5-5", permission: "approve", runsOn: { machine: "Automatic", mode: "sandboxed" }, messageCount: 0 };
     this.threadList = [t, ...this.threadList];
     for (const w of this.threadWatchers) w(this.threadList);
@@ -159,9 +159,9 @@ export class FixtureClient implements ThreadsClient {
   }
 
   /** Fixture search: the first 400 messages of each thread of the space are scanned (generated on the fly, deterministic), newest first. Instant: nothing is awaited. */
-  async searchMessages(query: string, limit = 100): Promise<MessageHit[]> {
+  async searchMessages(query: string, limit = 100): Promise<{ hits: MessageHit[]; partial: boolean }> {
     const q = query.trim().toLowerCase();
-    if (!q) return [];
+    if (!q) return { hits: [], partial: false };
     const hits: MessageHit[] = [];
     for (const t of this.threadList) {
       const seed = [...t.id].reduce((a, c) => a + c.charCodeAt(0), 0);
@@ -179,7 +179,7 @@ export class FixtureClient implements ThreadsClient {
         }
       }
     }
-    return hits.sort((a, b) => (b.at ?? 0) - (a.at ?? 0)).slice(0, limit);
+    return { hits: hits.sort((a, b) => (b.at ?? 0) - (a.at ?? 0)).slice(0, limit), partial: false };
   }
   async messageIndex(threadId: string, messageId: string): Promise<number | undefined> {
     const f = this.forks.get(threadId);

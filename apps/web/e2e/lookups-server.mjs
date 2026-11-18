@@ -27,12 +27,14 @@ try {
   const space = (await op(p, "spaces.list", {})).data.spaces.find((s) => s.personal).id;
 
   const t1 = (await op(p, "threads.create", { space_id: space, title: "Journal replay plan" })).data.thread;
-  await op(p, "threads.create", { space_id: space, title: "Storage layout review" });
+  const t2 = (await op(p, "threads.create", { space_id: space, title: "Storage layout review" })).data.thread;
+  const sent = await op(p, "threads.send", { space_id: space, id: t2.id, message: "The journal replay storage layout needs a review" });
+  console.log("   threads.send:", JSON.stringify(sent).slice(0, 160));
   await p.goto(`${url}/threads/${t1.id}?server=1`); await p.waitForSelector("html[data-ready]"); await p.waitForTimeout(2000);
   // what the wire says, polled while the index catches up
   let wireLookup = null; for (let i = 0; i < 30; i++) { wireLookup = (await op(p, "threads.lookup", { prefix: "Stor" })); if ((wireLookup.data?.hits ?? []).length) break; await p.waitForTimeout(500); }
   console.log("   threads.lookup:", JSON.stringify(wireLookup).slice(0, 300));
-  console.log("   search.query:", JSON.stringify(await op(p, "search.query", { query: "Storage", kinds: ["threads"] })).slice(0, 300));
+  console.log("   search.query hit:", JSON.stringify((await op(p, "search.query", { query: "journal", kinds: ["threads"] })).data?.hits?.[0] ?? null));
   console.log("   skills.list:", JSON.stringify(await op(p, "skills.list", { space_id: space, prefix: "" })).slice(0, 200));
   const composer = p.locator("#composer-field");
   await composer.click(); await p.keyboard.type("@");
@@ -45,18 +47,17 @@ try {
   await p.keyboard.type("Stor"); await p.waitForTimeout(900);
   const typed = (await p.locator("[role=listbox]").innerText().catch(() => "")).replace(/\s+/g, " ");
   const indexed = (wireLookup.data?.hits ?? []).length > 0;
-  if (indexed) ok(/Storage layout review/.test(typed), "@Stor finds the thread by title prefix (threads.lookup)", typed.slice(0, 120));
-  else console.log("SKIP  @Stor by threads.lookup: the server answers with no hits (its index does not hold threads yet: a backend gap, noted on #33)");
+  ok(indexed && /Storage layout review/.test(typed), "@Stor finds the thread by title prefix (threads.lookup)", typed.slice(0, 120));
   await p.keyboard.press("Escape"); await composer.fill("/"); await p.waitForTimeout(900);
   console.log("   / list:", (await p.locator("[role=listbox]").innerText().catch(() => "(no list)")).replace(/\s+/g, " ").slice(0, 120));
   await composer.fill(""); await p.keyboard.press("Escape");
   // message search over search.query: the index may still be catching up, so ask for a while
   await p.keyboard.press("Control+Shift+F");
   await p.locator(".msg-search-input").waitFor({ timeout: 3000 });
-  await p.keyboard.type("Storage");
+  await p.keyboard.type("journal");
   let hit = 0; for (let i = 0; i < 40 && !hit; i++) { await p.waitForTimeout(400); hit = await p.locator("[role=listbox][aria-label='Matching messages'] li").count(); }
-  if ((await op(p, "search.query", { query: "Storage", kinds: ["threads"] })).data?.hits?.length) ok(hit > 0, "message search returns the thread from search.query", String(hit));
-  else console.log("SKIP  message search: search.query answers with no hits for threads (not indexed yet); the panel said:", (await p.locator(".none").allInnerTexts()).join(" "));
+  ok(hit > 0, "message search returns the message from search.query", String(hit));
+  ok((await p.locator("[role=listbox][aria-label=\'Matching messages\'] li .w").count()) > 0, "and each hit shows when the message was written");
   if (hit) { await p.keyboard.press("Enter"); await p.waitForTimeout(800); ok(/\/threads\/[^/?]+/.test(p.url()) && (await p.locator(".msg-search-input").count()) === 0, "Enter opens it and closes the panel", p.url()); }
   await b.close();
 } catch (e) { console.error(e); bad++; }

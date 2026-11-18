@@ -83,8 +83,16 @@ pub(super) fn apply<D: Directory>(
             data.get("cursor").and_then(Value::as_str),
             data.get("limit").and_then(Value::as_u64).unwrap_or(100) as usize,
         )?;
-        let threads: Vec<_> = page.rows.into_iter()
-            .map(|r| json!({"id":r.id,"address":format!("/threads/{}",r.id),"revision":r.revision,"metadata":document::public_metadata(r.metadata),"turn_state":r.turn_state,"turn_reason":r.turn_reason}))
+        let now = calternal_types::now_ms();
+        let threads: Vec<_> = page
+            .rows
+            .into_iter()
+            .map(|r| {
+                let until = snooze::effective(&r.metadata, &r.turn_reason, now);
+                json!({"id":r.id,"address":format!("/threads/{}",r.id),"revision":r.revision,
+                "metadata":document::public_metadata(r.metadata),"turn_state":r.turn_state,
+                "turn_reason":r.turn_reason,"snoozed_until_ms":until})
+            })
             .collect();
         return Ok(json!({"threads":threads,"next_cursor":page.next}));
     }
@@ -119,7 +127,8 @@ pub(super) fn apply<D: Directory>(
             .and_then(Value::as_str)
             .unwrap_or("calternal-claude-code");
         let mut metadata = json!({
-            "title": data["title"],
+            "title": data.get("title").cloned().unwrap_or(json!("New thread")),
+            "title_source": if data.contains_key("title") { "manual" } else { "pending" },
             "provider": provider,
             "model": document::default_model(st, provider),
             "mode": data.get("mode").cloned().unwrap_or(json!(AgentMode::default())),
@@ -177,6 +186,11 @@ pub(super) fn apply<D: Directory>(
                 result["job"] = json!(job.view_for(who.id));
             }
         }
+        result["thread"]["snoozed_until_ms"] = json!(snooze::effective(
+            &item.metadata,
+            &result["thread"]["turn_reason"],
+            calternal_types::now_ms(),
+        ));
         return Ok(result);
     }
     if item.metadata["deleted"] == true {
@@ -185,6 +199,17 @@ pub(super) fn apply<D: Directory>(
             return finish_lifecycle(st, space, item.id, request, document::view(&item));
         }
         return Err(Error::not_found("item not found"));
+    }
+    if operation == "threads.snooze" {
+        let until = match &data["until_ms"] {
+            Value::Null => None,
+            value => Some(
+                value
+                    .as_i64()
+                    .ok_or_else(|| Error::invalid_input("until_ms must be an integer or null"))?,
+            ),
+        };
+        return snooze::set(&content, item, until, request);
     }
     if operation == "threads.send" {
         if item.metadata["archived"] == true {
@@ -335,7 +360,21 @@ pub(super) fn apply<D: Directory>(
         });
     }
     match operation {
-        "threads.rename" => item.metadata["title"] = data["title"].clone(),
+        "threads.rename" => {
+            let (_, account_zone) = super::headings::profile(st, who.id)?;
+            let (zone, offset) = display_zone(account_zone, data);
+            let now = super::headings::now(zone.as_deref(), offset)?;
+            super::title::rename(
+                &content,
+                item,
+                data["title"].clone(),
+                false,
+                &now,
+                request,
+                document::receipt_view(&mut reply),
+            )?;
+            return Ok(reply);
+        }
         "threads.archive" => item.metadata["archived"] = json!(true),
         "threads.unarchive" => item.metadata["archived"] = json!(false),
         "threads.delete" => item.metadata["deleted"] = json!(true),

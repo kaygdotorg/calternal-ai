@@ -12,7 +12,6 @@ import { values } from "./store.svelte";
 import { navigate } from "../../lib/route.svelte";
 import { shell } from "../../shell/shell.svelte";
 import { spaces } from "../../shell/spaces.svelte";
-import { canvasEnabled } from "../../canvas/model.svelte";
 import { canvasPrefs, LOOKS, OPEN_WIDTHS } from "../../canvas/prefs.svelte";
 import type { Look } from "../../canvas/layout";
 import { devToken, serverMode } from "../../server/client";
@@ -57,7 +56,7 @@ export interface Setting {
 /** A card of rows with an optional header; `danger` puts it last, under the Danger area header. */
 export interface Group { title?: string; settings: Setting[]; danger?: boolean }
 /** One Settings page: its address id (`/settings/<id>`), sidebar name and icon, a one-line purpose, and its groups. */
-export interface Page { id: string; name: string; icon: IconName; blurb: string; groups: Group[]; /** Show the groups as sections: a list beside the selected section where the card is wide, the list then the section (drill-in) where it is narrow. Every group needs a title. */ split?: boolean }
+export interface Page { id: string; name: string; icon: IconName; blurb: string; groups: Group[] }
 /** A sidebar section: `user` (this person), `space` (the current space) or `server` (Admin). Which sections and pages exist depends on the source and the capabilities, so read them through `visibleSections`. */
 export interface Section { id: "user" | "space" | "server"; name: string; pages: Page[] }
 
@@ -72,17 +71,15 @@ const signOutAction = (): void => {
 const confirmLater = (what: string) => () => alert(`${what}\n\nThis is a fixture: nothing is changed. The real action asks for confirmation (and a passkey when it changes access).`);
 
 const appearancePage: Page = {
-  id: "appearance", name: "Appearance", icon: "image", blurb: "How the app looks. Everything applies at once.", split: true,
+  id: "appearance", name: "Appearance", icon: "image", blurb: "How the app looks. Everything applies at once.",
   groups: [
-    { title: "Look", settings: [
+    { title: "Colour", settings: [
       { id: "appearance.scheme", label: "Colour scheme", help: "Auto follows the system.", control: { type: "scheme" }, get: () => A.scheme, set: (v) => A.setScheme(v as never) },
       { id: "appearance.preset", label: "Preset", help: "A preset sets the wallpaper and the colours together; each stays adjustable.", control: { type: "presets" } },
+      { id: "appearance.accent", label: "Accent", help: "From the wallpaper, or one colour of your own.", control: { type: "segmented", options: [{ id: "wallpaper", label: "From wallpaper" }, { id: "custom", label: "Custom" }] }, get: () => (A.prefs.accent === "theme" ? "wallpaper" : A.prefs.accent), set: (v) => ap((p) => (p.accent = v as never)) },
     ] },
     { title: "Wallpaper", settings: [
       { id: "appearance.wallpaper", label: "Wallpaper", help: "A photograph from the library, your own picture, a link, or an Unsplash search.", control: { type: "custom", load: () => import("../../appearance/WallpaperPanel.svelte") } },
-    ] },
-    { title: "Fonts", settings: [
-      { id: "appearance.fonts", label: "Fonts", help: "A family for each role.", control: { type: "custom", load: () => import("../../appearance/FontsPanel.svelte") } },
     ] },
     { title: "Materials", settings: [
       { id: "appearance.blur", label: "Blur", help: "Frosts the picture behind the sidebars and the card.", control: { type: "checkbox" }, get: () => A.prefs.materials.blur, set: (v) => ap((p) => (p.materials.blur = !!v)) },
@@ -90,26 +87,29 @@ const appearancePage: Page = {
       { id: "appearance.tint", label: "Tint", help: "A veil in the colour scheme's paper, with a whisper of the picture's hue.", control: { type: "checkbox" }, get: () => A.prefs.materials.tint, set: (v) => ap((p) => (p.materials.tint = !!v)) },
       { id: "appearance.clarity", label: "Clear to tinted", help: "Five steps from Clear (the most wallpaper shows through the sidebars and the card) to Tinted (the least), as in Apple's clear and tinted glass. Balanced is the readable default; Clear can fall under the readability floor but never changes the surface's light or dark. Starts from the system's reduced-transparency and contrast settings.", control: { type: "steps", steps: ["Clear", "Light", "Balanced", "Dense", "Tinted"] }, get: () => Math.round(A.clarity * 4), set: (v) => A.setClarityStep(Math.min(4, Math.max(0, Math.round(v as number))) / 4) },
     ] },
-    { title: "Size and colour", settings: [
+    { title: "Text", settings: [
       { id: "appearance.ui-size", label: "UI size", help: "One scale for type, spacing and controls together.", control: { type: "slider", min: 80, max: 150, unit: " %" }, get: () => A.prefs.uiSize, set: (v) => ap((p) => (p.uiSize = v as number)) },
-      { id: "appearance.accent", label: "Accent", help: "From the wallpaper, or one colour of your own.", control: { type: "segmented", options: [{ id: "wallpaper", label: "From wallpaper" }, { id: "custom", label: "Custom" }] }, get: () => (A.prefs.accent === "theme" ? "wallpaper" : A.prefs.accent), set: (v) => ap((p) => (p.accent = v as never)) },
-      { id: "appearance.wordmark", label: "Wordmark", help: "The name at the top of the sidebar.", control: { type: "text", placeholder: "Calternal" }, get: () => A.prefs.brand, set: (v) => ap((p) => (p.brand = String(v).slice(0, 24))) },
+      { id: "appearance.fonts", label: "Fonts", help: "A family for each kind of text; each row shows its own font.", control: { type: "custom", load: () => import("../../appearance/FontsText.svelte") } },
     ] },
-    { title: "Chat", settings: [
-      { id: "appearance.chat-width", label: "Chat layout", help: "Wide: messages and the composer use the whole card, yours on the right, the agent's from the left. Centred: a readable column.", control: { type: "segmented", options: [{ id: "wide", label: "Wide" }, { id: "centered", label: "Centred" }] }, get: () => A.prefs.chatWidth, set: (v) => ap((p) => (p.chatWidth = v === "centered" ? "centered" : "wide")) },
+    { title: "Wordmark", settings: [
+      { id: "appearance.wordmark", label: "Name", help: "The name at the top of the sidebar.", control: { type: "text", placeholder: "Calternal" }, get: () => A.prefs.brand, set: (v) => ap((p) => (p.brand = String(v).slice(0, 24))) },
+      { id: "appearance.wordmark-font", label: "Font", help: "The wordmark's own typeface.", control: { type: "custom", load: () => import("../../appearance/FontsWordmark.svelte") } },
     ] },
-    ...(canvasEnabled ? [{ title: "Windows", settings: [
+    { title: "Layout", settings: [
+      { id: "appearance.chat-width", label: "Width", help: "One choice for every page: Wide (the default on a desktop) uses the whole card, for chat and for Settings, with descriptions kept to a readable line; Centred keeps a readable column.", control: { type: "segmented", options: [{ id: "wide", label: "Wide" }, { id: "centered", label: "Centred" }] }, get: () => A.prefs.chatWidth, set: (v) => ap((p) => (p.chatWidth = v === "centered" ? "centered" : "wide")) },
+    ] },
+    { title: "Windows", settings: [
       { id: "appearance.window-look", label: "Window look", help: "How every window on the canvas looks: the middle card as it is, a transparent card, or a solid one.", control: { type: "segmented", options: LOOKS.map((l) => ({ id: l.value, label: l.label })) }, get: () => canvasPrefs.look, set: (v) => canvasPrefs.setLook(v as Look) },
       { id: "appearance.window-width", label: "New window width", help: "How wide a new window opens, as a share of the canvas. Drag a window's edge to change one.", control: { type: "popup", options: OPEN_WIDTHS.map((w) => ({ id: String(w.value), label: w.label })) }, get: () => String(canvasPrefs.width), set: (v) => canvasPrefs.setWidth(v === "null" ? null : Number(v)) },
-    ] } as Group] : []),
+    ] },
     { title: "Motion", settings: [
       { id: "appearance.motion", label: "Animations", help: "Follows the system's reduce-motion setting; this switch turns them off as well.", control: { type: "switch" }, get: () => A.prefs.motion, set: (v) => ap((p) => (p.motion = !!v)) },
     ] },
     { title: "Apps", settings: [
-      { id: "appearance.app-order", label: "Apps", help: "The order of the apps in the capsule at the bottom of the sidebar. Move one up or down.", control: { type: "order" }, get: () => A.prefs.appOrder, set: (v) => ap((p) => (p.appOrder = (v as string[]).slice())) },
+      { id: "appearance.app-order", label: "Order", help: "The order of the apps in the capsule at the bottom of the sidebar. Move one up or down.", control: { type: "order" }, get: () => A.prefs.appOrder, set: (v) => ap((p) => (p.appOrder = (v as string[]).slice())) },
     ] },
     { title: "Reset", settings: [
-      { id: "appearance.reset", label: "Restore defaults", help: "Puts every appearance setting back to its default.", control: { type: "button", text: "Restore defaults", run: () => A.reset() } },
+      { id: "appearance.reset", label: "Every appearance setting", help: "Puts all of them back to their defaults.", control: { type: "button", text: "Restore defaults", run: () => A.reset() } },
     ] },
   ],
 };
@@ -174,7 +174,7 @@ const membersPage: Page = {
       { id: "space.add-person", label: "Add a person", help: "Give a person a role in this space.", control: { type: "button", text: "Add a person…", run: confirmLater("Add a person") } },
       { id: "space.add-group", label: "Add a group", help: "A role can be given to a group as well as to a person: everyone in the group (and anyone who joins it later) has the role here. The group's own members are managed under Admin.", control: { type: "button", text: "Add a group…", run: confirmLater("Add a group") } },
     ] },
-    { title: "Members", settings: [{ id: "space.members", label: "Members", help: "Roles are sets of capabilities.", control: { type: "drill", summary: () => "12 members", run: confirmLater("Members") } }, { id: "space.roles", label: "Roles", control: { type: "drill", summary: () => "Owner, Manager, Member, Reader", run: confirmLater("Roles") } }] },
+    { title: "Members", settings: [{ id: "space.members", label: "People", help: "Roles are sets of capabilities.", control: { type: "drill", summary: () => "12 members", run: confirmLater("Members") } }, { id: "space.roles", label: "Roles", control: { type: "drill", summary: () => "Owner, Manager, Member, Reader", run: confirmLater("Roles") } }] },
     danger("space.leave", "Leave this space", "You lose access to everything in it.", "Leave space…"),
   ],
 };
@@ -182,7 +182,7 @@ const invitesPage: Page = {
   id: "invites", name: "Invites", icon: "link", blurb: "Invite people with a link that expires.",
   groups: [
     { settings: [{ id: "space.invites.create", label: "Invite someone", control: { type: "button", text: "Create invite…", run: confirmLater("Create invite") } }] },
-    { title: "Open invites", settings: [{ id: "space.invites.open", label: "Open invites", control: { type: "info", text: () => "None" } }] },
+    { title: "Open invites", settings: [{ id: "space.invites.open", label: "Links not used yet", control: { type: "info", text: () => "None" } }] },
     danger("space.invites.revoke-all", "Revoke every open invite", "Links already sent stop working.", "Revoke all…"),
   ],
 };
