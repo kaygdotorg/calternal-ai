@@ -4,7 +4,7 @@
 
 ## In the gate
 
-first-visit, shell-audit, flat-sidebars, resize, sidebar-scroll, a11y (four parts: device and scheme), text-parity, palette, palette-focus (12 opens), interact, phone-nav, settings-pages, focus-ring, swipe-rows, morph, states, new-thread, keyboard-threads, swipe, sidebar-pull, switch, safe-areas, composer. Each exits non-zero on a failed check. When a decided behaviour changes on purpose, change the suite in the same merge.
+first-visit, shell-audit, flat-sidebars, resize, sidebar-scroll, a11y (four parts: device and scheme), text-parity, palette, palette-focus (12 opens), interact, phone-nav, settings-pages, focus-ring, swipe-rows, morph, states, new-thread, keyboard-threads, swipe, sidebar-pull, switch, safe-areas, seam, composer. Each exits non-zero on a failed check. When a decided behaviour changes on purpose, change the suite in the same merge.
 
 The gate sets `CAL_GATE=1`: a suite then reports a timing measurement as `info` instead of failing on it (`palette`: keystroke cost at 6x CPU slowdown, which failed on dev-01 and passed on dev-02 with the same code; `morph`: the interrupted-open check needs at least 12 sampled frames and says so when a busy machine drew fewer). Measure on the perf VMs.
 
