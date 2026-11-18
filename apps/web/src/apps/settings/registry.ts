@@ -12,6 +12,9 @@ import { values } from "./store.svelte";
 import { navigate } from "../../lib/route.svelte";
 import { shell } from "../../shell/shell.svelte";
 import { spaces } from "../../shell/spaces.svelte";
+import { canvasEnabled } from "../../canvas/model.svelte";
+import { canvasPrefs, LOOKS, OPEN_WIDTHS } from "../../canvas/prefs.svelte";
+import type { Look } from "../../canvas/layout";
 import { devToken, serverMode } from "../../server/client";
 import { caps } from "../../shell/capabilities.svelte";
 
@@ -95,6 +98,10 @@ const appearancePage: Page = {
     { title: "Chat", settings: [
       { id: "appearance.chat-width", label: "Chat layout", help: "Wide: messages and the composer use the whole card, yours on the right, the agent's from the left. Centred: a readable column.", control: { type: "segmented", options: [{ id: "wide", label: "Wide" }, { id: "centered", label: "Centred" }] }, get: () => A.prefs.chatWidth, set: (v) => ap((p) => (p.chatWidth = v === "centered" ? "centered" : "wide")) },
     ] },
+    ...(canvasEnabled ? [{ title: "Windows", settings: [
+      { id: "appearance.window-look", label: "Window look", help: "How every window on the canvas looks: the middle card as it is, a transparent card, or a solid one.", control: { type: "segmented", options: LOOKS.map((l) => ({ id: l.value, label: l.label })) }, get: () => canvasPrefs.look, set: (v) => canvasPrefs.setLook(v as Look) },
+      { id: "appearance.window-width", label: "New window width", help: "How wide a new window opens, as a share of the canvas. Drag a window's edge to change one.", control: { type: "popup", options: OPEN_WIDTHS.map((w) => ({ id: String(w.value), label: w.label })) }, get: () => String(canvasPrefs.width), set: (v) => canvasPrefs.setWidth(v === "null" ? null : Number(v)) },
+    ] } as Group] : []),
     { title: "Motion", settings: [
       { id: "appearance.motion", label: "Animations", help: "Follows the system's reduce-motion setting; this switch turns them off as well.", control: { type: "switch" }, get: () => A.prefs.motion, set: (v) => ap((p) => (p.motion = !!v)) },
     ] },

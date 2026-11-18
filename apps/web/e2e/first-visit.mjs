@@ -30,7 +30,7 @@ for (const scheme of ["light", "dark"]) {
 { // desktop shell
   const { ctx, page } = await fresh(DEVICES.desktop);
   await page.waitForSelector("html[data-ready]"); await page.waitForTimeout(1200);
-  const caps = await page.locator('aside.side footer nav[aria-label="Apps"] a').evaluateAll((l) => l.map((e) => e.getAttribute("aria-label")));
+  const caps = await page.locator('aside.side footer nav[aria-label="Apps"] .opt').evaluateAll((l) => l.map((e) => e.getAttribute("aria-label")));
   ok(caps.join(",") === "Threads,Notes,Settings", "the app switcher is an icon-only capsule of the apps in the sidebar's footer", caps.join(","));
   ok((await page.locator('aside.side footer nav[aria-label="Apps"]').innerText()).trim() === "", "…with icons only, no words");
   const order = await page.evaluate(() => [...document.querySelectorAll("aside.side footer > *")].map((e) => e.matches(".avatar") ? "avatar" : e.querySelector('nav[aria-label="Apps"]') ? "apps" : "search"));
