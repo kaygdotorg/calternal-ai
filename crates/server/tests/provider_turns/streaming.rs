@@ -112,5 +112,6 @@ pub(super) async fn exercise(server: &Server, data: &TempDir, space: &str) {
     assert!(markdown.len() > calternal_content::MAX_DOCUMENT_BYTES - 32 * 1024);
     assert!(markdown.contains("overflow-segment-0:"));
     assert!(!markdown.contains("overflow-segment-32:"));
-    assert!(markdown.ends_with("\n<!-- /message -->\n"));
+    assert!(markdown.ends_with('\n'));
+    assert_eq!(saved["thread"]["messages"].as_array().unwrap().len(), 2);
 }

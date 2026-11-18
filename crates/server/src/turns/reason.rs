@@ -53,6 +53,7 @@ pub(crate) fn describe(state: Option<JobState>, c: &Value, private: bool) -> Val
         Some(Failed) if c["error"]["class"] == "authentication" => json!({
             "code":"provider_signed_out",
             "provider":c["error"]["provider"],
+            "message":format!("{} needs you to sign in again", c["error"]["provider_name"].as_str().unwrap_or("Your provider")),
             "sign_in_command":c["error"]["sign_in_command"],
         }),
         Some(Failed) if c["error"]["origin"] == "thread_storage" => json!({

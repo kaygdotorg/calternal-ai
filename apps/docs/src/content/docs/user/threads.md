@@ -83,16 +83,13 @@ For example, the operation input is
 ```
 
 The response contains `delta` with `id`, `base_revision`, `revision`,
-`offset` and `markdown`. Insert the returned UTF-8 bytes into the cached
+`offset`, `markdown` and `messages`. Insert the returned UTF-8 bytes into the cached
 Markdown body at `offset` and advance its revision. Exclude frontmatter when
-applying the insertion. The first checkpoint includes a new message's markers.
-Later checkpoints can insert before its closing marker, which rules out a
-message index or a whole-file suffix as the cursor. `start` and `length` are
-the byte range in the target revision and are echoed from the journal entry.
-Clients can copy `data` into `since` as before. The read uses the revision
-and append range, and ignores the accompanying actor.
-A session-only checkpoint has a zero-byte addition. A full get still returns
-the document, metadata and active job.
+applying the insertion. The insertion contains complete new records, with
+the same fields as `thread.messages` in a full get. A session-only checkpoint
+has a zero-byte addition and no messages. A checkpoint extending or finishing
+an existing message changes its heading or byte count and has no insertion
+delta. Refresh the full document for those revisions.
 
 Apply journal entries in order. Each pair describes one committed transition and
 can be read after newer checkpoints arrive. If the client lacks the matching
@@ -138,25 +135,21 @@ saved. Provider frames retain `{version, seq, event}`. A reasoning block emits
 `reasoning_finished` with monotonic `duration_ms`. Stream time measures
 observed work and can include transport or back-pressure.
 
-The terminal checkpoint adds one short `turn-timing` comment before the agent
-message's closing marker, at most one per attempt. The worked duration excludes
-queue time, person waits and retry delays. The marker also records observed
-reasoning, queue, sandbox and tool durations in milliseconds. Abrupt stops may
-leave a checkpoint without final timing. Claude exposes thinking as provider
-text on the live stream. The file retains timing only. Both reads expose the
-same opening and timing markers in Markdown. Apply checkpoint deltas in order
-before parsing message markers. Ordinary assistant Markdown is untrusted display
-content.
+The terminal checkpoint updates the agent heading with worked time and, when
+observed, thought time. The marker records both durations in milliseconds.
+A process stop before the terminal checkpoint can leave final timing absent.
+Reasoning text is available on the live stream after filtering and is omitted
+from saved messages. Both read forms expose the same structured agent
+provenance: provider plugin ID, model ID, requested reasoning level,
+thread-scoped machine reference, worked duration and reasoning duration.
 
-Send checks the loaded manifest, placement adds a fixed-size hash on its existing
-blocking worker, and live phases reuse the job buffer. These add zero indexed reads and zero
-flushes. Timing piggybacks on the terminal checkpoint with no added job flush.
-If the terminal checkpoint otherwise had no Markdown to save, the timing
-marker makes it one content checkpoint. That adds the usual capability check,
-one activation read, one receipt lookup, and one content head read, followed by
-the normal indexed write checks and three FULL commits
-(content, journal and outbox retirement), plus the normal file and directory
-syncs. No per-frame filesystem work is added.
+Send adds one indexed author display-name lookup. The catalog validates the
+selection in memory. Each changed output checkpoint loads the existing body
+once and reuses the indexed tail cursor, with no per-frame reads or flushes.
+Timing uses the normal terminal checkpoint. When timing is the only change,
+it adds one ordinary content write with its existing file and directory syncs,
+three FULL commits and its standard capability, activation, receipt and head
+checks. It adds no separate job flush.
 
 ### Tool steps and the saved output limit
 

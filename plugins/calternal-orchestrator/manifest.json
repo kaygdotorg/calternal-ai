@@ -25,6 +25,11 @@
       "input_schema": {
         "type": "object",
         "properties": {
+          "client_offset_minutes": {
+            "type": "integer",
+            "minimum": -840,
+            "maximum": 840
+          },
           "space_id": {
             "type": "string",
             "format": "uuid"
@@ -246,6 +251,11 @@
       "input_schema": {
         "type": "object",
         "properties": {
+          "client_offset_minutes": {
+            "type": "integer",
+            "minimum": -840,
+            "maximum": 840
+          },
           "id": {
             "type": "string",
             "format": "uuid"
@@ -366,6 +376,11 @@
       "input_schema": {
         "type": "object",
         "properties": {
+          "client_offset_minutes": {
+            "type": "integer",
+            "minimum": -840,
+            "maximum": 840
+          },
           "id": {
             "type": "string",
             "format": "uuid"

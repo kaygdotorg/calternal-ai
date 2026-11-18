@@ -41,6 +41,8 @@ pub(super) async fn prepare<D: Directory>(
         fields.remove("error");
         fields.remove("interruption");
         fields.remove("placement");
+        fields.remove("message_outcome");
+        fields.remove("message_timing");
     }
     let checkpoint = blocking(move || {
         let mut lease = None;

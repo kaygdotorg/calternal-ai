@@ -387,7 +387,13 @@ pub fn main(args: Args, out: &Output) -> i32 {
         let client = tokio::task::spawn_blocking(move || agent::client(&settings))
             .await
             .map_err(|_| CliError::new("internal", "Credential loading failed."))??;
-        let (operation, input) = args.command.operation();
+        let (operation, mut input) = args.command.operation();
+        if matches!(
+            operation,
+            "threads.create" | "threads.send" | "threads.rename"
+        ) {
+            input["client_offset_minutes"] = serde_json::json!(out.utc_offset_minutes());
+        }
         agent::call(&client, operation, input, connection.request_id)
             .await
             .map(|value| reply(out, value))

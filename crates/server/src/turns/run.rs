@@ -441,7 +441,7 @@ async fn execute<D: Directory>(
                                 } => {
                                     checkpoint["error"] = json!({
                                         "code":code,"message":message,"class":class,"reset_at_ms":reset_at_ms,
-                                        "provider":provider_id,"sign_in_command":sign_in_command,
+                                        "provider":provider_id,"provider_name":provider.manifest.name,"sign_in_command":sign_in_command,
                                     });
                                     retry_forbidden |= !matches!(
                                         class,
@@ -450,7 +450,10 @@ async fn execute<D: Directory>(
                                     );
                                     failure = Some((*class, *billing, *reset_at_ms));
                                 }
-                                ProviderEventKind::Done { outcome: o } => outcome = Some(o.clone()),
+                                ProviderEventKind::Done { outcome: o } => {
+                                    outcome = Some(o.clone());
+                                    checkpoint["message_outcome"] = json!(o);
+                                }
                                 ProviderEventKind::Check(status) => {
                                     checked = true;
                                     if verify {
