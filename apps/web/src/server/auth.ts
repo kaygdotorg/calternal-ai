@@ -6,7 +6,7 @@
  */
 
 /** The server's answer to `GET /api/v1/auth/status`. */
-export interface AuthStatus { setup: boolean; signed_in: boolean }
+export interface AuthStatus { setup: boolean; signed_in: boolean; /** The hosted service requires a verified email at signup; self-hosted may omit it. */ email_required?: boolean; /** The server can send mail (SMTP); without it an address can only be saved unverified. */ mail_available?: boolean }
 
 const b64 = {
   /** base64url text → bytes. */
@@ -91,12 +91,33 @@ export function deviceName(): string {
   return o ? `${b} on ${o}` : b;
 }
 
-/** First-owner setup: the one-use setup token and the owner's name; creates the passkey and signs in (the server sets the cookie). */
-export async function setup(token: string, name: string): Promise<void> {
-  const s = await post("setup/start", { token: token.trim(), name: name.trim() });
+/** What the server hands over once, when the account is made: ten recovery codes (shown once, never kept) and whether to prompt for a second passkey. */
+export interface SignupResult { recovery_codes: string[]; second_passkey_prompt: boolean }
+let signup: SignupResult | null = null;
+/** The signup result, once: the recovery step takes it and it is gone (it is never stored). */
+export function takeSignupResult(): SignupResult | null { const s = signup; signup = null; return s; }
+
+/** The extra things setup sends: the username, and the email with the proof that it was confirmed. */
+export interface SignupDetails { username: string; email?: string; verification_id?: string }
+
+/** Account setup (the first owner's or an invited person's): the one-use token, the name, the username and optionally the email; creates the passkey and signs in (the server sets the cookie). The one-time answer waits in `takeSignupResult`. */
+export async function setup(token: string, name: string, details?: SignupDetails): Promise<void> {
+  const s = await post("setup/start", { token: token.trim(), name: name.trim(), ...(details ? { username: details.username.trim(), ...(details.email ? { email: details.email.trim() } : {}), ...(details.verification_id ? { verification_id: details.verification_id } : {}) } : {}) });
   const cred = await ceremony("create", s.options as Json);
-  await post("setup/finish", { ceremony: s.ceremony, credential: encodeCredential(cred), device: deviceName() });
+  const fin = await post("setup/finish", { ceremony: s.ceremony, credential: encodeCredential(cred), device: deviceName() });
+  signup = Array.isArray(fin.recovery_codes) ? { recovery_codes: fin.recovery_codes as string[], second_passkey_prompt: !!fin.second_passkey_prompt } : null;
 }
+
+/** Sends an eight-digit code to the address (signup passes the setup or invite token; a signed-in change passes none). */
+export const emailStart = (email: string, token?: string): Promise<{ challenge_id: string; expires_at: number }> => post("email/start", { email: email.trim(), ...(token ? { token: token.trim() } : {}) }) as Promise<{ challenge_id: string; expires_at: number }>;
+/** Checks the code the person typed back; the answer carries the proof setup needs. */
+export const emailConfirm = (challenge_id: string, code: string, token?: string): Promise<{ verification_id?: string; email_status: string }> => post("email/confirm", { challenge_id, code, ...(token ? { token: token.trim() } : {}) }) as Promise<{ verification_id?: string; email_status: string }>;
+/** Makes a new set of recovery codes (the old set stops working); the new ones are returned once. */
+export const regenerateRecoveryCodes = async (): Promise<string[]> => ((await fresh(() => post("recovery/codes/regenerate", {}, true))) as { recovery_codes: string[] }).recovery_codes;
+/** Dismisses the prompt to add a second passkey (it returns in Settings, Account while there is one passkey). */
+export const dismissPasskeyPrompt = (): Promise<unknown> => post("passkeys/prompt/dismiss", {});
+/** Changes the username. */
+export const changeUsername = (username: string): Promise<{ username: string }> => fresh(() => post("username/change", { username: username.trim() }, true)) as Promise<{ username: string }>;
 
 /** Sign-in with a discoverable passkey (no account name is asked). */
 export async function signIn(): Promise<void> {
@@ -109,7 +130,7 @@ export async function signIn(): Promise<void> {
 export async function signOut(): Promise<void> { clearCache(); await post("logout"); }
 
 /** Who is signed in: the account (`name`, `role`, `capabilities`) and this browser's installation id. */
-export interface Me { user: { id: string; name: string; username: string; role: string; capabilities: string[] }; installation: string }
+export interface Me { user: { id: string; name: string; username: string; role: string; capabilities: string[] }; installation: string; email?: string | null; email_status?: "missing" | "unverified" | "verified"; mail_available?: boolean; second_passkey_prompt?: boolean; recovery_codes_configured?: boolean; /** The server's policy requires a verified email and this account has none: ask for one after accepting the session. */ email_setup_required?: boolean }
 /** A passkey as the server lists it. */
 export interface Passkey { id: string; name: string; created_at: number; last_used_at: number | null }
 /** A signed-in browser or app of this account. */

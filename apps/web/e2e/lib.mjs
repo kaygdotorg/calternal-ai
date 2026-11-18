@@ -89,3 +89,34 @@ export function busyNow() {
 }
 /** True when timing checks must be judged: the quiet list (`CAL_QUIET=1`) or a machine that is not busy. */
 export const judgeTimings = () => process.env.CAL_QUIET === "1" || !busyNow().busy;
+
+/** The username a test account gets from its name (3 to 32 letters, digits and single hyphens). */
+const usernameOf = (name) => (name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 32) + "-qa").replace(/^-+/, "");
+
+/** First-owner (or invited) signup through the real screens up to the passkey screen: setup code, name, username, then the email screen left empty (optional on a server with no mail). */
+export async function fillWho(p, token, name) {
+  if (token) await p.fill('input[name="token"]', token);
+  await p.fill('input[name="name"]', name);
+  await p.fill('input[name="username"]', usernameOf(name));
+  await p.getByRole("button", { name: "Continue" }).click();
+  await p.getByLabel(/^Email/).waitFor();
+  await p.getByRole("button", { name: "Continue" }).click();
+  await p.getByRole("button", { name: "Create passkey" }).waitFor();
+}
+
+/** A whole signup for tests that only need an account: the screens above, the passkey, the recovery codes saved, every optional step skipped, then into the app. */
+export async function signUp(p, token, name) {
+  await fillWho(p, token, name);
+  await p.getByRole("button", { name: "Create passkey" }).click();
+  await p.getByRole("button", { name: "I have saved them" }).click();
+  for (const step of ["A second passkey", "Choose a look"]) { await p.getByRole("heading", { name: step }).waitFor({ timeout: 15000 }); await p.locator("footer").getByRole("button", { name: "Skip" }).click(); }
+  for (let i = 0; i < 3; i++) {
+    const done = p.getByRole("button", { name: "Start the first thread" });
+    if (await done.isVisible().catch(() => false)) break;
+    await p.waitForTimeout(600);
+    const skip = p.locator("footer").getByRole("button", { name: "Skip" });
+    if (await skip.isVisible().catch(() => false)) await skip.click();
+  }
+  await p.getByRole("button", { name: "Start the first thread" }).click();
+  await p.waitForSelector("html[data-ready]");
+}

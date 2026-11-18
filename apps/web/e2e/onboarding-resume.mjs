@@ -9,11 +9,11 @@ const stop = await serve(); const browser = await launch();
 let bad = 0;
 const ok = (c, m, note = "") => { console.log(`${c ? "PASS" : "FAIL"}  ${m}${note ? "  " + note : ""}`); if (!c) bad++; };
 const json = (route, body, status = 200) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
-const ME = (id) => ({ user: { id, name: "Kay", username: "kay", role: "owner", capabilities: ["spaces.read"] }, installation: "inst-1" });
-async function mock(page, { setup, signedIn, account = "acc-1" }) {
+const ME = (id, extra = {}) => ({ user: { id, name: "Kay", username: "kay", role: "owner", capabilities: ["spaces.read"] }, installation: "inst-1", ...extra });
+async function mock(page, { setup, signedIn, account = "acc-1", me = {} }) {
   await page.route("**/api/v1/auth/status", (r) => json(r, { setup, signed_in: signedIn }));
   await page.route("**/api/v1/describe", (r) => json(r, { protocol_version: 1, genui_version: 1, principal: {}, operations: [] }));
-  await page.route("**/api/v1/auth/me", (r) => signedIn ? json(r, ME(account)) : json(r, { error: { code: "unauthorized", message: "no session" } }, 401));
+  await page.route("**/api/v1/auth/me", (r) => signedIn ? json(r, ME(account, me)) : json(r, { error: { code: "unauthorized", message: "no session" } }, 401));
   await page.route("**/api/v1/operations", async (r) => {
     const op = JSON.parse(r.request().postData() ?? "{}").operation;
     if (op === "spaces.list") return json(r, { ok: true, data: { spaces: [{ id: "sp-1", name: "Personal", personal: true, role: "owner" }] } });
@@ -46,7 +46,7 @@ try {
   { const { ctx, page } = await fresh({ fn: () => { if (!sessionStorage.getItem("seeded")) { sessionStorage.setItem("seeded", "1"); localStorage.setItem("cal.onboarding", JSON.stringify({ who: "owner", coder: false, step: "you", done: [], skipped: [] })); } } });
     await mock(page, { setup: false, signedIn: true });
     await page.goto(BASE + "/?server=1");
-    ok(await onboardingUp(page) && /Look/i.test(await page.locator("ol.steps li[aria-current=step]").innerText()), "(a) a reload right after the passkey goes on to the next step (the account exists)");
+    ok(await onboardingUp(page) && /Recovery/i.test(await page.locator("ol.steps li[aria-current=step]").innerText()), "(a) a reload right after the passkey goes on to the next step, the recovery codes (the account exists)");
     await ctx.close(); }
   // (b) stale state, no owner yet: seeded on a plain file of the origin (no app running), then the app opens
   { const { ctx, page } = await fresh(null);
@@ -85,6 +85,17 @@ try {
     ok(await onboardingUp(page), "(c) a device that knows the account still shows the onboarding");
     ok(mounted.length === 0, "(c) the app never painted, not even for a moment");
     await ctx.close(); }
+  // (d) the server's policy needs a verified email and this signed-in account has none: ask before the app (the login was not refused), and on a server with no mail say so plainly
+  for (const mail of [true, false]) {
+    const { ctx, page } = await fresh({ fn: () => localStorage.setItem("cal.firstrun", "1") });
+    await mock(page, { setup: false, signedIn: true, me: { email_setup_required: true, mail_available: mail, email_status: "missing" } });
+    await page.goto(BASE + "/?server=1"); await page.waitForSelector("html[data-ready]");
+    await page.getByRole("heading", { name: "Add your email address" }).waitFor({ timeout: 8000 }).catch(() => {});
+    const t = await page.locator("main").innerText().catch(() => "");
+    ok(/Add your email address/.test(t) && (await page.locator(".shell").count()) === 0, `(d) email_setup_required asks for an address before the app (mail ${mail ? "available" : "not configured"})`);
+    ok(mail ? !/cannot send email/.test(t) : /cannot send email, so an address cannot be verified here/.test(t), `(d) the no-mail copy shows only when mail_available is false`);
+    await ctx.close();
+  }
 } catch (err) { console.log("FAIL  " + err.message); bad++; }
 await browser.close(); await stop();
 process.exit(bad ? 1 : 0);

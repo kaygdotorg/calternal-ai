@@ -7,6 +7,7 @@ import { shell } from "./shell/shell.svelte";
 import { appearance } from "./appearance/prefs.svelte";
 import { serverMode } from "./server/client";
 import { startChrome } from "./shell/chrome";
+import "./canvas/area"; // the canvas is the shell's window area (shell/window-area.ts)
 
 registerFonts(import.meta.env.BASE_URL);
 initInputModality();
@@ -29,6 +30,7 @@ Promise.race([loadFonts(currentScheme()).catch(() => {}), new Promise((r) => set
       const { default: Onboarding } = await import("./shell/onboarding/Onboarding.svelte");
       return mount(Onboarding, { target, props: { who: b.screen === "signin" && !b.needsSetup ? "invited" : "owner", token: b.screen === "signin" ? (b.invite ?? "") : "" } });
     }
+    if (b.screen === "email") { const { default: EmailGate } = await import("./shell/EmailGate.svelte"); return mount(EmailGate, { target, props: { mail: b.mail } }); }
     const { default: Gate } = await import("./shell/SignIn.svelte");
     return mount(Gate, { target, props: b.screen === "signin" ? { needsSetup: b.needsSetup, invite: b.invite } : b.screen === "offline" ? { offline: true } : { version: b } });
   };
