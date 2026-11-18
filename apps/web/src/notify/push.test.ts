@@ -30,7 +30,35 @@ describe("what a notification says", () => {
     expect(sw).not.toMatch(/\bcaches\b/);
     expect(sw).toMatch(/addEventListener\("push"/);
     expect(sw).toMatch(/addEventListener\("notificationclick"/);
-    expect(sw).not.toMatch(/data\.(body|text|message|thread)/);
+    expect(sw).not.toMatch(/data\.(body|text|message)\b/);
+  });
+  // Runs the worker against a fake `self`: what a push shows and where a tap goes.
+  function worker() {
+    const on: Record<string, (e: unknown) => void> = {};
+    const shown: { title: string; opts: { body: string; data: { thread: string; space: string } } }[] = [];
+    const opened: string[] = [], navigated: string[] = [];
+    let windows: { focus(): Promise<void>; navigate(p: string): Promise<void> }[] = [];
+    const self = { addEventListener: (k: string, f: (e: unknown) => void) => { on[k] = f; }, skipWaiting() {}, clients: { claim() {}, matchAll: async () => windows, openWindow: async (p: string) => { opened.push(p); } }, registration: { showNotification: async (title: string, opts: never) => { shown.push({ title, opts }); } } };
+    new Function("self", sw)(self);
+    const run = async (k: string, e: object) => { let p: Promise<unknown> = Promise.resolve(); await on[k]({ ...e, waitUntil: (x: Promise<unknown>) => { p = x; } }); await p; };
+    return { push: (d: object) => run("push", { data: { json: () => d } }), click: (data: object) => run("notificationclick", { notification: { close() {}, data } }), shown, opened, navigated, setWindows: (w: typeof windows) => { windows = w; } };
+  }
+  const T = "11111111-2222-3333-4444-555555555555", S = "66666666-7777-8888-9999-000000000000";
+  it("shows only the title and 'needs you', keeps the ids out of the text", async () => {
+    const w = worker(); await w.push({ title: "Fix the journal", status: "needs_you", thread_id: T, space_id: S });
+    expect(w.shown[0]!.title).toBe("Fix the journal"); expect(w.shown[0]!.opts.body).toBe("needs you");
+    expect(JSON.stringify([w.shown[0]!.title, w.shown[0]!.opts.body])).not.toContain(T);
+    expect(w.shown[0]!.opts.data).toEqual({ thread: T, space: S });
+  });
+  it("a tap opens the thread in a new window, or navigates an open one", async () => {
+    const w = worker(); await w.click({ thread: T }); expect(w.opened).toEqual([`/threads/${T}`]);
+    const nav: string[] = []; w.setWindows([{ focus: async () => {}, navigate: async (p: string) => { nav.push(p); } }]); await w.click({ thread: T });
+    expect(nav).toEqual([`/threads/${T}`]); expect(w.opened.length).toBe(1);
+  });
+  it("a test, or a notice with no usable id, opens the Inbox", async () => {
+    const w = worker(); await w.push({ title: "Calternal", status: "test" }); expect(w.shown[0]!.opts.data).toEqual({ thread: "", space: "" });
+    await w.click({ thread: "" }); await w.push({ title: "x", status: "finished", thread_id: "../evil" }); await w.click(w.shown[1]!.opts.data);
+    expect(w.opened).toEqual(["/threads", "/threads"]);
   });
 });
 
