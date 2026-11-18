@@ -153,6 +153,10 @@ async fn every_registered_operation_has_an_independent_matrix_row() {
     // sessions in conformance/requests_cases.rs.
     // Package setting access uses the real sessions in plugin_settings_cases.rs.
     for (id, required) in [
+        ("push.subscribe", Capability::SpaceRead),
+        ("push.unsubscribe", Capability::SpaceRead),
+        ("push.devices", Capability::SpaceRead),
+        ("push.test", Capability::SpaceRead),
         ("plugins.network.content.get", Capability::PluginsUse),
         (
             "plugins.network.content.preference.get",
@@ -315,6 +319,14 @@ async fn every_registered_operation_has_an_independent_matrix_row() {
         MATRIX.len() + stored_rows.len(),
         "duplicate policy"
     );
+    for op in [
+        "push.subscribe",
+        "push.unsubscribe",
+        "push.devices",
+        "push.test",
+    ] {
+        assert_eq!(catalog.policy(op).unwrap().scope, Scope::Account, "{op}");
+    }
     for &(op, _) in ONBOARDING_MATRIX {
         assert_eq!(catalog.policy(op).unwrap().scope, Scope::Account, "{op}");
     }

@@ -33,20 +33,20 @@ impl Jobs {
             RunEnd::OutcomeUnknown => (JobState::OutcomeUnknown, "null".into()),
             RunEnd::Failed => (JobState::Failed, "null".into()),
         };
-        let wake = self.tx(space, |tx| {
-            let current: Option<(String, u32, Option<String>, String, bool)> = tx
+        let (wake, notification) = self.tx(space, |tx| {
+            let current: Option<(String, u32, Option<String>, String, bool, String, Option<String>)> = tx
                 .query_row(
-                    "SELECT state,runs,parent,operation,json_extract(input,'$.verify') IS 1 FROM jobs WHERE id=?1",
+                    "SELECT state,runs,parent,operation,json_extract(input,'$.verify') IS 1,account,CASE WHEN operation='agent.turn' AND json_extract(input,'$.check') IS NOT 1 AND json_type(input,'$.request.thread_id')='text' THEN json_extract(input,'$.request.thread_id') END FROM jobs WHERE id=?1",
                     [id],
-                    |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
+                    |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?)),
                 )
                 .optional()
                 .map_err(db_err)?;
-            let Some((s, runs, parent, operation, diagnostic)) = current else {
-                return Ok(vec![]);
+            let Some((s, runs, parent, operation, diagnostic, account, thread)) = current else {
+                return Ok((vec![], None));
             };
             if !matches!(s.as_str(), "placing" | "running") || runs != run {
-                return Ok(vec![]);
+                return Ok((vec![], None));
             }
             let mut state = state;
             if state == JobState::Waiting {
@@ -75,9 +75,17 @@ impl Jobs {
             {
                 wake.extend(report(tx, &parent, id, state, &result)?);
             }
-            Ok(wake)
+            let notification = (operation == "agent.turn" && !diagnostic && state == JobState::Done)
+                .then(|| thread.and_then(|thread| calternal_types::AccountId::parse(&account).ok().map(|account| (account, thread))))
+                .flatten();
+            Ok((wake, notification))
         })?;
         self.settle_run(id, run);
+        if let Some((account, thread)) = notification
+            && let Some(push) = self.push.get()
+        {
+            push.thread(account, space, &thread, None);
+        }
         Ok(wake)
     }
 

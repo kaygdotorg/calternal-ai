@@ -51,6 +51,7 @@ function section(text, heading) {
 
 const copies = {
   'dev/plugin-api': ['Plugin API decisions', 'docs/plugin-api.md'],
+  'dev/web-push': ['Browser push', 'docs/web-push.md'],
   'dev/provider-protocol': ['Provider adapter protocol', 'docs/provider-protocol.md'],
   'user/fonts': ['Fonts and account appearance', 'docs/fonts.md'],
   'user/people': ['People and access', 'docs/people.md'],

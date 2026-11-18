@@ -205,6 +205,42 @@ macro_rules! operation {
 /// Static policy rows, ordered by the public operation catalog.
 pub const REQUEST_OPERATIONS: &[RequestOperation] = &[
     operation!(
+        "push.subscribe",
+        "Register this browser for thread notifications",
+        Account,
+        SpaceRead,
+        Reversible,
+        crate::PushSubscribeInput,
+        crate::PushDevices
+    ),
+    operation!(
+        "push.unsubscribe",
+        "Remove one of your push subscriptions",
+        Account,
+        SpaceRead,
+        Reversible,
+        crate::PushUnsubscribeInput,
+        crate::PushRemoved
+    ),
+    operation!(
+        "push.devices",
+        "List your registered push devices and the public VAPID key",
+        Account,
+        SpaceRead,
+        Read,
+        crate::AccountInputList,
+        crate::PushDevices
+    ),
+    operation!(
+        "push.test",
+        "Queue a test push to this browser",
+        Account,
+        SpaceRead,
+        External,
+        crate::AccountInputList,
+        crate::PushQueued
+    ),
+    operation!(
         "plugins.network.content.get",
         "Get a prepared sealed content frame",
         Space,

@@ -97,6 +97,13 @@ Generated operation schemas. Capability and risk are shown only when the catalog
 - [fonts.faces](./fonts-faces/): Generate same-origin face rules
 - [fonts.list](./fonts-list/): List shared and caller-owned fonts
 - [fonts.remove](./fonts-remove/): Remove a caller-owned family
+- [push.subscribe](./push-subscribe/): Register this browser for thread notifications
+- [push.unsubscribe](./push-unsubscribe/): Remove one of your push subscriptions
+- [push.devices](./push-devices/): List your registered push devices and the public VAPID key
+- [push.test](./push-test/): Queue a test push to this browser
+- [plugins.network.content.get](./plugins-network-content-get/): Get a prepared sealed content frame
+- [plugins.network.content.preference.get](./plugins-network-content-preference-get/): Read your remote content preference
+- [plugins.network.content.preference.set](./plugins-network-content-preference-set/): Set your remote content preference
 - [plugins.settings.get](./plugins-settings-get/): Read a declared space plugin setting
 - [plugins.settings.set](./plugins-settings-set/): Edit a declared space plugin setting
 - [provider.sign_in.start](./provider-sign-in-start/): Start a private provider sign-in
