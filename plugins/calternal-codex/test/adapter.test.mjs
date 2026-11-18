@@ -11,7 +11,7 @@ import assert from 'node:assert/strict';
 const binary = fileURLToPath(new URL('./fake-codex.mjs', import.meta.url));
 const adapter = fileURLToPath(new URL('../dist/main.js', import.meta.url));
 
-async function fixture(t, args) {
+async function fixture(t, args, extraEnv) {
   const root = await mkdtemp(join(tmpdir(), 'calternal-codex-fixture-'));
   t.after(() => rm(root, {recursive: true, force: true}));
   const home = join(root, 'home');
@@ -28,6 +28,7 @@ async function fixture(t, args) {
       CALTERNAL_PROVIDER_LOGIN_DIR: login,
       CALTERNAL_PROVIDER_LOGIN: '1',
       CALTERNAL_AGENT_MODE: 'approve_for_me',
+      ...extraEnv,
     },
   });
   t.after(() => child.kill('SIGKILL'));
@@ -59,6 +60,19 @@ test('resumes an exact native session then steers and interrupts that active tur
   assert.deepEqual(await exited, [0, null]);
   assert.deepEqual(events, ['check', 'session', 'text_delta', 'done']);
   assert.equal(await readlink(join(home, '.codex', 'auth.json')), join(login, 'auth.json'));
+});
+
+test('a failed account probe reports a check failure without claiming sign-out', {timeout: 8000}, async t => {
+  const {child} = await fixture(t, [], {CALTERNAL_URL: 'https://probe-failure.example.invalid'});
+  const exited = once(child, 'exit');
+  child.stdin.end(JSON.stringify({version: 1, seq: 1, command: {type: 'check'}}) + '\n');
+  const events = [];
+  for await (const line of createInterface({input: child.stdout})) events.push(JSON.parse(line).event);
+  assert.deepEqual(await exited, [0, null]);
+  assert.deepEqual(events.map(event => event.type), ['error', 'done']);
+  assert.equal(events[0].code, 'provider_check_failed');
+  assert.equal(events[1].outcome, 'failed');
+  assert.ok(!JSON.stringify(events).includes('PRIVATE_FIXTURE_DETAIL'));
 });
 
 test('relays only the private device challenge and confirms official sign-in', {timeout: 8000}, async t => {

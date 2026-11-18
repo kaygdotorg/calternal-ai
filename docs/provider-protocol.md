@@ -65,6 +65,8 @@ access tokens, and risk policy. Its adapter drives the official App Server over
 stdio. It maps the selected model and effort to native turn parameters, forwards
 steer and interrupt to the current native turn, and persists the opaque native
 session ID for a later resume.
+A failed Codex account query is a private `provider_check_failed` error. It
+leaves the last login observation unchanged.
 
 In Least access, the host mounts the workspace read-only and the adapter selects
 a nested read-only policy with approvals disabled. In Approve for me, the host

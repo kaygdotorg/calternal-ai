@@ -92,7 +92,13 @@ class Adapter {
       await this.emit({type: 'check', installed: false, signed_in: false, sign_in_command: signInCommand});
       return 'missing' as const;
     }
-    const result = await rpc.request('account/read', {refreshToken: false});
+    let result: Frame;
+    try {
+      result = await rpc.request('account/read', {refreshToken: false});
+    } catch {
+      await this.error('provider_check_failed', 'unknown', 'Codex could not verify the ChatGPT account.');
+      return 'probe_failed' as const;
+    }
     const signed = object(result.account).type === 'chatgpt';
     await this.emit({type: 'check', installed: true, signed_in: signed, sign_in_command: signInCommand});
     return signed ? 'ready' as const : 'signed_out' as const;
@@ -108,7 +114,7 @@ class Adapter {
     if (status !== 'ready') {
       if (status === 'missing') {
         await this.error('provider_version_unavailable', 'permanent', 'The pinned Codex CLI or its sandbox is unavailable.');
-      } else {
+      } else if (status === 'signed_out') {
         await this.error('provider_signed_out', 'authentication', 'Sign in to Codex with ChatGPT.');
       }
       return;

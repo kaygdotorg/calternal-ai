@@ -12,7 +12,13 @@ for await (const line of createInterface({input: process.stdin})) {
   const {id, method, params} = JSON.parse(line);
   if (id === undefined) continue;
   let result = {};
-  if (method === 'account/read') result = {account: {type: 'chatgpt'}};
+  if (method === 'account/read') {
+    if (process.env.CALTERNAL_URL === 'https://probe-failure.example.invalid') {
+      write({id, error: {code: -32603, message: 'PRIVATE_FIXTURE_DETAIL'}});
+      continue;
+    }
+    result = {account: {type: 'chatgpt'}};
+  }
   if (method === 'account/login/start') {
     if (params.type !== 'chatgptDeviceCode') process.exit(2);
     result = {type: 'chatgptDeviceCode', verificationUrl: 'https://auth.openai.com/codex/device', userCode: 'FIXTURE-0123'};
