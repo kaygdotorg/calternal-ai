@@ -52,7 +52,7 @@ impl MachineService {
                 .map(|m| m.row.id)
                 .collect();
             for machine in &machines {
-                st.apply_revocation(*machine, &self.settings);
+                st.apply_revocation(*machine, &self.settings)?;
             }
             st.pool_grants.remove(&id);
             for m in st.machines.values_mut() {
@@ -109,13 +109,12 @@ impl MachineService {
         let orphaned: Vec<_> = st
             .worker_stops
             .iter()
-            .filter_map(|(lease, (machine, _, _))| {
-                (!st.machines.contains_key(machine)).then_some(*lease)
+            .filter_map(|(lease, stop)| {
+                (!st.machines.contains_key(&stop.machine)).then_some(*lease)
             })
             .collect();
         for lease in &orphaned {
             st.worker_stops.remove(lease);
-            st.recovery_stops.remove(lease);
         }
         if !orphaned.is_empty() {
             self.worker_changes.notify_waiters();

@@ -52,6 +52,9 @@ pub enum HostCallKind {
     /// Read an authorized item.
     #[serde(rename = "read_item")]
     ReadItem,
+    /// List a bounded page of live items from the calling plugin's own kind.
+    #[serde(rename = "list_items_v1")]
+    ListItemsV1,
     /// Write an authorized item.
     #[serde(rename = "write_item")]
     WriteItem,
@@ -70,6 +73,45 @@ pub enum HostCallKind {
     /// Request a scoped opaque handle, never secret bytes.
     #[serde(rename = "request_secret_handle")]
     RequestSecretHandle,
+}
+
+/// Version-one worker request for an indexed page of its own kind.
+#[derive(Debug, Deserialize, Serialize, JsonSchema, TS)]
+#[serde(deny_unknown_fields)]
+pub struct PluginItemPageInput {
+    /// Kind declared by the calling plugin. The invocation supplies the space.
+    pub kind: String,
+    /// Exact label filter, using the indexed label key.
+    #[ts(optional)]
+    pub label: Option<String>,
+    /// Opaque continuation returned by this call. Omit it for the first page.
+    #[ts(optional)]
+    pub cursor: Option<String>,
+    /// Number of items, from 1 to 100. Defaults to 100.
+    #[ts(optional)]
+    pub limit: Option<u16>,
+}
+
+/// Indexed fields available without loading the item's body or copying metadata.
+#[derive(Debug, Serialize, JsonSchema, TS)]
+pub struct PluginItemSummary {
+    /// Item UUID in the selected kind and space.
+    pub id: String,
+    /// Current opaque revision.
+    pub revision: String,
+    /// UTC commit timestamp.
+    pub updated_at: String,
+    /// Optional title, limited to 256 Unicode scalars.
+    pub title: Option<String>,
+}
+
+/// Page of live items in descending update order, then stable item ID order.
+#[derive(Debug, Serialize, JsonSchema, TS)]
+pub struct PluginItemPageResult {
+    /// Bounded summaries in index order.
+    pub items: Vec<PluginItemSummary>,
+    /// Continuation for the same account, space, package, kind and filter.
+    pub next_cursor: Option<String>,
 }
 /// Retry behavior declared by an operation.
 #[derive(

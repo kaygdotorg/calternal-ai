@@ -64,7 +64,7 @@ mod sessions;
 mod state;
 mod workers;
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
@@ -301,7 +301,6 @@ impl MachineService {
             execs: HashMap::new(),
             workers: HashMap::new(),
             worker_stops: HashMap::new(),
-            recovery_stops: HashSet::new(),
             next_order: 0,
             pool_load: HashMap::new(),
             db,
@@ -315,11 +314,22 @@ impl MachineService {
             if row.worker {
                 row.fence += 1;
                 row.reason = Some("plugin workers ended by server restart".into());
-                if let Some(machine) = row.machine {
+                if let Some(machine) = row
+                    .machine
+                    .filter(|id| st.machines.get(id).is_some_and(|m| !m.row.revoked))
+                {
                     row.state = "stopping".into();
-                    st.worker_stops.insert(row.id, (machine, [0; 32], u64::MAX));
-                    st.recovery_stops.insert(row.id);
+                    st.worker_stops.insert(
+                        row.id,
+                        workers::WorkerStop {
+                            machine,
+                            account: row.account,
+                            session: [0; 32],
+                            seq: u64::MAX,
+                        },
+                    );
                     db::put_lease(&st.db, &row).map_err(sql)?;
+                    st.take_slot(Some(machine), row.account);
                     st.leases.insert(
                         row.id,
                         Lease {
@@ -507,8 +517,9 @@ impl MachineService {
         let st = &mut *st;
         Self::check_owner(st, account, machine)?;
         st.authority.revoke(machine).map_err(authority_error)?;
-        st.apply_revocation(machine, &self.settings);
-        Ok(())
+        let result = st.apply_revocation(machine, &self.settings);
+        self.worker_changes.notify_waiters();
+        result
     }
 
     /// Set or clear draining on one of `account`'s machines; blocks (one commit).
@@ -604,8 +615,12 @@ impl MachineService {
                 .map(|l| l.row.id)
                 .collect();
             for lease in leases {
-                tracing::info!(%lease, %machine, "lease expired; explicit resume required");
-                st.interrupt(lease, "the machine stopped responding");
+                if st.leases[&lease].row.worker {
+                    st.end_lease(lease, "the machine stopped responding", &self.settings);
+                } else {
+                    tracing::info!(%lease, %machine, "lease expired; explicit resume required");
+                    st.interrupt(lease, "the machine stopped responding");
+                }
             }
         }
         st.execs.retain(|_, e| {

@@ -4,58 +4,33 @@ use crate::machines::MachineService;
 use base64::{Engine, engine::general_purpose::STANDARD as B64};
 use calternal_machine::{
     protocol::{ChunkEvent, SandboxSpec},
-    sandbox::{
-        Backend, BoxFuture, Exec, ExecRequest, OutputEvent, Sandbox, SandboxError, SandboxResult,
-    },
+    sandbox::{BoxFuture, Exec, ExecRequest, OutputEvent, Sandbox, SandboxError, SandboxResult},
 };
-use calternal_types::AccountId;
+use calternal_types::{AccountId, Error};
 use std::sync::Arc;
 use uuid::Uuid;
 
-pub(super) struct MachineBackend(pub Arc<MachineService>);
-
-impl Backend for MachineBackend {
-    fn name(&self) -> &'static str {
-        "machine"
-    }
-    fn discard(&self, _: Uuid, _: Uuid) -> BoxFuture<'_, SandboxResult<()>> {
-        Box::pin(async {
-            Err(SandboxError(
-                "workers are discarded by ending their lease".into(),
-            ))
-        })
-    }
-    fn erase(&self, _: Uuid, _: Option<Uuid>) -> BoxFuture<'_, SandboxResult<()>> {
-        Box::pin(async {
-            Err(SandboxError(
-                "owner erasures use the durable machine channel".into(),
-            ))
-        })
-    }
-    fn start<'a>(
-        &'a self,
-        spec: &'a SandboxSpec,
-    ) -> BoxFuture<'a, SandboxResult<Arc<dyn Sandbox>>> {
-        Box::pin(async move {
-            let service = self.0.clone();
-            let worker = spec
-                .worker
-                .clone()
-                .ok_or_else(|| SandboxError("worker source missing".into()))?;
-            let account = AccountId::from_uuid(spec.account_id).map_err(SandboxError::new)?;
-            let thread = spec.thread_id;
-            let run =
-                crate::blocking::spawn(move || service.request_worker(account, thread, worker))
-                    .await
-                    .map_err(SandboxError::new)?
-                    .map_err(|e| SandboxError(e.message))?;
-            Ok(Arc::new(MachineSandbox {
-                service: self.0.clone(),
-                account,
-                lease: run.lease_id,
-            }) as Arc<dyn Sandbox>)
-        })
-    }
+/// Admit an enrolled worker through the fenced scheduler. Preserves the
+/// caller-safe readiness reason on refusal. Costs one blocking admission.
+pub(super) async fn start(
+    service: Arc<MachineService>,
+    mut spec: SandboxSpec,
+) -> Result<Arc<dyn Sandbox>, Error> {
+    let worker = spec
+        .worker
+        .take()
+        .ok_or_else(|| Error::internal("worker source missing"))?;
+    let account = AccountId::from_uuid(spec.account_id)?;
+    let thread = spec.thread_id;
+    let scheduler = service.clone();
+    let run = crate::blocking::spawn(move || scheduler.request_worker(account, thread, worker))
+        .await
+        .map_err(|_| Error::internal("worker admission failed"))??;
+    Ok(Arc::new(MachineSandbox {
+        service,
+        account,
+        lease: run.lease_id,
+    }))
 }
 
 struct MachineSandbox {

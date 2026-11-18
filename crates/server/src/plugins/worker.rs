@@ -5,7 +5,8 @@
 //! no network, 256 MiB, one CPU and 64 PIDs. DirectBackend is an explicit
 //! development/test adapter with no OS isolation. Protocol v2 is unchanged.
 //!
-//! Bounds: eight workers, 32 concurrent invocations and 32 outgoing frames per
+//! Bounds: enrolled sandbox capacity (eight workers in local fixtures), 32
+//! concurrent invocations and 32 outgoing frames per
 //! worker, 256 KiB frames, 60 seconds idle, 3 seconds per interactive invocation,
 //! 128 MiB V8 heap, retirement at 4096 calls. A fault kills the worker; current
 //! callers receive a safe error and the next call starts a fresh worker without
@@ -44,7 +45,7 @@ const REMOTE_WORKER_START_ALLOWANCE: Duration = Duration::from_secs(3);
 pub const WORKER_START_TIMEOUT: Duration = Duration::from_secs(10);
 /// A worker with no in-flight invocation for this long exits.
 pub const WORKER_IDLE: Duration = Duration::from_secs(60);
-/// Maximum worker slots, including cold starts and unconfirmed teardown.
+/// Default local fixture slots, including cold starts and unconfirmed teardown.
 pub const MAX_WORKERS: usize = 8;
 /// Invocations after which a worker is retired and replaced (library replay bound: 4096).
 pub const MAX_LIFETIME_INVOCATIONS: u32 = 4096;
@@ -239,12 +240,28 @@ type WorkerKey = (String, SpaceId, u32);
 pub struct WorkerPool {
     closing: AtomicBool,
     node: Option<NodeRuntime>,
-    backend: Option<Arc<dyn calternal_machine::sandbox::Backend>>,
+    backend: Option<WorkerBackend>,
     workers: Mutex<HashMap<WorkerKey, Worker>>,
     in_flight: Arc<AtomicUsize>,
     starts: Mutex<HashMap<WorkerKey, std::sync::Weak<StartKey>>>,
-    max_workers: usize,
+    fixture_limit: Option<usize>,
+    // The enrolled backend uses this only to join teardown on shutdown.
     permits: Arc<tokio::sync::Semaphore>,
+}
+
+#[derive(Clone)]
+enum WorkerBackend {
+    Local(Arc<dyn calternal_machine::sandbox::Backend>),
+    Enrolled(Arc<crate::machines::MachineService>),
+}
+
+impl WorkerBackend {
+    fn name(&self) -> &'static str {
+        match self {
+            Self::Local(backend) => backend.name(),
+            Self::Enrolled(_) => "machine",
+        }
+    }
 }
 
 impl WorkerPool {
@@ -268,31 +285,37 @@ impl WorkerPool {
         Self {
             closing: AtomicBool::new(false),
             backend: node.as_ref().map(|_| {
-                if std::env::var("CALTERNAL_WORKER_TEST_BACKEND").as_deref() == Ok("podman") {
-                    Arc::new(calternal_machine::sandbox::podman::PodmanBackend::new(
-                        "podman",
-                        root,
-                        calternal_machine::sandbox::worker::IMAGE,
-                    )) as Arc<dyn calternal_machine::sandbox::Backend>
-                } else {
-                    Arc::new(calternal_machine::sandbox::direct::DirectBackend::new(root))
-                        as Arc<dyn calternal_machine::sandbox::Backend>
-                }
+                let backend =
+                    if std::env::var("CALTERNAL_WORKER_TEST_BACKEND").as_deref() == Ok("podman") {
+                        Arc::new(calternal_machine::sandbox::podman::PodmanBackend::new(
+                            "podman",
+                            root,
+                            calternal_machine::sandbox::worker::IMAGE,
+                        )) as Arc<dyn calternal_machine::sandbox::Backend>
+                    } else {
+                        Arc::new(calternal_machine::sandbox::direct::DirectBackend::new(root))
+                            as Arc<dyn calternal_machine::sandbox::Backend>
+                    };
+                WorkerBackend::Local(backend)
             }),
             node,
             workers: Mutex::new(HashMap::new()),
             in_flight: Arc::new(AtomicUsize::new(0)),
             starts: Mutex::new(HashMap::new()),
-            max_workers: max_workers.max(1),
+            fixture_limit: Some(max_workers.max(1)),
             permits: Arc::new(tokio::sync::Semaphore::new(max_workers.max(1))),
         }
     }
 
-    /// Route workers through enrolled machines. No local runtime or engine is
-    /// inspected or launched. Cost: one shared backend allocation, no I/O.
+    /// Route workers through enrolled machines and use their fenced leases for
+    /// capacity. Does not inspect a local runtime or engine. No I/O.
     pub fn machines(service: Arc<crate::machines::MachineService>) -> Self {
         let mut pool = Self::new(None);
-        pool.backend = Some(Arc::new(super::machine_worker::MachineBackend(service)));
+        pool.backend = Some(WorkerBackend::Enrolled(service));
+        pool.fixture_limit = None;
+        pool.permits = Arc::new(tokio::sync::Semaphore::new(
+            tokio::sync::Semaphore::MAX_PERMITS,
+        ));
         pool
     }
 
@@ -307,7 +330,10 @@ impl WorkerPool {
             .unwrap_or_else(|p| p.into_inner())
             .clear();
         let drained = tokio::time::timeout(WORKER_START_TIMEOUT, async {
-            while self.permits.available_permits() != self.max_workers {
+            let initial = self
+                .fixture_limit
+                .unwrap_or(tokio::sync::Semaphore::MAX_PERMITS);
+            while self.permits.available_permits() != initial {
                 tokio::time::sleep(Duration::from_millis(25)).await;
             }
         })

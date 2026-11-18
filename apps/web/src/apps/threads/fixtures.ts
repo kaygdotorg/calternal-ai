@@ -6,6 +6,7 @@
 import { FIXTURE_SPACES } from "../../shell/spaces.svelte";
 import type { ThreadEvents, ThreadsClient } from "./client";
 import { messageAt } from "./generate";
+import { addVersion, newFork, stamp, switchTo, tailAt, type Fork } from "./fork";
 import { permissionLabel, runsOnLabel } from "./permissions";
 import type { Answer, Attachment, Change, Message, MessageHit, Permission, Step, ProviderOption, Request, RunInfo, RunsOn, ThreadNotice, ThreadState, ThreadSummary } from "./model";
 
@@ -101,6 +102,8 @@ export class FixtureClient implements ThreadsClient {
   private requestList = seedRequests();
   constructor() { applyScenario(this.threadList, this.requestList); }
   private extra = new Map<string, Message[]>();
+  /** The fork of a thread whose message was edited (fork.ts); one fork point per thread in the fixtures. */
+  private forks = new Map<string, Fork>();
   private threadWatchers = new Set<(t: ThreadSummary[]) => void>();
   private requestWatchers = new Set<(r: Request[]) => void>();
   private open = new Map<string, { events: Set<ThreadEvents>; timer?: ReturnType<typeof setInterval>; sent: number; text: string }>();
@@ -147,9 +150,11 @@ export class FixtureClient implements ThreadsClient {
     const t = this.summary(threadId);
     const seed = [...threadId].reduce((a, c) => a + c.charCodeAt(0), 0);
     const base = this.extra.get(threadId) ?? [];
-    const generated = t.messageCount - base.length;
+    const f = this.forks.get(threadId);
+    const orig = f && f.active !== 0 ? f.saved : t.messageCount; // the original version's length: the base is always that version
+    const generated = orig - base.length;
     const out: Message[] = [];
-    for (let i = from; i < Math.min(to, t.messageCount); i++) out.push(i < generated ? messageAt(threadId, seed, i, BASE) : base[i - generated]!);
+    for (let i = from; i < Math.min(to, t.messageCount); i++) out.push(stamp(f, i, tailAt(f, i) ?? (i < generated ? messageAt(threadId, seed, i, BASE) : base[i - generated]!)));
     return out;
   }
 
@@ -174,15 +179,19 @@ export class FixtureClient implements ThreadsClient {
         }
       }
     }
-    return hits.sort((a, b) => b.at - a.at).slice(0, limit);
+    return hits.sort((a, b) => (b.at ?? 0) - (a.at ?? 0)).slice(0, limit);
   }
   async messageIndex(threadId: string, messageId: string): Promise<number | undefined> {
+    const f = this.forks.get(threadId);
+    const tk = f && f.active !== 0 ? f.tails[f.active]!.findIndex((x) => x.id === messageId) : -1;
+    if (f && tk >= 0) return f.at + tk;
     const t = this.threadList.find((x) => x.id === threadId);
+    const orig = t && f && f.active !== 0 ? f.saved : t?.messageCount ?? 0; // the base is the original version
     const m = /-m(\d+)$/.exec(messageId);
-    if (m && t && Number(m[1]) < t.messageCount) return Number(m[1]);
+    if (m && t && Number(m[1]) < orig) return Number(m[1]);
     const base = this.extra.get(threadId) ?? [];
     const k = base.findIndex((x) => x.id === messageId);
-    return k >= 0 && t ? t.messageCount - base.length + k : undefined;
+    return k >= 0 && t ? orig - base.length + k : undefined;
   }
 
   watch(threadId: string, events: ThreadEvents): () => void {
@@ -199,6 +208,39 @@ export class FixtureClient implements ThreadsClient {
         this.open.delete(threadId);
       }
     };
+  }
+
+  /** Adds a message to the version being shown: the original's base, or the shown version's tail. */
+  private append(threadId: string, msg: Message): void {
+    const f = this.forks.get(threadId);
+    if (f && f.active !== 0) f.tails[f.active]!.push(msg);
+    else this.extra.set(threadId, [...(this.extra.get(threadId) ?? []), msg]);
+  }
+  private reset(threadId: string): void { const o = this.open.get(threadId); const n = this.summary(threadId).messageCount; if (o) for (const e of o.events) e.onReset?.(n); }
+  async editMessage(threadId: string, messageId: string, text: string, _requestId: string): Promise<void> {
+    const i = await this.messageIndex(threadId, messageId);
+    if (i === undefined) return;
+    const cur = this.forks.get(threadId);
+    if (this.open.get(threadId)?.timer) await this.stop(threadId);
+    const first: Message = { id: `${threadId}-u${i}-e${Date.now()}`, role: "user", at: Date.now(), blocks: [{ type: "text", text }] };
+    let f = cur;
+    if (f && f.at === i) addVersion(f, this.summary(threadId).messageCount, first);
+    else { f = newFork(i, this.summary(threadId).messageCount, first); this.forks.set(threadId, f); }
+    this.patch(threadId, { messageCount: i + 1, state: "running", updatedAt: Date.now() });
+    this.reset(threadId);
+    const o = this.open.get(threadId);
+    if (o && !o.timer) setTimeout(() => this.startStream(threadId), 300);
+  }
+  async snooze(threadId: string, until: number | null): Promise<void> {
+    this.patch(threadId, { snoozedUntil: until ?? undefined });
+  }
+  async setVersion(threadId: string, _messageId: string, version: number): Promise<void> {
+    const f = this.forks.get(threadId);
+    if (!f) return;
+    if (this.open.get(threadId)?.timer) await this.stop(threadId);
+    const n = switchTo(f, version - 1, this.summary(threadId).messageCount);
+    this.patch(threadId, { messageCount: n, updatedAt: Date.now() });
+    this.reset(threadId);
   }
 
   private startStream(threadId: string): void {
@@ -241,7 +283,7 @@ export class FixtureClient implements ThreadsClient {
   private finishStream(threadId: string, id: string, text: string): void {
     const t = this.summary(threadId);
     const msg: Message = { id, role: "agent", at: Date.now(), blocks: [{ type: "steps", steps: this.stepsOf(id), ms: 12_000 }, { type: "text", text }] };
-    this.extra.set(threadId, [...(this.extra.get(threadId) ?? []), msg]);
+    this.append(threadId, msg);
     this.patch(threadId, { messageCount: t.messageCount + 1, state: "idle", updatedAt: Date.now() });
     const o = this.open.get(threadId);
     if (o) for (const e of o.events) e.onMessage(msg, t.messageCount);
@@ -256,7 +298,7 @@ export class FixtureClient implements ThreadsClient {
   async send(threadId: string, text: string, _requestId: string, attachments: Attachment[] = []): Promise<void> {
     const t = this.summary(threadId);
     const msg: Message = { id: `${threadId}-u${t.messageCount}`, role: "user", at: Date.now(), blocks: [...attachments.map((a) => ({ type: "file" as const, name: a.name, kind: a.kind, size: a.size, url: a.url })), ...(text ? [{ type: "text" as const, text }] : [])] };
-    this.extra.set(threadId, [...(this.extra.get(threadId) ?? []), msg]);
+    this.append(threadId, msg);
     this.patch(threadId, { messageCount: t.messageCount + 1, state: "running", updatedAt: Date.now() });
     const o = this.open.get(threadId);
     if (o) for (const e of o.events) e.onMessage(msg, t.messageCount);

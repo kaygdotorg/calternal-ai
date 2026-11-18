@@ -9,6 +9,24 @@
   ],
   "operations": [
     {
+      "id": "jobs-demo.list",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "kind": { "type": "string" },
+          "cursor": { "type": "string" },
+          "label": { "type": "string" },
+          "limit": { "type": "integer" }
+        },
+        "required": ["kind"],
+        "additionalProperties": false
+      },
+      "output_schema": { "type": "object" },
+      "required_capability": "space.read",
+      "mutates": false,
+      "idempotency": "read_only", "risk": "read"
+    },
+    {
       "id": "jobs-demo.write",
       "input_schema": { "type": "object", "properties": { "text": { "type": "string", "maxLength": 1024 } }, "required": ["text"], "additionalProperties": false },
       "output_schema": { "type": "object" },
@@ -58,5 +76,5 @@
   "secrets": [],
   "hooks": [],
   "themes": [],
-  "host_calls": ["write_item", "start_job", "checkpoint_job"]
+  "host_calls": ["write_item", "list_items_v1", "start_job", "checkpoint_job"]
 }

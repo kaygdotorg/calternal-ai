@@ -9,9 +9,8 @@ import tokens from "../../../../packages/ui/tokens/tokens.json" with { type: "js
 import { accentFor } from "./accent";
 import { PRESETS, presetById } from "./presets";
 import { applyTheme } from "./theme";
-import { setFloor } from "./veil";
 import { setClarity } from "./wallpaper";
-import { onWallpaperColours, setCraftLight, setFlags, setWallpaper, updateVeil, type WallpaperColours } from "./wallpaper";
+import { onWallpaperColours, setFlags, setWallpaper, updateVeil, type WallpaperColours } from "./wallpaper";
 
 /** How the accent colour is chosen. */
 export type AccentMode = "wallpaper" | "custom" | "theme";
@@ -47,11 +46,8 @@ export interface Prefs {
   motion: boolean;
   /** The chat column on a desktop: `wide` (the default, from the calternal-ui plugin's wide chat) fills the card, `centered` keeps a readable column. */
   chatWidth: "wide" | "centered";
-  /**
-   * TEMPORARY, for the owner's side-by-side comparison (Settings, Appearance, Compare); removed once decided. `floor`: the readability floor the veil is solved to (`current` 7:1 with text that
-   * flips, or `low` 4.5:1 that shows more wallpaper). `light`: the light scheme's surfaces (`derived`: the lighter photo with the solved veil, or `craft`: the unchanged photo under 0.92 white).
-   */
-  compare: { floor: "current" | "low"; light: "derived" | "craft"; /** Clear to tinted, 0 to 1: how much of the wallpaper shows through the veils. Null: from the system (reduced transparency or more contrast ask for tinted). */ clarity: number | null };
+  /** Clear to tinted, 0 to 1 in quarters: how much of the wallpaper shows through the veils (0.5 is the solved veil). Null: from the system (reduced transparency or more contrast ask for tinted). */
+  clarity: number | null;
 }
 
 /** The defaults, after the plugin's: a lightly blurred wallpaper behind the sidebars, a heavily blurred, deeper card. */
@@ -69,7 +65,7 @@ export const DEFAULTS: Prefs = {
   fonts: DEFAULT_FONTS,
   motion: true,
   chatWidth: "wide",
-  compare: { floor: "current", light: "derived", clarity: null },
+  clarity: null,
 };
 
 /** What Blur turns on: the blur radii (px) of the sidebars' and the card's copies of the picture. Tint and Dim have no fixed strength: the veil is solved (veil.ts). */
@@ -79,7 +75,7 @@ const KEY = "cal.appearance";
 function read(): Prefs {
   try {
     const s = JSON.parse(localStorage.getItem(KEY) ?? "null") as Partial<Prefs> | null;
-    return s ? { ...DEFAULTS, ...s, materials: { ...DEFAULTS.materials, ...s.materials }, fonts: { ...DEFAULTS.fonts, ...s.fonts }, compare: { ...DEFAULTS.compare, ...s.compare } } : structuredClone(DEFAULTS);
+    return s ? { ...DEFAULTS, ...s, materials: { ...DEFAULTS.materials, ...s.materials }, fonts: { ...DEFAULTS.fonts, ...s.fonts } } : structuredClone(DEFAULTS);
   } catch {
     return structuredClone(DEFAULTS);
   }
@@ -114,13 +110,15 @@ class Appearance {
     });
     // A scheme change re-renders what depends on it: a generated look's dark rendition, a theme's palette, the wash.
     onScheme(() => this.apply());
+    addEventListener("pagehide", () => this.flush());
+    document.addEventListener("visibilitychange", () => { if (document.hidden) this.flush(); });
     this.wallpapers = await this.library.list();
     this.apply();
   }
 
   /** Clear to tinted, 0 to 1. The person's choice, else from the system: reduced transparency or more contrast mean tinted (1); otherwise the middle (0.5), where the solved veil is untouched. */
   get clarity(): number {
-    const c = this.prefs.compare.clarity;
+    const c = this.prefs.clarity;
     if (typeof c === "number") return Math.round(Math.min(1, Math.max(0, c)) * 4) / 4; // five steps: Clear, Light, Balanced, Dense, Tinted
     return matchMedia("(prefers-reduced-transparency: reduce)").matches || matchMedia("(prefers-contrast: more)").matches ? 1 : 0.5;
   }
@@ -140,24 +138,43 @@ class Appearance {
     const scheme = currentScheme();
     if (p.chatWidth === "wide") document.documentElement.dataset.chatWide = ""; else delete document.documentElement.dataset.chatWide;
     if (p.motion) delete document.documentElement.dataset.motion; else document.documentElement.dataset.motion = "off";
-    // The comparison: a lower readability floor, and Craft's light surfaces on the unchanged photograph (a photo's unchanged rendition is its dark-scheme file).
-    setFloor(p.compare.floor);
     setClarity(this.clarity);
-    const craft = p.compare.light === "craft" && scheme === "light";
-    setCraftLight(craft);
-    const picture = w && !w.recipe && craft ? "dark" : scheme;
+    const picture = scheme;
     if (!w) setWallpaper(null, look);
     else void (this.library.resolve?.(w, picture) ?? Promise.resolve(picture === "dark" && w.urlDark ? w.urlDark : w.url)).then((src) => { if (mine === this.applySeq) setWallpaper(src, look); });
     applyTheme(p.themeId ? (presetById(p.themeId)?.theme ?? null) : null, currentScheme());
     updateVeil(m);
     this.applyAccent();
     void applyFonts(p.fonts);
-    if (!save) return;
+    if (save) this.persistSoon();
+  }
+
+  private saveTimer = 0;
+  private dirty = false;
+  /** Writes the preferences a moment after the last change (the screen never waits for storage: a drag of a slider writes once, not at every step), and at once when the page is hidden or closed. */
+  private persistSoon(): void {
+    this.dirty = true;
+    clearTimeout(this.saveTimer);
+    this.saveTimer = window.setTimeout(() => this.flush(), 300);
+  }
+  /** Writes the preferences now. */
+  flush(): void {
+    clearTimeout(this.saveTimer);
+    if (!this.dirty) return; // a first visit keeps no stored setting
+    this.dirty = false;
     try {
-      localStorage.setItem(KEY, JSON.stringify(p));
+      localStorage.setItem(KEY, JSON.stringify(this.prefs));
     } catch {
       /* private mode: the choice lasts for this page only */
     }
+  }
+
+  /** One step of Clear to tinted: only the veil is solved again, from the two blurred copies already made (nothing is decoded or blurred), and the write to storage waits for the slider to rest. */
+  setClarityStep(v: number): void {
+    this.prefs.clarity = v;
+    setClarity(this.clarity);
+    updateVeil(this.prefs.materials);
+    this.persistSoon();
   }
 
   private applyAccent(): void {

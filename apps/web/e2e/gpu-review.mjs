@@ -17,7 +17,7 @@ await shot("d-dark-threads", 1500, 970, "dark", "/threads/t-idle?firstrun=0");
 await shot("d-light-threads", 1500, 970, "light", "/threads/t-idle?firstrun=0");
 await shot("d-dark-notes", 1500, 970, "dark", "/notes/n-1?firstrun=0");
 await shot("d-light-settings", 1500, 970, "light", "/settings/appearance?firstrun=0");
-await shot("d-dark-settings-compare", 1500, 970, "dark", "/settings/appearance?firstrun=0", async (p) => { await p.evaluate(() => document.querySelector(".scroller").scrollTop = 1400); });
+await shot("d-dark-settings-materials", 1500, 970, "dark", "/settings/appearance?firstrun=0", async (p) => { await p.evaluate(() => document.querySelector(".scroller").scrollTop = 1400); });
 await shot("d-dark-closed", 1500, 970, "dark", "/threads/t-idle?firstrun=0", async (p) => { await p.getByRole("button", { name: "Hide the sidebar" }).click(); await p.getByRole("button", { name: "Hide the side panel" }).click(); });
 await shot("d-dark-firstrun", 1500, 970, "dark", "/threads/t-idle");
 await shot("d-dark-popover", 1500, 970, "dark", "/threads/t-idle?firstrun=0", async (p) => { await p.getByRole("button", { name: /Least access/ }).click(); });

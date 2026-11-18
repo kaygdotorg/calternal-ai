@@ -24,7 +24,8 @@ refused. The worker environment contains only the fixed locale.
 Limits have one declaration in `sandbox/worker.rs`: 256 MiB memory (no extra swap),
 1 CPU and 64 PIDs; V8's heap is capped at 128 MiB. There is one worker per
 (plugin, space), at most eight physical workers including starts and retiring
-sessions, with a semaphore held until authenticated teardown confirmation. Caller errors
+sessions, with a semaphore held until authenticated teardown confirmation or
+durable machine revocation. Caller errors
 are delivered before asynchronous cleanup, so a failed or unreachable machine
 cannot hang an operation or silently release capacity. Failed machine cleanup is
 retried; pending teardown is bounded by eight slots and has no timed expiry. At most 32 invocations are
@@ -87,9 +88,10 @@ Options requiring an owner decision:
   plugin state with setup guidance, requires a product decision. No server-side
   container path is added.
 
-A revoked or permanently lost machine cannot supply authenticated cleanup proof.
-Capacity remains reserved; an operator teardown attestation/recovery flow needs
-an owner decision before such proof can be bypassed.
+An unreachable enrolled machine retains its stopping reservations. A worker
+holds both machine and account capacity until authenticated teardown or
+durable machine revocation. The stop record retains the account so cleanup
+can release its reservation after an erasure removes the lease row.
 
 Manifest v1 has no destination declaration, manager approval record or `fetch`
 host call. All plugin network is therefore disabled. A future network-contract

@@ -3,7 +3,7 @@ use crate::{Result, db::Space, journal::lock, types::internal};
 use calternal_types::SpaceId;
 use std::{
     collections::HashMap,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, OnceLock},
     time::{Duration, Instant},
 };
 /// One cached space: opened on first use under its own lock, so a cold open in
@@ -11,6 +11,9 @@ use std::{
 pub(crate) struct Slot {
     /// Lazily opened stores, serialized only within this space.
     pub(crate) space: Mutex<Option<Space>>,
+    /// Published after lazy recovery. Visibility reads use WAL snapshots
+    /// without waiting for the writer to retire its already published outbox.
+    pub(crate) visibility: OnceLock<crate::ReadPool>,
     /// Idle-retirement clock, updated after each completed operation.
     pub(crate) last_used: Mutex<Instant>,
 }

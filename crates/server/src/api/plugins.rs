@@ -78,10 +78,10 @@ pub(super) fn check_view(plugin: &Plugin, value: &Value) -> Result<(), Error> {
 /// after; brokered writes retain their own documented durability costs.
 ///
 /// Admission (already done by the caller) checked the manifest-derived policy.
-/// Here: the plugin must be enabled; its activation generation is captured; every
-/// host call and the delivery are rechecked by the broker; then, as before, the
-/// result is discarded if the generation changed (conflict) or the caller's space
-/// access no longer holds. The HTTP guard rechecks the session on delivery.
+/// Capture the enabled generation once for worker routing. The broker rechecks
+/// activation before each effect and before disclosing a host reply to the worker.
+/// Recheck activation and grants here before returning the HTTP result. The HTTP
+/// guard also rechecks the session on delivery.
 pub(super) async fn invoke_plugin<D: Directory>(
     state: Shared<D>,
     p: Identity,

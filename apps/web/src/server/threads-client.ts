@@ -18,6 +18,7 @@ import type { ThreadEvents, ThreadsClient } from "../apps/threads/client";
 import type { Answer, Attachment, Change, Message, Permission, ProviderOption, Request, RunInfo, RunsOn, Step, ThreadState, ThreadSummary } from "../apps/threads/model";
 import { ServerClient, ServerError } from "./client";
 import { ServerRequests } from "./requests";
+import { lookups } from "./lookups";
 import { SpaceFeed, type FeedEntry } from "./space-feed";
 import { appendRecords, messagesOf, providerPlugin, readinessNotice, reasonNotice, stateOfTurn, summaryOf, wireMode, type WireReadiness, type WireReason, type WireRow, type WireThread, type WireJob, type WireRecord } from "./thread-file";
 
@@ -239,6 +240,9 @@ export class ServerThreads implements ThreadsClient {
   }
 
   /** Where a message is in its thread: the position among the messages of the (cached) read of it. */
+  /** The search and picker lookups, over the wire. */
+  readonly lookups = lookups(() => this.space());
+  async searchMessages(query: string, limit = 50) { return this.lookups.searchMessages(query, limit); }
   async messageIndex(id: string, messageId: string): Promise<number | undefined> {
     const open = this.opened.get(id) ?? (await this.load(id));
     const i = open.messages.findIndex((m) => m.id === messageId);

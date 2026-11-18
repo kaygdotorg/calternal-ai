@@ -33,6 +33,17 @@ export function mentionPool(agents: string[], threads: { id: string; title: stri
     ...items.map((t): Mention => ({ id: `i:${t.id}`, kind: "item", label: t.title, sub: "Note", insert: one(t.title) })),
   ];
 }
+/** The pool of `@` when the server answers (people.lookup, threads.lookup, items.lookup): the installed agents, then the people, threads and items it found for what was typed; no fixture rows. */
+export function remoteMentionPool(agents: string[], found: { people: { id: string; name: string; kind: string }[]; threads: { id: string; title: string }[]; items: { id: string; title: string; kind: string }[] }): Mention[] {
+  return [
+    ...agents.map((n): Mention => ({ id: `a:${n}`, kind: "agent", label: n, sub: "Agent", insert: one(n) })),
+    ...found.people.map((p): Mention => ({ id: `p:${p.id}`, kind: "person", label: p.name, sub: p.kind === "group" ? "Group" : "Person", insert: one(p.name) })),
+    ...found.threads.map((t): Mention => ({ id: `t:${t.id}`, kind: "thread", label: t.title, sub: "Thread", insert: one(t.title) })),
+    ...found.items.map((t): Mention => ({ id: `i:${t.id}`, kind: "item", label: t.title, sub: t.kind === "notes" ? "Note" : t.kind, insert: one(t.title) })),
+  ];
+}
+/** The pool of `/` when the server answers (skills.list): its skills, each inserting `/name `. */
+export const remoteSkillPool = (skills: { name: string; description: string }[]): Mention[] => skills.map((s): Mention => ({ id: `s:${s.name}`, kind: "skill", label: s.name, sub: s.description, insert: `/${s.name} ` }));
 /** Every skill `/` can list. */
 const SKILL_POOL: Mention[] = SKILLS.map(([id, name]): Mention => ({ id: `s:${id}`, kind: "skill", label: name, sub: `/${id}`, insert: `/${id} ` }));
 /** The skills `/` offers at the start of a line. One shared array, so the search index over it is built once. */

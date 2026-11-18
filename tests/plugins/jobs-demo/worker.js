@@ -2,6 +2,7 @@
 // cases. Never shipped: it is trusted only by servers built with `test-plugins`.
 //
 // jobs-demo.write  writes one hidden item.
+// jobs-demo.list   returns one broker page.
 // jobs-demo.start  admits a job running jobs-demo.run with the same input.
 // jobs-demo.run    a leaf streams `steps` chunks `delay_ms` apart, checkpointing every
 //                  `every` steps and resuming from the last checkpoint; a parent
@@ -30,6 +31,7 @@ function chunk(id, job_id, data) {
 }
 
 const ops = {
+  'jobs-demo.list': async (id, input) => call(id, 'list_items_v1', input),
   'jobs-demo.write': async (id, input) => ({ id: (await call(id, 'write_item', { kind: 'demo-notes', text: input.text })).id }),
   'jobs-demo.start': async (id, input) => ({ job_id: (await call(id, 'start_job', { operation: 'jobs-demo.run', input })).job_id }),
   'jobs-demo.run': async (id, { job_id, input, checkpoint, children }) => {

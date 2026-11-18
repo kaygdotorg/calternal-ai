@@ -77,6 +77,15 @@
       "reference": "owner decision 2026-11-18; single release arm over the ceiling fails"
     },
     {
+      "metric": "plugin.warm_browser_worker",
+      "percentile": "p95",
+      "budget": 15,
+      "unit": "ms",
+      "fixture": "one note, one broker read, warm enrolled rootless Podman worker and Chromium on one locked perf VM",
+      "measurement": "100 serial browser POSTs after 10 warmups, through decoded successful response; no relay or renderer",
+      "reference": "2026-11-18 A/B: 5.2 ms p95 on perf-01 and 10.1 ms on perf-02 after removing the uploader wait"
+    },
+    {
       "metric": "plugin.three_host_calls",
       "percentile": "p95",
       "budget": null,
@@ -185,13 +194,11 @@
     {
       "metric": "account.draft_write_to_feed",
       "percentile": "p95",
-      "budget": null,
+      "budget": 9,
       "unit": "ms",
       "fixture": "all",
-      "reference": null,
-      "measurement": "from before HTTP draft save until account SSE event",
-      "proposed_budget": 253.46744700000002,
-      "proposal_status": "unaccepted; maximum observed head-arm p95, no added headroom; dated control only"
+      "measurement": "from before HTTP draft save until the account SSE client receives its event",
+      "reference": "owner decision 2026-11-18 on single-digit unsent draft saves"
     },
     {
       "metric": "memory.1_spaces.idle_released",
