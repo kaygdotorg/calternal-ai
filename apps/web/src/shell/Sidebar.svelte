@@ -1,7 +1,7 @@
 <script lang="ts">
   // The left region. Not a card: it sits on the wallpaper. A wordmark at the top (the person's own name for the product, in a cursive face, both set in
   // Settings; no icon) with the sidebar button at the other end; the attention card and the app's own body scroll as one column that fades out under
-  // the wordmark row and the footer (no opaque band); the footer holds the account picture, the app switcher and search. Switching apps happens here.
+  // the wordmark row and the footer (no opaque band); the footer holds the account picture, the app capsule (icon-only, three at a time) and search. Switching apps happens here.
   import { Menu, Pill, type MenuItem } from "@calternal/ui";
   import { appearance } from "../appearance/prefs.svelte";
   import type { AppDef } from "../apps/registry";
@@ -10,7 +10,7 @@
   import Attention from "./Attention.svelte";
   import Palette from "./Palette.svelte";
   import { pull } from "../lib/pull";
-  import SpaceDots from "./SpaceDots.svelte";
+  import AppSwitcher from "./AppSwitcher.svelte";
   import { spaces } from "./spaces.svelte";
   import { shell } from "./shell.svelte";
 
@@ -18,9 +18,10 @@
   // One scroller serves every app: a new app starts at the top (an offset left by another app's list would put this one's first row under the wordmark).
   let scroller = $state<HTMLElement>();
   $effect(() => { void app.kind; if (scroller) scroller.scrollTop = 0; });
-  // The account picture: on a wide screen it opens Settings; on a phone, where the footer has no room for the dots, it opens a menu with the spaces (the current one checked) and Settings.
+  // The account picture opens the account menu on every screen: the spaces (the current one checked; a search field above five of them, which makes it a sheet on a phone) and Settings. There are no space dots in the footer.
   let menu = $state(false);
   let trigger = $state<HTMLButtonElement>();
+  const search = $derived(spaces.list.length > 5);
   const items = $derived<MenuItem[]>([...spaces.list.map((s) => ({ id: `space:${s.id}`, label: s.name, checked: s.id === spaces.current.id })), { id: "settings", label: "Settings", icon: "settings" as const }]);
   function pick(id: string) { if (id === "settings") navigate("/settings/appearance"); else { spaces.switchTo(id.slice(6)); navigate("/threads"); } }
 </script>
@@ -37,9 +38,9 @@
   </div>
 
   <footer>
-    <button type="button" class="avatar" bind:this={trigger} aria-label={shell.narrow ? "Account, spaces and settings: Kay" : "Account and settings: Kay"} aria-haspopup={shell.narrow ? "menu" : undefined} aria-expanded={shell.narrow ? menu : undefined} onclick={() => (shell.narrow ? (menu = !menu) : navigate("/settings/appearance"))}><span aria-hidden="true">K</span></button>
-    {#if shell.narrow}<Menu open={menu} {items} label="Account" {trigger} onclose={() => (menu = false)} onpick={pick} />{/if}
-    <span class="switch">{#if !shell.narrow}<SpaceDots />{/if}</span>
+    <button type="button" class="avatar" bind:this={trigger} aria-label="Account, spaces and settings: Kay" aria-haspopup="menu" aria-expanded={menu} onclick={() => (menu = !menu)}><span aria-hidden="true">K</span></button>
+    <Menu open={menu} {items} {search} label="Account" {trigger} onclose={() => (menu = false)} onpick={pick} />
+    <span class="switch"><AppSwitcher current={app.kind} /></span>
     <Pill icon="search" label="Search" aria-keyshortcuts={ariaKeys(shortcuts.chordFor("search"))} onclick={() => (shell.searchOpen = true)} />
   </footer>
 </div>
@@ -56,7 +57,7 @@
   footer { position: absolute; z-index: 2; left: 0; right: 0; bottom: 0; height: var(--foot-h); display: flex; align-items: flex-start; gap: var(--s-3); padding: var(--s-2) var(--s-4) 0; }
   .avatar { flex: none; width: var(--pill-h); height: var(--pill-h); border-radius: 50%; display: grid; place-items: center; background: color-mix(in oklab, var(--accent-base) 22%, rgb(var(--tint) / 0.6)); color: var(--accent); font-weight: var(--strong-weight); transition: scale var(--dur-fast) var(--ease-out); }
   .avatar:active { scale: var(--press-scale); }
-  .switch { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; }
+  .switch { flex: 1; min-width: 0; display: flex; justify-content: center; }
   .body { animation: space-in var(--dur-base) var(--ease-out); }
   @keyframes space-in { from { opacity: 0; } }
 </style>
