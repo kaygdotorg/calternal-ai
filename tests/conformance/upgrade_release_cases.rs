@@ -124,6 +124,39 @@ async fn release_artifacts_preserve_live_data_in_both_directions() {
     let candidate_id = std::env::var("CALTERNAL_RELEASE_NEXT_IMAGE").unwrap();
     let mut f = Fixture::empty();
     let shape = seed(&mut f, &previous).await;
+    let workspace_file = f
+        .dir
+        .path()
+        .join("machine")
+        .join(shape["workspace"].as_str().unwrap());
+    let original = std::fs::read(&workspace_file).unwrap();
+    // Exercise recovery of the old binary's own manifest and saved payloads.
+    // The shipped baseline writes v1 even for a full restore point.
+    answer(upgrade(
+        &f,
+        &previous,
+        &[
+            "prepare",
+            "--previous",
+            &previous_id,
+            "--candidate",
+            &candidate_id,
+            "--incompatible",
+        ],
+        None,
+    ));
+    assert_eq!(
+        answer(upgrade(&f, &previous, &["status"], None))["phase"],
+        "preparing"
+    );
+    std::fs::write(&workspace_file, b"interrupted change").unwrap();
+    assert_eq!(
+        answer(upgrade(&f, &candidate, &["recover"], None))["restored_previous"],
+        previous_id
+    );
+    assert_eq!(std::fs::read(&workspace_file).unwrap(), original);
+    prove_visible(&mut f, &previous, &shape).await;
+
     let evidence = f.dir.path().join("artifact-proof.json");
     std::fs::write(
         &evidence,

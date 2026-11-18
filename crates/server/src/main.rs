@@ -171,6 +171,7 @@ fn main() {
             machine_poll_hold_ms,
             machine_sandbox_cpu_millis,
             test_plugin_root,
+            upgrade_probe,
         } => {
             let mut machines = calternal_server::machines::Settings {
                 lease_ttl: std::time::Duration::from_millis(machine_lease_ttl_ms),
@@ -211,6 +212,7 @@ fn main() {
                     origin,
                     trusted_proxies,
                     test_plugin_root,
+                    upgrade_probe,
                     machines,
                     &out,
                 ))
@@ -243,10 +245,18 @@ async fn serve(
     origin: Option<String>,
     trusted_proxies: String,
     test_plugin_root: Option<PathBuf>,
+    upgrade_probe: Option<String>,
     machine_settings: calternal_server::machines::Settings,
     out: &Output,
 ) -> Result<(), CliError> {
     let mut timings = StartupTimings::new();
+    let probing = upgrade_probe.is_some();
+    if probing && !bind.ip().is_loopback() {
+        return Err(CliError::new(
+            "invalid_input",
+            "The upgrade probe requires loopback binding.",
+        ));
+    }
     // The roots guard runs first: a missing, swapped or foreign root is refused
     // before any directory, lock or database is created.
     const PIN_HINT: &str = "Put this installation's UUID in the server configuration as \
@@ -280,6 +290,7 @@ async fn serve(
             receipt_retention,
             plugin_root,
             test_plugin_root,
+            upgrade_probe,
             development,
         )
     })
@@ -593,6 +604,16 @@ async fn serve(
     let wallpapers = api::wallpapers::Wallpapers::from_env(&data_dir)
         .await
         .map_err(|e| boot(1, "failed", e.message, DATA_HINT))?;
+    if probing {
+        let health = axum::Router::new().route(
+            "/api/v1/auth/status",
+            axum::routing::get(|| async { axum::http::StatusCode::OK }),
+        );
+        return axum::serve(listener, health)
+            .with_graceful_shutdown(shutdown_signal())
+            .await
+            .map_err(|error| boot(1, "io", error.to_string(), DATA_HINT));
+    }
     let app = api::router(state.clone(), web_dir.clone())
         .layer(axum::Extension(machines.clone()))
         .layer(axum::Extension(wallpapers));

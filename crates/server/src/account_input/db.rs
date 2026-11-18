@@ -385,5 +385,5 @@ pub(crate) const UPGRADE_SCHEMA: calternal_store::migrations::Schema<'_> =
         "input.db",
         2,
         &[SCHEMA],
-        &[super::plugin_settings::SCHEMA],
+        &[(3, super::plugin_settings::SCHEMA)],
     );

@@ -583,6 +583,6 @@ pub(crate) fn upgrade_schema() -> calternal_store::migrations::Schema<'static> {
         "jobs.db",
         2,
         BATCHES.get_or_init(|| [SCHEMA, crate::threads::turn_events::schema()]),
-        &[waits::SCHEMA],
+        &[(3, waits::SCHEMA)],
     )
 }
