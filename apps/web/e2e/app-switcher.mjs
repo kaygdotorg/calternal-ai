@@ -9,7 +9,7 @@ const open = async (phone, path, order) => {
   const ctx = await b.newContext(phone ? { viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true } : { viewport: { width: 1440, height: 900 } });
   await ctx.addInitScript((o) => { if (o) localStorage.setItem("cal.appearance", JSON.stringify({ appOrder: o })); }, order);
   const page = await ctx.newPage(); await page.goto(`${BASE}${path}`); await page.waitForSelector("html[data-ready]"); await page.waitForTimeout(600);
-  if (phone) { await page.getByRole("button", { name: "Show threads" }).click().catch(() => {}); await page.waitForTimeout(700); }
+  if (phone) { await page.getByRole("button", { name: /Show (the sidebar|threads|notes)/ }).first().click(); await page.waitForTimeout(800); }
   return { ctx, page };
 };
 const geom = (page) => page.evaluate(() => {
