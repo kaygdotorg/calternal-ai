@@ -89,7 +89,8 @@ pub struct SpaceMachineSet {
     /// Shared space UUID.
     pub space_id: String,
     /// Owner's sandbox machine UUID or null to clear the setting.
-    #[schemars(required)]
+    #[serde(deserialize_with = "crate::models::required_nullable_string")]
+    #[schemars(schema_with = "crate::models::nullable_string_schema")]
     pub machine_id: Option<String>,
 }
 

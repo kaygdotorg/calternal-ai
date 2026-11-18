@@ -211,10 +211,6 @@ pub fn validate_operation_input(operation: &str, input: &JsonObject) -> Result<(
         return space(&decode::<crate::SpaceMachineGet>(input)?.space_id);
     }
     if operation == crate::SPACE_MACHINE_SET {
-        require(
-            input.contains_key("machine_id"),
-            "machine_id must be a UUID or null",
-        )?;
         let request: crate::SpaceMachineSet = decode(input)?;
         space(&request.space_id)?;
         return require(
