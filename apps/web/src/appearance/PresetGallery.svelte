@@ -1,5 +1,5 @@
 <script lang="ts">
-  // The preset gallery: one tile per preset (backdrop and palette together). Used by the appearance settings and by the first-run sheet.
+  // The preset gallery: one tile per preset (backdrop and palette together). Used by the appearance settings and by the Look step of the onboarding.
   import { PRESETS } from "./presets";
   import { appearance as A } from "./prefs.svelte";
   let { onpick }: { onpick?: (id: string) => void } = $props();

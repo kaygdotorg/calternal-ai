@@ -45,7 +45,6 @@
   function back() { const p = before(coder, step); if (p) step = p; }
   function start() {
     clear(store);
-    try { localStorage.setItem("cal.firstrun", "1"); } catch { /* none */ }
     location.replace(import.meta.env.BASE_URL + "threads");
   }
   const cur = $derived(steps.indexOf(step));

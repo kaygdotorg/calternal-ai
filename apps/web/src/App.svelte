@@ -11,10 +11,11 @@
   import { spaces } from "./shell/spaces.svelte";
   import Unknown from "./shell/Unknown.svelte";
   import SettingsSheet from "./appearance/SettingsSheet.svelte";
-  import FirstRun from "./appearance/FirstRun.svelte";
   import { shortcuts } from "./lib/shortcuts.svelte";
   import ShortcutsSheet from "./shell/ShortcutsSheet.svelte";
   import { client, store } from "./apps/threads/store.svelte";
+  import ThreadSearch from "./apps/threads/ThreadSearch.svelte";
+  import { messageSearch } from "./apps/threads/search.svelte";
 
   const NONE: AppDef = { kind: "", name: "Calternal", icon: "apps", Sidebar: Unknown, Main: Unknown, panels: [{ id: "none", label: "Nothing", icon: "info", component: Unknown }] };
   const seg = $derived(segments());
@@ -45,6 +46,7 @@
     { id: "app1", label: "Open Threads", group: "Navigation", where: "Anywhere", chord: "Alt+Digit1", run: () => navigate("/threads") },
     { id: "app2", label: "Open Notes", group: "Navigation", where: "Anywhere", chord: "Alt+Digit2", run: () => navigate("/notes") },
     { id: "undo", label: "Undo the last archive or delete", group: "Threads", where: "Outside a text field", chord: "Mod+KeyZ", run: () => undoLatest() || false },
+    { id: "msgsearch", label: "Search messages in threads", group: "Threads", where: "Anywhere", chord: "Mod+Shift+KeyF", run: () => { messageSearch.open = true; } },
     { id: "next", label: "Next thread", group: "Threads", where: "Anywhere", chord: "Alt+ArrowDown", run: () => step(1) },
     { id: "prev", label: "Previous thread", group: "Threads", where: "Anywhere", chord: "Alt+ArrowUp", run: () => step(-1) },
     { id: "composer", label: "Write a message", group: "Threads", where: "Outside a text field", chord: "Slash", run: () => { const f = document.getElementById("composer-field"); if (!f) return false; f.focus(); } },
@@ -67,7 +69,7 @@
 
 {#if route.path !== "/"}<Shell {app} id={seg[1]} />{/if}
 <LinkBanner />
+<ThreadSearch />
 <Toasts bottom={shell.narrow ? "calc(var(--bar-h) + env(safe-area-inset-bottom) + 12px)" : 24} />
-<FirstRun />
 <SettingsSheet open={settings && shell.narrow} onclose={() => navigate("/settings/appearance")} />
 <ShortcutsSheet open={shell.helpOpen} onclose={() => (shell.helpOpen = false)} />

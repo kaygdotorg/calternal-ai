@@ -133,15 +133,10 @@ const wallpapers = JSON.parse(readFileSync("wallpapers.json", "utf8"));
   ok(tiles >= 8, "The wallpaper picker offers the built-in set", String(tiles));
   await ctx.close();
 }
-// ---------- first run ----------
+// ---------- first visit ----------
 {
   const { ctx, page } = await fresh(DEVICES.desktop, "/threads/t-idle");
-  const d = page.getByRole("dialog", { name: "Choose a look" });
-  ok((await d.count()) === 1, "First run: a short gallery of presets");
-  const r = await d.evaluate((e) => { const x = e.getBoundingClientRect(); return { cx: x.left + x.width / 2, w: innerWidth }; });
-  ok(Math.abs(r.cx - r.w / 2) < 2, "The first-run chooser is a window-level dialog, centred (not placed in a sidebar)");
-  await page.getByRole("button", { name: "Keep the default" }).click(); await page.waitForTimeout(400);
-  ok((await page.getByRole("dialog").count()) === 0, "…then straight in");
+  ok((await page.getByRole("dialog").count()) === 0, "A first visit goes straight in: no look chooser dialog (the look is step 2 of the onboarding)");
   await ctx.close();
 }
 // ---------- phone ----------
