@@ -1,12 +1,11 @@
 // One continuous background (docs/ui-shell.md, "The background"): the wallpaper under ONE veil spans the whole window and both sidebars are drawn on it; the middle card is the only thing on top. Nothing may paint in the
 // gap beside the card or behind its rounded corners. Measured on real pixels: text, icons and the sidebars' own content are hidden, then the four corner regions OUTSIDE the card's radius (and the gap columns beside the
-// card, and the strips above and below it) are compared with the surface right next to them, across the line where a second layer would begin. A seam is a step in colour at that line; a smooth wallpaper changes slowly, so
-// the steps allowed are a few levels out of 255. Both schemes, the eight wallpapers, at 1x and 2x (the gate runs fewer: SEAM_FULL=1 for all).
+// card, and the strips above and below it) are compared with the surface right next to them, across the line where a second layer would begin. A seam is a step in colour at that line larger than the wallpaper's own change over the same distance (measured well inside the sidebars as a control) by more than 3 levels of 255. Both schemes, the eight wallpapers, at 1x and 2x (the gate runs fewer: SEAM_FULL=1 for all).
 import { chromium } from "playwright";
 import { readFileSync } from "node:fs";
 import { BASE, serve } from "./lib.mjs";
 const IDS = JSON.parse(readFileSync("wallpapers.json", "utf8")).map((w) => w.id);
-const FULL = !!process.env.SEAM_FULL, STEP = Number(process.env.SEAM_MAX ?? 5);
+const FULL = !!process.env.SEAM_FULL, STEP = Number(process.env.SEAM_MAX ?? 3);
 const stop = await serve(); const b = await chromium.launch(); let bad = 0, worstAll = 0;
 const cases = [];
 for (const scheme of ["light", "dark"]) for (const id of FULL ? IDS : [IDS[0], IDS[3]]) for (const dpr of FULL ? [1, 2] : id === IDS[0] ? [1, 2] : [1]) cases.push({ scheme, id, dpr });
@@ -37,13 +36,18 @@ for (const { scheme, id, dpr } of cases) {
     }
     // The gap columns beside the card at several heights, and the strips above and below it where the card does not reach the window's edge.
     for (const [name, xe, s2] of [["left gap", g.x0, -1], ["right gap", g.x1, 1]]) { let worst = 0; for (const f of [0.15, 0.3, 0.5, 0.7, 0.85]) { const yy = g.y0 + (g.y1 - g.y0) * f; const a = at(xe + s2 * 3, yy), b2 = at(xe + s2 * 12, yy); if (a && b2) worst = Math.max(worst, diff(a, b2)); } out.push([name, +worst.toFixed(1)]); }
+    // The control: how much the wallpaper itself changes over the same 9 px well inside each sidebar (nothing begins or ends there). A seam is a step larger than that.
+    let natural = 0;
+    for (const xs of [40, 120, g.x1 + 40, g.x1 + 120]) for (const f of [0.2, 0.4, 0.6, 0.8]) { const yy = g.y0 + (g.y1 - g.y0) * f; const a = at(xs, yy), b2 = at(xs + 9, yy); if (a && b2) natural = Math.max(natural, diff(a, b2)); }
+    out.push(["natural", +natural.toFixed(1)]);
     return out;
   }, [png, g, dpr]);
-  const worst = Math.max(...res.map((r) => r[1])); worstAll = Math.max(worstAll, worst);
-  const fail = res.filter((r) => r[1] > STEP);
+  const natural = res.find((r) => r[0] === "natural")[1], seams = res.filter((r) => r[0] !== "natural");
+  const worst = Math.max(...seams.map((r) => r[1] - natural)); worstAll = Math.max(worstAll, worst);
+  const fail = seams.filter((r) => r[1] - natural > STEP);
   console.log(`${fail.length ? "FAIL" : "PASS"}  ${scheme} ${id.slice(0, 6)} ${dpr}x  steps: ${res.map((r) => `${r[0]} ${r[1]}`).join(", ")}`);
   if (fail.length) bad++;
   await ctx.close();
 }
-console.log(`worst step across the window's seams: ${worstAll} levels of 255 (allowed ${STEP})`);
+console.log(`worst excess step over the control across the window's seams: ${worstAll.toFixed(1)} levels of 255 (allowed ${STEP})`);
 await b.close(); stop(); process.exit(bad ? 1 : 0);
