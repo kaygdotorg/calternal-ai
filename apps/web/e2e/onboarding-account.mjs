@@ -14,6 +14,7 @@ try {
     await p.goto(BASE + "/?onboarding=1"); await p.waitForSelector("html[data-ready]"); await p.locator("main ol.steps").waitFor();
     ok(/You/.test(await cur(p)), `${device}: the first step is You`);
     ok(await btn(p, "Continue").isDisabled(), `${device}: Continue waits for a name and a valid username`);
+    ok(/let you add an email address and make your passkey/.test(await p.locator("form").innerText()), `${device}: the first screen does not promise to ask for an email when it is optional`);
     await p.getByLabel("Your name").fill("Kay"); await p.getByLabel("Username").fill("ab");
     ok(/at least 3/.test(await p.locator("form").innerText()) && await btn(p, "Continue").isDisabled(), `${device}: a short username says so in plain words`);
     await p.getByLabel("Username").fill("admin");
@@ -49,6 +50,7 @@ try {
   { const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 } }); const p = await ctx.newPage();
     await p.addInitScript(() => localStorage.setItem("cal.firstrun", "1"));
     await p.goto(BASE + "/?onboarding=1&email_required=1"); await p.waitForSelector("html[data-ready]"); await p.locator("main ol.steps").waitFor();
+    ok(/ask for your email address and make your passkey/.test(await p.locator("form").innerText()), "hosted: the first screen says the next screens ask for the email address");
     await p.getByLabel("Your name").fill("Kay"); await p.getByLabel("Username").fill("kay-g"); await btn(p, "Continue").click();
     ok(!/optional/i.test(await p.locator("form").innerText()) && await btn(p, "Continue").isDisabled(), "hosted: the email is required and nothing goes on without it");
     await p.getByLabel("Email").fill("kay@example.com"); await btn(p, "Send the code").click(); await p.waitForTimeout(900);
