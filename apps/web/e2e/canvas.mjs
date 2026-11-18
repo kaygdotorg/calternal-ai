@@ -13,7 +13,9 @@ const rgbOf = (s) => (s.match(/[\d.]+/g) ?? []).slice(0, 3).map(Number);
 const ratio = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p); return (x + 0.05) / (y + 0.05); };
 const rects = (p) => p.evaluate(() => [...document.querySelectorAll("[data-win]")].map((w) => { const r = w.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height, kind: w.dataset.kind }; }));
 const canvasBox = (p) => p.locator("[data-canvas]").boundingBox();
-const animating = (p, wait = 600) => p.waitForFunction(() => [...document.querySelectorAll("[data-col]")].some((c) => c.getAnimations().length > 0), null, { timeout: wait }).then(() => true, () => false);
+/** Whether a column animation was REQUESTED since the last `arm`, and for how long (the page's own calls to `Element.animate` on a column are recorded, so the answer does not depend on when a sample is taken: a 220 ms animation sampled late, or a 0.22 ms one that merely existed for a frame, both used to read as "animating"). Needs `minMs`: the token duration, not a stub. */
+const arm = (p) => p.evaluate(() => { if (!window.__animCalls) { window.__animCalls = []; const orig = Element.prototype.animate; Element.prototype.animate = function (k, o) { if (this.hasAttribute?.("data-col")) window.__animCalls.push(typeof o === "number" ? o : o?.duration ?? 0); return orig.call(this, k, o); }; } window.__animCalls.length = 0; });
+const animating = async (p, wait = 600, minMs = 150) => { const t = Date.now(); for (;;) { const d = await p.evaluate(() => Math.max(0, ...(window.__animCalls ?? [0]))); if (d >= minMs) return true; if (Date.now() - t > wait) return false; await p.waitForTimeout(25); } };
 const item = (p, re) => p.locator("[role^=menuitem]", { hasText: re }).first();
 /** Every pixel outside the windows  is the same with and without the windows: two screenshots, the second with the strip hidden, compared outside the windows' boxes. Returns how many pixels differ by more than 3 in a channel. */
 async function seam(p) {
@@ -87,21 +89,24 @@ try {
     // a window opened by the keyboard: instant, right of the focused column
     await p.locator("[data-win]").nth(0).click({ position: { x: 100, y: 400 } }); await p.waitForTimeout(500);
     const before = (await wins(p).count());
+    await arm(p);
     await key(p, "Alt+Shift+KeyN"); await p.waitForTimeout(100);
     ok((await wins(p).count()) === before + 1 && !(await animating(p, 150)), "a keyboard-opened window is instant (no animation)", `${before} -> ${await wins(p).count()}`);
     r = await rects(p);
     const focused = await p.locator("[data-win][data-focused]").evaluate((e) => e.dataset.kind + ":" + [...document.querySelectorAll("[data-win]")].indexOf(e));
     ok((await p.locator("[data-win][data-focused]").getAttribute("data-kind")) === "threads", "the new window has focus", focused);
-    // pointer: add beside from the menu animates
+    // pointer: add beside from the menu animates (a column animation of the token duration is requested)
+    await arm(p);
     await p.locator("[data-win][data-focused]").getByRole("button", { name: "More" }).click();
     await item(p, /Open a thread beside/).click();
     ok(await animating(p), "a pointer-opened window animates (FLIP on the motion tokens)");
     await p.waitForTimeout(700);
-    ok(!(await animating(p, 150)), "the animation ends");
+    ok(await p.waitForFunction(() => ![...document.querySelectorAll("[data-col]")].some((c) => c.getAnimations().length > 0), null, { timeout: 4000 }).then(() => true, () => false), "the animation ends");
     // ---- keyboard focus moves, presets ----
     const fx = await p.locator("[data-win][data-focused]").evaluate((e) => e.getBoundingClientRect().x);
     await key(p, "Alt+Shift+ArrowLeft"); await p.waitForTimeout(100);
     ok((await p.locator("[data-win][data-focused]").evaluate((e) => e.getBoundingClientRect().x)) < fx, "Alt+Shift+Left focuses the column on the left");
+    await arm(p);
     await key(p, "Alt+Shift+KeyR"); await p.waitForTimeout(120);
     ok(!(await animating(p, 150)), "a keyboard width preset is instant");
     const fw = await p.locator("[data-win][data-focused]").evaluate((e) => e.getBoundingClientRect().width);
@@ -178,11 +183,13 @@ try {
     // maximise by the pointer animates; restore
     for (let i = 0; i < 8; i++) await key(p, "Alt+Shift+ArrowLeft");
     await p.waitForTimeout(200);
+    await arm(p);
     await p.locator("[data-focused]").getByRole("button", { name: "Full screen" }).click();
     ok(await animating(p), "full screen by the pointer animates");
     await p.waitForTimeout(600);
     const cv = await canvasBox(p), mx = await p.locator("[data-win].maximised").boundingBox();
     ok(Math.abs(mx.width - (cv.width - 16)) < 2 && Math.abs(mx.height - cv.height) < 2, "full screen makes the window fill the area (a card with no neighbours)", `${mx.width}x${mx.height} of ${cv.width}x${cv.height}`);
+    await arm(p);
     await key(p, "Alt+Shift+KeyF"); await p.waitForTimeout(100);
     ok((await p.locator("[data-win].maximised").count()) === 0 && !(await animating(p, 150)), "the keyboard restores it instantly");
     // focus follows the press, and the address and sidebars follow focus

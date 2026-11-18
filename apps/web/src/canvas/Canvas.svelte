@@ -16,6 +16,7 @@
   import { onWallpaperColours, wallpaperExtremes } from "../appearance/wallpaper";
   import { spaces } from "../shell/spaces.svelte";
   import { shell } from "../shell/shell.svelte";
+  import { parseMs } from "../shell/pull";
   import { centring, edgeOf, leftOf, maxScroll, nearColumns, NARROW, nextPreset, PRESETS, proportionFor, proportionOf, scrollTo, stripWidth, widthsOf } from "./layout";
   import { canvas } from "./model.svelte";
   import { canvasPrefs } from "./prefs.svelte";
@@ -118,7 +119,8 @@
   });
   /** Whether an action started now animates: a pointer drove it (not the keyboard) and motion is allowed. */
   const animates = (source: "pointer" | "key") => source === "pointer" && last === "pointer" && !reduced();
-  const tokenMs = (name: string, fallback: number) => Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue(name)) || fallback;
+  /** A duration token in ms. The browser hands a custom property back as it normalised it (`--dur-base` is ".22s", not "220ms"), so the unit must be read: `parseFloat` alone made every canvas animation 0.22 ms long, that is, none (shell/pull.ts `parseMs` reads the unit). */
+  const tokenMs = (name: string, fallback: number) => parseMs(getComputedStyle(document.documentElement).getPropertyValue(name), fallback);
   const tokenEase = (name: string, fallback: string) => getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
   /** Eases the strip to `to` over the motion token (interruptible: a pan or another call cancels it); instant when not animated. */
   function glide(to: number, animate: boolean) {
