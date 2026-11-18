@@ -1,0 +1,10 @@
+# Settings > Notifications
+
+Web push for the person's devices (backend and wire shapes: `docs/web-push.md` on `lane/web-push`). The page is **Settings > User > Notifications** (after Keyboard, before Machines), a custom panel (`apps/web/src/apps/settings/NotificationsPanel.svelte`).
+
+- **Opt-in, on a tap.** Nothing is asked on load. "Turn on for this device" is the one place the browser's permission prompt is shown; it then registers `/push-sw.js`, subscribes with the server's public key (`push.devices` returns it) and sends the subscription (`push.subscribe`).
+- **Devices.** This device is marked and can be turned off (the browser subscription is dropped and the device removed); other devices are listed with "Remove" (`push.unsubscribe`). "Send a test" (`push.test`, one a minute) sends a notification to this device.
+- **Where it cannot work** the page says why in plain words and offers no switch: an iPhone or iPad tab ("On iPhone and iPad, notifications only work in the installed app: Add to Home Screen, then open Calternal from the Home Screen"), an insecure address, a browser without push. A blocked permission says to allow it in the browser's site settings.
+- **The worker** (`public/push-sw.js`) shows only the thread's title and "needs you", "finished" or a test; the payload is `{title, status}` and carries no thread id or text. It has no fetch handler and no cache, so it cannot serve an old page. A tap focuses or opens the app at `/threads` (the Inbox lists the thread: the payload names no thread to open). It is not `public/sw.js`, the kill switch for the old app's worker, which is unchanged; `src/server/origin-state.ts` keeps this one and still removes every other worker and cache.
+- **Fixtures** keep an in-memory list with one other device; a test is only said to be on its way (no push is sent). Server mode uses the `push.*` operations; it is not wired to a real server yet (web push is not on dev).
+- Checks: `src/notify/push.test.ts`, `src/server/origin-state.test.ts`, `e2e/notifications.mjs` (in the gate).
