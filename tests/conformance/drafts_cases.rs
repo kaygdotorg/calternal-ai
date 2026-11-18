@@ -155,6 +155,11 @@ async fn account_feed_second_client_restart_foreign_bookmark_and_logout() {
         .await
         .ok();
     assert_eq!(live.next().await.unwrap()["type"], "changed");
+    // Kill with the subscriber still open so its last connection has no
+    // opportunity to checkpoint the committed draft and invalidation.
+    f.stop();
+    drop(live);
+    f.start().await;
     assert_eq!(
         f.op(
             1,
@@ -165,9 +170,6 @@ async fn account_feed_second_client_restart_foreign_bookmark_and_logout() {
         .body["data"]["record"]["text"],
         "private composition"
     );
-    drop(live);
-    f.stop();
-    f.start().await;
     let mut restored = super::live_cases::Live {
         response: account_live(&f, 1, Some(&bookmark)).await,
         buffer: Vec::new(),

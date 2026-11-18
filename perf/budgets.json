@@ -194,13 +194,11 @@
     {
       "metric": "account.draft_write_to_feed",
       "percentile": "p95",
-      "budget": null,
+      "budget": 9,
       "unit": "ms",
       "fixture": "all",
-      "reference": null,
-      "measurement": "from before HTTP draft save until account SSE event",
-      "proposed_budget": 253.46744700000002,
-      "proposal_status": "unaccepted; maximum observed head-arm p95, no added headroom; dated control only"
+      "measurement": "from before HTTP draft save until the account SSE client receives its event",
+      "reference": "owner decision 2026-11-18 on single-digit unsent draft saves"
     },
     {
       "metric": "memory.1_spaces.idle_released",
