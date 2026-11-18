@@ -112,6 +112,7 @@ impl Content {
         members: Vec<Uuid>,
         request: Request<'_>,
     ) -> Result<StoredCollection> {
+        let _actor = self.lifecycle.step(request.account.as_uuid())?;
         if members.len() > 10_000 {
             return Err(Error::invalid_input("collection membership is too large"));
         }
@@ -233,7 +234,11 @@ impl Content {
         }
         Ok(stored)
     }
-    fn account_collection_db(&self, account: AccountId) -> Result<rusqlite::Connection> {
+    fn account_collection_db(
+        &self,
+        account: AccountId,
+    ) -> Result<calternal_types::OwnerScoped<rusqlite::Connection>> {
+        let step = self.lifecycle.step(account.as_uuid())?;
         let conn = db::database(
             &self
                 .roots
@@ -254,6 +259,6 @@ impl Content {
         if binding != account.to_string() {
             return Err(internal("wrong account binding"));
         }
-        Ok(conn)
+        Ok(step.hold(conn))
     }
 }

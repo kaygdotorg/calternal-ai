@@ -102,3 +102,58 @@ fn guarded_trash_preserves_identity_history_and_refuses_new_admission() {
             .is_none()
     );
 }
+
+#[test]
+fn retired_space_refuses_a_stale_writer_and_its_pinned_journal() {
+    use calternal_types::ErrorCode;
+    let dir = tempfile::tempdir().unwrap();
+    let roots = calternal_roots::Roots {
+        appdata: dir.path().join("appdata"),
+        userdata_ssd: dir.path().join("ssd"),
+        userdata_hdd: dir.path().join("hdd"),
+    };
+    let content = Content::open(
+        roots.clone(),
+        dir.path().join("secrets"),
+        Duration::ZERO,
+        calternal_content::DEFAULT_RECEIPT_RETENTION,
+        |_| {},
+    )
+    .unwrap();
+    let space = SpaceId::new();
+    let stale = content.live_journal(space).unwrap();
+    let owner = content.lifecycle();
+    let admitted = owner.step(space.as_uuid()).unwrap();
+    owner.close(space.as_uuid());
+    let (send, recv) = std::sync::mpsc::channel();
+    std::thread::scope(|scope| {
+        scope.spawn(|| {
+            content.retire_space(space);
+            send.send(()).unwrap();
+        });
+        assert!(recv.try_recv().is_err());
+        assert_eq!(
+            content.live_journal(space).err().unwrap().code,
+            ErrorCode::NotFound
+        );
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        assert!(
+            runtime
+                .block_on(stale.commit(calternal_store::Commit {
+                    events: vec![],
+                    idempotency: None,
+                    durable: true,
+                }))
+                .is_err()
+        );
+        drop(admitted);
+        recv.recv_timeout(Duration::from_secs(5)).unwrap();
+    });
+    let path = roots.appdata.join("spaces").join(space.to_string());
+    std::fs::remove_dir_all(&path).unwrap();
+    assert!(content.live_journal(space).is_err());
+    assert!(!path.exists());
+}

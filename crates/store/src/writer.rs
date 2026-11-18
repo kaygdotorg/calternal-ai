@@ -61,9 +61,17 @@ pub(crate) fn spawn(
                 let head = &shared.head;
                 match cmd {
                     Cmd::Rotate(observed, reply) => {
-                        let _ = reply.send(restore::rotate(&mut conn, &shared, &observed, None));
+                        let result = shared.step().and_then(|_step| restore::rotate(&mut conn, &shared, &observed, None));
+                        let _ = reply.send(result);
                     }
                     Cmd::Commit(c, reply) => {
+                        let _step = match shared.step() {
+                            Ok(step) => step,
+                            Err(error) => {
+                                let _ = reply.send(Err(error));
+                                continue;
+                            }
+                        };
                         let durable = c.durable;
                         let r = if durable {
                             conn.pragma_update(None, "synchronous", "FULL")

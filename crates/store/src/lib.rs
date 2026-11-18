@@ -611,6 +611,16 @@ impl SpaceStore {
         blocking(move || restore::flush(&shared, &path)).await
     }
 
+    /// Bind this journal to the host's owner lifecycle before exposing it to
+    /// readers or external publishers. Cost: one cell write and no I/O.
+    pub fn bind_lifecycle(&self, lifecycle: calternal_types::OwnerLifecycle) {
+        let _ = self
+            .inner
+            .shared
+            .lifecycle
+            .set((lifecycle, self.inner.space));
+    }
+
     /// Saves events (and an idempotency record) atomically and returns the
     /// stored entries. A receipt key is unique per (account, space) for its
     /// retention: a second commit with a stored key fails with
