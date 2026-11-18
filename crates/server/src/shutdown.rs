@@ -4,9 +4,9 @@ use axum::{
     Extension, Router,
     body::Body,
     extract::{Request, State},
-    http::{StatusCode, header},
+    http::{HeaderValue, header},
     middleware::{self, Next},
-    response::{IntoResponse, Response},
+    response::Response,
 };
 use calternal_client::CancellationToken;
 use futures_util::StreamExt;
@@ -76,7 +76,11 @@ pub(crate) async fn wait(shutdown: Option<&Shutdown>) {
 
 async fn admit(State(shutdown): State<Shutdown>, request: Request, next: Next) -> Response {
     if shutdown.is_closing() {
-        return (StatusCode::SERVICE_UNAVAILABLE, [(header::RETRY_AFTER, "1")]).into_response();
+        let mut response = crate::api::error_response(calternal_types::Error::unavailable(
+            "The server is restarting. Retry this request shortly.",
+        ));
+        response.headers_mut().insert(header::RETRY_AFTER, HeaderValue::from_static("1"));
+        return response;
     }
     let response = next.run(request).await;
     if !response
@@ -97,7 +101,7 @@ async fn admit(State(shutdown): State<Shutdown>, request: Request, next: Next) -
 #[cfg(test)]
 mod tests {
     use super::*;
-    use axum::routing::post;
+    use axum::{http::StatusCode, routing::post};
     use tokio::sync::Notify;
     use tower::ServiceExt;
 

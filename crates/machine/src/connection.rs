@@ -79,6 +79,7 @@ pub(crate) async fn run_at(
         let closed = runner.release_all().await;
         let backend_closed = config.backend.shutdown().await;
         if result.is_none() {
+            runner.drain_outputs().await;
             announce_drain(&link, &runner, ack).await;
         }
         if !closed {
