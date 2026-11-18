@@ -48,6 +48,8 @@ pub(super) struct Intent {
     pub(super) files: Vec<SavedFile>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(super) entries: Option<Vec<super::full::Entry>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    checksum: Option<String>,
 }
 
 impl Intent {
@@ -60,6 +62,7 @@ impl Intent {
             phase: Phase::Copying,
             files: Vec::new(),
             entries: None,
+            checksum: None,
         }
     }
 
@@ -92,8 +95,12 @@ impl Intent {
         }
         let intent: Self = serde_json::from_slice(&bytes)?;
         match intent.format.as_str() {
-            FORMAT if intent.entries.is_none() => {}
-            FULL_FORMAT if intent.entries.is_some() && intent.files.is_empty() => {}
+            FORMAT if intent.entries.is_none() && intent.checksum.is_none() => {}
+            FULL_FORMAT if intent.entries.is_some() && intent.files.is_empty() => {
+                if intent.checksum != intent.full_checksum()? {
+                    return Err(io::Error::other("full upgrade intent failed its checksum"));
+                }
+            }
             _ => {
                 return Err(io::Error::other(
                     "unsupported or invalid upgrade intent format",
@@ -115,7 +122,26 @@ impl Intent {
         Ok(Some(intent))
     }
 
-    pub(super) fn publish(&self, path: &Path) -> io::Result<()> {
+    fn full_checksum(&self) -> io::Result<Option<String>> {
+        self.entries
+            .as_ref()
+            .map(|entries| {
+                let data = serde_json::to_vec(&(
+                    self.installation,
+                    &self.previous,
+                    &self.candidate,
+                    self.phase,
+                    entries,
+                ))?;
+                Ok(hex::encode(
+                    ring::digest::digest(&ring::digest::SHA256, &data).as_ref(),
+                ))
+            })
+            .transpose()
+    }
+
+    pub(super) fn publish(&mut self, path: &Path) -> io::Result<()> {
+        self.checksum = self.full_checksum()?;
         let bytes = serde_json::to_vec(&self)?;
         if bytes.len() as u64 > LIMIT {
             return Err(io::Error::other("upgrade intent exceeds its size limit"));

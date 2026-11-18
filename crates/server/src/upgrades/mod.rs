@@ -61,7 +61,7 @@ impl Deployment {
         Intent::load(&self.roots.appdata.join(INTENT), self.installation)
     }
 
-    fn publish(&self, intent: &Intent) -> io::Result<()> {
+    fn publish(&self, intent: &mut Intent) -> io::Result<()> {
         intent.publish(&self.roots.appdata.join(INTENT))
     }
 
@@ -84,7 +84,7 @@ impl Deployment {
         }
         full::discard(self)?;
         let mut intent = Intent::copying(self.installation, previous, candidate);
-        self.publish(&intent)?;
+        self.publish(&mut intent)?;
         let mut directories = std::collections::BTreeMap::new();
         let mut files = Vec::with_capacity(paths.len());
         for (index, (role, path)) in paths.into_iter().enumerate() {
@@ -109,7 +109,7 @@ impl Deployment {
         }
         intent.phase = Phase::Preparing;
         intent.files = files;
-        self.publish(&intent)?;
+        self.publish(&mut intent)?;
         hit(FaultPoint::UpgradeIntent);
         Ok(())
     }
@@ -124,11 +124,11 @@ impl Deployment {
         full::discard(self)?;
         let mut intent = Intent::copying(self.installation, previous, candidate);
         intent.make_full();
-        self.publish(&intent)?;
+        self.publish(&mut intent)?;
         full::capture(self, &mut entries)?;
         intent.entries = Some(entries);
         intent.phase = Phase::Preparing;
-        self.publish(&intent)?;
+        self.publish(&mut intent)?;
         hit(FaultPoint::UpgradeIntent);
         Ok(())
     }
@@ -156,7 +156,7 @@ impl Deployment {
         }
         if intent.phase == Phase::Preparing {
             intent.phase = Phase::Committed;
-            self.publish(&intent)?;
+            self.publish(&mut intent)?;
             hit(FaultPoint::UpgradeCommitted);
         }
         self.finish_committed(&mut intent)
@@ -192,7 +192,7 @@ impl Deployment {
         if full {
             intent.make_full();
         }
-        self.publish(&intent)?;
+        self.publish(&mut intent)?;
         full::discard(self)?;
         let path = self.roots.appdata.join(INTENT);
         intent::remove(&path)?;
@@ -410,14 +410,17 @@ fn validate_machine_path(roots: &Roots, machine: Option<PathBuf>) -> io::Result<
     // Keep the configured spelling: canonicalizing a symlinked ancestor
     // would turn a redirected machine root into a valid snapshot source.
     tree::Tree::open(&path)?;
-    let path = if path.is_absolute() { path } else {
+    let path = if path.is_absolute() {
+        path
+    } else {
         std::env::current_dir()?.join(path)
     };
     use std::os::unix::fs::MetadataExt;
     for root in [&roots.appdata, &roots.userdata_ssd, &roots.userdata_hdd] {
         let root = root.canonicalize()?;
         let other = std::fs::metadata(&root)?;
-        if root.starts_with(&path) || path.starts_with(&root)
+        if root.starts_with(&path)
+            || path.starts_with(&root)
             || (other.dev(), other.ino()) == (metadata.dev(), metadata.ino())
         {
             return Err(io::Error::other(

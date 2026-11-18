@@ -104,6 +104,7 @@ fn committed_upgrade_keeps_new_acknowledgements() {
     );
 }
 
+#[cfg(target_os = "linux")]
 #[test]
 fn full_restore_preserves_link_bytes_and_never_writes_through_a_link() {
     use std::os::unix::ffi::OsStrExt;
@@ -168,6 +169,7 @@ fn full_restore_preserves_link_bytes_and_never_writes_through_a_link() {
     }
 }
 
+#[cfg(target_os = "linux")]
 #[test]
 fn full_preflight_rejects_fifo_and_hard_links_outside_the_root() {
     let temp = tempfile::tempdir().unwrap();
@@ -195,4 +197,30 @@ fn full_preflight_rejects_fifo_and_hard_links_outside_the_root() {
         .unwrap();
     assert!(error.to_string().contains("pipe"));
     assert!(deployment.0.read().unwrap().is_none());
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn full_restore_rejects_a_changed_manifest_before_removing_files() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path();
+    let deployment = TestDeployment::new(root);
+    put(root, "ssd/work/file", b"saved");
+    inventory::Inventory::plan(&deployment.0, true, false)
+        .unwrap()
+        .apply(&deployment.0, "previous".into(), "candidate".into(), false)
+        .unwrap();
+
+    put(root, "ssd/work/file", b"live copy");
+    let path = root.join("appdata").join(INTENT);
+    let mut manifest: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    manifest["entries"].as_array_mut().unwrap().clear();
+    std::fs::write(path, serde_json::to_vec(&manifest).unwrap()).unwrap();
+    let error = deployment.restore().unwrap_err();
+    assert!(error.to_string().contains("intent failed its checksum"));
+    assert_eq!(
+        std::fs::read(root.join("ssd/work/file")).unwrap(),
+        b"live copy"
+    );
 }

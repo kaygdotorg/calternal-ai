@@ -73,11 +73,11 @@ fn walk(
     inodes: &mut Inodes,
     live: bool,
 ) -> io::Result<()> {
-    if path_bytes(prefix).len() > 4096 {
+    if path_bytes(prefix).len() >= 4096 {
         return Err(entry_error(
             role,
             prefix,
-            "snapshot path exceeds 4096 bytes",
+            "snapshot path must be shorter than 4096 bytes",
         ));
     }
     for name in dir.names()? {
@@ -129,8 +129,12 @@ fn walk(
             FileType::Socket => continue,
             _ => return Err(entry_error(role, &path, "unsupported snapshot entry type")),
         };
-        if path_bytes(&path).len() > 4096 {
-            return Err(entry_error(role, &path, "snapshot path exceeds 4096 bytes"));
+        if path_bytes(&path).len() >= 4096 {
+            return Err(entry_error(
+                role,
+                &path,
+                "snapshot path must be shorter than 4096 bytes",
+            ));
         }
         entries.push(Entry {
             role,
@@ -223,7 +227,7 @@ pub(super) fn plan(
 impl Entry {
     fn decode(&self) -> io::Result<Vec<u8>> {
         let raw = decode(&self.path)?;
-        if raw.len() > 4096
+        if raw.len() >= 4096
             || raw
                 .split(|b| *b == b'/')
                 .any(|part| part.is_empty() || part == b"." || part == b".." || part.contains(&0))

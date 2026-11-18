@@ -289,10 +289,11 @@ account. Confirm the current backup includes appdata, SSD, HDD and machine
 state. Keep the proof and both image IDs with the deployment record.
 
 1. Read the exact image ID from the running production container. Check the
-   deployed revision and confirm the running container and `:current` resolve
-   to the same image. Copy that exact image to dev-01 for the proof.
+   deployed revision for baseline tag `9f8005646448` and confirm the running
+   container and `:current` resolve to the same image. Copy that exact image
+   to dev-01 for the proof.
 
-   ```sh
+   ```bash
    set -euo pipefail
    umask 077
    export CALTERNAL_DEPLOY_HOST=calternal@calternal-cloud
@@ -305,7 +306,7 @@ state. Keep the proof and both image IDs with the deployment record.
    deployed_revision=$(ssh -o BatchMode=yes "$CALTERNAL_DEPLOY_HOST" \
      "podman image inspect --format '{{ index .Labels \"org.opencontainers.image.revision\" }}' $previous")
    test "${previous#sha256:}" = "${current#sha256:}"
-   test "$deployed_revision" = c8808625737a1ab782db0a13c77a75add8145db4
+   test "$deployed_revision" = 9f8005646448233b0ab1bbe46767bb1f8b7598d6
    ssh -o BatchMode=yes "$CALTERNAL_DEPLOY_HOST" \
      podman save --format oci-archive "$previous" | podman load --quiet
    imported=$(podman image inspect --format '{{.Id}}' "$previous")
@@ -315,9 +316,10 @@ state. Keep the proof and both image IDs with the deployment record.
 2. Build the approved candidate once and run the signed-in compatibility
    gate against that exact pair. Keep the deployed provider sandbox tag for
    an ordinary server update. A provider image change has its own staging
-   and verification steps.
+   and verification steps. Check `df -h ~` before building and stop if
+   dev-01 has less than 15 GB free.
 
-   ```sh
+   ```bash
    test -z "$(git status --porcelain)"
    export RELEASE_REVISION=$(git rev-parse HEAD)
    export SOURCE_DATE_EPOCH=$(git show -s --format=%ct HEAD)
@@ -326,18 +328,21 @@ state. Keep the proof and both image IDs with the deployment record.
    proof_dir=$(mktemp -d)
    proof=$proof_dir/upgrade-proof.json
 
-   nix develop .#deploy -c deploy/build-image.sh "$candidate"
-   nix develop -c scripts/verify-additive-upgrade.sh "$previous" "$candidate" "$proof"
+   flock -o -w 14400 /tmp/calternal-gate-2.lock bash -c '
+     set -euo pipefail
+     nix develop .#deploy -c deploy/build-image.sh "$1"
+     nix develop -c scripts/verify-additive-upgrade.sh "$2" "$1" "$3"
+   ' -- "$candidate" "$previous" "$proof"
    candidate_id=$(podman image inspect --format '{{.Id}}' "$candidate")
    test -s "$proof"
    ```
 
 3. Preview the target and deploy the image already tested by the gate. The
-   driver checks the proof and restore-point footprint before stopping the
-   services and repeats the checks under the root locks. If either check
-   refuses, read the error and resolve it before retrying.
+   driver checks the proof and the additive snapshot footprint before
+   stopping the services, then repeats those checks under the root locks. If
+   either check refuses, read the error and resolve it before retrying.
 
-   ```sh
+   ```bash
    deploy/deploy.sh --target deploy/cloud.conf --image "$revision" \
      --compatibility-proof "$proof" --dry-run
    deploy/deploy.sh --target deploy/cloud.conf --image "$revision" \
@@ -345,12 +350,14 @@ state. Keep the proof and both image IDs with the deployment record.
    ```
 
 4. Confirm the candidate is serving through Traefik and both units are up.
-   Expect `setup: false` for an enrolled installation. In a signed-in tab,
-   open an existing note or thread and save a small edit in an operator-owned
-   test note. Reload the page to verify the edit persisted. Confirm the pool
+   An installation waiting for its first owner should still return
+   `setup: true` and show the machine waiting for the handoff. An enrolled
+   installation should return `setup: false`. In that case, open an existing
+   note or thread in a signed-in tab, save a small edit in an operator-owned
+   test note, and reload to verify the edit persisted. Confirm the pool
    machine is online and can complete a disposable turn.
 
-   ```sh
+   ```bash
    deployed=$(ssh -o BatchMode=yes "$CALTERNAL_DEPLOY_HOST" \
      podman container inspect --format '{{.Image}}' calternal-ai)
    test "${deployed#sha256:}" = "${candidate_id#sha256:}"
@@ -369,7 +376,7 @@ state. Keep the proof and both image IDs with the deployment record.
    recovery failed, keep the instance stopped and inspect the unit journal
    and upgrade status before attempting another change.
 
-   ```sh
+   ```bash
    deploy/rollback.sh --target deploy/cloud.conf
    restored=$(ssh -o BatchMode=yes "$CALTERNAL_DEPLOY_HOST" \
      podman container inspect --format '{{.Image}}' calternal-ai)

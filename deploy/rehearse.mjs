@@ -9,7 +9,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 const { chromium } = createRequire(new URL("../apps/web/package.json", import.meta.url))("playwright");
 
 process.umask(0o077);
-const [phase, origin, root, target, tag, proof] = process.argv.slice(2);
+const [phase, origin, root, target, tag, proof, runArgument] = process.argv.slice(2);
 const unit = process.env.CALTERNAL_REHEARSAL_UNIT ?? "calternal-ai-rehearsal";
 const settingUp = ["setup", "upgrade-setup"].includes(phase);
 assert.ok(["setup", "fixture", "verify", "restart", "real", "upgrade-setup", "upgrade"].includes(phase)
@@ -127,10 +127,19 @@ try {
 
   }
   if (phase === "upgrade") {
-    assert.ok(target && tag && proof, "upgrade needs a disposable target, image tag and proof");
+    const run = Number(runArgument);
+    const driver = process.env.CALTERNAL_REHEARSAL_DRIVER;
+    assert.ok(target && tag && proof && driver && Number.isInteger(run) && run >= 1 && run <= 10,
+      "upgrade needs a disposable target, image tag, proof, deployment driver and run number");
+    const deploy = join(driver, "deploy.sh");
+    const rollback = join(driver, "rollback.sh");
     const imageId = () => execFileSync("podman", [
       "container", "inspect", "--format", "{{.Image}}", unit,
     ], { encoding: "utf8" }).trim().replace(/^sha256:/, "");
+    // The driver moves this pointer after stopping the old service and before
+    // starting the new one. Classify only requests sent and acknowledged on
+    // the same side of that move.
+    const serving = () => readFileSync(join(root, "releases/current/image.id"), "utf8").trim();
     const previous = imageId();
     const evidence = JSON.parse(readFileSync(proof, "utf8"));
     assert.equal(previous, evidence.previous);
@@ -143,7 +152,7 @@ try {
     const beforePid = execFileSync("podman", [
       "container", "inspect", "--format", "{{.State.Pid}}", unit,
     ], { encoding: "utf8" });
-    assert.throws(() => execFileSync("deploy/deploy.sh", [...deployArgs, wrongProof],
+    assert.throws(() => execFileSync(deploy, [...deployArgs, wrongProof],
       { stdio: ["ignore", "pipe", "pipe"] }), error => {
       assert.match(String(error.stderr), /preflight refused/i);
       return true;
@@ -153,86 +162,84 @@ try {
     assert.deepEqual(await api("auth/status"), { setup: false, signed_in: true });
     console.log("Invalid proof was refused while the original container and owner session stayed up.");
 
-    for (let run = 1; run <= 10; run++) {
-      assert.equal(imageId(), previous);
-      execFileSync("podman", ["tag", evidence.candidate, `localhost/${unit}:${tag}`]);
-      await wait("old machine online", async () => (await op("machines.onboarding")).ready);
-      const samples = [];
-      let deployResult;
-      const schedule = () => ({
-        operation: "notes.create",
-        input: { space_id: space, title: `Upgrade ${run} ${crypto.randomUUID()}`, markdown: "Acknowledged write probe" },
-        request_id: crypto.randomUUID(),
-      });
-      let pending = schedule();
-      const write = async () => {
-        let status;
-        let note;
-        try {
-          const response = await context.request.post(`${origin}/api/v1/operations`, {
-            data: pending, headers: { origin }, timeout: 1000,
-          });
-          status = response.status();
-          if (response.ok()) {
-            note = (await response.json()).data.note;
-          }
-        } catch {
-          status = 0;
-        }
-        const at = performance.now();
-        samples.push({ at, status, note });
-        if (note) pending = schedule();
-      };
-      await write();
-      assert.ok(samples[0].note);
-      const banner = page.getByRole("status").filter({ hasText: "Reconnecting…" });
-      // Start watching before the switch. The request probe also works when the
-      // app doesn't visibly display the banner during a short handoff.
-      const bannerSeen = banner.waitFor({ state: "visible", timeout: 25_000 })
-        .then(() => true, () => false);
-      const child = spawn("deploy/deploy.sh", [...deployArgs, proof], { stdio: "inherit" });
-      const done = new Promise((resolve, reject) => {
-        child.once("error", reject);
-        child.once("exit", (code, signal) => resolve({ code, signal }));
-      });
-      void done.then(value => { deployResult = value; }).catch(() => {});
-      const started = performance.now();
+    assert.equal(imageId(), previous);
+    execFileSync("podman", ["tag", evidence.candidate, `localhost/${unit}:${tag}`]);
+    await wait("old machine online", async () => (await op("machines.onboarding")).ready);
+    const samples = [];
+    let deployResult;
+    const schedule = () => ({
+      operation: "notes.create",
+      input: { space_id: space, title: `Upgrade ${run} ${crypto.randomUUID()}`, markdown: "Acknowledged write probe" },
+      request_id: crypto.randomUUID(),
+    });
+    let pending = schedule();
+    const write = async () => {
+      const startedOn = serving();
+      let status;
+      let note;
       try {
-        while (!deployResult || !samples.at(-1).note) {
-          assert.ok(performance.now() - started < 120_000, "deploy and first new write timed out");
-          await sleep(40);
-          await write();
-          if (deployResult) assert.equal(deployResult.code, 0, "deploy failed");
+        const response = await context.request.post(`${origin}/api/v1/operations`, {
+          data: pending, headers: { origin }, timeout: 1000,
+        });
+        status = response.status();
+        if (response.ok()) {
+          note = (await response.json()).data.note;
         }
-      } finally {
-        if (!deployResult) {
-          child.kill();
-          await done;
-        }
+      } catch {
+        status = 0;
       }
-
-      assert.equal(imageId(), evidence.candidate);
-      const lastFailure = samples.findLastIndex(sample => !sample.note);
-      assert.ok(lastFailure > 0, "no write failure was sampled during the stop");
-      const old = samples.slice(0, lastFailure).findLast(sample => sample.note);
-      const next = samples[lastFailure + 1];
-      assert.ok(old && next?.note, "missing acknowledgements around the write gap");
-      assert.equal((await op("notes.get", { id: old.note.id })).note.id, old.note.id);
-      assert.equal((await op("notes.get", { id: next.note.id })).note.id, next.note.id);
-      assert.equal((await api("auth/status")).signed_in, true);
-      console.log(JSON.stringify({
-        run, gap_ms: Number((next.at - old.at).toFixed(1)),
-        lost_samples: samples.filter(sample => !sample.note).length,
-        failure_statuses: [...new Set(samples.filter(sample => !sample.note).map(sample => sample.status))],
-        reconnect_banner: await Promise.race([bannerSeen, sleep(600).then(() => false)]),
-      }));
-      execFileSync("deploy/rollback.sh", ["--target", target], { stdio: "inherit" });
-      assert.equal(imageId(), previous);
-      assert.equal((await op("notes.get", { id: next.note.id })).note.id, next.note.id);
+      const at = performance.now();
+      samples.push({ at, status, note, image: startedOn === serving() ? startedOn : null });
+      if (note) pending = schedule();
+    };
+    await write();
+    assert.ok(samples[0].note);
+    const banner = page.getByRole("status").filter({ hasText: "Reconnecting…" });
+    // Start watching before the switch. The request probe also works when the
+    // app doesn't visibly display the banner during a short handoff.
+    const bannerSeen = banner.waitFor({ state: "visible", timeout: 25_000 })
+      .then(() => true, () => false);
+    const child = spawn(deploy, [...deployArgs, proof], { stdio: "inherit" });
+    const done = new Promise((resolve, reject) => {
+      child.once("error", reject);
+      child.once("exit", (code, signal) => resolve({ code, signal }));
+    });
+    void done.then(value => { deployResult = value; }).catch(() => {});
+    const started = performance.now();
+    try {
+      while (!deployResult || !samples.at(-1).note) {
+        assert.ok(performance.now() - started < 120_000, "deploy and first new write timed out");
+        await sleep(40);
+        await write();
+        if (deployResult) assert.equal(deployResult.code, 0, "deploy failed");
+      }
+    } finally {
+      if (!deployResult) {
+        child.kill();
+        await done;
+      }
     }
+
+    assert.equal(imageId(), evidence.candidate);
+    const old = samples.findLast(sample => sample.note && sample.image === previous);
+    const next = samples.find(sample => sample.note && sample.image === evidence.candidate);
+    assert.ok(old && next && next.at > old.at, "missing acknowledgements around the write gap");
+    assert.ok(samples.some(sample => !sample.note && sample.at > old.at && sample.at < next.at),
+      "no write failure was sampled during the stop");
+    assert.equal((await op("notes.get", { id: old.note.id })).note.id, old.note.id);
+    assert.equal((await op("notes.get", { id: next.note.id })).note.id, next.note.id);
+    assert.equal((await api("auth/status")).signed_in, true);
+    console.log(JSON.stringify({
+      run, gap_ms: Number((next.at - old.at).toFixed(1)),
+      lost_samples: samples.filter(sample => !sample.note).length,
+      failure_statuses: [...new Set(samples.filter(sample => !sample.note).map(sample => sample.status))],
+      reconnect_banner: await Promise.race([bannerSeen, sleep(600).then(() => false)]),
+    }));
+    execFileSync(rollback, ["--target", target], { stdio: "inherit" });
+    assert.equal(imageId(), previous);
+    assert.equal((await op("notes.get", { id: next.note.id })).note.id, next.note.id);
   } else if (phase === "upgrade-setup") {
-    // The shell harness switches only this disposable credential's URL to the
-    // private machine-protocol listener after the co-located handoff.
+    // This phase only initializes the disposable owner's browser session.
   } else if (["setup", "fixture", "real"].includes(phase)) {
     await wait("enrolled machine online", async () =>
       (await op("machines.onboarding")).ready);

@@ -1,9 +1,11 @@
 # Data-preserving upgrades
 
-Calternal-AI's first production baseline is the exact commit and image digest
-that passes the release-to-release gate. The schema numbers and generations
-below are that first production baseline. Preview data predates it and is
-refused rather than migrated.
+The production schema baseline is dev `9f8005646448233b0ab1bbe46767bb1f8b7598d6`,
+installed fresh as image tag `9f8005646448`. The markers below describe that
+release. The update proof uses the actual running image ID, which the operator
+captures in the [deployment runbook](deploy.md#first-ordinary-update-from-the-production-baseline).
+Preserve the earlier steps in the migration registry. Unsupported preview
+data is refused.
 
 ## Durable inventory
 
@@ -13,8 +15,8 @@ database until checkpointed. SQLite SHM, locks and sockets are runtime state.
 | Root and relative paths | Class | Writer and baseline marker |
 | --- | --- | --- |
 | Appdata `system/auth.db` | Authority | Auth, SQLite 11. Accounts, passkeys, sessions, roles, memberships, invites, approvals, machine identity and grants, erasures, key fingerprints and protected receipts. |
-| Appdata `system/machines.db` | Authority | Machine placement, SQLite 6. Leases, fences, drain, work locations, discard and erase delivery, and the durable stop record that keeps an erased worker's machine slot reserved until its stop completes. |
-| Appdata `spaces/<id>/content.db` | Mixed | Content, SQLite 3. Item identity, revisions, pending placement, trash and tombstones, kinds, plugin controls. Listing, labels and links are derived. |
+| Appdata `system/machines.db` | Authority | Machine placement, SQLite 7. Leases, fences, drain, work locations, machine leases for automatic thread titles, discard and erase delivery, and the durable stop record that keeps an erased worker's machine slot reserved until its stop completes. |
+| Appdata `spaces/<id>/content.db` | Mixed | Content, SQLite 4. Item identity, revisions, pending placement, trash and tombstones, kinds, plugin controls and thread snooze state. Listing, labels and links are derived. |
 | Appdata `spaces/<id>/index.db`, `secrets/spaces/<id>/head` | Authority | Space journal, SQLite 2 and binary CHW2. Journal, epoch, receipts and independent head witness. Receipts are pruned after the operator's retention (7 days by default) only on content's command, with every receipt of a surviving outbox intent pinned. The fence adds no stored state. |
 | Appdata `spaces/<id>/jobs.db` | Authority | Jobs, SQLite 2. Admission, retry and in-flight state, checkpoints, event outbox and retention. |
 | Appdata `accounts/<id>/input.db`, `content.db`, `agent-settings.db` | Authority | Account input, content and jobs. SQLite 2 for drafts and pending input, 1 for protected collections and 1 for retry settings. |
@@ -135,6 +137,10 @@ excluded. Devices, FIFOs and unknown entry types are refused by path.
 | Restore interrupted | Replay from the immutable manifest and payloads. A planted directory symlink fences restore. |
 | Committed or retirement interrupted | Retire payloads and finish the candidate's activation. Rollback requires a previous release that understands the live data. |
 
+The v2 intent checksum covers the image IDs, installation, phase and
+manifest, including link metadata and the payload checksums. Recovery
+validates it before making any changes to the captured roots.
+
 The private full-upgrade probe uses the candidate image with isolated
 networking and a loopback health endpoint. It holds the normal storage locks
 and finishes before the durable decision turns on public writes. A retry,
@@ -164,6 +170,26 @@ process stop, snapshot, migration, verification, commit, and process startup.
 The measurement covers the server process and storage. Measuring Quadlet,
 machine drain, Podman, and proxy overhead remains part of qualifying the
 full deployment budget.
+
+### Deployment rehearsal on dev-01
+
+Use a unique instance name of the form `calternal-ai-u46-<lowercase suffix>`
+and build the two release images as `localhost/$name:baseline-source` and
+`localhost/$name:candidate-source`. Generate the proof for those IDs and
+extract the baseline machine unit from the baseline source revision. With
+workspace npm dependencies installed, run the following on dev-01.
+
+```bash
+nix develop -c deploy/rehearse-upgrade.sh "$name" "$dev01_netbird_ip" \
+  "$proof" "$baseline_machine_unit"
+```
+
+The script creates ten disposable installations. Each run uses the deployment
+driver, rootless Podman, user Quadlet and a live enrolled machine service. A
+local HTTPS proxy forwards the signed-in browser's requests. The fixture
+uses a private loopback listener for the machine and starts with no job in
+flight. It records the last old-release and first new-release acknowledged
+write, then checks rollback retains the candidate's write.
 
 During a reconnect, the client retains queued sends and delivers them after
 the server is reachable again. Requests that already received a durable

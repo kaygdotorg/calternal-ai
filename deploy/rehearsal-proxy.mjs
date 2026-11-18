@@ -8,8 +8,9 @@ if (!certDir) throw new Error("Usage: rehearsal-proxy.mjs AUTHORITY BACKEND_IP B
 
 function forward(req, res) {
   const tls = Boolean(req.socket.encrypted);
-  if ((tls && req.headers.host !== publicName)
-      || (!tls && !req.url.startsWith("/api/v1/machine/"))) {
+  const machineRequest = req.url.startsWith("/api/v1/machine/")
+    || (req.method === "GET" && req.url === "/api/v1/auth/status");
+  if ((tls && req.headers.host !== publicName) || (!tls && !machineRequest)) {
     res.writeHead(404).end();
     return;
   }
