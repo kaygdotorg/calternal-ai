@@ -170,9 +170,18 @@ available here. Restoring the old container restores its DAV listener.
    curl -fsS -o /dev/null https://calternal.cloud/
    ```
 
-5. Open `https://calternal.cloud/` and register the first owner with the
-   target's mode-0600 `/srv/calternal-ai/appdata/setup.token`. Read it only from
-   a private session on the target. The installed user service automatically
+5. As the `calternal` deploy account, request a fresh code in a private
+   terminal on the target.
+
+   ```sh
+   podman exec calternal-ai /usr/local/bin/calternal setup-code --appdata /data/appdata
+   ```
+
+   The command uses the running container's installation ID. Open the address
+   it prints and register the first owner before the code expires. Repeating
+   the command replaces the previous unused code without a restart. Server
+   startup preserves a valid mode-0600 `setup.token`. Deployment normally
+   prints the command and address. The installed user service automatically
    enrolls this host in the instance pool. The first administrator gets an
    initial pool grant through the existing authorization mechanism.
 
