@@ -20,6 +20,7 @@ async fn thread_operations_hide_foreign_targets_and_keep_children_after_archive(
     for op in [
         "threads.create",
         "threads.list",
+        "threads.models",
         "threads.get",
         "threads.send",
         "threads.stop",
@@ -34,7 +35,9 @@ async fn thread_operations_hide_foreign_targets_and_keep_children_after_archive(
                     json!({"space_id":f.spaces[0],"title":"probe"}),
                     json!({"space_id":missing,"title":"probe"}),
                 ),
-                "threads.list" => (json!({"space_id":f.spaces[0]}), json!({"space_id":missing})),
+                "threads.list" | "threads.models" => {
+                    (json!({"space_id":f.spaces[0]}), json!({"space_id":missing}))
+                }
                 "threads.rename" => (
                     json!({"id":id,"title":"foreign"}),
                     json!({"id":missing,"title":"missing"}),
@@ -52,6 +55,37 @@ async fn thread_operations_hide_foreign_targets_and_keep_children_after_archive(
             rows.push(json!({"operation":op,"account":who,"equal":true}));
         }
     }
+    let models = f
+        .op(1, "threads.models", json!({"space_id":f.spaces[0]}))
+        .await;
+    models.ok();
+    let provider = &models.body["data"]["providers"][0];
+    assert_eq!(provider["id"], "calternal-claude-code");
+    assert!(
+        provider["models"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|model| model["id"] == provider["default_model"]
+                && model["reasoning_levels"].is_array())
+    );
+    for choice in [
+        json!({"model":"missing-model"}),
+        json!({"reasoning":"missing-level"}),
+    ] {
+        let mut input = json!({"id":id,"message":"invalid choice"});
+        input
+            .as_object_mut()
+            .unwrap()
+            .extend(choice.as_object().unwrap().clone());
+        assert_eq!(f.op(1, "threads.send", input).await.status, 400);
+    }
+    let unchanged = f.op(1, "threads.get", json!({"id":id})).await;
+    unchanged.ok();
+    assert_eq!(
+        unchanged.body["data"]["thread"]["metadata"]["message_count"],
+        0
+    );
     let wrong_space = f
         .op(
             1,
@@ -497,7 +531,7 @@ async fn saved_thread_events_replay_and_stay_in_the_owning_space() {
         .op(
             1,
             "threads.send",
-            json!({"id":thread,"message":"Recorded","model":"fixture-model"}),
+            json!({"id":thread,"message":"Recorded","model":"claude-opus-5-5"}),
         )
         .await;
     sent.ok();
@@ -548,7 +582,7 @@ async fn saved_thread_events_replay_and_stay_in_the_owning_space() {
     list.ok();
     let row = &list.body["data"]["threads"][0];
     assert_eq!(row["turn_state"], "waiting");
-    assert_eq!(row["metadata"]["model"], "fixture-model");
+    assert_eq!(row["metadata"]["model"], "claude-opus-5-5");
     f.op(1, "threads.stop", json!({"id":thread})).await.ok();
 
     let mut owner = Live::open(&f, 1, json!([{"space_id":space,"bookmark":bookmark}]))

@@ -151,7 +151,7 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
     },
     "model": {
       "default": "",
-      "description": "Official CLI model; empty uses `sonnet`.",
+      "description": "Official CLI model; empty uses the selected provider manifest default.",
       "type": "string"
     },
     "options": {

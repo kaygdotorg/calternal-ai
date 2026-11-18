@@ -210,6 +210,16 @@ pub(crate) fn readiness_context<D: Directory>(
     Ok((pin, controls))
 }
 
+/// Resolve one plugin against the already read space activation controls.
+pub(crate) fn enabled(controls: &Value, plugin: &crate::plugins::Plugin) -> Result<bool, Error> {
+    let key = crate::store::plugin_key(&plugin.manifest.id);
+    let enabled = match controls.get(&key) {
+        Some(control) => crate::store::plugin_row(control.clone())?.enabled,
+        None => crate::plugins::default_row(plugin).enabled,
+    };
+    Ok(enabled && plugin.unavailable.is_none())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

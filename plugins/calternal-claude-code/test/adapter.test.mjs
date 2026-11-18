@@ -32,6 +32,20 @@ test('scripted steps keep their name, target and bounded output metadata',async(
  assert.equal(steps[5].failed,true);
  assert.ok(!JSON.stringify(steps).includes('PRIVATE_LOGIN_SENTINEL'));
 });
+test('observed Claude thinking produces ordered reasoning events and no signature', async () => {
+ const f = fixture();
+ await f.command({type:'start', options:{effort:'xhigh'}, model:'claude-sonnet-5-5',
+  cwd:process.cwd(), instructions:'Core', resume:null});
+ await f.command({type:'send', prompt:'scripted-reasoning', context:[]});
+ await f.a.finish();
+ const reasoning = f.events.map(frame => frame.event).filter(event => event.type.startsWith('reasoning_'));
+ assert.deepEqual(reasoning.map(event => event.type), [
+  'reasoning_started', 'reasoning_delta', 'reasoning_delta', 'reasoning_finished',
+ ]);
+ assert.equal(reasoning.slice(1, 3).map(event => event.text).join(''), 'Inspecting fixture-thinking');
+ assert.ok(reasoning.at(-1).duration_ms >= 15);
+ assert.ok(!JSON.stringify(f.events).includes('PRIVATE_LOGIN_SENTINEL'));
+});
 test('questions and failures are normalized',async()=>{
  assert.ok((await run('question')).some(e=>e.event.type==='question'));
  assert.equal((await run('fail')).at(-1).event.outcome,'failed');

@@ -109,6 +109,85 @@
       "idempotency": "read_only"
     },
     {
+      "id": "threads.models",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "space_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "space_id"
+        ],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "providers": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "id",
+                "name",
+                "default_model",
+                "models"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "default_model": {
+                  "type": "string"
+                },
+                "models": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "id",
+                      "name",
+                      "reasoning_levels"
+                    ],
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "reasoning_levels": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "providers"
+        ],
+        "additionalProperties": false
+      },
+      "required_capability": "plugins.use",
+      "mutates": false,
+      "risk": "read",
+      "idempotency": "read_only"
+    },
+    {
       "id": "threads.get",
       "input_schema": {
         "type": "object",
@@ -195,6 +274,11 @@
               "approve_for_me",
               "full_access"
             ]
+          },
+          "reasoning": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 32
           }
         },
         "required": [

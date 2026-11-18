@@ -14,6 +14,17 @@ pub(crate) fn identifier(id: &str) -> bool {
             .bytes()
             .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b"._-".contains(&b))
 }
+fn selector(value: &str, limit: usize) -> bool {
+    value.len() <= limit
+        && value
+            .as_bytes()
+            .first()
+            .is_some_and(u8::is_ascii_alphanumeric)
+        && value
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"._-:@/".contains(&b))
+}
+
 fn unique<'a>(ids: impl Iterator<Item = &'a str>) -> bool {
     let mut seen = BTreeSet::new();
     ids.into_iter().all(|id| identifier(id) && seen.insert(id))
@@ -123,8 +134,21 @@ pub fn validate_manifest(m: &ManifestV1) -> Result<(), Error> {
         p.protocol_version != 1
             || !identifier(&p.executable)
             || p.executable.contains('.')
-            || p.default_model.is_empty()
-            || p.default_model.len() > 128
+            || !p.models.iter().any(|model| model.id == p.default_model)
+            || p.models.len() > 128
+            || !unique(p.models.iter().map(|model| model.id.as_str()))
+            || p.models.iter().any(|model| {
+                !selector(&model.id, 128)
+                    || model.name.trim().is_empty()
+                    || model.name.len() > 128
+                    || model.name.chars().any(char::is_control)
+                    || model.reasoning_levels.len() > 16
+                    || !unique(model.reasoning_levels.iter().map(String::as_str))
+                    || model
+                        .reasoning_levels
+                        .iter()
+                        .any(|level| !selector(level, 32))
+            })
     }) {
         return Err(Error::Invalid);
     }

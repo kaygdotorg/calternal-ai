@@ -1,6 +1,6 @@
 # Saved threads
 
-The `calternal-orchestrator` manifest owns kind `threads` and its nine operations.
+The `calternal-orchestrator` manifest owns kind `threads` and its operations.
 Its Rust product engine uses the public content and turn engines; it has no separate
 file writer, journal, SQLite store, capability table or stream. Addresses are
 `/threads/<uuid>` and message references append the message UUID.
@@ -17,8 +17,8 @@ The small frontmatter uses these keys:
 calternal-id: 019a8c00-0000-7000-8000-000000000001
 title: "Plan"
 provider: "calternal-claude-code"
-model: "sonnet"
-message-count: 1
+model: "claude-sonnet-5-5"
+message-count: 2
 mode: "approve_for_me"
 parent-thread: "019a8c00-0000-7000-8000-000000000002"
 spawned-by: "019a8c00-0000-7000-8000-000000000003"
@@ -32,17 +32,28 @@ last-activity-at: "2026-11-17T12:00:00.000Z"
 <!-- message:019a8c00-0000-7000-8000-000000000004 role:person time:2026-11-17T12:00:00.000Z -->
 Inspect this workspace.
 <!-- /message -->
+
+<!-- message:019a8c00-0000-7000-8000-000000000005 role:agent turn:019a8c00-0000-7000-8000-000000000005 provider:calternal-claude-code model:claude-sonnet-5-5 reasoning:high machine:72c16856719dbd545329e7c00d4445bd2ba045066533774b1315572ec50da38e time:2026-11-17T12:00:01.000Z -->
+The workspace has one project.
+<!-- turn-timing duration-ms:1200 reasoning-ms:400 queued-ms:10 sandbox-ms:100 tool-ms:200 -->
+<!-- /message -->
 ```
 
 Parent and spawn keys are optional; together they identify the parent conversation
 and the message that spawned this one. A message marker carries a stable UUID and an RFC 3339 UTC time. A person
 message is stamped on append. An agent message is stamped at its first saved
 checkpoint and retains that time when text is appended.
-An agent response uses its job UUID as a stable message ID across checkpoints.
+The first attempt uses the job UUID as its message ID. A later attempt gets
+its own message ID and the same `turn` UUID so provenance stays attached to the
+output of its machine. Each opening agent marker holds the manifest provider
+and model IDs, the requested reasoning level, and a thread-scoped reference to
+its personal machine. The reference is stable for the account and thread and
+keeps the real machine UUID private. A dash means provider-default effort or
+an anonymous pool placement. The same
+marker grammar allows missing attributes in earlier conversation files.
 The rebuildable metadata stores the current output insertion offset, run and
-checkpoint; subsequent chunks extend that same message without scanning text.
-Markers organize presentation only: message text is untrusted and never parsed
-for access, roles, provenance or instructions. Frontmatter string values use
+checkpoint. Later chunks extend that attempt's message without scanning text.
+Markers and message text are for display. Authority never comes from the Markdown. Frontmatter string values use
 JSON-quoted YAML scalars so titles cannot inject keys. The host writes exactly
 one `calternal-id` key. No migration or alternate reader is supported.
 
@@ -55,7 +66,8 @@ current caller, current space capabilities and plugin activation.
 
 Manifest input/output schemas, target fields, capabilities and risks are the
 single source of operation policy. `threads.create` makes an empty file;
-`threads.list` returns metadata; `threads.get` returns the Markdown and revision;
+`threads.list` returns metadata; `threads.models` lists the enabled provider catalog;
+`threads.get` returns the Markdown and revision;
 `threads.send` commits a person's message before admitting the turn;
 `threads.stop` cancels current work. `threads.rename` updates the title and filename
 while preserving the UUID and messages. `threads.archive` hides it from the
@@ -229,6 +241,58 @@ job lookups and flushes. The checkpoint derives the range from its existing
 body and write buffer. Publication reuses the outbox payload and existing
 journal commit, with no additional reads or flushes per event.
 
+### Models, phases and turn history
+
+Call `threads.models` with `{"space_id":"SPACE_UUID"}` and the space's
+`plugins.use` capability. Each response has a `providers` array.
+
+```json
+{"providers":[{"id":"calternal-claude-code","name":"Claude Code","default_model":"claude-sonnet-5-5","models":[{"id":"claude-sonnet-5-5","name":"Sonnet 5.5","reasoning_levels":["low","medium","high","xhigh","max"]}]}]}
+```
+
+Each provider supplies its own stable model IDs, display names and ordered effort
+levels. The server validates and caches the trusted manifests until restart. A
+read applies current space activation in one indexed query. It does not contact
+a machine or use a person's login. Use `agent.readiness` for capacity and sign-in.
+Provider versions, model releases, account entitlements and organization effort
+caps can change separately from the installed manifest.
+
+Send a model ID from that provider and optionally `reasoning` from that model.
+Omit `model` for the provider's catalog default. Omit `reasoning` to retain
+the provider's settings. Unknown choices are rejected before committing the
+message. An explicit level records the requested choice. Claude Code does
+not report whether organization settings capped the effective effort.
+
+Job stream chunks with `data.type == "turn_phase"` have a `phase` and Unix
+`at_ms`. Phases are `queued`, `starting_sandbox`, `running`, `thinking`,
+`running_tool`, and `waiting_on_person`. The last means the host parked the
+job for a trusted request. Its ID and content use the existing private request
+path. The current phase is also included as `job.checkpoint.turn_phase` when
+saved. Provider frames retain `{version, seq, event}`. A reasoning block emits
+`reasoning_started`, zero or more `reasoning_delta` frames with `text`, and
+`reasoning_finished` with monotonic `duration_ms`. Stream time measures
+observed work and can include transport or back-pressure.
+
+The terminal checkpoint adds one short `turn-timing` comment before the agent
+message's closing marker, at most one per attempt. The worked duration excludes
+queue time, person waits and retry delays. The marker also records observed
+reasoning, queue, sandbox and tool durations in milliseconds. Abrupt stops may
+leave a checkpoint without final timing. Claude exposes thinking as provider
+text on the live stream. The file retains timing only. Both reads expose the
+same opening and timing markers in Markdown. Apply checkpoint deltas in order
+before parsing message markers. Ordinary assistant Markdown is untrusted display
+content.
+
+Send checks the loaded manifest, placement adds a fixed-size hash on its existing
+blocking worker, and live phases reuse the job buffer. These add zero indexed reads and zero
+flushes. Timing piggybacks on the terminal checkpoint with no added job flush.
+If the terminal checkpoint otherwise had no Markdown to save, the timing
+marker makes it one content checkpoint. That adds the usual capability check,
+one activation read, one receipt lookup, and one content head read, followed by
+the normal indexed write checks and three FULL commits
+(content, journal and outbox retirement), plus the normal file and directory
+syncs. No per-frame filesystem work is added.
+
 ### Tool steps and the saved output limit
 
 Tool starts, output notices and completions carry the tool name and short
@@ -308,10 +372,11 @@ for account-scoped availability and provider checks.
 ```sh
 calternal threads --token-file person.token create --space-id <uuid> --title Plan
 calternal threads --token-file person.token list --space-id <uuid>
+calternal threads --token-file person.token models --space-id <uuid>
 calternal threads --token-file person.token list --space-id <uuid> --cursor <cursor>
 calternal threads --token-file person.token get <thread-uuid>
 calternal threads --token-file person.token get <thread-uuid> --since '<checkpoint journal data JSON>'
-calternal threads --token-file person.token --request-id <stable-id> send <thread-uuid> --message 'Inspect this workspace'
+calternal threads --token-file person.token --request-id <stable-id> send <thread-uuid> --message 'Inspect this workspace' --model claude-sonnet-5-5 --reasoning high
 calternal threads --token-file person.token stop <thread-uuid>
 calternal threads --token-file person.token rename <thread-uuid> --title "New title"
 calternal threads --token-file person.token archive <thread-uuid>

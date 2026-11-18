@@ -26,7 +26,16 @@ snapshots are disabled so resumed sessions receive the current instruction layer
 Native AskUserQuestion, Agent and Task tools are disabled;
 the core instructions prefer Calternal operations for questions and helpers.
 Permission denials become approval events; the adapter never approves them.
-Raw tool arguments/results and stderr are discarded. Text deltas still contain
+Raw tool arguments/results, thinking signatures and stderr are discarded.
+The adapter forwards observable partial thinking blocks and measures their
+elapsed time from the official stream. Encrypted blocks supply no text.
+
+The manifest pins model versions and declares the documented per-model effort
+levels. Sonnet 5.5 is the catalog default and requires Claude Code v2.1.284 or
+newer. Haiku 5.5 requires v2.1.293 or newer. The catalog can lag provider releases,
+retirements, gateway configuration, installed CLI versions and organization
+effort caps. Update the manifest and restart the server to refresh it.
+See the [official model configuration](https://code.claude.com/docs/en/model-config). Text deltas still contain
 model output and must be treated as untrusted data.
 
 Fake tests: `npm test --workspace @calternal/claude-code`. The real-account test

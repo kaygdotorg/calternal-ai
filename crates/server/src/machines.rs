@@ -166,6 +166,9 @@ pub struct RunView {
     pub state: LeaseState,
     /// Machine holding it, while assigned or running.
     pub machine_id: Option<Uuid>,
+    /// Whether a saved turn can record a thread-scoped reference for this placement.
+    #[serde(skip)]
+    pub(crate) personal_machine: bool,
     /// Why it ended, or why it is waiting again.
     pub reason: Option<String>,
     /// While waiting: 1-based place among all waiting leases.
@@ -369,6 +372,7 @@ impl MachineService {
                     thread_id: row.thread,
                     state: LeaseState::parse(&row.state),
                     machine_id: row.machine,
+                    personal_machine: false,
                     reason: row.reason,
                     queue_position: None,
                 }),

@@ -22,25 +22,7 @@ impl Redactor {
     pub(super) fn event(&mut self, event: &mut ProviderEventKind) -> Option<String> {
         use ProviderEventKind::*;
         match event {
-            TextDelta { text } => {
-                let mut combined = std::mem::take(&mut self.pending);
-                combined.push_str(text);
-                self.string(&mut combined);
-                let held = (1..self.secret.len())
-                    .rev()
-                    .find(|&n| combined.ends_with(&self.secret[..n]))
-                    .unwrap_or(0);
-                self.pending = combined.split_off(combined.len() - held);
-                if combined.len() > 4096 {
-                    let mut cut = combined.len() - 4096;
-                    while !combined.is_char_boundary(cut) {
-                        cut += 1;
-                    }
-                    *text = combined.split_off(cut);
-                    return Some(combined);
-                }
-                *text = combined;
-            }
+            TextDelta { text } => return self.delta(text),
             Check(status) => self.string(&mut status.sign_in_command),
             Session { session_id } => self.string(session_id),
             ToolStarted { id, name, summary }
@@ -67,8 +49,31 @@ impl Redactor {
                 self.string(message);
             }
             Done { outcome } => self.string(outcome),
-            Usage { .. } => {}
+            // The turn reader routes reasoning through an independent text redactor.
+            ReasoningStarted | ReasoningDelta { .. } | ReasoningFinished { .. } | Usage { .. } => {}
         }
+        None
+    }
+    /// Scrub a contiguous text channel. A possible split credential stays
+    /// private until later bytes distinguish it from the issued token.
+    pub(super) fn delta(&mut self, text: &mut String) -> Option<String> {
+        let mut combined = std::mem::take(&mut self.pending);
+        combined.push_str(text);
+        self.string(&mut combined);
+        let held = (1..self.secret.len())
+            .rev()
+            .find(|&n| combined.ends_with(&self.secret[..n]))
+            .unwrap_or(0);
+        self.pending = combined.split_off(combined.len() - held);
+        if combined.len() > 4096 {
+            let mut cut = combined.len() - 4096;
+            while !combined.is_char_boundary(cut) {
+                cut += 1;
+            }
+            *text = combined.split_off(cut);
+            return Some(combined);
+        }
+        *text = combined;
         None
     }
     fn tool(&self, id: &mut String, name: &mut String, summary: &mut String) {
@@ -106,6 +111,49 @@ impl Redactor {
             }
             _ => {}
         }
+    }
+}
+
+/// Independent text channels for one issued credential. Boundaries in one
+/// channel cannot flush a withheld credential prefix from the other.
+pub(super) struct Channels {
+    text: Redactor,
+    reasoning: Redactor,
+}
+
+impl Channels {
+    /// Retain the issued token once per channel; storage is bounded by its size.
+    pub(super) fn new(token: String) -> Self {
+        Self {
+            text: Redactor::new(token.clone()),
+            reasoning: Redactor::new(token),
+        }
+    }
+
+    /// Scrub a frame and return any overflow frame that must precede it.
+    pub(super) fn event(&mut self, event: &mut ProviderEventKind) -> Option<ProviderEventKind> {
+        use ProviderEventKind::*;
+        match event {
+            ReasoningDelta { text } => self
+                .reasoning
+                .delta(text)
+                .map(|text| ReasoningDelta { text }),
+            ReasoningFinished { .. } => {
+                // Drop a possible credential prefix at the block boundary.
+                let _ = self.reasoning.finish();
+                None
+            }
+            Done { .. } => {
+                let _ = self.text.event(event);
+                self.text.finish().map(|text| TextDelta { text })
+            }
+            _ => self.text.event(event).map(|text| TextDelta { text }),
+        }
+    }
+
+    /// Apply the existing whole-checkpoint scrub in addition to channel filtering.
+    pub(super) fn checkpoint(&self, value: &mut Value) {
+        self.text.checkpoint(value);
     }
 }
 
