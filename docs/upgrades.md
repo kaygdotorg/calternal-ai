@@ -105,6 +105,13 @@ on your branch. The number becomes fixed when the migration merges into
 renumber your pending step to the next free number when merging. The shared
 descriptor rejects duplicate numbers and gaps.
 
+**Protected auth writes.** Use a plain `UPDATE` and, if no row matched, a
+plain `INSERT` inside the same protected transaction. The `DO UPDATE`
+branch of a SQLite UPSERT can override the dirty-key trigger's
+`INSERT OR IGNORE` and fail on an already queued owner key. Keep the
+recovery trigger and witness publication in the write path.
+[Recovery protocol](../crates/recovery/PROTOCOL.md)
+
 ## Release handoff
 
 Unattended updates allow additive changes with proof that release N can run
