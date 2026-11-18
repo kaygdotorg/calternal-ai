@@ -78,7 +78,8 @@ Hidden placement uses the same plugin/kind namespace documented by the manifest
 contract. Collections placement is also registered by their provider before standard
 collections are provisioned; the library does not choose a provider's placement.
 
-Notes current files contain a host-owned `calternal-id` frontmatter key. Titles
+Notes current files contain a host-owned `calternal-id` frontmatter key and a
+`calternal-note/v1` format tag when the document has no format of its own. Titles
 use inherited NFC normalization, case/normalization collision checks and numbered
 names. The per-space index stores the selected relative path; identity is never
 derived from that filename. A title update commits its fixed rename intent with

@@ -48,6 +48,25 @@ if [[ -d $releases/current ]]; then
   [[ $current == "$releases"/release.* ]] || die 'Current release pointer leaves the release directory.'
 fi
 
+installation=$(sed -n 's/^CALTERNAL_INSTALLATION_ID=//p' "$public")
+[[ $installation =~ ^[a-fA-F0-9-]{36}$ ]] || die 'Set the installation UUID in server.env.'
+
+run_upgrade() {
+  local release=$1
+  shift
+  "$release/calternal" --json upgrade --appdata "$root/appdata" --userdata-ssd "$root/userdata-ssd" \
+    --userdata-hdd "$hdd" --installation-id "$installation" --machine-dir "$root/machine" "$@"
+}
+
+recover_pending() {
+  [[ -n $current ]] || return 0
+  local status
+  status=$(run_upgrade "$current" status) || return 1
+  if grep -Eq '"needs_recovery"[[:space:]]*:[[:space:]]*true' <<< "$status"; then
+    stop_roles && run_upgrade "$current" recover >/dev/null && activate "$current"
+  fi
+}
+
 stop_unit() {
   local load
   load=$(sysd show --property=LoadState --value "$1") || return 1
@@ -127,6 +146,8 @@ prepare_release() {
   fi
   podman rm "$created" >/dev/null || return 1
   chmod 0700 "$release/calternal" || return 1
+  printf '%s\n' "$recovery_template" > "$release/recover-start.sh" || return 1
+  chmod 0700 "$release/recover-start.sh" || return 1
   printf '%s\n' "$id" > "$release/image.id" || return 1
   sed -e "s|@NAME@|$name|g" -e "s|@PUBLISH_IP@|$publish_ip|g" \
     -e "s|@PUBLISH_PORT@|$publish_port|g" -e "s|@ROOT@|$root|g" \
@@ -180,8 +201,8 @@ show_setup() {
 
 case $action in
   deploy)
-    [[ $# == 4 && $1 =~ ^[a-f0-9]{64}$ ]] || die 'Expected the transferred image ID.'
-    id=$1 tag=$2 initialize=$3 reveal=$4
+    [[ $# == 5 && $1 =~ ^[a-f0-9]{64}$ && $5 =~ ^[01]$ ]] || die 'Expected the transferred image ID.'
+    id=$1 tag=$2 initialize=$3 reveal=$4 incompatible=$5
     podman image exists "$id" || die 'The transferred image is missing.'
     if [[ $initialize == 1 ]]; then
       [[ -z $current ]] || die 'Initialization is only for the first deployment.'
@@ -189,13 +210,37 @@ case $action in
     fi
     [[ -d $root/appdata && -d $root/userdata-ssd && -d $hdd ]] ||
       die 'Storage directories are missing. Use --initialize only for first setup.'
+    recover_pending || die 'Could not recover the pending deployment. Keep both roles stopped.'
+    if [[ -n $current && $incompatible == 0 && -z ${compatibility_proof:-} ]]; then
+      die 'Supply the compatibility proof for the two release images.'
+    fi
     candidate=$(mktemp -d "$releases/release.XXXXXXXX")
     trap '[[ $(realpath -- "$releases/current" 2>/dev/null || true) == "$candidate" ]] || rm -rf -- "$candidate"' EXIT
     prepare_release "$candidate" "$id" || die 'Could not stage the image and units.'
     old_previous=
     if [[ -d $releases/previous ]]; then old_previous=$(realpath -- "$releases/previous"); fi
     stop_roles || die 'Could not stop the current Calternal-AI services.'
+    if [[ -n $current ]]; then
+      declare -a approval
+      if [[ $incompatible == 1 ]]; then
+        approval=(--incompatible)
+      else
+        printf '%s\n' "$compatibility_proof" > "$candidate/upgrade-proof.json"
+        approval=(--proof "$candidate/upgrade-proof.json")
+      fi
+      if ! run_upgrade "$candidate" prepare --previous "$(<"$current/image.id")" \
+           --candidate "$id" "${approval[@]}" >/dev/null ||
+         ! run_upgrade "$candidate" commit --candidate "$id" >/dev/null; then
+        run_upgrade "$candidate" recover >/dev/null &&
+          restore || die 'Data recovery failed. Keep the instance stopped.'
+        die 'Upgrade preparation failed. The previous release is serving its original data.'
+      fi
+    fi
     if ! activate "$candidate"; then
+      if [[ $incompatible == 1 ]]; then
+        stop_roles || true
+        die 'The incompatible release could not start. Keep it stopped for the owner.'
+      fi
       log "Release $tag failed to become healthy. Restoring the earlier services."
       restore || die 'Recovery failed. Keep the instance stopped and inspect its local journal.'
       discard_candidate "$tag" "$id"
@@ -215,8 +260,9 @@ case $action in
   rollback)
     [[ $# == 0 && -n $current && -d $releases/previous ]] || die 'No previous release is available.'
     previous=$(realpath -- "$releases/previous")
+    recover_pending || die 'Could not recover the pending deployment.'
     stop_roles || die 'Could not stop the current Calternal-AI services.'
-    if ! activate "$previous"; then
+    if ! run_upgrade "$previous" verify >/dev/null || ! activate "$previous"; then
       restore || die 'Rollback and recovery both failed. Inspect the local journal.'
       die 'Rollback failed. The current release is back in service.'
     fi

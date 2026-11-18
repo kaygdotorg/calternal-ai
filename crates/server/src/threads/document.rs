@@ -3,6 +3,8 @@ use calternal_content::Item;
 use calternal_types::Error;
 use serde_json::{Value, json};
 
+const FORMAT: &str = "calternal-thread/v1";
+
 pub(super) fn validate_metadata(metadata: &Value) -> Result<(), Error> {
     for (key, max) in [("title", 256), ("provider", 80)] {
         let value = metadata[key].as_str().unwrap_or("");
@@ -27,9 +29,21 @@ pub(super) fn body_bytes(bytes: &[u8]) -> Result<&str, Error> {
         .strip_prefix("---\n")
         .and_then(|s| s.split_once("\n---\n"))
         .ok_or_else(|| Error::internal("invalid thread envelope"))?;
-    if !front.lines().any(|line| line == "format: calternal-thread") {
-        return Err(Error::conflict("invalid thread format"));
+    let mut tags = front
+        .lines()
+        .filter_map(|line| line.strip_prefix("format: "));
+    let tag = tags.next().unwrap_or_default();
+    if tags.next().is_some() {
+        return Err(Error::conflict("duplicate thread format"));
     }
+    calternal_fsio::format::require(tag, FORMAT).map_err(|error| {
+        if error.kind() == std::io::ErrorKind::Unsupported {
+            Error::conflict("This thread format requires a different server version.")
+                .with_details(json!({"reason":"unsupported_version","supported_format":FORMAT}))
+        } else {
+            Error::conflict("invalid thread format")
+        }
+    })?;
     let (_, tail) = body
         .strip_prefix("\n# ")
         .and_then(|s| s.split_once("\n\n"))
@@ -65,7 +79,7 @@ fn format_document(metadata: &Value, body: &str, id: Option<uuid::Uuid>, private
     if let Some(id) = id {
         writeln!(out, "calternal-id: {id}").expect("write to String");
     }
-    out.push_str("format: calternal-thread\n");
+    writeln!(out, "format: {FORMAT}").expect("write to String");
     let mut title = String::new();
     for c in metadata["title"].to_string().chars() {
         if matches!(c, '#' | '\u{2028}' | '\u{2029}' | '\u{fffe}' | '\u{ffff}') {
@@ -170,4 +184,29 @@ pub(super) fn record_message(metadata: &mut Value, now: &str) {
 pub(super) fn record_activity(metadata: &mut Value, now: &str) {
     metadata["updated_at"] = json!(now);
     metadata["last_activity_at"] = json!(now);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_newer_thread_version_returns_a_structured_refusal() {
+        let mut item = Item {
+            id: uuid::Uuid::now_v7(),
+            space: calternal_types::SpaceId::new(),
+            kind: "threads".into(),
+            metadata: json!({"title":"Test"}),
+            bytes: encode(&json!({"title":"Test"}), "").into_bytes(),
+            revision: "fixture".into(),
+            updated_at: String::new(),
+        };
+        assert!(checked_view(&item).is_ok());
+        item.bytes = String::from_utf8(item.bytes)
+            .unwrap()
+            .replace("calternal-thread/v1", "calternal-thread/v2")
+            .into_bytes();
+        let error = checked_view(&item).unwrap_err();
+        assert_eq!(error.details.unwrap()["reason"], "unsupported_version");
+    }
 }

@@ -89,6 +89,8 @@ fn folder(placement: &Placement, kind: &str) -> String {
         Placement::Hidden { plugin_id } => format!(".calternal/{plugin_id}/{kind}"),
     }
 }
+const MARKDOWN_FORMAT: &str = "format: calternal-note/v1\n";
+
 pub(crate) fn encoded(item: &Item, format: &FileFormat) -> Result<Vec<u8>> {
     if *format == FileFormat::Markdown {
         // The host owns identity; untrusted frontmatter cannot claim a second ID.
@@ -98,6 +100,12 @@ pub(crate) fn encoded(item: &Item, format: &FileFormat) -> Result<Vec<u8>> {
         if let Some(rest) = text.strip_prefix("---\n")
             && let Some((front, body)) = rest.split_once("\n---\n")
         {
+            if !front
+                .lines()
+                .any(|line| line.trim_start().starts_with("format:"))
+            {
+                out.push_str(MARKDOWN_FORMAT);
+            }
             for line in front.lines() {
                 if !line.trim_start().starts_with("calternal-id:") {
                     out.push_str(line);
@@ -108,6 +116,7 @@ pub(crate) fn encoded(item: &Item, format: &FileFormat) -> Result<Vec<u8>> {
             out.push_str(body);
             return Ok(out.into_bytes());
         }
+        out.push_str(MARKDOWN_FORMAT);
         out.push_str("---\n");
         out.push_str(text);
         Ok(out.into_bytes())

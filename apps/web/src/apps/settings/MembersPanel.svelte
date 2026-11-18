@@ -49,7 +49,7 @@
       <span class="n"><span class="t">{m.account_id === me ? `${m.name} (you)` : m.name}</span><span class="h">{capitalise(m.role)}</span></span>
       {#if canManage && m.role !== "owner" && m.account_id !== me}
         <span class="a">
-          <Selector label="Role of {m.name}" fill={false} options={(mine === "owner" ? ROLES : ROLES.slice(0, 2)).map((r) => ({ value: r.id, label: r.label }))} value={m.role} onchange={(v) => act(() => people.setRole(space, m.account_id, v as people.GrantRole))} />
+          <Selector class="sel-inline" label="Role of {m.name}" options={(mine === "owner" ? ROLES : ROLES.slice(0, 2)).map((r) => ({ value: r.id, label: r.label }))} value={m.role} onchange={(v) => act(() => people.setRole(space, m.account_id, v as people.GrantRole))} />
           {#if mine === "owner"}<Button text="Make owner" variant="quiet" disabled={busy} onclick={() => confirm(`Make ${m.name} the owner of this space? You become a manager.`) && act(() => people.transfer(space, m.account_id))} />{/if}
           <Button text="Remove" variant="quiet" disabled={busy} onclick={() => confirm(`Remove ${m.name} from this space?`) && act(() => people.removeMember(space, m.account_id))} />
         </span>

@@ -82,6 +82,23 @@ impl RecoverySink for Coordinator {
         run().map_err(auth_error)
     }
 }
+impl Coordinator {
+    /// Recapture protected records after a locked schema upgrade, before the
+    /// deployment admits writers. The deployment intent covers both the SQL
+    /// migration and these recovery writes. Cost scales with current authority.
+    pub fn refresh_after_migration(&self, conn: &Connection) -> Result<()> {
+        state::reset_capture_triggers(conn)?;
+        self.reconcile(conn).map_err(err)?;
+        let _serial = self.serial.lock().map_err(err)?;
+        let tx =
+            rusqlite::Transaction::new_unchecked(conn, rusqlite::TransactionBehavior::Immediate)
+                .map_err(err)?;
+        state::mark_all(&tx)?;
+        let intent = self.prepare(&tx).map_err(err)?;
+        tx.commit().map_err(err)?;
+        self.complete(conn, &intent).map_err(err)
+    }
+}
 fn auth_error(e: impl std::fmt::Display) -> calternal_auth::Error {
     calternal_auth::Error::Internal(e.to_string())
 }

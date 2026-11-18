@@ -29,40 +29,28 @@ impl Inputs {
         let c = Connection::open(&path).map_err(internal)?;
         c.busy_timeout(std::time::Duration::from_secs(5))
             .map_err(internal)?;
-        c.execute_batch(
-            "PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA secure_delete=ON;",
-        )
-        .map_err(internal)?;
-        let version: i64 = c
-            .query_row("PRAGMA user_version", [], |r| r.get(0))
+        c.execute_batch("PRAGMA synchronous=FULL; PRAGMA secure_delete=ON;")
             .map_err(internal)?;
-        if version == 0 {
-            // The record body is the one authoritative copy of its ownership:
-            // `space` and `item` are generated from it, so lookups and revocation
-            // cleanup can never disagree with what is delivered. A draft's item has
-            // one draft in one space; pending identities are (space, request ID).
-            c.execute_batch("BEGIN IMMEDIATE;
-CREATE TABLE binding(account TEXT PRIMARY KEY,epoch TEXT NOT NULL);
-CREATE TABLE inputs(kind TEXT NOT NULL CHECK(kind IN ('draft','pending')),id TEXT NOT NULL,body TEXT NOT NULL,draft_revision TEXT,space TEXT GENERATED ALWAYS AS (json_extract(body,'$.space_id')) STORED NOT NULL,item TEXT GENERATED ALWAYS AS (json_extract(body,'$.item_id')) STORED NOT NULL,payload_bytes INTEGER GENERATED ALWAYS AS (length(CAST(coalesce(json_extract(body,'$.text'),json_extract(body,'$.request')) AS BLOB))) STORED);
-CREATE UNIQUE INDEX inputs_key ON inputs(kind,space,id);
-CREATE UNIQUE INDEX inputs_one_draft ON inputs(id) WHERE kind='draft';
-CREATE INDEX inputs_space ON inputs(space);
-CREATE INDEX inputs_budget ON inputs(kind,payload_bytes);
-CREATE INDEX inputs_due ON inputs(kind,json_extract(body,'$.state'),json_extract(body,'$.created_at_ms'));
-CREATE TABLE events(seq INTEGER PRIMARY KEY AUTOINCREMENT,token TEXT NOT NULL UNIQUE);
-PRAGMA user_version=2;COMMIT;").map_err(internal)?;
+        calternal_store::migrations::migrate(&c, UPGRADE_SCHEMA).map_err(internal)?;
+        c.pragma_update(None, "journal_mode", "WAL")
+            .map_err(internal)?;
+        let read = || {
+            c.query_row("SELECT account FROM binding", [], |r| r.get::<_, String>(0))
+                .optional()
+                .map_err(internal)
+        };
+        let expected = id.to_string();
+        let mut bound = read()?;
+        if bound.is_none() {
+            // A crash after schema creation may leave the binding empty.
             c.execute(
-                "INSERT OR IGNORE INTO binding VALUES(?1,?2)",
-                params![id.to_string(), Uuid::new_v4().to_string()],
+                "INSERT INTO binding SELECT ?1,?2 WHERE NOT EXISTS(SELECT 1 FROM binding)",
+                params![expected, Uuid::new_v4().to_string()],
             )
             .map_err(internal)?;
-        } else if version != 2 {
-            return Err(internal("schema"));
+            bound = read()?;
         }
-        let bound: String = c
-            .query_row("SELECT account FROM binding", [], |r| r.get(0))
-            .map_err(internal)?;
-        if bound != id.to_string() {
+        if bound.as_deref() != Some(&expected) {
             return Err(internal("owner binding"));
         }
         Ok(c)
@@ -375,3 +363,19 @@ impl Inputs {
         content.receipt(space, p.id, id).map_err(internal)
     }
 }
+
+// Inputs derive their space and item from their authoritative payload. A draft
+// has one identity, and a pending send's key is qualified by its space.
+const SCHEMA: &str = "
+CREATE TABLE binding(account TEXT PRIMARY KEY,epoch TEXT NOT NULL);
+CREATE TABLE inputs(kind TEXT NOT NULL CHECK(kind IN ('draft','pending')),id TEXT NOT NULL,body TEXT NOT NULL,draft_revision TEXT,space TEXT GENERATED ALWAYS AS (json_extract(body,'$.space_id')) STORED NOT NULL,item TEXT GENERATED ALWAYS AS (json_extract(body,'$.item_id')) STORED NOT NULL,payload_bytes INTEGER GENERATED ALWAYS AS (length(CAST(coalesce(json_extract(body,'$.text'),json_extract(body,'$.request')) AS BLOB))) STORED);
+CREATE UNIQUE INDEX inputs_key ON inputs(kind,space,id);
+CREATE UNIQUE INDEX inputs_one_draft ON inputs(id) WHERE kind='draft';
+CREATE INDEX inputs_space ON inputs(space);
+CREATE INDEX inputs_budget ON inputs(kind,payload_bytes);
+CREATE INDEX inputs_due ON inputs(kind,json_extract(body,'$.state'),json_extract(body,'$.created_at_ms'));
+CREATE TABLE events(seq INTEGER PRIMARY KEY AUTOINCREMENT,token TEXT NOT NULL UNIQUE);
+";
+
+pub(crate) const UPGRADE_SCHEMA: calternal_store::migrations::Schema<'_> =
+    calternal_store::migrations::Schema::new("input.db", 2, &[SCHEMA], &[]);

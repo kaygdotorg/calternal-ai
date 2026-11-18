@@ -7,6 +7,9 @@ publish = false
 # Standalone suite with its own HTTP/software-authenticator fixture dependencies.
 [workspace]
 
+[features]
+release-upgrade = []
+
 [dependencies]
 base64 = "0.23.1"
 calternal-auth = { path = "../../crates/auth" }

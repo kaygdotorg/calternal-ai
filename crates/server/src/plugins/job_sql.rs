@@ -11,15 +11,13 @@ use super::Session;
 use super::jobs::{ChildResult, Job, Jobs, MAX_FINAL_PER_SPACE, MAX_RUNS, RETAIN_FINAL};
 use calternal_types::Error;
 
-pub(super) const SCHEMA: &str = "BEGIN IMMEDIATE;
-CREATE TABLE IF NOT EXISTS jobs(id TEXT PRIMARY KEY,plugin TEXT NOT NULL,account TEXT NOT NULL,session TEXT NOT NULL,operation TEXT NOT NULL,input TEXT NOT NULL,parent TEXT,state TEXT NOT NULL,checkpoint TEXT NOT NULL,checkpoint_seq INTEGER NOT NULL,checkpoints INTEGER NOT NULL,result TEXT NOT NULL,runs INTEGER NOT NULL,generation INTEGER NOT NULL,request_key TEXT UNIQUE,finished_ms INTEGER) STRICT;
+pub(super) const SCHEMA: &str = "CREATE TABLE IF NOT EXISTS jobs(id TEXT PRIMARY KEY,plugin TEXT NOT NULL,account TEXT NOT NULL,session TEXT NOT NULL,operation TEXT NOT NULL,input TEXT NOT NULL,parent TEXT,state TEXT NOT NULL,checkpoint TEXT NOT NULL,checkpoint_seq INTEGER NOT NULL,checkpoints INTEGER NOT NULL,result TEXT NOT NULL,runs INTEGER NOT NULL,generation INTEGER NOT NULL,request_key TEXT UNIQUE,finished_ms INTEGER) STRICT;
 CREATE INDEX IF NOT EXISTS jobs_thread ON jobs(json_extract(input,'$.request.thread_id')) WHERE operation='agent.turn';
 CREATE INDEX IF NOT EXISTS jobs_state ON jobs(state);
 CREATE INDEX IF NOT EXISTS jobs_account_state ON jobs(account,state);
 CREATE INDEX IF NOT EXISTS jobs_parent ON jobs(parent);
 CREATE INDEX IF NOT EXISTS jobs_finished ON jobs(finished_ms) WHERE finished_ms IS NOT NULL;
-CREATE TABLE IF NOT EXISTS child_results(parent TEXT NOT NULL,child TEXT NOT NULL,state TEXT NOT NULL,result TEXT NOT NULL,PRIMARY KEY(parent,child)) STRICT;
-COMMIT;";
+CREATE TABLE IF NOT EXISTS child_results(parent TEXT NOT NULL,child TEXT NOT NULL,state TEXT NOT NULL,result TEXT NOT NULL,PRIMARY KEY(parent,child)) STRICT;";
 
 pub(super) fn db_err(e: rusqlite::Error) -> Error {
     tracing::error!(error = %e, "jobs sqlite error");

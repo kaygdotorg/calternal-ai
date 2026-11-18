@@ -10,6 +10,7 @@ description = "Protected account, space, and group authority"
 calternal-types.workspace = true
 calternal-core.workspace = true
 calternal-fsio.workspace = true
+calternal-store.workspace = true
 rusqlite.workspace = true
 tokio = { workspace = true, features = ["sync"] }
 thiserror.workspace = true

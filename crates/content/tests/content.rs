@@ -181,7 +181,10 @@ fn restart_finishes_content_commit_before_file_placement_and_receipt() {
     let item = content.get(a, items[0].id).unwrap();
     assert_eq!(
         std::fs::read_to_string(content.file_path(a, &item.kind, item.id).unwrap()).unwrap(),
-        format!("---\ncalternal-id: {}\n---\ndurable", item.id)
+        format!(
+            "---\ncalternal-id: {}\nformat: calternal-note/v1\n---\ndurable",
+            item.id
+        )
     );
     let receipt = content.receipt(a, actor, "save").unwrap().unwrap();
     assert_eq!(receipt.result, json!({"id":item.id}));
@@ -270,7 +273,10 @@ fn human_names_collisions_renames_and_registered_hidden_placement() {
     assert_eq!(path.file_name().unwrap(), "CAFÉ.md");
     assert_eq!(
         std::fs::read_to_string(&path).unwrap(),
-        format!("---\ncalternal-id: {}\n---\nedited", one.id)
+        format!(
+            "---\ncalternal-id: {}\nformat: calternal-note/v1\n---\nedited",
+            one.id
+        )
     );
     assert!(!path.with_file_name("Café.md").exists());
     assert_eq!(content.journal(space).unwrap().len(), 3);
