@@ -2,7 +2,7 @@
 
 Decisions waiting on kayg, most blocking first. Answer here or in chat; answered items
 move to the decision record they belong to and leave this list. Terms: see
-[glossary](glossary.md). Updated 2026-11-18 05:10 IST.
+[glossary](glossary.md). Updated 2026-11-18 09:15 IST.
 
 ## Waiting now
 
@@ -11,12 +11,10 @@ move to the decision record they belong to and leave this list. Terms: see
 | 5 | Readability floor for surfaces over a wallpaper (provisional, built so kayg can see it): primary text held at 7:1, lesser text nudged toward it, and a surface may flip its text between light and dark as Craft's header does. Leaves 21 to 49% of the wallpaper visible on sidebars | kayg wants to see it: a comparison is being built on the preview | Materials |
 | 21 | Light mode over a photo: derive a lighter photo and keep showing a lot of it (built), or do as Craft does and put a nearly opaque light surface over any photo (92% white, about 8% of the photo shows), which works with every photo but shows little of it | See both on the preview, then choose | Light theme |
 | 10 | Native font: decide after seeing both on a Mac and an iPhone (deferred by kayg) | Build a switch in the native preview | Native apps |
-| 24 | Appearance: a Clear-to-Tinted slider like Apple's for how much wallpaper shows. Does it replace the Blur, Dim and Tint checkboxes or sit beside them? (The web cannot read the system's own setting; it can only default from the reduced-transparency and contrast preferences.) | Try both on the preview's Compare control | Appearance |
+| 24 | Materials: the middle card and the sidebars look too alike, which hurts contrast, and the Clear end of the slider gives a light-tinted sidebar even in dark mode. Being rebuilt from the calternal-ui plugin's defaults (how blurred, tinted and dimmed the card is against the sidebars) without the heavy blur; Clear-to-Tinted becomes a stepped slider | kayg to review on the preview | Appearance |
 | 25 | Composer chips: show more icons, or icons with text, when the composer is wide (kayg wants to discuss, 2026-11-18) | To grill | Composer |
 
 | 19 | Which Manager-only operation writes reserved `AI/AGENTS.md`? Generic kinds cannot claim or write it | Narrow space-settings operation, or a general protected space-file writer; costs in morning-decisions.md | Agents |
-| 26 | Composer speed budget (8 ms at the 95th percentile, 4x CPU slowdown): which measure it applies to. Work per key is 7.3 ms on a real GPU and 8.7 ms on the noisy dev VM, and no key missed its next frame there. "Key to next frame" includes waiting for the display refresh (up to 16.7 ms at 60 Hz), so it can never be under 8 ms | Apply the budget to work per key, and require zero missed frames | Performance gate |
-| 27 | An approval for an action that cannot be undone, or that widens access, is always single-use, whatever lifetime is asked for; "this thread" is offered only for reads, undoable changes and outside effects. Built this way after the independent review; it is my reading of "changes that cannot be undone ask" | Confirm | Requests |
 | 28 | The first-visit "Choose a look" chooser: now a centred dialog. The record only says "a short gallery, then straight in" | Keep the centred dialog | Onboarding |
 | 29 | On a phone, switching apps takes three taps and the app name does not look tappable: a capsule under the card as on desktop, or the pill in the sidebar footer | See both on a phone first | Phone shell |
 | 30 | Should the composer double as the command palette, or stay separate from Cmd-K | Stay separate | Composer |
@@ -30,10 +28,7 @@ move to the decision record they belong to and leave this list. Terms: see
 | 38 | The bottom band and edge kayg saw beside the right sidebar could not be reproduced in a real GPU Chrome at 1500x970: which window size and zoom, and does it still show on the current preview | kayg to look again | Shell |
 | 39 | With many spaces the dots overflow the sidebar footer: at 50 spaces about 7 show and the rest are reachable only through the palette. Options and screenshots on issue #15 | To grill with the dots design | Shell |
 | 40 | Performance decisions left by the fix lane: how to shorten security-log replay at start (1,000 spaces still start in 320 to 860 ms against 300 ms), whether to keep an inherited root-layout check, how to close the cold save tail (one arm at 49.9 ms against 40 ms), how to cut the draft-save tail; and what the 10 ms "write reaches a subscribed client" ceiling measures, since it includes the durable save itself | See the lane report; decide the measure first | Performance gate |
-| 41 | Building the web app downloads the eight default wallpapers from Unsplash, which refuses one of our dev VMs; a clean build depends on a third-party host. Commit small renditions to the repository, host them on our side, or keep fetching with a local cache | Host them on our side | Build |
 | 42 | A tool step's output: the saved thread file keeps only its size, so a reloaded thread shows "N bytes of output". Where long output lives (its address, how the thread links to it, how long it is kept) is undecided | To grill with long-output storage | Threads |
-| 43 | Deleting an account that is the only Owner of a space other people are in. Being built: refuse until ownership is transferred, naming the spaces. Alternatives: archive the space with a custodian and a retention period, or delete the shared content | Refuse until transferred | Accounts |
-| 44 | Erasing a deleted space or account from the machines that ran its agents (found by review): being built as a durable erase instruction each machine receives when it next connects, with pending erasures shown to the operator; a machine that never returns is the operator's to wipe. Also being built as safe defaults: an administrator deleting someone else's account needs a fresh passkey check too; invites the deleted person made in shared spaces are revoked and stay listed as revoked | Confirm all three | Accounts |
 
 ## Design rounds
 
@@ -50,6 +45,12 @@ move to the decision record they belong to and leave this list. Terms: see
 ## Recently decided (2026-11-17), now in the decision records
 
 - The composer and palette: see `composer.md`.
+- The composer's 8 ms budget applies to main-thread work per key, with zero missed frames required (2026-11-18).
+- An approval for an action that cannot be undone, or that widens access, is always single-use (2026-11-18).
+- Deleting an account that is a shared space's only Owner is refused until ownership is transferred (2026-11-18).
+- Erasure reaches machines by a durable erase instruction on next connect; an administrator deleting another account needs a fresh passkey check; a deleted person's invites in shared spaces are revoked and stay listed (2026-11-18).
+- Default wallpapers are fetched from Unsplash on demand with an API key kayg will provide; hosting them ourselves is to be grilled later, since photos can disappear (2026-11-18).
+- Clear-to-Tinted is a stepped slider (2026-11-18).
 - The Members screen can give a role in a space to a group as well as a person (2026-11-18).
 - The record that a deleted owner's secret key was erased is kept permanently (owner sign-off, 2026-11-18).
 - Sidebars are resizable by a handle at the vertical centre beside the middle card, shown on hover; wide mode is the default on desktop (2026-11-18).
