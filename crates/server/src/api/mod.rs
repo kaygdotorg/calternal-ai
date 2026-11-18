@@ -40,6 +40,7 @@ mod dispatch;
 mod guard;
 mod notes;
 pub(crate) mod people;
+mod spaces;
 mod plugins;
 mod request;
 mod request_action;
