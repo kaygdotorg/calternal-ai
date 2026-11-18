@@ -14,8 +14,10 @@ try {
   const tabs = p.locator("aside.side [role=tab]");
   ok((await tabs.count()) === 2 && /Inbox/.test(await tabs.nth(0).innerText()) && (await tabs.nth(1).innerText()) === "All Threads", "two tabs: Inbox and All Threads");
   ok((await tabs.nth(0).getAttribute("aria-selected")) === "true", "the Inbox is the first page when threads wait on the person");
-  const inbox = await p.locator("aside.side [role=tabpanel] a.row").evaluateAll((a) => a.map((x) => x.textContent.trim()));
-  ok(inbox.length > 0 && inbox.every((x) => /question|approval|secret|sign in|failed|interrupted/i.test(x)), "the Inbox lists only threads waiting on the person, each with its reason", inbox.join(" / ").slice(0, 120));
+  const inbox = await p.locator("aside.side [role=tabpanel] a.row").evaluateAll((a) => a.map((x) => ({ marks: [...x.querySelectorAll(".rm")].map((m) => m.getAttribute("aria-label")), icons: [...x.querySelectorAll(".rm svg")].map((s) => s.innerHTML), sub: !!x.querySelector(".s"), h: Math.round(x.getBoundingClientRect().height) })));
+  ok(inbox.length > 0 && inbox.every((x) => x.marks.length > 0 && x.marks.every((m) => /question|approval|secret|sign in|failed|interrupted/i.test(m))), "the Inbox lists only threads waiting on the person, each with its reason as a mark with an accessible name", inbox.map((x) => x.marks.join("+")).join(" / ").slice(0, 160));
+  ok(inbox.every((x) => !x.sub), "an Inbox row is one line: no second line under the title");
+  const shapes = new Set(inbox.flatMap((x) => x.icons)); ok(shapes.size >= Math.min(3, new Set(inbox.flatMap((x) => x.marks)).size), "each kind of reason has its own icon shape", String(shapes.size));
   ok((await p.locator("aside.side [role=tabpanel] .sec").count()) === 0, "the Inbox has no sections");
   await tabs.nth(1).click();
   ok((await p.locator("aside.side [role=tabpanel] .sec").count()) > 0 && (await tabs.nth(1).getAttribute("aria-selected")) === "true", "All Threads shows the list with its sections");

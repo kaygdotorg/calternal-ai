@@ -41,8 +41,10 @@ for (const scheme of ["light", "dark"]) {
   await page.keyboard.press("Control+Backslash"); await page.waitForTimeout(400);
   ok(await page.getByRole("button", { name: "Hide the sidebar" }).isVisible(), "its shortcut (Mod+\\) shows it again");
   await page.getByRole("button", { name: "Hide the side panel" }).click(); await page.waitForTimeout(400);
-  ok(await page.getByRole("button", { name: "Show the side panel" }).isVisible(), "with the side panel closed there is a button to show it");
-  await page.getByRole("button", { name: "Show the side panel" }).click(); await page.waitForTimeout(300);
+  ok((await page.getByRole("button", { name: "Show the side panel" }).count()) === 0, "with the side panel closed there is no button of its own at the card's corner");
+  await page.getByRole("button", { name: "Thread actions" }).click();
+  ok(await page.getByRole("menuitem", { name: "Show side panel" }).isVisible(), "the way back is Show side panel in the three-dot menu");
+  await page.getByRole("menuitem", { name: "Show side panel" }).click(); await page.waitForTimeout(300);
   await page.getByRole("button", { name: /Account, spaces and settings/ }).click(); await page.waitForTimeout(400);
   ok((await page.getByRole("menuitemradio", { name: "Infra" }).count()) === 1 && (await page.getByRole("menuitem", { name: "Settings" }).count()) === 1, "the account picture opens a menu with the spaces and Settings");
   await page.getByRole("menuitem", { name: "Settings" }).click(); await page.waitForTimeout(500);

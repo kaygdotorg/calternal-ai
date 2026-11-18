@@ -21,6 +21,8 @@ export interface ThreadEvents {
   onThought?(thought: { text: string; done?: boolean; ms?: number }): void;
   /** The thread's summary changed (state, title, provider). */
   onSummary(summary: ThreadSummary): void;
+  /** The messages from some index on are a different version now (an edit, or another version chosen): forget what was read and start from `count` messages. */
+  onReset?(count: number): void;
   /** The working turn ended without a message of its own appearing (stopped, failed): the working state goes away. */
   onStreamEnd?(): void;
 }
@@ -83,6 +85,14 @@ export interface ThreadsClient extends ChoicesClient, RequestsClient, PanelsClie
   searchMessages?(query: string, limit?: number): Promise<MessageHit[]>;
   /** Where a message is in its thread (its index among the thread's messages), so a list can jump to it without loading what is between; undefined when it is not there. */
   messageIndex?(threadId: string, messageId: string): Promise<number | undefined>;
+  /** The picker and search lookups when the server has them (search.query, people.lookup, skills.list, threads.lookup, items.lookup): the composer's `@` and `/` and message search use these instead of the fixtures. */
+  lookups?: Lookups;
+  /** Snoozes a thread until `until` (milliseconds since the epoch) or, with null, brings it back now. Absent when the server has no snooze yet; then no snooze control shows. */
+  snooze?(threadId: string, until: number | null): Promise<void>;
+  /** Edits a sent message of the person's: the edit becomes another version of the thread from that message on (the old tail is kept) and the agent answers it. Absent when the server has no edit yet. */
+  editMessage?(threadId: string, messageId: string, text: string, requestId: string): Promise<void>;
+  /** Shows another version of an edited message and what follows it (1-based `version`); per thread, so every viewer sees the same. */
+  setVersion?(threadId: string, messageId: string, version: number): Promise<void>;
   /** Follows a thread while it is open. Returns the unsubscribe. */
   watch(threadId: string, events: ThreadEvents): () => void;
   /** Sends a message (steers a running turn). `requestId` makes a retry safe. */
@@ -99,4 +109,20 @@ export interface ThreadsClient extends ChoicesClient, RequestsClient, PanelsClie
   archive(threadId: string): Promise<void>;
   /** Takes back the last archive of this thread (and the finished children that went with it). Resolves false if it cannot. */
   unarchive(threadId: string): Promise<boolean>;
+}
+
+/** One row of a picker lookup: a thread or an item. */
+export interface PickerHit { id: string; title: string; kind: string; space: string }
+/** The lookups behind message search and the composer's pickers. Each is one request; none throws for "no match" (an empty list). */
+export interface Lookups {
+  /** Messages (or threads, where the index is per thread) that match, newest first. */
+  searchMessages(query: string, limit?: number): Promise<MessageHit[]>;
+  /** People and groups of the current space whose display name starts with `prefix` (empty browses). */
+  people(prefix: string): Promise<{ id: string; name: string; kind: string }[]>;
+  /** The current space's skills whose name starts with `prefix`. */
+  skills(prefix: string): Promise<{ name: string; description: string }[]>;
+  /** Threads by title prefix across the spaces the person can read. */
+  threads(prefix: string): Promise<PickerHit[]>;
+  /** Items (notes and the like) by title prefix across the spaces the person can read. */
+  items(prefix: string): Promise<PickerHit[]>;
 }

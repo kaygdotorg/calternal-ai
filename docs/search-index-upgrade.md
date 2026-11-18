@@ -1,6 +1,6 @@
 # Prepare a search index before upgrading
 
-Proposed for issue #47. An ordinary upgrade keeps serving the last ready search
+Parked behind message search on issue #47. An ordinary upgrade keeps serving the last ready search
 index while the next release prepares its own. The content journal stays
 authoritative. The derived index, its manifests, and its watermark can be
 discarded and built again.
@@ -37,8 +37,8 @@ use. The current 100,000-note fixture uses about 79 MB in the checkpointed
 database. This is a sizing input. Admission uses the configured ceiling and
 measured WAL peak, not the fixture's size as a universal limit.
 
-The candidate has one writer and no long-lived readers. Start with a proposed
-64 MiB WAL allowance per candidate. Before beginning a batch, reserve
+The candidate has one writer and no long-lived readers. Measure its peak WAL
+on the selected message layout before setting an allowance. Before beginning a batch, reserve
 worst-case frames for its dirty-page ceiling, including frame headers. Cap
 cache spill so repeated frames cannot exceed that reservation. Checkpoint and
 truncate between batches if the allowance would be crossed. If a batch still cannot

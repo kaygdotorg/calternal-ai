@@ -14,7 +14,7 @@ pub(crate) fn run(a: &Args) -> Result<i32> {
             "search measurement needs at least 20 samples and 1..100000 total notes".into(),
         );
     }
-    std::fs::create_dir(&a.work)?;
+    fixtures::private_work(&a.work)?;
     let staging = tempfile::Builder::new()
         .prefix("calternal-search-")
         .tempdir_in("/dev/shm")?;

@@ -39,6 +39,8 @@ export type ThreadNotice =
 
 /** What the sidebar and the header need to know about a thread. A child thread has a `parentId`. */
 export interface ThreadSummary {
+  /** Until when the person snoozed the thread (milliseconds since the epoch): it is out of the Inbox until then and listed under Snoozed. Per thread, as the owner decided; the server clears it at the time. */
+  snoozedUntil?: number;
   /** The thread's UUID, the same in the sidebar, the address and every operation. */
   id: string;
   /** The space the thread is in (a UUID). The sidebar lists only the current space's threads. */
@@ -71,14 +73,14 @@ export interface ThreadSummary {
 
 /** One message that matched a search in the threads: where it is, when it was written and the line that matched, so a result can open the thread scrolled to it. */
 export interface MessageHit {
-  /** The message's id (stable across reloads; `?m=<id>` on a thread's address scrolls to it). */
-  messageId: string;
+  /** The message's id (stable across reloads; `?m=<id>` on a thread's address scrolls to it). Absent when the index is per thread, as the server's is: the thread then opens at its end. */
+  messageId?: string;
   /** The thread it is in. */
   threadId: string;
   /** That thread's title, for the result row. */
   threadTitle: string;
-  /** Milliseconds since the epoch the message was written; results are newest first. */
-  at: number;
+  /** Milliseconds since the epoch the message was written; results are newest first. Absent when the index does not carry it. */
+  at?: number;
   /** The line of the message that matched, trimmed. */
   line: string;
   /** Where the match is in `line` (start inclusive, end exclusive), for highlighting. */
@@ -164,6 +166,8 @@ export interface Message {
   blocks: Block[];
   /** For an assistant message: which provider, model and reasoning level wrote it and how long it took; absent for an older message that does not record it. */
   by?: MessageBy;
+  /** On a message that has been edited: which version of it is shown (`n`, from 1) of how many (`of`); the thread shows one version of the tail at a time, the same for everyone. Absent when there is only one. */
+  version?: { n: number; of: number };
 }
 
 /** A question from an agent: a form described in the generated-UI language, drawn by the shell. It never expires. */

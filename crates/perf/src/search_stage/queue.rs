@@ -8,7 +8,7 @@ use std::{
 };
 
 pub(crate) fn run(args: &Args) -> Result<i32> {
-    fs::create_dir(&args.work)?;
+    fixtures::private_work(&args.work)?;
     let fixture_root = tempfile::Builder::new()
         .prefix("notes-search-queue-")
         .tempdir_in("/dev/shm")?;

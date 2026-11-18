@@ -64,9 +64,16 @@ It contains current input and content-free invalidations. It is appdata, not a
 space file or userdata JSON exception. The ordinary per-space journal owns sent
 write receipts. Each call opens only its account database and closes it again;
 blocking workers handle SQLite, directory preparation, hashing and file locks.
-Writes use IMMEDIATE transactions and FULL durability, committing state and its
-invalidation together. There is no per-account worker/thread pool or global input
-mutex. The inherited content receipt router is consulted for completed retries.
+Writes use IMMEDIATE transactions, committing state and its invalidation
+together. There is no per-account worker/thread pool or global input mutex.
+The inherited content receipt router is consulted for completed retries.
+
+Draft saves use SQLite WAL with NORMAL synchronous mode. An acknowledged
+unsent edit survives an application crash. A power loss or system crash can
+discard the latest unsent edits. Draft saves skip the checkpoint at connection
+close and retain SQLite's normal WAL checkpoint threshold. Cleanup, schema
+initialization, pending submissions, sent messages, Notes, and space journals
+keep FULL durability.
 
 Proposed default safety ceilings (operator environment, read once at startup):
 

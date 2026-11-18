@@ -16,7 +16,7 @@
   let list = $state<HTMLElement>();
   let from = "";
   const available = typeof client.searchMessages === "function";
-  const ago = (at: number) => new Date(at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  const ago = (at: number | undefined) => at === undefined ? "" : new Date(at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
   $effect(() => {
     if (!messageSearch.open) return;
     text = ""; sel = 0; hits = [];
@@ -33,7 +33,7 @@
     const mine = ++seq;
     void client.searchMessages!(q, 100).then((r) => { if (mine === seq) { hits = r; sel = 0; } });
   });
-  const target = (h: MessageHit) => `/threads/${h.threadId}?m=${encodeURIComponent(h.messageId)}`;
+  const target = (h: MessageHit) => `/threads/${h.threadId}${h.messageId ? `?m=${encodeURIComponent(h.messageId)}` : ""}`;
   function follow() { const h = hits[sel]; if (h) navigate(target(h), true); }
   function close(restore: boolean) { messageSearch.open = false; if (restore && from) navigate(from, true); }
   function open(h: MessageHit | undefined) { if (!h) return; navigate(target(h), true); close(false); }
@@ -60,9 +60,9 @@
       <p class="none" role="status">No message matches.</p>
     {/if}
     <ul bind:this={list} role="listbox" aria-label="Matching messages">
-      {#each hits as h, i (h.threadId + h.messageId)}
-        <li role="option" aria-selected={i === sel} class:on={i === sel} data-message={h.messageId} onpointermove={() => (sel = i)} onclick={() => open(h)} onkeydown={() => {}}>
-          <span class="top"><span class="t">{h.threadTitle}</span><span class="w">{ago(h.at)}</span></span>
+      {#each hits as h, i (h.threadId + (h.messageId ?? i))}
+        <li role="option" aria-selected={i === sel} class:on={i === sel} data-message={h.messageId ?? undefined} onpointermove={() => (sel = i)} onclick={() => open(h)} onkeydown={() => {}}>
+          <span class="top"><span class="t">{h.threadTitle}</span>{#if h.at !== undefined}<span class="w">{ago(h.at)}</span>{/if}</span>
           <span class="line">{h.line.slice(0, h.start)}<mark>{h.line.slice(h.start, h.end)}</mark>{h.line.slice(h.end)}</span>
         </li>
       {/each}

@@ -211,6 +211,7 @@ impl Content {
                     }
                     let slot = Arc::new(Slot {
                         space: Mutex::new(None),
+                        visibility: Default::default(),
                         last_used: Mutex::new(Instant::now()),
                     });
                     map.insert(id, slot.clone());
@@ -226,6 +227,8 @@ impl Content {
                 Space::open(&self.roots.appdata, &self.roots.userdata_ssd, id, journal)?;
             self.recover_space(&mut opened)?;
             *held = Some(opened);
+            slot.visibility
+                .get_or_init(|| ReadPool::new(db::space_path(&self.roots.appdata, id)));
         }
         // A failed NORMAL bookkeeping reset must never weaken a later original
         // mutation. Like the journal writer, restore FULL before each admission;
@@ -420,19 +423,29 @@ impl Content {
     pub fn receipt_retention(&self) -> Duration {
         self.journals.retention()
     }
-    /// Checks one item's current kind and existence inside an authorized space.
-    /// Cost: the space's lock and one indexed read; no catalog access, body
-    /// allocation, journal call or fsync.
+    /// Checks one item's current committed kind and existence in an authorized
+    /// space. A live journal pins an already recovered slot. Its indexed WAL
+    /// read uses the existing bounded read pool, bypassing the writer's lock,
+    /// with an owner permit to exclude erasure. A cold call first recovers the
+    /// space. A database error fails the visibility check.
     pub fn contains(&self, space: SpaceId, kind: &str, item: Uuid) -> Result<bool> {
-        self.with_space(space, |s| {
-            s.conn
-                .query_row(
-                    "SELECT EXISTS(SELECT 1 FROM items WHERE id=?1 AND kind=?2)",
-                    params![item.to_string(), kind],
-                    |r| r.get(0),
-                )
-                .map_err(internal)
-        })
+        let exists = |conn: &rusqlite::Connection| {
+            conn.query_row(
+                "SELECT EXISTS(SELECT 1 FROM items WHERE id=?1 AND kind=?2)",
+                params![item.to_string(), kind],
+                |r| r.get(0),
+            )
+        };
+        let cached = lock(&self.spaces).get(&space).cloned();
+        if let Some(slot) = cached
+            && let Some(visibility) = slot.visibility.get()
+        {
+            let _step = self.lifecycle.step(space.as_uuid())?;
+            let visible = visibility.read(exists).map_err(internal)?;
+            *lock(&slot.last_used) = Instant::now();
+            return Ok(visible);
+        }
+        self.with_space(space, |s| exists(&s.conn).map_err(internal))
     }
 
     /// The space's journal store, for asynchronous following. The host must
@@ -493,5 +506,83 @@ impl Content {
                 .map(|v| serde_json::from_str(&v).map_err(internal))
                 .transpose()
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use calternal_types::AccountId;
+    use std::sync::mpsc;
+
+    #[test]
+    fn live_visibility_can_read_a_committed_item_while_the_space_writer_is_busy() {
+        let dir = tempfile::tempdir().unwrap();
+        let content = Content::open(
+            calternal_roots::Roots {
+                appdata: dir.path().join("appdata"),
+                userdata_ssd: dir.path().join("ssd"),
+                userdata_hdd: dir.path().join("hdd"),
+            },
+            dir.path().join("secrets"),
+            Duration::from_secs(60),
+            DEFAULT_RECEIPT_RETENTION,
+            |_| {},
+        )
+        .unwrap();
+        let space = SpaceId::new();
+        content
+            .register_kind(
+                space,
+                "notes",
+                Placement::Visible {
+                    folder: "Notes".into(),
+                },
+                FileFormat::Markdown,
+            )
+            .unwrap();
+        let item = content
+            .write(
+                space,
+                None,
+                "notes",
+                None,
+                serde_json::json!({"title": "Visible"}),
+                b"body",
+                Request {
+                    account: AccountId::new(),
+                    via: None,
+                    id: "create",
+                    operation: "notes.create",
+                    fingerprint: "create",
+                },
+                |item| serde_json::json!({"id": item.id}),
+            )
+            .unwrap();
+        let _journal = content.live_journal(space).unwrap();
+
+        let observed = std::thread::scope(|scope| {
+            let (locked, entered) = mpsc::channel();
+            let (release, resume) = mpsc::channel();
+            let (answer, observed) = mpsc::channel();
+            let content = &content;
+            scope.spawn(move || {
+                content
+                    .with_space(space, |_| {
+                        locked.send(()).unwrap();
+                        resume.recv().unwrap();
+                        Ok(())
+                    })
+                    .unwrap();
+            });
+            entered.recv().unwrap();
+            scope.spawn(move || {
+                let _ = answer.send(content.contains(space, "notes", item.id));
+            });
+            let observed = observed.recv_timeout(Duration::from_secs(2));
+            release.send(()).unwrap();
+            observed
+        });
+        assert!(observed.expect("visibility waited for the writer").unwrap());
     }
 }
