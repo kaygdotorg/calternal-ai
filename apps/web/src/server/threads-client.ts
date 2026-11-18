@@ -27,7 +27,7 @@ const TRACE = (() => { try { return localStorage.getItem("cal.debug.threads") ==
 const t0 = Date.now();
 const trace = (...a: unknown[]) => { if (TRACE) console.debug(`[threads +${Date.now() - t0}ms]`, ...a); };
 
-const PROVIDERS: ProviderOption[] = [{ id: "claude", name: "Claude Code", models: [{ id: "default", name: "Default" }] }];
+const PROVIDERS: ProviderOption[] = [{ id: "claude", name: "Claude Code", models: [{ id: "default", name: "Default" }], listed: false }];
 
 /** One thread held in memory: the last read (its revision), its parsed messages, its summary and the Markdown as `Body` (bytes, so the next addition can be spliced in; the string is not kept). */
 interface Open { thread: WireThread; messages: Message[]; summary: ThreadSummary; body: Body; at: number }
@@ -276,17 +276,30 @@ export class ServerThreads implements ThreadsClient {
     const abort = new AbortController();
     this.streams.set(id, abort);
     f.ev.onStreamStart(job);
-    let n = 0, last: { title: string; tool?: string; at: number } | null = null;
+    f.ev.onPhase?.("Waiting to start");
+    let n = 0, started = false, last: { title: string; tool?: string; at: number } | null = null;
     try {
       await this.server.jobEvents(job, (name, data, eid) => {
         trace("job event", name, eid ?? "");
         if (eid) this.bookmarks.set(job, eid);
         if (name === "reset") { void this.pull(id, true); return; }
+        if (name === "snapshot" || name === "state") {
+          // The job's own state: queued or admitted is still waiting; running with no provider event yet is the machine starting the sandbox.
+          const st = (data as { job?: { state?: string } } | null)?.job?.state;
+          if (st === "running" && !started) this.follows.get(id)?.ev.onPhase?.("Starting the machine");
+          return;
+        }
         if (name !== "chunk") return;
         // The job stream's chunk is `{ seq, data }`; for a provider event `data` is the provider envelope `{ version, seq, event: { type, ... } }` (docs/dev-e2e.md); placement and
         // notice chunks carry a plain `data.type` and are not provider events.
         const e = (data as { data?: { event?: { type?: string; text?: string; name?: string; summary?: string; failed?: boolean } } })?.data?.event ?? {};
         const ev = this.follows.get(id)?.ev;
+        // What the working row says: each provider event moves it (placement and the session start come first, then thinking and tools, then the words).
+        if (e.type === "session" || e.type === "start") { started = true; ev?.onPhase?.("Thinking"); }
+        else if (e.type === "tool_started") ev?.onPhase?.(e.summary ?? e.name ?? "Running a tool");
+        else if (e.type === "tool_finished") ev?.onPhase?.("Thinking");
+        else if (e.type === "text_delta") ev?.onPhase?.("Writing");
+        else if ((data as { data?: { type?: string } })?.data?.type === "placement") ev?.onPhase?.("Starting the machine");
         if (e.type === "text_delta" && e.text) ev?.onDelta(e.text);
         else if (e.type === "tool_started") last = { title: e.summary ?? e.name ?? "Tool", tool: e.name, at: Date.now() };
         else if (e.type === "tool_finished" && last) {

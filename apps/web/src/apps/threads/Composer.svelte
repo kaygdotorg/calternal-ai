@@ -154,7 +154,9 @@
   const parked = $derived(thread.state === "waiting" && !thread.notice);
   const provider = $derived(providers.find((p) => p.id === thread.provider));
   const modelName = $derived(provider?.models.find((m) => m.id === thread.model)?.name ?? thread.model);
-  const items = $derived<MenuItem[]>(providers.flatMap((p) => p.models.map((m) => ({ id: `${p.id}:${m.id}`, label: m.name, sub: p.name, icon: p.id === "codex" ? "codex" : "spark", checked: p.id === thread.provider && m.id === thread.model }))));
+  const items = $derived<MenuItem[]>(providers.flatMap((p) => p.models.map((m) => ({ id: `${p.id}:${m.id}`, label: m.name, sub: p.listed === false ? `${p.name} · models are not listed yet` : p.name, icon: p.id === "codex" ? "codex" : "spark", checked: p.id === thread.provider && m.id === thread.model }))));
+  // A search that finds nothing says why when the cause is the missing list, not the words: the server has no list of this provider's models yet (it sends with its default).
+  const empty = $derived(providers.some((p) => p.listed === false) ? "This provider's models are not listed yet. It uses its default model." : "Nothing matches.");
   const providerIcon = $derived(thread.provider === "codex" ? "codex" : "spark");
   // A mode picked here applies to the next turn at once, wider or narrower, with no confirmation (owner decision 2026-11-18); a turn that is running keeps the mode it started with, which the chip and menu say.
   const permItems = $derived<MenuItem[]>(PERMISSIONS.map((p) => ({ id: p.id, label: p.label, sub: p.sub, icon: p.icon, checked: p.id === thread.permission })));
@@ -191,7 +193,7 @@
       <Pill label="{provider?.name ?? ''} · {modelName}" icon={providerIcon} showLabel glass={false} aria-haspopup="menu" aria-expanded={menuOpen} bind:el={trigger} onclick={() => (menuOpen = !menuOpen)}>
         <span class="pl">{provider?.name} · {modelName}</span><span class="pm">{modelName}</span>
       </Pill>
-      <Menu open={menuOpen} {items} search compact morph label="Provider and model" trigger={trigger} onclose={() => (menuOpen = false)} onpick={(id) => { const [p, m] = id.split(":") as [ThreadSummary["provider"], string]; onprovider(p, m); }} />
+      <Menu open={menuOpen} {items} {empty} search compact morph label="Provider and model" trigger={trigger} onclose={() => (menuOpen = false)} onpick={(id) => { const [p, m] = id.split(":") as [ThreadSummary["provider"], string]; onprovider(p, m); }} />
     </span>
     <span class="chip permc">
       <Pill label={running ? `${permissionLabel(thread.permission)}, applies to the next turn` : permissionLabel(thread.permission)} icon={PERM_ICON} showLabel glass={false} aria-haspopup="menu" aria-expanded={permOpen} bind:el={permTrigger} onclick={() => (permOpen = !permOpen)}>

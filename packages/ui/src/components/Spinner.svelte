@@ -5,7 +5,8 @@
 <span class="spin" aria-hidden="true"></span>
 
 <style>
-  .spin { display: inline-block; width: var(--glyph-inline); height: var(--glyph-inline); border-radius: 50%; border: 2px solid color-mix(in oklab, currentColor 22%, transparent); border-top-color: currentColor; animation: spin 0.9s var(--ease-out) infinite; }
+  /* A spinner turns at one steady speed, forever: any easing curve is applied to each turn, so it speeds up and slows down once a turn and reads as stepping. `rotate` is a compositor property. */
+  .spin { display: inline-block; width: var(--glyph-inline); height: var(--glyph-inline); border-radius: 50%; border: 2px solid color-mix(in oklab, currentColor 22%, transparent); border-top-color: currentColor; animation: spin 0.9s linear infinite; }
   @keyframes spin { to { rotate: 360deg; } }
   @media (prefers-reduced-motion: reduce) { .spin { animation: none; border-top-color: color-mix(in oklab, currentColor 60%, transparent); } }
 </style>

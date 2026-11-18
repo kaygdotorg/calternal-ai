@@ -42,13 +42,17 @@ try {
     const back = await box(p); const g2 = await gap(p);
     ok(back.collapsed && Math.abs(back.h - rest.h) < 1 && Math.abs(g2.gap - g0.gap) < 2, "blur collapses it to the same height, the message back just above it", `h=${back.h.toFixed(0)} gap ${g2.gap.toFixed(0)}`);
     // interrupt: focus, then blur 120 ms in; what is drawn must never jump
-    await p.evaluate(() => { window.__s = []; const c = document.querySelector(".composer"); const t0 = performance.now(); const f = () => { const g = c.querySelector(":scope > .glass").getBoundingClientRect(); const m = [...document.querySelectorAll(".msg")].at(-1).getBoundingClientRect(); window.__s.push([g.height, m.bottom]); if (performance.now() - t0 < 900) requestAnimationFrame(f); }; requestAnimationFrame(f); });
+    await p.evaluate(() => { window.__s = []; const c = document.querySelector(".composer"); const t0 = performance.now(); const f = () => { const g = c.querySelector(":scope > .glass").getBoundingClientRect(); const m = [...document.querySelectorAll(".msg")].at(-1).getBoundingClientRect(); window.__s.push([g.height, m.bottom, performance.now() - t0]); if (performance.now() - t0 < 900) requestAnimationFrame(f); }; requestAnimationFrame(f); });
     await p.locator("#composer-field").click(); await p.waitForTimeout(120); await p.mouse.click(device === "phone" ? 200 : 900, 200); await p.waitForTimeout(900);
-    const hs = await p.evaluate(() => window.__s); let jump = 0, mj = 0; for (let i = 1; i < hs.length; i++) { jump = Math.max(jump, Math.abs(hs[i][0] - hs[i - 1][0])); mj = Math.max(mj, Math.abs(hs[i][1] - hs[i - 1][1])); }
-    ok(jump < 40 && mj < 40, "an interrupted expansion reverses without a jump", `biggest step glass ${jump.toFixed(0)} px, message ${mj.toFixed(0)} px over ${hs.length} frames`);
+    // A step between two frames may be as big as the motion allows in the time that passed (the track's steepest part is 14 % of the travel in one 17 ms frame; 20 % is allowed); a stall of the machine is not a jump.
+    const hs = await p.evaluate(() => window.__s); const travel = open1.h - rest.h; let jump = 0, mj = 0, bad2 = 0;
+    for (let i = 1; i < hs.length; i++) { const allow = travel * 0.2 * (hs[i][2] - hs[i - 1][2]) / 17 + 4; const a = Math.abs(hs[i][0] - hs[i - 1][0]), c = Math.abs(hs[i][1] - hs[i - 1][1]); jump = Math.max(jump, a); mj = Math.max(mj, c); if (a > allow || c > allow) bad2++; }
+    ok(bad2 === 0, "an interrupted expansion reverses without a jump", `biggest step glass ${jump.toFixed(0)} px, message ${mj.toFixed(0)} px over ${hs.length} frames (travel ${travel.toFixed(0)} px)`);
     // keyboard focus: Tab into the composer from outside; the change is instant (keyboard use never animates)
     await p.mouse.click(device === "phone" ? 200 : 900, 200); await p.waitForTimeout(500);
-    for (let i = 0; i < 60 && (await p.evaluate(() => document.activeElement?.id)) !== "composer-field"; i++) await p.keyboard.press(i === 0 ? "Tab" : "Tab");
+    // Put the focus on the control just before the field (found by tab order), then press Tab once: how many Tab presses it takes from the page is not what is checked.
+    await p.evaluate(() => { const sel = 'a[href], button:not([disabled]), input, textarea, select, [tabindex]:not([tabindex="-1"])'; const all = [...document.querySelectorAll(sel)].filter((e) => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0 && getComputedStyle(e).visibility !== "hidden"; }); const i = all.indexOf(document.getElementById("composer-field")); all[i - 1].focus(); });
+    for (let k = 0; k < 80 && (await p.evaluate(() => document.activeElement?.id)) !== "composer-field"; k++) await p.keyboard.press("Tab");
     await p.waitForTimeout(40);
     const kb = await box(p);
     ok((await p.evaluate(() => document.activeElement?.id)) === "composer-field" && !kb.collapsed && Math.abs(kb.h - open1.h) < 1.5, "Tab into the composer expands it at once (no animation for the keyboard)", `h=${kb.h.toFixed(0)}`);

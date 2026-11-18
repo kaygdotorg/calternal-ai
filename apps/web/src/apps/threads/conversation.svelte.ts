@@ -8,7 +8,33 @@ import type { ThreadsClient } from "./client";
 import { appearance } from "../../appearance/prefs.svelte";
 import type { Message, Step, ThreadSummary } from "./model";
 
+/** The running turn as the working row shows it: what it is doing now, its steps so far, its reasoning if the provider shares it, and when the person sent (to say how long it worked). */
+export interface Turn {
+  /** The job id once the server has one; empty between the send and the job. */
+  id: string;
+  /** The message text as written, only when the person turned streaming on. */
+  text: string;
+  steps: Step[];
+  /** What it is doing now, in words ("Sending", "Waiting to start", "Thinking", "Running ls", "Writing"). */
+  phase: string;
+  /** `Date.now()` when the person sent. */
+  startedAt: number;
+  /** The provider's reasoning so far; `ms` is set once it has finished. */
+  thought?: { text: string; ms?: number };
+}
+
 const PAGE = 100;
+
+/**
+ * An agent message as this page saw its turn: the saved file may not record how long it worked or what it thought (an older file, or a provider that does not say), but this page measured it.
+ * Only what the message lacks is filled in; what the file records wins.
+ */
+function carry(m: Message, t: Turn): Message {
+  const ms = Date.now() - t.startedAt;
+  const blocks = m.blocks.map((b) => (b.type === "steps" && !b.ms ? { ...b, ms } : b));
+  if (t.thought && !blocks.some((b) => b.type === "thought")) blocks.unshift({ type: "thought", text: t.thought.text, ms: t.thought.ms ?? ms });
+  return { ...m, blocks, by: { ...(m.by ?? {}), ms: m.by?.ms ?? ms } };
+}
 
 /** One open thread. Call `dispose` when leaving it. */
 export class Conversation {
@@ -16,8 +42,8 @@ export class Conversation {
   count = $state(0);
   /** Bumped when a page arrives, so rows waiting on it redraw. Not bumped by streaming. */
   rev = $state(0);
-  /** The streaming agent message, or null. */
-  stream = $state<{ id: string; text: string; steps: Step[] } | null>(null);
+  /** The running turn, or null: from the moment of the send (before the server has said anything) to the end of the turn. */
+  stream = $state<Turn | null>(null);
   summary = $state<ThreadSummary>();
 
   private cache = new Map<number, Message>();
@@ -35,12 +61,15 @@ export class Conversation {
     this.count = summary.messageCount;
     this.off = client.watch(id, {
       onMessage: (m, i) => {
+        // The turn's own message ends the working row (and keeps what only this page saw of the turn: how long it worked, what it thought); the person's message does not.
+        if (m.role === "agent" && this.stream) { m = carry(m, this.stream); this.stream = null; }
         this.cache.set(i, m);
-        if (this.stream) this.stream = null;
         this.count = Math.max(this.count, i + 1);
         this.rev++;
       },
-      onStreamStart: (id) => (this.stream = { id, text: "", steps: [] }),
+      onStreamStart: (id) => { const prev = this.stream; this.stream = { text: "", steps: [], phase: "Starting", startedAt: Date.now(), ...prev, id }; },
+      onPhase: (phase) => { if (this.stream) this.stream.phase = phase; },
+      onThought: (t) => { if (this.stream) this.stream.thought = { text: (this.stream.thought?.text ?? "") + t.text, ms: t.done ? t.ms ?? Date.now() - this.stream.startedAt : undefined }; },
       // Text is shown as it arrives only when the person turned streaming on (off by default): otherwise the working state and steps show, and the finished message appears at once.
       onDelta: (t) => {
         if (this.stream && appearance.prefs.streamText) this.stream.text += t;
@@ -72,6 +101,15 @@ export class Conversation {
         this.rev++;
       });
     }
+  }
+
+  /** The person has sent: the working row shows at once ("Sending"), before the server has answered, and goes if the send is refused (`undo`). */
+  begin(): () => void {
+    if (this.stream) return () => {};
+    const turn: Turn = { id: "", text: "", steps: [], phase: "Sending", startedAt: Date.now() };
+    this.stream = turn;
+    // (A `$state` proxy is not its target: the turn is told apart by its start, and a turn the server has already named is not taken back.)
+    return () => { if (this.stream && this.stream.startedAt === turn.startedAt && !this.stream.id) this.stream = null; };
   }
 
   /** Stops watching. */

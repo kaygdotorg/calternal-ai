@@ -1,6 +1,6 @@
 <script lang="ts">
-  // A folded group of tool calls ("Worked for 1 min · 6 tools"): quiet row that opens in place into the steps; each step opens into its
-  // command and output. Folded by default so a long thread reads as a conversation, not a log.
+  // A folded group of tool calls ("Worked for 1 min · 6 tools"; "Worked · 6 tools" when the time is not known): quiet row that opens in place into the steps; each step opens into its
+  // command and output. Folded by default so a long thread reads as a conversation, not a log. While the turn runs (`running`) it is open and says only how many tools so far: the working row beside it says what is happening.
   import { untrack } from "svelte";
   import { Icon, type IconName } from "@calternal/ui";
   import LogView from "./LogView.svelte";
@@ -18,7 +18,7 @@
 <div class="steps" class:open>
   <button type="button" class="head" aria-expanded={open} aria-controls="{uid}-list" onclick={() => (open = !open)}>
     <span class="chips" aria-hidden="true">{#each kinds as k, i}<span class="chip" style:--i={i}><Icon name={ICON[k]} inline /></span>{/each}</span>
-    <span class="sum" class:shimmer={running}>{running ? "Working" : `Worked for ${worked}`} · {steps.length} {steps.length === 1 ? "tool" : "tools"}</span>
+    <span class="sum">{running ? "" : ms > 0 ? `Worked for ${worked} · ` : "Worked · "}{steps.length} {steps.length === 1 ? "tool" : "tools"}</span>
     <span class="chev"><Icon name="chevron" inline /></span>
   </button>
   <div class="list" id="{uid}-list" inert={!open}>
@@ -44,8 +44,6 @@
   .chip { width: var(--s-7); height: var(--s-7); margin-left: calc(var(--s-2) * -1); display: grid; place-items: center; border-radius: 50%; background: var(--paper); box-shadow: 0 0 0 var(--s-1) rgb(var(--tint) / 0.9), inset 0 0 0 1px var(--line); color: var(--ink-3); z-index: calc(3 - var(--i)); position: relative; }
   .chip:first-child { margin-left: 0; }
   .sum { flex: 1; font-variant-numeric: tabular-nums; }
-  .shimmer { background: linear-gradient(100deg, var(--ink-3) 40%, var(--ink) 50%, var(--ink-3) 60%) 0 0 / 250% 100% no-repeat; -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; animation: sweep 1.9s linear infinite; }
-  @keyframes sweep { to { background-position: 100% 0; } }
   .chev { display: grid; transition: rotate var(--dur-base) var(--ease-out); }
   .open .chev { rotate: 90deg; }
   .list { display: grid; grid-template-rows: 0fr; transition: grid-template-rows var(--dur-base) var(--ease-out); }
@@ -58,5 +56,4 @@
   .ms { flex: none; color: var(--ink-3); font-variant-numeric: tabular-nums; }
   .out { padding: var(--s-1) var(--s-4) var(--s-4); }
   @media (hover: hover) and (pointer: fine) { .step:hover, .head:hover { background: var(--hover); } }
-  @media (prefers-reduced-motion: reduce) { .shimmer { animation: none; -webkit-text-fill-color: currentColor; } .list, .chev { transition: none; } }
 </style>
