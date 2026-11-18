@@ -12,7 +12,7 @@
   import type { Message, ProviderId } from "./model";
   import { store } from "./store.svelte";
   // `provider` is the thread's current provider, the mark of a message whose marker does not say which wrote it.
-  let { message, provider, providers }: { message: Message; provider: ProviderId; providers: { id: ProviderId; name: string; models: { id: string; name: string }[] }[] } = $props();
+  let { message, provider, providers, hit = false }: { hit?: boolean; message: Message; provider: ProviderId; providers: { id: ProviderId; name: string; models: { id: string; name: string }[] }[] } = $props();
   // A very long message (a tool's whole output, say) is drawn in part: the first CAP characters, cut at a line end, and the person chooses to draw the rest. Drawing 5 MB of Markdown at once blocked the page
   // for 0.7 s (2.4 s at 4x CPU slowdown); the list virtualises messages, not the inside of one. The text is all there (copy takes all of it).
   const CAP = 64 * 1024;
@@ -28,7 +28,7 @@
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<div class="msg {message.role}" class:agent-row={message.role === "agent"} onpointerenter={() => (armed = true)} onfocusin={() => (armed = true)}>
+<div class="msg {message.role}" class:agent-row={message.role === "agent"} data-hit={hit ? "" : undefined} onpointerenter={() => (armed = true)} onfocusin={() => (armed = true)}>
   {#if message.role === "user"}
     <div class="col end"><div class="bubble">{#each message.blocks as b}{#if b.type === "text"}<Md text={clip(b.text)} />{:else if b.type === "file"}<span class="file"><Icon name={b.kind === "image" ? "image" : "file"} inline />{b.name}</span>{/if}{/each}</div><MessageActions {message} {armed} /></div>
   {:else}
@@ -53,6 +53,8 @@
 
 <style>
   .clipped { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-3); color: var(--ink-3); font-size: var(--text-label); }
+  .msg[data-hit] { animation: hit 2s ease-out; }
+  @keyframes hit { from { background: color-mix(in oklab, var(--accent) 16%, transparent); } to { background: transparent; } }
   .msg { width: 100%; max-width: var(--msg-w); margin: 0 auto; padding: var(--s-4) var(--msg-pad-r, var(--pad-region)) var(--s-4) var(--msg-pad-l, var(--pad-region)); display: flex; }
   .msg.agent-row { display: grid; grid-template-columns: var(--s-8) minmax(0, 1fr); column-gap: var(--s-4); }
   /* The mark sits in a line of the message's own font and line height, so its centre is the first line's x-height centre at every text size and zoom (ProviderMark.svelte). */

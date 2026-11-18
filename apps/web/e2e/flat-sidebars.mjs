@@ -36,15 +36,15 @@ try {
     if (!good) bad++;
     await ctx.close();
   }
-  // A fresh profile on the default wallpaper with the first-run "Choose a look" panel open, below the panel where the sidebar shows (a 1500 by 950 dark window).
+  // A fresh profile on the default wallpaper (no stored choice): the first visit goes straight in, with no dialog over it (the look is chosen in the onboarding), and the sidebars are flat (a 1500 by 950 window).
   for (const scheme of ["dark", "light"]) {
     const ctx = await browser.newContext({ viewport: { width: 1500, height: 950 }, deviceScaleFactor: 2, colorScheme: scheme }); const page = await ctx.newPage();
     await page.goto(BASE + "/threads/t-run?panel=changes"); await page.waitForSelector("html[data-ready]");
     await page.waitForFunction(() => getComputedStyle(document.documentElement).getPropertyValue("--wall-card").includes("blob"), null, { timeout: 15000 }); await page.waitForTimeout(800);
     const open = await page.locator('[role="dialog"]').count();
-    const m = await measure(page, [870, 930], process.env.DUMP === "1");
-    const good = open > 0 && m.right.worst <= STEP && m.left.worst <= STEP;
-    console.log(`${good ? "PASS" : "FAIL"}  ${scheme.padEnd(5)} fresh profile, first-run panel ${open ? "open" : "NOT open"}, below it: largest step right ${m.right.worst.toFixed(2)} (x ${m.right.at.toFixed(0)}), left ${m.left.worst.toFixed(2)}${m.profile ? "\n   columns from the card edge: " + m.profile.join(" ") : ""}`);
+    const m = await measure(page, [120, -180], process.env.DUMP === "1");
+    const good = open === 0 && m.right.worst <= STEP && m.left.worst <= STEP;
+    console.log(`${good ? "PASS" : "FAIL"}  ${scheme.padEnd(5)} fresh profile, ${open ? "a dialog is OPEN" : "no dialog"}: largest step right ${m.right.worst.toFixed(2)} (x ${m.right.at.toFixed(0)}), left ${m.left.worst.toFixed(2)}${m.profile ? "\n   columns from the card edge: " + m.profile.join(" ") : ""}`);
     if (!good) bad++;
     await ctx.close();
   }

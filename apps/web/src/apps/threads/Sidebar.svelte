@@ -18,6 +18,7 @@
   import { client, startThread, store } from "./store.svelte";
   import { spaces } from "../../shell/spaces.svelte";
   import TopEntries from "./TopEntries.svelte";
+  import { messageSearch } from "./search.svelte";
   import { reasonLine } from "./inbox";
 
   // A fresh account: nothing listed, no section made, and the list has loaded (so it is not just still arriving).
@@ -194,10 +195,10 @@
       <Button variant="primary" text="Start a thread" onclick={() => void startThread().then((t) => navigate(`/threads/${t.id}`)).catch((e: Error) => toast(`Could not start a thread: ${e.message}`))} />
     </div>
   {:else}
-  <div class="tabs" role="tablist" aria-label="Which threads" tabindex="-1" onkeydown={tabKey}>
+  <div class="tabrow"><div class="tabs" role="tablist" aria-label="Which threads" tabindex="-1" onkeydown={tabKey}>
     <button type="button" role="tab" id="tab-inbox" aria-selected={tab === "inbox"} tabindex={tab === "inbox" ? 0 : -1} onclick={() => (chosen = "inbox")}>Inbox{#if items.length}<span class="n">{items.length}</span>{/if}</button>
     <button type="button" role="tab" id="tab-all" aria-selected={tab === "all"} tabindex={tab === "all" ? 0 : -1} onclick={() => (chosen = "all")}>All Threads</button>
-  </div>
+  </div><IconButton icon="search" label="Search messages" onclick={() => (messageSearch.open = true)} /></div>
   {#if tab === "inbox"}
     <div role="tabpanel" aria-labelledby="tab-inbox">
       {#if items.length}
@@ -269,6 +270,8 @@
     .rw:hover :global(.row), .rw:focus-within :global(.row) { padding-right: calc(var(--s-2) * 2 + 3 * var(--ib-small) + 2 * var(--s-1)); }
   }
   /* The two tabs split the sidebar's width in halves; the selected one's capsule spans its half (no empty space at the right). */
+  .tabrow { display: flex; align-items: center; gap: var(--s-1); margin: var(--s-3) 0 var(--s-2); padding-right: var(--s-2); }
+  .tabrow .tabs { flex: 1; margin: 0; }
   .tabs { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s-1); margin: var(--s-3) 0 var(--s-2); padding: 0 var(--s-2); }
   .tabs button { display: inline-flex; align-items: center; justify-content: center; gap: var(--s-2); min-height: var(--row-h); padding: 0 var(--s-4); border-radius: var(--r-pill); font-size: var(--text-label); font-weight: var(--strong-weight); color: var(--ink-3); }
   .tabs button[aria-selected="true"] { background: rgb(var(--ink-rgb) / 0.1); color: var(--ink); }
