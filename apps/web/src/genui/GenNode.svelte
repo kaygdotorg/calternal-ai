@@ -2,7 +2,7 @@
   // One node of a generated description. The catalog has 67 components; the web client draws the ones the shell needs first (question
   // forms, cards, tables, status) and shows a plain fallback line for the rest, so a description never breaks the page.
   import type { UiNode, Value } from "@calternal/genui";
-  import { Badge, Button, Switch } from "@calternal/ui";
+  import { Badge, Button, Selector, Switch } from "@calternal/ui";
   import Md from "../lib/Md.svelte";
   import type { Action, Host } from "./actions";
   import GenNode from "./GenNode.svelte";
@@ -66,9 +66,8 @@
     <select value={String(bind?.value ?? "")} onchange={(e) => host.set(bind!.name, e.currentTarget.value)}>{#each p.options as o}{@const x = opt(o)}<option value={x.value}>{x.label}</option>{/each}</select>
   </label>
 {:else if type === "Choice"}
-  <div class="field" role="radiogroup" aria-labelledby="{id}-c"><span id="{id}-c">{p.label}</span>
-    <div class="choice">{#each p.options as o}{@const x = opt(o)}<button type="button" role="radio" aria-checked={String(bind?.value) === x.value} onclick={() => host.set(bind!.name, x.value)}>{x.label}</button>{/each}</div>
-  </div>
+  <!-- The shared selection switcher (packages/ui Selector: a capsule that stretches to the new choice), so a plugin's Choice looks and moves like the app's own controls. -->
+  <Selector label={String(p.label ?? "")} fill={false} options={p.options.map((o) => { const x = opt(o); return { value: x.value, label: x.label }; })} value={bind?.value == null ? null : String(bind.value)} onchange={(v) => host.set(bind!.name, v)} />
 {:else if type === "Radio"}
   <div class="field" role="radiogroup" aria-labelledby="{id}-r"><span id="{id}-r">{p.label}</span>
     <div class="radios">{#each p.options as o}{@const x = opt(o)}<button type="button" role="radio" aria-checked={String(bind?.value) === x.value} onclick={() => host.set(bind!.name, x.value)}><b>{x.label}</b>{#if x.detail}<small>{x.detail}</small>{/if}</button>{/each}</div>
@@ -112,9 +111,8 @@
   .field { display: grid; gap: var(--s-2); border: 0; padding: 0; margin: 0; font-size: var(--text-label); color: var(--ink-2); font-weight: var(--strong-weight); }
   input[type="text"], textarea, select { width: 100%; min-height: calc(var(--pill-h) + var(--s-2)); padding: 0 var(--s-5); border: 0; border-radius: var(--r-select); background: rgb(var(--ink-rgb) / 0.07); color: var(--ink); font-size: var(--text-ui); font-weight: var(--ui-weight); }
   textarea { padding: var(--s-4) var(--s-5); resize: vertical; }
-  .choice { display: flex; flex-wrap: wrap; gap: var(--s-2); }
-  .choice button, .radios button { min-height: var(--pill-h); padding: 0 var(--s-5); border-radius: var(--r-pill); background: rgb(var(--ink-rgb) / 0.07); color: var(--ink); font-size: var(--text-ui); font-weight: var(--ui-weight); }
-  .choice button[aria-checked="true"], .radios button[aria-checked="true"] { background: var(--accent-soft); color: var(--accent); font-weight: var(--strong-weight); }
+  .radios button { min-height: var(--pill-h); padding: 0 var(--s-5); border-radius: var(--r-pill); background: rgb(var(--ink-rgb) / 0.07); color: var(--ink); font-size: var(--text-ui); font-weight: var(--ui-weight); }
+  .radios button[aria-checked="true"] { background: var(--accent-soft); color: var(--accent); font-weight: var(--strong-weight); }
   .radios { display: grid; gap: var(--s-2); } .radios button { display: grid; text-align: start; border-radius: var(--r-select); padding: var(--s-3) var(--s-5); } small { font-weight: var(--ui-weight); color: var(--ink-3); }
   .check { display: flex; align-items: center; gap: var(--s-4); min-height: var(--pill-h); font-weight: var(--ui-weight); color: var(--ink); font-size: var(--text-ui); }
   .check input { width: var(--s-7); height: var(--s-7); accent-color: var(--accent-base); }
