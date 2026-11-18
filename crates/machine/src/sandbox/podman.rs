@@ -300,7 +300,7 @@ impl PodmanBackend {
                         "--pull=never".into(), "--network=none".into(), "--read-only".into(),
                         "--pid=private".into(), "--ipc=private".into(), "--cap-drop=all".into(),
                         "--security-opt=no-new-privileges".into(), "--http-proxy=false".into(),
-                        "--log-driver=none".into(), "--tmpfs".into(), "/home/agent:mode=0700".into(),
+                        "--log-driver=none".into(), "--image-volume=ignore".into(), "--tmpfs".into(), "/home/agent:mode=0700".into(),
                         "--volume".into(), format!("{}:/run/calternal-broker:ro", broker.directory.display()),
                         "--env".into(), "HOME=/home/agent".into(),
                     ]);

@@ -111,9 +111,13 @@ for (const fd of fs.readdirSync('/proc/self/fd')) {{
 }}
 if (Object.keys(process.env).some(k=>/^(ANTHROPIC_|OPENAI_|CALTERNAL_GATEWAY|CLAUDE_CODE_OAUTH)/.test(k))) process.exit(14);
 if (fs.existsSync('/run/calternal-broker/gateway.sock')) process.exit(15);
-const req=http.get('{base}', response=>{{response.resume();process.exit(16);}});
-req.setTimeout(1500,()=>req.destroy());
-req.on('error',()=>{{fs.writeFileSync('/work/isolated','yes');console.log('boundary intact');}});
+const denied = input => new Promise(resolve => {{
+  const req=http.get(input, response=>{{response.resume();process.exit(16);}});
+  req.setTimeout(1500,()=>req.destroy());
+  req.on('error', resolve);
+}});
+Promise.all([denied('{base}'), denied({{socketPath:'/run/calternal-broker/gateway.sock',path:'/'}})])
+  .then(()=>{{fs.writeFileSync('/work/isolated','yes');console.log('boundary intact');}});
 JS
 "#,
             login = login.to_string_lossy(), host_pid = std::process::id(),

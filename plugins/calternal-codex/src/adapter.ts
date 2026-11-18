@@ -92,6 +92,10 @@ class Adapter {
       await this.emit({type: 'check', installed: false, signed_in: false, sign_in_command: signInCommand});
       return 'missing' as const;
     }
+    if (process.env.CALTERNAL_GATEWAY_URL) {
+      await this.emit({type: 'check', installed: true, signed_in: true, sign_in_command: signInCommand});
+      return 'ready' as const;
+    }
     let result: Frame;
     try {
       result = await rpc.request('account/read', {refreshToken: false});

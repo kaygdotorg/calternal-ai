@@ -266,7 +266,7 @@ impl ToolSandbox {
             .args(["run", "-i", "--rm", "--pull=never", "--network=none", "--pid=private",
                 "--ipc=private", "--read-only", "--cap-drop=all",
                 "--security-opt=no-new-privileges", "--userns=keep-id:uid=65534,gid=65534",
-                "--user=65534:65534", "--http-proxy=false", "--log-driver=none",
+                "--user=65534:65534", "--http-proxy=false", "--log-driver=none", "--image-volume=ignore",
                 "--memory=256m", "--pids-limit=32", "--timeout=20",
                 "--name", &name, "--label", &self.root_label, "--volume", &mount, "--workdir", "/work",
                 "--entrypoint=/usr/bin/env", &self.image, "-i", "LANG=C.UTF-8",
