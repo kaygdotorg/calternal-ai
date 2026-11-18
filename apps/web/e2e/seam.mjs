@@ -6,7 +6,7 @@ import { chromium } from "playwright";
 import { readFileSync } from "node:fs";
 import { BASE, serve } from "./lib.mjs";
 const IDS = JSON.parse(readFileSync("wallpapers.json", "utf8")).map((w) => w.id);
-const FULL = !!process.env.SEAM_FULL, STEP = Number(process.env.SEAM_MAX ?? 4);
+const FULL = !!process.env.SEAM_FULL, STEP = Number(process.env.SEAM_MAX ?? 5);
 const stop = await serve(); const b = await chromium.launch(); let bad = 0, worstAll = 0;
 const cases = [];
 for (const scheme of ["light", "dark"]) for (const id of FULL ? IDS : [IDS[0], IDS[3]]) for (const dpr of FULL ? [1, 2] : id === IDS[0] ? [1, 2] : [1]) cases.push({ scheme, id, dpr });
@@ -23,27 +23,20 @@ for (const { scheme, id, dpr } of cases) {
   const res = await page.evaluate(async ([png, g, dpr]) => {
     const img = await createImageBitmap(await (await fetch(`data:image/png;base64,${png}`)).blob());
     const c = document.createElement("canvas"); c.width = img.width; c.height = img.height; const x = c.getContext("2d", { willReadFrequently: true }); x.drawImage(img, 0, 0);
-    const px = (cx, cy) => x.getImageData(Math.round(cx * dpr), Math.round(cy * dpr), 1, 1).data;
-    const d = (a, b) => Math.max(Math.abs(a[0] - b[0]), Math.abs(a[1] - b[1]), Math.abs(a[2] - b[2]));
-    const R = Math.ceil(g.radius), out = [];
-    const outside = (dx, dy) => Math.hypot(R - dx, R - dy) > R + 0.5; // (dx, dy) measured from the corner of the card's box: outside the rounded corner when farther than R from the arc's centre
-    // For each corner: rows (or columns) crossing the line that the card's edge makes: compare a pixel just outside the card with the pixel it would continue into, 3 px farther out, along the same row.
-    const corners = [["top-left", g.x0, g.y0, 1, 1], ["top-right", g.x1, g.y0, -1, 1], ["bottom-left", g.x0, g.y1, 1, -1], ["bottom-right", g.x1, g.y1, -1, -1]];
-    for (const [name, cx, cy, sx, sy] of corners) {
+    // The mean colour of a 5 x 5 device-pixel patch (the grain is noise of a few levels per pixel; a seam is a step in the mean).
+    const at = (cx, cy) => { const px = Math.round(cx * dpr) - 2, py = Math.round(cy * dpr) - 2; if (px < 0 || py < 0 || px + 5 > img.width || py + 5 > img.height) return null; const d = x.getImageData(px, py, 5, 5).data; let r = 0, g2 = 0, b = 0; for (let i = 0; i < d.length; i += 4) { r += d[i]; g2 += d[i + 1]; b += d[i + 2]; } return [r / 25, g2 / 25, b / 25]; };
+    const diff = (a, b) => Math.max(Math.abs(a[0] - b[0]), Math.abs(a[1] - b[1]), Math.abs(a[2] - b[2]));
+    const R = g.radius, out = [];
+    // Around each rounded corner, leaving the card's edge outward along the radius: the ring 3 px outside the card against the ring 12 px outside it. Where a second layer began at the card's edge (a veil that stops, a shadow, a
+    // backdrop of the card's own) the two rings differ by a step; on one continuous background they differ by the wallpaper's slow gradient.
+    const corners = [["top-left", g.x0 + R, g.y0 + R, Math.PI, 1.5 * Math.PI], ["top-right", g.x1 - R, g.y0 + R, 1.5 * Math.PI, 2 * Math.PI], ["bottom-right", g.x1 - R, g.y1 - R, 0, 0.5 * Math.PI], ["bottom-left", g.x0 + R, g.y1 - R, 0.5 * Math.PI, Math.PI]];
+    for (const [name, cx, cy, a0, a1] of corners) {
       let worst = 0;
-      for (let k = 0; k <= R; k++) {
-        // horizontal line k px from the card's top (or bottom) edge: the first pixel outside the rounded corner, and the one 4 px beyond it away from the card
-        const dy = k; let dx = 0; while (dx <= R && !outside(dx, R - dy ? R - (R - dy) + 0 : 0) && dx < R) dx++;
-        const yy = cy + sy * (k + 0.5);
-        // inside the corner square, the card's edge on this row is at xEdge = cx + sx * (R - sqrt(R^2 - (R - k)^2))
-        const t = R - k, xe = cx + sx * (R - Math.sqrt(Math.max(0, R * R - t * t)));
-        const a = px(xe - sx * 1.5, yy), bpx = px(xe - sx * 6, yy);
-        worst = Math.max(worst, d(a, bpx));
-      }
-      out.push([name, worst]);
+      for (let k = 0; k <= 12; k++) { const t = a0 + ((a1 - a0) * k) / 12, ux = Math.cos(t), uy = Math.sin(t); const a = at(cx + ux * (R + 3), cy + uy * (R + 3)), b2 = at(cx + ux * (R + 12), cy + uy * (R + 12)); if (a && b2) worst = Math.max(worst, diff(a, b2)); }
+      out.push([name, +worst.toFixed(1)]);
     }
-    // The gap columns: beside the card's left and right edges, at several heights: the column of the gap against the column 8 px beyond it
-    for (const [name, xe, s] of [["left gap", g.x0, 1], ["right gap", g.x1, -1]]) { let worst = 0; for (const f of [0.2, 0.4, 0.6, 0.8]) { const yy = g.y0 + (g.y1 - g.y0) * f; worst = Math.max(worst, d(px(xe - s * 2, yy), px(xe - s * 10, yy))); } out.push([name, worst]); }
+    // The gap columns beside the card at several heights, and the strips above and below it where the card does not reach the window's edge.
+    for (const [name, xe, s2] of [["left gap", g.x0, -1], ["right gap", g.x1, 1]]) { let worst = 0; for (const f of [0.15, 0.3, 0.5, 0.7, 0.85]) { const yy = g.y0 + (g.y1 - g.y0) * f; const a = at(xe + s2 * 3, yy), b2 = at(xe + s2 * 12, yy); if (a && b2) worst = Math.max(worst, diff(a, b2)); } out.push([name, +worst.toFixed(1)]); }
     return out;
   }, [png, g, dpr]);
   const worst = Math.max(...res.map((r) => r[1])); worstAll = Math.max(worstAll, worst);
