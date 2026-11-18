@@ -16,6 +16,8 @@ mod plugin_wire;
 pub use plugin_wire::*;
 mod spaces;
 pub use spaces::*;
+mod onboarding;
+pub use onboarding::*;
 mod wallpapers;
 pub use wallpapers::*;
 mod secrets;

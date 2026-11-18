@@ -6,6 +6,9 @@ import { execFileSync } from 'node:child_process';
 const args=process.argv.slice(2);
 const loginFile = join(process.env.HOME, '.claude', '.credentials.json');
 if (args.join(' ') === 'auth login') {
+  // Lets a test prove the adapter reaps this process when its parent goes away.
+  mkdirSync(process.env.HOME, { recursive: true });
+  writeFileSync(join(process.env.HOME, 'login.pid'), String(process.pid));
   console.log('Open https://claude.ai/oauth/authorize?state=FIXTURE_BROWSER_LINK');
   console.error('PRIVATE_LOGIN_SENTINEL');
   let code = '';
