@@ -81,7 +81,7 @@ export class ServerClient {
   }
   /** Calls one operation. `requestId` makes a retry the same request. */
   async operate<T>(operation: string, input: Record<string, unknown> = {}, requestId: string = crypto.randomUUID()): Promise<T> {
-    const res = await this.send("/api/v1/operations", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ request_id: requestId, operation, input }) }, false, !READS.test(operation));
+    const res = await this.send("/api/v1/operations", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ request_id: requestId, operation, input }) }, false, !isRead(operation));
     let body: OperationResponse<T>;
     try { body = (await res.json()) as OperationResponse<T>; } catch { throw new ServerError("internal", `unreadable answer (${res.status})`, res.status); }
     if (!body.ok) throw new ServerError(body.error.code, body.error.message, res.status);
