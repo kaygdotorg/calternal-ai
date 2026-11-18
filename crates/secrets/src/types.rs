@@ -114,6 +114,13 @@ impl HandleToken {
 /// The one place a released value may go.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Consumer {
+    /// Host verification of one manifest-declared incoming webhook.
+    WebhookSignature {
+        /// Package declaring the space-local route.
+        package: String,
+        /// Declared route name, with no query or delivery identifiers.
+        route: String,
+    },
     /// One environment variable in the sandbox of one agent thread.
     SandboxEnv {
         /// Thread whose sandbox receives the variable.
@@ -134,6 +141,9 @@ impl Consumer {
     /// Check the consumer's shape so audit rows stay small and unambiguous.
     pub(crate) fn validate(&self) -> Result<()> {
         let ok = match self {
+            Self::WebhookSignature { package, route } => {
+                SecretName::for_plugin(package, route).is_ok()
+            }
             Self::SandboxEnv { variable, .. } => {
                 !variable.is_empty()
                     && variable.len() <= 64
@@ -160,6 +170,9 @@ impl Consumer {
     }
     pub(crate) fn describe(&self) -> String {
         match self {
+            Self::WebhookSignature { package, route } => {
+                format!("verify webhook {package}/{route}")
+            }
             Self::SandboxEnv { thread, variable } => format!("env {variable} in thread {thread}"),
             Self::RequestHeader { origin, header } => format!("header {header} to {origin}"),
         }

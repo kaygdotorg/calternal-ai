@@ -29,13 +29,36 @@ impl Flows {
     pub(super) fn new() -> Self {
         Self {
             states: Mutex::new(HashMap::new()),
-            client: reqwest::Client::builder()
-                .redirect(reqwest::redirect::Policy::none())
-                .timeout(Duration::from_secs(8))
+            client: Self::client_builder()
                 .build()
                 .expect("OIDC HTTP client configuration"),
             network: Semaphore::new(16),
         }
+    }
+
+    fn client_builder() -> reqwest::ClientBuilder {
+        reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .timeout(Duration::from_secs(8))
+    }
+
+    pub(super) fn with_ca(pem: &[u8]) -> std::io::Result<Self> {
+        let invalid = || {
+            std::io::Error::other("CALTERNAL_OIDC_CA_FILE must contain trusted PEM certificates")
+        };
+        let roots = reqwest::Certificate::from_pem_bundle(pem).map_err(|_| invalid())?;
+        if roots.is_empty() {
+            return Err(invalid());
+        }
+        let mut builder = Self::client_builder();
+        for root in roots {
+            builder = builder.add_root_certificate(root);
+        }
+        Ok(Self {
+            states: Mutex::new(HashMap::new()),
+            client: builder.build().map_err(|_| invalid())?,
+            network: Semaphore::new(16),
+        })
     }
 
     fn insert(&self, id: String, flow: Flow, began: Instant) -> Result<(), Response> {
@@ -171,11 +194,7 @@ fn failed() -> Response {
 }
 
 fn browser_cookie(headers: &HeaderMap) -> Option<&str> {
-    let cookies = cookies(headers);
-    let mut matched = cookies
-        .iter()
-        .filter(|(name, _)| *name == COOKIE)
-        .map(|(_, value)| *value);
+    let mut matched = cookies(headers, COOKIE);
     let first = matched.next()?;
     matched.next().is_none().then_some(first)
 }

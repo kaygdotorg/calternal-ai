@@ -46,7 +46,9 @@ pub(super) async fn guard<D: Directory>(
         }
         // Machine protocol routes authenticate the machine themselves.
         let account_route = path.starts_with("/api/v1/auth/")
-            || path.starts_with(calternal_machine::protocol::PATH_PREFIX);
+            || path.starts_with(calternal_machine::protocol::PATH_PREFIX)
+            || (*req.method() == axum::http::Method::POST
+                && path.starts_with(crate::plugins::signals::PREFIX));
         if api
             && !account_route
             && bearer(req.headers()).is_none()

@@ -2,6 +2,8 @@
 use super::*;
 use calternal_types::AccountId;
 
+pub(super) mod live;
+
 /// List registered manifests and caller-visible contributions. Read one indexed
 /// activation row per visible package, with one authority lookup for slot
 /// resolution. No content reads, worker invocations or durable writes.
@@ -13,16 +15,7 @@ pub(super) async fn list<D: Directory>(
     let catalog = state.registry.snapshot();
     let declarations = catalog.clone();
     let plugins = blocking(state, move |store| {
-        declarations
-            .plugins()
-            .iter()
-            .map(|plugin| {
-                plugin
-                    .available_in(space)
-                    .then(|| plugin_state(store, space, plugin))
-                    .transpose()
-            })
-            .collect::<Result<Vec<_>, _>>()
+        plugin_states(store, &declarations, space)
     })
     .await?;
     let (slots, owned_slots) = if catalog.has_slots() {
@@ -39,4 +32,21 @@ pub(super) async fn list<D: Directory>(
         slots: (!slots.is_empty()).then_some(slots),
         owned_slots: (!owned_slots.is_empty()).then_some(owned_slots),
     })
+}
+
+fn plugin_states(
+    store: &Store,
+    catalog: &crate::plugins::Catalog,
+    space: SpaceId,
+) -> Result<Vec<Option<PluginState>>, Error> {
+    catalog
+        .plugins()
+        .iter()
+        .map(|plugin| {
+            plugin
+                .available_in(space)
+                .then(|| plugin_state(store, space, plugin))
+                .transpose()
+        })
+        .collect()
 }
