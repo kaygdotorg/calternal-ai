@@ -37,13 +37,19 @@ for (const { scheme, id, dpr } of cases) {
       const name = nearTop ? (left ? "top-left" : "top-right") : nearBottom ? (left ? "bottom-left" : "bottom-right") : left ? "left gap" : "right gap";
       if (df > regions[name]) { regions[name] = df; where[name] = [Math.round(px), Math.round(py)]; }
     }
-    return Object.entries(regions).map(([k, v]) => [k, v, where[k] ?? null]);
+    // And the background itself, with no card in the way, must be continuous across the lines where the card's edges are: the old build had a veil per sidebar that ended exactly there (a step of 30 levels or more); a
+    // photograph changes a level or two over 6 px. The 90th percentile of the step over the card's height, at both vertical edges.
+    const mean = (x, y) => { const X = Math.round(x * dpr) - 1, Y = Math.round(y * dpr) - 1; let s = [0, 0, 0]; for (let j = 0; j < 3; j++) for (let i = 0; i < 3; i++) { const k = ((Y + j) * W + X + i) * 4; s[0] += B.data[k]; s[1] += B.data[k + 1]; s[2] += B.data[k + 2]; } return s.map((v) => v / 9); };
+    const steps = [];
+    for (const xe of [g.x0, g.x1]) for (let y = 8; y < g.ih - 8; y += 6) { const a1 = mean(xe - 3, y), b1 = mean(xe + 3, y); steps.push(Math.max(Math.abs(a1[0] - b1[0]), Math.abs(a1[1] - b1[1]), Math.abs(a1[2] - b1[2]))); }
+    steps.sort((p, q) => p - q);
+    return [...Object.entries(regions).map(([k, v]) => [k, v, where[k] ?? null]), ["step across the card's edge lines (p90)", +steps[Math.floor(steps.length * 0.9)].toFixed(1), null]];
   }, [withCard, without, g, dpr]);
-  const worst = Math.max(...res.map((r) => r[1])); worstAll = Math.max(worstAll, worst);
-  const fail = res.filter((r) => r[1] > MAX);
-  console.log(`${fail.length ? "FAIL" : "PASS"}  ${scheme} ${id.slice(0, 6)} ${dpr}x  differs with the card there: ${res.map((r) => `${r[0]} ${r[1]}${r[1] > MAX && r[2] ? ` at ${r[2]}` : ""}`).join(", ")}`);
+  const worst = Math.max(...res.filter((r) => !r[0].startsWith("step")).map((r) => r[1])); worstAll = Math.max(worstAll, worst);
+  const fail = res.filter((r) => r[1] > (r[0].startsWith("step") ? 4 : MAX));
+  console.log(`${fail.length ? "FAIL" : "PASS"}  ${scheme} ${id.slice(0, 6)} ${dpr}x   ${res.map((r) => `${r[0]} ${r[1]}${r[1] > MAX && r[2] ? ` at ${r[2]}` : ""}`).join(", ")}`);
   if (fail.length) bad++;
   await ctx.close();
 }
-console.log(`worst difference outside the card: ${worstAll} levels of 255 (allowed ${MAX})`);
+console.log(`worst difference (outside the card, with and without it): ${worstAll} levels of 255 (allowed ${MAX})`);
 await b.close(); stop(); process.exit(bad ? 1 : 0);
