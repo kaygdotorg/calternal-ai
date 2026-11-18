@@ -19,42 +19,37 @@ pub(super) async fn dispatch<D: Directory>(
 ) -> Result<Value, Error> {
     match op {
         SearchOperation::Query => {
-            let input: SearchInput = decode(input)?;
-            to_value(
-                search(
-                    state,
-                    person.id,
-                    input,
-                    false,
-                    catalog.search_configuration(),
-                )
-                .await?,
-            )
+            let input = decode(input)?;
+            let plan = QueryPlan::Projected {
+                config: catalog.search_configuration().clone(),
+                prefix: false,
+            };
+            to_value(search(state, person.id, input, plan).await?)
         }
         SearchOperation::Items | SearchOperation::Threads => {
             let i: LookupInput = decode(input)?;
-            let kinds = if op == SearchOperation::Threads {
-                vec!["threads".into()]
+            let plan = if op == SearchOperation::Threads {
+                QueryPlan::ThreadTitles(
+                    catalog
+                        .plugins()
+                        .iter()
+                        .find(|plugin| plugin.declares_kind("threads"))
+                        .cloned(),
+                )
             } else {
-                Vec::new()
+                QueryPlan::Projected {
+                    config: catalog.search_configuration().clone(),
+                    prefix: true,
+                }
             };
             let input = SearchInput {
                 query: i.prefix,
-                kinds,
+                kinds: Vec::new(),
                 space_id: i.space_id,
                 limit: i.limit,
                 cursor: i.cursor,
             };
-            to_value(
-                search(
-                    state,
-                    person.id,
-                    input,
-                    true,
-                    catalog.search_configuration(),
-                )
-                .await?,
-            )
+            to_value(search(state, person.id, input, plan).await?)
         }
         SearchOperation::People => {
             let i: SpaceLookupInput = decode(input)?;
@@ -100,12 +95,34 @@ fn directory<D: Directory>(state: &Shared<D>) -> Result<&calternal_auth::spaces:
         .ok_or_else(|| Error::unavailable("search directory unavailable"))
 }
 
+#[derive(Clone)]
+enum QueryPlan {
+    Projected {
+        config: Arc<SearchConfig>,
+        prefix: bool,
+    },
+    ThreadTitles(Option<Arc<Plugin>>),
+}
+
+impl QueryPlan {
+    fn collect(
+        &self,
+        store: &Store,
+        spaces: &[SpaceId],
+        input: &SearchInput,
+    ) -> Result<SearchResult, Error> {
+        match self {
+            Self::Projected { config, prefix } => collect(store, spaces, input, *prefix, config),
+            Self::ThreadTitles(plugin) => thread_titles(store, spaces, input, plugin.as_deref()),
+        }
+    }
+}
+
 async fn search<D: Directory>(
     state: &Shared<D>,
     account: AccountId,
     input: SearchInput,
-    prefix: bool,
-    config: &Arc<SearchConfig>,
+    plan: QueryPlan,
 ) -> Result<SearchResult, Error> {
     let selected = input.space_id.as_deref().map(space_of).transpose()?;
     let auth = directory(state)?;
@@ -116,9 +133,9 @@ async fn search<D: Directory>(
     };
     let spaces = load().await?;
     let selected_spaces = spaces.clone();
-    let selected_config = Arc::clone(config);
+    let selected_plan = plan.clone();
     let (input, page) = blocking(state, move |store| {
-        let page = collect(store, &selected_spaces, &input, prefix, &selected_config);
+        let page = selected_plan.collect(store, &selected_spaces, &input);
         Ok((input, page))
     })
     .await?;
@@ -127,23 +144,19 @@ async fn search<D: Directory>(
         return page;
     }
     // Recompute ordering, coverage and continuation if a grant changed.
-    retry(state, account, input, prefix, current, Arc::clone(config)).await
+    retry(state, account, input, current, plan).await
 }
 
 async fn retry<D: Directory>(
     state: &Shared<D>,
     account: AccountId,
     input: SearchInput,
-    prefix: bool,
     spaces: Vec<SpaceId>,
-    config: Arc<SearchConfig>,
+    plan: QueryPlan,
 ) -> Result<SearchResult, Error> {
     let filter = input.space_id.as_deref().map(space_of).transpose()?;
     let selected = spaces.clone();
-    let result = blocking(state, move |store| {
-        collect(store, &selected, &input, prefix, &config)
-    })
-    .await?;
+    let result = blocking(state, move |store| plan.collect(store, &selected, &input)).await?;
     let current = directory(state)?
         .search_spaces(account, filter, SearchOperation::CAPABILITY)
         .await
@@ -152,6 +165,62 @@ async fn retry<D: Directory>(
         return Err(Error::unavailable("space access changed; retry the search"));
     }
     Ok(result)
+}
+
+// Threads keep title lookup available before message indexing is enabled. Use
+// the existing content-head index after checking the declaring plugin's space
+// activation. Each enabled space takes one indexed title query and no body reads.
+fn thread_titles(
+    store: &Store,
+    spaces: &[SpaceId],
+    input: &SearchInput,
+    plugin: Option<&Plugin>,
+) -> Result<SearchResult, Error> {
+    let prefix = input.query.trim().to_ascii_lowercase();
+    let limit = input.limit.unwrap_or(20) as usize;
+    let mut hits = Vec::new();
+    if let Some(plugin) = plugin {
+        for &space in spaces {
+            if !activation(store, space, plugin)?.enabled {
+                continue;
+            }
+            let page = store.content().item_page(
+                space,
+                "threads",
+                calternal_content::ItemOrder::Title(&prefix),
+                input.cursor.as_deref(),
+                limit + 1,
+            )?;
+            for row in page.rows {
+                let title = row.metadata["title"]
+                    .as_str()
+                    .ok_or_else(|| Error::internal("thread has no indexed title"))?;
+                let key = row.metadata["title_key"]
+                    .as_str()
+                    .map_or_else(|| title.to_ascii_lowercase(), str::to_owned);
+                hits.push((
+                    (key, row.id),
+                    SearchHit {
+                        address: format!("/threads/{}", row.id),
+                        kind: row.kind,
+                        space_id: row.space.to_string(),
+                        title: title.to_owned(),
+                        excerpt: Vec::new(),
+                    },
+                ));
+            }
+            hits.sort_unstable_by(|a, b| a.0.cmp(&b.0));
+            hits.truncate(limit + 1);
+        }
+    }
+    let page = Page::from_lookahead(hits, limit, |(key, _)| {
+        serde_json::to_string(key).expect("stable title cursor")
+    });
+    Ok(SearchResult {
+        hits: page.rows.into_iter().map(|(_, hit)| hit).collect(),
+        next_cursor: page.next,
+        partial: false,
+    })
 }
 
 fn collect(

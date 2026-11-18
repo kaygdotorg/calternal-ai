@@ -3,6 +3,7 @@ use super::*;
 
 mod live;
 mod rebuild_source;
+mod thread_titles;
 
 pub(super) const OPERATIONS: &[&str] = &[
     "search.query",
@@ -54,6 +55,33 @@ async fn ready_search(f: &Fixture, who: usize, op: &str, input: Value) -> Value 
     })
     .await
     .unwrap_or_else(|_| panic!("search projection should catch up for {op}: {input}"))
+}
+
+#[tokio::test]
+async fn empty_space_rebuild_leaves_userdata_unprovisioned() {
+    let f = Fixture::new().await;
+    let space = &f.spaces[2];
+    let files = f.dir.path().join("userdata-ssd/spaces").join(space);
+    assert!(!files.exists(), "fixture space starts without userdata");
+    f.op(
+        1,
+        "plugins.enable",
+        json!({"space_id":space,"plugin_id":"calternal-notes-insights"}),
+    )
+    .await
+    .ok();
+    let app = f.appdata().join("spaces").join(space);
+    assert!(app.join("content.db").is_file());
+    let page = ready_search(
+        &f,
+        2,
+        "search.query",
+        json!({"space_id":space,"kinds":["notes"],"query":"needle"}),
+    )
+    .await;
+    assert_eq!(page, json!({"hits":[],"partial":false}));
+    assert!(app.join("search-v2.db").is_file(), "the worker ran");
+    assert!(!files.exists(), "search rebuild provisioned {files:?}");
 }
 
 #[tokio::test]
