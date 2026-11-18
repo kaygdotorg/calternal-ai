@@ -9,12 +9,14 @@
   import { reach } from "../../lib/reach";
   import { shell } from "../../shell/shell.svelte";
   import { incoming, incomingCollections } from "./share/incoming.svelte";
+  import { collectionList } from "./share/collections-list.svelte";
   import { beginSelect, endSelect, selectAll, allPicked, selection, selecting, toggleId, pickRange, provideList, setPicked } from "../../lib/select.svelte";
   import { collectionTitle, createCollection } from "./share/collections";
   import { twoFinger } from "../../lib/two-finger";
   import ShareHost from "./share/ShareHost.svelte";
   import { openShare, shareUi } from "./share/share.svelte";
     // What others have shared with the person, read once (the live stream refreshes it when the sharing lane publishes it).
+  $effect(() => { const space = notes.space?.id; if (space) void collectionList.load(space); });
   $effect(() => { void incoming.pages.refresh().catch(() => {}); void incomingCollections.pages.refresh().catch(() => {}); });
   // The list follows the space the shell is showing.
   $effect(() => { void notes.useSpace(spaces.current.id); });
@@ -66,7 +68,7 @@
     try {
       const item = ids.length === 1 ? { kind: "notes" as const, id: ids[0]! } : { kind: "collections" as const, id: (await createCollection(space, title, ids)).id };
       endSelect();
-      if (item.kind === "collections") navigate(`/collections/${item.id}`);
+      if (item.kind === "collections") { navigate(`/collections/${item.id}`); void collectionList.load(space); }
       openShare(item, title, from);
     } catch (e) { failed(say(e, "share these notes")); }
   }
@@ -114,6 +116,16 @@
   {:else}<ul><li class="none">{notes.error || "No notes yet."}{#if notes.error} <button type="button" class="retry" onclick={() => notes.retry()}>Try again</button>{/if}</li></ul>{/if}
   {/if}
   {#if !hits}{#if notes.notePages.error}<p class="cap" role="alert">{notes.notePages.error} <button type="button" class="retry" onclick={() => notes.notePages.retry()}>Try again</button></p>{/if}{/if}
+  {#if !hits && collectionList.items.length}
+    <div role="group" aria-label="Collections" class="grp">
+      <p class="section-heading later">Collections</p>
+      <ul>
+        {#each collectionList.items as c (c.id)}
+          <li><Row title={c.title} icon="folder" href={href(`/collections/${c.id}`)} selected={route.path === `/collections/${c.id}`} /></li>
+        {/each}
+      </ul>
+    </div>
+  {/if}
   {#if !hits && (incoming.items.length || incomingCollections.items.length)}
     <div role="group" aria-label="Shared with me" class="grp">
       <p class="section-heading later">Shared with me</p>

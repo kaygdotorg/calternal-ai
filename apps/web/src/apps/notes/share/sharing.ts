@@ -37,7 +37,7 @@ export interface ShareList {
 /** A person or group the caller can add. */
 export interface Found { audience: Audience; name: string }
 /** One row of "Shared with me": the item, its title, the sharer's display name (never an email), the caller's permission and whether it changed since the caller last opened it. */
-export interface Incoming { item: ItemRef; title: string; shared_by: string; permission: Permission; unread: boolean }
+export interface Incoming { item: ItemRef; title: string; shared_by: string; permission: Permission; unread: boolean; /** On a collection: the caller may change its notes. */ can_edit?: boolean }
 
 /** What `GET /s/<secret>` answers with `Accept: application/json` (no sign-in; a wrong, expired, revoked or trashed target is HTTP 404, here `not_found`): a note, a collection's members (each `href` is another such address), or a member (`back` leads to its collection). `item` is present only for a valid session whose account can open the item without the link (anonymous answers omit it): "Open in Calternal" shows only then. A member's `href` is a link-scoped position, opaque, never an item id. */
 export type Guest =
@@ -116,7 +116,7 @@ export class FixtureSharing implements SharingClient {
   private incoming: Incoming[] = [
     { item: { kind: "notes", id: "n-4" }, title: "Release checklist", shared_by: "Maya Okafor", permission: "edit", unread: true },
     { item: { kind: "notes", id: "n-3" }, title: "Invite flow", shared_by: "Theo Lindqvist", permission: "view", unread: false },
-    { item: { kind: "collections", id: "c-demo" }, title: "Launch notes", shared_by: "Maya Okafor", permission: "edit", unread: true },
+    { item: { kind: "collections", id: "c-demo" }, title: "Launch notes", shared_by: "Maya Okafor", permission: "edit", unread: true, can_edit: true },
   ];
   async list(item: ItemRef): Promise<ShareList> {
     const as = this.as;

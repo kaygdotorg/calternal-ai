@@ -110,6 +110,7 @@ try {
   for (const device of ["desktop", "phone"]) {
     const { page: p, ctx } = await open(browser, device, "light", "/notes/n-1?firstrun=0");
     if (device === "phone") { await p.getByRole("button", { name: /Show notes/ }).first().click(); await p.waitForTimeout(600); }
+    ok(await p.getByRole("group", { name: "Collections" }).getByRole("link").count() >= 2, `${device}: the sidebar lists the space's collections`);
     await p.getByRole("group", { name: "Shared with me" }).getByRole("link", { name: "Launch notes" }).click();
     await p.getByRole("heading", { name: "Launch notes" }).waitFor({ timeout: 8000 });
     ok(await p.getByRole("list", { name: "Notes in this collection" }).getByRole("link").count() === 2, `${device}: a collection shared with me opens as a page of its notes`);
@@ -122,7 +123,11 @@ try {
     await p.getByRole("button", { name: "Share", exact: true }).first().click(); await sheet(p).waitFor();
     ok(/Launch notes/.test(await sheet(p).locator("h2").textContent()), `${device}: Share opens the sheet for the collection`);
     await shot(p, `${device}-collection`);
-    await p.keyboard.press("Escape"); await ctx.close();
+    await p.keyboard.press("Escape");
+    // A collection the person may not change: no way to add or take out.
+    await p.goto(p.url().replace(/\/collections\/.*/, "/collections/c-ro?firstrun=0")); await p.getByRole("heading", { name: "Read-only set" }).waitFor({ timeout: 8000 });
+    ok(await p.getByRole("textbox", { name: "Add notes" }).count() === 0 && await p.getByRole("button", { name: /Take .* out/ }).count() === 0, `${device}: without can_edit the collection cannot be changed`);
+    await ctx.close();
   }
   // Access ended while writing: the edits are kept and the person is told in one line where they went.
   { const { page: p, ctx } = await open(browser, "desktop", "light", "/notes/n-2?firstrun=0&revoked=1");

@@ -54,17 +54,17 @@
       {#if c}
         <h1>{c.title}</h1>
         <p class="lede">{c.members.length === 1 ? "1 note" : `${c.members.length} notes`}</p>
-        <SearchField bind:value={q} label="Add notes" placeholder="Add notes" />
-        {#if hits.length}
+        {#if c.can_edit}<SearchField bind:value={q} label="Add notes" placeholder="Add notes" />{:else}<p class="lede">Only the space's owner can change what is in it.</p>{/if}
+        {#if c.can_edit && hits.length}
           <ul class="rows" aria-label="Notes to add">{#each hits as n (n.id)}<li><Row title={n.title} icon="notes" onclick={() => add(n.id)} /></li>{/each}</ul>
-        {:else if q.trim()}<p class="lede">No note starts with “{q.trim()}”.</p>{/if}
+        {:else if c.can_edit && q.trim()}<p class="lede">No note starts with “{q.trim()}”.</p>{/if}
         {#if c.members.length}
           <ul class="rows" aria-label="Notes in this collection">
             {#each c.members as m (m.id)}
-              <li><Row title={m.title} icon="notes" href={href(`/notes/${m.id}`)}>{#snippet trailing()}<IconButton small icon="close" label="Take {m.title} out of this collection" onclick={(e) => { e.preventDefault(); e.stopPropagation(); remove(m.id); }} />{/snippet}</Row></li>
+              <li><Row title={m.title} icon="notes" href={href(`/notes/${m.id}`)}>{#snippet trailing()}{#if c!.can_edit}<IconButton small icon="close" label="Take {m.title} out of this collection" onclick={(e) => { e.preventDefault(); e.stopPropagation(); remove(m.id); }} />{/if}{/snippet}</Row></li>
             {/each}
           </ul>
-        {:else}<p class="lede">Nothing in it yet. Add notes above.</p>{/if}
+        {:else}<p class="lede">{c.can_edit ? "Nothing in it yet. Add notes above." : "Nothing in it yet."}</p>{/if}
       {:else if error}
         <h1>{error === "gone" ? "Collection not found" : "Can't open this collection"}</h1>
         <p class="lede">{error === "gone" ? "It may have been removed, or you may not have access." : error}</p>

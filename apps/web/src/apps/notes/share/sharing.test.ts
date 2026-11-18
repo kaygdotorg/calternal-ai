@@ -127,3 +127,16 @@ describe("collections (fixtures)", () => {
     expect((await s.shared_with_me("notes")).items.every((i) => i.item.kind === "notes")).toBe(true);
   });
 });
+
+import { listCollections } from "./collections";
+describe("collections: can_edit and list", () => {
+  it("a read-only collection refuses a change and says can_edit false", async () => {
+    expect((await getCollection("c-ro")).can_edit).toBe(false);
+    await expect(setMembers("c-ro", "1", [])).rejects.toMatchObject({ code: "forbidden" });
+    expect((await getCollection("c-demo")).can_edit).toBe(true);
+  });
+  it("lists the space's collections", async () => {
+    const ids = (await listCollections("s")).items.map((c) => c.id);
+    expect(ids).toEqual(expect.arrayContaining(["c-demo", "c-ro"]));
+  });
+});
