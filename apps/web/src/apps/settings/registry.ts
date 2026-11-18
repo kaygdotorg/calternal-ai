@@ -113,7 +113,7 @@ const agentsPage: Page = {
     { title: "Retries and sandboxes", settings: [
       { id: "agents.retry", label: "Retry failed turns", help: "Try again after a provider error.", control: { type: "switch" }, ...fx("agents.retry", true) },
       { id: "agents.snooze-minutes", label: "Snooze", help: "How long a snoozed question stays quiet.", control: { type: "number", min: 1, max: 1440, unit: " min" }, ...fx("agents.snooze-minutes", 30) },
-      { id: "agents.sandbox-idle-minutes", label: "Sandbox idle time", help: "A thread's sandbox stops after this long without work.", control: { type: "number", min: 1, max: 240, unit: " min" }, ...fx("agents.sandbox-idle-minutes", 20) },
+      { id: "agents.sandbox-idle-minutes", label: "Sandbox idle time", help: "A thread's sandbox stops after this long without work.", control: { type: "number", min: 1, max: 240, unit: " min" }, ...fx("agents.sandbox-idle-minutes", 10) },
     ] },
     { title: "Decision service", settings: [
       { id: "agents.decision-provider", label: "Provider", help: "A fast typed-decision model, used after Enter and never while typing. Off until a key is connected.", control: { type: "popup", options: [{ id: "off", label: "Off" }, { id: "openai", label: "OpenAI Decisions" }, { id: "typesafe", label: "TypeSafe Jev" }] }, ...fx("agents.decision-provider", "off") },
