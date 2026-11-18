@@ -19,10 +19,10 @@ Build release N at the recorded revision with
 `cargo build --locked -j6 -p calternal-server --features test-plugins` in the
 Nix development shell. Save that executable as `release-n-calternal`.
 Build the candidate from this revision with
-`CALTERNAL_RELEASE_TEST_MIGRATION=v6 cargo build --locked -j6 -p calternal-server --features test-plugins --target-dir target/upgrade-next`.
+`CALTERNAL_RELEASE_TEST_MIGRATION=v7 cargo build --locked -j6 -p calternal-server --features test-plugins --target-dir target/upgrade-next`.
 Save a copy as `release-next-calternal`. The second build adds a disposable
 machine registry table to exercise migration and downgrade behavior. The
-production build leaves the machine schema at version 5.
+production build leaves the machine schema at version 6.
 
 From the candidate source root, inside the dev-01 Nix shell:
 

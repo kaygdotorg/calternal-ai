@@ -5,18 +5,18 @@
   //   busy      files are still uploading: the quiet circle with a spinner, disabled
   //   steer     a turn is running and there is text: the accent circle (the message steers the turn)
   //   stop      a turn is running and the box is empty: the ink circle with a solid rounded square in the paper colour (ChatGPT's and bb's stop), the weight of the glyph being the point
-  import { Spinner, tip } from "@calternal/ui";
+  import { Icon, Spinner, tip } from "@calternal/ui";
   let { state, label, onclick }: { state: "idle" | "ready" | "busy" | "steer" | "stop"; label: string; onclick: () => void } = $props();
   const off = $derived(state === "idle" || state === "busy");
 </script>
 
 <button type="button" class="go" data-state={state} aria-label={label} disabled={off} use:tip={{ label }} {onclick}>
   {#if state === "stop"}
-    <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="4.5" fill="currentColor" /></svg>
+    <Icon name="stop-round" solid inline />
   {:else if state === "busy"}
     <Spinner />
   {:else}
-    <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M12 19V5M5.5 11.5 12 5l6.5 6.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" /></svg>
+    <Icon name="up" bold />
   {/if}
 </button>
 

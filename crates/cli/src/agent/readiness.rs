@@ -20,7 +20,11 @@ pub fn reply(out: &Output, value: Value) -> Reply {
                     } else {
                         "Offline"
                     };
-                    let execution = machine["execution"].as_str().unwrap_or("—");
+                    let execution = if machine["sandbox_fallback"] == "kvm_unavailable" {
+                        "Containers only (KVM unavailable)"
+                    } else {
+                        machine["execution"].as_str().unwrap_or("—")
+                    };
                     let last_seen = machine["last_seen_ms"]
                         .as_i64()
                         .map(|ms| out.local_ms(ms))

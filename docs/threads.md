@@ -24,7 +24,9 @@ current caller, current space capabilities and plugin activation.
 Manifest input/output schemas, target fields, capabilities and risks are the
 single source of operation policy. `threads.create` makes an empty file;
 `threads.list` returns metadata; `threads.models` lists the enabled provider catalog;
-`threads.get` returns the Markdown and revision;
+`threads.get` returns the Markdown and revision. With a `message_id`, it checks
+the same thread authority and returns one saved record from the current
+revision, using the locator maintained by [search](search.md).
 `threads.send` commits a person's message before admitting the turn;
 `threads.stop` cancels current work. `threads.rename` updates the title and filename
 while preserving the UUID and messages. `threads.archive` hides it from the

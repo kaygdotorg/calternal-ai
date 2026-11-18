@@ -8,6 +8,8 @@ pub enum FaultPoint {
     AfterThreadMessage,
     /// Content revision and publication intent committed, before journal publication.
     AfterCommit,
+    /// The journal receipt and event committed before the outbox was retired.
+    AfterJournalCommit,
     /// Materialization is about to publish the new file bytes.
     BeforePlacement,
     /// File bytes were published, before placement bookkeeping finishes.
@@ -50,6 +52,7 @@ impl FaultPoint {
         match self {
             Self::AfterThreadMessage => "after_thread_message",
             Self::AfterCommit => "after_commit",
+            Self::AfterJournalCommit => "after_journal_commit",
             Self::BeforePlacement => "before_placement",
             Self::AfterPlacement => "after_placement",
             Self::BeforeReply => "before_reply",

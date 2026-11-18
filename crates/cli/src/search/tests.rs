@@ -17,6 +17,18 @@ fn search_commands_match_human_and_json_goldens() {
     let base = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden");
     for (name, op, data) in [
         ("query", SearchOperation::Query, hits.clone()),
+        (
+            "messages",
+            SearchOperation::Query,
+            json!({"hits":[{
+            "address":"/threads/019aabb0-1100-7111-8111-111111111111",
+            "space_id":"019aabb0-2200-7222-8222-222222222222",
+            "title":"Review plan","kind":"threads",
+            "excerpt":[{"text":"Review","matched":true},{"text":" plan","matched":false}],
+            "message_id":"019aabb0-3300-7333-8333-333333333333",
+            "message_at":"2026-11-18T12:00:00Z"
+        }],"partial":false}),
+        ),
         ("items", SearchOperation::Items, prefix_hits),
         (
             "threads",
@@ -48,8 +60,9 @@ fn search_commands_match_human_and_json_goldens() {
             let text = out.render(&reply(op, data.clone()).request_id("req-search"));
             assert_golden(&base.join(format!("search-{name}.{ext}")), &text);
             if machine {
+                let command = if name == "messages" { "query" } else { name };
                 assert_shape(
-                    &format!("calternal search {name}"),
+                    &format!("calternal search {command}"),
                     &serde_json::from_str(&text).unwrap(),
                 );
             }

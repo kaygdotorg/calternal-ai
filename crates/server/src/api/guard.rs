@@ -1,6 +1,11 @@
 //! Host allowlist, Origin and session checks and security headers for every response.
 use super::*;
 
+#[cfg(feature = "perf-timings")]
+tokio::task_local! {
+    pub(super) static OPERATION_ENTRY_NS: u64;
+}
+
 pub(super) fn is_api(path: &str) -> bool {
     path == "/api" || path.starts_with("/api/")
 }
@@ -15,6 +20,8 @@ pub(super) async fn guard<D: Directory>(
     next: Next,
 ) -> Response {
     let path = req.uri().path().to_string();
+    #[cfg(feature = "perf-timings")]
+    let entry_ns = (path == "/api/v1/operations").then(calternal_types::perf_monotonic_ns);
     let api = is_api(&path);
     let deny = |e: Error| -> Response {
         if api {
@@ -150,7 +157,16 @@ pub(super) async fn guard<D: Directory>(
             .extensions()
             .get::<crate::turns::access::Authority>()
             .cloned();
-        let response = next.run(req).await;
+        let response = next.run(req);
+        #[cfg(feature = "perf-timings")]
+        let response = async {
+            if let Some(entry_ns) = entry_ns {
+                OPERATION_ENTRY_NS.scope(entry_ns, response).await
+            } else {
+                response.await
+            }
+        };
+        let response = response.await;
         if api
             && !account_route
             && !sign_in_wallpaper

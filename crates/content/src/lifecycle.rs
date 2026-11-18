@@ -3,7 +3,7 @@ use crate::{Result, db::Space, journal::lock, types::internal};
 use calternal_types::SpaceId;
 use std::{
     collections::HashMap,
-    sync::{Arc, Mutex, OnceLock},
+    sync::{Arc, Mutex, OnceLock, TryLockError},
     time::{Duration, Instant},
 };
 /// One cached space: opened on first use under its own lock, so a cold open in
@@ -52,10 +52,29 @@ pub(crate) fn sweep(spaces: &Cache, idle: Duration) -> usize {
     }
     closed.len()
 }
+
+/// Attempts placement without blocking work for the other cached spaces.
+/// Retries a failed placement or a contended slot, whose pending state cannot be
+/// checked. A lock holder can release the slot without waking this worker.
+pub(crate) fn place_pending(slot: &Slot, fault: fn(crate::FaultPoint)) -> bool {
+    let mut held = match slot.space.try_lock() {
+        Ok(held) => held,
+        Err(TryLockError::WouldBlock) => return true,
+        Err(TryLockError::Poisoned(_)) => return false,
+    };
+    held.as_mut().is_some_and(|space| {
+        let retry = space.pending_since.is_some() && space.materialize_pending(fault).is_err();
+        // The journal wait can consume a placement wake. A quick pass after
+        // pruning also catches a write to a slot this pass already visited.
+        space.prune_receipts_if_due() || retry
+    })
+}
+
 /// Materializes pending heads and retires idle spaces on the existing worker.
-/// Wakes after writes; failed work retries in 50 ms and idle sweeping remains
-/// every 30 seconds. Visits at most 64 slots, with write
-/// backpressure at one second. No queue, per-write task or second cache is added.
+/// Wakes after writes and retries failed or contended slots in 50 ms. Idle
+/// sweeping remains every 30 seconds. Visits at most 64 slots, with write
+/// backpressure at one second. Cold recovery and hourly maintenance provide
+/// outbox pins before receipt pruning. No per-write task or second cache is added.
 pub(crate) fn spawn_sweeper(
     spaces: &Cache,
     root_guard: &RootGuard,
@@ -84,14 +103,10 @@ pub(crate) fn spawn_sweeper(
                     .collect();
                 for (id, slot) in slots {
                     if let Ok(_step) = lifecycle.step(id.as_uuid())
-                        && let Ok(mut space) = slot.space.try_lock()
-                        && let Some(space) = space.as_mut()
-                        && space.pending_since.is_some()
+                        && place_pending(&slot, fault)
                     {
-                        if space.materialize_pending(fault).is_err() {
-                            // Keep the original age: writes backpressure after 1s.
-                            wait = Duration::from_millis(50);
-                        }
+                        // Keep the original age: writes backpressure after 1s.
+                        wait = Duration::from_millis(50);
                     }
                 }
                 sweep(&spaces, idle);
@@ -100,3 +115,6 @@ pub(crate) fn spawn_sweeper(
         .map_err(internal)?;
     Ok(worker.thread().clone())
 }
+
+#[cfg(test)]
+mod tests;

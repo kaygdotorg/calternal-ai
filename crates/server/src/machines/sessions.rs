@@ -174,10 +174,16 @@ impl MachineService {
                 "the owner must enable direct execution with calternal machine set",
             ));
         }
-        if !matches!(f.backend.as_str(), "direct" | "podman" | "auto") {
+        let kvm_fallback = f.backend == calternal_machine::protocol::PODMAN_KVM_FALLBACK;
+        if super::microvm::is_requested(&f.backend) || kvm_fallback {
+            super::microvm::authorize(machine.row.owner)?;
+        } else if !matches!(f.backend.as_str(), "direct" | "podman" | "auto") {
             return Err(Error::invalid_input("unsupported machine backend"));
         }
-        let backend = if f.backend == "auto" {
+        let thread_limit = super::microvm::active_limit(&f.backend, f.guest_memory_mib)?;
+        let backend = if kvm_fallback {
+            "podman"
+        } else if f.backend == "auto" {
             if machine.row.direct && machine.row.owner != Owner::Pool {
                 "direct"
             } else {
@@ -200,6 +206,8 @@ impl MachineService {
         machine.live = Some(Live {
             session: hash,
             direct: backend == "direct",
+            kvm_fallback,
+            thread_limit,
             outbox: VecDeque::new(),
             next_seq: 1,
             polls: 0,
@@ -220,6 +228,11 @@ impl MachineService {
             .map(|l| l.row.id)
             .collect();
         for lease in held {
+            if rebooted && (super::microvm::is_requested(&backend) || kvm_fallback) {
+                let keep_files = !st.leases[&lease].row.worker;
+                super::microvm::lost(st, f.machine_id, lease, &self.settings, keep_files);
+                continue;
+            }
             st.send_assign(lease, &self.settings);
             if rebooted {
                 st.lose_execs(lease, "the machine restarted");
@@ -388,6 +401,7 @@ impl MachineService {
             .map(|l| l.step(lease.row.space.as_uuid()))
             .transpose()?;
         let account = lease.row.account;
+        let worker = lease.row.worker;
         let first = post.chunks.first().map_or(1, |c| c.seq);
         let exec = st.execs.entry(post.exec_id).or_insert_with(|| {
             // Unknown exec after a server restart: accept from wherever it is.
@@ -406,6 +420,7 @@ impl MachineService {
             return Err(fenced());
         }
         let (mut full, mut accepted) = (false, false);
+        let mut guest_lost = false;
         for chunk in post.chunks {
             if exec.state == ExecState::Done || chunk.seq <= exec.last_seq {
                 continue;
@@ -421,7 +436,11 @@ impl MachineService {
                 full = true;
                 break;
             }
-            if matches!(chunk.event, ChunkEvent::Exit(_)) {
+            if let ChunkEvent::Exit(ref exit) = chunk.event {
+                if exit.error.as_deref() == Some(calternal_machine::protocol::GUEST_LOST) {
+                    guest_lost = true;
+                    break;
+                }
                 exec.state = ExecState::Done;
                 exec.finished = Some(Instant::now());
             }
@@ -433,8 +452,13 @@ impl MachineService {
         if accepted {
             exec.notify.notify_one();
         }
+        let acked = exec.last_seq;
+        if guest_lost {
+            super::microvm::lost(st, machine_id, post.lease_id, &self.settings, !worker);
+            return Err(fenced());
+        }
         Ok(OutputAck {
-            acked: exec.last_seq,
+            acked,
             retry_after_ms: full.then_some(250),
         })
     }

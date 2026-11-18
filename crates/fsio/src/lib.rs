@@ -32,6 +32,13 @@ pub mod paced;
 pub mod private;
 pub mod usage;
 
+/// Bytes available to the current user on the filesystem containing `path`.
+/// The path must exist. This performs one filesystem statistics call.
+pub fn available_bytes(path: &Path) -> io::Result<u64> {
+    let stat = rustix::fs::statvfs(path)?;
+    Ok(stat.f_bavail.saturating_mul(stat.f_frsize))
+}
+
 #[cfg(any(target_os = "linux", target_os = "android", target_vendor = "apple"))]
 pub mod beneath;
 

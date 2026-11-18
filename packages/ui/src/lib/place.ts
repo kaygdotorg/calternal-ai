@@ -44,6 +44,7 @@ export function place(el: HTMLElement, anchor: Anchor, { prefer = "bottom", gap 
   else if (side === "bottom" && r.height > below && above > below) side = "top";
   const room = Math.max(96, side === "top" ? above : below);
   el.style.maxHeight = `${room}px`;
+  el.style.setProperty("--room", `${room}px`); // what a scrolling list inside it may take (Menu.svelte), so the list scrolls and the surface itself never has to
   el.style.overflowY = "auto";
   const left = Math.min(Math.max(a.left, margin), Math.max(margin, innerWidth - margin - r.width));
   el.style.translate = `${left}px 0`;
@@ -61,6 +62,7 @@ function placeBlind(el: HTMLElement, a: { left: number; top: number; right: numb
   const room = (s: "top" | "bottom") => (s === "top" ? above : below);
   const side = room(prefer) < 180 && room(other) > room(prefer) ? other : prefer;
   el.style.maxHeight = `${Math.max(96, room(side))}px`;
+  el.style.setProperty("--room", `${Math.max(96, room(side))}px`);
   el.style.maxWidth = `${innerWidth - 2 * margin}px`;
   el.style.overflowY = "auto";
   const left = Math.min(Math.max(a.left, margin), Math.max(margin, innerWidth - margin - minWidth));

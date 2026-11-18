@@ -68,8 +68,11 @@ pub enum Command {
         /// Thread UUID.
         id: String,
         /// JSON data from a threads.checkpoint journal entry.
-        #[arg(long, value_parser = |text: &str| text.parse::<Value>())]
+        #[arg(long, conflicts_with = "message_id", value_parser = |text: &str| text.parse::<Value>())]
         since: Option<Value>,
+        /// Open exactly this message from the current thread revision.
+        #[arg(long)]
+        message_id: Option<String>,
     },
     /// Save your message and admit a provider turn; reuse request-id after failure.
     Send {
@@ -154,10 +157,17 @@ impl Command {
                 ("threads.list", v)
             }
             Self::Models { space_id } => ("threads.models", json!({"space_id":space_id})),
-            Self::Get { id, since } => {
+            Self::Get {
+                id,
+                since,
+                message_id,
+            } => {
                 let mut input = json!({"id":id});
                 if let Some(since) = since {
                     input["since"] = since;
+                }
+                if let Some(message_id) = message_id {
+                    input["message_id"] = json!(message_id);
                 }
                 ("threads.get", input)
             }
@@ -326,6 +336,21 @@ pub fn reply(out: &Output, data: Value) -> Reply {
             );
     }
     let thread = &data["thread"];
+    if thread.get("markdown").is_none()
+        && let Some(message) = thread["messages"].get(0)
+    {
+        return Reply::new(data.clone())
+            .fields([
+                ("Thread", thread["id"].as_str().unwrap_or("").to_owned()),
+                ("Message", message["id"].as_str().unwrap_or("").to_owned()),
+                ("Sent", message["at"].as_str().unwrap_or("").to_owned()),
+            ])
+            .blank()
+            .text(message["text"].as_str().unwrap_or(""))
+            .hint(
+                "Next: use calternal threads get without --message-id for the full conversation.",
+            );
+    }
     let fields = vec![
         ("Thread", thread["id"].as_str().unwrap_or("").to_owned()),
         (

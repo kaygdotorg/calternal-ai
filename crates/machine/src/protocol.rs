@@ -28,7 +28,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 /// Protocol version spoken by this build; the server refuses other versions.
-pub const PROTOCOL_VERSION: u32 = 4;
+pub const PROTOCOL_VERSION: u32 = 5;
 
 /// Path prefix of every machine-facing endpoint. The server's account guard
 /// skips it: these endpoints authenticate the machine themselves.
@@ -103,6 +103,39 @@ pub struct SessionChallenge {
     pub challenge: String,
 }
 
+/// Session preference emitted when a Linux microVM role falls back to Podman
+/// because the machine user cannot create KVM guests.
+pub const PODMAN_KVM_FALLBACK: &str = "podman-no-kvm";
+
+/// Approved account guest sizing and its measured admission ceiling.
+#[derive(Clone, Copy, Debug)]
+pub struct GuestSize {
+    /// Configured RAM, in MiB.
+    pub memory_mib: u32,
+    /// Concurrent thread ceiling where a measurement has established one.
+    pub active_threads: Option<usize>,
+}
+
+impl GuestSize {
+    /// Resolve a configured RAM value against the supported size profiles.
+    pub fn from_mib(memory_mib: u32) -> Option<Self> {
+        const PROFILES: [GuestSize; 2] = [
+            GuestSize {
+                memory_mib: 512,
+                active_threads: Some(2),
+            },
+            GuestSize {
+                memory_mib: 1024,
+                // Three threads were at the latency cutoff on the busy dev host.
+                active_threads: Some(2),
+            },
+        ];
+        PROFILES
+            .into_iter()
+            .find(|size| size.memory_mib == memory_mib)
+    }
+}
+
 /// Proof of the machine key, opening a session.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -120,12 +153,15 @@ pub struct SessionFinish {
     pub protocol: u32,
     /// Requested backend, or auto for the owner's setting; direct requires owner consent.
     pub backend: String,
+    /// Configured size of an account guest on a microVM session.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub guest_memory_mib: Option<u32>,
 }
 
 /// An open session. Opening another session for the same machine ends this one.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionGranted {
-    /// Actual backend authorized for this session: podman or direct.
+    /// Actual backend authorized for this session: podman, direct or microvm.
     pub backend: String,
     /// Bearer token for `sync` and `output`; held in memory only, on both sides.
     pub token: String,
@@ -160,6 +196,8 @@ pub enum SandboxState {
     Running,
     /// A paused sandbox.
     Frozen,
+    /// A running guest exited. Provider leases may resume from their last checkpoint.
+    Lost,
     /// Could not start, or was closed locally; the server reconciles the lease.
     Failed {
         /// Short, path-free description.
@@ -384,6 +422,10 @@ pub enum Stream {
     /// Standard error.
     Stderr,
 }
+
+/// Machine-generated exit status for a disappearing guest. The registry must
+/// fence the lease and preserve its checkpoint before returning the exit.
+pub const GUEST_LOST: &str = "the sandbox guest stopped";
 
 /// How an exec ended.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]

@@ -44,6 +44,181 @@ agent turns and plugin workers. Each agent sandbox has 1 CPU, 1 GiB memory and
 256 PIDs. Each plugin worker has 1 CPU, 256 MiB memory and 64 PIDs, with
 networking disabled. Operate the deployment with sandboxed machine mode.
 
+## Choose the machine sandbox backend
+
+Use `podman` on Linux machines without usable KVM and for the current provider
+turn deployment. Rootless Podman puts each thread in its own container.
+`auto` follows an account machine's server-stored execution setting and uses
+Podman on pool machines. `direct` runs processes as the machine user with the
+owner's consent and gives those processes the user's filesystem and network
+access.
+
+`microvm` is an opt-in Linux x86-64 pool backend for isolation testing.
+It follows the [hybrid measurements](measurements/sandbox-hybrid.md) with
+Firecracker and rootless Podman. Each account has its own booted kernel, a
+private ext4 data disk and one container per thread. Spaces have separate homes
+within that disk. Claude uses the account-wide login directory from the
+Podman backend. Turns mount it read-only and login runs use a disposable
+home with a writable mount. The guest uses one administrator-selected
+container image. The immutable guest root holds the unpacked OCI filesystem.
+Podman gives each thread a writable overlay on the account disk. Boot reads
+the shared lower layer and skips per-account image import. Change the pinned
+image as a unit with a machine-role restart. Keep one active image and at most
+one rollback image rooted per machine. Drop older deployment roots so the
+operator’s normal Nix garbage collection can reclaim them.
+The guest uses vsock for control and has no host filesystem mounts. It
+boots offline unless the operator installs a TAP egress policy.
+
+Run Firecracker as the machine user with read/write access to `/dev/kvm`.
+An installer can grant access through the device's `kvm` group or a persistent
+device ACL. Restart the role or open a fresh login after a group change. If the
+role cannot open the device, read KVM API version 12, and create a VM with
+the machine user’s permissions, it logs the reason and uses rootless Podman.
+Machine readiness reports `sandbox_fallback: "kvm_unavailable"`; the
+fallback has the container isolation boundary. A missing Podman installation
+returns an explicit startup error. For Proxmox, the hypervisor operator
+checks nested KVM on the physical host and exposes virtualization extensions
+to the machine VM, then reruns the machine role probe in a fresh guest login. The offline guest needs no TAP, host `CAP_NET_ADMIN`, or root.
+Firecracker bridges vsock to a Unix socket in the machine's private runtime
+directory. A private boot device authenticates the host to the guest agent
+before it decodes a control request. The guest supplies init, an unprivileged UID with guest-local
+subuid/subgid ranges, and delegated cgroups for rootless Podman.
+
+### Install guest egress
+
+Use a dedicated, operator-managed Linux network namespace for the networked
+machine role. The namespace needs an uplink that can reach the app server for
+the role's own control plane traffic. The operator enables IPv4 forwarding
+there and creates each persistent TAP for the machine UID, with one routed
+subnet per TAP. For each entry in [the policy example](../deploy/microvm/egress.example.json),
+use `ip tuntap add dev TAP mode tap user MACHINE_UID`, assign the entry's
+`gateway/prefix` to that device with `ip addr add`, and bring the link up.
+Run these operations inside the declared namespace.
+
+Keep one root-owned, readable policy JSON file for the role. Name a TAP slot
+for each configured guest slot. List approved IPv4 destinations as explicit
+CIDRs, TCP or UDP, and ports. Each slot declares its approved public DNS
+resolver. The allowlist starts empty. List public control-plane and other
+operator-managed service ranges in `deny` before adding any allowed ranges. The host firewall drops incoming guest
+connections, traffic between guests, host-local access, private destinations
+and metadata traffic. It permits replies to authorized egress and NATs approved
+traffic on the uplink.
+
+List the approved addresses for these HTTPS endpoints on TCP 443:
+
+| Workload | Endpoints |
+| --- | --- |
+| Direct Claude Code turns | `api.anthropic.com`. |
+| Claude subscription sign-in and refresh | `platform.claude.com` for OAuth token exchange and refresh. The browser performing sign-in also needs `claude.com` and `claude.ai`, plus `sso.claude.com` where the organization uses SSO. Apply the browser requirements wherever the browser runs. |
+| npm package installs | `registry.npmjs.org` or the configured registry or mirror. Include approved tarball hosts, Git sources, or binary download hosts required by the project's lockfile and install scripts. |
+| Python installs from public PyPI | `pypi.org` for the index and `files.pythonhosted.org` for distributions. |
+| Rust installs from the public sparse registry | `index.crates.io` for the index and `static.crates.io` for crates. |
+
+For other package managers, list the approved index and artifact download
+hosts for the registries the project uses. The guest image already includes
+the pinned Claude Code binary. Add endpoints for optional Claude Code
+features only when the operator enables those features.
+[Claude Code network requirements](https://code.claude.com/docs/en/network-config#network-access-requirements)
+[npm registry documentation](https://docs.npmjs.com/cli/v11/using-npm/registry/)
+[PyPI index API](https://docs.pypi.org/api/index-api/)
+[Cargo registry configuration](https://index.crates.io/config.json)
+
+Resolve approved hostnames using the configured guest resolver and record the
+reviewed IPv4 addresses or published destination CIDRs in `allow`. The firewall
+matches IPs and ports. Refresh the same JSON file when DNS answers, provider
+ranges, registry configuration, or package download sources change. Remove
+superseded entries and retain the explicit `deny` ranges.
+
+With the role stopped, run `deploy/microvm/install-egress.py POLICY.json`
+as the namespace operator. It installs the firewall transaction and writes
+a bounded receipt beside the policy. Use the same stop, install, and restart
+sequence after each update. Set `network_policy` in the machine config to the
+absolute JSON path and run the unprivileged machine role in the same
+namespace. The role verifies that the receipt matches the policy, namespace
+and current host boot before opening a TAP. Missing or mismatched files
+prevent networked startup. After restart, verify a disposable Claude turn and
+a package download through the updated policy. Guests run without a NIC
+when the setting is omitted. A KVM fallback uses network-disabled Podman
+containers.
+
+To roll back, stop the machine role, remove its policy receipt, and remove
+`network_policy` before restarting offline. Remove the dedicated namespace
+only after the role has stopped. Retain the current policy and receipt only.
+
+### Build and configure a disposable guest
+
+Build the OCI archive on the development VM after `npm run build:plugins`.
+Use a digest-qualified Node 24 Debian base. The archive carries one image. Its filesystem, the
+static guest agent and CLI, the measured kernel and Nix-pinned runtime are
+included in the resulting immutable image.
+
+```sh
+nix develop .#deploy -c cargo build --locked -j6 \
+  --target x86_64-unknown-linux-musl -p calternal-machine -p calternal-server
+podman build -f deploy/microvm/Containerfile --build-arg "BASE=$NODE_BASE_DIGEST" \
+  -t localhost/calternal-standard:current .
+podman save --format docker-archive -o standard.tar localhost/calternal-standard:current
+nix develop .#microvm -c deploy/microvm/build-image.sh \
+  target/x86_64-unknown-linux-musl/debug/calternal-microvm-agent \
+  target/x86_64-unknown-linux-musl/debug/calternal standard.tar guest-image
+nix develop .#microvm --profile "$PWD/guest-runtime" \
+  -c sh -c 'command -v firecracker mkfs.ext4'
+```
+
+Use one private machine directory per enrolled identity. Put the machine-wide
+settings in an operator-owned JSON file. Use the executable paths printed
+by the runtime shell and the absolute guest image path. Set `image_digest`
+to the SHA-256 value printed by the image build. Keep the runtime profile
+and image rooted for the lifetime of the machine role so Nix garbage
+collection leaves their store paths available.
+
+```json
+{
+  "firecracker": "/absolute/path/to/firecracker",
+  "mkfs_ext4": "/absolute/path/to/mkfs.ext4",
+  "image_directory": "/absolute/path/to/guest-image",
+  "image_digest": "sha256-of-the-image.sha256-manifest",
+  "vcpus": 2,
+  "memory_mib": 512,
+  "disk_mib": 4096,
+  "max_guests": 4,
+  "warm_guests": 1
+}
+```
+
+```sh
+calternal machine run --backend microvm --dir "$MACHINE_DIR" \
+  --microvm-config "$MICROVM_CONFIG"
+```
+
+The 512 MiB and 1,024 MiB profiles each have two active thread slots across
+the person's pool work. A third turn shows **Waiting for capacity** with its queue position.
+The person can cancel while waiting. Placement retries when an active slot
+is released. Three threads at 1,024 MiB were at the median-latency cutoff
+on the busy development host. Both profiles stay within the machine-wide
+sandbox ceiling.
+
+The role verifies the kernel and system disk once at startup. It keeps up to
+two prebooted guests with blank account data, within the configured VMM cap.
+A new account can take one of them. An existing account cold boots from its
+own disk. After the last container lease releases its guest reference, a sweep
+can stop the guest after ten idle minutes, with a 15-second sweep interval.
+The 512 MiB performance budget for resuming a stopped guest is about one
+second, p90 under 1.1 s, through completion of the first command.
+CPU and RAM are configured per guest. The writable disk is sparse and capped
+by its logical size at creation. Reserve host disk capacity for all retained
+account disks. Changing disk size affects new disks. The plan decision bills elapsed sandbox running time. Monthly accounting
+and plan-selected sizes are separate from these operator settings.
+
+A role restart stops or fences old VMMs before clearing their transient files.
+A guest failure interrupts its active turns, which can resume from their
+checkpoint. A durable account erasure stops the guest and unlinks its disk
+before the machine acknowledges it. Thread erasure removes only the workspace
+and flushes the guest disk before acknowledgement. Account disks persist through
+normal idle stops and restarts. Treat any backups of these disks as private
+account data. Use a fresh enrollment for the preview to avoid splitting
+one machine identity's storage across backend types.
+
 ## Deploy and roll back
 
 From the dev-01 build checkout run `deploy/deploy.sh --target deploy/cloud.conf`.

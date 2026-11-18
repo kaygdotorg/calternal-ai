@@ -9,7 +9,7 @@ import { layout, type Container } from "./layout.svelte";
 import type { ThreadSummary } from "./model";
 import { client, store } from "./store.svelte";
 import { backLabel, snoozeChoices } from "./snooze";
-import { snoozeAsk, snoozeThread } from "./snooze.svelte";
+import { snoozeAsk, snoozeAvailable, snoozeThread } from "./snooze.svelte";
 import { snoozeEnd } from "./inbox";
 
 /** The ids of the current space's threads that stand on their own in the list (children follow their parent), newest first. */
@@ -25,7 +25,7 @@ export const containerName = (c: Container): string => (c === null ? layout.loos
 
 /** The snooze choices for `t` (none when the server cannot snooze): the presets from now, a date and time, and Unsnooze now when the person snoozed it. */
 export function snoozeItems(t: ThreadSummary): MenuItem[] {
-  if (typeof client.snooze !== "function") return [];
+  if (!snoozeAvailable()) return [];
   const now = Date.now();
   const s = snoozeEnd(t, now);
   return [
@@ -36,7 +36,7 @@ export function snoozeItems(t: ThreadSummary): MenuItem[] {
 }
 
 /** The one entry the thread's own menus carry (a long menu turns into a sheet on a phone): it opens the snooze panel with the presets and a date. */
-export const snoozeEntry = (t: ThreadSummary): MenuItem[] => (typeof client.snooze !== "function" ? [] : [{ id: "snooze:ask", label: "Snooze…", icon: "clock" as const }, ...(snoozeEnd(t, Date.now()) && !snoozeEnd(t, Date.now())!.auto ? [{ id: "snooze:off", label: "Unsnooze now" }] : [])]);
+export const snoozeEntry = (t: ThreadSummary): MenuItem[] => (!snoozeAvailable() ? [] : [{ id: "snooze:ask", label: "Snooze…", icon: "clock" as const }, ...(snoozeEnd(t, Date.now()) && !snoozeEnd(t, Date.now())!.auto ? [{ id: "snooze:off", label: "Unsnooze now" }] : [])]);
 
 /** What the menu offers for `t`: rename, move to another section, copy link, stop (while it runs) and archive. */
 export function threadItems(t: ThreadSummary): MenuItem[] {

@@ -31,6 +31,16 @@
   import { currentForm } from "../lib/theme";
   import { roving } from "../lib/roving";
   import type { Anchor } from "../lib/place";
+  /** Says whether the list has more above and below its visible part (`data-up`, `data-down`), on scroll and when its size changes: the style draws a fade at that edge and shows the scrollbar, so a list that continues never looks like it ends. */
+  function scrollCue(node: HTMLElement) {
+    const set = () => { node.toggleAttribute("data-up", node.scrollTop > 1); node.toggleAttribute("data-down", node.scrollTop + node.clientHeight < node.scrollHeight - 1); };
+    set();
+    node.addEventListener("scroll", set, { passive: true });
+    const ro = new ResizeObserver(set);
+    ro.observe(node);
+    for (const c of node.children) ro.observe(c);
+    return { destroy() { node.removeEventListener("scroll", set); ro.disconnect(); } };
+  }
   let {
     open,
     items,
@@ -79,7 +89,7 @@
       <input type="search" use:textField={{ kind: "search", cancels: true }} placeholder="Search" aria-label="Search {label}" bind:value={q} autocomplete="off" onkeydown={fromSearch} />
     </div>
   {/if}
-  <div bind:this={list} class="menu" role={search ? "menu" : "presentation"} aria-label={search ? label : undefined} use:roving={{ selector: "[role^=menuitem]", axis: "y" }}>
+  <div bind:this={list} class="menu" role={search ? "menu" : "presentation"} aria-label={search ? label : undefined} use:roving={{ selector: "[role^=menuitem]", axis: "y" }} use:scrollCue>
     {#each shown as it (it.id)}
       <button type="button" class="it" class:compact class:danger={it.danger} disabled={it.disabled} role={it.checked !== undefined ? "menuitemradio" : "menuitem"} aria-checked={it.checked !== undefined ? !!it.checked : undefined} tabindex="-1" onclick={() => { onpick(it.id); close(); }}>
         {#if it.icon}<Icon name={it.icon} />{/if}
@@ -101,7 +111,13 @@
 <style>
   .sh { padding: var(--s-2) 0; } .sh .menu { min-width: 0; max-width: none; max-height: none; overflow: visible; } .sh .it { min-height: var(--menu-row-h, 42px); }
   /* A long list (the space list at 50 spaces) scrolls inside the dropdown; the search field above it stays put. */
-  .menu { min-width: 15rem; max-width: 22rem; max-height: min(60dvh, 24rem); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; padding: var(--s-2); display: grid; gap: var(--s-1); align-content: start; }
+  /* The list takes the room the placement found (`--room`, set by lib/place.ts; less the search field above it), up to 24 rem, and scrolls inside: the surface always fits the window, whichever way it opens. */
+  .s + .menu { --menu-pad: calc(var(--pill-h) + var(--s-2)); }
+  .menu { min-width: 15rem; max-width: 22rem; max-height: min(calc(var(--room, 60dvh) - var(--menu-pad, 0px) - var(--s-2)), 24rem); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; padding: var(--s-2); display: grid; gap: var(--s-1); align-content: start; }
+  /* More above or below: a soft fade at that edge, and the thin scrollbar shows (the scrollbar is otherwise hidden). */
+  .menu:global([data-down]) { scrollbar-width: thin; -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - var(--s-9)), transparent); mask-image: linear-gradient(to bottom, #000 calc(100% - var(--s-9)), transparent); }
+  .menu:global([data-up]) { scrollbar-width: thin; -webkit-mask-image: linear-gradient(to top, #000 calc(100% - var(--s-9)), transparent); mask-image: linear-gradient(to top, #000 calc(100% - var(--s-9)), transparent); }
+  .menu:global([data-up][data-down]) { -webkit-mask-image: linear-gradient(to bottom, transparent, #000 var(--s-9), #000 calc(100% - var(--s-9)), transparent); mask-image: linear-gradient(to bottom, transparent, #000 var(--s-9), #000 calc(100% - var(--s-9)), transparent); }
   .s { display: flex; align-items: center; gap: var(--s-3); margin: var(--s-2) var(--s-2) 0; padding: 0 var(--s-4); min-height: var(--pill-h); border-radius: var(--r-pill); background: rgb(var(--ink-rgb) / 0.07); color: var(--ink-3); }
   .s input { flex: 1; min-width: 0; border: 0; background: none; color: var(--ink); font-size: var(--text-ui); }
   .s input:focus, .s input:focus-visible { outline: none; }

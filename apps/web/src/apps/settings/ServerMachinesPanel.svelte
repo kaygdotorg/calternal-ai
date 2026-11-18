@@ -1,7 +1,7 @@
 <script lang="ts">
   // The Machines page on the real server: your machines with their state, where threads run on each (sandboxed or direct: `machines.set`), stop sending work (drain) and revoke, and "Add a machine", which
   // makes a one-use enrollment code to give to that machine (`calternal machine enroll --server <this server> --code <code>`). Adding by SSH has no server operation, so that flow is not offered.
-  import { Button, Capsule } from "@calternal/ui";
+  import { Button, Selector } from "@calternal/ui";
   import { server } from "../../server/client";
   import { drainMachine, enrollmentCode, revokeMachine, setDirect } from "../../server/mutations";
   import { say } from "../../server/say";
@@ -29,7 +29,7 @@
   {#each machines as m (m.id)}
     <div class="r" data-setting="machines.{m.id}">
       <span class="n"><span class="t">{m.name}</span><span class="h">{STATE[m.state] ?? m.state} · {m.os} {m.arch}{#if m.state === "offline"} · Not connected. Start the machine, or revoke it if it is gone for good.{/if}</span></span>
-      <Capsule label="Where threads run on {m.name}" kind="radio" glass={false} items={[{ id: "sandboxed", label: "Sandboxed" }, { id: "direct", label: "Direct" }]} value={m.direct ? "direct" : "sandboxed"} onchange={(v) => act(() => setDirect(m.id, v === "direct"))} />
+      <Selector label="Where threads run on {m.name}" fill={false} options={[{ value: "sandboxed", label: "Sandboxed" }, { value: "direct", label: "Direct" }]} value={m.direct ? "direct" : "sandboxed"} onchange={(v) => act(() => setDirect(m.id, v === "direct"))} />
       <span class="a">
         <Button text={m.state === "draining" ? "Resume" : "Pause"} variant="quiet" disabled={busy} onclick={() => act(() => drainMachine(m.id, m.state !== "draining"))} />
         <Button text="Revoke" variant="quiet" disabled={busy} onclick={() => confirm(`Revoke ${m.name}? It can never connect again.`) && act(() => revokeMachine(m.id))} />

@@ -128,6 +128,11 @@ impl Runner {
         self.backend.preference()
     }
 
+    /// Send the configured account guest size with the first session request.
+    pub fn guest_memory_mib(&self) -> Option<u32> {
+        self.backend.guest_memory_mib()
+    }
+
     /// Install the server-authorized execution setting before assignments arrive.
     /// This changes only future sandbox starts; old fenced objects keep their backend.
     pub fn configure_backend(&self, mode: &str) -> Result<(), crate::Error> {
@@ -164,6 +169,7 @@ impl Runner {
                         Some(Err(reason)) => SandboxState::Failed {
                             reason: reason.clone(),
                         },
+                        Some(Ok(sandbox)) if !sandbox.available() => SandboxState::Lost,
                         Some(Ok(_)) => SandboxState::Running,
                     }
                 },
@@ -195,7 +201,7 @@ impl Runner {
                             && slot.spec.account_id == spec.account_id
                             && slot.spec.thread_id == spec.thread_id
                     });
-                    let full = slots
+                    let (held, account_held) = slots
                         .values()
                         .filter(|s| {
                             s.stop.get().is_none()
@@ -207,11 +213,22 @@ impl Runner {
                                     .and_then(OnceCell::get)
                                     .is_some_and(Result::is_err)
                         })
-                        .count()
-                        >= self.max_sandboxes as usize;
+                        .fold((0, 0), |(held, account_held), slot| {
+                            (
+                                held + 1,
+                                account_held + usize::from(slot.spec.account_id == spec.account_id),
+                            )
+                        });
+                    let account_full = self
+                        .guest_memory_mib()
+                        .and_then(crate::protocol::GuestSize::from_mib)
+                        .and_then(|size| size.active_threads)
+                        .is_some_and(|limit| account_held >= limit);
                     let denied = if closing_workspace {
                         Some("previous sandbox is still closing")
-                    } else if full {
+                    } else if account_full {
+                        Some("account guest capacity exhausted")
+                    } else if held >= self.max_sandboxes as usize {
                         Some("machine sandbox capacity exhausted")
                     } else {
                         None

@@ -6,6 +6,8 @@ use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 use serde::{Deserialize, Serialize};
 use std::{fs, io::Read, path::Path, time::Duration};
 
+mod worker_cache;
+
 const MAX_WORKER: usize = calternal_machine::sandbox::worker::MAX_SOURCE_BYTES;
 pub(super) const MAX_PACKAGES: usize = 128;
 pub(super) const MAX_RETAINED: usize = 128;
@@ -474,8 +476,11 @@ fn seed(conn: &mut Connection, root: &Path, defaults: bool) -> Result<(), String
 }
 
 /// Seed the installation once from the distribution and construct a bounded,
-/// immutable plugin snapshot. Materialize current and retained worker bundles while the
-/// server holds its installation lock. Starts verify the worker hash again.
+/// immutable plugin snapshot. While the server holds its installation lock,
+/// reuse private current and retained workers matching the archive and discard
+/// stale cache files. Cost: one bounded read per worker and one cache scan.
+/// Missing or invalid workers are atomically written and synced. Worker launches
+/// verify the pinned hash again.
 pub fn load(
     appdata: &Path,
     seed_root: Option<&Path>,
@@ -488,22 +493,17 @@ pub fn load(
         seed_root.is_none(),
     )?;
     let cache = appdata.join("installed-plugin-workers");
-    use std::os::unix::fs::DirBuilderExt;
-    match fs::DirBuilder::new().mode(0o700).create(&cache) {
-        Ok(()) => {}
-        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
-        Err(error) => return Err(reason(error)),
-    }
-    for file in fs::read_dir(&cache).map_err(reason)? {
-        let file = file.map_err(reason)?;
-        if file.file_type().map_err(reason)?.is_file()
-            && file.path().extension().is_some_and(|ext| ext == "js")
-        {
-            fs::remove_file(file.path()).map_err(reason)?;
-        }
-    }
+    calternal_fsio::private::directory(&cache).map_err(reason)?;
     let mut plugins = load_rows(&conn, &cache, "installed_plugins", MAX_PACKAGES)?;
     let retained = load_rows(&conn, &cache, "retained_plugins", MAX_RETAINED)?;
+    worker_cache::remove_stale(
+        &cache,
+        plugins
+            .iter()
+            .chain(&retained)
+            .filter_map(|plugin| plugin.worker.as_deref()),
+    )
+    .map_err(reason)?;
     if let Some(root) = test_root {
         for entry in super::test_entries() {
             match super::load_one(root, &entry, None) {
@@ -549,7 +549,9 @@ fn load_rows(
         let revision: u32 = row.get(3).map_err(reason)?;
         let worker = if let Some(code) = package.worker {
             let path = cache.join(format!("{}.{revision}.js", entry.id));
-            calternal_fsio::write_atomic_mode(&path, code.as_bytes(), 0o600).map_err(reason)?;
+            if !worker_cache::matches_private_file(&path, code.as_bytes()) {
+                calternal_fsio::write_atomic_mode(&path, code.as_bytes(), 0o600).map_err(reason)?;
+            }
             Some(path)
         } else {
             None
@@ -562,6 +564,8 @@ fn load_rows(
     Ok(plugins)
 }
 
+/// Package database schema shared by startup and release admission. Worker
+/// cache files are verified against their archive bytes and need no version.
 pub(crate) const UPGRADE_SCHEMA: calternal_store::migrations::Schema<'_> =
     calternal_store::migrations::Schema::new(
         "installed-plugins.sqlite3",
@@ -569,3 +573,6 @@ pub(crate) const UPGRADE_SCHEMA: calternal_store::migrations::Schema<'_> =
         &[PACKAGE_SCHEMA],
         &[],
     );
+
+#[cfg(test)]
+mod tests;

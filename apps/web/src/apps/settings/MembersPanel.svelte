@@ -1,7 +1,7 @@
 <script lang="ts">
   // The current space's people and groups: each person with a role you can change (if you may), Remove, and "Make owner" (the owner only); groups with their role; and the two ways to add: a person or a group already on this
   // server, or an invitation for someone who is not (Invites page). A grant can widen a role, never narrow it, so lowering one removes the person first (the server says so in words).
-  import { Button, Capsule , VirtualList } from "@calternal/ui";
+  import { Button, Selector, VirtualList } from "@calternal/ui";
   import { account } from "../../server/auth";
   import * as people from "../../server/people";
   import { say } from "../../server/say";
@@ -49,7 +49,7 @@
       <span class="n"><span class="t">{m.account_id === me ? `${m.name} (you)` : m.name}</span><span class="h">{capitalise(m.role)}</span></span>
       {#if canManage && m.role !== "owner" && m.account_id !== me}
         <span class="a">
-          <Capsule label="Role of {m.name}" kind="radio" glass={false} items={mine === "owner" ? ROLES : ROLES.slice(0, 2)} value={m.role} onchange={(v) => act(() => people.setRole(space, m.account_id, v as people.GrantRole))} />
+          <Selector label="Role of {m.name}" fill={false} options={(mine === "owner" ? ROLES : ROLES.slice(0, 2)).map((r) => ({ value: r.id, label: r.label }))} value={m.role} onchange={(v) => act(() => people.setRole(space, m.account_id, v as people.GrantRole))} />
           {#if mine === "owner"}<Button text="Make owner" variant="quiet" disabled={busy} onclick={() => confirm(`Make ${m.name} the owner of this space? You become a manager.`) && act(() => people.transfer(space, m.account_id))} />{/if}
           <Button text="Remove" variant="quiet" disabled={busy} onclick={() => confirm(`Remove ${m.name} from this space?`) && act(() => people.removeMember(space, m.account_id))} />
         </span>
@@ -71,7 +71,7 @@
     <div class="r"><span class="n">
       <label class="t" for="m-find">{adding === "person" ? "Choose a person" : "Choose a group"}</label>
       <input id="m-find" class="field" placeholder="Search" bind:value={find} autocomplete="off" />
-      <Capsule label="Role to give" kind="radio" glass={false} items={mine === "owner" ? ROLES : ROLES.slice(0, 2)} value={role} onchange={(v) => (role = v as people.GrantRole)} />
+      <Selector label="Role to give" fill={false} options={(mine === "owner" ? ROLES : ROLES.slice(0, 2)).map((r) => ({ value: r.id, label: r.label }))} value={role} onchange={(v) => (role = v as people.GrantRole)} />
     </span></div>
     {#each shown.slice(0, 8) as p (p.id)}<div class="r"><span class="t">{p.name}</span><Button text="Add as {role}" variant="quiet" disabled={busy} onclick={() => add(p.id)} /></div>{:else}<div class="r"><span class="h">{pool.length ? "Nobody matches." : adding === "person" ? "Everyone on this server is already here." : "No other groups."}</span></div>{/each}
     <div class="r"><Button text="Cancel" variant="quiet" onclick={() => (adding = null)} /></div>

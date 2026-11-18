@@ -24,7 +24,8 @@ refused. The worker environment contains only the fixed locale.
 Limits have one declaration in `sandbox/worker.rs`: 256 MiB memory (no extra swap),
 1 CPU and 64 PIDs; V8's heap is capped at 128 MiB. There is one worker per
 (plugin, space), at most eight physical workers including starts and retiring
-sessions, with a semaphore held until authenticated teardown confirmation. Caller errors
+sessions, with a semaphore held until authenticated teardown confirmation or
+durable machine revocation. Caller errors
 are delivered before asynchronous cleanup, so a failed or unreachable machine
 cannot hang an operation or silently release capacity. Failed machine cleanup is
 retried; pending teardown is bounded by eight slots and has no timed expiry. At most 32 invocations are
@@ -87,9 +88,21 @@ Options requiring an owner decision:
   plugin state with setup guidance, requires a product decision. No server-side
   container path is added.
 
-A revoked or permanently lost machine cannot supply authenticated cleanup proof.
-Capacity remains reserved; an operator teardown attestation/recovery flow needs
-an owner decision before such proof can be bypassed.
+An unreachable enrolled machine retains its stopping reservations. A worker
+with a lease holds both machine and account capacity until authenticated
+teardown or durable machine revocation. Owner erasure replaces a stopping
+lease with a record containing only the machine UUID, lease UUID and its one
+reserved slot. Erasure releases the account slot immediately. The record
+keeps the machine slot occupied across server restarts. Teardown proof or
+durable revocation removes the record and frees that slot.
+
+There is at most one record per reserved worker slot. The bound is the sum
+of the enrolled pool machines' admission ceilings, using the highest
+advertised ceiling for a machine whose capacity has decreased since admission.
+Pending stops continue counting against a reduced ceiling as they drain.
+Records have no timed expiry. Boot reads them once. Erasure writes them in
+the same transaction that deletes the leases. Teardown removes each record
+with one commit. Polls without teardown proof add no database I/O.
 
 Manifest v1 has no destination declaration, manager approval record or `fetch`
 host call. All plugin network is therefore disabled. A future network-contract

@@ -544,6 +544,7 @@ dependencies = [
 name = "calternal-perf"
 version = "0.1.0"
 dependencies = [
+ "blake3",
  "calternal-cli",
  "calternal-fsio",
  "calternal-server",

@@ -68,6 +68,17 @@ logging out closes an idle subscription.
 renditions with real passkey sessions, an unconfigured server, and synthetic
 images in a disposable cache. It uses no Unsplash network access.
 
+`microvm_cases.rs` uses a disposable enrolled pool machine and two passkey
+accounts. It checks separate kernel boot IDs, same-account thread isolation,
+foreign exec refusal, guest crash interruption, reopening a retained
+workspace, and durable account disk erasure. It also checks 512 MiB queueing
+and cancellation and fallback visibility. Set
+`CALTERNAL_MICROVM_TEST_CONFIG` to an operator config for the pinned guest in
+the [deployment guide](../../docs/deploy.md#build-and-configure-a-disposable-guest).
+Use a configuration with capacity for two guests and a machine user who can
+open `/dev/kvm` read-write. The case prints the skip reason if KVM access or
+the config is missing. Pass `--show-output` to see that detail in a serial run.
+
 ## Release-to-release conformance
 
 Run `scripts/verify-additive-upgrade.sh PREVIOUS_IMAGE CANDIDATE_IMAGE PROOF_OUTPUT`

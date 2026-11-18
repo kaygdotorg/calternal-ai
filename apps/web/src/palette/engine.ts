@@ -59,6 +59,8 @@ export function plan(text: string, provider = "the agent"): Plan {
     rows.unshift({ id: "task", kind: "task", label: intent, sub: "Tasks", action: { op: "task.new", text: q } });
   } else if (rows[0]) intent = rows[0].kind === "command" ? `Go to ${rows[0].label}` : `Open: ${rows[0].label}`;
   else intent = `Ask ${provider}: ${q}`;
+  // Looking for the words inside threads is the thread search (the footer's search button and Mod+K start here): its own row, after what matches by title, before the agent.
+  rows.push({ id: "messages", kind: "command", label: `Search messages for \u201c${q}\u201d`, sub: "Threads", action: { op: "messages.search", text: q } });
   // Sending to an agent is outward: always its own row, last, never the default when something matches.
   rows.push({ id: "ask", kind: "ask", label: `Ask ${provider}: ${q}`, sub: "Send to the agent", action: { ask: q } });
   return { parsed, intent, rows };

@@ -104,6 +104,8 @@ pub struct Receipt {
 pub enum FaultPoint {
     /// Content and publication intent committed, before any file placement.
     AfterCommit,
+    /// The journal receipt and event are durable, with the outbox row still present.
+    AfterJournalCommit,
     /// Immediately before fsio publishes current bytes.
     BeforePlacement,
     /// Bytes and parent entry durable, before placement bookkeeping.

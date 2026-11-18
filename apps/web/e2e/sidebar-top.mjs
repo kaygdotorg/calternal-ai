@@ -11,7 +11,7 @@ try {
   ok((await names(p)).join("|") === "New thread|Automations|Skills", "the top section has New thread, Automations and Skills by default", (await names(p)).join("|"));
   ok((await p.locator("aside.side").getByText("Needs you").count()) === 0, "there is no Needs-you card");
   // tabs
-  const tabs = p.locator("aside.side [role=tab]");
+  const tabs = p.locator("aside.side [role=tablist]:not([aria-label='Apps']) [role=tab]");
   ok((await tabs.count()) === 2 && /Inbox/.test(await tabs.nth(0).innerText()) && (await tabs.nth(1).innerText()) === "All Threads", "two tabs: Inbox and All Threads");
   ok((await tabs.nth(0).getAttribute("aria-selected")) === "true", "the Inbox is the first page when threads wait on the person");
   const inbox = await p.locator("aside.side [role=tabpanel] a.row").evaluateAll((a) => a.map((x) => ({ marks: [...x.querySelectorAll(".rm")].map((m) => m.getAttribute("aria-label")), icons: [...x.querySelectorAll(".rm svg")].map((s) => s.innerHTML), sub: !!x.querySelector(".s"), h: Math.round(x.getBoundingClientRect().height) })));
@@ -48,7 +48,7 @@ try {
   // empty inbox
   const e = await open(browser, "desktop", "light", "/threads/t-idle?scenario=quiet");
   await e.page.waitForTimeout(500);
-  const t0 = e.page.locator("aside.side [role=tab]");
+  const t0 = e.page.locator("aside.side [role=tablist]:not([aria-label='Apps']) [role=tab]");
   const sel = await t0.first().getAttribute("aria-selected");
   const empties = await e.page.locator("aside.side [role=tabpanel]").innerText();
   ok(sel === "true" ? /Nothing is waiting for you/.test(empties) : (await t0.nth(1).getAttribute("aria-selected")) === "true", "with nothing waiting the list opens on All Threads (and the Inbox says so plainly)");

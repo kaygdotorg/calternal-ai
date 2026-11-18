@@ -29,7 +29,7 @@
       {#if model}<span class="c" title="Model"><Icon name="spark" inline />{model}</span>{/if}
       {#if level}<span class="c" title="Reasoning"><LevelMark level={by!.reasoning!} levels={m?.levels ?? ["low", "medium", "high"]} />{level}</span>{/if}
       {#if by?.tier}<span class="c" title="Service tier"><Icon name="pulse" inline />{cap(by.tier)}</span>{/if}
-      {#if pct !== null}<span class="c" title="Context used {ctx}"><svg viewBox="0 0 18 18" width="14" height="14" aria-hidden="true"><circle cx="9" cy="9" r={R} class="track" /><circle cx="9" cy="9" r={R} class="fill" stroke-dasharray="{(C * pct) / 100} {C}" transform="rotate(-90 9 9)" /></svg>{pct}%</span>{/if}
+      {#if pct !== null}<span class="c" title="Context used {ctx}"><svg class="ring" viewBox="0 0 18 18" aria-hidden="true"><circle cx="9" cy="9" r={R} class="track" /><circle cx="9" cy="9" r={R} class="fill" stroke-dasharray="{(C * pct) / 100} {C}" transform="rotate(-90 9 9)" /></svg>{pct}%</span>{/if}
     </div>
   {:else}
     <dl>
@@ -46,6 +46,7 @@
 <style>
   .card { display: grid; gap: var(--s-4); padding: var(--s-5) var(--s-6); min-width: 15rem; max-width: 22rem; color: var(--ink); font-size: var(--text-ui); }
   .head { display: flex; align-items: center; gap: var(--s-3); }
+  .ring { width: var(--glyph-inline); height: var(--glyph-inline); }
   .ic { display: grid; place-items: center; width: var(--s-8); height: var(--s-8); border-radius: 50%; background: rgb(var(--ink-rgb) / 0.08); }
   .title { font-size: var(--text-heading); font-weight: var(--strong-weight); line-height: 1.2; }
   dl { display: grid; grid-template-columns: auto 1fr; gap: var(--s-2) var(--s-6); margin: 0; }

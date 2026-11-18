@@ -2,12 +2,13 @@
 
 Decisions waiting on kayg, most blocking first. Answer here or in chat; answered items
 move to the decision record they belong to and leave this list. Terms: see
-[glossary](glossary.md). Updated 2026-11-19 00:50 IST.
+[glossary](glossary.md). Updated 2026-11-19 03:10 IST.
 
 ## Waiting now
 
 | # | Question | Recommendation | Area |
 | --- | --- | --- | --- |
+| 53 | A request receipt is kept past the 7-day retention while its request is still unfinished on disk (the fix for a duplicated append after a crash); a stuck request can pin it with no fixed bound | Accept, with the stuck state shown in health | Storage |
 | 31 | Thread rows: hover hides the time and state mark for the three actions; swipe right shows only Copy link; touch has no long-press menu, "More" sits in the swipe tray | Keep all three; try on a phone | Threads |
 | 35 | People: can a group hold a server role; what happens when a space's only Owner is disabled | Port the existing app's answer | People |
 | 36 | Notes: purging the whole Trash at once, reusing a file name after delete, renames that touch many links | To grill | Notes |
@@ -29,6 +30,10 @@ Decided 2026-11-18: a person never signs in twice and no API key is used. The ti
 - **The canvas experiment** (kayg, 2026-11-18; still an experiment behind `?canvas=1`): no outer card; the area between the sidebars is the canvas and each window is a middle card, so one window looks exactly like the app today and a second animates as a split; structured columns as in niri; windows touch the top; one continuous veiled background behind them, as under the sidebars; windows opaque or transparent with no blur of their own; both sidebars follow the focused window's app; on a phone one window at a time. The app switcher is no longer part of the canvas (it moved to the left sidebar's footer). Feedback 2026-11-18 17:00, being fixed by the Threads lane: one window must match the app without the canvas exactly (fonts, spacing, animations); no fade on a half-scrolled window; windows are neutral dark or light, never tinted by the wallpaper's accent; no accent border on the selected window (inactive windows dim instead, to be judged); the fullscreen icon is two diagonal chevrons and the link icon becomes a real share menu.
 
 ## Queued, no decision needed
+
+- Codex reached its usage limit on 2026-11-19 (resets 2026-11-24). Backend lanes fall back to Claude per the standing rule: upgrades and plugins restarted; performance, search and microVM follow-ups parked until the first deploy is out.
+- Parked performance work: the cost of the smaller security-log compaction threshold (warm start 328 to 120 ms), the perf VM's own fsync tail against the 40 ms save budget at 100,000 notes, a health reason for a receipt pinned past retention.
+- Parked search work: account for the message index being 168 MB per million against 117 in the probe.
 
 - A long thread: a thread file stops at 2 MiB today (`thread_full`), so a thread cannot hold 100,000 messages; how a thread continues past the limit needs a design.
 

@@ -36,7 +36,7 @@ try {
     const { page: p, ctx } = await open(browser, "phone", "dark", "/threads/t-run");
     await p.waitForTimeout(800);
     const st = await p.locator(".go").first().getAttribute("data-state");
-    const g = await p.locator(".go svg rect").count();
+    const g = await p.locator('.go svg[data-icon="stop-round"][fill="currentColor"]').count();
     const cs = await p.locator(".go").first().evaluate((e) => { const s = getComputedStyle(e); return { bg: s.backgroundColor, fg: s.color }; });
     ok(st === "stop" && g === 1, "running: the control is Stop, a solid rounded square on the ink circle (the weight of ChatGPT's and bb's)", `${st} ${JSON.stringify(cs)}`);
     const go = await centre(p, ".go"); const lc = await lineCentre(p);
@@ -58,8 +58,8 @@ try {
     const { page: p, ctx } = await open(browser, "desktop", "dark", "/threads/t-idle");
     await p.waitForTimeout(800);
     const nav = await centre(p, "aside.side [role=tablist]");
-    const a = await centre(p, "aside.side [role=tab]:nth-child(1)"), b = await centre(p, "aside.side [role=tab]:nth-child(2)");
-    ok(Math.abs(a.w - b.w) <= 2 && Math.abs((a.w + b.w) - (nav.w - 16)) <= 12, "the Inbox and All Threads tabs are equal halves of the sidebar's width", `${a.w.toFixed(0)} + ${b.w.toFixed(0)} of ${nav.w.toFixed(0)}`);
+    const a = await centre(p, "aside.side [role=tab] >> nth=0"), b = await centre(p, "aside.side [role=tab] >> nth=1");
+    ok(Math.abs((a.w + b.w) - (nav.w - 16)) <= 14, "the Inbox and All Threads tabs fill the sidebar's width (the Selector shares the room between its tabs)", `${a.w.toFixed(0)} + ${b.w.toFixed(0)} of ${nav.w.toFixed(0)}`);
     await ctx.close();
   }
   {

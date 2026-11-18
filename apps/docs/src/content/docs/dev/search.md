@@ -24,6 +24,16 @@ ties. Up to twelve words from a 512-byte query match token prefixes. When a sing
 matches, the index can find titles within one edit, including adjacent swaps.
 An empty query returns no hits.
 
+Use `kinds: ["threads"]` for message search. Each hit keeps its thread
+address and adds `message_id` and `message_at`. Messages match literal words
+or an adjacent phrase between double quotes. They are ordered by saved UTC
+instant descending, then by message UUID descending. An unfiltered search
+places message matches after item title and body matches. Open a specific
+record with `threads.get` and `message_id`, or `calternal threads get ID
+--message-id MESSAGE_ID`. The operation checks the existing thread authority,
+uses the exact current revision, and returns one framed message. A removed
+record or a stale locator cannot open a different message.
+
 | Operation | Input and result |
 | --- | --- |
 | `threads.lookup` | Literal title `prefix` across readable spaces, optional `space_id`, `limit` and `cursor`. |
@@ -47,9 +57,8 @@ operation.
 
 ## Index
 
-A manifest opts a Markdown kind in with `searchable: true`. Notes opt in
-during this stage. Message indexing and message-ID lookup remain future work
-using the byte-counted thread format. The live catalog caches the search
+A manifest opts a Markdown kind in with `searchable: true`. Notes and threads
+opt in. The live catalog caches the search
 projection per immutable snapshot. Each request reuses its one catalog read
 from admission across spaces and match passes. The worker pins one snapshot
 per bounded sweep and shuts down when its owner closes.
@@ -57,17 +66,23 @@ per bounded sweep and shuts down when its owner closes.
 Each probe reads effective plugin activation from current space controls.
 Disabled kinds, packages scoped to another space, and unreadable spaces
 contribute zero hits and zero coverage information. The live catalog adds
-zero SQL or file reads. A warm ready probe uses six SQLite statements per
-space and match pass. The request normally uses two authority reads to
-confirm the same spaces before delivery.
+zero SQL or file reads. A warm Notes probe uses six SQLite statements per
+space and match pass. A message probe checks readiness and resolves terms
+before reading candidate blocks. It reuses the current revision lookup for
+hits in the same thread and reads one bounded byte range per candidate it
+verifies. The request normally uses two authority reads to confirm the
+same spaces before delivery.
 
 The derived per-space `search-v2.db` opens lazily. A separate maintenance
 thread scans at most 128 heads per turn and cycles through spaces. It runs
 outside foreground read and write admission. Its four warm writer handles
 and 128 idle reader sets are bounded. Prefix lookups use a B-tree range.
 Notes text and typo matching use SQLite FTS5 and title character pairs,
-ported from ADR 0031. The chronological message postings experiment is
-separate from the Notes read path.
+ported from ADR 0031. The independent message index uses 16 KiB SQLite pages,
+a 32 MiB writer cache, and compressed 16,384-position blocks. The worker writes
+each sorted run in block and term order. SQLite builds the chronological and
+UUID secondary indexes after the bulk load. Each posting records its newest
+time and UUID. A shared lower bound per block lets continuations skip newer blocks.
 
 A save performs zero search SQL statements, userdata reads, parses, or
 flushes. The worker tails the durable journal position, uses the saved
@@ -100,11 +115,34 @@ scalars, bodies at 8,192 scalars, and the worker reads only the first 64 KiB
 of each staged body for keyword indexing. The frontmatter delimiter must be
 within those bytes. A space beyond the slot ceiling sets `partial: true`.
 
-The live search writer caps its WAL at 64 MiB per space. At 48 MiB the
+The Notes and message writers each cap their WAL at 64 MiB per space. At 48 MiB the
 background worker attempts a truncated checkpoint before another turn. A
 reader that pins the WAL can delay search catch-up. Foreground notes and
 journal writes keep their existing admission and durability. An oversized
 uncommitted index write fails and leaves the watermark unchanged.
+
+Message search has a separate file and journal watermark. The worker reads
+verified files once during a rebuild and loads the exact staged version on
+fallback. It replaces a changed thread's postings and advances the projection
+watermark in the same transaction. The healthy lag target is one second.
+Normal thread list, full thread open, and saves work during the rebuild. Search
+returns `partial: true` until the generation is ready. A cold phrase request
+waits for verification reads and then returns the verified page. The results
+stay partial if a request reaches the verification work limit.
+
+The message index stores a locator per message, a dictionary for live terms,
+and a compressed posting for each distinct term in a block. Bytes grow in
+proportion to indexed transcript bytes. The maintenance worker reserves 1 GiB
+of appdata free space, space for unpublished SQLite rollback work, and a 64 MiB
+message WAL. It pauses publication if the reserve cannot be met, leaves the
+watermark unchanged, and reports partial coverage. SQLite reuses pages freed
+by edits and deletes. The allocated file can retain the generation's previous
+high-water size until a rebuild. Authoritative saves continue when the
+derived index pauses.
+
+`search-messages-v1.all.db` is the all-time partition of a space's message index.
+A future partition can replace `all` with a UTC interval key using the same schema and generation.
+Readers can merge those intervals by the existing timestamp and message UUID cursor.
 
 ## Pending product decisions
 
