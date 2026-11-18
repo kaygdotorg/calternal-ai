@@ -115,3 +115,10 @@ or `calternal machine install`. It enrolls to that person's account with a
 systemd service or launchd agent. Install the matching binary and have the
 Podman engine running first. Use `sh installer.sh --binary /path/to/calternal`
 when the binary is outside PATH.
+
+
+The opt-in `microvm` pool backend runs this same rootless Podman implementation
+inside a Firecracker guest per account. It uses the same isolated space homes
+and Claude login directory in the guest's account disk. See the
+deployment guide
+for the offline preview, KVM privileges and pinned image.
