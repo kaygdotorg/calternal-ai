@@ -46,6 +46,14 @@ pub const PREVIEW_ITEM_ID: &str = "00000000-0000-7000-8000-000000000000";
 pub trait InvocationHost: Send + Sync {
     /// Recheck current authority for `required`: grants, plugin activation and generation.
     fn authorize(&self, required: ManifestCapability) -> bool;
+    /// Reuse the admitted activation during internal worker routing.
+    fn authorize_pinned(&self, required: ManifestCapability) -> bool {
+        self.authorize(required)
+    }
+    /// Check a result handed to the adapter before any caller-facing delivery.
+    fn authorize_delivery(&self, required: ManifestCapability) -> bool {
+        self.authorize(required)
+    }
     /// Validate one host call's input and apply it under current authority.
     /// Errors reach the worker as `ok: false` with no detail.
     fn call(&self, method: HostCallKind, input: &Value) -> Result<Value, Error>;
@@ -336,10 +344,17 @@ impl<D: Directory> SpaceHost<D> {
 }
 
 impl<D: Directory> InvocationHost for SpaceHost<D> {
-    /// Cost: one session check (see [`Session::is_live`]), one directory capability
-    /// read and one pooled activation read; no content I/O. The worker
-    /// session calls this up to four times per host call.
+    /// At an effect or worker disclosure, recheck live session, capabilities
+    /// and activation. Costs one additional space-local control read.
     fn authorize(&self, required: ManifestCapability) -> bool {
+        self.authorize_pinned(required)
+            && activation(&self.state.store, self.space, &self.plugin)
+                .is_ok_and(|row| row.enabled && row.generation == self.generation)
+    }
+
+    /// Check live session and grants, reusing the enabled generation captured
+    /// at admission. The live catalog lookup also fences removed revisions.
+    fn authorize_pinned(&self, required: ManifestCapability) -> bool {
         let Some(required) = host_capability(required) else {
             return false;
         };
@@ -350,8 +365,16 @@ impl<D: Directory> InvocationHost for SpaceHost<D> {
             return false;
         }
         self.state.registry.snapshot().authorizes(&self.plugin)
-            && activation(&self.state.store, self.space, &self.plugin)
-                .is_ok_and(|row| row.enabled && row.generation == self.generation)
+    }
+
+    /// Jobs publish here. HTTP dispatch separately checks current activation
+    /// before returning a result or recording a receipt, including on refusal.
+    fn authorize_delivery(&self, required: ManifestCapability) -> bool {
+        if self.run.is_some() {
+            self.authorize(required)
+        } else {
+            self.authorize_pinned(required)
+        }
     }
 
     /// Cost: `read_item` is one pooled catalog route read and one item read under
