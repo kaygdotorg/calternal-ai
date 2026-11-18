@@ -52,19 +52,20 @@ pub(super) fn run(
         });
     }
     if a.rooms_only {
+        let space = space.as_str().ok_or("invalid fixture space")?;
+        let item = first["id"].as_str().ok_or("invalid fixture note")?;
         samples.extend(crate::rooms::sample(
             &h,
-            space.as_str().ok_or("invalid fixture space")?,
-            first["id"].as_str().ok_or("invalid fixture note")?,
+            space,
+            item,
             a.samples,
             require_commit_timings,
             &root.join("server.log"),
         )?);
         if a.room_access_storm {
-            let space = space.as_str().ok_or("invalid fixture space")?;
             samples.insert(
                 crate::rooms::ACCESS_STORM.into(),
-                crate::rooms::sample_access_storm(&mut h, space)?,
+                crate::rooms::sample_access_storm(&mut h, space, item)?,
             );
         }
         return Ok(ScenarioObservations {

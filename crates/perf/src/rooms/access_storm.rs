@@ -15,7 +15,7 @@ pub(crate) const SAMPLES: usize = ROOMS * PEERS * SECONDS;
 
 /// Keep 1,024 authenticated memberships live. Reuse the fixture session to
 /// isolate the cost of per-membership View refresh from enrollment and setup.
-pub(crate) fn sample(http: &mut Http, space: &str) -> Result<Vec<f64>> {
+pub(crate) fn sample(http: &mut Http, space: &str, first: &str) -> Result<Vec<f64>> {
     let (unrelated, _) = http.op("spaces.create", json!({"name":"Unrelated grant changes"}))?;
     let (note, _) = http.op(
         "notes.create",
@@ -25,7 +25,10 @@ pub(crate) fn sample(http: &mut Http, space: &str) -> Result<Vec<f64>> {
     let (group, _) = http.op("groups.create", json!({"name":"Unrelated grant target"}))?;
     let group = group["group_id"].as_str().ok_or("missing grant audience")?;
     let mut rooms = Vec::with_capacity(ROOMS);
-    for n in 0..ROOMS {
+    // Reuse the base sample's room, which can still occupy one of the 32
+    // slots while the idle retirement timer runs.
+    rooms.push(format!("{space}/notes/{first}"));
+    for n in 1..ROOMS {
         let (note, _) = http.op(
             "notes.create",
             json!({"space_id":space,"title":format!("Access storm {n}"),"markdown":"Start"}),
