@@ -33,9 +33,8 @@ try {
     await p.getByRole("button", { name: "Create a link" }).click(); await p.locator("[data-link]").first().waitFor();
     ok(/Never expires/.test(await p.locator("[data-link]").first().textContent()), `${device}: a new link never expires by default`);
     ok(/Anyone with a link can view/.test(await p.locator("[data-share-sentence]").textContent()), `${device}: the sentence mentions the link`);
-    await p.getByRole("button", { name: "Rename Link 1" }).click();
     await p.getByRole("textbox", { name: "Link name" }).fill("Team"); await p.keyboard.press("Enter");
-    await p.waitForFunction(() => /Team/.test(document.querySelector("[data-link]")?.textContent ?? ""));
+    await p.waitForFunction(() => document.querySelector("[data-link] input")?.value === "Team");
     ok(true, `${device}: a link can be renamed`);
     await p.getByRole("button", { name: "QR code" }).click(); await p.locator(".qr svg").waitFor();
     await sheet(p).evaluate((e) => e.scrollIntoView?.()); await shot(p, `${device}-link-qr`);

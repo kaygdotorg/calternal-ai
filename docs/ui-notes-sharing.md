@@ -22,9 +22,16 @@ Lane report: issue #62. Ported from the existing app (`ShareSheet`, `docs/grills
 - The Share pill sits left of the three dots; on a note shared with the person, the owner's avatar sits there and opens the same sheet. A note shared as View is read-only in the editor.
 - A canvas window's Share button calls `openShare({ kind: "notes", id }, title, button)`; the note's own app (`Notes.svelte`) mounts the `ShareHost`.
 
-## Assumed, to confirm on #60
+## Confirmed by the sharing lane
 
-The grant row (`grant_id`, `audience?`, `name`, `permission`, `expires_at`), the values of `space_access` (a permission or null) and of the caller's own `permission`, and a guest read `sharing.guest_read(secret)` that needs no sign-in and answers `not_found` for a wrong, revoked or expired secret.
+Named grants `{grant_id, permission, audience, name}`; link grants `{grant_id, permission: "view", label, expires_at}` (labels may repeat, `link_create` needs a non-blank one); `space_access` "view", "edit" or null. The guest read is `GET /s/<secret>` with `Accept: application/json`: a note `{title, markdown}`, a collection `{title, members: [{title, href}]}`, a member `{title, markdown, back}`; `item: {kind, id}` only when the request has a session whose account can open the item without the link; every dead link is a 404; member `href`s are opaque. Still open: the values of the caller's own `permission`, and the answer shape of `sharing.rescue` (assumed `{note: {id, title}}`).
+
+## Also here
+
+- `real.ts`: the real client (`sharing.*` operations and the guest fetch), chosen by `serverMode()`; fixtures stay the default.
+- `rescue.ts` and `NotesStore.rescue`: a write refused because access ended sends only the blocks the person changed, with the cached title, to `sharing.rescue`, and says in one line where they went (a stable request id per text, or the queued write's id).
+- Multi-select in the Notes sidebar (`lib/select.svelte.ts`, ported from the existing app): ⌘/Ctrl-click, ⇧-click or a row's Select; Share on several notes calls `collections.create` and opens that collection's sheet; one picked note shares as itself. Not ported yet: the two-finger swipe down, trash from the bar.
+- `SearchField` (`packages/ui`): the one search field; the sheet uses it.
 
 ## Checked
 

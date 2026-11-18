@@ -56,14 +56,12 @@
   const expiryOptions = EXPIRIES.map((e) => ({ value: e.days === null ? "never" : String(e.days), label: e.label }));
   const setExpiry = (g: LinkGrant, v: string) => void change(() => sharing.link_update(item, g.grant_id, undefined, v === "never" ? null : Date.now() + Number(v) * DAY));
   const createLink = () => void change(() => sharing.link_create(item, `Link ${links.length + 1}`));
-  // Rename a link (its label): the name becomes a field in place; Enter keeps it, Escape leaves it, an empty name leaves it.
-  let renaming = $state<string | null>(null), draft = $state("");
-  const startRename = (g: LinkGrant) => { renaming = g.grant_id; draft = g.label; };
-  const focusNow = (el: HTMLInputElement) => { el.focus(); el.select(); };
-  function commitRename(g: LinkGrant) {
-    const name = draft.trim();
-    renaming = null;
-    if (name && name !== g.label) void change(() => sharing.link_update(item, g.grant_id, name));
+  // Renaming a link: its name is a field right in the row (a tap on it is a real focus, so a phone's keyboard brings it into view; a field focused by code is not scrolled to on iOS). Enter or leaving keeps the name; Escape
+  // puts the old one back; an empty name is put back too (a link needs a name).
+  function rename(g: LinkGrant, el: HTMLInputElement) {
+    const name = el.value.trim();
+    if (!name) el.value = g.label;
+    else if (name !== g.label) void change(() => sharing.link_update(item, g.grant_id, name));
   }
   let qr = $state<{ id: string; svg: string } | null>(null);
   async function copy(g: LinkGrant) {
@@ -113,12 +111,10 @@
           <div class="link" data-link={g.grant_id}>
             <div class="l1">
               <Icon name="link" />
-              {#if renaming === g.grant_id}
-                <input class="ren" aria-label="Link name" bind:value={draft} use:focusNow onkeydown={(e) => { if (e.key === "Enter") commitRename(g); else if (e.key === "Escape") { e.stopPropagation(); renaming = null; } }} onblur={() => commitRename(g)} />
-              {:else}
-                <span class="nm">{g.label}<small>Anyone with it can view · {g.expires_at === null ? "Never expires" : expiryText(g.expires_at)}</small></span>
-                {#if list.can_manage_links}<IconButton small icon="edit" label="Rename {g.label}" onclick={() => startRename(g)} />{/if}
-              {/if}
+              <span class="nm">
+                {#if list.can_manage_links}<input class="ren" aria-label="Link name" value={g.label} onblur={(e) => rename(g, e.currentTarget)} onkeydown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); else if (e.key === "Escape") { e.stopPropagation(); e.currentTarget.value = g.label; e.currentTarget.blur(); } }} />{:else}{g.label}{/if}
+                <small>Anyone with it can view · {g.expires_at === null ? "Never expires" : expiryText(g.expires_at)}</small>
+              </span>
               {#if list.can_manage_links}<IconButton small icon="close" label="Remove {g.label}" onclick={() => void change(() => sharing.revoke(item, g.grant_id))} />{/if}
             </div>
             {#if list.can_manage_links}
@@ -159,7 +155,8 @@
   .link { display: grid; gap: var(--s-3); padding: var(--s-3); border-radius: var(--r-select); background: rgb(var(--ink-rgb) / 0.05); }
   .l1 { display: flex; align-items: center; gap: var(--s-4); color: var(--ink-2); }
   .l1 .nm { color: var(--ink); }
-  .ren { flex: 1; min-width: 0; min-height: var(--pill-h); padding: 0 var(--s-4); border: 0; border-radius: var(--r-pill); background: rgb(var(--ink-rgb) / 0.07); color: var(--ink); font-size: var(--text-ui); text-align: start; }
+  .ren { width: 100%; min-width: 0; margin: 0 calc(var(--s-2) * -1); padding: 0 var(--s-2); min-height: var(--row-h); border: 0; border-radius: var(--r-select); background: none; color: var(--ink); font-size: var(--text-ui); text-align: start; }
+  .ren:focus, .ren:focus-visible { outline: none; background: rgb(var(--ink-rgb) / 0.07); }
   .l3 { display: flex; flex-wrap: wrap; gap: var(--s-2); }
   .qr { justify-self: start; width: 9rem; padding: var(--s-2); border-radius: var(--r-select); background: #fff; line-height: 0; }
   .qr :global(svg) { width: 100%; height: auto; }
