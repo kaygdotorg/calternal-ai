@@ -48,3 +48,20 @@ normal Manager session to invoke `plugins.settings.get` with the space UUID,
 package ID and key. Invoke `plugins.settings.set` with those fields, the current
 override as `base`, and a new string as `value`. Invoke the view to see the
 change. The view must still show the default in another enabled space.
+
+## Check the whole path
+
+Run each group of commands in the project directory with the development
+env sourced in that shell. Edit the root-level `worker.ts` and
+`worker.test.mjs` produced by the scaffold. The fixture tests do not execute
+the host's job scheduler or consume progress chunks. For a job plugin,
+mock admission to assert the operation and payload. Test pure step logic
+separately. After live loading, check ordering through the real SSE
+endpoint and confirm the durable result with `jobs.get`. The first real
+run supplies `checkpoint: null`.
+
+For a Markdown list, create a distinct item through the declared add
+operation, call the view operation, and confirm the generated list shows
+the saved title. For a settings view, check both the default and an edited
+value with the current stored value as the edit base. See the public
+reference for callback payloads and component signatures.

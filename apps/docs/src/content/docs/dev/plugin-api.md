@@ -171,3 +171,22 @@ intent. Syntax damage returns defaults with a file-and-line repair hint.
 Once the file is valid, recovery reapplies the pending key and keeps other
 edits. A competing edit to the same key becomes a conflict. Unrelated
 operations stay available during repair.
+
+## Author diagnostics
+
+`calternal plugin new` creates a directory under the current directory and
+prints the root worker, fixture test and next commands. Source the local
+development env before using `calternal`, Node.js or npm. `calternal plugin dev`
+accepts `APPDATA`, `SPACE_ID` and `ACCOUNT_ID` as defaults for its flags.
+
+An invocation that fails a plugin input schema check returns a bounded JSON
+pointer and the expected type or constraint. The request values stay out of
+the diagnostic. The space selector is required in the CLI input for a
+space-targeted plugin operation. Host job lookups accept a job UUID only.
+The CLI points to discovery when input is invalid. A busy worker means the
+host reached a live admission bound. Retry durable writes with the same
+request ID when an invocation slot is free.
+
+The SDK fixture captures a subprocess's exit status or signal and up to
+4 KiB of its stderr. Fixture diagnostics are local to the author. The live
+worker protocol still treats a failed handler as a failed invocation.
