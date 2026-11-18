@@ -48,6 +48,9 @@ pub(crate) async fn dispatch<D: Directory>(
     if !matches!(session, Session::Agent { .. }) && !session.is_live(&state.directory).await {
         return Err(Error::unauthorized("sign in again first"));
     }
+    if row.id.starts_with("push.") {
+        return crate::web_push::operation(state, person.id, session, row.id, input).await;
+    }
     if row.id.starts_with("harnesses.") {
         return crate::plugins::harness_admin::dispatch(
             state, machines, person.id, session, row.id, input,

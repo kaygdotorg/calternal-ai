@@ -80,6 +80,7 @@ pub(super) fn open_stores(
     receipt_retention: std::time::Duration,
     plugin_root: Option<std::path::PathBuf>,
     test_plugin_root: Option<std::path::PathBuf>,
+    upgrade_probe: Option<String>,
     development: bool,
 ) -> Result<
     (
@@ -92,7 +93,13 @@ pub(super) fn open_stores(
 > {
     use super::boot;
     use calternal_server::{plugins::package_store, store::Store};
-    let store = Store::open(&roots, installation, create, receipt_retention).map_err(|e| {
+    let store = match upgrade_probe {
+        Some(candidate) => {
+            Store::open_upgrade_probe(&roots, installation, receipt_retention, &candidate)
+        }
+        None => Store::open(&roots, installation, create, receipt_retention),
+    }
+    .map_err(|e| {
         boot(
             1,
             "failed",

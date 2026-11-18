@@ -425,26 +425,32 @@ const ADD_HARNESS: &str =
 /// Return the machine registry schema shared by normal startup and upgrade admission.
 /// Baseline 6 is the first production schema, including durable erased-worker stops.
 pub(crate) fn upgrade_schema() -> calternal_store::migrations::Schema<'static> {
+    use calternal_store::migrations::Schema;
+
+    const TITLES: (i64, &str) = (7, TITLE_LEASES);
+    const HARNESS: (i64, &str) = (8, ADD_HARNESS);
+    const SHARED: (i64, &str) = (9, SPACE_EXECUTION);
+    const CURRENT: Schema<'static> =
+        Schema::new("machines.db", 6, &[SCHEMA], &[TITLES, HARNESS, SHARED]);
     #[cfg(feature = "test-plugins")]
     if option_env!("CALTERNAL_RELEASE_TEST_MIGRATION") == Some("v7") {
-        return calternal_store::migrations::Schema::new(
+        const FIXTURE: Schema<'static> = Schema::new(
             "machines.db",
             6,
             &[SCHEMA],
             &[
-                TITLE_LEASES,
-                ADD_HARNESS,
-                SPACE_EXECUTION,
-                "CREATE TABLE upgrade_fixture (id INTEGER PRIMARY KEY) STRICT;",
+                TITLES,
+                HARNESS,
+                SHARED,
+                (
+                    10,
+                    "CREATE TABLE upgrade_fixture (id INTEGER PRIMARY KEY) STRICT;",
+                ),
             ],
         );
+        return FIXTURE;
     }
-    calternal_store::migrations::Schema::new(
-        "machines.db",
-        6,
-        &[SCHEMA],
-        &[TITLE_LEASES, ADD_HARNESS, SPACE_EXECUTION],
-    )
+    CURRENT
 }
 
 #[cfg(test)]
@@ -455,7 +461,7 @@ mod tests {
     #[test]
     fn shared_execution_migrates_from_harness_leases() {
         let conn = Connection::open_in_memory().unwrap();
-        let previous = Schema::new("machines.db", 6, &[SCHEMA], &[TITLE_LEASES, ADD_HARNESS]);
+        let previous = Schema::new("machines.db", 6, &[SCHEMA], &[(7, TITLE_LEASES), (8, ADD_HARNESS)]);
         migrate_release(&conn, previous, false).unwrap();
         let space = SpaceId::new();
         let actor = AccountId::new();
@@ -484,7 +490,7 @@ mod tests {
         use calternal_machine::protocol::{HarnessSandbox, ProviderLoginScope};
 
         let conn = Connection::open_in_memory().unwrap();
-        let previous = Schema::new("machines.db", 6, &[SCHEMA], &[TITLE_LEASES]);
+        let previous = Schema::new("machines.db", 6, &[SCHEMA], &[(7, TITLE_LEASES)]);
         migrate_release(&conn, previous, false).unwrap();
         let (id, space, account, thread) = (
             Uuid::new_v4(),

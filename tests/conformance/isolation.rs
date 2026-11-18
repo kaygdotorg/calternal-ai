@@ -56,6 +56,7 @@ mod upgrade_handoff_cases;
 #[cfg(feature = "release-upgrade")]
 mod upgrade_release_cases;
 mod wallpaper_cases;
+mod web_push_cases;
 mod worker_cases;
 mod worker_delivery_cases;
 
@@ -215,6 +216,9 @@ impl Fixture {
             .unwrap_or_else(|| repo.join("plugins"));
         let mut command = Command::new(binary);
         command.env_clear();
+        if self.dir.path().join("web-push-local").is_file() {
+            command.env("CALTERNAL_TEST_WEB_PUSH_LOCAL", "1");
+        }
         if self.dir.path().join("fonts-off").is_file() {
             command.env("CALTERNAL_FONT_DOWNLOADS", "off");
         }
@@ -765,6 +769,7 @@ async fn all_operations_hide_foreign_ids() {
     covered.extend(plugin_diagnostics_cases::OPERATIONS.iter().copied());
     covered.extend(search_cases::OPERATIONS.iter().copied());
     covered.extend(sharing_cases::OPERATIONS.iter().copied());
+    covered.extend(web_push_cases::OPERATIONS.iter().copied());
     covered.extend(font_cases::OPERATIONS.iter().copied());
     // Private account input is exercised with real sessions in drafts_cases.rs.
     covered.extend([
