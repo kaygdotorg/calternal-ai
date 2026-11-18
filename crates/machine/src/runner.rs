@@ -497,14 +497,7 @@ impl Runner {
     /// Number the exec's events and upload them until the exit is acknowledged,
     /// the lease is fenced or the machine is revoked. Worker replies can
     /// unblock a broker round trip, so only ordinary exec output waits to batch.
-    async fn upload(
-        &self,
-        lease_id: Uuid,
-        fence: u64,
-        exec_id: Uuid,
-        mut exec: Exec,
-        batch: bool,
-    ) {
+    async fn upload(&self, lease_id: Uuid, fence: u64, exec_id: Uuid, mut exec: Exec, batch: bool) {
         let mut pending: VecDeque<(Chunk, usize)> = VecDeque::new();
         let (mut seq, mut bytes, mut ended, mut backoff) =
             (0u64, 0usize, false, Duration::from_millis(200));
