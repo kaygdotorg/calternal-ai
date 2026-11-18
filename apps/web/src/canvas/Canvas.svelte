@@ -16,10 +16,9 @@
   import { onWallpaperColours, wallpaperExtremes } from "../appearance/wallpaper";
   import { spaces } from "../shell/spaces.svelte";
   import { shell } from "../shell/shell.svelte";
-  import { centring, edgeOf, GAP, leftOf, maxScroll, nearColumns, NARROW, nextPreset, PRESETS, proportionFor, proportionOf, scrollTo, stripWidth, widthsOf, type Look } from "./layout";
+  import { centring, edgeOf, leftOf, maxScroll, nearColumns, NARROW, nextPreset, PRESETS, proportionFor, proportionOf, scrollTo, stripWidth, widthsOf, type Look } from "./layout";
   import { canvas } from "./model.svelte";
   import { frostDensity } from "./frost";
-  import { hueOf, lightnessOf, windowColours } from "./surface";
   import NotePreview from "./NotePreview.svelte";
   import WindowFrame, { type WinAction } from "./WindowFrame.svelte";
   import type { IconName } from "@calternal/ui";
@@ -30,26 +29,22 @@
   /** The scroll position now (px); `vx` is where the mounted set was last worked out, a reactive copy updated when the scroll has moved by a quarter viewport. */
   let x = $state(canvas.x), vx = $state(canvas.x);
   let frame = 0, tween = 0;
-  let fadeL = $state<HTMLElement>(), fadeR = $state<HTMLElement>();
 
   // ---- the layout, from the rules ----
   const widths = $derived(widthsOf(canvas.cols, vw));
   const pad = $derived(centring(widths, vw));
   const narrow = $derived(vw < NARROW);
 
-  // ---- colours: the wallpaper's hue and tone, the scheme, and the frost's density ----
+  // ---- colours: the scheme and the transparent look's density (every window is neutral: nothing is tinted with the wallpaper's colour) ----
   let scheme = $state(currentScheme());
-  const accentHue = () => hueOf(getComputedStyle(document.documentElement).getPropertyValue("--accent-base").trim() || "#808080");
-  let hue = $state<number | null>(accentHue());
   let tone = $state<{ lo: [number, number, number]; hi: [number, number, number] } | null>(null);
   onMount(() => {
     const read = () => { tone = wallpaperExtremes(); };
     read();
     const a = onScheme((s) => { scheme = s; queueMicrotask(read); });
-    const b = onWallpaperColours((c) => { hue = c?.hue?.h ?? accentHue(); read(); });
+    const b = onWallpaperColours(() => read());
     return () => { a(); b(); };
   });
-  const colours = $derived(windowColours(scheme, hue, tone ? lightnessOf([0, 1, 2].map((i) => (tone!.lo[i]! + tone!.hi[i]!) / 2) as [number, number, number]) : undefined));
   /** The scheme's own paper and inks as the page resolves them (the frosted window is the page's paper over glass, with the page's inks). */
   const page = $derived.by(() => {
     void scheme;
@@ -64,20 +59,6 @@
   const density = $derived(tone ? frostDensity(page.paper, page.ink, page.ink3, tone.lo, tone.hi) : 0.5);
 
   // ---- the strip ----
-  /** The edge fade: how far a window is cut off at the left and right edge of the viewport, as the complement of the edge strip's opacity (1: no fade). It is 1 at both edges unless a window crosses that edge and falls to 0 over `FADE` px of crossing. */
-  const FADE = 24;
-  function fades(): [number, number] {
-    let l = 1, r = 1, left = edgeOf(vw) + pad;
-    for (const w of widths) {
-      const right = left + w;
-      if (left < x && right > x) l = Math.min(l, 1 - Math.min(1, (x - left) / FADE));
-      if (right > x + vw && left < x + vw) r = Math.min(r, 1 - Math.min(1, (right - (x + vw)) / FADE));
-      left = right + GAP;
-      if (left > x + 2 * vw) break;
-    }
-    return [l, r];
-  }
-  let fl = 1, fr = 1;
   // Frosted windows show a blurred picture of the wallpaper that must stay still while the window moves: each picture is moved against the strip's movement, in the frame that moves the strip (transform only, no layout, no style invalidation of the windows'
   // contents). Its offsets are worked out when the layout changes (`refreshPics`), from layout offsets that no animation disturbs.
   let pics: { el: HTMLElement; cl: number; oy: number }[] = [];
@@ -87,7 +68,7 @@
     if (!el) return;
     const cr = el.getBoundingClientRect();
     canvasLeft = cr.left;
-    pics = [...el.querySelectorAll<HTMLElement>(".pic")].map((p) => {
+    pics = [...el.querySelectorAll<HTMLElement>("[data-win] > .pic")].map((p) => {
       const slot = p.closest<HTMLElement>("[data-win]")!.parentElement as HTMLElement, col = slot.parentElement as HTMLElement;
       p.style.width = `${innerWidth}px`; p.style.height = `${innerHeight}px`;
       return { el: p, cl: Number(col.dataset.l ?? 0), oy: -(cr.top + col.offsetTop + slot.offsetTop) };
@@ -95,13 +76,29 @@
     place();
   }
   $effect(() => { void canvas.cols; void mounted; void vw; void vh; void pad; void tick().then(refreshPics); });
+  /**
+   * The app switcher floats in the shell's one slot at the area's bottom centre (`.area > .appbar`); here it is carried to the middle of the focused window's visible part (clamped inside the area), so it never straddles the boundary of two windows or a window's corner (as long
+   * as the window is wider than it). It is one transform on one element, written in the frame that moves the strip while panning, and eased on the motion token when the focus or the layout changes.
+   */
+  function placeCapsule(animate: boolean) {
+    const bar = el?.closest(".area")?.querySelector<HTMLElement>(":scope > .appbar");
+    const cap = bar?.querySelector<HTMLElement>(".sw") ?? null;
+    if (!bar || !cap) return;
+    const f = canvas.colIndexOf(canvas.focus);
+    let dx = 0;
+    if (f >= 0 && !canvas.max) {
+      const l = leftOf(widths, f, vw) + pad - x, a = Math.max(0, l), b = Math.min(vw, l + widths[f]!), half = cap.offsetWidth / 2;
+      dx = Math.max(half, Math.min(vw - half, (a + b) / 2)) - vw / 2;
+    }
+    bar.style.transition = animate && !reduced() ? `transform var(--dur-base) var(--ease-out)` : "none";
+    bar.style.transform = dx ? `translate3d(${dx}px,0,0)` : "";
+  }
+  $effect(() => { void canvas.focus; void canvas.cols; void widths; void vw; void pad; void canvas.max; void tick().then(() => placeCapsule(true)); });
   const write = () => {
     frame = 0;
     if (strip) strip.style.transform = `translate3d(${-x}px,0,0)`;
     place();
-    const [l, r] = canvas.max ? [1, 1] : fades();
-    if (l !== fl) { fl = l; if (fadeL) fadeL.style.opacity = String(1 - l); }
-    if (r !== fr) { fr = r; if (fadeR) fadeR.style.opacity = String(1 - r); }
+    placeCapsule(false);
     if (Math.abs(x - vx) > vw / 4) vx = x;
   };
   const apply = () => { if (!frame) frame = requestAnimationFrame(write); };
@@ -109,7 +106,26 @@
   /** Moves the strip by `d` px (a user's pan: it takes hold of any running tween). */
   function pan(d: number) { cancelAnimationFrame(tween); tween = 0; x = clamp(x + d); apply(); settle(); }
   let settleTimer = 0;
-  const settle = () => { clearTimeout(settleTimer); settleTimer = window.setTimeout(() => { vx = x; canvas.x = x; canvas.save(); }, 140); };
+  const settle = () => { clearTimeout(settleTimer); settleTimer = window.setTimeout(() => { vx = x; canvas.x = x; canvas.save(); snap(); }, 140); };
+  /** How much of column `i` (px of its width) lies inside the viewport now. */
+  const visibleOf = (i: number) => { const l = leftOf(widths, i, vw) + pad; return Math.max(0, Math.min(l + widths[i]!, x + vw) - Math.max(l, x)); };
+  const fullyIn = (i: number) => visibleOf(i) >= Math.min(widths[i]!, vw) - 1;
+  /**
+   * The rest rule: at rest the focused window is fully in view; a neighbour may peek, cut by the canvas edge (nothing is drawn for it, no gradient, no line). Any other state exists only while a gesture is running. When a gesture ends with the focused column
+   * not fully in view, the column with the most in view takes focus and slides fully into view on the motion tokens (instant when motion is off). Not while a finger is down, a tween runs, or a window holds the input lock.
+   */
+  function snap() {
+    if (canvas.max || !canvas.cols.length || fingers || tween || fling || locked()) return;
+    const f = canvas.colIndexOf(canvas.focus);
+    if (f >= 0 && fullyIn(f)) return;
+    let best = -1, most = -1;
+    for (let i = 0; i < canvas.cols.length; i++) { const v = visibleOf(i); if (v > most + 0.5 || (best === f && Math.abs(v - most) <= 0.5)) { most = v; best = i; } }
+    const c = canvas.cols[best];
+    if (!c || most <= 0) return;
+    const w = c.wins.find((k) => k.id === canvas.focus) ?? c.wins[0]!;
+    if (canvas.focus !== w.id) canvas.setFocus(w.id);
+    reveal(w.id, !reduced());
+  }
   const reduced = () => matchMedia("(prefers-reduced-motion: reduce)").matches || document.documentElement.dataset.motion === "off";
   /** What the person last used, a pointer press or a key (captured on the document, so it is known the moment an action runs). */
   let last: "pointer" | "key" = "pointer";
@@ -284,11 +300,17 @@
   const chordLabel = (id: string) => { const c = shortcuts.chordFor(id); return c ? showChord(c) : ""; };
   const kbd = $derived({ max: chordLabel("win-max"), lock: chordLabel("win-lock") });
 
-  let menu = $state<{ x: number; y: number; id: string } | null>(null);
+  let menu = $state<{ x: number; y: number; id: string; kind: "window" | "share" } | null>(null);
   const menuWin = $derived(canvas.win(menu?.id ?? null));
+  /** The share menu's entries; sharing is a separate design with the owner, so this is the whole list for now and a new way to share is one more entry here and one more case in `pick`. */
+  const shareItems = (): MenuItem[] => [
+    ...(typeof navigator.share === "function" ? [{ id: "share:system", label: "Share…", icon: "share" as IconName }] : []),
+    { id: "share:copy", label: "Copy link", icon: "copy" as IconName },
+  ];
   const menuItems = $derived.by<MenuItem[]>(() => {
     const w = menuWin;
     if (!w) return [];
+    if (menu?.kind === "share") return shareItems();
     const c = canvas.cols[canvas.colIndexOf(w.id)];
     const next = (k: string) => nextOf(k);
     const open: MenuItem[] = ["threads", "notes"].flatMap((k) => (next(k) ? [{ id: `beside:${k}`, label: `Open ${appFor(k)?.name === "Threads" ? "a thread" : "a note"} beside`, icon: "sidebar-right" as IconName }, { id: `below:${k}`, label: `Open ${k === "threads" ? "a thread" : "a note"} below`, icon: "down" as IconName }] : []));
@@ -325,17 +347,18 @@
   function toggleMax(id: string, source: "pointer" | "key") {
     void transact(() => canvas.toggleMax(id), animates(source));
   }
-  function share(w: { kind: string; item: string }) {
-    const url = location.origin + href(`/${w.kind}/${w.item}`);
-    void navigator.clipboard?.writeText(url).then(() => toast("Link copied"), () => toast("Could not copy the link"));
+  const linkOf = (w: { kind: string; item: string }) => location.origin + href(`/${w.kind}/${w.item}`);
+  function shareLink(w: { kind: string; item: string }, how: "system" | "copy") {
+    const url = linkOf(w);
+    if (how === "system") void navigator.share({ url, title: titleOf(w.kind, w.item) }).catch(() => { /* dismissed */ });
+    else void navigator.clipboard?.writeText(url).then(() => toast("Link copied"), () => toast("Could not copy the link"));
   }
   function act(id: string, a: WinAction, source: "pointer" | "key", target: HTMLElement) {
     const w = canvas.win(id);
     if (!w) return;
     if (a === "max") toggleMax(id, source);
-    else if (a === "share") share(w);
     else if (a === "lock") canvas.toggleLock(id);
-    else { const r = target.getBoundingClientRect(); menu = { x: r.right, y: r.bottom, id }; }
+    else { const r = target.getBoundingClientRect(); menu = { x: r.right, y: r.bottom, id, kind: a === "share" ? "share" : "window" }; }
   }
   function pick(item: string) {
     const m = menu; menu = null;
@@ -343,7 +366,9 @@
     const w = canvas.win(m.id);
     if (!w) return;
     const source = "pointer" as const;
-    if (item.startsWith("beside:")) addBeside(item.slice(7), false, source);
+    if (item === "share:system") shareLink(w, "system");
+    else if (item === "share:copy") shareLink(w, "copy");
+    else if (item.startsWith("beside:")) addBeside(item.slice(7), false, source);
     else if (item.startsWith("below:")) addBeside(item.slice(6), true, source);
     else if (item.startsWith("width:")) setPreset(w.id, Number(item.slice(6)), source);
     else if (item === "equal") canvas.equalHeights(canvas.cols[canvas.colIndexOf(w.id)]!.id);
@@ -384,7 +409,6 @@
 </script>
 
 <div class="canvas" bind:this={el} data-max={maxed ? "" : undefined} data-canvas>
-  <div class="fade l" bind:this={fadeL} aria-hidden="true"></div><div class="fade r" bind:this={fadeR} aria-hidden="true"></div>
   <div class="view">
     <div class="strip" bind:this={strip} style:width="{stripWidth(widths, vw) + pad}px">
       {#each canvas.cols as c, i (c.id)}
@@ -394,7 +418,7 @@
             {#each c.wins as w, k (w.id)}
               {#if !maxed || w.id === canvas.max}
                 <div class="slot" style:flex="{mine ? 1 : w.weight} 1 0" style:min-height="0">
-                  <WindowFrame win={w} title={titleOf(w.kind, w.item)} icon={iconOf(w.kind)} ownTitle={w.kind === "threads"} focused={canvas.focus === w.id} maximised={mine} look={w.look} {colours}
+                  <WindowFrame win={w} title={titleOf(w.kind, w.item)} icon={iconOf(w.kind)} ownTitle={w.kind === "threads"} focused={canvas.focus === w.id} maximised={mine} look={w.look}
                     paper={page.paper.join(" ")} {density} hasBelow={k < c.wins.length - 1} edge={i === 0 && i === canvas.cols.length - 1 ? "lr" : i === 0 ? "l" : i === canvas.cols.length - 1 ? "r" : ""} {kbd}
                     onfocus={() => focusWin(w.id)} onaction={(a, source, target) => act(w.id, a, source, target)}
                     onresizew={(dx) => resizeWidth(c.id, i, dx)} onresizeh={(dy) => canvas.dragBoundary(c.id, k, dy, el?.querySelector<HTMLElement>(`[data-col="${c.id}"]`)?.clientHeight ?? vh)}>
@@ -412,17 +436,11 @@
   {#if canvas.cols.length === 0}<p class="none">Open a thread or a note from the sidebar.</p>{/if}
 </div>
 
-<Menu open={!!menu} items={menuItems} label="Window menu" anchor={menu ? { left: menu.x, top: menu.y, right: menu.x, bottom: menu.y } : null} placement="bottom" onclose={() => (menu = null)} onpick={pick} />
+<Menu open={!!menu} items={menuItems} label={menu?.kind === "share" ? "Share" : "Window menu"} anchor={menu ? { left: menu.x, top: menu.y, right: menu.x, bottom: menu.y } : null} placement="bottom" onclose={() => (menu = null)} onpick={pick} />
 
 <style>
   /* The area between the sidebars is the canvas and paints nothing: behind the windows is the one veiled wallpaper layer the sidebars sit on (shell/Backdrop.svelte), so every pixel outside the windows is the same with and without them. The windows are middle cards. */
-  .canvas { position: absolute; inset: 0; overflow: hidden; touch-action: pan-x pan-y; overscroll-behavior: contain; }
-  /* The edge fade (the owner's: minimal, only while a window enters or leaves through an edge, never a standing band): two 28 px strips at the area's left and right edges that paint the same layers as the background (the picture, the veil), fixed to the viewport so they match it,
-     under a static gradient, drawn over the windows. Their opacity is 0 unless a window crosses that edge (`fades()`), so nothing is drawn at rest; it is the only thing that changes while panning, and opacity is composited. */
-  .fade { position: absolute; z-index: 2; top: 0; bottom: 0; width: 28px; pointer-events: none; opacity: 0; background: var(--veil-l, linear-gradient(rgb(var(--tint) / 0.5) 0 0)), var(--wall-side, var(--wall-fallback, var(--backdrop))) center / cover no-repeat fixed; }
-  .fade.l { left: 0; -webkit-mask-image: linear-gradient(to right, #000, transparent); mask-image: linear-gradient(to right, #000, transparent); }
-  .fade.r { right: 0; -webkit-mask-image: linear-gradient(to left, #000, transparent); mask-image: linear-gradient(to left, #000, transparent); }
-  .canvas[data-max] .fade { display: none; }
+  .canvas { --switcher-clear: calc(var(--s-3) + var(--pill-h) + var(--s-4)); position: absolute; inset: 0; overflow: hidden; touch-action: pan-x pan-y; overscroll-behavior: contain; }
   .view { position: absolute; inset: 0; z-index: 1; }
   .strip { position: absolute; top: 0; bottom: 0; left: 0; will-change: transform; }
   /* Columns run from the top to the bottom edge of the area as today's card does; the gap between stacked windows is the same 8 px. */
