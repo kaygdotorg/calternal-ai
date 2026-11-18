@@ -474,15 +474,7 @@ pub fn render(out: &Output, operation: &str, id: &str, data: &Value) -> Option<R
                 .hint("Next: calternal groups list"),
         }
     };
-    if let Some(cursor) = data["next_cursor"].as_str() {
-        return Some(
-            reply
-                .blank()
-                .fields([("next cursor", cursor)])
-                .hint("Next: repeat with --cursor."),
-        );
-    }
-    Some(reply)
+    Some(reply.page_cursor())
 }
 
 fn cell(value: &Value) -> String {

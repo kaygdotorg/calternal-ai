@@ -12,6 +12,36 @@ pub struct Space {
     /// UUID of the space to query.
     #[arg(long)]
     space: String,
+    /// Fetch the next page of up to 100 rows. Pass - to read the cursor from stdin.
+    #[arg(long, value_parser = parse_cursor)]
+    cursor: Option<String>,
+}
+
+fn parse_cursor(argument: &str) -> Result<String, String> {
+    use std::io::Read;
+
+    if argument != "-" {
+        calternal_core::validate_page_cursor(argument).map_err(|error| error.message)?;
+        return Ok(argument.to_owned());
+    }
+    let mut token = String::new();
+    std::io::stdin()
+        .take(calternal_core::MAX_PAGE_CURSOR_BYTES as u64 + 2)
+        .read_to_string(&mut token)
+        .map_err(|_| "cannot read a cursor from stdin")?;
+    let token = token.trim_end_matches(['\r', '\n']);
+    calternal_core::validate_page_cursor(token).map_err(|error| error.message)?;
+    Ok(token.to_owned())
+}
+
+impl Space {
+    fn input(self) -> Value {
+        let mut input = json!({"space_id":self.space});
+        if let Some(cursor) = self.cursor {
+            input["cursor"] = json!(cursor);
+        }
+        input
+    }
 }
 
 /// Notes commands address items by their stable UUID.
@@ -77,16 +107,17 @@ impl Notes {
     pub fn operation(self) -> (&'static str, Value) {
         match self {
             Self::List { scope, tag } => {
-                let mut input = json!({"space_id":scope.space});
+                let mut input = scope.input();
                 if let Some(tag) = tag {
                     input["tag"] = json!(tag);
                 }
                 ("notes.list", input)
             }
-            Self::Lookup { scope, prefix } => (
-                "notes.lookup",
-                json!({"space_id":scope.space,"prefix":prefix}),
-            ),
+            Self::Lookup { scope, prefix } => {
+                let mut input = scope.input();
+                input["prefix"] = json!(prefix);
+                ("notes.lookup", input)
+            }
             Self::Delete { id } => ("notes.delete", json!({"id":id})),
             Self::Restore { id } => ("notes.restore", json!({"id":id})),
             Self::Rename {
@@ -130,11 +161,12 @@ impl Tags {
     /// Build a bounded index query.
     pub fn operation(self) -> (&'static str, Value) {
         match self {
-            Self::List { scope } => ("tags.list", json!({"space_id":scope.space})),
-            Self::Lookup { scope, prefix } => (
-                "tags.lookup",
-                json!({"space_id":scope.space,"prefix":prefix}),
-            ),
+            Self::List { scope } => ("tags.list", scope.input()),
+            Self::Lookup { scope, prefix } => {
+                let mut input = scope.input();
+                input["prefix"] = json!(prefix);
+                ("tags.lookup", input)
+            }
         }
     }
 }
@@ -165,7 +197,7 @@ impl Trash {
     /// Build the Trash operation request. Authority is enforced by the server.
     pub fn operation(self) -> (&'static str, Value) {
         match self {
-            Self::List { scope } => ("trash.list", json!({"space_id":scope.space})),
+            Self::List { scope } => ("trash.list", scope.input()),
             Self::Purge { id } => ("trash.purge", json!({"id":id})),
         }
     }
@@ -187,7 +219,8 @@ pub fn reply(out: &Output, op: &str, data: Value) -> Reply {
                     .collect(),
                 "No matching tags.",
             )
-            .hint("Next: calternal notes list --space SPACE --tag TAG.");
+            .hint("Next: calternal notes list --space SPACE --tag TAG.")
+            .page_cursor();
     }
     if let Some(notes) = data["notes"].as_array() {
         let time = if op == "trash.list" {
@@ -228,7 +261,8 @@ pub fn reply(out: &Output, op: &str, data: Value) -> Reply {
                     "No matching notes."
                 },
             )
-            .hint(hint);
+            .hint(hint)
+            .page_cursor();
     }
     if op == "trash.purge" {
         return reply

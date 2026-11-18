@@ -46,15 +46,15 @@ Generated operation schemas. Capability and risk are shown only when the catalog
 - [invites.list](./invites-list/): List and copy current space invitations.
 - [invites.revoke](./invites-revoke/): Revoke an unused space invitation.
 - [invites.redeem](./invites-redeem/): Redeem a space invitation as the signed-in account.
-- [notes.list](./notes-list/): List up to 100 live notes, optionally under a tag
+- [notes.list](./notes-list/): List a page of up to 100 live notes, optionally under a tag
 - [notes.delete](./notes-delete/): Move a note to its space's Trash
 - [notes.restore](./notes-restore/): Restore a note from its space's Trash
-- [trash.list](./trash-list/): List notes in the space's Trash
+- [trash.list](./trash-list/): List a page of up to 100 notes in the space's Trash
 - [trash.purge](./trash-purge/): Permanently delete a note from Trash
 - [notes.rename](./notes-rename/): Rename a note at its current revision
-- [notes.lookup](./notes-lookup/): Find notes by title prefix
-- [tags.list](./tags-list/): List tags and their current note counts
-- [tags.lookup](./tags-lookup/): Find tags by name prefix
+- [notes.lookup](./notes-lookup/): Find a page of up to 100 notes by title prefix
+- [tags.list](./tags-list/): List a page of up to 100 tags and their current note counts
+- [tags.lookup](./tags-lookup/): Find a page of up to 100 tags by name prefix
 - [drafts.save](./drafts-save/): drafts save
 - [drafts.list](./drafts-list/): drafts list
 - [drafts.get](./drafts-get/): drafts get

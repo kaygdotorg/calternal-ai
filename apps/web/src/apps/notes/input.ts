@@ -5,27 +5,43 @@
  */
 import { ServerClient, ServerError } from "../../server/client";
 
+/** A private, unsent version of one note (a complete replacement), kept per account so typed text survives a closed tab or a dropped connection. */
 export interface Draft { spaceId: string; itemId: string; text: string; revision: string }
+/** A write that could not be sent yet, kept with its original creation time; the nested request's id is the record's id. `confirmation_required` means it waits for the person. */
 export interface PendingWrite {
   /** The underlying request's id (stable; a retry reuses it). */
   id: string;
+  /** The space of the note the write is for. */
   spaceId: string;
+  /** The note the write is for. */
   itemId: string;
+  /** When the write was made (Unix ms); kept through retries so the server can order it. */
   createdAtMs: number;
+  /** The operation to send (`notes.update`). */
   operation: string;
+  /** The operation's input exactly as it will be sent. */
   input: Record<string, unknown>;
   /** `queued`, or `confirmation_required` once it is more than seven days old. */
   state: string;
 }
+/**
+ * The account's private input as Notes uses it (docs/account-input.md): the draft of the open note and the writes waiting to be sent, with a feed that says when either changed elsewhere. Failures are `ServerError`;
+ * a draft write is best effort (the editor still has the text).
+ */
 export interface InputClient {
+  /** The unsent draft of one note, or null when there is none. */
   draft(spaceId: string, itemId: string): Promise<Draft | null>;
+  /** Replaces the note's draft with this text; best effort, so a failure is ignored by the caller. */
   saveDraft(spaceId: string, itemId: string, text: string): Promise<void>;
+  /** Removes the note's draft (after it was saved). */
   dropDraft(spaceId: string, itemId: string): Promise<void>;
+  /** The writes waiting to be sent, oldest first. */
   pending(): Promise<PendingWrite[]>;
   /** Queues a write; resolves with the queued record. */
   queue(w: Omit<PendingWrite, "state">): Promise<PendingWrite>;
   /** Sends a queued write now (`confirm` for one that needs the person's confirmation). Resolves when sent; rejects if the server still cannot be reached. */
   send(id: string): Promise<void>;
+  /** Cancels a waiting write by its id; one that is already sent is unaffected. */
   cancel(id: string): Promise<void>;
   /** Calls `onChange` when drafts or pending input changed elsewhere (the account feed). Returns the stop function. */
   watch(onChange: () => void): () => void;

@@ -1,3 +1,3 @@
-KIND      ID                                    SPACE                                 DETAIL
-approval  019a8c00-0000-7000-8000-000000000001  019a8c00-0000-7000-8000-000000000002  notes.create
+KIND      ID                                    SPACE                DETAIL        LIFETIMES
+approval  019a8c00-0000-7000-8000-000000000001  019a8c00-0000-7000…  notes.create  once, this-thread
 Next: calternal requests --help

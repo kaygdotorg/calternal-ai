@@ -1,5 +1,5 @@
 //! Operation admission (one capability lookup), receipts and the host handlers.
-use super::*;
+use super::{cursors::admitted_operation, *};
 use crate::authz::Policy;
 
 pub(super) fn decode<T: DeserializeOwned>(input: JsonObject) -> Result<T, Error> {
@@ -260,7 +260,7 @@ pub(super) async fn dispatch_scoped<D: Directory>(
     .await
 }
 
-pub(super) async fn admitted_operation<D: Directory>(
+pub(super) async fn run_admitted_operation<D: Directory>(
     state: Shared<D>,
     p: Identity,
     session: Session,
@@ -401,27 +401,13 @@ pub(super) async fn dispatch_checked<D: Directory>(
     input: JsonObject,
 ) -> Result<Value, Error> {
     match op {
-        "notes.list" | "notes.lookup" | "tags.list" | "tags.lookup" | "trash.list" => {
-            super::notes::discover(&state, op, input).await
-        }
+        "notes.list" | "notes.lookup" | "tags.list" | "tags.lookup" | "trash.list"
+        | "notes.history" => super::note_pages::discover(&state, op, input).await,
         "notes.get" => {
             let i: NotesGetInput = decode(input)?;
             let space = space_of(&i.space_id)?;
             let note = blocking(&state, move |s| s.get(space, &i.id)).await?;
             to_value(NoteResult { note })
-        }
-        "notes.history" => {
-            let i: NotesHistoryInput = decode(input)?;
-            let limit = i.limit.unwrap_or(20);
-            let space = space_of(&i.space_id)?;
-            let (versions, next_cursor) = blocking(&state, move |s| {
-                s.history(space, &i.id, limit, i.cursor.as_deref())
-            })
-            .await?;
-            to_value(NotesHistoryResult {
-                versions,
-                next_cursor,
-            })
         }
         "notes.delete" | "notes.restore" | "trash.purge" | "notes.rename" => {
             super::notes::mutate(&state, p, request_id, op, input).await

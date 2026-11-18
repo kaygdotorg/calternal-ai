@@ -18,7 +18,7 @@
     <div class="r" data-setting="server.person.{p.account_id}"><span class="n"><span class="t">{p.name}</span><span class="h">{p.role === "admin" ? "Operator" : "Member"}{p.disabled ? " · Disabled" : ""}</span></span>
       {#if !p.disabled}<Button text="Disable" variant="quiet" disabled={busy} onclick={() => disable(p)} />{/if}</div>
   {/each}
-  {#if pg && !pg.done}<div class="r" use:reach={() => void more()}><span class="h">Loading more…</span></div>{/if}
+  {#if pg && !pg.done}<div class="r" use:reach={more}><span class="h">Loading more…</span></div>{/if}
   {#if loaded && !list.length && !error}<div class="r"><span class="h">No accounts.</span></div>{/if}
   {#if error}<p class="e" role="alert">{error}</p>{/if}
 </div>

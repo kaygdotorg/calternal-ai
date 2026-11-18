@@ -12,12 +12,14 @@ mod actor;
 mod capability;
 mod error;
 mod id;
+mod page;
 mod space_paths;
 
 pub use actor::{Actor, Via};
 pub use capability::{Capability, CapabilitySet};
 pub use error::{Error, ErrorCode, Result};
 pub use id::{AccountId, GroupId, InstallationId, InviteId, SpaceId};
+pub use page::Page;
 pub use space_paths::{SPACE_INSTRUCTIONS_PATH, is_reserved_space_path};
 
 /// Maximum JSON bytes in a plugin worker frame, excluding its newline (256 KiB).

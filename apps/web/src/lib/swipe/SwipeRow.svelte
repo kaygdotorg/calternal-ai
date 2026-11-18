@@ -1,11 +1,17 @@
 <script lang="ts" module>
   /** One swipe button. `full`: a long swipe runs it (only the outer one of a side). `leaves`: the row goes away when it runs. */
   export interface SwipeAction {
+    /** Unique within the row; the key the row uses for the button. */
     id: string;
+    /** The button's text, also its accessible name. */
     label: string;
+    /** The button's icon. */
     icon: import("@calternal/ui").IconName;
+    /** The button's colour role: `accent` for the main action, `danger` for removal. */
     tone: "accent" | "plain" | "danger";
+    /** Only on the outer button of a side: a long swipe past the commit point runs this button. */
     full?: boolean;
+    /** The row leaves the list when this runs (archive, delete), so a long swipe keeps it out until `run` settles. */
     leaves?: boolean;
     /** Runs when the button is tapped or a long swipe commits it. Return a promise when it takes a while: a row a long swipe threw out waits for it. */
     run: (el: HTMLElement | undefined) => void | Promise<unknown>;

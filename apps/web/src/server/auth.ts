@@ -25,6 +25,7 @@ const b64 = {
     return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
   },
 };
+/** The base64url helpers WebAuthn needs (bytes to text and back, no padding); exported for tests and for the passkey flows in other modules. Malformed input throws from `atob`. */
 export const base64url = b64;
 
 import { clearCache } from "./cache";
@@ -115,7 +116,7 @@ export interface Passkey { id: string; name: string; created_at: number; last_us
 export interface InstallationRow { id: string; kind: string; name: string; created_at: number; last_seen_at: number; current: boolean }
 
 /** Asks again for a passkey (`reverify/*`): the server wants a fresh one before it changes how someone signs in. */
-async function reverify(): Promise<void> {
+export async function reverify(): Promise<void> {
   const s = await post("reverify/start", {});
   const cred = await ceremony("get", s.options as Json);
   await post("reverify/finish", { ceremony: s.ceremony, credential: encodeCredential(cred), device: deviceName() });

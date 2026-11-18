@@ -1,5 +1,5 @@
 //! Consume once authority before dispatch and replay completed responses.
-use super::{dispatch::admitted_operation, *};
+use super::{cursors::admitted_operation, *};
 use crate::authz::Policy;
 use crate::turns::access::Authority;
 

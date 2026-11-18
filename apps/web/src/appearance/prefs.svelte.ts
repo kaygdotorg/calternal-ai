@@ -35,12 +35,15 @@ export interface Prefs {
   themeId: string | null;
   /** The preset last applied, for the gallery's selected tile. */
   presetId: string | null;
+  /** Where the accent colour comes from: the wallpaper, a preset's own, or a custom colour. */
   accent: AccentMode;
+  /** The custom accent as `#rrggbb`; used only when `accent` is `custom`. */
   accentColor: string;
   /** The wordmark at the top of the sidebar: its text (the font is `fonts.brand`). */
   brand: string;
   /** Whether an agent's message streams in as it is written. Off by default: a working state and the steps show, then the finished message appears at once. */
   streamText: boolean;
+  /** The font choices per role (text, headings, code); a family that is not loaded falls back to the shipped one. */
   fonts: FontPrefs;
   /** Whether the interface animates. The system's reduce-motion setting is always honoured (the motion tokens shorten); this is the person's own off switch on top of it. */
   motion: boolean;

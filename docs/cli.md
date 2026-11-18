@@ -101,15 +101,20 @@ default from expiry, redemption, or revocation.
 
 | Command | Purpose | Human output | Data |
 |---|---|---|---|
-| `notes list --space UUID [--tag TAG]` | List active notes, optionally under a tag. | Note table | `notes[]` |
-| `notes lookup --space UUID PREFIX` | Find live notes by title prefix. | Note table with link target | `notes[]` with `link_target` |
+| `notes list --space UUID [--tag TAG] [--cursor CURSOR]` | List up to 100 active notes, optionally under a tag. | Note table | `notes[]` |
+| `notes lookup --space UUID PREFIX [--cursor CURSOR]` | Find live notes by title prefix. | Note table with link target | `notes[]` with `link_target` |
 | `notes rename ID --base-revision REVISION --title TITLE` | Update heading, filename and links. | Note fields and Markdown | `note` |
 | `notes delete ID` | Move a note to Trash. | Note fields and state | `note` |
 | `notes restore ID` | Restore a note. | Note fields and state | `note` |
-| `tags list --space UUID` | List tags and note counts. | Tag and count table | `tags[]` |
-| `tags lookup --space UUID PREFIX` | Find tags by name prefix. | Tag and count table | `tags[]` |
-| `trash list --space UUID` | List trashed notes. | Note table with deletion time | `notes[]` |
+| `tags list --space UUID [--cursor CURSOR]` | List tags and note counts. | Tag and count table | `tags[]` |
+| `tags lookup --space UUID PREFIX [--cursor CURSOR]` | Find tags by name prefix. | Tag and count table | `tags[]` |
+| `trash list --space UUID [--cursor CURSOR]` | List trashed notes. | Note table with deletion time | `notes[]` |
 | `trash purge ID` | Permanently delete a note in Trash. | ID and deletion state | `id`, `state` |
+
+Each Notes, Tags and Trash listing or lookup command returns up to 100 rows.
+Continue with the same arguments and `--cursor`. JSON output includes
+`next_cursor` when another page is available. Pass `--cursor -` to read a
+cursor from standard input, including values too long for a shell argument.
 
 These commands accept `--base-url`, `--token-file`, `--request-id` and
 `--json`. See [Notes operations](notes-operations.md) for bounds, permission
@@ -117,7 +122,7 @@ checks and Trash retention.
 
 | Command | Purpose | Human output | `data` (JSON) |
 |---|---|---|---|
-| `requests list` | List private questions, approvals and secret prompts. | Adaptive table with kind, request ID, space and detail. | `requests[]` |
+| `requests list` | List private questions, approvals and secret prompts. | Adaptive table with kind, request ID, space, detail and allowed approval lifetimes. | `requests[]` |
 | `requests answer ID --answer JSON` | Submit a question's form values. | Request ID and status. | `id`, `status` |
 | `requests approve ID --lifetime once\|this-thread` | Approve using a fresh passkey session. | Request ID and status. | `id`, `status` |
 | `requests deny ID` | Decline a pending approval. | Request ID and status. | `id`, `status` |
@@ -181,7 +186,7 @@ identical command to retry safely.
 | Command | Purpose | Human output | `data` (JSON) |
 |---|---|---|---|
 | `describe` | The server's protocol versions, your principal and spaces, and the operations it offers. | `protocol`, `genui`, `principal`; table `SPACE ROLE`; table `OPERATION ACCESS DESCRIPTION`. | the describe result: `protocol_version`, `genui_version`, `principal`, `operations[]` (with schemas) |
-| `notes list [--space ID]` | List notes. | Table `ID TITLE UPDATED REVISION`, or a friendly empty result with a command to create one. | `notes[]` |
+| `notes list [--space ID] [--cursor CURSOR]` | List notes. | Table `ID TITLE UPDATED REVISION`, or a friendly empty result with a command to create one. | `notes[]` |
 | `notes get ID` | Show one note. | `id`, `space`, `title`, `revision`, `updated`, blank line, the Markdown. | `note` |
 | `notes create --title T (--markdown M \| --markdown-file F)` | Create a note. | As `notes get`. | `note` |
 | `notes update ID --base-revision R [--title T] (--markdown M \| --markdown-file F)` | Replace a note's content against a known revision. | As `notes get`. A stale revision is `conflict`. | `note` |

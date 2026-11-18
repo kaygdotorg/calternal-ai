@@ -184,6 +184,9 @@ enum NotesCommand {
         /// Exact tag without a leading hash, including descendant tags.
         #[arg(long)]
         tag: Option<String>,
+        /// Fetch the next page of up to 100 notes with the same space and tag.
+        #[arg(long)]
+        cursor: Option<String>,
     },
     #[command(
         about = "Show one note and its current revision",
@@ -355,10 +358,13 @@ fn request_for(command: Command, request_id: Option<String>) -> Result<PendingRe
             (operation, input)
         }
         Command::Notes { command } => match command {
-            NotesCommand::List { scope, tag } => {
+            NotesCommand::List { scope, tag, cursor } => {
                 let mut input = json!({"space_id":scope.space});
                 if let Some(tag) = tag {
                     input["tag"] = json!(tag);
+                }
+                if let Some(cursor) = cursor {
+                    input["cursor"] = json!(cursor);
                 }
                 ("notes.list".into(), input)
             }

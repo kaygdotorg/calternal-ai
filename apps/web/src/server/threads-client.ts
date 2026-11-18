@@ -32,6 +32,7 @@ interface Open { thread: WireThread; messages: Message[]; summary: ThreadSummary
 /** The composer's choices for the next send, kept per thread on this page. */
 type Choices = Partial<Pick<ThreadSummary, "provider" | "model" | "permission" | "runsOn">>;
 
+/** The real server behind the threads interface (one thread is a Markdown file in the space plus jobs): list, open, send, steer, stop, archive, provider choice and readiness. Failures are `ServerError`; reads are cached per revision and the live feeds keep them current. */
 export class ServerThreads implements ThreadsClient {
   private choices = new Map<string, Choices>();
   /** The turn state each thread is in, from the list, the thread and the journal (a single source for the sidebar and the open thread). */
@@ -47,7 +48,7 @@ export class ServerThreads implements ThreadsClient {
   private feed: SpaceFeed | null = null;
   private timers = new Map<string, number>();
 
-  constructor(private server: ServerClient, private space: () => string = () => spaces.current.id) { this.asks = new ServerRequests(server, space); }
+  constructor(private server: ServerClient, private space: () => string = () => spaces.current.id, reverify?: () => Promise<void>) { this.asks = new ServerRequests(server, space, reverify); }
 
   /** The shell's space list is the server's, once: until it is, the current space is a fixture id the server has never heard of. */
   private spacesLoaded: Promise<void> | null = null;
@@ -85,12 +86,13 @@ export class ServerThreads implements ThreadsClient {
     for (const [id, o] of this.opened) { o.summary = this.withReadiness({ ...o.summary, notice: undefined }); this.follows.get(id)?.ev.onSummary({ ...o.summary, ...this.known(id) } as ThreadSummary); }
     this.tellList();
   }
+  /** Follows the account feed: a readiness change re-reads `agent.readiness`; any other change of the account (a secret asked for by a running turn parks nothing, so no thread event tells of it) re-reads the request inbox, once for a burst. */
   private watchReadiness(): void {
     if (this.readyFeed) return;
     this.readyFeed = new AbortController();
     const ac = this.readyFeed;
     void this.loadReadiness();
-    void (async () => { for (let wait = 1000; !ac.signal.aborted; wait = Math.min(wait * 2, 15000)) { try { await this.server.readinessLive(() => void this.loadReadiness(), ac.signal); } catch { /* away: try again */ } if (ac.signal.aborted) return; await new Promise((r) => setTimeout(r, wait)); } })();
+    void (async () => { for (let wait = 1000; !ac.signal.aborted; wait = Math.min(wait * 2, 15000)) { try { await this.server.accountLive((f) => { if (f === "ReadinessChanged" || f === "Reset") void this.loadReadiness(); if (f !== "ReadinessChanged") this.later("requests", () => void this.asks.refresh()); }, { readiness: true, signal: ac.signal }); } catch { /* away: try again */ } if (ac.signal.aborted) return; await new Promise((r) => setTimeout(r, wait)); } })();
   }
   async check(id: string): Promise<void> {
     const s = this.lastList.find((t) => t.id === id) ?? this.opened.get(id)?.summary;
@@ -233,7 +235,7 @@ export class ServerThreads implements ThreadsClient {
     const abort = new AbortController();
     this.streams.set(id, abort);
     f.ev.onStreamStart(job);
-    let n = 0, last: { title: string; at: number } | null = null;
+    let n = 0, last: { title: string; tool?: string; at: number } | null = null;
     try {
       await this.server.jobEvents(job, (name, data, eid) => {
         trace("job event", name, eid ?? "");
@@ -242,12 +244,12 @@ export class ServerThreads implements ThreadsClient {
         if (name !== "chunk") return;
         // The job stream's chunk is `{ seq, data }`; for a provider event `data` is the provider envelope `{ version, seq, event: { type, ... } }` (docs/dev-e2e.md); placement and
         // notice chunks carry a plain `data.type` and are not provider events.
-        const e = (data as { data?: { event?: { type?: string; text?: string; summary?: string; failed?: boolean } } })?.data?.event ?? {};
+        const e = (data as { data?: { event?: { type?: string; text?: string; name?: string; summary?: string; failed?: boolean } } })?.data?.event ?? {};
         const ev = this.follows.get(id)?.ev;
         if (e.type === "text_delta" && e.text) ev?.onDelta(e.text);
-        else if (e.type === "tool_started") last = { title: e.summary ?? "Tool", at: Date.now() };
+        else if (e.type === "tool_started") last = { title: e.summary ?? e.name ?? "Tool", tool: e.name, at: Date.now() };
         else if (e.type === "tool_finished" && last) {
-          const step: Step = { id: `${job}-${n++}`, kind: "run", title: last.title, status: e.failed ? "failed" : "ok", ms: Date.now() - last.at };
+          const step: Step = { id: `${job}-${n++}`, kind: "run", title: last.title, detail: last.tool, status: e.failed ? "failed" : "ok", ms: Date.now() - last.at };
           ev?.onStep(step);
           last = null;
         }

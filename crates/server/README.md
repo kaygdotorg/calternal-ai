@@ -37,6 +37,11 @@ Request receipts (what a retry with the same request ID replays) are kept 7 days
 default; `--receipt-retention-days` / `CALTERNAL_RECEIPT_RETENTION_DAYS` changes it.
 A retry after that is treated as a new request.
 
+Notes, Tags, Trash and directory continuations bind to the account, operation and
+filters. Cursors carry a signed position and expire on restart. Approval entries
+in the private request inbox and feed carry the lifetimes the host accepts for
+that action.
+
 The listener binds `127.0.0.1`. `appdata/startup.json` (0600) reports `base_url`,
 `passkey_origin`, `setup_token_file`, `development_tokens`, `pid`, and token file
 paths. The default passkey origin is `http://localhost:<bound-port>`: WebAuthn

@@ -8,7 +8,7 @@ title: "calternal notes lookup"
 
 | Arguments | Purpose | Human output | JSON data |
 | --- | --- | --- | --- |
-| `notes lookup --space UUID PREFIX` | Find live notes by title prefix. | Note table with link target | `notes[]` with `link_target` |
+| `notes lookup --space UUID PREFIX [--cursor CURSOR]` | Find live notes by title prefix. | Note table with link target | `notes[]` with `link_target` |
 
 ## JSON data shape
 
@@ -23,7 +23,8 @@ title: "calternal notes lookup"
       "updated_at": "string",
       "link_target": "string"
     }
-  ]
+  ],
+  "next_cursor?": "string"
 }
 ```
 
@@ -34,6 +35,8 @@ Recorded test fixture:
 ```text
 ID                                    TITLE     UPDATED                     REVISION    LINK TARGET
 019aabb0-1100-7111-8111-111111111111  New Plan  2026-11-17 06:12:03 +00:00  v2.preview  New Plan.md
+
+next cursor:  c-next
 ```
 
 ## JSON example
@@ -43,6 +46,7 @@ Recorded test fixture:
 ```json
 {
   "data": {
+    "next_cursor": "c-next",
     "notes": [
       {
         "id": "019aabb0-1100-7111-8111-111111111111",

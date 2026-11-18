@@ -20,6 +20,7 @@ import { probeOn, startProbe } from "./probe";
 /** A picker trigger at the caret (the range covers the trigger characters and what follows them). */
 export interface FieldTrigger { kind: TriggerKind; query: string; from: number; to: number }
 
+/** How a plain field behaves: change callback, what it holds (for the browser's spelling rules), whether Escape collapses a selection, picker triggers, and the history's limits. */
 export interface FieldOptions extends HistoryOptions {
   /** Called after every change with the change and its origin. */
   onchange?: (tx: Transaction) => void;
@@ -31,6 +32,7 @@ export interface FieldOptions extends HistoryOptions {
   triggers?: { kinds: readonly TriggerKind[]; on: (t: FieldTrigger | null) => void };
 }
 
+/** The note editor's text behaviour (undo and redo as steps, IME-safe, picker triggers) for an `<input>` or `<textarea>`, so every field in the app edits the same way. Attaches listeners to the element; `destroy` removes them. */
 export class FieldEditor {
   readonly history: History;
   readonly ime = new ImeGate();

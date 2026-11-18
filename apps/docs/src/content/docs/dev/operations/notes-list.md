@@ -6,7 +6,7 @@ title: "notes.list"
 
 > **Preview: the app is not released.** This site describes a development preview and accepted designs; it does not establish production readiness.
 
-List up to 100 live notes, optionally under a tag
+List a page of up to 100 live notes, optionally under a tag
 
 Capability: not declared in this catalogue; the host policy remains authoritative.
 
@@ -16,7 +16,7 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
 {
   "risk": "read",
   "id": "notes.list",
-  "description": "List up to 100 live notes, optionally under a tag",
+  "description": "List a page of up to 100 live notes, optionally under a tag",
   "mutates": false
 }
 ```
@@ -29,6 +29,12 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
   "additionalProperties": false,
   "description": "Input for `notes.list`; the server independently checks access to the selected space.",
   "properties": {
+    "cursor": {
+      "description": "Opaque cursor from the preceding page with the same space and filters.",
+      "maxLength": 524288,
+      "minLength": 1,
+      "type": "string"
+    },
     "space_id": {
       "description": "Owning/access space identifier: 1..80 ASCII letters, digits or `_.:-`; never proof of authority.",
       "maxLength": 80,
@@ -98,6 +104,13 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
   },
   "description": "Result for `notes.list`, containing at most 100 current note summaries.",
   "properties": {
+    "next_cursor": {
+      "description": "Opaque continuation for the next page, omitted at the end.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
     "notes": {
       "description": "At most 100 current summaries, ordered by descending update timestamp then resource ID.",
       "items": {

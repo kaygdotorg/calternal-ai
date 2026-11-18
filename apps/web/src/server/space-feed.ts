@@ -8,6 +8,7 @@ import { ServerClient } from "./client";
 /** The parts of a journal entry the Threads client reads: what changed (`kind`, such as `threads.rename`), which item (the thread's UUID) and the entry's own data. */
 export interface FeedEntry { kind: string; item: string; data?: Record<string, unknown> }
 
+/** A reconnecting follower of one space's journal: calls `onentry` for each entry and `onreset` when derived state must be reloaded; after a drop it resumes from the server's bookmark (so no entry is missed) after a wait that grows from 0.25 s to 15 s, and `stop` ends it. A failed connection is retried, never thrown. */
 export class SpaceFeed {
   private ac = new AbortController();
   private bookmark: string | null = null;

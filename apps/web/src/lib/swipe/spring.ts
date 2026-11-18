@@ -5,6 +5,7 @@
 // easing for "from here to there, starting at this speed", so the motion runs as a plain WAAPI
 // transform on the compositor. Overshoot shows as values past 1, which `linear()` allows.
 
+/** A release animation as the Web Animations API takes it: a CSS `linear()` easing and its duration in ms. */
 export type Release = { easing: string; duration: number };
 
 /**

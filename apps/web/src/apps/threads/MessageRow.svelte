@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { href } from "../../lib/route.svelte";
   // One message. The person's words sit in a tinted bubble on the right; the agent's are plain text on the card, with folded
   // steps, generated-UI cards and links to child threads between paragraphs. No inner card around a message.
+  import { href } from "../../lib/route.svelte";
   import type { Component } from "svelte";
   import { Button, Icon } from "@calternal/ui";
   import Md from "../../lib/Md.svelte";

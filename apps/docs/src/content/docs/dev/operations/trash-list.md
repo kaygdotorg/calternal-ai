@@ -6,7 +6,7 @@ title: "trash.list"
 
 > **Preview: the app is not released.** This site describes a development preview and accepted designs; it does not establish production readiness.
 
-List notes in the space's Trash
+List a page of up to 100 notes in the space's Trash
 
 Capability: not declared in this catalogue; the host policy remains authoritative.
 
@@ -16,7 +16,7 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
 {
   "risk": "read",
   "id": "trash.list",
-  "description": "List notes in the space's Trash",
+  "description": "List a page of up to 100 notes in the space's Trash",
   "mutates": false
 }
 ```
@@ -27,17 +27,23 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "additionalProperties": false,
-  "description": "Input for members, leave and directory-record deletion.",
+  "description": "A continuation scoped to one space.",
   "properties": {
+    "cursor": {
+      "description": "The previous page's cursor for this space and operation.",
+      "maxLength": 524288,
+      "minLength": 1,
+      "type": "string"
+    },
     "space_id": {
-      "description": "Space UUID; names are never accepted in its place.",
+      "description": "Space UUID.",
       "type": "string"
     }
   },
   "required": [
     "space_id"
   ],
-  "title": "SpaceInput",
+  "title": "SpaceDirectoryPageInput",
   "type": "object"
 }
 ```
@@ -91,6 +97,13 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
   },
   "description": "Result for `notes.list`, containing at most 100 current note summaries.",
   "properties": {
+    "next_cursor": {
+      "description": "Opaque continuation for the next page, omitted at the end.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
     "notes": {
       "description": "At most 100 current summaries, ordered by descending update timestamp then resource ID.",
       "items": {

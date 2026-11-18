@@ -16,7 +16,9 @@ request itself and the submitted answer are private to the recipient.
 | `space.instructions` | `space_id` and optional replacement `markdown`. Requires `space.settings` for both reading and writing. |
 
 Questions use the existing GenUI catalog and are checked for embedded actions.
-Approvals use a fixed trusted form. Secret prompts list metadata and an expiry
+Approvals use a fixed trusted form. Each approval detail carries
+`lifetimes` in both the list and account feed. The server uses the
+same choices when validating a submitted decision. Secret prompts list metadata and an expiry
 time. Values still enter through the trusted secret-provide endpoint. Thread
 credentials can raise a question or request authority for their own turn.
 They cannot list, answer, approve or deny a person's requests.

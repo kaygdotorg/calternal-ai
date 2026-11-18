@@ -11,8 +11,11 @@ export type Anchor = Element | { left: number; top: number; right: number; botto
 
 /** Where to put the surface relative to its anchor. `prefer` is the side tried first; `margin` is the least distance kept from the window's edges. */
 export interface PlaceOptions {
+  /** Which side to try first; the other is used when this one does not fit. */
   prefer?: "top" | "bottom";
+  /** Space between the anchor and the panel in px. */
   gap?: number;
+  /** Space kept between the panel and the window edge in px. */
   margin?: number;
   /** The surface covers its anchor instead of sitting beside it: its near edge lines up with the anchor's (bottom edge when it grows upward, top edge when downward) and it is at least as wide, so a popover that morphs out of a button starts inside the button's own box. */
   cover?: boolean;

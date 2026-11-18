@@ -1,7 +1,7 @@
 //! Per-space discovery over item heads. Projections share the content transaction.
-use crate::{Content, Result, Summary, types::internal};
-use calternal_types::SpaceId;
-use rusqlite::{Connection, params};
+use crate::{Content, Error, Result, Summary, db::Space, types::internal};
+use calternal_types::{Page, SpaceId};
+use rusqlite::{Connection, Row, params};
 use uuid::Uuid;
 
 // A label is a name, not an item. The primary key groups it by kind and
@@ -22,6 +22,9 @@ pub(crate) fn install(conn: &Connection) -> Result<()> {
             ON items(kind,updated_at DESC,id) WHERE substr(path,1,7) <> '.trash/';
         CREATE INDEX IF NOT EXISTS item_trash
             ON items(kind,updated_at,id) WHERE substr(path,1,7) = '.trash/';
+        CREATE INDEX IF NOT EXISTS item_trash_page
+            ON items(kind,updated_at DESC,id)
+            WHERE substr(path,1,7) = '.trash/' AND mat_state NOT IN ('purging','purged');
         CREATE INDEX IF NOT EXISTS item_title_key
             ON items(kind,coalesce(json_extract(metadata,'$.title_key'),lower(json_extract(metadata,'$.title'))),id)
             WHERE substr(path,1,7) <> '.trash/';
@@ -73,77 +76,182 @@ fn prefix_end(prefix: &str) -> Option<String> {
     None
 }
 
+/// Indexed order used for a page of current item summaries.
+pub enum ItemOrder<'a> {
+    /// Live items by descending update timestamp, then ascending item UUID.
+    Updated {
+        /// Exact indexed label, including descendants projected to this name.
+        label: Option<&'a str>,
+    },
+    /// Trash items by descending move timestamp, then ascending item UUID.
+    Trash,
+    /// Live items by folded title and ascending item UUID under this prefix.
+    Title(&'a str),
+}
+
+const TITLE_KEY: &str =
+    "coalesce(json_extract(metadata,'$.title_key'),lower(json_extract(metadata,'$.title')))";
+
+const UPDATED_PAGE: &str =
+    "SELECT i.id,i.metadata,i.revision,i.updated_at,i.path,i.updated_at FROM items i
+                         WHERE i.kind=?1 AND substr(i.path,1,7) <> '.trash/'
+                         AND i.updated_at<=?2 AND (i.updated_at<?2 OR i.id>?3)
+                         AND (?4 IS NULL OR EXISTS (
+                             SELECT 1 FROM item_terms l WHERE l.kind=?1 AND l.category='label'
+                             AND l.name=?4 AND l.item=i.id
+                         ))
+                         ORDER BY i.updated_at DESC,i.id LIMIT ?5";
+const TRASH_PAGE: &str = "SELECT id,metadata,revision,updated_at,path,updated_at FROM items
+                         WHERE kind=?1 AND substr(path,1,7) = '.trash/' AND mat_state NOT IN ('purging','purged')
+                         AND updated_at<=?2 AND (updated_at<?2 OR id>?3) AND ?4 IS NULL
+                         ORDER BY updated_at DESC,id LIMIT ?5";
+const LABEL_RANGE_PAGE: &str = "SELECT name,count(*) FROM item_terms WHERE kind=?1 AND category='label' AND name>=?2 AND (NOT ?3 OR name>?2) AND name<?4 GROUP BY name ORDER BY name LIMIT ?5";
+const LABEL_TAIL_PAGE: &str = "SELECT name,count(*) FROM item_terms WHERE kind=?1 AND category='label' AND name>=?2 AND (NOT ?3 OR name>?2) AND ?4 IS NULL GROUP BY name ORDER BY name LIMIT ?5";
+
+// Keep the title expression in sync with the index declaration above.
+fn title_queries() -> &'static [String; 2] {
+    static SQL: std::sync::OnceLock<[String; 2]> = std::sync::OnceLock::new();
+    SQL.get_or_init(|| {
+        [
+            format!(
+                "SELECT id,metadata,revision,updated_at,path,{TITLE_KEY} FROM items
+         WHERE kind=?1 AND substr(path,1,7) <> '.trash/'
+         AND {TITLE_KEY}>=?2 AND ({TITLE_KEY},id)>(?2,?3) AND {TITLE_KEY}<?4
+         ORDER BY {TITLE_KEY},id LIMIT ?5"
+            ),
+            format!(
+                "SELECT id,metadata,revision,updated_at,path,{TITLE_KEY} FROM items
+         WHERE kind=?1 AND substr(path,1,7) <> '.trash/'
+         AND {TITLE_KEY}>=?2 AND ({TITLE_KEY},id)>(?2,?3) AND ?4 IS NULL
+         ORDER BY {TITLE_KEY},id LIMIT ?5"
+            ),
+        ]
+    })
+}
+
+impl Space {
+    pub(crate) fn item_page(
+        &self,
+        kind: &str,
+        order: ItemOrder<'_>,
+        cursor: Option<&str>,
+        limit: usize,
+    ) -> Result<Page<Summary>> {
+        let position: Option<(String, String)> = cursor
+            .map(serde_json::from_str)
+            .transpose()
+            .map_err(|_| Error::invalid_input("invalid page cursor"))?;
+        let (sql, first, id, other) = match order {
+            ItemOrder::Title(prefix) => {
+                let end = prefix_end(prefix);
+                let sql = &title_queries()[usize::from(end.is_none())];
+                let (first, id) = position.unwrap_or_else(|| (prefix.to_owned(), String::new()));
+                (sql.as_str(), first, id, end)
+            }
+            order => {
+                let (sql, label) = match order {
+                    ItemOrder::Updated { label } => (UPDATED_PAGE, label),
+                    ItemOrder::Trash => (TRASH_PAGE, None),
+                    ItemOrder::Title(_) => unreachable!(),
+                };
+                // Persisted timestamps are UTC RFC 3339 strings beginning with a digit.
+                let (first, id) = position.unwrap_or_else(|| ("~".into(), String::new()));
+                (sql, first, id, label.map(str::to_owned))
+            }
+        };
+        let mut stmt = self.conn.prepare_cached(sql).map_err(internal)?;
+        let rows = stmt
+            .query_map(params![kind, first, id, other, (limit + 1) as i64], |row| {
+                let summary = read_head(row)?;
+                Ok((summary, row.get::<_, String>(5)?))
+            })
+            .map_err(internal)?;
+        let rows = rows
+            .map(|row| {
+                let ((id, metadata, revision, updated_at, path), key) = row.map_err(internal)?;
+                Ok((
+                    Summary {
+                        id: Uuid::parse_str(&id).map_err(internal)?,
+                        space: self.id,
+                        kind: kind.into(),
+                        path,
+                        metadata: serde_json::from_str(&metadata).map_err(internal)?,
+                        revision,
+                        updated_at,
+                    },
+                    key,
+                ))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let page = Page::from_lookahead(rows, limit, |(row, key)| {
+            serde_json::json!([key, row.id]).to_string()
+        });
+        Ok(Page {
+            rows: page.rows.into_iter().map(|(row, _)| row).collect(),
+            next: page.next,
+        })
+    }
+}
+
+fn read_head(row: &Row<'_>) -> rusqlite::Result<(String, String, String, String, String)> {
+    Ok((
+        row.get(0)?,
+        row.get(1)?,
+        row.get(2)?,
+        row.get(3)?,
+        row.get(4)?,
+    ))
+}
+
 impl Content {
-    /// Read current, visible item summaries using one indexed title-prefix or label
-    /// query in an authorized space. Exactly one selector must be set. No userdata
-    /// reads, and at most 100 result rows.
-    pub fn discover(
+    /// Read one indexed page of item summaries in an authorized space, up to
+    /// 1,000 rows. Takes the space lock for one query. Label filters probe the
+    /// exact term key for each candidate in update order. No userdata or body reads.
+    pub fn item_page(
         &self,
         space: SpaceId,
         kind: &str,
-        title_prefix: Option<&str>,
-        label: Option<&str>,
-    ) -> Result<Vec<Summary>> {
+        order: ItemOrder<'_>,
+        cursor: Option<&str>,
+        limit: usize,
+    ) -> Result<Page<Summary>> {
         self.with_space(space, |s| {
-            let end = title_prefix.and_then(prefix_end);
-            let (sql, selector) = match (title_prefix, label) {
-                (Some(prefix), None) => {
-                    let sql = if end.is_some() {
-                        "SELECT id,metadata,revision,updated_at,path FROM items
-                         WHERE kind=?1 AND substr(path,1,7) <> '.trash/'
-                         AND coalesce(json_extract(metadata,'$.title_key'),lower(json_extract(metadata,'$.title'))) >= ?2
-                         AND coalesce(json_extract(metadata,'$.title_key'),lower(json_extract(metadata,'$.title'))) < ?3
-                         ORDER BY coalesce(json_extract(metadata,'$.title_key'),lower(json_extract(metadata,'$.title'))),id LIMIT 100"
-                    } else {
-                        "SELECT id,metadata,revision,updated_at,path FROM items
-                         WHERE kind=?1 AND substr(path,1,7) <> '.trash/'
-                         AND coalesce(json_extract(metadata,'$.title_key'),lower(json_extract(metadata,'$.title'))) >= ?2
-                         AND ?3 IS NULL
-                         ORDER BY coalesce(json_extract(metadata,'$.title_key'),lower(json_extract(metadata,'$.title'))),id LIMIT 100"
-                    };
-                    (sql, prefix)
-                }
-                (None, Some(label)) => (
-                    "SELECT i.id,i.metadata,i.revision,i.updated_at,i.path
-                     FROM item_terms l JOIN items i ON i.id=l.item
-                     WHERE l.kind=?1 AND l.category='label' AND l.name=?2 AND ?3 IS NULL
-                     ORDER BY i.updated_at DESC,i.id LIMIT 100",
-                    label,
-                ),
-                _ => return Err(crate::Error::invalid_input("select either a title prefix or a label")),
-            };
-            let mut stmt = s.conn.prepare_cached(sql).map_err(internal)?;
-            let values = params![kind, selector, end];
-            let rows = stmt.query_map(values, |r| {
-                Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
-            }).map_err(internal)?;
-            rows.map(|row| {
-                let (id, metadata, revision, updated_at, path) = row.map_err(internal)?;
-                Ok(Summary {
-                    id: Uuid::parse_str(&id).map_err(internal)?,
-                    space,
-                    kind: kind.into(),
-                    path,
-                    metadata: serde_json::from_str(&metadata).map_err(internal)?,
-                    revision,
-                    updated_at,
-                })
-            }).collect()
+            s.item_page(kind, order, cursor, limit.clamp(1, 1000))
         })
     }
 
-    /// Read up to 100 labels and counts, in name order, using one indexed prefix
-    /// query in an authorized space. Counts include only current visible items.
-    pub fn labels(&self, space: SpaceId, kind: &str, prefix: &str) -> Result<Vec<(String, u32)>> {
+    /// Read up to the requested number of label names and current note counts
+    /// through the term index, capped at 1,000 names. One space-local query.
+    pub fn label_page(
+        &self,
+        space: SpaceId,
+        kind: &str,
+        prefix: &str,
+        cursor: Option<&str>,
+        limit: usize,
+    ) -> Result<Page<(String, u32)>> {
         self.with_space(space, |s| {
             let end = prefix_end(prefix);
-            let mut stmt = s.conn.prepare_cached(if end.is_some() {
-                "SELECT name,count(*) FROM item_terms WHERE kind=?1 AND category='label' AND name>=?2 AND name<?3 GROUP BY name ORDER BY name LIMIT 100"
-            } else {
-                "SELECT name,count(*) FROM item_terms WHERE kind=?1 AND category='label' AND name>=?2 AND ?3 IS NULL GROUP BY name ORDER BY name LIMIT 100"
-            }).map_err(internal)?;
-            let rows = stmt.query_map(params![kind, prefix, end], |r| Ok((r.get(0)?,r.get(1)?))).map_err(internal)?;
-            rows.collect::<rusqlite::Result<Vec<_>>>().map_err(internal)
+            let start = cursor.unwrap_or(prefix);
+            let limit = limit.clamp(1, 1000);
+            let mut stmt = s
+                .conn
+                .prepare_cached(if end.is_some() {
+                    LABEL_RANGE_PAGE
+                } else {
+                    LABEL_TAIL_PAGE
+                })
+                .map_err(internal)?;
+            let rows = stmt
+                .query_map(
+                    params![kind, start, cursor.is_some(), end, (limit + 1) as i64],
+                    |r| Ok((r.get(0)?, r.get(1)?)),
+                )
+                .map_err(internal)?;
+            let rows = rows
+                .collect::<rusqlite::Result<Vec<(String, u32)>>>()
+                .map_err(internal)?;
+            Ok(Page::from_lookahead(rows, limit, |row| row.0.clone()))
         })
     }
 }
@@ -151,6 +259,45 @@ impl Content {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn page_statements_seek_an_ordered_index_without_sorting() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE items(id TEXT PRIMARY KEY,kind TEXT,metadata TEXT,revision TEXT,
+              updated_at TEXT,path TEXT,mat_state TEXT);
+             CREATE INDEX item_list ON items(kind,updated_at DESC,id);",
+        )
+        .unwrap();
+        install(&conn).unwrap();
+        let cases = [
+            (UPDATED_PAGE, "item_live_list", "updated_at"),
+            (TRASH_PAGE, "item_trash_page", "updated_at"),
+            (&title_queries()[0], "item_title_key", "<expr>"),
+            (&title_queries()[1], "item_title_key", "<expr>"),
+            (LABEL_RANGE_PAGE, "PRIMARY KEY", "name"),
+            (LABEL_TAIL_PAGE, "PRIMARY KEY", "name"),
+        ];
+        for (sql, index, ranged_key) in cases {
+            let mut stmt = conn.prepare(&format!("EXPLAIN QUERY PLAN {sql}")).unwrap();
+            let plan = stmt
+                .query_map(params!["notes", "k", "", Some("z"), 101], |row| {
+                    row.get::<_, String>(3)
+                })
+                .unwrap()
+                .collect::<rusqlite::Result<Vec<_>>>()
+                .unwrap()
+                .join("\n");
+            assert!(
+                plan.contains("SEARCH")
+                    && plan.contains(index)
+                    && (plan.contains(&format!("{ranged_key}>?"))
+                        || plan.contains(&format!("{ranged_key}<?"))),
+                "{plan}"
+            );
+            assert!(!plan.contains("TEMP B-TREE"), "{plan}");
+        }
+    }
 
     #[test]
     fn binary_prefix_ranges_cover_unicode() {

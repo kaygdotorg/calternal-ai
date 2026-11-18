@@ -5,6 +5,7 @@
  */
 import type { Extension } from "@codemirror/state";
 
+/** A lazily loaded piece of the editor (`frontmatter`, block `ids`, `tables`, fenced `code`), fetched only for a note whose text needs it. */
 export type Feature = "frontmatter" | "ids" | "tables" | "code";
 
 const DETECT: Record<Feature, RegExp> = {

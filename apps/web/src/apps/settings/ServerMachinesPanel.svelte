@@ -6,6 +6,7 @@
   import { say } from "../../server/say";
   import { checkProvider, providerName, readiness, watchReadiness, type MachineState, type ProviderReadiness } from "../../server/readiness";
   import { spaces } from "../../shell/spaces.svelte";
+  import { clockTime, copyText } from "../../lib/format";
   import "./panel.css";
   interface Machine { id: string; name: string; os: string; arch: string; direct: boolean; state: "online" | "draining" | "offline" | "revoked" }
   let loaded = $state(false), machines = $state<Machine[]>([]), error = $state(""), code = $state<{ code: string; expires_ms: number } | null>(null), busy = $state(false);
@@ -17,7 +18,7 @@
   let ready = $state<Record<string, MachineState>>({}), checking = $state<string | null>(null), copied = $state(""), silent = $state<Record<string, boolean>>({});
   async function loadReady() { try { ready = Object.fromEntries((await readiness(spaces.current.id)).machines.map((m) => [m.machine_id, m])); } catch { /* an older server has no readiness: no provider rows */ } }
   async function check(m: Machine, provider: string) { checking = `${m.id}/${provider}`; try { await checkProvider(spaces.current.id, m.id, provider); await loadReady(); silent[`${m.id}/${provider}`] = !ready[m.id]?.providers[provider]?.check; } catch (e) { error = say(e, "check the provider"); } checking = null; }
-  async function copy(cmd: string) { try { await navigator.clipboard.writeText(cmd); copied = cmd; setTimeout(() => (copied = ""), 2000); } catch { error = "Could not copy. Select the command and copy it."; } }
+  async function copy(cmd: string) { if (await copyText(cmd)) { copied = cmd; setTimeout(() => (copied = ""), 2000); } else error = "Could not copy. Select the command and copy it."; }
   const standing = (p: ProviderReadiness) => !p.enabled ? "Off in this space" : p.ready ? "Signed in" : !p.check ? "Not checked yet" : !p.check.installed ? "Not installed on this machine" : !p.check.signed_in ? "Not signed in" : "Not ready";
   $effect(() => { void spaces.current.id; return watchReadiness(() => void loadReady()); });
   void load();
@@ -46,6 +47,6 @@
   {:else}
     {#if loaded && !error}<div class="r"><span class="n"><span class="t">No machines yet</span><span class="h">A machine is a computer your threads run on: your own Mac or Linux box, or a cloud server. Add one to start a thread. Make a code here, then run the command below on that machine.</span></span></div>{/if}
   {/each}
-  <div class="r"><span class="n"><span class="t">Add a machine</span><span class="h">{code ? `Valid until ${new Date(code.expires_ms).toLocaleTimeString()}, one use.` : "Makes a one-use code for the machine to enroll with."}</span>{#if code}<code class="cmd">calternal machine enroll --server {location.origin} --code {code.code}</code>{/if}</span><Button text={code ? "Make another code" : "Make a code"} variant={machines.length ? "secondary" : "primary"} disabled={busy} onclick={() => act(async () => { code = await call<{ code: string; expires_ms: number }>("/codes", {}); })} /></div>
+  <div class="r"><span class="n"><span class="t">Add a machine</span><span class="h">{code ? `Valid until ${clockTime(code.expires_ms)}, one use.` : "Makes a one-use code for the machine to enroll with."}</span>{#if code}<code class="cmd">calternal machine enroll --server {location.origin} --code {code.code}</code>{/if}</span><Button text={code ? "Make another code" : "Make a code"} variant={machines.length ? "secondary" : "primary"} disabled={busy} onclick={() => act(async () => { code = await call<{ code: string; expires_ms: number }>("/codes", {}); })} /></div>
   {#if error}<p class="e" role="alert">{error}</p>{/if}
 </div>

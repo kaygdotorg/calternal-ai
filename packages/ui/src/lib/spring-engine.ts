@@ -6,8 +6,10 @@
 // Parameters follow Apple's model: `damping` is the damping ratio (1 = no overshoot, lower =
 // more bounce) and `response` is roughly the seconds it takes to get there.
 
+/** A spring in Apple's terms: `damping` is the damping ratio (1 = no overshoot, lower bounces) and `response` is roughly the seconds to settle. */
 export type SpringConfig = { damping: number; response: number };
 
+/** One animated number on a damped spring, stepped by the shared frame loop: `value` chases `target`, `velocity` carries across a retarget (so an interrupted motion continues, never jumps). Stops itself when settled; costs nothing while idle. */
 export class Spring {
   value: number;
   velocity = 0;
@@ -96,6 +98,7 @@ export function run(springs: Spring[], frame: () => void, done?: () => void): ()
 /** Is any job currently animating? (For tests: nothing should tick once everything is still.) */
 export const active = () => jobs.size > 0;
 
+/** True when the person asked the system for reduced motion; callers then apply the end state at once instead of animating. */
 export const prefersReducedMotion = () =>
   typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
 
