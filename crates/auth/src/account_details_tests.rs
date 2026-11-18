@@ -12,7 +12,10 @@ const VERSION_13: Schema<'_> = Schema::new(
     "auth.db",
     11,
     &[include_str!("schema.sql")],
-    &[include_str!("account_details.sql"), include_str!("oidc.sql")],
+    &[
+        include_str!("account_details.sql"),
+        include_str!("oidc.sql"),
+    ],
 );
 
 #[test]
