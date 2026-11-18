@@ -93,8 +93,8 @@ fn refused(message: &str) -> Error {
 
 impl Auth {
     /// Revoke an account, memberships and private spaces and publish pending
-    /// erasures under the existing recovery barrier. A self-delete requires a
-    /// fresh passkey assertion. An administrator can delete another account.
+    /// erasures under the existing recovery barrier. Self-service and administrator
+    /// deletion require a fresh passkey assertion from a person’s installation.
     /// No filesystem work waits on the auth worker. The callback may close
     /// admissions only, and runs even if post-commit recovery publication fails.
     pub async fn erase_account(
@@ -109,20 +109,10 @@ impl Auth {
         db.run(move |connection| {
             let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate).map_err(sql)?;
             crate::people::require_active(&tx, actor)?;
-            if actor == target {
-                crate::session::check_fresh(&tx, &inner.config, actor, installation, false)?;
-            } else {
-                if !crate::people::has(&tx, actor, Capability::PeopleManage)? {
-                    return Err(refused("Only a server administrator can delete another account."));
-                }
-                let id = installation.to_string();
-                let live = tx.query_row(
-                    "SELECT EXISTS(SELECT 1 FROM installations WHERE id=?1 AND user_id=?2
-                      AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at>?3))",
-                    params![id, actor.to_string(), crate::db::now_ms()], |r| r.get::<_,bool>(0)
-                ).map_err(sql)?;
-                if !live { return Err(refused("Sign in again to delete this account.")); }
+            if actor != target && !crate::people::has(&tx, actor, Capability::PeopleManage)? {
+                return Err(refused("Only a server administrator can delete another account."));
             }
+            crate::session::check_fresh(&tx, &inner.config, actor, installation, false)?;
             let id = target.to_string();
             tx.query_row("SELECT id FROM users WHERE id=?1", [&id], |r| r.get::<_,String>(0))
                 .optional().map_err(sql)?.ok_or_else(|| Error::new(ErrorCode::NotFound,"account not found"))?;
@@ -143,7 +133,10 @@ impl Auth {
             for table in ["setup_tokens", "passkeys", "group_members"] {
                 tx.execute(&format!("DELETE FROM {table} WHERE user_id=?1"), [&id]).map_err(sql)?;
             }
-            tx.execute("DELETE FROM invites WHERE created_by=?1", [&id]).map_err(sql)?;
+            tx.execute("DELETE FROM invites WHERE created_by=?1 AND space_id IS NULL", [&id]).map_err(sql)?;
+            tx.execute("UPDATE invites SET revoked_at=coalesce(revoked_at,?2),created_by=NULL
+                        WHERE created_by=?1 AND space_id IS NOT NULL",
+                       params![id, crate::db::now_ms()]).map_err(sql)?;
             tx.execute("DELETE FROM space_receipts WHERE actor=?1 OR scope IN (SELECT id FROM spaces WHERE owner_account=?1)", [&id]).map_err(sql)?;
             tx.execute("DELETE FROM development_directory WHERE id=?1 OR id IN (SELECT id FROM spaces WHERE owner_account=?1)", [&id]).map_err(sql)?;
             tx.execute("DELETE FROM spaces WHERE owner_account=?1", [&id]).map_err(sql)?;

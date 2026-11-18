@@ -88,7 +88,7 @@ pub enum People {
     },
     /// Permanently erase your account or, as a server admin, another account.
     #[command(
-        after_help = "Sign in again with your passkey before deleting your own account. Transfer shared spaces with calternal people transfer first."
+        after_help = "Verify your passkey in a browser or native installation before deleting an account. Transfer shared spaces with calternal people transfer first."
     )]
     Delete {
         /// Omit to delete your own account.

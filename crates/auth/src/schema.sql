@@ -1,4 +1,4 @@
--- auth.db, version 9: the current schema in one definition (no migration chain).
+-- auth.db, version 10: the current schema in one definition (no migration chain).
 -- Accounts and their credentials, server roles, groups and invites (existing app
 -- ADR 0058-0060), and spaces with their memberships and directory receipts.
 -- Disposable preview data only: an auth.db at any other version is refused.
@@ -83,7 +83,7 @@ CREATE TABLE group_members (
 CREATE INDEX group_people ON group_members(user_id, group_id);
 CREATE TABLE invites (
     id             TEXT PRIMARY KEY,
-    created_by     TEXT NOT NULL REFERENCES users(id),
+    created_by     TEXT REFERENCES users(id),
     hash           BLOB NOT NULL UNIQUE,
     secret         BLOB NOT NULL,
     created_at     INTEGER NOT NULL,

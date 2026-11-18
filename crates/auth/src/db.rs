@@ -16,7 +16,7 @@ use std::time::Duration;
 mod role_batch;
 
 /// The one schema version this build reads; [`migrate`] creates it on an empty file.
-const VERSION: i64 = 9;
+const VERSION: i64 = 10;
 
 /// A handle to the dedicated auth.db worker. Its bounded mailbox serializes
 /// authority reads, authentication writes and recovery publication for this

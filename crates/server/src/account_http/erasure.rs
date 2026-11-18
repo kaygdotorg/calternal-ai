@@ -58,6 +58,9 @@ async fn erase<D: Directory>(
             {
                 return classified_failure(403, "forbidden", detail, false);
             }
+            if matches!(&failure, Error::Internal(_)) {
+                tracing::warn!(error = %failure, "account authority erasure failed");
+            }
             error(failure)
         })?;
     let owners = match outcome {
