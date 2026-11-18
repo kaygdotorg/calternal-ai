@@ -2,13 +2,12 @@
 
 Decisions waiting on kayg, most blocking first. Answer here or in chat; answered items
 move to the decision record they belong to and leave this list. Terms: see
-[glossary](glossary.md). Updated 2026-11-18 21:40 IST.
+[glossary](glossary.md). Updated 2026-11-18 22:20 IST.
 
 ## Waiting now
 
 | # | Question | Recommendation | Area |
 | --- | --- | --- | --- |
-| 24 | Materials: how far the middle card separates from the sidebars, the readability floor for text over a wallpaper, and how much photo shows in light mode. Rebuilt from the calternal-ui plugin's defaults with a five-step Clear-to-Tinted slider | Review on the preview | Appearance |
 | 31 | Thread rows: hover hides the time and state mark for the three actions; swipe right shows only Copy link; touch has no long-press menu, "More" sits in the swipe tray | Keep all three; try on a phone | Threads |
 | 35 | People: can a group hold a server role; what happens when a space's only Owner is disabled | Port the existing app's answer | People |
 | 36 | Notes: purging the whole Trash at once, reusing a file name after delete, renames that touch many links | To grill | Notes |
@@ -31,11 +30,18 @@ Decided 2026-11-18: a person never signs in twice and no API key is used. The ti
 
 ## Queued, no decision needed
 
+- A long thread: a thread file stops at 2 MiB today (`thread_full`), so a thread cannot hold 100,000 messages; how a thread continues past the limit needs a design.
+- File format tags (`format: calternal-thread` and the rest) carry no version in either app; add one while no real data exists.
+
 - Rewrite git history to drop old images at the next quiet point.
 - Try phone navigation (swipe back, dragging the card) on a real phone: it is merged but not counted as done until checked on a device.
 
 ## Recently decided (2026-11-17), now in the decision records
 
+- Materials (#24, 2026-11-18): the readability floor is 7:1 with text flipping light or dark; light mode uses the lighter copy of the photo; the temporary Compare section is removed.
+- Draft saves are relaxed (2026-11-18): they no longer wait for the disk to confirm, so a power cut may lose the latest unsent draft edits; notes and sent messages keep the full guarantee.
+- Thread rows are one line in the Inbox as in All Threads; the waiting reason is a mark at the row's end (2026-11-18).
+- Canvas (2026-11-18): the right-sidebar toggle is an item inside the three-dot menu; windows are resized with the same handle as the sidebars.
 - Settings round (2026-11-18): Settings is an app like the others, so a window in the canvas, with panes modelled on Xcode's settings; a theme is one readable file that can be exported, imported and shared, plugins can ship themes, and themes are tokens, never CSS; an Inbox thread can be snoozed until a chosen time, and a thread waiting for a subscription limit moves to a Snoozed section until the reset; a space's Owner installs plugins for their own space, from a gallery, an address, or built in the app; a machine can be renamed, paused, switched between sandboxed and direct, inspected and removed. Retry and shortcuts were already decided (`orchestrator-proposal.md`, `composer.md`).
 - Editing a sent message (2026-11-18): the interaction on issue #33 is approved; the version on screen is per thread, the same for everyone.
 - First-owner setup code (2026-11-18): a server command prints one when no owner exists yet; production is deployed fresh with that build and earlier test data and rollbacks are deleted (never the old app's data).
