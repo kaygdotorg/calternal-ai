@@ -11,6 +11,7 @@
   const apps = $derived(switcherApps());
   const options = $derived(apps.map((a) => ({ value: a.kind, label: a.name, iconOnly: true })));
   // The Selector marks the chosen app itself; this copy follows the address (a choice made elsewhere, the palette, Back).
+  // svelte-ignore state_referenced_locally
   let chosen = $state(current);
   $effect(() => { chosen = current; });
   let root = $state<HTMLElement>(), at = $state(1); // `at`: the index of the app in the middle slot (the three in view are at-1, at, at+1)
@@ -56,7 +57,7 @@
 <style>
   .switcher { min-width: 0; display: flex; justify-content: center; }
   /* Three icons wide (the Selector scrolls sideways by itself); with three or fewer apps it is as wide as they are. */
-  .switcher :global(.apps) { max-width: calc(var(--pill-h) * 3 + 6px); }
+  .switcher :global(.apps) { max-width: calc(var(--pill-h) * 3 + 8px); }
   .ic { display: grid; place-items: center; transition: scale var(--dur-base) var(--ease-out), opacity var(--dur-base) var(--ease-out); }
   .ic.outer { scale: 0.75; opacity: 0.55; }
   .letter { display: grid; place-items: center; width: var(--glyph); height: var(--glyph); border-radius: 50%; border: 1.5px solid currentColor; font-size: calc(var(--glyph) * 0.6); font-weight: var(--strong-weight); line-height: 1; }

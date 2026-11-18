@@ -1,7 +1,7 @@
 <script lang="ts">
   // The right region: a flat sidebar directly on the wallpaper, like the left one (only the middle is a card). The current app's panels scroll under a
   // floating title and floating bottom tabs, fading out at both edges (no opaque band). The app's plugin decides which panels exist.
-  import { Capsule, Pill } from "@calternal/ui";
+  import { Pill, Selector } from "@calternal/ui";
   import { ariaKeys, shortcuts } from "../lib/shortcuts.svelte";
   import type { AppDef } from "../apps/registry";
   import { shell } from "./shell.svelte";
@@ -19,7 +19,7 @@
     {#key panel.id}<panel.component {id} {...panel.props} />{/key}
   </div>
   {#if !shell.narrow}
-    <div class="tabs"><Capsule label="{app.name} panels" items={app.panels.map((p) => ({ id: p.id, label: p.tab ?? p.label, icon: p.icon }))} value={panel.id} onchange={(v) => shell.showPanel(v)} /></div>
+    <div class="tabs"><Selector label="{app.name} panels" options={app.panels.map((p) => ({ value: p.id, label: p.tab ?? p.label, iconName: p.icon }))} value={panel.id} onchange={(v) => shell.showPanel(v)} /></div>
   {/if}
 </div>
 

@@ -13,6 +13,7 @@
   import { edgeConfigs, step, type Edges, type SelectorOption } from "./edges";
   import { measureOnMount, measureOnFrame } from "./measure-batch";
   import { modality } from "../../lib/input";
+  import Icon from "../Icon.svelte";
   /** Keyboard actions never animate: true after a key, so the element that moves can say so on itself. */
   const instant = (): true | undefined => (modality() === "key" ? true : undefined);
 
@@ -210,7 +211,7 @@
       onkeydown={(e) => key(e, i)}
     >
       {#if optionContent}{@render optionContent(o)}{:else}
-      {#if o.icon}<span class="icon">{@render o.icon()}</span>{:else if optionIcon}<span class="icon">{@render optionIcon(o)}</span>{/if}
+      {#if o.icon}<span class="icon">{@render o.icon()}</span>{:else if o.iconName}<span class="icon"><Icon name={o.iconName} /></span>{:else if optionIcon}<span class="icon">{@render optionIcon(o)}</span>{/if}
       {#if !o.iconOnly}<span class="lbl" data-text={o.label}>{o.label}</span>{/if}
       {/if}
     </button>

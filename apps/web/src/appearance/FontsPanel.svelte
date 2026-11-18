@@ -1,7 +1,7 @@
 <script lang="ts">
   // Fonts, as a section of Settings, Appearance: a family per role (interface, chat, code, and the wordmark) from Google Fonts, Fontsource, Fontshare, the person's own files or the system. Wide: the roles on the left and the chosen role's
   // picker beside them (no nested page); narrow: the list, then the picker with a Back button. Everything goes through the adapters in fonts.ts, so the real server plugs in without changes here.
-  import { Button, Capsule, Icon, Row, SplitView, textField } from "@calternal/ui";
+  import { Button, Icon, Row, Selector, SplitView, textField } from "@calternal/ui";
   import { SOURCE_LABEL, type FontInfo, type FontRole, type FontSource } from "./fonts";
   import { appearance as A } from "./prefs.svelte";
   let error = $state("");
@@ -56,7 +56,7 @@
     {#snippet detail()}
       {#if view}
         <h2>{ROLE[view]} font</h2>
-        <Capsule class="sources" label="Font source" kind="radio" glass={false} items={(["google", "fontsource", "fontshare", "upload", "system"] as const).map((s) => ({ id: s, label: SOURCE_LABEL[s] }))} value={source} onchange={(v) => { source = v as FontSource; fq = ""; error = ""; }} />
+        <Selector class="sources" label="Font source" fill={false} options={(["google", "fontsource", "fontshare", "upload", "system"] as const).map((s) => ({ value: s, label: SOURCE_LABEL[s] }))} value={source} onchange={(v) => { source = v as FontSource; fq = ""; error = ""; }} />
         {#if source !== "system" && source !== "upload"}
           <label class="visually-hidden" for="f-q">Search fonts</label>
           <input id="f-q" class="field" type="search" use:textField={{ kind: "search" }} placeholder="Search {SOURCE_LABEL[source]}" bind:value={fq} autocomplete="off" />
