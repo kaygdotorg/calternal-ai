@@ -270,6 +270,21 @@ frame isolation contracts. Owned mounts accept only operation-backed
 contributions. Web and Swift mounting belong to the client renderers.
 See the [interface proposal](plugin-interface-proposal.md).
 
+## Content write results and retries
+
+An interactive mutating operation validates its input before the broker can
+write. Each `write_item` validates its arguments and authorization before
+commit and returns an item UUID and opaque string revision. The normal
+operation response must match the declared output schema and, for generated
+views, the GenUI contract.
+
+If the worker cannot deliver a valid response after committing a content
+write, the host returns `data.committed_write` with the first saved item's
+`id` and `revision`. This host acknowledgment confirms that write. It
+does not describe later callbacks or carry a generated view. A retry with the
+same request ID and input replays the durable result. Changed input conflicts.
+The usual receipt retention and authorization checks apply.
+
 ## Page a plugin's own kinds
 
 Declare `list_items_v1` in `host_calls`. In a worker handler, call

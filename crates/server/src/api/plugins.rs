@@ -1,5 +1,7 @@
 //! Manifest-declared plugin operations on their (plugin, space) worker, and previews.
 use super::*;
+mod receipts;
+use receipts::committed_write;
 
 pub(super) fn plugin_state(
     s: &Store,
@@ -77,10 +79,12 @@ pub(super) fn check_view(plugin: &Plugin, value: &Value) -> Result<(), Error> {
 /// A mutating operation is receipted like every other write: a retry with the same
 /// request ID and input returns the original result without invoking the worker, and
 /// different input under that ID is a conflict. The worker's own `write_item` calls
-/// carry per-call receipts, so a retry after an undelivered result replays them.
+/// carry per-call receipts. When the declared output cannot be delivered, the
+/// first committed write supplies a host acknowledgment under the original ID.
 /// Cost: one blocking canonical-hash task without a body clone, plus worker
-/// interaction. Mutations add one receipt lookup before and one journal append
-/// after; brokered writes retain their own documented durability costs.
+/// interaction. Mutations read the outer receipt and, on miss, the first
+/// write receipt before dispatch. Finalization checks for a competing receipt
+/// before appending. Brokered writes retain their documented durability costs.
 ///
 /// Admission (already done by the caller) checked the manifest-derived policy.
 /// Capture the enabled generation once for worker routing. The broker rechecks
@@ -113,16 +117,22 @@ pub(super) async fn invoke_plugin<D: Directory>(
     let plugin_input = Value::Object(input.into_iter().collect());
     let (plugin2, account) = (plugin.clone(), p.id);
     let (rid, operation, fp2) = (request_id.to_owned(), op.to_owned(), fp.clone());
+    let receipt_actor = actor.clone();
     let admitted = blocking(&state, move |s| {
+        let row = activation(s, space, &plugin2)?;
+        if !row.enabled {
+            return Err(Error::forbidden("plugin is disabled in this space"));
+        }
         // A mutating operation's retry replays its receipt and runs nothing again.
         if mutates {
             if let Some(v) = replay_receipt(s, account, space, &rid, &operation, &fp2)? {
                 return Ok(Err(v));
             }
-        }
-        let row = activation(s, space, &plugin2)?;
-        if !row.enabled {
-            return Err(Error::forbidden("plugin is disabled in this space"));
+            if let Some(result) = committed_write(s, account, space, &rid, &fp2)? {
+                let value =
+                    s.record_plugin_receipt(receipt_actor, &rid, &operation, &fp2, space, result)?;
+                return Ok(Err(value));
+            }
         }
         Ok(Ok(row.generation))
     })
@@ -140,6 +150,11 @@ pub(super) async fn invoke_plugin<D: Directory>(
         generation,
         request_id.to_owned(),
     );
+    let host = if mutates {
+        host.for_request(fp.clone())
+    } else {
+        host
+    };
     let outcome = state
         .workers
         .invoke(
@@ -173,19 +188,23 @@ pub(super) async fn invoke_plugin<D: Directory>(
         );
     }
     policy.check(super::authorization::capabilities(&state, p.id, space).await?)?;
-    let value = outcome_value(outcome)?;
-    check_view(&plugin, &value)?;
-    if mutates {
-        // Only a delivered result is receipted: a refused or failed call may be
-        // retried, and its brokered writes replay by their own receipts.
-        let (principal, rid, op, result) =
-            (actor, request_id.to_owned(), op.to_owned(), value.clone());
-        blocking(&state, move |s| {
-            s.record_plugin_receipt(principal, &rid, &op, &fp, space, result)
-        })
-        .await?;
+    let value = outcome_value(outcome).and_then(|value| {
+        check_view(&plugin, &value)?;
+        Ok(value)
+    });
+    if !mutates {
+        return value;
     }
-    Ok(value)
+    let rid = request_id.to_owned();
+    let op = op.to_owned();
+    blocking(&state, move |s| {
+        let result = match value {
+            Ok(value) => value,
+            Err(error) => committed_write(s, actor.account, space, &rid, &fp)?.ok_or(error)?,
+        };
+        s.record_plugin_receipt(actor, &rid, &op, &fp, space, result)
+    })
+    .await
 }
 
 /// Preview a plugin without activating it or touching user data: its first
