@@ -91,6 +91,20 @@ Capability: space.read.
           "description": "Manifest kind identifier.",
           "type": "string"
         },
+        "message_at": {
+          "description": "Saved RFC 3339 message time, with its original offset.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "message_id": {
+          "description": "Stable record UUID on a message hit.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "space_id": {
           "description": "Owning space UUID.",
           "type": "string"

@@ -10,6 +10,7 @@ pub(crate) mod persistence;
 pub(crate) mod provider_notice;
 pub(crate) mod provider_session;
 mod records;
+pub(crate) mod search;
 pub(crate) mod turn_events;
 mod turn_status;
 use crate::turns::blocking;

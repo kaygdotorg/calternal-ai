@@ -105,7 +105,10 @@ pub fn configure_search<D: Directory>(
         let state = owner.upgrade()?;
         Some(state.registry.snapshot().search_configuration().clone())
     });
-    state.store.shared_content().configure_search(source)
+    state
+        .store
+        .shared_content()
+        .configure_search(source, crate::threads::search::decode)
 }
 
 /// Construct the exact loopback hostnames accepted for a bound listener port.

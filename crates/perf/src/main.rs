@@ -9,6 +9,7 @@ mod idle;
 mod jobs;
 mod live;
 mod materialization;
+mod message_search;
 mod notes_scenario;
 mod rebuild;
 mod report;
@@ -82,6 +83,9 @@ struct Args {
     /// Measure authorized first-page search and same-space note saves.
     #[arg(long)]
     search_only: bool,
+    /// Gate exact term, rare term and phrase search against framed thread fixtures.
+    #[arg(long)]
+    message_search_only: bool,
     /// Measure staged file-origin and actual first-use index rebuilding.
     #[arg(long)]
     rebuild_only: bool,
@@ -134,6 +138,7 @@ fn run(a: &Args) -> Result<i32> {
         a.commit_timing_only,
         a.concurrency_only,
         a.search_only,
+        a.message_search_only,
         a.search_queue,
         a.rebuild_only,
     ]
@@ -143,7 +148,7 @@ fn run(a: &Args) -> Result<i32> {
         > 1
     {
         return Err(
-            "choose one measurement mode: --prepare-only, --jobs-only, --idle-only, --fsync-probe, --startup-only, --commit-timing-only, --concurrency-only, --search-only or --rebuild-only".into(),
+            "choose one measurement mode: --prepare-only, --jobs-only, --idle-only, --fsync-probe, --startup-only, --commit-timing-only, --concurrency-only, --search-only, --message-search-only or --rebuild-only".into(),
         );
     }
     if a.startup_timeout_seconds == 0 || a.startup_timeout_seconds > 300 {
@@ -172,6 +177,9 @@ fn run(a: &Args) -> Result<i32> {
     }
     if a.search_only {
         return search::run(a);
+    }
+    if a.message_search_only {
+        return message_search::run(a);
     }
     if a.samples < 20 || a.pairs < 3 {
         return Err("at least 20 samples and three interleaved pairs are required".into());

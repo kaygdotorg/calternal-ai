@@ -2,6 +2,7 @@
 use super::*;
 
 mod live;
+mod messages;
 mod rebuild_source;
 mod thread_titles;
 

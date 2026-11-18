@@ -1,5 +1,6 @@
 //! Bounded, derived full-text projection of each space's current Markdown heads.
 mod fuzzy;
+mod messages;
 mod readers;
 mod source;
 mod wal;
@@ -7,6 +8,7 @@ mod worker;
 use crate::{Content, Result, discovery::prefix_end, types::internal};
 use calternal_types::{Error, SpaceId};
 pub use fuzzy::typo_expression;
+pub use messages::{MessageDecoder, MessageRecord, message_terms};
 pub(super) use readers::{Readers, Writers};
 use rusqlite::{Connection, functions::FunctionFlags, params};
 use serde::{Deserialize, Serialize};
@@ -45,6 +47,10 @@ impl SearchConfig {
             kinds: serde_json::json!(kinds.iter().map(|k| &k.kind).collect::<Vec<_>>()).to_string(),
             filters: serde_json::json!(kinds).to_string(),
         }
+    }
+
+    fn has_messages(&self) -> bool {
+        self.kinds.contains("\"threads\"")
     }
 }
 
@@ -103,7 +109,7 @@ impl SearchKey {
 
     /// Whether this page is continuing the typo fallback.
     pub fn fuzzy(&self) -> bool {
-        self.0 == 2
+        self.0 == 3
     }
 }
 
@@ -119,6 +125,8 @@ pub struct IndexedHit {
     pub title: String,
     /// Plain excerpt with internal highlight delimiters U+0001 and U+0002.
     pub excerpt: String,
+    /// Stable message identity and saved time, present for a transcript match.
+    pub message: Option<(uuid::Uuid, String)>,
 }
 
 /// Per-space rows with a coverage flag. Callers combine only authorized pages.
@@ -140,6 +148,12 @@ pub enum SearchMatch<'a> {
         all: &'a str,
         /// Equivalent query limited to the title column.
         title: &'a str,
+        /// Literal message terms, already split and lowercased by the shared tokenizer.
+        message_terms: &'a [String],
+        /// Require adjacency in the saved message body.
+        phrase: bool,
+        /// A threads-only query uses chronological results exclusively.
+        messages_only: bool,
     },
     /// Single-word typo fallback: bigram candidates checked by edit distance.
     Fuzzy {
@@ -188,7 +202,7 @@ const MATCH: &str = "WITH
     )
     FROM selected";
 const FUZZY: &str = "
-    SELECT 2,'',d.id,d.kind,d.title,char(1)||d.title||char(2)
+    SELECT 3,'',d.id,d.kind,d.title,char(1)||d.title||char(2)
     FROM search_title_grams JOIN search_docs d ON d.rowid=search_title_grams.rowid
     WHERE search_title_grams MATCH ?3 AND d.kind IN allowed AND d.id>?4
       AND search_one_edit(d.title_key,?5)
@@ -228,6 +242,7 @@ fn search(conn: &Connection, filters: &str, probe: &SearchProbe<'_>) -> Result<I
                     kind: r.get(3).map_err(internal)?,
                     title: r.get(4).map_err(internal)?,
                     excerpt: r.get(5).map_err(internal)?,
+                    message: None,
                 });
             }
         }
@@ -242,7 +257,7 @@ fn search(conn: &Connection, filters: &str, probe: &SearchProbe<'_>) -> Result<I
                 params![filters, probe.kinds, first, id, prefix, end, limit],
             )
         }
-        SearchMatch::Text { all, title } => {
+        SearchMatch::Text { all, title, .. } => {
             let tier = after.map_or(0, |key| key.0);
             rows(
                 &sql[2],
@@ -272,8 +287,9 @@ impl Content {
     pub fn configure_search(
         self: &Arc<Self>,
         source: SearchConfigSource,
+        decode_messages: MessageDecoder,
     ) -> Result<std::thread::JoinHandle<()>> {
-        let (send, handle) = worker::start(self, source)?;
+        let (send, handle) = worker::start(self, source, decode_messages)?;
         self.search_worker
             .set(send)
             .map_err(|_| Error::internal("search worker is already configured"))?;
@@ -297,11 +313,12 @@ impl Content {
         let pair = self.search_readers.take(space, &self.roots.appdata)?;
         let (source, index, journal) = &pair;
         let result = (|| {
-            let (allowed, capped) = source::allowed(source, &config.filters, probe.kinds, space)?;
+            let source = source.unchecked_transaction().map_err(internal)?;
+            let (allowed, capped) = source::allowed(&source, &config.filters, probe.kinds, space)?;
             if allowed == "[]" {
                 return Ok(IndexedPage::empty());
             }
-            if source::pending(source)? {
+            if source::pending(&source)? {
                 if let Some(worker) = self.search_worker.get() {
                     let _ = worker.try_send(space);
                 }
@@ -315,6 +332,37 @@ impl Content {
                 .map(|reader| reader.head())
                 .transpose()
                 .map_err(internal)?;
+            let mut message_page = IndexedPage::empty();
+            if let SearchMatch::Text {
+                message_terms,
+                phrase,
+                messages_only,
+                ..
+            } = probe.matching
+            {
+                if let Some(head) = &head
+                    && allowed.contains("\"threads\"")
+                {
+                    message_page = messages::search(
+                        &self.roots.appdata,
+                        &source,
+                        space,
+                        head,
+                        message_terms,
+                        phrase,
+                        probe,
+                    )?;
+                    message_page.partial |= capped;
+                    if message_page.partial
+                        && let Some(worker) = self.search_worker.get()
+                    {
+                        let _ = worker.try_send(space);
+                    }
+                }
+                if messages_only {
+                    return Ok(message_page);
+                }
+            }
             let snapshot = index
                 .as_ref()
                 .map(|conn| readers::while_available(|| conn.unchecked_transaction()))
@@ -336,13 +384,14 @@ impl Content {
                 }
             }
             let Some((head, ready)) = matches else {
-                return Ok(IndexedPage {
-                    partial: true,
-                    ..IndexedPage::empty()
-                });
+                message_page.partial = true;
+                return Ok(message_page);
             };
             let mut page = search(snapshot.as_deref().expect("ready index"), &allowed, probe)?;
-            page.partial = capped || head.seq != ready.watermark;
+            page.partial = capped || head.seq != ready.watermark || message_page.partial;
+            page.hits.extend(message_page.hits);
+            page.hits.sort_unstable_by(|a, b| a.key.cmp(&b.key));
+            page.hits.truncate(probe.limit.min(51));
             Ok(page)
         })();
         self.search_readers.keep(space, pair);

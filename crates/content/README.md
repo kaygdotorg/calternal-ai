@@ -126,6 +126,8 @@ reads were removed. Linked path edits and Trash/restore finish placement before
 returning, and purge finishes removal before publishing its receipt.
 
 An opted-in Markdown kind is searchable through a separate per-space database.
+Threads have a chronological message index that follows the same journal and
+locates one byte-counted message in the exact committed revision.
 A bounded worker advances its projection and journal watermark outside the
 acknowledgment path. A new generation becomes visible when it has scanned
 the retained heads and caught up. List and ID reads use the retained metadata.
