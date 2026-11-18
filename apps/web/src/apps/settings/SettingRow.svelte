@@ -78,6 +78,7 @@
   .row { min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: var(--s-6); min-height: calc(var(--row-h-settings)); padding: var(--s-3) var(--s-6); position: relative; transition: background-color var(--dur-slow) var(--ease-out); }
   .row.col { display: grid; gap: var(--s-3); justify-content: stretch; padding-block: var(--s-5); }
   .row.col:has(> :global(ul)), .row.col:has(> :global(.sp)) { padding: 0; }
+  .row.col:has(> :global(.sc)) { padding: var(--s-3) var(--s-2); }
   .row.hl { background: var(--accent-soft); }
   .l { display: grid; min-width: 0; gap: var(--s-1); }
   .t { font-size: var(--text-ui); font-weight: var(--strong-weight); }
