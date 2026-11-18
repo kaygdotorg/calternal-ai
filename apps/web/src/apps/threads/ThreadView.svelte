@@ -19,6 +19,8 @@
   import MessageRow from "./MessageRow.svelte";
   import ThreadNotices from "./ThreadNotices.svelte";
   import RequestBar from "./RequestBar.svelte";
+  import SignIn from "./SignIn.svelte";
+  import type { SignInRequest } from "./model";
   import { client, store, startThread } from "./store.svelte";
 
   let { id }: { id: string } = $props();
@@ -84,7 +86,12 @@
   const summary = $derived(conv?.summary ?? store.get(id));
   const parent = $derived(summary?.parentId ? store.get(summary.parentId) : undefined);
   const reqs = $derived(store.requestsFor(id));
-  const total = $derived((conv?.count ?? 0) + (conv?.stream ? 1 : 0));
+  /** Sign-ins for this thread, open or just ended: items at the end of the conversation (not part of it: the thread file carries one line). */
+  const signIns = $derived<{ req: SignInRequest; state: "pending" | "done" | "failed" }[]>([
+    ...reqs.flatMap((r) => (r.kind === "signin" ? [{ req: r, state: "pending" as const }] : [])),
+    ...store.signedIn.filter((f) => f.req.threadId === id),
+  ]);
+  const total = $derived((conv?.count ?? 0) + (conv?.stream ? 1 : 0) + signIns.length);
 
   // One conversation per open thread. It depends on the thread being listed (a boolean), not on the list itself: the list is replaced whenever the server says something changed (every checkpoint of a
   // running turn), and a conversation rebuilt each time lost its cache and its place and left the open thread showing placeholders for messages the adapter had already read.
@@ -152,8 +159,11 @@
             {#if conv && i < conv.count}
               {@const m = conv.get(i)}
               {#if m}<MessageRow message={m} provider={summary?.provider ?? "claude"} providers={store.providers} />{:else}<div class="skeleton" aria-hidden="true"></div>{/if}
-            {:else if conv?.stream}
+            {:else if conv?.stream && i === conv.count}
               <StreamRow turn={conv.stream} provider={summary?.provider ?? "claude"} providers={store.providers} />
+            {:else if conv}
+              {@const s = signIns[i - conv.count - (conv.stream ? 1 : 0)]}
+              {#if s}<div class="signin">{#key s.req.id}<SignIn request={s.req} result={s.state} onanswer={(code) => client.answer(s.req.id, { kind: "signin", code }).catch((e: Error) => toast(`Not sent: ${e.message}`))} onpoll={s.state === "pending" ? async () => { const st = (await client.signInStatus?.(s.req.id)) ?? "gone"; if (st === "done" || st === "failed") void store.refresh(); return st; } : undefined} />{/key}</div>{/if}
             {/if}
           {/snippet}
         </VirtualList>
@@ -166,7 +176,7 @@
       <div class="inner">
         <ThreadNotices thread={summary} onnew={() => void startThread().then((t) => navigate(`/threads/${t.id}`), (e: Error) => toast(`Could not start a thread: ${e.message}`))} onresume={() => client.resume(id).catch((e: Error) => toast(`Could not resume: ${e.message}`))} oncheck={() => client.check(id).then(() => toast("Checked"), (e: Error) => toast(`Could not check: ${e.message}`))} />
         <RequestBar requests={reqs} onanswer={(rid, a) => client.answer(rid, a).catch((e: Error) => toast(`Not sent: ${e.message}`))} />
-        <Composer thread={summary} providers={store.providers} machines={store.machines} onpermission={(p) => client.setPermission(id, p)} onrunson={(r) => client.setRunsOn(id, r)} onreasoning={(l) => client.setReasoning(id, l)} onattach={(f, progress) => client.upload(id, f, progress)} onsend={(t, files) => { const undo = conv?.begin(); return client.send(id, t, crypto.randomUUID(), files).catch((e: Error) => { undo?.(); toast(`Not sent: ${e.message}`); throw e; }); }} onstop={() => client.stop(id).catch((e: Error) => toast(`Could not stop: ${e.message}`))} onprovider={(p, m) => client.setProvider(id, p, m)} />
+        <Composer thread={summary} providers={store.providers} machines={store.machines} onpermission={(p) => client.setPermission(id, p)} onrunson={(r) => client.setRunsOn(id, r)} onreasoning={(l) => client.setReasoning(id, l)} ontype={() => void client.signInTyping?.(id)} onattach={(f, progress) => client.upload(id, f, progress)} onsend={(t, files) => { const undo = conv?.begin(); return client.send(id, t, crypto.randomUUID(), files).catch((e: Error) => { undo?.(); toast(`Not sent: ${e.message}`); throw e; }); }} onstop={() => client.stop(id).catch((e: Error) => toast(`Could not stop: ${e.message}`))} onprovider={(p, m) => client.setProvider(id, p, m)} />
       </div>
     </div>
   {/if}
@@ -188,6 +198,7 @@
   h1 { font-size: var(--text-ui); font-weight: var(--strong-weight); line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .crumb { font-size: var(--text-section); color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 1; }
   .list { position: absolute; inset: 0; }
+  .signin { margin: var(--s-4) var(--pad-region); max-width: var(--msg-w, 100%); }
   .skeleton { height: 96px; margin: var(--s-4) var(--pad-region); border-radius: var(--r-card); background: rgb(var(--ink-rgb) / 0.05); }
   .bottom { position: absolute; z-index: 3; left: 0; right: 0; bottom: 0; display: flex; justify-content: center; pointer-events: none; padding: var(--s-4) var(--msg-pad-r, var(--pad-region)) max(var(--pad-region), var(--safe-bottom), var(--bottom-inset, 0px)) var(--msg-pad-l, var(--pad-region)); }
   .inner { pointer-events: auto; display: flex; flex-direction: column; gap: var(--s-4); width: 100%; max-width: var(--msg-inner, calc(var(--msg-w) - 2 * var(--pad-region))); min-width: 0; }

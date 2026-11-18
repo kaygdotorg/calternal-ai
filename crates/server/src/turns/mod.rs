@@ -76,6 +76,21 @@ pub async fn dispatch<D: Directory>(
             ));
         }
     }
+    if op == calternal_core::MACHINES_INSTALL {
+        if agent.is_some() || matches!(session, Session::Agent { .. }) {
+            return Err(Error::forbidden("a person must enroll a machine"));
+        }
+        if !session.is_live(&state.directory).await {
+            return Err(Error::unauthorized("sign in again first"));
+        }
+        return crate::machines::install::script(state, machines, who.id).await;
+    }
+    if op == calternal_core::MACHINES_ONBOARDING {
+        if agent.is_some() {
+            return Err(Error::forbidden("a person must check machine onboarding"));
+        }
+        return crate::machines::colocated::onboarding(state, machines, who.id).await;
+    }
     let verify = op == calternal_core::MACHINES_VERIFY;
     if verify {
         if agent.is_some() {

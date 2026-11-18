@@ -51,6 +51,75 @@ async fn fake_provider_streams_through_podman_and_the_mounted_operation_cli() {
     wait_online(&server, &server.owner, 1).await;
     let space = server.owned_space(&server.owner).await;
     let account = Uuid::parse_str(&server.principal(&server.owner).await.0).unwrap();
+    let call = |operation: &'static str, input: Value| {
+        let server = &server;
+        async move {
+            let (status, reply) = server
+                .call(
+                    &server.owner,
+                    "/api/v1/operations",
+                    Some(json!({
+                        "request_id":Uuid::new_v4(),"operation":operation,"input":input,
+                    })),
+                )
+                .await;
+            assert_eq!(status, 200, "{operation}: {status}");
+            reply["data"].clone()
+        }
+    };
+    let sign_in = call(
+        "provider.sign_in.start",
+        json!({
+            "space_id":space,"provider_id":"calternal-claude-code"
+        }),
+    )
+    .await;
+    let sign_in_id = sign_in["id"].clone();
+    tokio::time::timeout(ENGINE_TEST_LIMIT, async {
+        loop {
+            let requests = call("requests.list", json!({})).await;
+            if requests["requests"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|request| {
+                    request["id"] == sign_in_id
+                        && request["detail"]["url"]
+                            == "https://claude.ai/oauth/authorize?state=FIXTURE_BROWSER_LINK"
+                })
+            {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    })
+    .await
+    .expect("private provider prompt did not arrive");
+    call(
+        "provider.sign_in.answer",
+        json!({
+            "id":sign_in_id,"code":"FIXTURE_BROWSER_ANSWER"
+        }),
+    )
+    .await;
+    tokio::time::timeout(ENGINE_TEST_LIMIT, async {
+        loop {
+            let result = call("provider.sign_in.status", json!({"id":sign_in_id})).await;
+            if result["status"] == "done" {
+                break;
+            }
+            assert_eq!(result["status"], "pending");
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    })
+    .await
+    .expect("provider sign-in did not complete");
+    let account_home = mdir.join(&format!("sandboxes/accounts/{account}"));
+    assert_eq!(
+        std::fs::read_to_string(account_home.join("provider-login/.credentials.json")).unwrap(),
+        "FIXTURE_MACHINE_ONLY_LOGIN"
+    );
+
     let thread = Uuid::new_v4();
     let mut command = tokio::process::Command::new(BIN);
     command.kill_on_drop(true);
@@ -108,7 +177,7 @@ async fn fake_provider_streams_through_podman_and_the_mounted_operation_cli() {
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
     assert!(!root.join("threads").join(thread.to_string()).exists());
-    assert!(root.join("home").exists());
+    assert!(root.join("spaces").join(&space).join("home").exists());
 
     let live_thread = Uuid::new_v4();
     let run = server.request_run(&server.owner, &space, live_thread).await;

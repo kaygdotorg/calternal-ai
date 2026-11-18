@@ -46,6 +46,8 @@ pub(super) async fn spawn(
         .map_err(|_| Error::unavailable("plugin manifest rejected by worker session"))?;
     let sandbox = backend
         .start(&SandboxSpec {
+            space_id: Some(space),
+            provider_login: false,
             // Operator-installed packages always start from the private copy of
             // verified bytes. Explicit in-memory fixtures can supply test assets.
             code_directory: (plugin.revision == 0 && backend.name() != "machine")

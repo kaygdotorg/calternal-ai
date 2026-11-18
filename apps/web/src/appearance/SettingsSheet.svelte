@@ -199,12 +199,6 @@
         <p class="note">One scale for type, spacing and controls together.</p>
       </section>
 
-      <section aria-labelledby="s-switch">
-        <h2 id="s-switch">App switcher (trying it out)</h2>
-        <Capsule label="App switcher place" kind="radio" glass={false} items={[{ id: "sidebar", label: "In the sidebar" }, { id: "card", label: "Under the middle card" }]} value={p.switcher} onchange={(v) => A.change((x) => (x.switcher = v as never))} />
-        {#if p.switcher === "card"}<Switch label="Hide until needed" hint="Off: always visible. On: it appears when the pointer or focus reaches the card's bottom edge." checked={p.switcherAutoHide} onchange={(v) => A.change((x) => (x.switcherAutoHide = v))} />{/if}
-      </section>
-
       <section aria-labelledby="s-col">
         <h2 id="s-col">Colour</h2>
         <Capsule label="Colour scheme" kind="radio" glass={false} items={[{ id: "system", label: "System", icon: "apps" }, { id: "light", label: "Light", icon: "sun" }, { id: "dark", label: "Dark", icon: "moon" }]} value={A.scheme} onchange={(v) => A.setScheme(v as never)} />

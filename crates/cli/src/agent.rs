@@ -1,9 +1,9 @@
 //! Non-interactive provider commands for `calternal`, using the shared output module.
 use crate::output::{CliError, Output};
 use calternal_client::{CancellationToken, Client};
-/// Operation used by the machine CLI's bounded diagnostic.
-pub use calternal_core::MACHINES_VERIFY;
 use calternal_core::{AgentInput, AgentMode, OperationRequest};
+/// Operation used by the machine CLI's bounded diagnostic.
+pub use calternal_core::{MACHINES_INSTALL, MACHINES_ONBOARDING, MACHINES_VERIFY};
 use clap::{Args as ClapArgs, Subcommand};
 use serde_json::{Value, json};
 use std::path::PathBuf;
@@ -404,6 +404,28 @@ pub fn invoke(
             return Ok(crate::output::Reply::new(value.clone())
                 .fields([("Plugin", id), ("Version", version), ("Status", status)])
                 .hint("Use `calternal plugin --help` for package and activation commands."));
+        }
+        if operation.as_deref() == Some(calternal_core::MACHINES_INSTALL) {
+            let script = value["script"]
+                .as_str()
+                .ok_or_else(|| error("The server did not return an installer."))?;
+            return Ok(crate::output::Reply::new(value.clone()).text(script));
+        }
+        if operation.as_deref() == Some(calternal_core::MACHINES_ONBOARDING) {
+            let yes = |key| if value[key] == true { "Yes" } else { "No" };
+            let hint = if value["ready"] == true {
+                "Run calternal machine verify for a sandbox and provider check."
+            } else {
+                "Check that the machine service is running and has capacity, then retry."
+            };
+            let mut reply = crate::output::Reply::new(value.clone()).fields([
+                ("Machine attached", yes("attached")),
+                ("Ready for a sandbox", yes("ready")),
+            ]);
+            if let Some(id) = value["machine_id"].as_str() {
+                reply = reply.fields([("Machine ID", id)]);
+            }
+            return Ok(reply.hint(hint));
         }
         if operation.as_deref() == Some(calternal_core::MACHINES_VERIFY) {
             let yes = |b: &Value| match b.as_bool() {

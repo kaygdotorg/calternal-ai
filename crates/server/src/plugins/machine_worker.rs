@@ -78,7 +78,7 @@ impl Sandbox for MachineSandbox {
                 while let Some(data) = writes.recv().await {
                     let service = service.clone();
                     if !matches!(
-                        crate::blocking::spawn(move || service.worker_input(account, id, data))
+                        crate::blocking::spawn(move || service.interactive_input(account, id, data))
                             .await,
                         Ok(Ok(()))
                     ) {

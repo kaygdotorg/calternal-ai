@@ -68,6 +68,16 @@ pub struct AgentInput {
 /// Manual provider operations. This table feeds discovery, policy and instruction indexes.
 pub const AGENT_OPERATIONS: &[(&str, &str, bool)] = &[
     (
+        crate::MACHINES_INSTALL,
+        "Create a single-use personal machine enrollment script",
+        true,
+    ),
+    (
+        crate::MACHINES_ONBOARDING,
+        "Check whether the installation has an enrolled, available machine",
+        false,
+    ),
+    (
         crate::MACHINES_VERIFY,
         "Verify a selected machine and provider sign-in",
         true,

@@ -7,6 +7,40 @@ use ts_rs::TS;
 /// Read-only operation for machine and provider status.
 pub const AGENT_READINESS: &str = "agent.readiness";
 
+/// Read first-owner onboarding status for an instance machine.
+pub const MACHINES_ONBOARDING: &str = "machines.onboarding";
+
+/// Issue a script for enrolling a machine owned by the signed-in account.
+pub const MACHINES_INSTALL: &str = "machines.install";
+
+/// The enrollment script and the deadline for redeeming its one-time code.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(deny_unknown_fields)]
+pub struct MachineInstallResult {
+    /// Readable shell script containing the private enrollment code.
+    pub script: String,
+    /// Unix milliseconds when the code expires if unused.
+    #[ts(type = "number")]
+    pub expires_ms: i64,
+}
+
+/// No caller-controlled scope or target for machine onboarding and enrollment.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(deny_unknown_fields)]
+pub struct MachineOnboardingInput {}
+
+/// Enrollment and current placement availability for first-owner setup.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(deny_unknown_fields)]
+pub struct MachineOnboardingResult {
+    /// An active enrollment exists on this installation.
+    pub attached: bool,
+    /// The selected machine is connected and can accept a sandbox placement.
+    pub ready: bool,
+    /// The selected machine UUID for the owner's explicit verification.
+    pub machine_id: Option<String>,
+}
+
 /// Run an owner-authorized diagnostic on one enrolled machine.
 pub const MACHINES_VERIFY: &str = "machines.verify";
 

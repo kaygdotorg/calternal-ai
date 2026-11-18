@@ -593,6 +593,7 @@ Machine-side provider declaration; executable is installed in the sandbox image 
 | `executable` | yes | string | Basename resolved inside the sandbox's PATH; no shell, path or arguments. |
 | `models` | yes | array | Models offered by this adapter, validated and cached with the manifest. |
 | `protocol_version` | yes | integer | Version of the bounded stdio contract, currently one. |
+| `sign_in` | no | boolean | Whether the executable implements the private `--sign-in` mode. |
 
 ```json
 {
@@ -625,6 +626,10 @@ Machine-side provider declaration; executable is installed in the sandbox image 
       "type": "integer",
       "format": "uint32",
       "minimum": 0
+    },
+    "sign_in": {
+      "description": "Whether the executable implements the private `--sign-in` mode.",
+      "type": "boolean"
     }
   },
   "additionalProperties": false

@@ -10,8 +10,8 @@ const { chromium } = createRequire(new URL("../apps/web/package.json", import.me
 
 process.umask(0o077);
 const unit = "calternal-ai-rehearsal";
-const [phase, origin, root, machineUrl] = process.argv.slice(2);
-assert.ok(["setup", "fixture", "verify", "restart", "real"].includes(phase) && origin && root && machineUrl);
+const [phase, origin, root] = process.argv.slice(2);
+assert.ok(["setup", "fixture", "verify", "restart", "real"].includes(phase) && origin && root);
 const session = join(root, "rehearsal-session.json");
 const cli = join(root, "releases/current/calternal");
 const machine = join(root, "machine");
@@ -116,16 +116,10 @@ try {
     await context.storageState({ path: session });
     console.log("First owner registered a resident software passkey at the configured HTTPS origin.");
 
-    const enrollment = await api("machines/codes", {});
-    execFileSync(cli, ["machine", "enroll", "--server", machineUrl, "--dir", machine,
-      "--name", "Deployment rehearsal", "--code", "-"], {
-      input: enrollment.code, env: { ...process.env, NO_PROXY: new URL(machineUrl).hostname }, stdio: ["pipe", "ignore", "inherit"],
-    });
-    systemctl("start", `${unit}-machine.service`);
   }
   if (["setup", "fixture", "real"].includes(phase)) {
     await wait("enrolled machine online", async () =>
-      (await api("machines")).machines.some(m => m.state === "online"));
+      (await op("machines.onboarding")).ready);
 
     const space = (await op("spaces.list")).spaces.find(s => s.personal && s.role === "owner").id;
     const title = phase === "real" ? "Real provider rehearsal" : `Deployment rehearsal ${crypto.randomUUID().slice(0, 8)}`;
@@ -157,7 +151,7 @@ try {
 
     if (phase === "restart") {
       await wait("enrolled machine online", async () =>
-        (await api("machines")).machines.some(m => m.state === "online"));
+        (await op("machines.onboarding")).ready);
       const id = (await op("threads.send", {
         id: saved.thread, message: "Fixture turn for restart hang",
       })).job.id;

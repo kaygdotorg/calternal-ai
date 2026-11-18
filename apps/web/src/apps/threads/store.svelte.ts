@@ -3,6 +3,7 @@
  * One instance per page. The client is the only thing that changes when the real operations arrive.
  */
 import { inboxOf, type InboxItem } from "./inbox";
+import type { SignInRequest } from "./model";
 import type { ThreadsClient } from "./client";
 import { FixtureClient } from "./fixtures";
 import { server, serverMode } from "../../server/client";
@@ -24,19 +25,37 @@ class ThreadsStore {
   async start(): Promise<void> {
     const [t, r, p, m] = await Promise.all([client.listThreads(), client.requests(), client.providers(), client.machines()]);
     this.threads = t;
-    this.requests = r;
+    this.setRequests(r);
     this.providers = p;
     this.machines = m;
     this.ready = true;
     client.watchThreads((x) => (this.threads = x));
-    client.watchRequests((x) => (this.requests = x));
+    client.watchRequests((x) => this.setRequests(x));
   }
 
   /** Reloads the list and the open requests (pull to refresh). */
   async refresh(): Promise<void> {
-    [this.threads, this.requests] = await Promise.all([client.listThreads(), client.requests()]);
+    const [t, r] = await Promise.all([client.listThreads(), client.requests()]);
+    this.threads = t;
+    this.setRequests(r);
   }
 
+  /** Sign-ins that ended, kept for a few seconds so the conversation can say so ("Authentication done"); never stored anywhere (the thread file carries one line). */
+  signedIn = $state<{ req: SignInRequest; state: "done" | "failed" }[]>([]);
+
+  /** Takes the server's open requests; a sign-in that has left the list is looked up once so its item can say how it ended. */
+  private setRequests(next: Request[]): void {
+    const gone = this.requests.filter((r): r is SignInRequest => r.kind === "signin" && !next.some((n) => n.id === r.id));
+    this.requests = next;
+    for (const r of gone) void this.settle(r);
+  }
+  private async settle(r: SignInRequest): Promise<void> {
+    let st: "pending" | "done" | "failed" | "gone" = "gone";
+    try { st = (await client.signInStatus?.(r.id)) ?? "gone"; } catch { /* unknown: nothing to say */ }
+    if (st !== "done" && st !== "failed") return;
+    this.signedIn = [...this.signedIn.filter((f) => f.req.id !== r.id), { req: r, state: st }];
+    setTimeout(() => (this.signedIn = this.signedIn.filter((f) => f.req.id !== r.id)), st === "done" ? 8000 : 30000);
+  }
   /** One thread by id. */
   get(id: string): ThreadSummary | undefined {
     return this.threads.find((t) => t.id === id);
