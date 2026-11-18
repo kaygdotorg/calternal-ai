@@ -2,7 +2,7 @@
 
 Decisions waiting on kayg, most blocking first. Answer here or in chat; answered items
 move to the decision record they belong to and leave this list. Terms: see
-[glossary](glossary.md). Updated 2026-11-18 14:00 IST.
+[glossary](glossary.md). Updated 2026-11-18 14:40 IST.
 
 ## Waiting now
 
@@ -14,7 +14,6 @@ move to the decision record they belong to and leave this list. Terms: see
 | 30 | Should the composer double as the command palette, or stay separate from Cmd-K? | Stay separate | Composer |
 | 31 | Thread rows: hover hides the time and state mark for the three actions; swipe right shows only Copy link; touch has no long-press menu, "More" sits in the swipe tray | Keep all three; try on a phone | Threads |
 | 42 | Long tool output: the thread file keeps only its size. Where the output lives, how the thread links to it, how long it is kept | To grill | Threads |
-| 29 | Phone: switching apps takes three taps and the app name does not look tappable | See both forms on a phone | Phone shell |
 | 39 | Many spaces: the dots overflow the sidebar footer (about 7 of 50 show; the rest only through the palette) | To grill | Shell |
 | 28 | The first-visit "Choose a look" chooser is a centred dialog; the record only says "a short gallery, then straight in" | Keep the dialog | Onboarding |
 | 32 | The page waits for its font before painting; painting first is earlier but the text visibly swaps | Keep waiting | First paint |
@@ -31,11 +30,10 @@ move to the decision record they belong to and leave this list. Terms: see
 - **In progress: Settings and Appearance**: first eleven answers recorded in `settings.md`; second batch asked. Appearance (wordmark and its font, fonts, wallpaper, accent, themes and presets), agents (retry and snooze, streaming, default permission mode), shortcuts, machines, plugins, skills, automations.
 - **Machines without a terminal**, partly decided 2026-11-18 (below); still to grill: pre-configuring machines at deploy time, the `curl | sh` installer at calternal.com/install for both a server and a machine, the macOS app that bundles the CLI, how a machine behind NAT stays reachable for people who know nothing about networking, and how a group's allowance of pool compute is configured and shown.
 - **Plans and compute**: what a group (a plan or role) is allowed on the pool, and how that is configured.
-- **Plugin-delivered interface**: how a plugin ships real UI, so the orchestrator can be split (shell, composer, a thread rail as `calternal-orchestrator-rail`).
-- **Upgrades with real data**: there is no migration code by rule; what an upgrade across a schema change does once calternal.cloud holds data.
-- Onboarding for developers versus everyone else: what changes.
-- Skills and automations management screens.
-- The app shell on narrow screens, and the app switcher's exact form.
+- **Plugin-delivered interface**, partly decided 2026-11-18: generated views plus sandboxed components; everything is a plugin, the shell included; official and community plugins get the same treatment. Open: how the shell and the orchestrator ship UI under those rules (lane #50 is writing the proposal with a prototype).
+- **Upgrades with real data**: decided 2026-11-18 that updates are automatic and a failed one rolls back without the person or admin noticing. Open: how data moves across a schema change (kayg asked for the options to be explained again).
+- **MicroVMs**: one per person with a container per thread is decided and not built; all our VMs are Proxmox VMs, so nested virtualisation is available. Starts when a backend lane frees up.
+- **The canvas experiment**: windows inside the middle card, niri-style (kayg, 2026-11-18); being tried in the fixtures behind `?canvas=1`.
 
 ## Queued, no decision needed
 
@@ -45,6 +43,9 @@ move to the decision record they belong to and leave this list. Terms: see
 ## Recently decided (2026-11-17), now in the decision records
 
 - The composer and palette: see `composer.md`.
+- App switcher (2026-11-18): the capsule under the middle card, three apps as text only, horizontally scrollable, no list; the same bar is the phone's bottom bar for apps, with spaces behind the account picture.
+- Onboarding (2026-11-18): one path; an "I write code" switch adds repositories, the CLI and direct mode.
+- Skills and automations screens (2026-11-18): a list per space; creating either is hand-held; a skill follows the official Agent Skills standard; an automation's schedule is typed in natural language; each run is a thread.
 - Plans (2026-11-18): a group's compute is a sandbox size (CPUs and RAM) plus hours per month.
 - The re-authentication line reads "<Provider> needs you to sign in again" (2026-11-18).
 - Threads sidebar (2026-11-18): a top section the person can edit (New Thread, Automations, Skills by default); no Needs-you card; two tabs, Inbox (threads waiting on the person) and All Threads.
