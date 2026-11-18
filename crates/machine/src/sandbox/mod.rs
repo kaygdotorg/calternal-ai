@@ -24,6 +24,7 @@
 pub mod configured;
 pub mod direct;
 pub mod podman;
+mod provider_home;
 pub mod worker;
 
 use std::future::Future;

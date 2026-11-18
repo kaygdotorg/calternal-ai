@@ -117,7 +117,7 @@
 
 {#if present}
   <div class="pop" use:portal use:ready bind:this={box} data-leaving={leaving && !morphing ? "" : undefined} data-morph={morphed ? "" : undefined} {role} aria-label={label} {...rest}>
-    <Panel radius="card" {dense}><div class="w" bind:this={words}>{@render children()}</div></Panel>
+    <Panel radius="menu" {dense}><div class="w" bind:this={words}>{@render children()}</div></Panel>
   </div>
 {/if}
 

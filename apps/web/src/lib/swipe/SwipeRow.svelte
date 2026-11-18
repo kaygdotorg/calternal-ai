@@ -94,7 +94,7 @@
   .trail .ra-act { right: calc(var(--i) * 64px); }
   .lbl { max-width: 100%; text-align: center; overflow: hidden; white-space: nowrap; }
   /* A desktop row is 32 px tall: the tile (row less 8) has room for the icon only; the name stays as the button's accessible name. */
-  @media (hover: hover) and (pointer: fine) { .lbl { display: none; } .ra-act { border-radius: 8px; } }
+  @media (hover: hover) and (pointer: fine) { .lbl { display: none; } .ra-act { border-radius: var(--r-select); } }
   [data-tone="accent"] { --t-soft: var(--accent-soft); --t-ink: var(--accent); --t-solid: var(--accent); --t-on: #fff; }
   [data-tone="plain"] { --t-soft: rgb(var(--ink-rgb) / 0.1); --t-ink: var(--ink-2); --t-solid: var(--ink-2); --t-on: var(--paper); }
   [data-tone="danger"] { --t-soft: color-mix(in oklab, var(--danger) 15%, transparent); --t-ink: var(--danger); --t-solid: var(--danger); --t-on: var(--paper); }
