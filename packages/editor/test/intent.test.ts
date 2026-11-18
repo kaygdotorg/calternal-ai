@@ -2,45 +2,57 @@ import { expect, it } from 'vitest'
 import * as Y from 'yjs'
 import { LocalIntent } from '../src/live/intent'
 
-const mine = (o: unknown) => o === 'me'
-function room(text: string) {
-  const doc = new Y.Doc()
-  const t = doc.getText('md')
-  t.insert(0, text)
-  return { doc, t, intent: new LocalIntent(t, mine) }
+/** Two replicas of one note, `me` (this person) and `peer`, that exchange updates on demand. */
+function pair(text: string) {
+  const me = new Y.Doc()
+  const peer = new Y.Doc()
+  me.getText('md').insert(0, text)
+  Y.applyUpdate(peer, Y.encodeStateAsUpdate(me))
+  const sync = () => { Y.applyUpdate(peer, Y.encodeStateAsUpdate(me)); Y.applyUpdate(me, Y.encodeStateAsUpdate(peer)) }
+  const mine = me.getText('md')
+  const intent = new LocalIntent(mine)
+  return { me, peer, mine, theirs: peer.getText('md'), sync, intent }
 }
 
 it('rescue holds only what this person wrote: one local change, then a later remote change, then access ends', () => {
-  const { doc, t, intent } = room('# Plan\n\nOne.')
-  doc.transact(() => t.insert(t.length, '\n\nMine, not yet confirmed.'), 'me')
-  doc.transact(() => t.insert(t.length, '\n\nA peer wrote this later.'), 'peer')
-  expect(t.toString()).toContain('A peer wrote this later.')
+  const { mine, theirs, sync, intent } = pair('# Plan\n\nOne.')
+  mine.insert(mine.length, '\n\nMine, not yet confirmed.')
+  theirs.insert(theirs.length, '\n\nA peer wrote this later.')
+  sync()
+  expect(mine.toString()).toContain('A peer wrote this later.')
   expect(intent.blocks()).toEqual(['Mine, not yet confirmed.'])
 })
 
-it('a peer\'s words typed inside this person\'s run are left out of it', () => {
-  const { doc, t, intent } = room('Start.')
-  doc.transact(() => t.insert(t.length, ' hello world'), 'me')
-  const at = t.toString().indexOf(' world')
-  doc.transact(() => t.insert(at, ' PEER'), 'peer')
-  expect(t.toString()).toBe('Start. hello PEER world')
-  const got = intent.blocks().join(' ')
-  expect(got).not.toContain('PEER')
-  expect(got).toContain('hello')
+it("a peer's words typed inside this person's run are left out, and the two halves are joined", () => {
+  const { mine, theirs, sync, intent } = pair('Start.')
+  mine.insert(mine.length, ' hello world')
+  sync()
+  theirs.insert(theirs.toString().indexOf(' world'), ' PEER')
+  sync()
+  expect(mine.toString()).toBe('Start. hello PEER world')
+  expect(intent.blocks()).toEqual(['hello world'])
 })
 
-it('keystrokes in a row are one run; a delete adds nothing; confirmation clears it', () => {
-  const { doc, t, intent } = room('A\n\nB')
-  for (const ch of 'typed') doc.transact(() => t.insert(t.length, ch), 'me')
-  doc.transact(() => t.delete(0, 1), 'me')
+it('text already in the note when the person began is not owed, and a deletion adds nothing', () => {
+  const { mine, intent } = pair('A\n\nB')
+  mine.delete(0, 1)
+  expect(intent.blocks()).toEqual([])
+  mine.insert(mine.length, '\n\ntyped')
   expect(intent.blocks()).toEqual(['typed'])
-  intent.clear()
-  expect(intent.blocks()).toEqual([])
 })
 
-it('changes that are not this person\'s (the room, another tab, replay) are never noted', () => {
-  const { doc, t, intent } = room('x')
-  doc.transact(() => t.insert(1, ' from the room'), 'room')
-  doc.transact(() => t.insert(t.length, ' from a tab'), 'tab')
-  expect(intent.blocks()).toEqual([])
+it('what the room confirmed is no longer owed', () => {
+  const { mine, intent } = pair('x')
+  mine.insert(1, ' first')
+  intent.clear()
+  mine.insert(mine.length, '\n\nsecond')
+  expect(intent.blocks()).toEqual(['second'])
+})
+
+it("another person's own paragraphs are never taken, even next to this person's", () => {
+  const { mine, theirs, sync, intent } = pair('Top.')
+  theirs.insert(theirs.length, '\n\nTheirs alone.')
+  sync()
+  mine.insert(mine.length, '\n\nMine alone.')
+  expect(intent.blocks()).toEqual(['Mine alone.'])
 })

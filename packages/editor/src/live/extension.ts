@@ -8,7 +8,7 @@
  */
 import { EditorState, Prec, type Extension } from '@codemirror/state'
 import { EditorView, ViewPlugin, keymap, type KeyBinding } from '@codemirror/view'
-import { yCollab, yUndoManagerKeymap as shared, ySyncAnnotation, ySyncFacet } from 'y-codemirror.next'
+import { yCollab, yUndoManagerKeymap as shared, ySyncAnnotation } from 'y-codemirror.next'
 import type { Awareness } from 'y-protocols/awareness'
 import * as Y from 'yjs'
 import { origin } from '../block/origin'
@@ -123,16 +123,14 @@ const theme = EditorView.baseTheme({
 export function liveExtension(session: NoteSession, resolve: (account: string) => Person): { extension: Extension; undo: Y.UndoManager; intent: LocalIntent } {
   const ytext = session.text
   const undo = new Y.UndoManager(ytext, { trackedOrigins: new Set() })
-  // What this editor itself wrote (typing and paste go through the view's sync configuration, undo and redo through the undo manager): the only text a rescue may take.
-  const intent = new LocalIntent(ytext, () => false)
-  const own = ViewPlugin.define((view) => { const conf = view.state.facet(ySyncFacet); intent.mine = (o) => o === conf || o === undo; return { destroy: () => intent.destroy() } })
+  // What this editor itself wrote (the items this document's own client inserted since the room last confirmed): the only text a rescue may take.
+  const intent = new LocalIntent(ytext)
   const keys = undoKeys(session)
   const presence = session.awareness ? new Named(session.awareness, resolve) : null
   return {
     undo,
     intent,
     extension: [
-      own,
       historyInput(keys),
       Prec.highest(keymap.of(keys)),
       // The editor's own history is not used here: Yjs owns undo, for this author only.
