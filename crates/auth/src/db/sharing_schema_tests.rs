@@ -16,11 +16,14 @@ const ACCOUNTS_RELEASE: Schema<'_> = Schema::new(
 #[test]
 fn auth_13_to_14_preserves_accounts_and_covers_sharing_erasure() {
     let connection = Connection::open_in_memory().unwrap();
-    connection.pragma_update(None, "foreign_keys", true).unwrap();
+    connection
+        .pragma_update(None, "foreign_keys", true)
+        .unwrap();
     migrate(&connection, ACCOUNTS_RELEASE).unwrap();
     assert_eq!(inspect(&connection, ACCOUNTS_RELEASE).unwrap(), 13);
-    connection.execute_batch(
-        "BEGIN;
+    connection
+        .execute_batch(
+            "BEGIN;
          INSERT INTO users(id,name,username,created_at) VALUES
            ('owner','Owner','owner',100),('viewer','Viewer','viewer',101),
            ('creator','Creator','creator',102);
@@ -28,8 +31,8 @@ fn auth_13_to_14_preserves_accounts_and_covers_sharing_erasure() {
          INSERT INTO space_memberships VALUES('space','owner','manager');
          INSERT INTO groups(id,name) VALUES('group','Test group');
          COMMIT;",
-    )
-    .unwrap();
+        )
+        .unwrap();
 
     connection
         .execute("CREATE TABLE item_grants(collision TEXT)", [])
@@ -40,11 +43,9 @@ fn auth_13_to_14_preserves_accounts_and_covers_sharing_erasure() {
     migrate(&connection, MIGRATIONS).unwrap();
     assert_eq!(inspect(&connection, MIGRATIONS).unwrap(), 14);
     let username: String = connection
-        .query_row(
-            "SELECT username FROM users WHERE id='owner'",
-            [],
-            |row| row.get(0),
-        )
+        .query_row("SELECT username FROM users WHERE id='owner'", [], |row| {
+            row.get(0)
+        })
         .unwrap();
     assert_eq!(username, "owner");
 
@@ -64,7 +65,9 @@ fn auth_13_to_14_preserves_accounts_and_covers_sharing_erasure() {
     .unwrap();
     let count = |table: &str| -> i64 {
         connection
-            .query_row(&format!("SELECT count(*) FROM {table}"), [], |row| row.get(0))
+            .query_row(&format!("SELECT count(*) FROM {table}"), [], |row| {
+                row.get(0)
+            })
             .unwrap()
     };
     assert_eq!(count("item_share_seen"), 0);
