@@ -165,7 +165,10 @@ server never launches or signs in to a provider. The first provider is
 ## Authoring and interface prototype
 
 The [author workflow](plugin-authoring.md) documents the SDK scaffold, fixture
-host, local operator package review and per-space activation.
+host, live drafts, local operator package review and per-space activation.
+The server checks a candidate worker's readiness before publishing it, using
+a bounded challenge with no space data. The SDK transport handles it for
+authors. See the author workflow for active revision behavior during updates.
 
 Optional manifest `slots` declare a bounded set of local IDs, accessible
 labels, host slot IDs and renderer references. A generated renderer refers to

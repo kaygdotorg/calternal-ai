@@ -186,7 +186,7 @@ pub const POLICIES: &[Policy] = &[
 ];
 
 /// Find an explicit host policy using a bounded, allocation-free scan.
-/// Plugin rows are looked up through [`crate::plugins::Registry::policy`].
+/// Plugin rows are looked up through [`crate::plugins::Catalog::policy`].
 pub fn policy(operation: &str) -> Option<&'static Policy> {
     static ACCOUNT: std::sync::OnceLock<Vec<Policy>> = std::sync::OnceLock::new();
     let account = ACCOUNT.get_or_init(|| {

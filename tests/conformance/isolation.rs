@@ -153,6 +153,11 @@ impl Drop for Fixture {
         self.stop();
     }
 }
+fn source_root() -> PathBuf {
+    std::env::var_os("CALTERNAL_CONFORMANCE_SOURCE_ROOT")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../.."))
+}
 impl Fixture {
     /// The server's appdata root; userdata-ssd and userdata-hdd are its siblings.
     fn appdata(&self) -> PathBuf {
@@ -177,7 +182,7 @@ impl Fixture {
         let _ = std::fs::remove_file(&path);
         let binary = std::env::var("CALTERNAL_SERVER_BIN")
             .expect("set CALTERNAL_SERVER_BIN to built dev-VM binary");
-        let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let repo = source_root();
         let mut command = Command::new(binary);
         command.env_clear();
         if self.dir.path().join("wallpaper-cache-case").is_file() {

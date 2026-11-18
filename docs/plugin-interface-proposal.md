@@ -331,7 +331,7 @@ contains the detailed constraints for the 24 previously adopted capabilities.
 | Extension point in the reference systems | Calternal status | What an author can do there today |
 | --- | --- | --- |
 | bb-lite plugin-declared typed slots and single or multiple selection | Decided, unbuilt | Let another package add a new kind of entry without changing the foundation. This prototype has fixed slots. |
-| bb and bb-lite local install, hot reload and development inspection | Partly built in this lane | Change worker code and receive an activation result without restarting the development server. |
+| bb and bb-lite local install, hot reload and development inspection | Live install and scoped draft reload implemented. End-to-end performance and the broader inspection surface are pending. | Follow readiness, logs and timing for an edited worker in one author-facing view. |
 | bb marketplace and bb-lite Git/local catalogs, dependency and engine ranges, upgrade rollback | Decided, unbuilt | Find packages by source, have compatibility checked and restore the last working activation. Local checksum review is built in this lane. |
 | bb-lite fork existing server, app or runner entry and profiles | Decided, unbuilt | Fork one part of a default feature and keep updating the other parts. |
 | bb status, logs, lifecycle timings, safe mode and bb-lite audit chain | Decided, unbuilt | See why a plugin needs setup, view handler latency and disable scoped plugins together. |

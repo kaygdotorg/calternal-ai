@@ -7,6 +7,7 @@ use calternal_core::{PluginSlotRenderer, ResolvedPluginSlot};
 /// and one bounded scan of each enabled manifest with contributions.
 pub(super) async fn resolve<D: Directory>(
     state: &Shared<D>,
+    catalog: &crate::plugins::Catalog,
     account: calternal_types::AccountId,
     space: SpaceId,
     plugins: &[PluginState],
@@ -29,8 +30,7 @@ pub(super) async fn resolve<D: Directory>(
                 | PluginSlotRenderer::Command { operation } => operation,
                 PluginSlotRenderer::Sealed { .. } => continue,
             };
-            let reachable = state
-                .registry
+            let reachable = catalog
                 .policy(operation)
                 .is_some_and(|policy| policy.check(authority).is_ok());
             if reachable {
