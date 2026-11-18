@@ -163,8 +163,11 @@ const wallpapers = JSON.parse(readFileSync("wallpapers.json", "utf8"));
 {
   const { ctx, page } = await fresh(DEVICES.phone, "/threads/t-idle?firstrun=0");
   await page.getByRole("button", { name: "Show threads" }).click(); await page.waitForTimeout(600);
-  const dots = await page.locator("aside.side footer [aria-label='Spaces'] [role=radio]").evaluateAll((e) => e.map((d) => { const r = d.getBoundingClientRect(); return [r.width, r.height]; }));
-  ok(dots.length === 2 && dots.every(([w, h]) => w >= 24 && h >= 36), "Phone: the space dots are in the sidebar footer with a touch-sized target", JSON.stringify(dots));
+  ok((await page.locator("aside.side footer [aria-label='Spaces']").count()) === 0, "Phone: no space dots in the sidebar footer (the spaces are behind the account picture)");
+  await page.getByRole("button", { name: /Account, spaces and settings/ }).click(); await page.waitForTimeout(300);
+  const items = await page.locator("[role^=menuitem]").evaluateAll((e) => e.map((d) => [d.textContent.trim(), d.getBoundingClientRect().height]));
+  ok(items.length >= 3 && items.some(([t]) => /Settings/.test(t)) && items.every(([, h]) => h >= 36), "Phone: the account picture opens the spaces and Settings with touch-sized rows", JSON.stringify(items));
+  await page.keyboard.press("Escape"); await page.waitForTimeout(200);
   ok((await page.locator(".grip").count()) === 0, "Phone: no resize handles");
   const f = await page.evaluate(() => { const r = document.querySelector("aside.side footer").getBoundingClientRect(); return r.bottom <= innerHeight + 1; });
   ok(f, "Phone: the footer is in view");
