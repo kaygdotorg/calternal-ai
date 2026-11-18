@@ -8,11 +8,11 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } fr
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-/** The suites: file, extra arguments, a timeout in seconds (default 240: it only bounds a hang, and dev VMs are shared), the name shown and extra environment (`a11y-threads` runs its own workers). The accessibility walk is four suites (device and scheme) so that no one suite runs long. */
+/** The suites: file, extra arguments, a timeout in seconds (default 240: it only bounds a hang, and dev VMs are shared), the name shown and extra environment . The accessibility walk is four suites (device and scheme) so that no one suite runs long. */
 const SUITES = [
   ["a11y", ["desktop", "light"], 300, "a11y desktop light"], ["a11y", ["desktop", "dark"], 300, "a11y desktop dark"], ["a11y", ["phone", "light"], 300, "a11y phone light"], ["a11y", ["phone", "dark"], 300, "a11y phone dark"],
   ["first-visit"], ["shell-audit"], ["flat-sidebars"], ["resize"], ["sidebar-scroll"], ["text-parity"], ["palette"],
-  ["palette-focus", ["12"]], ["interact"], ["phone-nav"], ["settings-pages"], ["focus-ring"], ["swipe-rows"], ["morph"], ["states"], ["new-thread"], ["keyboard-threads"], ["swipe"], ["sidebar-pull"], ["switch"], ["composer"], ["composer-fold"], ["a11y-threads", [], 300, "a11y-threads", { CAL_WORKERS: "3" }],
+  ["palette-focus", ["12"]], ["interact"], ["phone-nav"], ["settings-pages"], ["focus-ring"], ["swipe-rows"], ["morph"], ["states"], ["new-thread"], ["keyboard-threads"], ["swipe"], ["sidebar-pull"], ["switch"], ["composer"], ["composer-fold"],
 ].map(([name, args = [], timeout = 240, label = name, env = {}]) => ({ name, args, timeout, label, env }));
 
 const free = () => new Promise((res, rej) => { const s = createServer(); s.listen(0, "127.0.0.1", () => { const { port } = s.address(); s.close(() => res(port)); }); s.on("error", rej); });

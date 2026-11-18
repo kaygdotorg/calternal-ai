@@ -13,6 +13,7 @@
 import { cssPx, luminance, scheduleMaterial, setBackdropField, currentScheme, type Field } from "@calternal/ui";
 import tokens from "../../../../packages/ui/tokens/tokens.json" with { type: "json" };
 import { surfaces } from "./surfaces.svelte";
+import { blurRgba, saturateRgba } from "./blur";
 import { scaled, solve, type Flags, type Ink, type RGB, type Role, type Scheme, type Veil } from "./veil";
 
 type Layer = "side" | "card";
@@ -63,13 +64,22 @@ function load(src: string): Promise<HTMLImageElement> {
   return done;
 }
 
-/** Renders the picture cover-fitted to the viewport, blurred and saturated, into a small canvas. */
+/** Whether this browser's canvas honours `filter` (Chrome and Firefox do; Safari ignores it, so the blur is done by hand there). */
+const canvasFilter = ((): boolean => { const c = document.createElement("canvas").getContext("2d"); if (!c || !("filter" in c)) return false; c.filter = "blur(2px)"; return c.filter === "blur(2px)"; })();
+/** Device pixels a pixel of the copy covers at most: the copy is a blur, so it can be coarse, but a browser that scales it up without smoothing (Safari did) must not show blocks, and at 4 device pixels they are too small to see. */
+const COARSE = 4;
+
+/**
+ * Renders the picture cover-fitted to the viewport, blurred and saturated, into a canvas sized to the screen's own pixels (one copy pixel per 4 device pixels: a 390 wide phone at 3x gets 292 px across, a 1440 wide window at 1x
+ * gets 360), so nothing is scaled up much and no block shows at 1x, 2x or 3x. The blur is a canvas filter where there is one, else the by-hand blur in `blur.ts`. Cost: one pass at start and when the window or the picture changes;
+ * the blob is held while the wallpaper is, about 15 to 60 KB of JPEG a copy.
+ */
 function render(img: HTMLImageElement, blur: number, saturate: number): HTMLCanvasElement {
-  // At most 1/4 scale: real Safari upscales a smaller copy without smoothing it, which showed as blocks.
-  const k = Math.min(4, Math.max(1, blur / 8));
-  const w = Math.max(16, Math.round(innerWidth / k));
-  const h = Math.max(16, Math.round(innerHeight / k));
-  const r = blur / k;
+  const dpr = Math.max(1, devicePixelRatio || 1);
+  const per = COARSE / dpr; // CSS px per copy pixel
+  const w = Math.max(16, Math.round(innerWidth / per));
+  const h = Math.max(16, Math.round(innerHeight / per));
+  const r = blur / per; // the blur radius in copy pixels
   const m = Math.ceil(2 * r); // draw past the edges so the blur never fades them to transparent
   const scale = Math.max((w + 2 * m) / img.naturalWidth, (h + 2 * m) / img.naturalHeight);
   const dw = img.naturalWidth * scale;
@@ -77,9 +87,28 @@ function render(img: HTMLImageElement, blur: number, saturate: number): HTMLCanv
   const canvas = document.createElement("canvas");
   canvas.width = w;
   canvas.height = h;
-  const ctx = canvas.getContext("2d")!;
-  ctx.filter = `blur(${r}px) saturate(${saturate}%)`;
-  ctx.drawImage(img, (w - dw) / 2, (h - dh) / 2, dw, dh);
+  const ctx = canvas.getContext("2d", { willReadFrequently: !canvasFilter })!;
+  if (canvasFilter) {
+    ctx.filter = `blur(${r}px) saturate(${saturate}%)`;
+    ctx.drawImage(img, (w - dw) / 2, (h - dh) / 2, dw, dh);
+    return canvas;
+  }
+  // No canvas filter: draw the picture larger than the copy by the margin, take it down in halves (each one a smooth average, like mip-mapping, so no aliasing), then blur by hand.
+  ctx.imageSmoothingQuality = "high";
+  let cur: CanvasImageSource = img, cw = img.naturalWidth, ch = img.naturalHeight;
+  while (cw / 2 >= dw && ch / 2 >= dh) {
+    const half = document.createElement("canvas");
+    half.width = Math.round(cw / 2); half.height = Math.round(ch / 2);
+    const hc = half.getContext("2d")!;
+    hc.imageSmoothingQuality = "high";
+    hc.drawImage(cur, 0, 0, half.width, half.height);
+    cur = half; cw = half.width; ch = half.height;
+  }
+  ctx.drawImage(cur, (w - dw) / 2, (h - dh) / 2, dw, dh);
+  const px = ctx.getImageData(0, 0, w, h);
+  blurRgba(px.data, w, h, r);
+  saturateRgba(px.data, saturate / 100);
+  ctx.putImageData(px, 0, 0);
   return canvas;
 }
 

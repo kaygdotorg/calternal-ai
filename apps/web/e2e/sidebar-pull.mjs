@@ -81,4 +81,30 @@ const touch = (page, type, x, y, sel = ".mid-card") => page.evaluate(([type, x, 
   ok((await page.locator(".shell").getAttribute("data-sidebar")) === "false", "phone: the opposite swipe closes it");
   await ctx.close();
 }
+// ---- the phone: the sidebar is mounted and painted at every pull position (10 % steps), and an empty screen has no bottom bar
+{
+  const { ctx, page } = await open("phone");
+  const W = await page.evaluate(() => document.querySelector("aside.side").firstElementChild.getBoundingClientRect().width);
+  const dir = process.env.PULL_SHOTS; if (dir) (await import("node:fs")).mkdirSync(dir, { recursive: true });
+  await touch(page, "pointerdown", 100, 400);
+  let allPainted = true, steps = [];
+  for (let pct = 10; pct <= 100; pct += 10) {
+    const x = 100 + Math.round((W * pct) / 100);
+    await touch(page, "pointermove", x, 402); await page.waitForTimeout(60);
+    const st = await page.evaluate(() => { const a = document.querySelector("aside.side"), c = a.firstElementChild, cs = getComputedStyle(c), mid = document.querySelector(".mid").getBoundingClientRect(); const rows = [...c.querySelectorAll("a.row, .row")].filter((r) => r.getBoundingClientRect().right < mid.left + 4 && r.getBoundingClientRect().width > 0).length; return { vis: getComputedStyle(a).visibility, op: cs.opacity, tr: cs.translate, cardLeft: Math.round(mid.left), rowsRevealed: rows }; });
+    steps.push(`${pct}%: card at ${st.cardLeft}, ${st.rowsRevealed} rows revealed`);
+    if (st.vis !== "visible" || st.op !== "1" || (st.tr !== "none" && st.tr !== "0px")) allPainted = false;
+    if (dir) await page.screenshot({ path: `${dir}/pull-${String(pct).padStart(3, "0")}.png` });
+  }
+  ok(allPainted, "phone: the sidebar is painted and unmoved at every pull position from 10 % to 100 %", steps.join("; "));
+  await touch(page, "pointerup", 100 + W, 402); await page.waitForTimeout(500);
+  await ctx.close();
+}
+{
+  const { ctx, page } = await open("phone"); await page.goto(`${BASE}/threads`); await page.waitForSelector("html[data-ready]"); await page.waitForTimeout(400);
+  ok((await page.locator(".phone-tabs").count()) === 0, "phone: an empty Threads screen has no bottom tab bar (no thread, no panels)");
+  await page.goto(`${BASE}/threads/t-run`); await page.waitForSelector("html[data-ready]"); await page.waitForTimeout(400);
+  ok((await page.locator(".phone-tabs").count()) === 1, "phone: an open thread has it");
+  await ctx.close();
+}
 await b.close(); stop(); process.exit(bad ? 1 : 0);

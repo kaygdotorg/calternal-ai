@@ -173,7 +173,8 @@
   const tap = () => { if (gmoved) { gmoved = false; return; } shell.dismiss(); };
   // Choosing something in the sidebar shows it: the list goes away without a history step, so Back brings the list back over what you came from.
   const choose = (e: MouseEvent) => { if (shell.narrow && (e.target as Element).closest("a[href]")) shell.closeOver(); };
-  const hasRight = $derived(app.panels.length > 0);
+  // The panels belong to what is open: with no thread (or note) open there is nothing to switch between, so no side panel and, on a phone, no bottom bar. The way back to the list stays (the header button, the edge swipe).
+  const hasRight = $derived(app.panels.length > 0 && (!shell.narrow || !!id));
   const rightOpen = $derived(shell.rightOpen && hasRight);
   // A closed sidebar or side panel always has a way back: a button at the card's top corner on the same side, with the shortcut in its tooltip. (A phone has its own header button and the edge swipe.)
   // (A phone shows it for Settings only: Threads and Notes have their own header button, and the Settings page has no header.)
@@ -207,7 +208,7 @@
   {#if hasRight}<aside class="right" class:pulled={wp?.side === "right"} style:--vis={wp?.side === "right" ? `${wp.vis}px` : undefined} style:--w={wp?.side === "right" ? `${wp.w}px` : undefined} bind:this={rightEl} class:dragging={dragMode === "panel" && drag !== null} style:transform={dragMode === "panel" && drag !== null ? `translateX(${drag}px)` : undefined} data-ink={surfaces.right ?? undefined} aria-label="{app.name} side panel" inert={!rightOpen}><RightSidebar {app} {id} /></aside>{/if}
 </div>
 <!-- The phone's bottom bar is the app's panels: an app with none (Settings) has no bar, and its pages use the whole height. -->
-{#if shell.narrow && !shell.sidebarOpen && app.panels.length}<PhoneTabs {app} />{/if}
+{#if shell.narrow && !shell.sidebarOpen && app.panels.length && id}<PhoneTabs {app} />{/if}
 
 <style>
   /* Wide chat (the plugin's default, Settings, Appearance, Chat layout): on a desktop the thread's column is the whole card, with room on the left for a contents rail and a margin on the right. */
@@ -258,6 +259,10 @@
   .narrow .side > :global(.side) { width: calc(100% - var(--peek)); }
   .narrow[data-sidebar="false"] .side { visibility: hidden; transition: visibility 0s var(--dur-sheet); }
   .narrow:has(.mid.dragging) .side { visibility: visible; transition: none; }
+  /* The sidebar and the side panel are mounted and drawn at every pull position: closed, the sidebar is only out of sight (`visibility`, after the card has slid away), never faded or moved, so a half pull shows
+     the list, fully painted, with the card sliding over it (its corners rounded and its shadow on). Nothing is laid out during the pull: only the card's (or panel's) `transform` changes. */
+  .narrow .side > :global(.side), .narrow .right > :global(.rs) { opacity: 1 !important; translate: none !important; transition: none !important; }
+  .narrow[data-sidebar="true"] .mid :global(.mid-card), .narrow[data-right="true"] .mid :global(.mid-card), .narrow:has(.mid.dragging) .mid :global(.mid-card) { box-shadow: var(--shadow-card); }
   .narrow .mid { touch-action: pan-y; }
   .narrow .mid.dragging { transition: none; }
   .narrow:has(.mid.dragging) .mid :global(.mid-card) { border-radius: var(--r-pane); }
