@@ -1,0 +1,9 @@
+    /// Turns the device (ORIENTATION: portrait, landscapeLeft, landscapeRight, upsideDown) and captures the result after WAIT seconds (default 2). Added by apps/web/scripts/ios-sim.sh setup.
+    func testRotate() throws {
+        let name = parameter("ORIENTATION", default: "landscapeLeft")
+        let map: [String: UIDeviceOrientation] = ["portrait": .portrait, "landscapeLeft": .landscapeLeft, "landscapeRight": .landscapeRight, "upsideDown": .portraitUpsideDown]
+        guard let o = map[name] else { XCTFail("ORIENTATION must be one of \(map.keys.sorted())"); return }
+        XCUIDevice.shared.orientation = o
+        sleep(UInt32(parameter("WAIT", default: "2")) ?? 2)
+        capture("rotate-\(name)")
+    }

@@ -4,6 +4,7 @@
   import { untrack } from "svelte";
   import { Icon } from "@calternal/ui";
   import Md from "../../lib/Md.svelte";
+  import "./block-head.css";
   let { text, ms, running = false }: { text: string; ms: number; running?: boolean } = $props();
   let open = $state(untrack(() => running && !!text));
   const secs = $derived(Math.max(1, Math.round(ms / 1000)));
@@ -12,7 +13,7 @@
 </script>
 
 <div class="thought" class:open>
-  <button type="button" class="head" aria-expanded={text ? open : undefined} aria-controls="{uid}-t" disabled={!text} onclick={() => (open = !open)}>
+  <button type="button" class="head block-head" aria-expanded={text ? open : undefined} aria-controls="{uid}-t" disabled={!text} onclick={() => (open = !open)}>
     <span class="ic"><Icon name="spark" inline /></span>
     <span class="sum" class:pulse={running}>{running ? "Thinking" : `Thought for ${took}`}</span>
     {#if text}<span class="chev"><Icon name="chevron" inline /></span>{/if}
@@ -22,8 +23,6 @@
 
 <style>
   .thought { display: grid; border-radius: var(--r-card); background: rgb(var(--ink-rgb) / 0.05); overflow: clip; }
-  .head { display: flex; align-items: center; gap: var(--s-4); width: 100%; min-height: calc(var(--row-h) + var(--s-3)); padding: 0 var(--s-5) 0 var(--s-4); color: var(--ink-3); font-size: var(--text-label); text-align: start; }
-  .head:disabled { cursor: default; }
   .ic { display: grid; width: var(--s-7); place-items: center; }
   .sum { flex: 1; font-variant-numeric: tabular-nums; }
   .chev { display: grid; transition: rotate var(--dur-base) var(--ease-out); }

@@ -4,7 +4,7 @@
   // them: the sidebar is underneath and the middle card slides aside to reveal it (and visibly floats above it); the right card slides
   // over the middle card from the right; the app and its panels are the bottom bar.
   import { untrack } from "svelte";
-  import { Card, HeaderPill, Pill, tokenEase, tokenMs } from "@calternal/ui";
+  import { Card, chromeHeader, HeaderPill, Pill, tokenEase, tokenMs } from "@calternal/ui";
   import { ariaKeys, shortcuts } from "../lib/shortcuts.svelte";
   import type { AppDef } from "../apps/registry";
   import { appearance } from "../appearance/prefs.svelte";
@@ -198,7 +198,7 @@
     {#if !shell.narrow && shell.sidebarOpen}<ResizeHandle side="left" />{/if}
     {#if !shell.narrow && hasRight && rightOpen}<ResizeHandle side="right" />{/if}
     {#if showLeft}<div class="edge l">{#if shell.narrow}<Pill icon="sidebar" label="Show the sidebar" aria-keyshortcuts={ariaKeys(shortcuts.chordFor("sidebar"))} onclick={() => shell.toggleSidebar()} />{:else}<CollapsedPill {app} />{/if}</div>{/if}
-    {#if !canvasEnabled}<div class="edge hl" style:--hl-off={showLeft ? (shell.narrow ? "calc(var(--pill-h) + var(--s-3))" : "calc(var(--pill-h) * 2 + var(--s-3) * 2)") : "0px"}><HeaderPill /></div>{/if}
+    {#if !canvasEnabled}<div class="edge hl" style:--hl-off={showLeft || (shell.narrow && !!chromeHeader.pinned) ? (shell.narrow ? "calc(var(--pill-h) + var(--s-3))" : "calc(var(--pill-h) * 2 + var(--s-3) * 2)") : "0px"}><HeaderPill /></div>{/if}
     {#if canvasEnabled}
       <!-- The canvas experiment (canvas/Canvas.svelte): no card round it; the area between the sidebars is the canvas and each window is a middle card. The app switcher is in the sidebar's footer. -->
       <div class="area" role="region" aria-label={app.name}>
@@ -223,7 +223,7 @@
   @media (min-width: 760px) { :global(html[data-chat-wide]) { --msg-w: 100%; --msg-inner: none; --msg-pad-l: 3.25rem; --msg-pad-r: 1.5rem; } }
   .shell {
     --sw: var(--side-w); --rw: var(--right-w);
-    position: fixed; inset: 0 0 var(--kb, 0px) 0; box-sizing: border-box; padding-left: var(--safe-left); padding-right: var(--safe-right); z-index: 1; display: grid; grid-template-columns: var(--sw) minmax(0, 1fr) var(--rw); grid-template-rows: minmax(0, 1fr); /* one row exactly the window's height: a page taller than the window scrolls inside the card and never stretches the sidebars (their footer stays in view in every app) */
+    position: fixed; inset: 0 0 var(--kb, 0px) 0; transition: bottom var(--dur-base) var(--ease-out); box-sizing: border-box; padding-left: var(--safe-left); padding-right: var(--safe-right); z-index: 1; display: grid; grid-template-columns: var(--sw) minmax(0, 1fr) var(--rw); grid-template-rows: minmax(0, 1fr); /* one row exactly the window's height: a page taller than the window scrolls inside the card and never stretches the sidebars (their footer stays in view in every app) */
   }
   .shell:not(.narrow) > .side { grid-column: 1; } .shell:not(.narrow) > .mid { grid-column: 2; } .shell:not(.narrow) > .right { grid-column: 3; }
   /* A sidebar being pulled into view (or out): out of the columns, fixed at its edge at full width, its content `--vis` px into view; the card is moved by the same amount (inline transform). The rules are in ./pull.ts. */
