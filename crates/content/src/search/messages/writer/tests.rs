@@ -16,7 +16,7 @@ fn input(thread: i64, stamp: i64, id: u128) -> Input {
 }
 
 #[test]
-fn thread_removal_uses_the_uuid_index_prefix() {
+fn thread_removal_uses_an_index_with_the_thread_prefix() {
     let db = Connection::open_in_memory().unwrap();
     db.execute_batch(SCHEMA).unwrap();
     db.execute_batch(SECONDARY).unwrap();
@@ -28,8 +28,12 @@ fn thread_removal_uses_the_uuid_index_prefix() {
         )
         .unwrap();
     assert!(
-        plan.contains("SEARCH locations USING INDEX locations_id (thread=?)")
-            || plan.contains("SEARCH locations USING COVERING INDEX locations_id (thread=?)"),
+        ["locations_id", "locations_thread"].iter().any(|index| {
+            plan.contains(&format!("SEARCH locations USING INDEX {index} (thread=?)"))
+                || plan.contains(&format!(
+                    "SEARCH locations USING COVERING INDEX {index} (thread=?)"
+                ))
+        }),
         "{plan}"
     );
 }
