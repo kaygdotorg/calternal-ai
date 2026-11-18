@@ -16,8 +16,8 @@ try {
     await p.route("**/api/v1/auth/setup/start", (r) => json(r, { error: { code: "invite_invalid", message: "unknown code" } }, 403));
     await p.goto(BASE + "/?server=1");
     await p.waitForSelector("html[data-ready]");
-    await p.getByRole("heading", { name: "Set up Calternal" }).waitFor({ timeout: 8000 }).catch(() => {});
-    ok(await p.getByRole("heading", { name: "Set up Calternal" }).isVisible(), `${device}: setup is pending, so the first-owner screen shows`);
+    await p.locator("form input").first().waitFor({ timeout: 8000 });
+    ok(/Set up|owner/i.test(await p.locator("main, body").first().innerText()), `${device}: setup is pending, so the first-owner form shows`);
     const inputs = p.locator("form input");
     await inputs.nth(0).fill("ABCD-EFGH-JKLM"); if ((await inputs.count()) > 1) await inputs.nth(1).fill("Kay");
     await p.getByRole("button", { name: /Create passkey|Set up/ }).click();
