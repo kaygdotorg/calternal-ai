@@ -250,7 +250,7 @@ async fn rejects_an_old_ticket_and_admits_a_fresh_read_after_reconnect() {
             .unwrap();
         assert!(runtime.receive().await.is_none());
     });
-    let reader = Arc::new(fixture.content.item_head_reader(fixture.space));
+    let reader = Arc::new(tokio::task::block_in_place(|| fixture.content.item_head_reader(fixture.space)).unwrap());
     exchange(fresh, fixture.auth.clone(), reader.clone(), scope)
         .await
         .unwrap();

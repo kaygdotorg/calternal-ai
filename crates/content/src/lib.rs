@@ -204,12 +204,9 @@ impl Content {
         };
         Ok(content)
     }
-    /// Runs `f` on space `id` under that space's lock, opening the space first if it
-    /// is not cached. Cost: map lock for a lookup or insert (no I/O); a cold space
-    /// opens SQLite and its journal under its own lock only. Refuses with
-    /// unavailable when 64 spaces are open and all are in use.
-    fn with_space<T>(&self, id: SpaceId, f: impl FnOnce(&mut Space) -> Result<T>) -> Result<T> {
-        let _step = self.lifecycle.step(id.as_uuid())?;
+    /// Pin the existing slot, allocating a cache entry if needed. The map
+    /// lock covers only cache metadata. Retired stores are dropped after it.
+    fn pin_slot(&self, id: SpaceId) -> Result<Arc<Slot>> {
         // A capacity-evicted space is dropped (draining its journal writer) only
         // after the map lock is released, so no other space waits on that drain.
         let mut evicted = None;
@@ -238,6 +235,16 @@ impl Content {
             }
         };
         drop(evicted);
+        Ok(slot)
+    }
+
+    /// Runs `f` on space `id` under that space's lock, opening the space first if it
+    /// is not cached. Cost: map lock for a lookup or insert (no I/O); a cold space
+    /// opens SQLite and its journal under its own lock only. Refuses with
+    /// unavailable when 64 spaces are open and all are in use.
+    fn with_space<T>(&self, id: SpaceId, f: impl FnOnce(&mut Space) -> Result<T>) -> Result<T> {
+        let _step = self.lifecycle.step(id.as_uuid())?;
+        let slot = self.pin_slot(id)?;
         #[cfg(feature = "perf-timings")]
         let slot_wait = calternal_store::timings::SaveStage::SlotWait.start();
         let mut held = lock(&slot.space);

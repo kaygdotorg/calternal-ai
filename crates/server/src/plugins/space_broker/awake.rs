@@ -41,7 +41,7 @@ impl Awake {
         authority: Spaces,
         reader: Arc<ItemHeadReader>,
         pin: &PackagePin,
-        placement: Option<HeldPlacement>,
+        placement: Option<(Arc<Wake>, HeldPlacement)>,
     ) -> Result<Arc<Self>, Error> {
         if connected.grants.space() != connected.space {
             return Err(unavailable());
@@ -73,8 +73,8 @@ impl Awake {
             inboxes: Mutex::default(),
         });
         let owner = Arc::downgrade(&awake);
+        let epoch = awake.epoch;
         tokio::spawn(async move {
-            let _placement = placement;
             while let Ok(Some(delivery)) =
                 tokio::time::timeout(IDLE, connected.channel.receive()).await
             {
@@ -93,6 +93,13 @@ impl Awake {
             }
             // Close the socket while the placement guard is still held.
             connected.channel.fence();
+            if let Some((wake, placement)) = placement {
+                drop(placement);
+                let mut current = wake.awake.lock().await;
+                if current.as_ref().is_some_and(|awake| awake.epoch == epoch) {
+                    current.take();
+                }
+            }
         });
         Ok(awake)
     }

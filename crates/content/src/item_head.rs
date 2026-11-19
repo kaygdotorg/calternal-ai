@@ -15,13 +15,26 @@ pub struct ItemHead {
 /// Read-only connection pool for the selected space. It retains no installation
 /// catalog or shared writer. The caller must fence authority before each use
 /// and again before releasing a result.
-pub struct ItemHeadReader(ReadPool);
+pub struct ItemHeadReader {
+    space: SpaceId,
+    slot: Arc<Slot>,
+    lifecycle: calternal_types::OwnerLifecycle,
+}
 
 impl Content {
-    /// Bind a read-only item-head reader to an already authorized space.
-    /// Cost: path construction only. The first read opens the space database.
-    pub fn item_head_reader(&self, space: SpaceId) -> ItemHeadReader {
-        ItemHeadReader(ReadPool::new(db::space_path(&self.roots.appdata, space)))
+    /// Pin the space's existing visibility pool during carrier wake. Takes one
+    /// cache lookup. If cold, recovers the space on this blocking worker before
+    /// the normal content path publishes the pool.
+    pub fn item_head_reader(&self, space: SpaceId) -> Result<ItemHeadReader> {
+        let slot = self.pin_slot(space)?;
+        if slot.visibility.get().is_none() {
+            self.with_space(space, |_| Ok(()))?;
+        }
+        Ok(ItemHeadReader {
+            space,
+            slot,
+            lifecycle: self.lifecycle.clone(),
+        })
     }
 }
 
@@ -31,8 +44,12 @@ impl ItemHeadReader {
     /// with no item bytes, catalog lookup, storage writes or flushes.
     /// Call off the asynchronous executor.
     pub fn read(&self, kind: &str, id: Uuid) -> Result<ItemHead> {
+        let _step = self.lifecycle.step(self.space.as_uuid())?;
         let row = self
-            .0
+            .slot
+            .visibility
+            .get()
+            .ok_or_else(missing)?
             .read(|c| {
                 c.prepare_cached(
                     "SELECT metadata, revision FROM items WHERE id=?1 AND kind=?2

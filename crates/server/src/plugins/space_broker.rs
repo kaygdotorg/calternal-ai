@@ -229,12 +229,10 @@ async fn wake_space<D: Directory>(
     let connected = service
         .open_space_channel(account, placement.lease, approval.package.clone())
         .await?;
-    let reader = Arc::new(
-        state
-            .store
-            .shared_content()
-            .item_head_reader(approval.space),
-    );
+    let content = state.store.shared_content();
+    let space = approval.space;
+    let reader = crate::blocking::spawn(move || content.item_head_reader(space))
+        .await.map_err(|_| unavailable())??;
     let authority = state
         .directory
         .protected_spaces()
