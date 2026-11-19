@@ -71,7 +71,7 @@ export class LocalCopy {
   private db: IDBDatabase | null
   private readonly walKey: string
   /** Changes not yet confirmed by IndexedDB, oldest first (`l`: a local edit). */
-  private pending: Array<{ n: number; u: string; l?: 1 }> = []
+  private pending: Array<{ n: number; u: Uint8Array; l?: 1 }> = []
   /** When this device's oldest unconfirmed edit was made, or null for none. */
   private dirtyAt: number | null = null
   /** Whether a change of this origin is an edit made here. Set by the owner. */
@@ -223,7 +223,7 @@ export class LocalCopy {
     // The first unconfirmed local edit writes the marker in its own transaction.
     const local = this.isLocal(origin)
     const mark = local && this.dirtyAt == null ? (this.dirtyAt = Date.now()) : null
-    this.pending.push(local ? { n, u: toB64(update), l: 1 } : { n, u: toB64(update) })
+    this.pending.push(local ? { n, u: update, l: 1 } : { n, u: update }) // (base64 only when the write-ahead list is written, not per key)
     this.queued.push(update)
     // The first unconfirmed edit (which carries the marker) goes at once; the rest of a burst of typing is written together a moment later, off the keystroke.
     if (mark != null || !LocalCopy.coalesce) this.flushQueue(mark)
@@ -268,7 +268,7 @@ export class LocalCopy {
     const ls = storage()
     if (!ls) return
     try {
-      if (this.pending.length) ls.setItem(this.walKey, JSON.stringify(this.pending))
+      if (this.pending.length) ls.setItem(this.walKey, JSON.stringify(this.pending.map((e) => (e.l ? { n: e.n, u: toB64(e.u), l: 1 } : { n: e.n, u: toB64(e.u) }))))
       else ls.removeItem(this.walKey)
       this.walWritten = this.pending.length > 0
     } catch {
