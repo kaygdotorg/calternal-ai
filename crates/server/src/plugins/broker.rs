@@ -415,6 +415,19 @@ impl<D: Directory> SpaceHost<D> {
                 id,
                 base,
                 body,
+                |item| {
+                    super::network::ingest(
+                        &self.runtime,
+                        self.state.clone(),
+                        self.identity.id,
+                        self.session.clone(),
+                        self.space,
+                        &self.plugin,
+                        self.generation,
+                        kind,
+                        item,
+                    )
+                },
             )
             .map_err(|_| Error::Refused)?;
         // WorkerSession runs callbacks serially. Slot zero remains available

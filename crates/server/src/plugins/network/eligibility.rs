@@ -7,6 +7,7 @@ pub(super) enum SourceAge {
     WithinWindow,
     Older,
     Junk,
+    ExplicitOnly,
 }
 
 #[derive(Clone, Copy)]
@@ -22,13 +23,14 @@ pub(super) fn may_enqueue(
     trigger: Trigger,
 ) -> bool {
     use ContentFetchPreference::{Always, Ask};
-    use SourceAge::{Older, WithinWindow};
+    use SourceAge::{ExplicitOnly, Older, WithinWindow};
     use Trigger::{ExplicitLoad, Ingest, Open};
     matches!(
         (preference, source_age, trigger),
         (Always, WithinWindow, Ingest | ExplicitLoad)
             | (Always, Older, Open | ExplicitLoad)
             | (Ask, WithinWindow | Older, ExplicitLoad)
+            | (Always | Ask, ExplicitOnly, ExplicitLoad)
     )
 }
 
@@ -51,6 +53,12 @@ mod tests {
             assert!(may_enqueue(Ask, source, ExplicitLoad));
             assert!(!may_enqueue(Never, source, ExplicitLoad));
         }
+        for preference in [Ask, Always] {
+            assert!(!may_enqueue(preference, SourceAge::ExplicitOnly, Ingest));
+            assert!(!may_enqueue(preference, SourceAge::ExplicitOnly, Open));
+            assert!(may_enqueue(preference, SourceAge::ExplicitOnly, ExplicitLoad));
+        }
+        assert!(!may_enqueue(Never, SourceAge::ExplicitOnly, ExplicitLoad));
         for trigger in [Ingest, Open, ExplicitLoad] {
             assert!(!may_enqueue(Always, Junk, trigger));
         }

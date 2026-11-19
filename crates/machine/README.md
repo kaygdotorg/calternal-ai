@@ -12,7 +12,8 @@ machine and never starts containers or VMs. The server side lives in
 # On the server host, or from the signed-in account (POST /api/v1/machines/codes):
 calternal machines code --appdata APPDATA --userdata-ssd SSD --userdata-hdd HDD --account <account-uuid>   # or --pool
 # On the machine:
-scripts/install-machine.sh --server https://cal.example.org --code - < code.txt
+curl --disable --proto '=https' --tlsv1.2 -fsS https://calternal.com/install |
+  sh -s -- --server https://cal.example.org
 # which runs, in order:
 calternal machine enroll --server https://cal.example.org --code CODE
 calternal machine run                    # --backend auto|podman|direct; default auto follows owner setting
@@ -24,7 +25,7 @@ calternal machine verify MACHINE_UUID --space-id SPACE_UUID --token-file PERSON_
 Machine directory: `$CALTERNAL_MACHINE_DIR`, else `$XDG_DATA_HOME/calternal/machine`,
 else `~/.local/share/calternal/machine`. It holds `credentials` (`key: value` lines,
 mode 0600: server, machine id, owner, Ed25519 private key) and `sandboxes/accounts/<account>/threads/<thread>/work` and a persistent `sandboxes/accounts/<account>/home`.
-Exit code 3 means the machine was revoked.
+Exit code 3 means the machine was revoked. See [machine installation and updates](../../docs/machine-install.md).
 
 Verification runs one provider readiness check through the enrolled channel. A
 machine owner or pool administrator gets the sandbox status, provider install

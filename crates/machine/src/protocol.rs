@@ -1,4 +1,4 @@
-//! Wire protocol between the server role and the machine role, version 4.
+//! Wire protocol between the server and machine roles.
 //!
 //! The machine always connects out; the server never opens a connection to a
 //! machine. Everything is plain JSON over HTTP(S) requests the machine makes:
@@ -10,6 +10,7 @@
 //! | `POST /api/v1/machine/session/finish` | Sign it with the machine key ([`SessionFinish`] → [`SessionGranted`]). |
 //! | `POST /api/v1/machine/sync` | Long-poll: report state, receive work ([`SyncRequest`] → [`SyncResponse`]). |
 //! | `POST /api/v1/machine/output` | Upload exec output ([`OutputPost`] → [`OutputAck`]). |
+//! | `POST /api/v1/machine/preview-output` | Upload the same output frames for an active preview without creating a missing stream. |
 //!
 //! Why long-poll rather than a websocket or SSE: it needs no new dependency on
 //! either side, passes any HTTP proxy that already fronts the server, reuses the
@@ -27,8 +28,49 @@ use calternal_types::{AccountId, SpaceId};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-/// Protocol version spoken by this build; the server refuses other versions.
-pub const PROTOCOL_VERSION: u32 = 8;
+/// Highest protocol version supported by this build.
+pub const PROTOCOL_VERSION: u32 = 9;
+
+/// First machine protocol that supports a sandbox-local HTTP preview.
+pub const PREVIEW_PROTOCOL_VERSION: u32 = 9;
+/// Largest body returned by one machine preview read.
+pub const PREVIEW_BODY_BYTES: usize = 1024 * 1024;
+/// Maximum duration of the local HTTP read, in milliseconds.
+pub const PREVIEW_TIMEOUT_MS: u32 = 8_000;
+
+/// A GET in an isolated sandbox's loopback namespace.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PreviewRequest {
+    /// Nonzero TCP port published by the run owner.
+    pub port: u16,
+    /// Origin-form path and optional query, with no caller headers.
+    pub path: String,
+}
+
+impl PreviewRequest {
+    /// Bound the request target and reject bytes that cannot appear in an HTTP path.
+    pub fn valid(&self) -> bool {
+        self.port != 0
+            && self.path.len() <= 2048
+            && self.path.starts_with('/')
+            && !self.path.starts_with("//")
+            && self
+                .path
+                .bytes()
+                .all(|b| (0x21..=0x7e).contains(&b) && b != b'#')
+    }
+}
+
+/// Metadata on the first line of a preview's stdout, followed by raw body bytes.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PreviewMetadata {
+    /// Upstream HTTP status, without redirects or upgrades.
+    pub status: u16,
+    /// Upstream media type. The server applies its own allow-list.
+    pub content_type: String,
+}
 
 /// First machine protocol that supports a broker and distinct tool sandbox.
 pub const SHARED_TOOLS_PROTOCOL_VERSION: u32 = 8;
@@ -487,6 +529,17 @@ pub enum Down {
         /// released by `SecretStore::use_value` when the server builds this
         /// message (see `MachineService::exec` for the seam).
         env: Vec<(String, String)>,
+    },
+    /// Read a published HTTP preview over the ordinary fenced output stream.
+    Preview {
+        /// The running lease whose sandbox owns the loopback address.
+        lease_id: Uuid,
+        /// The lease's current fence.
+        fence: u64,
+        /// One-shot output stream identifier.
+        exec_id: Uuid,
+        /// Bounded request target issued by the server.
+        request: PreviewRequest,
     },
     /// One bounded write to an interactive exec; envelope replay protection applies.
     Input {

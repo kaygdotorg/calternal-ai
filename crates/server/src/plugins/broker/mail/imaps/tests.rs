@@ -233,7 +233,7 @@ fn malicious_mime_nesting_is_refused_before_the_protocol_parser() {
 #[tokio::test]
 async fn production_resolution_refuses_loopback() {
     assert!(
-        crate::netguard::public_addresses("127.0.0.1", 993)
+        crate::plugins::network::fetch::Service::default().mail_addresses("127.0.0.1", 993)
             .await
             .is_err()
     );

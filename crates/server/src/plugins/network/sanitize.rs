@@ -20,7 +20,7 @@ pub(super) struct CleanContent {
 
 /// Parse HTML once, then write out only the host's selected tags and attributes.
 /// Time and memory are bounded by the input and output caps; no I/O.
-pub(super) fn clean(html: &str, proxy: &str) -> Option<CleanContent> {
+pub(super) fn clean(html: &str, proxy: &impl Fn(usize) -> String) -> Option<CleanContent> {
     if html.len() > MAX_HTML_BYTES {
         return None;
     }
@@ -37,7 +37,7 @@ pub(super) fn clean(html: &str, proxy: &str) -> Option<CleanContent> {
 fn children(
     element: ElementRef<'_>,
     depth: usize,
-    proxy: &str,
+    proxy: &impl Fn(usize) -> String,
     output: &mut CleanContent,
 ) -> Option<()> {
     if depth == MAX_DEPTH {
@@ -59,7 +59,7 @@ fn children(
 fn render(
     element: ElementRef<'_>,
     depth: usize,
-    proxy: &str,
+    proxy: &impl Fn(usize) -> String,
     output: &mut CleanContent,
 ) -> Option<()> {
     let node = element.value();
@@ -120,7 +120,7 @@ fn render(
     Some(())
 }
 
-fn image(node: &Element, proxy: &str, output: &mut CleanContent) {
+fn image(node: &Element, proxy: &impl Fn(usize) -> String, output: &mut CleanContent) {
     if let Some(alt) = node.attr("alt") {
         attribute(&mut output.html, "alt", alt);
     }
@@ -150,7 +150,7 @@ fn tracking_image(node: &Element) -> bool {
         })
 }
 
-fn srcset(text: &str, proxy: &str, assets: &mut Vec<Url>) -> Option<String> {
+fn srcset(text: &str, proxy: &impl Fn(usize) -> String, assets: &mut Vec<Url>) -> Option<String> {
     if text.len() > MAX_SRCSET_BYTES {
         return None;
     }
@@ -182,7 +182,7 @@ fn srcset(text: &str, proxy: &str, assets: &mut Vec<Url>) -> Option<String> {
         let Some(index) = push_ref(assets, url) else {
             break;
         };
-        let target = format!("{proxy}/{index}");
+        let target = proxy(index);
         output.push(if descriptor.is_empty() {
             target
         } else {
@@ -194,8 +194,8 @@ fn srcset(text: &str, proxy: &str, assets: &mut Vec<Url>) -> Option<String> {
 
 const MAX_SRCSET_BYTES: usize = 16 * 1024;
 
-fn asset(list: &mut Vec<Url>, proxy: &str, text: &str) -> Option<String> {
-    push_ref(list, asset_url(text)?).map(|index| format!("{proxy}/{index}"))
+fn asset(list: &mut Vec<Url>, proxy: &impl Fn(usize) -> String, text: &str) -> Option<String> {
+    push_ref(list, asset_url(text)?).map(|index| proxy(index))
 }
 
 // Destination policy is independently enforced on every dial by the guard.
@@ -270,7 +270,7 @@ mod tests {
                srcset="https://hidden.invalid/tracker 2x 2w"><a href="https://example.com/page">read</a></p>
              <svg><image href="https://hidden.invalid/inline.svg"></image></svg>
              <script>evil()</script><iframe src="https://hidden.invalid/frame"></iframe>"#,
-            PROXY,
+            &|index| format!("{PROXY}/{index}"),
         )
         .unwrap();
         assert_eq!(
@@ -293,7 +293,7 @@ mod tests {
                 a { background-image: url("https://example.com/dropped.png"); }
             </style><p style="font-family: Letter; cursor: url(https://example.com/cursor.png);
                            background-image: url(https://example.com/background.png)">Letter</p>"#,
-            PROXY,
+            &|index| format!("{PROXY}/{index}"),
         ).unwrap();
         assert_eq!(result.assets.len(), 2);
         assert!(result.html.contains("@font-face{font-family:"));
@@ -308,7 +308,7 @@ mod tests {
         let result = clean(
             r#"<img srcset="https://example.com/one 1x, https://example.com/two 2x">
                <img srcset="https://example.com/unexpected 2w 2x">"#,
-            PROXY,
+            &|index| format!("{PROXY}/{index}"),
         )
         .unwrap();
         assert_eq!(result.assets.len(), 2);
@@ -324,7 +324,7 @@ mod tests {
                 format!(r#"<img src="https://example.com/{i}"><img src="https://example.com/{i}">"#)
             })
             .collect::<String>();
-        let result = clean(&images, PROXY).unwrap();
+        let result = clean(&images, &|index| format!("{PROXY}/{index}")).unwrap();
         assert_eq!(result.assets.len(), MAX_REFERENCES);
         assert_eq!(result.html.matches(" src=").count(), 2 * MAX_REFERENCES);
     }

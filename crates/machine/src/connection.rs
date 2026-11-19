@@ -24,7 +24,7 @@ use crate::protocol::{
 use crate::ready::Ready;
 use crate::runner::Runner;
 use crate::sandbox::Backend;
-use crate::{Error, Result};
+use crate::{Error, Result, update};
 
 /// Settings of a running machine role.
 pub struct Config {
@@ -39,16 +39,17 @@ pub struct Config {
 /// Run the machine role until `shutdown` completes (orderly exit, `Ok`) or the
 /// machine is revoked ([`Error::Revoked`], after stopping every sandbox).
 pub async fn run(config: Config, shutdown: impl std::future::Future<Output = ()>) -> Result<()> {
-    run_at(config, None, &Ready::default(), shutdown).await
+    run_at(config, None, &Ready::default(), false, shutdown).await
 }
 
 pub(crate) async fn run_at(
     config: Config,
     address: Option<&ConnectAddress>,
     ready: &Ready,
+    self_update: bool,
     shutdown: impl std::future::Future<Output = ()>,
 ) -> Result<()> {
-    let _ownership = crate::ownership::lock(&config.dir).await?;
+    let ownership = crate::ownership::lock(&config.dir).await?;
     let path = config.dir.clone();
     let creds = tokio::task::spawn_blocking(move || Credentials::load(&path))
         .await
@@ -66,22 +67,96 @@ pub(crate) async fn run_at(
     ));
     let boot_id = Uuid::new_v4();
     tracing::info!(machine = %creds.machine_id, server = %creds.server, "machine role starting");
+    let mut updater = self_update.then(|| {
+        let server = creds.server.clone();
+        let address = address.cloned();
+        tokio::spawn(async move { update::stage(&server, address.as_ref()).await })
+    });
+    let mut ack = 0;
     let result = tokio::select! {
-        r = session_loop(&creds, &link, &runner, boot_id, ready) => r,
-        () = shutdown => Ok(()),
+        biased;
+        () = shutdown => None,
+        result = session_loop(&creds, &link, &runner, boot_id, ready, &mut ack, &mut updater) => Some(result),
     };
-    let closed = runner.release_all().await;
-    let backend_closed = config.backend.shutdown().await;
-    result.and_then(|()| {
-        if closed {
-            backend_closed.map_err(|e| Error::Protocol(e.0))
-        } else {
-            Err(Error::Protocol(
+    if let Some(updater) = updater {
+        updater.abort();
+        let _ = updater.await;
+    }
+    let started = Instant::now();
+    let drained = tokio::time::timeout(Duration::from_millis(1750), async {
+        if result.is_none() {
+            announce_drain(&link, &runner, ack).await;
+        }
+        let closed = runner.release_all().await;
+        let backend_closed = config.backend.shutdown().await;
+        if result.is_none() {
+            runner.drain_outputs().await;
+            announce_drain(&link, &runner, ack).await;
+        }
+        if !closed {
+            return Err(Error::Protocol(
                 "sandbox teardown incomplete; restart the machine role to sweep its sandboxes"
                     .into(),
-            ))
+            ));
         }
+        backend_closed.map_err(|e| Error::Protocol(e.0))
     })
+    .await
+    .unwrap_or_else(|_| {
+        Err(Error::Protocol(
+            "machine did not drain within 1750 ms; restart it to sweep its sandboxes".into(),
+        ))
+    });
+    if result.is_none() && drained.is_ok() {
+        tracing::info!(
+            elapsed_ms = started.elapsed().as_millis(),
+            "machine drain finished"
+        );
+    }
+    let staged = result.transpose()?.flatten();
+    drained?;
+    if let Some(staged) = staged {
+        let target = tokio::task::spawn_blocking(move || staged.publish())
+            .await
+            .map_err(|_| Error::Protocol("cannot publish machine update".into()))??;
+        drop(ownership);
+        return update::restart(&target);
+    }
+    Ok(())
+}
+
+async fn announce_drain(link: &Link, runner: &Arc<Runner>, ack: u64) {
+    // An older or an unreachable server may not answer immediately. Closing
+    // local sandboxes must still proceed before the shutdown deadline.
+    let Ok(capacity) = capacity(runner).await else {
+        return;
+    };
+    let req = SyncRequest {
+        ack,
+        capacity,
+        draining: true,
+        leases: runner.reports(),
+        discards: runner.discard_reports(),
+    };
+    if link
+        .post::<_, SyncResponse>(
+            "/api/v1/machine/sync",
+            &req,
+            true,
+            Duration::from_millis(200),
+        )
+        .await
+        .is_ok()
+    {
+        runner.ack_discards(&req.discards);
+    }
+}
+
+async fn capacity(runner: &Arc<Runner>) -> Result<crate::protocol::Capacity> {
+    let runner = runner.clone();
+    tokio::task::spawn_blocking(move || runner.capacity())
+        .await
+        .map_err(|error| Error::Protocol(error.to_string()))
 }
 
 async fn session_loop(
@@ -90,7 +165,10 @@ async fn session_loop(
     runner: &Arc<Runner>,
     boot_id: Uuid,
     ready: &Ready,
-) -> Result<()> {
+    ack: &mut u64,
+    updater: &mut Option<tokio::task::JoinHandle<Result<update::Staged>>>,
+) -> Result<Option<update::Staged>> {
+    let mut staged = None;
     let mut backoff = Backoff::default();
     let mut last_ok = Instant::now();
     let mut lease_ttl = Duration::from_secs(90);
@@ -117,16 +195,25 @@ async fn session_loop(
             }
             tracing::warn!(%error, "could not update the machine service status");
         }
-        let mut ack = 0u64;
+        *ack = 0;
         loop {
-            let machine = runner.clone();
-            let capacity = tokio::task::spawn_blocking(move || machine.capacity())
-                .await
-                .map_err(|error| Error::Protocol(error.to_string()))?;
+            if updater.as_ref().is_some_and(|task| task.is_finished())
+                && let Some(task) = updater.take()
+            {
+                match task.await {
+                    Ok(Ok(release)) => {
+                        tracing::info!("machine update verified; draining existing leases");
+                        staged = Some(release);
+                    }
+                    Ok(Err(error)) => tracing::warn!(%error, "machine updates unavailable"),
+                    Err(error) => tracing::warn!(%error, "machine update task ended"),
+                }
+            }
+            let capacity = capacity(runner).await?;
             let req = SyncRequest {
-                ack,
+                ack: *ack,
                 capacity,
-                draining: false,
+                draining: staged.is_some(),
                 leases: runner.reports(),
                 discards: runner.discard_reports(),
             };
@@ -144,10 +231,20 @@ async fn session_loop(
                     backoff = Backoff::default();
                     last_ok = Instant::now();
                     for env in resp.messages {
-                        if env.seq > ack {
-                            ack = env.seq;
+                        if env.seq > *ack {
                             runner.handle(env.message).await;
+                            *ack = env.seq;
                         }
+                    }
+                    // The draining request closes server admission before we
+                    // handle its queued assignments. Release only after their
+                    // turns and teardown have completed. Reconnect repeats
+                    // this acknowledgement barrier with the new session.
+                    if req.draining
+                        && runner.reports().is_empty()
+                        && runner.discard_reports().is_empty()
+                    {
+                        return Ok(staged);
                     }
                     let runner = runner.clone();
                     tokio::spawn(async move { runner.park_idle(lease_ttl).await });
@@ -266,3 +363,7 @@ pub fn default_dir() -> std::path::PathBuf {
         });
     base.join("calternal/machine")
 }
+
+#[cfg(test)]
+#[path = "connection_update_tests.rs"]
+mod update_tests;

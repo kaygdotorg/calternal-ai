@@ -64,6 +64,7 @@ base64.workspace = true
 tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "env-filter", "ansi"] }
 
 reqwest.workspace = true
+libc = "0.2"
 openssl = "0.10"
 imap = { version = "2.4.1", default-features = false }
 imap-proto = "0.10.2"

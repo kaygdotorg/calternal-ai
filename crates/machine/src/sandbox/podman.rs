@@ -514,6 +514,62 @@ impl Sandbox for PodmanSandbox {
         })
     }
 
+    fn preview(
+        &self,
+        request: crate::protocol::PreviewRequest,
+    ) -> BoxFuture<'_, SandboxResult<Exec>> {
+        Box::pin(async move {
+            if self.worker || self.broker.is_some() || !request.valid() {
+                return Err(SandboxError(
+                    "sandbox does not support this HTTP preview".into(),
+                ));
+            }
+            let mode = tokio::time::timeout(
+                std::time::Duration::from_secs(2),
+                podman(
+                    &self.podman,
+                    &[
+                        "inspect",
+                        "--type",
+                        "container",
+                        "--format",
+                        "{{.HostConfig.NetworkMode}}",
+                        &self.container,
+                    ],
+                ),
+            )
+            .await
+            .map_err(|_| SandboxError("preview network check timed out".into()))??;
+            let name = mode.trim().split(':').next().unwrap_or_default();
+            if !matches!(
+                name,
+                "bridge" | "none" | "private" | "slirp4netns" | "pasta"
+            ) {
+                return Err(SandboxError(
+                    "preview requires a private Podman network namespace".into(),
+                ));
+            }
+            self.exec(ExecRequest {
+                argv: vec![
+                    "/usr/bin/env".into(),
+                    "-i".into(),
+                    "PATH=/usr/local/bin:/usr/bin:/bin".into(),
+                    "node".into(),
+                    "--input-type=module".into(),
+                    "-e".into(),
+                    include_str!("preview.mjs").into(),
+                    "--".into(),
+                    request.port.to_string(),
+                    request.path,
+                    crate::protocol::PREVIEW_BODY_BYTES.to_string(),
+                    crate::protocol::PREVIEW_TIMEOUT_MS.to_string(),
+                ],
+                ..ExecRequest::default()
+            })
+            .await
+        })
+    }
+
     fn freeze(&self) -> BoxFuture<'_, SandboxResult<()>> {
         Box::pin(async move {
             podman(&self.podman, &["pause", &self.container])

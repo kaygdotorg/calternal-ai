@@ -208,6 +208,9 @@ impl MachineService {
             session: hash,
             direct: backend == "direct",
             harness_protocol: f.protocol >= HARNESS_PROTOCOL_VERSION,
+            preview: f.protocol >= calternal_machine::protocol::PREVIEW_PROTOCOL_VERSION
+                && backend == "podman"
+                && !kvm_fallback,
             shared_tools: f.protocol >= calternal_machine::protocol::SHARED_TOOLS_PROTOCOL_VERSION
                 && backend == "podman",
             shared_provider: f.protocol
@@ -297,8 +300,18 @@ impl MachineService {
         token: &str,
         req: SyncRequest,
     ) -> Result<Vec<Envelope>, Error> {
+        self.sync_until(machine_id, token, req, None).await
+    }
+
+    pub(super) async fn sync_until(
+        self: &Arc<Self>,
+        machine_id: Uuid,
+        token: &str,
+        req: SyncRequest,
+        shutdown: Option<&crate::shutdown::Shutdown>,
+    ) -> Result<Vec<Envelope>, Error> {
         let session = hash32(token);
-        let reports = !req.discards.is_empty();
+        let ready = req.draining || !req.discards.is_empty();
         let svc = self.clone();
         let notify = blocking(move || svc.sync_begin(machine_id, &session, &req)).await?;
         let _guard = PollGuard {
@@ -309,14 +322,16 @@ impl MachineService {
         loop {
             let svc = self.clone();
             let pending = blocking(move || svc.outbox(machine_id, &session)).await?;
-            if reports || !pending.is_empty() {
+            if ready || !pending.is_empty() {
                 return Ok(pending);
             }
-            if tokio::time::timeout_at(deadline, notify.notified())
-                .await
-                .is_err()
-            {
-                return Ok(Vec::new());
+            tokio::select! {
+                () = crate::shutdown::wait(shutdown) => return Ok(Vec::new()),
+                result = tokio::time::timeout_at(deadline, notify.notified()) => {
+                    if result.is_err() {
+                        return Ok(Vec::new());
+                    }
+                }
             }
         }
     }
@@ -388,10 +403,24 @@ impl MachineService {
         let mut deliver = Vec::with_capacity(queued.len());
         let mut keep = VecDeque::new();
         for envelope in queued {
+            if let Down::Preview {
+                lease_id,
+                fence,
+                exec_id,
+                ..
+            } = &envelope.message
+                && (!st.execs.contains_key(exec_id)
+                    || !st.leases.get(lease_id).is_some_and(|lease| {
+                        lease.assigned_machine() == Some(machine_id) && lease.row.fence == *fence
+                    }))
+            {
+                continue;
+            }
             let lease = match &envelope.message {
                 Down::Assign { lease_id, .. }
                 | Down::AssignHarness { lease_id, .. }
                 | Down::Exec { lease_id, .. }
+                | Down::Preview { lease_id, .. }
                 | Down::Input { lease_id, .. } => Some(lease_id),
                 _ => None,
             };
@@ -416,6 +445,23 @@ impl MachineService {
     /// it; a full buffer answers `retry_after_ms`. Wrong machine, stale fence or
     /// ended lease: 409.
     pub fn output(&self, machine_id: Uuid, post: OutputPost) -> Result<OutputAck, Error> {
+        self.accept_output(machine_id, post, false)
+    }
+
+    pub(super) fn preview_output(
+        &self,
+        machine_id: Uuid,
+        post: OutputPost,
+    ) -> Result<OutputAck, Error> {
+        self.accept_output(machine_id, post, true)
+    }
+
+    fn accept_output(
+        &self,
+        machine_id: Uuid,
+        post: OutputPost,
+        preview: bool,
+    ) -> Result<OutputAck, Error> {
         let mut st = self.lock()?;
         let st = &mut *st;
         let fenced = || Error::conflict("lease fenced");
@@ -437,6 +483,9 @@ impl MachineService {
         let account = lease.row.account;
         let worker = lease.row.worker;
         let first = post.chunks.first().map_or(1, |c| c.seq);
+        if preview && !st.execs.get(&post.exec_id).is_some_and(|e| e.preview) {
+            return Err(fenced());
+        }
         let exec = st.execs.entry(post.exec_id).or_insert_with(|| {
             // Unknown exec after a server restart: accept from wherever it is.
             let mut e = Exec::new(
@@ -450,7 +499,7 @@ impl MachineService {
             e.lost_before = (first > 1).then_some(first);
             e
         });
-        if exec.lease != post.lease_id {
+        if exec.lease != post.lease_id || exec.preview != preview {
             return Err(fenced());
         }
         let (mut full, mut accepted) = (false, false);

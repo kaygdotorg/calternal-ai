@@ -10,14 +10,14 @@ pub const AGENT_READINESS: &str = "agent.readiness";
 /// Read first-owner onboarding status for an instance machine.
 pub const MACHINES_ONBOARDING: &str = "machines.onboarding";
 
-/// Issue a script for enrolling a machine owned by the signed-in account.
+/// Issue a command for enrolling a machine owned by the signed-in account.
 pub const MACHINES_INSTALL: &str = "machines.install";
 
-/// The enrollment script and the deadline for redeeming its one-time code.
+/// The enrollment command and the deadline for redeeming its one-time code.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS)]
 #[serde(deny_unknown_fields)]
 pub struct MachineInstallResult {
-    /// Readable shell script containing the private enrollment code.
+    /// One-line shell command containing the private enrollment code.
     pub script: String,
     /// Unix milliseconds when the code expires if unused.
     #[ts(type = "number")]
