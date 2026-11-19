@@ -95,6 +95,13 @@ preference. The `images_fonts` profile is for anonymous HTTPS media retrieval
 by host-issued asset reference. Outbound asset delivery is pending in this
 preview. The profile does not accept arbitrary page URLs or retrieve page titles.
 
+Content fetch can disclose data through the hostname, path or query that a
+plugin puts in a stored media URL. Always may send that URL at ingest even
+when nobody opens the item. There are no caller cookies, credentials or
+referrer headers. The proxy limits each plugin to 16 distinct hostnames per
+space per minute, including redirects. Managers can see the latest 32
+attempted hostnames in `plugins.diagnostics` through `fetch_hosts`.
+
 ### C. Open internet
 
 **Example: an RSS reader with user-added feeds.** The author discloses that the

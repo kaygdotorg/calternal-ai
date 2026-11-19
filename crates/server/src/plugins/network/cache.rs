@@ -149,9 +149,16 @@ mod tests {
     #[tokio::test]
     async fn rejected_admission_remains_visible_to_the_reader() {
         let cache = Cache::default();
-        let key = Key { account: AccountId::new(), space: SpaceId::new(), target: [0; 32] };
+        let key = Key {
+            account: AccountId::new(),
+            space: SpaceId::new(),
+            target: [0; 32],
+        };
         let entry = cache.start(key).unwrap();
         cache.finish(key, &entry, Err(Failure::Capacity));
-        assert!(matches!(cache.get(key).unwrap().read().await, Err(Failure::Capacity)));
+        assert!(matches!(
+            cache.get(key).unwrap().read().await,
+            Err(Failure::Capacity)
+        ));
     }
 }

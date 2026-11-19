@@ -28,7 +28,13 @@ pub(crate) fn client_for(
     hosts: Option<&'static [&'static str]>,
     timeout: Duration,
 ) -> Result<reqwest::Client, reqwest::Error> {
-    build(hosts, timeout, Arc::new(local::Local::default()), false, None)
+    build(
+        hosts,
+        timeout,
+        Arc::new(local::Local::default()),
+        false,
+        None,
+    )
 }
 
 /// Checked Class B dialing policy. Build with an interface enumeration on a
@@ -41,8 +47,17 @@ pub(crate) struct ContentPolicy {
 
 impl ContentPolicy {
     /// Read attached interfaces and parse operator ranges. One blocking call.
-    pub(crate) fn load(ranges: &str, nat64: Option<&str>, fixture: bool, own: OriginAddresses) -> io::Result<Self> {
-        Ok(Self { local: local::Local::load(ranges, nat64)?, own, fixture })
+    pub(crate) fn load(
+        ranges: &str,
+        nat64: Option<&str>,
+        fixture: bool,
+        own: OriginAddresses,
+    ) -> io::Result<Self> {
+        Ok(Self {
+            local: local::Local::load(ranges, nat64)?,
+            own,
+            fixture,
+        })
     }
 
     /// Resolve an admitted hostname and select its first checked address.
@@ -53,9 +68,13 @@ impl ContentPolicy {
             return Ok(([127, 0, 0, 1], 443).into());
         }
         let answers = lookup(host, self.fixture).await?;
-        if answers.is_empty() || answers.iter().any(|a| {
-            deny::is_denied(a.ip()) || self.local.denies(a.ip()) || own_denies(Some(&self.own), a.ip())
-        }) {
+        if answers.is_empty()
+            || answers.iter().any(|a| {
+                deny::is_denied(a.ip())
+                    || self.local.denies(a.ip())
+                    || own_denies(Some(&self.own), a.ip())
+            })
+        {
             return Err(refused());
         }
         Ok(std::net::SocketAddr::new(answers[0].ip(), 443))
@@ -64,7 +83,11 @@ impl ContentPolicy {
 
 /// Build one TLS client on a blocking worker. Only the checked host override
 /// can resolve, so the connector uses the quota's IP while preserving SNI.
-pub(crate) fn content_client(host: &str, checked: std::net::SocketAddr, timeout: Duration) -> Result<reqwest::Client, reqwest::Error> {
+pub(crate) fn content_client(
+    host: &str,
+    checked: std::net::SocketAddr,
+    timeout: Duration,
+) -> Result<reqwest::Client, reqwest::Error> {
     struct NoDns;
     impl Resolve for NoDns {
         fn resolve(&self, _: Name) -> Resolving {
@@ -90,9 +113,13 @@ async fn lookup(host: &str, fixture: bool) -> io::Result<Vec<std::net::SocketAdd
 
 fn builder(timeout: Duration) -> reqwest::ClientBuilder {
     reqwest::Client::builder()
-        .https_only(true).no_proxy()
-        .redirect(reqwest::redirect::Policy::none()).retry(reqwest::retry::never())
-        .connect_timeout(Duration::from_secs(5)).timeout(timeout).user_agent("calternal")
+        .https_only(true)
+        .no_proxy()
+        .redirect(reqwest::redirect::Policy::none())
+        .retry(reqwest::retry::never())
+        .connect_timeout(Duration::from_secs(5))
+        .timeout(timeout)
+        .user_agent("calternal")
 }
 
 fn build(
@@ -103,7 +130,10 @@ fn build(
     own: Option<OriginAddresses>,
 ) -> Result<reqwest::Client, reqwest::Error> {
     let mut builder = builder(timeout).dns_resolver(Arc::new(PublicDns {
-        hosts, local, fixture, own,
+        hosts,
+        local,
+        fixture,
+        own,
     }));
     if hosts.is_none() {
         builder = builder.http1_only().pool_max_idle_per_host(0);
@@ -130,9 +160,11 @@ impl Resolve for PublicDns {
             }
             let addresses = lookup(name.as_str(), fixture).await?;
             if addresses.is_empty()
-                || addresses
-                    .iter()
-                    .any(|a| deny::is_denied(a.ip()) || local.denies(a.ip()) || own_denies(own.as_ref(), a.ip()))
+                || addresses.iter().any(|a| {
+                    deny::is_denied(a.ip())
+                        || local.denies(a.ip())
+                        || own_denies(own.as_ref(), a.ip())
+                })
             {
                 return Err(refused().into());
             }
@@ -142,7 +174,11 @@ impl Resolve for PublicDns {
 }
 
 fn own_denies(own: Option<&OriginAddresses>, ip: IpAddr) -> bool {
-    own.is_some_and(|own| own.load().as_ref().is_none_or(|addresses| addresses.contains(&ip)))
+    own.is_some_and(|own| {
+        own.load()
+            .as_ref()
+            .is_none_or(|addresses| addresses.contains(&ip))
+    })
 }
 
 #[cfg(test)]

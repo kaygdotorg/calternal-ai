@@ -5,11 +5,12 @@ use super::{
     audit, cache, check_source, db,
     eligibility::{self, Trigger},
     frames::Source,
-    media, quota::Quota,
+    media,
+    quota::Quota,
 };
 use crate::{api::Shared, auth::Directory, netguard};
 use calternal_types::Owner;
-use reqwest::{Client, Url};
+use reqwest::Url;
 use std::{
     io,
     sync::Arc,
@@ -55,10 +56,16 @@ impl Default for Service {
 pub(crate) async fn configure<D: Directory>(state: &Shared<D>, origin: &str) {
     let service = &state.store.plugin_fetch;
     if service.ranges.is_empty() {
-        tracing::warn!("CALTERNAL_CONTENT_FETCH_DENY_CIDRS is empty; configure any additional NAT or hairpin server ranges");
+        tracing::warn!(
+            "CALTERNAL_CONTENT_FETCH_DENY_CIDRS is empty; configure any additional NAT or hairpin server ranges"
+        );
     }
-    let Ok(origin) = Url::parse(origin) else { return; };
-    let Some(host) = origin.host_str() else { return; };
+    let Ok(origin) = Url::parse(origin) else {
+        return;
+    };
+    let Some(host) = origin.host_str() else {
+        return;
+    };
     let host = host.to_owned();
     service.own.store(None);
     async fn refresh(host: &str, own: &netguard::OriginAddresses) {
@@ -66,8 +73,17 @@ pub(crate) async fn configure<D: Directory>(state: &Shared<D>, origin: &str) {
         let values = if let Ok(ip) = raw.parse::<std::net::IpAddr>() {
             vec![ip]
         } else {
-            let name = if host.contains('.') && !host.ends_with('.') { format!("{host}.") } else { host.to_owned() };
-            match tokio::time::timeout(Duration::from_secs(3), tokio::net::lookup_host((name.as_str(), 0))).await {
+            let name = if host.contains('.') && !host.ends_with('.') {
+                format!("{host}.")
+            } else {
+                host.to_owned()
+            };
+            match tokio::time::timeout(
+                Duration::from_secs(3),
+                tokio::net::lookup_host((name.as_str(), 0)),
+            )
+            .await
+            {
                 Ok(Ok(addresses)) => addresses.map(|address| address.ip()).collect(),
                 _ => return,
             }
@@ -81,7 +97,9 @@ pub(crate) async fn configure<D: Directory>(state: &Shared<D>, origin: &str) {
     tokio::spawn(async move {
         loop {
             tokio::time::sleep(Duration::from_secs(60)).await;
-            let Some(state) = state.upgrade() else { break; };
+            let Some(state) = state.upgrade() else {
+                break;
+            };
             refresh(&host, &state.store.plugin_fetch.own).await;
         }
     });
@@ -96,7 +114,6 @@ impl Service {
     pub(super) fn get(&self, source: &Source, url: &Url) -> Option<Arc<cache::Entry>> {
         self.cache.get(key(source, url))
     }
-
 }
 
 fn key(source: &Source, url: &Url) -> cache::Key {
@@ -126,9 +143,13 @@ pub(super) fn enqueue<D: Directory>(
     let service = &state.store.plugin_fetch;
     for url in urls {
         let key = key(&source, url);
-        let Some(entry) = service.cache.start(key) else { continue; };
+        let Some(entry) = service.cache.start(key) else {
+            continue;
+        };
         let Some(slot) = service.quota.enqueue(&source.plugin, source.space) else {
-            service.cache.finish(key, &entry, Err(cache::Failure::Capacity));
+            service
+                .cache
+                .finish(key, &entry, Err(cache::Failure::Capacity));
             continue;
         };
         let (st, source, url) = (state.clone(), source.clone(), url.clone());
@@ -232,14 +253,22 @@ async fn finish_audit<D: Directory>(
 
 /// Read local interfaces on a blocking worker once per source fetch.
 /// Each dial builds its pinned TLS client on a blocking worker as well.
-async fn build_policy(ranges: std::ffi::OsString, nat64: Option<std::ffi::OsString>, fixture: bool, own: netguard::OriginAddresses) -> io::Result<netguard::ContentPolicy> {
+async fn build_policy(
+    ranges: std::ffi::OsString,
+    nat64: Option<std::ffi::OsString>,
+    fixture: bool,
+    own: netguard::OriginAddresses,
+) -> io::Result<netguard::ContentPolicy> {
     crate::blocking::spawn(move || {
         let ranges = ranges.to_str().ok_or_else(refused)?;
-        let nat64 = nat64.as_ref().map(|value| value.to_str().ok_or_else(refused)).transpose()?;
+        let nat64 = nat64
+            .as_ref()
+            .map(|value| value.to_str().ok_or_else(refused))
+            .transpose()?;
         netguard::ContentPolicy::load(ranges, nat64, fixture, own)
     })
-        .await
-        .map_err(io::Error::other)?
+    .await
+    .map_err(io::Error::other)?
 }
 
 async fn retrieve<D: Directory>(
@@ -253,7 +282,14 @@ async fn retrieve<D: Directory>(
     let fixture = service.fixture.is_some();
     #[cfg(not(all(feature = "test-plugins", debug_assertions)))]
     let fixture = false;
-    let policy = build_policy(service.ranges.clone(), service.nat64.clone(), fixture, service.own.clone()).await.map_err(|_| cache::Failure::Unavailable)?;
+    let policy = build_policy(
+        service.ranges.clone(),
+        service.nat64.clone(),
+        fixture,
+        service.own.clone(),
+    )
+    .await
+    .map_err(|_| cache::Failure::Unavailable)?;
     let own_host = state
         .directory
         .http_auth()
@@ -274,15 +310,25 @@ async fn retrieve<D: Directory>(
                 return Err(refused());
             }
             authorized(state, source, trigger).await?;
+            if !service.quota.visit(&source.plugin, source.space, host) {
+                failure = cache::Failure::Capacity;
+                return Err(refused());
+            }
             reservation = Some(
                 service
                     .admission
                     .try_start(source.space, CAP as u64)
-                    .map_err(|_| refused())?,
+                    .map_err(|_| {
+                        failure = cache::Failure::Capacity;
+                        refused()
+                    })?,
             );
             hop = Some((begin_audit(state, source, host).await?, Instant::now()));
             let checked = policy.resolve(host).await?;
             let Some(dial) = service.quota.dial(checked.ip()) else {
+                if let Some(reservation) = reservation.take() {
+                    reservation.finish(0);
+                }
                 failure = cache::Failure::Capacity;
                 return Err(refused());
             };
@@ -342,7 +388,11 @@ async fn retrieve<D: Directory>(
     result.ok().and_then(Result::ok).ok_or(failure)
 }
 
-async fn request(_service: &Service, url: Url, checked: std::net::SocketAddr) -> io::Result<reqwest::RequestBuilder> {
+async fn request(
+    _service: &Service,
+    url: Url,
+    checked: std::net::SocketAddr,
+) -> io::Result<reqwest::RequestBuilder> {
     #[cfg(all(feature = "test-plugins", debug_assertions))]
     if let Some(fixture) = &_service.fixture
         && url.domain() == Some("content-fetch.test")
@@ -354,14 +404,16 @@ async fn request(_service: &Service, url: Url, checked: std::net::SocketAddr) ->
     }
     let host = url.domain().ok_or_else(refused)?.to_owned();
     let client = crate::blocking::spawn(move || netguard::content_client(&host, checked, TIMEOUT))
-        .await.map_err(io::Error::other)?.map_err(io::Error::other)?;
+        .await
+        .map_err(io::Error::other)?
+        .map_err(io::Error::other)?;
     Ok(client.get(url))
 }
 
 #[cfg(all(feature = "test-plugins", debug_assertions))]
 struct Fixture {
     origin: Url,
-    client: Client,
+    client: reqwest::Client,
 }
 
 #[cfg(all(feature = "test-plugins", debug_assertions))]
@@ -380,7 +432,7 @@ impl Fixture {
         {
             return None;
         }
-        let client = Client::builder()
+        let client = reqwest::Client::builder()
             .no_proxy()
             .redirect(reqwest::redirect::Policy::none())
             .retry(reqwest::retry::never())
@@ -401,7 +453,15 @@ mod client_tests {
 
     #[tokio::test(flavor = "current_thread")]
     async fn background_client_reports_configuration_errors() {
-        assert!(build_policy("not-a-cidr".into(), None, false, Default::default()).await.is_err());
-        assert!(build_policy(Default::default(), None, false, Default::default()).await.is_ok());
+        assert!(
+            build_policy("not-a-cidr".into(), None, false, Default::default())
+                .await
+                .is_err()
+        );
+        assert!(
+            build_policy(Default::default(), None, false, Default::default())
+                .await
+                .is_ok()
+        );
     }
 }

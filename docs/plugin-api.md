@@ -281,9 +281,17 @@ the older-content fallback. Items marked as junk never fetch. For Ask mode,
 the host can explicitly POST the authenticated frame URL with the normal
 same-origin session. HTTP 202 acknowledges the action. Open or reload the
 frame to display any queued media. Recent opens alone cause no upstream
-requests. The media URL is a short-lived signed reference scoped to the
-viewer and the frame. It rechecks live session, permission, source revision,
+requests. The media URL is signed for the viewer’s short-lived frame, asset index,
+and expiry. It rechecks live session, permission, source revision,
 plugin activation, and the current preference before serving.
+
+Remote media URLs can carry data in their hostname, path or query. A plugin
+that can write a declared source can put data there and trigger outbound
+requests under Always. The proxy's anonymity strips host-provided identifying
+headers, while the destination receives the plugin-supplied URL. Each plugin
+can contact up to 16 distinct hostnames per space per rolling minute, counting
+redirect destinations. Managers can see the latest 32 attempted hostnames in
+`plugins.diagnostics` as `fetch_hosts`. Paths and queries stay out of diagnostics.
 
 The server fetches image and font bytes off the request path. HTTPS GET on
 443 uses a generic `calternal` User-Agent without cookies, credentials,

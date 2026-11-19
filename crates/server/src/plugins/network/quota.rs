@@ -15,12 +15,14 @@ const QUEUED: usize = 128;
 const QUEUED_PER_PLUGIN: usize = 16;
 const QUEUED_PER_SPACE_PLUGIN: usize = 8;
 const FETCHES_PER_MINUTE: usize = 60;
+const HOSTS_PER_MINUTE: usize = 16;
 const PER_IP: usize = 2;
 const MINUTE: Duration = Duration::from_secs(60);
 
 #[derive(Default)]
 struct SpaceUsage {
     starts: VecDeque<Instant>,
+    hosts: HashMap<String, Instant>,
     queued: usize,
 }
 
@@ -50,7 +52,8 @@ impl Quota {
     fn shard(&self, id: &str) -> std::sync::MutexGuard<'_, HashMap<String, PluginUsage>> {
         let digest = ring::digest::digest(&ring::digest::SHA256, id.as_bytes());
         self.plugins[usize::from(digest.as_ref()[0]) % SHARDS]
-            .lock().unwrap_or_else(|error| error.into_inner())
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
     }
 
     /// Count source fetches before consuming a shared queue slot. Redirects
@@ -60,10 +63,15 @@ impl Quota {
         let now = Instant::now();
         plugins.retain(|_, usage| {
             usage.spaces.retain(|_, space| {
-                while space.starts.front().is_some_and(|at| now.duration_since(*at) >= MINUTE) {
+                while space
+                    .starts
+                    .front()
+                    .is_some_and(|at| now.duration_since(*at) >= MINUTE)
+                {
                     space.starts.pop_front();
                 }
-                space.queued > 0 || !space.starts.is_empty()
+                space.hosts.retain(|_, at| now.duration_since(*at) < MINUTE);
+                space.queued > 0 || !space.starts.is_empty() || !space.hosts.is_empty()
             });
             !usage.spaces.is_empty()
         });
@@ -84,14 +92,43 @@ impl Quota {
         usage.queued += 1;
         slot.queued += 1;
         slot.starts.push_back(now);
-        Some(Queued { quota: self.clone(), plugin: plugin.into(), space, _shared: shared })
+        Some(Queued {
+            quota: self.clone(),
+            plugin: plugin.into(),
+            space,
+            _shared: shared,
+        })
+    }
+
+    /// Track distinct named outbound targets before DNS. This includes redirect
+    /// targets and does not keep URL paths or query strings.
+    pub(super) fn visit(&self, plugin: &str, space: SpaceId, host: &str) -> bool {
+        let mut plugins = self.shard(plugin);
+        let Some(space) = plugins
+            .get_mut(plugin)
+            .and_then(|usage| usage.spaces.get_mut(&space))
+        else {
+            return false;
+        };
+        let now = Instant::now();
+        space.hosts.retain(|_, at| now.duration_since(*at) < MINUTE);
+        if space.hosts.len() == HOSTS_PER_MINUTE && !space.hosts.contains_key(host) {
+            return false;
+        }
+        space.hosts.insert(host.to_owned(), now);
+        true
     }
 
     /// Limit simultaneous dials by the exact checked address, independent of hostname.
     pub(super) fn dial(&self, ip: IpAddr) -> Option<Dial<'_>> {
-        let mut addresses = self.addresses.lock().unwrap_or_else(|error| error.into_inner());
+        let mut addresses = self
+            .addresses
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
         let active = addresses.entry(ip).or_default();
-        if *active >= PER_IP { return None; }
+        if *active >= PER_IP {
+            return None;
+        }
         *active += 1;
         Some(Dial { quota: self, ip })
     }
@@ -123,10 +160,16 @@ pub(super) struct Dial<'a> {
 
 impl Drop for Dial<'_> {
     fn drop(&mut self) {
-        let mut addresses = self.quota.addresses.lock().unwrap_or_else(|error| error.into_inner());
+        let mut addresses = self
+            .quota
+            .addresses
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
         if let Some(active) = addresses.get_mut(&self.ip) {
             *active -= 1;
-            if *active == 0 { addresses.remove(&self.ip); }
+            if *active == 0 {
+                addresses.remove(&self.ip);
+            }
         }
     }
 }
@@ -146,11 +189,27 @@ mod tests {
         assert!(quota.enqueue("same-package", a).is_none());
         assert!(quota.enqueue("same-package", b).is_some());
         let jobs: Vec<_> = (0..QUEUED_PER_PLUGIN)
-            .map(|_| quota.enqueue("flood", SpaceId::new()).unwrap()).collect();
+            .map(|_| quota.enqueue("flood", SpaceId::new()).unwrap())
+            .collect();
         assert!(quota.enqueue("flood", SpaceId::new()).is_none());
         assert!(quota.enqueue("other", a).is_some());
         drop(jobs);
         assert!(quota.enqueue("flood", b).is_some());
+    }
+
+    #[test]
+    fn distinct_host_budget_counts_redirect_hosts_and_is_space_scoped() {
+        let quota = Arc::new(Quota::default());
+        let first = SpaceId::new();
+        let second = SpaceId::new();
+        let _a = quota.enqueue("mail", first).unwrap();
+        let _b = quota.enqueue("mail", second).unwrap();
+        for i in 0..HOSTS_PER_MINUTE {
+            assert!(quota.visit("mail", first, &format!("site-{i}.example")));
+        }
+        assert!(quota.visit("mail", first, "site-0.example"));
+        assert!(!quota.visit("mail", first, "different.example"));
+        assert!(quota.visit("mail", second, "different.example"));
     }
 
     #[test]

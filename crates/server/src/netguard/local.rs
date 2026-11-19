@@ -28,7 +28,10 @@ impl Local {
                 IpAddr::V4(_) if !translation && bits <= 32 => {
                     IpAddr::V4(u32::MAX.checked_shl(32 - bits).unwrap_or(0).into())
                 }
-                IpAddr::V6(_) if bits <= 128 && (!translation || matches!(bits, 32 | 40 | 48 | 56 | 64 | 96)) => {
+                IpAddr::V6(_)
+                    if bits <= 128
+                        && (!translation || matches!(bits, 32 | 40 | 48 | 56 | 64 | 96)) =>
+                {
                     IpAddr::V6(u128::MAX.checked_shl(128 - bits).unwrap_or(0).into())
                 }
                 _ => return Err(super::refused()),
@@ -136,5 +139,4 @@ mod tests {
         assert!(Local::load("", Some("93.184.215.16/32")).is_err());
         assert!(Local::load("", Some("2606:4700:abcd::/72")).is_err());
     }
-
 }

@@ -137,7 +137,14 @@ pub(crate) async fn asset<D: Directory>(
     Path((frame, index, expiry, signature)): Path<(Uuid, usize, i64, String)>,
 ) -> Response {
     let result = async {
-        if !asset_authorized(&state.store.cursor_key, frame, index as u64, expiry, &signature, asset_now()) {
+        if !asset_authorized(
+            &state.store.cursor_key,
+            frame,
+            index as u64,
+            expiry,
+            &signature,
+            asset_now(),
+        ) {
             return Err(missing());
         }
         let (current, entry) = ready_entry(&state, frame, index).await?;
@@ -148,8 +155,10 @@ pub(crate) async fn asset<D: Directory>(
         }
         let asset = asset.map_err(|failure| match failure {
             super::cache::Failure::Unavailable => missing(),
-            super::cache::Failure::Capacity => calternal_types::Error::unavailable("Remote media capacity exhausted")
-                .with_details(serde_json::json!({"reason":"content_fetch_capacity"})),
+            super::cache::Failure::Capacity => {
+                calternal_types::Error::unavailable("Remote media capacity exhausted")
+                    .with_details(serde_json::json!({"reason":"content_fetch_capacity"}))
+            }
         })?;
         Ok::<_, calternal_types::Error>(
             (

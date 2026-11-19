@@ -46,9 +46,21 @@ fn asset_signature(key: &hmac::Key, frame: Uuid, index: u64, expiry: i64) -> Str
     hex::encode(mac.sign().as_ref())
 }
 
-fn asset_authorized(key: &hmac::Key, frame: Uuid, index: u64, expiry: i64, signature: &str, now: i64) -> bool {
+fn asset_authorized(
+    key: &hmac::Key,
+    frame: Uuid,
+    index: u64,
+    expiry: i64,
+    signature: &str,
+    now: i64,
+) -> bool {
     use subtle::ConstantTimeEq;
-    expiry > now && bool::from(asset_signature(key, frame, index, expiry).as_bytes().ct_eq(signature.as_bytes()))
+    expiry > now
+        && bool::from(
+            asset_signature(key, frame, index, expiry)
+                .as_bytes()
+                .ct_eq(signature.as_bytes()),
+        )
 }
 
 fn asset_now() -> i64 {
@@ -166,7 +178,8 @@ pub(super) fn prepare(
     let content = sanitize::clean(html, &|index| {
         let signature = asset_signature(&store.cursor_key, id, index as u64, expiry);
         format!("{}/{index}/{expiry}/{signature}", frame_path(id))
-    }).ok_or_else(missing)?;
+    })
+    .ok_or_else(missing)?;
     store.plugin_frames.insert(
         id,
         frames::Source {
@@ -227,6 +240,15 @@ fn check_source<D: Directory>(state: &Shared<D>, source: &frames::Source) -> Res
         return Err(missing());
     }
     Ok(())
+}
+
+/// Read the bounded host history for a package after Manager authorization.
+pub(crate) fn recent_fetch_hosts(
+    store: &Store,
+    space: SpaceId,
+    plugin: &str,
+) -> Result<Vec<String>, Error> {
+    audit::hosts(store.appdata(), space, plugin)
 }
 
 /// Resolve a prepared frame and its external navigation targets for the
