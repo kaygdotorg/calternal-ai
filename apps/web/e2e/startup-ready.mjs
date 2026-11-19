@@ -10,7 +10,7 @@ const op = (p, name, input) => p.evaluate(async ([name, input]) => { const r = a
 /** Threads and Notes are ready on this page: both lists show what the API holds, and each opens. `held` is what the page asked and never got an answer to. */
 async function ready(p, label, thread, note) {
   const pending = new Set(), born = new Map();
-  p.on("request", (r) => { if (r.url().includes("/api/v1/operations")) { pending.add(r); born.set(r, Date.now()); } }); p.on("requestfinished", (r) => pending.delete(r)); p.on("requestfailed", (r) => pending.delete(r));
+  p.on("request", (r) => { if (r.url().includes("/api/v1/operations")) { pending.add(r); born.set(r, Date.now()); } }); p.on("framenavigated", (f) => { if (f === p.mainFrame()) pending.clear(); }); /* a request of the page just left never reports an end: only the page now shown counts */ p.on("requestfinished", (r) => pending.delete(r)); p.on("requestfailed", (r) => pending.delete(r));
   await p.goto(`${url}/threads?server=1`); await p.waitForSelector("html[data-ready]");
   await p.getByText(thread.title).first().waitFor({ timeout: 20000 }).catch(() => {});
   ok(await p.getByText(thread.title).count() >= 1, `${label}: Threads is ready (the thread made through the API is listed)`);
@@ -36,6 +36,8 @@ try {
   const note = { ...(await op(p, "notes.create", { space_id: space, title: "Ready note", markdown: "# Ready note\n\nBody\n" })).data.note, title: "Ready note" };
   ok(!!thread?.id && !!note?.id, "sign-up made an account with a space; a thread and a note were created through the API");
   await ready(p, "first load after sign-up", thread, note);
+  // The first page is closed before the second opens: over plain http a browser allows six connections per host and each open page keeps several streams (account feed, thread feed) on them, so a second tab's calls would queue behind the first tab's streams (a limit of http/1.1, not of the app; https/h2 has none).
+  await p.close();
   const warm = await ctx.newPage();
   await ready(warm, "warm reload (a second page of the same browser)", thread, note);
   await warm.reload({ waitUntil: "domcontentloaded" }); await warm.waitForSelector("html[data-ready]");
