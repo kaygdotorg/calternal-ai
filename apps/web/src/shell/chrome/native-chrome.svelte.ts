@@ -13,6 +13,7 @@ import { accountItems, pickAccountItem } from "../accountMenu";
 import { self } from "../self.svelte";
 import { switcherApps } from "../switcherApps.svelte";
 import { toSchema } from "./encode";
+import { countsOnly, selectionEchoOnly } from "./diff";
 import type { ChromeBody, ChromeDescription, ChromeEvent, ChromeItem, ChromeProvider } from "./types";
 
 
@@ -84,8 +85,16 @@ export function describe(kind: string, body: ChromeBody, scheme: "light" | "dark
   };
 }
 
+/** The row the shell last chose (a `row` event) and when: its selection echo is not worth a full apply, and while rows keep arriving the shell is stepping through the list (a key repeating). */
+let lastRow: { id: string; at: number } | null = null;
+/** A key repeat is over when no row event came for this long. */
+const REPEAT_MS = 400;
+/** While a key repeats, a publication that only moves counts waits so long since the last one that was sent. */
+const COUNT_EVERY_MS = 1000;
+
 /** Routes an event from the shell: the shell's own (app, account, sidebar, search) here, the rest to the app's provider. Returns whether anything answered it. */
 export function routeEvent(kind: string, ev: ChromeEvent): boolean {
+  if (ev.type === "row" && ev.id) { lastRow = { id: ev.id, at: performance.now() }; }
   switch (ev.type) {
     case "app": if (ev.id) navigate(`/${ev.id}`); return true;
     case "account": if (ev.id && pickAccountItem(ev.id)) return true; return false;
@@ -118,7 +127,7 @@ const PENDING_MS = 5000;
 export function startNativeChrome(appKind: () => string): () => void {
   const b = bridge();
   if (!b || !chromeCompatible(b)) return () => {}; // no call, or a contract the shell cannot draw: the page keeps its own chrome
-  let frame = 0, latest: ChromeDescription | null = null, lastSent = "";
+  let frame = 0, latest: ChromeDescription | null = null, lastSent = "", lastWire: ChromeDescription | null = null, lastAt = 0, held = 0;
   const send = async () => {
     frame = 0;
     const d = latest; if (!d) return;
@@ -127,7 +136,16 @@ export function startNativeChrome(appKind: () => string): () => void {
       const wire = toSchema(d) as ChromeDescription;
       const same = JSON.stringify({ ...wire, revision: 0 });
       if (same === lastSent) return; // nothing in the description changed (a republish for a store that moved something not published): send nothing
-      lastSent = same;
+      if (lastWire) {
+        // The shell already shows the selection it made: an echo of only that is recorded as applied and not sent.
+        if (lastRow && performance.now() - lastRow.at < 2000 && selectionEchoOnly(lastWire, wire, lastRow.id)) { lastSent = same; lastWire = wire; return; }
+        // Under churn the counts move several times a second: while the shell steps through the list, a count-only change waits, at most one a second.
+        if (lastRow && performance.now() - lastRow.at < REPEAT_MS && performance.now() - lastAt < COUNT_EVERY_MS && countsOnly(lastWire, wire)) {
+          if (!held) held = window.setTimeout(() => { held = 0; if (!frame) frame = requestAnimationFrame(() => void send()); }, COUNT_EVERY_MS - (performance.now() - lastAt));
+          return;
+        }
+      }
+      lastSent = same; lastWire = wire; lastAt = performance.now();
       const r = await b.chrome!(wire);
       const ms = performance.now() - t0;
       nativeChrome.lat.push(ms); if (nativeChrome.lat.length > 200) nativeChrome.lat.shift();
@@ -158,7 +176,7 @@ export function startNativeChrome(appKind: () => string): () => void {
     if (handled && (ev.type === "row" || ev.type === "app")) nativeChrome.open = false; // choosing something closes the sidebar
   };
   addEventListener("calternal:chrome", onEvent);
-  return () => { removeEventListener("calternal:chrome", onEvent); stop(); if (frame) cancelAnimationFrame(frame); };
+  return () => { removeEventListener("calternal:chrome", onEvent); stop(); clearTimeout(held); if (frame) cancelAnimationFrame(frame); };
 }
 
 /** The most rows sent for a section that is not windowed, and the margin kept around the window the shell shows. */
