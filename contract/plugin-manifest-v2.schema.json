@@ -1,0 +1,280 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://calternal.com/contract/plugin-manifest-v2.schema.json",
+  "title": "Calternal plugin manifest v2",
+  "description": "Review draft for Q1, Q2, Q4, Q6, Q8 and Q9 of docs/plugin-api-v2.md. Validate locally with the versioned contract registry. Uniqueness, references, byte limits, content safety and approval are separate host checks.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["api_version", "id", "name", "version", "icon", "age_rating", "apps", "kinds", "operations", "host_methods"],
+  "properties": {
+    "api_version": { "const": 2 },
+    "id": { "$ref": "#/definitions/localId" },
+    "name": { "$ref": "#/definitions/label" },
+    "version": { "type": "string", "minLength": 5, "maxLength": 64, "description": "Validated as a semantic version by the host." },
+    "icon": { "$ref": "#/definitions/icon" },
+    "age_rating": { "enum": ["all", "13+", "16+", "18+", "unrated"] },
+    "worker": { "$ref": "#/definitions/asset" },
+    "apps": { "type": "array", "maxItems": 16, "items": { "$ref": "#/definitions/app" } },
+    "kinds": { "type": "array", "maxItems": 64, "items": { "$ref": "#/definitions/kind" } },
+    "operations": { "type": "array", "maxItems": 128, "items": { "$ref": "#/definitions/operation" } },
+    "host_methods": {
+      "description": "The host also checks each requested method against the approved scope and operation.",
+      "type": "array", "uniqueItems": true, "maxItems": 64,
+      "items": { "enum": [
+        "read_item", "write_item", "list_items_v1", "list_collection", "search_items",
+        "room_head", "room_hook", "sharing_check", "start_job", "checkpoint_job", "park_job", "job_status",
+        "cancel_job", "read_setting_v1", "set_setting", "request_secret_handle", "content_prepare_v1",
+        "proxy_request", "start_turn", "read_turn", "publish_description", "publish_feed", "storage_get", "storage_apply"
+      ] }
+    },
+    "room_hooks": {
+      "type": "array", "maxItems": 32,
+      "items": {
+        "type": "object", "additionalProperties": false, "required": ["kind", "phase", "operation"],
+        "properties": {
+          "kind": { "$ref": "#/definitions/localId" },
+          "phase": { "const": "post_commit" },
+          "operation": { "$ref": "#/definitions/operationId" }
+        }
+      }
+    },
+    "jobs": { "type": "array", "maxItems": 32, "items": { "$ref": "#/definitions/job" } },
+    "schedules": { "type": "array", "maxItems": 32, "items": { "$ref": "#/definitions/schedule" } },
+    "webhooks": { "type": "array", "maxItems": 32, "items": { "$ref": "#/definitions/webhook" } },
+    "settings": { "type": "array", "maxItems": 64, "items": { "$ref": "#/definitions/setting" } },
+    "secrets": { "type": "array", "maxItems": 32, "items": { "$ref": "#/definitions/secret" } },
+    "network": {
+      "type": "object", "additionalProperties": false, "required": ["destinations"],
+      "properties": {
+        "destinations": {
+          "type": "array", "maxItems": 64,
+          "items": { "oneOf": [
+            { "$ref": "#/definitions/named" }, { "$ref": "#/definitions/media" },
+            { "$ref": "#/definitions/public" }, { "$ref": "#/definitions/private" }
+          ] }
+        }
+      }
+    },
+    "storage": {
+      "type": "object", "additionalProperties": false, "required": ["format", "schema_version", "quota_bytes"],
+      "properties": {
+        "format": { "const": "records-v1" },
+        "schema_version": { "type": "integer", "minimum": 1, "maximum": 2147483647 },
+        "quota_bytes": { "type": "integer", "minimum": 1, "maximum": 16777216 },
+        "max_ttl_seconds": { "type": "integer", "minimum": 1, "maximum": 2592000, "description": "Omit for records without per-record expiry." }
+      }
+    },
+    "gallery": { "$ref": "#/definitions/gallery" }
+  },
+  "definitions": {
+    "localId": { "type": "string", "pattern": "^[a-z][a-z0-9]*(?:[-_][a-z0-9]+)*$", "maxLength": 64 },
+    "operationId": { "type": "string", "pattern": "^[a-z][a-z0-9_-]*(?:\\.[a-z][a-z0-9_-]*)+$", "maxLength": 128 },
+    "label": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "path": { "type": "string", "minLength": 1, "maxLength": 256, "pattern": "^(?!.*(?:^|/)\\.{1,2}(?:/|$))[A-Za-z0-9_-][A-Za-z0-9._-]*(?:/[A-Za-z0-9_-][A-Za-z0-9._-]*)*$" },
+    "asset": {
+      "type": "object", "additionalProperties": false, "required": ["path", "sha256"],
+      "properties": { "path": { "$ref": "#/definitions/path" }, "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" } }
+    },
+    "icon": {
+      "oneOf": [
+        { "$ref": "#/definitions/localId" },
+        { "type": "object", "additionalProperties": false, "required": ["image"],
+          "properties": { "image": { "$ref": "#/definitions/asset" } } }
+      ],
+      "description": "A catalogue icon or a checked bundled PNG/JPEG."
+    },
+    "embeddedSchema": {
+      "description": "An inline Draft 7 schema or boolean. Host compiles it offline using only registered references.",
+      "type": ["object", "boolean"]
+    },
+    "description": {
+      "type": "object", "additionalProperties": false, "required": ["id", "version", "baseline"],
+      "properties": {
+        "id": { "$ref": "#/definitions/localId" },
+        "version": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "baseline": { "$ref": "#/definitions/asset" }
+      }
+    },
+    "app": {
+      "type": "object", "additionalProperties": false, "required": ["id", "name", "icon", "chrome", "content"],
+      "properties": {
+        "id": { "$ref": "#/definitions/localId" },
+        "name": { "$ref": "#/definitions/label" },
+        "icon": { "$ref": "#/definitions/icon" },
+        "chrome": { "$ref": "#/definitions/description" },
+        "content": { "$ref": "#/definitions/description" }
+      }
+    },
+    "kind": {
+      "type": "object", "additionalProperties": false, "required": ["id", "storage", "claimed_text", "schema"],
+      "properties": {
+        "id": { "$ref": "#/definitions/localId" },
+        "storage": { "$ref": "plugin-manifest-v1.schema.json#/definitions/ManifestPlacement" },
+        "claimed_text": { "type": "boolean" },
+        "extension": { "type": "string", "pattern": "^[a-z0-9]{1,16}$" },
+        "schema": { "$ref": "#/definitions/embeddedSchema" },
+        "searchable": { "type": "boolean" },
+        "live_editing": { "type": "boolean" }
+      },
+      "allOf": [
+        { "if": { "properties": { "claimed_text": { "const": false } } }, "then": { "required": ["extension"] },
+          "else": { "properties": { "extension": { "const": "md" } } } },
+        { "if": { "required": ["live_editing"], "properties": { "live_editing": { "const": true } } },
+          "then": { "properties": { "claimed_text": { "const": true } } } }
+      ]
+    },
+    "operation": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "input_schema", "output_schema", "required_capability", "risk", "mutates", "idempotency"],
+      "properties": {
+        "id": { "$ref": "#/definitions/operationId" },
+        "input_schema": { "$ref": "#/definitions/embeddedSchema" },
+        "output_schema": { "$ref": "#/definitions/embeddedSchema" },
+        "required_capability": { "$ref": "plugin-manifest-v1.schema.json#/definitions/ManifestCapability" },
+        "risk": { "$ref": "plugin-manifest-v1.schema.json#/definitions/OperationRisk" },
+        "mutates": { "type": "boolean" },
+        "idempotency": { "$ref": "plugin-manifest-v1.schema.json#/definitions/ManifestIdempotency" },
+        "target_kind": { "$ref": "#/definitions/localId", "description": "Optional kind for an item-targeted operation; the host resolves its address." }
+      },
+      "if": { "properties": { "risk": { "const": "read" } } },
+      "then": { "properties": { "mutates": { "const": false }, "idempotency": { "const": "read_only" } } },
+      "else": { "properties": { "mutates": { "const": true }, "idempotency": { "enum": ["request_id", "never"] } } }
+    },
+    "wait": {
+      "type": "object", "additionalProperties": false, "required": ["kind"],
+      "properties": {
+        "kind": { "enum": ["question", "approval", "webhook", "deadline"] },
+        "schema_operation": { "$ref": "#/definitions/operationId" },
+        "route": { "$ref": "#/definitions/localId" }
+      },
+      "allOf": [
+        { "if": { "properties": { "kind": { "const": "question" } } }, "then": { "required": ["schema_operation"] },
+          "else": { "not": { "required": ["schema_operation"] } } },
+        { "if": { "properties": { "kind": { "const": "webhook" } } }, "then": { "required": ["route"] },
+          "else": { "not": { "required": ["route"] } } }
+      ]
+    },
+    "job": {
+      "type": "object", "additionalProperties": false, "required": ["id", "run_operation", "replayable"],
+      "properties": {
+        "id": { "$ref": "#/definitions/localId" },
+        "run_operation": { "$ref": "#/definitions/operationId" },
+        "replayable": { "type": "boolean" },
+        "waits": { "type": "array", "maxItems": 32, "uniqueItems": true, "items": { "$ref": "#/definitions/wait" } }
+      },
+      "if": { "properties": { "replayable": { "const": false } } },
+      "then": { "properties": { "waits": { "maxItems": 0 } } }
+    },
+    "schedule": {
+      "type": "object", "additionalProperties": false, "required": ["id", "operation"],
+      "properties": {
+        "id": { "$ref": "#/definitions/localId" },
+        "operation": { "$ref": "#/definitions/operationId" },
+        "default_calendar": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "description": { "$ref": "#/definitions/label" }
+      }
+    },
+    "webhook": {
+      "type": "object", "additionalProperties": false, "required": ["id", "schema_operation", "signing_secret"],
+      "properties": {
+        "id": { "$ref": "#/definitions/localId" },
+        "schema_operation": { "$ref": "#/definitions/operationId" },
+        "signing_secret": { "$ref": "#/definitions/localId" },
+        "dispatch_operation": { "$ref": "#/definitions/operationId", "description": "Omit for wait-delivery-only routes." }
+      }
+    },
+    "setting": {
+      "type": "object", "additionalProperties": false, "required": ["key", "scope", "value_schema", "default"],
+      "properties": {
+        "key": { "$ref": "#/definitions/localId" },
+        "scope": { "enum": ["personal", "space"] },
+        "value_schema": { "$ref": "#/definitions/embeddedSchema" },
+        "default": {},
+        "label": { "$ref": "#/definitions/label" }
+      }
+    },
+    "secret": {
+      "type": "object", "additionalProperties": false, "required": ["name", "label", "purpose", "scope", "required"],
+      "properties": {
+        "name": { "$ref": "#/definitions/localId" }, "label": { "$ref": "#/definitions/label" },
+        "purpose": { "type": "string", "minLength": 1, "maxLength": 1024 },
+        "scope": { "enum": ["personal", "space"] }, "required": { "type": "boolean" }
+      }
+    },
+    "hosts": {
+      "type": "array", "minItems": 1, "maxItems": 64, "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1, "maxLength": 253, "description": "Checked and normalized by netguard." }
+    },
+    "ports": {
+      "type": "array", "minItems": 1, "maxItems": 32, "uniqueItems": true,
+      "items": { "type": "integer", "minimum": 1, "maximum": 65535 }
+    },
+    "named": {
+      "type": "object", "additionalProperties": false, "required": ["kind", "id", "hosts", "ports", "protocol"],
+      "properties": {
+        "kind": { "const": "named_connection" },
+        "id": { "$ref": "#/definitions/localId" }, "hosts": { "$ref": "#/definitions/hosts" },
+        "ports": { "$ref": "#/definitions/ports" }, "protocol": { "enum": ["https", "imap", "jmap", "smtp", "tcp"] },
+        "secret": { "$ref": "#/definitions/localId" }
+      }
+    },
+    "media": {
+      "type": "object", "additionalProperties": false, "required": ["kind", "id", "profile", "sources"],
+      "properties": {
+        "kind": { "const": "content_fetch" }, "id": { "$ref": "#/definitions/localId" },
+        "profile": { "const": "images_fonts" }, "hosts": { "$ref": "#/definitions/hosts" },
+        "any_public": { "const": true },
+        "sources": {
+          "type": "array", "minItems": 1, "maxItems": 32, "uniqueItems": true,
+          "items": {
+            "type": "object", "additionalProperties": false, "required": ["kind", "field"],
+            "properties": { "kind": { "$ref": "#/definitions/localId" }, "field": { "const": "text" } }
+          }
+        }
+      },
+      "oneOf": [{ "required": ["hosts"] }, { "required": ["any_public"] }]
+    },
+    "public": {
+      "type": "object", "additionalProperties": false, "required": ["kind", "id", "ports"],
+      "properties": {
+        "kind": { "const": "open_internet" }, "id": { "$ref": "#/definitions/localId" },
+        "hosts": { "$ref": "#/definitions/hosts" }, "any_public": { "const": true },
+        "ports": { "$ref": "#/definitions/ports" }
+      },
+      "oneOf": [{ "required": ["hosts"] }, { "required": ["any_public"] }]
+    },
+    "private": {
+      "type": "object", "additionalProperties": false, "required": ["kind", "id", "origin", "ports"],
+      "properties": {
+        "kind": { "const": "private_network" }, "id": { "$ref": "#/definitions/localId" },
+        "origin": { "enum": ["approved_server_route", "approved_space_machine"] },
+        "ports": { "$ref": "#/definitions/ports" }, "hosts": { "$ref": "#/definitions/hosts" },
+        "ranges": { "type": "array", "minItems": 1, "maxItems": 32, "uniqueItems": true,
+          "items": { "type": "string", "maxLength": 49, "pattern": "^[0-9A-Fa-f:.]+/[0-9]{1,3}$" } }
+      },
+      "anyOf": [{ "required": ["hosts"] }, { "required": ["ranges"] }]
+    },
+    "gallery": {
+      "type": "object", "additionalProperties": false,
+      "required": ["author", "summary", "description", "source", "license", "permissions", "screenshots"],
+      "properties": {
+        "author": { "$ref": "#/definitions/label" },
+        "summary": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "description": { "type": "string", "minLength": 1, "maxLength": 8192 },
+        "source": { "type": "string", "maxLength": 1024, "pattern": "^https://[^?#]+$" },
+        "license": { "$ref": "#/definitions/label" },
+        "permissions": { "type": "string", "minLength": 1, "maxLength": 8192 },
+        "screenshots": {
+          "type": "array", "minItems": 1, "maxItems": 3,
+          "items": {
+            "type": "object", "additionalProperties": false, "required": ["file", "caption"],
+            "properties": {
+              "file": { "type": "string", "pattern": "^[A-Za-z0-9_-]{1,64}\\.png$" },
+              "caption": { "type": "string", "minLength": 1, "maxLength": 256 }
+            }
+          }
+        }
+      }
+    }
+  }
+}
