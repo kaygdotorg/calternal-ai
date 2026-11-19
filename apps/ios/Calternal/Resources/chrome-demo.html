@@ -43,25 +43,25 @@
   };
   const shown = () => store.threads.filter(t => (store.filter === 'all' || t.unread) && t.title.toLowerCase().includes(store.query.toLowerCase()))
     .sort((a, b) => b.pinned - a.pinned);
-  const row = (t) => ({ id: t.id, title: t.title, detail: t.time, selected: t.id === store.selected, trailing: [...(t.unread ? [{ kind: 'dot' }] : []), ...(t.id === 't2' ? [{ kind: 'symbol', value: 'exclamationmark.triangle', tone: 'warn' }] : [])],
-    icon: t.pinned ? { symbol: 'pin.fill' } : undefined,
-    leadingActions: [{ id: 'pin', title: t.pinned ? 'Unpin' : 'Pin', symbol: 'pin' }],
-    trailingActions: [{ id: 'archive', title: 'Archive', symbol: 'archivebox', role: 'destructive' }, { id: 'read', title: t.unread ? 'Mark read' : 'Mark unread', symbol: 'envelope.badge' }],
-    menu: [{ id: 'rename', title: 'Rename', symbol: 'pencil', input: { placeholder: 'Name', value: t.title } }, { id: 'pin', title: 'Pin', symbol: 'pin' }, { id: 'archive', title: 'Archive', symbol: 'archivebox', role: 'destructive' }] });
+  const row = (t) => ({ id: t.id, title: t.title, detail: t.time, selected: t.id === store.selected, trailing: [...(t.unread ? [{ kind: 'dot' }] : []), ...(t.id === 't2' ? [{ kind: 'icon', value: 'warning', tone: 'warn' }] : [])],
+    icon: t.pinned ? 'spark' : undefined,
+    leadingActions: [{ id: 'pin', title: t.pinned ? 'Unpin' : 'Pin', icon: 'spark' }],
+    trailingActions: [{ id: 'archive', title: 'Archive', icon: 'trash', role: 'destructive' }, { id: 'read', title: t.unread ? 'Mark read' : 'Mark unread', icon: 'mail' }],
+    menu: [{ id: 'rename', title: 'Rename', icon: 'edit', input: { placeholder: 'Name', value: t.title } }, { id: 'pin', title: 'Pin', icon: 'spark' }, { id: 'archive', title: 'Archive', icon: 'trash', role: 'destructive' }] });
   const noteOffset = () => Math.max(0, store.win.from - 20);
   const noteRows = () => { const o = noteOffset(), n = Math.min(5000, store.win.to + 20) - o + 1; return Array.from({ length: Math.max(0, n) }, (_, i) => ({ id: 'n' + (o + i), title: 'Note ' + (o + i + 1), detail: 'windowed' })); };
   const describe = () => ({
     version: 1, revision: ++store.revision, scheme: 'dark', accent: '#d9822b',
     header: { title: (store.threads.find(t => t.id === store.selected) || { title: 'Threads' }).title,
-      trailing: [{ id: 'more', title: 'More', symbol: 'ellipsis', menu: [{ id: 'rename', title: 'Rename', symbol: 'pencil' }, { id: 'share', title: 'Share', symbol: 'square.and.arrow.up' }, { id: 'archive', title: 'Archive', symbol: 'archivebox', role: 'destructive' }] }] },
+      trailing: [{ id: 'more', title: 'More', icon: 'more', menu: [{ id: 'rename', title: 'Rename', icon: 'edit' }, { id: 'share', title: 'Share', icon: 'share' }, { id: 'archive', title: 'Archive', icon: 'trash', role: 'destructive' }] }] },
     sidebar: { open: store.open, title: 'Calternal', refresh: true,
-      cards: store.card ? [{ id: 'wait1', title: 'Passkey needs your approval', detail: 'The dev VM is asking to continue.', tone: 'warn', icon: { symbol: 'exclamationmark.triangle' }, primary: { id: 'approve', title: 'Approve' }, secondary: { id: 'deny', title: 'Deny' } }] : [],
+      cards: store.card ? [{ id: 'wait1', title: 'Passkey needs your approval', detail: 'The dev VM is asking to continue.', tone: 'warn', icon: 'warning', primary: { id: 'approve', title: 'Approve' }, secondary: { id: 'deny', title: 'Deny' } }] : [],
       selectors: [{ id: 'filter', options: [{ id: 'inbox', title: 'Inbox', badge: String(store.threads.filter(t => t.unread).length) }, { id: 'all', title: 'All Threads' }], selected: store.filter }],
-      sections: [{ id: 'main', rows: [{ id: 'new', title: 'New thread', icon: { symbol: 'plus' } }, { id: 'automations', title: 'Automations', icon: { symbol: 'clock' } }, { id: 'skills', title: 'Skills', icon: { symbol: 'wrench' } }] },
-        { id: 'threads', title: 'Threads', actions: [{ id: 'add', title: 'New thread', symbol: 'plus' }], menu: [{ id: 'read-all', title: 'Mark all read', symbol: 'checkmark.circle' }], rows: shown().map(row) },
+      sections: [{ id: 'main', rows: [{ id: 'new', title: 'New thread', icon: { icon: 'plus' } }, { id: 'automations', title: 'Automations', icon: 'pulse' }, { id: 'skills', title: 'Skills', icon: 'terminal' }] },
+        { id: 'threads', title: 'Threads', actions: [{ id: 'add', title: 'New thread', icon: 'plus' }], menu: [{ id: 'read-all', title: 'Mark all read', icon: 'check' }], rows: shown().map(row) },
         { id: 'notes', title: 'Notes (5000)', count: 5000, offset: noteOffset(), rows: noteRows() }],
-      apps: [{ id: 'threads', title: 'Threads', symbol: 'bubble.left', selected: true }, { id: 'notes', title: 'Notes', symbol: 'doc.text' }, { id: 'settings', title: 'Settings', symbol: 'gearshape' }],
-      account: { id: 'account', initial: 'K', title: 'Account', menu: [{ id: 'space-personal', title: 'Personal', checked: true, sub: 'kayg' }, { id: 'settings', title: 'Settings', symbol: 'gearshape' }, { id: 'signout', title: 'Sign out', symbol: 'rectangle.portrait.and.arrow.right', role: 'destructive' }] }, search: { placeholder: 'Search threads' } },
+      apps: [{ id: 'threads', title: 'Threads', icon: 'threads', selected: true }, { id: 'notes', title: 'Notes', icon: 'notes' }, { id: 'settings', title: 'Settings', icon: 'settings' }],
+      account: { id: 'account', initial: 'K', title: 'Account', menu: [{ id: 'space-personal', title: 'Personal', checked: true, sub: 'kayg' }, { id: 'settings', title: 'Settings', icon: 'settings' }, { id: 'signout', title: 'Sign out', icon: 'back', role: 'destructive' }] }, search: { placeholder: 'Search threads' } },
   });
   let native = false;
   async function publish() {

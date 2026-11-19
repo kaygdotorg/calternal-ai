@@ -55,7 +55,7 @@ public struct ShellView: View {
 }
 
 /// The wallpaper's side copy over the whole window with the veil of each flat sidebar over its own region. Without a wallpaper yet, the flat backdrop colour.
-private struct Backdrop: View {
+struct Backdrop: View {
     let model: WallpaperModel
     let size: CGSize
     let sideWidth: CGFloat, rightWidth: CGFloat
@@ -77,7 +77,7 @@ private struct Backdrop: View {
 }
 
 /// The ink a flat sidebar uses: its solved secondary inks, and the other scheme's colours when the veil flipped it.
-private extension View {
+extension View {
     func sidebarInk(_ veil: Veil?, scheme: ColorScheme) -> some View {
         environment(\.surfaceInk, veil.map { SurfaceInk(ink2: $0.ink2, ink3: $0.ink3) })
             .environment(\.colorScheme, veil.map { $0.dark ? .dark : .light } ?? scheme)
@@ -179,7 +179,7 @@ private struct PhoneLayout: View {
 }
 
 /// The wallpaper copy and veil under the right sidebar once it has slid over the card: the same picture, aligned to the window.
-private struct WallpaperBackdropFlat: View {
+struct WallpaperBackdropFlat: View {
     let wallpaper: Wallpaper
     let veil: Veil?
     let size: CGSize

@@ -38,11 +38,6 @@ enum ShellConfig {
     /// `-CalternalNativeChrome YES`, or the switch in iOS Settings > Calternal). Off by default.
     static var nativeChrome: Bool { UserDefaults.standard.bool(forKey: "CalternalNativeChrome") }
 
-    /// Whether the native sidebar floats over the full-screen web view (the page moves its own card
-    /// from `--sidebar-p`) instead of sliding the card (launch argument `-CalternalChromeFloating YES`,
-    /// or the switch in iOS Settings > Calternal). Only meaningful with `nativeChrome`.
-    static var chromeFloating: Bool { UserDefaults.standard.bool(forKey: "CalternalChromeFloating") }
-
     /// True if `url` belongs to the web app and stays inside the shell; other sites open in Safari.
     /// The app's own hosts are the start address's host and `calternal.cloud` with its subdomains
     /// (`preview.calternal.cloud`). Bundled pages (`file:`) are always inside.

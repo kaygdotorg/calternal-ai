@@ -1,3 +1,4 @@
+import CalternalUI
 import UIKit
 import WebKit
 import os
@@ -21,7 +22,7 @@ final class ShellViewController: UIViewController {
     private var pendingRestore = false
     var nativeBar: NativeBar?
     /// The experimental native chrome, present while the page publishes a chrome description.
-    var chromeLayout: ChromeLayout?
+    var chromeHost: ChromeHost?
 
     init() {
         let config = WKWebViewConfiguration()
@@ -244,13 +245,13 @@ final class ShellViewController: UIViewController {
     func setChrome(_ object: Any?, reply: @escaping @MainActor (Any?, String?) -> Void) {
         guard ShellConfig.nativeChrome else { return reply(["native": false], nil) }
         guard let object, !(object is NSNull) else {
-            chromeLayout?.tearDown(); chromeLayout = nil
+            chromeHost?.tearDown(); chromeHost = nil
             return reply(["native": false], nil)
         }
         do {
             let description = try ChromeDescription.decode(object)
-            if let layout = chromeLayout { layout.update(description) } else {
-                chromeLayout = ChromeLayout(shell: self, description: description)
+            if let host = chromeHost { host.update(description) } else {
+                chromeHost = ChromeHost(shell: self, description: description)
             }
             reply(["native": true], nil)
         } catch {
@@ -259,7 +260,7 @@ final class ShellViewController: UIViewController {
     }
 
     /// VoiceOver escape (two-finger Z): closes the native sidebar when it is open.
-    override func accessibilityPerformEscape() -> Bool { chromeLayout?.accessibilityEscape() ?? false }
+    override func accessibilityPerformEscape() -> Bool { chromeHost?.closeSidebar() ?? false }
 
     /// Delivers a native event to the page (e.g. `calternal:bar`).
     func dispatch(event: String, detail: String) {

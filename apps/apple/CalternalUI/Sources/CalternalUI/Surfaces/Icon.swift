@@ -5,6 +5,7 @@ import SwiftUI
 public enum IconName: String, CaseIterable, Sendable {
     case threads, notes, tasks, files, search, plus, close, check, chevron, up, down, back, more, sidebar, sidebarRight, apps, settings, terminal, file, folder
     case code, table, pulse, changes, branch, spark, send, stop, play, lock, key, shield, bell, warning, info, person, copy, reply, mail
+    case trash, edit, share, question, claude, codex
 
     /// The SF Symbol drawn for the name.
     public var symbol: String {
@@ -48,6 +49,12 @@ public enum IconName: String, CaseIterable, Sendable {
         case .copy: "doc.on.doc"
         case .reply: "arrowshape.turn.up.left"
         case .mail: "envelope"
+        case .trash: "trash"
+        case .edit: "pencil"
+        case .share: "square.and.arrow.up"
+        case .question: "questionmark.circle"
+        case .claude: "sparkle"
+        case .codex: "chevron.left.forwardslash.chevron.right"
         }
     }
 }
