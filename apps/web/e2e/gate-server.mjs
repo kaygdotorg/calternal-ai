@@ -2,7 +2,7 @@
 // Runs the suites one after another (each starts its own server) on free ports, each under a timeout, one line per suite, exit 1 on any failure, headless, no timing judgements (CAL_GATE=1 keeps the performance checks from judging).
 // Usage: `CALTERNAL_SERVER_BIN=/path/to/calternal npm run e2e:server -w apps/web` (the binary must be built with `--features test-plugins`, which the plugin-prompt suite needs; run it on the machine where the server is built, dev-01), or without the variable it builds the server itself (`cargo build -p calternal-server --bin calternal --features test-plugins`) and the app. `dist/` is built when it is missing. Name suites to run only those: `npm run e2e:server -w apps/web -- startup-ready`.
 import { execFileSync, spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync, statSync } from "node:fs";
 import { createServer } from "node:net";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -29,7 +29,10 @@ if (!existsSync(join(root, "plugins", "calternal-claude-code", "dist", "main.js"
   console.log("building the Claude Code adapter ...");
   for (const w of ["@calternal/plugin-sdk", "@calternal/claude-code"]) execFileSync("npm", ["run", "build", "--workspace", w], { cwd: root, stdio: "inherit" });
 }
-if (!existsSync(join(here, "..", "dist", "index.html"))) { console.log("building the app ..."); execFileSync("npm", ["run", "build"], { cwd: join(here, ".."), stdio: "inherit" }); }
+// dist is rebuilt when any source file is newer than it (a stale dist once made a client bug look like a server one).
+const newest = (dir) => { let t = 0; for (const e of readdirSync(dir, { withFileTypes: true })) { const p = join(dir, e.name); t = Math.max(t, e.isDirectory() ? newest(p) : statSync(p).mtimeMs); } return t; };
+const distAt = existsSync(join(here, "..", "dist", "index.html")) ? statSync(join(here, "..", "dist", "index.html")).mtimeMs : 0;
+if (!distAt || newest(join(here, "..", "src")) > distAt || newest(join(root, "packages", "ui", "src")) > distAt) { console.log("building the app ..."); execFileSync("npm", ["run", "build"], { cwd: join(here, ".."), stdio: "inherit" }); }
 
 const only = process.argv.slice(2);
 let failed = 0;
