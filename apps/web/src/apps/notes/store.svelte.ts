@@ -91,7 +91,8 @@ class NotesStore {
     if (!n || !this.space) return;
     try {
       const latest = await this.client.get(this.space.id, n.id);
-      if (latest.revision === n.revision) return;
+      // The read took a while: the open note may have been saved (or changed) meanwhile, so compare with the note as it is NOW (this person's own save, whose journal entry started this read, is not a change from elsewhere).
+      if (this.note?.id !== n.id || latest.revision === this.note.revision) return;
       if (this.saveState === "saved") { this.note = latest; this.show(latest); await this.reloadInput(); }
       else if (this.saveState !== "saving") { this.conflict = latest; this.saveState = "conflict"; }
     } catch { /* gone or away: the list refresh and the banner tell it */ }
