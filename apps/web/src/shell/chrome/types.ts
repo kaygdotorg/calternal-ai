@@ -23,21 +23,19 @@ export interface ChromeRow {
 }
 
 /** A titled (or untitled: `title` null) group of rows that can fold. */
-export interface ChromeSection { id: string; title: string | null; collapsed?: boolean; menu?: ChromeItem[]; actions?: ChromeItem[]; rows: ChromeRow[] }
+/** `count` and `offset` make `rows` a window of a longer list (rows are then one fixed height): the shell asks for the part it shows with a `window` event. */
+export interface ChromeSection { id: string; title: string | null; collapsed?: boolean; menu?: ChromeItem[]; actions?: ChromeItem[]; rows: ChromeRow[]; count?: number; offset?: number }
 
 /** A segmented choice above the lists (Inbox, All Threads). */
 export interface ChromeSelector { id: string; selected: string; options: { id: string; title: string; badge?: ChromeBadge }[] }
 
-/** The person's look, published so the shell can paint the wallpaper, the veils and the accent itself. `wallpaper` is a library id, `auto` or null (none); `url` is the picture's address when the page can give one (the built-in library). Each veil is `[r, g, b, a]` (0 to 255, alpha 0 to 1) per layer. */
-export interface ChromeAppearance {
-  wallpaper: { id: string | null; url?: string }; blur: boolean; dim: boolean; tint: boolean; clarity: number | null; scheme: "light" | "dark"; accent?: string; uiScale: number;
-  veils?: Record<"side" | "card", { tint: [number, number, number, number]; dim: [number, number, number, number]; ink2?: string; ink3?: string }>;
-}
+/** The person's look, published so the shell can paint the wallpaper and the glass natively (contract/chrome-v1.schema.json): `wallpaper` is `auto`, a name the shell knows (`dune`, `aurora`, `ember`) or a library id (then `image` carries the picture once, as a PNG or JPEG data URL, and the shell blurs and solves the veils itself), or null for none. */
+export interface ChromeAppearance { wallpaper: string | null; blur: boolean; dim: boolean; tint: boolean; uiSize: number; image?: string }
 
 /** The whole description. */
 export interface ChromeDescription {
   version: 1; revision: number; scheme: "light" | "dark"; accent?: string;
-  /** What the shell needs to draw the wallpaper and the glass natively: the picture, the switches, the solved veils (see `appearance.ts`). */
+  /** What the shell needs to paint the wallpaper and the glass natively (see `appearance.ts`). */
   appearance?: ChromeAppearance;
   header: { leading?: ChromeItem[]; title: string; trailing?: ChromeItem[] };
   sidebar: {
@@ -53,7 +51,7 @@ export interface ChromeDescription {
 export interface ChromeBody { header: ChromeDescription["header"]; selectors: ChromeSelector[]; sections: ChromeSection[]; search: { placeholder: string } }
 
 /** An event from the shell. */
-export interface ChromeEvent { type: "row" | "action" | "menu" | "selector" | "app" | "header" | "account" | "search" | "section" | "sidebar" | "refresh"; id?: string; rowId?: string; option?: string; text?: string; open?: boolean; revision: number; sentAt: number }
+export interface ChromeEvent { type: "row" | "action" | "menu" | "selector" | "app" | "header" | "account" | "search" | "section" | "sidebar" | "refresh" | "window"; id?: string; rowId?: string; option?: string; text?: string; open?: boolean; from?: number; to?: number; revision: number; sentAt: number }
 
 /** An app's side of the contract: what it publishes and how it answers events it owns (`row`, `action`, `menu`, `selector`, `section`, `header`, `refresh`). */
 export interface ChromeProvider {

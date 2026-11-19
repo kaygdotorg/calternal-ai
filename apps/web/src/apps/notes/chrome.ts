@@ -5,6 +5,7 @@
  */
 import { toast } from "@calternal/ui";
 import { navigate, route, segments } from "../../lib/route.svelte";
+import { windowed } from "../../shell/chrome/native-chrome.svelte";
 import type { ChromeBadge, ChromeBody, ChromeEvent, ChromeItem, ChromeProvider, ChromeRow, ChromeSection } from "../../shell/chrome/types";
 import { collectionList } from "./share/collections-list.svelte";
 import { incoming, incomingCollections } from "./share/incoming.svelte";
@@ -23,7 +24,7 @@ export const notesChrome: ChromeProvider = {
     const noteRow = (id: string, title: string, over: Partial<ChromeRow> = {}): ChromeRow => ({ id, title, icon: "notes", selected: current === id, ...over });
     const sections: ChromeSection[] = [
       { id: "top", title: null, rows: [{ id: "new", title: "New note", icon: "plus" }, { id: "trash", title: "Trash", icon: "trash", selected: route.path.startsWith("/notes") && route.query.get("view") === "trash" }] },
-      { id: "notes", title: notes.space?.name ?? "Notes", rows: notes.list.filter((n) => match(n.title)).map((n) => noteRow(n.id, n.title, { trailingActions: [{ id: "trash", title: "Move to Trash", icon: "trash", role: "destructive" }], menu: noteMenu(n.title) })) },
+      { id: "notes", title: notes.space?.name ?? "Notes", ...windowed("notes", notes.list.filter((n) => match(n.title)).map((n) => noteRow(n.id, n.title, { trailingActions: [{ id: "trash", title: "Move to Trash", icon: "trash", role: "destructive" }], menu: noteMenu(n.title) }))) },
     ];
     const cols = collectionList.items.filter((c) => match(c.title));
     if (cols.length) sections.push({ id: "collections", title: "Collections", rows: cols.map((c) => ({ id: `c:${c.id}`, title: c.title, icon: "folder", selected: route.path === `/collections/${c.id}` })) });
@@ -52,6 +53,7 @@ export const notesChrome: ChromeProvider = {
         return true;
       }
       case "header": if (ev.id === "share" && notes.note) openShare({ kind: "notes", id: notes.note.id }, notes.note.title, null); return true;
+      case "window": if (ev.id === "notes" && ev.to !== undefined && ev.to >= notes.list.length - 40) void notes.notePages.next(); return true;
       case "refresh": void notes.refresh(); return true;
       default: return false;
     }

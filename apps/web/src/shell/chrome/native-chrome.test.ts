@@ -110,20 +110,31 @@ describe("native chrome: the Notes and Settings providers", () => {
   });
 });
 
-describe("native chrome: the appearance the shell paints with", () => {
-  test("publishes the wallpaper, the switches, the scheme and the scale (and the solved veils when there are any)", async () => {
+describe("native chrome: the appearance and the schema form", () => {
+  test("the appearance is the schema's: a wallpaper name, the three switches, the scale (a library picture is read once as a data URL)", async () => {
     const { appearanceOf } = await import("./appearance");
-    document.documentElement.style.setProperty("--l-tint", "20 30 40"); document.documentElement.style.setProperty("--l-tint-a", "0.35");
-    document.documentElement.style.setProperty("--l-dim", "10 10 10"); document.documentElement.style.setProperty("--l-dim-a", "0.5");
-    document.documentElement.style.setProperty("--c-tint", "50 60 70"); document.documentElement.style.setProperty("--c-tint-a", "0.8");
-    document.documentElement.style.setProperty("--c-dim", "255 255 255"); document.documentElement.style.setProperty("--c-dim-a", "0.6");
-    const a = appearanceOf("dark");
-    expect(a.scheme).toBe("dark");
+    const a = appearanceOf(() => {});
+    expect(["string", "object"]).toContain(typeof a.wallpaper); // a name, or null for none
     expect(typeof a.blur).toBe("boolean");
-    expect(a.uiScale).toBeGreaterThan(0);
-    expect(a.veils!.side.tint).toEqual([20, 30, 40, 0.35]);
-    expect(a.veils!.card.dim).toEqual([255, 255, 255, 0.6]);
-    for (const n of ["--l-tint", "--l-tint-a", "--l-dim", "--l-dim-a", "--c-tint", "--c-tint-a", "--c-dim", "--c-dim-a"]) document.documentElement.style.removeProperty(n);
-    expect(appearanceOf("light").veils).toBeUndefined();
+    expect(a.uiSize).toBeGreaterThan(0);
+  });
+  test("the encoder keeps icons as names, badge values as strings, and windows a long section with count and offset", async () => {
+    const { toSchema } = await import("./encode");
+    const d = { version: 1 as const, revision: 3, scheme: "dark" as const, header: { title: "T" }, sidebar: { open: false, title: "C", selectors: [{ id: "f", selected: "a", options: [{ id: "a", title: "A", badge: { kind: "count" as const, value: 5 } }] }], sections: [{ id: "s", title: null, rows: [{ id: "r", title: "R", icon: "claude", trailing: [{ kind: "icon" as const, icon: "question", tone: "info" as const }, { kind: "count" as const, value: 2 }] }], count: 500, offset: 40 }], apps: [{ id: "threads", title: "Threads", icon: "threads", selected: true }], account: { id: "account", initial: "K", title: "Kay" }, search: { placeholder: "Search" } } };
+    const out = toSchema(d) as { sidebar: { sections: { title?: string; count: number; offset: number; rows: { icon: string; trailing: { kind: string; value: string }[] }[] }[]; selectors: { options: { badge: string }[] }[] } };
+    expect(out.sidebar.sections[0]!.title).toBeUndefined();
+    expect(out.sidebar.sections[0]!.rows[0]!.icon).toBe("claude");
+    expect(out.sidebar.sections[0]!.rows[0]!.trailing).toEqual([{ kind: "icon", value: "question", tone: "info" }, { kind: "count", value: "2" }]);
+    expect([out.sidebar.sections[0]!.count, out.sidebar.sections[0]!.offset]).toEqual([500, 40]);
+    expect(out.sidebar.selectors[0]!.options[0]!.badge).toBe("5");
+  });
+  test("a long section is sent as the window the shell asked for plus a margin", async () => {
+    const { windowed } = await import("./native-chrome.svelte");
+    const all = Array.from({ length: 300 }, (_, i) => i);
+    nativeChrome.windows = { s: [100, 130] };
+    const w = windowed("s", all);
+    expect(w.count).toBe(300); expect(w.offset).toBe(80); expect(w.rows[0]).toBe(80); expect(w.rows.length).toBe(70);
+    expect(windowed("short", all.slice(0, 10)).count).toBeUndefined();
+    nativeChrome.windows = {};
   });
 });

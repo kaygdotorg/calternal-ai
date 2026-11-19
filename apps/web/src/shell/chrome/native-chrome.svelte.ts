@@ -12,11 +12,10 @@ import { appearanceOf } from "./appearance";
 import { accountItems, pickAccountItem } from "../accountMenu";
 import { self } from "../self.svelte";
 import { switcherApps } from "../switcherApps.svelte";
-import { toDraft1 } from "./draft1";
+import { toSchema } from "./encode";
+import { imageSent } from "./appearance";
 import type { ChromeBody, ChromeDescription, ChromeEvent, ChromeItem, ChromeProvider } from "./types";
 
-/** Which form of the contract the shell decodes: "draft-1" (the first draft, reduced by `draft1.ts`) until the shell takes the agreed fields, then "v2" (the full description). */
-export const CONTRACT: "draft-1" | "v2" = "draft-1";
 
 interface Bridge { chrome?: (d: ChromeDescription | null) => Promise<{ native: boolean }>; log?: (s: string) => unknown }
 const bridge = (): Bridge | undefined => (typeof window === "undefined" ? undefined : (window as unknown as { calternalNative?: Bridge }).calternalNative);
@@ -31,6 +30,10 @@ class NativeChrome {
   open = $state(false);
   /** The text in the native search field. */
   query = $state("");
+  /** Bumped when something the description reads outside the stores has arrived (a wallpaper picture): the publisher then builds it again. */
+  tick = $state(0);
+  /** The part of each long section the shell shows, by section id (`window` events): `[from, to]` row indexes. */
+  windows = $state<Record<string, [number, number]>>({});
   /** Round trips of publications in milliseconds, newest last (at most 200), for the measurement. */
   lat: number[] = [];
   private revision = 0;
@@ -51,7 +54,7 @@ const toItem = (m: { id: string; label: string; sub?: string; icon?: string; dan
 /** The whole description for the current state of the stores: the app's body from its provider, and the shell's parts. Reads reactive state, so call it inside an effect. */
 export function describe(kind: string, body: ChromeBody, scheme: "light" | "dark", revision: number): ChromeDescription {
   return {
-    version: 1, revision, scheme, accent: accentOf(), appearance: appearanceOf(scheme),
+    version: 1, revision, scheme, accent: accentOf(), appearance: appearanceOf(() => { nativeChrome.tick++; }),
     header: body.header,
     sidebar: {
       open: nativeChrome.open, title: appearance.prefs.brand,
@@ -70,6 +73,7 @@ export function routeEvent(kind: string, ev: ChromeEvent): boolean {
     case "account": if (ev.id && pickAccountItem(ev.id)) return true; return false;
     case "sidebar": nativeChrome.open = !!ev.open; return true;
     case "search": nativeChrome.query = ev.text ?? ""; return true;
+    case "window": if (ev.id && ev.from !== undefined && ev.to !== undefined) { nativeChrome.windows = { ...nativeChrome.windows, [ev.id]: [ev.from, ev.to] }; return nativeChrome.providerFor(kind)?.handle(ev) ?? true; } return true;
     case "menu": if (ev.id && !ev.rowId && pickAccountItem(ev.id)) return true; break;
   }
   return nativeChrome.providerFor(kind)?.handle(ev) ?? false;
@@ -88,7 +92,8 @@ export function startNativeChrome(appKind: () => string): () => void {
     const d = latest; if (!d) return;
     const t0 = performance.now();
     try {
-      const r = await b.chrome!((CONTRACT === "draft-1" ? toDraft1(d) : d) as ChromeDescription);
+      const r = await b.chrome!(toSchema(d) as ChromeDescription);
+      if (d.appearance?.image) imageSent(d.appearance.wallpaper);
       const ms = performance.now() - t0;
       nativeChrome.lat.push(ms); if (nativeChrome.lat.length > 200) nativeChrome.lat.shift();
       (window as unknown as { __chromeStats?: unknown }).__chromeStats = { published: d.revision, last: Math.round(ms * 10) / 10, avg: Math.round((nativeChrome.lat.reduce((x, y) => x + y, 0) / nativeChrome.lat.length) * 10) / 10 };
@@ -100,6 +105,7 @@ export function startNativeChrome(appKind: () => string): () => void {
     $effect(() => {
       const kind = appKind(), p = nativeChrome.providerFor(kind);
       if (!p) return;
+      void nativeChrome.tick;
       const body = p.describe(nativeChrome.query);
       const scheme = (document.documentElement.dataset.scheme === "dark" ? "dark" : "light") as "light" | "dark";
       latest = describe(kind, body, scheme, nativeChrome.nextRevision());
@@ -114,4 +120,17 @@ export function startNativeChrome(appKind: () => string): () => void {
   };
   addEventListener("calternal:chrome", onEvent);
   return () => { removeEventListener("calternal:chrome", onEvent); stop(); if (frame) cancelAnimationFrame(frame); };
+}
+
+/** The most rows sent for a section that is not windowed, and the margin kept around the window the shell shows. */
+const WHOLE = 80, MARGIN = 20;
+/**
+ * A long section as a window of its rows: all of them when the list is short, else the rows the shell asked for (`window` event) plus a margin, with `count` and `offset` (the shell then draws a list of one fixed row height and
+ * keeps spacers for the rest). Reads `nativeChrome.windows`, so a new window republishes.
+ */
+export function windowed<T>(sectionId: string, all: T[]): { rows: T[]; count?: number; offset?: number } {
+  if (all.length <= WHOLE) return { rows: all };
+  const [from, to] = nativeChrome.windows[sectionId] ?? [0, WHOLE / 2];
+  const a = Math.max(0, from - MARGIN), b = Math.min(all.length, to + MARGIN);
+  return { rows: all.slice(a, b), count: all.length, offset: a };
 }

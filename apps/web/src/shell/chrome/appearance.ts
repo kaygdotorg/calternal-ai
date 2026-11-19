@@ -1,30 +1,38 @@
 import { appearance } from "../../appearance/prefs.svelte";
-import { accentOf } from "./accent";
 import type { ChromeAppearance } from "./types";
 
-const root = () => document.documentElement.style;
-const rgb = (name: string): [number, number, number] | null => { const m = /^\s*(\d+)\s+(\d+)\s+(\d+)\s*$/.exec(root().getPropertyValue(name)); return m ? [Number(m[1]), Number(m[2]), Number(m[3])] : null; };
-const num = (name: string): number => { const v = parseFloat(root().getPropertyValue(name)); return Number.isFinite(v) ? v : 0; };
-const layer = (k: "l" | "c", what: "tint" | "dim"): [number, number, number, number] | null => { const c = rgb(`--${k}-${what}`); return c ? [...c, num(`--${k}-${what}-a`)] as [number, number, number, number] : null; };
-const ink = (k: "l" | "c", n: 2 | 3): string | undefined => root().getPropertyValue(`--${k}-ink${n}`).trim() || undefined;
+/** The wallpapers the shell paints itself, by name (the three procedural ones CalternalUI has): `auto` and these need no picture sent. */
+const NATIVE = new Set(["auto", "dune", "aurora", "ember"]);
+const images = new Map<string, string | "pending" | "failed">();
+let sentImage = "";
+/** Bumped when a picture has been read, so the publisher builds the description again (it reads this). */
+export const imageTick = { n: 0 } as { n: number };
+
+/** A picture's bytes as a data URL (the shell takes PNG or JPEG data URLs, once). */
+async function dataUrl(url: string): Promise<string> {
+  const blob = await (await fetch(url)).blob();
+  return await new Promise<string>((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result)); r.onerror = () => rej(r.error); r.readAsDataURL(blob); });
+}
 
 /**
- * The person's look as the native shell needs it to paint the wallpaper and the glass itself: the wallpaper (a library id, `auto` or none, and its address when it is in the built-in library), the Blur, Dim and Tint
- * switches, Clear to tinted, the scheme, the accent and the interface scale, and the veils the page has solved from the picture (the sidebars' as `side`, the card's as `card`: tint and dim as `[r, g, b, a]`, and the two
- * quieter inks), so the shell does not solve them again. A custom or searched wallpaper has no address the shell can fetch (it lives in the page's own storage): the shell then gets the id only. Reads reactive preferences
- * (so a change republishes) and the root's solved variables (read when the description is built).
+ * The person's look as the shell paints it (contract/chrome-v1.schema.json): the wallpaper (`auto`, a built-in name, or a library id, and for a library wallpaper the picture itself ONCE as a data URL: the shell blurs it and
+ * solves the veils natively), the Blur, Dim and Tint switches and the interface scale. A custom upload or a searched picture lives in the page's storage and has no address, so only the id is sent for those. Reads reactive
+ * preferences, so a change republishes; the picture is read in the background and `onImage` is told when it is ready.
  */
-export function appearanceOf(scheme: "light" | "dark"): ChromeAppearance {
+export function appearanceOf(onImage: () => void): ChromeAppearance {
   const p = appearance.prefs;
   const id = p.wallpaperId;
-  const builtIn = id && id !== "auto" && /^[a-z0-9-]+$/i.test(id);
-  const side = { tint: layer("l", "tint"), dim: layer("l", "dim") }, card = { tint: layer("c", "tint"), dim: layer("c", "dim") };
-  const veils: ChromeAppearance["veils"] = side.tint && side.dim && card.tint && card.dim
-    ? { side: { tint: side.tint, dim: side.dim, ink2: ink("l", 2), ink3: ink("l", 3) }, card: { tint: card.tint, dim: card.dim, ink2: ink("c", 2), ink3: ink("c", 3) } }
-    : undefined;
-  return {
-    wallpaper: { id, ...(builtIn ? { url: `${import.meta.env.BASE_URL}wallpapers/${id}.jpg` } : {}) },
-    blur: p.materials.blur, dim: p.materials.dim, tint: p.materials.tint, clarity: p.clarity, scheme, accent: accentOf(), uiScale: p.uiSize / 100,
-    ...(veils ? { veils } : {}),
-  };
+  const out: ChromeAppearance = { wallpaper: id, blur: p.materials.blur, dim: p.materials.dim, tint: p.materials.tint, uiSize: p.uiSize / 100 };
+  if (id && !NATIVE.has(id) && /^[a-z0-9-]+$/i.test(id)) {
+    const have = images.get(id);
+    if (have && have !== "pending" && have !== "failed") { if (sentImage !== id) out.image = have; }
+    else if (!have) {
+      images.set(id, "pending");
+      void dataUrl(`${import.meta.env.BASE_URL}wallpapers/${id}.jpg`).then((u) => { images.set(id, u); onImage(); }, () => images.set(id, "failed"));
+    }
+  }
+  return out;
 }
+
+/** The picture of `id` has been sent: it is not sent again until the wallpaper changes. */
+export function imageSent(id: string | null): void { if (id) sentImage = id; }
