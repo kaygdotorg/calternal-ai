@@ -91,7 +91,8 @@ class NotesStore {
     if (!n || !this.space) return;
     try {
       const latest = await this.client.get(this.space.id, n.id);
-      if (latest.revision === n.revision) return;
+      // The read took a while: the open note may have been saved (or changed) meanwhile, so compare with the note as it is NOW (this person's own save, whose journal entry started this read, is not a change from elsewhere).
+      if (this.note?.id !== n.id || latest.revision === this.note.revision) return;
       if (this.saveState === "saved") { this.note = latest; this.show(latest); await this.reloadInput(); }
       else if (this.saveState !== "saving") { this.conflict = latest; this.saveState = "conflict"; }
     } catch { /* gone or away: the list refresh and the banner tell it */ }
@@ -207,7 +208,7 @@ class NotesStore {
       rememberTop(this.note.id, this.note.markdown);
       this.show(this.note); this.saveState = "saved"; this.conflict = null; this.typing = false;
       this.error = ""; this.errorCode = "";
-      if (this.note.spaceId !== this.space.id) shellSpaces.switchTo(this.note.spaceId); // a note of another space (from the palette, a link): that space becomes current
+      if (this.note.spaceId !== this.space.id && shellSpaces.list.some((s) => s.id === this.note!.spaceId)) shellSpaces.switchTo(this.note.spaceId); // a note of another space (from the palette, a link): that space becomes current (a note shared from a space the person is not in stays where it is)
     } catch (e) { this.note = null; this.error = say(e, "open the note"); this.errorCode = e instanceof ServerError ? e.code : ""; }
     await this.reloadInput();
   }
@@ -220,7 +221,7 @@ class NotesStore {
     this.saveState = "saving";
     const t0 = performance.now();
     try {
-      const saved = await this.client.update(this.space.id, this.note.id, this.note.revision, title, markdown);
+      const saved = await this.client.update(this.note.spaceId, this.note.id, this.note.revision, title, markdown);
       this.lastSaveMs = performance.now() - t0;
       this.note = saved;
       this.saveState = "saved"; this.conflict = null; this.error = "";
