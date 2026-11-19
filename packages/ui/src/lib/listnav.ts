@@ -59,17 +59,19 @@ export function wantsKey(e: Pick<KeyboardEvent, "key" | "altKey" | "ctrlKey" | "
 export const HOLD_MAX_MS = 500;
 export const navHold = (() => {
   let held = false, timer = 0;
-  const subs = new Set<() => void>();
+  const subs = new Set<() => void>(), begins = new Set<() => void>();
   const release = () => { if (timer) { clearTimeout(timer); timer = 0; } if (!held) return; held = false; for (const f of [...subs]) f(); };
   return {
     get held() { return held; },
     /** A key of a navigation burst: hold (once; the maximum runs from the first key). */
-    begin() { if (held) return; held = true; timer = window.setTimeout(() => { timer = 0; release(); }, HOLD_MAX_MS); },
+    begin() { if (held) return; held = true; timer = window.setTimeout(() => { timer = 0; release(); }, HOLD_MAX_MS); for (const f of [...begins]) f(); },
+    /** Calls `f` each time a hold begins (a burst of keys starts); returns the way to stop. Work that must not run while a key repeats (image reads) cancels itself here. */
+    subscribeBegin(f: () => void) { begins.add(f); return () => { begins.delete(f); }; },
     release,
     /** Calls `f` each time a hold ends; returns the way to stop. */
     subscribe(f: () => void) { subs.add(f); return () => { subs.delete(f); }; },
     /** How many are subscribed (the tests check that none are left behind). */
-    get subscribers() { return subs.size; },
+    get subscribers() { return subs.size + begins.size; },
   };
 })();
 

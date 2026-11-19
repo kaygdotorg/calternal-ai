@@ -24,9 +24,9 @@ export class ActionUi implements InvokerHooks {
 
   constructor(session: HostSession) { this.invoker = new Invoker(session, this); }
 
-  /** Opens `d`, first settling the dialog it replaces (cancelled), so no activation is left waiting for ever on a dialog nobody can answer. */
   /** Counts the dialogs opened; only the newest one closes the dialog slot when answered (a `$state` value is a proxy, so identity cannot be compared). */
   #n = 0;
+  /** Opens `d`, first settling the dialog it replaces (cancelled), so no activation is left waiting for ever on a dialog nobody can answer. */
   #open(d: Dialog) { const old = this.dialog; this.dialog = d; if (old) { if (old.kind === "confirm") old.done(false); else old.done(null); } }
 
   /** Asks for a text, date or datetime answer in the prompt sheet; null when cancelled. */

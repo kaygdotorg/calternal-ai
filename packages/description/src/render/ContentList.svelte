@@ -4,6 +4,8 @@
   // `refine_query`, which a description may leave unsaid). The list takes the height of its container and scrolls itself, or with `inside` follows the nearest scrolling ancestor (a sidebar).
   import { getContext, untrack } from "svelte";
   import { ACTIONS_KEY, APP_KEY, type ActionContext, type AppContext } from "../invoke/context";
+  import { titleOf } from "./eval";
+  import type { RowFields } from "../model";
   import { VirtualList, cssPx } from "@calternal/ui";
   import type { Bind, State } from "../model";
   import type { WindowStore } from "../windows/window-store.svelte";
@@ -36,8 +38,13 @@
   // The rows may no longer be the ones the selection was made on (the query changed, an action or Undo changed the list): the selection is cleared and the cursor row, if it is still there, is settled again so its
   // contexts are the fresh ones; the ticked set is dropped.
   let again: string | null = null;
-  $effect(() => { void store.generation; untrack(() => { again = selection.drawn; selection.clear(); }); });
-  $effect(() => { void store.tick; untrack(() => { if (again && store.indexOf(again) >= 0) { const id = again; again = null; void selection.settle(id); } }); });
+  // `??=`: a second change before the first one's reply arrives must not lose the cursor row (the first remembered it, the second finds the selection already cleared).
+  $effect(() => { void store.generation; untrack(() => { again ??= selection.drawn; selection.clear(true); }); });
+  $effect(() => { void store.resets; untrack(() => { selection.untick(selection.ticked); }); }); // a new query: nothing ticked before it means anything
+  $effect(() => { void store.tick; untrack(() => {
+    selection.untick(store.takeLeft()); // ticks survive the person's own action, an Undo and a count-only change; only ids that left the loaded rows are dropped
+    if (again && store.indexOf(again) >= 0) { const id = again; again = null; void selection.settle(id); }
+  }); });
 
   // One Tab stop per list: the controls inside a row (action buttons, the more button, the disclosure, the tick box) are reached by keys, never by Tab; the list itself (its scroller, or with `inside` the selected or first
   // row) is the one stop.
@@ -60,9 +67,28 @@
     mo.observe(root, { childList: true, subtree: true });
     return () => mo.disconnect();
   });
+  /** The controls inside a row, in order: the tick box, the action buttons, the more button. Reached by the arrow keys from the row, never by Tab. */
+  const controlsOf = (row: HTMLElement): HTMLElement[] => [...row.querySelectorAll<HTMLElement>("label.tick input, .acts button, button.more")].filter((c) => !c.hasAttribute("disabled"));
   const onkey = (e: KeyboardEvent) => {
-    if (!multiple || e.key !== " " || !(e.target as HTMLElement).matches?.("button.row")) return;
-    const i = Number((e.target as HTMLElement).closest<HTMLElement>("[data-i]")?.dataset.i); const r = store.row(i);
+    const t = e.target as HTMLElement | null, row = t?.closest<HTMLElement>("[data-i]");
+    if (!t || !row) return;
+    // The grid pattern: from the row, ArrowRight moves to its first control (a row with folded children opens first), ArrowLeft and Escape come back; between controls the arrows step.
+    if (e.key === "ArrowRight" || e.key === "ArrowLeft" || e.key === "Escape") {
+      const main = row.querySelector<HTMLElement>("button.row"), cs = controlsOf(row);
+      if (t === main && e.key === "ArrowRight") {
+        const disc = row.querySelector<HTMLElement>(".disc[aria-expanded=false]");
+        if (disc) return; // the row's own handler opens its children first
+        if (cs[0]) { e.preventDefault(); e.stopPropagation(); cs[0].focus(); }
+      } else if (cs.includes(t)) {
+        const i = cs.indexOf(t);
+        if (e.key === "ArrowRight" && cs[i + 1]) { e.preventDefault(); cs[i + 1]!.focus(); }
+        else if (e.key === "ArrowLeft") { e.preventDefault(); (i > 0 ? cs[i - 1] : main)?.focus(); }
+        else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); main?.focus(); }
+      }
+      return;
+    }
+    if (!multiple || e.key !== " " || !t.matches?.("button.row")) return;
+    const r = store.row(Number(row.dataset.i));
     if (r) { e.preventDefault(); selection.toggle(r.id); } // Space ticks in a multiple-selection list; Enter opens
   };
 
@@ -106,7 +132,7 @@
       >
         {#snippet row(i)}
           {@const r = store.row(i)}
-          {#if r}{#if multiple}<label class="tick"><input type="checkbox" checked={selection.ticked.includes(r.id)} onchange={() => selection.toggle(r.id)} aria-label="Select {r.id}" /></label>{/if}<RowActions {template} row={r} {store} {kindIcon} selected={r.id === selection.drawn} onclick={() => choose(r.id, i, true)} />
+          {#if r}{#if multiple}<label class="tick"><input type="checkbox" checked={selection.ticked.includes(r.id)} onchange={() => selection.toggle(r.id)} aria-label={titleOf(template, r.fields as RowFields) || "Select row"} /></label>{/if}<RowActions {template} row={r} {store} {kindIcon} selected={r.id === selection.drawn} onclick={() => choose(r.id, i, true)} />
           {:else}<SkeletonRow icon={template.icon !== undefined} width={40 + ((i * 17) % 40)} />{/if}
         {/snippet}
       </VirtualList>

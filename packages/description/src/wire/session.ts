@@ -9,7 +9,6 @@ import type { Route, Transport } from "./transport";
 /** What a session needs from outside: the transport, a clock and a timer (replaceable for tests). */
 export interface SessionOptions {
   transport: Transport;
-  now?: () => number;
   /** Where renewal asks which window refs and result versions the interface holds. */
   held?: () => Record<string, string>;
 }
@@ -22,27 +21,27 @@ export class HostSession {
   #viewContexts: ActionContexts = {};
   /** The route parameters now in force (selector, open item), for hosts that read them from the transport. */
   route: Record<string, string> = {};
-  #leasedAt = 0;
   #renewalSeq = 0;
   #closed = false;
+  #lapsed = false;
+  #lapseTimer: ReturnType<typeof setTimeout> | null = null;
   #timer: ReturnType<typeof setTimeout> | null = null;
-  #now: () => number;
   #held: () => Record<string, string>;
   /** What the interface holds, for renewal: window ref to result version. */
   set held(f: () => Record<string, string>) { this.#held = f; }
-  /** Called with true while the lease is current and false once it has lapsed without a renewal (rows stay in memory, hidden). */
+  /** Called with false when the lease lapses without a renewal (rows stay in memory, hidden) and with true when a renewal grants it again (which windows repaint is `onrenewed`'s to decide). */
   oncurrent?: (current: boolean) => void;
   /** Called with replacement windows a renewal returned. */
   onrenewed?: (r: LeaseRenewResult) => void;
 
-  constructor(o: SessionOptions) { this.transport = o.transport; this.#now = o.now ?? (() => performance.now()); this.#held = o.held ?? (() => ({})); }
+  constructor(o: SessionOptions) { this.transport = o.transport; this.#held = o.held ?? (() => ({})); }
 
   get lease(): SubscriptionLease | null { return this.#lease; }
   get audience(): WindowAudience | null { return this.#audience; }
   /** Contexts issued with the view for actions that belong to no row. */
   get viewContexts(): ActionContexts { return this.#viewContexts; }
-  /** True while the lease has not lapsed. */
-  get current(): boolean { return !!this.#lease && this.#now() - this.#leasedAt < this.#lease.lease_seconds * 1000; }
+  /** True while the lease has not lapsed: a lapse timer fires `lease_seconds` after the last grant or renewal, however the renewals went (failed, hung or ignored). */
+  get current(): boolean { return !!this.#lease && !this.#lapsed; }
 
   /** Opens `viewRef` (a ref the host issued: no id is made up here) and starts the renewal timer. */
   async open(viewRef: string): Promise<ViewOpenResult> {
@@ -78,7 +77,12 @@ export class HostSession {
     return this.transport.post<T>(route, body, { lease: this.#lease.lease_ref, signal });
   }
 
-  #take(l: SubscriptionLease) { this.#lease = l; this.#leasedAt = this.#now(); }
+  #take(l: SubscriptionLease) {
+    this.#lease = l; this.#lapsed = false;
+    if (this.#lapseTimer) clearTimeout(this.#lapseTimer);
+    // The lease runs out `lease_seconds` after it was granted unless a renewal grants it again: rows are then not current until a renewal names them (section 6).
+    this.#lapseTimer = setTimeout(() => { if (this.#closed) return; this.#lapsed = true; this.oncurrent?.(false); }, l.lease_seconds * 1000);
+  }
 
   #schedule() {
     if (this.#timer) clearTimeout(this.#timer);
@@ -96,14 +100,15 @@ export class HostSession {
     try {
       const r = await this.transport.post<LeaseRenewResult>("view.renew", req, { lease: l.lease_ref });
       if (this.#closed || this.#lease !== l) return; // the view closed (or its lease moved on) while the renewal was in flight: nothing to take, no timer to start
-      if (sent !== this.#renewalSeq || r.renewal_id !== renewal_id || r.request_lease_ref !== l.lease_ref || r.cache_partition !== l.cache_partition) return; // superseded or not ours: ignored
-      this.#take(r.lease); this.#viewContexts = r.activation_contexts; this.oncurrent?.(true); this.onrenewed?.(r);
-    } catch { /* keep rows hidden when the lease runs out */ }
+      // A reply that is not the answer to this renewal (superseded, another lease or partition) is ignored; the next attempt is still scheduled.
+      if (!(sent !== this.#renewalSeq || r.renewal_id !== renewal_id || r.request_lease_ref !== l.lease_ref || r.cache_partition !== l.cache_partition)) {
+        this.#take(r.lease); this.#viewContexts = r.activation_contexts; this.oncurrent?.(true); this.onrenewed?.(r);
+      }
+    } catch { /* the lapse timer hides the rows when the lease runs out */ }
     if (this.#closed) return;
-    if (!this.current) this.oncurrent?.(false);
     this.#schedule();
   }
 
   /** Stops renewing (the view closed). */
-  close() { this.#closed = true; if (this.#timer) clearTimeout(this.#timer); this.#timer = null; this.#lease = null; }
+  close() { this.#closed = true; if (this.#lapseTimer) clearTimeout(this.#lapseTimer); if (this.#timer) clearTimeout(this.#timer); this.#timer = null; this.#lease = null; }
 }

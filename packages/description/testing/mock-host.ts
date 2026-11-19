@@ -24,6 +24,8 @@ export interface MockOptions {
   actionIds?: string[];
   /** Called with each window request (a spy). */
   onWindow?: (req: WindowRequestPayload) => void;
+  /** Answers `view.renew` (the default retains nothing and renews the same lease). */
+  renew?: (body: { renewal_id: string; lease_ref: string; cache_partition: string }) => unknown | Promise<unknown>;
   /** Lets a test refuse or replace a window reply; return undefined for the normal answer. */
   intercept?: (req: WindowRequestPayload, n: number) => WindowReply | undefined | Promise<WindowReply | undefined>;
   audience?: WindowAudience;
@@ -45,8 +47,10 @@ export class MockHost implements Transport {
   readonly lease: SubscriptionLease = { lease_ref: "l-1", lease_seconds: 15, grant_revision: "g-1", cache_partition: "cp-1" };
   readonly log: { route: Route; body: unknown }[] = [];
 
+  /** When set, the ids of the rows in order (a list that gains and loses rows); `rows` should match its length. */
+  order: string[] | null = null;
   /** The id of row `i`. */
-  id(i: number): string { return `r-${i}`; }
+  id(i: number): string { return this.order?.[i] ?? `r-${i}`; }
   /** Fields of row `i`. */
   fields(i: number, bind = ""): Record<string, unknown> { return this.opts.fields ? this.opts.fields(i, bind) : { title: `Row ${i}`, updated: 1_700_000_000 - i }; }
   /** The contexts the host would issue for row `i`. */
@@ -82,6 +86,7 @@ export class MockHost implements Transport {
   async post<T>(route: Route, body: unknown): Promise<T> {
     this.log.push({ route, body });
     if (route === "view.open") return { lease: this.lease, activation_contexts: {}, audience: this.opts.audience ?? "own_space_member" } as T;
+    if (route === "view.renew" && this.opts.renew) return (await this.opts.renew(body as never)) as T;
     if (route === "view.renew") { const b = body as { renewal_id: string }; return { lease: this.lease, retained_results: [], activation_contexts: {}, windows: [], renewal_id: b.renewal_id, request_lease_ref: this.lease.lease_ref, cache_partition: this.lease.cache_partition } as T; }
     if (route === "selection.settled") { const b = body as { bind: string; row: string }; return { type: "selection_context", lease_ref: this.lease.lease_ref, cache_partition: this.lease.cache_partition, bind: b.bind, row: b.row, activation_contexts: { open: `ctx-${b.row}` } } as T; }
     if (route === "window") {

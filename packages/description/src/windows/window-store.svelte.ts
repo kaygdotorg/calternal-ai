@@ -16,7 +16,6 @@ export interface WindowSource { window(request: WindowRequestPayload, signal?: A
 /** The states a list can be in (the catalogue's `WindowResult.state`, plus the plan error). */
 export type ListState = "loading" | "ready" | "empty" | "error" | "refine_query";
 
-/** Window requests a second (the contract's cap) and requests in flight at once. */
 /** Window requests a store sends in one second (the contract's cap). */
 export const MAX_REQUESTS_PER_SECOND = 4;
 /** Window requests of one store in flight at once. */
@@ -49,6 +48,8 @@ export class WindowStore {
   hidden = $state(false);
   /** Bumps whenever the rows may no longer be the ones the selection was made on (reset, a new result set, a re-read): the selection of this bind is then cleared and settled again. */
   generation = $state(0);
+  /** Bumps only when the query itself changed (`reset`): everything the person had ticked is then meaningless. */
+  resets = $state(0);
   /** The last `window_ref` and `result_version` the host issued, for lease renewal. */
   windowRef: string | null = null;
   resultVersion: string | null = null;
@@ -59,6 +60,8 @@ export class WindowStore {
   readonly #contexts = new Map<string, ActionContexts>();
   /** Row id to index, so the cursor finds its row in O(1) however long the list is. */
   readonly #ids = new Map<string, number>();
+  /** Ids that were replaced in a loaded row by a different one and have not turned up elsewhere: they have left the list. */
+  readonly #left = new Set<string>();
   /** Replies and in-flight requests of an older query are dropped by epoch; `reset` and `destroy` abort them. */
   #epoch = 0;
   #ctl = new AbortController();
@@ -139,6 +142,7 @@ export class WindowStore {
       const a = Math.max(0, f - Math.floor(this.size / 2)), b = Math.min(limit, l + this.size);
       for (let c = Math.floor(a / this.size); c * this.size < b; c++) want.add(c);
     }
+    for (const c of this.#stale) want.add(c); // a re-read is asked for even while nothing is drawn (a hidden list draws only skeletons)
     const mid = centre.length ? centre[0]![0] : 0;
     return [...want].filter((c) => !this.#inflight.has(c) && !this.#refused.has(c) && (this.#stale.has(c) || this.#firstMissing(c, limit) >= 0)).sort((x, y) => Math.abs(x * this.size - mid) - Math.abs(y * this.size - mid));
   }
@@ -211,9 +215,9 @@ export class WindowStore {
   reset(): void {
     if (this.#dead) return;
     this.#epoch++; this.#ctl.abort(); this.#ctl = new AbortController();
-    this.#inflight.clear(); this.#refreshing.clear(); this.#walking = false; this.#sent = [];
+    this.#inflight.clear(); this.#refreshing.clear(); this.#walking = false; // (`#sent` stays: the requests already made still count toward the 4 a second)
     this.#clear(); this.#held = null; this.#stale.clear(); this.#endUnavailable = false; this.resultVersion = null; this.windowRef = null;
-    this.state = "loading"; this.planError = null; this.hidden = false; this.generation++; this.#bump(); this.#pump();
+    this.state = "loading"; this.planError = null; this.hidden = false; this.generation++; this.resets++; this.#bump(); this.#pump();
   }
 
   /**
@@ -243,6 +247,9 @@ export class WindowStore {
     if (this.#dead || w.bind !== this.bind.id || (w.parent ?? undefined) !== this.parent) return;
     this.#place(w, { bind: this.bind.id, from: w.offset, to: w.offset + Math.max(1, w.rows.length) });
   }
+
+  /** The ids that have left the loaded rows since the last call (replaced and not seen again): the ticks and selection on them are dropped, while those of rows merely not loaded are kept. */
+  takeLeft(): string[] { void this.tick; const out = [...this.#left].filter((id) => !this.#ids.has(id)); this.#left.clear(); return out; }
 
   /** The goal row of a refusal recovery in progress, or null. */
   get walkGoal(): number | null { return this.#walk ? this.#walk.goal : null; }
@@ -325,10 +332,15 @@ export class WindowStore {
     this.#ended = false; this.#refreshing.clear();
   }
 
-  #setRow(i: number, r: WindowRow) { const old = this.#rows.get(i); if (old && old.id !== r.id) { this.#ids.delete(old.id); this.#contexts.delete(old.id); } this.#rows.set(i, r); this.#ids.set(r.id, i); }
+  #setRow(i: number, r: WindowRow) {
+    const old = this.#rows.get(i);
+    // The overwritten row leaves only if the id still points here: after an archive or an Undo shifts rows, the same id may already have been placed at another index by another chunk's reply.
+    if (old && old.id !== r.id && this.#ids.get(old.id) === i) { this.#ids.delete(old.id); this.#contexts.delete(old.id); this.#left.add(old.id); }
+    this.#rows.set(i, r); this.#ids.set(r.id, i); this.#left.delete(r.id);
+  }
   #delRow(i: number) { const r = this.#rows.get(i); if (!r) return; this.#rows.delete(i); if (this.#ids.get(r.id) === i) { this.#ids.delete(r.id); this.#contexts.delete(r.id); } }
 
-  #clear() { this.#walk = null; this.#refused.clear(); this.#tailCover = 0; this.#rows.clear(); this.#ids.clear(); this.#contexts.clear(); this.#count = null; this.#ended = false; this.#loadedEnd = 0; }
+  #clear() { this.#left.clear(); this.#walk = null; this.#refused.clear(); this.#tailCover = 0; this.#rows.clear(); this.#ids.clear(); this.#contexts.clear(); this.#count = null; this.#ended = false; this.#loadedEnd = 0; }
 
   #place(reply: WindowResult, req: WindowRequestPayload) {
     if (reply.state === "ready") { this.resultVersion = reply.result_version; this.windowRef = reply.window_ref; }

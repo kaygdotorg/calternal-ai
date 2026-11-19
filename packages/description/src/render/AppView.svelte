@@ -3,7 +3,7 @@
   // place that draws the bind, holds the route parameters (selectors and row `open` set them; binds that read a route parameter start over when it changes), and refuses a description it cannot draw. It holds no app-specific
   // code: what is drawn is only what the description declares; the page supplies the host components and the shell's own controls.
   import { onDestroy, setContext, untrack, type Component } from "svelte";
-  import { Glass, Toasts } from "@calternal/ui";
+  import { Glass, Toasts, navHold } from "@calternal/ui";
   import type { Action, AppDescription, Bind } from "../model";
   import type { HostSession } from "../wire/session";
   import { refusalOf } from "../check";
@@ -41,7 +41,7 @@
   ui.onok = () => { for (const st of stores.values()) st.refresh(); };
   ui.onroute = (name, created) => setRoute(name, created);
   provideActions({ ui, session, onshell: (a) => props.onshell?.(a) });
-  const images = new ImageCache((ref, signal) => session.image(ref, signal));
+  const images = new ImageCache((ref, signal) => session.image(ref, signal), { hold: navHold }); // reads wait while a key repeats and stop when a burst begins
   setContext(IMAGES_KEY, (ref: string, signal?: AbortSignal) => images.get(ref, signal));
   const refusal = refusalOf(description);
   const binds = new Map<string, Bind>((description.binds ?? []).map((b) => [b.id, b]));
@@ -75,9 +75,9 @@
   setContext(APP_KEY, app);
   session.held = () => Object.fromEntries([...stores.values()].filter((s) => s.windowRef && s.resultVersion).map((s) => [s.windowRef!, s.resultVersion!]));
   // The lease: while it has lapsed the rows are not drawn as current and offer no contexts; a renewal repaints only the windows it names as retained and may bring replacement windows (section 6).
-  session.oncurrent = (current) => { for (const s of stores.values()) s.setCurrent(current); if (!current) images.clear(); };
+  session.oncurrent = (current) => { if (!current) { for (const s of stores.values()) s.setCurrent(false); images.clear(); } }; // a renewal never un-hides by itself: `renewed` (retained windows) or a fresh reply does
   session.onrenewed = (r) => { for (const s of stores.values()) { s.renewed(r.retained_results); for (const w of r.windows) s.apply(w); } };
-  onDestroy(() => { for (const s of stores.values()) s.destroy(); images.clear(); session.close(); });
+  onDestroy(() => { for (const s of stores.values()) s.destroy(); images.destroy(); session.close(); });
 
   /** The bind whose ticked rows a header action takes as a host-issued selection reference, if its inputs name one. */
   const setBind = (a: Action): string | undefined => { for (const v of Object.values(("inputs" in a ? a.inputs : undefined) ?? {})) { const x = v as { selection?: string; set?: boolean }; if (x.selection && x.set) return x.selection; } return undefined; };

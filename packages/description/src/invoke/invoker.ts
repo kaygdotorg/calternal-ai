@@ -50,6 +50,10 @@ export class Invoker {
 
   /** Runs one activation to its outcome. Resolves with the outcome, or a local state when nothing was sent. */
   async run(action: Invoke, a: Activation): Promise<ActionOutcome | Local> {
+    if (!this.session.current) { // a lapsed lease is refused here, before anything is sent: the host would have to refuse it, and rows that are not current offer no contexts
+      const o: ActionOutcome = { activation_id: "", state: "error", code: "lease_lapsed", message: "Reconnecting to the host. Try again in a moment." };
+      this.hooks.outcome?.(action, o); return o;
+    }
     if (a.flush) { await a.flush(); }
     const context = a.recontext ? a.recontext() : a.context;
     if (!context) return { state: "waiting" }; // no host-issued context for the drawn row: wait for it, send nothing

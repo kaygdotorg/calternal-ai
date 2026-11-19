@@ -61,6 +61,9 @@ export class Selection {
     return r.selection_ref;
   }
 
+  /** Unticks the given ids (rows that left the list); every other tick stays. */
+  untick(ids: readonly string[]): void { if (ids.length) this.ticked = this.ticked.filter((x) => !ids.includes(x)); }
+
   /** Forgets the selection and the ticked rows (the list's result set was replaced, or an action changed it: the row, or its context, may be gone). */
-  clear(): void { this.drawn = null; this.ticked = []; this.#settled = null; this.#contexts = null; this.#contextsRow = null; this.#seq++; }
+  clear(keepTicks = false): void { this.drawn = null; if (!keepTicks) this.ticked = []; this.#settled = null; this.#contexts = null; this.#contextsRow = null; this.#seq++; }
 }
