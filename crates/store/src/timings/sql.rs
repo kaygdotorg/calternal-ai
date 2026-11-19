@@ -11,7 +11,8 @@ use std::sync::OnceLock;
 /// timings, with no bound parameters. Keep it disabled for latency gates.
 pub fn with_sql_profile(mut conn: Connection, store: &'static str) -> Connection {
     static ENABLED: OnceLock<bool> = OnceLock::new();
-    if !*ENABLED.get_or_init(|| std::env::var_os("CALTERNAL_PROFILE_SQL").is_some_and(|v| v == "1")) {
+    if !*ENABLED.get_or_init(|| std::env::var_os("CALTERNAL_PROFILE_SQL").is_some_and(|v| v == "1"))
+    {
         return conn;
     }
     let mut started = None;

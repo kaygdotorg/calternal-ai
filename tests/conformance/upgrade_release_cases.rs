@@ -290,9 +290,11 @@ async fn release_artifacts_preserve_live_data_in_both_directions() {
     f.start().await;
     let thread = f.op(0, "threads.get", json!({"id":shape["thread"]})).await;
     thread.ok();
-    assert!(thread.body["data"]["thread"]["markdown"]
-        .as_str()
-        .is_some_and(|markdown| markdown.contains(message)));
+    assert!(
+        thread.body["data"]["thread"]["markdown"]
+            .as_str()
+            .is_some_and(|markdown| markdown.contains(message))
+    );
     let restored = f.op(0, "notes.get", json!({"id":id})).await;
     restored.ok();
     assert_eq!(
