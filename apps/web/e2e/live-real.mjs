@@ -21,7 +21,7 @@ const stopServer = async () => { srv.kill("SIGTERM"); await new Promise((r) => {
 let bad = 0;
 const ok = (c, m, lane = "", note = "") => { console.log(`${c ? "PASS" : "FAIL"}  ${m}${c || !lane ? "" : `   [lane: ${lane}]`}${note ? "  " + note : ""}`); if (!c) bad++; };
 const scenario = async (name, lane, f) => { try { await f(); } catch (e) { ok(false, `${name}: ${String(e.message).split("\n")[0]}`, lane); } };
-const again = async (f) => { for (let i = 0; ; i++) { try { return await f(); } catch (e) { if (i >= 6 || !/Execution context was destroyed|navigation/.test(String(e.message))) throw e; await new Promise((r) => setTimeout(r, 700)); } } };
+const again = async (f) => { for (let i = 0; ; i++) { try { return await f(); } catch (e) { if (i >= 6 || !/Execution context was destroyed|navigation|ERR_ABORTED/.test(String(e.message))) throw e; await new Promise((r) => setTimeout(r, 700)); } } };
 const op = (p, operation, input = {}) => again(() => p.evaluate(async ([operation, input]) => (await fetch("/api/v1/operations", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ request_id: crypto.randomUUID(), operation, input }) })).json(), [operation, input]));
 // The document text only: a collaborator's cursor label (.cm-ySelectionInfo) is drawn inside the content but is not part of the note.
 const text = (p) => p.locator(".cm-content").evaluate((el) => { const c = el.cloneNode(true); c.querySelectorAll(".cm-ySelectionInfo, .cm-ySelectionCaret").forEach((n) => n.remove()); return c.innerText ?? c.textContent; });
@@ -37,7 +37,7 @@ try {
   await signUp(A.p, token, "Olive");
   await A.p.waitForSelector("html[data-ready]");
   // An invitation for the second person.
-  await A.p.evaluate(() => { history.pushState(null, "", "/settings/invites"); dispatchEvent(new PopStateEvent("popstate")); });
+  await A.p.waitForLoadState("load"); await again(async () => { await A.p.goto(`${url}/settings/invites?server=1`); await A.p.waitForSelector("html[data-ready]"); });
   await A.p.getByRole("button", { name: "Make an invitation" }).click(); await A.p.locator("code.cmd").first().waitFor({ timeout: 10000 });
   const link = new URL((await A.p.locator("code.cmd").first().innerText()).trim());
   await G.p.goto(`${url}${link.pathname}`); await G.p.waitForSelector("html[data-ready]");
@@ -45,8 +45,14 @@ try {
   const me = async (P) => (await again(() => P.evaluate(async () => (await fetch("/api/v1/auth/me")).json()))).user;
   await A.p.waitForSelector("html[data-ready]"); await G.p.waitForSelector("html[data-ready]"); await A.p.waitForTimeout(1500);
   const [olive, gus] = [await me(A.p), await me(G.p)];
-  const spaceOf = async (P) => (await op(P, "spaces.list")).data.spaces[0].id;
-  const space = await spaceOf(A.p), gusSpace = await spaceOf(G.p);
+  // Each account's own (personal) space: the invitation also made the guest a member of the owner's space, so "the first space" would be the shared one for both.
+  const spaceOf = async (P) => (await op(P, "spaces.list")).data.spaces.find((x) => x.personal)?.id;
+  // The note lives in a space the owner makes for it: the invitation already made the guest a member of the owner's personal space, which would hide what a grant and its revoke do.
+  const made0 = await op(A.p, "spaces.create", { name: "Project" });
+  const space = made0.data?.space?.id ?? made0.data?.id, gusSpace = await spaceOf(G.p);
+  ok(space && gusSpace && space !== gusSpace, "setup: the owner has a space for the note and the guest has a personal space", "spaces backend", `${JSON.stringify(made0.error ?? "")} ${space} ${gusSpace}`);
+  const inOwners = (await op(G.p, "spaces.list")).data.spaces.find((x) => x.id === space);
+  ok(!inOwners, "setup: before the grant the guest has no role in the note's space", "spaces backend", JSON.stringify(inOwners ?? ""));
   const made = await op(A.p, "notes.create", { space_id: space, title: "Plan", markdown: "# Plan\n\nStart here.\n" });
   const note = made.data?.note; ok(!!note, "setup: an owner, a second account and a note in the owner's space", "backend (accounts/notes)", JSON.stringify(made.error ?? ""));
   const grant = await op(A.p, "sharing.grant", { item: { kind: "notes", id: note.id }, audience: { account_id: gus.id }, permission: "edit" });
@@ -83,6 +89,7 @@ try {
   await scenario("revoked mid-edit", "live-rooms backend (access_revoked) or ui-notes (rescue)", async () => {
     await G.p.locator(".cm-content").click(); await G.p.keyboard.press("Control+End");
     // A real drop: Chromium's offline emulation leaves an established WebSocket open (frames neither arrive nor close it), so the open sockets are closed too, as a lost connection would.
+    const seen = []; const onResponse = (r) => seen.push(`${r.status()} ${r.request().method()} ${new URL(r.url()).pathname}`); G.p.on("response", onResponse);
     await G.p.context().setOffline(true); await G.p.evaluate(() => (window.__sockets ?? []).forEach((w) => w.close()));
     await G.p.keyboard.type("\nGUEST-LOCAL-WORDS");
     await A.p.locator(".cm-content").click(); await A.p.keyboard.press("Control+End"); await A.p.keyboard.type("\nOWNER-LATER-WORDS");
@@ -93,6 +100,7 @@ try {
     await G.p.context().setOffline(false);
     const line = await until(async () => (await G.p.locator("p.err[role=alert]").allInnerTexts()).find((t) => /no longer open|kept/.test(t)), 20000);
     ok(!!line, "revoked: the guest is told in one line what happened to their edits", "ui-notes or live-rooms backend (the frame after a reconnect)", JSON.stringify(line || ""));
+    G.p.off("response", onResponse); console.log(`   guest requests from the revoke on (status method path): ${seen.filter((x) => !/\/assets\/|\.(js|css|woff2?)$/.test(x)).join(" | ").slice(0, 1500)}`);
     const rescued = await op(G.p, "notes.list", { space_id: gusSpace });
     const copy = (rescued.data?.notes ?? []).find((n) => /Your edits to/.test(n.title));
     const body = copy ? (await op(G.p, "notes.get", { space_id: gusSpace, id: copy.id })).data?.note?.markdown ?? "" : "";

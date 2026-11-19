@@ -228,6 +228,8 @@ export interface RoomOptions {
 class RoomTransport implements Transport {
   private wanted = false
   private joined = false
+  /** Whether this socket has ever been admitted: a later join the room refuses as `not_found` or `forbidden` then means access was taken away while the connection was down. */
+  private admitted = false
   private joining = false
   private membership = 0
   private retry: ReturnType<typeof setTimeout> | null = null
@@ -315,6 +317,7 @@ class RoomTransport implements Transport {
         if (theirs) this.options.onLineage?.(theirs)
         this.joining = false
         this.joined = true
+        this.admitted = true
         this.opens.forEach((f) => f())
         return
       }
@@ -334,6 +337,8 @@ class RoomTransport implements Transport {
         // Two shapes of the same refusal: the code itself (`lineage_changed`), or `conflict` with `details.reason` `lineage_changed` (docs/live-rooms.md, "Browser binding").
         if (code === 'lineage_changed' || (code === 'conflict' && error?.details?.reason === 'lineage_changed')) return this.refused(CLOSE_LINEAGE, 'lineage_changed')
         this.errors.forEach((f) => f(code || 'join_failed'))
+        // Admitted before, refused now as not found or forbidden: access was revoked while offline, the same end as a `left` with `access_revoked` (the host rescues what this person wrote).
+        if (this.admitted && (code === 'not_found' || code === 'forbidden')) return this.refused(CLOSE_REVOKED, 'access_revoked')
         if (FINAL.has(code)) return this.refused(CLOSE_REFUSED, code)
         // Anything else (a server hiccup) is worth another try.
         if (this.wanted) this.retry = setTimeout(() => this.connect(), 1000)

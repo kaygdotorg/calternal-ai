@@ -5,7 +5,7 @@
 import { serverMode } from "../../../server/client";
 import { account } from "../../../server/auth";
 import { grants } from "../../../server/people";
-import { sharing } from "../share/sharing";
+import { isLink, sharing } from "../share/sharing";
 import { textKey } from "../share/rescue";
 import { rescueBlocks, settleOwed } from "../share/owed";
 import { notes } from "../store.svelte";
@@ -62,7 +62,7 @@ class LiveNotes {
     const { Awareness } = await import("y-protocols/awareness");
     const fixture = serverMode() ? null : await import("./fixture");
     if (id !== this.id) return;
-    if (serverMode()) void this.loadNames(spaceId);
+    if (serverMode()) void this.loadNames(spaceId, noteId);
     const me = serverMode() ? (await account.me().catch(() => null))?.user.id ?? "" : "acc-you";
     const session = await live.NoteSession.open({
       id: noteId,
@@ -115,8 +115,11 @@ class LiveNotes {
     liveNotice.text = await rescueBlocks(noteId, notes.note?.title ?? "this note", blocks, `${noteId}:${textKey(blocks.join("\n"))}`);
   }
 
-  private async loadNames(spaceId: string): Promise<void> {
-    try { for (const m of (await grants(spaceId)).members as unknown as { account_id?: string; id?: string; name?: string }[]) { const id = m.account_id ?? m.id; if (id && m.name) this.names.set(id, m.name); } this.here = this.here.map((h) => ({ ...h, name: this.resolve(h.account).name })); } catch { /* names stay "Someone" */ }
+  private async loadNames(spaceId: string, noteId: string): Promise<void> {
+    try { for (const m of (await grants(spaceId)).members as unknown as { account_id?: string; id?: string; name?: string }[]) { const id = m.account_id ?? m.id; if (id && m.name) this.names.set(id, m.name); } } catch { /* names stay "Someone" */ }
+    // People who have the note shared with them are not members of its space: their names come from the note's own list of who can see it (when this person may read it).
+    try { for (const g of (await sharing.list({ kind: "notes", id: noteId })).grants) if (!isLink(g) && "account_id" in g.audience && g.name) this.names.set(g.audience.account_id, g.name); } catch { /* not allowed to read it: the name stays as it was */ }
+    this.here = this.here.map((h) => ({ ...h, name: this.resolve(h.account).name }));
   }
 
   close(): void {

@@ -283,6 +283,22 @@ test.each([
   live.disconnect()
 })
 
+test('a join refused as not_found after having been admitted is an access revoked while away (4403),', () => {
+  vi.useFakeTimers()
+  const { live, room, ws } = joinedRoom()
+  const closes: Array<[number, string]> = []
+  room.onClose((c, r) => closes.push([c, r]))
+  ws.json({ type: 'left', room: 'notes/a', membership: latestMembership(ws), reason: 'fell_behind' })
+  vi.advanceTimersByTime(200)
+  const again = latestMembership(ws)
+  ws.json({ type: 'join_failed', room: 'notes/a', membership: again, error: { code: 'not_found', message: 'gone' } })
+  expect(closes.at(-1)).toEqual([4403, 'access_revoked'])
+  vi.advanceTimersByTime(10_000)
+  expect(ws.sent.filter((s) => typeof s === 'string' && JSON.parse(s).type === 'join')).toHaveLength(2)
+  live.disconnect()
+  vi.useRealTimers()
+})
+
 test('left with access_revoked ends the membership for good: closed with 4403, never joined again, socket kept', () => {
   vi.useFakeTimers()
   const { live, room, ws, membership } = joinedRoom()
