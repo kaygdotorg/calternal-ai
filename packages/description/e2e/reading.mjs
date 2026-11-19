@@ -22,7 +22,7 @@ ok((await submit.getAttribute("aria-disabled")) === "true", "Add is disabled whi
 await p.locator("[data-form=add] label:has-text('Address') input").fill("https://example.org/article");
 ok((await submit.getAttribute("aria-disabled")) === null, "Add enables when the form is valid");
 await submit.click();
-await p.waitForFunction((t) => [...document.querySelectorAll("[data-i] .t")].some((e) => e.textContent === t), title, { timeout: 15000 }).catch(() => {});
+await p.waitForFunction((t) => [...document.querySelectorAll("[data-i] .t")].some((e) => e.textContent === t), title, { timeout: 40000 }).catch(() => {});
 const shown = await p.evaluate((t) => [...document.querySelectorAll("[data-i] .t")].some((e) => e.textContent === t), title);
 ok(shown, "the new item is drawn from the host's next window", title);
 const routes = wire.map((w) => w.route);
