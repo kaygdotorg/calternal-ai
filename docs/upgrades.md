@@ -310,6 +310,22 @@ container stop wrapper. The machine service has a two-second systemd stop
 timeout. A write whose reply is lost can replay using the same request ID.
 The first update from the old image still uses its own old stop path.
 
+In the repeat rehearsal, both images used the fixed shutdown from
+`ad137513`. The incoming lab image added a disposable machines schema
+9 table to exercise a real additive migration. The browser held
+authenticated account and space streams open in each run. The gaps in
+seconds were 4.911, 3.629, 4.670, 3.092, 6.164, 3.067, 1.910, 1.870,
+2.961 and 1.536. The minimum, median and maximum were 1.536, 3.080 and
+6.164 seconds. Nine of ten met the five-second budget. All ten rollbacks
+retained the candidate's acknowledged write.
+
+Neither service needed SIGKILL. The largest recorded in-process drain
+was 49 ms for each role, including the untimed rollbacks and teardown.
+In the slowest run, the old server drained in 2 ms, but its unit took
+another 2.1 seconds to finish stopping. The next container then took
+1.4 seconds to initialize after creation. Instrument Podman teardown and
+activation before adjusting the application deadline further.
+
 The browser can treat proxy 502, 503 and 504 as temporary unavailability,
 show the reconnect state and retry with the original request IDs.
 
