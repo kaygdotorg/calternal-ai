@@ -1,0 +1,91 @@
+/**
+ * One open view against the host: view open, the shared subscription lease and its renewal, and the window route with the lease attached. The lease is 15 seconds (`SubscriptionLease.lease_seconds`);
+ * the session renews it while rows are painted and reports `current` false while a renewal is outstanding past the lease, so the interface keeps filled rows in memory but does not paint them as current
+ * (docs/description-contract.md section 6). Activation contexts and refs are held in memory only.
+ */
+import type { ActionContexts, SelectionContextResult, SettledSelectionRequest, SubscriptionLease, ViewOpenResult, WindowAudience, WindowReply, WindowRequestPayload, LeaseRenewRequest, LeaseRenewResult } from "../model";
+import type { Transport } from "./transport";
+
+/** What a session needs from outside: the transport, a clock and a timer (replaceable for tests). */
+export interface SessionOptions {
+  transport: Transport;
+  now?: () => number;
+  /** Where renewal asks which window refs and result versions the interface holds. */
+  held?: () => Record<string, string>;
+}
+
+/** An open view: the lease, the audience and the contexts for the view's own (header, form, composer) actions. */
+export class HostSession {
+  readonly transport: Transport;
+  #lease: SubscriptionLease | null = null;
+  #audience: WindowAudience | null = null;
+  #viewContexts: ActionContexts = {};
+  #leasedAt = 0;
+  #renewalSeq = 0;
+  #timer: ReturnType<typeof setTimeout> | null = null;
+  #now: () => number;
+  #held: () => Record<string, string>;
+  /** What the interface holds, for renewal: window ref to result version. */
+  set held(f: () => Record<string, string>) { this.#held = f; }
+  /** Called with true while the lease is current and false once it has lapsed without a renewal (rows stay in memory, hidden). */
+  oncurrent?: (current: boolean) => void;
+  /** Called with replacement windows a renewal returned. */
+  onrenewed?: (r: LeaseRenewResult) => void;
+
+  constructor(o: SessionOptions) { this.transport = o.transport; this.#now = o.now ?? (() => performance.now()); this.#held = o.held ?? (() => ({})); }
+
+  get lease(): SubscriptionLease | null { return this.#lease; }
+  get audience(): WindowAudience | null { return this.#audience; }
+  /** Contexts issued with the view for actions that belong to no row. */
+  get viewContexts(): ActionContexts { return this.#viewContexts; }
+  /** True while the lease has not lapsed. */
+  get current(): boolean { return !!this.#lease && this.#now() - this.#leasedAt < this.#lease.lease_seconds * 1000; }
+
+  /** Opens `viewRef` (a ref the host issued: no id is made up here) and starts the renewal timer. */
+  async open(viewRef: string): Promise<ViewOpenResult> {
+    const r = await this.transport.post<ViewOpenResult>("view.open", { type: "view_open", view_ref: viewRef });
+    this.#take(r.lease); this.#audience = r.audience; this.#viewContexts = r.activation_contexts;
+    this.#schedule();
+    return r;
+  }
+
+  /** One window request under the lease. Resolves with the host's reply (a typed refusal included). */
+  window(request: WindowRequestPayload, signal?: AbortSignal): Promise<WindowReply> {
+    if (!this.#lease) return Promise.reject(new Error("The view is not open."));
+    return this.transport.post<WindowReply>("window", { type: "window", request }, { lease: this.#lease.lease_ref, signal });
+  }
+
+  /** Tells the host which single row is now selected (the settled selection, section 3.2) and returns the contexts it issued for exactly that row. */
+  selection(bind: string, row: string, signal?: AbortSignal): Promise<SelectionContextResult> {
+    if (!this.#lease) return Promise.reject(new Error("The view is not open."));
+    const body: SettledSelectionRequest = { type: "selection", bind, row };
+    return this.transport.post<SelectionContextResult>("selection.settled", body, { lease: this.#lease.lease_ref, signal });
+  }
+
+  #take(l: SubscriptionLease) { this.#lease = l; this.#leasedAt = this.#now(); }
+
+  #schedule() {
+    if (this.#timer) clearTimeout(this.#timer);
+    const l = this.#lease; if (!l) return;
+    // Renew at two thirds of the lease so one lost attempt still leaves time for a second.
+    this.#timer = setTimeout(() => { void this.renew(); }, l.lease_seconds * 1000 * 0.66);
+  }
+
+  /** Renews the lease. A superseded or refused answer keeps the rows hidden; a matching one repaints only what it retained. */
+  async renew(): Promise<void> {
+    const l = this.#lease; if (!l) return;
+    const renewal_id = `r-${++this.#renewalSeq}-${Math.random().toString(36).slice(2, 8)}`;
+    const req: LeaseRenewRequest = { type: "lease_renew", renewal_id, lease_ref: l.lease_ref, cache_partition: l.cache_partition, grant_revision: l.grant_revision, result_versions: this.#held() };
+    const sent = this.#renewalSeq;
+    try {
+      const r = await this.transport.post<LeaseRenewResult>("view.renew", req, { lease: l.lease_ref });
+      if (sent !== this.#renewalSeq || r.renewal_id !== renewal_id || r.request_lease_ref !== l.lease_ref || r.cache_partition !== l.cache_partition) return; // superseded or not ours: ignored
+      this.#take(r.lease); this.#viewContexts = r.activation_contexts; this.oncurrent?.(true); this.onrenewed?.(r);
+    } catch { /* keep rows hidden when the lease runs out */ }
+    if (!this.current) this.oncurrent?.(false);
+    this.#schedule();
+  }
+
+  /** Stops renewing (the view closed). */
+  close() { if (this.#timer) clearTimeout(this.#timer); this.#timer = null; this.#lease = null; }
+}

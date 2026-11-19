@@ -1,0 +1,28 @@
+// The harness page: draws one description with the renderer, over the in-page mock host (`?mock=5000`, `&count=none`, `&latency=40`) or a real host (`?host=<base>&view=<ref>`; the bearer is in `?bearer=`,
+// never logged). `?fixture=reading-list|notes` picks the sealed fixture. The suites and the performance measures drive this page; it holds no product code.
+import { mount } from "svelte";
+import "@calternal/ui/styles";
+import { initInputModality, initScheme } from "@calternal/ui";
+import { AppView, HostSession, HttpTransport, type AppDescription } from "../src";
+import { MockHost } from "../testing/mock-host";
+import reading from "../../../contract/fixtures/description-v2/reading-list-app.json";
+import notes from "../../../contract/fixtures/description-v2/notes-app.json";
+
+const q = new URLSearchParams(location.search);
+initInputModality(); initScheme();
+const fixtures: Record<string, unknown> = { "reading-list": reading, notes };
+const description = fixtures[q.get("fixture") ?? "reading-list"] as AppDescription;
+const rows = Number(q.get("mock") ?? 0);
+const transport = rows > 0
+  ? new MockHost({ rows, count: (q.get("count") as "exact" | "none") ?? "exact", latencyMs: Number(q.get("latency") ?? 0), fields: (i) => ({ title: `Reading item ${i}`, added: 1_700_000_000 - i, read: i % 7 === 0, updated: 1_700_000_000 - i, pinned: i % 11 === 0 }) })
+  : new HttpTransport({ base: q.get("host")!, bearer: q.get("bearer") ?? undefined });
+const session = new HostSession({ transport });
+const w = window as unknown as Record<string, unknown>;
+w.__session = session; w.__t0 = performance.now(); w.__transport = transport;
+const t0 = performance.now();
+await session.open(q.get("view") ?? "v-mock");
+w.__opened = performance.now() - t0;
+mount(AppView, { target: document.getElementById("app")!, props: { description, session, kindIcons: { "reading-item": "notes", "reading-reminder": "clock", notes: "notes", collections: "folder" } } });
+// First rows painted: the first skeleton-free row of the first list.
+const mo = new MutationObserver(() => { if (!w.__painted && document.querySelector("[data-i] .row:not([data-skeleton])")) { w.__painted = performance.now() - t0; mo.disconnect(); } });
+mo.observe(document.body, { childList: true, subtree: true });

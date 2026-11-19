@@ -1,0 +1,73 @@
+/**
+ * An in-process host that speaks the catalogue's sealed wire shapes over a deterministic list, for the unit suites, the harness page and the performance measures. It is NOT the host and decides nothing about
+ * authority; it answers view open, windows (start and end anchors, exact or absent count, empty, refine_query, typed refusals on request), selection contexts, lease renewal and leaves the rest to its callers.
+ * A test supplies `rows`, `fields` and hooks to make it refuse or change version.
+ */
+import type { SubscriptionLease, WindowAudience, WindowRequestPayload, WindowReply } from "../src/model";
+import type { Route, Transport } from "../src/wire/transport";
+
+/** How the mock behaves. */
+export interface MockOptions {
+  /** Rows in the list. */
+  rows?: number;
+  /** `exact` (default) or `none`: whether replies carry a count. */
+  count?: "exact" | "none";
+  /** Milliseconds each window answer takes. */
+  latencyMs?: number;
+  /** Fields of row `i`. */
+  fields?: (i: number) => Record<string, unknown>;
+  /** Called with each window request (a spy). */
+  onWindow?: (req: WindowRequestPayload) => void;
+  /** Lets a test refuse or replace a window reply; return undefined for the normal answer. */
+  intercept?: (req: WindowRequestPayload, n: number) => WindowReply | undefined | Promise<WindowReply | undefined>;
+  audience?: WindowAudience;
+}
+
+/** The in-process host. */
+export class MockHost implements Transport {
+  rows: number;
+  version = "rv-1";
+  windowCalls = 0;
+  readonly opts: MockOptions;
+  constructor(o: MockOptions = {}) { this.opts = o; this.rows = o.rows ?? 100; }
+  readonly lease: SubscriptionLease = { lease_ref: "l-1", lease_seconds: 15, grant_revision: "g-1", cache_partition: "cp-1" };
+  readonly log: { route: Route; body: unknown }[] = [];
+
+  /** The id of row `i`. */
+  id(i: number): string { return `r-${i}`; }
+  /** Fields of row `i`. */
+  fields(i: number): Record<string, unknown> { return this.opts.fields ? this.opts.fields(i) : { title: `Row ${i}`, updated: 1_700_000_000 - i }; }
+  /** The contexts the host would issue for row `i`. */
+  contexts(i: number) { return { row: this.id(i), contexts: { open: `ctx-${this.id(i)}` } }; }
+
+  /** A normal answer to a window request over this list. */
+  answer(req: WindowRequestPayload): WindowReply {
+    const audience = this.opts.audience ?? "own_space_member";
+    const exact = (this.opts.count ?? "exact") === "exact";
+    if (this.rows === 0 && req.from === 0) return { audience, bind: req.bind, state: "empty", result_version: this.version, offset: 0, rows: [], window_ref: `w-${req.bind}`, ...(exact ? { count: { mode: "exact", value: 0 } } : {}) } as WindowReply;
+    const span = Math.min(200, req.to - req.from);
+    if (req.anchor === "end") {
+      // distance zero is the last row; the rows come back in normal order, so the window is [last-to+1, last-from]
+      const hi = this.rows - 1 - req.from, lo = Math.max(0, hi - span + 1);
+      const idx: number[] = []; for (let i = lo; i <= hi; i++) idx.push(i);
+      return { audience, bind: req.bind, state: "ready", result_version: this.version, offset: this.rows - 1 - hi, anchor: "end", rows: idx.map((i) => ({ id: this.id(i), fields: this.fields(i) })), window_ref: `w-${req.bind}-e`, count: { mode: "exact", value: this.rows }, activation_contexts: idx.map((i) => this.contexts(i)) } as WindowReply;
+    }
+    const idx: number[] = []; for (let i = req.from; i < Math.min(this.rows, req.from + span); i++) idx.push(i);
+    return { audience, bind: req.bind, state: "ready", result_version: this.version, offset: req.from, rows: idx.map((i) => ({ id: this.id(i), fields: this.fields(i) })), window_ref: `w-${req.bind}-${req.from}`, ...(exact ? { count: { mode: "exact", value: this.rows } } : {}), activation_contexts: idx.map((i) => this.contexts(i)) } as WindowReply;
+  }
+
+  async post<T>(route: Route, body: unknown): Promise<T> {
+    this.log.push({ route, body });
+    if (route === "view.open") return { lease: this.lease, activation_contexts: {}, audience: this.opts.audience ?? "own_space_member" } as T;
+    if (route === "view.renew") { const b = body as { renewal_id: string }; return { lease: this.lease, retained_results: [], activation_contexts: {}, windows: [], renewal_id: b.renewal_id, request_lease_ref: this.lease.lease_ref, cache_partition: this.lease.cache_partition } as T; }
+    if (route === "selection.settled") { const b = body as { bind: string; row: string }; return { type: "selection_context", lease_ref: this.lease.lease_ref, cache_partition: this.lease.cache_partition, bind: b.bind, row: b.row, activation_contexts: { open: `ctx-${b.row}` } } as T; }
+    if (route === "window") {
+      const req = (body as { request: WindowRequestPayload }).request; const n = ++this.windowCalls;
+      this.opts.onWindow?.(req);
+      if (this.opts.latencyMs) await new Promise((r) => setTimeout(r, this.opts.latencyMs));
+      const over = await this.opts.intercept?.(req, n);
+      return (over ?? this.answer(req)) as T;
+    }
+    throw new Error(`The mock host has no ${route}.`);
+  }
+}
