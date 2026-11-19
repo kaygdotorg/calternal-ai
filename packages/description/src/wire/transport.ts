@@ -39,7 +39,9 @@ export class HttpTransport implements Transport {
     const headers: Record<string, string> = {};
     if (this.#bearer) headers.authorization = `Bearer ${this.#bearer}`;
     if (opts.lease) headers["x-step0-view-lease"] = opts.lease;
-    const res = await this.#fetch(`${this.#base}/row-images/${encodeURIComponent(ref)}`, { headers, redirect: "error", cache: "no-store" });
+    // The image read is the host's own origin-level route (`/api/v2/row-images/{ref}`), not under the fixture's /step0/v2 base; a relative base (a same-origin proxy) keeps it beside its other routes.
+    const root = /^https?:/.test(this.#base) ? `${new URL(this.#base).origin}/api/v2/row-images` : `${this.#base}/row-images`;
+    const res = await this.#fetch(`${root}/${encodeURIComponent(ref)}`, { headers, redirect: "error", cache: "no-store" });
     if (!res.ok) return null;
     const type = res.headers.get("content-type") ?? "";
     if (!/^image\/(png|jpeg)/.test(type)) return null;

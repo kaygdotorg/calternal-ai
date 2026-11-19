@@ -30,6 +30,8 @@ async function product(req, res, sub) {
 }
 
 async function proxy(req, res, path) {
+  // Row images are the host's origin-level route, not under the fixture base.
+  if (path.startsWith("row-images/")) path = `../../../api/v2/${path}`;
   const chunks = []; let size = 0;
   for await (const c of req) { size += c.length; if (size > 131072) { res.writeHead(413).end(); return; } chunks.push(c); }
   const headers = { authorization: `Bearer ${bearer()}` };
