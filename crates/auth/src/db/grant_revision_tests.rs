@@ -46,6 +46,16 @@ fn affected_space_is_fenced_before_session_write_commits() {
     let unrelated = spaces.grant_revision(other_space, enroll(&spaces)).unwrap();
     let before = affected.current().unwrap();
     let other_before = unrelated.current().unwrap();
+    db.run_blocking(move |connection| {
+        connection.execute(
+            "INSERT INTO installations(id,user_id,kind,name,token_hash,created_at,last_seen_at)
+             VALUES ('fixture',?1,'browser','Fixture',x'01',0,0)",
+            [ids.owner.to_string()],
+        ).map_err(sql)?;
+        connection.execute("UPDATE installations SET token_hash=x'02' WHERE id='fixture'", []).map_err(sql)?;
+        Ok(())
+    }).unwrap();
+    assert_eq!(affected.current(), Some(before));
     let (changed, in_transaction) = mpsc::channel();
     let (release, resume) = mpsc::channel();
     let writer_db = db.clone();
@@ -53,12 +63,8 @@ fn affected_space_is_fenced_before_session_write_commits() {
         writer_db
             .run_blocking(move |connection| {
                 let tx = connection.transaction().map_err(sql)?;
-                tx.execute(
-                "INSERT INTO installations(id,user_id,kind,name,token_hash,created_at,last_seen_at)
-                 VALUES ('fixture',?1,'browser','Fixture',x'01',0,0)",
-                [ids.owner.to_string()],
-            )
-            .map_err(sql)?;
+                tx.execute("UPDATE installations SET revoked_at=1 WHERE id='fixture'", [])
+                    .map_err(sql)?;
                 changed.send(()).unwrap();
                 resume.recv_timeout(Duration::from_secs(5)).unwrap();
                 tx.commit().map_err(sql)

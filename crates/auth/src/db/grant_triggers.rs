@@ -75,7 +75,7 @@ pub(super) fn install(connection: &Connection) -> rusqlite::Result<()> {
             "installations",
             "user_id",
             Account,
-            " OF revoked_at,expires_at,token_hash,user_id",
+            " OF revoked_at,expires_at,user_id",
         ),
         ("users", "id", AccountStatus, " OF disabled_at"),
         ("machine_pool_grants", "account", Account, ""),
@@ -90,10 +90,15 @@ pub(super) fn install(connection: &Connection) -> rusqlite::Result<()> {
     for (table, key, scope, update_columns) in tables {
         let old = scope.sql("OLD", key);
         let new = scope.sql("NEW", key);
+        // A new sign-in grants no authority to an already issued ticket.
+        if table != "installations" {
+            sql.push_str(&format!(
+                "CREATE TEMP TRIGGER grant_{table}_insert BEFORE INSERT ON main.{table}
+                    BEGIN {new} END;"
+            ));
+        }
         sql.push_str(&format!(
-            "CREATE TEMP TRIGGER grant_{table}_insert BEFORE INSERT ON main.{table}
-                BEGIN {new} END;
-            CREATE TEMP TRIGGER grant_{table}_delete BEFORE DELETE ON main.{table}
+            "CREATE TEMP TRIGGER grant_{table}_delete BEFORE DELETE ON main.{table}
                 BEGIN {old} END;
             CREATE TEMP TRIGGER grant_{table}_update BEFORE UPDATE{update_columns} ON main.{table}
                 BEGIN {old} {new} END;"
