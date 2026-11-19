@@ -10,7 +10,7 @@ publish = false
 # Keep debug-only test-plugin stage markers.
 test-timings = ["calternal-types/perf-clock"]
 # Also compile the same journal marker in optimized builds.
-perf-timings = ["test-timings"]
+perf-timings = ["test-timings", "rusqlite/trace"]
 
 [dependencies]
 calternal-types.workspace = true

@@ -167,6 +167,8 @@ impl Space {
             return Err(internal("wrong space binding"));
         }
         crate::discovery::install(&conn)?;
+        #[cfg(feature = "perf-timings")]
+        let conn = calternal_store::timings::with_sql_profile(conn, "content");
         Ok(Self {
             id,
             journal,

@@ -123,6 +123,8 @@ pub(crate) fn open_writer(path: &Path, with_check: bool) -> Result<OpenState> {
         .map_err(Error::internal)?;
     let (epoch, epoch_head, highwater_initialized) = ensure_epoch(&conn, with_check)?;
     let (head, head_check) = read_head(&conn, with_check)?;
+    #[cfg(feature = "perf-timings")]
+    let conn = crate::timings::with_sql_profile(conn, "journal");
     Ok(OpenState {
         conn,
         epoch,

@@ -4,6 +4,10 @@
 #[cfg(feature = "perf-timings")]
 mod note_save;
 #[cfg(feature = "perf-timings")]
+mod sql;
+#[cfg(feature = "perf-timings")]
+pub use sql::with_sql_profile;
+#[cfg(feature = "perf-timings")]
 pub use note_save::{SaveStage, observe_note_save, observe_thread_storage};
 
 /// Emit one JSON diagnostic correlated by request ID after a stage completes.

@@ -16,6 +16,8 @@ pub(crate) struct JobDatabase {
 impl JobDatabase {
     /// Wrap an open connection. Cost: no I/O or allocation.
     pub(super) fn new(connection: Connection, lifecycle: OwnerLifecycle, space: SpaceId) -> Self {
+        #[cfg(feature = "perf-timings")]
+        let connection = calternal_store::timings::with_sql_profile(connection, "jobs");
         Self {
             connection: Mutex::new(connection),
             lifecycle,
