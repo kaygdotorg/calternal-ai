@@ -2,6 +2,66 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://calternal.cloud/contract/host-catalogue-v2.json",
   "description": "Review contract for host kinds, operations, query limits and the activation exchange. A reference shape conveys no authority. The host semantic loader still validates scope, profiles, contracts and dependencies. A description, manifest, event or reply conforms only if it passes contract/verify-description.py at the pinned revision. The JSON Schemas define necessary structural rules and are insufficient on their own. A schema validator used alone must assert formats, including calendar validity for date-time. Differences in verifier-only rule classes are by design.",
+  "open_cutover_requirements": {
+    "renderer_history": {
+      "status": "OPEN",
+      "feature": "Notes",
+      "missing": "A portable renderer request and reply for listing authorized revisions and selecting a restore source.",
+      "blocks": "Browse Notes history and restore a selected revision.",
+      "cutover": "Disabled until a later numbered revision pins this requirement."
+    },
+    "linked_user_comments": {
+      "status": "OPEN",
+      "feature": "Notes",
+      "missing": "A portable checked comment submission and returned comment record for linked users.",
+      "blocks": "Linked-user Comment, including durable creation, delivery and revocation.",
+      "cutover": "Disabled until a later numbered revision pins this requirement."
+    },
+    "historical_transcript_attribution": {
+      "status": "OPEN",
+      "feature": "Threads",
+      "missing": "Committed-record fields for historical headings and author, time, machine and login attribution.",
+      "blocks": "Equal rendering and attribution after history restore, projection rebuild and rollback.",
+      "cutover": "Disabled until a later numbered revision pins this requirement."
+    },
+    "attachment_upload": {
+      "status": "OPEN",
+      "feature": "Threads",
+      "missing": "A portable, checked composer upload contract that produces a Draft AttachmentRef.",
+      "blocks": "Submit a draft with a new attachment on an eligible machine.",
+      "cutover": "Disabled until a later numbered revision pins this requirement.",
+      "proposal": "Sealed generic-engines §§A.1, C.3 use checked composer material and leave acquisition outside this revision. §B.4 defers the new general file-upload routes."
+    },
+    "mention_lookup": {
+      "status": "OPEN",
+      "feature": "Threads",
+      "missing": "A portable, scoped lookup and selection contract for composer mentions.",
+      "blocks": "Choose an authorized recipient and submit that mention under prepared Send.",
+      "cutover": "Disabled until a later numbered revision pins this requirement.",
+      "proposal": "Sealed generic-engines §§A.1, C.3 define checked mentions in prepared material and leave lookup transport outside this revision."
+    },
+    "queued_follow_up": {
+      "status": "OPEN",
+      "feature": "Threads",
+      "missing": "Portable requests and record state for queuing, viewing, editing, cancelling and submitting follow-ups.",
+      "blocks": "Queue and manage a follow-up independently of direct Send or steer.",
+      "cutover": "Disabled until a later numbered revision pins this requirement."
+    },
+    "snooze_presets": {
+      "status": "OPEN",
+      "feature": "Threads",
+      "missing": "The host policy and portable presentation for the offered snooze presets.",
+      "blocks": "Pass the shipped preset snooze workflow using the actor-scoped writer.",
+      "cutover": "Disabled until a later numbered revision pins this requirement."
+    },
+    "snooze_custom_picker": {
+      "status": "OPEN",
+      "feature": "Threads",
+      "missing": "The custom snooze picker policy, including supported date/time choices, time zone and defaults.",
+      "blocks": "Pass the shipped custom date/time snooze workflow using the actor-scoped writer.",
+      "cutover": "Disabled until a later numbered revision pins this requirement."
+    }
+  },
   "reserved_operation_prefixes": [
     "host."
   ],

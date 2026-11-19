@@ -1,4 +1,4 @@
-# Plugin API v2 · revision 14.8 draft
+# Plugin API v2 · revision 14.9 draft
 
 The first contract covers host-drawn apps, generic items, durable jobs and
 generic conversation and execution engines. Freeze after the §8 spikes. Fixture bounds are test settings. See the
@@ -1539,15 +1539,15 @@ fixtures, with final revisions, visible authority and durable outcomes equal.
 - **Notes.** Cold open a collection and search. Edit one 2 MiB note and
   update metadata while a second client edits through Yjs. Reconnect an
   offline draft, retain body and history, rename and Undo, Trash, restore
-  from Trash and history, and confirm Empty Trash as a Manager. Verify
-  linked-user View/Comment and revocation, the host Share sheet and bounded
+  from Trash, and confirm Empty Trash as a Manager. Verify linked-user
+  View and revocation, the host Share sheet and bounded
   bulk Trash/share/collection creation and Choice-from-Bind Move, no worker wake for built-in
   lifecycle actions, and recover a committed save after rollback.
 - **Threads.** Ship only after Notes, both Step 2 writer gates and the
   sealed proposal’s [custody and cutover gates][generic-engines] pass.
   Halt new old-engine admissions and wait for zero live attempts before
   switching writers. See the [cutover wire audit](reviews/plugin-api-v2-14.8-cutover-wire.md)
-  for the renderer fields and remaining implementation blockers. Migrate a legacy session into protected bindings
+  for the wire inventory. Migrate a legacy session into protected bindings
   only with authenticated historical proof of its exact account, provider,
   conversation, machine and profile. Retire Resume for an unproved binding
   and show “Previous session unavailable. Start a new session.” to its
@@ -1558,22 +1558,53 @@ fixtures, with final revisions, visible authority and durable outcomes equal.
   over-limit and unreconciled refusals. Remove private session copies from ordinary files,
   metadata, history and journal, and quarantine unsanitized inputs under
   protected retention. Prove an ordinary backup restores complete public
-  history with stable IDs and rendering and no private session records in
-  the backup or restored inputs. Verify projection rebuild and rollback from
-  post-cutover writes before switching writers. Then open an indexed thread list, submit a
-  composer draft with an attachment on the person’s eligible machine,
-  reconnect at a committed transcript cursor, queue a follow-up, act on
-  a protected approval, archive and unarchive, snooze, and stop. Require exactly one submission per
-  receipt, correct machine/login attribution, no lost committed transcript,
-  and equivalent rollback/reopen behavior. On the original and rebuilt
+  history with stable IDs, order and canonical text and no private session
+  records in the backup or restored inputs. Full rendered equality is
+  blocked on historical attribution below. Verify projection rebuild and
+  rollback from post-cutover writes before switching writers. Open an
+  indexed thread list, submit a composer draft on the person’s eligible
+  machine, reconnect at a committed transcript cursor, act on a protected
+  approval, archive and unarchive, qualify the checked actor-scoped
+  snooze timestamp and Stop. Require exactly one submission per receipt,
+  no lost committed transcript and equivalent rollback/reopen behavior.
+  On the original and rebuilt
   page and follow, assert equal attachment order, media types and lengths
   under equal authority. Reject an over-bound record. Revoke only one
   attachment before delivery while keeping corpus access. Require the
   same record and cursor with no descriptor or placeholder for that
   attachment, and opaque 404 on the old download ref. Exercise host-owned
   provider/model/reasoning/permission/machine controls and authorized
-  options, checked attachments and snooze presets plus the shipped custom
-  date/time picker unless the Owner approves a parity exception.
+  options. Use already checked attachment refs to exercise prepared Send
+  and committed attachment reads. New attachment upload is gated below.
+
+**Existing host protocols.** The Notes editor uses the
+[live room protocol](live-rooms.md#browser-binding) for Yjs deltas, receipts
+and reconnect from a persisted replica. The host's account
+[`drafts.*` and `pending.*` operations](account-input.md#operations)
+handle saved drafts and revision-checked submission. The
+[room and content save engines](live-rooms.md#merge-and-durability) handle
+merge, revisions and checkpoints. These paths bypass the plugin wire. Step 3
+still tests the end-to-end behavior and platform persistence.
+
+**OPEN cutover requirements.** Keep each affected workflow's cutover
+disabled until a later numbered revision pins its missing contract.
+Passing the covered cases enables qualification only. Keep the shipped
+path where available and keep the Notes-first release order. Any proposal
+to defer a workflow past app cutover requires an explicit Owner parity
+decision and a numbered revision. The
+[catalogue open list](../contract/host-catalogue-v2.json#/open_cutover_requirements)
+records the same blockers.
+
+| OPEN | Missing contract | Cutover requirement blocked |
+| --- | --- | --- |
+| `renderer_history` | A portable renderer request and reply for listing authorized revisions and selecting a restore source. The [existing `notes.history` operation](../contract/operations.json) is a parity reference and §3 covers engine reads. | Browse Notes history and restore a selected revision. |
+| `linked_user_comments` | A portable checked comment submission and returned comment record for linked users. | Linked-user Comment, including durable creation, delivery and revocation. |
+| `historical_transcript_attribution` | Committed-record fields for historical headings and author, time, machine and login attribution. | Equal rendering and attribution after history restore, projection rebuild and rollback. |
+| `attachment_upload` | A portable, checked composer upload contract that produces a Draft AttachmentRef. The [sealed proposal §A.1][generic-engines-composer] consumes checked refs. [§B.4][generic-engines-uploads] defers the new general file-upload routes. | Submit a draft with a new attachment on an eligible machine. |
+| `mention_lookup` | A portable, scoped lookup and selection contract for composer mentions. The [sealed proposal §A.1][generic-engines-composer] covers checked mention material. [§C.3][generic-engines-revision] leaves lookup transport outside the revision scope. | Choose an authorized recipient and submit that mention under prepared Send. |
+| `queued_follow_up` | Portable requests and record state for queuing, viewing, editing, cancelling and submitting follow-ups. | Queue and manage a follow-up independently of direct Send or steer. |
+| `snooze_presets` | The host policy and portable presentation for the offered snooze presets. | Pass the shipped preset snooze workflow using the actor-scoped writer. |
+| `snooze_custom_picker` | The custom snooze picker policy, including supported date/time choices, time zone and defaults. | Pass the shipped custom date/time snooze workflow using the actor-scoped writer. |
 
 Run executable catalogue fixtures for both apps, including nested child
 rows and user-made sections. Drag is an Owner-approved parity exception
@@ -1631,7 +1662,7 @@ See the [recorded answers](https://git.kayg.org/kayg/calternal-ai/src/commit/3ab
   qualifies. Scratch activation and Photos-scale I/O and metadata stay
   outside this revision.
 
-### Revision 14.8 draft questions and implementation seams
+### Revision 14.9 draft questions and implementation seams
 
 - Discovery rights, canonical writer and who owns a cross-runner list are
   separate owner questions in [the sealed proposal’s §C][generic-engines].
@@ -1654,16 +1685,18 @@ See the [recorded answers](https://git.kayg.org/kayg/calternal-ai/src/commit/3ab
   at each boundary and require exactly one release and no stale admission.
   Do not enable an
   atomic-Undo shortcut before its gate.
-- The [renderer gap report][renderer-gaps] includes the remaining portable
-  attachment-upload and mention-lookup transports. Omit those controls
-  until their portable checked routes qualify. This draft specifies the
-  route operands, quote acquisition, request-card read and item editor
-  open alongside the other conversation components and prepared Send.
+- The [renderer gap report][renderer-gaps] and the Step 3 open list
+  track the remaining portable transports. The
+  [morning decision](morning-decisions.md#notes-and-orchestrator-cutover-issue-78)
+  records the sequencing question.
 
 See the [review dispositions](reviews/plugin-api-v2-review-dispositions.md)
 for the revision 4 through 6 finding maps.
 
 [generic-engines]: https://git.kayg.org/kayg/calternal-ai/src/commit/5abca642/docs/proposals/plugin-api-v2-generic-engines.md
+[generic-engines-composer]: https://git.kayg.org/kayg/calternal-ai/src/commit/5abca642/docs/proposals/plugin-api-v2-generic-engines.md#a1-admission-send-and-lifecycle
+[generic-engines-uploads]: https://git.kayg.org/kayg/calternal-ai/src/commit/5abca642/docs/proposals/plugin-api-v2-generic-engines.md#b4-photos-scale-follow-up
+[generic-engines-revision]: https://git.kayg.org/kayg/calternal-ai/src/commit/5abca642/docs/proposals/plugin-api-v2-generic-engines.md#c3-numbered-contract-revision
 [runner-walk]: https://git.kayg.org/kayg/calternal-ai/src/commit/ad6fc02e/docs/proposals/independent-runner-walk-2026-11-20.md
 [provider-probe]: https://git.kayg.org/kayg/calternal-ai/src/commit/b3964ef3/docs/measurements/provider-credential-brokering-2026-11-20.md
 [renderer-gaps]: https://git.kayg.org/kayg/calternal-ai/src/commit/880f524b918e2bb2850cafaaa58c66a40f3a208a/docs/reviews/v2-renderer-contract-gaps-2026-11-20.md

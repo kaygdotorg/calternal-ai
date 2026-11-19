@@ -206,3 +206,34 @@ responsible for verifying the artifact. Neither choice affects foreground
 request cost. Prefer reserving bundled IDs once the distribution update
 path can replace them with verified artifacts. The installer currently
 keeps the operator approval flow.
+
+## Notes and orchestrator cutover (issue #78)
+
+**Which of these must be pinned before the orchestrator and Notes cut over, and which can follow?**
+
+A cutover replaces the current app with the ordinary plugin and its
+host-owned controls. Decide the required workflows before scheduling
+that switch. Until then the [Step 3 open list](plugin-api-v2.md#step-3--notes-first-then-threads)
+blocks each affected workflow. The existing room and account-input protocols
+already cover Notes editing and draft reconnect. Their end-to-end
+qualification remains required.
+
+| Workflow | Example | Cost to pin before cutover | Cost of waiting |
+| --- | --- | --- | --- |
+| Notes revision browser | Pick Tuesday's version of a recipe and restore it. | Reuse the history engine and qualify paging and access for both renderers. | Keep the current history path or lose the ability to find a revision to restore in the replacement. |
+| Linked-user comments | Give a collaborator Comment access to a note and revoke it later. | Qualify checked creation, display and live revocation for linked users on both renderers. | Shared notes can qualify for View, but the replacement cannot honor the collaborator's Comment grant. |
+| Historical transcript headings and attribution | Reopen a restored thread and tell who wrote a message, when, and which machine and login ran the agent. | Verify the old-to-new render and privacy-safe attribution against restored and rolled-back histories. | Exact historical display and machine/login attribution remain unproved, blocking the writer switch. |
+| Composer attachment upload | Attach a PDF from a phone before sending to an eligible machine. | Qualify upload bounds and custody, then verify the committed ref carries the right bytes. | Keep the current path where available. In the replacement, prepared Send can use an already checked ref but cannot acquire a new file. |
+| Composer mention lookup | Find the intended Alex from two people with that name. | Qualify scoped lookup and prepare-time recipient checks in both renderers. | Hide the picker. Plain text remains available, and the replacement cannot offer checked recipient selection from names. |
+| Queued follow-up management | Queue a second instruction while a run is busy, then edit or cancel it. | Qualify queue ownership, retry, ordering and distinction from steering a live attempt. | Keep the old queue path. The replacement cannot guarantee that a follow-up waits or can be edited before it starts. |
+| Snooze presets | Put a thread aside until tomorrow morning. | Qualify the offered presets and actor-local deadline behavior on both platforms. | Keep the old shortcuts or defer preset snooze. A checked timestamp alone cannot reproduce the shortcut. |
+| Custom snooze picker | Choose Tuesday at 09:30 in the person's time zone. | Agree on defaults and time-zone behavior and qualify the native pickers. | People lose arbitrary date/time selection in the replacement while this workflow is disabled. |
+
+**Recommendation.** Pin the Notes revision browser and linked-user comments
+before replacing Notes. For Threads, pin historical attribution, attachment
+upload and queued follow-up before switching writers. Allow mention lookup
+and the two snooze affordances to follow only if the Owner explicitly
+accepts those visible gaps and the numbered revision records which
+workflows stay disabled. Keeping full parity costs more before release.
+Deferring those controls shortens the path to cutover and leaves the
+affected workflows on their current paths where available.
