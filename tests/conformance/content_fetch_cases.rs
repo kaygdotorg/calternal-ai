@@ -239,7 +239,7 @@ async fn media_is_ingested_anonymously_and_ask_requires_explicit_load() {
 }
 
 #[tokio::test]
-async fn nonpublic_dns_answers_and_unchecked_redirects_are_refused() {
+async fn nonpublic_dns_answers_are_refused() {
     let f = ProxyFixture::new().await;
     for host in [
         "private",
@@ -256,6 +256,11 @@ async fn nonpublic_dns_answers_and_unchecked_redirects_are_refused() {
         assert_eq!(f.asset(&assets[0]).await.status(), 404, "{host}");
     }
     assert!(f.hits().is_empty());
+}
+
+#[tokio::test]
+async fn redirects_and_invalid_urls_are_checked_before_each_hop() {
+    let f = ProxyFixture::new().await;
     for path in [
         "redirect-private",
         "redirect-credentials",
