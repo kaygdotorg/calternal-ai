@@ -42,9 +42,8 @@ the structured outcome.
 
 ## Design
 
-- **Transport**: version 4 long-poll over HTTP(S) (`protocol`). There are no
-  new dependencies on either side, it passes any proxy in front of the server, and it
-  reuses the server's request guard. Both directions carry sequence numbers and
+- **Control plane** uses version 4 long-poll over HTTP(S) (`protocol`)
+  and the server's request guard. Both directions carry sequence numbers and
   acknowledgements, so a dropped request loses nothing. The cost is one held request
   per machine, plus one round trip of latency when output and work cross.
 - **Identity**: the key pair is made on the machine; the server stores the public key.
@@ -109,6 +108,14 @@ profile: no network, read-only code only, no persistent home or host data mounts
 256 MiB / 1 CPU / 64 PIDs. Interactive execs return a bounded stdin sender;
 machine `Input` messages retain ordering and fencing. Details, lifecycle, test
 commands and placement restrictions: plugin workers.
+
+The approved item-head profile opens a separate per-space data stream with
+HTTP/1.1 Upgrade on the enrolled TLS origin. Machine sync delivers the
+single-use reservation and controls placement. The runtime verifies the
+leased space and generation before starting the package in the existing
+worker sandbox. Revoking the session or losing the short space-channel
+lease tears down that placement. Protocol and verification.
+
 
 
 First-owner deployments start their machine service before setup. The server

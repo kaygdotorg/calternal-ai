@@ -82,12 +82,17 @@ pin and manifest loading are updated. Existing v0 core/SDK types are retained
 for that server until its lane removes them; no compatibility negotiation is
 provided by this new library.
 
-Module costs: registration probes indexes by contributed ID and allocates only new keys;
-session operations use bounded maps/queues and compiled schemas. No library
-operation takes a lock, performs filesystem I/O, fsyncs, starts a process or opens
-a network connection. Each accepted callback performs one broker operation;
-its adapter defines transaction/fsync/round-trip costs. SDK send promises carry
-transport back pressure and pending callback/handler maps are bounded.
+Registration probes indexes by contributed ID and allocates only new keys.
+The private worker session uses bounded maps, queues and compiled schemas.
+Its trusted broker adapter defines callback storage and durability costs.
+
+`SpaceChannel` runs on a stream whose enrollment and assignment the host has
+already verified. Each space has its own credits, control queue, lease timer
+and socket watchdog. Short per-space locks protect the credit ledger. Socket
+operations run after the ledger lock is released. Receiving a frame parses one
+bounded JSON object. Sending writes a sequenced object and flushes the stream,
+with a grant check on each guarded socket poll. The channel performs no
+storage reads or flushes. See the [space channel report](../../docs/reviews/space-channel-2026-11-19.md).
 
 
 The optional `slots` field declares up to 32 contributions. A contribution
