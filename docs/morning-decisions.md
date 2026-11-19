@@ -191,3 +191,18 @@ enrollment gate.
 - **First release.** Decide whether to drain parked plugin jobs before a
   downgrade or keep the new server while those jobs still need signals.
   The jobs.db migration keeps the previous job writer shape.
+
+### May operator-installed packages replace a bundled package ID?
+
+The installer currently lets an operator approve a replacement under an
+existing bundled ID. Decide whether that approval should also let the
+replacement take the ID's native host bindings. For example, a locally
+modified Threads package approved under the bundled ID inherits the
+native `threads` namespace. Reserving the IDs for the distribution would
+prevent that substitution and would require a separate authenticated
+distribution update path for bundled packages. Keeping operator approval
+would preserve local forks and the existing update flow, with the operator
+responsible for verifying the artifact. Neither choice affects foreground
+request cost. Prefer reserving bundled IDs once the distribution update
+path can replace them with verified artifacts. The installer currently
+keeps the operator approval flow.

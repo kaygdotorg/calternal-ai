@@ -23,7 +23,7 @@ impl Jobs {
             space,
             id,
             Some("agent.turn"),
-            Some("calternal-orchestrator"),
+            Some(crate::plugins::threads_owner()),
             account,
         )
     }

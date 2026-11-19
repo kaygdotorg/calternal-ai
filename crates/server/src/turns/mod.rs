@@ -212,7 +212,8 @@ pub async fn dispatch<D: Directory>(
             rid.to_owned(),
             i.space_id.clone(),
         );
-        let generation = enabled_generation(&state, &i.space_id, "calternal-orchestrator").await?;
+        let generation =
+            enabled_generation(&state, &i.space_id, crate::plugins::threads_owner()).await?;
         let (st_settings, account_settings) = (state.clone(), who.id.to_string());
         let settings = if verify {
             calternal_core::AgentRetrySettings {
@@ -254,7 +255,7 @@ pub async fn dispatch<D: Directory>(
             admission.apply(|| {
                 let id = st.jobs.admit(Admission {
                     space: scope,
-                    plugin: "calternal-orchestrator".into(),
+                    plugin: crate::plugins::threads_owner().into(),
                     account: who.id,
                     session,
                     operation: "agent.turn".into(),

@@ -275,6 +275,14 @@ impl DeclarationIndex {
         self.register(manifest.id(), PackageClaims::v2(manifest))
     }
 
+    /// Withdraw a package's live keys after startup detects an unavailable
+    /// dependency. Cost: one scan of the bounded installed declaration index.
+    pub fn withdraw_live(&mut self, package: &str) {
+        for entries in self.active.values_mut() {
+            entries.retain(|_, owner| owner != package);
+        }
+    }
+
     /// Package that owns a live kind. Cost: O(log kinds), no allocation.
     pub fn kind_owner(&self, name: &str) -> Option<&str> {
         self.owner(Category::Kind, name)

@@ -101,7 +101,7 @@ pub(super) fn apply<D: Directory>(
         for (kind, placement, format, live_editing) in st
             .registry
             .snapshot()
-            .get("calternal-orchestrator")
+            .get(crate::plugins::threads_owner())
             .expect("checked plugin")
             .kind_registrations()
         {

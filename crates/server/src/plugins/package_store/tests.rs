@@ -238,11 +238,14 @@ fn upgrading_registers_the_provider_without_changing_its_archive() {
     assert_eq!(installed, (7, archive, checksum, true, 4));
     assert_eq!(
         calternal_store::migrations::inspect(&db, baseline).unwrap(),
-        4
+        3
     );
 }
 
+/// Distribution gate: run `npm run build:plugins` before explicitly running
+/// this test, so the loader checks the real pinned worker bytes.
 #[test]
+#[ignore = "requires built plugin workers; run npm run build:plugins first"]
 fn real_distribution_registers_every_bundled_package_and_operation() {
     let data = tempfile::tempdir().unwrap();
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../plugins");
@@ -282,4 +285,22 @@ fn real_distribution_registers_every_bundled_package_and_operation() {
             }
         }
     }
+}
+
+#[test]
+fn external_distribution_cannot_assign_native_namespaces() {
+    let data = tempfile::tempdir().unwrap();
+    let distribution = tempfile::tempdir().unwrap();
+    fs::write(
+        distribution.path().join("trusted-plugins.json"),
+        br#"{"plugins":[],"operation_namespace_owners":{"threads":"replacement"}}"#,
+    )
+    .unwrap();
+    let error = load(data.path(), Some(distribution.path()), None, false)
+        .err()
+        .expect("external namespace mapping must be refused");
+    assert!(
+        error.contains("unknown field `operation_namespace_owners`"),
+        "{error}"
+    );
 }

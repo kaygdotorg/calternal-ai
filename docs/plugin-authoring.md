@@ -106,10 +106,12 @@ authority for that package. Preserve appdata when reinstalling the server.
 
 The catalogue reserves each package's operation prefixes. Manifest v2
 also reserves its app IDs for that package. An app or package cannot claim
-a host operation namespace. The bundled distribution assigns ownership of
-shared namespaces whose exact host operations stay reserved. Installed
+a host operation namespace. The compiled-in namespace owner map assigns
+shared prefixes whose exact host operations stay reserved. Operator
+distribution catalogues cannot supply this map. Installed
 packages keep their original registration order through updates. Startup
-registers valid rows in that order before applying skipped-row reservations.
+registers valid rows in that order, checks reads against the complete
+catalogue and then applies skipped-row reservations.
 A reservation blocks reassignment, while the current live owner can retain
 its existing names on update. If a stored package no longer validates, the
 server keeps its recoverable names and folders reserved while its

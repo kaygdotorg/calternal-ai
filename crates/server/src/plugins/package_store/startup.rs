@@ -68,6 +68,7 @@ pub fn load(
     for (_, plugin) in v1 {
         catalog.load_v1(Arc::new(plugin), &mut installed.reserved);
     }
+    catalog.reserve_invalid_v2_reads(&mut installed.reserved);
     // Reservations affect subsequent admission, never the choice of live owners on load.
     catalog
         .declarations
@@ -267,7 +268,7 @@ fn initialize_distribution(
     if defaults
         && !entries
             .iter()
-            .any(|entry| entry.id == "calternal-orchestrator")
+            .any(|entry| entry.id == super::super::threads_owner())
     {
         let manifest = host::parse_manifest(include_bytes!(
             "../../../../../plugins/calternal-orchestrator/manifest.json"

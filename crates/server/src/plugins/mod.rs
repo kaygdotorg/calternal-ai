@@ -74,8 +74,6 @@ const TRUSTED_JSON: &str = include_str!("../../trusted-plugins.json");
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct TrustedFile {
-    #[serde(default)]
-    operation_namespace_owners: BTreeMap<String, String>,
     plugins: Vec<TrustedEntry>,
 }
 
@@ -657,6 +655,28 @@ fn check_operation(package: &str, id: &str, capability: &str) -> Result<(), Stri
     Ok(())
 }
 
+fn bundled_namespace_owners() -> &'static BTreeMap<String, String> {
+    static OWNERS: std::sync::OnceLock<BTreeMap<String, String>> = std::sync::OnceLock::new();
+    OWNERS.get_or_init(|| {
+        let owners: BTreeMap<String, String> =
+            serde_json::from_str(include_str!("../../plugin-namespace-owners.json"))
+                .expect("compiled-in package namespace owners are valid");
+        assert!(owners.values().all(|owner| {
+            trusted_distribution()
+                .plugins
+                .iter()
+                .any(|entry| &entry.id == owner)
+        }));
+        owners
+    })
+}
+
+/// Bundled package owning the native Threads namespace. Resolves the same
+/// compiled-in owner used for installation and dispatch.
+pub(crate) fn threads_owner() -> &'static str {
+    &bundled_namespace_owners()["threads"]
+}
+
 fn check_operation_namespace(package: &str, prefix: &str) -> Result<(), String> {
     // A None owner is a host namespace. A distribution entry can assign the
     // namespace to a package while exact host operation IDs stay reserved.
@@ -665,8 +685,7 @@ fn check_operation_namespace(package: &str, prefix: &str) -> Result<(), String> 
         authz::operation_namespaces()
             .map(|prefix| (prefix, None))
             .chain(
-                trusted_distribution()
-                    .operation_namespace_owners
+                bundled_namespace_owners()
                     .iter()
                     .map(|(prefix, owner)| (prefix.as_str(), Some(owner.as_str()))),
             )

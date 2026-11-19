@@ -14,11 +14,14 @@ pub(crate) async fn admit<D: Directory>(
     scheduled: Option<i64>,
     zone: String,
 ) -> Result<(String, String), Error> {
-    let generation =
-        crate::turns::enabled_generation(state, &space.to_string(), "calternal-orchestrator")
-            .await?;
+    let generation = crate::turns::enabled_generation(
+        state,
+        &space.to_string(),
+        crate::plugins::threads_owner(),
+    )
+    .await?;
     let st = state.clone();
-    let actor = calternal_types::Actor::plugin(who.id, "calternal-orchestrator");
+    let actor = calternal_types::Actor::plugin(who.id, crate::plugins::threads_owner());
     let audit = actor.clone();
     let rid = format!("automation-run/{run}");
     let send = rid.clone();

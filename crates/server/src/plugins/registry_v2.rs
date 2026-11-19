@@ -1,7 +1,10 @@
 //! V2 declarations share ownership checks with v1 and grant no runtime authority.
-use std::sync::Arc;
+use std::{
+    collections::{BTreeMap, VecDeque},
+    sync::Arc,
+};
 
-use calternal_plugin_host::ManifestV2;
+use calternal_plugin_host::{DeclarationIndex, ManifestV2, PackageClaims};
 use serde_json::Value;
 
 use super::{Catalog, check_operation, check_operation_namespace};
@@ -33,30 +36,81 @@ impl Catalog {
         ))
     }
 
-    pub(super) fn check_v2_reads(&self, manifest: &ManifestV2) -> Result<(), String> {
-        for kind in declared(manifest, "reads") {
+    fn read_owners<'a>(
+        &'a self,
+        manifest: &'a ManifestV2,
+    ) -> impl Iterator<Item = Result<Option<&'a str>, String>> + 'a {
+        declared(manifest, "reads").map(|kind| {
             let id = kind.as_str().expect("checked kind ID");
-            let local = declared(manifest, "kinds").any(|decl| decl["id"] == id);
-            if !local
-                && self.declarations.kind_owner(id).is_none()
-                && !ManifestV2::host_owns_kind(id)
+            if ManifestV2::host_owns_kind(id)
+                || declared(manifest, "kinds").any(|decl| decl["id"] == id)
             {
-                return Err(format!("Declared read kind {id} is not installed"));
+                return Ok(None);
             }
+            self.declarations
+                .kind_owner(id)
+                .map(Some)
+                .ok_or_else(|| format!("Declared read kind {id} is not installed"))
+        })
+    }
+
+    pub(super) fn check_v2_reads(&self, manifest: &ManifestV2) -> Result<(), String> {
+        for owner in self.read_owners(manifest) {
+            owner?;
         }
         Ok(())
     }
 
+    pub(super) fn reserve_invalid_v2_reads(&mut self, unavailable: &mut DeclarationIndex) {
+        // Check declarations against the complete set of ownership winners.
+        // Walk each dependency edge once, then withdraw the failed closure.
+        let mut dependents: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+        let mut refused = BTreeMap::new();
+        let mut queue = VecDeque::new();
+        for (id, manifest) in &self.v2 {
+            for result in self.read_owners(manifest) {
+                match result {
+                    Ok(Some(owner)) if self.v2.contains_key(owner) => {
+                        dependents.entry(owner).or_default().push(id);
+                    }
+                    Err(error) if !refused.contains_key(id) => {
+                        refused.insert(id.clone(), error);
+                        queue.push_back(id.clone());
+                    }
+                    _ => {}
+                }
+            }
+        }
+        while let Some(owner) = queue.pop_front() {
+            for dependent in dependents.get(owner.as_str()).into_iter().flatten() {
+                if !refused.contains_key(*dependent) {
+                    refused.insert(
+                        (*dependent).to_owned(),
+                        format!("Declared read owner {owner} is unavailable"),
+                    );
+                    queue.push_back((*dependent).to_owned());
+                }
+            }
+        }
+        for (id, error) in refused {
+            tracing::warn!(plugin = %id, reason = %error, "installed v2 package unavailable");
+            let manifest = self
+                .v2
+                .remove(&id)
+                .expect("only registered owners can be withdrawn");
+            self.declarations.withdraw_live(&id);
+            unavailable.reserve_unavailable(id, Some(PackageClaims::v2(&manifest)));
+        }
+    }
+
     pub(super) fn register_v2(&mut self, manifest: Arc<ManifestV2>) -> Result<(), String> {
-        self.declarations.check_reserved(
-            manifest.id(),
-            &calternal_plugin_host::PackageClaims::v2(&manifest),
-        )?;
+        self.check_v2_reads(&manifest)?;
+        self.declarations
+            .check_reserved(manifest.id(), &PackageClaims::v2(&manifest))?;
         self.register_stored_v2(manifest)
     }
 
     pub(super) fn register_stored_v2(&mut self, manifest: Arc<ManifestV2>) -> Result<(), String> {
-        self.check_v2_reads(&manifest)?;
         for operation in declared(&manifest, "operations") {
             let id = operation["id"].as_str().expect("checked operation ID");
             let capability = operation["required_capability"]

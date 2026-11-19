@@ -394,3 +394,59 @@ fn startup_uses_install_order_across_versions() {
         assert!(restarted.get("later-v1").is_none());
     }
 }
+
+#[test]
+fn startup_resolves_reads_against_all_winners_and_cascades_invalid_reads() {
+    let data = tempfile::tempdir().unwrap();
+    let path = data.path();
+    start_catalog(path);
+
+    let mut reader = bare("first-reader");
+    reader["reads"] = json!(["later-kind"]);
+    stored_archive(path, "first-reader", reader);
+    let mut last_reader = bare("last-reader");
+    last_reader["reads"] = json!(["middle-kind"]);
+    stored_archive(path, "last-reader", last_reader);
+    let mut middle = bare("middle-reader");
+    middle["reads"] = json!(["unavailable-kind"]);
+    middle["kinds"] = json!([kind("middle-kind", "Middle Folder")]);
+    stored_archive(path, "middle-reader", middle);
+    let mut absent = bare("absent-owner");
+    absent["reads"] = json!(["never-installed"]);
+    absent["kinds"] = json!([kind("unavailable-kind", "Unavailable Folder")]);
+    stored_archive(path, "absent-owner", absent);
+
+    let later = legacy_notes("later-owner", "later-kind", "Later Folder");
+    let later = package_store::Package {
+        manifest: later.manifest.clone(),
+        worker: None,
+    };
+    package_store::commit_v2(
+        path,
+        "later-owner",
+        &later.archive().unwrap(),
+        &later.checksum().unwrap(),
+    )
+    .unwrap();
+
+    let catalog = start_catalog(path);
+    assert!(catalog.v2_manifest("first-reader").is_some());
+    for id in ["last-reader", "middle-reader", "absent-owner"] {
+        assert!(catalog.v2_manifest(id).is_none(), "{id}");
+    }
+    for (name, expected) in [
+        (
+            "middle-kind",
+            "unresolved read by unavailable package last-reader",
+        ),
+        (
+            "unavailable-kind",
+            "reserved by unavailable package absent-owner",
+        ),
+    ] {
+        assert!(catalog.v2_kind(name).is_none());
+        let mut candidate = bare("candidate");
+        candidate["kinds"] = json!([kind(name, "Candidate Folder")]);
+        refuse(&catalog, candidate, expected);
+    }
+}

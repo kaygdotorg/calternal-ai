@@ -1,7 +1,4 @@
 {
-  "operation_namespace_owners": {
-    "threads": "calternal-orchestrator"
-  },
   "plugins": [
     {
       "id": "calternal-notes",
