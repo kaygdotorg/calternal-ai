@@ -395,8 +395,8 @@ Everything in 5.0 and 5.1 is drawable with system controls. Findings, in order o
 
 ## 9. Paper exercises (fixtures) (web lane)
 
-Fixtures in `contract/fixtures/description-v2/` with one **fixture manifest** per exercise (`manifests/`, in the plugin manifest v2 format: kinds, indexed fields, operations,
-reads), so a fixture is checked against what the plugin would declare, not against nothing: `reading-list`, `notes`, `threads`. Run `python3 contract/verify-description.py`.
+Fixtures in `contract/fixtures/description-v2/` with one **fixture manifest** per exercise (`manifests/`, a subset of the plugin manifest v2 format: kinds, indexed fields, operations,
+reads), so a fixture is checked against what the plugin would declare, not against nothing: `reading-list-app`, `notes-app`, `threads-app` (and `notes-bulk-and-snooze-app`). Run `python3 contract/verify-description.py`.
 This section is a rerun of the three exercises after Opus review 4: what is written, what is not, how many concepts an author meets before the first list, and what
 `defineView` and `defineChrome` will hide.
 

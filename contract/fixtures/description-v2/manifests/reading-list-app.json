@@ -1,5 +1,5 @@
 {
-  "description": "Fixture manifest: the kinds and operations the fixture's package declares (a subset of plugin-manifest-v2).",
+  "description": "Fixture manifest for the reading-list exercise: a subset of plugin-manifest-v2 (the plugin's kinds with typed indexed fields and audiences, the operations with titles and inputs). The full manifest is validated by the plugins lane.",
   "kinds": {
     "reading-item": {
       "fields": {
@@ -8,8 +8,13 @@
         },
         "read": {
           "type": "Boolean"
+        },
+        "title": {
+          "type": "Text"
         }
-      }
+      },
+      "icon": "book",
+      "title_field": "title"
     },
     "reading-reminder": {
       "fields": {
@@ -19,8 +24,13 @@
         "person": {
           "type": "AccountRef",
           "audience": "viewer_self"
+        },
+        "title": {
+          "type": "Text"
         }
-      }
+      },
+      "icon": "clock",
+      "title_field": "title"
     }
   },
   "operations": {

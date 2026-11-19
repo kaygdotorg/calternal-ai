@@ -181,10 +181,25 @@
                   "enum": [
                     "text",
                     "date",
-                    "datetime"
+                    "datetime",
+                    "choice"
                   ],
                   "default": "text",
-                  "description": "text: a text field; date: a date picker; datetime: a date and time picker (snooze). The answer is a device-held value in `interaction.prompt`."
+                  "description": "text: a text field; date or datetime: a picker; choice: one row of a bind (Move to collection, a tag). A choice is NOT a client value: the shell asks the host to issue a `ChoiceRef` for the picked option row and sends it in `interaction.choices` under the prompt's slot; the host resolves the row from the authorised option bind and never accepts a client-supplied id as the choice."
+                },
+                "options": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "bind"
+                  ],
+                  "properties": {
+                    "bind": {
+                      "$ref": "#/$defs/Id",
+                      "description": "The bind whose rows are the options (at most 50); authorised like any other bind, so a viewer never sees an option they may not read."
+                    }
+                  },
+                  "description": "For kind `choice`: the options, as the rows of a bind."
                 }
               },
               "additionalProperties": false,
@@ -197,7 +212,7 @@
           "required": [
             "prompt"
           ],
-          "description": "Ask the person for text when the action fires (a rename); `initial` may use the row scope."
+          "description": "Ask the person for one answer when the action fires (a rename, a date, a choice); the answer is device-held (`interaction.prompt`, or `interaction.choices` for a choice) and the host previews it like any other value."
         }
       ]
     },
@@ -488,13 +503,6 @@
               ]
             }
           ]
-        },
-        "selectionMode": {
-          "enum": [
-            "single",
-            "multiple"
-          ],
-          "default": "single"
         }
       },
       "additionalProperties": false,
@@ -1223,87 +1231,38 @@
         "config": {
           "type": "object",
           "properties": {
-            "placeholder": {
-              "type": "string",
-              "maxLength": 120
-            },
-            "enabled": {
+            "thread": {
               "$ref": "#/$defs/ValueSource",
-              "description": "A literal or a source that resolves to a boolean; absent means enabled."
-            },
-            "attachments": {
-              "type": "boolean",
-              "default": false
-            },
-            "mentions": {
-              "type": "boolean",
-              "default": false,
-              "description": "@-mentions and /commands the host offers; their targets are authorised by the host, never by the description."
-            },
-            "stop": {
-              "type": "boolean",
-              "default": false,
-              "description": "Show the host's Stop control while a turn is in flight (host.turn.stop with the thread's active turn, from the composer surface); a description cannot name it as an invoke."
+              "description": "The thread (a typed thread reference from the route or the selection). The host owns the send: it composes `turns.start` from this thread, the draft and the chosen options."
             },
             "controls": {
               "type": "array",
-              "maxItems": 6,
+              "uniqueItems": true,
+              "maxItems": 8,
               "items": {
-                "type": "object",
-                "properties": {
-                  "id": {
-                    "$ref": "#/$defs/Id"
-                  },
-                  "label": {
-                    "type": "string",
-                    "maxLength": 60
-                  },
-                  "kind": {
-                    "const": "choice"
-                  },
-                  "options": {
-                    "type": "object",
-                    "properties": {
-                      "source": {
-                        "enum": [
-                          "providers",
-                          "models",
-                          "reasoning",
-                          "permissions",
-                          "machines"
-                        ],
-                        "description": "A host option source: the host returns only options the viewer is authorised for; a description never lists options."
-                      }
-                    },
-                    "additionalProperties": false,
-                    "required": [
-                      "source"
-                    ]
-                  },
-                  "required": {
-                    "type": "boolean",
-                    "default": false
-                  }
-                },
-                "additionalProperties": false,
-                "required": [
-                  "id",
-                  "label",
-                  "kind",
-                  "options"
+                "enum": [
+                  "attachments",
+                  "mentions",
+                  "provider",
+                  "model",
+                  "reasoning",
+                  "permission",
+                  "machine",
+                  "stop"
                 ]
               },
-              "description": "Host-owned choice controls shown with the composer (provider, model, reasoning, permission, machine). Values are device-held choices read through {control: <composer>.<control>} and re-checked by the host against the option source at activation."
+              "description": "Which host-owned controls appear with the composer. Their options come from the host and are authorised for the viewer (`composer.options`); a description never lists options. Absent: the text box and Send only."
             },
-            "thread": {
-              "$ref": "#/$defs/ValueSource",
-              "description": "The thread this composer sends to: a typed thread reference from the route. The host composes the send itself (`turns.start`) from the checked thread, the draft and the chosen host options; a description names no operation and no inputs."
+            "placeholder": {
+              "type": "string",
+              "maxLength": 120
             }
           },
           "additionalProperties": false,
           "required": [
             "thread"
-          ]
+          ],
+          "description": "Composer configuration: the thread and which host controls appear. Send, Stop, the option lists, the draft and its checking are the host's."
         }
       },
       "additionalProperties": false,

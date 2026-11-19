@@ -159,6 +159,26 @@
                 }
               }
             }
+          },
+          {
+            "id": "move",
+            "title": "Move to collection",
+            "icon": "folder",
+            "operation": "host.collection.move",
+            "inputs": {
+              "item": {
+                "row": "id"
+              },
+              "collection": {
+                "prompt": {
+                  "title": "Move to",
+                  "kind": "choice",
+                  "options": {
+                    "bind": "collections"
+                  }
+                }
+              }
+            }
           }
         ]
       },
@@ -269,7 +289,7 @@
         "type": "item",
         "kind": "notes",
         "ref": {
-          "route": "note"
+          "route": "item"
         }
       },
       "fields": [
@@ -476,7 +496,7 @@
             "id": "editor",
             "config": {
               "item": {
-                "route": "note"
+                "route": "item"
               },
               "mode": "edit",
               "showTitle": true

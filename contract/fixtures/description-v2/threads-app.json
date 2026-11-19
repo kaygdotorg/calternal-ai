@@ -313,13 +313,20 @@
           "type": "composer",
           "id": "composer",
           "config": {
-            "placeholder": "Ask about this thread",
-            "enabled": {
-              "literal": true
-            },
             "thread": {
               "route": "thread"
-            }
+            },
+            "controls": [
+              "attachments",
+              "mentions",
+              "provider",
+              "model",
+              "reasoning",
+              "permission",
+              "machine",
+              "stop"
+            ],
+            "placeholder": "Ask about this thread"
           }
         }
       ]
@@ -362,40 +369,20 @@
             "type": "composer",
             "id": "composer",
             "config": {
-              "placeholder": "Message",
-              "attachments": true,
-              "mentions": true,
-              "stop": true,
-              "controls": [
-                {
-                  "id": "provider",
-                  "label": "Agent",
-                  "kind": "choice",
-                  "options": {
-                    "source": "providers"
-                  },
-                  "required": true
-                },
-                {
-                  "id": "model",
-                  "label": "Model",
-                  "kind": "choice",
-                  "options": {
-                    "source": "models"
-                  }
-                },
-                {
-                  "id": "reasoning",
-                  "label": "Reasoning",
-                  "kind": "choice",
-                  "options": {
-                    "source": "reasoning"
-                  }
-                }
-              ],
               "thread": {
                 "route": "thread"
-              }
+              },
+              "controls": [
+                "attachments",
+                "mentions",
+                "provider",
+                "model",
+                "reasoning",
+                "permission",
+                "machine",
+                "stop"
+              ],
+              "placeholder": "Message"
             }
           }
         }
