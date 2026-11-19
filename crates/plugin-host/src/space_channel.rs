@@ -11,7 +11,10 @@ pub use wire::{PackagePin, SpaceFrame, SpaceMessage, SpaceMethod};
 
 use std::{
     collections::HashMap,
+    future::poll_fn,
+    pin::Pin,
     sync::{Arc, Mutex},
+    task::Poll,
     time::Duration,
 };
 use tokio::{
@@ -162,7 +165,7 @@ impl SpaceChannel {
     }
 
     /// Queue a frame with a local delivery guard. The writer checks the guard
-    /// again before assigning an ordinal and starting the physical write.
+    /// again before assigning an ordinal and before every socket write or flush poll.
     /// The guard must be nonblocking and may run after the submitting task ends.
     pub fn send_checked(
         &self,
@@ -319,6 +322,39 @@ async fn write_bytes(writer: &mut (impl AsyncWrite + Unpin), bytes: &[u8]) -> Re
     writer.flush().await.map_err(|_| Error::Invocation)
 }
 
+async fn write_guarded(
+    writer: &mut (impl AsyncWrite + Unpin),
+    mut bytes: &[u8],
+    check: &(dyn Fn() -> bool + Send + Sync),
+) -> Result<(), Error> {
+    // An inactive grant after a partial frame ends the stream. Returning to
+    // the queue would concatenate the next frame onto an unfinished line.
+    while !bytes.is_empty() {
+        let n = poll_fn(|context| {
+            if !check() {
+                return Poll::Ready(Err(Error::Refused));
+            }
+            Pin::new(&mut *writer)
+                .poll_write(context, bytes)
+                .map(|result| result.map_err(|_| Error::Invocation))
+        })
+        .await?;
+        if n == 0 {
+            return Err(Error::Invocation);
+        }
+        bytes = &bytes[n..];
+    }
+    poll_fn(|context| {
+        if !check() {
+            return Poll::Ready(Err(Error::Refused));
+        }
+        Pin::new(&mut *writer)
+            .poll_flush(context)
+            .map(|result| result.map_err(|_| Error::Invocation))
+    })
+    .await
+}
+
 async fn maintain_lease(
     shared: &Shared,
     mut expiry: watch::Receiver<Instant>,
@@ -423,9 +459,14 @@ async fn write_loop(
         if pending.control.is_none() {
             shared.written(&pending, bytes.len())?;
         }
-        timeout(WRITE_LIMIT, write_bytes(&mut writer, &bytes))
-            .await
-            .map_err(|_| Error::Invocation)??;
+        timeout(WRITE_LIMIT, async {
+            match pending.guard.as_deref() {
+                Some(check) => write_guarded(&mut writer, &bytes, check).await,
+                None => write_bytes(&mut writer, &bytes).await,
+            }
+        })
+        .await
+        .map_err(|_| Error::Invocation)??;
         if matches!(pending.frame.message, SpaceMessage::Fence {}) {
             return Ok(());
         }

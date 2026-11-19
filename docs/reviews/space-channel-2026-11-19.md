@@ -157,7 +157,9 @@ local comparisons. It performs zero storage reads or flushes.
    and relays it on a capability-free child pipe. The child sees its own
    invocation ID and callback ID. The supervisor alone retains the ticket.
    The host rechecks the grant at the content query, on its return and when
-   dequeuing outbound replies. The normal manifest installer remains on the
+   dequeuing outbound replies. Guarded writes also recheck on each write and
+   flush poll. Revocation aborts a partially written line and closes the stream.
+   The normal manifest installer remains on the
    existing path until it can supply validated v2 approvals.
 
 A warm item-head callback binds to a per-space read pool and performs one
@@ -194,6 +196,8 @@ an old-epoch frame carrying the expected next sequence. A two-package
 transport fixture holds one callback for two seconds and checks control
 priority and second-package progress within 500 ms. A separate test
 verifies that a stale queued reply consumes neither delivery nor sequence.
+A second physical fault revokes a grant after a guarded reply writes a
+prefix. Resuming the receiver must not expose the completed stale frame.
 The real-process expiry test keeps the peer open for the whole fault and
 requires the package to be reaped within five seconds of the last
 renewal. These are development regression bounds.

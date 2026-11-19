@@ -250,3 +250,37 @@ async fn stale_queued_reply_is_discarded_without_consuming_an_ordinal() {
     assert_eq!(received.frame().seq, 1);
     assert_eq!(received.frame().ticket, Some(next));
 }
+
+#[tokio::test]
+async fn revoked_reply_cannot_finish_after_a_stalled_write_resumes() {
+    let (host, mut peer, pin) = raw_peer().await;
+    let live = Arc::new(AtomicBool::new(true));
+    let guard = live.clone();
+    let length = 50_000;
+    host.send_checked(
+        &pin,
+        Uuid::new_v4(),
+        SpaceMessage::Reply {
+            callback_id: Uuid::new_v4(),
+            result: Ok(json!("r".repeat(length))),
+        },
+        move || guard.load(Ordering::Acquire),
+    )
+    .unwrap();
+    let mut prefix = [0_u8; 512];
+    timeout(Duration::from_millis(200), peer.read_exact(&mut prefix))
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(!prefix.contains(&b'\n'));
+    assert!(host.is_live());
+    live.store(false, Ordering::Release);
+    // Once writable again, the writer must recheck before finishing the line.
+    let mut unread = Vec::new();
+    timeout(Duration::from_secs(2), peer.read_until(b'\n', &mut unread))
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(unread.len() + prefix.len() < length);
+    assert!(!unread.contains(&b'\n'));
+}
