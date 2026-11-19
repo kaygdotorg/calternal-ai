@@ -230,6 +230,53 @@ path, then parses metadata once on each of up to 200 selected heads.
 It uses two scope probes, a covering range, the existing admission and
 delivery checks and zero flushes.
 
+## Locked performance run
+
+The first perf-01 run executed checksum-verified release binaries under
+`/usr/local/bin/perf-lock.sh`, with 100 samples per arm. Its list fixture
+contained 100,000 Notes heads and requested 100 rows over HTTP using pagination
+cursors for the deep pages. The comparison is `85add29a` → `49fb0187`.
+The candidate's server and content crates match `e307f153`.
+
+| Notes list offset | Baseline p95 | Candidate p95 |
+| --- | ---: | ---: |
+| First page | 1.071 ms | 1.247 ms |
+| 10,000 | 1.069 ms | 1.430 ms |
+| 90,000 | 1.619 ms | 1.261 ms |
+
+| Effective scopes | Combined save p95 |
+| --- | ---: |
+| 1 | 43.688 ms |
+| 4 | 52.519 ms |
+| 16 | 56.589 ms |
+| 32 | 60.576 ms |
+
+All four save measurements crossed 40 ms. The first run omitted a control
+save arm. It used a constant 8 KiB body, an alternating title, a zero-second
+idle threshold and 6,000 members per additional explicit collection. Step 0
+used a short changing body, a fixed title, a warm 120-second idle threshold and
+a rotating timestamp-sorted membership. Both end the timed interval at the
+`Content::write` acknowledgment. Both include the FULL revision/outbox
+commit, FULL journal publication and FULL outbox retirement. Projection
+maintenance is in the revision transaction. Filesystem materialization and
+projection verification occur afterward. These differences prevent attributing
+the initial save result to the projection. A controlled rerun copies Step 0's
+seed, body, timer and background scope distribution and exercises the
+product's real newest projection and membership triggers. The matched
+control on `85add29a` returned 24.992 / 27.262 / 28.604 / 29.144 / 35.285 ms
+p95 at 0 / 1 / 4 / 16 / 32 scopes, with 100 saves per arm. The zero-scope
+arm used the original engine without a timed projection. The nonzero arms
+used the Step 0 fixture triggers. In the product arm the implicit space
+projection takes one scope. At one scope that leaves no moving count.
+At wider scopes the fixture moves one additional newest-first scope on
+each save and verifies its two counts. The fixture enrolls 257 background
+audiences with the same population distribution as Step 0.
+
+The list follow-up fuses the ordered scope range and its item head lookups
+into one prepared statement. The range still visits one page independently
+of the cursor offset, fetches up to 101 metadata heads, and adds zero flushes.
+The revised perf gate remains open pending the locked comparison.
+
 ## Simplification opportunities
 
 - Generalize the existing collection membership relation before qualifying

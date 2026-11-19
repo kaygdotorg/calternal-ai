@@ -147,51 +147,54 @@ pub(super) fn keys(
     Ok(keys)
 }
 
+const NATIVE_NOTES_PAGE: &str = "SELECT w.item,i.metadata,i.revision,i.updated_at,i.path
+             FROM window_rows w INDEXED BY window_cover
+             CROSS JOIN items i ON i.id=w.item
+             WHERE (w.collection,w.audience)=(?1,?2) AND (w.sort_key,w.item)>(?4,?5)
+             ORDER BY w.sort_key,w.item LIMIT ?3";
+
 impl Space {
     /// Native Notes keeps its timestamp/UUID cursor and existing summary fields.
-    /// One covering scan, then at most limit+1 full metadata lookups.
+    /// One statement seeks the covering range and fetches up to limit+1 heads.
     pub(crate) fn native_notes_page(
         &self,
         cursor: Option<&str>,
         limit: usize,
     ) -> Result<Page<Summary>> {
-        let boundary = cursor.map(parse_native_cursor).transpose()?;
+        let (key, id) = cursor
+            .map(parse_native_cursor)
+            .transpose()?
+            .unwrap_or_else(|| (Key::Integer(i64::MIN), String::new()));
         let scope = super::WindowScope::SpaceNotes.key();
-        let scan = boundary
-            .as_ref()
-            .map_or(Scan::Forward(0), |key| Scan::Seek(key, false));
         let mut stmt = self
             .conn
-            .prepare_cached("SELECT metadata,revision,updated_at,path FROM items WHERE id=?1")
+            .prepare_cached(NATIVE_NOTES_PAGE)
             .map_err(internal)?;
-        let keys = keys(
-            &self.conn,
-            &scope,
-            Plan {
-                scan,
-                take: limit as u64 + 1,
-                reversed: false,
-            },
-        )?;
-        let rows = keys
-            .into_iter()
-            .map(|(_, id)| {
-                let (metadata, revision, updated_at, path): (String, String, String, String) = stmt
-                    .query_row([&id], |row| {
-                        Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
-                    })
-                    .map_err(internal)?;
-                Ok(Summary {
-                    id: Uuid::parse_str(&id).map_err(internal)?,
-                    space: self.id,
-                    kind: "notes".into(),
-                    path,
-                    revision,
-                    updated_at,
-                    metadata: serde_json::from_str(&metadata).map_err(internal)?,
-                })
-            })
-            .collect::<Result<Vec<_>>>()?;
+        let mut records = stmt
+            .query(params![scope.0, scope.1, limit as i64 + 1, key, id])
+            .map_err(internal)?;
+        let mut rows = Vec::with_capacity(limit + 1);
+        while let Some(row) = records.next().map_err(internal)? {
+            let id = row
+                .get_ref(0)
+                .map_err(internal)?
+                .as_str()
+                .map_err(internal)?;
+            let metadata = row
+                .get_ref(1)
+                .map_err(internal)?
+                .as_str()
+                .map_err(internal)?;
+            rows.push(Summary {
+                id: Uuid::parse_str(id).map_err(internal)?,
+                space: self.id,
+                kind: "notes".into(),
+                metadata: serde_json::from_str(metadata).map_err(internal)?,
+                revision: row.get(2).map_err(internal)?,
+                updated_at: row.get(3).map_err(internal)?,
+                path: row.get(4).map_err(internal)?,
+            });
+        }
         Ok(Page::from_lookahead(rows, limit, |row| {
             serde_json::json!([row.updated_at, row.id]).to_string()
         }))
@@ -286,6 +289,18 @@ mod tests {
                 .unwrap()
                 .collect::<rusqlite::Result<Vec<_>>>()
                 .unwrap();
+            let mut native = conn.prepare(NATIVE_NOTES_PAGE).unwrap();
+            let materialized = native
+                .query_map(
+                    params![scope.0, scope.1, 200, boundary.0, boundary.1],
+                    |row| row.get::<_, String>(0),
+                )
+                .unwrap()
+                .collect::<rusqlite::Result<Vec<_>>>()
+                .unwrap();
+            assert_eq!(materialized, plain);
+            assert_eq!(native.get_status(StatementStatus::FullscanStep), 0);
+            assert_eq!(native.get_status(StatementStatus::Sort), 0);
             assert_eq!(probed, plain);
             assert_eq!(probed.len(), 200);
             assert_eq!(seen.load(Ordering::Relaxed), 200);
