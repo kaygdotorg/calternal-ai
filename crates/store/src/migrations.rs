@@ -63,6 +63,11 @@ impl<'a> Schema<'a> {
         self
     }
 
+    /// Name written into the rollback marker, unique to this store. No I/O.
+    pub const fn name(self) -> &'a str {
+        self.name
+    }
+
     /// Version written after all declared batches. No I/O.
     pub const fn version(self) -> i64 {
         match self.changes.last() {

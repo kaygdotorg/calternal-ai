@@ -6,12 +6,10 @@ use calternal_types::{AccountId, Error};
 use rusqlite::{Connection, OpenFlags};
 use std::{io, time::Duration};
 
-const FILE: &str = "onboarding.db";
-
 /// Initial account-local settings schema. The release inventory uses this descriptor.
 pub(crate) const SCHEMA: calternal_store::migrations::Schema<'_> =
     calternal_store::migrations::Schema::new(
-        FILE,
+        "onboarding.db",
         1,
         &["CREATE TABLE finished(id INTEGER PRIMARY KEY CHECK(id=1)) STRICT;"],
         &[],
@@ -28,7 +26,7 @@ pub(crate) fn state(
 ) -> Result<OnboardingState, Error> {
     let _step = store.content().lifecycle().step(account.as_uuid())?;
     let dir = store.appdata().join("accounts").join(account.to_string());
-    let path = dir.join(FILE);
+    let path = dir.join(SCHEMA.name());
     if finish {
         calternal_fsio::private::directory(&dir).map_err(storage_error)?;
         calternal_fsio::private::file(&path).map_err(storage_error)?;

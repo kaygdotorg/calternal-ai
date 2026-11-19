@@ -125,8 +125,51 @@ impl Inventory {
     }
 }
 
+type Store = (&'static str, Schema<'static>);
+
+// This is the release inventory. Each descriptor is the one used by its writer.
+fn system_stores() -> [Store; 6] {
+    use crate::{machines, plugins};
+    [
+        ("system/auth.db", calternal_auth::db::MIGRATIONS),
+        ("system/appearance.db", crate::api::appearance::SCHEMA),
+        ("system/machines.db", machines::db::upgrade_schema()),
+        (
+            crate::automations::scheduling::PATH,
+            crate::automations::scheduling::SCHEMA,
+        ),
+        ("system/content-index.db", calternal_content::ROUTE_SCHEMA),
+        (
+            "installed-plugins.sqlite3",
+            plugins::package_store::UPGRADE_SCHEMA,
+        ),
+    ]
+}
+
+fn space_stores() -> [Store; 5] {
+    use crate::plugins;
+    [
+        ("content.db", calternal_content::SPACE_SCHEMA),
+        ("index.db", calternal_store::JOURNAL_SCHEMA),
+        ("network.db", plugins::network::db::SCHEMA),
+        ("jobs.db", plugins::jobs::upgrade_schema()),
+        ("secrets.db", calternal_secrets::OWNER_SCHEMA),
+    ]
+}
+
+fn account_stores() -> [Store; 6] {
+    use crate::{account_input, plugins};
+    [
+        ("content.db", calternal_content::ACCOUNT_SCHEMA),
+        ("input.db", account_input::UPGRADE_SCHEMA),
+        ("web-push.db", crate::web_push::db::SCHEMA),
+        ("agent-settings.db", plugins::AGENT_SETTINGS_SCHEMA),
+        (crate::onboarding::SCHEMA.name(), crate::onboarding::SCHEMA),
+        ("secrets.db", calternal_secrets::OWNER_SCHEMA),
+    ]
+}
+
 fn databases(appdata: &Path) -> io::Result<Vec<Database>> {
-    use crate::{account_input, machines, plugins};
     let mut entries = Vec::new();
     let mut inspect_one = |relative: String, schema: Schema<'static>| -> io::Result<()> {
         let path = appdata.join(&relative);
@@ -142,48 +185,15 @@ fn databases(appdata: &Path) -> io::Result<Vec<Database>> {
         });
         Ok(())
     };
-    for (relative, schema) in [
-        ("system/auth.db", calternal_auth::db::MIGRATIONS),
-        ("system/appearance.db", crate::api::appearance::SCHEMA),
-        ("system/machines.db", machines::db::upgrade_schema()),
-        (
-            crate::automations::scheduling::PATH,
-            crate::automations::scheduling::SCHEMA,
-        ),
-        ("system/content-index.db", calternal_content::ROUTE_SCHEMA),
-        (
-            "installed-plugins.sqlite3",
-            plugins::package_store::UPGRADE_SCHEMA,
-        ),
-    ] {
+    for (relative, schema) in system_stores() {
         inspect_one(relative.into(), schema)?;
     }
     for (scope, schemas) in [
-        (
-            "spaces",
-            [
-                Some(("content.db", calternal_content::SPACE_SCHEMA)),
-                Some(("index.db", calternal_store::JOURNAL_SCHEMA)),
-                Some(("network.db", plugins::network::db::SCHEMA)),
-                Some(("jobs.db", plugins::jobs::upgrade_schema())),
-                None,
-                Some(("secrets.db", calternal_secrets::OWNER_SCHEMA)),
-            ],
-        ),
-        (
-            "accounts",
-            [
-                Some(("content.db", calternal_content::ACCOUNT_SCHEMA)),
-                Some(("input.db", account_input::UPGRADE_SCHEMA)),
-                Some(("web-push.db", crate::web_push::db::SCHEMA)),
-                Some(("agent-settings.db", plugins::AGENT_SETTINGS_SCHEMA)),
-                Some(("onboarding.db", crate::onboarding::SCHEMA)),
-                Some(("secrets.db", calternal_secrets::OWNER_SCHEMA)),
-            ],
-        ),
+        ("spaces", space_stores().as_slice()),
+        ("accounts", account_stores().as_slice()),
     ] {
         for id in owners(appdata, scope)? {
-            for (file, schema) in schemas.into_iter().flatten() {
+            for &(file, schema) in schemas {
                 inspect_one(format!("{scope}/{id}/{file}"), schema)?;
             }
         }
@@ -297,3 +307,7 @@ fn recovery(deploy: &Deployment) -> io::Result<calternal_recovery::Coordinator> 
     calternal_recovery::Coordinator::open(&recovery_dir, deploy.installation)
         .map_err(io::Error::other)
 }
+
+#[cfg(test)]
+#[path = "inventory_tests.rs"]
+mod tests;
