@@ -40,8 +40,20 @@ export interface ServerOptions {
   retry?: { first: number; max: number; total: number };
 }
 
-/** A proxy or gateway that answers while the server behind it is away (an update, a restart): temporary, never the server's own answer to the request. */
+/** Statuses a proxy or gateway answers with while the server behind it is away (an update, a restart). */
 const TEMPORARY = new Set([502, 503, 504]);
+/**
+ * Whether a response is the server's own answer, whatever its status: it carries our JSON envelope (`{ok, ...}` for operations, `{error: {code, ...}}` for the account routes). A 503 like that is a refusal (no machine,
+ * not ready) that repeating will not change, so it is returned at once; only an answer that is NOT our envelope (a gateway's HTML or text page) is the server being away.
+ */
+async function carriesEnvelope(res: Response): Promise<boolean> {
+  try {
+    const body: unknown = await res.clone().json();
+    return !!body && typeof body === "object" && (typeof (body as { ok?: unknown }).ok === "boolean" || typeof ((body as { error?: { code?: unknown } }).error?.code) === "string");
+  } catch { return false; }
+}
+/** A gateway's 502, 503 or 504 (not the server's own answer): the server is away. */
+const gatewayDown = async (res: Response): Promise<boolean> => TEMPORARY.has(res.status) && !(await carriesEnvelope(res));
 /** The default patience: 250 ms, doubling to 3 s between tries, for up to two minutes. */
 const PATIENCE = { first: 250, max: 3000, total: 120_000 };
 
@@ -60,7 +72,7 @@ export class ServerClient {
     const raw = o.fetch ?? ((...a: Parameters<typeof fetch>) => fetch(...a));
     this.plain = raw;
     // Every call reports to the shared link state (reconnecting banner, expired session); a call the caller cancelled is not a failure.
-    this.f = (...a) => raw(...a).then((r) => { if (r.status === 401) link.expired(!!this.token()); else if (TEMPORARY.has(r.status)) link.failed(); else link.ok(); return r; }, (e: Error) => { if (e?.name !== "AbortError") link.failed(); throw e; });
+    this.f = (...a) => raw(...a).then(async (r) => { if (r.status === 401) link.expired(!!this.token()); else if (await gatewayDown(r)) link.failed(); else link.ok(); return r; }, (e: Error) => { if (e?.name !== "AbortError") link.failed(); throw e; });
   }
   /**
    * A call to a route that is not an operation (account, passkeys, machines): JSON in, JSON out (`{}` for 204), a failure as `ServerError` with the server's own code (or one from the status) and no server text
@@ -81,7 +93,7 @@ export class ServerClient {
     try { res = await (plain ? this.plain : this.f)(`${this.base}${path}`, { ...init, headers: this.headers(init.headers as Record<string, string>) }); }
     catch { throw new ServerError("unavailable", "Can't reach the server."); }
     // A proxy's 502, 503 or 504 is the server being away, whatever its body says (an HTML page, not our envelope): the same as a dropped connection.
-    if (TEMPORARY.has(res.status)) throw new ServerError("unavailable", "Can't reach the server.", res.status);
+    if (await gatewayDown(res)) throw new ServerError("unavailable", "Can't reach the server.", res.status);
     return res;
   }
   /** An event stream (SSE): the body to read, or `ServerError` when the server refuses it. */
