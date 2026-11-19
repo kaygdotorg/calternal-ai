@@ -556,7 +556,7 @@ async fn pool_erasures_survive_replay_and_require_a_machine_acknowledgement() {
     assert_eq!(
         pending["pending_erasures"],
         json!([
-            {"machine_id":pool.id,"pending":1,"operator_wipe":false}
+            {"machine_id":pool.id,"pending":1,"unusable_checkpoints":0,"operator_wipe":false}
         ])
     );
 

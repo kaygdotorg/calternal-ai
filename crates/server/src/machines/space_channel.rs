@@ -15,6 +15,9 @@ use std::{sync::Arc, time::Duration};
 use tokio::sync::{oneshot, watch};
 use uuid::Uuid;
 
+/// Durable terminal cause for recovering a pending checkpoint acknowledgement.
+pub(super) const SMALL_VM_IDLE_REASON: &str = "small plugin runtime idle";
+
 // Preview host limit on live streams and reservations, independent of the
 // content cache. The scheduler also enforces each machine's actual capacity.
 const MAX_CHANNELS: usize = 32;
@@ -24,6 +27,8 @@ pub(crate) struct Connected {
     pub(crate) space: SpaceId,
     pub(crate) channel: SpaceChannel,
     pub(crate) grants: GrantRevision,
+    /// Readiness for first invocation after any checkpoint proof is spent.
+    pub(crate) restore_consumed: watch::Receiver<bool>,
 }
 
 pub(super) struct Reservation {
@@ -32,6 +37,7 @@ pub(super) struct Reservation {
     account: AccountId,
     session: [u8; 32],
     closing: watch::Sender<bool>,
+    restore_consumed: watch::Sender<bool>,
     reply: Option<oneshot::Sender<Connected>>,
 }
 
@@ -58,6 +64,38 @@ impl State {
         Ok(())
     }
 
+    /// Persist consumption for the exact running carrier before admitting calls.
+    /// The sync worker holds the scheduler lock across this one conditional write
+    /// so a concurrent wake cannot reuse the proof before admission opens.
+    pub(super) fn consume_restore(
+        &self,
+        space: SpaceId,
+        machine: Uuid,
+        lease: Uuid,
+    ) -> Result<(), Error> {
+        if let Some(reservation) = self.space_channels.get(&space)
+            && reservation.binding.lease_id == lease
+            && reservation.machine == machine
+            && let Some(counter) = reservation.binding.checkpoint
+        {
+            if *reservation.restore_consumed.borrow() {
+                return Ok(());
+            }
+            super::checkpoint::consume(&self.db, space, machine, counter)?;
+            reservation.restore_consumed.send_replace(true);
+        }
+        Ok(())
+    }
+
+    /// Recheck machine inventory promptly while its restored guest awaits admission.
+    pub(super) fn awaiting_restore_report(&self, machine: Uuid) -> bool {
+        self.space_channels.values().any(|reservation| {
+            reservation.machine == machine
+                && !*reservation.closing.borrow()
+                && !*reservation.restore_consumed.borrow()
+        })
+    }
+
     pub(super) fn close_space_lease(&mut self, lease: Uuid) {
         if let Some(space) = self.leases.get(&lease).map(|row| row.row.space)
             && self
@@ -79,14 +117,43 @@ impl State {
 }
 
 impl MachineService {
+    /// End an idle small placement and request a snapshot. Hold the
+    /// scheduler lock through its durable terminal lease transition and
+    /// queueing Stop; capacity stays reserved until machine acknowledgement.
+    pub(crate) fn sleep_space_run(&self, account: AccountId, lease: Uuid) -> Result<(), Error> {
+        let mut st = self.lock()?;
+        let placement = st
+            .leases
+            .get(&lease)
+            .filter(|l| {
+                l.row.account == account
+                    && l.row.worker
+                    && l.row.image.as_deref()
+                        == Some(calternal_machine::sandbox::worker::SPACE_VM_IMAGE)
+            })
+            .ok_or_else(no_assignment)?;
+        if matches!(
+            placement.state,
+            super::LeaseState::Stopping | super::LeaseState::Ended
+        ) {
+            return Ok(());
+        }
+        let machine = placement.assigned_machine().ok_or_else(no_assignment)?;
+        let space = placement.row.space;
+        st.advance_checkpoint(space, machine, lease)?;
+        st.end_with_files(lease, SMALL_VM_IDLE_REASON, &self.settings, true);
+        Ok(())
+    }
+
     /// Cold wake preflight. One scheduler lock for memory-only reservation
     /// cleanup and capacity checking before placement can start a sandbox.
     pub(crate) fn check_space_channel_available(&self, space: SpaceId) -> Result<(), Error> {
         self.lock()?.require_channel_capacity(space)
     }
 
-    /// Reserve the v2 data channel on an enrolled worker placement. Uses two
-    /// control-plane memory lookups plus an outbox message. No frame uses this lock.
+    /// Reserve the v2 carrier under the scheduler lock on the blocking worker.
+    /// Read the restore proof before queueing the assignment so a concurrent
+    /// erasure cannot authorize an older copy. No frame takes this lock.
     pub(crate) async fn open_space_channel(
         self: &Arc<Self>,
         account: AccountId,
@@ -108,6 +175,7 @@ impl MachineService {
                 fence: lease.row.fence,
                 assignment: Uuid::new_v4(),
                 package,
+                checkpoint: super::checkpoint::proof(&st.db, lease.row.space, machine)?,
             };
             let session = st
                 .machines
@@ -125,6 +193,7 @@ impl MachineService {
                     account,
                     session,
                     closing: watch::channel(false).0,
+                    restore_consumed: watch::channel(binding.checkpoint.is_none()).0,
                     reply: Some(reply),
                 },
             );
@@ -151,6 +220,7 @@ impl MachineService {
             Uuid,
             SpaceChannelAssignment,
             watch::Sender<bool>,
+            watch::Receiver<bool>,
             oneshot::Sender<Connected>,
         ),
         Error,
@@ -194,6 +264,7 @@ impl MachineService {
             machine,
             reservation.binding.clone(),
             reservation.closing.clone(),
+            reservation.restore_consumed.subscribe(),
             reply,
         ))
     }
@@ -238,8 +309,8 @@ pub(super) async fn upgrade<D: Directory>(
             .protected_spaces()
             .cloned()
             .ok_or_else(no_assignment)?;
-        let (binding, grants, closing, reply) = blocking(move || {
-            let (machine, binding, closing, reply) =
+        let (binding, grants, closing, restore_consumed, reply) = blocking(move || {
+            let (machine, binding, closing, restore_consumed, reply) =
                 service.claim_channel(&token, space, assignment)?;
             let grants = match authority.grant_revision(space, machine) {
                 Ok(grants) => grants,
@@ -248,7 +319,7 @@ pub(super) async fn upgrade<D: Directory>(
                     return Err(super::authority_error(error));
                 }
             };
-            Ok((binding, grants, closing, reply))
+            Ok((binding, grants, closing, restore_consumed, reply))
         })
         .await?;
         let upgraded = hyper::upgrade::on(&mut request);
@@ -277,6 +348,7 @@ pub(super) async fn upgrade<D: Directory>(
                         space,
                         channel,
                         grants,
+                        restore_consumed,
                     })
                     .ok()?;
                 tokio::select! {

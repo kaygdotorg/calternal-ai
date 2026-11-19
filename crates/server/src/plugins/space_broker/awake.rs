@@ -9,7 +9,7 @@ use std::{
         atomic::{AtomicBool, Ordering},
     },
 };
-use tokio::sync::{Semaphore, mpsc};
+use tokio::sync::{Semaphore, mpsc, watch};
 
 pub(super) const IDLE: Duration = Duration::from_secs(60);
 pub(super) type Inbox = mpsc::Receiver<SpaceDelivery>;
@@ -26,6 +26,8 @@ pub(super) struct Awake {
     admission: Arc<InvocationReader>,
     reader: Arc<ItemHeadReader>,
     tickets: Semaphore,
+    accepting: AtomicBool,
+    drained: watch::Sender<bool>,
     inboxes: Mutex<HashMap<Uuid, mpsc::Sender<SpaceDelivery>>>,
 }
 
@@ -47,10 +49,15 @@ impl Awake {
         if connected.grants.space() != connected.space {
             return Err(unavailable());
         }
-        let ready = tokio::time::timeout(
-            crate::plugins::worker::WORKER_START_TIMEOUT,
-            connected.channel.receive(),
-        )
+        let ready = tokio::time::timeout(crate::plugins::worker::WORKER_START_TIMEOUT, async {
+            let ready = connected.channel.receive().await?;
+            connected
+                .restore_consumed
+                .wait_for(|consumed| *consumed)
+                .await
+                .ok()?;
+            Some(ready)
+        })
         .await
         .map_err(|_| unavailable())?
         .ok_or_else(unavailable)?;
@@ -75,11 +82,15 @@ impl Awake {
             admission: Arc::new(admission),
             reader,
             tickets: Semaphore::new(MAX_ACTIVE_TICKETS),
+            accepting: AtomicBool::new(true),
+            drained: watch::channel(false).0,
             inboxes: Mutex::default(),
         });
         let owner = Arc::downgrade(&awake);
         let epoch = awake.epoch;
         tokio::spawn(async move {
+            let mut drain = false;
+            let mut stop = false;
             loop {
                 let next = tokio::time::timeout(idle, connected.channel.receive()).await;
                 let Some(awake) = owner.upgrade() else { break };
@@ -92,7 +103,14 @@ impl Awake {
                     Err(_) if awake.tickets.available_permits() < MAX_ACTIVE_TICKETS => continue,
                     Err(_) => {
                         // Fence under the same lock that registers new tickets.
-                        awake.fence.close();
+                        if placement.is_some() {
+                            drain = connected.channel.request_remote_sleep().is_ok();
+                        }
+                        if !drain {
+                            stop = connected.channel.request_remote_stop().is_ok();
+                        }
+                        // Reject another ticket while the control frame is queued.
+                        awake.accepting.store(false, Ordering::Release);
                         break;
                     }
                 };
@@ -105,6 +123,12 @@ impl Awake {
                     inboxes.remove(&id);
                 }
             }
+            if drain || stop {
+                let mut life = connected.channel.lifetime();
+                let _ =
+                    tokio::time::timeout(Duration::from_millis(500), life.wait_for(|live| !*live))
+                        .await;
+            }
             // Close the socket while the placement guard is still held.
             connected.channel.fence();
             if let Some(awake) = owner.upgrade()
@@ -112,7 +136,13 @@ impl Awake {
             {
                 inboxes.clear();
             }
-            if let Some((wake, placement)) = placement {
+            let drained = owner.upgrade().map(|awake| awake.drained.clone());
+            if let Some((wake, mut placement)) = placement {
+                if drain {
+                    // The next wake joins this space's drain until the machine
+                    // confirms that the old VMM was reaped.
+                    let _ = placement.suspend().await;
+                }
                 drop(placement);
                 if let Some(wake) = wake.upgrade() {
                     let mut current = wake.awake.lock().await;
@@ -121,15 +151,25 @@ impl Awake {
                     }
                 }
             }
+            if let Some(drained) = drained {
+                drained.send_replace(true);
+            }
         });
         Ok(awake)
+    }
+
+    pub(super) fn drain_waiter(&self) -> Option<watch::Receiver<bool>> {
+        (!self.accepting.load(Ordering::Acquire)).then(|| self.drained.subscribe())
     }
 
     pub(super) async fn invoke(&self, scope: Scope) -> Result<Value, Error> {
         let _permit = {
             // Claim admission under the same short lock as the idle fence.
             let _registration = self.inboxes.lock().map_err(|_| unavailable())?;
-            if scope.epoch != self.epoch || !self.sender.is_live() {
+            if scope.epoch != self.epoch
+                || !self.sender.is_live()
+                || !self.accepting.load(Ordering::Acquire)
+            {
                 return Err(unavailable());
             }
             self.tickets.try_acquire().map_err(|_| {

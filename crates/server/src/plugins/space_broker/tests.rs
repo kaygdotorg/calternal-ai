@@ -38,6 +38,7 @@ setInterval(() => {}, 1000);
 const lines = require('node:readline').createInterface({input:process.stdin});
 const call = require('node:crypto').randomUUID();
 const waiting = [];
+let firstBurst = true;
 const send = (invocation, message) => process.stdout.write(JSON.stringify({
   protocol_version:2, invocation_id:invocation, message
 }) + '\n');
@@ -48,10 +49,13 @@ lines.on('line', line => {
     const callback = () => send(f.invocation_id, {
       type:'host_call', call_id:call, method:'item_head', input:m.input
     });
-    if (m.operation === 'fixture.other') callback();
+    if (m.operation === 'fixture.other' || !firstBurst) callback();
     else {
       waiting.push(callback);
-      if (waiting.length === Number("$MAX_ACTIVE_TICKETS")) waiting.splice(0).forEach(run => run());
+      if (waiting.length === Number("$MAX_ACTIVE_TICKETS")) {
+        firstBurst = false;
+        waiting.splice(0).forEach(run => run());
+      }
     }
   } else if (m.type === 'host_reply' && m.call_id === call && m.result.Ok) {
     send(f.invocation_id, {type:'complete',data:m.result.Ok});
@@ -171,6 +175,7 @@ impl Fixture {
                 space: self.space,
                 channel: host.unwrap(),
                 grants: self.grants.clone(),
+                restore_consumed: tokio::sync::watch::channel(true).1,
             },
             runtime.unwrap(),
         )

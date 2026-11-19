@@ -17,6 +17,8 @@ pub(super) struct WorkerStop {
     pub session: [u8; 32],
     /// Outbox sequence the session must acknowledge.
     pub seq: u64,
+    /// The terminal command authorized a checkpoint.
+    pub checkpoint: bool,
 }
 
 impl WorkerStop {
@@ -28,6 +30,7 @@ impl WorkerStop {
             account,
             session: [0; 32],
             seq: u64::MAX,
+            checkpoint: false,
         }
     }
 }
@@ -45,6 +48,28 @@ impl MachineService {
         thread: Uuid,
         source: PluginWorker,
     ) -> Result<RunView, Error> {
+        self.request_plugin_placement(account, thread, source, worker::IMAGE)
+    }
+
+    /// Reserve an offline small-VM placement before publishing its v2 carrier.
+    /// Shares the worker lease capacity and teardown acknowledgement, with the
+    /// same two durable commits on the existing placement scheduler.
+    pub(crate) fn request_space_vm(
+        &self,
+        account: AccountId,
+        thread: Uuid,
+        source: PluginWorker,
+    ) -> Result<RunView, Error> {
+        self.request_plugin_placement(account, thread, source, worker::SPACE_VM_IMAGE)
+    }
+
+    fn request_plugin_placement(
+        &self,
+        account: AccountId,
+        thread: Uuid,
+        source: PluginWorker,
+        image: &str,
+    ) -> Result<RunView, Error> {
         if source.source.len() > worker::MAX_SOURCE_BYTES {
             return Err(Error::invalid_input("plugin bundle exceeds 1 MiB"));
         }
@@ -52,7 +77,7 @@ impl MachineService {
             source.space_id,
             account,
             thread,
-            Some(worker::IMAGE.into()),
+            Some(image.into()),
             Some(source),
             None,
             false,
@@ -222,6 +247,7 @@ impl super::state::State {
         &self,
         account: AccountId,
         settings: &Settings,
+        small_vm: bool,
     ) -> Result<(), Error> {
         let mut enrolled = false;
         let mut online = false;
@@ -231,7 +257,7 @@ impl super::state::State {
                 && self.may_use(machine, account)
         }) {
             enrolled = true;
-            if Self::worker_machine(machine, settings) {
+            if Self::worker_machine(machine, settings, small_vm) {
                 online = true;
                 if self.free_for(machine, account, settings) > 0 {
                     return Ok(());
@@ -241,6 +267,8 @@ impl super::state::State {
         Err(if online {
             Error::unavailable("Plugin workers are busy. Retry shortly.")
                 .with_details(serde_json::json!({"reason":"worker_capacity"}))
+        } else if small_vm {
+            Error::unavailable("No eligible pool machine has an available small plugin VM.")
         } else if enrolled {
             Error::unavailable("No pool machine is ready to run containers. Ask an operator to reconnect one or enroll another with Podman.")
                 .with_details(serde_json::json!({"reason":"worker_machine_offline"}))
@@ -252,13 +280,14 @@ impl super::state::State {
 
     /// Whether the authenticated pool session reported an initialized container
     /// runner with a positive sandbox ceiling. Pure in-memory check.
-    pub(super) fn worker_machine(machine: &Machine, settings: &Settings) -> bool {
+    pub(super) fn worker_machine(machine: &Machine, settings: &Settings, small_vm: bool) -> bool {
         machine.row.owner == Owner::Pool
             && super::readiness::connected(machine, settings)
-            && machine
-                .live
-                .as_ref()
-                .is_some_and(|live| !live.direct && live.capacity.max_sandboxes > 0)
+            && machine.live.as_ref().is_some_and(|live| {
+                !live.direct
+                    && live.capacity.max_sandboxes > 0
+                    && (!small_vm || live.capacity.small_plugin_vm)
+            })
     }
 
     /// Persist teardown proof before releasing an admission reservation. One
@@ -272,15 +301,32 @@ impl super::state::State {
         let done: Vec<_> = self
             .worker_stops
             .iter()
-            .filter(|(lease, stop)| {
-                stop.machine == machine
-                    && (stop.session != *session || req.ack >= stop.seq)
-                    && !req.leases.iter().any(|report| report.lease_id == **lease)
+            .filter_map(|(lease, stop)| {
+                if stop.machine != machine || (stop.session == *session && req.ack < stop.seq) {
+                    return None;
+                }
+                let report = req.leases.iter().find(|report| report.lease_id == *lease);
+                let Some(report) = report else {
+                    return Some((*lease, None));
+                };
+                let row = &self.leases.get(lease)?.row;
+                match report.sandbox {
+                    calternal_machine::protocol::SandboxState::CheckpointSaved { counter }
+                        if stop.checkpoint
+                            && stop.account.is_some()
+                            && report.fence.checked_add(1) == Some(row.fence) =>
+                    {
+                        Some((*lease, Some((row.space, counter))))
+                    }
+                    _ => None,
+                }
             })
-            .map(|(id, _)| *id)
             .collect();
         let count = done.len();
-        for id in done {
+        for (id, checkpoint) in done {
+            if let Some((space, counter)) = checkpoint {
+                super::checkpoint::acknowledge(&self.db, space, id, machine, counter)?;
+            }
             self.finish_worker_stop(id)?;
         }
         Ok(count)
@@ -308,386 +354,4 @@ impl super::state::State {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    use calternal_machine::{
-        identity::MachineKey,
-        protocol::{EnrolRequest, PROTOCOL_VERSION, SessionFinish},
-    };
-
-    mod erasure;
-
-    fn ready_machine(service: &MachineService, owner: Owner, capacity: u32) -> Uuid {
-        ready_machine_with_key(service, owner, capacity).0
-    }
-
-    fn ready_machine_with_key(
-        service: &MachineService,
-        owner: Owner,
-        capacity: u32,
-    ) -> (Uuid, MachineKey) {
-        let (code, _) = service.issue_code(owner).unwrap();
-        let key = MachineKey::generate().unwrap();
-        let machine = service
-            .enrol(&EnrolRequest {
-                code,
-                public_key: key.public_key_b64(),
-                name: "fixture".into(),
-                os: "linux".into(),
-                arch: "x86_64".into(),
-                direct: false,
-            })
-            .unwrap()
-            .machine_id;
-        connect(service, machine, &key);
-        let mut state = service.lock().unwrap();
-        let live = state
-            .machines
-            .get_mut(&machine)
-            .unwrap()
-            .live
-            .as_mut()
-            .unwrap();
-        live.capacity.max_sandboxes = capacity;
-        live.capacity.available_memory_bytes = Some(64 << 30);
-        (machine, key)
-    }
-
-    fn connect(service: &MachineService, machine: Uuid, key: &MachineKey) -> String {
-        let challenge = service.session_start(machine).unwrap();
-        service
-            .session_finish(&SessionFinish {
-                machine_id: machine,
-                signature: key.sign_session(machine, &challenge),
-                challenge,
-                boot_id: Uuid::new_v4(),
-                protocol: PROTOCOL_VERSION,
-                backend: "podman".into(),
-                guest_memory_mib: None,
-            })
-            .unwrap()
-            .token
-    }
-
-    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn space_channel_is_single_use_and_bound_to_the_enrolled_assignee() {
-        let dir = tempfile::tempdir().unwrap();
-        let root = dir.path().to_owned();
-        let (service, owner, worker, machine, token, foreign) = blocking(move || {
-            let spaces =
-                calternal_auth::spaces::Spaces::open(&root.join("system/auth.db")).unwrap();
-            let ids = spaces.seed_development().unwrap();
-            let service =
-                MachineService::open(&root, spaces.machines(), Settings::default()).unwrap();
-            service.set_pool_grant(ids.owner, true).unwrap();
-            let (machine, key) = ready_machine_with_key(&service, Owner::Pool, 3);
-            let token = connect(&service, machine, &key);
-            {
-                let mut state = service.lock().unwrap();
-                let live = state
-                    .machines
-                    .get_mut(&machine)
-                    .unwrap()
-                    .live
-                    .as_mut()
-                    .unwrap();
-                live.capacity.max_sandboxes = 3;
-                live.capacity.available_memory_bytes = Some(64 << 30);
-            }
-            let worker = service
-                .request_worker(
-                    ids.owner,
-                    Uuid::new_v4(),
-                    PluginWorker {
-                        space_id: ids.personal,
-                        source: "fixture".into(),
-                    },
-                )
-                .unwrap();
-            let (other, foreign_key) = ready_machine_with_key(&service, Owner::Pool, 1);
-            let foreign = connect(&service, other, &foreign_key);
-            Ok((service, ids.owner, worker, machine, token, foreign))
-        })
-        .await
-        .unwrap();
-        let scheduler = service.clone();
-        let lease = worker.lease_id;
-        let opened = tokio::spawn(async move {
-            scheduler
-                .open_space_channel(
-                    owner,
-                    lease,
-                    calternal_plugin_host::space_channel::PackagePin {
-                        package: "calternal-fixture".into(),
-                        digest: "a".repeat(64),
-                    },
-                )
-                .await
-        });
-        let service2 = service.clone();
-        let binding = tokio::time::timeout(Duration::from_secs(2), async {
-            loop {
-                let service3 = service2.clone();
-                let message = blocking(move || {
-                    let state = service3.lock()?;
-                    Ok(state.machines[&machine]
-                        .live
-                        .as_ref()
-                        .unwrap()
-                        .outbox
-                        .iter()
-                        .find_map(|envelope| match &envelope.message {
-                            Down::OpenSpaceChannel { channel } => Some(channel.clone()),
-                            _ => None,
-                        }))
-                })
-                .await
-                .unwrap();
-                if let Some(binding) = message {
-                    break binding;
-                }
-                tokio::task::yield_now().await;
-            }
-        })
-        .await
-        .unwrap();
-        let service2 = service.clone();
-        blocking(move || {
-            assert!(
-                service2
-                    .claim_channel(&foreign, binding.space, binding.assignment)
-                    .is_err()
-            );
-            assert!(
-                service2
-                    .claim_channel(&token, SpaceId::new(), binding.assignment)
-                    .is_err()
-            );
-            let (_, _, closing, reply) = service2
-                .claim_channel(&token, binding.space, binding.assignment)
-                .unwrap();
-            assert!(
-                service2
-                    .claim_channel(&token, binding.space, binding.assignment)
-                    .is_err()
-            );
-            service2.stop_run(owner, lease).unwrap();
-            assert!(*closing.borrow());
-            drop(reply);
-            Ok(())
-        })
-        .await
-        .unwrap();
-        assert!(opened.await.unwrap().is_err());
-    }
-
-    #[test]
-    fn worker_frames_and_leases_are_not_public_machine_resources() {
-        let dir = tempfile::tempdir().unwrap();
-        let spaces =
-            calternal_auth::spaces::Spaces::open(&dir.path().join("system/auth.db")).unwrap();
-        let owner = spaces.seed_development().unwrap().owner;
-        let service =
-            MachineService::open(dir.path(), spaces.machines(), Settings::default()).unwrap();
-        service.set_pool_grant(owner, true).unwrap();
-        ready_machine(&service, Owner::Pool, 3);
-        let space = SpaceId::new();
-        let worker = service
-            .request_worker(
-                owner,
-                Uuid::new_v4(),
-                PluginWorker {
-                    space_id: space,
-                    source: "verified fixture".into(),
-                },
-            )
-            .unwrap();
-        let exec = Uuid::new_v4();
-        service.lock().unwrap().execs.insert(
-            exec,
-            Exec::new(
-                worker.lease_id,
-                owner,
-                vec!["node".into()],
-                vec![],
-                ExecState::Queued,
-            ),
-        );
-        assert!(
-            service
-                .request_run(space, owner, worker.thread_id, None)
-                .is_err()
-        );
-        assert_eq!(service.run_space(worker.lease_id).unwrap(), None);
-        assert_eq!(service.exec_space(exec).unwrap(), None);
-        let regular = service
-            .request_run(space, owner, Uuid::new_v4(), None)
-            .unwrap();
-        assert_eq!(service.run_space(regular.lease_id).unwrap(), Some(space));
-    }
-    #[test]
-    fn admitted_worker_capacity_is_the_sum_of_ready_pool_ceilings() {
-        let dir = tempfile::tempdir().unwrap();
-        let spaces =
-            calternal_auth::spaces::Spaces::open(&dir.path().join("system/auth.db")).unwrap();
-        let owner = spaces.seed_development().unwrap().owner;
-        let service =
-            MachineService::open(dir.path(), spaces.machines(), Settings::default()).unwrap();
-        let start = || {
-            service.request_worker(
-                owner,
-                Uuid::new_v4(),
-                PluginWorker {
-                    space_id: SpaceId::new(),
-                    source: "verified fixture".into(),
-                },
-            )
-        };
-        let reason = |error: Error| {
-            error.details.unwrap()["reason"]
-                .as_str()
-                .unwrap()
-                .to_owned()
-        };
-        ready_machine(&service, Owner::Account { id: owner }, 10);
-        assert_eq!(reason(start().unwrap_err()), "worker_machine_required");
-        let first = ready_machine(&service, Owner::Pool, 4);
-        let second = ready_machine(&service, Owner::Pool, 5);
-        assert_eq!(reason(start().unwrap_err()), "worker_machine_required");
-        service.set_pool_grant(owner, true).unwrap();
-
-        let placements: Vec<_> = (0..9)
-            .map(|_| start().unwrap().machine_id.unwrap())
-            .collect();
-        assert_eq!(
-            placements
-                .iter()
-                .filter(|&&machine| machine == first)
-                .count(),
-            4
-        );
-        assert_eq!(
-            placements
-                .iter()
-                .filter(|&&machine| machine == second)
-                .count(),
-            5
-        );
-        assert_eq!(reason(start().unwrap_err()), "worker_capacity");
-    }
-
-    #[test]
-    fn teardown_capacity_requires_ack_and_survives_server_restart() {
-        let dir = tempfile::tempdir().unwrap();
-        let open = || {
-            let spaces =
-                calternal_auth::spaces::Spaces::open(&dir.path().join("system/auth.db")).unwrap();
-            let owner = spaces.seed_development().unwrap().owner;
-            (
-                MachineService::open(dir.path(), spaces.machines(), Settings::default()).unwrap(),
-                owner,
-            )
-        };
-        let (service, owner) = open();
-        let source = || PluginWorker {
-            space_id: SpaceId::new(),
-            source: "verified fixture".into(),
-        };
-        service.set_pool_grant(owner, true).unwrap();
-        let machine = ready_machine(&service, Owner::Pool, 1);
-        let run = service
-            .request_worker(owner, Uuid::new_v4(), source())
-            .unwrap();
-        service.stop_run(owner, run.lease_id).unwrap();
-        assert!(!service.worker_stopped(run.lease_id).unwrap());
-        assert_eq!(service.lock().unwrap().load(machine), 1);
-        assert_eq!(service.lock().unwrap().pool_load.get(&owner), Some(&1));
-        assert_eq!(
-            service
-                .request_worker(owner, Uuid::new_v4(), source())
-                .unwrap_err()
-                .details
-                .unwrap()["reason"],
-            "worker_capacity"
-        );
-        let mut report = SyncRequest {
-            ack: 4,
-            discards: vec![],
-            capacity: Default::default(),
-            draining: false,
-            leases: vec![],
-        };
-        {
-            let mut state = service.lock().unwrap();
-            state.worker_stops.insert(
-                run.lease_id,
-                WorkerStop {
-                    machine,
-                    account: Some(owner),
-                    session: [2; 32],
-                    seq: 5,
-                },
-            );
-            assert_eq!(
-                state
-                    .finish_worker_stops(machine, &[2; 32], &report)
-                    .unwrap(),
-                0
-            );
-            report.ack = 5;
-            report
-                .leases
-                .push(calternal_machine::protocol::LeaseReport {
-                    lease_id: run.lease_id,
-                    fence: 1,
-                    sandbox: calternal_machine::protocol::SandboxState::Running,
-                });
-            assert_eq!(
-                state
-                    .finish_worker_stops(machine, &[2; 32], &report)
-                    .unwrap(),
-                0
-            );
-        }
-        drop(service);
-        let (service, owner) = open();
-        assert_eq!(service.lock().unwrap().load(machine), 1);
-        assert_eq!(service.lock().unwrap().pool_load.get(&owner), Some(&1));
-        assert!(!service.worker_stopped(run.lease_id).unwrap());
-        let other = ready_machine(&service, Owner::Pool, 1);
-        let next = service
-            .request_worker(owner, Uuid::new_v4(), source())
-            .unwrap();
-        assert_eq!(next.machine_id, Some(other));
-        assert_eq!(service.lock().unwrap().pool_load.get(&owner), Some(&2));
-        report.leases.clear();
-        {
-            let mut state = service.lock().unwrap();
-            assert_eq!(
-                state
-                    .finish_worker_stops(Uuid::new_v4(), &[3; 32], &report)
-                    .unwrap(),
-                0
-            );
-            assert_eq!(
-                state
-                    .finish_worker_stops(machine, &[3; 32], &report)
-                    .unwrap(),
-                1
-            );
-        }
-        assert!(service.worker_stopped(run.lease_id).unwrap());
-        assert_eq!(service.lock().unwrap().load(machine), 0);
-        assert_eq!(service.lock().unwrap().pool_load.get(&owner), Some(&1));
-        service.stop_run(owner, next.lease_id).unwrap();
-        assert!(!service.worker_stopped(next.lease_id).unwrap());
-        assert!(service.revoke_any(other).unwrap());
-        assert!(service.worker_stopped(next.lease_id).unwrap());
-        assert_eq!(service.lock().unwrap().load(other), 0);
-        assert!(!service.lock().unwrap().pool_load.contains_key(&owner));
-        drop(service);
-        let (service, _) = open();
-        assert!(service.worker_stopped(next.lease_id).unwrap());
-    }
-}
+mod tests;

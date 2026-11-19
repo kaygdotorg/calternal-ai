@@ -367,13 +367,14 @@ pub fn machines(cmd: MachinesCmd, out: &Output) -> Result<Reply, CliError> {
                 );
             if !erasures.is_empty() {
                 reply = reply.blank().line("Pending machine erasures").table(
-                    &["MACHINE", "PENDING", "ACTION"],
+                    &["MACHINE", "PENDING", "UNUSABLE CHECKPOINTS", "ACTION"],
                     erasures
                         .iter()
                         .map(|entry| {
                             vec![
                                 entry.machine_id.to_string(),
                                 entry.pending.to_string(),
+                                entry.unusable_checkpoints.to_string(),
                                 if entry.operator_wipe {
                                     "Operator wipe"
                                 } else {

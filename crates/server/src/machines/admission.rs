@@ -253,7 +253,11 @@ impl MachineService {
         let is_worker = worker.is_some();
         if is_worker {
             st.place_waiting(&self.settings);
-            st.check_worker_capacity(account, &self.settings)?;
+            st.check_worker_capacity(
+                account,
+                &self.settings,
+                image.as_deref() == Some(calternal_machine::sandbox::worker::SPACE_VM_IMAGE),
+            )?;
         }
         let row = db::LeaseRow {
             id: Uuid::new_v4(),

@@ -282,7 +282,7 @@ pub(super) fn put_title(c: &mut Connection, row: &LeaseRow) -> rusqlite::Result<
     tx.commit()
 }
 
-/// Commit placement and both erasure locations before sending an assignment.
+/// Commit placement and its erasure provenance before sending an assignment.
 /// The location rows outlive timed lease pruning. One FULL transaction.
 pub(super) fn put_assignment(c: &mut Connection, row: &LeaseRow) -> rusqlite::Result<()> {
     let tx = c.transaction()?;
@@ -302,6 +302,18 @@ pub(super) fn put_assignment(c: &mut Connection, row: &LeaseRow) -> rusqlite::Re
         tx.execute(
             "INSERT OR IGNORE INTO account_home_locations VALUES(?1,?2)",
             params![account, machine],
+        )?;
+    }
+    if let Some(machine) = row.machine
+        && row.image.as_deref() == Some(calternal_machine::sandbox::worker::SPACE_VM_IMAGE)
+    {
+        tx.execute(
+            "INSERT OR IGNORE INTO space_runtime_locations VALUES(?1,?2,?3)",
+            params![
+                row.space.to_string(),
+                row.account.to_string(),
+                machine.to_string()
+            ],
         )?;
     }
     tx.commit()
@@ -436,6 +448,24 @@ pub(crate) fn last_thread_machine(
     Ok(id.and_then(|s| Uuid::parse_str(&s).ok()))
 }
 
+const SPACE_RUNTIME: &str = "
+CREATE TABLE space_runtime_locations(
+ space TEXT NOT NULL, account TEXT NOT NULL, machine TEXT NOT NULL,
+ PRIMARY KEY(space,account,machine)
+) STRICT, WITHOUT ROWID;
+CREATE INDEX space_runtime_locations_account ON space_runtime_locations(account);
+CREATE TABLE space_runtime_checkpoints(
+ space TEXT PRIMARY KEY, counter INTEGER NOT NULL CHECK(counter>0),
+ lease TEXT NOT NULL, acknowledged TEXT
+) STRICT, WITHOUT ROWID;
+CREATE TABLE space_runtime_erasures(
+ space TEXT NOT NULL, machine TEXT NOT NULL, request_id TEXT NOT NULL UNIQUE,
+ through INTEGER, failures INTEGER NOT NULL DEFAULT 0, retry_after_ms INTEGER NOT NULL DEFAULT 0,
+ PRIMARY KEY(space,machine)
+) STRICT, WITHOUT ROWID;
+CREATE INDEX space_runtime_erasure_delivery ON space_runtime_erasures(machine,retry_after_ms,request_id);
+";
+
 const ADD_HARNESS: &str =
     "ALTER TABLE leases ADD COLUMN harness TEXT CHECK (harness IS NULL OR json_valid(harness));";
 
@@ -447,8 +477,9 @@ pub(crate) fn upgrade_schema() -> calternal_store::migrations::Schema<'static> {
     const TITLES: (i64, &str) = (7, TITLE_LEASES);
     const HARNESS: (i64, &str) = (8, ADD_HARNESS);
     const SHARED: (i64, &str) = (9, SPACE_EXECUTION);
+    const VM: (i64, &str) = (10, SPACE_RUNTIME);
     const CURRENT: Schema<'static> =
-        Schema::new("machines.db", 6, &[SCHEMA], &[TITLES, HARNESS, SHARED]);
+        Schema::new("machines.db", 6, &[SCHEMA], &[TITLES, HARNESS, SHARED, VM]);
     #[cfg(feature = "test-plugins")]
     if option_env!("CALTERNAL_RELEASE_TEST_MIGRATION") == Some("v7") {
         const FIXTURE: Schema<'static> = Schema::new(
@@ -459,8 +490,9 @@ pub(crate) fn upgrade_schema() -> calternal_store::migrations::Schema<'static> {
                 TITLES,
                 HARNESS,
                 SHARED,
+                VM,
                 (
-                    10,
+                    11,
                     "CREATE TABLE upgrade_fixture (id INTEGER PRIMARY KEY) STRICT;",
                 ),
             ],
@@ -471,157 +503,20 @@ pub(crate) fn upgrade_schema() -> calternal_store::migrations::Schema<'static> {
     CURRENT
 }
 
+/// Build a schema-9 store with the deployed tables for upgrade regressions.
 #[cfg(test)]
-mod tests {
-    use super::*;
+pub(super) fn fixture_schema9(path: &Path) -> rusqlite::Connection {
     use calternal_store::migrations::{Schema, migrate_release};
-
-    #[test]
-    fn shared_execution_migrates_from_harness_leases() {
-        let conn = Connection::open_in_memory().unwrap();
-        let previous = Schema::new(
-            "machines.db",
-            6,
-            &[SCHEMA],
-            &[(7, TITLE_LEASES), (8, ADD_HARNESS)],
-        );
-        migrate_release(&conn, previous, false).unwrap();
-        let space = SpaceId::new();
-        let actor = AccountId::new();
-        let lease = Uuid::new_v4();
-        conn.execute(
-            "INSERT INTO leases (id, space, account, thread, fence, state, created_ms, updated_ms, worker) VALUES (?1, ?2, ?3, ?4, 0, 'waiting', 1, 1, 0)",
-            params![lease.to_string(), space.to_string(), actor.to_string(), Uuid::new_v4().to_string()],
-        ).unwrap();
-        migrate_release(&conn, upgrade_schema(), true).unwrap();
-        assert_eq!(
-            calternal_store::migrations::inspect(&conn, previous).unwrap(),
-            upgrade_schema().version()
-        );
-        assert_eq!(
-            super::lease(&conn, lease).unwrap().unwrap().shared_sponsor,
-            None
-        );
-        let stored: i64 = conn
-            .query_row("SELECT count(*) FROM space_execution", [], |row| row.get(0))
-            .unwrap();
-        assert_eq!(stored, 0);
-    }
-
-    #[test]
-    fn harness_lease_migration_preserves_existing_fences_and_writes_scoped_profiles() {
-        use calternal_machine::protocol::{HarnessSandbox, ProviderLoginScope};
-
-        let conn = Connection::open_in_memory().unwrap();
-        let previous = Schema::new("machines.db", 6, &[SCHEMA], &[(7, TITLE_LEASES)]);
-        migrate_release(&conn, previous, false).unwrap();
-        let (id, space, account, thread) = (
-            Uuid::new_v4(),
-            SpaceId::new(),
-            AccountId::new(),
-            Uuid::new_v4(),
-        );
-        conn.execute(
-            "INSERT INTO leases
-             (id, space, account, thread, image, worker, fence, state, created_ms, updated_ms)
-             VALUES (?1, ?2, ?3, ?4, 'fixture-image', 0, 11, 'running', 1, 1)",
-            params![
-                id.to_string(),
-                space.to_string(),
-                account.to_string(),
-                thread.to_string(),
-            ],
-        )
-        .unwrap();
-
-        migrate_release(&conn, upgrade_schema(), true).unwrap();
-        let prior = lease(&conn, id).unwrap().unwrap();
-        assert_eq!(prior.fence, 11);
-        assert_eq!(prior.image.as_deref(), Some("fixture-image"));
-        assert_eq!(prior.harness, None);
-        let harness = HarnessSandbox {
-            provider_id: "fixture-harness".into(),
-            login_scope: ProviderLoginScope::Space(space),
-            workspace_read_only: true,
-            disposable_profile: false,
-            legacy_profile: false,
-            guest_image_digest: None,
-        };
-        let managed = LeaseRow {
-            id: Uuid::new_v4(),
-            thread: Uuid::new_v4(),
-            harness: Some(harness.clone()),
-            ..prior
-        };
-        put_lease(&conn, &managed).unwrap();
-        assert_eq!(
-            lease(&conn, managed.id).unwrap().unwrap().harness,
-            Some(harness)
-        );
-    }
-
-    #[test]
-    fn title_leases_migrate_with_durable_classification_for_both_writers() {
-        let mut conn = Connection::open_in_memory().unwrap();
-        let previous = Schema::new("machines.db", 6, &[SCHEMA], &[]);
-        migrate_release(&conn, previous, false).unwrap();
-        let existing = LeaseRow {
-            id: Uuid::new_v4(),
-            space: SpaceId::new(),
-            account: AccountId::new(),
-            shared_sponsor: None,
-            shared_tools: None,
-            thread: Uuid::new_v4(),
-            worker: false,
-            background_title: false,
-            image: None,
-            harness: None,
-            machine: None,
-            last_machine: None,
-            pinned_machine: None,
-            fence: 0,
-            state: "waiting".into(),
-            reason: None,
-            created_ms: 1,
-        };
-        conn.execute(
-            "INSERT INTO leases
-             (id, space, account, thread, worker, fence, state, created_ms, updated_ms)
-             VALUES (?1, ?2, ?3, ?4, 0, 0, 'waiting', 1, 1)",
-            params![
-                existing.id.to_string(),
-                existing.space.to_string(),
-                existing.account.to_string(),
-                existing.thread.to_string()
-            ],
-        )
-        .unwrap();
-
-        let schema = upgrade_schema();
-        migrate_release(&conn, schema, true).unwrap();
-        assert_eq!(
-            calternal_store::migrations::inspect(&conn, previous).unwrap(),
-            schema.version()
-        );
-        assert!(!lease(&conn, existing.id).unwrap().unwrap().background_title);
-
-        let title = LeaseRow {
-            id: Uuid::new_v4(),
-            thread: Uuid::new_v4(),
-            background_title: true,
-            ..existing
-        };
-        put_title(&mut conn, &title).unwrap();
-        let reread = lease(&conn, title.id).unwrap().unwrap();
-        assert!(reread.background_title);
-        assert!(!reread.worker);
-        let legacy_worker: bool = conn
-            .query_row(
-                "SELECT worker FROM leases WHERE id=?1",
-                [title.id.to_string()],
-                |r| r.get(0),
-            )
-            .unwrap();
-        assert!(legacy_worker);
-    }
+    let connection = Connection::open(path).unwrap();
+    let legacy = Schema::new(
+        "machines.db",
+        6,
+        &[SCHEMA],
+        &[(7, TITLE_LEASES), (8, ADD_HARNESS), (9, SPACE_EXECUTION)],
+    );
+    migrate_release(&connection, legacy, false).unwrap();
+    connection
 }
+
+#[cfg(test)]
+mod tests;

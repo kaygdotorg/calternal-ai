@@ -311,12 +311,18 @@ impl MachineService {
         let session = hash32(token);
         let ready = req.draining || !req.discards.is_empty();
         let svc = self.clone();
-        let notify = blocking(move || svc.sync_begin(machine_id, &session, &req)).await?;
+        let (notify, awaiting_restore) =
+            blocking(move || svc.sync_begin(machine_id, &session, &req)).await?;
         let _guard = PollGuard {
             svc: self.clone(),
             machine_id,
         };
-        let deadline = tokio::time::Instant::now() + self.settings.poll_hold;
+        let hold = if awaiting_restore {
+            self.settings.poll_hold.min(Duration::from_millis(100))
+        } else {
+            self.settings.poll_hold
+        };
+        let deadline = tokio::time::Instant::now() + hold;
         loop {
             let svc = self.clone();
             let pending = blocking(move || svc.outbox(machine_id, &session)).await?;
@@ -339,7 +345,7 @@ impl MachineService {
         machine_id: Uuid,
         session: &[u8; 32],
         req: &SyncRequest,
-    ) -> Result<Arc<Notify>, Error> {
+    ) -> Result<(Arc<Notify>, bool), Error> {
         let mut st = self.lock()?;
         let st = &mut *st;
         let _step = st
@@ -367,7 +373,6 @@ impl MachineService {
             observed.max(live.memory_reservations)
         };
         live.draining = req.draining;
-        live.polls += 1;
         let notify = live.notify.clone();
         if let Some(m) = st.machines.get_mut(&machine_id) {
             m.last_seen = Instant::now();
@@ -380,9 +385,11 @@ impl MachineService {
         if st.finish_worker_stops(machine_id, session, req)? > 0 {
             self.worker_changes.notify_waiters();
         }
-        st.reconcile(machine_id, &req.leases, &self.settings);
+        st.deliver_erasures(machine_id)?;
+        st.reconcile(machine_id, &req.leases, &self.settings)?;
         st.place_waiting(&self.settings);
-        Ok(notify)
+        live_mut(st.machines.get_mut(&machine_id), session)?.polls += 1;
+        Ok((notify, st.awaiting_restore_report(machine_id)))
     }
 
     fn outbox(&self, machine_id: Uuid, session: &[u8; 32]) -> Result<Vec<Envelope>, Error> {

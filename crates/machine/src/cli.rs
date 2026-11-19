@@ -157,6 +157,9 @@ pub enum Command {
         /// Operator configuration file for the experimental microVM backend.
         #[arg(long)]
         microvm_config: Option<PathBuf>,
+        /// Operator configuration for the offline small plugin VM. Requires Auto.
+        #[arg(long)]
+        space_vm_config: Option<PathBuf>,
         /// Optional operator ceiling on concurrent sandboxes.
         #[arg(long, default_value_t = u32::MAX)]
         max_sandboxes: u32,
@@ -462,6 +465,7 @@ async fn run(cmd: Command) -> Result<Reply, CliError> {
             image,
             podman,
             microvm_config,
+            space_vm_config,
             max_sandboxes,
         } => {
             let dir = dir.unwrap_or_else(connection::default_dir);
@@ -480,11 +484,28 @@ async fn run(cmd: Command) -> Result<Reply, CliError> {
                 } else {
                     (None, None)
                 };
+            if space_vm_config.is_some() && !matches!(backend, BackendKind::Auto) {
+                return Err(CliError::new(
+                    "usage",
+                    "--space-vm-config requires --backend auto.",
+                ));
+            }
             let backend: Arc<dyn Backend> = match backend {
-                BackendKind::Auto => Arc::new(
-                    crate::sandbox::configured::ConfiguredBackend::new(root, podman, image)
-                        .with_cli_dir(cli_dir),
-                ),
+                BackendKind::Auto => {
+                    let mut configured = crate::sandbox::configured::ConfiguredBackend::new(
+                        root.clone(),
+                        podman,
+                        image,
+                    )
+                    .with_cli_dir(cli_dir);
+                    if let Some(path) = space_vm_config {
+                        configured = configured
+                            .with_small_vm(root, &path)
+                            .await
+                            .map_err(|error| CliError::new("configuration", error.to_string()))?;
+                    }
+                    Arc::new(configured)
+                }
                 BackendKind::Direct => Arc::new(DirectBackend::new(root).with_cli_dir(cli_dir)),
                 BackendKind::Microvm => {
                     #[cfg(target_os = "linux")]

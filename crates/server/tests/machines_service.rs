@@ -95,6 +95,7 @@ async fn sync(svc: &Arc<MachineService>, m: &M, leases: Vec<LeaseReport>) -> Vec
             cpus: 1,
             memory_bytes: 0,
             available_memory_bytes: Some(64 << 30),
+            small_plugin_vm: false,
             max_sandboxes: 2,
             running_sandboxes: 0,
         },

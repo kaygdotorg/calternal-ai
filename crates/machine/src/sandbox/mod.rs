@@ -160,6 +160,40 @@ pub trait Backend: Send + Sync + 'static {
     fn start<'a>(&'a self, spec: &'a SandboxSpec)
     -> BoxFuture<'a, SandboxResult<Arc<dyn Sandbox>>>;
 
+    /// Whether the initialized backend accepts offline plugin VM placements.
+    /// Cost: one field check, with no I/O or guest start.
+    fn supports_small_plugin_vm(&self) -> bool {
+        false
+    }
+
+    /// Erase a space's offline VM checkpoint after its placements are stopped.
+    /// Refuse if the configured backend cannot establish that deletion succeeded.
+    fn erase_space_runtime(
+        &self,
+        _space: calternal_types::SpaceId,
+        _through: Option<u64>,
+    ) -> BoxFuture<'_, SandboxResult<()>> {
+        Box::pin(async {
+            Err(SandboxError(
+                "Small plugin VM storage is unavailable for erasure".into(),
+            ))
+        })
+    }
+
+    /// Start an offline plugin-space placement. Called only after the enrolled
+    /// carrier opens. Backends without the configured wall refuse before I/O.
+    fn start_space<'a>(
+        &'a self,
+        _spec: &'a SandboxSpec,
+        _checkpoint: Option<u64>,
+    ) -> BoxFuture<'a, SandboxResult<Arc<dyn Sandbox>>> {
+        Box::pin(async {
+            Err(SandboxError(
+                "Small plugin VM is unavailable on this machine".into(),
+            ))
+        })
+    }
+
     /// Start a harness under the requested provider isolation. Unsupported
     /// backends fail before mounting any profile or starting its adapter.
     fn start_harness<'a>(
@@ -181,6 +215,12 @@ pub trait Sandbox: Send + Sync {
     /// reporting to the machine registry. Native sandboxes rely on exec exits.
     fn available(&self) -> bool {
         true
+    }
+
+    /// Stop the guest and publish the numbered checkpoint if supported.
+    /// True means publication and teardown both completed.
+    fn checkpoint(&self, _counter: u64) -> BoxFuture<'_, SandboxResult<bool>> {
+        Box::pin(async { self.stop().await.map(|()| false) })
     }
 
     /// Run a command in the work directory and stream its output.

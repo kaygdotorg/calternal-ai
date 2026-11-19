@@ -2,6 +2,8 @@
 //! The dedicated control port is always attached. Online guests also lease an
 //! operator-managed TAP. A rootless Podman container runs each thread.
 
+mod config;
+pub use config::Config;
 mod disk;
 mod guest;
 mod image;
@@ -9,6 +11,12 @@ mod kvm;
 #[cfg(test)]
 mod measure;
 mod network;
+mod snapshot;
+mod snapshot_api;
+mod space;
+pub(super) use space::SmallRuntime;
+mod storage;
+pub(crate) use storage::{erase_unconfigured, sweep_unconfigured};
 mod vmm;
 mod wire;
 
@@ -22,7 +30,6 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, Weak};
 use std::time::{Duration, Instant};
 
-use serde::Deserialize;
 use tokio::process::Command;
 use tokio::sync::{Mutex as AsyncMutex, Notify, OnceCell};
 use uuid::Uuid;
@@ -48,63 +55,6 @@ pub async fn probe_kvm() -> SandboxResult<()> {
 
 const IDLE: Duration = Duration::from_secs(600);
 const SWEEP: Duration = Duration::from_secs(15);
-
-/// Operator-owned configuration read once when starting the machine role.
-/// CPU and memory apply to a whole account guest. The disk size applies to
-/// newly created account disks and is stored in the disk itself.
-#[derive(Clone, Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Config {
-    /// Absolute executable path for the Firecracker release build.
-    pub firecracker: PathBuf,
-    /// Absolute path of the verified immutable guest image directory.
-    pub image_directory: PathBuf,
-    /// SHA-256 of the image's fixed-order digest manifest, in lowercase hex.
-    pub image_digest: String,
-    /// Path to the ext4 filesystem formatter on the host.
-    pub mkfs_ext4: PathBuf,
-    /// Virtual CPUs per account, between 1 and 32.
-    pub vcpus: u8,
-    /// Guest RAM in MiB. Must be a supported account guest size.
-    pub memory_mib: u32,
-    /// Logical data disk ceiling per account in MiB, between 1024 and 65536.
-    pub disk_mib: u32,
-    /// Prebooted guests without user data, between 0 and 2.
-    pub warm_guests: usize,
-    /// Maximum VMMs, including idle and unassigned guests, between 1 and 64.
-    pub max_guests: usize,
-    /// Absolute operator policy path for a networked guest. Omit for offline guests.
-    #[serde(default)]
-    pub network_policy: Option<PathBuf>,
-}
-
-impl Config {
-    /// Read and validate the small operator configuration on a blocking task.
-    /// Disk and VM resources are untouched until backend initialization.
-    pub async fn load(path: &Path) -> SandboxResult<Self> {
-        let file = tokio::fs::read(path).await.map_err(SandboxError::new)?;
-        let config: Self = serde_json::from_slice(&file).map_err(SandboxError::new)?;
-        if !config.firecracker.is_absolute()
-            || !config.image_directory.is_absolute()
-            || !config.mkfs_ext4.is_absolute()
-            || config
-                .network_policy
-                .as_ref()
-                .is_some_and(|path| !path.is_absolute())
-            || !(1..=32).contains(&config.vcpus)
-            || GuestSize::from_mib(config.memory_mib).is_none()
-            || !(1024..=65536).contains(&config.disk_mib)
-            || !(1..=64).contains(&config.max_guests)
-            || config.warm_guests > 2
-            || config.warm_guests >= config.max_guests
-        {
-            return Err(SandboxError(
-                "invalid microVM paths or resource limits".into(),
-            ));
-        }
-        Ok(config)
-    }
-}
 
 struct Account {
     vm: Option<Guest>,

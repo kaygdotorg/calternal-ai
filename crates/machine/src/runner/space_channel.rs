@@ -1,10 +1,11 @@
 //! Attach the supervisor endpoint to a worker assignment from machine sync.
 use super::*;
 use crate::protocol::SpaceChannelAssignment;
+use crate::sandbox::{Exec, OutputEvent};
 use calternal_plugin_host::{
     Error as ProtocolError, MAX_FRAME_BYTES,
     space_channel::{
-        MAX_ACTIVE_TICKETS, PackagePin, SpaceChannel, SpaceMessage,
+        MAX_ACTIVE_TICKETS, PackagePin, SpaceChannel, SpaceDelivery, SpaceMessage,
         child::{ChildFrame, ChildMessage},
     },
 };
@@ -12,7 +13,7 @@ use calternal_plugin_host::{
 impl Runner {
     pub(super) async fn open_space_channel(self: Arc<Self>, binding: SpaceChannelAssignment) {
         let Some(slot) = self.slot(binding.lease_id).filter(|slot| {
-            !slot.removed.load(Ordering::Acquire)
+            slot.closed.get().is_none()
                 && slot.fence.load(Ordering::Acquire) == binding.fence
                 && slot
                     .spec
@@ -22,27 +23,38 @@ impl Runner {
         }) else {
             return;
         };
-        if slot.channel_started.swap(true, Ordering::AcqRel) {
+        if slot.restore_checkpoint.set(binding.checkpoint).is_err() {
             return;
         }
-        self.supervise_channel(&binding, &slot).await;
-        // This reservation belongs to a v2 placement and cannot keep its sandbox
-        // after the authenticated channel lease ends.
+        slot.channel_started.store(true, Ordering::Release);
+        let sleep = self.supervise_channel(&binding, &slot).await;
+        if sleep && slot.is_small_vm() {
+            // Carrier Sleep drains admission. Only ordered machine sync can
+            // authorize a numbered checkpoint. Bound an abandoned drain.
+            if tokio::time::timeout(Duration::from_secs(2), async {
+                while slot.closed.get().is_none() {
+                    tokio::time::sleep(Duration::from_millis(20)).await;
+                }
+            })
+            .await
+            .is_ok()
+            {
+                return;
+            }
+        }
         Self::close(&slot, false).await;
     }
 
-    async fn supervise_channel(&self, binding: &SpaceChannelAssignment, slot: &Slot) {
+    async fn supervise_channel(&self, binding: &SpaceChannelAssignment, slot: &Slot) -> bool {
         let Ok((io, mut session)) = self.link.upgrade_space(binding).await else {
-            return;
+            return false;
         };
         let Ok(mut channel) = SpaceChannel::runtime(io, binding.space, binding.assignment).await
         else {
-            return;
+            return false;
         };
-        if slot.removed.load(Ordering::Acquire)
-            || slot.fence.load(Ordering::Acquire) != binding.fence
-        {
-            return;
+        if slot.closed.get().is_some() || slot.fence.load(Ordering::Acquire) != binding.fence {
+            return false;
         }
         let mut life = channel.lifetime();
         let fence = channel.fence_handle();
@@ -52,30 +64,50 @@ impl Runner {
                 .sandbox(slot, &guard)
                 .await
                 .map_err(|_| ProtocolError::Invocation)?;
+            // A restored guest can report Running once its sandbox exists.
+            // Wait for the host's first admitted request before executing Node.
+            let first = if binding.checkpoint.is_some() {
+                channel.ready(&binding.package)?;
+                let Some(first) = channel.receive().await else {
+                    return Ok(());
+                };
+                if !matches!(first.frame().message, SpaceMessage::Invoke { .. }) {
+                    return Err(ProtocolError::Invalid);
+                }
+                Some(first)
+            } else {
+                None
+            };
+            let argv = [
+                "node",
+                "--permission",
+                "--allow-fs-read=.",
+                "--disallow-code-generation-from-strings",
+                "--max-old-space-size=128",
+                "worker.js",
+            ]
+            .map(str::to_owned)
+            .to_vec();
             let exec = sandbox
                 .exec(ExecRequest {
-                    argv: [
-                        "node",
-                        "--permission",
-                        "--allow-fs-read=.",
-                        "--disallow-code-generation-from-strings",
-                        "--max-old-space-size=128",
-                        "worker.js",
-                    ]
-                    .into_iter()
-                    .map(str::to_owned)
-                    .collect(),
+                    argv,
                     interactive: true,
                     ..ExecRequest::default()
                 })
                 .await
                 .map_err(|_| ProtocolError::Invocation)?;
-            relay_package(&mut channel, &binding.package, exec).await
+            relay_package(&mut channel, &binding.package, exec, first).await
         };
         tokio::select! {
-            _ = session.changed() => fence.close(),
-            _ = life.wait_for(|live| !*live) => {}
-            _ = run => fence.close(),
+            _ = session.changed() => {
+                fence.close();
+                false
+            }
+            _ = life.wait_for(|live| !*live) => channel.sleep_requested(),
+            _ = run => {
+                fence.close();
+                channel.sleep_requested()
+            }
         }
     }
 }
@@ -88,15 +120,20 @@ async fn relay_package(
     channel: &mut SpaceChannel,
     pin: &PackagePin,
     mut exec: Exec,
+    mut first: Option<SpaceDelivery>,
 ) -> Result<(), ProtocolError> {
     let input = exec.input.take().ok_or(ProtocolError::Invocation)?;
     let mut active = HashMap::<Uuid, Uuid>::new();
     let mut line = Vec::new();
-    channel.ready(pin)?;
+    if first.is_none() {
+        channel.ready(pin)?;
+    }
     let sender = channel.sender();
     loop {
         tokio::select! {
-            item = channel.receive() => {
+            item = async {
+                if first.is_some() { first.take() } else { channel.receive().await }
+            } => {
                 let Some(item) = item else { return Ok(()) };
                 let frame = item.frame();
                 if frame.package.as_deref() != Some(pin.package.as_str())
@@ -203,6 +240,7 @@ mod tests {
                     input: Some(input),
                     events,
                 },
+                None,
             )
             .await
         });

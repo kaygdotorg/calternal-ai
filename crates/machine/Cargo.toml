@@ -26,7 +26,7 @@ tokio = { workspace = true, features = ["process", "sync", "signal", "fs", "net"
 ring.workspace = true
 base64.workspace = true
 tracing.workspace = true
-rustix = { workspace = true, features = ["process"] }
+rustix = { workspace = true, features = ["process", "fs"] }
 
 tempfile.workspace = true
 

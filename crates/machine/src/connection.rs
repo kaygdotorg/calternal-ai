@@ -59,17 +59,26 @@ pub(crate) async fn run_at(
         .await
         .map_err(|e| Error::Protocol(e.0))?;
     let link = Arc::new(Link::with_connect_address(&creds.server, address)?);
-    let runner = Arc::new(Runner::new(
-        config.backend.clone(),
-        link.clone(),
-        config.max_sandboxes,
-    ));
+    let runner = Runner::new(config.backend.clone(), link.clone(), config.max_sandboxes);
+    #[cfg(target_os = "linux")]
+    let runner = runner.with_space_runtime_root(config.dir.join("sandboxes"));
+    let runner = Arc::new(runner);
+    #[cfg(target_os = "linux")]
+    let offline_storage = async {
+        if config.backend.supports_small_plugin_vm() {
+            std::future::pending::<()>().await;
+        }
+        crate::sandbox::microvm::sweep_unconfigured(&config.dir.join("sandboxes")).await;
+    };
+    #[cfg(not(target_os = "linux"))]
+    let offline_storage = std::future::pending::<()>();
     let boot_id = Uuid::new_v4();
     tracing::info!(machine = %creds.machine_id, server = %creds.server, "machine role starting");
     let mut ack = 0;
     let result = tokio::select! {
         biased;
         () = shutdown => None,
+        () = offline_storage => None,
         result = session_loop(&creds, &link, &runner, boot_id, ready, &mut ack) => Some(result),
     };
     let started = Instant::now();

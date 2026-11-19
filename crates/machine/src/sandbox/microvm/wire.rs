@@ -12,7 +12,8 @@ use uuid::Uuid;
 pub(super) const PORT: u32 = 5000;
 const MAX_MESSAGE: usize = 8 * 1024 * 1024;
 
-// A separate read-only boot drive supplies a fresh capability to each guest.
+// A read-only boot drive supplies a fresh capability on cold boot. Offline small
+// guest restores retain that capability in their space-bound snapshot and drive.
 // Guest-local vsock clients can reach the listener on some kernel versions.
 const CONTROL_DOMAIN: &[u8] = b"calternal-microvm-control-v1";
 
@@ -38,6 +39,9 @@ pub(super) async fn verify(
 #[derive(Serialize, Deserialize)]
 pub(super) enum Request {
     Ready,
+    SmallReady,
+    QuiesceSmall,
+    ReseedSmall([u8; 32]),
     Start(SpaceId, SandboxSpec),
     StartHarness(SpaceId, SandboxSpec, crate::protocol::HarnessSandbox),
     Discard(Uuid, Uuid),
@@ -51,6 +55,7 @@ pub(super) enum Request {
 pub(super) enum Response {
     Ready,
     Error,
+    Unavailable,
     Output(ChunkEvent),
 }
 
