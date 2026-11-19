@@ -29,8 +29,10 @@ try {
   const en = await op(p, "plugins.enable", { space_id: space, plugin_id: "jobs-demo" });
   console.log("   plugins.enable:", JSON.stringify(en).slice(0, 160));
   const deadline = Date.now() + 3600_000;
-  const q = await op(p, "jobs-demo.start", { space_id: space, steps: 1, delay_ms: 0, every: 1, wait: "question", deadline_ms: deadline });
-  const a = await op(p, "jobs-demo.start", { space_id: space, steps: 1, delay_ms: 0, every: 1, wait: "approval", deadline_ms: deadline });
+  // The first start spawns the plugin worker: on a busy machine it can answer "extension timed out"; a retry starts a fresh one.
+  const start = async (wait) => { let r; for (let i = 0; i < 4; i++) { r = await op(p, "jobs-demo.start", { space_id: space, steps: 1, delay_ms: 0, every: 1, wait, deadline_ms: deadline }); if (r.ok) break; await p.waitForTimeout(2000); } return r; };
+  const q = await start("question");
+  const a = await start("approval");
   console.log("   jobs:", JSON.stringify(q).slice(0, 140), JSON.stringify(a).slice(0, 140));
   let wire = []; for (let i = 0; i < 60; i++) { wire = (await op(p, "requests.list", {})).data?.requests ?? []; if (wire.filter((r) => r.job_id).length >= 2) break; await p.waitForTimeout(500); }
   ok(wire.filter((r) => r.job_id && !r.thread_id).length === 2, "the server lists both waits as requests with a job and no thread", JSON.stringify(wire.map((r) => [r.detail?.kind, !!r.job_id, r.thread_id])));
@@ -50,7 +52,7 @@ try {
   await p.waitForTimeout(1500);
   ok((await p.getByRole("dialog", { name: /from a plugin/ }).count()) === 0 && (await rows.count()) === 1, "answering it closes the sheet and the row leaves");
   const jobs = await op(p, "jobs.get", { job_id: q.data?.job_id });
-  let state = jobs.data?.state; for (let i = 0; i < 20 && state !== "done"; i++) { await p.waitForTimeout(500); state = (await op(p, "jobs.get", { job_id: q.data?.job_id })).data?.state; }
+  let state = jobs.data?.job?.state; for (let i = 0; i < 20 && state !== "done"; i++) { await p.waitForTimeout(500); state = (await op(p, "jobs.get", { job_id: q.data?.job_id })).data?.job?.state; }
   ok(state === "done", "the job that waited ends done once it is answered", String(state));
   await rows.first().locator("button, a").first().click();
   await p.getByRole("dialog", { name: /from a plugin/ }).getByRole("button", { name: /Allow once|Deny/ }).first().waitFor({ timeout: 5000 }).catch(() => {});
