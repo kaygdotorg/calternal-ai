@@ -243,7 +243,7 @@ export class WindowStore {
     if (reply.state === "ready" && this.resultVersion !== null && reply.result_version !== this.resultVersion) {
       // A new result set replaces the window wholesale, but never in the middle of a key burst.
       if (navHold.held) { this.#held = { reply, req }; return; }
-      this.#clear();
+      this.#supersede(req);
     }
     this.#place(reply, req);
   }
@@ -262,13 +262,26 @@ export class WindowStore {
     this.#pump();
   }
 
-  #applyHeld() { const h = this.#held; if (!h) return; this.#held = null; this.#clear(); this.#place(h.reply, h.req); this.#pump(); }
+  #applyHeld() { const h = this.#held; if (!h) return; this.#held = null; this.#supersede(h.req); this.#place(h.reply, h.req); this.#pump(); }
+
+  /**
+   * A new result set replaces the old one. What is drawn stays on screen until its replacement arrives (a list that changes several times a second must not flash skeleton rows or lose its prefetched windows on every
+   * reply): rows far from what is drawn are dropped, the drawn chunks are asked for again, and each reply overwrites its rows in place; rows past the new exact count are dropped when it is known.
+   */
+  #supersede(req: WindowRequestPayload) {
+    this.#walk = null; this.#refused.clear(); this.#tailCover = 0; this.#ended = false; this.#count = null; this.#loadedEnd = 0;
+    const keep = [...this.#visible.values()];
+    const near = (i: number) => keep.some(([f, l]) => i >= f - this.size && i < l + this.size) || (!keep.length && i < this.size);
+    for (const i of [...this.#rows.keys()]) if (!near(i)) this.#rows.delete(i);
+    for (const i of this.#rows.keys()) { this.#loadedEnd = Math.max(this.#loadedEnd, i + 1); this.#stale.add(Math.floor(i / this.size)); }
+    this.#stale.delete(Math.floor(req.from / this.size));
+  }
 
   #clear() { this.#walk = null; this.#refused.clear(); this.#tailCover = 0; this.#rows.clear(); this.#contexts.clear(); this.#count = null; this.#ended = false; this.#loadedEnd = 0; }
 
   #place(reply: WindowResult, req: WindowRequestPayload) {
     if (reply.state === "ready") { this.resultVersion = reply.result_version; this.windowRef = reply.window_ref; }
-    if (reply.count) this.#count = reply.count;
+    if (reply.count) { this.#count = reply.count; if (reply.count.mode === "exact") for (const i of [...this.#rows.keys()]) if (i >= reply.count.value) this.#rows.delete(i); }
     let base = reply.offset;
     if (reply.anchor === "end" && this.#count?.mode === "exact") base = this.#count.value - 1 - reply.offset - (reply.rows.length - 1);
     reply.rows.forEach((r, k) => this.#rows.set(base + k, r as WindowRow));

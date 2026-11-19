@@ -134,3 +134,15 @@ describe("refresh after an action", () => {
     expect(store.resultVersion).toBe("rv-2"); expect(store.length).toBe(101); expect(store.row(0)?.fields.title).toBe("New 0");
   });
 });
+
+describe("a list that changes on every reply (churn)", () => {
+  it("keeps what is drawn on screen while replacements arrive, never dropping it to skeletons", async () => {
+    let v = 0;
+    const host = new MockHost({ rows: 500, intercept: (req) => { const r = host.answer(req) as { result_version: string }; r.result_version = `rv-${++v}`; return r as never; } });
+    const { store } = await open(host);
+    store.ensure("a", 0, 30);
+    let missing = 0;
+    for (let k = 0; k < 40; k++) { await vi.advanceTimersByTimeAsync(300); for (let i = 0; i < 30; i++) if (!store.row(i) && store.loaded > 0) missing++; if (k % 5 === 0) store.refresh(); }
+    expect(missing).toBe(0); expect(store.length).toBe(500); expect(store.resultVersion).not.toBe("rv-1");
+  });
+});

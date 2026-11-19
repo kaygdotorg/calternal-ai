@@ -36,7 +36,6 @@
     "ajv": "^8.17.1",
     "ajv-formats": "^3.0.1",
     "jsdom": "^31.0.1",
-    "json-schema-to-typescript": "^15.0.4",
     "playwright": "1.63.0",
     "svelte": "5.57.1",
     "svelte-check": "^4.3.0",
