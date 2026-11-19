@@ -123,7 +123,7 @@
       "properties": {
         "id": { "$ref": "host-catalogue-v2.json#/$defs/KindId" },
         "icon": { "$ref": "#/definitions/icon" },
-        "title_field": { "$ref": "#/definitions/localId", "description": "Declared string field exposed as the generated generic title." },
+        "title_field": { "$ref": "#/definitions/localId", "description": "Ordinary string metadata exposed as the generic title. Install rejects a body-derived or extractor-owned source, a reserved host projection, or an indexed source with a narrower audience." },
         "storage": { "$ref": "plugin-manifest-v1.schema.json#/definitions/ManifestPlacement" },
         "claimed_text": { "type": "boolean" },
         "extension": { "type": "string", "pattern": "^[a-z0-9]{1,16}$" },

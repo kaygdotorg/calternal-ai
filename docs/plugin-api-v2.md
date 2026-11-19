@@ -1,4 +1,4 @@
-# Plugin API v2 · revision 14.4 draft
+# Plugin API v2 · revision 14.5 draft
 
 The first contract covers host-drawn apps, generic items, durable jobs and
 generic conversation and execution engines. Freeze after the §8 spikes. Fixture bounds are test settings. See the
@@ -346,7 +346,9 @@ Set `notify_creator` on an enrollment to request a host notification on outcome.
 scheduler records a receipt-backed event with enrollment label, status and
 an authorized link, then uses the host notification path. At most one per
 occurrence. A Reminder can notify even when the operation returns no payload.
-The worker cannot choose the recipient or supply arbitrary feed text.
+The worker cannot choose the recipient or supply feed text. A notification
+may carry the host-checked enrollment label, status and authorized link.
+Omit projected fields, body excerpts and worker payloads.
 
 Signed wait webhooks deliver a typed signal to one parked job. Verify the
 enrolled route, signed correlation and replay identity, and revalidate the
@@ -651,7 +653,12 @@ The catalogue owns generic `id`, `title`, `updated`, `trashed` and
 `pinned` metadata through the same manifest API a community app uses.
 Kind declarations name an icon, a string title field and indexed fields
 using the catalogue’s type and audience vocabularies. The host derives
-generic fields from the engine record and its configured title field.
+generic fields from the engine record. Install checks the generic title
+source before any projection exists. It must be ordinary Text metadata.
+Reject extractor outputs, including `body_excerpt`, other body-derived
+fields, host-owned aliases and an indexed source with narrower delivery
+than the generic title. Use the same provenance for title search and
+offline title display.
 The manifest’s `reads` names every kind a package’s Bind may access,
 including its own. The SDK fills the package’s own kinds into the emitted
 list. Authors write `reads` only for another app’s kinds, including host
@@ -672,7 +679,12 @@ before opening subscriptions. Reject cycles, ambiguous multi-row operands,
 out-of-scope action inputs and references to undeclared binds or actions.
 At query execution and delivery authorize the package and viewer, kind,
 collection, each field of every input or output, each filter/sort,
-corpus and any upstream Bind field. Cross-bind query operands are unsupported, including a foreign Bind’s
+corpus and any upstream Bind field. Check source provenance before any
+projection, including a header or row title, secondary text, search excerpt,
+symbol, image fallback and offline display. Body authority is separate from
+a title grant. Recheck it before ranking on body fields or delivering their
+values. An audience designation is a necessary check. The actual item,
+source and grant still constrain the result. Cross-bind query operands are unsupported, including a foreign Bind’s
 selection as a filter or collection operand. Action/component edges may
 refer to one authorized stable row under the same audience. A Choice prompt
 may read up to 50 options from an independently authorized Bind. The host
@@ -841,7 +853,9 @@ versions it issued. `LeaseRenewRequest` carries `renewal_id`, `lease_ref`,
 session with matching outstanding `renewal_id`, current `request_lease_ref`
 and current `cache_partition`. Replace the composer action map and its
 contexts together, with omission meaning an empty map. Each context binds the
-exact component, purpose and action ID as well as its lease and grant. Re-evaluate Stop
+exact component, purpose and action ID as well as its lease and grant.
+A composer token cannot be reused by an authored, shell or row action,
+including actions in windows carried by a renewal. Re-evaluate Stop
 against the exact pending intent or current attempt. Repaint only exact `retained_results`
 pairs of `window_ref` and `result_version`. Changed grants or versions
 require fresh authorized windows. Ignore superseded replies and keep rows
@@ -1278,7 +1292,7 @@ and zero-effect assertions must hold on every repetition.
 | **Scoped search** | On locked perf-01 exercise the claimed-text and conversation shapes in their qualified scopes through the depth in `query.search`. Include a searchable community kind alongside Notes. For conversation search compare both tiers against the catalogue order. Seed title-only, message-only and dual matches, including tied message timestamps. Run two queries that reverse the order of a message-only pair and verify exact order, one row per conversation and the same order across page boundaries. Beyond that depth, assert ready windows with the exact authorized rows and order while both budgets hold. Exhaust each budget separately and assert a `refine_query` window with bounded provisional rows and no count. For Notes check the qualified Unicode cases, refusal before the mark-aware Devanagari rebuild, and CJK segmentation and substring refusal. Meter postings, materialized-row work and count work separately against `query.live_limits`. A broad prefix must start no expansion. Settle two parents of one Bind, then change the collection within one parent. Replay a window and both selection forms from the superseded scope with the old and current generations. No old rows, counts or context tokens. Repeat for a forged, foreign and revoked parent and both child-edge types. For a valid unqualified scope the first window returns `unsupported_plan` with zero scanned candidates. For an enabled scope compare rows and counts with a live-authority oracle. During publication lag and stale authority, assert `loading` with no rows, counts or activation contexts. Race revoke against delivery and assert zero stale results. For a reader with a ready search, edit a hidden row and a hidden field. Check before, during and after publication that the visible state, rows, ranks, count and result version stay unchanged. Measure foreground save and save-to-search lag separately. Keep maintenance out of the save transaction and meet the append gate. |
 | **Atomic large save** | Stage an escape-heavy 2 MiB body and reconstruct it by revision-pinned ranges after the head moves, p95 ≤5 s. The 60 s range pin is invalidated by purge or revoke. Race duplicate begin, lost chunk ACK, conflicting bytes, cancel and orphan cleanup. Race revoke, epoch loss, enrollment removal and run replacement on both sides of commit and inject crashes before publication and before reply. No partial edit or success receipt before commit. After commit recover one revision and receipt. |
 | **Durable transcript** | Stall the reader, cut after commit before ACK and restart. First screenful drawn p95 ≤150 ms on a warm authorized reconnect, with stable record IDs/order, cursor and durable receipts on replay. Reopen the boundary record and refresh sign-in notices in the same authorized reply. Revoked reconnect reveals neither rows nor bookmarks. An independent control request completes p95 ≤500 ms with the transcript reader stalled. |
-| **Host + renderer authority** | On Svelte Chromium check both formats, a real protected approval and a live Bind. Forge row/route/Bind/context, untouched prefills, bulk IDs, ChoiceRefs, cached data and built-in surfaces. Inject duplicate and stale activations, revocation and unrelated churn. Zero unauthorized effects or rendered bytes, one commit on replay, and unrelated-churn action p95 ≤2 s from dispatch. Race revocation at egress, job claim/park and approval resolve before freezing those routes. Issue and fetch a body-derived thumbnail ref while all grants are live. Revoke only body access, preserving item access, image-field access and the view lease. Fetch that same ref and require the same opaque 404 as an absent image, with zero image bytes and no worker wake. For each §4.4 atomic-Undo case exercised in Step 0, crash before and after the named commit and during publication: recover neither effect nor Undo before commit, and both after it. Concurrently edit a dependency, then require Undo to refuse without another effect. Run idle-archive recovery in Step 2 on its writer. Exercise ineligible variants and prove the shortcut and full swipe cannot bypass their checks. Delay or spoof lease replies and verify only current, exact retained windows repaint. Test unverified and conflicting provider mark claims, including a fresh or offline host without verified ownership data. Only a verified publisher with a matching ownership binding may project a distinctive mark. |
+| **Host + renderer authority** | On Svelte Chromium check both formats, a real protected approval and a live Bind. Forge row/route/Bind/context, untouched prefills, bulk IDs, ChoiceRefs, cached data and built-in surfaces. Inject duplicate and stale activations, revocation and unrelated churn. Zero unauthorized effects or rendered bytes, one commit on replay, and unrelated-churn action p95 ≤2 s from dispatch. Race revocation at egress, job claim/park and approval resolve before freezing those routes. Issue and fetch a body-derived thumbnail ref while all grants are live. Revoke only body access, preserving item access, image-field access and the view lease. Fetch that same ref and require the same opaque 404 as an absent image, with zero image bytes and no worker wake. For each §4.4 atomic-Undo case exercised in Step 0, crash before and after the named commit and during publication: recover neither effect nor Undo before commit, and both after it. Concurrently edit a dependency, then require Undo to refuse without another effect. Run idle-archive recovery in Step 2 on its writer. Exercise ineligible variants and prove the shortcut and full swipe cannot bypass their checks. Delay or spoof lease replies and verify only current, exact retained windows repaint. Test unverified and conflicting provider mark claims, including a fresh or offline host without verified ownership data. Only a verified publisher with a matching ownership binding may project a distinctive mark. | Run the projection sweep with a title-only guest and an authorized body reader. Revoke only body access and verify titles still work. Assert no protected header, row title, secondary text, snippet, cache part, notification text, symbol, image ref or bytes. Check sorts, predicates, count and rank against the title-only oracle after edits to hidden bodies or restricted fields. Check eligible member projections and title-only search still return their expected rows.
 | **Host create with collection placement** | With the plugin asleep, create a default empty item in an authorized shared collection in one exchange without a challenge. Read the authorized row back with each configured extractor type. Require an empty set, omitted absent scalars and no image ref. Then save a valid false and zero and require both values in the projection. Crash before and after the FULL commit. Before commit recover no item, membership or Undo. After commit recover all three and replay the same receipt. Undo removes the item and its introduced membership together. Compare refusals for absent, foreign, unreadable and non-editable collection refs and require identical opaque outcomes. After resolve, delete the collection or revoke the actor’s membership edit access and require the same outcome on dispatch. Fill the item quota and membership quota separately, then require the typed limit outcome without an item, membership or Undo. Race two creates for the last membership slot and require exactly one commit. After a successful create, add another membership or a share grant without editing the head or introduced membership, and verify Undo refusal in each case. Assert zero runtime wakes throughout on a kind without a follow-up. |
 | **Phone activation exchanges** | In the same Chromium phone link fixture, from action intent to host outcome, an eligible swipe and prepared Send each use one exchange. An ordinary plugin operation without a challenge uses two. On the Step 2 archive writer, an idle archive full swipe takes one exchange with no sheet and returns unarchive Undo. An active archive shows the challenge and the host-written stop material. Also exercise the cleanup cases. Require the bounds on every run and report p95 exchange counts and elapsed time. Alter prepared material, including via parsed final text, or drop the Send reply. Require a fresh preview for changed material and replay the exact final text once. |
 | **Keyboard windowing** | 5,000 rows with seeded authorized thumbnails and 30 keys/sec on the phone fixture. During repeat, assert zero new image GETs and cancellation of in-flight image fetches. After settling, fetch only current refs for the visible rows. Record image request counts and bytes. At most four window requests in any second and zero selection/navigation events during repeat on every run. Report p95 request rate. After the first real rows paint, capture each viewport frame during the repeat burst. Require zero skeleton-row frames during the steady 30 Hz segment on every run. Same-version prefetch applies while keys repeat; an activation waits for the context of its drawn target. Delay a context for A until B is drawn and verify the activation cannot use A. |
@@ -1526,7 +1540,7 @@ See the [recorded answers](https://git.kayg.org/kayg/calternal-ai/src/commit/3ab
   qualifies. Scratch activation and Photos-scale I/O and metadata stay
   outside this revision.
 
-### Revision 14.4 draft questions and implementation seams
+### Revision 14.5 draft questions and implementation seams
 
 - Discovery rights, canonical writer and who owns a cross-runner list are
   separate owner questions in [the sealed proposal’s §C][generic-engines].

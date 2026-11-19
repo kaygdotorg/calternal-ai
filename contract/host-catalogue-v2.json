@@ -135,7 +135,8 @@
   "provider_marks": {
     "trust": "A provider-specific mark name belongs to the verified publisher identified by a trusted signed gallery entry or an explicit operator checksum pin. The signed entry or operator pin binds the approved package artifact and publisher identity to the canonical mark names it owns. A checksum without an explicit publisher and mark binding does not establish mark ownership.",
     "install": "Verify the installed artifact and its publisher using the existing gallery signature or operator checksum pin. Record the canonical mark name, verified publisher, installed package identity, provider contribution ID, pinned manifest digest and trusted ownership source. Record a usable distinctive mark only if the verified publisher owns that name. Do not grant an unowned mark based on installation order. Calternal providers use the same rules.",
-    "projection": "Emit provider_icon only when the active installed contribution matches the recorded binding and its verified publisher still owns the mark. Omit it on missing trust, missing ownership or any conflict, including on a fresh or offline host without verified ownership data. Recheck on installation updates, uninstalls and trust changes. The row draws its generic fallback symbol when the field is omitted."
+    "projection": "Emit provider_icon only when the active installed contribution matches the recorded binding and its verified publisher still owns the mark. Omit it on missing trust, missing ownership or any conflict, including on a fresh or offline host without verified ownership data. Recheck on installation updates, uninstalls and trust changes. The row draws its generic fallback symbol when the field is omitted. The field name is host-owned across all kinds. Distinctive names resolve only through this trust rule, including when a template claims a symbol by name. A field-backed symbol cannot take a body-derived source.",
+    "field": "provider_icon"
   },
   "operations": {
     "host.item.create": {
@@ -1144,7 +1145,7 @@
       "row_reference_schema": {
         "$ref": "#/$defs/Ref"
       },
-      "description": "The declared parent edge constrains the nested lookup and any count before filtering or pagination. Authorize the entire parent ancestry and each returned row. A parent operand is an optional extra predicate. A Bind may be a section rows Bind or a children target, never both. Section rows present LayoutEntryRef; child rows present their kind’s row ref. The window_ref identifies the Bind, stable parent, anchor and issued range within the current lease and partition. Separately cap materialized rows and entries skipped in an index-only jump over the scoped covering index from the nearer end. Absolute jumps are capped by max_offset. An explicit start anchor can cross that cap only for forward continuation without exact count authority, exactly at the next row of a host-issued ready start window for the current view, Bind, parent and result version. Seek from the checked boundary key. Before planning an end-relative request, check the effective authorized count mode for its Bind and scope. Require a non-search Bind and exact count authority. For search or with mode estimate or none return WindowPlanError with reason end_unavailable and no end distance. A view with count mode none shows no scroll extent implying a total. An index-only jump beyond the skip cap returns WindowPlanError with reason skip_limit. Non-search list plans use maintained scope counts. Search counts use query.search.count.",
+      "description": "The declared parent edge constrains the nested lookup and any count before filtering or pagination. Authorize the entire parent ancestry and each returned row. A parent operand is an optional extra predicate. A Bind may be a section rows Bind or a children target, never both. Section rows present LayoutEntryRef; child rows present their kind’s row ref. The window_ref identifies the Bind, stable parent, anchor and issued range within the current lease and partition. Separately cap materialized rows and entries skipped in an index-only jump over the scoped covering index from the nearer end. Absolute jumps are capped by max_offset. An explicit start anchor can cross that cap only for forward continuation without exact count authority, exactly at the next row of a host-issued ready start window for the current view, Bind, parent and result version. Seek from the checked boundary key. Before planning an end-relative request, check the effective authorized count mode for its Bind and scope. Require a non-search Bind and exact count authority. For search or with mode estimate or none return WindowPlanError with reason end_unavailable and no end distance. A view with count mode none shows no scroll extent implying a total. An index-only jump beyond the skip cap returns WindowPlanError with reason skip_limit. Non-search list plans use maintained scope counts. Search counts use query.search.count. Check the live field and its source before using any sort or filter. A grant on the item or a generic display name cannot authorize an unreadable predicate or ordering key.",
       "max_nested_row_depth": 3
     },
     "unsupported_plan": {
@@ -1270,7 +1271,7 @@
       "qualification": "For each ready authority-versioned Bind, qualify its supported literal-term and prefix modes for windows up to query.window.max_request_span starting at offsets through qualified_depth. Serve later windows while both query.live_limits budgets for scoped postings and materialized rows hold. Use only the kind’s authorized scopes, order and scope-local statistics. Refuse unqualified shapes, scopes and sorts with unsupported_query_plan. End anchors are unavailable for search. The host returns WindowPlanError with reason end_unavailable and the renderer pages forward for End.",
       "publication": "The host owns the qualified list and search projections of item text and declared indexed fields. Its index maintains the list projections, and its existing background search worker maintains the search projections and same-generation term statistics independently of save acknowledgement. Check live access to the scope, searchable fields and output fields before evaluation. Readiness and invalidation compare revisions of the viewer’s authorized row-and-field projection, never a space-wide watermark. While that projection is behind or stale after revocation, return loading with no rows, count or activation contexts. A hidden-only edit leaves the visible search state, result version, rows, ranks and counts unchanged during and after publication. Fence cached results on revocation and recheck authority on delivery. Deny access if the scope is no longer authorized.",
       "refinement": "Bound scoped posting work using same-generation term frequencies. When an otherwise qualified query exhausts the scoped-posting or materialized-row budget, return refine_query with only bounded provisional rows from the same authorized query and published generation. A prefix exceeding either the expansion cap or the posting budget returns refine_query without starting expansion and can include only already-issued rows for that query, audience and generation. Omit count, activation contexts and member cache record. Provisional replies have null result_version and window_ref.",
-      "count": "Non-search lists use maintained per-scope counts. Claimed-text exact search counts measure qualified matches in a ready authorized projection under the separate count-work and rate budgets and require exact-count authority. Search defaults to count mode none. Search estimates and exact distinct-thread search counts are unqualified. Refuse an unqualified count request with unsupported_query_plan.",
+      "count": "Non-search lists use maintained per-scope counts. Claimed-text exact search counts measure qualified matches in a ready authorized projection under the separate count-work and rate budgets and require exact-count authority. Search defaults to count mode none. Search estimates and exact distinct-thread search counts are unqualified. Refuse an unqualified count request with unsupported_query_plan. Apply current source authority before matching, ranking or counting. A title-only grant contributes only the authorized title corpus. Any body excerpt in a search row is independently checked.",
       "request_schema": {
         "$ref": "#/$defs/SearchWindowRequest"
       },
@@ -1816,7 +1817,7 @@
               }
             ]
           },
-          "description": "Values match the resolved Bind projection and declared field types. Arrays are allowed only for a projected TextSet. Apply window_field_delivery and the live field and source checks before projecting each value. Omit absent extractor scalars."
+          "description": "Values match the resolved Bind projection and declared field types. Arrays are allowed only for a projected TextSet. Apply window_field_delivery and the live field and source checks before projecting each value. Omit absent extractor scalars. Field use as a live title, secondary part, search excerpt, mark or image fallback retains the original field audience and source authority. Body-derived fields need current body access."
         },
         "parent_refs": {
           "type": "object",
@@ -2150,7 +2151,7 @@
           }
         }
       ],
-      "description": "An authenticated reply for the active view and its audience. At from zero, the host sends empty for a wholly empty result. A ready reply at offset zero contains rows. Check the session, lease partition and audience before consuming rows or a cache record. Any cache record must match this view and window. Only a non-search Bind in a view with exact count authority receives an end anchor and end-relative offset. Every end-anchored reply carries count.mode exact. Check count policy for the active Bind and scope on each delivery. An absolute offset above max_offset is only returned to a contiguous forward continuation without exact count authority, with anchor:start and no count or persistent cache record."
+      "description": "An authenticated reply for the active view and its audience. At from zero, the host sends empty for a wholly empty result. A ready reply at offset zero contains rows. Check the session, lease partition and audience before consuming rows or a cache record. Any cache record must match this view and window. Only a non-search Bind in a view with exact count authority receives an end anchor and end-relative offset. Every end-anchored reply carries count.mode exact. Check count policy for the active Bind and scope on each delivery. An absolute offset above max_offset is only returned to a contiguous forward continuation without exact count authority, with anchor:start and no count or persistent cache record. Bind states have no route-dependent action context."
     },
     "ProviderId": {
       "type": "string",
@@ -2884,7 +2885,8 @@
       "maxProperties": 32,
       "additionalProperties": {
         "$ref": "#/$defs/ContextRef"
-      }
+      },
+      "description": "Each composer context belongs only to its one action ID and component, including across view actions and embedded window row actions. The same token cannot also appear as an authored, shell or row action context."
     },
     "RowActivationContexts": {
       "type": "object",
@@ -3324,7 +3326,8 @@
         },
         "notify_creator": {
           "type": "boolean",
-          "default": false
+          "default": false,
+          "description": "Enables host-generated notifications only. Use the checked enrollment label, outcome status and an authorized link. No fields, result text or snippets are accepted as notification sources. Recheck recipient and link authority at delivery."
         }
       }
     },
@@ -4952,7 +4955,8 @@
       "type": "Text",
       "index_owner": "content",
       "audience": "shared_projection",
-      "nullable": false
+      "nullable": false,
+      "description": "The kind’s declared ordinary Text metadata source. Install rejects a body-derived source, extractor output, host-owned projection and an indexed source whose declared audience is narrower than shared_projection. Use the same authorized source for list, shared title, title search and offline display."
     },
     "updated": {
       "type": "Timestamp",
@@ -5002,5 +5006,14 @@
       "$ref": "#/$defs/HostWorkerInvokeFrame"
     },
     "invoke_scope": "The host dispatches to the exact admitted package, digest, epoch and ticket. For composer job claims and replays include the pinned ExecutionJobContext. For all other invocations omit it. Refuse a worker-origin invoke or any worker-supplied job context."
+  },
+  "offline_member_display": {
+    "field_audiences": [
+      "shared_projection"
+    ],
+    "excluded_fields": [
+      "provider_icon"
+    ],
+    "scope": "Check live own-space membership, the paired window and the host offline allowlist. Cache only a prefix of those rows in the same order. Take the title from the row title field. For the secondary line take only eligible plain text parts or the first eligible declared date part. Drop body-backed parts and restricted fields regardless of the display slot. Omit the record if any required title is ineligible."
   }
 }

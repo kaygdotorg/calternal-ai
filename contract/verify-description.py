@@ -20,7 +20,7 @@ import sys
 
 from description_input import PackageInput, Validation, check_unique_ids, lexical_path, read_bytes, read_json, resolved_path
 
-from description_events import COMPONENT_TYPES, EventBindings, check_composer_actions, check_composer_invoke, check_event_binding, check_route_capacity, validate_component_request, walk
+from description_events import COMPONENT_TYPES, EventBindings, check_composer_actions, check_composer_invoke, check_event_binding, check_route_capacity, route_operands, validate_component_request, walk
 import description_verification as verification
 
 from description_verification import (
@@ -361,9 +361,18 @@ def semantic(doc, errors, catalogue, manifest, installed_manifests=()):
                     check(member, literal, f"$.binds[{index}].filter.value.literal", errors, catalogue)
             if field_type == "TextSet" and operation not in ("contains", "exists"):
                 errors.append(f"$.binds[{index}].filter: TextSet supports contains and exists")
-        for relative_path, desc in walk(bind, errors):
+        for relative_path, desc in walk(bind, errors, skip_literals=True):
             if not isinstance(desc, dict):
                 continue
+            icon = desc.get("icon")
+            if isinstance(icon, dict) and "field" in icon:
+                field = icon["field"]
+                if verification.body_derived_field(entry, field, field_meta(entry, field, generic)):
+                    errors.append(f"$.binds[{index}]{relative_path[1:]}.icon: a symbol cannot use a body-derived field")
+            if desc.get("kind") == "icon" and "field" in desc:
+                field = desc["field"]
+                if verification.body_derived_field(entry, field, field_meta(entry, field, generic)):
+                    errors.append(f"$.binds[{index}]{relative_path[1:]}.field: a symbol cannot use a body-derived field")
             for key in errors.each(("when", "disabled")):
                 operand = desc.get(key)
                 if isinstance(operand, dict) and field_meta(entry, operand.get("field")).get("type") == "RowImageRef":
@@ -444,6 +453,10 @@ def validate_description(doc, manifest, installed, errors):
     if verification.CATALOGUE is not None:
         limit = verification.CATALOGUE["$defs"]["RouteOperands"]["maxProperties"]
         check_route_capacity(doc, limit, errors)
+    for index, bind in enumerate(errors.each(doc.get("binds", []))):
+        for state, declaration in errors.each(bind.get("states", {}).items()):
+            if route_operands(declaration.get("action", {}), errors):
+                errors.append(f"$.binds[{index}].states.{state}.action: Bind-state actions cannot consume route operands")
     semantic(doc, errors, verification.CATALOGUE, manifest, installed)
 
 
@@ -477,14 +490,24 @@ def validate_composer_capture(capture, bindings, errors):
             return issued
         lease = reply["lease"]
         authority = (lease["lease_ref"], lease["grant_revision"])
-        for action, (component, purpose) in errors.each(issued.items()):
-            context = reply["activation_contexts"][action]
-            binding = (authority, component, purpose, action)
+        def remember(action, context, purpose, scope):
+            binding = (authority, purpose, action, scope)
             previous = contexts.setdefault(context, binding)
-            if previous[0] != authority:
+            if previous == binding or (purpose is None and previous[1] is None):
+                return
+            if purpose is None or previous[1] is None:
+                errors.append(f"{path}.activation_contexts: composer context aliases a non-composer action")
+            elif previous[0] != authority:
                 errors.append(f"{path}.activation_contexts: reused composer context from a different lease or grant")
-            elif previous != binding:
+            else:
                 errors.append(f"{path}.activation_contexts: composer context was rebound to a different component, purpose or action ID")
+
+        for action, context in errors.each(reply["activation_contexts"].items()):
+            remember(action, context, issued.get(action), "view")
+        for window in errors.each(reply.get("windows", [])):
+            for row in errors.each(window.get("activation_contexts", [])):
+                for action, context in errors.each(row["contexts"].items()):
+                    remember(action, context, None, "row")
         return issued
 
     reply = capture["view_open"]

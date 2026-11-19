@@ -1,6 +1,6 @@
 # Description contract (v2)
 
-Status: **revision 14.4 draft (based on 13.18)**, paired with the [Plugin API v2 specification](plugin-api-v2.md). The [description schema](../contract/description-v2.schema.json) defines the shared renderer shapes.
+Status: **revision 14.5 draft (based on 13.18)**, paired with the [Plugin API v2 specification](plugin-api-v2.md). The [description schema](../contract/description-v2.schema.json) defines the shared renderer shapes.
 
 The schema is checked with `python3 contract/verify-description.py` against the fixtures in `contract/fixtures/description-v2/` (valid ones must pass,
 `invalid-*` ones must report the reason in their directory’s `expected-errors.json`). The fixtures are the paper exercises of section 9. The verifier uses `replies/origins.json` to resolve each standalone window reply to its description fixture and Bind, then checks every projected value against the kind’s declared field type.
@@ -112,8 +112,9 @@ parts with ` · ` and omit absent parts and their separators. Date formats
 take timestamps and text takes plain text. The [catalogue’s `Timestamp`](../contract/host-catalogue-v2.json) uses RFC 3339 with seconds 00 to 59 only, and the host records any leap second as second 59 with the fraction clamped.
 The renderer computes relative
 dates at draw time from the local clock and refreshes them without host
-pushes. Rows without `secondary` stay single-line. Row text comes only from
-fields.
+pushes. Rows without `secondary` stay single-line. The header and row title,
+secondary line and search excerpt retain their source’s live field and body
+authority. Use no substitute text from an inaccessible field.
 
 Any plugin may declare a leading icon on a Bind-produced item row. The optional `icon` may name a symbol, derive from a row field or kind, or use the catalogue’s `RowImageIcon` to select a small host-authorized image from a projected `RowImageRef` field. Follow the catalogue’s `query.row_images` read and cache rules. The renderer draws exactly the icons declared by the description. Thread rows use the host-projected `provider_icon` only when the provider mark binding matches the installed contribution. Missing publisher verification, missing mark ownership or a conflicting binding uses the declared generic fallback symbol. A note preview fits a portrait area of about 30 × 36 pt. Note rows declare the existing `RowImageIcon` portrait aspect and its `image.fallback` snippet field. Keep the last authorized retained image while fresh capture is pending. The host labels it with `stale_images` on the row and rechecks item, source, field and body authority at every fetch. While the thumbnail loads or when none is available, draw a simple document miniature from the freshly authorised snippet. If no authorised snippet is available, draw the document miniature without text. Shortcut rows retain their declared icons.
 `marks` (up to three) are trailing dots, counts, texts or icons, each with an optional `when` predicate and a tone. `leadingActions`, `trailingActions` and `menu` are
@@ -122,7 +123,7 @@ Use the host-issued row reference for row identity in selection, events and scop
 
 ### 2.5 States
 
-`states.empty`, `loading`, `error` and `refine_query` are small messages (`title`, `detail`, `icon`, an optional action). The description or host provides their text.
+`states.empty`, `loading`, `error` and `refine_query` are small messages (`title`, `detail`, `icon`, an optional action). The description or host provides their text. A state action may use an eligible view context. It cannot use a route source, including a route-dependent prompt prefill. Bind states have no context for those inputs.
 Show `loading` until the first window arrives and `error` on `state: "error"` or a `WindowPlanError` without an available paging recovery (§2.3).
 For a nonempty result set, forward paging ends on a short `ready` window, including a zero-row `ready` window at a page boundary. Keep the rows already shown. Only `state: "empty"` shows the Bind’s empty message. It means the whole result set is empty and is valid only when the requested `from` is zero.
 At `from: 0`, the host sends `empty` for a wholly empty result. A `ready` reply at offset zero contains rows. An `empty` reply carries an exact count of zero when a count is supplied. Count-free replies omit it. When a `ready` reply carries an exact count, the host checks the returned range against that count under the catalogue’s `WindowResult` rule.
@@ -398,7 +399,8 @@ accepted reply. Apply its map and contexts atomically and discard retired
 IDs and replaced contexts, including after a grant change or a second
 or later renewal. Ignore a reply for a superseded request. A new lease
 or grant revision requires fresh composer contexts. A token remains bound to
-its original component, purpose and action ID.
+its original component, purpose and action ID. Compare against every
+action context in the reply, including renewed windows.
 This lets an open composer receive Stop when a cold Send enters Starting.
 The component ID is the lookup
 key. A composer action ID is not author-defined. Send the exact context
@@ -513,7 +515,7 @@ such as Empty Trash.
   person's item, no count, no account initial and no activation context, so it may be stored (one file of at most 4 MB, keyed by the signed-in account, deleted on sign-out and on account
   switch). `templates: none` keeps nothing.
 * **Q10 (owner decision, 2026-11-19): own-space member rows can persist.** Only opted-in root windows without route-dependent or parent scope are eligible, and only for binds whose query inputs are **invariant**: a `list` source with at most a literal collection and no reference, search text, route, form, selection or parent operand anywhere in the source, filter or sort (account-bound `{viewer: person}` stays invariant); the schema and the verifier refuse `persist` otherwise, no query identity is added to the record, and only start-anchored windows are persisted.
-  Accept only `MemberRowCacheRecord`, the display-only exception to session-only projections. Its host-approved offline display fields exclude every body-derived part. For Notes the cached secondary line keeps the authorised date as `subtitle_timestamp`. Format it from the local clock at draw time using the pinned template. Reserve the same line height until a fresh authorised reply adds the snippet. The authenticated `ViewOpenResult` and `WindowResult` name the audience.
+  Accept only `MemberRowCacheRecord`, the display-only exception to session-only projections. The host builds it from the paired window using the catalogue’s offline display allowlist. Every title and secondary part must keep its checked source. Exclude body text and audience-restricted sources. For Notes the cached secondary line keeps the authorised date as `subtitle_timestamp`. Format it from the local clock at draw time using the pinned template. Reserve the same line height until a fresh authorised reply adds the snippet. The authenticated `ViewOpenResult` and `WindowResult` name the audience.
   The schema permits the record only on ready or empty start-anchored own-space member replies without a parent. Before writing, match it to the authenticated active view and window.
   On write and load check the schema, host proof, scope, opt-ins and expiry (§4.2 of the Plugin API). Load only into the matching own-space root display.
   Encrypt with account- and space-bound keys. On an unlocked device paint at launch as unconfirmed, then confirm or correct the rows with the first host answer.

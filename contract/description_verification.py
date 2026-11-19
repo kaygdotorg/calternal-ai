@@ -486,12 +486,30 @@ def check_worker_invocation(frame, manifest, job_id, errors):
         errors.append("$.message.job_context: allowed only for an admitted composer intent job")
 
 
+def declared_title_text(kind, title, errors):
+    """Resolve a declared metadata title through local definitions to a string."""
+    metadata = kind["schema"]
+    node = metadata.get("properties", {}).get(title) if isinstance(metadata, dict) else None
+    seen = set()
+    while not errors.full and isinstance(node, dict) and id(node) not in seen:
+        errors.visit()
+        if "$ref" not in node:
+            return node.get("type") == "string"
+        ref = node["$ref"]
+        if not ref.startswith("#/"):
+            return False
+        seen.add(id(node))
+        node, _ = resolve(ref, metadata, errors)
+    return False
+
+
 def check_manifest_install(manifest, errors):
     """Check reserved indexed fields and host_create follow-ups at install."""
     if CATALOGUE is None:
         return
     generic = CATALOGUE["generic_item_fields"]
     projected = CATALOGUE["conversation_capability"]["field_projections"]
+    provider_projection = CATALOGUE["provider_marks"]["field"]
     operations = manifest.get("operations", {})
     jobs = manifest.get("jobs", {})
     send_operations = composer_send_operations(manifest, errors)
@@ -500,6 +518,8 @@ def check_manifest_install(manifest, errors):
         path = f"$.kinds.{kind_id}"
         for field in errors.each(sorted(field_names(kind, errors) & generic.keys())):
             errors.append(f"{path}.indexed_fields.{field}: reserved host generic field")
+        if kind.get("conversation") is not True and provider_projection in kind.get("fields", {}):
+            errors.append(f"{path}.indexed_fields.{provider_projection}: reserved host provider projection")
         if kind.get("conversation") is True:
             for field in errors.each(sorted(field_names(kind, errors) & projected.keys())):
                 errors.append(f"{path}.indexed_fields.{field}: reserved host conversation field")
@@ -540,6 +560,17 @@ def check_manifest_install(manifest, errors):
         for field in errors.each(kind.get("device_row_images", [])):
             if fields.get(field, {}).get("type") != "RowImageRef":
                 errors.append(f"{path}.device_row_images: slot must be a declared RowImageRef")
+        title = kind["title_field"]
+        title_meta = fields.get(title, {})
+        if title in outputs or body_derived_field(kind, title, title_meta):
+            errors.append(f"{path}.title_field: generic title cannot use a body-derived source")
+        elif (title == provider_projection or (kind.get("conversation") is True and title in projected)
+              or (title in generic and title != "title") or (title_meta and (
+                  title_meta.get("type") != "Text" or title_meta.get("audience") != generic["title"]["audience"]
+              ))):
+            errors.append(f"{path}.title_field: generic title requires an unrestricted metadata source")
+        elif not declared_title_text(kind, title, errors):
+            errors.append(f"{path}.title_field: generic title requires declared string metadata")
         host_create = kind.get("host_create") or {}
         for field in errors.each(host_create.get("defaults", {})):
             if field in outputs:
@@ -658,7 +689,63 @@ def load_reply_origins(origins, source_dir, sources, catalogue, reply_files, err
     return resolved
 
 
-def check_window_rows(reply, origin, catalogue, errors):
+def body_derived_field(kind, field, meta):
+    """Identify every declared body-backed field, including implicit selectors and device images."""
+    return (meta.get("body_derived") is True or meta.get("source") == "body_excerpt"
+            or field in kind.get("device_row_images", ()))
+
+
+def window_field_refusal(kind, field, meta, reply, catalogue, body_allowed):
+    """Find an invalid audience or source restriction visible in a captured reply."""
+    if reply.get("audience") is not None and (audience := meta.get("audience")) is not None:
+        policy = catalogue["window_field_delivery"][audience]
+        if reply["audience"] not in policy["audiences"] or (
+            "state" in policy and reply.get("state") != policy["state"]
+        ):
+            return f"{audience} is unavailable for this window audience or state"
+    if body_allowed is False and body_derived_field(kind, field, meta):
+        return "body-derived field requires current body authority"
+    if meta.get("type") == "RowImageRef" and reply.get("state") != "ready":
+        return "RowImageRef requires a ready window"
+    return None
+
+
+def check_cached_display(reply, bind, kind, generic, catalogue, errors):
+    """Check signed display fields against the traceable, offline-safe live row prefix."""
+    cache_rows = reply["member_cache_record"]["rows"]
+    live_rows = reply["rows"]
+    base = "$.member_cache_record.rows"
+    if len(cache_rows) > len(live_rows):
+        errors.append(f"{base}: cache rows must be a prefix of the paired window")
+        return
+    row_template = bind.get("row", {})
+    title = row_template.get("title", {}).get("field", "title")
+    policy = catalogue["offline_member_display"]
+
+    def eligible(field):
+        meta = field_meta(kind, field, generic)
+        return (field not in policy["excluded_fields"] and meta.get("audience") in policy["field_audiences"]
+                and not body_derived_field(kind, field, meta))
+
+    for index, cached in enumerate(errors.each(cache_rows)):
+        fields = live_rows[index]["fields"]
+        if not eligible(title) or cached["title"] != fields.get(title):
+            errors.append(f"{base}[{index}].title: expected the offline-eligible live title")
+        text = []
+        dates = []
+        for part in errors.each(row_template.get("secondary", [])):
+            field = part["field"]
+            value = fields.get(field)
+            if not eligible(field) or not isinstance(value, str):
+                continue
+            (text if part["format"] == "text" else dates).append(value)
+        if "subtitle" in cached and (not text or cached["subtitle"] != " · ".join(text)):
+            errors.append(f"{base}[{index}].subtitle: expected only offline-eligible live secondary text")
+        if "subtitle_timestamp" in cached and (not dates or cached["subtitle_timestamp"] != dates[0]):
+            errors.append(f"{base}[{index}].subtitle_timestamp: expected an offline-eligible live secondary date")
+
+
+def check_window_rows(reply, origin, catalogue, errors, *, body_allowed=None):
     """Check each returned value against its declared kind field and nullability."""
     bind, kind, generic = origin
     if "bind" in reply and reply["bind"] != bind["id"]:
@@ -671,6 +758,17 @@ def check_window_rows(reply, origin, catalogue, errors):
         for field in errors.each(("bind", "window_ref", "offset")):
             if record[field] != reply[field]:
                 errors.append(f"$.member_cache_record.{field}: must match its window reply")
+        check_cached_display(reply, bind, kind, generic, catalogue, errors)
+    if reply.get("state") in ("ready", "empty", "refine_query"):
+        filters = bind.get("filter", {})
+        for group, terms in errors.each((("sort", bind.get("sort", [])),
+                ("filter.all", filters.get("all", [])), ("filter.any", filters.get("any", [])))):
+            for term in errors.each(terms):
+                field = term["field"]
+                reason = window_field_refusal(kind, field, field_meta(kind, field, generic),
+                                              reply, catalogue, body_allowed)
+                if reason:
+                    errors.append(f"$.bind.{group}.{field}: {reason}")
     if "rows" not in reply:
         return
     declared_types = catalogue["$defs"]["FieldType"]["enum"]
@@ -690,20 +788,15 @@ def check_window_rows(reply, origin, catalogue, errors):
             if field not in bind.get("fields", []):
                 errors.append(f"{path}: field is not projected by Bind {bind['id']!r}")
                 continue
-            if reply.get("audience") is not None and meta.get("audience") is not None:
-                audience = meta["audience"]
-                policy = catalogue["window_field_delivery"][audience]
-                if reply.get("audience") not in policy["audiences"] or (
-                    "state" in policy and reply.get("state") != policy["state"]
-                ):
-                    errors.append(f"{path}: {audience} is unavailable for this window audience or state")
-                    continue
+            if reason := window_field_refusal(kind, field, meta, reply, catalogue, body_allowed):
+                errors.append(f"{path}: {reason}")
+                continue
             if value is not None or meta.get("nullable") is not True:
                 check(catalogue["$defs"][field_type], value, path, errors, catalogue)
 
 
-def validate_reply(doc, origin, errors):
-    """Check reply shape, range and projected values against the originating Bind."""
+def validate_reply(doc, origin, errors, *, body_allowed=None):
+    """Check reply shape, range and projection. A conformance fixture can supply its known body grant."""
     check({"$ref": "#/$defs/WindowReply"}, doc, "$", errors)
     if errors:
         return
@@ -718,7 +811,7 @@ def validate_reply(doc, origin, errors):
         validate_search_generation(doc, bind, errors)
         if "state" in doc and ("parent" in doc) != bool(bind["source"].get("parent")):
             errors.append("$.parent: parent scope must match source.parent")
-        check_window_rows(doc, origin, CATALOGUE, errors)
+        check_window_rows(doc, origin, CATALOGUE, errors, body_allowed=body_allowed)
 
 
 def validate_search_generation(value, bind, errors):

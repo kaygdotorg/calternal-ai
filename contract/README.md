@@ -111,6 +111,13 @@ The verifier checks up to 16 pairs against the immediately preceding reply’s
 lease and grant and validates each replacement map. The Invoke uses only
 the last map and context. The capture bound applies to verifier artifacts.
 
+Reply validation checks the named audience against each declared source and
+checks cache text against the offline-eligible display parts of the paired
+window. The grant fixtures also supply the body permission as an oracle
+input. A standalone reply contains no proof of the live body grant. The
+host checks live source, item and field authority before planning and at
+delivery.
+
 Directory mode finds replies in
 `replies/`. Use `--reply FILE` to select replies and `--origins FILE` to override
 `replies/origins.json`. The origins map names a verified description and Bind
