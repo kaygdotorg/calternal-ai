@@ -477,6 +477,86 @@ Rebuilding the reader's scope after an excluded-source change kept every sampled
 Reproduce with the page executable and filter `scoped_threads` under the
 same lock below. The lag test defaults to 100 samples per arm.
 
+## Nested rows and personal sections
+
+The harness uses the sealed revision 12.5 base `bb43b24e`. It opens
+disposable roots through the server's `Store`, uses real `notes.create`,
+`threads.create`, `threads.list`, `sharing.grant` and `sharing.revoke`
+operations, and reuses `authorize_item_access`, the item access epoch and
+the live directory membership view. Turns supplies its own parent
+relationships and cursor-ordered child IDs. The fixture declares the
+Notes relationships and writes the disposable scoped projection from
+authorized real item IDs.
+
+The parent key is (viewer, space, parent, child Bind, sort key, ID).
+A parent reference is random and bound to the view, viewer, Bind, space
+and complete path. An admitted depth-one Turns window checks one live
+item head and one live authority query, reads one exact count and seeks
+one ordered window. A Notes ancestor also reads inherited collection
+roots. Depth three repeats the ancestor check for each ancestor. The
+first and second windows in the fixture visit two and three index
+entries, respectively, and return two and one rows. The read paths run
+zero commits or flushes and require no worker. The shared process-local
+access epoch detects stale projection delivery in the fixture. Product
+maintenance needs audience-scoped invalidation and a delivery fence.
+
+The layout prototype uses `rusqlite` on the disposable authority
+database, so its live-membership check and effect/Undo share one write
+transaction. The backing space uses real Notes items. The fixture's
+item lookup is a seeded projection for that shared-space membership
+case. The transaction takes one membership and one revision read.
+Create takes two more indexed reads, rename one, remove two including
+the removed section's placements. Move to takes four more reads for
+destination, item, prior placement and destination tail. Move up and
+down each take two more reads for placement and neighbor. Undo adds one
+receipt read to membership and revision. Each success uses one FULL
+WAL commit and its sync. There are no independent effect/Undo commits.
+Opening the temporary authority database for prototype transactions
+serializes unrelated writers in that database. Product layout should
+use the per-space writer with a live authority commit fence.
+
+Both runs used `calternal-perf-01-backup01` under
+`/usr/local/bin/perf-lock.sh` and a release binary built on dev-01.
+Each timed cell has 100 repetitions per width. All latency cells are
+p50 / p95 in ms for 256 and 4,096 placements, respectively.
+
+| Injection | Pass condition | Measured | Verdict |
+| --- | --- | --- | --- |
+| Interleave offsets 0 and 2 under two Turns parents in one Bind | Independent exact windows in the real Turns order | 0.961 / 1.064 and 0.933 / 1.226 per four windows. All 800 timed windows matched. | Pass |
+| Nested Notes and Turns, hidden Notes child, invalid refs | Authorized ancestry through depth three. Depth four, cycles, wrong view/Bind/viewer and forged refs confer no rows or counts. | 200 iterations with four correct depth-two/three windows and four denied refs each. Hidden child excluded from both rows and the exact count on all 200 Notes page pairs. Depth four and cycle refused in both runs. | Pass |
+| Revoke a child grant, parent grant and Turns membership | No stale rows or counts. Refresh reflects the child revoke. | Two child revokes. Both stale projections suppressed and both refreshed counts fell from 3 to 2. Zero rows and counts on 1,400 revoked root/descendant reads. | Pass |
+| Stock Turns parent query versus scoped index | Ordered seek under the parent constraint, with bounded visits | Stock query plan uses `item_list (kind=? AND updated_at<?)` with a residual parent predicate. Scoped plan uses `PRIMARY KEY (actor=? AND space=? AND parent=? AND bind=?)`, with no sort. | Existing plan misses, prototype passes |
+| `host.layout.section.create` | Effect and Undo atomic, each p95 ≤40 ms | Edit 6.704 / 8.222 and 6.690 / 10.489. Undo 6.712 / 9.221 and 6.679 / 9.430. | Pass |
+| `host.layout.section.rename` | Effect and Undo atomic, each p95 ≤40 ms | Edit 6.607 / 6.918 and 6.563 / 7.099. Undo 6.588 / 9.803 and 6.545 / 8.750. | Pass |
+| `host.layout.section.remove` | Effect and Undo atomic, each p95 ≤40 ms | Edit 6.984 / 11.348 and 19.044 / 30.974. Undo 8.522 / 14.728 and 45.540 / 49.464. | 40 ms gate misses |
+| `host.layout.move_to` | Effect and Undo atomic, each p95 ≤40 ms | Edit 6.476 / 8.953 and 6.712 / 10.339. Undo 6.459 / 9.121 and 6.632 / 9.926. | Pass |
+| `host.layout.move_up` | Effect and Undo atomic, each p95 ≤40 ms | Edit 6.497 / 8.541 and 6.642 / 10.297. Undo 6.478 / 8.482 and 6.612 / 9.993. | Pass |
+| `host.layout.move_down` | Effect and Undo atomic, each p95 ≤40 ms | Edit 6.931 / 8.769 and 6.702 / 8.083. Undo 6.900 / 8.778 and 6.666 / 7.777. | Pass |
+| Lost reply, process exit and stale or foreign Undo | Neither effect nor Undo before commit. Both survive after commit and during reply publication. Restore exact placement/order. A newer layout edit prevents prior Undo. | 36 process exits across the six operations and two widths. 1,200 clean pre-commit rollbacks and 1,200 successful effect/Undo pairs. All 200 stale and 1,200 foreign Undo attempts refused. | Pass |
+| Personal section windows and live membership | Scope to the authenticated person’s layout. Refuse item-only access, foreign/forged parent ref, and revoked section/placement reads, writes and Undo. | Second member unchanged on all 1,200 owner edits. Zero admitted revoked reads, edits or Undo across 200 membership removals. Each width also refused forged/foreign section refs and an actual item from a different space. | Pass |
+
+### What the specification must change
+
+The sealed text already requires a parent-scoped ordered index. The
+stock Turns query cannot implement this contract at scale. For the
+implementation, maintain the current authorized parent keys and their
+counts at the same scope as the read. Keep unauthorized or stale counts
+and rows unavailable until the replacement projection is ready.
+
+Specify bounded work at the layout commit boundary. A section removal
+should retire the section and its placement generation atomically and
+retain that generation until its Undo expires. Undo should reactivate it
+in one transaction. Copying or rewriting every placement at the
+interactive boundary makes the operation depend on section size.
+
+Build via `nix develop -c cargo test --locked --release -p calternal-server
+--test v2_step0_nested --no-run` on dev-01. Copy the release test executable
+and the Notes, orchestrator and Claude Code manifests to a disposable
+ext4 directory on perf-01. Set `STEP0_PLUGINS` to the copied plugin root
+and `TMPDIR` to the disposable directory. Run the executable under the
+perf lock with `--ignored --exact parent_windows_and_personal_sections
+--nocapture --test-threads=1`. The second arm sets `STEP0_LAYOUT_SIZE=4096`.
+
 ## Reproducing the measurements
 
 Build in the existing lane copy on `calternal-dev-01-compute02`.
