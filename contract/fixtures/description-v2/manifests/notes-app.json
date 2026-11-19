@@ -1,0 +1,95 @@
+{
+  "api_version": 2,
+  "id": "notes",
+  "name": "Notes",
+  "version": "1.0.0",
+  "icon": "notes",
+  "network": "none",
+  "apps": [
+    {
+      "id": "notes",
+      "name": "Notes",
+      "icon": "notes",
+      "description": {
+        "id": "app",
+        "template": {
+          "path": "notes-app.json",
+          "sha256": "76baae44b0c7b8da465490822ab4866fcf34f595015995bc368544afdea2ac67"
+        }
+      }
+    }
+  ],
+  "kinds": [
+    {
+      "id": "notes",
+      "icon": "notes",
+      "title_field": "title",
+      "storage": {
+        "hidden": true
+      },
+      "claimed_text": true,
+      "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "title"
+        ],
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "pinned": {
+            "type": "boolean"
+          }
+        }
+      },
+      "indexed_fields": {
+        "pinned": {
+          "type": "Boolean",
+          "audience": "member_item"
+        }
+      }
+    }
+  ],
+  "reads": [
+    "collections",
+    "notes"
+  ],
+  "operations": [
+    {
+      "id": "notes.create",
+      "title": "New note",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [],
+        "properties": {
+          "collection": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        }
+      },
+      "output_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [],
+        "properties": {}
+      },
+      "required_capability": "content.write",
+      "risk": "reversible",
+      "idempotency": "request_id",
+      "methods": [
+        "item_save"
+      ],
+      "creates": "notes"
+    }
+  ],
+  "worker": {
+    "path": "dist/fixture.js",
+    "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+  }
+}

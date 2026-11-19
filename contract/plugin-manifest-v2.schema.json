@@ -108,14 +108,13 @@
       }
     },
     "app": {
-      "type": "object", "additionalProperties": false, "required": ["id", "name", "icon", "chrome", "content"],
+      "type": "object", "additionalProperties": false, "required": ["id", "name", "icon", "description"],
       "properties": {
         "id": { "$ref": "#/definitions/localId" },
         "name": { "$ref": "#/definitions/label" },
         "icon": { "$ref": "#/definitions/icon" },
         "engine": { "const": "turns" },
-        "chrome": { "$ref": "#/definitions/description" },
-        "content": { "$ref": "#/definitions/description" }
+        "description": { "$ref": "#/definitions/description" }
       }
     },
     "kind": {

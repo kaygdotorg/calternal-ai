@@ -22,8 +22,8 @@ mail ingestion, credential custody and the host table engine.
 
 ## 1. Package and install
 
-[Manifest v2](../contract/plugin-manifest-v2.schema.json) has apps with pinned
-chrome/content templates, kinds with metadata/index declarations and an
+[Manifest v2](../contract/plugin-manifest-v2.schema.json) has apps with one pinned
+AppDescription (shared Bind list, chrome and content), kinds with metadata/index declarations and an
 optional live-room profile, operations with input/output schemas, capability,
 risk, idempotency and optional item target, jobs/waits, schedule eligibility,
 settings, secrets and typed credential routes. Before wake, resolve
@@ -437,7 +437,9 @@ one catalogue WindowResult with bind, state, result version, actual offset
 and stable rows. Count is an exact/estimate object or omitted, as allowed
 by audience and plan. The chrome/content pair shares one Bind list.
 `viewer_self` permits counts over the actor’s own authorized projection
-only. Turn controls require current turn-specific authority. Stable window/rank locators
+only. Turn controls require current turn-specific authority. The host projects
+`snoozed_until` as null after expiry and invalidates the actor’s Inbox Bind
+without waking the runtime. Stable window/rank locators
 belong to the checked query and result version. Missing indexes, unbounded
 ACL intersections, unavailable authorized counts and linear offset scans
 return `422 unsupported_query_plan`. Never silently fall back to a scan.
@@ -740,7 +742,7 @@ and zero-effect assertions must hold on every repetition.
 | **Durable transcript** | Stall the reader, cut after commit before ACK and restart. First screenful drawn p95 ≤150 ms on a warm authorized reconnect, with the durable cursor, stable event and receipt sequences unchanged. Revoked reconnect reveals neither rows nor bookmarks. An independent control request completes p95 ≤500 ms with the transcript reader stalled. |
 | **Host + renderer authority** | On Svelte Chromium check both formats, a real protected approval and a live Bind. Forge row/route/Bind/context, untouched prefills, bulk IDs, ChoiceRefs, cached data and built-in surfaces. Inject duplicate and stale activations, revocation and unrelated churn. Zero unauthorized effects or rendered bytes, one commit on replay, and unrelated-churn action p95 ≤2 s from dispatch. Race revocation at egress, job claim/park and approval resolve before freezing those routes. |
 | **Phone activation exchanges** | In the same Chromium phone link fixture, from action intent to host outcome, swipe uses at most two exchanges and prepared Send at most one. Require the bounds on every run and report p95 exchange counts and elapsed time. Alter prepared material before Send or drop its reply. Refuse stale material and replay the exact final text once. |
-| **Keyboard windowing** | 5,000 rows with 30 keys/sec on the phone fixture. Report p95 window requests/sec (≤4) and selection/navigation events during repeat (zero on every run). No skeleton while continuous scrolling is steady. Same-version prefetch applies while keys repeat; a selection-dependent action flushes its settled target first. |
+| **Keyboard windowing** | 5,000 rows with 30 keys/sec on the phone fixture. At most four window requests in any second and zero selection/navigation events during repeat on every run. Report p95 request rate. No skeleton while continuous scrolling is steady. Same-version prefetch applies while keys repeat; a selection-dependent action flushes its settled target first. |
 | **Interactive pending** | Force work past three plugin seconds, including a cold wake with the separate measured/fixture allowance. Check caller-visible pending p95 ≤3 s from admission, one diagnostic and one status ref. Poll while it finishes and retry after a lost reply. Never launch again or allow effects after ticket expiry. |
 
 If a gate misses, record the measured failure and change the mechanism or

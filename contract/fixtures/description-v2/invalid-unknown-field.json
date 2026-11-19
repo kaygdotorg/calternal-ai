@@ -1,13 +1,16 @@
 {
   "version": 2,
+  "kind": "app",
   "revision": 1,
-  "sidebar": {
-    "sections": [
-      {
-        "id": "x",
-        "bind": "b",
-        "rows_from_page": []
-      }
-    ]
+  "chrome": {
+    "sidebar": {
+      "sections": [
+        {
+          "id": "x",
+          "bind": "b",
+          "rows_from_page": []
+        }
+      ]
+    }
   }
 }

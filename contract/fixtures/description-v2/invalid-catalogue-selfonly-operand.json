@@ -1,5 +1,6 @@
 {
   "version": 2,
+  "kind": "app",
   "revision": 1,
   "binds": [
     {

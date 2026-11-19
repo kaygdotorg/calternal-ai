@@ -1,0 +1,32 @@
+{
+  "version": 2,
+  "kind": "app",
+  "revision": 1,
+  "binds": [
+    {
+      "id": "a",
+      "source": {
+        "type": "list",
+        "kind": "notes"
+      }
+    },
+    {
+      "id": "b",
+      "source": {
+        "type": "list",
+        "kind": "notes"
+      },
+      "filter": {
+        "all": [
+          {
+            "field": "collection",
+            "op": "eq",
+            "value": {
+              "selection": "a"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

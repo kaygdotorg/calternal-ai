@@ -63,7 +63,8 @@
           "type": "Timestamp",
           "index_owner": "turns",
           "audience": "viewer_self",
-          "nullable": true
+          "nullable": true,
+          "description": "Actor-scoped active snooze deadline. Null once the deadline passes; host invalidates affected Bind results at expiry."
         },
         "archived": {
           "type": "Boolean",

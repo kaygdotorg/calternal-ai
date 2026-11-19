@@ -1,0 +1,13 @@
+{
+  "version": 2,
+  "kind": "app",
+  "revision": 1,
+  "chrome": {
+    "footer": {
+      "account": {
+        "id": "account",
+        "initial": "K"
+      }
+    }
+  }
+}

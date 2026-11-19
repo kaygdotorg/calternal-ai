@@ -1,0 +1,15 @@
+{
+  "version": 2,
+  "kind": "app",
+  "revision": 1,
+  "chrome": {
+    "sidebar": {
+      "cards": [
+        {
+          "id": "c",
+          "title": "Card"
+        }
+      ]
+    }
+  }
+}

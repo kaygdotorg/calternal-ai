@@ -1,0 +1,25 @@
+{
+  "version": 2,
+  "kind": "app",
+  "revision": 1,
+  "binds": [
+    {
+      "id": "l",
+      "source": {
+        "type": "list",
+        "kind": "notes"
+      },
+      "fields": [
+        "title"
+      ]
+    }
+  ],
+  "chrome": {
+    "header": {
+      "title": {
+        "bind": "l",
+        "field": "title"
+      }
+    }
+  }
+}

@@ -1,49 +1,51 @@
 {
   "version": 2,
-  "kind": "view",
+  "kind": "app",
   "revision": 1,
-  "root": {
-    "type": "stack",
-    "children": [
-      {
-        "type": "stack",
-        "children": [
-          {
-            "type": "stack",
-            "children": [
-              {
-                "type": "stack",
-                "children": [
-                  {
-                    "type": "stack",
-                    "children": [
-                      {
-                        "type": "stack",
-                        "children": [
-                          {
-                            "type": "stack",
-                            "children": [
-                              {
-                                "type": "stack",
-                                "children": [
-                                  {
-                                    "type": "text",
-                                    "text": "deep"
-                                  }
-                                ]
-                              }
-                            ]
-                          }
-                        ]
-                      }
-                    ]
-                  }
-                ]
-              }
-            ]
-          }
-        ]
-      }
-    ]
+  "view": {
+    "root": {
+      "type": "stack",
+      "children": [
+        {
+          "type": "stack",
+          "children": [
+            {
+              "type": "stack",
+              "children": [
+                {
+                  "type": "stack",
+                  "children": [
+                    {
+                      "type": "stack",
+                      "children": [
+                        {
+                          "type": "stack",
+                          "children": [
+                            {
+                              "type": "stack",
+                              "children": [
+                                {
+                                  "type": "stack",
+                                  "children": [
+                                    {
+                                      "type": "text",
+                                      "text": "deep"
+                                    }
+                                  ]
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
   }
 }

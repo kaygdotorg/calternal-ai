@@ -1,10 +1,7 @@
 {
   "version": 2,
+  "kind": "app",
   "revision": 1,
-  "scheme": "dark",
-  "cache": {
-    "templates": "keep"
-  },
   "binds": [
     {
       "id": "collections",
@@ -112,13 +109,20 @@
             "id": "pin",
             "title": "Pin",
             "icon": "spark",
-            "operation": "notes.pin",
+            "operation": "host.item.patch-metadata",
             "inputs": {
               "item": {
                 "row": "id"
+              },
+              "field": {
+                "literal": "pinned"
+              },
+              "value": {
+                "literal": true
               }
             },
-            "tone": "warn"
+            "tone": "warn",
+            "fullSwipe": true
           }
         ],
         "trailingActions": [
@@ -132,14 +136,7 @@
                 "row": "id"
               }
             },
-            "role": "destructive",
-            "result": {
-              "show": [
-                "pending",
-                "error",
-                "undo"
-              ]
-            }
+            "role": "destructive"
           }
         ],
         "menu": [
@@ -161,18 +158,26 @@
                   }
                 }
               }
-            },
-            "preview": {
-              "material": [
-                "item"
-              ]
-            },
-            "result": {
-              "show": [
-                "pending",
-                "error",
-                "undo"
-              ]
+            }
+          },
+          {
+            "id": "move",
+            "title": "Move to collection",
+            "icon": "folder",
+            "operation": "host.collection.move",
+            "inputs": {
+              "item": {
+                "row": "id"
+              },
+              "collection": {
+                "prompt": {
+                  "title": "Move to",
+                  "kind": "choice",
+                  "options": {
+                    "bind": "collections"
+                  }
+                }
+              }
             }
           }
         ]
@@ -277,149 +282,238 @@
         "size": 1,
         "count": "exact"
       }
+    },
+    {
+      "id": "note",
+      "source": {
+        "type": "item",
+        "kind": "notes",
+        "ref": {
+          "route": "item"
+        }
+      },
+      "fields": [
+        "title",
+        "updated",
+        "pinned"
+      ]
+    },
+    {
+      "id": "current",
+      "source": {
+        "type": "item",
+        "kind": "notes",
+        "ref": {
+          "route": "item"
+        }
+      },
+      "fields": [
+        "title"
+      ]
+    },
+    {
+      "id": "note-search",
+      "source": {
+        "type": "search",
+        "kind": "notes"
+      },
+      "fields": [
+        "title"
+      ],
+      "window": {
+        "size": 30,
+        "count": "estimate"
+      },
+      "row": {
+        "title": {
+          "field": "title"
+        },
+        "open": {
+          "route": {
+            "name": "item",
+            "value": "id"
+          }
+        }
+      }
     }
   ],
-  "sidebar": {
-    "open": true,
-    "title": "Calternal",
-    "selectors": [
-      {
-        "id": "view",
-        "route": "view",
-        "selected": "notes",
-        "options": [
-          {
-            "id": "notes",
-            "title": "Notes"
-          },
-          {
-            "id": "trash",
-            "title": "Trash",
-            "count": {
-              "bind": "trash-count"
+  "cache": {
+    "templates": "keep"
+  },
+  "chrome": {
+    "sidebar": {
+      "open": true,
+      "title": "Calternal",
+      "selectors": [
+        {
+          "id": "view",
+          "route": "view",
+          "selected": "notes",
+          "options": [
+            {
+              "id": "notes",
+              "title": "Notes"
+            },
+            {
+              "id": "trash",
+              "title": "Trash",
+              "count": {
+                "bind": "trash-count"
+              }
             }
-          }
-        ]
-      }
-    ],
-    "sections": [
-      {
-        "id": "shortcuts",
-        "rows": [
-          {
-            "id": "new-note",
-            "title": "New note",
-            "icon": "plus",
-            "open": {
-              "invoke": {
-                "id": "create",
-                "title": "New note",
-                "operation": "notes.create",
-                "inputs": {
-                  "collection": {
-                    "route": "collection"
+          ]
+        }
+      ],
+      "sections": [
+        {
+          "id": "shortcuts",
+          "rows": [
+            {
+              "id": "new-note",
+              "title": "New note",
+              "icon": "plus",
+              "open": {
+                "invoke": {
+                  "id": "create",
+                  "title": "New note",
+                  "operation": "notes.create",
+                  "inputs": {
+                    "collection": {
+                      "route": "collection"
+                    }
                   }
                 }
               }
             }
-          }
-        ]
-      },
-      {
-        "id": "collections",
-        "title": "Collections",
-        "bind": "collections",
-        "showWhen": {
-          "route": "view",
-          "equals": "notes"
-        }
-      },
-      {
-        "id": "notes",
-        "title": "Notes",
-        "bind": "notes",
-        "showWhen": {
-          "route": "view",
-          "equals": "notes"
-        }
-      },
-      {
-        "id": "trash",
-        "title": "Trash",
-        "bind": "trash",
-        "showWhen": {
-          "route": "view",
-          "equals": "trash"
+          ]
         },
-        "actions": [
-          {
-            "id": "empty-trash",
-            "title": "Empty Trash",
-            "icon": "trash",
-            "role": "destructive",
-            "shell": {
-              "sheet": "trash"
-            }
-          }
-        ]
-      }
-    ],
-    "refresh": true
-  },
-  "footer": {
-    "account": {
-      "id": "account",
-      "initial": "K",
-      "title": "Account",
-      "menu": [
         {
-          "id": "signout",
-          "title": "Sign out",
-          "role": "destructive",
+          "id": "collections",
+          "title": "Collections",
+          "bind": "collections",
+          "showWhen": {
+            "route": "view",
+            "equals": "notes"
+          }
+        },
+        {
+          "id": "notes",
+          "title": "Notes",
+          "bind": "notes",
+          "showWhen": {
+            "route": "view",
+            "equals": "notes"
+          }
+        },
+        {
+          "id": "trash",
+          "title": "Trash",
+          "bind": "trash",
+          "showWhen": {
+            "route": "view",
+            "equals": "trash"
+          },
+          "actions": [
+            {
+              "id": "empty-trash",
+              "title": "Empty Trash",
+              "icon": "trash",
+              "role": "destructive",
+              "shell": {
+                "sheet": "trash"
+              }
+            }
+          ]
+        }
+      ],
+      "refresh": true
+    },
+    "header": {
+      "title": {
+        "bind": "current",
+        "field": "title"
+      },
+      "trailing": [
+        {
+          "id": "share",
+          "title": "Share",
+          "icon": "share",
           "shell": {
-            "signOut": true
+            "sheet": "share",
+            "item": {
+              "route": "item"
+            }
           }
         }
       ]
     },
-    "apps": [
-      {
-        "id": "threads",
-        "title": "Threads",
-        "icon": "threads"
+    "footer": {
+      "account": {
+        "id": "account",
+        "title": "Account",
+        "menu": [
+          {
+            "id": "signout",
+            "title": "Sign out",
+            "role": "destructive",
+            "shell": {
+              "signOut": true
+            }
+          }
+        ]
       },
-      {
-        "id": "notes",
-        "title": "Notes",
-        "icon": "notes"
-      },
-      {
-        "id": "settings",
-        "title": "Settings",
-        "icon": "settings"
+      "apps": [
+        {
+          "id": "threads",
+          "title": "Threads",
+          "icon": "threads"
+        },
+        {
+          "id": "notes",
+          "title": "Notes",
+          "icon": "notes"
+        },
+        {
+          "id": "settings",
+          "title": "Settings",
+          "icon": "settings"
+        }
+      ],
+      "search": {
+        "placeholder": "Search notes",
+        "bind": "note-search"
       }
-    ],
-    "search": {
-      "placeholder": "Search notes"
     }
   },
-  "header": {
-    "title": {
-      "bind": "notes",
-      "field": "title"
-    },
-    "trailing": [
-      {
-        "id": "share",
-        "title": "Share",
-        "icon": "share",
-        "shell": {
-          "sheet": "share",
-          "item": {
-            "route": "item"
+  "view": {
+    "root": {
+      "type": "stack",
+      "children": [
+        {
+          "type": "component",
+          "component": {
+            "type": "item-editor",
+            "id": "editor",
+            "config": {
+              "item": {
+                "route": "item"
+              },
+              "mode": "edit",
+              "showTitle": true
+            }
           }
+        },
+        {
+          "type": "detail",
+          "bind": "note",
+          "fields": [
+            {
+              "label": "Updated",
+              "field": "updated"
+            }
+          ]
         }
-      }
-    ]
+      ]
+    }
   }
 }
