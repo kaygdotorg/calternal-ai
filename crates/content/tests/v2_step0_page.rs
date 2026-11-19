@@ -5,6 +5,12 @@ mod combined_save;
 mod covering;
 #[path = "v2_step0_page/scoped.rs"]
 mod scoped;
+#[path = "v2_step0_page/search.rs"]
+mod search;
+#[path = "v2_step0_page/search_lag.rs"]
+mod search_lag;
+#[path = "v2_step0_page/search_save.rs"]
+mod search_save;
 
 use calternal_content::{Content, FileFormat, ItemOrder, Placement};
 use calternal_roots::Roots;
@@ -143,6 +149,31 @@ fn fixture(root: &std::path::Path) -> (Content, SpaceId, std::path::PathBuf) {
     let mut writer = Connection::open(&db).unwrap();
     seed(&mut writer);
     (content, space, db)
+}
+
+#[test]
+#[ignore = "disposable perf fixture; see step 0 measurements"]
+fn scoped_search_worker_lag() {
+    let root = tempfile::tempdir().unwrap();
+    search_lag::exercise(root.path());
+}
+
+#[test]
+#[ignore = "disposable perf fixture; see step 0 measurements"]
+fn scoped_search_combined_save() {
+    for enabled in [false, true] {
+        let root = tempfile::tempdir().unwrap();
+        let (content, space, db) = fixture(root.path());
+        combined_save::exercise_search(&content, space, &db, enabled);
+    }
+}
+
+#[test]
+#[ignore = "disposable perf fixture; see step 0 measurements"]
+fn scoped_search_windows() {
+    let root = tempfile::tempdir().unwrap();
+    let (_content, _space, db) = fixture(root.path());
+    search::exercise(&db, root.path());
 }
 
 #[test]

@@ -1,6 +1,7 @@
 //! Measure real Content saves with scoped membership triggers in content.db.
 use super::covering::COUNTS;
 use super::scoped::{DYNAMIC, SCHEMA, populate_membership};
+use super::search_save;
 use super::{RUNS, summary};
 use calternal_content::{Content, Item, Request};
 use calternal_types::{AccountId, SpaceId};
@@ -40,6 +41,7 @@ fn save(
     prior: Option<&Item>,
     scopes: i64,
     run: usize,
+    sized_body: Option<&str>,
 ) -> Item {
     let moving = (scopes != 0).then_some(MAX_SCOPES + (run % 2) as i64);
     let key = format!("combined-{scopes}-{run}");
@@ -53,7 +55,7 @@ fn save(
             "notes",
             prior.map(|i| i.revision.as_str()),
             json!({"title":"Combined save", "moving_audience": moving}),
-            body.as_bytes(),
+            sized_body.unwrap_or(&body).as_bytes(),
             Request {
                 account: actor,
                 via: None,
@@ -139,6 +141,14 @@ fn verify(writer: &Connection, item: &Item, scopes: i64) {
 }
 
 pub(super) fn exercise(content: &Content, space: SpaceId, path: &Path) {
+    run(content, space, path, None);
+}
+
+pub(super) fn exercise_search(content: &Content, space: SpaceId, path: &Path, enabled: bool) {
+    run(content, space, path, Some(enabled));
+}
+
+fn run(content: &Content, space: SpaceId, path: &Path, search: Option<bool>) {
     let mut writer = Connection::open(path).unwrap();
     writer.busy_timeout(Duration::from_secs(5)).unwrap();
     writer.execute_batch(SCHEMA).unwrap();
@@ -161,6 +171,9 @@ pub(super) fn exercise(content: &Content, space: SpaceId, path: &Path) {
         .unwrap();
     }
     tx.commit().unwrap();
+    if search == Some(true) {
+        search_save::install(&mut writer, MAX_SCOPES);
+    }
     writer
         .execute_batch("PRAGMA wal_checkpoint(TRUNCATE)")
         .unwrap();
@@ -176,30 +189,53 @@ pub(super) fn exercise(content: &Content, space: SpaceId, path: &Path) {
     let actor = AccountId::new();
     let mut last = None;
     let widths = [0, 1, 4, 16, 32, 64, 256];
-    let selected = std::env::var("STEP0_SCOPE").ok().map(|value| {
-        let width = value.parse().unwrap();
-        assert!(widths.contains(&width));
-        width
+    let selected = if search.is_some() {
+        Some(32)
+    } else {
+        std::env::var("STEP0_SCOPE").ok().map(|value| {
+            let width = value.parse().unwrap();
+            assert!(widths.contains(&width));
+            width
+        })
+    };
+    let corpus = [" oddmarker ", " evenmarker "].map(|marker| {
+        format!(
+            "{marker}{}",
+            "notebook agenda workshop archive reference ".repeat(200)
+        )[..8192]
+            .to_owned()
     });
     for scopes in widths
         .into_iter()
         .filter(|width| selected.is_none_or(|selected| *width == selected))
     {
-        let mut item = save(content, space, actor, None, scopes, 0);
+        let mut item = save(
+            content,
+            space,
+            actor,
+            None,
+            scopes,
+            0,
+            search.map(|_| corpus[0].as_str()),
+        );
         content.materialize(space, item.id).unwrap();
         set_scope(&mut writer, &item, scopes, last.as_ref());
         let mut samples = Vec::new();
         for run in 1..=RUNS {
+            let body = search.map(|_| corpus[run % 2].as_str());
             let start = Instant::now();
-            item = save(content, space, actor, Some(&item), scopes, run);
+            item = save(content, space, actor, Some(&item), scopes, run, body);
             samples.push(start.elapsed().as_micros());
             // Placement is the engine's separate durability stage, not part
             // of the user-visible save acknowledgment being timed here.
             content.materialize(space, item.id).unwrap();
             verify(&writer, &item, scopes);
+            if search == Some(true) {
+                search_save::verify(&writer, &item.id.to_string(), MAX_SCOPES, (run % 2) as i64);
+            }
         }
         println!(
-            "combined save scopes={scopes} n={RUNS} membership_keys={} count_rows={} us {}",
+            "combined save search={search:?} scopes={scopes} n={RUNS} membership_keys={} count_rows={} us {}",
             2 * scopes,
             if scopes == 0 { 0 } else { 2 },
             summary(&mut samples)
