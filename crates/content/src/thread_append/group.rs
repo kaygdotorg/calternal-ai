@@ -101,7 +101,11 @@ impl Space {
         if ready.hasher.finalize().to_hex().as_str() != full {
             return Err(internal("thread append file checksum differs"));
         }
+        #[cfg(feature = "perf-timings")]
+        let sync = calternal_store::timings::SaveStage::RecordSync.start();
         file.sync_all().map_err(internal)?;
+        #[cfg(feature = "perf-timings")]
+        sync.finish();
         ready.stamp = named(&folder, &head.path, &file)?;
         ready.seq = head.seq;
         fault(FaultPoint::AfterPlacement);

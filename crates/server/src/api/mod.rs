@@ -44,6 +44,8 @@ pub(crate) mod people;
 mod plugin_slots;
 mod plugins;
 mod request;
+#[cfg(feature = "perf-timings")]
+pub(crate) mod thread_timing;
 mod search;
 pub(crate) mod search_skills;
 mod sharing;
@@ -326,6 +328,8 @@ fn operation_mutates(catalog: &crate::plugins::Catalog, op: &str) -> bool {
 }
 
 async fn operations<D: Directory>(State(state): State<Shared<D>>, req: Request) -> Response {
+    #[cfg(feature = "perf-timings")]
+    let parsed_from = calternal_types::perf_monotonic_ns();
     let machines = req
         .extensions()
         .get::<Arc<crate::machines::MachineService>>()
@@ -379,6 +383,14 @@ async fn operations<D: Directory>(State(state): State<Shared<D>>, req: Request) 
         Err(e) => return failure(salvage_request_id(&bytes), e.into()),
     };
     let rid = request.request_id.clone();
+    #[cfg(feature = "perf-timings")]
+    let thread_timing = (request.operation == "threads.send").then(|| {
+        let entry = OPERATION_ENTRY_NS.try_with(|entry| *entry).unwrap_or(0);
+        thread_timing::at(&rid, "http_entry", entry);
+        thread_timing::at(&rid, "http_authorized", parsed_from);
+        thread_timing::mark(&rid, "http_parsed");
+        thread_timing::Reply(rid.clone())
+    });
     let scheduling_space = request
         .input
         .get("space_id")
@@ -484,8 +496,17 @@ async fn operations<D: Directory>(State(state): State<Shared<D>>, req: Request) 
     fault::hit(FaultPoint::BeforeReply);
     match result {
         Ok(data) => {
+            #[cfg(feature = "perf-timings")]
+            if let Some(timing) = &thread_timing {
+                thread_timing::mark(&timing.0, "http_serialize");
+            }
             let mut response =
                 json_response(StatusCode::OK, &OperationResponse::success(rid, data));
+            #[cfg(feature = "perf-timings")]
+            if let Some(timing) = thread_timing {
+                thread_timing::mark(&timing.0, "http_serialized");
+                response.extensions_mut().insert(timing);
+            }
             if request.operation == "requests.ask" || request.operation == "access.request" {
                 response
                     .extensions_mut()

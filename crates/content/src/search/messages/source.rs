@@ -127,15 +127,21 @@ pub(super) fn slice(
     revision.bytes.read(db, range)
 }
 
-/// A steady append advances a ready projection with only newly appended
-/// frames. A replaced base, pruned version or unusually long backlog needs
-/// the ordinary rebuild of that one thread.
+/// A batch of consecutive patches and the revision reached by indexing them.
+pub(super) struct Fragments {
+    pub(super) rows: Vec<(usize, Vec<u8>)>,
+    pub(super) revision: String,
+}
+
+/// A steady append or a backlogged append chain advances the projection by
+/// at most 64 patches per transaction. A replaced base or missing prior
+/// revision needs the ordinary rebuild of that thread.
 pub(super) fn fragments(
     db: &Connection,
     head: &Head,
     prior: &str,
-) -> Result<Option<Vec<(usize, Vec<u8>)>>> {
-    const MAX_FRAGMENTS: usize = 64;
+) -> Result<Option<Fragments>> {
+    const MAX_FRAGMENTS: i64 = 64;
     if !head.patched {
         return Ok(None);
     }
@@ -148,21 +154,23 @@ pub(super) fn fragments(
         .query_row(params![head.id, prior], |r| r.get(0))
         .optional()
         .map_err(internal)?;
-    let Some(old) = old.filter(|seq| {
-        *seq >= current.base_seq && *seq < current.seq && current.seq - *seq <= MAX_FRAGMENTS as i64
-    }) else {
+    let Some(old) = old.filter(|seq| *seq >= current.base_seq && *seq < current.seq) else {
         return Ok(None);
     };
-    db.prepare_cached(
-        "SELECT p.offset,v.bytes FROM thread_revision_patches p JOIN versions v USING(item,seq)
+    let through = current.seq.min(old.saturating_add(MAX_FRAGMENTS));
+    let mut statement = db.prepare_cached(
+        "SELECT p.offset,v.bytes,v.revision FROM thread_revision_patches p JOIN versions v USING(item,seq)
          WHERE p.item=?1 AND p.base_seq=?2 AND p.seq>?3 AND p.seq<=?4 ORDER BY p.seq",
-    )
-    .map_err(internal)?
-    .query_map(params![head.id, current.base_seq, old, current.seq], |r| {
-        Ok((r.get::<_, u32>(0)? as usize, r.get(1)?))
-    })
-    .map_err(internal)?
-    .collect::<rusqlite::Result<_>>()
-    .map(Some)
-    .map_err(internal)
+    ).map_err(internal)?;
+    let mut query = statement.query(params![head.id, current.base_seq, old, through]).map_err(internal)?;
+    let mut rows = Vec::new();
+    let mut revision = String::new();
+    while let Some(row) = query.next().map_err(internal)? {
+        rows.push((row.get::<_, u32>(0).map_err(internal)? as usize, row.get(1).map_err(internal)?));
+        revision = row.get(2).map_err(internal)?;
+    }
+    if rows.len() as i64 != through - old {
+        return Ok(None);
+    }
+    Ok(Some(Fragments { rows, revision }))
 }

@@ -4,7 +4,7 @@
 #[cfg(feature = "perf-timings")]
 mod note_save;
 #[cfg(feature = "perf-timings")]
-pub use note_save::{SaveStage, observe_note_save};
+pub use note_save::{SaveStage, observe_note_save, observe_thread_storage};
 
 /// Emit one JSON diagnostic correlated by request ID after a stage completes.
 /// `elapsed_us` measures a stage duration. Writes one stderr line with the

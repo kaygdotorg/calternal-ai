@@ -271,6 +271,10 @@ pub(super) async fn guard<D: Directory>(
     if api && !cacheable_asset {
         h.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
     }
+    #[cfg(feature = "perf-timings")]
+    if let Some(timing) = resp.extensions().get::<super::thread_timing::Reply>() {
+        super::thread_timing::mark(&timing.0, "http_deliver");
+    }
     resp
 }
 

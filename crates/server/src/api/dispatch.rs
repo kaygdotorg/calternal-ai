@@ -299,6 +299,10 @@ pub(super) async fn dispatch_scoped_inner<D: Directory>(
             return Err(e.with_details(serde_json::json!({"status":"approval_required","approval_id":approval,"job_id":agent.as_ref().map(|a|a.job.as_str()),"request_id":request_id})));
         }
     }
+    #[cfg(feature = "perf-timings")]
+    if op == "threads.send" {
+        super::thread_timing::mark(request_id, "operation_admitted");
+    }
     admitted_operation(
         state, p, session, request_id, op, input, agent, policy, job_scoped, catalog,
     )

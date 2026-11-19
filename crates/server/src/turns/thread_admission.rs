@@ -34,6 +34,7 @@ pub(crate) async fn admit<D: Directory>(
         .ok_or_else(|| Error::internal("missing message fingerprint"))?
         .to_owned();
     let id = blocking(move || {
+        let admit = || {
         let thread = Uuid::parse_str(&input.thread_id)
             .map_err(|_| Error::internal("invalid saved thread"))?;
         let space_id =
@@ -83,6 +84,13 @@ pub(crate) async fn admit<D: Directory>(
                 }
                 Ok(id)
             })
+        };
+        #[cfg(feature = "perf-timings")]
+        return calternal_store::timings::observe_thread_storage(
+            request_id.trim_start_matches("thread-admit/"), "thread_job", admit,
+        );
+        #[cfg(not(feature = "perf-timings"))]
+        admit()
     })
     .await?;
     let job = load(state, &id).await.map_err(|_| {

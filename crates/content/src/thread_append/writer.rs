@@ -232,7 +232,11 @@ impl Content {
                 tx.execute("DELETE FROM outbox WHERE rowid<=?1", [cutoff])
                     .map_err(internal)?;
             }
+            #[cfg(feature = "perf-timings")]
+            let commit = calternal_store::timings::SaveStage::ContentCommit.start();
             tx.commit().map_err(internal)?;
+            #[cfg(feature = "perf-timings")]
+            commit.finish();
             s.published_appends = None;
             s.pending_since.get_or_insert_with(Instant::now);
             s.append_recovering = true;
@@ -246,8 +250,12 @@ impl Content {
                 return Err(blocked());
             }
             (self.fault)(FaultPoint::BeforePlacement);
+            #[cfg(feature = "perf-timings")]
+            let write = calternal_store::timings::SaveStage::RecordWrite.start();
             io::place(&mut group.file, stamp.len(), offset as u64, witness, record, Folder::check_append_lease)
                 .map_err(proof::file_error)?;
+            #[cfg(feature = "perf-timings")]
+            write.finish();
             ready.stamp = named(&folder, &head.path, &group.file)?;
             ready.seq = seq;
             group.last = seq;

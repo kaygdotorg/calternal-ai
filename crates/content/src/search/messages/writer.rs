@@ -130,7 +130,13 @@ pub(in crate::search) fn advance(
     for event in changes {
         if let Some(id) = event.item {
             let thread = source::get(&snapshot, &id)?;
-            replace(&snapshot, &tx, &mut state, &id, thread.as_ref(), decode)?;
+            if !replace(&snapshot, &tx, &mut state, &id, thread.as_ref(), decode)? {
+                // Keep this journal event as the continuation cursor. The
+                // projection revision records progress within the patch chain.
+                save(&tx, &state)?;
+                tx.commit().map_err(internal)?;
+                return Ok(Progress::More);
+            }
         }
         state.watermark = event.sequence;
     }
@@ -356,7 +362,7 @@ fn replace(
     id: &str,
     thread: Option<&source::Head>,
     decode: MessageDecoder,
-) -> Result<()> {
+) -> Result<bool> {
     if let Some((slot, revision)) = tx
         .prepare_cached("SELECT slot,revision FROM threads WHERE id=?1")
         .map_err(internal)?
@@ -365,22 +371,22 @@ fn replace(
         .map_err(internal)?
     {
         if thread.is_some_and(|t| t.revision == revision) {
-            return Ok(());
+            return Ok(true);
         }
         if let Some(thread) = thread
             && let Some(fragments) = source::fragments(primary, thread, &revision)?
         {
             let mut batch = Vec::new();
-            for (offset, bytes) in fragments {
+            for (offset, bytes) in fragments.rows {
                 ingest_records(&bytes, slot, offset, true, decode, &mut batch)?;
             }
             write_run(tx, state, &mut batch)?;
             tx.execute(
                 "UPDATE threads SET revision=?1 WHERE slot=?2",
-                params![thread.revision, slot],
+                params![fragments.revision, slot],
             )
             .map_err(internal)?;
-            return Ok(());
+            return Ok(fragments.revision == thread.revision);
         }
         remove(tx, slot)?;
     }
@@ -389,7 +395,7 @@ fn replace(
         ingest(primary, None, tx, thread, decode, &mut batch)?;
         write_run(tx, state, &mut batch)?;
     }
-    Ok(())
+    Ok(true)
 }
 
 fn remove(tx: &Transaction<'_>, slot: i64) -> Result<()> {

@@ -18,6 +18,12 @@ pub enum SaveStage {
     Filename,
     /// Commit the content and outbox intent transaction.
     ContentCommit,
+    /// Check the suffix witness and append one Markdown record.
+    RecordWrite,
+    /// Sync the leased file before publishing the prepared thread records.
+    RecordSync,
+    /// Commit the saved-turn job and its admission receipt.
+    JobCommit,
     /// Journal receipt lookup, writer handoff, transaction and reply.
     Journal,
     /// Commit removal of a published outbox row.
@@ -30,6 +36,9 @@ struct Durations {
     file_guard_ns: u64,
     filename_ns: u64,
     content_commit_ns: u64,
+    record_write_ns: u64,
+    record_sync_ns: u64,
+    job_commit_ns: u64,
     journal_ns: u64,
     retirement_ns: u64,
     commits: u32,
@@ -64,6 +73,9 @@ impl SaveSpan {
                     d.content_commit_ns += elapsed;
                     d.commits += 1;
                 }
+                SaveStage::RecordWrite => d.record_write_ns += elapsed,
+                SaveStage::RecordSync => d.record_sync_ns += elapsed,
+                SaveStage::JobCommit => d.job_commit_ns += elapsed,
                 SaveStage::Journal => d.journal_ns += elapsed,
                 SaveStage::Retirement => d.retirement_ns += elapsed,
             }
@@ -117,4 +129,28 @@ pub fn observe_note_save<T>(
         }
     }
     result
+}
+
+/// Measure one foreground thread callback using the existing per-worker spans.
+/// Callers emit once outside the content or jobs lock.
+pub fn observe_thread_storage<T>(request_id: &str, stage: &'static str, run: impl FnOnce() -> T) -> T {
+    let start_ns = now();
+    let scoped = Scope(TIMING.with(|t| t.replace(Some(Durations::default()))));
+    let value = run();
+    let end_ns = now();
+    let durations = TIMING.with(|t| t.take()).expect("installed above");
+    drop(scoped);
+    #[derive(serde::Serialize)]
+    struct Record<'a> {
+        stage: &'static str,
+        request_id: &'a str,
+        start_ns: u64,
+        end_ns: u64,
+        #[serde(flatten)]
+        durations: Durations,
+    }
+    if let Ok(json) = serde_json::to_string(&Record{stage,request_id,start_ns,end_ns,durations}) {
+        eprintln!("CALTERNAL_STAGE {json}");
+    }
+    value
 }

@@ -78,26 +78,32 @@ pub(crate) async fn dispatch<D: Directory>(
     if op == "threads.models" {
         return blocking(move || models::list(&state, space, &who)).await;
     }
+    #[cfg(feature = "perf-timings")]
+    if op == "threads.send" {
+        crate::api::thread_timing::mark(rid, "thread_save_queued");
+    }
     let value = retry_verifying(|| {
         let (st, operation, request_id, data) =
             (state.clone(), op.to_owned(), rid.to_owned(), input.clone());
         let caller = who.clone();
         let message_actor = actor.clone();
         blocking(move || {
-            operations::apply(
-                &st,
-                &caller,
-                space,
-                &operation,
-                &request_id,
-                &data,
-                id,
-                &message_actor,
-            )
+            let apply = || operations::apply(
+                &st, &caller, space, &operation, &request_id, &data, id, &message_actor,
+            );
+            #[cfg(feature = "perf-timings")]
+            if operation == "threads.send" {
+                return calternal_store::timings::observe_thread_storage(
+                    &request_id, "thread_save", apply,
+                );
+            }
+            apply()
         })
     })
     .await?;
     if op == "threads.send" {
+        #[cfg(feature = "perf-timings")]
+        crate::api::thread_timing::mark(rid, "thread_saved");
         crate::fault::hit(crate::fault::FaultPoint::AfterThreadMessage);
         let thread = value["thread"]["id"]
             .as_str()
@@ -139,6 +145,8 @@ pub(crate) async fn dispatch<D: Directory>(
             value["intent"].clone(),
         )
         .await?;
+        #[cfg(feature = "perf-timings")]
+        crate::api::thread_timing::mark(rid, "job_admitted");
         return Ok(json!({"thread":value["thread"],"job":job.view()}));
     }
     Ok(value)

@@ -439,7 +439,11 @@ impl Jobs {
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_err)?;
         let value = f(&tx)?;
+        #[cfg(feature = "perf-timings")]
+        let commit = calternal_store::timings::SaveStage::JobCommit.start();
         tx.commit().map_err(db_err)?;
+        #[cfg(feature = "perf-timings")]
+        commit.finish();
         if let Some(publisher) = &self.thread_events {
             let pending = c
                 .prepare_cached("SELECT EXISTS(SELECT 1 FROM saved_turn_events)")

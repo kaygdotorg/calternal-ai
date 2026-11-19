@@ -39,7 +39,14 @@ pub(crate) fn run(a: &Args) -> Result<i32> {
             .ok_or("fixture thread missing")?
             .to_owned()
     };
-    let size = seed(&a.work, space, &id, a.small_thread)?;
+    let ceiling = if a.small_thread {
+        64 * 1024
+    } else if a.legacy_thread_limit {
+        2 * 1024 * 1024 - 48 * 1024
+    } else {
+        SIZE - 48 * 1024
+    };
+    let size = seed(&a.work, space, &id, ceiling)?;
     let (_server, mut http, _) = start(a)?;
     http.cookie = fixture.cookie;
     let started = Instant::now();
@@ -47,9 +54,11 @@ pub(crate) fn run(a: &Args) -> Result<i32> {
     let rebuild = started.elapsed().as_secs_f64() * 1000.0;
     let mut appends = Vec::new();
     for sample in 0..=a.samples {
-        let (result, ms) = http.op(
+        let request = format!("perf-thread-append-{sample}");
+        let (result, ms) = http.op_id(
             "threads.send",
             json!({"id":id,"message":"Append probe to a near-ceiling thread."}),
+            &request,
         )?;
         let job = result["job"]["id"].as_str().ok_or("fixture turn missing")?;
         // Job cancellation is outside the timed request. There is no provider client.
@@ -58,12 +67,9 @@ pub(crate) fn run(a: &Args) -> Result<i32> {
             appends.push(ms);
         }
     }
-    if a.small_thread {
-        return report(
-            a,
-            size,
-            &[stats::summarize(SMALL_APPEND, appends, &budgets)],
-        );
+    if a.small_thread || a.legacy_thread_limit {
+        let metric = if a.small_thread { SMALL_APPEND } else { "threads.2mib.append" };
+        return report(a, size, &[stats::summarize(metric, appends, &budgets)]);
     }
     let message = indexed(&mut http, space)?;
     let mut tails = Vec::new();
@@ -132,14 +138,13 @@ fn indexed(http: &mut Http, space: &str) -> Result<String> {
     }
 }
 
-fn seed(root: &Path, space: &str, id: &str, small: bool) -> Result<usize> {
+fn seed(root: &Path, space: &str, id: &str, threshold: usize) -> Result<usize> {
     let base = root.join("appdata/spaces").join(space);
     // Select an old-format snapshot within a small reserve for repeated writes.
     // Fixture creation is untimed and runs with the disposable server stopped.
-    let threshold = SIZE - 48 * 1024;
     let identity = format!("---\ncalternal-id: {id}\n");
-    let mut low: usize = if small { 8 } else { 1 };
-    let mut high = if small { low } else { 100_000 };
+    let mut low = 1;
+    let mut high = threshold / 128;
     while low < high {
         let mid = (low + high).div_ceil(2);
         let (_, markdown) = calternal_server::rebuild_probe::message_fixture(0, mid);
@@ -157,8 +162,8 @@ fn seed(root: &Path, space: &str, id: &str, small: bool) -> Result<usize> {
             .strip_prefix("---\n")
             .ok_or("invalid fixture envelope")?
     );
-    if !small && placed.len() < SIZE - 64 * 1024 {
-        return Err("fixture did not approach 16 MiB".into());
+    if placed.len() < threshold.saturating_sub(1024) {
+        return Err("fixture did not approach the requested size".into());
     }
     let mut db = Connection::open(base.join("content.db"))?;
     let path: String =
