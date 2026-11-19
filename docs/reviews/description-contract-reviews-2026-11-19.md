@@ -82,3 +82,14 @@ Part B's own findings are fixed here (`FIXED`); findings about the runtime are t
 | 8 | Choice prompt order | web lane (5.0) |
 | 9 | Typed query refusal | FIXED: 2.3/2.5 cite `WindowReply` and `WindowPlanError` |
 | 2, 10, 11, 12 | Snooze, indexed-page gate, snapshot wake, badge predicate | plugins lane |
+
+## Round 7 (Sol, re-review of 84ce8ab4) and revision 8: the renderer side
+
+| # | Finding | Status |
+| --- | --- | --- |
+| 1 | `selection.settled` missing from the component enum | FIXED: the enum is documented as a subset of the catalogue's component_routes; `selection.settled` is the shell's direct `EventSelection`, `window` is `EventWindow`, `selection_set` is `EventSelectionSet` |
+| 2 | Per-parent bind at a root consumer; `{parent:true}` description | FIXED: the schema describes the filter as optional; the verifier rejects a per-parent bind referenced outside its edge; `persist` on a per-parent bind is refused by the schema (Bind `if/then`) |
+| 3 | Move to operand types read from the wrong schema level | FIXED: the verifier selects the oneOf/anyOf branch by required and allowed keys, type-checks operands against it, and requires a `choice` prompt for the destination; negative fixtures for thread-as-placement, item-as-entry and a literal destination |
+| 4 | Cache audience / stale restriction | FIXED on the schema side: `Cache` no longer says only templates persist and names the member record for root windows only; the audience discriminator and the guest/public branches are the catalogue's (plugins lane) |
+| 6 | Window reply | FIXED: `EventWindow` and the new `WindowReply` def cite the catalogue's WindowReply (WindowResult or typed WindowPlanError); the verifier validates `reply-*` and `invalid-reply-*` fixtures against it |
+| 5, 7 | Cache window identity, deep-window budget | plugins lane |

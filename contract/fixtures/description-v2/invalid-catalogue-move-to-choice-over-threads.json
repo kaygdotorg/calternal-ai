@@ -1,0 +1,82 @@
+{
+  "version": 2,
+  "kind": "app",
+  "revision": 1,
+  "binds": [
+    {
+      "id": "layout",
+      "source": {
+        "type": "list",
+        "kind": "layout_sections"
+      },
+      "fields": [
+        "title"
+      ],
+      "row": {
+        "title": {
+          "field": "title"
+        }
+      }
+    },
+    {
+      "id": "others",
+      "source": {
+        "type": "list",
+        "kind": "threads"
+      },
+      "fields": [
+        "title"
+      ]
+    },
+    {
+      "id": "rows",
+      "source": {
+        "type": "list",
+        "kind": "threads",
+        "parent": true
+      },
+      "fields": [
+        "title"
+      ],
+      "row": {
+        "title": {
+          "field": "title"
+        },
+        "menu": [
+          {
+            "id": "mv",
+            "title": "Move to",
+            "operation": "host.layout.move_to",
+            "inputs": {
+              "thread": {
+                "context": "item"
+              },
+              "section": {
+                "prompt": {
+                  "title": "Move to",
+                  "kind": "choice",
+                  "options": {
+                    "bind": "others"
+                  }
+                }
+              }
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "chrome": {
+    "sidebar": {
+      "sections": [
+        {
+          "id": "mine",
+          "repeat": {
+            "over": "layout",
+            "rows": "rows"
+          }
+        }
+      ]
+    }
+  }
+}

@@ -194,11 +194,26 @@ def semantic(doc, errors, catalogue, manifest):
                     if entry is None: errors.append(f"{path}: {op} is not in the host catalogue")
                     else:
                         if not entry.get("generic_invoke", False): errors.append(f"{path}: {op} is not a generic invoke in the catalogue (surfaces: {entry.get('surfaces')})")
-                        schema_in = (entry.get("input_schema") or {}).get("properties", {})
+                        input_schema = entry.get("input_schema") or {}
+                        base_props = input_schema.get("properties", {})
+                        base_required = list(input_schema.get("required", []))
                         given = node.get("inputs", {})
+                        branches = input_schema.get("oneOf") or input_schema.get("anyOf")
+                        schema_in, required = dict(base_props), base_required
+                        if branches:
+                            # the branch is selected by the inputs given: its required keys must all be present and every given key must be allowed by it
+                            fits = []
+                            for branch in branches:
+                                props = {**base_props, **(branch.get("properties") or {})}
+                                req = base_required + list(branch.get("required", []))
+                                if all(r in given for r in req) and all(k in props for k in given): fits.append((props, req))
+                            wants_one = "oneOf" in input_schema
+                            if (wants_one and len(fits) != 1) or (not wants_one and not fits):
+                                errors.append(f"{path}: {op} inputs {sorted(given)} fit {len(fits)} of the input schema's branches")
+                            if fits: schema_in, required = fits[0]
                         for name in given:
                             if schema_in and name not in schema_in: errors.append(f"{path}: {op} has no input {name!r}")
-                        for name in (entry.get("input_schema") or {}).get("required", []):
+                        for name in required:
                             if name not in given: errors.append(f"{path}: {op} needs input {name!r}")
                         owner_bind = None
                         m_owner = re.match(r"^\$\.binds\[(\d+)\]", path)
@@ -214,15 +229,20 @@ def semantic(doc, errors, catalogue, manifest):
                                 if owner_in_repeat and ctx_kind != "item": errors.append(f"{path}: in the rows of a Section.repeat the row id is a placement (LayoutEntryRef): the ThreadRef input {name!r} of {op} must be {{context: item}}, not the bare row id")
                                 if ctx_kind == "item" and owner_kind != "threads": errors.append(f"{path}: {{context: item}} fills a ThreadRef only from a row of kind `threads`, not {owner_kind!r}")
                             if ctx_kind == "placement" and declared_type not in ("LayoutEntryRef", ""): errors.append(f"{path}: {{context: placement}} fills a LayoutEntryRef, not {declared_type}")
-                        for branches_key in ("oneOf", "anyOf"):
-                            branches = (entry.get("input_schema") or {}).get(branches_key)
-                            if branches:
-                                satisfied = [b for b in branches if all(r in given for r in b.get("required", []))]
-                                if (branches_key == "oneOf" and len(satisfied) != 1) or (branches_key == "anyOf" and not satisfied):
-                                    errors.append(f"{path}: {op} inputs {sorted(given)} satisfy {len(satisfied)} of the schema's {branches_key} branches")
-                        if op == "host.layout.move_to":
-                            if ("thread" in given) == ("entry" in given): errors.append(f"{path}: host.layout.move_to takes exactly one of `thread` (add an unplaced thread) or `entry` (move a placement)")
-                            if "section" not in given: errors.append(f"{path}: host.layout.move_to needs a `section` choice")
+                            if ctx_kind == "item" and declared_type == "LayoutEntryRef": errors.append(f"{path}: {{context: item}} cannot fill the LayoutEntryRef input {name!r}")
+                            if declared_type in ("ChoiceRef", "LayoutSectionRef") and (declared_type == "ChoiceRef" or name == "section"):
+                                prompt = source.get("prompt") if isinstance(source, dict) else None
+                                if not (isinstance(prompt, dict) and prompt.get("kind") == "choice"):
+                                    errors.append(f"{path}: input {name!r} of {op} is a destination choice: it must come from a `choice` prompt over the authorized options, not a literal or a row value")
+                                else:
+                                    option_bind = binds.get(((prompt.get("options") or {}).get("bind")))
+                                    option_kind = cat_kinds.get(((option_bind or {}).get("source") or {}).get("kind"))
+                                    want = "LayoutSectionRef" if (declared_type == "LayoutSectionRef" or name == "section") else None
+                                    if want and (option_kind is None or option_kind.get("row_ref") != want):
+                                        errors.append(f"{path}: the choice for {name!r} of {op} must range over a bind whose kind has row_ref {want} (layout_sections), not {((option_bind or {}).get('source') or {}).get('kind')!r}")
+                            if declared_type == "ThreadRef" and isinstance(source, dict) and source.get("row") == "id" and not owner_in_repeat:
+                                if (cat_kinds.get(owner_kind) or {}).get("row_ref") != "ThreadRef":
+                                    errors.append(f"{path}: the bare row id fills a ThreadRef only in a bind whose kind has row_ref ThreadRef (threads), not {owner_kind!r}")
                         for name in entry.get("target_inputs", []):
                             if isinstance(given.get(name), dict) and "literal" in given[name]: errors.append(f"{path}: target input {name!r} of {op} cannot be a literal")
                 elif manifest is not None and op not in man_ops:
@@ -276,6 +296,10 @@ def semantic(doc, errors, catalogue, manifest):
         over = binds.get(rep.get("over"))
         if over is not None and (over.get("source") or {}).get("kind") != "layout_sections":
             errors.append(f"{sec_path}: repeat.over must be a bind that reads `layout_sections` (the per-person layout the host stores)")
+    for path_, node_ in walk(doc):
+        if isinstance(node_, dict) and isinstance(node_.get("bind"), str) and node_["bind"] in parent_binds:
+            if not path_.endswith(".children"):
+                errors.append(f"{path_}: the per-parent bind {node_['bind']!r} is consumed only through its declared edge (children or repeat.rows), not by an ordinary section, list, count or header")
     for bind_id in sorted(parent_binds - referenced):
         errors.append(f"$.binds {bind_id}: a bind with `source.parent: true` needs a declared edge (a RowTemplate.children or a Section.repeat that references it)")
     for path, node in walk(doc):
@@ -338,9 +362,10 @@ for file in sorted((root / "fixtures" / "description-v2").glob("*.json")):
     if manifest_file.exists():
         manifest = normalize_manifest(load_strict(manifest_file.read_text()))
     is_event = file.name.startswith(("event-", "invalid-event-"))
+    is_reply = file.name.startswith(("reply-", "invalid-reply-"))
     if doc is not None:
-        check({"$ref": "#/$defs/Event"} if is_event else schema, doc, "$", errors)
-        if not is_event:
+        check({"$ref": "#/$defs/Event"} if is_event else {"$ref": "#/$defs/WindowReply"} if is_reply else schema, doc, "$", errors)
+        if not is_event and not is_reply:
             view_limits(doc, errors)
             semantic(doc, errors, CATALOGUE, manifest)
     expect_invalid = file.name.startswith("invalid-")

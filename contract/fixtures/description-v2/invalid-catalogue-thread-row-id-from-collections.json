@@ -1,0 +1,34 @@
+{
+  "version": 2,
+  "kind": "app",
+  "revision": 1,
+  "binds": [
+    {
+      "id": "cols",
+      "source": {
+        "type": "list",
+        "kind": "collections"
+      },
+      "fields": [
+        "title"
+      ],
+      "row": {
+        "title": {
+          "field": "title"
+        },
+        "menu": [
+          {
+            "id": "ar",
+            "title": "Archive",
+            "operation": "turns.archive",
+            "inputs": {
+              "thread": {
+                "row": "id"
+              }
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -1210,13 +1210,13 @@
       },
       "max_rows": 200,
       "default_rows": 60,
-      "max_offset": 100000,
+      "max_offset": 500000,
       "max_encoded_bytes": 131072,
       "max_request_span": 200,
       "row_reference_schema": {
         "$ref": "#/$defs/Ref"
       },
-      "description": "The declared parent edge constrains the nested lookup and any count before filtering or pagination. Authorize the entire parent ancestry and each returned row. A parent operand is an optional extra predicate. The window_ref identifies the Bind, stable parent and issued range within the current lease and partition.",
+      "description": "The declared parent edge constrains the nested lookup and any count before filtering or pagination. Authorize the entire parent ancestry and each returned row. A parent operand is an optional extra predicate. The window_ref identifies the Bind, stable parent and issued range within the current lease and partition. Separately cap materialized rows and entries skipped in an index-only jump over the scoped covering index from the nearer end. A jump beyond the skip cap returns WindowPlanError. Exact counts come from the maintained count for the authorized scope.",
       "max_nested_row_depth": 3
     },
     "unsupported_plan": {
@@ -1235,15 +1235,22 @@
       "query_starts_per_actor_per_second": 16,
       "query_starts_per_space_per_second": 64,
       "live_updates_per_bind_per_second": 4,
-      "index_visits_per_window": 4096,
       "index_visits_per_count": 100000,
       "count_starts_per_space_per_second": 4,
       "pending_windows_per_actor": 4,
       "pending_windows_per_space": 32,
       "query_concurrency_per_space": 8,
-      "subscriber_session_lease_seconds": 15
+      "subscriber_session_lease_seconds": 15,
+      "materialized_rows_per_window": 4096,
+      "index_jump_skips_per_window": 250000,
+      "effective_scopes_per_item": 256
     },
-    "cross_bind_operands": "Forbidden in the first query slice. Action and component references to upstream fields still require one authorized projected row and a checked dependency edge."
+    "cross_bind_operands": "Forbidden in the first query slice. Action and component references to upstream fields still require one authorized projected row and a checked dependency edge.",
+    "scope_limit_refusal": {
+      "status": 422,
+      "code": "effective_scope_limit_exceeded",
+      "description": "Check projected scope fan-out before committing a grant or other scope-expanding change. Count distinct effective (collection, audience) scopes per item after resolving direct and inherited ACL paths. Refuse the whole change if any item would exceed the cap. A save touches at most two index keys per effective scope."
+    }
   },
   "$defs": {
     "Ref": {
@@ -1772,7 +1779,8 @@
         "result_version",
         "offset",
         "rows",
-        "window_ref"
+        "window_ref",
+        "audience"
       ],
       "properties": {
         "result_version": {
@@ -1853,6 +1861,9 @@
         },
         "member_cache_record": {
           "$ref": "#/$defs/MemberRowCacheRecord"
+        },
+        "audience": {
+          "$ref": "#/$defs/WindowAudience"
         }
       },
       "allOf": [
@@ -1912,8 +1923,24 @@
               }
             }
           }
+        },
+        {
+          "if": {
+            "required": [
+              "member_cache_record"
+            ]
+          },
+          "then": {
+            "properties": {
+              "audience": {
+                "const": "own_space_member"
+              },
+              "parent": false
+            }
+          }
         }
-      ]
+      ],
+      "description": "An authenticated reply for the active view and its audience. Check the session, lease partition and audience before consuming rows or a cache record. Any cache record must match this view and window."
     },
     "ProviderId": {
       "type": "string",
@@ -2299,7 +2326,8 @@
       "additionalProperties": false,
       "required": [
         "lease",
-        "activation_contexts"
+        "activation_contexts",
+        "audience"
       ],
       "properties": {
         "lease": {
@@ -2308,6 +2336,9 @@
         },
         "activation_contexts": {
           "$ref": "#/$defs/ActionContexts"
+        },
+        "audience": {
+          "$ref": "#/$defs/WindowAudience"
         }
       }
     },
@@ -2729,12 +2760,12 @@
         "to": {
           "type": "integer",
           "minimum": 1,
-          "maximum": 100200
+          "maximum": 500200
         },
         "from": {
           "type": "integer",
           "minimum": 0,
-          "maximum": 100000
+          "maximum": 500000
         },
         "bind": {
           "$ref": "#/$defs/ActionId"
@@ -2889,7 +2920,7 @@
         "offset": {
           "type": "integer",
           "minimum": 0,
-          "maximum": 100000
+          "maximum": 500000
         },
         "issued_at": {
           "$ref": "#/$defs/Timestamp"
@@ -2921,7 +2952,7 @@
           "description": "Host authentication of the complete record excluding this proof, verified against the expected host on disk write and load. Conveys no action or renewal authority."
         }
       },
-      "description": "The only persistable viewer projection. Issued by the host for an eligible ready or empty window of a live own-space member on an opted-in Bind. Bind issuance to the account, space, template and window. Contains only issued display text, never row IDs, contexts, action material or credentials."
+      "description": "The only persistable viewer projection. Issue only on an opted-in, ready or empty root window for a live own-space member, with no route-dependent or parent scope. Authenticate the account, space, template, Bind, window and offset. Contains only issued display text, never row IDs, contexts, action material or credentials."
     },
     "WindowPlanError": {
       "type": "object",
@@ -2962,6 +2993,15 @@
         "content_fetch": false
       },
       "description": "Install and gallery badge and filter predicate for an already validated manifest. Worker egress denial separately follows network:none."
+    },
+    "WindowAudience": {
+      "enum": [
+        "own_space_member",
+        "member",
+        "guest",
+        "public"
+      ],
+      "description": "Host-asserted audience of the authenticated active view. member denotes other member views. Compare with the active view before accepting any window."
     }
   },
   "activation_limits": {
@@ -3096,7 +3136,8 @@
       "output_schema": {
         "$ref": "#/$defs/SelectionContextResult"
       },
-      "scope": "Current authorized Bind and lease. Reconstruct the exact stable row named by the settled selection before issuing contexts."
+      "scope": "Current authorized Bind and lease. Reconstruct the exact stable row named by the settled selection before issuing contexts.",
+      "surface": "direct_shell"
     }
   },
   "generic_item_fields": {
@@ -3144,7 +3185,7 @@
   },
   "cache_policy": {
     "member_rows_max_age_seconds": 1209600,
-    "persistent_row_scope": "Only the host-authenticated own-space member record may go to disk. Validate shape, proof, account, space, member audience, view identity, lifetime and current opt-ins on write and load. Never serialize a WindowResult.",
+    "persistent_row_scope": "Root windows without route-dependent or parent scope only. Verify shape, host proof, account, space, template, Bind, offset, lifetime and opt-ins on write and load. On write the record must match the authenticated active view and reply, including own_space_member audience and window_ref. On load use only the matching local own-space root display. Never serialize a WindowResult.",
     "persistent_row_authority": "Display on unlocked devices as unconfirmed until the host confirms or corrects the rows. Encrypt with account- and space-bound keys. Never persist guest or public rows, action credentials or contexts. Erase on sign-out, account switch or known revocation. Every action requires a fresh host context.",
     "record_schema": {
       "$ref": "#/$defs/MemberRowCacheRecord"

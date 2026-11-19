@@ -76,16 +76,17 @@ the keyboard at 30 rows a second:
 
 ```
 shell -> host   { type: "window", request: { bind: "notes", from: 120, to: 180, parent?: "<row ref>" } }                 // the catalogue's WindowRequest: the ONE envelope
-host  -> shell  { bind: "notes", parent?, window_ref, state: "ready", result_version, count: {mode, value}, offset: 100,
+host  -> shell  { bind: "notes", audience, parent?, window_ref, state: "ready", result_version, count: {mode, value}, offset: 100,
                   rows: [ { id, fields: {...} }, ... ], activation_contexts: [ { row, contexts: { action_id: token } } ] }   // the catalogue's WindowResult
 ```
 
-The shapes are the catalogue's (`contract/host-catalogue-v2.json`: `WindowRequest`, the **one** envelope; `WindowReply`, which is a `WindowResult` or a typed `WindowPlanError` {status 422, code `unsupported_query_plan`}); this document cites them and defines no second one. A query plan the host does not support is answered with the `WindowPlanError`, never a silent empty window, and the renderer shows the bind's `error` state for it. Row ids are opaque and stable;
-no position is an authority reference.
+The catalogue defines one `WindowRequest` envelope and one `WindowReply` union of `WindowResult` and `WindowPlanError` (status 422, code `unsupported_query_plan`).
+On refusal of an index jump, page from the nearer known end. Use the start when the end is unknown. If paging is also refused, show the bind's `error` state.
+Row ids are opaque and stable. No position is an authority reference.
 
-* A window is the half-open range `[from, to)` of at most 200 rows; the highest supported ranked offset is 100,000 and the host never scans linearly to reach an offset
-  (a request past the limit is refused, and the renderer shows the end). `window.size` (1 to 200, default 60) is the rows returned per request; `count` is `exact`,
-  `estimate` or `none`.
+* A window is the half-open range `[from, to)` of at most 200 returned rows. The highest supported offset is 500,000. The host may materialize up to 4,096 rows and,
+  separately, skip up to 250,000 entries in an index-only jump from the nearer end of the scoped covering index. Exact counts use the maintained count for the authorized scope.
+  `window.size` is 1 to 200, default 60. `count` is `exact`, `estimate` or `none`.
 * The renderer prefetches ahead of the visible rows and, when a key or a drag walks past the edge of what it holds, asks for the next window at once (no
   settling), coalesced to at most 4 window **requests** a second; the host may answer with a larger range than asked (`offset` and `rows` say what came back).
 * `result_version` identifies the result set. A new version replaces the window wholesale; the renderer skips a replacement equal to what it draws, so a republish that
@@ -104,8 +105,8 @@ Rows are identified by the item id everywhere: selection, events, scope.
 
 ### 2.5 States
 
-`states.empty`, `loading` and `error` (also the answer to a `WindowPlanError`) are small messages (`title`, `detail`, `icon`, an optional action). Their text is the description's or host-written; never worker
-output. A renderer shows `loading` until the first window arrives, `empty` when `count` is 0, `error` when the host answers `state: "error"`.
+`states.empty`, `loading` and `error` are small messages (`title`, `detail`, `icon`, an optional action). The description or host provides their text.
+Show `loading` until the first window arrives, `empty` when `count` is 0, and `error` on `state: "error"` or a `WindowPlanError` that paging cannot recover (§2.3).
 
 ### 2.6 What the schema needs from the host (authorization is the host's job)
 
@@ -118,7 +119,7 @@ The description only asks. Before any indexed work the host must:
 3. produce **host-owned projections** for guests: rows are built by the host from the item's grant, never by plugin code;
 4. authorize the **whole dependency graph** of an app (no bind takes an operand from another; a search is pinned to the audience's corpus; a count is taken over the
    already-authorized projection); a guest gets an `exact` count only over an explicit shared root/child projection with count disclosure enabled, otherwise **`none`** (no estimate), nested windows included;
-5. bound the work: windows of at most 200 rows, 16 predicates, **16 binds per app** (chrome and view together: there is one list), ranked offsets to 100,000, and per actor and
+5. bound the work: windows of at most 200 rows, 16 predicates, **16 binds per app** (chrome and view together: there is one list), offsets to 500,000, and per actor and
    per space caps on open subscriptions, window bytes and invalidations a second, coalesced before querying; pushes are **host-only** and **never wake the space runtime**;
 6. **deliver activation contexts**: with each window (`WindowResult.activation_contexts`, one entry per row and action), with the view when it opens (`ViewOpenResult`, for the header,
    form and composer actions) and when the subscription lease renews (`LeaseRenewRequest`/`LeaseRenewResult`, one 15-second lease for the subscription and its contexts). The
@@ -132,7 +133,7 @@ Plugin API (Part A); this section lists only what the description relies on.
 
 * **Nested child rows.** A row template may declare `children: {bind}`: a bind whose source has `parent: true`. **The declared edge is the mandatory constraint:** every window request on such a bind
   carries `request.parent`, a host-issued `WindowParentRef` taken from the parent row's `parent_refs`, scoped to that edge and its ancestry and checked by the host on every request (a parent bind
-  that no edge references is refused by the verifier). `{parent: true}` in a filter is only an optional extra predicate. The renderer asks for a parent's children with its own windows, only when the row is expanded; a row with children draws the system's disclosure control (a `List`
+  that no edge references is refused by the verifier). `{parent: true}` in a filter is only an optional extra predicate. **A per-parent bind is consumed only through its declared edge**: no ordinary section, list, count or header may reference it (the verifier rejects it), and `persist` is refused on it (only ROOT windows may be persisted, section 6). The renderer asks for a parent's children with its own windows, only when the row is expanded; a row with children draws the system's disclosure control (a `List`
   with `children`/`DisclosureGroup`). Depth is at most 3, counted through the chain; the host checks it and the verifier rejects cycles. Child threads under their parent are this.
 * **User-made sections.** `Section.repeat: {over, rows}` makes one section per row of the bind `over`, which **must read `layout_sections`** (the verifier rejects any other kind; the per-person layout the host stores: the host virtual kind `layout_sections` with
   `id`, `title`, `position`, viewer-only) with each section's rows from the per-parent bind `rows`. The layout is stored and authorized by the host; **Move to, Move up and Move down are host
@@ -329,12 +330,12 @@ plugin code). A description can run a named **invoke** on a component's event on
 * **Data-free templates persist.** A template is a description with its binds as requests: sections, selectors, titles the author wrote, icons, actions. It holds no row, no title of a
   person's item, no count, no account initial and no activation context, so it may be stored (one file of at most 4 MB, keyed by the signed-in account, deleted on sign-out and on account
   switch). `templates: none` keeps nothing.
-* **Q10 (owner decision, 2026-11-19): a MEMBER's own-space rows persist between launches.** Only the rows of binds that opt in (`persist: true`) in the member's own space; **encrypted, with keys
-  bound to the account and the space, on an unlocked device, and only as the host-authenticated `MemberRowCacheRecord`** (attached to a window result for an own-space member only: `audience` is the constant `own_space_member`, display rows are title and optional subtitle, nothing actionable; the shell validates it on write and on load; it is the one explicit exemption from the rule that viewer projections are never persisted, and a guest or public window carries no such record, so those rows cannot reach the disk path),
-  , **painted at once at the next launch and then confirmed or corrected by the host's first window answer**; retained for at most
-  14 days (or `maxAgeDays` if shorter); **erased on sign-out, on account switch and on any known revocation** (a lost membership, a role change the device learns of, a revoked device). Persisted
-  rows are **display only**: they carry no activation context, no resolution reference, no confirmation challenge or proof and no credential, and **every action still needs a fresh host context**
-  (the renderer disables actions on a row until the host's window answer has issued one). **Never for a guest or a public view**, whatever the description says; `memberRows: none` keeps nothing.
+* **Q10 (owner decision, 2026-11-19): own-space member rows can persist.** Only opted-in root windows without route-dependent or parent scope are eligible.
+  Accept only `MemberRowCacheRecord`, the display-only exception to session-only projections. The authenticated `ViewOpenResult` and `WindowResult` name the audience.
+  The schema permits the record only on ready or empty own-space member replies without a parent. Before writing, match it to the authenticated active view and window.
+  On write and load check the schema, host proof, scope, opt-ins and expiry (§4.2 of the Plugin API). Load only into the matching own-space root display.
+  Encrypt with account- and space-bound keys. On an unlocked device paint at launch as unconfirmed, then confirm or correct the rows with the first host answer.
+  Keep for at most 14 days or `maxAgeDays` if shorter. Erase on sign-out, account switch or known revocation. Every action needs a fresh host context.
   *Sol's recorded objection:* protected rows should be revalidated by the host before they are painted, because a revocation the device has not yet learned of leaves titles visible for the
   moment before the first answer; the owner accepted that cost knowingly in exchange for an instant first paint. The mitigations are the conditions above (short retention, device lock, key
   binding, erase on a known revocation).
@@ -342,7 +343,7 @@ plugin code). A description can run a named **invoke** on a component's event on
   and a guest of the same account never share a partition), are never written to storage, and are cleared on revocation, on closing a guest link, on sign-out, on account switch and when the
   session ends. Activation contexts, resolution references, confirmation challenges and proofs are never stored anywhere.
 * **What the person sees at first paint.** The template at once (the sidebar's structure, selectors, section titles the author wrote, the footer, the header), with the member's persisted rows
-  where a bind opted in (marked as not yet confirmed) and otherwise skeleton rows and the bind's `loading` state; the host's first window answer confirms or corrects them (one round trip). Offline
+  where an eligible root bind opted in (marked as not yet confirmed) and otherwise skeleton rows and the bind's `loading` state; the host's first window answer confirms or corrects them (one round trip). Offline
   or unauthorised, the person sees the template and the state the host or the shell can say truthfully (`offline`, `sign in again`); a guest or public viewer never sees a title from a past session.
   A shell that cannot meet these rules (an older client) gets a host fallback that obeys the same authority rules, or the page's own chrome.
 * **"Do not paint" is not "discard".** When a lease lapses or the app is in the background, filled rows stay in memory (same session, space and audience partition) but are not drawn as current. The
@@ -432,7 +433,7 @@ Everything in 5.0 and 5.1 is drawable with system controls. Findings, in order o
 Fixtures in `contract/fixtures/description-v2/` with one **fixture manifest** per exercise (`manifests/`, a subset of the plugin manifest v2 format: kinds, indexed fields, operations,
 reads), so a fixture is checked against what the plugin would declare, not against nothing: `reading-list-app`, `notes-app`, `threads-app` (and `notes-bulk-and-snooze-app`). Run `python3 contract/verify-description.py`.
 **Reads.** Every bind needs its kind in the manifest's `reads`; the SDK fills a package's own kinds into `reads` automatically, so an author writes `reads` only for another app's kinds (Threads reads `threads` and `layout_sections`, the host's). The verifier still requires the entry in the manifest it checks.
-**Persisted rows (owner decision Q10).** A member's own-space rows may persist on the device (encrypted, painted at once, then confirmed or corrected by the host); a bind opts in with `persist`, a description may opt out with `cache.memberRows: none`, and nothing persists for a guest or a public view. The conditions are section 6's. The fixture `threads-nested-catalogue-app.json` shows both (`cache.memberRows`, `persist` on the `all` bind).
+**Persisted rows (owner decision Q10).** A member's own-space rows may persist on the device (encrypted, painted at once, then confirmed or corrected by the host); a bind opts in with `persist` (**root binds only**: a nested or per-parent bind, such as child threads or the rows of a user section, never persists, and the schema refuses `persist` on a parent bind), a description may opt out with `cache.memberRows: none`, and nothing persists for a guest or a public view (a guest or public reply cannot carry the member record). The conditions are section 6's. The fixture `threads-nested-catalogue-app.json` shows both (`cache.memberRows`, `persist` on the `all` bind).
 This section is a rerun of the three exercises after Opus review 4: what is written, what is not, how many concepts an author meets before the first list, and what
 `defineView` and `defineChrome` will hide.
 
@@ -467,7 +468,7 @@ multi-selection and bulk Trash through `selection_ref`; **Move to collection** a
 
 **Written:** the Inbox as a bind (`waiting_on eq viewer.person`) with its count in the selector; All Threads; provider icons from the open `ProviderId` values; state marks; the
 transcript with the host's Quote and Stop; the composer as a thread and its controls (provider, model, reasoning, permission, machine, attachments, mentions), the host owning the
-send; an approval as a `request-card` over the protected request (`requests`, `thread_ref`); snooze as a `datetime` prompt; **nested child rows** (owner decision Q11: child threads under their parent: the `all` bind's rows declare `children: {bind}`, a bind with `source.parent: true` windowed per parent row, depth at most 3); **user-made sections** (Q11: `Section.repeat {over, rows}`: one section per row of the host's per-person layout, a host virtual kind `layout_sections`, each section's threads a per-parent bind), with **Move to**, **Move up**, **Move down** and section create, rename and remove as host layout operations (`host.layout.*`, entries named by the host-issued `LayoutEntryRef`, which the row id is inside a repeated section). Operands are context-derived (`{context: "item"}` is the underlying thread, `{context: "placement"}` the placement entry inside a repeated section): Move to adds an unplaced thread by `thread` plus the section choice, a placed row moves by `entry`, Archive always takes the thread. The nested window request carries the host-issued parent ref the parent row came with (`WindowRow.parent_refs` to `request.parent`; fixture `event-catalogue-window-parent.json`). Fixture: `threads-nested-catalogue-app.json`.
+send; an approval as a `request-card` over the protected request (`requests`, `thread_ref`); snooze as a `datetime` prompt; **nested child rows** (owner decision Q11: child threads under their parent: the `all` bind's rows declare `children: {bind}`, a bind with `source.parent: true` windowed per parent row, depth at most 3); **user-made sections** (Q11: `Section.repeat {over, rows}`: one section per row of the host's per-person layout, a host virtual kind `layout_sections`, each section's threads a per-parent bind), with **Move to**, **Move up**, **Move down** and section create, rename and remove as host layout operations (`host.layout.*`, entries named by the host-issued `LayoutEntryRef`, which the row id is inside a repeated section). Operands are context-derived (`{context: "item"}` is the underlying thread, `{context: "placement"}` the placement entry inside a repeated section): Move to adds an unplaced thread by `thread` plus the section choice, a placed row moves by `entry`, Archive always takes the thread. The nested window request carries the host-issued parent ref the parent row came with (`WindowRow.parent_refs` to `request.parent`; fixture `event-catalogue-window-parent.json`). Fixture: `threads-nested-catalogue-app.json`. The renderer-side replies are exercised as fixtures: `reply-catalogue-window-ready`, `-loading` and `-plan-error` (the typed refusal `{status: 422, code: unsupported_query_plan}`: a renderer first pages from the nearer known end (2.3) and shows the bind's error state only if paging is refused too, never loading for ever), with negatives for a wrong code, a ready reply without a result version and an unknown field. The member cache record is exercised by `reply-catalogue-window-member-record` (an own-space-member, root, ready reply carrying the record) and the negatives `invalid-reply-catalogue-window-guest-record`, `-public-record` and `-nested-record` (a guest or public reply, or a nested one, carrying the same valid record); they validate once the catalogue has `WindowAudience` (revision 8).
 **Not written / open:**
 * **New thread** (no operation creates a thread: `turns.create`), **archive and unarchive** (distinct from Trash: `turns.archive`, `turns.unarchive`), **snooze** (`turns.snooze` and a
   `snoozed_until` field so the Inbox can hide snoozed threads), **follow-up** (`turns.follow_up`): plugins lane catalogue additions; the fixture maps them by name until they land.

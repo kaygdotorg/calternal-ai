@@ -1,4 +1,4 @@
-# Plugin API v2 · revision 7
+# Plugin API v2 · revision 8
 
 The first contract covers host-drawn apps, generic items, durable jobs and
 Turns. Freeze after the §8 spikes. Fixture bounds are test settings. See the
@@ -456,9 +456,21 @@ only. Turn controls require current turn-specific authority. The host projects
 without waking the runtime. Window locators belong to the checked query
 and result version. Ordered collection windows use a scoped covering
 index over collection, audience, sort key and stable ID, with a maintained
-count per scope. Step 0 selects the jump strategy, such as keyset traversal from the
-nearer end or offset traversal over the covering index. The contract
-requires no maintained exact ranks. These are the qualified plan families.
+count per authorized scope. Exact counts use that maintained count.
+An index-only jump may skip up to 250,000 entries from the nearer end,
+independently of the 4,096-row materialization cap (§4.2). The window
+offset ceiling is 500,000, so scopes of up to 500,000 rows can jump
+anywhere. The measured slope projects about
+11 ms at the skip cap. [Step 0 measurements](https://git.kayg.org/kayg/calternal-ai/src/commit/db0838c762cd2df3158ab4337991dc0348b6463f/docs/measurements/plugin-api-v2-step0.md#covering-index-and-maintained-count).
+
+Cap each item at 256 distinct effective (collection, audience) scopes
+after deduplicating direct and inherited ACL paths. Check all affected
+items before committing a grant or another scope-expanding change.
+Refuse the entire change with `422 effective_scope_limit_exceeded` if
+any item would exceed the cap. A save touches at most two covering-index
+keys per effective scope.
+
+The first contract qualifies these plan families.
 
 | Plan family | Required index |
 | --- | --- |
@@ -467,11 +479,15 @@ requires no maintained exact ranks. These are the qualified plan families.
 | Manual collection + mutable ACL + sort, including the main Notes list | The scoped covering membership index, with current ACL applied before windowing and a maintained count per scope. Reading and sorting all members is disallowed even at offset zero. |
 | Child and section windows | Parent-scoped ordered indexes for authorized child rows and personal section placements. |
 | Search | Authorized member or shared corpus index with bounded rank and pagination. |
-| Filtered counts | Authorized filter indexes for bounded exact counts, or an audience-certified member estimate. |
+| Filtered counts | A maintained count for the supported authorized scope, or an audience-certified member estimate. |
 
 Return `422 unsupported_query_plan` if the plan or index cannot satisfy
 the requested scope, filters, sort, window or count within the work
-budget. For a window request this is the typed `WindowPlanError` reply.
+budget. For a window request this is the typed `WindowPlanError` reply,
+including when an index-only jump exceeds its skip cap. After a jump
+refusal the renderer falls back to paging from the nearer known end.
+Use the start if the end is unknown. The host can page by the last
+key of the adjacent window for the same view and result version.
 Never serve the request with a table scan or a sort of the full candidate set.
 
 The first contract includes nested child rows and user-made sections (Q11).
@@ -491,8 +507,11 @@ scoped to space and app. Layout membership grants no item access.
 Set aggregate limits across the chrome/content pair and all tabs.
 The catalogue sets 16 binds, 8 live subscriptions and 2 pending windows
 per open view, 16 subscriptions per actor and 128 per space. Bound queued
-bytes and query starts at all three levels. The first fixture caps index
-visits (4,096/window or 100,000/count) and count starts (four/sec/space).
+bytes and query starts at all three levels. Per window cap materialized
+rows at 4,096. Separately cap entries skipped by an index-only jump from
+the nearer end at 250,000. Exact counts read the maintained count for the
+authorized scope. Meter count work independently and limit starts to
+four/sec/space.
 It emits up to four coalesced pushes/sec per bind. Authorize before spending work,
 coalesce invalidations before evaluating and share a plan only within an
 identical audience/authority scope. Supersede obsolete requests, return a
@@ -518,13 +537,18 @@ account or audience switch, session end or guest link closure.
 
 Data-free templates may persist. The only persistable viewer projection is
 the catalogue’s `MemberRowCacheRecord` (Q10). The host issues it only for
-an eligible live own-space member on a Bind with `persist: true` and
-`cache.memberRows` enabled. On write and load verify the schema, host
-proof, account, space, own-space-member audience, template and window
-scope, current opt-ins, and `issued_at ≤ now < expires_at`. Reject any
-lifetime past the allowed retention. Persist only its allowlisted display
-payload and authenticated metadata. Never serialize live windows, guest or
-public rows, action credentials or activation contexts.
+a live own-space member on an opted-in root window without route-dependent
+or parent scope. The authenticated `ViewOpenResult` and `WindowResult` carry
+the view audience. Accept a record on write only from an own-space-member
+reply matching the active view, including the lease partition, account,
+space, template, Bind, window ref and offset. The window schema forbids
+records in other audiences and in per-parent results.
+
+On write and load verify the schema, host proof, account, space, template,
+root Bind, offset, current opt-ins and `issued_at ≤ now < expires_at`.
+Reject lifetimes past the allowed retention. On load show a record only
+for the matching local own-space root display. Never serialize live
+windows, guest or public rows, action credentials or activation contexts.
 
 On an unlocked device paint eligible records at launch as unconfirmed,
 then confirm or correct them with the host’s first window answer. Encrypt
@@ -842,7 +866,7 @@ and zero-effect assertions must hold on every repetition.
 | Spike | Injections and pass condition |
 | --- | --- |
 | **One enrolled channel** | Two real package processes on one enrolled channel in Space A, plus Space B. Block A’s carrier receiver until its actual writer stalls mid-frame. Hold a slow callback for two seconds. With a writable carrier, control and the other callback complete p95 ≤500 ms. While stalled, local fencing p95 ≤500 ms, close p95 ≤2 s and Space B progress p95 ≤2 s. No old-lease effect after local fencing. Remote stops within 5 s of its last authenticated renewal on every run. Reconnect rejects the old epoch and authorized replay commits once. |
-| **Cold indexed page** | 100,000 mixed-visibility rows. Test offsets 0, 10,000 and 90,000 for windowed plans including collection + ACL + sort and search during grant/content churn. Offset 0 p95 ≤100 ms, deep windows p95 ≤500 ms. Measure covering-index entries visited at each offset and keep work within the window budget. For stable-ID lookup assert one bounded indexed lookup and scoped authority check for a present, missing and unauthorized ID. For standalone exact counts assert separately metered indexed work within the count ceiling and count only the authorized set after grant churn. Under the same workload, a save touches a bounded number of index entries and stays within the 40 ms append gate. Reject table scans and full candidate sorts, coalesce fan-out, refuse both counts and rows on revocation and wake no worker. |
+| **Cold indexed page** | 100,000 mixed-visibility rows. Test offsets 0, 10,000 and 90,000 for windowed plans including collection + ACL + sort and search during grant/content churn. Offset 0 p95 ≤100 ms, deep windows p95 ≤500 ms. Seed enough authorized rows for every requested range and assert the exact authorized rows in order. Empty or refused replies fail. Meter materialized rows and skipped covering-index entries separately against their bounds. In a larger authorized scope, also request a range whose nearer-end jump exceeds the skip cap. Assert a typed refusal followed by paging that returns the same authorized rows. For stable-ID lookup assert one bounded indexed lookup and scoped authority check for a present, missing and unauthorized ID. For standalone exact counts assert one maintained-count lookup and the exact authorized total after grant churn. Exercise saves at the effective-scope cap and assert at most two covering-index keys touched per scope. Measure the existing write and index maintenance together on the save path and require p95 ≤40 ms. The measured two-collection sort change adds about 9 ms p95 in isolation. Reject table scans and full candidate sorts, coalesce fan-out, refuse both counts and rows on revocation and wake no worker. |
 | **Atomic large save** | Stage an escape-heavy 2 MiB body and reconstruct it by revision-pinned ranges after the head moves, p95 ≤5 s. The 60 s range pin is invalidated by purge or revoke. Race duplicate begin, lost chunk ACK, conflicting bytes, cancel and orphan cleanup. Race revoke, epoch loss, enrollment removal and run replacement on both sides of commit and inject crashes before publication and before reply. No partial edit or success receipt before commit. After commit recover one revision and receipt. |
 | **Durable transcript** | Stall the reader, cut after commit before ACK and restart. First screenful drawn p95 ≤150 ms on a warm authorized reconnect, with the durable cursor, stable event and receipt sequences unchanged. Revoked reconnect reveals neither rows nor bookmarks. An independent control request completes p95 ≤500 ms with the transcript reader stalled. |
 | **Host + renderer authority** | On Svelte Chromium check both formats, a real protected approval and a live Bind. Forge row/route/Bind/context, untouched prefills, bulk IDs, ChoiceRefs, cached data and built-in surfaces. Inject duplicate and stale activations, revocation and unrelated churn. Zero unauthorized effects or rendered bytes, one commit on replay, and unrelated-churn action p95 ≤2 s from dispatch. Race revocation at egress, job claim/park and approval resolve before freezing those routes. For each §4.4 atomic-Undo case, crash before and after the named commit and during publication: recover neither effect nor Undo before commit, and both after it. Concurrently edit a dependency, then require Undo to refuse without another effect. Exercise ineligible variants and prove the shortcut and full swipe cannot bypass their checks. Delay or spoof lease replies and verify only current, exact retained windows repaint. |
