@@ -13,6 +13,9 @@
   import TrashView from "./TrashView.svelte";
   import { notes } from "./store.svelte";
   import "./column.css";
+  import "./style/page.css";
+  import { noteStyle } from "./style/store.svelte";
+  import { hasSurface, pageTheme, pageVars } from "./style/apply";
   import { store as threadStore } from "../threads/store.svelte";
   import { navigate, route } from "../../lib/route.svelte";
   import { serverMode } from "../../server/client";
@@ -52,6 +55,8 @@
   $effect(() => { void notes.view.seq; latest = ""; });
   let heads = $state<{ level: number; text: string; from: number }[]>([]);
   let editor = $state<NoteEditor>();
+  const style = $derived(noteStyle.page);
+  const surface = $derived(hasSurface(style, noteStyle.fm));
   let latest = "";
   let draftTimer = 0, saveTimer = 0;
   const titleOf = (t: string) => /^# +(.+)$/m.exec(t)?.[1]?.trim() ?? notes.note?.title ?? "Untitled";
@@ -119,7 +124,8 @@
 
   {#if notes.note}<ShareHost item={{ kind: "notes", id: notes.note.id }} />{/if}
 
-  <article class="nc-article">
+  <article class="nc-article" use:pageTheme={style.theme} data-width={style.width === "narrow" ? undefined : style.width} data-size={style.size === "default" ? undefined : style.size} data-font={style.font === "system" ? undefined : style.font}
+    data-surface={surface || undefined} data-frame={surface && style.frame ? "" : undefined} data-grain={surface && style.grain ? "" : undefined} data-faint={style.opacity !== null && style.opacity < 0.6 ? "" : undefined} style={pageVars(style)}>
     {#if notes.note}
       {#if notes.draft}
         <p class="draft" role="status">You have an unsent draft of this note. <Button variant="quiet" text="Restore" onclick={() => { editor?.setText(notes.draft!.text); edited(notes.draft!.text); }} /> <Button variant="quiet" text="Discard" onclick={async () => { await notes.input.dropDraft(notes.note!.spaceId, notes.note!.id); await notes.reloadInput(); }} /></p>

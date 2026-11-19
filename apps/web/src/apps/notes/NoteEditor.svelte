@@ -9,10 +9,15 @@
   import { onMount } from "svelte";
   import { serverMode } from "../../server/client";
   import { notes as store } from "./store.svelte";
+  import { noteStyle } from "./style/store.svelte";
+  import { shell } from "../../shell/shell.svelte";
   import type { BlockEditor, Block, Trigger } from "../../../../../packages/editor/src/block/index";
   let { id, text, onedit, onheadings, label = "Note", readOnly = false, live = undefined, notes = [], threads = [], agents = [], tags = [] }: { id: string; text: string; onedit: (text: string) => void; onheadings?: (h: { level: number; text: string; from: number }[]) => void; label?: string; /** No typing: someone who can only view the note, or a guest. */ readOnly?: boolean; /** The note is in a live room: the extension binds the editor to the room's text (the room saves, so `onedit` is not called). */ live?: { extension: import("@codemirror/state").Extension }; notes?: { id: string; title: string }[]; threads?: { id: string; title: string }[]; agents?: string[]; tags?: string[] } = $props();
   let host = $state<HTMLElement>();
   let ed: BlockEditor | undefined;
+  let detach: (() => void) | undefined;
+  $effect(() => { noteStyle.readOnly = readOnly; });
+  $effect(() => { noteStyle.phone = shell.narrow; });
   let openedId = "";
   let menu = $state<{ block: Block; rect: DOMRect } | null>(null);
   const items: MenuItem[] = [{ id: "up", label: "Move up" }, { id: "down", label: "Move down" }, { id: "duplicate", label: "Duplicate" }, { id: "delete", label: "Delete", danger: true }];
@@ -69,20 +74,24 @@
       const { createBlockEditor } = m;
       await m.prepare(text); // the lazy pieces this note needs (frontmatter, block IDs, tables, code grammars), so its first draw is right
       if (dead || !host) return;
+      noteStyle.report({}); // a note with no frontmatter loads no piece that would report it
       ed = createBlockEditor({
         parent: host, text, label, readOnly,
         extensions: live?.extension,
         // A task is a list item that starts with a box: the host says so, the editor package has no such kind.
         kinds: (b, s) => (b.kind === "item" && /^\s*[-*+] \[[ xX]\]/.test(s.doc.sliceString(b.from, Math.min(b.to, b.from + 8))) ? "task" : null),
+        onFrontmatter: (fm) => noteStyle.report(fm),
         onchange: (t, origin) => { if (!live && origin !== "remote") onedit(t); heads(); },
         onMenu: (block, rect) => (menu = { block, rect }),
         onTrigger: (t) => { if (!t) dismissed = null; trig = t; },
         pickerKey,
       });
       openedId = id;
+      const e0 = ed;
+      detach = noteStyle.attach({ text: () => e0.value, apply: (c) => e0.apply(c, "command") });
       onheadings?.(ed.headings());
     });
-    return () => { dead = true; clearTimeout(timer); ed?.destroy(); ed = undefined; };
+    return () => { dead = true; clearTimeout(timer); detach?.(); ed?.destroy(); ed = undefined; };
   });
   // Another note, or the same note saved elsewhere with different text: replace the document (never while it already shows exactly this text).
   $effect(() => {
@@ -94,6 +103,7 @@
     void import("../../../../../packages/editor/src/block/index").then(async (m) => {
       await m.prepare(t);
       if (ed !== e || openedId !== i) return;
+      noteStyle.report({});
       e.setValue(t);
       onheadings?.(e.headings());
     });
