@@ -125,6 +125,12 @@ Re-exports [PluginState](/docs/dev/typescript/plugin-sdk/worker-v2/interfaces/pl
 
 ***
 
+### prepareContent
+
+Re-exports [prepareContent](/docs/dev/typescript/plugin-sdk/worker-v2/functions/preparecontent/)
+
+***
+
 ### readPluginState
 
 Re-exports [readPluginState](/docs/dev/typescript/plugin-sdk/worker-v2/functions/readpluginstate/)
