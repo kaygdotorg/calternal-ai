@@ -157,6 +157,15 @@ fn fixture(root: &std::path::Path) -> (Content, SpaceId, std::path::PathBuf) {
 }
 
 #[test]
+#[ignore = "disposable combined-scope search perf fixture"]
+fn scoped_search_all_fields() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_content, _space, source) = fixture(dir.path());
+    search::exercise_all(&source, dir.path());
+    threads_index::combined::exercise(dir.path());
+}
+
+#[test]
 #[ignore = "disposable perf fixture; see step 0 measurements"]
 fn scoped_threads_worker_lag() {
     let root = tempfile::tempdir().unwrap();

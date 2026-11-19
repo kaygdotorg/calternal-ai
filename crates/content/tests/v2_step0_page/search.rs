@@ -541,3 +541,76 @@ pub(super) fn exercise(source: &Path, scratch: &Path) {
         );
     }
 }
+
+pub(super) fn exercise_all(source: &Path, scratch: &Path) {
+    prepare_source(source);
+    let saved = [
+        (false, scratch.join("all-space.db")),
+        (true, scratch.join("all-collection.db")),
+    ];
+    for (collection, path) in &saved {
+        seed(source, path, *collection);
+    }
+    let src = Connection::open(source).unwrap();
+    src.execute_batch(
+        "BEGIN IMMEDIATE;
+         UPDATE search_docs SET title='Notebook privateonly',title_key='notebook privateonly' WHERE rowid=1;
+         DELETE FROM search_text WHERE rowid=1;
+         INSERT INTO search_text(rowid,title,body)
+            VALUES(1,'Notebook privateonly','alpha beta notes privateonly');
+         COMMIT;"
+    ).unwrap();
+    for (collection, path) in saved {
+        let changed = path.with_extension("hidden.db");
+        seed(source, &changed, collection);
+        let conn = read(&path);
+        let after = read(&changed);
+        for (name, query) in [
+            ("one_title", Query::Text("notebook")),
+            ("two_split", Query::Text("notebook alpha")),
+            ("three_split", Query::Text("notebook alpha beta")),
+            ("prefix_both", Query::TokenPrefix("note")),
+        ] {
+            for depth in [0, 200] {
+                let expected = window(&conn, query, depth).unwrap();
+                assert_eq!(expected.ids.len(), WINDOW);
+                assert!(expected.estimated_postings <= POSTING_BUDGET);
+                assert_eq!(window(&after, query, depth).unwrap(), expected);
+                assert_eq!(
+                    expected
+                        .ids
+                        .iter()
+                        .collect::<std::collections::HashSet<_>>()
+                        .len(),
+                    WINDOW
+                );
+                assert!(!expected.ids.contains(&uuid::Uuid::from_u128(1).to_string()));
+                let expression = match query {
+                    Query::Text("notebook") => "title:notebook",
+                    Query::Text("notebook alpha") => "title:notebook AND body:alpha",
+                    Query::Text("notebook alpha beta") => {
+                        "title:notebook AND body:alpha AND body:beta"
+                    }
+                    Query::TokenPrefix("note") => "title:note* OR body:note*",
+                    _ => unreachable!(),
+                };
+                assert_eq!(text_ids(&conn, expression, depth, None), expected.ids);
+                let mut times = Vec::new();
+                for _ in 0..RUNS {
+                    let start = Instant::now();
+                    let actual = window(&read(&path), query, depth).unwrap();
+                    times.push(start.elapsed().as_micros());
+                    assert_eq!(actual, expected);
+                }
+                println!(
+                    "all_notes collection={collection} query={name} depth={depth} n={RUNS} bound={} row_work={} rows={} us {}",
+                    expected.estimated_postings,
+                    expected.visits + WINDOW as i64,
+                    expected.ids.len(),
+                    summary(&mut times)
+                );
+            }
+        }
+    }
+    println!("all_notes hidden_rank_changes=0 hidden_state_changes=0");
+}

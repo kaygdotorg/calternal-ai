@@ -293,6 +293,7 @@ pub(super) fn exercise(root: &Path) {
     seed_scope(&scoped_space, 96_773);
     seed_scope(&scoped_collection, 9_676);
 
+    let combined = std::env::var_os("STEP0_ALL_SEARCH").is_some();
     let (send, recv) = std::sync::mpsc::sync_channel::<Job>(0);
     let (ack, done) = std::sync::mpsc::sync_channel(0);
     let adapter_content = content.clone();
@@ -307,8 +308,24 @@ pub(super) fn exercise(root: &Path) {
             let core_time = job.saved.elapsed().as_micros();
             publish(&mut scoped_space, &job.marker, &job.body, job.stamp);
             publish(&mut scoped_collection, &job.marker, &job.body, job.stamp);
-            ack.send((core_time, job.saved.elapsed().as_micros(), job.stamp))
-                .unwrap();
+            let scoped_time = job.saved.elapsed().as_micros();
+            if combined {
+                let query = format!("title:search AND {}", job.marker);
+                for scope in [&scoped_space, &scoped_collection] {
+                    let slot: i64 = scope.query_row(
+                         "SELECT rowid FROM search_text WHERE search_text MATCH ?1 ORDER BY rowid LIMIT 1",
+                         [&query], |r| r.get(0)
+                    ).unwrap();
+                    assert_eq!(slot, 1);
+                }
+            }
+            ack.send((
+                core_time,
+                scoped_time,
+                job.stamp,
+                job.saved.elapsed().as_micros(),
+            ))
+            .unwrap();
         }
     });
 
@@ -364,6 +381,7 @@ pub(super) fn exercise(root: &Path) {
         let start_churn = churn.load(Ordering::Acquire);
         let mut core_times = Vec::new();
         let mut scoped_times = Vec::new();
+        let mut finished = Vec::new();
         for _ in 0..samples {
             total += 1;
             let stamp = Stamp {
@@ -386,9 +404,10 @@ pub(super) fn exercise(root: &Path) {
                 saved,
             })
             .unwrap();
-            let (core, scoped, revision) = done.recv_timeout(TIMEOUT).unwrap();
+            let (core, scoped, revision, ready) = done.recv_timeout(TIMEOUT).unwrap();
             core_times.push(core);
             scoped_times.push(scoped);
+            finished.push(ready);
             content.materialize(space, latest.id).unwrap();
             published = Some(revision);
             assert_eq!(
@@ -407,6 +426,12 @@ pub(super) fn exercise(root: &Path) {
                     || { panic!("revoked generation evaluated") }
                 ),
                 loading()
+            );
+        }
+        if combined {
+            println!(
+                "all_notes_lag busy={busy} n={samples} ready_us {}",
+                summary(&mut finished)
             );
         }
         println!(

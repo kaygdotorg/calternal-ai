@@ -176,6 +176,10 @@ pub(super) fn exercise(root: &Path) {
     scope
         .execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;")
         .unwrap();
+    let combined = std::env::var_os("STEP0_ALL_SEARCH").is_some();
+    if combined {
+        super::threads_index::combined::title_projection(&scope);
+    }
     let token = content.live_journal(space).unwrap().head();
     let baseline = Connection::open(&base).unwrap();
     let next: i64 = baseline
@@ -248,6 +252,7 @@ pub(super) fn exercise(root: &Path) {
         let initial = churn.load(Ordering::Acquire);
         let mut core = Vec::new();
         let mut scoped = Vec::new();
+        let mut finished = Vec::new();
         for _ in 0..reps {
             seq += 1;
             let marker = format!("appendmarker{seq}");
@@ -270,7 +275,21 @@ pub(super) fn exercise(root: &Path) {
                 .unwrap();
             assert_eq!((found, version(&scope)), (1, (last.0, last.1 + 1)));
             scoped.push(ack.elapsed().as_micros());
+            if combined {
+                super::threads_index::combined::contains_append(
+                    &scope,
+                    &marker,
+                    &prior.id.to_string(),
+                );
+                finished.push(ack.elapsed().as_micros());
+            }
             content.materialize(space, prior.id).unwrap();
+        }
+        if combined {
+            println!(
+                "all_threads_lag busy={busy} n={reps} ready_us {}",
+                summary(&mut finished)
+            );
         }
         println!(
             "thread_lag busy={busy} n={reps} seeded_messages={corpus} competing_saves={} core_us {} scoped_us {}",
@@ -289,6 +308,7 @@ pub(super) fn exercise(root: &Path) {
     content.materialize(space, hidden.id).unwrap();
     settled(&content, &config, space, "initialhidden");
     let before = visible_snapshot(&scope);
+    let all_before = combined.then(|| super::threads_index::combined::visible_window(&scope));
     let hidden = append(
         &content,
         space,
@@ -300,6 +320,12 @@ pub(super) fn exercise(root: &Path) {
     content.materialize(space, hidden.id).unwrap();
     settled(&content, &config, space, "privateonly");
     assert_eq!(visible_snapshot(&scope), before);
+    if combined {
+        assert_eq!(
+            Some(super::threads_index::combined::visible_window(&scope)),
+            all_before
+        );
+    }
     assert_eq!(
         scope
             .query_row(

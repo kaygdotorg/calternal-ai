@@ -1,6 +1,8 @@
 //! Scoped Threads Bind over the existing message schema and Elias–Fano codec.
 #[path = "../../src/search/messages/codec.rs"]
 mod codec;
+#[path = "threads_combined.rs"]
+pub(super) mod combined;
 use super::{RUNS, WINDOW, summary};
 use calternal_content::message_terms;
 use rusqlite::{Connection, OpenFlags, OptionalExtension, params};
@@ -204,9 +206,8 @@ enum Shape {
 }
 impl Shape {
     fn plan(self, conn: &Connection) -> Vec<(i64, usize)> {
-        let mut list = Vec::new();
         if matches!(self, Self::Title) {
-            return list;
+            return Vec::new();
         }
         if matches!(self, Self::Prefix) {
             let mut q=conn.prepare_cached("SELECT t.id,s.doc FROM terms t
@@ -227,20 +228,29 @@ impl Shape {
             Self::Broad => "the",
             _ => unreachable!(),
         };
-        let mut q = conn
-            .prepare_cached(
-                "SELECT t.id,s.doc FROM terms t JOIN term_stats s ON s.term=t.id WHERE t.word=?1",
-            )
-            .unwrap();
-        for term in message_terms(terms) {
-            list.push(
-                q.query_row([term], |r| Ok((r.get(0)?, r.get::<_, i64>(1)? as usize)))
-                    .unwrap(),
-            );
-        }
-        list.sort_unstable_by_key(|entry| entry.1);
-        list
+        literal_plan(conn, terms)
     }
+}
+
+fn literal_plan(conn: &Connection, terms: &str) -> Vec<(i64, usize)> {
+    let mut q = conn
+        .prepare_cached(
+            "SELECT t.id,s.doc FROM terms t JOIN term_stats s ON s.term=t.id WHERE t.word=?1",
+        )
+        .unwrap();
+    let mut list = Vec::new();
+    for term in message_terms(terms) {
+        let Some(postings) = q
+            .query_row([term], |r| Ok((r.get(0)?, r.get::<_, i64>(1)? as usize)))
+            .optional()
+            .unwrap()
+        else {
+            return Vec::new();
+        };
+        list.push(postings);
+    }
+    list.sort_unstable_by_key(|entry| entry.1);
+    list
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -279,8 +289,29 @@ fn record(conn: &Connection, shape: Shape, depth: usize) -> Window {
         };
     }
     let terms = shape.plan(&tx);
+    ranked_messages(
+        &tx,
+        &terms,
+        matches!(shape, Shape::Prefix),
+        depth,
+        WINDOW,
+        &HashSet::new(),
+        BUDGET,
+        ROW_BUDGET,
+    )
+}
+
+fn ranked_messages(
+    conn: &Connection,
+    terms: &[(i64, usize)],
+    prefix: bool,
+    depth: usize,
+    size: usize,
+    exclude: &HashSet<i64>,
+    postings_budget: usize,
+    row_budget: usize,
+) -> Window {
     let bound = terms.iter().map(|x| x.1).sum::<usize>();
-    let prefix = matches!(shape, Shape::Prefix);
     let mut out = Window {
         rows: Vec::new(),
         bound,
@@ -288,9 +319,9 @@ fn record(conn: &Connection, shape: Shape, depth: usize) -> Window {
         lookups: 0,
         blocks: 0,
         descriptors: 0,
-        refine: bound > BUDGET || terms.len() > 32,
+        refine: bound > postings_budget || terms.len() > 32,
     };
-    if out.refine {
+    if out.refine || terms.is_empty() || size == 0 {
         return out;
     }
     type Key = (i64, u128);
@@ -299,18 +330,14 @@ fn record(conn: &Connection, shape: Shape, depth: usize) -> Window {
         Ok((row.get(stamp)?, u128::from_be_bytes(bytes)))
     };
     let mut blocks = BTreeMap::<i64, Key>::new();
-    let drivers = if prefix {
-        terms.as_slice()
-    } else {
-        &terms[..1]
-    };
-    let mut index=tx.prepare_cached("SELECT block,stamp,newest FROM postings INDEXED BY postings_newest WHERE term=?1 ORDER BY stamp DESC,newest DESC,block").unwrap();
+    let drivers = if prefix { terms } else { &terms[..1] };
+    let mut index=conn.prepare_cached("SELECT block,stamp,newest FROM postings INDEXED BY postings_newest WHERE term=?1 ORDER BY stamp DESC,newest DESC,block").unwrap();
     for &(term, _) in drivers {
         let items = index
             .query_map([term], |r| Ok((r.get::<_, i64>(0)?, key(r, 1, 2)?)))
             .unwrap();
         for item in items {
-            if out.descriptors == ROW_BUDGET {
+            if out.descriptors == row_budget {
                 out.refine = true;
                 return out;
             }
@@ -324,23 +351,23 @@ fn record(conn: &Connection, shape: Shape, depth: usize) -> Window {
     }
     let mut order = blocks.into_iter().collect::<Vec<_>>();
     order.sort_unstable_by_key(|(_, max)| std::cmp::Reverse(*max));
-    let mut posting = tx
+    let mut posting = conn
         .prepare_cached("SELECT positions FROM postings WHERE block=?1 AND term=?2")
         .unwrap();
-    let mut loc = tx
+    let mut loc = conn
         .prepare_cached("SELECT stamp,id,thread FROM locations WHERE position=?1")
         .unwrap();
-    let mut title = tx
+    let mut title = conn
         .prepare_cached("SELECT id FROM threads WHERE slot=?1")
         .unwrap();
     let mut ranked = BTreeSet::<(Key, i64)>::new();
     let mut by_thread = HashMap::<i64, Key>::new();
-    let target = depth + WINDOW;
+    let target = depth + size;
     'blocks: for (block, max) in order {
         if ranked.len() == target && ranked.first().unwrap().0 >= max {
             break;
         }
-        if out.descriptors + out.blocks + out.lookups + WINDOW >= ROW_BUDGET {
+        if out.descriptors + out.blocks + out.lookups + size >= row_budget {
             out.refine = true;
             break;
         }
@@ -355,7 +382,7 @@ fn record(conn: &Connection, shape: Shape, depth: usize) -> Window {
                 .map(|raw| codec::decode(&raw).unwrap())
                 .unwrap_or_default();
             out.postings += offsets.len();
-            assert!(out.postings <= BUDGET);
+            assert!(out.postings <= postings_budget);
             if prefix {
                 hits.extend(offsets);
             } else if i == 0 {
@@ -372,7 +399,7 @@ fn record(conn: &Connection, shape: Shape, depth: usize) -> Window {
             hits.dedup();
         }
         for offset in hits.into_iter().rev() {
-            if out.descriptors + out.blocks + out.lookups + WINDOW >= ROW_BUDGET {
+            if out.descriptors + out.blocks + out.lookups + size >= row_budget {
                 out.refine = true;
                 break 'blocks;
             }
@@ -382,6 +409,9 @@ fn record(conn: &Connection, shape: Shape, depth: usize) -> Window {
                 })
                 .unwrap();
             out.lookups += 1;
+            if exclude.contains(&slot) {
+                continue;
+            }
             if ranked.len() == target && ranked.first().unwrap().0 >= stamp {
                 break;
             }
@@ -399,7 +429,7 @@ fn record(conn: &Connection, shape: Shape, depth: usize) -> Window {
             }
         }
     }
-    for (_, slot) in ranked.into_iter().rev().skip(depth).take(WINDOW) {
+    for (_, slot) in ranked.into_iter().rev().skip(depth).take(size) {
         out.rows
             .push(title.query_row([slot], |r| r.get(0)).unwrap());
         out.lookups += 1;

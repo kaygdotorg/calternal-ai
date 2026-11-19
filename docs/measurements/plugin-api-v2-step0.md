@@ -657,6 +657,95 @@ the perf lock. Run with `--ignored --exact transcript_recovery_and_control
 --nocapture --test-threads=1`. Keep the executable in place until its
 restart helpers have exited.
 
+## Follow-up — search across all searchable fields
+
+Claimed-text Notes reuse the existing audience-scoped two-column FTS5
+index and one MATCH. The literal AND terms can match across title and
+body within a single item. The probe uses the same 100,000-note corpus,
+with 96,774 authorized in the space and 9,677 in the manual collection.
+It verifies cross-field matches against explicit column predicates. The
+scoped tokenizer and Unicode qualification described above still apply.
+
+Turns reuses the existing title FTS5 schema and the compressed message
+postings and locations from `calternal-content`. We added sparse term
+overlap to the same 100,000-thread, 740,000-message fixture to exercise
+both tiers in each measured window and compare the exact de-duplicated
+order to the independent source oracle. Under one scope snapshot, the
+host takes the title prefix of the rank order and fills the remainder
+from newest matching messages, skipping threads already matched by
+title. One-to-three AND terms match the full title or one message.
+Combining title and message content in a weighted FTS row would lose
+the same-message AND boundary or require another verification step. The
+two existing readers support a strict title-first order directly.
+Title FTS uses the existing claimed-text schema for the measured
+literals. Message tokenization follows the existing Turns rules.
+
+The worker supplies same-generation scoped document frequencies. The
+merge checks one sum and one prefix expansion cap across the two
+indexes before opening the cursors. Titles use the stable thread-ID
+order. Row work includes both sides’ visited entries, block and driver
+rows, and returned IDs. Inputs still have one 160,000-posting and
+4,096-row budget. The probe uses a 200-row window. Each cell is 100
+fresh read-only connections on locked perf-01, with zero commits or
+flushes. Posting bounds include both branches. The decode column is
+actual message posting decode work. FTS5's title/Notes work is bounded
+by the scoped term stats.
+
+| Scope | Query | Posting bound | Message postings decoded at 0 / 200 | Row work at 0 / 200 | Depth 0 p50 / p95 (ms) | Depth 200 p50 / p95 (ms) | Verdict |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | --- |
+| Notes space | 1 term (title) | 36,774 | — / — | 400 / 600 | 0.447 / 0.474 | 0.450 / 0.476 | Pass, 200 rows |
+| Notes space | 2 AND (title and body) | 90,000 | — / — | 400 / 600 | 0.470 / 0.504 | 0.485 / 0.510 | Pass, 200 rows |
+| Notes space | 3 AND (title and body) | 138,387 | — / — | 400 / 600 | 0.487 / 0.517 | 0.523 / 0.557 | Pass, 200 rows |
+| Notes space | Prefix across fields | 133,548 | — / — | 400 / 600 | 5.656 / 5.915 | 5.812 / 5.958 | Pass, 200 rows |
+| Notes collection | 1 term (title) | 3,677 | — / — | 400 / 600 | 0.444 / 0.477 | 0.453 / 0.481 | Pass, 200 rows |
+| Notes collection | 2 AND (title and body) | 9,000 | — / — | 400 / 600 | 0.474 / 0.494 | 0.491 / 0.581 | Pass, 200 rows |
+| Notes collection | 3 AND (title and body) | 13,838 | — / — | 400 / 600 | 0.495 / 0.548 | 0.516 / 0.579 | Pass, 200 rows |
+| Notes collection | Prefix across fields | 13,354 | — / — | 400 / 600 | 0.957 / 0.988 | 0.966 / 0.997 | Pass, 200 rows |
+| Threads space | 1 term | 84,242 | 2,161 / 2,161 | 590 / 1,359 | 0.788 / 0.921 | 1.055 / 1.090 | Pass, 200 rows |
+| Threads space | 2 AND terms | 138,160 | 3,542 / 3,542 | 656 / 1,237 | 0.847 / 0.941 | 1.071 / 1.112 | Pass, 200 rows |
+| Threads space | 3 AND terms | 154,387 | 3,956 / 7,725 | 478 / 721 | 0.721 / 0.765 | 0.875 / 0.967 | Pass, 200 rows |
+| Threads space | Prefix | 138,160 | 3,542 / 3,542 | 632 / 1,401 | 0.892 / 0.999 | 1.156 / 1.192 | Pass, 200 rows |
+| Threads space | Broad-term control | 672,724 | 0 / 0 | 0 / 0 | 0.164 / 0.205 | 0.163 / 0.187 | Refined before read |
+
+
+A hidden Notes title/body edit and a hidden Turns title/message source
+change left the authorized ranked windows and their state unchanged.
+The live Turns worker also indexed an append on a hidden thread while
+the combined viewer window stayed unchanged. The fixtures compare the
+same visible generation after excluding hidden data. Search returns no
+count by default.
+
+| Corpus and worker load | Scoped publication p50 / p95 (ms) | Combined query sees the published append p50 / p95 (ms) |
+| --- | ---: | ---: |
+| Notes idle | 17.287 / 26.454 | 17.412 / 26.531 |
+| Notes busy, 517 competing saves | 18.006 / 55.249 | 18.143 / 55.353 |
+| Turns idle | 36.240 / 46.510 | 36.311 / 46.606 |
+| Turns busy, 1,999 competing appends | 331.490 / 562.559 | 331.606 / 562.630 |
+
+Each lag arm has 100 samples. The combined read observes the same
+published generation with no additional publication transaction. The
+busy Turns run had higher absolute lag than the earlier run. It adds
+only 0.071 ms to the within-run p95 comparison; this measures read
+observation overhead rather than a new write stage. A title change
+belongs to the same authority-versioned publication. These append
+figures cover bodies/messages with a stable title.
+
+### What the specification must change
+
+Make the Bind’s author-declared field filter optional and default to all
+searchable fields. Keep the input match shape independent of that
+filter. Claimed text can match across title and body. The Turns result
+has all matching titles first, then threads ranked by their newest
+matching message, with each thread emitted once. A title or a single
+message must match the full query. Meter both sides together. Use the
+existing authorized generation and refinement rules, including no
+count or contexts on a partial result. The shared depth remains 200.
+
+Build the `v2_step0_page` release executable on dev-01. Run
+`scoped_search_all_fields` under the perf lock for the matrix. Set
+`STEP0_ALL_SEARCH=1` for `scoped_search_worker_lag` and
+`scoped_threads_worker_lag`.
+
 ## Reproducing the measurements
 
 Build in the existing lane copy on `calternal-dev-01-compute02`.
