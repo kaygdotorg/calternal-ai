@@ -31,7 +31,9 @@ the same endpoint through its CORS preflight.
    existing `home` and `shared` views still exercise the authority matrix.
    The app templates, manifests and wire validator pin
    [revision 13.18](https://git.kayg.org/kayg/calternal-ai/src/commit/195935f4dbed93d660f79ed4bde27c00fffd550f/contract/fixtures/description-v2).
-   The Notes toolbar also mounts the pinned Notes bulk fixture's Trash action.
+   The Notes toolbar mounts the pinned bulk action for scripted use. The
+   Home content list has the sealed `ListNode.selectionMode: multiple`
+   declaration and shows the tick controls. The Notes sidebar is navigation.
    Notes projects snippets for secondary text and the row-image fallback.
    Every third initial Notes row includes a sample thumbnail when the
    source revision is current. Fetch it from the view host at
@@ -77,7 +79,8 @@ moves using the checked ChoiceRef for the target section. Resolve a
 bulk Trash with up to 50 IDs from issued Notes windows in
 `interaction.rows`, or call `POST /selection.set` with
 `{"type":"selection_set","bind":"notes","rows":[...]}` and the lease header.
-Use its returned `selection_ref` in the activation interaction. Data changes
+The route works on Home, Shared and Notes for an editor using rows issued
+by that view lease. Use its returned `selection_ref` in the activation interaction. Data changes
 appear on a fresh window read. These display effects use disposable
 in-memory state. The original authority tests still use the real engines.
 

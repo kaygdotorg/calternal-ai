@@ -134,7 +134,7 @@ struct Volatile {
     contexts: HashMap<Uuid, Context>,
     windows: HashMap<Uuid, IssuedWindow>,
     display_search: HashMap<Uuid, (String, bool)>,
-    display_sets: HashMap<Uuid, (Uuid, Vec<(Uuid, String)>)>,
+    selection_sets: HashMap<Uuid, (Uuid, Vec<(Uuid, String)>)>,
     display_parents: HashMap<Uuid, (Uuid, &'static str, Uuid)>,
     window_order: u64,
     choices: HashMap<Uuid, Choice>,
@@ -328,7 +328,7 @@ impl Host {
                 contexts,
                 windows,
                 display_search,
-                display_sets,
+                selection_sets,
                 display_parents,
                 choices,
                 resolutions,
@@ -338,7 +338,7 @@ impl Host {
             contexts.retain(|_, c| leases.contains_key(&c.lease));
             windows.retain(|_, w| leases.contains_key(&w.lease));
             display_search.retain(|id, _| leases.contains_key(id));
-            display_sets.retain(|_, (lease, _)| leases.contains_key(lease));
+            selection_sets.retain(|_, (lease, _)| leases.contains_key(lease));
             display_parents.retain(|_, parent| leases.contains_key(&parent.0));
             choices.retain(|_, c| contexts.contains_key(&c.context));
             resolutions.retain(|_, r| contexts.contains_key(&r.context));
@@ -387,7 +387,7 @@ impl Host {
             ),
             "selection.set" => (
                 "selection_set_result",
-                self.display_set(who, session, lease_header.ok_or(HIDDEN)?, &input)
+                self.selection_set(who, session, lease_header.ok_or(HIDDEN)?, &input)
                     .await?,
             ),
             "selection.settled" => (

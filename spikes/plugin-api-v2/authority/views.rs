@@ -435,6 +435,83 @@ impl Host {
         )
     }
 
+    pub(super) async fn selection_set(
+        &self,
+        who: Identity,
+        session: Uuid,
+        id: Uuid,
+        input: &Value,
+    ) -> Reply<Value> {
+        let (_, view) = self.lease(who, session, id).await?;
+        let _fence = view.gate.lock().await;
+        let (lease, _) = self.lease(who, session, id).await?;
+        if input["bind"] != NOTES || view.display.as_ref().is_some_and(|d| d.app != App::Notes) {
+            return Err(HIDDEN);
+        }
+        if !self.editor(who, &view).await {
+            return Err(FORBIDDEN);
+        }
+        let targets = self.selection_rows(&view, &lease, &input["rows"])?;
+        self.check_targets(who, &view, &targets).await?;
+        let mut live = self.live.lock().unwrap();
+        live.selection_sets.retain(|_, (id, _)| *id != lease.id);
+        let token = Uuid::new_v4();
+        live.selection_sets.insert(token, (lease.id, targets));
+        Ok(json!({"type":"selection_result","bind":NOTES,"selection_ref":token}))
+    }
+
+    fn selection_rows(
+        &self,
+        view: &View,
+        lease: &Lease,
+        rows: &Value,
+    ) -> Reply<Vec<(Uuid, String)>> {
+        rows.as_array()
+            .ok_or(INVALID)?
+            .iter()
+            .map(|value| {
+                let row = value
+                    .as_str()
+                    .and_then(|s| Uuid::parse_str(s).ok())
+                    .ok_or(HIDDEN)?;
+                let revision = if view.display.is_some() {
+                    self.display_row(lease.id, row, NOTES)
+                } else {
+                    self.issued_row(lease.id, row)
+                }
+                .ok_or(HIDDEN)?;
+                Ok((row, revision))
+            })
+            .collect()
+    }
+
+    pub(super) fn bulk_targets(
+        &self,
+        view: &View,
+        lease: &Lease,
+        interaction: &Value,
+    ) -> Reply<(Uuid, Vec<(Uuid, String)>)> {
+        let (reference, rows) = if interaction.get("selection_ref").is_some() {
+            let token = ref_at(interaction, "selection_ref")?;
+            let live = self.live.lock().unwrap();
+            let (_, rows) = live
+                .selection_sets
+                .get(&token)
+                .filter(|(id, _)| *id == lease.id)
+                .ok_or(HIDDEN)?;
+            (token, rows.clone())
+        } else {
+            (
+                Uuid::new_v4(),
+                self.selection_rows(view, lease, &interaction["rows"])?,
+            )
+        };
+        if rows.is_empty() {
+            return Err(INVALID);
+        }
+        Ok((reference, rows))
+    }
+
     pub(super) fn issued_row(&self, lease: Uuid, id: Uuid) -> Option<String> {
         self.live
             .lock()

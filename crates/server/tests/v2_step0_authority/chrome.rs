@@ -505,3 +505,121 @@ async fn sealed_chrome_end_and_images() {
     assert!(after["rows"][0]["fields"].get("thumbnail").is_none());
     assert!(after["rows"][0]["fields"]["snippet"].is_string());
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[ignore = "disposable shared bulk selection fixture"]
+async fn sealed_selection_set_home_matches_notes() {
+    let f = ClientFixture::new().await;
+    let bootstrap = f.bootstrap(&f.owner).await;
+    let home = f
+        .ok(
+            &f.owner,
+            "view.open",
+            None,
+            open(&bootstrap["views"]["home"]),
+        )
+        .await;
+    let notes = f
+        .ok(
+            &f.owner,
+            "view.open",
+            None,
+            open(&bootstrap["views"]["notes"]),
+        )
+        .await;
+    let home_lease = &home["lease"]["lease_ref"];
+    let notes_lease = &notes["lease"]["lease_ref"];
+    let page = f.ok(&f.owner, "window", Some(home_lease), window()).await;
+    let rows = json!([page["rows"][0]["id"], page["rows"][1]["id"]]);
+    let set_request = |rows| json!({"type":"selection_set","bind":"notes","rows":rows});
+    let resolve_set = |view: &Value, sel: &Value| {
+        json!({
+            "type":"invoke","action_id":"trash-selected","activation_id":uuid::Uuid::new_v4(),
+            "activation_context":view["activation_contexts"]["trash-selected"],
+            "interaction":{"selection_ref":sel}
+        })
+    };
+
+    assert_eq!(
+        f.call(
+            &f.owner,
+            "selection.set",
+            Some(notes_lease),
+            set_request(rows.clone())
+        )
+        .await
+        .0,
+        404
+    );
+    let set = f
+        .ok(
+            &f.owner,
+            "selection.set",
+            Some(home_lease),
+            set_request(rows.clone()),
+        )
+        .await;
+    assert_eq!(set["type"], "selection_result");
+    assert_eq!(set["bind"], "notes");
+    let selection = &set["selection_ref"];
+    assert_eq!(
+        f.call(
+            &f.owner,
+            "activation.resolve",
+            None,
+            resolve_set(&notes, selection)
+        )
+        .await
+        .0,
+        404
+    );
+    assert_eq!(
+        f.call(
+            &f.guest,
+            "selection.set",
+            Some(home_lease),
+            set_request(rows.clone())
+        )
+        .await
+        .0,
+        404
+    );
+    let clear = f
+        .ok(
+            &f.owner,
+            "selection.set",
+            Some(home_lease),
+            set_request(json!([])),
+        )
+        .await;
+    assert_ne!(clear["selection_ref"], *selection);
+    assert_eq!(
+        f.call(
+            &f.owner,
+            "activation.resolve",
+            None,
+            resolve_set(&home, selection)
+        )
+        .await
+        .0,
+        404
+    );
+    let selected = f
+        .ok(
+            &f.owner,
+            "selection.set",
+            Some(home_lease),
+            set_request(rows),
+        )
+        .await;
+    let resolved = f
+        .ok(
+            &f.owner,
+            "activation.resolve",
+            None,
+            resolve_set(&home, &selected["selection_ref"]),
+        )
+        .await;
+    assert_eq!(resolved["selection_ref"], selected["selection_ref"]);
+    assert_eq!(resolved["confirm"], "challenge");
+}

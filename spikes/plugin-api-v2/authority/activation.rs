@@ -3,7 +3,6 @@ use super::*;
 use calternal_content::Request;
 use calternal_core::SharePermission;
 use calternal_store::{Commit, IdemWrite, StampedEvent};
-use std::collections::HashSet;
 
 impl Host {
     async fn context(
@@ -226,32 +225,9 @@ impl Host {
                     if fields.len() != 1 {
                         return Err(INVALID);
                     }
-                    if interaction.get("selection_ref").is_some() {
-                        let token = ref_at(&interaction, "selection_ref")?;
-                        let live = self.live.lock().unwrap();
-                        let (_, rows) = live
-                            .display_sets
-                            .get(&token)
-                            .filter(|(id, _)| *id == lease.id)
-                            .ok_or(HIDDEN)?;
-                        targets.extend(rows.iter().cloned());
-                        selection = Some(token);
-                    } else {
-                        for value in interaction["rows"].as_array().ok_or(INVALID)? {
-                            let row = value
-                                .as_str()
-                                .and_then(|s| Uuid::parse_str(s).ok())
-                                .ok_or(HIDDEN)?;
-                            targets.push((
-                                row,
-                                self.display_row(lease.id, row, "notes").ok_or(HIDDEN)?,
-                            ));
-                        }
-                    }
-                    selection.get_or_insert_with(Uuid::new_v4);
-                    if targets.is_empty() {
-                        return Err(INVALID);
-                    }
+                    let (reference, rows) = self.bulk_targets(&view, &lease, &interaction)?;
+                    selection = Some(reference);
+                    targets = rows;
                     material.push(
                         json!({"name":"selection","label":"Selected notes","value":targets.len()}),
                     );
@@ -326,26 +302,13 @@ impl Host {
                     .push(json!({"name":"destination","label":"Destination","value":picked.label}));
             }
             Action::Bulk => {
-                if fields.len() != 1 || !fields.contains_key("rows") {
+                if fields.len() != 1 {
                     return Err(INVALID);
                 }
-                let rows = interaction["rows"]
-                    .as_array()
-                    .filter(|r| !r.is_empty())
-                    .ok_or(INVALID)?;
-                let mut unique = HashSet::new();
-                for row in rows {
-                    let row = row
-                        .as_str()
-                        .and_then(|s| Uuid::parse_str(s).ok())
-                        .ok_or(HIDDEN)?;
-                    if !unique.insert(row) {
-                        return Err(INVALID);
-                    }
-                    targets.push((row, self.issued_row(lease.id, row).ok_or(HIDDEN)?));
-                }
-                material.push(json!({"name":"selection","label":"Selected notes","value":targets.iter().map(|t|t.0).collect::<Vec<_>>()}));
-                selection = Some(Uuid::new_v4());
+                let (reference, rows) = self.bulk_targets(&view, &lease, &interaction)?;
+                material.push(json!({"name":"selection","label":"Selected notes","value":rows.iter().map(|t|t.0).collect::<Vec<_>>()}));
+                selection = Some(reference);
+                targets = rows;
             }
         }
         self.check_targets(who, &view, &targets).await?;

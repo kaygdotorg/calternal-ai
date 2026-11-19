@@ -401,38 +401,6 @@ pub(super) fn row_context_rev(row: &Row, other: &Row) -> String {
 }
 
 impl Host {
-    pub(in crate::authority) async fn display_set(
-        &self,
-        who: Identity,
-        session: Uuid,
-        id: Uuid,
-        input: &Value,
-    ) -> Reply<Value> {
-        let (lease, view) = self.lease(who, session, id).await?;
-        let _fence = view.gate.lock().await;
-        self.lease(who, session, id).await?;
-        if input["bind"] != "notes" || view.display.as_ref().is_none_or(|d| d.app != App::Notes) {
-            return Err(HIDDEN);
-        }
-        if !self.editor(who, &view).await {
-            return Err(FORBIDDEN);
-        }
-        let mut targets = Vec::new();
-        for value in input["rows"].as_array().ok_or(INVALID)? {
-            let row = value
-                .as_str()
-                .and_then(|s| Uuid::parse_str(s).ok())
-                .ok_or(HIDDEN)?;
-            targets.push((row, self.display_row(lease.id, row, "notes").ok_or(HIDDEN)?));
-        }
-        self.check_targets(who, &view, &targets).await?;
-        let mut live = self.live.lock().unwrap();
-        live.display_sets.retain(|_, (id, _)| *id != lease.id);
-        let token = Uuid::new_v4();
-        live.display_sets.insert(token, (lease.id, targets));
-        Ok(json!({"type":"selection_result","bind":"notes","selection_ref":token}))
-    }
-
     pub(in crate::authority) fn display_row(
         &self,
         lease: Uuid,
