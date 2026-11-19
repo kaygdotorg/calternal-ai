@@ -16,6 +16,7 @@ const PER_SHARD: usize = 4;
 const LIFETIME: Duration = Duration::from_secs(300);
 
 /// The stored revision behind a sealed frame.
+#[derive(Clone)]
 pub(super) struct Source {
     pub(super) account: AccountId,
     pub(super) session: Session,
@@ -26,11 +27,14 @@ pub(super) struct Source {
     pub(super) kind: String,
     pub(super) item: Uuid,
     pub(super) revision: String,
+    pub(super) age: super::eligibility::SourceAge,
 }
 
 pub(super) struct Frame {
     pub(super) source: Source,
     pub(super) content: CleanContent,
+    /// An explicit viewer action has authorized Ask-mode media for this frame.
+    pub(super) load_approved: std::sync::atomic::AtomicBool,
     expires: Instant,
 }
 
@@ -59,6 +63,7 @@ impl Frames {
             Arc::new(Frame {
                 source,
                 content,
+                load_approved: Default::default(),
                 expires: now + LIFETIME,
             }),
         ));

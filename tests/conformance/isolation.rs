@@ -31,6 +31,7 @@ mod requests_cases;
 mod requests_review_cases;
 mod threads_cases;
 
+mod content_fetch_cases;
 mod cursor_cases;
 mod deploy_cases;
 mod drafts_cases;
@@ -216,6 +217,10 @@ impl Fixture {
             .unwrap_or_else(|| repo.join("plugins"));
         let mut command = Command::new(binary);
         command.env_clear();
+        if let Ok(origin) = std::fs::read_to_string(self.dir.path().join("content-fetch-origin")) {
+            command.env("CALTERNAL_TEST_CONTENT_FETCH_ORIGIN", origin);
+            command.env("CALTERNAL_CONTENT_FETCH_DENY_CIDRS", "93.184.215.18/32");
+        }
         if self.dir.path().join("web-push-local").is_file() {
             command.env("CALTERNAL_TEST_WEB_PUSH_LOCAL", "1");
         }

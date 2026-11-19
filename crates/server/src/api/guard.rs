@@ -24,6 +24,8 @@ pub(super) async fn guard<D: Directory>(
     let entry_ns = (path == "/api/v1/operations").then(calternal_types::perf_monotonic_ns);
     let api = is_api(&path);
     let guest_read = path.starts_with("/s/") && matches!(*req.method(), Method::GET | Method::HEAD);
+    // An opaque sealed frame uses a narrow signed media URL rather than cookies.
+    let signed_media = crate::plugins::network::http::is_asset_read(req.method(), &path);
     let deny = |e: Error| -> Response {
         if api {
             failure(None, e)
@@ -51,6 +53,7 @@ pub(super) async fn guard<D: Directory>(
                 && path.starts_with(crate::plugins::signals::PREFIX));
         if api
             && !account_route
+            && !signed_media
             && bearer(req.headers()).is_none()
             && let Some(service) = state.directory.http_auth()
             && req
@@ -62,6 +65,7 @@ pub(super) async fn guard<D: Directory>(
         }
 
         if !account_route
+            && !signed_media
             && !guest_read
             && let Some(origin) = req.headers().get(header::ORIGIN)
         {
@@ -99,11 +103,12 @@ pub(super) async fn guard<D: Directory>(
             == Some("cross-site")
             && !provider_callback
             && !guest_read
+            && !signed_media
         {
             break 'resp deny(Error::forbidden("cross-site request denied"));
         }
         let sign_in_wallpaper = super::wallpapers::is_sign_in_request(req.method(), &path);
-        if api && !account_route && !sign_in_wallpaper {
+        if api && !account_route && !signed_media && !sign_in_wallpaper {
             // The installation travels with the request so plugin work can recheck it.
             let session = if let Some(service) = state.directory.http_auth() {
                 crate::account_http::identify(service, req.headers())
@@ -188,6 +193,7 @@ pub(super) async fn guard<D: Directory>(
         let response = response.await;
         if api
             && !account_route
+            && !signed_media
             && !sign_in_wallpaper
             && (response.status().is_success()
                 || response

@@ -94,6 +94,7 @@ fn sealed_frame_is_per_person_and_dies_when_the_source_head_changes() {
                 metadata: json!({}),
                 text: r#"<p>hello</p><img src="https://example.com/image.png?key=hidden">"#,
             },
+            |_| {},
         )
         .unwrap();
     let id = saved["id"].as_str().unwrap();
@@ -174,6 +175,7 @@ fn sealed_frame_is_per_person_and_dies_when_the_source_head_changes() {
                 metadata: json!({}),
                 text: "<p>replacement</p>",
             },
+            |_| {},
         )
         .unwrap();
     assert_eq!(

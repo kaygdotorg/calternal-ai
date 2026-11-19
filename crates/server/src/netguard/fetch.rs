@@ -53,28 +53,46 @@ pub(crate) async fn get_with_redirects(
             .send()
             .await
             .map_err(io::Error::other)?;
-        if !matches!(
-            response.status(),
-            StatusCode::MOVED_PERMANENTLY
-                | StatusCode::FOUND
-                | StatusCode::SEE_OTHER
-                | StatusCode::TEMPORARY_REDIRECT
-                | StatusCode::PERMANENT_REDIRECT
-        ) {
+        let Some(next) = redirect_target(&url, &response, &mut redirects)? else {
             return Ok(response);
-        }
-        if redirects == 0 {
-            return Err(super::refused());
-        }
-        let location = response
-            .headers()
-            .get(header::LOCATION)
-            .and_then(|value| value.to_str().ok())
-            .filter(|value| value.len() <= 2048)
-            .ok_or_else(super::refused)?;
-        url = url.join(location).map_err(|_| super::refused())?;
-        redirects -= 1;
+        };
+        url = next;
     }
+}
+
+/// Resolve one allowed redirect location and validate its canonical HTTPS
+/// shape. The caller must reauthorize and connect through the guard next.
+pub(crate) fn redirect_target(
+    url: &Url,
+    response: &Response,
+    remaining: &mut u8,
+) -> io::Result<Option<Url>> {
+    if !matches!(
+        response.status(),
+        StatusCode::MOVED_PERMANENTLY
+            | StatusCode::FOUND
+            | StatusCode::SEE_OTHER
+            | StatusCode::TEMPORARY_REDIRECT
+            | StatusCode::PERMANENT_REDIRECT
+    ) {
+        return Ok(None);
+    }
+    if *remaining == 0 {
+        return Err(super::refused());
+    }
+    let mut locations = response.headers().get_all(header::LOCATION).iter();
+    let location = locations
+        .next()
+        .and_then(|value| value.to_str().ok())
+        .filter(|value| value.len() <= 2048)
+        .ok_or_else(super::refused)?;
+    if locations.next().is_some() {
+        return Err(super::refused());
+    }
+    let next = url.join(location).map_err(|_| super::refused())?;
+    check_url(&next)?;
+    *remaining -= 1;
+    Ok(Some(next))
 }
 
 /// Read a response body without retaining more than the caller's byte ceiling.

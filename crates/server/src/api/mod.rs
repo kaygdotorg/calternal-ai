@@ -157,7 +157,12 @@ pub fn router<D: Directory>(state: Shared<D>, web_dir: Option<PathBuf>) -> Route
         .route(wallpapers::ROUTE, get(wallpapers::image))
         .route(
             crate::plugins::network::http::FRAME_ROUTE,
-            get(crate::plugins::network::http::document::<D>),
+            get(crate::plugins::network::http::document::<D>)
+                .post(crate::plugins::network::http::load::<D>),
+        )
+        .route(
+            crate::plugins::network::http::ASSET_ROUTE,
+            get(crate::plugins::network::http::asset::<D>),
         )
         .merge(appearance::routes::<D>())
         .route("/api", any(api_not_found))
