@@ -164,7 +164,9 @@ independently derived keys.
 The space content migration from SQLite 8 to 9 adds
 `thread_revision_patches` to the existing descriptor. It leaves every old
 SQLite snapshot and v1 Markdown file unchanged. A new checkpoint records only its bytes and the offset and
-hashes needed to place or read it. The current reader composes patches over
+hashes needed to place or read it. It also records the preceding full hash
+and the first patch of a sync group so cold recovery can repair complete and
+torn records in order. The current reader composes patches over
 their immutable base snapshot. The first new patch does require a writer
 that understands the new representation. The first patched commit retires a
 rollback marker that would let an older writer open those heads.

@@ -60,7 +60,21 @@ impl Content {
             else {
                 return Ok(());
             };
-            if place_related && let Err(error) = space.place_related(&account, &request, self.fault)
+            #[cfg(target_os = "linux")]
+            let placement_already_durable = if append
+                && state.as_deref() == Some("pending")
+                && space.append_group.is_none()
+                && let Some(item) = id.as_deref()
+            {
+                self.journals.receipt(&space.journal, account.parse().map_err(internal)?, &request)?.is_some()
+                    && space.recover_published_thread_group(item, &revision)?
+            } else {
+                false
+            };
+            #[cfg(not(target_os = "linux"))]
+            let placement_already_durable = false;
+            if place_related && !placement_already_durable
+                && let Err(error) = space.place_related(&account, &request, self.fault)
             {
                 #[cfg(target_os = "linux")]
                 if error.code == calternal_types::ErrorCode::Conflict

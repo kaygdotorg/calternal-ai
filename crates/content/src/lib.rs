@@ -211,6 +211,15 @@ impl Content {
     /// opens SQLite and its journal under its own lock only. Refuses with
     /// unavailable when 64 spaces are open and all are in use.
     fn with_space<T>(&self, id: SpaceId, f: impl FnOnce(&mut Space) -> Result<T>) -> Result<T> {
+        self.with_space_access(id, None, f)
+    }
+
+    fn with_space_access<T>(
+        &self,
+        id: SpaceId,
+        _append_to: Option<Uuid>,
+        f: impl FnOnce(&mut Space) -> Result<T>,
+    ) -> Result<T> {
         let _step = self.lifecycle.step(id.as_uuid())?;
         // A capacity-evicted space is dropped (draining its journal writer) only
         // after the map lock is released, so no other space waits on that drain.
@@ -265,7 +274,9 @@ impl Content {
         let opened = held.as_mut().expect("opened above");
         let result = (|| {
             #[cfg(target_os = "linux")]
-            if opened.append_recovering {
+            if opened.append_recovering
+                && !opened.append_group.as_ref().is_some_and(|group| group.accepts(_append_to))
+            {
                 self.publish_pending(opened)?;
                 opened.materialize_pending(self.fault)?;
                 opened.append_recovering = false;

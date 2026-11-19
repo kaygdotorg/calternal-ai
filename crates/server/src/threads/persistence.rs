@@ -100,7 +100,11 @@ pub(crate) fn checkpoint<D: Directory>(
         .unwrap(),
     );
     let content = state.store.content();
-    if let Some(receipt) = content.receipt(space, job.account, &rid)? {
+    #[cfg(target_os = "linux")]
+    let prior = content.thread_append_receipt(space, id, job.account, &rid)?;
+    #[cfg(not(target_os = "linux"))]
+    let prior = content.receipt(space, job.account, &rid)?;
+    if let Some(receipt) = prior {
         if receipt.fingerprint != fp {
             return Err(Error::request_reused());
         }

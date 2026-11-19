@@ -86,7 +86,11 @@ entire transcript in the send receipt.
 A warm append reads up to 8 KiB of staged prefix when it needs document
 framing, one bounded prepared-record row in SQLite, and one preceding
 range of at most 4 KiB from the file. It appends at most 64 KiB in one write
-and syncs the file once. The SQLite write stores the new patch bytes once
+and syncs the file once for up to four complete records. An output checkpoint
+can join a same-file group during a 2 ms window. Ordinary reads and writes
+close the group first. Each record is prepared in SQLite before its file
+write, and the group's file sync precedes every journal acknowledgement.
+The SQLite write stores the new patch bytes once
 with one FULL content commit and one FULL journal commit before acknowledgement.
 The journal commit publishes the message and its retry receipt together.
 The published outbox intent keeps its receipt pinned until the next append

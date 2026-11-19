@@ -17,6 +17,8 @@ CREATE TABLE thread_revision_patches(
     witness BLOB NOT NULL CHECK(length(witness) = 32),
     digest BLOB NOT NULL CHECK(length(digest) = 32),
     file_digest TEXT NOT NULL CHECK(length(file_digest) = 64),
+    prior_digest TEXT NOT NULL CHECK(length(prior_digest) = 64),
+    batch_start INTEGER NOT NULL CHECK(batch_start BETWEEN seq - 3 AND seq),
     PRIMARY KEY(item, seq),
     CHECK(base_seq < seq),
     FOREIGN KEY(item, seq) REFERENCES versions(item, seq) ON DELETE CASCADE,
@@ -174,8 +176,8 @@ mod tests {
              ('t',3,'v3','{}',X'666768','now','owner'),
              ('t',4,'v4','{}',X'7A','now','owner');
              INSERT INTO thread_revision_patches VALUES
-             ('t',2,1,3,2,zeroblob(32),zeroblob(32), printf('%064d',0)),
-             ('t',3,1,5,3,zeroblob(32),zeroblob(32), printf('%064d',0));",
+             ('t',2,1,3,2,zeroblob(32),zeroblob(32), printf('%064d',0),printf('%064d',0),2),
+             ('t',3,1,5,3,zeroblob(32),zeroblob(32), printf('%064d',0),printf('%064d',0),3);",
         )
         .unwrap();
         tx.commit().unwrap();

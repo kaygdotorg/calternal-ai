@@ -33,6 +33,8 @@ pub(crate) struct Space {
     pub(crate) files: PathBuf,
     /// Oldest acknowledged head awaiting file durability; never reset by new writes.
     pub(crate) pending_since: Option<std::time::Instant>,
+    /// Highest published outbox row still pinned and when retirement was queued.
+    pub(crate) published_appends: Option<(i64, std::time::Instant)>,
     /// Monotonic throttle for the existing lifecycle worker's receipt maintenance.
     pub(crate) last_receipt_prune: std::time::Instant,
     /// Immutable kind definitions, shared by validation, naming and placement;
@@ -44,6 +46,8 @@ pub(crate) struct Space {
     pub(crate) append_task: Option<crate::thread_append::proof::Task>,
     #[cfg(target_os = "linux")]
     pub(crate) append_recovering: bool,
+    #[cfg(target_os = "linux")]
+    pub(crate) append_group: Option<crate::thread_append::Group>,
     pub(crate) names: HashMap<String, calternal_fsio::names::DirectoryNames>,
 }
 /// The existing per-space SQLite path under the guarded appdata root.
@@ -174,6 +178,8 @@ impl Space {
             append_task: None,
             #[cfg(target_os = "linux")]
             append_recovering: false,
+            #[cfg(target_os = "linux")]
+            append_group: None,
             names: HashMap::new(),
             registrations: RefCell::new(HashMap::new()),
             pending_since: None,

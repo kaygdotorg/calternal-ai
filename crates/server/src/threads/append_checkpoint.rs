@@ -43,7 +43,7 @@ fn append(
     request: Request<'_>,
     seq: u64,
 ) -> Result<(), Error> {
-    let (head, size) = content.thread_head(space, id)?;
+    let (head, size) = content.thread_head_for_append(space, id)?;
     let mut metadata = head.metadata;
     let output = &metadata["output"];
     if metadata["deleted"] == true
@@ -64,7 +64,7 @@ fn append(
     } else if control {
         return Ok(());
     }
-    let prefix = document::prefix_bytes(&content.thread_prefix(space, id, &head.revision)?)?;
+    let prefix = document::prefix_bytes(&content.thread_prefix_for_append(space, id, &head.revision)?)?;
     let mut frame = String::from("\n");
     if control {
         frame.push_str(records::CONTROL);
