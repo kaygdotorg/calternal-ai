@@ -1964,7 +1964,8 @@
       ],
       "properties": {
         "lease": {
-          "$ref": "#/$defs/SubscriptionLease"
+          "$ref": "#/$defs/SubscriptionLease",
+          "description": "Starts the shared lease for current view, windows and authorized activation contexts."
         },
         "activation_contexts": {
           "$ref": "#/$defs/ActionContexts"
@@ -2254,6 +2255,100 @@
           }
         }
       }
+    },
+    "ViewOpenRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "view_ref"
+      ],
+      "properties": {
+        "type": {
+          "const": "view_open"
+        },
+        "view_ref": {
+          "$ref": "#/$defs/Ref"
+        }
+      }
+    },
+    "ChoiceOptionsRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "activation_context",
+        "slot"
+      ],
+      "properties": {
+        "type": {
+          "const": "choice_options"
+        },
+        "activation_context": {
+          "$ref": "#/$defs/ContextRef"
+        },
+        "slot": {
+          "$ref": "#/$defs/ActionId"
+        }
+      }
+    },
+    "ShareSheetResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sheet_ref",
+        "audiences"
+      ],
+      "properties": {
+        "sheet_ref": {
+          "$ref": "#/$defs/Ref"
+        },
+        "audiences": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "ref",
+              "label"
+            ],
+            "properties": {
+              "ref": {
+                "$ref": "#/$defs/ChoiceRef"
+              },
+              "label": {
+                "$ref": "#/$defs/Text"
+              }
+            }
+          },
+          "maxItems": 50
+        }
+      }
+    },
+    "TrashSheetResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sheet_ref",
+        "kind",
+        "selection_ref",
+        "count"
+      ],
+      "properties": {
+        "sheet_ref": {
+          "$ref": "#/$defs/Ref"
+        },
+        "kind": {
+          "$ref": "#/$defs/KindId"
+        },
+        "selection_ref": {
+          "$ref": "#/$defs/TrashSelectionRef"
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
     }
   },
   "activation_limits": {
@@ -2313,37 +2408,55 @@
       "input_schema": {
         "$ref": "#/$defs/UndoRequest"
       },
-      "scope": "Host surface and current actor/target authority"
+      "scope": "Host surface and current actor/target authority",
+      "output_schema": {
+        "$ref": "#/$defs/ActionOutcome"
+      }
     },
     "status": {
       "input_schema": {
         "$ref": "#/$defs/StatusRequest"
       },
-      "scope": "Host surface and current actor/target authority"
+      "scope": "Host surface and current actor/target authority",
+      "output_schema": {
+        "$ref": "#/$defs/ActionOutcome"
+      }
     },
     "request_resolve": {
       "input_schema": {
         "$ref": "#/$defs/RequestCardResolve"
       },
-      "scope": "Host surface and current actor/target authority"
+      "scope": "Host surface and current actor/target authority",
+      "output_schema": {
+        "$ref": "#/$defs/ActionOutcome"
+      }
     },
     "share_sheet": {
       "input_schema": {
         "$ref": "#/$defs/ShareSheetRequest"
       },
-      "scope": "Host surface and current actor/target authority"
+      "scope": "Host surface and current actor/target authority",
+      "output_schema": {
+        "$ref": "#/$defs/ShareSheetResult"
+      }
     },
     "trash_sheet": {
       "input_schema": {
         "$ref": "#/$defs/TrashSheetRequest"
       },
-      "scope": "Host surface and current actor/target authority"
+      "scope": "Host surface and current actor/target authority",
+      "output_schema": {
+        "$ref": "#/$defs/TrashSheetResult"
+      }
     },
     "view.open": {
       "output_schema": {
         "$ref": "#/$defs/ViewOpenResult"
       },
-      "scope": "Authenticated view session, including data-free render and its sources"
+      "scope": "Authenticated view session, including data-free render and its sources",
+      "input_schema": {
+        "$ref": "#/$defs/ViewOpenRequest"
+      }
     },
     "view.renew": {
       "input_schema": {
@@ -2358,7 +2471,10 @@
       "output_schema": {
         "$ref": "#/$defs/ChoiceOptions"
       },
-      "scope": "Context-bound prompt and authorized option Bind; never accepts a raw client target"
+      "scope": "Context-bound prompt and authorized option Bind; never accepts a raw client target",
+      "input_schema": {
+        "$ref": "#/$defs/ChoiceOptionsRequest"
+      }
     }
   },
   "generic_item_fields": {

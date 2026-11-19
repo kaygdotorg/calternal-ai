@@ -462,8 +462,9 @@ that depends on it. Prefetch and pushes never wake a worker.
 Persist data-free templates only in this draft. Keep filled rows and their
 grant/result versions in bounded memory, partitioned by session, space and
 audience. At lease expiry or transient disconnect stop painting those rows.
-Renewal requires fresh authority. If grant revision and result version both
-match, repaint the retained rows without refetch. Otherwise discard
+Renewal requires fresh authority. If current grant/result versions match the versions the host actually
+issued to that lease, repaint retained rows without refetch. Client
+version claims alone cannot authorize retention. Otherwise discard
 invalidated rows and fetch only fresh authorized windows. Discard on
 revocation, sign-out, audience switch or guest link closure. No protected
 data paints until authorization is current. Persistence for members’
@@ -537,8 +538,8 @@ until their context is available.
    method’s effect with its catalogue policy. `confirm:none` applies to
    reads or a host-proven reversible effect whose only material is the
    rendered target or its submitting form’s own fields (including a
-   host prompt scoped to that submission). Undo must be available for the
-   precise effect. Irreversible, external, widening, bulk, declared material
+   host prompt scoped to that submission). The engine must commit an eligible Undo in the same receipt boundary
+   as the precise effect. Irreversible, external, widening, bulk, declared material
    inputs and any destination, recipient or permission require
    `confirm:challenge`. Validate those inputs even if a label, a default,
    autofill or a typed field supplied them. The description cannot waive or
@@ -590,7 +591,9 @@ and `SelectionSetResult` accept stable IDs from the checked Bind and return
 a scoped `selection_ref` for authorization at dispatch. Purge and Empty Trash
 use a trusted preview, Manager/Owner confirmation of a host-pinned set and per-batch authority.
 Use the catalogue’s typed Undo, status, request-card resolve, Share and
-kind-specific Trash-sheet routes. Status polling uses the original action’s
+kind-specific Trash-sheet routes. The host sends an authorized audience
+list or pinned Trash selection/count before the protected confirmation.
+Status polling uses the original action’s
 audience. `showWhen` may use viewer roles for visibility; the host still
 authorizes every operation. Metadata patch takes scalar field/value with
 the rendered head from context. Allow full swipe for a checked, single
