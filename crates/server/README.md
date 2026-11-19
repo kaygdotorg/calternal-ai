@@ -297,11 +297,14 @@ permanent-deletion state without forcing file placement: purge suppresses prior
 body receipts, while later outside-file conflicts do not revoke an acknowledged
 SSD result. The shared content receipt type carries the existing item UUID.
 
-Native operation admission and delivery checks await the existing auth worker directly.
-Item resolution offloads only its catalog lookup before awaiting the same current-grant
-query. There is no cross-request capability cache: each check observes the existing
-auth-worker publication barrier, including removals, role edits and account disable.
-Synchronous test directories use the blocking adapter.
+Native operation admission and delivery checks await the existing auth worker.
+Item resolution offloads the catalog and, for share-enabled Notes operations,
+the reverse-membership lookup. Before delivering the result, a fresh space role
+can satisfy the policy without acquiring the content writer slot. A role that
+lacks the required capability falls back to the item-grant check. Each check
+observes the existing auth-worker publication barrier, including removals,
+role edits and account disable. Synchronous test directories use the blocking
+adapter.
 
 Foreground operation callbacks use the operation catalog/manifest's `mutates`
 flag to select scheduling. Separate lazy current-thread Tokio drivers supply two

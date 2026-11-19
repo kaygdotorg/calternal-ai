@@ -323,6 +323,8 @@ pub(super) async fn dispatch_scoped_inner<D: Directory>(
     .await
 }
 
+/// Dispatch an admitted operation and recheck current authority before returning
+/// its result. Delivery uses the current space role or, when needed, item grants.
 pub(super) async fn run_admitted_operation<D: Directory>(
     state: Shared<D>,
     p: Identity,
@@ -458,14 +460,8 @@ pub(super) async fn run_admitted_operation<D: Directory>(
             .map_err(crate::auth::auth_error)?;
     }
     if let Some(space) = delivery_space {
-        let caps = if let Some(id) = delivery_item {
-            crate::resolve::item_capabilities(&state, p.id, space, "notes", id)
-                .await?
-                .0
-        } else {
-            super::authorization::capabilities(&state, p.id, space).await?
-        };
-        policy.check(caps)?;
+        super::authorization::authorize_delivery(&state, p.id, &policy, space, delivery_item)
+            .await?;
     }
     Ok(value)
 }
