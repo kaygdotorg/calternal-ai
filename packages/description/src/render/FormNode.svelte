@@ -7,7 +7,7 @@
   import ActionButton from "./ActionButton.svelte";
 
   let { node }: { node: FormNode } = $props();
-  const { session } = useActions();
+  const { viewContext } = useActions();
   const initial = () => Object.fromEntries(node.fields.map((f) => [f.id, f.initial ?? (f.input === "toggle" ? false : "")]));
   let values = $state<Record<string, unknown>>(initial());
   let error = $state<string | null>(null);
@@ -25,7 +25,7 @@
   }
   const valid = $derived(node.fields.every((f) => problem(f, values[f.id]) === null));
   const submit = $derived(node.submit);
-  const context = $derived(session.viewContexts[submit.id]);
+  const context = $derived(viewContext(submit.id));
   const interaction = () => ({ form: { ...values } as Record<string, unknown> });
   function done(o: unknown) {
     const out = o as ActionOutcome | { state: string };

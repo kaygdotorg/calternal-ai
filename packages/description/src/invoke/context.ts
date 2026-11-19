@@ -8,6 +8,8 @@ export interface ActionContext {
   ui: ActionUi;
   /** The open session (the view's own activation contexts, the lease). */
   session: HostSession;
+  /** The host-issued activation context for a view-level action (a form's submit, a button, a header action), read reactively: renewals replace the view's contexts, and a control drawn while its context was missing enables when it arrives. */
+  viewContext(actionId: string): string | undefined;
   /** A shell action the shell should perform (already checked against the allow-list). */
   onshell?: (action: unknown) => void;
 }

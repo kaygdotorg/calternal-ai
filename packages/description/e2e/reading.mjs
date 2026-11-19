@@ -22,7 +22,9 @@ ok((await submit.getAttribute("aria-disabled")) === "true", "Add is disabled whi
 await p.locator("[data-form=add] label:has-text('Address') input").fill("https://example.org/article");
 // the Add context is the view's own and the host may have evicted it under load: the next lease renewal brings it back (at most about 10 s)
 await p.waitForFunction(() => document.querySelector("[data-form=add] [data-action=add]")?.getAttribute("aria-disabled") === null, null, { timeout: 15000 }).catch(() => {});
-ok((await submit.getAttribute("aria-disabled")) === null, "Add enables when the form is valid");
+const dis = await submit.getAttribute("aria-disabled");
+if (dis !== null) console.log("DEBUG", JSON.stringify(await p.evaluate(() => ({ ctx: Object.keys(window.__session.viewContexts), err: document.querySelector("[data-form-error]")?.textContent, inputs: [...document.querySelectorAll("[data-form=add] input")].map((i) => i.value) }))));
+ok(dis === null, "Add enables when the form is valid");
 await submit.click();
 await p.waitForFunction((t) => [...document.querySelectorAll("[data-i] .t")].some((e) => e.textContent === t), title, { timeout: 40000 }).catch(() => {});
 const shown = await p.evaluate((t) => [...document.querySelectorAll("[data-i] .t")].some((e) => e.textContent === t), title);

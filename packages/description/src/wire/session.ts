@@ -29,6 +29,8 @@ export class HostSession {
   #held: () => Record<string, string>;
   /** What the interface holds, for renewal: window ref to result version. */
   set held(f: () => Record<string, string>) { this.#held = f; }
+  /** Called whenever the view's own activation contexts were replaced (at open and at each renewal), so what is drawn from them can update. */
+  oncontexts?: () => void;
   /** Called with false when the lease lapses without a renewal (rows stay in memory, hidden) and with true when a renewal grants it again (which windows repaint is `onrenewed`'s to decide). */
   oncurrent?: (current: boolean) => void;
   /** Called with replacement windows a renewal returned. */
@@ -47,7 +49,7 @@ export class HostSession {
   async open(viewRef: string): Promise<ViewOpenResult> {
     this.#closed = false;
     const r = await this.transport.post<ViewOpenResult>("view.open", { type: "view_open", view_ref: viewRef });
-    this.#take(r.lease); this.#audience = r.audience; this.#viewContexts = r.activation_contexts;
+    this.#take(r.lease); this.#audience = r.audience; this.#viewContexts = r.activation_contexts; this.oncontexts?.();
     this.#schedule();
     return r;
   }
@@ -102,7 +104,7 @@ export class HostSession {
       if (this.#closed || this.#lease !== l) return; // the view closed (or its lease moved on) while the renewal was in flight: nothing to take, no timer to start
       // A reply that is not the answer to this renewal (superseded, another lease or partition) is ignored; the next attempt is still scheduled.
       if (!(sent !== this.#renewalSeq || r.renewal_id !== renewal_id || r.request_lease_ref !== l.lease_ref || r.cache_partition !== l.cache_partition)) {
-        this.#take(r.lease); this.#viewContexts = r.activation_contexts; this.oncurrent?.(true); this.onrenewed?.(r);
+        this.#take(r.lease); this.#viewContexts = r.activation_contexts; this.oncontexts?.(); this.oncurrent?.(true); this.onrenewed?.(r);
       }
     } catch { /* the lapse timer hides the rows when the lease runs out */ }
     if (this.#closed) return;

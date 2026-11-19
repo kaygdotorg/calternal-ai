@@ -17,7 +17,7 @@ async function listView(host: MockHost, o: { multiple?: boolean; inside?: boolea
   const session = new HostSession({ transport: host }); await session.open("v");
   const store = new WindowStore({ bind: o.b ?? bind, source: session });
   const selection = new Selection("notes", session);
-  const view = render(ContentList, { props: { store, selection, label: "n", multiple: o.multiple, inside: o.inside }, context: new Map<any, any>([[ACTIONS_KEY, { ui: new ActionUi(session), session }]]) });
+  const view = render(ContentList, { props: { store, selection, label: "n", multiple: o.multiple, inside: o.inside }, context: new Map<any, any>([[ACTIONS_KEY, { ui: new ActionUi(session), session, viewContext: (id: string) => session.viewContexts[id] }]]) });
   await vi.advanceTimersByTimeAsync(1500); await settle();
   return { session, store, selection, view };
 }
@@ -199,5 +199,22 @@ describe("finding 13: the keyboard reaches a row's controls without the context-
     const inRows = [...view.container.querySelectorAll<HTMLElement>("[data-i] button, [data-i] input")].filter((e) => e.tabIndex >= 0);
     expect(view.container.querySelectorAll("[data-i]").length).toBe(4);
     expect(inRows.length).toBe(0);
+  });
+});
+
+describe("view contexts that arrive after the first draw", () => {
+  it("a form drawn while its context was missing enables when a renewal brings the context (the real AppView)", async () => {
+    const description: AppDescription = { version: 2, kind: "app", revision: 1, binds: [], view: { root: { type: "form", id: "add", fields: [{ id: "t", label: "Title", input: "text", required: true }], submit: { id: "add", title: "Add", operation: "reading.add", inputs: { t: { form: "add", field: "t" } } } } } };
+    const lease = { lease_ref: "l-1", lease_seconds: 15 as const, grant_revision: "g", cache_partition: "cp" };
+    const host: MockHost = new MockHost({ rows: 0, renew: (b) => ({ lease, retained_results: [], activation_contexts: { add: "ctx-add" }, windows: [], renewal_id: b.renewal_id, request_lease_ref: b.lease_ref, cache_partition: b.cache_partition }) });
+    const session = new HostSession({ transport: host }); await session.open("v"); // the host issued no context for `add` (evicted under budget)
+    const view = render(AppView, { props: { description, session } });
+    await vi.advanceTimersByTimeAsync(200); await settle();
+    const input = view.container.querySelector<HTMLInputElement>("[data-form=add] input")!;
+    await fireEvent.input(input, { target: { value: "hello" } });
+    const btn = () => view.container.querySelector<HTMLElement>("[data-action=add]")!;
+    expect(btn().getAttribute("aria-disabled")).toBe("true"); // nothing can be sent without a context
+    await vi.advanceTimersByTimeAsync(11_000); await settle(); // the renewal brings it
+    expect(btn().getAttribute("aria-disabled")).toBeNull(); // before the fix the context read at first draw was kept for ever
   });
 });

@@ -13,7 +13,7 @@
   import { marksOf } from "./eval";
 
   let { sidebar, footer, role, initial }: { sidebar: Sidebar; footer?: Footer; role?: "viewer" | "editor" | "manager" | "owner"; /** The person's initial, from the session (a template holds none). */ initial?: string } = $props();
-  const app = useApp(), { ui, session } = useActions();
+  const app = useApp(), { ui, session, viewContext } = useActions();
   const ranks = { viewer: 0, editor: 1, manager: 2, owner: 3 } as const;
   function shown(s: Section): boolean {
     const w = s.showWhen;
@@ -91,7 +91,7 @@
       <div class="bar">
         {#each footer.apps ?? [] as a (a.id)}{@const ic = typeof a.icon === "string" ? knownIcon(a.icon) : undefined}<button type="button" class="app" data-app-entry={a.id} aria-label={a.title} title={a.title} onclick={() => app.openApp?.(a.id)}>{a.title}</button>{/each}
         {#if footer.account}<button type="button" class="acct" bind:this={accountEl} aria-label={footer.account.title ?? "Account"} onclick={() => (accountOpen = true)}>{initial ?? "·"}</button>
-          <Menu open={accountOpen} items={accountItems} label={footer.account.title ?? "Account"} trigger={accountEl} onclose={() => (accountOpen = false)} onpick={(id) => { accountOpen = false; const a = (footer.account!.menu ?? []).find((x) => x.id === id); if (a) { if ("operation" in a) void ui.invoker.run(a, { context: session.viewContexts[a.id] }); else if (shellAllowed(a)) app.onshell?.(a); } }} />{/if}
+          <Menu open={accountOpen} items={accountItems} label={footer.account.title ?? "Account"} trigger={accountEl} onclose={() => (accountOpen = false)} onpick={(id) => { accountOpen = false; const a = (footer.account!.menu ?? []).find((x) => x.id === id); if (a) { if ("operation" in a) void ui.invoker.run(a, { context: viewContext(a.id) }); else if (shellAllowed(a)) app.onshell?.(a); } }} />{/if}
       </div>
     </div>
   {/if}

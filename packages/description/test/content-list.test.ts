@@ -14,7 +14,7 @@ const flush = async () => { for (let i = 0; i < 30; i++) await vi.advanceTimersB
 async function draw(host: MockHost, bind: Bind = base) {
   const session = new HostSession({ transport: host }); await session.open("v");
   const store = new WindowStore({ bind, source: session });
-  const view = render(ContentList, { props: { store, selection: new Selection(bind.id, session), kindIcon: "notes", label: "Items" }, context: new Map([[ACTIONS_KEY, { ui: new ActionUi(session), session }]]) });
+  const view = render(ContentList, { props: { store, selection: new Selection(bind.id, session), kindIcon: "notes", label: "Items" }, context: new Map([[ACTIONS_KEY, { ui: new ActionUi(session), session, viewContext: (id: string) => session.viewContexts[id] }]]) });
   return { store, view, session };
 }
 beforeEach(() => { vi.useFakeTimers(); });

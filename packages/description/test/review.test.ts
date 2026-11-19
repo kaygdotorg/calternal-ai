@@ -60,7 +60,7 @@ describe("finding 3: the selection follows the list", () => {
     const session = new HostSession({ transport: host }); await session.open("v");
     const store = new WindowStore({ bind, source: session });
     const selection = new Selection("notes", session);
-    const view = render(ContentList, { props: { store, selection, label: "n" }, context: new Map<any, any>([[ACTIONS_KEY, { ui: new ActionUi(session), session }]]) });
+    const view = render(ContentList, { props: { store, selection, label: "n" }, context: new Map<any, any>([[ACTIONS_KEY, { ui: new ActionUi(session), session, viewContext: (id: string) => session.viewContexts[id] }]]) });
     await settle();
     await fireEvent.click(view.container.querySelector("[data-i] button.row")!); await settle();
     expect(selection.drawn).toBe("r-0"); expect(selection.sent).toBe(1);
@@ -211,7 +211,7 @@ describe("finding 13: one Tab stop per list", () => {
     const session = new HostSession({ transport: host }); await session.open("v");
     const store = new WindowStore({ bind: withActions, source: session });
     const scroller = document.createElement("div"); scroller.style.overflowY = "auto"; document.body.append(scroller); // the scrolling ancestor an `inside` list follows
-    const view = render(ContentList, { target: scroller, props: { store, selection: new Selection("notes", session), label: "n", inside: true, multiple: true }, context: new Map<any, any>([[ACTIONS_KEY, { ui: new ActionUi(session), session }]]) });
+    const view = render(ContentList, { target: scroller, props: { store, selection: new Selection("notes", session), label: "n", inside: true, multiple: true }, context: new Map<any, any>([[ACTIONS_KEY, { ui: new ActionUi(session), session, viewContext: (id: string) => session.viewContexts[id] }]]) });
     await vi.advanceTimersByTimeAsync(1500); await settle(); await settle();
     const tabbable = [...view.container.querySelectorAll<HTMLElement>("button, input, a, select, textarea")].filter((e) => e.tabIndex >= 0);
     expect(view.container.querySelectorAll("[data-i]").length).toBe(6);

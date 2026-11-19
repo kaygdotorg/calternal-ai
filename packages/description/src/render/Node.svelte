@@ -11,7 +11,7 @@
   import { secondaryOf } from "./eval";
 
   let { node }: { node: ContentNode } = $props();
-  const app = useApp(), { session } = useActions();
+  const app = useApp(), { viewContext } = useActions();
   /** True when an action's inputs read the ticked set of a multiple-selection list. */
   const setBind = (inputs: Record<string, unknown> | undefined): string | undefined => { for (const v of Object.values(inputs ?? {})) { const s = v as { selection?: string; set?: boolean }; if (s.selection && s.set) return s.selection; } return undefined; };
   const fmt = (v: unknown): string => (v === undefined || v === null ? "" : typeof v === "string" ? v : typeof v === "number" ? (v > 1e9 && v < 1e13 ? secondaryOf([{ field: "v", format: "relative_date" }], { v }) ?? String(v) : String(v)) : String(v));
@@ -25,10 +25,10 @@
 {:else if node.type === "text"}
   <p class="text {node.style ?? 'body'} {node.tone ?? ''}" data-node="text">{node.text}</p>
 {:else if node.type === "notice"}
-  <div class="notice {node.tone ?? 'warn'}" role="status" data-node="notice"><strong>{node.title}</strong>{#if node.detail}<span>{node.detail}</span>{/if}{#if node.action}<ActionButton action={node.action} context={session.viewContexts[node.action.id]} />{/if}</div>
+  <div class="notice {node.tone ?? 'warn'}" role="status" data-node="notice"><strong>{node.title}</strong>{#if node.detail}<span>{node.detail}</span>{/if}{#if node.action}<ActionButton action={node.action} context={viewContext(node.action.id)} />{/if}</div>
 {:else if node.type === "button"}
   {@const sb = setBind(node.invoke.inputs)}
-  <div data-node="button"><ActionButton action={node.invoke} context={session.viewContexts[node.invoke.id]} style={node.style ?? "quiet"} selection={sb ? app.selectionFor(sb) : undefined} setOf={sb} /></div>
+  <div data-node="button"><ActionButton action={node.invoke} context={viewContext(node.invoke.id)} style={node.style ?? "quiet"} selection={sb ? app.selectionFor(sb) : undefined} setOf={sb} /></div>
 {:else if node.type === "form"}
   <FormNode {node} />
 {:else if node.type === "list"}

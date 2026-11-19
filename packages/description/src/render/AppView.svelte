@@ -40,7 +40,10 @@
   const ui = new ActionUi(session);
   ui.onok = () => { for (const st of stores.values()) st.refresh(); };
   ui.onroute = (name, created) => setRoute(name, created);
-  provideActions({ ui, session, onshell: (a) => props.onshell?.(a) });
+  let ctxVersion = $state(0);
+  session.oncontexts = () => { ctxVersion++; };
+  const viewContext = (id: string): string | undefined => { void ctxVersion; return session.viewContexts[id]; };
+  provideActions({ ui, session, viewContext, onshell: (a) => props.onshell?.(a) });
   const images = new ImageCache((ref, signal) => session.image(ref, signal), { hold: navHold }); // reads wait while a key repeats and stop when a burst begins
   setContext(IMAGES_KEY, (ref: string, signal?: AbortSignal) => images.get(ref, signal));
   const refusal = refusalOf(description);
@@ -99,7 +102,7 @@
     {/if}
     <main class="main"><Glass />
       <div class="head">{#if itemTitle ?? title}<h1 class="h1">{itemTitle ?? title}</h1>{/if}
-        {#each [...(header?.leading ?? []), ...(header?.trailing ?? [])] as a (a.id)}{@const sb = setBind(a)}<ActionButton action={a} context={session.viewContexts[a.id]} selection={sb ? selectionFor(sb) : undefined} setOf={sb} />{/each}</div>
+        {#each [...(header?.leading ?? []), ...(header?.trailing ?? [])] as a (a.id)}{@const sb = setBind(a)}<ActionButton action={a} context={viewContext(a.id)} selection={sb ? selectionFor(sb) : undefined} setOf={sb} />{/each}</div>
       {#if description.view}<Node node={description.view.root} />{/if}
     </main>
     {#if panel && panel.open !== false}

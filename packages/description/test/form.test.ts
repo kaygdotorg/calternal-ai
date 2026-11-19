@@ -17,7 +17,7 @@ async function draw(outcome: "ok" | "error") {
   const session = new HostSession({ transport: host }); await session.open("v");
   (session as any).viewContexts; // contexts: the mock issues none at open, so give the view one for the submit
   Object.assign(session.viewContexts, { add: "ctx-add" });
-  const view = render(FormNode, { props: { node }, context: new Map([[ACTIONS_KEY, { ui: new ActionUi(session), session }]]) });
+  const view = render(FormNode, { props: { node }, context: new Map([[ACTIONS_KEY, { ui: new ActionUi(session), session, viewContext: (id: string) => session.viewContexts[id] }]]) });
   const btn = () => view.container.querySelector<HTMLButtonElement>("[data-action=add]")!;
   const type = async (label: string, v: string) => { await fireEvent.input(view.container.querySelector<HTMLInputElement>(`label:has(.l) input[placeholder], input`)!, {}); const el = [...view.container.querySelectorAll("label")].find((l) => l.textContent?.includes(label))!.querySelector("input")!; await fireEvent.input(el, { target: { value: v } }); };
   return { host, view, btn, type };
