@@ -316,7 +316,7 @@ These conclusions describe the initial wall experiments. The later XFS tests use
    | 4 GiB, agents | 438–516 idle | 10.29–20.08 | 4,106–4,116 | 8 | 1 |
    | 8 GiB, agents | 520–600 idle | 10.29–20.13 | 8,202–8,212 | 4 | 0 |
 
-   These arithmetic ceilings use the initial 45.55 GiB available disk and 6.51 GiB MemAvailable on this 7.70 GiB host. Disk subtracts the 8 GiB guard and shared fixture allocation (about 272 MiB for plugins or 4.56 GiB for agents). RAM subtracts the 1 GiB guard and divides by configured guest RAM, before VMM overhead. The 512 MiB and 1 GiB fresh PSS values are medians from the pre-snapshot samples. The 8 GiB guest booted and restored because its resident pages occupied a fraction of configured RAM. Fully backed admission would exclude it on this host. The benchmark exercised one agent space at a time. Simultaneous agent spaces, mixed populations and production density remain unmeasured.
+   These arithmetic ceilings use the initial 45.55 GiB available disk and 6.51 GiB MemAvailable on this 7.70 GiB host. Disk subtracts the 8 GiB guard and shared fixture allocation (about 272 MiB for plugins or 4.56 GiB for agents). RAM subtracts the 1 GiB guard and divides by configured guest RAM, before VMM overhead. The 512 MiB and 1 GiB fresh PSS values are medians from the pre-snapshot samples. The 8 GiB guest booted and restored because its resident pages occupied a fraction of configured RAM. Fully backed admission would exclude it on this host. That snapshot benchmark exercised one agent space at a time. The [always-on sweep](#always-on-agent-density) measured mixed populations of agent and plugin VMs.
 3. **Agents in the space microVM.** Use 2 GiB as the smallest tested candidate for this workload. All 120 idle restore trials passed the cohort check. At 2 GiB the one- and three-agent builds completed, idle full saves took 4.62–6.44 s, and restore p95 ranged from 358–1,954 ms cached and 619–1,438 ms evicted. At 4 GiB all builds completed, with 8.50–22.50 s idle saves. At 8 GiB one-agent builds completed and idle saves took 18.03–59.04 s. Three-agent build completion at 8 GiB is unverified. Three-agent settings p95 improved with the reservation in every measured pair (including 17.94 → 8.91 ms and 32.53 → 2.01 ms at 2 GiB). The agents received about half the CPU time per window, and the one-agent p95 sometimes worsened. The experiment applied CPU pinning and memory protection together, so it gives no separate effect for either control.
 4. **Self-host isolation.** Label native rootless Podman siblings **weaker isolation** than Firecracker. Siblings separate PID, mount and network namespaces but share the host kernel and, in this fixture, the same user namespace. Nested native Podman would also share the host kernel, and the tested configurations failed to start. gVisor adds a userspace kernel that handles workload syscalls before they reach the Linux host. Its measured deployment used a shared cohort resource cap. With idle cohorts, the median for both timed stages combined was 1.04 s for one agent and 2.04 s for three, and PSS was 735 and 848 MiB. Native siblings took 1.08 and 2.18 s, with 215 and 242 MiB PSS. [gVisor architecture](https://gvisor.dev/docs/)
 5. **Randomness on restore.** Synchronous Node crypto emitted the same 32 bytes in all 20 default restores, despite 20 distinct kernel draws. Kernel-only reseeding still returned one distinct Node result. Kernel plus Node/OpenSSL reseeding gave 20 distinct draws from each, with broker p50/p95/max of 219/316/341 ms versus 89/115/119 ms by default. The difference between broker medians was 130 ms. The Node stage including both draws measured 6.07 ms p50 with both reseeds versus 4.27 ms with kernel-only seeding. The result supports a wake gate that refreshes each resumed long-lived RNG before it serves requests. The probe covered one Node process.
@@ -438,8 +438,134 @@ The earlier 2 MiB range fixture’s 168.45 ms p95 covers staging, commit, head a
 
 The wire should open a whole-file read with an item and requested revision, pin that exact immutable revision for the stream, and return the length and a stream ID after authorizing the caller identified by the enrolled channel. Carry ordered binary frames and enforce bounded byte credits on each stream and across the VM. Close the pin on completion, cancellation or expiry. Route revocation through stream cancellation so returning credit does not perform a new authority lookup. The benchmark checked immutable revisions and flow control. It did not exercise revocation.
 
+## Always-on agent density
+
+Measured on `calternal-perf-01-backup01` with four visible AMD Ryzen 7 3700X CPUs, 7.70 GiB RAM and no swap. The host itself is a KVM VM. Firecracker was v1.16.1 and the agent disks were on native XFS. Agent guests had two vCPUs and 2 or 4 GiB configured RAM. Each booted one or three rootless Podman containers with an idle Node process in each. Each active VM ran the workload in one container while the other containers stayed idle. Plugin code ran in a separate 256 MiB VM. Files and build output lived in disposable guest scratch. No userdata was mounted.
+
+The editor-and-shell loop reread a source slice, edited scratch files and streamed output over vsock every two seconds. At one-minute intervals it compiled and ran a small test against the SQLite header. Each light population had to show fresh output and a successful test from every active VM during its measured window. The clean build compiled the upstream SQLite amalgamation shipped with `libsqlite3-sys 0.39.1` at `-O2` and checked the output object. It represents one CPU-heavy compiler per active VM. The toolset and fixtures were built on dev-01. The guest compiles were the measured workloads. These short fixtures cover co-tenancy and memory residency over the measured windows. The toolset kept the existing agent runtime and added the compiler and source fixture.
+
+Each density arm first measured the plugin with zero neighbouring agent VMs, then increased the number of prestarted neighbours. The always-on plugin served brokered settings calls while the driver independently woke a snapshot of the same five-worker fixture. Wake includes reseeding and cohort validation. The baseline primed the plugin snapshot before the sweep. The JSON reports cache residency at each population. Memory pressure can affect the wake. Idle and light broker measurements use 12 and 70 second target windows. The timed wake sequence runs alongside the broker sampling and issues up to 12 sequential wakes early in each window. Build latency samples were kept during collective compile overlap and the memory sampler continued through completion. The agent density sweeps used free-page reporting off with the balloon at zero.
+
+A population passes if its plugin broker p95 is at most the larger of 5 ms and twice its own plugin-only baseline, and wake p95 is at most the larger of 500 ms and twice its own baseline. A stage also needs successful workload checks, at least 100 timed broker calls and five timed wakes, and zero probe errors. The sweep stops at the first tested miss or the memory guard below 1.5 GiB host MemAvailable. A passing tested population is a lower bound on density when the next sample skipped counts. The criterion measures co-tenancy on this machine. The observed wake times also show which populations stay within an absolute 500 ms.
+
+The sampler read each VMM’s host RSS and PSS once a second. PSS apportions file-backed sharing. Host MemAvailable captures more than VMM process memory, including kernel activity and competing caches. Host and guest steal come from their respective CPU counters. Host vCPU wait is Linux scheduler wait divided by runtime plus scheduler wait for the vCPU threads. That percentage is conditional on runnable time. Idle vCPUs can show a large ratio on little runnable time. Scheduler statistics were enabled during the locked arms and restored when each arm released the lock. Each arm held its own perf lock with a 17-minute watchdog. [Linux scheduler counters](https://docs.kernel.org/scheduler/sched-stats.html#proc-pid-schedstat)
+
+The initial 2 GiB one-agent idle and light sweeps each accumulated 4,095 broker and warm-up calls plus one initialization call on its settings worker. The worker reached its invocation cap and disconnected. The raw logs retain both attempts. The corrected arms use a new warm settings worker for each population with the same snapshot fixture and preserve the agent VMs between steps. The later light arms use that procedure as well. [Worker rotation contract](../../crates/plugin-host/README.md)
+
+### Resident footprint with one neighbouring agent VM
+
+| Guest MiB | Agents | Activity | Samples | VMM PSS MiB p50 / p95 / max | VMM RSS MiB p50 / p95 / max | Host min available MiB |
+| --- | --- | --- | --- | --- | --- | --- |
+| 2048 | 1 | idle | 12 | 234.2 / 234.2 / 234.2 | 236.5 / 236.5 / 236.5 | 6,535.3 |
+| 2048 | 1 | light | 70 | 253.8 / 261.3 / 261.3 | 256.0 / 263.5 / 263.5 | 6,481.4 |
+| 2048 | 1 | build | 53 | 582.2 / 616.3 / 616.4 | 584.5 / 618.6 / 618.7 | 6,146.1 |
+| 2048 | 3 | idle | 13 | 244.0 / 244.0 / 244.0 | 246.3 / 246.3 / 246.3 | 6,492.8 |
+| 2048 | 3 | light | 70 | 292.8 / 294.8 / 294.8 | 295.1 / 297.1 / 297.1 | 6,426.9 |
+| 2048 | 3 | build | 53 | 609.5 / 621.2 / 621.3 | 611.8 / 623.5 / 623.6 | 6,115.1 |
+| 4096 | 1 | idle | 13 | 323.7 / 323.7 / 323.7 | 326.0 / 326.0 / 326.0 | 6,437.2 |
+| 4096 | 1 | light | 70 | 365.3 / 371.4 / 371.4 | 367.6 / 373.7 / 373.7 | 6,368.3 |
+| 4096 | 1 | build | 53 | 678.4 / 699.3 / 699.3 | 680.7 / 701.6 / 701.7 | 6,029.9 |
+| 4096 | 3 | idle | 13 | 362.7 / 362.7 / 362.7 | 365.0 / 365.0 / 365.0 | 6,397.0 |
+| 4096 | 3 | light | 70 | 394.3 / 399.5 / 399.5 | 396.5 / 401.7 / 401.7 | 6,349.1 |
+| 4096 | 3 | build | 55 | 720.3 / 729.9 / 730.0 | 722.5 / 732.1 / 732.3 | 5,988.8 |
+
+### Plugin latency as the agent population grows
+
+| Guest MiB | Agents | Activity | Measured populations | Last pass | First miss | Baseline RTT p95 ms | Baseline wake p95 ms | Last pass RTT p95 ms | Last pass wake p95 ms | Miss RTT p95 ms | Miss wake p95 ms | Stop |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 2048 | 1 | idle | 1 / 2 / 3 / 4 / 6 / 8 / 10 / 12 / 16 / 20 / 24 | 24 | 25 started (target 28) | 5.26 | 377.1 | 8.23 | 335.9 | — | — | 1.5 GiB host MemAvailable guard |
+| 2048 | 1 | light | 1 / 4 / 8 / 12 / 16 | 16 | 20 started | 4.43 | 255.8 | 2.43 | 237.3 | — | — | 1.5 GiB host MemAvailable guard |
+| 2048 | 1 | build | 1 / 2 / 3 / 4 / 6 / 8 | 8 | 10 started | 7.22 | 481.3 | 12.66 | 743.6 | — | — | guest connection refused |
+| 2048 | 3 | idle | 1 / 2 / 3 / 4 / 6 / 8 / 10 / 12 / 16 / 20 | 20 | 22 started (target 24) | 5.77 | 447.7 | 3.06 | 454.6 | — | — | 1.5 GiB host MemAvailable guard |
+| 2048 | 3 | light | 1 / 4 / 8 / 12 / 16 | 16 | 19 started (target 20) | 5.73 | 417.4 | 2.39 | 313.8 | — | — | 1.5 GiB host MemAvailable guard |
+| 2048 | 3 | build | 1 | 0 | 1 | 2.75 | 291.6 | — | — | 6.69 | 216.7 | broker p95 threshold |
+| 4096 | 1 | idle | 1 / 2 / 3 / 4 / 6 / 8 / 10 / 12 / 16 | 16 | 17 started (target 20) | 4.46 | 704.9 | 5.43 | 524.9 | — | — | 1.5 GiB host MemAvailable guard |
+| 4096 | 1 | light | 1 / 4 / 8 / 12 | 12 | 15 started (target 16) | 5.74 | 350.0 | 2.46 | 350.2 | — | — | 1.5 GiB host MemAvailable guard |
+| 4096 | 1 | build | 1 / 3 / 4 / 6 | 4 | 6 | 5.99 | 562.2 | 11.38 | 679.9 | 12.37 | 682.8 | broker p95 threshold |
+| 4096 | 3 | idle | 1 / 2 / 3 / 4 / 6 / 8 / 10 / 12 | 12 | 15 started (target 16) | 7.24 | 476.6 | 6.73 | 506.4 | — | — | 1.5 GiB host MemAvailable guard |
+| 4096 | 3 | light | 1 / 4 / 8 / 12 | 12 | 14 started (target 16) | 5.39 | 493.0 | 2.55 | 438.6 | — | — | 1.5 GiB host MemAvailable guard |
+| 4096 | 3 | build | 1 / 3 | 1 | 3 | 6.26 | 510.9 | 7.29 | 272.8 | 13.05 | 439.2 | broker p95 threshold |
+
+The corrected one-agent 2 GiB idle arm passed at 24 VMs and reached the memory guard after starting a 25th. In the clean-build arm for that shape, ten VMs started but a guest connection was refused before the stage produced valid probe data. The last eight-VM stage had 1,896 MiB of host MemAvailable. The ten-VM error did not identify whether memory or another failure caused the connection loss. The 2 GiB three-agent arm missed the broker limit at one build on a 2.75 ms baseline. Its 6.69 ms broker p95 and 217 ms wake p95 describe that arm's relative result. Build gates across these arms depended on the observed baselines and available CPU.
+
+### CPU steal and vCPU scheduler wait
+
+| Guest MiB | Agents | Activity | Neighbours | Result | Host steal % | Guest median steal % | Guest max steal % | Agent vCPU wait % | Plugin vCPU wait % |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 2048 | 1 | idle | 24 | pass | 0.16 | 0.21 | 1.02 | 73.66 | 10.99 |
+| 2048 | 1 | light | 16 | pass | 0.11 | 0.04 | 0.16 | 7.13 | 4.86 |
+| 2048 | 1 | build | 8 | pass | 0.08 | 32.25 | 32.53 | 61.05 | 69.53 |
+| 2048 | 3 | idle | 20 | pass | 0.10 | 0.12 | 0.50 | 66.99 | 13.98 |
+| 2048 | 3 | light | 16 | pass | 0.08 | 0.05 | 0.41 | 8.14 | 7.20 |
+| 2048 | 3 | build | 1 | miss | 0.09 | 0.15 | 0.15 | 0.27 | 21.42 |
+| 4096 | 1 | idle | 16 | pass | 0.06 | 0.12 | 0.29 | 59.85 | 21.68 |
+| 4096 | 1 | light | 12 | pass | 0.08 | 0.05 | 0.34 | 7.39 | 6.49 |
+| 4096 | 1 | build | 4 | pass | 0.08 | 6.27 | 6.47 | 14.18 | 68.05 |
+| 4096 | 1 | build | 6 | miss | 0.12 | 21.42 | 22.55 | 43.87 | 70.27 |
+| 4096 | 3 | idle | 12 | pass | 0.06 | 0.12 | 0.21 | 54.59 | 24.99 |
+| 4096 | 3 | light | 12 | pass | 0.09 | 0.06 | 0.13 | 10.07 | 6.52 |
+| 4096 | 3 | build | 1 | pass | 0.13 | 0.12 | 0.12 | 0.22 | 21.87 |
+| 4096 | 3 | build | 3 | miss | 0.10 | 2.46 | 2.46 | 5.04 | 56.90 |
+
+Idle and light agent guests recorded little steal even near the memory guard. Steal grew with sustained compiler overlap while host-level steal stayed low. At eight builds in the 2 GiB one-agent arm, median agent guest steal was 32.25%, median agent vCPU run-queue wait was 61.05% of run plus wait, and the live plugin vCPUs spent 69.53% of that active scheduling time waiting.
+
+### Reclaiming resident memory from awake guests
+
+Reclamation was measured in a separate, otherwise idle agent VM. The fixture touched one byte per page in a 512 MiB buffer in the 2 GiB guest or a 1,024 MiB buffer in the 4 GiB guest, held it for 12 seconds and then exited. The idle column is median VMM PSS 60–75 seconds after the touch started. The peak-to-idle drop is measured host PSS. It can include other guest memory changing during the window.
+
+For the balloon pass, the driver requested half the configured RAM and recorded the actual inflated amount and settle time. It then requested deflation and repeated the touch. The return time is the first 0.5-second sample at or above 80% of the observed PSS rise from the ballooned idle level. The deflation column reports how long it took to observe an actual balloon of zero. Balloon size is guest capacity released, while PSS measures its host residency effect.
+
+| Guest MiB | Agents | FPR | Fresh PSS MiB | Touch peak MiB | Idle at 60–75 s MiB | Peak to idle drop MiB | Balloon idle PSS MiB | Actual balloon MiB | Inflation s | Deflation to zero s | 80% rebound s | Return peak PSS MiB |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 2048 | 1 | off | 227.3 | 748.5 | 748.5 | 0.0 | — | — | — | — | — | — |
+| 2048 | 1 | on | 219.4 | 747.6 | 259.6 | 488.0 | 226.5 | 1024 | 0.20 | 0.26 | 6.28 | 759.0 |
+| 2048 | 3 | off | 261.4 | 779.7 | 779.7 | 0.0 | — | — | — | — | — | — |
+| 2048 | 3 | on | 261.3 | 786.7 | 306.7 | 480.0 | 271.7 | 1024 | 0.20 | 0.25 | 5.77 | 784.4 |
+| 4096 | 1 | off | 327.4 | 1,368.5 | 1,368.5 | 0.0 | — | — | — | — | — | — |
+| 4096 | 1 | on | 327.5 | 1,368.2 | 385.0 | 983.2 | 358.5 | 2048 | 0.30 | 0.81 | 20.49 | 1,386.3 |
+| 4096 | 3 | off | 363.6 | 1,395.5 | 1,395.5 | 0.0 | — | — | — | — | — | — |
+| 4096 | 3 | on | 361.9 | 1,396.5 | 420.5 | 976.0 | 385.4 | 2048 | 0.31 | 0.81 | 9.92 | 1,422.0 |
+
+### What this means for the design
+
+Use 2 GiB as the default agent VM tier for the tested editor, shell and SQLite build. Assign 4 GiB when the job requires more guest memory. An always-on agent avoids an agent wake on its request path but carries resident memory from recent work. The build measurements support separate admission for runnable compiles and for resident VMs. Keep capacity for the plugin broker and plugin wakes when admitting builds. On perf-01 the relative gate allowed up to eight simultaneous builds in one sweep, but the wake p95 at eight was 744 ms and median guest CPU steal was 32%. In two other sweeps the broker gate tripped with several GiB still available. A small concurrency limit, measured again with explicit plugin CPU headroom, gives a stronger latency commitment than pricing by guest RAM alone.
+
+The sizing tables reserve 25% of physical RAM for the OS, plugins and burst headroom, add 128 MiB per agent VM for costs outside VMM PSS, and round the observed memory budget up to the next 128 MiB. The all-activity budget also covers the highest observed PSS in the allocation and rebound tests. The counts are memory-only divisions of the remainder. The fully backed column reserves the complete configured guest memory and the same overhead. A production density price needs a bound on per-agent memory and locally qualified CPU, I/O and plugin load. A self-hoster should subtract any services that need more than the 25% pool before using these counts.
+
+Enable free-page reporting for always-on guests if the production kernel and VMM qualification preserve the reclaim result. Across both cohorts it released 480–488 MiB after the 512 MiB touch in 2 GiB guests and 976–983 MiB after the 1 GiB touch in 4 GiB guests. The extra half-guest balloon reclaimed 26–35 MiB once free-page reporting had settled. The balloon dropped to zero in 0.25–0.81 seconds. The return to 80% of the tested PSS rise took 5.8–20.5 seconds. Budget the peak memory for work that can resume concurrently, even with reporting enabled.
+
+For capacity pricing with a bounded profile and the stated reserve, a 64 GiB host has memory for 48–54 of the measured 2 GiB VMs or 29–32 of the 4 GiB VMs. A 256 GiB host has memory for 192–219 or 118–128 respectively. Use the fully backed counts for an unrestricted guest memory policy. A 16 GiB self-hoster can budget up to five fully backed 2 GiB guests or two fully backed 4 GiB guests after the 4 GiB host reserve, then size concurrent builds to the local plugin latency target. A workload capped to the measured profiles gives higher memory-only ceilings of 12–13 or 7–8.
+
+### Memory-only capacity by activity
+
+| Guest MiB | Agents | Activity | Peak sampled PSS MiB | Budget MiB/VM | 16 GiB | 64 GiB | 256 GiB |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 2048 | 1 | idle | 236.6 | 384 | 32 | 128 | 512 |
+| 2048 | 1 | light | 272.6 | 512 | 24 | 96 | 384 |
+| 2048 | 1 | build | 619.8 | 768 | 16 | 64 | 256 |
+| 2048 | 3 | idle | 250.9 | 384 | 32 | 128 | 512 |
+| 2048 | 3 | light | 307.5 | 512 | 24 | 96 | 384 |
+| 2048 | 3 | build | 621.3 | 768 | 16 | 64 | 256 |
+| 4096 | 1 | idle | 323.7 | 512 | 24 | 96 | 384 |
+| 4096 | 1 | light | 371.7 | 512 | 24 | 96 | 384 |
+| 4096 | 1 | build | 708.1 | 896 | 13 | 54 | 219 |
+| 4096 | 3 | idle | 362.7 | 512 | 24 | 96 | 384 |
+| 4096 | 3 | light | 401.0 | 640 | 19 | 76 | 307 |
+| 4096 | 3 | build | 743.1 | 896 | 13 | 54 | 219 |
+
+### Memory-only capacity including the allocation stress test
+
+| Guest MiB | Agents | PSS retained after touch with FPR off MiB | Allocation test peak PSS MiB | Worst measured budget MiB/VM | 16 GiB | 64 GiB | 256 GiB | Fully backed 16 / 64 / 256 GiB |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 2048 | 1 | 748.5 | 759.0 | 896 | 13 | 54 | 219 | 5 / 22 / 90 |
+| 2048 | 3 | 779.7 | 786.7 | 1024 | 12 | 48 | 192 | 5 / 22 / 90 |
+| 4096 | 1 | 1,368.5 | 1,386.3 | 1536 | 8 | 32 | 128 | 2 / 11 / 46 |
+| 4096 | 3 | 1,395.5 | 1,422.0 | 1664 | 7 | 29 | 118 | 2 / 11 / 46 |
+
+Raw per-stage data, workload output and the fixture harness are retained under `~/space-runtime-measure/density-followup/` on perf-01. The JSON companion records sample counts, failures, p50/p95/max, cache residency, CPU counters and raw checksums. The density probes kept agent cohorts online for the duration of each arm. Multi-day memory retention, all agents in a cohort compiling simultaneously and additional host sizes were outside the observed workloads.
+
 ## Simplification opportunities
 
 The guest relay and stdio adapter share a newline-delimited frame format, so one driver can validate the operation and timing boundary for all three walls.
 
-Keep one current snapshot generation per space and VM role. Reuse one broker flow-control mechanism for large files. Combine agent reseeding and the cohort check into a readiness exchange.
+Keep one current snapshot generation per space and VM role. Reuse one broker flow-control mechanism for large files. Combine agent reseeding and the cohort check into a readiness exchange. Use one build admission queue per host with separate plugin CPU headroom.
