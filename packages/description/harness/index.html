@@ -1,0 +1,10 @@
+<!doctype html>
+<html lang="en" data-scheme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Description renderer harness</title><link rel="icon" href="data:," />
+    <style>html, body, #app { height: 100%; margin: 0; } html, body { background: transparent !important; } body { font-family: system-ui, sans-serif !important; } .wall { position: fixed; inset: -20px; z-index: -1; background: #3b3548 url(./wallpapers/EX_STserBZM.jpg) center / cover no-repeat; filter: blur(14px) saturate(.55); } .wall::after { content: ""; position: absolute; inset: 0; background: rgb(24 22 30 / .62); } :root[data-scheme=light] .wall::after { background: rgb(247 246 250 / .66); } </style>
+  </head>
+  <body><div class="wall"></div><div id="app"></div><script type="module" src="./main.ts"></script></body>
+</html>

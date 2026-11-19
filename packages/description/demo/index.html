@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Calternal description renderer: demo</title>
+<style>body{font:16px/1.5 system-ui,sans-serif;max-width:46rem;margin:2rem auto;padding:0 1rem;color:#222}a{color:#0b57d0}li{margin:.9rem 0}code{background:#eee;padding:0 .25em}small{color:#666}</style></head>
+<body>
+<h1>Description renderer demo</h1>
+<p>One Svelte renderer draws plugin <em>descriptions</em> (data, not code) against the disposable step 0 host. Everything here is development data: edits are lost when the host restarts.</p>
+<ul>
+<li><a href="/app/?host=/api&viewName=reading"><strong>Reading list</strong></a><br>Add a link (the form), see it appear, search from the footer. <small>Real: the plugin operation through resolve and dispatch, the new row, the search flow. Stand-in: nothing is stored beyond the fixture's memory.</small></li>
+<li><a href="/app/?host=/api&viewName=notes&synthetic=1"><strong>Notes</strong> (5,000 notes, three changes a second)</a><br>Second line (age, snippet), the miniature in place of a thumbnail, row actions and menu, collections, Trash selector. <small>Real: windows, counts, live churn. Stand-in: the editor is an empty box (the page's own editor draws it in the product), thumbnails are the host's snippet miniature, and only the actions this fixture host implements work; others answer with the host's own message.</small></li>
+<li><a href="/app/?host=/api&viewName=threads&synthetic=1"><strong>Threads</strong> (5,000 threads, three changes a second)</a><br>Inbox and All Threads, nested children, your sections, provider icons. <small>Real: windows with parent refs, sections. Stand-in: the conversation, composer options, Send and the approval card come from a synthetic source (the host has no routes for them yet); nothing is stored.</small></li>
+</ul>
+<p><small>How to read the pages: arrows move the selection; Page Up/Down, Home and End only scroll. A long list asks the host for windows as you scroll, at most four requests a second.</small></p>
+</body></html>

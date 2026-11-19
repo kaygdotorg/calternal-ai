@@ -1,0 +1,51 @@
+{
+  "name": "@calternal/description",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The web renderer of the plugin API v2 description contract (docs/description-contract.md): typed model generated from the sealed schemas, the wire client, windowed lists and the Svelte components that draw a description. No app-specific code.",
+  "license": "AGPL-3.0-only",
+  "exports": {
+    ".": {
+      "svelte": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./model": "./src/generated/model.ts"
+  },
+  "svelte": "./src/index.ts",
+  "scripts": {
+    "types": "node scripts/generate-types.mjs",
+    "check": "node scripts/generate-types.mjs --check && node scripts/check-docs.mjs && svelte-check --tsconfig ./tsconfig.json",
+    "test": "vitest run",
+    "harness:build": "npm run tokens -w @calternal/ui && mkdir -p harness/public/wallpapers && cp -f ../../apps/web/public/wallpapers/EX_STserBZM.jpg harness/public/wallpapers/ 2>/dev/null; vite build -c vite.harness.config.ts",
+    "harness": "vite preview -c vite.harness.config.ts",
+    "e2e:perf": "node e2e/perf.mjs",
+    "e2e:keys": "node e2e/keys.mjs",
+    "e2e:fixtures": "node e2e/fixtures.mjs",
+    "e2e": "node scripts/run-e2e.mjs",
+    "demo": "node demo/server.mjs",
+    "e2e:actions": "node e2e/actions.mjs",
+    "e2e:components": "node e2e/components.mjs",
+    "e2e:bulk": "node e2e/bulk.mjs",
+    "check:docs": "node scripts/check-docs.mjs"
+  },
+  "peerDependencies": {
+    "svelte": "^5.57.1"
+  },
+  "dependencies": {
+    "@calternal/ui": "*"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "7.3.1",
+    "@testing-library/svelte": "^5.4.2",
+    "ajv": "^8.17.1",
+    "ajv-formats": "^3.0.1",
+    "jsdom": "^31.0.1",
+    "playwright": "1.63.0",
+    "svelte": "5.57.1",
+    "svelte-check": "^4.3.0",
+    "typescript": "^5.9.3",
+    "vite": "8.3.1",
+    "vitest": "^5.0.4"
+  }
+}
