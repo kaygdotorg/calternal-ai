@@ -76,8 +76,8 @@ export class ServerClient {
     let res: Response;
     try { res = await (plain ? this.plain : this.f)(`${this.base}${path}`, { ...init, headers: this.headers(init.headers as Record<string, string>) }); }
     catch { throw new ServerError("unavailable", "Can't reach the server."); }
-    // A proxy's 502, 503 or 504 is the server being away, whatever its body says (an HTML page, not our envelope): the same as a dropped connection.
-    if (TEMPORARY.has(res.status)) throw new ServerError("unavailable", "Can't reach the server.", res.status);
+    // A proxy's 502, 503 or 504 is the server being away (an HTML page, not our envelope): the same as a dropped connection. The server's own JSON answer with one of these codes (a refusal such as "no machine to run on") is an answer, not an outage.
+    if (TEMPORARY.has(res.status) && !/json/i.test(res.headers.get("content-type") ?? "")) throw new ServerError("unavailable", "Can't reach the server.", res.status);
     return res;
   }
   /** An event stream (SSE): the body to read, or `ServerError` when the server refuses it. */

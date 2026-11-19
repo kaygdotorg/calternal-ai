@@ -36,6 +36,12 @@ describe("the server away: a proxy's 502, 503 and 504, and a dropped connection"
     expect(states[1]).toBe("reconnecting"); // the shell shows it while the server is away
     expect(link.state).toBe("ok"); // and settles once it answers
   });
+  test("the server's own JSON answer with a 503 is an answer, not an outage (no retry, no reconnecting)", async () => {
+    const { c, ids, states } = away(() => new Response(JSON.stringify({ ok: false, error: { code: "conflict", message: "no machine to run on" } }), { status: 503, headers: { "content-type": "application/json" } }), 5);
+    await expect(c.operate("automations.run_now", { id: "a" })).rejects.toMatchObject({ code: "conflict", status: 503 });
+    expect(ids).toHaveLength(1);
+    expect(states).not.toContain("reconnecting");
+  });
   test("a dropped connection is the same", async () => {
     const { c, ids } = away(() => { throw new TypeError("Failed to fetch"); }, 2);
     expect(await c.operate("notes.update", { id: "n" })).toEqual({ note: "saved" });
