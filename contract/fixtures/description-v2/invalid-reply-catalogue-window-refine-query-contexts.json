@@ -19,5 +19,6 @@
       }
     }
   ],
-  "activation_contexts": []
+  "activation_contexts": [],
+  "settle_generation": 1
 }

@@ -1,0 +1,8 @@
+{
+  "type": "component",
+  "component": "approval",
+  "route": "transcript.body",
+  "request": {
+    "body": "pinned-body"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "definition": "TranscriptUpdate",
+  "value": {
+    "conversation": "thread-1",
+    "committed_cursor": "first-record",
+    "upserts": [
+      {
+        "record_id": "record-1",
+        "role": "person",
+        "text": "First message"
+      }
+    ]
+  }
+}

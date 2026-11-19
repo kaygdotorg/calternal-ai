@@ -116,8 +116,8 @@ class PackageTests(unittest.TestCase):
         self.event(invoke("trash-selected", rows=["opaque"]))
 
     def test_search_checks_bind_type(self):
-        self.event({"type": "search", "bind": "bogus", "text": "words"}, "active description")
-        self.event({"type": "search", "bind": "notes", "text": "words"}, "not a search bind")
+        self.event({"type": "search", "bind": "bogus", "text": "words", "settle_generation": 1}, "active description")
+        self.event({"type": "search", "bind": "notes", "text": "words", "settle_generation": 1}, "not a search bind")
 
     def test_route_checks_name(self):
         self.event({"type": "route", "id": "item", "row": "opaque"})

@@ -101,20 +101,33 @@
       "effect": "reversible",
       "idempotency": "request_id",
       "authority": "Live content creation authority in the current space and the owning installed kind’s host_create declaration. For optional collection placement check live authority to edit membership in that collection in the same space under the commit fence.",
-      "surfaces": ["authorized_template_action", "host_item_control"],
+      "surfaces": [
+        "authorized_template_action",
+        "host_item_control"
+      ],
       "generic_invoke": true,
       "full_swipe": false,
       "worker_wake": "never",
       "input_schema": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["kind"],
+        "required": [
+          "kind"
+        ],
         "properties": {
-          "kind": { "$ref": "#/$defs/KindId", "description": "The host resolves this from the template’s declared literal kind and checks its owning manifest." },
-          "collection": { "$ref": "#/$defs/CollectionRef", "description": "Optional. Take only a server-resolved route operand or a template literal. Omit when the named route parameter is absent. Apply the opaque collection refusal to any supplied ref that is absent, foreign, unreadable or not editable." }
+          "kind": {
+            "$ref": "#/$defs/KindId",
+            "description": "The host resolves this from the template’s declared literal kind and checks its owning manifest."
+          },
+          "collection": {
+            "$ref": "#/$defs/CollectionRef",
+            "description": "Optional. Take only a server-resolved route operand or a template literal. Omit when the named route parameter is absent. Apply the opaque collection refusal to any supplied ref that is absent, foreign, unreadable or not editable."
+          }
         }
       },
-      "outcome_schema": { "$ref": "#/$defs/ActionOutcome" },
+      "outcome_schema": {
+        "$ref": "#/$defs/ActionOutcome"
+      },
       "atomic_undo": true,
       "confirmation_when": "No challenge, including for a shared collection. The checked operation creates a new empty item and exposes no existing material.",
       "refusals": {
@@ -433,7 +446,7 @@
       "engine": "execution_stop",
       "effect": "irreversible",
       "idempotency": "request_id",
-      "authority": "The starter or live PluginsManage with item authority. Recheck under the attempt fence.",
+      "authority": "The exact pending intent or admitted attempt is reconstructed by the host. The starter or live PluginsManage must also hold the relevant item right. Recheck both under the lifecycle fence.",
       "surfaces": [
         "host_composer",
         "host_execution_control"
@@ -442,19 +455,11 @@
       "full_swipe": false,
       "worker_wake": "never",
       "target_inputs": [
-        "execution"
+        "execution",
+        "intent"
       ],
       "input_schema": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "execution"
-        ],
-        "properties": {
-          "execution": {
-            "$ref": "#/$defs/ExecutionRef"
-          }
-        }
+        "$ref": "#/$defs/ExecutionStopTarget"
       },
       "outcome_schema": {
         "$ref": "#/$defs/ActionOutcome"
@@ -675,7 +680,8 @@
       "confirmation_when": "Before the writer gate passes, require a challenge. After it passes, an eligible idle archive resolves and dispatches in one exchange without a sheet. Challenge archive outside atomic_undo_when. Retiring grants with head-only Undo requires a challenge. For an active execution the host-written material says: The running execution will be stopped. A pending intent or active execution requires confirmation bound to that exact target and the current starter or live PluginsManage authority.",
       "atomic_undo_when": "Idle archive requires no active execution, unresolved send intent or pending approval to retire. Saved authority requires a challenge unless it consists only of item grants that the Step 2 writer retires in the same FULL item content transaction as archive and that Undo restores together with the item head. Retiring grants with head-only Undo requires a challenge. Check idle eligibility under the commit fence. Execution admission rejects a fresh admission to an archived head under the same fence. Commit the archived head and its unarchive Undo in one FULL item content transaction, with no separate cleanup.",
       "full_swipe_when": "After the Step 2 idle-archive atomic writer with Undo passes, enable atomic_undo and full_swipe for the first swipe action with effective confirm:none and the idle condition.",
-      "kind_capability": "conversation"
+      "kind_capability": "conversation",
+      "execution_fence": "When confirmation pins an unresolved intent, durably refuse it in the same FULL archive/Undo commit. Undo never clears that refusal. Recheck the live execution-control authority and pinned target under the lifecycle fence."
     },
     "host.item.unarchive": {
       "engine": "item lifecycle unarchive",
@@ -1134,7 +1140,8 @@
       "max_utf8_bytes_per_element": 256,
       "max_total_index_keys": 1152,
       "refusal": "index_work_limit",
-      "rules": "Count all changed covering, membership and count keys across fields, items and scopes. Apply at the save, share, membership and Undo fence. Mandatory revoke fences first and defers excess cleanup. Counts include each authorized item once. TextSet is not sortable."
+      "rules": "Count all changed covering, membership and count keys across fields, items and scopes. Apply at the save, share, membership and Undo fence. Mandatory revoke fences first and defers excess cleanup. Counts include each authorized item once. TextSet is not sortable.",
+      "contains": "One nonempty Text element of at most 256 UTF-8 bytes. A text literal or a checked route resolved as Text is eligible. AccountRef and parent refs are ineligible."
     },
     "body_excerpt": {
       "max_utf8_bytes": 160,
@@ -1143,7 +1150,7 @@
     "row_images": {
       "read": "GET /api/v2/row-images/{ref}",
       "provenance": "The host marks an image body-derived from trusted provenance, including a device snapshot of the body or a job output produced from it. A manifest flag alone cannot determine provenance. Without established provenance, withhold the image.",
-      "retention": "Keep the last authorized asset marked stale across a head advance until replacement. Recheck current item, field, body and retained source revision at delivery. Purge, redaction and revoke fence delivery before cleanup.",
+      "retention": "Keep the last authorized asset marked stale across a head advance until replacement. Recheck current item, field, body and retained source revision at delivery. Purge, redaction and revoke fence delivery before cleanup. A stale mark means a retained older authorized image, which is still readable. It is not an expired reference.",
       "ref_schema": {
         "$ref": "#/$defs/RowImageRef"
       },
@@ -1153,13 +1160,25 @@
       ],
       "max_bytes": 65536,
       "max_pixel_edge": 128,
-      "authorization": "Only the host may mint a ref in an authorized ready window. Bind it to the account, space, live view lease, row, retained source revision, field and exact asset. Use the view host origin, live session and lease to fetch it. Resolve through the host origin with authentication and recheck the binding and live item and image-field authority before sending bytes. For a body-derived image also recheck live body authority at fetch, even when the item and image-field grants remain valid. Return the same opaque 404 for absent, expired, stale, oversized or unauthorized images. No redirects, worker wake or outbound fetch.",
+      "authorization": "Only the host may mint a ref in an authorized ready window. Bind it to the account, space, live view lease, row, retained source revision, field and exact asset. Use the view host origin, live session and lease to fetch it. Resolve through the host origin with authentication and recheck the binding and live item and image-field authority before sending bytes. For a body-derived image also recheck live body authority at fetch, even when the item and image-field grants remain valid. Return the same opaque 404 for absent, expired, unretained, oversized or unauthorized images. No redirects, worker wake or outbound fetch.",
       "cache": "Use Cache-Control: no-store on the HTTP reply. Keep decoded images only in renderer memory keyed by ref for a currently authorized row. Drop them on row or ref replacement, revocation, lease loss or account switch. Omit refs and images from persisted member rows and refine_query replies.",
       "draw": "Request the image asynchronously. While a navigation key repeats, defer new image reads and cancel reads in flight. Once the key settles, fetch only still-visible rows' current refs. While loading or unavailable, use the declared RowImageIcon fallback if present; otherwise leave the image slot blank.",
-      "publish": "The editing device captures an exact committed revision. A session-bound grant permits a single bounded validated still-image upload. First valid digest wins the slot and exact replay returns its receipt. Keep private bytes and reservation until bounded cleanup.",
+      "publish": "Check upload identity, exact source-state digest, revision and item/edit authority before admitting bytes and again before pointer commit. Strip image metadata and stamp the authenticated uploader as host provenance. Serve only the normalized delivery variant under the smaller read caps. First valid upload wins the slot and exact replay returns its receipt. Reserve bounded staging up front, make bytes durable before the pointer, and sweep expired grants, reservations and orphan bytes by the cleanup deadline, including on restart before admission.",
       "prepare": "row_images.prepare",
       "upload": "PUT /api/v2/row-images/uploads/{grant}",
-      "upload_result_schema": { "$ref": "#/$defs/RowImagePublishResult" }
+      "upload_result_schema": {
+        "$ref": "#/$defs/RowImagePublishResult"
+      },
+      "upload_limits": {
+        "max_encoded_bytes": 524288,
+        "max_decoded_width": 256,
+        "max_decoded_height": 384,
+        "max_concurrent_decodes_per_space": 2,
+        "max_pending_grants_per_space": 64,
+        "max_staging_bytes_per_space": 8388608,
+        "grant_and_staging_seconds": 300,
+        "orphan_cleanup_additional_seconds": 30
+      }
     },
     "cross_bind_operands": "Forbidden in the first query slice. Action and component references to upstream fields still require one authorized projected row and a checked dependency edge.",
     "scope_limit_refusal": {
@@ -1214,7 +1233,26 @@
       "field_filter": "Optional on the Bind. Default all. Claimed-text kinds allow all, title or body. Conversation kinds allow all, title or messages. The request match shape is independent of the field filter and defaults to literal AND terms. A prefix is explicitly requested as one token prefix.",
       "match_schema": {
         "$ref": "#/$defs/SearchMatchShape"
-      }
+      },
+      "settle_generation": "Required on search requests and all window deliveries (including refusals), absent on other Binds. Compare the lease, Bind and current renderer generation before applying any acknowledgement or window."
+    },
+    "extractors": {
+      "output_types": {
+        "frontmatter": [
+          "Text",
+          "TextSet",
+          "Boolean",
+          "Number",
+          "Timestamp"
+        ],
+        "first_blocks": [
+          "Text"
+        ],
+        "inline_tags": [
+          "TextSet"
+        ]
+      },
+      "provenance": "Every selector reads the same checked claimed-text item and produces a body-derived field. Expose the value and any filtered count only under the intersection of source and field audiences. No selector can mint an opaque host ref."
     }
   },
   "$defs": {
@@ -1453,7 +1491,7 @@
         "final_text": {
           "type": "string",
           "maxLength": 65536,
-          "description": "Message content for a prepared composer.send only. The host returns ActionOutcome after committing the message/intent or forwarding checked steer. Retry with the same activation ID and final text. Any parser-derived change to recipients, routing, permissions or other prepared material requires a fresh resolve and preview."
+          "description": "Message content for a host-issued prepared Send only. The host returns ActionOutcome after committing the message/intent or forwarding checked steer. Retry with the same activation ID and final text. Any parser-derived change to recipients, routing, permissions or other prepared material requires a fresh resolve and preview."
         }
       }
     },
@@ -1719,7 +1757,17 @@
         "fields": {
           "type": "object",
           "maxProperties": 32,
-          "additionalProperties": { "$ref": "#/$defs/Scalar" }
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Scalar"
+              },
+              {
+                "$ref": "#/$defs/TextSet"
+              }
+            ]
+          },
+          "description": "Values match the resolved Bind projection and declared field types. Arrays are allowed only for a projected TextSet."
         },
         "parent_refs": {
           "type": "object",
@@ -1739,7 +1787,7 @@
           "items": {
             "$ref": "#/$defs/ActionId"
           },
-          "description": "Field names of stale retained assets actually projected on this row. Recheck current authority. Never persist stale-image state or refs."
+          "description": "Field names of retained older assets actually projected on this row. They remain fetchable under live authority and retention checks. Omit on persistence."
         }
       }
     },
@@ -1844,6 +1892,9 @@
         },
         "anchor": {
           "$ref": "#/$defs/WindowAnchor"
+        },
+        "settle_generation": {
+          "$ref": "#/$defs/SearchSettleGeneration"
         }
       },
       "allOf": [
@@ -2047,7 +2098,8 @@
         "receipt": {
           "$ref": "#/$defs/Ref"
         }
-      }
+      },
+      "description": "Publication reports the checked revision and opaque receipt. The host stores authenticated uploader provenance with the asset."
     },
     "RowImagePrepare": {
       "type": "object",
@@ -2084,7 +2136,7 @@
         "bytes": {
           "type": "integer",
           "minimum": 1,
-          "maximum": 65536
+          "maximum": 524288
         },
         "sha256": {
           "type": "string",
@@ -2301,23 +2353,7 @@
       ],
       "properties": {
         "intent": {
-          "$ref": "#/$defs/Ref"
-        },
-        "request_id": {
-          "$ref": "#/$defs/Ref"
-        }
-      }
-    },
-    "ExecutionEffectTarget": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "execution",
-        "request_id"
-      ],
-      "properties": {
-        "execution": {
-          "$ref": "#/$defs/ExecutionRef"
+          "$ref": "#/$defs/ExecutionIntentRef"
         },
         "request_id": {
           "$ref": "#/$defs/Ref"
@@ -2395,7 +2431,7 @@
           "description": "Canonical transcript record text. Use the host’s restricted Markdown renderer or show it as plain text. Embedded HTML is text."
         },
         "body": {
-          "$ref": "#/$defs/Ref"
+          "$ref": "#/$defs/TranscriptBodyRef"
         }
       }
     },
@@ -2445,12 +2481,31 @@
           }
         },
         "committed_cursor": {
-          "$ref": "#/$defs/TranscriptCursor"
+          "$ref": "#/$defs/CommittedTranscriptCursor"
         },
         "older_cursor": {
           "$ref": "#/$defs/TranscriptCursor"
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "committed_cursor": {
+                "type": "null"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "records": {
+                "maxItems": 0
+              },
+              "older_cursor": false
+            }
+          }
+        }
+      ]
     },
     "SealedFrameOpen": {
       "type": "object",
@@ -2792,7 +2847,7 @@
         },
         "activation_contexts": {
           "$ref": "#/$defs/ActionContexts",
-          "description": "Use composer.send and composer.stop keys for the active checked composer target when eligible. The keys are host-owned and the renderer echoes the issued context in ResolveActivation."
+          "description": "A host-issued action ID is the key. Resolve composer IDs through composer_actions[component_id] and use only that action ID’s exact issued context."
         },
         "audience": {
           "$ref": "#/$defs/WindowAudience"
@@ -2873,7 +2928,27 @@
             }
           }
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "audience": {
+                "enum": [
+                  "guest",
+                  "public"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "viewer": false,
+              "account": false
+            }
+          }
+        }
+      ]
     },
     "LeaseRenewRequest": {
       "type": "object",
@@ -3315,6 +3390,9 @@
         },
         "route": {
           "$ref": "#/$defs/RouteOperands"
+        },
+        "settle_generation": {
+          "$ref": "#/$defs/SearchSettleGeneration"
         }
       },
       "allOf": [
@@ -3553,6 +3631,10 @@
             "end_unavailable"
           ],
           "description": "skip_limit means an otherwise qualified index-only jump would skip too many entries. end_unavailable means the requested end anchor targets a search Bind or the effective count mode is estimate or none. unsupported_plan means no qualified plan for the scope, filters, sort, search or count. materialization_limit means a qualified non-search plan would materialize too many rows. Search row-budget exhaustion returns refine_query. After skip_limit the renderer pages from the nearer permitted end (start for search Binds or when the view lacks exact-count authority), keeping the original jump target as its goal. After end_unavailable it pages forward from the last loaded row. For a nonempty result set, forward paging ends on a short `ready` window, including a zero-row `ready` window at a page boundary. Keep the rows already shown. Only `state: \"empty\"` shows the Bind’s empty message. It means the whole result set is empty and is valid only when the requested `from` is zero. On `refine_query`, stop any pending End or forward-paging navigation, keep the rows already shown, and show the refine message. Do not retry the same window. Every other reason shows the Bind error state."
+        },
+        "settle_generation": {
+          "$ref": "#/$defs/SearchSettleGeneration",
+          "description": "Echo for a search Bind refusal so the renderer can discard a superseded generation."
         }
       },
       "description": "Typed response to the corresponding window request when no qualified bounded plan is available."
@@ -3675,7 +3757,10 @@
             "anchor": {
               "const": "start"
             }
-          }
+          },
+          "required": [
+            "settle_generation"
+          ]
         }
       },
       "description": "The shared window envelope validated after resolving its Bind as a search. A missing anchor defaults to start. Refuse an end anchor with end_unavailable."
@@ -3694,9 +3779,6 @@
     "ComposerActionIds": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "send"
-      ],
       "properties": {
         "send": {
           "$ref": "#/$defs/ActionId"
@@ -3704,7 +3786,8 @@
         "stop": {
           "$ref": "#/$defs/ActionId"
         }
-      }
+      },
+      "minProperties": 1
     },
     "TranscriptUpdate": {
       "type": "object",
@@ -3719,7 +3802,7 @@
           "$ref": "#/$defs/ItemRef"
         },
         "committed_cursor": {
-          "$ref": "#/$defs/TranscriptCursor"
+          "$ref": "#/$defs/CommittedTranscriptCursor"
         },
         "notices": {
           "type": "array",
@@ -3774,7 +3857,25 @@
             }
           }
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "committed_cursor": {
+                "type": "null"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "upserts": {
+                "maxItems": 0
+              }
+            }
+          }
+        }
+      ]
     },
     "QuoteRequest": {
       "type": "object",
@@ -3904,9 +4005,31 @@
                     "once",
                     "this_thread"
                   ]
+                },
+                "minItems": 1
+              }
+            },
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "decision": {
+                      "const": "approve"
+                    }
+                  }
+                },
+                "then": {
+                  "required": [
+                    "lifetimes"
+                  ]
+                },
+                "else": {
+                  "properties": {
+                    "lifetimes": false
+                  }
                 }
               }
-            }
+            ]
           },
           "maxItems": 2
         }
@@ -4010,7 +4133,8 @@
       "additionalProperties": false,
       "required": [
         "type",
-        "bind"
+        "bind",
+        "settle_generation"
       ],
       "properties": {
         "type": {
@@ -4018,6 +4142,9 @@
         },
         "bind": {
           "$ref": "#/$defs/ActionId"
+        },
+        "settle_generation": {
+          "$ref": "#/$defs/SearchSettleGeneration"
         }
       }
     },
@@ -4026,7 +4153,8 @@
       "additionalProperties": false,
       "required": [
         "type",
-        "text"
+        "text",
+        "settle_generation"
       ],
       "properties": {
         "type": {
@@ -4041,8 +4169,157 @@
         },
         "match": {
           "$ref": "#/$defs/SearchMatchShape"
+        },
+        "settle_generation": {
+          "$ref": "#/$defs/SearchSettleGeneration"
         }
       }
+    },
+    "ExecutionIntentRef": {
+      "$ref": "#/$defs/Ref",
+      "description": "Opaque exact durable prepared Send intent. Valid only in its owning job context or host-issued execution control."
+    },
+    "ExecutionJobContext": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "intent"
+      ],
+      "properties": {
+        "intent": {
+          "$ref": "#/$defs/ExecutionIntentRef"
+        }
+      }
+    },
+    "ExecutionStopTarget": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "execution": {
+          "$ref": "#/$defs/ExecutionRef"
+        },
+        "intent": {
+          "$ref": "#/$defs/ExecutionIntentRef"
+        }
+      },
+      "oneOf": [
+        {
+          "required": [
+            "execution"
+          ]
+        },
+        {
+          "required": [
+            "intent"
+          ]
+        }
+      ]
+    },
+    "ExecutionStopRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "request_id"
+      ],
+      "properties": {
+        "execution": {
+          "$ref": "#/$defs/ExecutionRef"
+        },
+        "intent": {
+          "$ref": "#/$defs/ExecutionIntentRef"
+        },
+        "request_id": {
+          "$ref": "#/$defs/Ref"
+        }
+      },
+      "oneOf": [
+        {
+          "required": [
+            "execution"
+          ]
+        },
+        {
+          "required": [
+            "intent"
+          ]
+        }
+      ]
+    },
+    "ExecutionStopResult": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/ExecutionStatus"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "intent",
+            "phase"
+          ],
+          "properties": {
+            "intent": {
+              "$ref": "#/$defs/ExecutionIntentRef"
+            },
+            "phase": {
+              "const": "stopped"
+            }
+          }
+        }
+      ]
+    },
+    "TranscriptBodyRef": {
+      "$ref": "#/$defs/Ref",
+      "description": "Opaque continuation token bound to viewer, view lease, conversation, exact record revision and next UTF-8 offset."
+    },
+    "TranscriptBodyRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "body"
+      ],
+      "properties": {
+        "body": {
+          "$ref": "#/$defs/TranscriptBodyRef"
+        }
+      }
+    },
+    "TranscriptBodyPage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "record_id",
+        "text"
+      ],
+      "properties": {
+        "record_id": {
+          "$ref": "#/$defs/Ref"
+        },
+        "text": {
+          "type": "string",
+          "maxLength": 16384
+        },
+        "next": {
+          "$ref": "#/$defs/TranscriptBodyRef"
+        }
+      }
+    },
+    "CommittedTranscriptCursor": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/TranscriptCursor"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Null until the first canonical record exists. Omit after/before when reading or following an empty transcript."
+    },
+    "SearchSettleGeneration": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991,
+      "description": "Renderer sequence per lease and resolved search Bind. A lower generation never supersedes a higher one. Reuse a generation only for exact replay."
     }
   },
   "activation_limits": {
@@ -4058,7 +4335,10 @@
       "output": {
         "$ref": "#/$defs/ExecutionStatus"
       },
-      "scope": "Active job grant, checked cold send intent, pinned contribution and placement. Reserve by receipt before dispatch."
+      "scope": "An admitted replayable composer job receives ExecutionJobContext from the host at claim and resume. Compare its intent, exact owning job receipt, current item state, pinned contribution and placement under the lifecycle fence before reserving by receipt. Caller input cannot mint job context.",
+      "invocation_context_schema": {
+        "$ref": "#/$defs/ExecutionJobContext"
+      }
     },
     "execution_status": {
       "input": {
@@ -4089,12 +4369,12 @@
     },
     "execution_stop": {
       "input": {
-        "$ref": "#/$defs/ExecutionEffectTarget"
+        "$ref": "#/$defs/ExecutionStopRequest"
       },
       "output": {
-        "$ref": "#/$defs/ExecutionStatus"
+        "$ref": "#/$defs/ExecutionStopResult"
       },
-      "scope": "Starter or live PluginsManage, with item authority. Fence before remote Stop."
+      "scope": "Check the starter or live PluginsManage and item right under the lifecycle fence. A pending intent is durably refused before admission. An exact admitted attempt is fenced before remote Stop. Never retarget a stale control to its replacement."
     },
     "execution_wait": {
       "input": {
@@ -4203,7 +4483,7 @@
       "input_schema": {
         "$ref": "#/$defs/RequestCardResolve"
       },
-      "scope": "Host surface and current actor/target authority",
+      "scope": "Check the exact request, live actor, context, selected offered lifetime and current approvability. A one-use approval must gate the exact checked effect at tool dispatch. A repeated answer cannot dispatch again.",
       "output_schema": {
         "$ref": "#/$defs/ActionOutcome"
       }
@@ -4230,7 +4510,7 @@
       "output_schema": {
         "$ref": "#/$defs/ViewOpenResult"
       },
-      "scope": "Authenticated view session, including data-free render and its sources",
+      "scope": "Authenticated view session, including data-free render and its sources Composer Send and Stop resolve through composer_actions[component_id] and activation_contexts[action_id] from this view. Guest and public receive no viewer or account identity.",
       "input_schema": {
         "$ref": "#/$defs/ViewOpenRequest"
       }
@@ -4279,7 +4559,7 @@
       "output_schema": {
         "$ref": "#/$defs/RequestCardRecord"
       },
-      "scope": "Current member lease, declared component, exact reconstructed request and designated actor. Recheck authority before rendering and resolution. Reply with opaque not-found on any mismatch."
+      "scope": "Current member lease, declared component, exact reconstructed request and designated actor. Recheck authority before rendering and resolution. Reply with opaque not-found on any mismatch. Every native provider request must permit approval and the gateway must be able to enforce its exact effect inside the attempt sandbox before offering Approve. Otherwise offer dismissal only."
     },
     "editor.open": {
       "input_schema": {
@@ -4288,7 +4568,7 @@
       "output_schema": {
         "$ref": "#/$defs/EditorHead"
       },
-      "scope": "Current view lease and exact checked item bound to the declared editor component. Returns only the authorized committed head pinned for the range route."
+      "scope": "Current view lease and exact checked item bound to the declared editor component. Returns only the authorized committed head pinned for the range route. A conversation body additionally requires corpus authority. Conversation editing uses the canonical conversation engine only."
     },
     "search.settled": {
       "input_schema": {
@@ -4297,7 +4577,17 @@
       "output_schema": {
         "$ref": "#/$defs/SettledSearchResult"
       },
-      "scope": "Settle text and optional match for one authorized search Bind. Use only the Bind’s field filter. Clear its previous results before issuing a new offset-zero window."
+      "scope": "Bind each acknowledgement and subsequent window or plan refusal to the current view lease, resolved search Bind and settle_generation. Supersede older generations atomically and reject changed text or match on replay. Use only the Bind’s field filter. A new generation starts at offset zero."
+    },
+    "transcript.body": {
+      "input_schema": {
+        "$ref": "#/$defs/TranscriptBodyRequest"
+      },
+      "output_schema": {
+        "$ref": "#/$defs/TranscriptBodyPage"
+      },
+      "max_utf8_bytes": 16384,
+      "scope": "Return the next whole UTF-8 segment of that pinned record only. Check live viewer, lease, corpus, exact record and offset at read and egress. Absent, expired, purged or unauthorized refs return opaque 404 without bytes or a continuation. A final page omits next."
     }
   },
   "conversation_capability": {
@@ -4349,7 +4639,8 @@
       "member_title",
       "member_body",
       "shared_titles"
-    ]
+    ],
+    "body_authority": "Only the canonical transcript engine writes the body. Refuse generic save and editor-room, staged and range mutations. Require message-corpus authority on raw body delivery including editor, range and history material for any pinned revision. Title-only grants confer no corpus access."
   },
   "generic_item_fields": {
     "id": {
@@ -4401,5 +4692,10 @@
     "record_schema": {
       "$ref": "#/$defs/MemberRowCacheRecord"
     }
+  },
+  "execution_attempt_authority": {
+    "principal": "A distinct host-minted principal per exact attempt. Its separately fenced lease never confers an ordinary invocation ticket or the member principal. Interim refs-only policy applies in every space.",
+    "broker": "Only purpose-specific operations on admitted host-issued refs within effect ceilings. Reject list, search, count, enumeration and bulk reads. Refuse job enqueue, ticket minting and delegation that could acquire discovery rights.",
+    "renewal_and_egress": "Recheck the exact attempt and runtime fence, live session or scheduled principal, grants, package generation and placement at renewal, effects and output egress. Revoke fences immediately and stops renewal."
   }
 }

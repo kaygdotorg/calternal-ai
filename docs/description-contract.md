@@ -1,6 +1,6 @@
 # Description contract (v2)
 
-Status: **revision 14 draft (based on 13.18)**, paired with the [Plugin API v2 specification](plugin-api-v2.md). The [description schema](../contract/description-v2.schema.json) defines the shared renderer shapes.
+Status: **revision 14.1 draft (based on 13.18)**, paired with the [Plugin API v2 specification](plugin-api-v2.md). The [description schema](../contract/description-v2.schema.json) defines the shared renderer shapes.
 
 The schema is checked with `python3 contract/verify-description.py` against the fixtures in `contract/fixtures/description-v2/` (valid ones must pass,
 `invalid-*` ones must report the reason in their directory’s `expected-errors.json`). The fixtures are the paper exercises of section 9. The verifier uses `replies/origins.json` to resolve each standalone window reply to its description fixture and Bind, then checks every projected value against the kind’s declared field type.
@@ -63,7 +63,10 @@ fields, so the Notes Trash and the Threads Inbox are ordinary binds.
 `eq ne in lt lte gt gte exists prefix`; `in` takes a homogeneous literal list of at most 32. Values are `FilterValue`s: a literal, `{viewer: person}` (so "waiting on me" is
 `waiting_on eq viewer.person`; `waiting_on` and `pending_for` accept only `self` as an operand), `{route: ...}` or `{selection: ...}`. **Never a field of another bind, a row, a
 form or a prompt**: a hidden field of one bind must not steer another bind's query (the cross-bind operand leak). A search takes a `TextSource` (a literal, a form
-field or a composer draft). `{bind, field}` stays legal only in an invoke's inputs and a component's config, where the host reconstructs it. `sort` is at most two
+field or a composer draft). `{bind, field}` stays legal only in an invoke's inputs and a component's config, where the host reconstructs it. A `contains` predicate takes one nonempty Text element from a literal
+or a checked route resolved as Text. The viewer and parent operands are
+references. A Bind can return a bounded `TextSet` array only for a
+declared and projected field of that type. `sort` is at most two
 indexed fields. The host-issued row reference is the implicit last key, so order is total and stable across windows.
 
 ### 2.3 Windows
@@ -340,7 +343,7 @@ plugin code). A description can run a named **invoke** on a component's event on
   authorises the viewer for the ref (a guest's grant included) before anything is read. The description holds no viewer data.
 * **Drafts and options.** The composer's text stays on the device. It reuses the existing host routes for attachment upload and mention lookup. Attachments are held as host-owned `AttachmentRef`s, mentions are account references, a quoted passage is a host-issued quote reference (the catalogue's `Draft`), and the chosen provider, model, reasoning level, permission and machine are opaque option references the host returned (`Interaction.options`). The description names none of them: it says which controls appear. The host checks everything (lengths, counts, that every attachment is the viewer's own, that every option is one it offered for this thread) and composes the send; it never trusts the client. The one-exchange Send treats the final text **solely as message content**: anything the host parses out of it that changes recipients, routing, permissions or other prepared material (a mention, a slash command) needs a fresh preview before it takes effect (3.2). The draft clears only after `ok`; `error` keeps it.
 * **Transcript reads** use `transcript.page` with a checked conversation ItemRef. With neither cursor, read the newest page. Use `older_cursor` as `before` when scrolling up, and the committed cursor as `after` when catching up. Supply one cursor at most. Pages are returned oldest to newest, default 60, maximum 128 records and 128 KiB. On reconnect refresh the boundary record and the bounded notice prefix in that reply. Follow through the existing view subscription, replacing records by stable UUID and applying the returned committed cursor. Cancel on selection or authority change. The renderer never invents a cursor.
-* **Prepared composer Send** uses the host-issued `composer.send` activation context for the active composer. Resolve that action with checked draft/option material, then confirm with `final_text`. The reply is the committed `ActionOutcome`, with a status ref while Starting. Retry the exact activation and text. The host supplies `composer.stop` only with current execution-control authority.
+* **Prepared composer Send** uses the action ID and context issued for the active composer in `view.open` as described below. The manifest’s reserved Send operation cannot appear in an authored Invoke. Resolve that action with checked draft/option material, then confirm with `final_text`. The reply is the committed `ActionOutcome`, with a status ref while Starting. Retry the exact activation and text. The host supplies a Stop action ID only with current execution-control authority.
 * **Composer choices** send the current checked option refs in `composer.options`. Resolve provider first, then model, then reasoning. Machine and permission choices are checked against the admitted provider/placement and viewer. A change upstream invalidates downstream refs. `selected` and `default` are nullable option refs, and the renderer sends selected refs under the same keys in `interaction.options`.
 * **Streaming** is the host's: the transcript's rows grow and change without a description revision; the host caps the update rate, commits a final message at the
   end, and drops an in-flight load when the viewer moves to another thread (the old transcript load is cancelled, not finished).
@@ -365,9 +368,12 @@ It never carries the raw route values again. After an `ok` outcome,
 `created` leaves the route unchanged.
 
 **Composer.** In `view.open`, `composer_actions[component_id]` names the
-host-issued `send` and optional `stop` action IDs. Their tokens come from
+eligible host-issued `send` and `stop` action IDs. Their tokens come from
 `activation_contexts`, refreshed by renewal. The component ID is the lookup
-key. Omit an action when authority or a current target is missing. Resolve
+key. A composer action ID is not author-defined. Send the exact context
+under that action ID, scoped to the opening view and current lease. Use
+an issued ID only for its own composer and purpose. Omit an action
+when authority or a current target is missing. Resolve
 Send with the checked draft refs and opaque options when prepared material
 changes. The host returns a prepared resolution and challenge bound to that
 material. Submit `invoke_confirm` with `final_text` and the prepared IDs.
@@ -375,7 +381,7 @@ The host commits and returns the `ActionOutcome` directly, without a
 separate dispatch. Retry precisely the same activation and final text until
 the receipt is known. Change either material or text after a committed
 intent only with a new activation. Stop uses the host's action context and
-the execution it resolves.
+the exact pending intent or admitted attempt it resolves.
 
 Ask for `provider` first, then `model` for that provider, then `reasoning`
 for both. `permission` and `machine` are independently requested, with all
@@ -390,12 +396,19 @@ An authorised renderer calls `request-card.read` for the bound request and
 component within the current view lease. Draw the host record and only its
 offered decisions and approval lifetimes. Use the same record's
 `card_context` with `RequestCardResolve`; Approve and Deny are host decisions
-with no author-defined action ID. Keep a closed card read-only. Limit each
+with no author-defined action ID. Every Approve choice offers a nonempty
+list of allowed lifetimes. Send one of those lifetimes. Deny has no
+lifetime. A dismissal-only card offers Deny alone. Keep a closed card
+read-only. Limit each
 delivery to 16 KiB including material. A refusal discloses no card contents.
 
 **Transcript.** The canonical record has a stable `record_id`, a `role`
 (person, agent, automation), bounded text and an optional authorised pinned
-body. Notice and request-card records use their own typed shapes. A provider
+body continuation. Send that ref to `transcript.body` for the next piece of
+the same record. Append `text` to that record and follow `next` only while
+the record and view lease still match. Cancel on revocation or route change.
+An empty transcript has a null `committed_cursor`. Page and follow without
+a cursor until the first record supplies one. Notice and request-card records use their own typed shapes. A provider
 delta or tool frame is a producer input. The host scrubs and folds it into
 the common record. `TranscriptUpdate` on the same subscription upserts
 committed records and replaces the one optional provisional text preview.
@@ -415,7 +428,10 @@ byte length. The shell reads pinned byte pages and saves with the existing
 range and staged-save engine contracts in the Plugin API. The portable first
 path is a revision-checked whole-document save. A conflict returns the
 current head and keeps the local draft. Live rooms remain a separate
-negotiated transport with edit authorization. `sealed_frame.open` returns a
+negotiated transport with edit authorization for eligible kinds.
+Conversation body reads require message-corpus authority. Conversation
+body edits use the host composer and transcript engine.
+`sealed_frame.open` returns a
 short-lived same-host content URL, enforced CSP and byte ceiling. Load in an
 isolated, non-persistent sandbox with network denied except for the pinned
 content delivery. Recheck the audience and lease before serving the bytes.
@@ -431,11 +447,16 @@ uses the current member role and hides the control if none is available. The
 account menu is the host shell's existing space, settings and sign-out
 surface. Guest and public views receive none of these identity fields.
 
-**Search and counts.** The shell posts settled text and optional `match` to
-`search.settled`. Acknowledgement names the Bind. Clear previous result
-versions and open a new start-anchored window at offset zero. The declared
-`field_filter` stays in the Bind. If a newer settle superseded this one,
-ignore its acknowledgement and results. Exact counts draw as numbers.
+**Search and counts.** The shell increments `settle_generation` for each
+new settled input within the current lease and resolved Bind. It posts the
+generation, text and optional `match` to `search.settled`. The host echoes
+the generation with the Bind, fences older settles and accepts exact
+replay of the current one. Require a matching current acknowledgement, then
+clear previous results and request a start-anchored window at offset zero.
+Carry the same generation on every search window request. Match lease,
+Bind and generation before applying a reply, push or plan refusal, even
+if it carries a previously unseen result version. Omit this field on
+non-search windows. The declared `field_filter` stays in the Bind. Exact counts draw as numbers.
 Estimates draw as “about N”. Omit an unavailable count or badge. Exact empty
 has zero. Explicit selection sets remain limited to 50 stable issued rows.
 The generic renderer omits Select All when more than 50 eligible rows are

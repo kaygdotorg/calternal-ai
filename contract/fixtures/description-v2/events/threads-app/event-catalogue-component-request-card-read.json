@@ -1,0 +1,9 @@
+{
+  "type": "component",
+  "component": "approval",
+  "route": "request-card.read",
+  "request": {
+    "component": "approval",
+    "request_ref": "request-1"
+  }
+}

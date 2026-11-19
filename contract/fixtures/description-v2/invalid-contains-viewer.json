@@ -1,0 +1,39 @@
+{
+  "version": 2,
+  "kind": "app",
+  "revision": 1,
+  "binds": [
+    {
+      "id": "notes",
+      "source": {
+        "type": "list",
+        "kind": "notes"
+      },
+      "fields": [
+        "title",
+        "tags"
+      ],
+      "filter": {
+        "all": [
+          {
+            "field": "tags",
+            "op": "contains",
+            "value": {
+              "viewer": "person"
+            }
+          }
+        ]
+      },
+      "row": {
+        "title": {
+          "field": "title"
+        }
+      }
+    }
+  ],
+  "chrome": {
+    "header": {
+      "title": "Tagged notes"
+    }
+  }
+}

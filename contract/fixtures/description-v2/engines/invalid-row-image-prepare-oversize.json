@@ -1,0 +1,13 @@
+{
+  "definition": "RowImagePrepare",
+  "value": {
+    "item": "note-1",
+    "revision": "rev-1",
+    "field": "thumbnail",
+    "source_state_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+    "sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+    "content_type": "image/png",
+    "bytes": 524289
+  },
+  "error": "$.bytes: above 524288"
+}

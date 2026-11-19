@@ -4,6 +4,7 @@
     "bind": "thread-search",
     "from": 1,
     "to": 2,
-    "anchor": "start"
+    "anchor": "start",
+    "settle_generation": 1
   }
 }

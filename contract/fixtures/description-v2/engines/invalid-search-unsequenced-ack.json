@@ -1,0 +1,8 @@
+{
+  "definition": "SettledSearchResult",
+  "value": {
+    "type": "search_settled",
+    "bind": "thread-search"
+  },
+  "error": "missing settle_generation"
+}

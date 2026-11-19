@@ -102,7 +102,13 @@ passes structural validation before its IDs are indexed or its semantic checks
 run. Component events also pass the catalogue's route-specific request schema
 before the originating template is indexed. The host
 checks live authority over opaque references such as rows, leases, activations
-and proofs. Directory mode finds replies in
+and proofs. To verify a captured host-issued composer Invoke, submit
+`{"view_open": <ViewOpenResult>, "event": <ResolveActivation>}` as the
+event artifact. The verifier matches the composer and exact context against
+the originating description and view-open reply. The wrapper is a verifier
+input, not a host request.
+
+Directory mode finds replies in
 `replies/`. Use `--reply FILE` to select replies and `--origins FILE` to override
 `replies/origins.json`. The origins map names a verified description and Bind
 for each reply. Events and app templates alone need no origins map. Use

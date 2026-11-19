@@ -1,6 +1,6 @@
 """Template-aware checks for event identifiers and catalogue request shapes."""
 
-from description_verification import check
+from description_verification import check, validate_search_generation
 
 COMPONENT_TYPES = {"item-editor", "conversation-transcript", "composer", "request-card", "sealed-html-frame"}
 TYPED_ROUTES = {
@@ -9,6 +9,7 @@ TYPED_ROUTES = {
     "request_resolve": "request-card",
     "request-card.read": "request-card",
     "transcript.quote": "conversation-transcript",
+    "transcript.body": "conversation-transcript",
     "editor.open": "item-editor",
     "transcript.follow": "conversation-transcript",
     "sealed_frame.open": "sealed-html-frame",
@@ -105,6 +106,35 @@ class EventBindings:
         return bind
 
 
+def check_composer_invoke(event, bindings, view_open, errors):
+    """Resolve a host-owned action from its recorded opening reply."""
+    issued = {}
+    for component, actions in errors.each(view_open.get("composer_actions", {}).items()):
+        if bindings.components.get(component, {}).get("type") != "composer":
+            errors.append(f"$.view_open.composer_actions: {component!r} is not a composer in the active description")
+        for purpose, action_id in errors.each(actions.items()):
+            if action_id in issued or action_id in bindings.actions or action_id in bindings.shell_actions:
+                errors.append(f"$.view_open.composer_actions: duplicate action ID {action_id!r}")
+            if action_id not in view_open["activation_contexts"]:
+                errors.append(f"$.view_open.activation_contexts: missing issued context for {action_id!r}")
+            issued[action_id] = purpose
+    action_id = event["action_id"]
+    if action_id not in issued:
+        errors.append("$.action_id: expected a composer action issued in the originating view")
+        return
+    if view_open["activation_contexts"].get(action_id) != event["activation_context"]:
+        errors.append("$.activation_context: must match the issued composer action context")
+    interaction = event.get("interaction", {})
+    if issued[action_id] == "send":
+        allowed = {"draft", "options"}
+        if "dispatch" in event:
+            errors.append("$.dispatch: prepared Send requires confirmation")
+    else:
+        allowed = set()
+    if interaction.keys() - allowed:
+        errors.append("$.interaction: unexpected values for this host composer action")
+
+
 def check_invoke(event, bindings, errors):
     """Check action-local device values and bulk row scope against the invoke."""
     errors.visit()
@@ -189,6 +219,8 @@ def check_component(event, bindings, errors, catalogue):
             errors.append("$.request.kind: Trash Sheet kind is not declared by a Bind")
     if not allowed:
         errors.append(f"$.component: {ident!r} cannot use route {route!r}")
+    elif "component" in request and request["component"] != ident:
+        errors.append("$.request.component: must match the component envelope")
 
 
 def check_event_binding(event, bindings, errors, catalogue):
@@ -205,6 +237,7 @@ def check_event_binding(event, bindings, errors, catalogue):
         request = event["request"]
         bind = bindings.bind_for(request["bind"], errors)
         if bind is not None:
+            validate_search_generation(request, bind, errors)
             if ("parent" in request) != bool(bind["source"].get("parent")):
                 errors.append("$.request.parent: window parent scope must match source.parent")
             if bind["source"]["type"] == "search":

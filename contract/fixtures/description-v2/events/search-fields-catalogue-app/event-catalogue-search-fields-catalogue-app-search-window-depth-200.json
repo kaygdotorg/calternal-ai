@@ -4,6 +4,7 @@
     "bind": "all",
     "from": 200,
     "to": 400,
-    "anchor": "start"
+    "anchor": "start",
+    "settle_generation": 1
   }
 }

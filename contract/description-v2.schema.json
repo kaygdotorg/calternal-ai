@@ -254,7 +254,9 @@
         "field",
         "op"
       ],
-      "description": "One comparison on an indexed field. `exists` takes no value."
+      "if": { "properties": { "op": { "const": "contains" } } },
+      "then": { "required": ["value"] },
+      "description": "One comparison on an indexed field. `exists` takes no value. `contains` requires a TextSet and one Text operand: a text literal or a route resolved to Text. The viewer operand is an AccountRef."
     },
     "Filter": {
       "type": "object",
@@ -2490,6 +2492,11 @@
         "route": {
           "enum": [
             "transcript.page",
+            "transcript.follow",
+            "transcript.quote",
+            "transcript.body",
+            "request-card.read",
+            "editor.open",
             "sealed_frame.open",
             "sealed_frame.resize",
             "sealed_frame.open_link",

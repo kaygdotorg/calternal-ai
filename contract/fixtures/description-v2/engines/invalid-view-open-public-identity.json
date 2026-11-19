@@ -1,0 +1,18 @@
+{
+  "definition": "ViewOpenResult",
+  "value": {
+    "lease": {
+      "lease_ref": "lease",
+      "lease_seconds": 15,
+      "grant_revision": "current",
+      "cache_partition": "personal"
+    },
+    "audience": "public",
+    "activation_contexts": {},
+    "account": {
+      "name": "Someone",
+      "initial": "S"
+    }
+  },
+  "error": "$.account: not allowed here"
+}

@@ -1,0 +1,10 @@
+{
+  "invalid-event-catalogue-search-missing-generation.json": "required for search windows only",
+  "invalid-event-catalogue-composer-wrong-context.json": "must match the issued composer action context",
+  "invalid-event-catalogue-composer-unissued-id.json": "expected a composer action issued in the originating view",
+  "invalid-event-catalogue-component-transcript-follow.json": "'approval' cannot use route 'transcript.follow'",
+  "invalid-event-catalogue-component-transcript-quote.json": "'approval' cannot use route 'transcript.quote'",
+  "invalid-event-catalogue-component-transcript-body.json": "'approval' cannot use route 'transcript.body'",
+  "invalid-event-catalogue-component-request-card-read.json": "'transcript' cannot use route 'request-card.read'",
+  "invalid-event-catalogue-composer-on-card.json": "is not a composer in the active description"
+}

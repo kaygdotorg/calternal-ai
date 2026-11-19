@@ -107,8 +107,8 @@
   "invalid-reply-catalogue-window-projected-providerid.json": "$.rows[0].fields.field_providerid: expected string",
   "invalid-reply-catalogue-window-projected-requestref.json": "$.rows[0].fields.field_requestref: expected string",
   "invalid-reply-catalogue-window-projected-rowimageref.json": "$.rows[0].fields.field_rowimageref: 'https://example.invalid/thumbnail' does not match",
-  "invalid-reply-catalogue-window-projected-scalar-array.json": "expected ['string', 'number', 'boolean', 'null']",
-  "invalid-reply-catalogue-window-projected-scalar-object.json": "expected ['string', 'number', 'boolean', 'null']",
+  "invalid-reply-catalogue-window-projected-scalar-array.json": "$.rows[0].fields.field_text: expected string",
+  "invalid-reply-catalogue-window-projected-scalar-object.json": "matches none of the anyOf branches",
   "invalid-reply-catalogue-window-projected-text.json": "$.rows[0].fields.field_text: expected string",
   "invalid-reply-catalogue-window-projected-threadref.json": "$.rows[0].fields.field_threadref: expected string",
   "invalid-reply-catalogue-window-projected-timestamp.json": "$.rows[0].fields.field_timestamp: must be an RFC 3339 date-time with seconds 00 to 59",
@@ -137,5 +137,11 @@
   "invalid-view-deep.json": "$.view.root: matches a forbidden shape",
   "invalid-view-literal-rows.json": "$.view.root: unknown field rows",
   "invalid-viewer-space-source.json": "$.binds[0].filter.all[0].value.viewer: must be 'person'",
-  "invalid-window-size.json": "$.binds[0].window.size: above 200"
+  "invalid-window-size.json": "$.binds[0].window.size: above 200",
+  "invalid-contains-no-value.json": "missing value",
+  "invalid-contains-viewer.json": "contains requires a TextSet and one Text operand",
+  "invalid-authored-prepared-send.json": "prepared Send operation is reserved for the host composer",
+  "invalid-reply-catalogue-window-tags-string.json": "$.rows[0].fields.tags: expected array",
+  "invalid-reply-catalogue-search-missing-generation.json": "required for search windows only",
+  "invalid-reply-catalogue-window-stale-non-image.json": "must name a delivered RowImageRef in a ready row"
 }

@@ -1,4 +1,4 @@
-# Plugin API v2 · revision 14 draft
+# Plugin API v2 · revision 14.1 draft
 
 The first contract covers host-drawn apps, generic items, durable jobs and
 generic conversation and execution engines. Freeze after the §8 spikes. Fixture bounds are test settings. See the
@@ -71,7 +71,9 @@ declares `threads`, and independent runners may declare their own kinds.
 A conversation gets a canonical Markdown file, bounded transcript,
 authorized message corpus, scoped parent edge and checked
 `active_execution` projection. The Inbox supplies viewer-scoped
-`waiting_on`. None of these grants package or viewer access.
+`waiting_on`. None of these grants package or viewer access. The host
+transcript engine is the sole conversation body writer. Conversation
+kinds cannot declare a live editor room. See §3 for the corpus fence.
 Provider contributions pin an adapter, image digest and model options.
 IDs are open and resolved from installed contributions. A distinctive provider mark requires a
 verified publisher that owns the canonical mark name. Its binding comes
@@ -266,6 +268,17 @@ derive from that request and its step or checkpoint position.
    expire after 60 seconds or earlier on terminal, cancel or revocation.
    Persist principal, scope and delegation. Mint a fresh ticket from the
    creator’s current rights for each job run or schedule occurrence.
+4. **Attempt by execution lease.** An agent gets a distinct principal and
+   lease for the exact attempt, separate from the package invocation
+   ticket and the person’s own session. The interim rule is refs only in
+   every space. The broker admits only purpose-specific calls on the
+   host-issued refs and within the admitted effect ceilings. Refuse list,
+   search, count, enumeration, bulk reads and job or ticket delegation
+   that could obtain discovery rights. Only independently admitted plugin
+   jobs may acquire their own rights. Recheck the exact attempt, runtime
+   fence, live session or scheduled principal, grant, package generation
+   and placement on renewal, broker effects and egress. Revocation fences
+   effect and delivery immediately and stops renewal.
 
 **Commit and recovery.** Every effect must take the per-space authority
 fence at the engine’s recovery-visible commit point. Check the live grant,
@@ -416,7 +429,14 @@ its receipt, with long work as a durable job.
 | Execution · `execution_start`, `execution_status`, `execution_input`, `execution_spawn_child`, `execution_stop` | The catalogue types each call. The host issues the admitted intent, resolves provider and placement, and binds every effect to the exact attempt under live authority. Start, input, child and Stop use checked receipts. |
 | Schedules · `schedule_create`, `schedule_remove` | Declared eligible operation, pinned target/payload, time zone and calendar or enrollment ID → durable enrollment or removal receipt. One indexed, bounded write. Resume requires the enrollment and live authority. |
 
-The package owns its conversation kind. The item engine exposes an indexed, host-maintained `trashed` boolean for lifecycle
+The package owns its conversation kind. The canonical transcript engine
+alone writes its framed body, including role and provenance. Generic create
+can initialize an empty conversation. Generic metadata changes preserve the
+body. Refuse body replacement through save, staged upload, history restore,
+generic body rewrites and live rooms. Raw body delivery, including editor
+open, pinned ranges, revision material and export, checks live
+message-corpus authority at read and egress. A title-only viewer learns
+neither body bytes nor body-dependent revision data or bookmarks. The item engine exposes an indexed, host-maintained `trashed` boolean for lifecycle
 views. Plugins cannot set it as metadata or claim host-owned kinds. The [host catalogue](../contract/host-catalogue-v2.json) registers typed
 direct engine dispatch. Its built-ins never start a plugin worker.
 `host.item.patch-metadata` uses the same room-checked save path.
@@ -428,12 +448,27 @@ host-minted Undo action reference.
 Prepared Send commits the message, Starting projection and replayable job
 intent under the item fence before any plugin or agent wake. The
 same-package Send declaration targets its own conversation kind and
-names the replayable job to enqueue.
+names the replayable job to enqueue. The job declares
+`execution_intent: true`. Its run operation targets the same kind and
+accepts exactly its required target `ItemRef` in a closed input object.
+At install, resolve these declarations and reject aliases from generic
+dispatch, scheduling, or create follow-up into the prepared Send path.
+Only that composer may admit the job. At claim and replay the host injects
+`ExecutionJobContext.intent` outside operation input, bound to the exact
+durable intent and owning job receipt. `execution_start` compares it under
+the lifecycle fence and refuses a supplied, foreign or retired intent.
 The host validates the final material, provider options and eligibility
 against installed declarations. When `steer_live` is set and the prepared
 attempt is still live, Send forwards checked text directly to
 `execution_input` without waking the plugin. The exact attempt is part
-of the prepared proof. A replacement requires a fresh preview.
+of the prepared proof. A replacement requires a fresh preview. The host
+can issue Stop during Starting, before there is an attempt. Its context
+pins either the exact unresolved intent or the exact admitted attempt.
+The starter or live `PluginsManage` must also hold the relevant item
+right. Stop durably refuses a pending intent, or fences an admitted
+attempt before remote dispatch. A stale control cannot stop its replacement.
+Confirmation for archive pins the same exact target and rechecks both rights
+under the lifecycle fence (§4.4).
 
 A replayable job may park on `execution` under the owning job and attempt.
 Check the durable transition cursor and install the wait atomically.
@@ -468,25 +503,36 @@ Markdown records. Use one audience for persisted content. Token events are
 transient. Apply the sealed proposal’s spool and foreground budgets.
 
 A protected Inbox answer is bound to the live process, exact request and
-checked effect. Keep Codex native approvals actionable when the gateway
-can prove the effect remains inside the exact attempt sandbox. A native
-request that would cross it is dismissal-only. Use a separate protected
-broker action for an external effect, with a one-use decision consumed at
-the actual gateway dispatch. Replay cannot dispatch it again.
+checked effect. For every provider, including Codex, a native approval is
+actionable only when the provider marks it approvable and the gateway can
+enforce that exact effect inside the attempt sandbox. A native
+`can_approve: false`, missing approvability, or unproved containment yields
+dismissal only. A card offers Approve with at least one lifetime and Deny
+without lifetimes. Resolve rechecks the live actor, request, approvability
+and the exact lifetime offered in the context. External effects use a
+separate protected broker action. A one-use decision gates the actual
+gateway dispatch of the checked effect. Replay cannot dispatch it again.
 
 #### Declarative extraction and retention
 
 A package may declare bounded frontmatter, first-block or inline-tag
 selectors in `extractors`. The host reads only declared content of the
-same committed item. Outputs and their counts inherit the intersection
-of input audiences. No worker wake, regex or callback. A first-block
+same committed claimed-text body. Each selector’s output is a declared
+`body_derived` field of one of the selector’s types in catalogue
+`query.extractors`. Frontmatter emits Text, TextSet, Boolean, Number or
+Timestamp. It cannot mint a host reference. Outputs and their counts
+inherit the intersection of input audiences. No worker wake, regex or callback. A first-block
 summary skips the title when declared and feeds the existing mini preview.
 Inline tags take the manifest’s marker, hierarchy separator and exclusions.
 The host has no Notes defaults. The existing body_excerpt declaration is
 the shorthand for the checked preview text selector. Notes declares its shipped grammar and
 uses its package for tag rename and link rewrite.
 
-A `TextSet` filter uses `contains` with one typed Text element. The host
+A `TextSet` filter uses `contains` with one nonempty Text element within
+the set’s element limit. Use a literal or a checked route that resolves to
+Text. A viewer or parent ref cannot supply a member. A window may project
+a bounded `TextSet` array only for a declared and projected `TextSet` field.
+The host
 deduplicates values and counts each authorized item once. Do not sort by
 a TextSet. Charge the catalogue’s total key budget on saves, sharing,
 membership and Undo. Refuse excess work with `index_work_limit` under
@@ -785,10 +831,16 @@ The catalogue gives typed host component routes. `transcript.page`
 takes a checked conversation ItemRef and a viewer-bound record cursor.
 Return at most 128 records and 128 KiB. Reopen the boundary record on
 authorized reconnect, replace it by UUID, and continue in record order.
-Refresh the bounded host sign-in notices in the same reply. Check live
-corpus and field authority at delivery, including quotes and bounded
-long-record continuation. A revoked viewer gets neither bytes nor
-bookmarks. The composer uses `composer.options` for checked installed
+Refresh the bounded host sign-in notices in the same reply. An empty
+corpus has `committed_cursor: null` and no older cursor. Catch up without
+an after cursor until the first committed record supplies a boundary.
+A clipped record supplies an opaque body continuation for
+`transcript.body`, bound to the viewer, lease, conversation, exact record
+revision and next UTF-8 offset. Each page returns at most 16 KiB of whole
+characters from that pin and an optional next ref. Recheck live corpus and
+field authority at read and egress, including quotes and continuations.
+An absent, expired, purged or revoked ref returns the same opaque 404,
+with zero bytes and no continuation. The composer uses `composer.options` for checked installed
 choices. Templates do not submit a second target or the protected Send
 operation. See §4.3 for the cold prepared exchange.
 
@@ -797,12 +849,23 @@ a portrait aspect and the existing snippet fallback. An editing device
 captures the saved revision, paints locally, and obtains the same slot’s
 session-bound upload grant after the save ACK. Prepare binds the exact
 committed state digest, MIME type, byte length and upload digest. Keep
-the revision 13 image read’s 64 KiB and 128 px edge limit in this draft. Validate bytes, still-image
-type, dimensions and authority before committing the pointer. The first
-valid image wins the revision and exact digest replay returns its receipt.
-Keep the last authorized image marked stale while the next is pending.
-Fetch rechecks current item, source and body authority. If no authorized
-image can be delivered, draw the miniature. Keep image refs, decoded
+separate bounds for upload and delivery. Upload accepts at most 512 KiB
+and a 256 × 384 decoded still image, with two simultaneous decodes, 64
+pending grants and 8 MiB of reserved staging per space. The grant and
+staging expire after five minutes. Reclaim expired and orphan bytes and
+reservations within another 30 seconds, including a sweep before new
+admission after restart. Validate session, edit authority and exact source
+at ingest and publication. Normalize and strip metadata, stamp authenticated
+uploader provenance and make the bytes durable before committing the
+pointer. Pixels supplied by an editor can be misleading. Attribution
+identifies their source, and the next eligible capture replaces them.
+The first valid image wins the revision and exact replay by that session
+returns its receipt. The host serves the smaller normalized variant,
+at most 64 KiB and 128 px on its longest edge. Keep the last authorized
+image marked stale and fetchable until replacement. Delivery rechecks
+current item, source, field and body authority even on a conditional
+read. Unretained or unauthorized refs return opaque 404. Use the miniature
+when no authorized image can be delivered. Keep image refs, decoded
 images and body-derived row parts out of persisted records.
 
 A sealed frame ref names a committed content revision and belongs to a
@@ -971,7 +1034,7 @@ revisions of all affected resources and refuses if any dependency moved.
 | `host.layout.section.create` | The per-person layout revision transaction creates the section and commits Undo that removes it. |
 | `host.layout.section.rename` | The same layout transaction commits the title change and its prior title for Undo. |
 | `host.layout.section.remove` | One per-person layout revision transaction retires the section and its placement generation and records Undo naming that generation. Retired generations are excluded from reads. Undo rechecks live membership and the post-effect layout revision and reactivates the exact generation in one transaction before its expiry. Reactivation grants no item access. Reclaim expired retired generations in bounded background batches. Removal and Undo perform no per-placement work. |
-| `host.item.archive` | Idle archive requires no active turn, unresolved send intent or pending approval to retire. Saved authority requires a challenge unless it consists only of thread grants that the Step 2 writer retires in the same FULL thread content transaction as archive and that Undo restores together with the thread head. Retiring grants with head-only Undo requires a challenge. Check eligibility and reject fresh turn admission to an archived head under the same commit fence. The FULL thread content transaction records archive and its unarchive Undo together. The current writer commits the head without Undo and enters a separate protected authority transaction, so the shortcut stays ineligible until the Step 2 writer passes. After it passes, eligible idle archive takes one full-swipe exchange without a sheet. For an active turn the host says “The running turn will be stopped.” |
+| `host.item.archive` | Idle archive requires no active turn, unresolved send intent or pending approval to retire. Saved authority requires a challenge unless it consists only of thread grants that the Step 2 writer retires in the same FULL thread content transaction as archive and that Undo restores together with the thread head. Retiring grants with head-only Undo requires a challenge. Check eligibility and reject fresh turn admission to an archived head under the same commit fence. The FULL thread content transaction records archive and its unarchive Undo together. The current writer commits the head without Undo and enters a separate protected authority transaction, so the shortcut stays ineligible until the Step 2 writer passes. After it passes, eligible idle archive takes one full-swipe exchange without a sheet. For an active turn the host says “The running turn will be stopped.” A confirmed archive that pins an unresolved intent durably refuses it in the same FULL archive and Undo commit. Undo never reopens that intent. |
 | `host.item.unarchive` | The FULL thread content transaction records the new head and Undo. A full swipe may unarchive an eligible thread. |
 | `host.item.snooze` | Ineligible. Today’s writer stores one shared manual deadline. The actor-scoped operation stays unavailable until the Step 2 actor-keyed snooze writer commits the actor’s deadline, its index entry and Undo together. Subscription retry state is unaffected. |
 | `host.item.patch-metadata` | The room-checked FULL content transaction records the changed head and Undo for a single boolean toggle. Full swipe covers this case. |
@@ -1220,6 +1283,21 @@ intentional refusal/retry with an actionable response.
 
 ### Step 2 — Integrate placement and engines
 
+Before enabling the generic execution and preview routes, run these
+paired controls on the actual engines. Contract fixtures check what can
+be expressed on the wire. The runtime gates check what a host actually
+authorizes, commits and delivers.
+
+| Fixture | Required result |
+| --- | --- |
+| Attempt broker and renewal | A member can enumerate in an ordinary invocation and the attempt can read its admitted item. The same member's attempt gets zero rows, counts or jobs when it requests discovery, supplies the member ticket, or delegates to an indexer. Revoke the item grant during an admitted output and replace the attempt before renewal. Require zero old-attempt effects, delivery or successful renewal after either fence. |
+| Cold composer job and Stop | Pause after a durable Send and before claim. Stop using the pending-intent context, restart and admit the job. Require the refusal receipt, zero starts and no effect on a later intent. In the control arm the claimed job receives the exact intent and starts once on replay. Supplying a sibling intent or calling without injected context starts zero runs. |
+| Conversation body | A canonical append can be paged and, with corpus rights, its exact bytes can be read through a pinned range. A same-kind package save, staged replacement, history-body restore or room write cannot publish a forged role, provenance or bytes. A title-only viewer gets zero corpus bytes, lengths or bookmarks via transcript, editor, range or export. Revoke after opening a pin and before delivery to cover both readers. |
+| Native approval and lifetime | For each provider offer Approve only on the approvable, contained arm. With native approvability false or containment unproved, forge an approval and require zero dispatches. Use a valid context with an unoffered lifetime and require zero dispatches. An exact offered one-use decision dispatches once, including on replay. |
+| Read from an empty or clipped transcript | Open and follow a new conversation before its first append. Require no fabricated cursor, then one committed UUID and a usable cursor after append. Read a clipped multilingual body across pages and compare exact UTF-8 bytes with the pinned record. A copied or revoked continuation returns the same opaque refusal as an absent ref. |
+| Device preview | Accept a valid 100 KiB capture and serve the normalized delivery variant with authenticated uploader provenance. Refuse oversize, copied or late uploads. After head advance, the current authorized viewer fetches the same retained previous image, marked stale. Revoke only body authority and repeat the same fetch, including a conditional request. Require the same 404 as an absent ref, zero bytes and no 304 or wake. Cut before byte durability and before pointer commit. Require the prior authorized image or fallback in both arms and reclaim orphans and reservations by the staging deadline. |
+| Search settle race | Send two different texts to one Bind. Delay the first acknowledgement and a window carrying a previously unseen older result version until the second result renders. Require zero changes to rows, counts or navigation from superseded acknowledgements, results or plan refusals. Deliver the newer request before the older one in a second arm and require the newer search to remain current. |
+
 Pass these end-to-end flows on the selected wall before app migration.
 
 - **Space lifecycle.** Start each trial with all placements asleep. Admit a tap and due light
@@ -1265,9 +1343,11 @@ Pass these end-to-end flows on the selected wall before app migration.
      unresolved intent blocks sheet-free archive.
   2. Commit a send intent and pause before job admission. Commit a
      confirmed archive through the challenged path with that matching
-     saved intent. Fresh job admission rejects the archived head under
-     the fence, resolves the intent as refused with a plain outcome
-     the composer can show, and starts no turn.
+     saved intent. The FULL archive and Undo commit also durably refuses
+     that exact intent with a plain outcome. Crash before and after that
+     commit. After recovery, run unarchive Undo before resuming admission.
+     Admission and replay must return the durable refusal with zero starts,
+     even though the head is live again. A fresh Send is the positive control.
   3. Commit archive first, then attempt Send. The send is refused at
      intent commit.
 
@@ -1305,8 +1385,19 @@ fixtures, with final revisions, visible authority and durable outcomes equal.
   linked-user View/Comment and revocation, the host Share sheet and bounded
   bulk Trash/share/collection creation and Choice-from-Bind Move, no worker wake for built-in
   lifecycle actions, and recover a committed save after rollback.
-- **Threads.** Ship only after Notes and both Step 2 writer gates pass.
-  Open an indexed thread list, submit a
+- **Threads.** Ship only after Notes, both Step 2 writer gates and the
+  sealed proposal’s [custody and cutover gates][generic-engines] pass.
+  Halt new old-engine admissions and wait for zero live attempts before
+  switching writers. Migrate a legacy session into protected bindings
+  only with authenticated historical proof of its exact account, provider,
+  conversation, machine and profile. Retire Resume for an unproved binding
+  and show “Previous session unavailable. Start a new session.” Keep its
+  thread readable. Remove private session copies from ordinary files,
+  metadata, history and journal, and quarantine unsanitized inputs under
+  protected retention. Prove an ordinary backup restores complete public
+  history with stable IDs and rendering and no private session records in
+  the backup or restored inputs. Verify projection rebuild and rollback from
+  post-cutover writes before switching writers. Then open an indexed thread list, submit a
   composer draft with an attachment on the person’s eligible machine,
   reconnect at a committed transcript cursor, queue a follow-up, act on
   a protected approval, archive and unarchive, snooze, and stop. Require exactly one submission per
@@ -1374,10 +1465,11 @@ See the [recorded answers](https://git.kayg.org/kayg/calternal-ai/src/commit/3ab
 
 ### Revision 14 draft questions and implementation seams
 
-- Owner decisions stay open for discovery rights, canonical writer and
-  cross-runner list ownership. The conservative draft uses refs only, the
-  generic host Markdown writer and separate package-owned conversation
-  kinds. Keep body-derived display out of offline row records.
+- Discovery rights, canonical writer and who owns a cross-runner list are
+  separate owner questions in [the sealed proposal’s §C][generic-engines].
+  The interim rules are refs only (removing discovery available in today’s
+  Full access mode), the generic host Markdown writer and package-owned
+  conversation kinds. Body-derived fields stay out of offline rows.
 - Native-login custody needs the personal-machine decision described in
   the credential probe. A declared provider is eligible only after actual
   profile, supervisor and transport conformance. Manifest validation

@@ -4,7 +4,7 @@
     "id": "item-1",
     "fields": {
       "title": "Example",
-      "thumbnail": "asset-1"
+      "thumbnail": "previous-authorized-image-ref"
     },
     "stale_images": [
       "thumbnail"

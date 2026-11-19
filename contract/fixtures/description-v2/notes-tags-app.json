@@ -10,7 +10,9 @@
         "kind": "notes"
       },
       "fields": [
-        "title"
+        "title",
+        "tags",
+        "thumbnail"
       ],
       "filter": {
         "all": [

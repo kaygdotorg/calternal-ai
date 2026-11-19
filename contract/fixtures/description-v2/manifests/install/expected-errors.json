@@ -7,5 +7,11 @@
   "invalid-host-create-after-item-ref-array-pointer-out-of-range.json": "unresolvable embedded schema reference '#/definitions/entries/allOf/1'",
   "invalid-host-create-after-job-input.json": "$.kinds.albums.host_create.after: entry must accept only the created ItemRef of 'albums' at target.field",
   "invalid-reserved-generic-field.json": "$.kinds.albums.indexed_fields.updated: reserved host generic field",
-  "invalid-unresolvable-embedded-schema.json": "unresolvable embedded schema reference '#/definitions/missing'"
+  "invalid-unresolvable-embedded-schema.json": "unresolvable embedded schema reference '#/definitions/missing'",
+  "invalid-composer-job-no-intent.json": "must opt into host execution_intent context",
+  "invalid-composer-job-accepts-intent.json": "run input must accept only its target ItemRef",
+  "invalid-conversation-room.json": "live_room: not allowed here",
+  "invalid-frontmatter-mints-ref.json": "frontmatter cannot produce 'RowImageRef'",
+  "invalid-frontmatter-no-provenance.json": "requires a claimed-text source and body_derived output",
+  "invalid-composer-send-schedule.json": "prepared Send is reserved for the host composer"
 }

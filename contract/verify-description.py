@@ -20,7 +20,7 @@ import sys
 
 from description_input import PackageInput, Validation, check_unique_ids, lexical_path, read_bytes, read_json, resolved_path
 
-from description_events import COMPONENT_TYPES, EventBindings, check_event_binding, validate_component_request, walk
+from description_events import COMPONENT_TYPES, EventBindings, check_composer_invoke, check_event_binding, validate_component_request, walk
 import description_verification as verification
 
 from description_verification import (
@@ -66,6 +66,7 @@ def semantic(doc, errors, catalogue, manifest, installed_manifests=()):
     cat_ops = (catalogue or {}).get("operations", {})
     cat_kinds = (catalogue or {}).get("kinds", {})
     man_ops = (manifest or {}).get("operations", {})
+    composer_sends = verification.composer_send_operations(manifest or {}, errors)
     man_kinds = dict(errors.each((manifest or {}).get("kinds", {}).items()))
     for installed in errors.each(installed_manifests):
         for kind_id, kind in errors.each(installed.get("kinds", {}).items()):
@@ -84,6 +85,8 @@ def semantic(doc, errors, catalogue, manifest, installed_manifests=()):
         if not isinstance(node, dict): continue
         if "operation" in node and "id" in node and isinstance(node.get("operation"), str):
             op = node["operation"]
+            if op in composer_sends:
+                errors.append(f"{path}: prepared Send operation is reserved for the host composer")
             entry = cat_ops.get(op) if catalogue is not None else None
             if catalogue is not None:
                 row_input = re.match(r"^\$\.binds\[(\d+)\]\.row\.", path)
@@ -344,11 +347,18 @@ def semantic(doc, errors, catalogue, manifest, installed_manifests=()):
                 errors.append(f"{path}: {field_type} cannot be a sort key")
         for pred in errors.each(predicates):
             field_type = field_meta(entry, pred["field"]).get("type")
-            operation, operand = pred.get("op"), pred.get("value", {})
+            operation, operand = pred["op"], pred.get("value", {})
             if field_type == "RowImageRef":
                 errors.append(f"$.binds[{index}].filter: RowImageRef cannot be a predicate operand")
-            if operation == "contains" and (field_type != "TextSet" or not isinstance(operand, dict) or ("literal" in operand and not isinstance(operand["literal"], str))):
-                errors.append(f"$.binds[{index}].filter: contains requires a TextSet and one Text operand")
+            if operation == "contains":
+                # Route parameters resolve to the consuming operand's type; an
+                # account or parent source retains its reference type.
+                literal = operand.get("literal")
+                member = (catalogue or {}).get("$defs", {}).get("TextSet", {}).get("items")
+                if field_type != "TextSet" or ("route" not in operand and not isinstance(literal, str)):
+                    errors.append(f"$.binds[{index}].filter: contains requires a TextSet and one Text operand")
+                elif "literal" in operand:
+                    check(member, literal, f"$.binds[{index}].filter.value.literal", errors, catalogue)
             if field_type == "TextSet" and operation not in ("contains", "exists"):
                 errors.append(f"$.binds[{index}].filter: TextSet supports contains and exists")
         for relative_path, desc in walk(bind, errors):
@@ -436,6 +446,19 @@ def validate_description(doc, manifest, installed, errors):
 
 def validate_event(doc, bindings, errors):
     """Check event shape and contextual Bind and window range requirements."""
+    view_open = None
+    if isinstance(doc, dict) and "view_open" in doc:
+        if doc.keys() != {"view_open", "event"} or not bindings or verification.CATALOGUE is None:
+            errors.append("$: composer capture requires an originating description, view_open and event")
+            return
+        view_open, doc = doc["view_open"], doc["event"]
+        check({"$ref": "#/$defs/ViewOpenResult"}, view_open, "$.view_open", errors, verification.CATALOGUE)
+        check({"$ref": "#/$defs/ResolveActivation"}, doc, "$.event", errors, verification.CATALOGUE)
+        if not errors:
+            origin = bindings()
+            if not errors:
+                check_composer_invoke(doc, origin, view_open, errors)
+        return
     check({"$ref": "#/$defs/Event"}, doc, "$", errors)
     if errors:
         return

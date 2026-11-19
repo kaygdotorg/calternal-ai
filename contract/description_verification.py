@@ -439,7 +439,7 @@ def load_checked_manifest(path, errors):
 SCHEMA_ANNOTATIONS = {"title", "description", "$comment", "default", "examples", "deprecated", "readOnly", "writeOnly"}
 
 
-def is_created_item_input(input_schema, field, errors):
+def is_only_item_input(input_schema, field, errors):
     """Require a closed, one-property object with a registered ItemRef, ignoring annotations."""
     if not isinstance(input_schema, dict):
         return False
@@ -465,6 +465,12 @@ def is_created_item_input(input_schema, field, errors):
     return False
 
 
+def composer_send_operations(manifest, errors):
+    """Resolve this package's operations reserved for host-only prepared Send."""
+    return {kind["composer"]["send"] for kind in errors.each(manifest.get("kinds", {}).values())
+            if "composer" in kind}
+
+
 def check_manifest_install(manifest, errors):
     """Check reserved indexed fields and host_create follow-ups at install."""
     if CATALOGUE is None:
@@ -473,6 +479,8 @@ def check_manifest_install(manifest, errors):
     projected = CATALOGUE["conversation_capability"]["field_projections"]
     operations = manifest.get("operations", {})
     jobs = manifest.get("jobs", {})
+    send_operations = composer_send_operations(manifest, errors)
+    composer_jobs = set()
     for kind_id, kind in errors.each(manifest.get("kinds", {}).items()):
         path = f"$.kinds.{kind_id}"
         for field in errors.each(sorted(field_names(kind, errors) & generic.keys())):
@@ -489,12 +497,21 @@ def check_manifest_install(manifest, errors):
                 errors.append(f"{path}.composer.send: must name a same-package operation targeting this conversation kind")
             if run_job.get("replayable") is not True or run.get("target", {}).get("kind") != kind_id:
                 errors.append(f"{path}.composer.job: must name a replayable job targeting this conversation kind")
+            else:
+                composer_jobs.add(composer["job"])
+                target_field = run["target"].get("field")
+                if run_job.get("execution_intent") is not True:
+                    errors.append(f"{path}.composer.job: must opt into host execution_intent context")
+                if not target_field or not is_only_item_input(run.get("input_schema"), target_field, errors):
+                    errors.append(f"{path}.composer.job: run input must accept only its target ItemRef")
         fields = kind.get("fields", {})
         for extractor in errors.each(kind.get("extractors", [])):
             output = fields.get(extractor.get("output"), {})
-            want = {"inline_tags": "TextSet", "first_blocks": "Text"}.get(extractor.get("selector"))
-            if not output or (want and (output.get("type") != want or output.get("body_derived") is not True)):
-                errors.append(f"{path}.extractors: output needs a declared field of the matching type and body authority")
+            allowed = CATALOGUE["query"]["extractors"]["output_types"][extractor["selector"]]
+            if kind.get("claimed_text") is not True or output.get("body_derived") is not True:
+                errors.append(f"{path}.extractors: requires a claimed-text source and body_derived output")
+            if output.get("type") not in allowed:
+                errors.append(f"{path}.extractors: {extractor['selector']} cannot produce {output.get('type')!r}")
         for field in errors.each(kind.get("device_row_images", [])):
             if fields.get(field, {}).get("type") != "RowImageRef":
                 errors.append(f"{path}.device_row_images: slot must be a declared RowImageRef")
@@ -503,12 +520,25 @@ def check_manifest_install(manifest, errors):
             continue
         operation_id = after.get("operation")
         if "job" in after:
+            if jobs.get(after["job"], {}).get("execution_intent") is True:
+                errors.append(f"{path}.host_create.after: a composer intent job can only be admitted by prepared Send")
             operation_id = jobs.get(after["job"], {}).get("run_operation")
+        if operation_id in send_operations:
+            errors.append(f"{path}.host_create.after: prepared Send is reserved for the host composer")
         operation = operations.get(operation_id, {})
         target = operation.get("target", {})
         field = target.get("field")
-        if not field or target.get("kind") != kind_id or not is_created_item_input(operation.get("input_schema"), field, errors):
+        if not field or target.get("kind") != kind_id or not is_only_item_input(operation.get("input_schema"), field, errors):
             errors.append(f"{path}.host_create.after: entry must accept only the created ItemRef of {kind_id!r} at target.field")
+    for job_id, job in errors.each(jobs.items()):
+        if job.get("execution_intent") is True and job_id not in composer_jobs:
+            errors.append(f"$.jobs.{job_id}.execution_intent: must belong to a conversation composer")
+    for collection, field in (("jobs", "run_operation"), ("schedule_eligibility", "operation"),
+                              ("wait_webhooks", "schema_operation")):
+        entries = jobs.values() if collection == "jobs" else manifest.get(collection, [])
+        for entry in errors.each(entries):
+            if entry[field] in send_operations:
+                errors.append(f"$.{collection}.{entry['id']}: prepared Send is reserved for the host composer")
 
 
 def project_kind(kind, catalogue):
@@ -614,6 +644,10 @@ def check_window_rows(reply, origin, catalogue, errors):
         return
     declared_types = catalogue["$defs"]["FieldType"]["enum"]
     for index, row in enumerate(errors.each(reply["rows"])):
+        for field in errors.each(row.get("stale_images", [])):
+            if (reply["state"] != "ready" or field not in row["fields"] or row["fields"][field] is None
+                    or field_meta(kind, field, generic).get("type") != "RowImageRef"):
+                errors.append(f"$.rows[{index}].stale_images: must name a delivered RowImageRef in a ready row")
         for field, value in errors.each(row["fields"].items()):
             path = f"$.rows[{index}].fields.{field}"
             meta = field_meta(kind, field, generic)
@@ -638,4 +672,11 @@ def validate_reply(doc, origin, errors):
         if not rows and offset < total:
             errors.append("$.rows: an exact count still has rows at this offset")
     if origin is not None:
+        validate_search_generation(doc, origin[0], errors)
         check_window_rows(doc, origin, CATALOGUE, errors)
+
+
+def validate_search_generation(value, bind, errors):
+    """Require the search correlation field precisely on search Bind windows."""
+    if ("settle_generation" in value) != (bind["source"]["type"] == "search"):
+        errors.append("$.settle_generation: required for search windows only")

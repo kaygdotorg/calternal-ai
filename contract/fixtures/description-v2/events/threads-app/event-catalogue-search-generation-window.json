@@ -1,0 +1,9 @@
+{
+  "type": "window",
+  "request": {
+    "bind": "thread-search",
+    "from": 0,
+    "to": 20,
+    "settle_generation": 7
+  }
+}

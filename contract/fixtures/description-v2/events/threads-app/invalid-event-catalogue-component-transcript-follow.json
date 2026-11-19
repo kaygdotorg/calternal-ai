@@ -1,0 +1,8 @@
+{
+  "type": "component",
+  "component": "approval",
+  "route": "transcript.follow",
+  "request": {
+    "conversation": "thread-1"
+  }
+}

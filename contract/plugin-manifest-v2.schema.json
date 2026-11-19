@@ -152,6 +152,7 @@
           }
         },
         "extractors": {
+          "description": "Closed selectors over the same claimed-text body. Their outputs must be declared body_derived fields of the types in catalogue query.extractors.",
           "type": "array",
           "maxItems": 8,
           "items": {
@@ -258,6 +259,7 @@
           "description": "Opt this package-owned kind into the checked conversation capability. Grants no authority."
         },
         "composer": {
+          "description": "Reserve Send for the host composer. The named replayable job targets this kind, accepts only the target item as operation input, and declares execution_intent to receive host-owned invocation context.",
           "type": "object",
           "additionalProperties": false,
           "required": [
@@ -356,6 +358,7 @@
       },
       "allOf": [
         { "if": { "required": ["composer"] }, "then": { "required": ["conversation"] } },
+        { "if": { "required": ["conversation"] }, "then": { "properties": { "live_room": false } } },
         { "if": { "required": ["conversation"] }, "then": { "properties": { "claimed_text": { "const": true } } } },
         { "if": { "properties": { "claimed_text": { "const": false } } },
           "then": { "required": ["extension"], "properties": {
@@ -520,6 +523,7 @@
       "properties": {
         "id": { "$ref": "#/definitions/localId" },
         "run_operation": { "$ref": "#/definitions/operationId" },
+        "execution_intent": { "const": true, "description": "Only the owning composer may admit this job. The host injects ExecutionJobContext at claim and replay; caller input cannot set it." },
         "placement": { "const": "heavy", "description": "Run this job in the on-demand larger plugin VM under the same isolation rules. Omission uses the small plugin VM." },
         "replayable": { "type": "boolean" },
         "waits": { "type": "array", "maxItems": 32, "uniqueItems": true, "items": { "$ref": "#/definitions/wait" } }

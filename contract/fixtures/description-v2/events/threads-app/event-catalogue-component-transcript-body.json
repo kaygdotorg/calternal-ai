@@ -1,0 +1,8 @@
+{
+  "type": "component",
+  "component": "transcript",
+  "route": "transcript.body",
+  "request": {
+    "body": "pinned-body"
+  }
+}

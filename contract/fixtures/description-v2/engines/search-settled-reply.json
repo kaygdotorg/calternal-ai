@@ -2,6 +2,7 @@
   "definition": "SettledSearchResult",
   "value": {
     "type": "search_settled",
-    "bind": "search-notes"
+    "bind": "search-notes",
+    "settle_generation": 7
   }
 }

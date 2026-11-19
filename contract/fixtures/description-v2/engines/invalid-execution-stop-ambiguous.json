@@ -1,0 +1,9 @@
+{
+  "definition": "ExecutionStopRequest",
+  "value": {
+    "intent": "intent-1",
+    "execution": "execution-1",
+    "request_id": "request-1"
+  },
+  "error": "matches 2 of the oneOf branches"
+}

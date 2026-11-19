@@ -1,0 +1,9 @@
+{
+  "type": "component",
+  "component": "wrong-editor",
+  "route": "editor.open",
+  "request": {
+    "component": "editor",
+    "item": "item-1"
+  }
+}
