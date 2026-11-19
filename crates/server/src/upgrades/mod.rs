@@ -259,6 +259,8 @@ pub enum Action {
     Status,
     /// Restore an incomplete deployment, replayably, before serving requests.
     Recover,
+    /// Count all accounts, including disabled accounts, under the stopped data locks.
+    AccountCount,
     /// Check that this release understands the current database and recovery formats.
     Verify,
 }
@@ -350,6 +352,10 @@ pub fn run(
                 None => None,
             };
             Ok(json!({"restored_previous":restored}))
+        }
+        Action::AccountCount => {
+            deploy.require_clean()?;
+            Ok(json!({"accounts": inventory::account_count(&deploy.roots.appdata)?}))
         }
         Action::Verify => {
             inventory::verify(&deploy)?;

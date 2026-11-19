@@ -42,7 +42,8 @@ fi
 candidate=$image:$tag
 if ((dry_run)); then
   if ((build)); then printf 'nix develop .#deploy -c %q %q\n' "$here/build-image.sh" "$candidate"; fi
-  printf 'podman save %q | ' "$candidate"
+  remote podman image exists IMAGE_ID
+  printf 'If the digest is absent: podman save %q | ' "$candidate"
   remote podman load --quiet
   remote bash -s -- deploy "${target_args[@]}" IMAGE_ID "$tag" "$initialize" "$show_token" "$incompatible"
   print_remote_script
@@ -58,7 +59,10 @@ if ((build)); then
 fi
 image_id=$(podman image inspect --format '{{.Id}}' "$candidate")
 image_id=${image_id#sha256:}
-podman save "$candidate" | remote podman load --quiet
+# A previously staged immutable digest needs no second OCI export and import.
+if ! remote podman image exists "$image_id"; then
+  podman save "$candidate" | remote podman load --quiet
+fi
 # Shell-quote the fixed templates into stdin before executing the remote driver.
 # No target settings or secrets are expanded into template source.
 {

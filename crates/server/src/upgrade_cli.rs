@@ -36,6 +36,8 @@ enum Step {
     Status,
     /// Restore a pending upgrade before either release serves requests.
     Recover,
+    /// Count accounts while the roles are stopped without printing account details.
+    AccountCount,
     /// Verify that this binary understands the current protected state.
     Verify,
 }
@@ -106,6 +108,7 @@ pub(super) fn run(command: UpgradeArgs) -> Result<Reply, CliError> {
         Step::Status => (Action::Status, "Upgrade status"),
         Step::Recover => (Action::Recover, "Recovered upgrade"),
         Step::Verify => (Action::Verify, "Data versions verified"),
+        Step::AccountCount => (Action::AccountCount, "Account count"),
     };
     let result = upgrades::run(roots, command.machine_dir, id, action).map_err(error)?;
     let fields = result

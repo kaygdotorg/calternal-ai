@@ -24,30 +24,14 @@ const V4: &[(Ipv4Addr, u8)] = &[
     (Ipv4Addr::new(255, 255, 255, 255), 32),
 ];
 
-/// IPv6 ranges as `(address, prefix length)`.
+// Within global unicast, refuse special-purpose protocol, documentation and
+// transition ranges. Mapped IPv4, NAT64 and other non-global ranges are
+// outside the allowed prefix.
 const V6: &[(Ipv6Addr, u8)] = &[
-    (Ipv6Addr::UNSPECIFIED, 128),
-    (Ipv6Addr::LOCALHOST, 128),
-    // IPv4-mapped.
-    (Ipv6Addr::new(0, 0, 0, 0, 0, 0xffff, 0, 0), 96),
-    // NAT64, both well-known prefixes.
-    (Ipv6Addr::new(0x64, 0xff9b, 0, 0, 0, 0, 0, 0), 96),
-    (Ipv6Addr::new(0x64, 0xff9b, 1, 0, 0, 0, 0, 0), 48),
-    // Discard-only.
-    (Ipv6Addr::new(0x100, 0, 0, 0, 0, 0, 0, 0), 64),
-    // Teredo.
-    (Ipv6Addr::new(0x2001, 0, 0, 0, 0, 0, 0, 0), 32),
-    // Documentation.
+    (Ipv6Addr::new(0x2001, 0, 0, 0, 0, 0, 0, 0), 23),
     (Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 0), 32),
-    // 6to4.
     (Ipv6Addr::new(0x2002, 0, 0, 0, 0, 0, 0, 0), 16),
-    // Unique local.
-    (Ipv6Addr::new(0xfc00, 0, 0, 0, 0, 0, 0, 0), 7),
-    // Link-local and the old site-local range.
-    (Ipv6Addr::new(0xfe80, 0, 0, 0, 0, 0, 0, 0), 10),
-    (Ipv6Addr::new(0xfec0, 0, 0, 0, 0, 0, 0, 0), 10),
-    // Multicast.
-    (Ipv6Addr::new(0xff00, 0, 0, 0, 0, 0, 0, 0), 8),
+    (Ipv6Addr::new(0x3fff, 0, 0, 0, 0, 0, 0, 0), 20),
 ];
 
 fn in_v4(a: Ipv4Addr, net: Ipv4Addr, bits: u8) -> bool {
@@ -60,31 +44,42 @@ fn in_v6(a: Ipv6Addr, net: Ipv6Addr, bits: u8) -> bool {
     u128::from(a) & mask == u128::from(net) & mask
 }
 
-/// The IPv4 address hidden inside an IPv6 one, in the forms that carry
-/// one: mapped (`::ffff:a.b.c.d`), NAT64 (`64:ff9b::a.b.c.d`), 6to4
-/// (`2002:aabb:ccdd::`) and the old IPv4-compatible form (`::a.b.c.d`).
-fn embedded_v4(a: Ipv6Addr) -> Option<Ipv4Addr> {
-    let o = a.octets();
-    let low = Ipv4Addr::new(o[12], o[13], o[14], o[15]);
-    if in_v6(a, Ipv6Addr::new(0, 0, 0, 0, 0, 0xffff, 0, 0), 96)
-        || in_v6(a, Ipv6Addr::new(0x64, 0xff9b, 0, 0, 0, 0, 0, 0), 96)
-        || in_v6(a, Ipv6Addr::UNSPECIFIED, 96)
-    {
-        return Some(low);
-    }
-    if o[0] == 0x20 && o[1] == 0x02 {
-        return Some(Ipv4Addr::new(o[2], o[3], o[4], o[5]));
-    }
-    None
-}
-
 /// True for an address that cannot be used for public HTTPS requests.
 pub(super) fn is_denied(ip: IpAddr) -> bool {
     match ip {
         IpAddr::V4(a) => V4.iter().any(|&(n, b)| in_v4(a, n, b)),
         IpAddr::V6(a) => {
-            V6.iter().any(|&(n, b)| in_v6(a, n, b))
-                || embedded_v4(a).is_some_and(|v4| is_denied(IpAddr::V4(v4)))
+            !in_v6(a, Ipv6Addr::new(0x2000, 0, 0, 0, 0, 0, 0, 0), 3)
+                || V6.iter().any(|&(n, b)| in_v6(a, n, b))
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_public_destination_ranges_pass() {
+        for denied in [
+            "10.1.2.3",
+            "127.0.0.1",
+            "169.254.169.254",
+            "100.64.0.1",
+            "::1",
+            "::ffff:127.0.0.1",
+            "64:ff9b::a01:203",
+            "2002:7f00:1::",
+            "2001:2::1",
+            "3fff::1",
+            "5f00::1",
+            "fc00::1",
+            "fe80::1",
+        ] {
+            assert!(is_denied(denied.parse().unwrap()), "{denied}");
+        }
+        for public in ["8.8.8.8", "2606:4700:4700::1111"] {
+            assert!(!is_denied(public.parse().unwrap()), "{public}");
         }
     }
 }
