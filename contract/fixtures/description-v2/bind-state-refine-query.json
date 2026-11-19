@@ -7,7 +7,8 @@
       "id": "found",
       "source": {
         "type": "search",
-        "kind": "threads"
+        "kind": "notes",
+        "mode": "terms"
       },
       "fields": [
         "title"

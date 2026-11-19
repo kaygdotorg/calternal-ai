@@ -308,7 +308,7 @@
             "item",
             "search"
           ],
-          "description": "list: an index window over a kind's items (optionally one collection); item: exactly one item by reference; search: items of one or more kinds matching a text."
+          "description": "list: an index window over a kind's items (optionally one collection); item: exactly one item by reference; search: items matching text under the author’s required mode."
         },
         "kind": {
           "$ref": "#/$defs/Id"
@@ -328,6 +328,9 @@
         "parent": {
           "const": true,
           "description": "This bind is windowed PER PARENT ROW: it lists the children of one row of another bind (child threads under their parent) or the rows of one user-made section. **The declared edge (a `RowTemplate.children` or a `Section.repeat`) is the mandatory constraint**: every window request on such a bind carries `request.parent`, a host-issued row ref (`WindowParentRef`, taken from the parent row's `parent_refs`) scoped to that edge and its ancestry, which the host checks on every request. `{parent: true}` in a filter is only an optional extra predicate. A parent bind that no edge references is refused."
+        },
+        "mode": {
+          "$ref": "https://calternal.cloud/contract/host-catalogue-v2.json#/$defs/SearchMode"
         }
       },
       "additionalProperties": false,
@@ -335,7 +338,28 @@
         "type",
         "kind"
       ],
-      "description": "What a bind reads. The host authorizes kind, collection, every filter field, every sort field, the search and the output fields against the viewer, the space and (for a guest) the item's grant BEFORE any indexed work, and projects rows for the audience. The description only asks."
+      "description": "What a bind reads. The host authorizes kind, collection, every filter field, every sort field, the search and the output fields against the viewer, the space and (for a guest) the item's grant BEFORE any indexed work, and projects rows for the audience. The description only asks.",
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "search"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "mode"
+            ]
+          },
+          "else": {
+            "properties": {
+              "mode": false
+            }
+          }
+        }
+      ]
     },
     "Marks": {
       "type": "array",
@@ -599,8 +623,7 @@
                 "estimate",
                 "none"
               ],
-              "default": "exact",
-              "description": "Whether a total accompanies the rows; the native list needs it to size a long list."
+              "description": "Whether to request a total with the rows. Search defaults to none under the catalogue’s query.search.count policy. Non-search defaults to exact, subject to count authority and the relevant count-work budget."
             }
           },
           "additionalProperties": false,
@@ -787,6 +810,33 @@
                         }
                       }
                     }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "source": {
+                "properties": {
+                  "type": {
+                    "const": "search"
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "window": {
+                "properties": {
+                  "count": {
+                    "enum": [
+                      "exact",
+                      "none"
+                    ]
                   }
                 }
               }
@@ -2187,7 +2237,7 @@
     },
     "EventWindow": {
       "$ref": "https://calternal.cloud/contract/host-catalogue-v2.json#/$defs/WindowRequest",
-      "description": "Ask for rows [from, to) of a bind (optionally for one parent row): the catalogue's WindowRequest is the ONE window envelope ({type: \"window\", request}); this schema cites it and defines no second shape. `anchor` is `start` (the default: absolute offsets, capped) or `end` (the end-relative form: [from, to) is counted back from the last row, width at most 200; distances may exceed the absolute cap), which End and near-end jumps use only with exact count authority; a result for an end-anchored request echoes `anchor: end` and an offset that is the distance of the nearest returned row from the end, with rows in the bind's normal order. The absolute jump ceiling stays 500,000: only contiguous forward paging with an explicit `anchor: start` may cross it (End without exact count authority, estimate or none, on a larger scope), requiring no count, a current ready start-window boundary of the same view, bind, parent and result, and `from` exactly its next row; a deep request without an explicit anchor fails the catalogue schema, and deep start replies are count-free, carry explicit `anchor: start` and carry no member cache record. An end-anchored `WindowResult` carries `count.mode: exact`: a view whose effective count mode is `estimate` or `none` gets `end_unavailable`. The answer is the catalogue's **WindowReply**: a `WindowResult` or a typed `WindowPlanError` ({status: 422, code: unsupported_query_plan, reason: skip_limit | unsupported_plan | materialization_limit | end_unavailable}). In a view whose effective count mode is `estimate` or `none` (any audience: a guest usually has none but may hold exact-count permission) the end-relative form is REFUSED with reason `end_unavailable`, and no end-anchored reply ever carries an estimate or an end distance without an exact count (a `WindowResult` with `anchor: end` carries a count object and is only ready or empty, so a count-free reply cannot encode one; the request keeps the shared shape and the host refuses an attempted end request after checking the effective count policy) (one row's start index plus its end distance would reveal the total); End there pages forward from the last loaded row; forward paging ends on a short ready window or an empty reply (never on a throttled reply, an error or partial work), and the renderer shows no scroll extent that implies a total. Recovery rule: After skip_limit the renderer pages from the nearer permitted end (start when the view lacks exact-count authority), keeping the original jump target as its goal. After end_unavailable it pages forward from the last loaded row. Forward paging ends on a short ready window or an empty reply. Every other reason shows the Bind error state. A consumer handles both reply variants."
+      "description": "Ask for rows [from, to) of a bind (optionally for one parent row): the catalogue's WindowRequest is the ONE window envelope ({type: \"window\", request}); this schema cites it and defines no second shape. `anchor` is `start` (the default: absolute offsets, capped) or `end` (the end-relative form: [from, to) is counted back from the last row, width at most 200; distances may exceed the absolute cap), which End and near-end jumps use only on non-search Binds with exact count authority; a result for an end-anchored request echoes `anchor: end` and an offset that is the distance of the nearest returned row from the end, with rows in the bind's normal order. The absolute jump ceiling stays 500,000: only contiguous forward paging with an explicit `anchor: start` may cross it (End without exact count authority, estimate or none, on a larger scope), requiring no count, a current ready start-window boundary of the same view, bind, parent and result, and `from` exactly its next row; a deep request without an explicit anchor fails the catalogue schema, and deep start replies are count-free, carry explicit `anchor: start` and carry no member cache record. An end-anchored `WindowResult` carries `count.mode: exact`: a view whose effective count mode is `estimate` or `none` gets `end_unavailable`. After resolving the Bind, validate search windows against EventSearchWindow. Search refuses anchor end with end_unavailable and End pages forward. The answer is the catalogue's **WindowReply**: a `WindowResult` or a typed `WindowPlanError` ({status: 422, code: unsupported_query_plan, reason: skip_limit | unsupported_plan | materialization_limit | end_unavailable}). In a view whose effective count mode is `estimate` or `none` (any audience: a guest usually has none but may hold exact-count permission) the end-relative form is REFUSED with reason `end_unavailable`, and no end-anchored reply ever carries an estimate or an end distance without an exact count (a `WindowResult` with `anchor: end` carries a count object and is only ready or empty, so a count-free reply cannot encode one; the request keeps the shared shape and the host refuses an attempted end request after checking the effective count policy) (one row's start index plus its end distance would reveal the total); End there pages forward from the last loaded row; forward paging ends on a short ready window or an empty reply (never on a throttled reply, an error or partial work), and the renderer shows no scroll extent that implies a total. Recovery rule: After skip_limit the renderer pages from the nearer permitted end (start for search Binds or when the view lacks exact-count authority), keeping the original jump target as its goal. After end_unavailable it pages forward from the last loaded row. Forward paging ends on a short ready window or an empty reply. Every other reason shows the Bind error state. A consumer handles both reply variants."
     },
     "EventSelection": {
       "$ref": "https://calternal.cloud/contract/host-catalogue-v2.json#/$defs/SettledSelectionRequest",
@@ -2232,9 +2282,6 @@
         "text": {
           "type": "string",
           "maxLength": 200
-        },
-        "sentAt": {
-          "type": "number"
         }
       },
       "additionalProperties": false,
@@ -2242,7 +2289,7 @@
         "type",
         "text"
       ],
-      "description": "The settled text of a search field."
+      "description": "Send the settled text for the named search Bind, or for the active footer search Bind when bind is omitted. The authenticated view supplies the Bind and its author-declared mode. The event carries no mode."
     },
     "EventSection": {
       "type": "object",
@@ -2517,6 +2564,10 @@
     "WindowReply": {
       "$ref": "https://calternal.cloud/contract/host-catalogue-v2.json#/$defs/WindowReply",
       "description": "The shared reply to a window request: a WindowResult or a typed WindowPlanError. Cited, never defined here."
+    },
+    "EventSearchWindow": {
+      "$ref": "https://calternal.cloud/contract/host-catalogue-v2.json#/$defs/SearchWindowRequest",
+      "description": "The same window envelope for a resolved search Bind. Only the start anchor is valid."
     }
   }
 }

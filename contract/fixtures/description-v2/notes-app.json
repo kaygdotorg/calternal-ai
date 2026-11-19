@@ -315,14 +315,15 @@
       "id": "note-search",
       "source": {
         "type": "search",
-        "kind": "notes"
+        "kind": "notes",
+        "mode": "terms"
       },
       "fields": [
         "title"
       ],
       "window": {
         "size": 30,
-        "count": "estimate"
+        "count": "none"
       },
       "row": {
         "title": {

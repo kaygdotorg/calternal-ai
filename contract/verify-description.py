@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""Validates contract/fixtures/description-v2/*.json against contract/description-v2.schema.json.
+"""Validates description fixtures against contract/description-v2.schema.json.
+
+Events in events/<description>/ also resolve their Bind in the named description fixture.
 
 A small validator for the keywords the schema uses (type, properties, required, additionalProperties, enum, const, pattern, minimum, maximum,
 minItems, maxItems, uniqueItems, maxLength, maxProperties, oneOf, $ref), so the contract can be checked with the standard library alone.
@@ -370,6 +372,9 @@ def semantic(doc, errors, catalogue, manifest):
         kind_id = source.get("kind")
         path = f"$.binds[{index}].source"
         if not isinstance(kind_id, str): continue
+        search_kind = catalogue.get("query", {}).get("search", {}).get("kind")
+        if source.get("type") == "search" and search_kind is not None and kind_id != search_kind:
+            errors.append(f"{path}: search is qualified only for {search_kind!r}")
         kind = cat_kinds.get(kind_id) if catalogue is not None else None
         plugin = man_kinds.get(kind_id) if manifest is not None else None
         if catalogue is not None and kind is None and plugin is None:
@@ -389,10 +394,31 @@ def semantic(doc, errors, catalogue, manifest):
                 if isinstance(meta, dict) and meta.get("audience") == "viewer_self" and not (pred.get("op") == "eq" and pred.get("value") == {"viewer": "person"}):
                     errors.append(f"{path}: {pred['field']!r} is viewer-only: it accepts only `eq` with {{viewer: person}}")
 
+def check_event_binding(event, view, errors):
+    """Check events that depend on the referenced Bind in the active description."""
+    event_type = event.get("type")
+    if event_type not in ("search", "window"):
+        return
+    if event_type == "search":
+        footer = view.get("chrome", {}).get("footer", {})
+        bind_id = event.get("bind", footer.get("search", {}).get("bind"))
+    else:
+        bind_id = event["request"]["bind"]
+    target = next((b for b in view.get("binds", []) if b["id"] == bind_id), None)
+    if target is None:
+        errors.append(f"$: bind {bind_id!r} is not in the active description")
+    elif target["source"]["type"] == "search":
+        if event_type == "window":
+            check({"$ref": "#/$defs/EventSearchWindow"}, event, "$", errors)
+    elif event_type == "search":
+        errors.append(f"$: bind {bind_id!r} is not a search bind")
+
+
 failed = False
-manifests_dir = root / "fixtures" / "description-v2" / "manifests"
+fixtures_dir = root / "fixtures" / "description-v2"
+manifests_dir = fixtures_dir / "manifests"
 print("host catalogue: " + ("loaded" if CATALOGUE is not None else "not present yet (plugins lane); operation, kind and field names are not resolved"))
-for file in sorted((root / "fixtures" / "description-v2").glob("*.json")):
+for file in sorted([*fixtures_dir.glob("*.json"), *fixtures_dir.glob("events/*/*.json")]):
     if CATALOGUE is None and "-catalogue-" in file.name:
         print(f"skip {file.name}  (needs the host catalogue)")
         continue
@@ -401,6 +427,12 @@ for file in sorted((root / "fixtures" / "description-v2").glob("*.json")):
         doc = load_strict(file.read_text())
     except (DuplicateKey, ValueError) as error:
         errors.append(str(error)); doc = None
+    if CATALOGUE is None and any(
+        path.endswith(".source") and isinstance(source, dict) and source.get("type") == "search"
+        for path, source in walk(doc)
+    ):
+        print(f"skip {file.name}  (search modes need the host catalogue)")
+        continue
     manifest = None
     manifest_file = manifests_dir / file.name.replace("invalid-", "")
     if manifest_file.exists():
@@ -414,6 +446,9 @@ for file in sorted((root / "fixtures" / "description-v2").glob("*.json")):
             if isinstance(req.get("from"), int) and isinstance(req.get("to"), int):
                 if not req["from"] < req["to"]: errors.append(f"$.request: from ({req['from']}) must be below to ({req['to']})")
                 if limit is not None and req["to"] - req["from"] > limit: errors.append(f"$.request: the span {req['to'] - req['from']} exceeds the catalogue's max_request_span ({limit})")
+        if is_event and file.parent.parent == fixtures_dir / "events" and not errors:
+            view = load_strict((fixtures_dir / f"{file.parent.name}.json").read_text())
+            check_event_binding(doc, view, errors)
         if not is_event and not is_reply:
             view_limits(doc, errors)
             semantic(doc, errors, CATALOGUE, manifest)

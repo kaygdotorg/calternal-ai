@@ -54,8 +54,8 @@ One definition (`$defs/Bind`):
 * `list`: an index window over a kind's items, optionally one **collection** (a collection id from a literal, the route or the selection, so a collection
   UUID works; it is not a static pattern).
 * `item`: exactly one item by reference from the route or the selection. A literal row is never accepted.
-* `search`: items of a kind matching a text value source (a form or a draft); the footer search sends the **settled** text only (about 150 ms after the last
-  key), so a bind never re-queries per keystroke.
+* `search`: a Notes search whose author declares a `mode` from the catalogue’s `SearchMode`. The footer sends settled text through `EventSearch`.
+  The renderer supplies no search mode. The host applies the mode declared by the addressed Bind in the active view.
 
 Threads, trashed items and requests are kinds or indexed fields the host (or Turns) declares: `trashed`, `trashed_at`, `waiting_on`, `pending_for` are host-indexed
 fields, so the Notes Trash and the Threads Inbox are ordinary binds.
@@ -82,16 +82,18 @@ host  -> shell  { bind: "notes", audience, parent?, window_ref, state: "ready", 
 
 The catalogue defines one `WindowRequest` envelope and one `WindowReply` union of `WindowResult` and `WindowPlanError`. The typed refusal carries status 422, code `unsupported_query_plan`, and a reason.
 
-**End-relative windows.** End and near-end jumps use `anchor:"end"` only with exact count authority. The range counts backward from the last authorized row, with distance zero at that row. Results keep the Bind’s normal order, echo the end anchor, and carry `count.mode: exact`. The offset is the end distance of the returned row nearest the end.
+**End-relative windows.** End and near-end jumps use `anchor:"end"` only on non-search Binds with exact count authority. The range counts backward from the last authorized row, with distance zero at that row. Results keep the Bind’s normal order, echo the end anchor, and carry `count.mode: exact`. The offset is the end distance of the returned row nearest the end.
 
-**Forward paging.** With effective count mode `estimate` or `none`, the host refuses an end anchor with `end_unavailable` and sends no end distance. An explicit `anchor:"start"` can cross the 500,000 absolute jump ceiling only at the checked next row of a ready window for the same active view, Bind, parent and result version. Deep start replies omit count and the member cache record. In mode `none` show no scroll extent that implies a total.
+**Forward paging.** The host checks search windows against `EventSearchWindow`, the same window envelope restricted to the start anchor.
+For search Binds or with effective count mode `estimate` or `none`, the host refuses an end anchor with `end_unavailable` and sends no end distance. Search End pages forward. An explicit `anchor:"start"` can cross the 500,000 absolute jump ceiling only at the checked next row of a ready window for the same active view, Bind, parent and result version. Deep start replies omit count and the member cache record. In mode `none` show no scroll extent that implies a total.
 
-**Recovery rule.** After skip_limit the renderer pages from the nearer permitted end (start when the view lacks exact-count authority), keeping the original jump target as its goal. After end_unavailable it pages forward from the last loaded row. Forward paging ends on a short ready window or an empty reply. Every other reason shows the Bind error state.
+**Recovery rule.** After skip_limit the renderer pages from the nearer permitted end (start for search Binds or when the view lacks exact-count authority), keeping the original jump target as its goal. After end_unavailable it pages forward from the last loaded row. Forward paging ends on a short ready window or an empty reply. Every other reason shows the Bind error state.
 Row ids are opaque and stable. No position is an authority reference.
 
 * A window is the half-open range `[from, to)` of at most 200 returned rows. The absolute jump ceiling is 500,000. The host may materialize up to 4,096 rows and,
-  separately, skip up to 250,000 entries in an index-only jump from the nearer end of the scoped covering index. Exact counts use the maintained count for the authorized scope.
-  `window.size` is 1 to 200, default 60. `count` is `exact`, `estimate` or `none`.
+  separately, skip up to 250,000 entries in an index-only jump from the nearer end of the scoped covering index. Non-search lists use the maintained count for the authorized scope.
+  Search counts qualified matches only with exact-count authority and within the separate count-work budget in the catalogue. Otherwise search has count mode `none`.
+  See the catalogue’s `query.window` for window sizes.
 * The renderer prefetches ahead of the visible rows and, when a key or a drag walks past the edge of what it holds, asks for the next window at once (no
   settling), coalesced to at most 4 window **requests** a second; the host may answer with a larger range than asked (`offset` and `rows` say what came back).
 * `result_version` identifies the result set. A new version replaces the window wholesale; the renderer skips a replacement equal to what it draws, so a republish that
@@ -116,7 +118,7 @@ Show `loading` until the first window arrives, `empty` when `count` is 0, and `e
 **`refine_query`.** A qualified search over its posting budget returns the catalogue’s `WindowResult` in this state. See `query.search` and `query.live_limits` for limits.
 Show the provisional rows with the Bind’s message or “Refine your search.” Treat the rows as display only and show no total-implying scroll extent or End.
 A broad prefix starts no expansion and may reuse only an already-issued window for the same authorized query and generation. A changed query starts a new search.
-While the projection is behind or stale after revocation, show `loading` with no rows, count or activation contexts.
+While the authorized row-and-field projection is behind or stale after revocation, show `loading` with no rows, count or activation contexts.
 
 ### 2.6 What the schema needs from the host (authorization is the host's job)
 
@@ -128,7 +130,7 @@ The description only asks. Before any indexed work the host must:
    metadata from the count of an `eq` filter or from row order: filters, sorts and counts on a field the audience cannot read are refused, not filtered);
 3. produce **host-owned projections** for guests: rows are built by the host from the item's grant, never by plugin code;
 4. authorize the **whole dependency graph** of an app (no bind takes an operand from another; a search is pinned to the audience's corpus; a count is taken over the
-   already-authorized projection). A guest gets an `exact` count only over an explicit shared root or child projection with count disclosure enabled. Otherwise its mode is `none`, including nested windows. For any audience whose mode is `estimate` or `none`, refuse the end anchor with `end_unavailable` and send no end distance.
+   already-authorized projection). A guest gets an `exact` count only over an explicit shared root or child projection with count disclosure enabled. Otherwise its mode is `none`, including nested windows. For search Binds or any audience whose mode is `estimate` or `none`, refuse the end anchor with `end_unavailable` and send no end distance.
 5. bound the work: windows of at most 200 rows, 16 predicates, **16 binds per app** (chrome and view together: there is one list), and absolute jumps up to 500,000, with the contiguous paging exception for views without exact count authority in §2.3. Apply per actor and
    per space caps on open subscriptions, window bytes and invalidations a second, coalesced before querying; pushes are **host-only** and **never wake the space runtime**;
 6. **deliver activation contexts**: with each window (`WindowResult.activation_contexts`, one entry per row and action), with the view when it opens (`ViewOpenResult`, for the header,
@@ -298,8 +300,8 @@ the web, SwiftUI natively); no plugin is written twice, and anything the vocabul
   (section 8, item 4). The contract's figure is about 100 ms; the web renderer's rest is adaptive: 1.6 times the longest gap between repeats in the burst, at least 45 ms and at most 120 ms, which is the same rule measured on the web; a load
   never starts while keys are still repeating, and a new key cancels the previous load.
 * **Home, End and Page Up/Down** over rows that are not loaded are a renderer duty. The host answers windows and the renderer moves selection when the target arrives.
-  Home asks for `[0, n)` from the start. With exact count authority, End requests `anchor: end` from zero. Page Up/Down request a window around the current index
-  and may use the end anchor near the tail only with exact count authority. Without it, End pages forward from the last loaded row. Follow the recovery rule in §2.3
+  Home asks for `[0, n)` from the start. On a non-search Bind with exact count authority, End requests `anchor: end` from zero and Page Up/Down may use the end anchor near the tail.
+  Search End and End without exact-count authority page forward from the last loaded row. Follow the recovery rule in §2.3
   and retain the target during jump recovery. A view with count mode `none` shows no scroll extent implying a total.
 * **Search refinement** uses the `refine_query` Bind state in §2.5.
 * **A `list` takes the remaining height of its stack and scrolls itself.** One `list` per scroll region: a `stack` that holds a list does not scroll, and nested scrolling
@@ -471,9 +473,8 @@ template, sidebar section, view root and list node. Adding the first row adds an
 ### 9.2 Notes: windowed sidebar, collections, Trash, rename with Undo, bulk Trash and Share, Move to collection
 
 **Written:** collections as a bound section; notes as a list bound to the route's collection in index windows with an exact count; Trash as a bind (`trashed eq true`); Restore;
-Empty Trash and Share as host sheets reached by a `ShellAction` (the host writes the material); rename with a prompt and a host-owned Undo; the footer search over a search
-bind; the editor as an `item-editor` reading the route's item (the fixture's route is `item` on both sides); the header title from an item bind of the open note; bounded
-multi-selection and bulk Trash through `selection_ref`; **Move to collection** as a `choice` prompt over the collections bind (at most 50 options) that sets the note's collection.
+Empty Trash and Share as host sheets reached by a `ShellAction` (the host writes the material); rename with a prompt and a host-owned Undo; the footer search over a Notes Bind in `terms` mode; the editor as an `item-editor` reading the route's item (the fixture's route is `item` on both sides); the header title from an item bind of the open note; bounded
+multi-selection and bulk Trash through `selection_ref`; **Move to collection** as a `choice` prompt over the collections bind (at most 50 options) that sets the note's collection. The search-mode fixtures send text through the same `EventSearch` path for all declared modes.
 **Not written / open:**
 * **New note opens the note it creates** (`created`, `then`); **pin without a runtime wake** (the metadata patch); **Undo and status** have no wire shape yet in the event union
   (the plugins and native lanes define them); **Empty Trash** names no kind and an Editor should not see it (`showWhen` on roles).

@@ -1,0 +1,10 @@
+{
+  "reads": [
+    "notes"
+  ],
+  "kinds": {
+    "notes": {
+      "fields": {}
+    }
+  }
+}
