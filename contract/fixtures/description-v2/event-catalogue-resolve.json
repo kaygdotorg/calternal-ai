@@ -1,0 +1,11 @@
+{
+  "type": "invoke",
+  "action_id": "rename",
+  "activation_id": "act-1",
+  "activation_context": "ctx-9f3",
+  "interaction": {
+    "prompt": {
+      "title": "Q3 plan"
+    }
+  }
+}

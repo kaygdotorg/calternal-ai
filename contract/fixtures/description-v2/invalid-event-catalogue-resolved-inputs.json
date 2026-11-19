@@ -1,0 +1,9 @@
+{
+  "type": "invoke",
+  "action_id": "rename",
+  "activation_id": "act-1",
+  "activation_context": "ctx",
+  "inputs": {
+    "item": "n-7f3"
+  }
+}

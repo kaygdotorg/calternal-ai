@@ -1,0 +1,32 @@
+{
+  "version": 2,
+  "revision": 1,
+  "binds": [
+    {
+      "id": "a",
+      "source": {
+        "type": "list",
+        "kind": "notes"
+      }
+    },
+    {
+      "id": "b",
+      "source": {
+        "type": "list",
+        "kind": "notes"
+      },
+      "filter": {
+        "all": [
+          {
+            "field": "title",
+            "op": "prefix",
+            "value": {
+              "bind": "a",
+              "field": "title"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -56,8 +56,7 @@
               }
             },
             "tone": "good",
-            "fullSwipe": true,
-            "retry": "safe"
+            "fullSwipe": true
           }
         ]
       },
@@ -81,30 +80,6 @@
     ]
   },
   "header": {
-    "title": "Reading list",
-    "trailing": [
-      {
-        "id": "add",
-        "title": "Add",
-        "icon": "plus",
-        "operation": "reading.add",
-        "inputs": {
-          "url": {
-            "form": "add",
-            "field": "url"
-          },
-          "title": {
-            "form": "add",
-            "field": "title"
-          }
-        },
-        "preview": {
-          "material": [
-            "url"
-          ]
-        },
-        "retry": "keyed"
-      }
-    ]
+    "title": "Reading list"
   }
 }

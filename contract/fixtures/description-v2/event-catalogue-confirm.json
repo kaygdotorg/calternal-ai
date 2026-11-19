@@ -1,0 +1,6 @@
+{
+  "type": "invoke_confirm",
+  "activation_id": "act-1",
+  "resolution_ref": "res-1",
+  "confirmation_challenge": "chal-1"
+}

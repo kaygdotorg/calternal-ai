@@ -1,0 +1,21 @@
+{
+  "version": 2,
+  "revision": 1,
+  "sidebar": {
+    "sections": [
+      {
+        "id": "x",
+        "title": "X",
+        "actions": [
+          {
+            "id": "a",
+            "title": "Do",
+            "operation": "notes.pin",
+            "inputs": {},
+            "retry": "safe"
+          }
+        ]
+      }
+    ]
+  }
+}

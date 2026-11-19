@@ -58,8 +58,7 @@
               }
             },
             "tone": "good",
-            "fullSwipe": true,
-            "retry": "safe"
+            "fullSwipe": true
           }
         ]
       },
@@ -162,7 +161,6 @@
               "field": "url"
             }
           },
-          "retry": "keyed",
           "result": {
             "show": [
               "pending",
@@ -216,8 +214,7 @@
             "material": [
               "item"
             ]
-          },
-          "retry": "keyed"
+          }
         }
       },
       {

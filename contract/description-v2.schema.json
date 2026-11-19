@@ -88,13 +88,17 @@
           "properties": {
             "selection": {
               "$ref": "#/$defs/Id"
+            },
+            "set": {
+              "const": true,
+              "description": "The set of rows the person ticked in a list whose `selectionMode` is `multiple` (at most 50), as a HOST-ISSUED selection reference (`interaction.selection_ref` in the catalogue's Interaction): the shell sends the ticked row ids to the host, the host validates them against the bind's snapshot and the viewer and returns the reference; an action names the reference, never the ids."
             }
           },
           "additionalProperties": false,
           "required": [
             "selection"
           ],
-          "description": "The id of the row selected in the bind with this id (or the item chosen in a selector). Resolved at activation time from what is rendered."
+          "description": "The row selected in the bind with this id (single selection: reconstructed by the host from the activation context, never read from the event), or with `set` the host-issued reference of the ticked rows."
         },
         {
           "type": "object",
@@ -182,7 +186,17 @@
                   "maxLength": 120
                 },
                 "initial": {
-                  "$ref": "#/$defs/ValueSource"
+                  "$ref": "#/$defs/ValueSource",
+                  "description": "A starting value. A value the person did not edit is NOT typed input: it is previewed like any other default (docs/description-contract.md 3.2)."
+                },
+                "kind": {
+                  "enum": [
+                    "text",
+                    "date",
+                    "datetime"
+                  ],
+                  "default": "text",
+                  "description": "text: a text field; date: a date picker; datetime: a date and time picker (snooze). The answer is a device-held value in `interaction.prompt`."
                 }
               },
               "additionalProperties": false,
@@ -196,6 +210,20 @@
             "prompt"
           ],
           "description": "Ask the person for text when the action fires (a rename); `initial` may use the row scope."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "control": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9._:-]{0,63}\\.[a-z0-9][a-z0-9._:-]{0,63}$"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "control"
+          ],
+          "description": "The value of a composer control, named <composer id>.<control id> (provider, model, reasoning, permission, machine): a device-held choice among options the host authorised, sent inside `interaction.form`."
         }
       ]
     },
@@ -224,7 +252,7 @@
           ]
         },
         "value": {
-          "$ref": "#/$defs/ValueSource"
+          "$ref": "#/$defs/FilterValue"
         }
       },
       "additionalProperties": false,
@@ -293,16 +321,16 @@
           "$ref": "#/$defs/Id"
         },
         "collection": {
-          "description": "Restricts a list to one collection: a collection id from a literal, the route or the selection.",
-          "$ref": "#/$defs/ValueSource"
+          "$ref": "#/$defs/FilterValue",
+          "description": "Restricts a list to one collection: a collection id from a literal, the route or the selection."
         },
         "ref": {
-          "description": "For `item`: the item reference, from the route or the selection (never a literal row).",
-          "$ref": "#/$defs/ValueSource"
+          "$ref": "#/$defs/FilterValue",
+          "description": "For `item`: the item reference, from the route or the selection (never a literal row)."
         },
         "text": {
-          "description": "For `search`: the query text, from a form or draft.",
-          "$ref": "#/$defs/ValueSource"
+          "$ref": "#/$defs/TextSource",
+          "description": "For `search`: the query text, from a form or draft."
         }
       },
       "additionalProperties": false,
@@ -423,7 +451,7 @@
         "leadingActions": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/Invoke"
+            "$ref": "#/$defs/Action"
           },
           "maxItems": 3,
           "description": "Swipe-right actions. Only the first may set fullSwipe."
@@ -431,7 +459,7 @@
         "trailingActions": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/Invoke"
+            "$ref": "#/$defs/Action"
           },
           "maxItems": 3,
           "description": "Swipe-left actions."
@@ -439,7 +467,7 @@
         "menu": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/Invoke"
+            "$ref": "#/$defs/Action"
           },
           "maxItems": 12,
           "description": "Context menu."
@@ -477,7 +505,7 @@
               "type": "object",
               "properties": {
                 "invoke": {
-                  "$ref": "#/$defs/Invoke"
+                  "$ref": "#/$defs/Action"
                 }
               },
               "additionalProperties": false,
@@ -486,6 +514,13 @@
               ]
             }
           ]
+        },
+        "selectionMode": {
+          "enum": [
+            "single",
+            "multiple"
+          ],
+          "default": "single"
         }
       },
       "additionalProperties": false,
@@ -509,7 +544,7 @@
           "$ref": "#/$defs/Icon"
         },
         "action": {
-          "$ref": "#/$defs/Invoke"
+          "$ref": "#/$defs/Action"
         }
       },
       "additionalProperties": false,
@@ -634,7 +669,17 @@
         "operation": {
           "type": "string",
           "pattern": "^[a-z][a-z0-9._-]{0,95}$",
-          "description": "A plugin operation id as the manifest declares it, or a host built-in (`host.item.trash`, `host.item.rename`, `host.item.restore`, `host.undo`, `host.approval.resolve`, `host.route.set`). Built-ins that need no worker are executed by the host without waking the space runtime."
+          "not": {
+            "enum": [
+              "host.approval.resolve",
+              "host.undo",
+              "host.action.status",
+              "host.panel.ask",
+              "host.route.set",
+              "host.session.end"
+            ]
+          },
+          "description": "A plugin operation id as the manifest declares it, or a host built-in listed in the host catalogue (contract/host-catalogue-v2.json): host.item.trash, host.item.rename, host.item.restore, host.item.patch-metadata, host.trash.purge, host.item.share, turns.start, host.turn.stop. A generic Invoke can NOT name the operations that belong to a designated host component or result (host.approval.resolve: the request card; host.undo and host.action.status: an outcome; host.panel.ask: the transcript's onQuote) or a shell-only control (host.route.set, host.session.end: see ShellAction). Retry, effect class and idempotency come from the catalogue and the manifest, never from the description."
         },
         "inputs": {
           "type": "object",
@@ -659,7 +704,7 @@
         },
         "fullSwipe": {
           "type": "boolean",
-          "description": "On the first action of a swipe set: a full swipe performs it. Set only on a safe action; a full swipe never opens a confirmation."
+          "description": "On the FIRST action of a swipe set only, and only for a reversible host built-in that returns an Undo and needs no preview (the catalogue says which); a full swipe never opens a confirmation and never runs an irreversible, disclosing or widening operation."
         },
         "confirm": {
           "type": "object",
@@ -696,15 +741,6 @@
           },
           "additionalProperties": false,
           "description": "Trusted preview. For an operation the host classifies as mutating or disclosing, the shell shows the person the RESOLVED value of every material input, resolved at activation time from what is rendered, before sending; the description can add material inputs but cannot remove one the operation's manifest declares."
-        },
-        "retry": {
-          "enum": [
-            "safe",
-            "keyed",
-            "never"
-          ],
-          "default": "keyed",
-          "description": "safe: idempotent; keyed: the host de-duplicates by the invocation id so a retry after a dropped connection does not repeat the effect; never: the interface must not retry and shows the outcome as unknown."
         },
         "pending": {
           "enum": [
@@ -867,14 +903,14 @@
         "actions": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/Invoke"
+            "$ref": "#/$defs/Action"
           },
           "maxItems": 3
         },
         "menu": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/Invoke"
+            "$ref": "#/$defs/Action"
           },
           "maxItems": 12
         }
@@ -942,10 +978,10 @@
           "maxLength": 240
         },
         "primary": {
-          "$ref": "#/$defs/Invoke"
+          "$ref": "#/$defs/Action"
         },
         "secondary": {
-          "$ref": "#/$defs/Invoke"
+          "$ref": "#/$defs/Action"
         },
         "when": {
           "type": "object",
@@ -1018,14 +1054,14 @@
         "leading": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/Invoke"
+            "$ref": "#/$defs/Action"
           },
           "maxItems": 2
         },
         "trailing": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/Invoke"
+            "$ref": "#/$defs/Action"
           },
           "maxItems": 3
         }
@@ -1053,7 +1089,7 @@
             "menu": {
               "type": "array",
               "items": {
-                "$ref": "#/$defs/Invoke"
+                "$ref": "#/$defs/Action"
               },
               "maxItems": 12
             }
@@ -1209,13 +1245,13 @@
     "Cache": {
       "type": "object",
       "properties": {
-        "policy": {
+        "templates": {
           "enum": [
-            "account",
+            "keep",
             "none"
           ],
-          "default": "account",
-          "description": "account: the shell may keep this description for the first paint at the next launch, keyed by the signed-in account, and deletes it on sign-out; none: the shell keeps nothing."
+          "default": "keep",
+          "description": "keep: the shell may persist this DATA-FREE description for the next launch (bounded by maxAgeDays); none: it keeps nothing."
         },
         "maxAgeDays": {
           "type": "integer",
@@ -1225,7 +1261,7 @@
         }
       },
       "additionalProperties": false,
-      "description": "What the device may keep. A description with host-filled binds names a person's titles once the rows are filled; the cache holds the description (data-free) and, only under `account`, the last windows (bounded to one file of at most 4 MB). Signing out, switching account or a policy of `none` deletes it."
+      "description": "What the device may keep. Only data-free templates persist. Rows the host filled are session-only (memory, partitioned by session, space and audience, cleared on revocation, link closure, sign-out and account switch, never written to storage) and are never painted before the host has authorised the viewer now. Activation contexts, resolution references, confirmation challenges and proofs are never stored (docs/description-contract.md 6)."
     },
     "Chrome": {
       "type": "object",
@@ -1290,60 +1326,51 @@
       "description": "Chrome v2: the description of the shell around the content card. The shell draws it with system controls (sidebar list, header, footer, panel). Data arrives only through binds."
     },
     "Event": {
-      "type": "object",
-      "properties": {
-        "type": {
-          "enum": [
-            "window",
-            "invoke",
-            "route",
-            "selection",
-            "search",
-            "section",
-            "sidebar",
-            "layout",
-            "app",
-            "refresh"
-          ]
+      "description": "Shell to host. In a page-hosted shell the page relays; in a native app without a page the shell sends the same typed request to the host directly. Each variant has its own required fields. The three activation events are the host catalogue's (ResolveActivation, ConfirmActivation, DispatchActivation: action_id, activation_id, activation_context, interaction; the shell sends no resolved row, route or bind value, and the host reconstructs every server-owned source).",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/EventWindow"
         },
-        "bind": {
-          "$ref": "#/$defs/Id"
+        {
+          "$ref": "#/$defs/EventSelection"
         },
-        "id": {
-          "$ref": "#/$defs/Id"
+        {
+          "$ref": "#/$defs/EventSelectionSet"
         },
-        "row": {
-          "$ref": "#/$defs/Id"
+        {
+          "$ref": "#/$defs/EventRoute"
         },
-        "from": {
-          "type": "integer",
-          "minimum": 0
+        {
+          "$ref": "#/$defs/EventSearch"
         },
-        "to": {
-          "type": "integer",
-          "minimum": 0
+        {
+          "$ref": "#/$defs/EventSection"
         },
-        "inputs": {
-          "type": "object",
-          "description": "For invoke: the inputs resolved on the device and SHOWN to the person (material inputs)."
+        {
+          "$ref": "#/$defs/EventSidebar"
         },
-        "invocation": {
-          "type": "string",
-          "maxLength": 64,
-          "description": "For invoke: a fresh id per activation; the host de-duplicates retries by it."
+        {
+          "$ref": "#/$defs/EventLayout"
         },
-        "renderedRevision": {
-          "type": "integer"
+        {
+          "$ref": "#/$defs/EventApp"
         },
-        "sentAt": {
-          "type": "number"
+        {
+          "$ref": "#/$defs/EventRefresh"
+        },
+        {
+          "$ref": "#/$defs/EventComponent"
+        },
+        {
+          "$ref": "host-catalogue-v2.json#/$defs/ResolveActivation"
+        },
+        {
+          "$ref": "host-catalogue-v2.json#/$defs/ConfirmActivation"
+        },
+        {
+          "$ref": "host-catalogue-v2.json#/$defs/DispatchActivation"
         }
-      },
-      "additionalProperties": false,
-      "required": [
-        "type"
-      ],
-      "description": "Shell to host. In a page-hosted shell the page relays; in a native app without a page the shell sends the same typed request to the host directly."
+      ]
     },
     "BindResult": {
       "type": "object",
@@ -1401,63 +1428,15 @@
       "description": "Host to shell: the answer to a window request, projected for this audience."
     },
     "InvokeOutcome": {
-      "type": "object",
-      "properties": {
-        "invocation": {
-          "type": "string"
+      "description": "Host to shell, in the order of the protocol: the reply to a resolve is an ActivationResolution (a resolution_ref and, where the host requires one, a confirmation_challenge with the host's own material preview); the reply to a dispatch is an ActionOutcome (ok, pending with a status_ref, error, stale, refused, unknown, and an undo reference). Both are the catalogue's shapes.",
+      "oneOf": [
+        {
+          "$ref": "host-catalogue-v2.json#/$defs/ActivationResolution"
         },
-        "state": {
-          "enum": [
-            "ok",
-            "pending",
-            "error",
-            "stale",
-            "refused"
-          ]
-        },
-        "code": {
-          "type": "string",
-          "maxLength": 48
-        },
-        "message": {
-          "type": "string",
-          "maxLength": 240,
-          "description": "Plain language, written by the host."
-        },
-        "status": {
-          "type": "string",
-          "maxLength": 64,
-          "description": "A host-owned status reference the interface may poll through a host built-in."
-        },
-        "undo": {
-          "type": "object",
-          "properties": {
-            "ref": {
-              "type": "string",
-              "maxLength": 64
-            },
-            "label": {
-              "type": "string",
-              "maxLength": 60
-            },
-            "expiresAt": {
-              "type": "number"
-            }
-          },
-          "additionalProperties": false,
-          "required": [
-            "ref",
-            "label"
-          ],
-          "description": "A host-owned undo: the interface offers a button that invokes `host.undo` with the ref."
+        {
+          "$ref": "host-catalogue-v2.json#/$defs/ActionOutcome"
         }
-      },
-      "additionalProperties": false,
-      "required": [
-        "invocation",
-        "state"
-      ],
-      "description": "Host to shell: the outcome of an invoke. `stale` means the rendered target changed before activation; the shell re-renders and the person acts again."
+      ]
     },
     "ItemEditor": {
       "type": "object",
@@ -1537,9 +1516,10 @@
               "default": 60,
               "description": "Messages per read; the host reads the screenful first and the rest in steps."
             },
-            "onQuote": {
-              "$ref": "#/$defs/Invoke",
-              "description": "Optional: what `quote` (a selected passage asked about) does, usually host.panel.ask with the passage as input {selection: text}."
+            "quote": {
+              "type": "boolean",
+              "default": false,
+              "description": "Offer Quote on a selected passage. The host handles it (a typed quote reference into the side chat's composer: `Draft.quote`); a description cannot name an operation for it."
             }
           },
           "additionalProperties": false,
@@ -1578,7 +1558,7 @@
             },
             "enabled": {
               "$ref": "#/$defs/ValueSource",
-              "description": "A literal or a source that resolves to a boolean (for example {bind, field} of an item bind); absent means enabled. A composer has no row, so a row-scoped predicate is not accepted here (use enabledWhen)."
+              "description": "A literal or a source that resolves to a boolean; absent means enabled."
             },
             "send": {
               "$ref": "#/$defs/Invoke",
@@ -1594,8 +1574,9 @@
               "description": "@-mentions and /commands the host offers; their targets are authorised by the host, never by the description."
             },
             "stop": {
-              "$ref": "#/$defs/Invoke",
-              "description": "Optional: what the Stop control runs while a turn is in flight (host.turn.stop)."
+              "type": "boolean",
+              "default": false,
+              "description": "Show the host's Stop control while a turn is in flight (host.turn.stop with the thread's active turn, from the composer surface); a description cannot name it as an invoke."
             },
             "enabledWhen": {
               "type": "object",
@@ -1621,6 +1602,60 @@
                 "op"
               ],
               "description": "Enabled while the source compares true against the value, for example {source: {bind: thread, field: state}, op: ne, value: {literal: archived}}. Both sides are value sources, so no renderer has to guess a row scope."
+            },
+            "controls": {
+              "type": "array",
+              "maxItems": 6,
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "$ref": "#/$defs/Id"
+                  },
+                  "label": {
+                    "type": "string",
+                    "maxLength": 60
+                  },
+                  "kind": {
+                    "const": "choice"
+                  },
+                  "options": {
+                    "type": "object",
+                    "properties": {
+                      "source": {
+                        "enum": [
+                          "providers",
+                          "models",
+                          "reasoning",
+                          "permissions",
+                          "machines"
+                        ],
+                        "description": "A host option source: the host returns only options the viewer is authorised for; a description never lists options."
+                      },
+                      "dependsOn": {
+                        "$ref": "#/$defs/Id",
+                        "description": "Another control of this composer whose value narrows these options (models depend on the provider)."
+                      }
+                    },
+                    "additionalProperties": false,
+                    "required": [
+                      "source"
+                    ]
+                  },
+                  "required": {
+                    "type": "boolean",
+                    "default": false
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "id",
+                  "label",
+                  "kind",
+                  "options"
+                ]
+              },
+              "description": "Host-owned choice controls shown with the composer (provider, model, reasoning, permission, machine). Values are device-held choices read through {control: <composer>.<control>} and re-checked by the host against the option source at activation."
             }
           },
           "additionalProperties": false,
@@ -1938,6 +1973,14 @@
         "title": {
           "type": "string",
           "maxLength": 120
+        },
+        "selectionMode": {
+          "enum": [
+            "single",
+            "multiple"
+          ],
+          "default": "single",
+          "description": "multiple: rows can be ticked (at most 50); actions on the set use {selection, set: true}, and the host-written preview shows the count and first titles."
         }
       },
       "additionalProperties": false,
@@ -2112,6 +2155,486 @@
         "root"
       ],
       "description": "The content of the card for one place: data-free like chrome (binds are requests the host fills), drawn with the renderer's own controls. A view uses the same Bind and Invoke as chrome."
+    },
+    "FilterValue": {
+      "description": "Where a filter, collection or item-reference value may come from. ONLY a literal, the viewer, the route or the selection: never a field of another bind, a row, a form or a prompt, so no hidden field of one bind can steer another bind's query (the cross-bind operand leak). `in` takes a homogeneous list of at most 32 literals.",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "literal": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/Literal"
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/Literal"
+                  },
+                  "maxItems": 32
+                }
+              ]
+            }
+          },
+          "required": [
+            "literal"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "viewer": {
+              "enum": [
+                "person",
+                "space",
+                "roles"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "viewer"
+          ],
+          "description": "The signed-in person, the current space or the person's role set in it. Resolved by the host from the session, never from the description."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "route": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]{0,31}$"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "route"
+          ],
+          "description": "A named parameter of the current route (for example the collection or thread in the address). Typed as a reference or string by the field it filters."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "selection": {
+              "$ref": "#/$defs/Id"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "selection"
+          ],
+          "description": "The id of the row selected in the bind with this id (or the item chosen in a selector). Resolved at activation time from what is rendered."
+        }
+      ]
+    },
+    "TextSource": {
+      "description": "The text of a search: a literal, a form field or a composer draft held on the device (what the person typed). Never a field of a bind.",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "literal": {
+              "$ref": "#/$defs/Literal"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "literal"
+          ],
+          "description": "A constant."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "form": {
+              "$ref": "#/$defs/Id"
+            },
+            "field": {
+              "$ref": "#/$defs/Id"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "form",
+            "field"
+          ],
+          "description": "A value of a form held on the device (a text field, a toggle) and submitted only when the action fires."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "draft": {
+              "$ref": "#/$defs/Id"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "draft"
+          ],
+          "description": "The draft text of a composer with this id, held on the device until the action fires."
+        }
+      ]
+    },
+    "ShellAction": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/Id"
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "icon": {
+          "$ref": "#/$defs/Icon"
+        },
+        "shell": {
+          "description": "A control the SHELL performs without an operation, so no generic Invoke can reach it: navigate, reload the view, sign out.",
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "route": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "pattern": "^[a-z][a-z0-9_]{0,31}$"
+                    },
+                    "value": {
+                      "$ref": "#/$defs/ValueSource"
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "value"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "route"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "reload": {
+                  "const": true
+                }
+              },
+              "required": [
+                "reload"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "signOut": {
+                  "const": true
+                }
+              },
+              "required": [
+                "signOut"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "sheet": {
+                  "enum": [
+                    "trash",
+                    "share"
+                  ],
+                  "description": "Open a host-owned protected sheet: the Trash set (confirm and purge, Manager or Owner), or the audience sheet of a share. The sheet, not the description, names the operation and shows the material facts."
+                },
+                "item": {
+                  "$ref": "#/$defs/ValueSource"
+                }
+              },
+              "required": [
+                "sheet"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "role": {
+          "enum": [
+            "destructive"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "shell"
+      ],
+      "additionalProperties": false,
+      "description": "A control the SHELL performs without a generic operation: navigate (host.route.set), reload, sign out (host.session.end), or open a host-owned protected sheet (Trash set / purge, share audience). No generic Invoke can reach them."
+    },
+    "Action": {
+      "description": "An action in chrome: an Invoke (an operation the host dispatches) or a ShellAction (a control the shell performs).",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/Invoke"
+        },
+        {
+          "$ref": "#/$defs/ShellAction"
+        }
+      ]
+    },
+    "EventWindow": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "window"
+        },
+        "bind": {
+          "$ref": "#/$defs/Id"
+        },
+        "from": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100000
+        },
+        "to": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100200
+        },
+        "sentAt": {
+          "type": "number"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "bind",
+        "from",
+        "to"
+      ],
+      "description": "Ask for rows [from, to) of a bind (half-open, at most 200 rows, ranked offset at most 100,000)."
+    },
+    "EventSelection": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "selection"
+        },
+        "bind": {
+          "$ref": "#/$defs/Id"
+        },
+        "row": {
+          "$ref": "#/$defs/Id"
+        },
+        "sentAt": {
+          "type": "number"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "bind",
+        "row"
+      ],
+      "description": "The selection moved in a bind's list (sent once after it settles, never during a key repeat)."
+    },
+    "EventSelectionSet": {
+      "$ref": "https://calternal.cloud/contract/host-catalogue-v2.json#/$defs/SelectionSetRequest",
+      "description": "The ticked rows of a multiple-selection list: the plugins lane's shared shape (type, bind, rows unique and at most 50, an empty list clears, optional sentAt telemetry). The host validates every id against the bind's snapshot and the viewer and answers with a SelectionSetResult carrying the `selection_ref` that actions use; the ids are never an action's input."
+    },
+    "EventRoute": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "route"
+        },
+        "id": {
+          "$ref": "#/$defs/Id"
+        },
+        "row": {
+          "$ref": "#/$defs/Id"
+        },
+        "sentAt": {
+          "type": "number"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "id"
+      ],
+      "description": "A route parameter changed (a row opened, a selector option chosen)."
+    },
+    "EventSearch": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "search"
+        },
+        "bind": {
+          "$ref": "#/$defs/Id"
+        },
+        "text": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "sentAt": {
+          "type": "number"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "text"
+      ],
+      "description": "The settled text of a search field."
+    },
+    "EventSection": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "section"
+        },
+        "id": {
+          "$ref": "#/$defs/Id"
+        },
+        "collapsed": {
+          "type": "boolean"
+        },
+        "sentAt": {
+          "type": "number"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "id",
+        "collapsed"
+      ],
+      "description": "A section was folded or unfolded."
+    },
+    "EventSidebar": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "sidebar"
+        },
+        "open": {
+          "type": "boolean"
+        },
+        "sentAt": {
+          "type": "number"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "open"
+      ],
+      "description": "The sidebar was opened or closed."
+    },
+    "EventLayout": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "layout"
+        },
+        "id": {
+          "$ref": "#/$defs/Id"
+        },
+        "width": {
+          "type": "number",
+          "minimum": 0
+        },
+        "sentAt": {
+          "type": "number"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "id"
+      ],
+      "description": "A layout preference changed (the sidebar's width)."
+    },
+    "EventApp": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "app"
+        },
+        "id": {
+          "$ref": "#/$defs/Id"
+        },
+        "sentAt": {
+          "type": "number"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "id"
+      ],
+      "description": "Another app was chosen in the footer."
+    },
+    "EventRefresh": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "refresh"
+        },
+        "bind": {
+          "$ref": "#/$defs/Id"
+        },
+        "sentAt": {
+          "type": "number"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "type"
+      ],
+      "description": "Pull to refresh: ask the host again for a bind or for all."
+    },
+    "EventComponent": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "component"
+        },
+        "component": {
+          "$ref": "#/$defs/Id"
+        },
+        "route": {
+          "enum": [
+            "transcript.page",
+            "sealed_frame.open",
+            "sealed_frame.resize",
+            "sealed_frame.open_link"
+          ],
+          "description": "The host route the component call uses; the request and reply shapes are the catalogue's component_routes (TranscriptPageRequest, TranscriptPage, SealedFrame*), not defined here."
+        },
+        "request": {
+          "type": "object"
+        },
+        "sentAt": {
+          "type": "number"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "component",
+        "route",
+        "request"
+      ],
+      "description": "A host component's own call to the host (a transcript page read, a sealed frame's open, resize or link). The `request` is validated against the catalogue's schema for the route."
     }
   }
 }

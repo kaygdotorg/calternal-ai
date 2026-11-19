@@ -2,10 +2,10 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://calternal.com/contract/plugin-manifest-v2.schema.json",
   "title": "Calternal plugin manifest v2",
-  "description": "Revision 3 review draft. Only the exercised subset freezes after the pre-freeze spikes. Validate offline with the versioned contract registry. Uniqueness, references, digest verification and approval are separate host checks.",
+  "description": "Revision 4 review draft. Only the exercised subset freezes after the pre-freeze spikes. Validate offline with the versioned contract registry. Uniqueness, references, digest verification and approval are separate host checks.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["api_version", "id", "name", "version", "icon", "apps", "kinds", "operations"],
+  "required": ["api_version", "id", "name", "version", "icon", "apps", "kinds", "operations", "network"],
   "properties": {
     "api_version": { "const": 2 },
     "id": { "$ref": "#/definitions/localId" },
@@ -24,16 +24,23 @@
     "settings": { "type": "array", "maxItems": 64, "items": { "$ref": "#/definitions/setting" } },
     "secrets": { "type": "array", "maxItems": 32, "items": { "$ref": "#/definitions/secret" } },
     "credential_routes": { "type": "array", "maxItems": 32, "items": { "$ref": "#/definitions/credentialRoute" } },
+    "content_fetch": { "const": true, "description": "Render remote images through the host's anonymous image proxy. Grants no worker network access." },
     "network": {
-      "type": "object", "additionalProperties": false, "required": ["destinations"],
-      "properties": {
-        "destinations": {
-          "type": "array", "maxItems": 64,
-          "items": { "oneOf": [
-            { "$ref": "#/definitions/named" }, { "$ref": "#/definitions/media" }
-          ] }
+      "oneOf": [
+        { "const": "none", "description": "No network access. Show the install and gallery badge and deny every worker egress route." },
+        {
+          "type": "object", "additionalProperties": false, "minProperties": 1, "maxProperties": 3,
+          "properties": {
+            "fixed_sites": {
+              "description": "Exact HTTPS hosts accepted at install by a Manager or Owner.",
+              "type": "array", "minItems": 1, "maxItems": 64, "uniqueItems": true,
+              "items": { "$ref": "#/definitions/hostname" }
+            },
+            "user_servers": { "const": true, "description": "Use public HTTPS servers the acting person has added in account setup." },
+            "any_website": { "const": true, "description": "Use public HTTPS with an Owner-approved install warning." }
+          }
         }
-      }
+      ]
     }
   },
   "if": {
@@ -47,6 +54,28 @@
     ]
   },
   "then": { "required": ["worker"] },
+  "allOf": [
+    {
+      "if": { "properties": { "network": { "const": "none" } } },
+      "then": {
+        "properties": {
+          "operations": {
+            "items": { "properties": { "methods": { "not": { "contains": { "enum": ["proxy_request", "credential_call", "request_secret_handle"] } } } } }
+          }
+        }
+      }
+    },
+    {
+      "if": { "required": ["credential_routes"], "properties": { "credential_routes": { "minItems": 1 } } },
+      "then": {
+        "required": ["secrets"],
+        "properties": {
+          "secrets": { "minItems": 1 },
+          "network": { "type": "object", "anyOf": [{ "required": ["fixed_sites"] }, { "required": ["user_servers"] }] }
+        }
+      }
+    }
+  ],
   "definitions": {
     "localId": { "type": "string", "pattern": "^[a-z][a-z0-9]*(?:[-_][a-z0-9]+)*$", "maxLength": 64 },
     "operationId": { "type": "string", "pattern": "^[a-z][a-z0-9_-]*(?:\\.[a-z][a-z0-9_-]*)+$", "maxLength": 128 },
@@ -115,7 +144,7 @@
         "item_rename_status", "item_rename_undo", "item_purge", "empty_trash",
         "collection_create", "collection_membership", "items_list", "items_search", "sharing_check",
         "start_job", "checkpoint_job", "job_status", "cancel_job", "read_setting", "set_setting",
-        "request_secret_handle", "content_prepare", "proxy_request", "credential_call", "turn_start", "turn_status", "turn_cancel",
+        "request_secret_handle", "proxy_request", "credential_call", "turn_start", "turn_status", "turn_cancel",
         "turn_follow_up", "turn_answer", "turn_select_machine", "schedule_create", "schedule_remove"
       ]
     },
@@ -229,14 +258,23 @@
       }
     },
     "credentialRoute": {
-      "description": "Approved endpoints and a host profile bind an operation to typed credential redemption. Validate referenced routes, destination and schemas against the host profile registry.",
+      "description": "Typed account-server or fixed-site credential route. The host checks the associated permission line, endpoint and profile.",
       "type": "object", "additionalProperties": false,
-      "required": ["id", "destination", "host", "port", "profile", "secret", "input_schema", "output_schema"],
+      "required": ["id", "connection", "profile", "secret", "input_schema", "output_schema"],
       "properties": {
         "id": { "$ref": "#/definitions/localId" },
-        "destination": { "$ref": "#/definitions/localId" },
-        "host": { "$ref": "#/definitions/hostname" },
-        "port": { "$ref": "#/definitions/port" },
+        "connection": {
+          "oneOf": [
+            {
+              "type": "object", "additionalProperties": false, "required": ["fixed_site"],
+              "properties": { "fixed_site": { "$ref": "#/definitions/hostname" } }
+            },
+            {
+              "type": "object", "additionalProperties": false, "required": ["user_server"],
+              "properties": { "user_server": { "$ref": "#/definitions/localId" } }
+            }
+          ]
+        },
         "profile": { "$ref": "#/definitions/localId" },
         "secret": { "$ref": "#/definitions/localId" },
         "input_schema": { "$ref": "#/definitions/embeddedSchema" },
@@ -246,37 +284,6 @@
     "hostname": {
       "type": "string", "minLength": 1, "maxLength": 253, "pattern": "^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$",
       "description": "Exact DNS name, checked and normalized by netguard."
-    },
-    "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
-    "hosts": {
-      "type": "array", "minItems": 1, "maxItems": 64, "uniqueItems": true,
-      "items": { "$ref": "#/definitions/hostname" }
-    },
-    "ports": {
-      "type": "array", "minItems": 1, "maxItems": 32, "uniqueItems": true,
-      "items": { "$ref": "#/definitions/port" }
-    },
-    "named": {
-      "type": "object", "additionalProperties": false, "required": ["kind", "id", "hosts", "ports", "protocol"],
-      "properties": {
-        "kind": { "const": "named_connection" },
-        "id": { "$ref": "#/definitions/localId" }, "hosts": { "$ref": "#/definitions/hosts" },
-        "ports": { "$ref": "#/definitions/ports" }, "protocol": { "const": "https" }
-      }
-    },
-    "media": {
-      "type": "object", "additionalProperties": false, "required": ["kind", "id", "profile", "sources", "hosts"],
-      "properties": {
-        "kind": { "const": "content_fetch" }, "id": { "$ref": "#/definitions/localId" },
-        "profile": { "const": "images_fonts" }, "hosts": { "$ref": "#/definitions/hosts" },
-        "sources": {
-          "type": "array", "minItems": 1, "maxItems": 32, "uniqueItems": true,
-          "items": {
-            "type": "object", "additionalProperties": false, "required": ["kind", "field"],
-            "properties": { "kind": { "$ref": "#/definitions/localId" }, "field": { "const": "text" } }
-          }
-        }
-      }
     }
   }
 }

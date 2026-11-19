@@ -301,7 +301,7 @@
             ],
             "properties": {
               "selection_ref": {
-                "$ref": "#/$defs/Ref"
+                "$ref": "#/$defs/SelectionRef"
               }
             }
           }
@@ -759,7 +759,7 @@
             ],
             "properties": {
               "selection_ref": {
-                "$ref": "#/$defs/Ref"
+                "$ref": "#/$defs/SelectionRef"
               }
             }
           }
@@ -897,7 +897,8 @@
         "thread",
         "attachments",
         "mentions",
-        "quote"
+        "quote",
+        "options"
       ],
       "input_schema": {
         "type": "object",
@@ -929,6 +930,28 @@
           },
           "quote": {
             "$ref": "#/$defs/Quote"
+          },
+          "options": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [],
+            "properties": {
+              "provider": {
+                "$ref": "#/$defs/ComposerOptionRef"
+              },
+              "model": {
+                "$ref": "#/$defs/ComposerOptionRef"
+              },
+              "reasoning": {
+                "$ref": "#/$defs/ComposerOptionRef"
+              },
+              "permission": {
+                "$ref": "#/$defs/ComposerOptionRef"
+              },
+              "machine": {
+                "$ref": "#/$defs/ComposerOptionRef"
+              }
+            }
           }
         }
       },
@@ -1176,7 +1199,7 @@
           "$ref": "#/$defs/Draft"
         },
         "selection_ref": {
-          "$ref": "#/$defs/Ref"
+          "$ref": "#/$defs/SelectionRef"
         }
       }
     },
@@ -1624,6 +1647,128 @@
           "$ref": "#/$defs/Ref"
         }
       }
+    },
+    "SelectionRef": {
+      "$ref": "#/$defs/Ref",
+      "description": "Host-issued reference to an eligible selection of at most 50 stable row IDs in this activation context."
+    },
+    "SelectionSetRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "bind",
+        "rows"
+      ],
+      "properties": {
+        "type": {
+          "const": "selection_set"
+        },
+        "bind": {
+          "$ref": "#/$defs/ActionId"
+        },
+        "rows": {
+          "type": "array",
+          "maxItems": 50,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/Ref"
+          },
+          "description": "Stable rows in the checked Bind window set. An empty array clears the selection."
+        },
+        "sentAt": {
+          "type": "number",
+          "description": "Optional renderer telemetry. Never used for authorization, ordering or expiry."
+        }
+      }
+    },
+    "SelectionSetResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "bind",
+        "selection_ref"
+      ],
+      "properties": {
+        "type": {
+          "const": "selection_result"
+        },
+        "bind": {
+          "$ref": "#/$defs/ActionId"
+        },
+        "selection_ref": {
+          "$ref": "#/$defs/SelectionRef"
+        }
+      }
+    },
+    "ComposerControl": {
+      "enum": [
+        "provider",
+        "model",
+        "reasoning",
+        "permission",
+        "machine"
+      ]
+    },
+    "ComposerOptionRef": {
+      "$ref": "#/$defs/Ref",
+      "description": "Host-issued choice bound to viewer, thread and the needed option-source versions."
+    },
+    "ComposerOptionRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "thread",
+        "control"
+      ],
+      "properties": {
+        "thread": {
+          "$ref": "#/$defs/ThreadRef"
+        },
+        "control": {
+          "$ref": "#/$defs/ComposerControl"
+        },
+        "after": {
+          "$ref": "#/$defs/Ref"
+        }
+      }
+    },
+    "ComposerOptionPage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "control",
+        "options"
+      ],
+      "properties": {
+        "control": {
+          "$ref": "#/$defs/ComposerControl"
+        },
+        "options": {
+          "type": "array",
+          "maxItems": 50,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "ref",
+              "label"
+            ],
+            "properties": {
+              "ref": {
+                "$ref": "#/$defs/ComposerOptionRef"
+              },
+              "label": {
+                "$ref": "#/$defs/Text"
+              }
+            }
+          }
+        },
+        "next": {
+          "$ref": "#/$defs/Ref"
+        }
+      }
     }
   },
   "activation_limits": {
@@ -1661,6 +1806,24 @@
         "$ref": "#/$defs/SealedFrameOpenLink"
       },
       "scope": "Host link ID from the current frame, with fresh route authorization"
+    },
+    "selection.set": {
+      "input_schema": {
+        "$ref": "#/$defs/SelectionSetRequest"
+      },
+      "output_schema": {
+        "$ref": "#/$defs/SelectionSetResult"
+      },
+      "scope": "Current authorized Bind, context and depth-limited stable row IDs"
+    },
+    "composer.options": {
+      "input_schema": {
+        "$ref": "#/$defs/ComposerOptionRequest"
+      },
+      "output_schema": {
+        "$ref": "#/$defs/ComposerOptionPage"
+      },
+      "scope": "Host-authorized thread, viewer, and provider/runtime option source"
     }
   }
 }

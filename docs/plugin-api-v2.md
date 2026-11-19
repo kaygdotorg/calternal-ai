@@ -17,8 +17,8 @@ and [broker adapters](../crates/server/src/plugins/broker.rs), container
 isolation for no-KVM, durable jobs/waits, revisions, receipts, diagnostics,
 provider adapters, Notes/collection sharing, anonymous media and the trial
 kit. Reuse them. Add the space supervisor, commit fences, bindings and SDK.
-Mail has a data layer and fixture UI. Real mailbox access waits for a reviewed
-mail engine, credential custody, bounded ingestion and a new-mail trigger.
+Mail has a data layer and fixture UI. Real mailbox access waits for reviewed
+mail ingestion, credential custody and the host table engine.
 
 ## 1. Package and install
 
@@ -53,7 +53,8 @@ providers and outbound disclosures. Gallery installs take one tap. Source
 installs warn. Pin the digest. Members see packages, grants and destinations. Check and probe agent-authored code
 in the space without broker authority, then enable the exact digest and
 grant the Owner confirmed. Verify updates before fencing/draining the old
-revision. Permission widening needs the Owner. Resuming an old job under a
+revision. Permission widening needs the Owner except for the network
+installation approvals below. Resuming an old job under a
 new digest requires compatible migration and current grants. Use the
 [upgrade runner](upgrades.md). Disable/remove fences triggers, tickets and
 scoped views, stops the package and preserves host-owned items and share
@@ -154,10 +155,10 @@ derive from that request and its step or checkpoint position.
 3. **Person by ticket.** The host mints after admission and stores actor,
    session or delegation, package/digest, operation, target, allowed effects,
    approval, audience, epoch, grant revision and expiry. Compare the bound
-   package and live authority on every callback and before delivery. Q2
-   settles ticket lifetime. Terminal completion, cancel and revocation fence
-   the reference. Persist principal, scope and delegation. Mint a new ticket
-   when work becomes runnable.
+   package and live authority on every callback and before delivery. Tickets
+   expire after 60 seconds or earlier on terminal, cancel or revocation.
+   Persist principal, scope and delegation. Mint a fresh ticket from the
+   creator’s current rights for each job run or schedule occurrence.
 
 **Commit and recovery.** Every effect must take the per-space authority
 fence at the engine’s recovery-visible commit point. Check the live grant,
@@ -201,8 +202,13 @@ Receipt identity is enrollment plus the scheduled instant. Run with the
 creator’s authority and selected eligible machine or sandbox and their
 configured permission mode (Approve for me by default). On machine outage,
 catch up once that day in the enrollment’s time zone when the machine returns. Record a visible skip on a later day. Revoking the enrolled session or losing
-access pauses runs pending fresh authorization. Removal fences admitted
-occurrences as well as future schedules.
+access fences admitted work. When the creator leaves the shared space or
+loses the necessary right, stop the schedule and notify the space’s current
+Managers and Owner through host outcomes with no private payload. A Manager
+or Owner may explicitly take over. Reauthorize operation, target, settings,
+machine and account-configured servers under the new creator, and reuse
+existing occurrence receipts so takeover never replays committed runs.
+Removal and takeover fence the prior enrollment before admitting new work.
 
 Set `notify_creator` on an enrollment to request a host notification on outcome. The
 scheduler records a receipt-backed event with enrollment label, status and
@@ -216,25 +222,59 @@ job's target and grant before its existing winning-signal transaction.
 The sender cannot select actor, operation or target. Standalone dispatch is
 outside this contract.
 
+**Network.** A plugin may contact only the public destinations its install
+screen says it can use. Installation approves the listed lines. Show at
+most these three, in plain language, and omit unused lines.
+
+| Install line | Manifest field | Approval |
+| --- | --- | --- |
+| Fixed sites | `network.fixed_sites` lists exact HTTPS hosts | Manager or Owner approves at install. |
+| Servers you add | `network.user_servers` opts in | The actor approves their own server by entering the exact host in account setup. |
+| Any website | `network.any_website` opts in | Owner approval at install with a plain warning. |
+
+An update that adds a line or expands the listed fixed sites asks again
+under the applicable role. Unchanged lines retain consent. People can
+remove their configured hosts independently of package installation.
+Direct sockets and private-network access stay disabled. TCP comes later
+as “Servers you add” with a port.
+
+Declare `network: "none"` for the explicit **No network access** tier.
+Install shows that statement. The gallery generates the same badge and
+filter from the checked manifest digest. An update adding a network line
+loses the badge and asks for approval. Every package process has no ambient
+socket route and has only its own supervisor endpoint. The host checks
+that endpoint’s package identity/digest and current installed policy on
+every broker egress entry, including delegated jobs and credential
+routes. A No network package cannot obtain a worker proxy or credential
+route, even in a space with a network-enabled package. Refuse before DNS,
+connection or proxy-cache lookup. Cross-package IPC cannot borrow egress.
+
+Render remote images only if the package declares `content_fetch: true`.
+The declaration grants no worker egress and does not affect the No
+network badge. If absent, load no remote images. If present, the
+authorized host renderer may fetch through the anonymous proxy with one
+per-person setting, default on. No worker broker method prepares or reads
+these assets. The host media route exposes no fetched bytes or handles to
+the worker and allows no credentials, active content or arbitrary headers.
+
+Before DNS authorize the exact requested host under the selected approved
+line or the anonymous-image path. Resolve through checked public addresses
+and pin address and TLS host identity for dispatch. Recheck authority,
+hostname, address and TLS on redirects. Refuse private addresses and unsafe
+redirects. Explain URL disclosure in the trusted preview where material.
+
 Issue a handle with `request_secret_handle` for an operation-declared
 credential route. Redeem through `credential_call {route, handle, input}`.
-The manifest pins a named HTTPS destination, exact host/port and secret,
-and a registered host profile. Operations reference permitted routes.
-The profile fixes method, path, input, credential injection and output.
-The host compiles those schemas and rejects profile/manifest mismatches
-before enable. No profile means the route stays disabled. Bind redemption
-to the same live actor, invocation, grant revision, runtime epoch, secret
-version, route, profile and endpoint. Reject mismatches before DNS. The
-worker receives the projected typed result or a safe refusal. It cannot
-choose headers, override endpoint or read the credential-bearing response.
-Credentialed routes refuse redirects. Generic proxy requests accept no
-handles or credentials.
-
-For egress, require exact approved hostnames before DNS, pin checked
-addresses and TLS identity, and recheck authority, hostname, address and TLS
-on each allowed redirect. Approval explains URL disclosure including names,
-paths and queries. Media stays anonymous. See Q6–Q7 for approvers/defaults and
-Q9 for the Owner’s earlier TCP decision.
+The route names a fixed approved site or an account-setup server slot, a
+host profile and a secret. Require the matching network line. A credential
+route cannot attach a secret to the “Any website” permission. Resolve an
+exact HTTPS endpoint for this actor before issuing the handle. The profile
+fixes method, path, typed input, credential injection and projected output.
+Check profile and manifest schemas before enable. Bind redemption to the
+actor, ticket, grant revision, epoch, secret version, route and endpoint.
+Refuse mismatches before DNS and disallow credentialed redirects. Generic
+proxy calls accept no credentials. Do not expose credential-bearing
+responses or secret bytes to the worker.
 
 Refusals return 4xx, code, plain message and optional path or next step.
 Foreign resources give opaque `404`. Audit records include time, space,
@@ -262,7 +302,7 @@ its receipt, with long work as a durable job.
 | Rooms / sharing · `sharing_check` | Item ref plus requested action → permission for the live grant. A room is an attribute of the kind, opened client-to-host using its own bounded protocol. Room membership and events keep fencing the item grant. No plugin hook acknowledgment. |
 | Jobs · `start_job`, `checkpoint_job`, `job_status`, `cancel_job` | Declared job, payload and resolved target/grant → durable job ID. Checkpoint only the owning current run. Status/cancel uses a scoped job ID with opaque `404` for foreign jobs. Bounded checkpoints, live progress and park count per space/package. |
 | Settings / secrets · `read_setting`, `set_setting`, `request_secret_handle` | Declared key or secret purpose → effective value/version or opaque handle. Validate type, compare revision on writes and bind personal values to the actor. One bounded engine operation. Missing authorization is `403` or opaque `404` as appropriate. |
-| Proxy · `content_prepare`, `proxy_request`, `credential_call` | Authorized sealed content revision → opaque asset refs. Declared HTTPS destination and bounded typed request → bounded response. Unapproved destination is `403`, oversize `413`, quota `429`. Anonymous media keeps the existing 10 MB, three redirects and 16 hosts/minute fixture ceilings. Typed call returns the profile output or `403` without contacting the endpoint. |
+| Proxy · `proxy_request`, `credential_call` | Approved install line and bounded HTTPS request → bounded response. The host-only sealed content route exposes authorized opaque image refs to the renderer. Unapproved destination is `403`, oversize `413`, quota `429`. Anonymous media keeps the existing 10 MB, three redirects and 16 hosts/minute fixture ceilings. Typed call returns the profile output or `403` without contacting the endpoint. |
 | Turns · `turn_start`, `turn_status`, `turn_cancel`, `turn_follow_up`, `turn_answer`, `turn_select_machine` | Thread ref to start and Turn ref for run controls, with typed payload → admitted turn, bounded status, queue state or protected-request receipt. A person can select their own eligible enrolled machine and login for their own turn. The host resolves eligibility and approval. A plugin cannot select arbitrary placement. Host drafts resolve to checked message text and attachment refs at submit. Transcript pages and append are client-to-host. |
 | Schedules · `schedule_create`, `schedule_remove` | Declared eligible operation, pinned target/payload, time zone and calendar or enrollment ID → durable enrollment or removal receipt. One indexed, bounded write. Resume requires the enrollment and live authority. |
 
@@ -296,14 +336,12 @@ the same request type and resolver. Approvals bind the material action,
 target, grantee and lifetime. Irreversible lifecycle actions use one-use
 confirmation. A stored approval cannot substitute for a live grant.
 
-Background work has no single interactive deadline or persistent ticket.
-A schedule occurrence and each runnable job segment get fresh authority.
-A creator who loses the necessary rights or leaves the space immediately
-fences in-flight commits and future runs. Stop execution, including parked
-continuations, record a safe reason, and leave previously committed work
-intact. The scheduler or jobs engine emits the stopped status without
-waking a worker. Notification recipients and takeover are open (Q2).
-Until decided, no Manager can silently inherit the creator’s grant.
+Background work has no overall interactive deadline or persistent ticket.
+Each authorized run gets a fresh 60-second ticket. Longer work saves a
+checkpoint and continues in a later authorized run when its ticket expires.
+If its creator loses rights or leaves, stop the job, including parked
+continuations, record the reason and preserve committed work. Schedule
+takeover is a host action as described above and confers no job takeover.
 
 Job admission persists operation, target and grant. Revalidate at claim,
 terminal park and resume, including any child and descendants. The runner
@@ -402,14 +440,18 @@ require an authorized reload. Check before sending each page and on resume.
 Changing selection cancels the old delivery. Composer input carries typed
 text and host-checked attachment/mention refs. A quote is a thread and
 opaque transcript passage ref, minted for an authorized durable range;
-a selection or arbitrary source string cannot serve as a quote.
+a selection or arbitrary source string cannot serve as a quote. Composer
+options use the host-owned catalogue routes. Resolve provider, model,
+reasoning, permission and machine choices under the active Thread and
+viewer. Check the component’s typed interaction slots and issued option
+refs before admitting `turns.start`.
 
 A sealed frame ref names a committed content revision and belongs to a
 space and audience. Verify it on first use and each asset request. Expire
 fixture refs after five minutes or earlier on grant/session loss or frame
 removal. `sealed_frame.open` serves HTML on a sandboxed host route with no scripts, forms,
 popups, same-origin privileges, top navigation or direct network.
-The existing anonymous media proxy can serve approved opaque assets.
+The anonymous media proxy serves approved opaque images only when declared and enabled (§3).
 Only the trusted wrapper can call `sealed_frame.resize` or
 `sealed_frame.open_link` with an opaque, checked link ID.
 The host re-resolves links, authorizes internal routes and uses its own
@@ -489,7 +531,9 @@ designated host request card and live approver can resolve an approval.
 Only the authorized holder of an eligible host-issued Undo ref can Undo,
 with the original target and current revision checked again. Share uses
 a host-owned audience sheet. A bulk selection ref is context-bound and
-contains at most 50 eligible items in the fixture. Purge and Empty Trash
+contains at most 50 eligible items in the fixture. `SelectionSetRequest`
+and `SelectionSetResult` accept stable IDs from the checked Bind and return
+a scoped `selection_ref` for authorization at dispatch. Purge and Empty Trash
 use a trusted preview, Manager/Owner confirmation of a host-pinned set and per-batch authority.
 Status polling uses the originating action’s audience. Panel, composer,
 route and session controls use only their catalogue-designated surfaces.
@@ -535,12 +579,14 @@ revoked entries and media from subsequent views.
 
 ## 6. Deliberate cuts
 
-Data access stays brokered. If a real plugin needs bulk records or
-aggregates, consider a host-owned table store behind the broker.
+Every package uses the same brokered data engines, official or community.
+No package owns a database. Build a host-owned table engine, open to every
+plugin through the broker, when an app needs bulk records or aggregates.
+Mail is the expected first consumer.
 
 Description patches and base revisions, viewer
 projections, worker-published feeds, room hook acknowledgments, standalone
-inbound dispatch, direct sockets, brokered TCP pending Q9, private-network and open-internet proxy grants,
+inbound dispatch, direct sockets, brokered TCP and private-network access,
 guest Prompt execution, snapshots, and gallery listing fields are outside
 the first contract. Live room sync is an engine facility. Gallery listing
 policy stays in the submissions repo. These cuts do not retire existing
@@ -584,14 +630,15 @@ package, capture screenshots from fixtures and check completeness.
 Before enabling submissions, a public-guide-only author must produce a
 package and complete listing from the scaffold. The validator must accept
 it, reject an omitted required field and flag a stale connection statement
-or missing screenshot. This preparation and check require no publishing.
+or missing screenshot. It derives the No network access badge from the
+pinned manifest and drops it on a newly approved line. This preparation and check require no publishing.
 
 | Case | Assertion |
 | --- | --- |
 | Wire, quotas and control | Invalid UTF-8, duplicates, deep or oversized JSON, unknown fields, forged package/epoch, frame replay and wrong direction have no effect. Saturate one package and one space while another makes progress and controls arrive or the stalled carrier fences by its watchdog. |
 | Independent permission matrix | Exercise Owner, Manager, Editor, Reader, foreign account, guest View/Comment and revoked ticket across methods and deliveries. Match expected capability/target outcomes from independent fixtures. A compromised supervisor reaches neither a second space nor machine control. |
 | Commit and recovery | Race role/session/plugin revocation with effect commit and egress dispatch. Crash before and after save/park and reconnect with the same receipt. Race answer/deadline/cancel and assert one winning effect. Reject stale handles and changed agent-authored digest. |
-| Scoped render and egress | Seed a warm worker with privileged data and assert the guest sees only host-bound fields. Check counts/windows, empty/load/error, selection coalescing and no wake on a cold read. Refuse disallowed URL/DNS/redirect without connection or foreign media. Verify audit redaction. |
+| Scoped render and egress | Seed a warm worker with privileged data and assert the guest sees only host-bound fields. Check counts/windows, empty/load/error, selection coalescing and no wake on a cold read. Refuse disallowed URL/DNS/redirect without connection or foreign media. Test Manager approval of fixed sites, Owner-only Any website, actor-only account servers, added-line reapproval and No network badge/filter changes. A No network package in the same space as an enabled neighbor must make zero DNS, connection or proxy-cache requests via raw sockets, broker calls, credentials, jobs or forged package routing. Test anonymous images with and without `content_fetch` and the viewer setting. The worker gets no bytes in any case. Verify audit redaction. |
 | Lifecycle and migration | Coalesce wake, bound drain, replace after fault, verify clean boot and exhausted admission. Verify upgrade, remove, active job fences and real/fake parity. Test that parked jobs and signed wait signals survive restart. |
 
 ## 8. Build order and gates
@@ -704,26 +751,15 @@ can discard the change. Mail still waits for a later engine contract.
 
 ## Owner decisions and open questions
 
-See the [recorded answers](https://git.kayg.org/kayg/calternal-ai/src/commit/6e4bc237/docs/open-questions.md#recently-decided-2026-11-17-now-in-the-decision-records).
+See the [recorded answers](https://git.kayg.org/kayg/calternal-ai/src/commit/b8c88b926fa650c0a247c0b74bf5f66a92fc39b4/docs/open-questions.md#recently-decided-2026-11-17-now-in-the-decision-records).
 
 - **Q1 Interactive deadline — DECIDED.** A tap has three seconds of plugin time after a separate short wake allowance. Slower work is a job with progress.
-- **Q2 Ticket lifetime and background ownership — OPEN.** Recommend a
-  maximum 60 seconds per live ticket. Stop scheduled/running/parked work
-  if its creator loses the required rights or leaves. Recommend notifying
-  the creator if still entitled, otherwise a space Manager/Owner with a
-  scoped stopped status and no private payload. Recommend any takeover be
-  a new, explicitly approved enrollment or job under the new actor’s
-  own rights, without replaying committed effects.
+- **Q2 Tickets and schedules — DECIDED.** 60 seconds per ticket, fresh at each run under the creator’s current rights. Stop on lost rights or departure, notify Managers, and allow scoped Manager takeover of the schedule (§3).
 - **Q3 Guest access to a future host-owned table store — OPEN.** Recommend granting none by default and revisiting only with an explicit item-bound profile.
 - **Q4 Gallery listings — DECIDED.** Icon, description, screenshots, age rating and plain connection disclosures are required for gallery submissions. The manifest stays small. See §7.
-- **Q5 Private package database — DECIDED.** Brokered data access only. If a real plugin needs bulk records or aggregates, consider a host-owned table store behind the broker.
-- **Q6 Destination approval — OPEN.** Await the Owner’s simplified network permission decision.
-- **Q7 Media default — OPEN (#80).** Await the simplified network permission decision.
-- **Q8 Plan mapping — OPEN pending measurement.** Recommend choosing plan ceilings from measured wake, memory and saturation rather than embedding tiers in the contract.
-
-- **Q9 Brokered TCP — OPEN for sequencing.** The Owner decided on generic TCP
-  to an approved host and port. The simplified network decision is pending.
-  Direct runtime sockets remain forbidden.
+- **Q5 Storage parity — DECIDED.** No plugin database. Host engines serve official and community plugins equally. Build the table engine when needed, expected for Mail (§6).
+- **Q6, Q7, Q9 Network — DECIDED.** Install lines and actor approval follow §3. No network access is explicit. Declared content fetch loads anonymous images through the host, default on per person. No private network in the first release. TCP follows later under “Servers you add”.
+- **Q8 Plan mapping — OPEN pending measurement.** Choose plan ceilings from measured wake, memory and saturation.
 
 ## Third-round review responses
 
@@ -738,7 +774,7 @@ same tree. Test gates in §8 are requirements for later implementation.
 | 3 | §3 and catalogue retain rename status and protected Undo. |
 | 4 | §3 retains one recovery-visible fence for commit and invalidation. |
 | 5 | §5 retains narrow guest descendants and denies guest jobs pending proof. |
-| 6 | §3 and manifest retain typed credential redemption. |
+| 6 | §3 and manifest retain typed redemption against fixed sites or actor-configured servers. |
 | 7 | §8 retains the real shared writer stall and range/staging checks. |
 | 8 | §8 labels the checked-in guide v1, excludes it from v2 trials and requires the rewritten examples. |
 | 9 | §4.1 authorizes all dependency edges, rejecting cross-bind query operands in the first slice. |
@@ -753,7 +789,7 @@ same tree. Test gates in §8 are requirements for later implementation.
 | 18 | §3 retains hosted calendar, missed-run and notification semantics. |
 | 19 | §7 retains `defineView` and `defineChrome` for exercised schemas. |
 | 20 | §8 gates the rewritten v2 guide and compiled examples. No runtime or guide implementation in this revision. |
-| 21 | Q9 retains the earlier TCP decision and asks about sequencing. |
+| 21 | §3 and Q9 record the Owner’s decision: TCP comes later under “Servers you add”. |
 | 22 | §4.1, catalogue and Part B retain authorized viewer/route operands. |
 | 23 | §§3, 4.1 and catalogue register canonical kinds and Trash/inbox fields. |
 | 24 | §3 retains metadata save against the live room head. |

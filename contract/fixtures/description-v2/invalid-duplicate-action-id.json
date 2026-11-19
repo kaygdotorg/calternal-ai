@@ -1,0 +1,26 @@
+{
+  "version": 2,
+  "revision": 1,
+  "sidebar": {
+    "sections": [
+      {
+        "id": "x",
+        "title": "X",
+        "actions": [
+          {
+            "id": "same",
+            "title": "A",
+            "operation": "notes.pin",
+            "inputs": {}
+          },
+          {
+            "id": "same",
+            "title": "B",
+            "operation": "notes.pin",
+            "inputs": {}
+          }
+        ]
+      }
+    ]
+  }
+}

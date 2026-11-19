@@ -3,15 +3,15 @@
   "revision": 1,
   "scheme": "dark",
   "cache": {
-    "policy": "account",
-    "maxAgeDays": 14
+    "maxAgeDays": 14,
+    "templates": "keep"
   },
   "binds": [
     {
       "id": "waiting",
       "source": {
         "type": "list",
-        "kind": "thread"
+        "kind": "threads"
       },
       "fields": [
         "title",
@@ -47,8 +47,8 @@
         "icon": {
           "field": "provider",
           "map": {
-            "claude": "claude",
-            "codex": "codex"
+            "calternal-claude-code": "claude",
+            "calternal-codex": "codex"
           }
         },
         "marks": [
@@ -113,7 +113,7 @@
       "id": "all",
       "source": {
         "type": "list",
-        "kind": "thread"
+        "kind": "threads"
       },
       "fields": [
         "title",
@@ -138,8 +138,8 @@
         "icon": {
           "field": "provider",
           "map": {
-            "claude": "claude",
-            "codex": "codex"
+            "calternal-claude-code": "claude",
+            "calternal-codex": "codex"
           }
         },
         "marks": [
@@ -166,11 +166,11 @@
       "id": "requests",
       "source": {
         "type": "list",
-        "kind": "request"
+        "kind": "requests"
       },
       "fields": [
         "title",
-        "thread"
+        "thread_ref"
       ],
       "filter": {
         "all": [
@@ -192,7 +192,7 @@
       "id": "thread",
       "source": {
         "type": "item",
-        "kind": "thread",
+        "kind": "threads",
         "ref": {
           "route": "thread"
         }
@@ -217,11 +217,13 @@
         "primary": {
           "id": "open-request",
           "title": "Review",
-          "operation": "host.route.set",
-          "inputs": {
-            "thread": {
-              "bind": "requests",
-              "field": "thread"
+          "shell": {
+            "route": {
+              "name": "thread",
+              "value": {
+                "bind": "requests",
+                "field": "thread_ref"
+              }
             }
           }
         }
@@ -260,8 +262,7 @@
                 "id": "create",
                 "title": "New thread",
                 "operation": "threads.create",
-                "inputs": {},
-                "retry": "keyed"
+                "inputs": {}
               }
             }
           }
@@ -359,7 +360,6 @@
                 "draft": "composer"
               }
             },
-            "retry": "keyed",
             "result": {
               "show": [
                 "pending",
