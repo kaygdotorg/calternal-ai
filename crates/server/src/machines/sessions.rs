@@ -380,6 +380,7 @@ impl MachineService {
         if st.finish_worker_stops(machine_id, session, req)? > 0 {
             self.worker_changes.notify_waiters();
         }
+        st.deliver_erasures(machine_id)?;
         st.reconcile(machine_id, &req.leases, &self.settings);
         st.place_waiting(&self.settings);
         Ok(notify)

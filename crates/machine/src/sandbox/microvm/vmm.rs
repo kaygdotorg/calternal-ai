@@ -17,6 +17,7 @@ use tokio::net::UnixStream;
 use tokio::process::{Child, Command};
 use uuid::Uuid;
 
+use super::snapshot_api::AttemptError;
 use super::wire::{self, Request, Response};
 use super::{Config, SandboxError, SandboxResult};
 
@@ -195,7 +196,7 @@ impl Guest {
         control_disk: PathBuf,
         owned: Arc<File>,
         permit: Arc<OwnedSemaphorePermit>,
-    ) -> SandboxResult<Self> {
+    ) -> Result<Self, AttemptError> {
         let guest =
             Self::load_small(config, run, generation, disk, control_disk, owned, permit).await?;
         let ready = tokio::time::timeout(Duration::from_secs(2), async {
@@ -203,17 +204,18 @@ impl Guest {
             SystemRandom::new()
                 .fill(&mut seed)
                 .map_err(|_| SandboxError("Cannot get fresh small VM entropy".into()))?;
-            guest.control(&Request::ReseedSmall(seed)).await?;
-            guest.control(&Request::SmallReady).await
+            guest.control_checked(&Request::ReseedSmall(seed)).await?;
+            guest.control_checked(&Request::SmallReady).await
         })
         .await;
         match ready {
             Ok(Ok(())) => Ok(guest),
-            _ => {
+            result => {
                 guest.stop().await?;
-                Err(SandboxError(
-                    "Small plugin VM restore could not reseed and become ready".into(),
-                ))
+                match result {
+                    Ok(Err(error)) => Err(error),
+                    _ => Err(SandboxError("Small plugin VM reseed timed out".into()).into()),
+                }
             }
         }
     }
@@ -227,24 +229,22 @@ impl Guest {
         control_disk: PathBuf,
         owned: Arc<File>,
         permit: Arc<OwnedSemaphorePermit>,
-    ) -> SandboxResult<Self> {
+    ) -> Result<Self, AttemptError> {
         use super::snapshot_api;
         let socket = run.join(format!(
             "{}.sock",
             &Uuid::new_v4().simple().to_string()[..16]
         ));
         if socket.as_os_str().len() >= 100 {
-            return Err(SandboxError(
-                "microVM runtime directory path is too long".into(),
-            ));
+            return Err(SandboxError("microVM runtime directory path is too long".into()).into());
         }
         let api_socket = socket.with_extension("api");
         let token = tokio::fs::read(&control_disk)
             .await
             .map_err(SandboxError::new)?;
-        let token: &[u8] = token
-            .get(..32)
-            .ok_or_else(|| SandboxError("Invalid saved control drive".into()))?;
+        let token: &[u8] = token.get(..32).ok_or_else(|| {
+            AttemptError::Refused(SandboxError("Invalid saved control drive".into()))
+        })?;
         let key = Arc::new(hmac::Key::new(hmac::HMAC_SHA256, token));
         let mut command = Command::new(&config.firecracker);
         command.arg("--api-sock").arg(&api_socket);
@@ -267,9 +267,9 @@ impl Guest {
                 .map_err(SandboxError::new)?
             {
                 if !guest.alive() || tokio::time::Instant::now() >= deadline {
-                    return Err(SandboxError(
-                        "Firecracker did not open the snapshot API".into(),
-                    ));
+                    return Err(
+                        SandboxError("Firecracker did not open the snapshot API".into()).into(),
+                    );
                 }
                 tokio::time::sleep(Duration::from_millis(20)).await;
             }
@@ -280,10 +280,10 @@ impl Guest {
                 &guest.socket,
             )
             .await?;
-            snapshot_api::resume(&api_socket).await
+            snapshot_api::resume(&api_socket).await.map_err(Into::into)
         })
         .await
-        .unwrap_or_else(|_| Err(SandboxError("Small plugin VM restore timed out".into())));
+        .unwrap_or_else(|_| Err(SandboxError("Small plugin VM restore timed out".into()).into()));
         if let Err(error) = ready {
             guest.stop().await?;
             return Err(error);
@@ -301,6 +301,11 @@ impl Guest {
     }
 
     pub(super) async fn control(&self, request: &Request) -> SandboxResult<()> {
+        self.control_checked(request).await.map_err(Into::into)
+    }
+
+    /// Distinguish an authenticated guest refusal from a broken or late pipe.
+    pub(super) async fn control_checked(&self, request: &Request) -> Result<(), AttemptError> {
         tokio::time::timeout(Duration::from_secs(15), async {
             let mut channel = connect(&self.socket).await?;
             wire::prove(channel.get_mut(), &self.key)
@@ -311,14 +316,19 @@ impl Guest {
                 .map_err(SandboxError::new)?;
             match wire::receive(&mut channel).await {
                 Ok(Response::Ready) => Ok(()),
-                Ok(Response::Error) => Err(SandboxError(
+                Ok(Response::Error) => Err(AttemptError::Refused(SandboxError(
                     "microVM guest rejected sandbox operation".into(),
-                )),
-                _ => Err(SandboxError("microVM guest channel closed".into())),
+                ))),
+                Ok(Response::Unavailable) => {
+                    Err(SandboxError("microVM guest operation unavailable".into()).into())
+                }
+                _ => Err(SandboxError("microVM guest channel closed".into()).into()),
             }
         })
         .await
-        .map_err(|_| SandboxError("microVM guest operation timed out".into()))?
+        .map_err(|_| {
+            AttemptError::Unavailable(SandboxError("microVM guest operation timed out".into()))
+        })?
     }
 
     pub(super) async fn stop(mut self) -> SandboxResult<()> {

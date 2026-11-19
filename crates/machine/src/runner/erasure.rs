@@ -46,8 +46,8 @@ impl Runner {
     }
 
     /// Stop the matching small VM before attempting physical erasure.
-    /// Hold the parking guard through deletion so idle release cannot publish
-    /// another snapshot. A failed stop or removal stays queued on the server.
+    /// Join the slot's terminal action before erasing under the space gate.
+    /// A failed stop or removal stays queued on the server.
     pub(super) async fn erase_space_runtime(
         &self,
         request_id: Uuid,
@@ -61,7 +61,6 @@ impl Runner {
         {
             return;
         }
-        let _parking = self.parking.lock().await;
         let mut stopped = true;
         for slot in self
             .all()
@@ -74,10 +73,23 @@ impl Runner {
                 stopped = false;
             }
         }
-        let success = stopped && self.backend.erase_space_runtime(space).await.is_ok();
+        let success = stopped && self.erase_space_files(space).await.is_ok();
         self.discards
             .lock()
             .expect("discards")
             .insert(request_id, success);
+    }
+    async fn erase_space_files(
+        &self,
+        space: calternal_types::SpaceId,
+    ) -> crate::sandbox::SandboxResult<()> {
+        let result = self.backend.erase_space_runtime(space).await;
+        #[cfg(target_os = "linux")]
+        if result.is_err()
+            && let Some(root) = &self.space_runtime_root
+        {
+            return crate::sandbox::microvm::erase_unconfigured(root, space).await;
+        }
+        result
     }
 }

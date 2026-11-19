@@ -99,11 +99,93 @@ pub(super) fn queue(
             .map_err(sql)?,
     );
     db.execute(
+        "DELETE FROM space_runtime_checkpoints AS checkpoint
+         WHERE EXISTS (SELECT 1 FROM machine_erasures
+                       WHERE space_runtime=checkpoint.space AND machine=checkpoint.machine)",
+        [],
+    )
+    .map_err(sql)?;
+    db.execute(
         &format!("DELETE FROM space_runtime_locations WHERE {owner_field}=?1"),
         [&id],
     )
     .map_err(sql)?;
     Ok(added)
+}
+
+/// Read checkpoint affinity and stale holders at cold placement only.
+pub(super) fn space_placement(
+    db: &Connection,
+    space: calternal_types::SpaceId,
+) -> Result<(Option<Uuid>, HashSet<Uuid>), Error> {
+    use rusqlite::OptionalExtension as _;
+    let space = space.to_string();
+    let newest = db
+        .query_row(
+            "SELECT machine FROM space_runtime_checkpoints WHERE space=?1",
+            [&space],
+            |row| uuid(row, 0),
+        )
+        .optional()
+        .map_err(sql)?;
+    let mut statement = db
+        .prepare_cached(
+            "SELECT machine FROM machine_erasures WHERE space_runtime=?1 AND space_runtime!=''",
+        )
+        .map_err(sql)?;
+    let pending = statement
+        .query_map([space], |row| uuid(row, 0))
+        .map_err(sql)?
+        .collect::<rusqlite::Result<_>>()
+        .map_err(sql)?;
+    Ok((newest, pending))
+}
+
+impl State {
+    /// Commit the acknowledged checkpoint location and erasures for other copies
+    /// together while the registry still retains the old placement reservation.
+    pub(super) fn record_space_checkpoint(
+        &mut self,
+        space: calternal_types::SpaceId,
+        machine: Uuid,
+    ) -> Result<(), Error> {
+        let tx = self.db.transaction().map_err(sql)?;
+        let space = space.to_string();
+        let holder = machine.to_string();
+        let changed = tx
+            .execute(
+                "INSERT INTO space_runtime_checkpoints VALUES(?1,?2)
+             ON CONFLICT(space) DO UPDATE SET machine=excluded.machine
+             WHERE space_runtime_checkpoints.machine!=excluded.machine",
+                params![space, holder],
+            )
+            .map_err(sql)?;
+        if changed == 0 {
+            return Ok(());
+        }
+        let pending = {
+            let mut statement = tx.prepare(
+                "INSERT OR IGNORE INTO machine_erasures(machine,account,thread,space_runtime,request_id)
+                 SELECT machine,'','',space,lower(hex(randomblob(16))) FROM
+                   (SELECT DISTINCT machine,space FROM space_runtime_locations WHERE space=?1 AND machine!=?2)
+                 RETURNING machine"
+            ).map_err(sql)?;
+            statement
+                .query_map(params![space, holder], |row| uuid(row, 0))
+                .map_err(sql)?
+                .collect::<rusqlite::Result<Vec<_>>>()
+                .map_err(sql)?
+        };
+        tx.commit().map_err(sql)?;
+        self.pending_erasure_machines
+            .extend(pending.iter().copied());
+        for machine in pending {
+            if let Some(live) = self.machines.get(&machine).and_then(|m| m.live.as_ref()) {
+                live.notify.notify_one();
+            }
+        }
+        Ok(())
+    }
 }
 
 /// Retire only success reports bound to this machine. A failed removal stays

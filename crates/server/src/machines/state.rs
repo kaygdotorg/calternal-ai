@@ -427,6 +427,7 @@ impl State {
                         account: Some(account),
                         session,
                         seq,
+                        checkpoint,
                     },
                 );
             }
@@ -525,20 +526,26 @@ impl State {
                 self.end_for_placement(lease, "shared space machine changed", false);
                 continue;
             }
+            let small = l.row.worker
+                && l.row.image.as_deref()
+                    == Some(calternal_machine::sandbox::worker::SPACE_VM_IMAGE);
+            let (checkpoint, erasures) = if small {
+                match super::erasure_queue::space_placement(&self.db, l.row.space) {
+                    Ok(placement) => placement,
+                    Err(error) => {
+                        tracing::warn!(%error, "cannot read small VM checkpoint placement");
+                        continue;
+                    }
+                }
+            } else {
+                (None, HashSet::new())
+            };
             let mut memory_blocked = false;
             let best = self
                 .machines
                 .values()
-                // Shared-space workers use initialized operator containers.
-                .filter(|m| {
-                    !l.row.worker
-                        || Self::worker_machine(
-                            m,
-                            settings,
-                            l.row.image.as_deref()
-                                == Some(calternal_machine::sandbox::worker::SPACE_VM_IMAGE),
-                        )
-                })
+                .filter(|m| !l.row.worker || Self::worker_machine(m, settings, small))
+                .filter(|m| !erasures.contains(&m.row.id))
                 .filter(|m| l.row.harness.is_none() || Self::harness_machine(m))
                 .filter(|m| l.row.pinned_machine.is_none_or(|id| id == m.row.id))
                 .filter(|m| {
@@ -553,6 +560,7 @@ impl State {
                 .filter(|(_, free)| *free > 0)
                 .max_by_key(|(m, free)| {
                     (
+                        checkpoint == Some(m.row.id),
                         l.row.last_machine == Some(m.row.id),
                         m.row.owner != Owner::Pool,
                         *free,

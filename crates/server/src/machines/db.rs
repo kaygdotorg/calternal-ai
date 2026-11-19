@@ -57,11 +57,21 @@ CREATE INDEX IF NOT EXISTS workspace_locations_account ON workspace_locations(ac
 CREATE TABLE IF NOT EXISTS account_home_locations(
  account TEXT NOT NULL, machine TEXT NOT NULL, PRIMARY KEY(account,machine)
 ) STRICT, WITHOUT ROWID;
+CREATE TABLE space_runtime_locations(
+ space TEXT NOT NULL, account TEXT NOT NULL, machine TEXT NOT NULL,
+ PRIMARY KEY(space,account,machine)
+) STRICT, WITHOUT ROWID;
+CREATE INDEX space_runtime_locations_account ON space_runtime_locations(account);
+CREATE TABLE space_runtime_checkpoints(
+ space TEXT PRIMARY KEY, machine TEXT NOT NULL
+) STRICT, WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS machine_erasures(
  machine TEXT NOT NULL, account TEXT NOT NULL, thread TEXT NOT NULL,
+ space_runtime TEXT NOT NULL DEFAULT '',
  request_id TEXT NOT NULL UNIQUE, retry_after_ms INTEGER NOT NULL DEFAULT 0,
- PRIMARY KEY(machine,account,thread)
+ PRIMARY KEY(machine,account,thread,space_runtime)
 ) STRICT, WITHOUT ROWID;
+CREATE INDEX machine_erasure_by_space ON machine_erasures(space_runtime,machine) WHERE space_runtime!='';
 CREATE INDEX IF NOT EXISTS machine_erasure_delivery ON machine_erasures(machine,retry_after_ms,request_id);
 CREATE INDEX IF NOT EXISTS workspace_discards_pending ON workspace_discards(machine,state);
 CREATE INDEX IF NOT EXISTS workspace_discards_account ON workspace_discards(account);
@@ -85,25 +95,6 @@ CREATE TABLE space_execution (
 ) STRICT, WITHOUT ROWID;
 ALTER TABLE leases ADD COLUMN shared_sponsor TEXT;
 ALTER TABLE leases ADD COLUMN shared_tools TEXT CHECK (shared_tools IS NULL OR json_valid(shared_tools));
-";
-
-const SPACE_RUNTIME_ERASURE: &str = "
-CREATE TABLE space_runtime_locations(
- space TEXT NOT NULL, account TEXT NOT NULL, machine TEXT NOT NULL,
- PRIMARY KEY(space,account,machine)
-) STRICT, WITHOUT ROWID;
-CREATE INDEX space_runtime_locations_account ON space_runtime_locations(account);
-ALTER TABLE machine_erasures RENAME TO old_machine_erasures;
-CREATE TABLE machine_erasures(
- machine TEXT NOT NULL, account TEXT NOT NULL, thread TEXT NOT NULL,
- space_runtime TEXT NOT NULL DEFAULT '',
- request_id TEXT NOT NULL UNIQUE, retry_after_ms INTEGER NOT NULL DEFAULT 0,
- PRIMARY KEY(machine,account,thread,space_runtime)
-) STRICT, WITHOUT ROWID;
-INSERT INTO machine_erasures(machine,account,thread,request_id,retry_after_ms)
- SELECT machine,account,thread,request_id,retry_after_ms FROM old_machine_erasures;
-DROP TABLE old_machine_erasures;
-CREATE INDEX machine_erasure_delivery ON machine_erasures(machine,retry_after_ms,request_id);
 ";
 
 pub(crate) use calternal_types::now_ms;
@@ -478,13 +469,8 @@ pub(crate) fn upgrade_schema() -> calternal_store::migrations::Schema<'static> {
     const TITLES: (i64, &str) = (7, TITLE_LEASES);
     const HARNESS: (i64, &str) = (8, ADD_HARNESS);
     const SHARED: (i64, &str) = (9, SPACE_EXECUTION);
-    const VM_ERASURE: (i64, &str) = (10, SPACE_RUNTIME_ERASURE);
-    const CURRENT: Schema<'static> = Schema::new(
-        "machines.db",
-        6,
-        &[SCHEMA],
-        &[TITLES, HARNESS, SHARED, VM_ERASURE],
-    );
+    const CURRENT: Schema<'static> =
+        Schema::new("machines.db", 6, &[SCHEMA], &[TITLES, HARNESS, SHARED]);
     #[cfg(feature = "test-plugins")]
     if option_env!("CALTERNAL_RELEASE_TEST_MIGRATION") == Some("v7") {
         const FIXTURE: Schema<'static> = Schema::new(
@@ -495,9 +481,8 @@ pub(crate) fn upgrade_schema() -> calternal_store::migrations::Schema<'static> {
                 TITLES,
                 HARNESS,
                 SHARED,
-                VM_ERASURE,
                 (
-                    11,
+                    10,
                     "CREATE TABLE upgrade_fixture (id INTEGER PRIMARY KEY) STRICT;",
                 ),
             ],

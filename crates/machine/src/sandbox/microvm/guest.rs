@@ -10,6 +10,7 @@ use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::{Mutex, Semaphore};
 use uuid::Uuid;
 
+use super::snapshot_api::AttemptError;
 use super::wire::{self, Request, Response};
 use crate::protocol::ChunkEvent;
 use crate::sandbox::{
@@ -89,14 +90,45 @@ impl Agent {
                     .map_err(SandboxError::new),
             };
         }
-        let response = if self.control(request).await.is_ok() {
-            Response::Ready
-        } else {
-            Response::Error
+        let result = match request {
+            Request::ReseedSmall(seed) => self.reseed_small(seed).await,
+            request => self.control(request).await.map_err(AttemptError::Refused),
+        };
+        let response = match result {
+            Ok(()) => Response::Ready,
+            Err(AttemptError::Refused(_)) => Response::Error,
+            Err(AttemptError::Unavailable(_)) => Response::Unavailable,
         };
         wire::send(&mut io, &response)
             .await
             .map_err(SandboxError::new)
+    }
+
+    async fn reseed_small(&self, seed: [u8; 32]) -> Result<(), AttemptError> {
+        use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+        // The small guest snapshots only after the package and its
+        // exec pipes have been stopped. An active guest cannot reseed.
+        // Only this guest's startup can wait on the privileged
+        // helper. Keep the lock until acknowledgement so Start cannot
+        // observe an incomplete seed exchange.
+        let threads = self.threads.lock().await;
+        if !threads.is_empty() {
+            return Err(AttemptError::Refused(SandboxError(
+                "small plugin guest was not drained".into(),
+            )));
+        }
+        let mut control = UnixStream::connect("/run/calternal-reseed.sock")
+            .await
+            .map_err(SandboxError::new)?;
+        control.write_all(&seed).await.map_err(SandboxError::new)?;
+        if control.read_u8().await.map_err(SandboxError::new)? != b'1' {
+            return Err(AttemptError::Refused(SandboxError(
+                "small plugin guest reseed was not acknowledged".into(),
+            )));
+        }
+        tokio::fs::write(SMALL_READY, [])
+            .await
+            .map_err(|error| SandboxError::new(error).into())
     }
 
     async fn control(&self, request: Request) -> SandboxResult<()> {
@@ -115,30 +147,7 @@ impl Agent {
                     .await
                     .map_err(SandboxError::new)
             }
-            Request::ReseedSmall(seed) => {
-                use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
-                // The small guest snapshots only after the package and its
-                // exec pipes have been stopped. An active guest cannot reseed.
-                // Only this guest's startup can wait on the privileged
-                // helper. Keep the lock until acknowledgement so Start cannot
-                // observe an incomplete seed exchange.
-                let threads = self.threads.lock().await;
-                if !threads.is_empty() {
-                    return Err(SandboxError("small plugin guest was not drained".into()));
-                }
-                let mut control = UnixStream::connect("/run/calternal-reseed.sock")
-                    .await
-                    .map_err(SandboxError::new)?;
-                control.write_all(&seed).await.map_err(SandboxError::new)?;
-                if control.read_u8().await.map_err(SandboxError::new)? != b'1' {
-                    return Err(SandboxError(
-                        "small plugin guest reseed was not acknowledged".into(),
-                    ));
-                }
-                tokio::fs::write(SMALL_READY, [])
-                    .await
-                    .map_err(SandboxError::new)
-            }
+            Request::ReseedSmall(_) => unreachable!(),
             Request::Start(space, mut spec) => {
                 spec.space_id = Some(space);
                 if self.small {

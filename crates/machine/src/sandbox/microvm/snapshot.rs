@@ -297,7 +297,13 @@ fn copy_extents(input: &mut File, output: &mut File, length: u64) -> io::Result<
 }
 
 fn record(generation: &Generation, component: &str) -> io::Result<String> {
-    let metadata = fs::symlink_metadata(generation.path.join(component))?;
+    let metadata = fs::symlink_metadata(generation.path.join(component)).map_err(|error| {
+        if error.kind() == io::ErrorKind::NotFound {
+            invalid()
+        } else {
+            error
+        }
+    })?;
     if !metadata.is_file() || metadata.len() == 0 {
         return Err(invalid());
     }

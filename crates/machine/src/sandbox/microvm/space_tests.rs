@@ -50,6 +50,41 @@ async fn small_snapshot_reseeds_recovers_after_interruption_and_rejects_mixed_fi
         .rand_bytes(5)
         .tempdir_in(path.parent().unwrap())
         .unwrap();
+    // Observe actual cold Firecracker launches without changing the product
+    // runner or guest. The wrapper delegates every invocation to Firecracker.
+    use std::os::unix::fs::{PermissionsExt as _, symlink};
+    let mut config: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    symlink(
+        config["firecracker"].as_str().unwrap(),
+        root.path().join("real-firecracker"),
+    )
+    .unwrap();
+    let launcher = root.path().join("firecracker");
+    std::fs::write(
+        &launcher,
+        r#"#!/bin/sh
+profile=${0%/*}
+for arg do
+    if [ "$arg" = "--config-file" ]; then
+        printf 'boot\n' >> "$profile/boot-count"
+        break
+    fi
+done
+exec "$profile/real-firecracker" "$@"
+"#,
+    )
+    .unwrap();
+    std::fs::set_permissions(&launcher, std::fs::Permissions::from_mode(0o700)).unwrap();
+    config["firecracker"] = serde_json::json!(launcher);
+    let path = root.path().join("fixture.json");
+    std::fs::write(&path, config.to_string()).unwrap();
+    let cold_boots = || {
+        std::fs::read_to_string(root.path().join("boot-count"))
+            .unwrap()
+            .lines()
+            .count()
+    };
     let runtime = Arc::new(
         SmallRuntime::load(root.path().to_path_buf(), &path)
             .await
@@ -138,6 +173,17 @@ async fn small_snapshot_reseeds_recovers_after_interruption_and_rejects_mixed_fi
         vm.stop().await.unwrap();
         std::fs::remove_file(disk).unwrap();
     }
+
+    // A host filesystem error on the production restore path preserves current.
+    let run = runtime.state.root.join("run");
+    let blocked_disk = run.join(&base.disk_name);
+    std::fs::create_dir(&blocked_disk).unwrap();
+    assert!(runtime.start(&spec).await.is_err());
+    assert_eq!(
+        Generation::current(&saved, &binding).unwrap().unwrap().id,
+        base.id
+    );
+    std::fs::remove_dir(blocked_disk).unwrap();
 
     let first = runtime.start(&spec).await.unwrap();
     assert_eq!(
@@ -242,12 +288,34 @@ async fn small_snapshot_reseeds_recovers_after_interruption_and_rejects_mixed_fi
     assert!(other.exists());
     let newer = runtime.start(&spec).await.unwrap();
     newer.release().await.unwrap();
+    // A genuine Podman Start refusal on restore invalidates the checkpoint.
+    // The deliberately oversized package also refuses the single cold attempt.
+    let mut oversized = spec.clone();
+    oversized.worker.as_mut().unwrap().source =
+        "x".repeat(crate::sandbox::worker::MAX_SOURCE_BYTES + 1);
+    let before = cold_boots();
+    assert!(runtime.start(&oversized).await.is_err());
+    assert_eq!(cold_boots(), before + 1);
+    assert!(!saved.exists());
+    let rebuilt = runtime.start(&spec).await.unwrap();
+    assert!(
+        rebuilt
+            .slot
+            .lock()
+            .await
+            .vm
+            .as_ref()
+            .unwrap()
+            .restored
+            .is_none()
+    );
+    rebuilt.release().await.unwrap();
     let expired = std::time::SystemTime::now() - RETENTION - Duration::from_secs(1);
     std::fs::File::open(saved.join("current"))
         .unwrap()
         .set_modified(expired)
         .unwrap();
-    runtime.sweep_expired().await.unwrap();
+    runtime.sweep_expired().await;
     assert!(!saved.exists());
     assert!(other.exists());
 }

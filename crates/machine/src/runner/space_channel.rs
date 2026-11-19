@@ -1,6 +1,7 @@
 //! Attach the supervisor endpoint to a worker assignment from machine sync.
 use super::*;
 use crate::protocol::SpaceChannelAssignment;
+use crate::sandbox::{Exec, OutputEvent};
 use calternal_plugin_host::{
     Error as ProtocolError, MAX_FRAME_BYTES,
     space_channel::{

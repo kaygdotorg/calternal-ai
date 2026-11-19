@@ -10,31 +10,23 @@
 mod erasure;
 /// Supervision of the isolated v2 package pipe.
 mod space_channel;
+mod upload;
 
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
-use base64::Engine;
-use base64::engine::general_purpose::STANDARD as B64;
 use tokio::sync::{OnceCell, RwLock};
 use uuid::Uuid;
 
 use crate::Error;
 use crate::link::Link;
-use crate::protocol::{
-    Capacity, Chunk, ChunkEvent, Down, ExitInfo, LeaseReport, OutputAck, OutputPost, SandboxSpec,
-    SandboxState,
-};
-use crate::sandbox::{Backend, Exec, ExecRequest, OutputEvent, Sandbox, failed_exec};
+use crate::protocol::{Capacity, Down, LeaseReport, SandboxSpec, SandboxState};
+use crate::sandbox::{Backend, ExecRequest, Sandbox, failed_exec};
 
 /// Most output bytes an exec keeps waiting for the server's acknowledgement.
 pub const UNACKED_BYTES: usize = 256 * 1024;
-/// Largest upload body, in raw output bytes.
-const POST_BYTES: usize = 1024 * 1024;
-/// Short wait to batch small writes into one upload.
-const COALESCE: Duration = Duration::from_millis(20);
 
 type SandboxCell = OnceCell<Result<Arc<dyn Sandbox>, String>>;
 
@@ -49,7 +41,7 @@ struct Slot {
     last_use: Mutex<Instant>,
     /// The first terminal action chooses whether teardown preserves files.
     closed: OnceLock<bool>,
-    stop: OnceCell<()>,
+    stop: OnceCell<bool>,
     /// A v2 placement is supervised once and the supervisor owns its teardown.
     channel_started: AtomicBool,
     execs: Mutex<HashSet<Uuid>>,
@@ -76,14 +68,16 @@ impl Slot {
                     } else {
                         sb.stop().await
                     };
-                    result.map_err(|e| {
-                        tracing::warn!(lease=%self.lease_id,error=%e,"sandbox stop failed");
-                    })
+                    result
+                        .map(|()| keep_files && sb.checkpoint_saved())
+                        .map_err(|e| {
+                            tracing::warn!(lease=%self.lease_id,error=%e,"sandbox stop failed");
+                        })
                 })
                 .await
                 .is_ok();
         }
-        let _ = self.stop.set(());
+        let _ = self.stop.set(false);
         true
     }
 }
@@ -97,6 +91,8 @@ pub struct Runner {
     discards: Mutex<HashMap<Uuid, bool>>,
     parking: tokio::sync::Mutex<()>,
     uploads: Arc<()>,
+    #[cfg(target_os = "linux")]
+    space_runtime_root: Option<std::path::PathBuf>,
 }
 
 impl Runner {
@@ -110,7 +106,16 @@ impl Runner {
             discards: Mutex::new(HashMap::new()),
             parking: tokio::sync::Mutex::new(()),
             uploads: Arc::new(()),
+            #[cfg(target_os = "linux")]
+            space_runtime_root: None,
         }
+    }
+
+    /// Bind this role's sandbox root for erasures after a backend change.
+    #[cfg(target_os = "linux")]
+    pub(crate) fn with_space_runtime_root(mut self, root: std::path::PathBuf) -> Self {
+        self.space_runtime_root = Some(root);
+        self
     }
 
     /// Bounded deletion results retained until a successful sync acknowledges them.
@@ -175,7 +180,13 @@ impl Runner {
                 lease_id: s.lease_id,
                 fence: s.fence.load(Ordering::Acquire),
                 sandbox: match s.closed.get() {
-                    Some(true) if s.is_small_vm() => SandboxState::SleepPending,
+                    Some(true) if s.is_small_vm() => {
+                        if s.stop.get() == Some(&true) {
+                            SandboxState::CheckpointSaved
+                        } else {
+                            SandboxState::SleepPending
+                        }
+                    }
                     Some(_) => SandboxState::Failed {
                         reason: "the local lease expired or is closing".into(),
                     },
@@ -443,6 +454,7 @@ impl Runner {
                     && slot.spec.worker.is_some()
                     && slot.is_small_vm()
                     && Self::close(&slot, true).await
+                    && slot.stop.get() != Some(&true)
                 {
                     self.slots.lock().expect("slots").remove(&lease_id);
                 }
@@ -573,14 +585,6 @@ impl Runner {
         closed
     }
 
-    pub(crate) async fn drain_outputs(&self) {
-        // After the session stops dispatching, the count can only fall. Each
-        // exec holds its reference until upload is acknowledged or fenced.
-        while Arc::strong_count(&self.uploads) > 1 {
-            tokio::time::sleep(Duration::from_millis(5)).await;
-        }
-    }
-
     fn all(&self) -> Vec<Arc<Slot>> {
         self.slots
             .lock()
@@ -588,108 +592,5 @@ impl Runner {
             .values()
             .cloned()
             .collect()
-    }
-
-    /// Number the exec's events and upload them until the exit is acknowledged,
-    /// the lease is fenced or the machine is revoked. Worker replies can
-    /// unblock a broker round trip, so only ordinary exec output waits to batch.
-    async fn upload(&self, lease_id: Uuid, fence: u64, exec_id: Uuid, mut exec: Exec, batch: bool) {
-        let mut pending: VecDeque<(Chunk, usize)> = VecDeque::new();
-        let (mut seq, mut bytes, mut ended, mut backoff) =
-            (0u64, 0usize, false, Duration::from_millis(200));
-        let push = |ev: OutputEvent,
-                    seq: &mut u64,
-                    pending: &mut VecDeque<(Chunk, usize)>,
-                    bytes: &mut usize| {
-            *seq += 1;
-            let (event, size, last) = match ev {
-                OutputEvent::Data(stream, b) => (
-                    ChunkEvent::Data {
-                        stream,
-                        data: B64.encode(&b),
-                    },
-                    b.len(),
-                    false,
-                ),
-                OutputEvent::Exit(info) => (ChunkEvent::Exit(info), 0, true),
-            };
-            pending.push_back((Chunk { seq: *seq, event }, size));
-            *bytes += size;
-            last
-        };
-        loop {
-            if !ended && pending.is_empty() {
-                match exec.events.recv().await {
-                    Some(ev) => ended |= push(ev, &mut seq, &mut pending, &mut bytes),
-                    None => {
-                        let lost = OutputEvent::Exit(ExitInfo {
-                            error: Some("output ended without exit".into()),
-                            ..ExitInfo::default()
-                        });
-                        ended |= push(lost, &mut seq, &mut pending, &mut bytes);
-                    }
-                }
-                if !ended && batch {
-                    tokio::time::sleep(COALESCE).await;
-                }
-            }
-            while !ended && bytes < UNACKED_BYTES {
-                match exec.events.try_recv() {
-                    Ok(ev) => ended |= push(ev, &mut seq, &mut pending, &mut bytes),
-                    Err(_) => break,
-                }
-            }
-            let mut size = 0;
-            let chunks: Vec<Chunk> = pending
-                .iter()
-                .take_while(|(_, n)| {
-                    size += n;
-                    size <= POST_BYTES || size == *n
-                })
-                .map(|(c, _)| c.clone())
-                .collect();
-            let post = OutputPost {
-                lease_id,
-                fence,
-                exec_id,
-                chunks,
-            };
-            match self
-                .link
-                .post::<_, OutputAck>(
-                    "/api/v1/machine/output",
-                    &post,
-                    true,
-                    Duration::from_secs(30),
-                )
-                .await
-            {
-                Ok(ack) => {
-                    backoff = Duration::from_millis(200);
-                    while pending.front().is_some_and(|(c, _)| c.seq <= ack.acked) {
-                        bytes -= pending.pop_front().expect("front").1;
-                    }
-                    if ended && pending.is_empty() {
-                        return;
-                    }
-                    if let Some(ms) = ack.retry_after_ms {
-                        tokio::time::sleep(Duration::from_millis(ms.min(5_000))).await;
-                    }
-                }
-                Err(Error::Revoked) => return,
-                Err(e) if matches!(e.status(), Some(404 | 409)) => {
-                    tracing::info!(lease = %lease_id, exec = %exec_id, "output refused: lease fenced");
-                    return;
-                }
-                Err(e) => {
-                    if e.status() == Some(401) {
-                        self.link.wait_for_session().await;
-                    }
-                    tracing::debug!(error = %e, "output upload failed; retrying");
-                    tokio::time::sleep(backoff).await;
-                    backoff = (backoff * 2).min(Duration::from_secs(5));
-                }
-            }
-        }
     }
 }

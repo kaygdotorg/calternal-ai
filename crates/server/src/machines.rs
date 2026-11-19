@@ -335,8 +335,14 @@ impl MachineService {
                 continue;
             }
             if row.worker {
-                row.fence += 1;
-                row.reason = Some("plugin workers ended by server restart".into());
+                let checkpoint = row.state == "stopping"
+                    && row.reason.as_deref() == Some(space_channel::SMALL_VM_IDLE_REASON)
+                    && row.image.as_deref()
+                        == Some(calternal_machine::sandbox::worker::SPACE_VM_IMAGE);
+                if !checkpoint {
+                    row.fence += 1;
+                    row.reason = Some("plugin workers ended by server restart".into());
+                }
                 if let Some(machine) = row
                     .machine
                     .filter(|id| st.machines.get(id).is_some_and(|m| !m.row.revoked))
@@ -344,7 +350,10 @@ impl MachineService {
                     row.state = "stopping".into();
                     st.worker_stops.insert(
                         row.id,
-                        workers::WorkerStop::recovered(machine, Some(row.account)),
+                        workers::WorkerStop {
+                            checkpoint,
+                            ..workers::WorkerStop::recovered(machine, Some(row.account))
+                        },
                     );
                     db::put_lease(&st.db, &row).map_err(sql)?;
                     st.take_slot(Some(machine), Some(row.account));

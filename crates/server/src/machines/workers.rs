@@ -17,6 +17,8 @@ pub(super) struct WorkerStop {
     pub session: [u8; 32],
     /// Outbox sequence the session must acknowledge.
     pub seq: u64,
+    /// The terminal command authorized a checkpoint.
+    pub checkpoint: bool,
 }
 
 impl WorkerStop {
@@ -28,6 +30,7 @@ impl WorkerStop {
             account,
             session: [0; 32],
             seq: u64::MAX,
+            checkpoint: false,
         }
     }
 }
@@ -298,15 +301,27 @@ impl super::state::State {
         let done: Vec<_> = self
             .worker_stops
             .iter()
-            .filter(|(lease, stop)| {
-                stop.machine == machine
-                    && (stop.session != *session || req.ack >= stop.seq)
-                    && !req.leases.iter().any(|report| report.lease_id == **lease)
+            .filter_map(|(lease, stop)| {
+                if stop.machine != machine || (stop.session == *session && req.ack < stop.seq) {
+                    return None;
+                }
+                let report = req.leases.iter().find(|report| report.lease_id == *lease);
+                let Some(report) = report else {
+                    return Some((*lease, None));
+                };
+                let row = &self.leases.get(lease)?.row;
+                let saved = stop.checkpoint
+                    && stop.account.is_some()
+                    && report.sandbox == calternal_machine::protocol::SandboxState::CheckpointSaved
+                    && report.fence.checked_add(1) == Some(row.fence);
+                saved.then_some((*lease, Some(row.space)))
             })
-            .map(|(id, _)| *id)
             .collect();
         let count = done.len();
-        for id in done {
+        for (id, checkpoint) in done {
+            if let Some(space) = checkpoint {
+                self.record_space_checkpoint(space, machine)?;
+            }
             self.finish_worker_stop(id)?;
         }
         Ok(count)
@@ -653,6 +668,7 @@ mod tests {
                     account: Some(owner),
                     session: [2; 32],
                     seq: 5,
+                    checkpoint: false,
                 },
             );
             assert_eq!(

@@ -1,14 +1,15 @@
 //! Dedicated offline placements for the small plugin guest.
 use super::snapshot::{Binding, Generation};
+use super::snapshot_api::AttemptError;
+use super::storage::{RETENTION, RETENTION_SWEEP, erase_saved, sweep};
 use super::*;
 use calternal_types::SpaceId;
 use tokio::sync::{OwnedMutexGuard, OwnedSemaphorePermit};
 
-type PlacementGate = Arc<OwnedMutexGuard<()>>;
+/// Exclusive ownership of one space while checkpoint I/O is in flight.
+pub(super) type PlacementGate = Arc<OwnedMutexGuard<()>>;
 
 const GATE_WAIT: Duration = Duration::from_secs(3);
-const RETENTION: Duration = Duration::from_secs(24 * 60 * 60);
-const RETENTION_SWEEP: Duration = Duration::from_secs(15 * 60);
 
 /// Machine-local capacity and per-space exclusion for small offline guests.
 pub(in crate::sandbox) struct SmallRuntime {
@@ -49,7 +50,7 @@ impl SmallRuntime {
             .set(version.to_owned())
             .map_err(|_| SandboxError("Small plugin VM is already initialized".into()))?;
         self.state.initialize().await?;
-        self.sweep_expired().await?;
+        self.sweep_expired().await;
         let runtime = Arc::downgrade(self);
         tokio::spawn(async move {
             loop {
@@ -57,34 +58,14 @@ impl SmallRuntime {
                 let Some(runtime) = runtime.upgrade() else {
                     return;
                 };
-                if let Err(error) = runtime.sweep_expired().await {
-                    tracing::warn!(%error, "cannot prune expired small plugin VM snapshots");
-                }
+                runtime.sweep_expired().await;
             }
         });
         Ok(())
     }
 
-    async fn sweep_expired(&self) -> SandboxResult<()> {
-        let root = self.state.root.join("spaces");
-        let mut entries = match tokio::fs::read_dir(root).await {
-            Ok(entries) => entries,
-            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
-            Err(error) => return Err(SandboxError::new(error)),
-        };
-        while let Some(entry) = entries.next_entry().await.map_err(SandboxError::new)? {
-            let name = entry.file_name();
-            let Some(space) = name.to_str().and_then(|name| name.parse::<SpaceId>().ok()) else {
-                continue;
-            };
-            if let Ok(gate) = self.gate(space).try_lock_owned() {
-                let path = entry.path();
-                if super::snapshot::expired(&path, RETENTION).await? {
-                    erase_saved(path, Arc::new(gate)).await?;
-                }
-            }
-        }
-        Ok(())
+    async fn sweep_expired(&self) {
+        sweep(self.state.root.join("spaces"), Some(self), None).await;
     }
 
     /// Reserve a space and a capacity slot, then restore or boot and admit its worker.
@@ -151,27 +132,42 @@ impl SmallRuntime {
                 .map_err(SandboxError::new)?
         };
         let run = self.state.root.join("run");
+        let request = Request::Start(space, spec.clone());
         let restored = match generation {
             Ok(Some(generation)) => {
-                match self
-                    .restore(&run, &generation, owned.clone(), permit.clone(), &gate)
-                    .await
-                {
+                let attempt = async {
+                    let (vm, disk) = self
+                        .restore(&run, &generation, owned.clone(), permit.clone(), &gate)
+                        .await?;
+                    if let Err(error) = vm.control_checked(&request).await {
+                        vm.stop().await?;
+                        return Err(error);
+                    }
+                    Ok((vm, disk))
+                }
+                .await;
+                match attempt {
                     Ok(restored) => Some(restored),
                     Err(error) => {
-                        tracing::warn!(%space, %error, "small plugin VM restore failed; starting cold");
                         clear_restore_scratch(&run, &generation, gate.clone()).await?;
-                        erase_saved(saved.clone(), gate.clone()).await?;
-                        None
+                        match error {
+                            AttemptError::Refused(error) => {
+                                tracing::warn!(%space, %error, "small plugin VM checkpoint refused; starting cold");
+                                erase_saved(saved.clone(), gate.clone()).await?;
+                                None
+                            }
+                            AttemptError::Unavailable(error) => return Err(error),
+                        }
                     }
                 }
             }
             Ok(None) => None,
-            Err(error) => {
+            Err(error) if error.kind() == io::ErrorKind::InvalidData => {
                 tracing::warn!(%space, %error, "refusing inconsistent small VM snapshot; starting cold");
                 erase_saved(saved.clone(), gate.clone()).await?;
                 None
             }
+            Err(error) => return Err(SandboxError::new(error)),
         };
         let (vm, disk) = match restored {
             Some(restored) => restored,
@@ -183,14 +179,14 @@ impl SmallRuntime {
                 let vm =
                     Guest::boot_small(&self.state.config, &run, disk.path.clone(), owned, permit)
                         .await?;
+                if let Err(error) = vm.control(&request).await {
+                    vm.stop().await?;
+                    disk.clear().await?;
+                    return Err(error);
+                }
                 (vm, disk)
             }
         };
-        if let Err(error) = vm.control(&Request::Start(space, spec.clone())).await {
-            vm.stop().await?;
-            disk.clear().await?;
-            return Err(error);
-        }
         let socket = vm.socket.clone();
         let key = vm.key.clone();
         let slot = Arc::new(AsyncMutex::new(Account {
@@ -205,10 +201,12 @@ impl SmallRuntime {
             gate: Mutex::new(Some(gate)),
             saved,
             binding,
+            checkpoint: std::sync::atomic::AtomicBool::new(false),
         }))
     }
 
-    fn gate(&self, space: SpaceId) -> Arc<AsyncMutex<()>> {
+    /// Find the gate shared by this space’s placements, sweep and erasure.
+    pub(super) fn gate(&self, space: SpaceId) -> Arc<AsyncMutex<()>> {
         let mut slots = self.slots.lock().expect("small runtime registry");
         slots.retain(|_, gate| gate.strong_count() != 0);
         let weak = slots.entry(space).or_default();
@@ -230,7 +228,7 @@ impl SmallRuntime {
         owned: Arc<File>,
         permit: Arc<OwnedSemaphorePermit>,
         gate: &PlacementGate,
-    ) -> SandboxResult<(Guest, Scratch)> {
+    ) -> Result<(Guest, Scratch), AttemptError> {
         let disk = Scratch {
             path: run.join(&generation.disk_name),
             cleanup: Mutex::new(None),
@@ -276,7 +274,7 @@ impl SmallRuntime {
         let gate = tokio::time::timeout(GATE_WAIT, self.gate(space).lock_owned())
             .await
             .map_err(|_| SandboxError("Small plugin VM is still shutting down".into()))?;
-        erase_saved(self.saved(space), Arc::new(gate)).await
+        erase_saved(self.saved(space), gate).await
     }
 }
 
@@ -299,20 +297,6 @@ async fn clear_restore_scratch(
         let disk = remove_file(&disk);
         let control = remove_file(&control);
         disk.and(control)
-    })
-    .await
-    .map_err(SandboxError::new)?
-    .map_err(SandboxError::new)
-}
-
-async fn erase_saved(path: PathBuf, gate: PlacementGate) -> SandboxResult<()> {
-    tokio::task::spawn_blocking(move || {
-        let _gate = gate;
-        match std::fs::remove_dir_all(&path) {
-            Ok(()) => calternal_fsio::sync_dir(path.parent().expect("runtime space parent")),
-            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
-            Err(error) => Err(error),
-        }
     })
     .await
     .map_err(SandboxError::new)?
@@ -367,11 +351,16 @@ pub(in crate::sandbox) struct Placement {
     gate: Mutex<Option<PlacementGate>>,
     saved: PathBuf,
     binding: Binding,
+    checkpoint: std::sync::atomic::AtomicBool,
 }
 
 impl Sandbox for Placement {
     fn available(&self) -> bool {
         self.thread.available()
+    }
+
+    fn checkpoint_saved(&self) -> bool {
+        self.checkpoint.load(std::sync::atomic::Ordering::Acquire)
     }
 
     fn exec(
@@ -422,11 +411,16 @@ impl Sandbox for Placement {
                     }
                     Err(error) => Err(error),
                 };
+                match saved {
+                    Ok(()) => self
+                        .checkpoint
+                        .store(true, std::sync::atomic::Ordering::Release),
+                    Err(error) => {
+                        tracing::warn!(%error, "small plugin VM snapshot failed; preserving previous snapshot")
+                    }
+                }
                 vm.stop().await?;
                 self.disk.clear().await?;
-                if let Err(error) = saved {
-                    tracing::warn!(%error, "small plugin VM snapshot failed; preserving previous snapshot");
-                }
             }
             self.gate.lock().expect("placement gate").take();
             Ok(())
@@ -526,7 +520,9 @@ async fn save(
         );
         // Only the newly published generation is needed after commit. An
         // interrupted write leaves its predecessor's pointer usable.
-        super::snapshot::prune_drafts(&root, Some(generation.id))?;
+        if let Err(error) = super::snapshot::prune_drafts(&root, Some(generation.id)) {
+            tracing::warn!(%error, "cannot prune superseded small VM drafts");
+        }
         Ok::<(), io::Error>(())
     })
     .await

@@ -227,6 +227,8 @@ pub enum SandboxState {
     Frozen,
     /// An authenticated idle drain is saving the small guest's checkpoint.
     SleepPending,
+    /// The guest exited after publishing its durable snapshot.
+    CheckpointSaved,
     /// A running guest exited. Provider leases may resume from their last checkpoint.
     Lost,
     /// Could not start, or was closed locally; the server reconciles the lease.

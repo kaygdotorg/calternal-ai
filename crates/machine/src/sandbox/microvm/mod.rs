@@ -15,6 +15,8 @@ mod snapshot;
 mod snapshot_api;
 mod space;
 pub(super) use space::SmallRuntime;
+mod storage;
+pub(crate) use storage::{erase_unconfigured, sweep_unconfigured};
 mod vmm;
 mod wire;
 

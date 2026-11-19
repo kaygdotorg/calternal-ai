@@ -15,6 +15,9 @@ use std::{sync::Arc, time::Duration};
 use tokio::sync::{oneshot, watch};
 use uuid::Uuid;
 
+/// Durable terminal cause for recovering a pending checkpoint acknowledgement.
+pub(super) const SMALL_VM_IDLE_REASON: &str = "small plugin runtime idle";
+
 // Preview host limit on live streams and reservations, independent of the
 // content cache. The scheduler also enforces each machine's actual capacity.
 const MAX_CHANNELS: usize = 32;
@@ -92,7 +95,7 @@ impl MachineService {
                         == Some(calternal_machine::sandbox::worker::SPACE_VM_IMAGE)
             })
             .ok_or_else(no_assignment)?;
-        st.end_with_files(lease, "small plugin runtime idle", &self.settings, true);
+        st.end_with_files(lease, SMALL_VM_IDLE_REASON, &self.settings, true);
         Ok(())
     }
 

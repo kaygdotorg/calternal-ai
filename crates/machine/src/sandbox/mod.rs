@@ -215,6 +215,12 @@ pub trait Sandbox: Send + Sync {
         true
     }
 
+    /// Whether this sandbox published a checkpoint during successful release.
+    /// The machine inspects this after teardown acknowledgement. Cost: one load.
+    fn checkpoint_saved(&self) -> bool {
+        false
+    }
+
     /// Run a command in the work directory and stream its output.
     fn exec(&self, request: ExecRequest) -> BoxFuture<'_, SandboxResult<Exec>>;
     /// Pause every process; memory stays resident.

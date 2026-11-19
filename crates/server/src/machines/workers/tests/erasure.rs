@@ -267,3 +267,126 @@ fn dormant_space_runtime_erasure_replays_for_both_owners() {
         );
     }
 }
+
+#[test]
+fn checkpoint_affinity_and_erasure_precede_new_placement() {
+    use calternal_machine::protocol::DiscardReport;
+    let dir = tempfile::tempdir().unwrap();
+    let (service, account) = open(dir.path());
+    let spaces = calternal_auth::spaces::Spaces::open(&dir.path().join("system/auth.db")).unwrap();
+    let space = spaces.seed_development().unwrap().personal;
+    service.set_pool_grant(account, true).unwrap();
+    let (first, first_key) = ready_machine_with_key(&service, Owner::Pool, 1);
+    let (second, second_key) = ready_machine_with_key(&service, Owner::Pool, 1);
+    let first_token = connect(&service, first, &first_key);
+    let second_token = connect(&service, second, &second_key);
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_time()
+        .build()
+        .unwrap();
+    let report = |ack, max_sandboxes, draining, leases, discards| SyncRequest {
+        ack,
+        draining,
+        leases,
+        discards,
+        capacity: Capacity {
+            max_sandboxes,
+            small_plugin_vm: true,
+            available_memory_bytes: Some(64 << 30),
+            ..Default::default()
+        },
+    };
+    let sync = |machine, token: &str, report| {
+        runtime
+            .block_on(service.sync(machine, token, report))
+            .unwrap()
+    };
+    let new_run = || {
+        service.request_space_vm(
+            account,
+            Uuid::new_v4(),
+            PluginWorker {
+                space_id: space,
+                source: "fixture".into(),
+            },
+        )
+    };
+    let sleep =
+        |run: RunView, machine, token: &str, ack, slots, draining| {
+            service.sleep_space_run(account, run.lease_id).unwrap();
+            let commands = sync(machine, token, report(ack, slots, draining, vec![], vec![]));
+            let seq = commands.iter().find_map(|message| {
+            matches!(message.message, Down::SleepSpace { lease_id } if lease_id == run.lease_id)
+                .then_some(message.seq)
+        }).unwrap();
+            let saved = LeaseReport {
+                lease_id: run.lease_id,
+                fence: 1,
+                sandbox: SandboxState::CheckpointSaved,
+            };
+            let messages = sync(
+                machine,
+                token,
+                report(seq, slots, draining, vec![saved], vec![]),
+            );
+            messages
+                .iter()
+                .map(|message| message.seq)
+                .max()
+                .unwrap_or(seq)
+        };
+
+    sync(first, &first_token, report(0, 1, false, vec![], vec![]));
+    sync(second, &second_token, report(0, 8, true, vec![], vec![]));
+    let run = new_run().unwrap();
+    assert_eq!(run.machine_id, Some(first));
+    let ack_first = sleep(run, first, &first_token, 0, 1, false);
+    sync(second, &second_token, report(0, 8, false, vec![], vec![]));
+    let preferred = new_run().unwrap();
+    assert_eq!(preferred.machine_id, Some(first));
+    let ack_first = sleep(preferred, first, &first_token, ack_first, 1, true);
+    let fallback = new_run().unwrap();
+    assert_eq!(fallback.machine_id, Some(second));
+    let ack_second = sleep(fallback, second, &second_token, 0, 8, true);
+
+    // Simulate the old holder reconnecting before its erasure is processed.
+    let first_token = connect(&service, first, &first_key);
+    let commands = sync(first, &first_token, report(0, 1, false, vec![], vec![]));
+    let erase = commands
+        .iter()
+        .find_map(|message| match message.message {
+            Down::EraseSpaceRuntime {
+                request_id,
+                space_id,
+            } if space_id == space => Some((message.seq, request_id)),
+            _ => None,
+        })
+        .expect("older copy must be erased after the space sleeps on the other machine");
+    assert!(
+        !commands
+            .iter()
+            .any(|message| matches!(message.message, Down::Assign { .. }))
+    );
+    assert!(new_run().is_err());
+    let commands = sync(
+        first,
+        &first_token,
+        report(erase.0, 1, false, vec![], vec![]),
+    );
+    assert!(
+        !commands
+            .iter()
+            .any(|message| matches!(message.message, Down::Assign { .. }))
+    );
+    let erased = DiscardReport {
+        request_id: erase.1,
+        success: true,
+    };
+    sync(
+        first,
+        &first_token,
+        report(erase.0, 1, false, vec![], vec![erased]),
+    );
+    assert_eq!(new_run().unwrap().machine_id, Some(first));
+    assert!(ack_first > 0 && ack_second > 0);
+}

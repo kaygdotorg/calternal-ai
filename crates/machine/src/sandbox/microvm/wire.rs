@@ -55,6 +55,7 @@ pub(super) enum Request {
 pub(super) enum Response {
     Ready,
     Error,
+    Unavailable,
     Output(ChunkEvent),
 }
 

@@ -126,7 +126,7 @@ impl Sandbox for Thread {
                             }
                         }
                         Ok(Response::Output(ChunkEvent::Exit(exit))) => break Some(exit),
-                        Ok(Response::Error) => {
+                        Ok(Response::Error | Response::Unavailable) => {
                             break Some(failed("microVM guest could not start exec"));
                         }
                         _ => {
