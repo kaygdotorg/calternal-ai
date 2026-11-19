@@ -89,8 +89,8 @@ ${tail}`);
 }
 
 /** Open a real-server test page with a disposable virtual passkey. */
-export async function openRealServerPage(browser) {
-  const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+export async function openRealServerPage(browser, options = {}) {
+  const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, ...options });
   await context.addInitScript(() => localStorage.setItem("cal.firstrun", "1"));
   const page = await context.newPage();
   const cdp = await context.newCDPSession(page);
@@ -206,3 +206,23 @@ export async function signUp(p, token, name) {
  * headings), so a suite scopes `.composer`, `h1`, the header and the list to this, never to the page. (The composer's field keeps the id `composer-field` in the focused window alone.)
  */
 export const win = (page) => page.locator("[data-win][data-focused], .mid-card:not([data-win])").first();
+
+/**
+ * An https front for a real server, for what needs a secure public origin (web push: "Web push requires an HTTPS server"): a self-signed certificate made here, a TLS listener on `port` that forwards every request (streams included) to the server's own http address. Start the server with
+ * `--origin https://localhost:<port>` and open pages with `ignoreHTTPSErrors`. Returns `{ url, stop }`.
+ */
+export async function startTlsProxy(targetUrl, port) {
+  const { execFileSync } = await import("node:child_process");
+  const https = await import("node:https"), http = await import("node:http");
+  const dir = mkdtempSync(join(tmpdir(), "cal-tls-"));
+  execFileSync("openssl", ["req", "-x509", "-newkey", "rsa:2048", "-nodes", "-keyout", join(dir, "k.pem"), "-out", join(dir, "c.pem"), "-days", "1", "-subj", "/CN=localhost", "-addext", "subjectAltName=DNS:localhost"], { stdio: "ignore" });
+  const target = new URL(targetUrl);
+  const srv = https.createServer({ key: readFileSync(join(dir, "k.pem")), cert: readFileSync(join(dir, "c.pem")) }, (req, res) => {
+    const up = http.request({ host: target.hostname, port: target.port, method: req.method, path: req.url, headers: req.headers }, (r) => { res.writeHead(r.statusCode ?? 502, r.headers); r.pipe(res); });
+    up.on("error", () => { if (!res.headersSent) res.writeHead(502); res.end(); });
+    res.on("close", () => up.destroy());
+    req.pipe(up);
+  });
+  await new Promise((resolve) => srv.listen(port, "127.0.0.1", resolve));
+  return { url: `https://localhost:${port}`, stop: async () => { srv.closeAllConnections?.(); await new Promise((r) => srv.close(r)); rmSync(dir, { recursive: true, force: true }); } };
+}
