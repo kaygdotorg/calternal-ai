@@ -234,6 +234,15 @@ def semantic(doc, errors, catalogue, manifest):
                                 prompt = source.get("prompt") if isinstance(source, dict) else None
                                 if not (isinstance(prompt, dict) and prompt.get("kind") == "choice"):
                                     errors.append(f"{path}: input {name!r} of {op} is a destination choice: it must come from a `choice` prompt over the authorized options, not a literal or a row value")
+                                else:
+                                    option_bind = binds.get(((prompt.get("options") or {}).get("bind")))
+                                    option_kind = cat_kinds.get(((option_bind or {}).get("source") or {}).get("kind"))
+                                    want = "LayoutSectionRef" if (declared_type == "LayoutSectionRef" or name == "section") else None
+                                    if want and (option_kind is None or option_kind.get("row_ref") != want):
+                                        errors.append(f"{path}: the choice for {name!r} of {op} must range over a bind whose kind has row_ref {want} (layout_sections), not {((option_bind or {}).get('source') or {}).get('kind')!r}")
+                            if declared_type == "ThreadRef" and isinstance(source, dict) and source.get("row") == "id" and not owner_in_repeat:
+                                if (cat_kinds.get(owner_kind) or {}).get("row_ref") != "ThreadRef":
+                                    errors.append(f"{path}: the bare row id fills a ThreadRef only in a bind whose kind has row_ref ThreadRef (threads), not {owner_kind!r}")
                         for name in entry.get("target_inputs", []):
                             if isinstance(given.get(name), dict) and "literal" in given[name]: errors.append(f"{path}: target input {name!r} of {op} cannot be a literal")
                 elif manifest is not None and op not in man_ops:

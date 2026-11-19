@@ -1896,7 +1896,7 @@
           "required": [
             "parent"
           ],
-          "description": "The id of the parent row this window is requested for: legal only in a bind whose source has `parent: true`. The host reconstructs it; the renderer never supplies it."
+          "description": "An optional ADDITIONAL predicate: the id of the parent row of a per-parent bind, reconstructed by the host from the checked declared edge. It is distinct from `request.parent`, the host-issued `WindowParentRef` that scopes every window request to that edge and its ancestry, and it is never required: the edge is the constraint."
         }
       ]
     },
@@ -2062,7 +2062,7 @@
     },
     "EventWindow": {
       "$ref": "https://calternal.cloud/contract/host-catalogue-v2.json#/$defs/WindowRequest",
-      "description": "Ask for rows [from, to) of a bind (optionally for one parent row): the catalogue's WindowRequest is the ONE window envelope ({type: \"window\", request}); this schema cites it and defines no second shape. The answer is the catalogue's **WindowReply**: a `WindowResult` (bind, parent, window_ref, state, count, result version, stable opaque row ids, activation contexts) or a typed `WindowPlanError` ({status: 422, code: unsupported_query_plan}); a consumer must handle both, and shows the bind's `error` state for the refusal."
+      "description": "Ask for rows [from, to) of a bind (optionally for one parent row): the catalogue's WindowRequest is the ONE window envelope ({type: \"window\", request}); this schema cites it and defines no second shape. The answer is the catalogue's **WindowReply**: a `WindowResult` (bind, parent, window_ref, state, count, result version, stable opaque row ids, activation contexts) or a typed `WindowPlanError` ({status: 422, code: unsupported_query_plan}); a consumer must handle both. A refused jump (a `WindowPlanError` for a request beyond the index-skip cap) falls back to paging from the nearer known end of the list (the start when none is known); the bind's `error` state is shown only if that paging is refused too."
     },
     "EventSelection": {
       "$ref": "https://calternal.cloud/contract/host-catalogue-v2.json#/$defs/SettledSelectionRequest",
