@@ -852,6 +852,78 @@ fn apple_app_site_malformed_setting_refuses_startup() {
 }
 
 #[test]
+fn static_web_cache_headers_and_missing_hashed_asset() {
+    let d = TempDir::new("web-cache");
+    let web = d.0.join("web");
+    std::fs::create_dir_all(web.join("assets")).unwrap();
+    let entry_files = [
+        "index.html",
+        "sw.js",
+        "push-sw.js",
+        "manifest.webmanifest",
+        "boot.js",
+        "assets/unhashed.js",
+    ];
+    let hashed = "assets/main-B8c_7-Xq.js";
+    let ordinary = "assets/icon.svg";
+    for path in entry_files.into_iter().chain([hashed, ordinary]) {
+        let file = std::fs::File::create(web.join(path)).unwrap();
+        (&file).write_all(b"web fixture").unwrap();
+        file.set_modified(std::time::UNIX_EPOCH + Duration::from_secs(315_532_800))
+            .unwrap();
+    }
+    let srv = start_with(&d.0.join("data"), None, Some(&web));
+    let obtain = |method: &str, path: &str| {
+        raw(
+            srv.port,
+            method,
+            path,
+            &[("If-Modified-Since", "Tue, 01 Jan 1980 00:00:00 GMT")],
+            None,
+        )
+        .unwrap()
+    };
+    let thread = format!("/threads/{}", uuid::Uuid::now_v7());
+    for path in entry_files
+        .into_iter()
+        .map(|path| format!("/{path}"))
+        .chain(["/".to_owned(), thread])
+    {
+        for method in ["GET", "HEAD"] {
+            let response = obtain(method, &path);
+            assert_eq!(response.status, 200, "{method} {path}");
+            assert!(response.headers.contains("cache-control: no-cache\r\n"));
+            assert!(!response.headers.contains("last-modified:"));
+        }
+    }
+
+    let hashed_path = format!("/{hashed}");
+    let fresh = raw(srv.port, "GET", &hashed_path, &[], None).unwrap();
+    let validated = obtain("GET", &hashed_path);
+    assert_eq!(fresh.status, 200);
+    assert_eq!(validated.status, 304);
+    for response in [fresh, validated] {
+        assert!(
+            response
+                .headers
+                .contains("cache-control: public, max-age=31536000, immutable\r\n")
+        );
+    }
+    let ordinary = obtain("GET", &format!("/{ordinary}"));
+    assert_eq!(ordinary.status, 200);
+    assert!(
+        ordinary
+            .headers
+            .contains("cache-control: public, max-age=300, must-revalidate\r\n")
+    );
+
+    let missing = obtain("GET", "/assets/main-DeadHash.js");
+    assert_eq!(missing.status, 404);
+    assert!(missing.headers.contains("cache-control: no-store\r\n"));
+    assert!(!missing.headers.contains("text/html"));
+}
+
+#[test]
 fn static_dir_serves_files_and_only_app_addresses_fall_back() {
     let d = TempDir::new("web");
     let web = d.0.join("web");

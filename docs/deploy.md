@@ -84,6 +84,13 @@ from the host and name `MACHINE_CONNECT` if TCP cannot connect. Inspect
 `journalctl --user -u calternal-ai-machine.service` on the target for the
 machine's connection failure.
 
+## Preserve web cache headers
+
+Pass the server's `Cache-Control` through the reverse proxy. App pages and
+unversioned entry files such as service-worker scripts revalidate on each use.
+Build-hashed files under `/assets/` are immutable for one year. Other static
+files are fresh for five minutes and must revalidate afterward.
+
 ## Route public shares
 
 Keep `/s/` on the same Traefik HTTPS route as the app. Preserve the Host
