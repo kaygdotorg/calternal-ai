@@ -11,7 +11,11 @@ import { accentOf } from "./accent";
 import { accountItems, pickAccountItem } from "../accountMenu";
 import { self } from "../self.svelte";
 import { switcherApps } from "../switcherApps.svelte";
+import { toDraft1 } from "./draft1";
 import type { ChromeBody, ChromeDescription, ChromeEvent, ChromeItem, ChromeProvider } from "./types";
+
+/** Which form of the contract the shell decodes: "draft-1" (the first draft, reduced by `draft1.ts`) until the shell takes the agreed fields, then "v2" (the full description). */
+export const CONTRACT: "draft-1" | "v2" = "draft-1";
 
 interface Bridge { chrome?: (d: ChromeDescription | null) => Promise<{ native: boolean }>; log?: (s: string) => unknown }
 const bridge = (): Bridge | undefined => (typeof window === "undefined" ? undefined : (window as unknown as { calternalNative?: Bridge }).calternalNative);
@@ -84,12 +88,13 @@ export function startNativeChrome(appKind: () => string): () => void {
     const d = latest; if (!d) return;
     const t0 = performance.now();
     try {
-      const r = await b.chrome!(d);
+      const r = await b.chrome!((CONTRACT === "draft-1" ? toDraft1(d) : d) as ChromeDescription);
       const ms = performance.now() - t0;
       nativeChrome.lat.push(ms); if (nativeChrome.lat.length > 200) nativeChrome.lat.shift();
       (window as unknown as { __chromeStats?: unknown }).__chromeStats = { published: d.revision, last: Math.round(ms * 10) / 10, avg: Math.round((nativeChrome.lat.reduce((x, y) => x + y, 0) / nativeChrome.lat.length) * 10) / 10 };
+      if ([1, 3, 10, 30].includes(nativeChrome.lat.length)) { try { b.log?.(`chrome publish round trip: last ${ms.toFixed(1)} ms, avg ${(nativeChrome.lat.reduce((x, y) => x + y, 0) / nativeChrome.lat.length).toFixed(1)} ms over ${nativeChrome.lat.length}`); } catch { /* ignored */ } }
       if (r.native !== nativeChrome.native) { nativeChrome.native = r.native; document.documentElement.toggleAttribute("data-native-chrome-page", r.native); }
-    } catch { /* the shell did not answer: keep drawing our own */ }
+    } catch (e) { try { b.log?.(`chrome publish failed: ${String((e as Error)?.message ?? e).slice(0, 300)}`); } catch { /* ignored */ } /* the shell did not answer: keep drawing our own */ }
   };
   const stop = $effect.root(() => {
     $effect(() => {
@@ -104,7 +109,8 @@ export function startNativeChrome(appKind: () => string): () => void {
   const onEvent = (e: Event) => {
     const ev = (e as CustomEvent<ChromeEvent>).detail;
     try { b.log?.(`chrome event ${ev.type} ${ev.id ?? ""} after ${Date.now() - ev.sentAt} ms`); } catch { /* ignored */ }
-    routeEvent(appKind(), ev);
+    const handled = routeEvent(appKind(), ev);
+    if (handled && (ev.type === "row" || ev.type === "app")) nativeChrome.open = false; // choosing something closes the sidebar
   };
   addEventListener("calternal:chrome", onEvent);
   return () => { removeEventListener("calternal:chrome", onEvent); stop(); if (frame) cancelAnimationFrame(frame); };

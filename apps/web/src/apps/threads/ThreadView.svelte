@@ -143,7 +143,7 @@
 </script>
 
 <div class="thread">
-  <header bind:this={headerEl} class:windowed>
+  <header bind:this={headerEl} class:windowed data-chrome-header>
     {#if shell.narrow && !windowed}<Pill icon="sidebar" label="Show threads" onclick={() => shell.toggleSidebar()} />{/if}
     <!-- The thread's title is the page's one heading (assistive technology reads this) and, drawn, the shell's shared header line (HeaderPill, pinned below) beside the sidebar button; in a canvas window the window's own title pill. A pill is drawn here only while renaming. -->
     <h1 class="visually-hidden">{summary?.title ?? "Thread"}</h1>

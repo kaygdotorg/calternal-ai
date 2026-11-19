@@ -69,10 +69,10 @@ describe("native chrome: the publisher", () => {
     await new Promise((r) => requestAnimationFrame(() => r(null)));
     await Promise.resolve();
     expect(chrome).toHaveBeenCalledTimes(1);
-    const first = chrome.mock.calls[0]![0] as { revision: number; version: number; sidebar: { apps: unknown[]; account: { menu: unknown[] } } };
+    const first = chrome.mock.calls[0]![0] as { revision: number; version: number; sidebar: { apps: unknown[]; account: { title: string } } };
     expect(first.version).toBe(1);
     expect(first.sidebar.apps.length).toBeGreaterThanOrEqual(2);
-    expect(first.sidebar.account.menu.length).toBeGreaterThan(2);
+    expect(first.sidebar.account.title.length).toBeGreaterThan(0); // the account menu itself is only in the full contract (v2)
     expect(nativeChrome.native).toBe(true);
     nativeChrome.query = "x"; flushSync();
     await new Promise((r) => requestAnimationFrame(() => r(null)));
