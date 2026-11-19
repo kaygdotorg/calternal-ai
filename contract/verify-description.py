@@ -351,8 +351,10 @@ def semantic(doc, errors, catalogue, manifest):
             owner = binds_list[int(m.group(1))].get("id") if m else None
             if owner not in repeat_rows: errors.append(f"{path}: {{context: placement}} is legal only inside the rows of a Section.repeat")
             elif owner in set(children_edges.values()): errors.append(f"{path}: this bind is both a section's rows and a child-rows bind: a placement operand would be usable from the child edge, where the row is no placement")
-    for bind_id in sorted(repeat_rows & set(children_edges.values())):
-        errors.append(f"$.binds {bind_id}: the bind is both a section's rows and a child-rows bind: its row ref is ambiguous (a placement in one, the underlying item in the other)")
+    dual_edge = repeat_rows & set(children_edges.values())
+    for path_, node_ in walk(doc):
+        if isinstance(node_, dict) and set(node_) == {"selection"} and isinstance(node_["selection"], str) and node_["selection"] in dual_edge:
+            errors.append(f"{path_}: a single-selection operand on {node_['selection']!r} is ambiguous: that bind is both a section's rows (row ref LayoutEntryRef) and a child-rows bind (row ref the underlying item)")
     def depth(bind_id, seen=()):
         if bind_id in seen: errors.append(f"$.binds: children cycle through {bind_id!r}"); return 0
         nxt = children_edges.get(bind_id)

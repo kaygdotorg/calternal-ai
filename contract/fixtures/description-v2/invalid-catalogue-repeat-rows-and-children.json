@@ -31,6 +31,21 @@
       "row": {
         "title": {
           "field": "title"
+        }
+      }
+    },
+    {
+      "id": "top",
+      "source": {
+        "type": "list",
+        "kind": "threads"
+      },
+      "fields": [
+        "title"
+      ],
+      "row": {
+        "title": {
+          "field": "title"
         },
         "children": {
           "bind": "rows"
@@ -46,6 +61,21 @@
           "repeat": {
             "over": "layout",
             "rows": "rows"
+          }
+        }
+      ]
+    },
+    "header": {
+      "title": "x",
+      "trailing": [
+        {
+          "id": "up",
+          "title": "Up",
+          "operation": "host.layout.move_up",
+          "inputs": {
+            "entry": {
+              "selection": "rows"
+            }
           }
         }
       ]
