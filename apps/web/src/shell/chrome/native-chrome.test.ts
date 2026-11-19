@@ -135,7 +135,7 @@ describe("native chrome: the appearance and the schema form", () => {
     const all = Array.from({ length: 300 }, (_, i) => i);
     nativeChrome.windows = { s: [100, 130] };
     const w = windowed("s", all);
-    expect(w.count).toBe(300); expect(w.offset).toBe(80); expect(w.rows[0]).toBe(80); expect(w.rows.length).toBe(70);
+    expect(w.count).toBe(300); expect(w.offset).toBe(85); expect(w.rows[0]).toBe(85); expect(w.rows.length).toBe(60); // 30 asked + 20 margin each side is 70, capped at 60 around the middle
     expect(windowed("short", all.slice(0, 10)).count).toBeUndefined();
     nativeChrome.windows = {};
   });
