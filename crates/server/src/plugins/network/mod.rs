@@ -36,11 +36,22 @@ fn frame_path(id: Uuid) -> String {
     format!("{FRAME_PREFIX}/{id}")
 }
 
-fn asset_signature(store: &Store, frame: Uuid) -> String {
-    let mut mac = hmac::Context::with_key(&store.cursor_key);
-    mac.update(b"plugin-content/asset/v1");
+fn asset_signature(key: &hmac::Key, frame: Uuid, index: u64, expiry: i64) -> String {
+    let mut mac = hmac::Context::with_key(key);
+    mac.update(b"plugin-content/asset/v2");
     mac.update(frame.as_bytes());
+    mac.update(&index.to_be_bytes());
+    mac.update(&expiry.to_be_bytes());
     hex::encode(mac.sign().as_ref())
+}
+
+fn asset_authorized(key: &hmac::Key, frame: Uuid, index: u64, expiry: i64, signature: &str, now: i64) -> bool {
+    use subtle::ConstantTimeEq;
+    expiry > now && bool::from(asset_signature(key, frame, index, expiry).as_bytes().ct_eq(signature.as_bytes()))
+}
+
+fn asset_now() -> i64 {
+    time::OffsetDateTime::now_utc().unix_timestamp()
 }
 
 fn declares(plugin: &Plugin, kind: &str, field: calternal_core::ContentFetchField) -> bool {
@@ -102,7 +113,7 @@ pub(super) fn ingest<D: Directory>(
     let Ok(html) = std::str::from_utf8(&item.bytes) else {
         return;
     };
-    let Some(content) = sanitize::clean(html, "") else {
+    let Some(content) = sanitize::clean(html, &|_| String::new()) else {
         return;
     };
     let source = Arc::new(frames::Source {
@@ -149,9 +160,12 @@ pub(super) fn prepare(
         return Err(missing());
     }
     let id = Uuid::new_v4();
-    let assets = format!("{}/{}", frame_path(id), asset_signature(store, id));
+    let expiry = asset_now() + frames::LIFETIME.as_secs() as i64;
     let html = std::str::from_utf8(&item.bytes).map_err(|_| missing())?;
-    let content = sanitize::clean(html, &assets).ok_or_else(missing)?;
+    let content = sanitize::clean(html, &|index| {
+        let signature = asset_signature(&store.cursor_key, id, index as u64, expiry);
+        format!("{}/{index}/{expiry}/{signature}", frame_path(id))
+    }).ok_or_else(missing)?;
     store.plugin_frames.insert(
         id,
         frames::Source {
