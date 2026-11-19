@@ -17,12 +17,13 @@
     "types": "node scripts/generate-types.mjs",
     "check": "node scripts/generate-types.mjs --check && svelte-check --tsconfig ./tsconfig.json",
     "test": "vitest run",
-    "harness:build": "npm run tokens -w @calternal/ui && vite build -c vite.harness.config.ts",
+    "harness:build": "npm run tokens -w @calternal/ui && mkdir -p harness/public/wallpapers && cp -f ../../apps/web/public/wallpapers/EX_STserBZM.jpg harness/public/wallpapers/ 2>/dev/null; vite build -c vite.harness.config.ts",
     "harness": "vite preview -c vite.harness.config.ts",
     "e2e:perf": "node e2e/perf.mjs",
     "e2e:keys": "node e2e/keys.mjs",
     "e2e:fixtures": "node e2e/fixtures.mjs",
-    "e2e": "npm run e2e:keys && npm run e2e:fixtures && npm run e2e:perf"
+    "e2e": "npm run e2e:keys && npm run e2e:fixtures && npm run e2e:perf",
+    "demo": "node demo/server.mjs"
   },
   "peerDependencies": {
     "svelte": "^5.57.1"

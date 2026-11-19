@@ -5,6 +5,7 @@ import { join } from "node:path";
 // The harness page (harness/): a static build served by `vite preview`, driven by the browser suites and the performance measures.
 export default defineConfig({
   root: join(__dirname, "harness"),
+  base: "./", // served under /app/ by the demo server, and from any path by the suites
   plugins: [svelte()],
   resolve: { conditions: ["browser"] },
   server: { fs: { allow: [join(__dirname, "../..")] } },

@@ -62,3 +62,47 @@ export class HttpTransport implements Transport {
     throw new HostError(res.status, j?.code, j?.message ?? `The host answered ${res.status}.`, json);
   }
 }
+
+/** Options of the product transport. */
+export interface ProductTransportOptions {
+  /** The view's address, for example `http://127.0.0.1:3210/api/v2/spaces/<space>/reading-list-view` (the same transport serves a Notes view at its own address). */
+  base: string;
+  /** The signed-in session's bearer token; held in memory only. */
+  bearer: string;
+  fetch?: typeof fetch;
+}
+
+/**
+ * The product routes of a host view (docs/reviews/window-engine-2026-11-19.md): `GET base` describes the view, `POST base` opens it, `POST base/window` and `POST base/renew` run under the lease, which travels as
+ * `X-Calternal-View-Lease` with its cache partition in `X-Calternal-Cache-Partition`. Window refusals are the sealed 422 body. Routes the product slice does not serve (activation, search, selection) fail with a
+ * 501 `HostError`, so the renderer reports them as unavailable rather than inventing an answer.
+ */
+export class ProductTransport implements Transport {
+  readonly #base: string; readonly #bearer: string; readonly #fetch: typeof fetch;
+  #partition = "";
+  constructor(o: ProductTransportOptions) { this.#base = o.base.replace(/\/$/, ""); this.#bearer = o.bearer; this.#fetch = o.fetch ?? ((...a) => fetch(...a)); }
+
+  /** The view's own description: its `view_ref` and the emitted description. */
+  async describe<T = { view_ref: string; description: unknown }>(): Promise<T> {
+    const res = await this.#fetch(this.#base, { headers: { authorization: `Bearer ${this.#bearer}` } });
+    if (!res.ok) throw new HostError(res.status, undefined, `The host answered ${res.status}.`);
+    return (await res.json()) as T;
+  }
+
+  async post<T>(route: Route, body: unknown, opts: { lease?: string; signal?: AbortSignal } = {}): Promise<T> {
+    const path = route === "view.open" ? "" : route === "window" ? "/window" : route === "view.renew" ? "/renew" : null;
+    if (path === null) throw new HostError(501, "unsupported_route", `This product route does not serve ${route}.`);
+    const headers: Record<string, string> = { "content-type": "application/json", authorization: `Bearer ${this.#bearer}` };
+    if (opts.lease) { headers["x-calternal-view-lease"] = opts.lease; headers["x-calternal-cache-partition"] = this.#partition; }
+    const res = await this.#fetch(`${this.#base}${path}`, { method: "POST", headers, body: JSON.stringify(body), signal: opts.signal });
+    const text = await res.text();
+    let json: unknown; try { json = text ? JSON.parse(text) : undefined; } catch { json = undefined; }
+    if (res.ok || (res.status === 422 && (json as { code?: string } | undefined)?.code === "unsupported_query_plan")) {
+      const lease = (json as { lease?: { cache_partition?: string } } | undefined)?.lease;
+      if (lease?.cache_partition) this.#partition = lease.cache_partition;
+      return json as T;
+    }
+    const j = json as { code?: string; message?: string } | undefined;
+    throw new HostError(res.status, j?.code, j?.message ?? `The host answered ${res.status}.`, json);
+  }
+}

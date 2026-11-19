@@ -1,7 +1,7 @@
 /** @calternal/description: the web renderer of the plugin API v2 description contract. See docs/description-contract.md and docs/plugin-api-v2.md. */
 export type * from "./model";
 export { isPlanError } from "./model";
-export { HttpTransport, HostError, type Transport, type Route, type HttpTransportOptions } from "./wire/transport";
+export { HttpTransport, ProductTransport, HostError, type Transport, type Route, type HttpTransportOptions, type ProductTransportOptions } from "./wire/transport";
 export { HostSession, type SessionOptions } from "./wire/session";
 export { WindowStore, MAX_REQUESTS_PER_SECOND, MAX_IN_FLIGHT, type WindowSource, type WindowStoreOptions, type ListState } from "./windows/window-store.svelte";
 export { titleOf, marksOf, iconOf, holds, type MarkView } from "./render/eval";

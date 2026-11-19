@@ -3,6 +3,7 @@
   // place that draws the bind, holds the route parameters (selectors and row `open` set them; binds that read a route parameter start over when it changes), and refuses a description it cannot draw. It holds no app-specific
   // code: what is drawn is only what the description declares; the page supplies the host components and the shell's own controls.
   import { onDestroy, setContext, untrack, type Component } from "svelte";
+  import { Glass } from "@calternal/ui";
   import type { AppDescription, Bind } from "../model";
   import type { HostSession } from "../wire/session";
   import { refusalOf } from "../check";
@@ -84,17 +85,17 @@
 {:else}
   <div class="app" data-app>
     {#if description.chrome?.sidebar || description.chrome?.footer}
-      <aside class="side" style:width="{description.chrome.sidebar?.width ?? 280}px">
+      <aside class="side" style:width="{description.chrome.sidebar?.width ?? 280}px"><Glass />
         <Sidebar sidebar={description.chrome.sidebar ?? {}} footer={description.chrome.footer} role={props.role} initial={props.initial} />
       </aside>
     {/if}
-    <main class="main">
+    <main class="main"><Glass />
       <div class="head">{#if itemTitle ?? title}<h1 class="h1">{itemTitle ?? title}</h1>{/if}
         {#each [...(header?.leading ?? []), ...(header?.trailing ?? [])] as a (a.id)}<ActionButton action={a} context={session.viewContexts[a.id]} />{/each}</div>
       {#if description.view}<Node node={description.view.root} />{/if}
     </main>
     {#if panel && panel.open !== false}
-      <aside class="panel" data-panel={panel.id ?? "panel"} aria-label={panel.title ?? "Panel"}>
+      <aside class="panel" data-panel={panel.id ?? "panel"} aria-label={panel.title ?? "Panel"}><Glass />
         {#if panel.title}<h2 class="ph">{panel.title}</h2>{/if}
         {#each panel.components as c (c.id)}<HostComponent component={c} />{/each}
       </aside>
@@ -104,10 +105,11 @@
 <ActionHost {ui} />
 
 <style>
-  .app { display: flex; height: 100%; min-height: 0; }
-  .side { flex: none; min-height: 0; border-inline-end: 1px solid color-mix(in oklab, var(--ink) 10%, transparent); }
-  .main { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: var(--s-4); padding: var(--s-5); }
-  .panel { flex: none; width: 320px; min-height: 0; display: flex; flex-direction: column; gap: var(--s-3); padding: var(--s-4); border-inline-start: 1px solid color-mix(in oklab, var(--ink) 10%, transparent); }
+  /* The shell look of packages/ui: floating glass panes (sidebar, card, panel) over the page's own ground, one pane radius. */
+  .app { display: flex; gap: var(--s-4); height: 100%; min-height: 0; padding: var(--s-4); box-sizing: border-box; }
+  .side { position: relative; flex: none; min-height: 0; border-radius: var(--r-pane); isolation: isolate; }
+  .main { position: relative; flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: var(--s-4); padding: var(--s-5); border-radius: var(--r-pane); isolation: isolate; }
+  .panel { position: relative; flex: none; width: 320px; min-height: 0; display: flex; flex-direction: column; gap: var(--s-3); padding: var(--s-4); border-radius: var(--r-pane); isolation: isolate; }
   .ph { margin: 0; font-size: var(--text-ui); font-weight: var(--strong-weight); }
   .head { display: flex; align-items: center; gap: var(--s-3); }
   .h1 { margin: 0; font-size: var(--text-title, 28px); }
