@@ -7,3 +7,5 @@ export { triggerAt, type Trigger } from "./triggers";
 export { origin } from "./origin";
 export { prepare, detect, type Feature } from "./features";
 export { markersIn, visibleText, idsIn, newId, ensureId, endMarker, markerFor, isTaskLine, type Marker } from "./ids";
+export { MARKS, around, marksAround, typeOfLine, spansIn, toggleMark, setType, deleteBlocks, duplicateBlocks, nudgeBlocks, withChildren, highlightPlugin, shortcuts, type BlockType, type Span, type MarkKind, type Marks, type Shortcuts } from "./formatting";
+export { frontmatterEnd } from "./frontmatter";

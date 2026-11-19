@@ -46,3 +46,6 @@ export { Toasts, toast, undoable, undoLatest, failed, notify, track, dismiss, ty
 export { textField, type TextFieldOptions } from "./lib/textfield";
 export { scrollCue } from "./lib/scroll-cue";
 export { pressRow, pressRows, openPress, registerPreview, previewOf, LIFT_MS, MENU_MS, STILL, PRIME_MS, type PressBag } from "./lib/press";
+export { Bar, barModes, pickBarKey, pickBase, type BarMode, type BarRole, type BarState } from "./bar";
+export { default as Morph } from "./components/Morph.svelte";
+export { shouldClose, sheetDrag, type SheetDrag } from "./lib/sheet-drag";

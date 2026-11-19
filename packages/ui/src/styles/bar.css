@@ -1,0 +1,265 @@
+/* The bar's own motion and size tokens, ported unchanged from the existing app (tokens.css there): the capsule springs over 320 ms on the
+   out curve; a sheet's edges ride the drawer curve over 340 ms; a phone's rows are 52 pt (64 with the blocks bar) and every target is 44. */
+:root {
+  --bar-morph: var(--ease-out);
+  --bar-morph-ms: 320ms;
+  --bar-sheet: var(--ease-sheet, var(--ease-out));
+  --bar-sheet-ms: 340ms;
+  --bar-row-phone: 52px;
+  --bar-row-tall: 64px;
+  --hit-min: 44px;
+}
+
+/* The one bar's look (#269), shared by the app and the mockup: where it sits, and the rows, pills
+   and tabs its modes are made of. Its glass, blur and spring are tokens (tokens.css: --glass-float*,
+   --spring-morph*), drawn by Morph. Every mode uses these classes, so every mode looks the same. */
+
+/* Behind an open sheet on a phone, a clear layer takes the tap outside it (Bar.svelte): it closes the
+   sheet and reaches nothing under it. Never a dim (IN5, #660), so it needs no colour and no motion. */
+.bar-catch {
+  position: absolute;
+  inset: 0;
+  z-index: 19;
+  background: transparent;
+  cursor: default;
+}
+
+.bar-wrap {
+  --cl: var(--clip, 0px);
+  position: absolute;
+  left: var(--cl);
+  right: 0;
+  bottom: 14px;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 20;
+  /* Centred under the visible page, which starts where the panes end; Focus slides that edge.
+     Positioned, never translated: a bar shifted past the frame would let the browser scroll the
+     frame sideways to reveal a focused sheet control (the "sheet floats mid-page" bug). */
+  transition: --cl var(--dur-sheet) var(--ease-sheet);
+}
+.instant .bar-wrap,
+.resizing .bar-wrap {
+  transition: none;
+}
+.bar-wrap.phone {
+  position: fixed;
+  /* Just above the home indicator (#290); the app corrects it to what you can really see. */
+  bottom: calc(max(var(--safe-bottom), 8px) + 6px);
+  /* Lifted onto the keyboard while it's up (the app sets --lift): a spring when the keyboard
+     opens, 1:1 while the page scrolls under it. */
+  /* --sheet-drop: an inset sheet sits lower than the capsule (below); 0 for everything else. */
+  translate: 0 calc(var(--sheet-drop, 0px) - var(--lift, 0px));
+  transition: translate var(--dur-sheet) var(--ease-sheet);
+}
+/* A sheet on a phone (Insert, Style, Info, Move, Link) is iOS's inset sheet (#469, measured in the iPhone
+   simulator on Safari's share sheet): 8 pt in from the sides and from the screen's bottom edge, over the home
+   indicator (a native sheet ignores the bottom safe area). The capsule rests higher (max(safe, 8) + 6), so a
+   sheet drops by the difference, on the bar's own spring. With the keyboard up the bar rides on it
+   (lib/keyboard.svelte.ts marks it `data-kb`), so the drop is off. Its corners: smaller on top, concentric
+   with the display at the bottom (tokens.css, lib/sheet-radius.ts). */
+.bar-wrap.phone.sheet {
+  padding-left: calc(var(--sheet-inset) + var(--safe-left, 0px));
+  padding-right: calc(var(--sheet-inset) + var(--safe-right, 0px));
+}
+.bar-wrap.phone.sheet:not([data-kb]) {
+  --sheet-drop: calc(max(var(--safe-bottom), 8px) + 6px - var(--sheet-inset));
+}
+.bar-wrap.phone .morph[role="dialog"] {
+  border-radius: var(--sheet-corners);
+}
+/* On the Home Screen a fixed box can end a status bar above the screen's bottom (#445): the bar
+   sits in the app's own box instead, which is measured to the real bottom (home-screen.ts). */
+:root[data-home-screen] .bar-wrap.phone {
+  position: absolute;
+}
+.bar-wrap.phone[data-follow="true"] {
+  transition: none;
+}
+
+/* A mode's row of controls. Heights are minimums, here and below: larger text (#351) grows the
+   row and its pills rather than clipping their words. */
+.bar-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-height: 44px;
+  padding: 0 8px;
+  white-space: nowrap;
+}
+.bar-wrap.phone .bar-row {
+  min-height: 52px;
+  /* 36 px icons 8 px apart: with the 4 px of reach each side, the hit areas meet at 44 px. */
+  gap: 8px;
+}
+
+/* A phone's targets are 44 px (#346). The art keeps its size; a pseudo-element reaches out the
+   rest, so a finger's hit area grows without the look changing. */
+.bar-wrap.phone :is(.ib, .bar-pill, .bar-kind, .bar-cancel, .bar-tab) {
+  position: relative;
+}
+.bar-wrap.phone :is(.ib, .bar-pill, .bar-kind, .bar-cancel, .bar-tab)::after {
+  content: "";
+  position: absolute;
+  inset: var(--reach, -4px);
+}
+.bar-wrap.phone .bar-tab {
+  --reach: -2px 0;
+}
+.bar-wrap.phone .bar-pill,
+.bar-wrap.phone .bar-kind {
+  --reach: -4px 0;
+}
+.bar-wrap.phone .bar-cancel {
+  --reach: -6px 0;
+}
+
+.bar-kind-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* From 375 px up the kind (which may be long: "Subheading") gives way with an ellipsis before the row would pass the 16 px
+   gutters. Large text (`data-text`, lib/text-size) keeps it whole. */
+@media (min-width: 375px) {
+  :root:not([data-text="large"]) .bar-wrap .bar-kind {
+    min-width: 0;
+    max-width: calc(100vw - 304px);
+  }
+}
+
+/* Tabs: Notes and Settings. */
+.bar-tabs {
+  gap: 4px;
+  padding: 0 5px;
+}
+.bar-tab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: calc(44px + var(--icon-grow, 0px));
+  height: calc(34px + var(--icon-grow, 0px));
+  border-radius: 999px;
+  color: var(--ink-2);
+}
+.bar-tab[aria-selected="true"] {
+  background: var(--accent-soft);
+  color: var(--ink);
+}
+.bar-tab[aria-selected="true"] svg {
+  color: var(--accent);
+}
+.bar-wrap.phone .bar-tab {
+  width: calc(52px + var(--icon-grow, 0px));
+  height: calc(40px + var(--icon-grow, 0px));
+  border-radius: 999px;
+}
+
+/* The one accent pill at the start of a row (Log, New) or the end of a question (Yes). */
+.bar-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 0 12px 0 10px;
+  margin-right: 2px;
+  border-radius: 999px;
+  font-size: calc(13.5 * var(--type-px));
+  font-weight: 600;
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+@media (hover: hover) and (pointer: fine) {
+  .bar-pill.press:not(:disabled):hover {
+    background-color: color-mix(in oklab, var(--accent) 86%, black);
+  }
+}
+.bar-wrap.phone .bar-pill,
+.bar-wrap.phone .bar-kind {
+  min-height: 36px;
+}
+
+/* The block's kind (Text ▾, Heading ▾): opens Style. */
+.bar-kind {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 0 8px 0 12px;
+  border-radius: 999px;
+  font-size: calc(13.5 * var(--type-px));
+  font-weight: 500;
+  color: var(--ink);
+  background: var(--hover);
+}
+.bar-kind svg {
+  rotate: 90deg;
+  color: var(--ink-3);
+}
+.bar-count {
+  font-size: calc(12.5 * var(--type-px));
+  color: var(--ink-3);
+  padding: 0 6px;
+}
+.bar-danger {
+  color: var(--danger);
+}
+
+/* A question (#101): the words, Cancel, and the answer as the pill. */
+.bar-ask {
+  gap: 8px;
+  padding-inline-start: 14px;
+}
+.bar-question {
+  font-size: var(--text-ui);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.bar-cancel {
+  min-height: 32px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: var(--text-ui);
+  color: var(--ink-2);
+}
+@media (hover: hover) and (pointer: fine) {
+  .bar-cancel:hover {
+    background: var(--hover);
+  }
+}
+
+/* A toast (#145): its words, then its action at the end. Long words wrap at spaces onto a second
+   line, never mid-word, and never wider than the screen. */
+.bar-row.bar-toast {
+  position: relative;
+  gap: 8px;
+  padding: 0 7px 0 16px;
+  font-size: calc(13.5 * var(--type-px));
+  font-weight: 500;
+  color: var(--ink);
+  height: auto;
+  min-height: 44px;
+  max-width: min(440px, calc(100vw - 32px));
+  white-space: normal;
+}
+.bar-wrap.phone .bar-row.bar-toast {
+  min-height: 52px;
+}
+.bar-toast .text {
+  overflow-wrap: break-word;
+  padding: 6px 0;
+}
+.bar-toast:not(:has(.act)) {
+  padding-right: 16px;
+}
+
+/* After a key nothing here moves (TASTE.md, #344; #1056). This names this file's own transitions, so a key
+   restyles only them, never the whole page (the old `*` rule did, #1044). */
+:root[data-last-input="keyboard"] .bar-wrap,
+:root[data-last-input="keyboard"] .bar-wrap.phone {
+  transition-duration: 0s !important;
+  transition-delay: 0s !important;
+}
