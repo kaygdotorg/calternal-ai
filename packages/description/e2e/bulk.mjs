@@ -10,6 +10,7 @@ let bad = 0;
 const ok = (c, m, note = "") => { console.log(`${c ? "PASS" : "FAIL"}  ${m}${note ? "  " + note : ""}`); if (!c) bad++; };
 const { page: p } = await open(browser, `host=${encodeURIComponent(HOST)}&bearer=${encodeURIComponent(bearer)}&viewName=notes&extend=multi:notes`);
 const wire = []; p.on("request", (r) => { if (r.method() === "POST" && /selection|activation|choice|undo/.test(r.url())) wire.push({ route: new URL(r.url()).pathname.split("/").pop(), body: r.postDataJSON() }); });
+let firstIds = []; p.on("response", async (r) => { if (r.url().endsWith("/window")) { const j = await r.json().catch(() => null); if (j?.bind === "notes" && j.offset === 0 && j.rows?.length >= 2) firstIds = [j.rows[0].id, j.rows[1].id]; } }); // the rows' ids come from the host's windows (a tick box is named by its row's title, not its id)
 const replies = []; p.on("response", async (r) => { if (/activation\.(resolve|dispatch)|selection\.set/.test(r.url())) replies.push({ route: new URL(r.url()).pathname.split("/").pop(), status: r.status(), body: await r.text().catch(() => "") }); });
 await p.waitForSelector("[data-node=list] [data-i] input[type=checkbox]", { timeout: 30000 });
 await p.waitForTimeout(800);
@@ -23,7 +24,7 @@ await p.keyboard.press("Space");
 ok(await boxes.nth(0).isChecked(), "Space on the focused tick box ticks the row");
 await boxes.nth(1).check();
 ok(wire.length === 0, "ticking rows sends nothing");
-const ids = await p.evaluate(() => [...document.querySelectorAll("[data-node=list] [data-i]")].slice(0, 2).map((e) => e.querySelector("input[type=checkbox]").getAttribute("aria-label").replace("Select ", "")));
+const ids = firstIds;
 await p.locator("[data-action=trash-selected]").click();
 await p.waitForTimeout(2500);
 const set = wire.find((w) => w.route === "selection.set");
