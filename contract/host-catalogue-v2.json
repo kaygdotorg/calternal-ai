@@ -142,7 +142,7 @@
           "rule": "Check the normal item and collection membership quotas under the commit fence. Refuse the whole transaction when either would be exceeded."
         }
       },
-      "atomic_undo_when": "Validate the opted-in kind’s defaults. Under the same fence check authority and the normal item and membership quotas, then commit the empty item, its optional collection membership and Undo in one FULL content transaction. Record the item head, item-wide membership and sharing revisions and revision of the introduced membership, if any. Undo checks live authority and all these revisions under the fence and refuses if any changed. On success it removes the item and the membership introduced by this create together. Return the created ref only after commit. Optional declared package follow-up runs separately after commit and cannot delay this no-wake operation."
+      "atomic_undo_when": "Reject manifest defaults for extractor outputs and device image slots. Run the installed host extractors, including body_excerpt, on the empty source and validate the initial state with the allowed defaults. Under the same fence check authority and the normal item and membership quotas, then commit the empty item, its optional collection membership and Undo in one FULL content transaction. Record the item head, item-wide membership and sharing revisions and revision of the introduced membership, if any. Undo checks live authority and all these revisions under the fence and refuses if any changed. On success it removes the item and the membership introduced by this create together. Return the created ref only after commit. Optional declared package follow-up runs separately after commit and cannot delay this no-wake operation."
     },
     "host.item.rename": {
       "engine": "item_rename",
@@ -1207,7 +1207,8 @@
         "match": "For all, match authorized title and body together in the published scope-local FTS index. An AND query may match terms in different fields of the same item. Return each item once in the kind’s stable scope-local order.",
         "field_filter_schema": {
           "$ref": "#/$defs/ClaimedTextSearchFilter"
-        }
+        },
+        "additional_scopes": "Per-parent and parent plus collection Binds require an independently qualified scope-local index. Space and manual-collection measurements do not qualify those scopes."
       },
       "conversation": {
         "scopes": [
@@ -1217,7 +1218,8 @@
         "qualification": "For all, match the full query against an authorized title or within one authorized message. Emit distinct conversations with title matches first, in stable conversation ID order, followed by message-only matches ordered by the newest matching authorized message timestamp and message UUID. A conversation matching both appears once in the title tier. Reuse the authority-versioned title and message indexes under one scope snapshot. Deduplicate token expansions across both sources and sum their posting bounds and row work under the existing shared budgets. Field filters restrict this same matching and delivery path.",
         "field_filter_schema": {
           "$ref": "#/$defs/ConversationSearchFilter"
-        }
+        },
+        "additional_scopes": "Per-parent Binds require a separately qualified title and message-corpus plan in that scope. Collection and parent plus collection require independent qualification where the kind supports membership."
       },
       "qualified_depth": 200,
       "max_authorized_items_per_scope": 100000,
@@ -1256,7 +1258,8 @@
       "merge": {
         "TextSet": "Union all grammar-normalized selector values. Use the output's common inline hierarchy separator to expand parents for all values, including frontmatter. Deduplicate exact normalized entries, including parents, and order deterministically. If there is no inline separator, use a flat union. Apply element, set and index-work caps to the resulting set before publishing it.",
         "other_fields": "Allow one selector per output. Multiple inline selectors on the same TextSet output require the same separator."
-      }
+      },
+      "initialization": "Host create uses the same extractors on the empty source under the content transaction. Empty sets are []; an empty configured text summary is empty text. A missing frontmatter key has no value. Manifest defaults cannot supply any of these outputs, including body_excerpt."
     }
   },
   "$defs": {
@@ -2620,6 +2623,14 @@
         },
         "route": {
           "$ref": "#/$defs/RouteOperands"
+        },
+        "parent": {
+          "$ref": "#/$defs/WindowParentRef",
+          "description": "Required for a per-parent Bind only. Use the checked parent of the current scope."
+        },
+        "settle_generation": {
+          "$ref": "#/$defs/SearchSettleGeneration",
+          "description": "Required for a search Bind only. Match the currently accepted search scope."
         }
       }
     },
@@ -2640,6 +2651,14 @@
         },
         "selection_ref": {
           "$ref": "#/$defs/SelectionRef"
+        },
+        "parent": {
+          "$ref": "#/$defs/WindowParentRef",
+          "description": "Required for a per-parent Bind only. Use the checked parent of the current scope."
+        },
+        "settle_generation": {
+          "$ref": "#/$defs/SearchSettleGeneration",
+          "description": "Required for a search Bind only. Match the currently accepted search scope."
         }
       }
     },
@@ -3023,7 +3042,8 @@
         "cache_partition": {
           "$ref": "#/$defs/CachePartitionRef"
         }
-      }
+      },
+      "description": "Renew the active lease using the lease ref, cache partition and grant revision from the last accepted open or renewal reply. The code path is the same on every renewal."
     },
     "LeaseRenewResult": {
       "type": "object",
@@ -3077,7 +3097,7 @@
           "description": "Current complete per-component Send/Stop ID map. Omission means empty. Every listed ID has an exact context in activation_contexts in the same accepted reply."
         }
       },
-      "description": "Accept only an authenticated host reply matching the outstanding renewal_id, current request_lease_ref and cache_partition. Retain only exact window_ref and result_version pairs authorized and previously issued to that lease. Ignore superseded replies and keep live rows hidden on timeout or refusal."
+      "description": "Accept only an authenticated host reply matching the outstanding renewal_id, current request_lease_ref and cache_partition. Retain only exact window_ref and result_version pairs authorized and previously issued to that lease. Ignore superseded replies and keep live rows hidden on timeout or refusal. At each renewal use the lease and grant from the latest accepted reply. Replace the composer ID map and contexts together, including on subsequent renewals and when a map is omitted. A changed lease or grant needs fresh composer contexts."
     },
     "UndoRequest": {
       "type": "object",
@@ -3507,6 +3527,14 @@
         },
         "activation_contexts": {
           "$ref": "#/$defs/ActionContexts"
+        },
+        "parent": {
+          "$ref": "#/$defs/WindowParentRef",
+          "description": "Required for a per-parent Bind only. Use the checked parent of the current scope."
+        },
+        "settle_generation": {
+          "$ref": "#/$defs/SearchSettleGeneration",
+          "description": "Required for a search Bind only. Match the currently accepted search scope."
         }
       },
       "description": "Host issues selection contexts for exactly the stable row reported as drawn. Renderer waits if none matches that row and ignores unrelated or superseded contexts."
@@ -3543,6 +3571,14 @@
         },
         "route": {
           "$ref": "#/$defs/RouteOperands"
+        },
+        "parent": {
+          "$ref": "#/$defs/WindowParentRef",
+          "description": "Required for a per-parent Bind only. Use the checked parent of the current scope."
+        },
+        "settle_generation": {
+          "$ref": "#/$defs/SearchSettleGeneration",
+          "description": "Required for a search Bind only. Match the currently accepted search scope."
         }
       },
       "description": "Settled single selection in the current authorized view. The host validates the drawn row under the Bind and returns its SelectionContextResult."
@@ -3816,7 +3852,7 @@
       "additionalProperties": {
         "$ref": "#/$defs/Ref"
       },
-      "description": "The shell supplies values only for route operands declared by the consuming Bind or view. Require every route operand used by a Bind query. For an app view-open, missing component or action operands make those surfaces unavailable. A content-only app requires the operands its root components need. The host checks live type and authority. This map conveys no activation authority."
+      "description": "At most eight declared route operands. Each Bind must fit its complete set of distinct required source and filter operands in this object. View open uses its chrome and content operands. Windows and single selection may also resolve optional row-action inputs without widening the query scope."
     },
     "ComposerActionIds": {
       "type": "object",
@@ -4187,6 +4223,10 @@
         },
         "settle_generation": {
           "$ref": "#/$defs/SearchSettleGeneration"
+        },
+        "parent": {
+          "$ref": "#/$defs/WindowParentRef",
+          "description": "Required for a per-parent Bind only. Use the checked parent of the current scope."
         }
       }
     },
@@ -4217,6 +4257,10 @@
         },
         "route": {
           "$ref": "#/$defs/RouteOperands"
+        },
+        "parent": {
+          "$ref": "#/$defs/WindowParentRef",
+          "description": "Required for a per-parent Bind only. Use the checked parent of the current scope."
         }
       }
     },
@@ -4489,6 +4533,33 @@
           "$ref": "#/$defs/ExecutionChildRequestRef"
         }
       }
+    },
+    "ExecutionAttemptChildRefusal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "reason"
+      ],
+      "properties": {
+        "reason": {
+          "enum": [
+            "pending_limit",
+            "unavailable",
+            "request_mismatch"
+          ]
+        }
+      },
+      "description": "pending_limit means the authenticated parent cannot reserve a new slot. Use unavailable for a stale fence, unavailable target or retired request. request_mismatch means changed input under the same live receipt."
+    },
+    "ExecutionAttemptChildReply": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/ExecutionAttemptChildAck"
+        },
+        {
+          "$ref": "#/$defs/ExecutionAttemptChildRefusal"
+        }
+      ]
     }
   },
   "activation_limits": {
@@ -4534,7 +4605,7 @@
       "output": {
         "$ref": "#/$defs/ExecutionStatus"
       },
-      "scope": "Only the owning job consumes the checked child request. Resolve pinned kind and refs from it. Recheck exact parent, live caller, target, ancestor ceilings and aggregate tree quota. Commit the child item, parent edge and admission under one fence by receipt."
+      "scope": "Only the owning job consumes a live checked request. Resolve pinned kind and refs, and recheck exact parent, live caller, eligible target, all ancestor ceilings and reserved tree capacity. Convert the reserved slot to admitted execution with child item and parent edge under one fence. A retryable refusal keeps the unexpired reservation. A terminal refusal releases it exactly once. Durable receipt replay adds no child or slot."
     },
     "execution_stop": {
       "input": {
@@ -4566,9 +4637,15 @@
         "$ref": "#/$defs/ExecutionAttemptChildRequest"
       },
       "output": {
-        "$ref": "#/$defs/ExecutionAttemptChildAck"
+        "$ref": "#/$defs/ExecutionAttemptChildReply"
       },
-      "scope": "Check exact current parent, actor, eligible target, refs and ceilings. Deduplicate the request under the parent-attempt receipt. Atomically store the immutable checked request and its child_requested transition before ACK. Replay the exact receipt and emit the transition once. A changed request under that ID or a stale fence is refused."
+      "scope": "Check exact current parent, live actor, eligible target, refs and ancestor ceilings under the tree reservation fence. Resolve an existing parent-attempt receipt first. Exact live replay returns the same ref without another transition or reservation. Reject changed input or retired requests. For a fresh receipt atomically reserve pending and aggregate tree capacity before storing the request and its child_requested transition. At capacity return pending_limit without a record, receipt, transition or wake. Release pending capacity once on consumption, expiry or fencing and retire the queued transition. Expiry and fencing survive restart. Recheck authority before returning the reply.",
+      "limits": {
+        "per_parent_pending": 1,
+        "tree_attempts_including_pending": 8,
+        "max_depth": 3,
+        "pending_seconds": 300
+      }
     }
   },
   "component_routes": {
@@ -4629,7 +4706,7 @@
       "output_schema": {
         "$ref": "#/$defs/SelectionSetResult"
       },
-      "scope": "Current authorized Bind and lease, for a checked set of selected rows or a clear."
+      "scope": "Current authorized Bind and lease, for a checked set of selected rows or a clear. Validate the exact parent for a per-parent Bind and the exact current generation and scope for a search Bind. Bind issued contexts and set refs to that scope."
     },
     "composer.options": {
       "input_schema": {
@@ -4689,7 +4766,7 @@
       "output_schema": {
         "$ref": "#/$defs/ViewOpenResult"
       },
-      "scope": "Authenticated view session, including data-free render and its sources Composer Send and Stop resolve through composer_actions[component_id] and activation_contexts[action_id] from this view. Guest and public receive no viewer or account identity.",
+      "scope": "Authenticated view session, including data-free render and its sources Composer Send and Stop resolve through composer_actions[component_id] and activation_contexts[action_id] from this view. Guest and public receive no viewer or account identity. Resolve declared route consumers from all chrome and content, including sidebar shortcuts and section actions and footer actions. Missing optional host.item.create collection operands mean no placement.",
       "input_schema": {
         "$ref": "#/$defs/ViewOpenRequest"
       }
@@ -4719,7 +4796,7 @@
       "output_schema": {
         "$ref": "#/$defs/SelectionContextResult"
       },
-      "scope": "Current authorized Bind and lease. Reconstruct the exact stable row named by the settled selection before issuing contexts.",
+      "scope": "Current authorized Bind and lease. Reconstruct the exact stable row named by the settled selection before issuing contexts. Validate the exact parent for a per-parent Bind and the exact current generation and scope for a search Bind. Bind issued contexts and set refs to that scope.",
       "surface": "direct_shell"
     },
     "transcript.quote": {
@@ -4756,7 +4833,7 @@
       "output_schema": {
         "$ref": "#/$defs/SettledSearchResult"
       },
-      "scope": "Bind each acknowledgement and subsequent window or plan refusal to the current view lease, resolved search Bind and settle_generation. Supersede older generations atomically and reject changed text or match on replay. Use only the Bind’s field filter. A new generation starts at offset zero. Resolve required route operands before accepting the generation. Bind that generation to the exact resolved scope including any collection. A window must resolve to the same scope. A route change requires a new generation and never widens the prior search."
+      "scope": "Check the lease, Bind, required route operands and WindowParentRef before acknowledging. Require parent iff the Bind declares source.parent. Pin the generation to the exact resolved collection, parent and ancestry where declared, along with the full predicate, authorized audience, text and match. Echo the checked parent and generation. An exact current replay is idempotent. Fence older generations and reject changed input or scope on same-generation replay. Every window, settled selection and explicit selection set must resolve to the pinned scope. A changed collection, parent or route requires a new generation starting at zero. An invalid parent gets the same opaque refusal as an absent scope. For a valid scope lacking the qualified index, the first window returns unsupported_plan without scanning candidates."
     },
     "transcript.body": {
       "input_schema": {
@@ -4811,7 +4888,8 @@
         "type": "ExecutionRef",
         "index_owner": null,
         "audience": "eligible_execution_actor",
-        "nullable": true
+        "nullable": true,
+        "description": "Nullable ref for an exact admitted attempt, only in a ready member reply to an eligible execution actor. The parent edge resolves to an ItemRef. Starting may have only an intent-based Stop context."
       }
     },
     "search_corpora": [

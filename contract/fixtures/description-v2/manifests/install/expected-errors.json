@@ -15,5 +15,9 @@
   "invalid-frontmatter-no-provenance.json": "requires a claimed-text source and body_derived output",
   "invalid-composer-send-schedule.json": "prepared Send is reserved for the host composer",
   "invalid-text-set-extractors-conflicting-separators.json": "inline selectors for 'tags' require one hierarchy separator",
-  "invalid-extractors-repeated-scalar-output.json": "repeated output 'summary' requires TextSet"
+  "invalid-extractors-repeated-scalar-output.json": "repeated output 'summary' requires TextSet",
+  "invalid-host-create-default-union-tags.json": ".host_create.defaults.tags: extractor-owned output",
+  "invalid-host-create-default-summary.json": ".host_create.defaults.summary: extractor-owned output",
+  "invalid-host-create-default-snippet.json": ".host_create.defaults.snippet: extractor-owned output",
+  "invalid-host-create-default-image.json": ".host_create.defaults.thumbnail: host-owned image slot"
 }

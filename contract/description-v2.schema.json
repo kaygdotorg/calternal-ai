@@ -341,7 +341,7 @@
         "type",
         "kind"
       ],
-      "description": "What a bind reads. The host authorizes kind, collection, every filter field, every sort field, the search and the output fields against the viewer, the space and (for a guest) the item's grant BEFORE any indexed work, and projects rows for the audience. The description only asks.",
+      "description": "What a bind reads. The host authorizes kind, collection, every filter field, every sort field, the search and the output fields against the viewer, the space and (for a guest) the item's grant BEFORE any indexed work, and projects rows for the audience. The description only asks. A per-parent search sends a WindowParentRef with its settled request and all subsequent requests in that scope. Use only a qualified index for the resolved parent and any collection.",
       "allOf": [
         {
           "if": {
@@ -690,7 +690,7 @@
         "id",
         "source"
       ],
-      "description": "ONE definition used by chrome and content: a data-free request for rows, counts or one item. Several binds may be in one view; every reference names its bind id. A description with binds contains no viewer data, so it may be cached and shared.",
+      "description": "ONE definition used by chrome and content: a data-free request for rows, counts or one item. Several binds may be in one view; every reference names its bind id. A description with binds contains no viewer data, so it may be cached and shared. The full set of distinct required route operands across the source and both filter groups must fit the catalogue RouteOperands cap. The verifier checks the combined set before opening subscriptions.",
       "allOf": [
         {
           "if": {

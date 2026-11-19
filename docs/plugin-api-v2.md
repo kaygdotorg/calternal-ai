@@ -1,4 +1,4 @@
-# Plugin API v2 · revision 14.2 draft
+# Plugin API v2 · revision 14.3 draft
 
 The first contract covers host-drawn apps, generic items, durable jobs and
 generic conversation and execution engines. Freeze after the §8 spikes. Fixture bounds are test settings. See the
@@ -487,16 +487,24 @@ terminal transitions wake it, once per receipt. Tokens do not wake the
 plugin VM. An authenticated attempt sends `ExecutionAttemptChildRequest`
 over its attempt channel with a receipt ID, a target conversation kind and
 up to 32 distinct admitted refs. The host derives the exact parent and
-actor from that channel, checks their live rights, target eligibility and
-ancestor ceilings, then commits the immutable request and
-`child_requested` transition before acknowledgement. A replay of the
-same receipt returns the same checked ref. Changed input and stale fences
-are refused. Only the owning parent job consumes that ref through
-`execution_spawn_child`. The host resolves the kind and refs from the
-checked request, rechecks the exact parent, actor, eligible target,
-ancestors and tree quota, and commits generic child creation, parent edge
-and admission under one fence. Child rights are the intersection of the
-request, live caller and every ancestor's admitted refs and effect ceilings.
+actor from that channel. Under the tree reservation fence check the
+exact live parent, actor, eligible target and ancestor ceilings. An exact
+receipt replay returns the same live checked ref. Changed input under that
+receipt is refused. Reserve before minting: one pending request per attempt,
+eight attempts including reservations per tree and depth at most three,
+as bounded in the catalogue. Commit the reservation, immutable request and
+`child_requested` transition together before ACK. At capacity return
+`pending_limit` with no receipt, record, transition or wake.
+
+Only the owning parent job can consume the ref using `execution_spawn_child`.
+Recheck authority and convert the reservation to an admitted slot with the
+generic child item and parent edge in one transaction. Child rights are the
+intersection of the request, live caller and every ancestor's admitted refs
+and effect ceilings. A retryable refusal keeps the reservation. Release it
+exactly once on consumption, terminal refusal, expiry (five minutes from
+mint) or fencing. The durable deadline and fence retire queued transitions,
+including after restart. A consumed or retired mint receipt cannot allocate
+a new slot within receipt retention. Replay a committed spawn by its own receipt.
 
 The placement runtime enforces the heartbeat/renewal freeze and verified
 teardown cutoffs in the sealed proposal. Keep quota until verified
@@ -552,7 +560,13 @@ Charge the element, set and index-work limits to the merged result and
 publish it with the source commit. Notes preserves the shipped scanner's
 spelling and case. The host has no Notes defaults. The existing body_excerpt declaration is
 the shorthand for the checked preview text selector. Notes declares its shipped grammar and
-uses its package for tag rename and link rewrite.
+uses its package for tag rename and link rewrite. Reject `host_create.defaults`
+for every extractor output, including `body_excerpt`, and for every declared
+device image slot. On generic create run the host extractors on the empty
+source in the FULL transaction. Sets start empty, an empty configured summary
+is empty text, missing frontmatter keys have no value and a new image slot has
+no ref. Validate the resulting state with the allowed package defaults before
+commit.
 
 A `TextSet` filter uses `contains` with one nonempty Text element within
 the set’s element limit. Use a literal or a checked route that resolves to
@@ -645,8 +659,12 @@ kinds. Check the emitted list before authorizing the viewer and field graph. A p
 reference. Item rows use the kind’s row reference. Rows of a repeated
 section use a `LayoutEntryRef`. A request row resolves only to an
 authorized `RequestRef`. `waiting_on` and `pending_for` support the
-viewer’s own equality operand only. `threads.active_turn` resolves as a
-Turn ref, never as the parent Thread ref.
+viewer’s own equality operand only. A conversation’s `active_execution`
+is the nullable `ExecutionRef` for the exact admitted attempt, available only
+to an eligible execution actor on a ready member reply. The parent edge
+names an `ItemRef`.
+Before admission the host may issue a Stop context for a pending intent from
+the composer. That intent has no active execution ref.
 
 Compile one dependency graph per view, including chrome and content.
 Check unique in-scope IDs, declared kinds and types, and all binding edges
@@ -731,7 +749,12 @@ The first contract qualifies these plan families.
 The search Bind’s optional field filter defaults to all searchable text. The renderer supplies the search text and a match shape of literal AND terms or one literal token prefix. Claimed-text search matches the authorized title and body in one scope-local result order. Conversation search matches the full query in the authorized title or within one authorized message. Return one row per thread, with all matching titles ahead of message-only matches. Retain the kind’s stable order within each tier. Apply one posting, expansion and row-work budget to the whole result. Title-only, body-only and message-only are optional filters where the kind supports them.
 
 The catalogue’s `query.search` defines the shared depth, scopes, tokenizer
-and supported shapes. Serve later windows while both work budgets in
+and supported shapes. Settle pins the authorized scope before the first
+window. Per-parent search requires a checked parent and a qualified
+parent-scoped plan, including the collection dimension when declared.
+Changing a collection or parent invalidates old generations, selections
+and contexts for that Bind. An unsupported combination cannot fall back
+to a kind-wide scan. Serve later windows while both work budgets in
 `query.live_limits` hold.
 If an otherwise qualified query exhausts either budget, return a
 `refine_query` window containing only bounded authorized partial rows
@@ -1061,7 +1084,7 @@ revisions of all affected resources and refuses if any dependency moved.
 
 | Catalogue operation | Commit boundary and eligibility |
 | --- | --- |
-| `host.item.create` | Under one FULL content transaction’s fence, check live creation authority, optional collection-membership edit authority and the normal item and membership quotas. Then commit the empty item with its defaults, requested membership and Undo together. An omitted route parameter skips placement. A supplied ref that is absent, foreign, unreadable or not editable returns the same opaque `collection_unavailable` outcome. Quota refusal returns `create_limit_reached` with no item, membership or Undo committed. Undo rechecks live authority and the item head, its membership and sharing revisions and the introduced membership revision, if any. Refuse on any change. On success remove the item and its introduced membership together. Return the created ref with no runtime wake or challenge, even in a shared collection. Any declared follow-up receives only the created ref under §1 after commit. |
+| `host.item.create` | Under one FULL content transaction’s fence, check live creation authority, optional collection-membership edit authority and the normal item and membership quotas. Then commit the empty item with its permitted defaults and the host’s empty-source extraction, requested membership and Undo together. An omitted route parameter skips placement. A supplied ref that is absent, foreign, unreadable or not editable returns the same opaque `collection_unavailable` outcome. Quota refusal returns `create_limit_reached` with no item, membership or Undo committed. Undo rechecks live authority and the item head, its membership and sharing revisions and the introduced membership revision, if any. Refuse on any change. On success remove the item and its introduced membership together. Return the created ref with no runtime wake or challenge, even in a shared collection. Any declared follow-up receives only the created ref under §1 after commit. |
 | `host.item.trash`, `host.item.restore` | The FULL content transaction records the item revision, recoverable placement and Undo. Full swipe covers single-item Trash and restore from Trash. Trash paths with separate lifecycle cleanup are ineligible. |
 | `host.item.rename` | The FULL content transaction records the new head, placement and Undo for a single-item rename without deferred link rewrites. The current Notes job commits inbound-link changes in later transactions, so that path remains ineligible. |
 | `host.collection.move` | Challenge only if the destination’s effective audience contains anyone other than the actor. Otherwise the FULL content transaction can commit the complete move and Undo in one exchange. A two-collection move is ineligible for the shortcut until both membership changes commit together. |
@@ -1248,7 +1271,7 @@ and zero-effect assertions must hold on every repetition.
 | --- | --- |
 | **One enrolled channel** | Two real package processes on one enrolled channel in Space A, plus Space B. Block A’s carrier receiver until its actual writer stalls mid-frame. Hold a slow callback for two seconds. With a writable carrier, control and the other callback complete p95 ≤500 ms. While stalled, local fencing p95 ≤500 ms, close p95 ≤2 s and Space B progress p95 ≤2 s. No old-lease effect after local fencing. Remote stops within 5 s of its last authenticated renewal on every run. Reconnect rejects the old epoch and authorized replay commits once. |
 | **Cold indexed page** | 100,000 mixed-visibility rows. During grant/content churn test manual collection + ACL + sort from offset 0 through its last full authorized range and last visible row (at most 10,000 members, so the last full 200-row range starts at most at offset 9,800). Use a dense dynamic collection for offsets 10,000 and 90,000. Exercise search under the scoped search gate. In the cold Notes page arm, seed authorized thumbnails and record first row paint, visible thumbnail completion, image GET count and transferred bytes separately from indexed page latency. Offset 0 p95 ≤100 ms, deep windows p95 ≤500 ms. Seed enough authorized rows for every requested range and assert the exact authorized rows in order. Empty or refused replies fail. Meter materialized rows and skipped covering-index entries separately against their bounds. In a larger authorized scope, also request a range whose nearer-end jump exceeds the skip cap. Assert `skip_limit` followed by paging that returns the same authorized rows. Test End on a scope beyond the absolute offset ceiling using `anchor:"end"` and assert the last authorized rows. For stable-ID lookup assert one bounded indexed lookup and scoped authority check for a present, missing and unauthorized ID. For standalone exact counts assert one maintained-count lookup and the exact authorized total after grant churn. Exercise saves at the 32-effective-scope cap and assert at most two covering-index keys touched per scope. Refuse a grant or membership that would create scope 33 with the typed limit error. Measure the existing write and index maintenance together on the save path and require p95 ≤40 ms. The measured two-collection sort change adds about 9 ms p95 in isolation. Reject table scans and full candidate sorts, coalesce fan-out, refuse both counts and rows on revocation and wake no worker. |
-| **Scoped search** | On locked perf-01 exercise the claimed-text and conversation shapes in their qualified scopes through the depth in `query.search`. Include a searchable community kind alongside Notes. Beyond that depth, assert ready windows with the exact authorized rows and order while both budgets hold. Exhaust each budget separately and assert a `refine_query` window with bounded provisional rows and no count. For Notes check the qualified Unicode cases, refusal before the mark-aware Devanagari rebuild, and CJK segmentation and substring refusal. Meter postings, materialized-row work and count work separately against `query.live_limits`. A broad prefix must start no expansion. During publication lag and stale authority, assert `loading` with no rows, counts or activation contexts. Race revoke against delivery and assert zero stale results. For a reader with a ready search, edit a hidden row and a hidden field. Check before, during and after publication that the visible state, rows, ranks, count and result version stay unchanged. Measure foreground save and save-to-search lag separately. Keep maintenance out of the save transaction and meet the append gate. |
+| **Scoped search** | On locked perf-01 exercise the claimed-text and conversation shapes in their qualified scopes through the depth in `query.search`. Include a searchable community kind alongside Notes. Beyond that depth, assert ready windows with the exact authorized rows and order while both budgets hold. Exhaust each budget separately and assert a `refine_query` window with bounded provisional rows and no count. For Notes check the qualified Unicode cases, refusal before the mark-aware Devanagari rebuild, and CJK segmentation and substring refusal. Meter postings, materialized-row work and count work separately against `query.live_limits`. A broad prefix must start no expansion. Settle two parents of one Bind, then change the collection within one parent. Replay a window and both selection forms from the superseded scope with the old and current generations. No old rows, counts or context tokens. Repeat for a forged, foreign and revoked parent and both child-edge types. For a valid unqualified scope the first window returns `unsupported_plan` with zero scanned candidates. For an enabled scope compare rows and counts with a live-authority oracle. During publication lag and stale authority, assert `loading` with no rows, counts or activation contexts. Race revoke against delivery and assert zero stale results. For a reader with a ready search, edit a hidden row and a hidden field. Check before, during and after publication that the visible state, rows, ranks, count and result version stay unchanged. Measure foreground save and save-to-search lag separately. Keep maintenance out of the save transaction and meet the append gate. |
 | **Atomic large save** | Stage an escape-heavy 2 MiB body and reconstruct it by revision-pinned ranges after the head moves, p95 ≤5 s. The 60 s range pin is invalidated by purge or revoke. Race duplicate begin, lost chunk ACK, conflicting bytes, cancel and orphan cleanup. Race revoke, epoch loss, enrollment removal and run replacement on both sides of commit and inject crashes before publication and before reply. No partial edit or success receipt before commit. After commit recover one revision and receipt. |
 | **Durable transcript** | Stall the reader, cut after commit before ACK and restart. First screenful drawn p95 ≤150 ms on a warm authorized reconnect, with stable record IDs/order, cursor and durable receipts on replay. Reopen the boundary record and refresh sign-in notices in the same authorized reply. Revoked reconnect reveals neither rows nor bookmarks. An independent control request completes p95 ≤500 ms with the transcript reader stalled. |
 | **Host + renderer authority** | On Svelte Chromium check both formats, a real protected approval and a live Bind. Forge row/route/Bind/context, untouched prefills, bulk IDs, ChoiceRefs, cached data and built-in surfaces. Inject duplicate and stale activations, revocation and unrelated churn. Zero unauthorized effects or rendered bytes, one commit on replay, and unrelated-churn action p95 ≤2 s from dispatch. Race revocation at egress, job claim/park and approval resolve before freezing those routes. Issue and fetch a body-derived thumbnail ref while all grants are live. Revoke only body access, preserving item access, image-field access and the view lease. Fetch that same ref and require the same opaque 404 as an absent image, with zero image bytes and no worker wake. For each §4.4 atomic-Undo case exercised in Step 0, crash before and after the named commit and during publication: recover neither effect nor Undo before commit, and both after it. Concurrently edit a dependency, then require Undo to refuse without another effect. Run idle-archive recovery in Step 2 on its writer. Exercise ineligible variants and prove the shortcut and full swipe cannot bypass their checks. Delay or spoof lease replies and verify only current, exact retained windows repaint. Test unverified and conflicting provider mark claims, including a fresh or offline host without verified ownership data. Only a verified publisher with a matching ownership binding may project a distinctive mark. |
@@ -1499,7 +1522,7 @@ See the [recorded answers](https://git.kayg.org/kayg/calternal-ai/src/commit/3ab
   qualifies. Scratch activation and Photos-scale I/O and metadata stay
   outside this revision.
 
-### Revision 14.2 draft questions and implementation seams
+### Revision 14.3 draft questions and implementation seams
 
 - Discovery rights, canonical writer and who owns a cross-runner list are
   separate owner questions in [the sealed proposal’s §C][generic-engines].
@@ -1512,7 +1535,15 @@ See the [recorded answers](https://git.kayg.org/kayg/calternal-ai/src/commit/3ab
   authenticates none of those.
 - The paper walkthrough exercises declarative shapes. The runtime still
   needs cold Send/intent and child transaction proofs, park race and
-  restart qualification, and archive/snooze writers. Do not enable an
+  restart qualification, and archive/snooze writers. For child admission, pause the parent job and
+  race two fresh requests for the last slot. Require one ACK, one
+  `pending_limit` and exactly one committed transition. Repeat with the
+  parent queue full, aggregate tree full and depth exhausted. Replay a
+  live receipt at capacity, then send changed input for that ID. Exercise
+  consume, retryable refusal, terminal refusal, expiry over restart and a
+  consume/fence race. Read back queue, reservation, child and wake counts
+  at each boundary and require exactly one release and no stale admission.
+  Do not enable an
   atomic-Undo shortcut before its gate.
 - The [renderer gap report][renderer-gaps] includes the remaining portable
   attachment-upload and mention-lookup transports. Omit those controls

@@ -341,12 +341,12 @@
         },
         "live_room": { "enum": ["yjs-v1"] },
         "host_create": {
-          "description": "Opt in to generic host.item.create. Supply schema-valid initial metadata for an empty item. Optional after runs a same-package operation or job after the host commit. At install, resolve a job to run_operation and require the entry operation to target this kind with target.field and accept exactly that one required property in a closed input object. Resolve the property reference to ItemRef through the host registry and ignore schema annotations. The host binds the created ref to target.field as the only input.",
+          "description": "Opt in to generic host.item.create. Supply schema-valid initial metadata for an empty item. Install rejects defaults for each host extractor output, the body_excerpt shorthand and every declared device_row_images slot. The host extracts from the empty source before committing the item. Optional after runs a same-package operation or job after the host commit. At install, resolve a job to run_operation and require the entry operation to target this kind with target.field and accept exactly that one required property in a closed input object. Resolve the property reference to ItemRef through the host registry and ignore schema annotations. The host binds the created ref to target.field as the only input.",
           "type": "object",
           "additionalProperties": false,
           "required": ["defaults"],
           "properties": {
-            "defaults": { "type": "object" },
+            "defaults": { "type": "object", "description": "Package-supplied metadata only. Do not supply a host-derived output, even as null or an empty value." },
             "after": {
               "type": "object",
               "additionalProperties": false,

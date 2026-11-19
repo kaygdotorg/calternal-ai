@@ -106,10 +106,10 @@ and proofs. To verify a captured host-issued composer Invoke, submit
 `{"view_open": <ViewOpenResult>, "event": <ResolveActivation>}` as the
 event artifact. The verifier matches the composer and exact context against
 the originating description and view-open reply. For an Invoke issued
-on renewal, include the paired `renew_request` and `renew_result` in the
-same capture. The verifier checks the earlier lease and the matching
-outstanding renewal, then uses the replacement composer map and contexts.
-The wrapper is a verifier input.
+on renewal, include `renewals: [{request, result}, …]` in acceptance order.
+The verifier checks up to 16 pairs against the immediately preceding reply’s
+lease and grant and validates each replacement map. The Invoke uses only
+the last map and context. The capture bound applies to verifier artifacts.
 
 Directory mode finds replies in
 `replies/`. Use `--reply FILE` to select replies and `--origins FILE` to override

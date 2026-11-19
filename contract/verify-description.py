@@ -20,7 +20,7 @@ import sys
 
 from description_input import PackageInput, Validation, check_unique_ids, lexical_path, read_bytes, read_json, resolved_path
 
-from description_events import COMPONENT_TYPES, EventBindings, check_composer_invoke, check_event_binding, validate_component_request, walk
+from description_events import COMPONENT_TYPES, EventBindings, bind_route_operands, check_composer_actions, check_composer_invoke, check_event_binding, validate_component_request, view_route_operands, walk
 import description_verification as verification
 
 from description_verification import (
@@ -441,39 +441,77 @@ def validate_description(doc, manifest, installed, errors):
     if errors:
         return
     view_limits(doc, errors)
+    if verification.CATALOGUE is not None:
+        limit = verification.CATALOGUE["$defs"]["RouteOperands"]["maxProperties"]
+        _, required = view_route_operands(doc, errors)
+        if len(required) > limit:
+            errors.append(f"$.view.root: needs more than {limit} distinct route operands")
+        for index, bind in enumerate(errors.each(doc.get("binds", []))):
+            if len(bind_route_operands(bind, errors)) > limit:
+                errors.append(f"$.binds[{index}]: needs more than {limit} distinct route operands")
     semantic(doc, errors, verification.CATALOGUE, manifest, installed)
 
 
 def validate_composer_capture(capture, bindings, errors):
-    """Validate the recorded authority reply used to resolve a host Send or Stop."""
+    """Check a bounded chain of accepted replies before resolving an invoke."""
     base = {"view_open", "event"}
-    renewal = {"renew_request", "renew_result"}
-    if capture.keys() not in (base, base | renewal) or not bindings or verification.CATALOGUE is None:
-        errors.append("$: composer capture requires an originating description, view_open and event. Include both renewal records when using a renewal")
+    if capture.keys() not in (base, base | {"renewals"}) or not bindings or verification.CATALOGUE is None:
+        errors.append("$: composer capture requires an originating description, view_open and event")
         return
     catalogue = verification.CATALOGUE
-    for name, definition in errors.each((("view_open", "ViewOpenResult"), ("event", "ResolveActivation"),
-                                        ("renew_request", "LeaseRenewRequest"), ("renew_result", "LeaseRenewResult"))):
-        if name in capture:
-            check({"$ref": f"#/$defs/{definition}"}, capture[name], f"$.{name}", errors, catalogue)
+    capture_fields = {"view_open": "ViewOpenResult", "event": "ResolveActivation"}
+    for name, definition in errors.each(capture_fields.items()):
+        check({"$ref": f"#/$defs/{definition}"}, capture[name], f"$.{name}", errors, catalogue)
+    pair = {
+        "type": "object", "additionalProperties": False, "required": ["request", "result"],
+        "properties": {"request": {"$ref": "#/$defs/LeaseRenewRequest"},
+                       "result": {"$ref": "#/$defs/LeaseRenewResult"}},
+    }
+    renewals = capture.get("renewals", [])
+    check({"type": "array", "maxItems": 16, "items": pair}, renewals, "$.renewals", errors, catalogue)
     if errors:
         return
-    opened = capture["view_open"]
-    reply = opened
-    if "renew_request" in capture:
-        request, reply = capture["renew_request"], capture["renew_result"]
-        lease = opened["lease"]
+    origin = bindings()
+    if errors:
+        return
+    reply = capture["view_open"]
+    issued = check_composer_actions(origin, reply, errors)
+    lease = reply["lease"]
+    authority = (lease["lease_ref"], lease["grant_revision"])
+    context_authorities = {reply["activation_contexts"][action]: authority for action in errors.each(issued)
+                           if action in reply["activation_contexts"]}
+    seen = set()
+    for index, renewal in enumerate(errors.each(renewals)):
+        request, result = renewal["request"], renewal["result"]
+        lease = reply["lease"]
+        path = f"$.renewals[{index}]"
+        if request["renewal_id"] in seen:
+            errors.append(f"{path}.request: renewal ID was already used")
+            return
+        seen.add(request["renewal_id"])
         if (request["lease_ref"] != lease["lease_ref"]
                 or request["grant_revision"] != lease["grant_revision"]
-                or reply["renewal_id"] != request["renewal_id"]
-                or reply["request_lease_ref"] != request["lease_ref"]
-                or not (lease["cache_partition"] == request["cache_partition"] == reply["cache_partition"]
-                        == reply["lease"]["cache_partition"])):
-            errors.append("$.renew_result: must match the originating lease, partition and outstanding renewal")
+                or result["renewal_id"] != request["renewal_id"]
+                or result["request_lease_ref"] != request["lease_ref"]
+                or not (lease["cache_partition"] == request["cache_partition"] == result["cache_partition"]
+                        == result["lease"]["cache_partition"])):
+            errors.append(f"{path}.result: must match the originating lease, partition and outstanding renewal from the last accepted reply")
             return
-    origin = bindings()
+        for retained in errors.each(result["retained_results"]):
+            if (lease["grant_revision"] != result["lease"]["grant_revision"]
+                    or request["result_versions"].get(retained["window_ref"]) != retained["result_version"]):
+                errors.append(f"{path}.result.retained_results: must name a requested exact result under the unchanged grant")
+        reply = result
+        issued = check_composer_actions(origin, reply, errors)
+        if errors:
+            return
+        authority = (reply["lease"]["lease_ref"], reply["lease"]["grant_revision"])
+        for action in errors.each(issued):
+            context = reply["activation_contexts"][action]
+            if context_authorities.setdefault(context, authority) != authority:
+                errors.append(f"{path}.result.activation_contexts: reused composer context from a different lease or grant")
     if not errors:
-        check_composer_invoke(capture["event"], origin, reply, errors)
+        check_composer_invoke(capture["event"], reply, issued, errors)
 
 
 def validate_event(doc, bindings, errors):

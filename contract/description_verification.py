@@ -520,7 +520,8 @@ def check_manifest_install(manifest, errors):
                 if not target_field or not is_only_item_input(run.get("input_schema"), target_field, errors):
                     errors.append(f"{path}.composer.job: run input must accept only its target ItemRef")
         fields = kind.get("fields", {})
-        outputs, separators = set(), {}
+        outputs = {field for field, meta in errors.each(fields.items()) if meta.get("source") == "body_excerpt"}
+        separators = {}
         for extractor in errors.each(kind.get("extractors", [])):
             field = extractor["output"]
             output = fields.get(field, {})
@@ -539,7 +540,13 @@ def check_manifest_install(manifest, errors):
         for field in errors.each(kind.get("device_row_images", [])):
             if fields.get(field, {}).get("type") != "RowImageRef":
                 errors.append(f"{path}.device_row_images: slot must be a declared RowImageRef")
-        after = (kind.get("host_create") or {}).get("after")
+        host_create = kind.get("host_create") or {}
+        for field in errors.each(host_create.get("defaults", {})):
+            if field in outputs:
+                errors.append(f"{path}.host_create.defaults.{field}: extractor-owned output cannot have a default")
+            elif field in kind.get("device_row_images", []):
+                errors.append(f"{path}.host_create.defaults.{field}: host-owned image slot cannot have a default")
+        after = host_create.get("after")
         if not after:
             continue
         operation_id = after.get("operation")
@@ -681,6 +688,10 @@ def check_window_rows(reply, origin, catalogue, errors):
                 errors.append(f"{path}: field is not declared with a catalogue type")
             elif field not in bind.get("fields", []):
                 errors.append(f"{path}: field is not projected by Bind {bind['id']!r}")
+            elif meta.get("audience") == "eligible_execution_actor" and (
+                reply.get("audience") != "member" or reply.get("state") != "ready"
+            ):
+                errors.append(f"{path}: execution actor fields require a ready member reply")
             elif value is not None or meta.get("nullable") is not True:
                 check(catalogue["$defs"][field_type], value, path, errors, catalogue)
 
@@ -697,11 +708,14 @@ def validate_reply(doc, origin, errors):
         if not rows and offset < total:
             errors.append("$.rows: an exact count still has rows at this offset")
     if origin is not None:
-        validate_search_generation(doc, origin[0], errors)
+        bind = origin[0]
+        validate_search_generation(doc, bind, errors)
+        if "state" in doc and ("parent" in doc) != bool(bind["source"].get("parent")):
+            errors.append("$.parent: parent scope must match source.parent")
         check_window_rows(doc, origin, CATALOGUE, errors)
 
 
 def validate_search_generation(value, bind, errors):
-    """Require the search correlation field precisely on search Bind windows."""
+    """Require the search correlation field precisely on search Bind requests and replies."""
     if ("settle_generation" in value) != (bind["source"]["type"] == "search"):
-        errors.append("$.settle_generation: required for search windows only")
+        errors.append("$.settle_generation: required for search Binds only")

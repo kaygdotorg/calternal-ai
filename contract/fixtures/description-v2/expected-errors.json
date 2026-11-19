@@ -142,7 +142,7 @@
   "invalid-contains-viewer.json": "contains requires a TextSet and one Text operand",
   "invalid-authored-prepared-send.json": "prepared Send operation is reserved for the host composer",
   "invalid-reply-catalogue-window-tags-string.json": "$.rows[0].fields.tags: expected array",
-  "invalid-reply-catalogue-search-missing-generation.json": "required for search windows only",
+  "invalid-reply-catalogue-search-missing-generation.json": "required for search Binds only",
   "invalid-reply-catalogue-window-stale-non-image.json": "must name a delivered RowImageRef in a ready row",
   "invalid-reply-catalogue-guest-image-attribution.json": ".image_attribution: not allowed here",
   "invalid-reply-catalogue-public-image-attribution.json": ".image_attribution: not allowed here",

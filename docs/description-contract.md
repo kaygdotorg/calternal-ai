@@ -1,6 +1,6 @@
 # Description contract (v2)
 
-Status: **revision 14.2 draft (based on 13.18)**, paired with the [Plugin API v2 specification](plugin-api-v2.md). The [description schema](../contract/description-v2.schema.json) defines the shared renderer shapes.
+Status: **revision 14.3 draft (based on 13.18)**, paired with the [Plugin API v2 specification](plugin-api-v2.md). The [description schema](../contract/description-v2.schema.json) defines the shared renderer shapes.
 
 The schema is checked with `python3 contract/verify-description.py` against the fixtures in `contract/fixtures/description-v2/` (valid ones must pass,
 `invalid-*` ones must report the reason in their directory’s `expected-errors.json`). The fixtures are the paper exercises of section 9. The verifier uses `replies/origins.json` to resolve each standalone window reply to its description fixture and Bind, then checks every projected value against the kind’s declared field type.
@@ -363,11 +363,20 @@ plugin code). A description can run a named **invoke** on a component's event on
 ### 5.1 Host surfaces and navigation on the wire
 
 A route-dependent Bind uses the same `route` operands on its window, settled
-selection, explicit selection set and search settle. Supply every route
-operand consumed by the Bind source or filter. View-open accepts only
-operands consumed by its view-level actions and components. Missing app
-operands leave the dependent actions or components unavailable. A
-content-only app requires the operands used by its root components.
+selection, explicit selection set and search settle. Supply every distinct
+operand used by the source and both filter groups together. Reject a Bind
+whose required names exceed the catalogue's eight-property cap, counting
+a repeated name once. Window and settled single-selection requests may
+also carry optional route operands used to issue that Bind’s row action
+contexts. They do not change the query scope. An absent action input
+withholds that action’s context. View-open allows operands used by view-level actions
+and components in the header, panel, sidebar (shortcuts and section actions
+and menus), footer and content root. A selector assignment or route target
+alone does not declare an input. Missing optional app operands leave the
+dependent actions or components unavailable. `host.item.create` with an
+omitted optional collection route creates the item without placement.
+A content-only app requires the operands used by its root components and
+must fit those names in the same cap.
 The shell supplies at most eight declared names and opaque refs. The host
 verifies declaration, kind, space, live viewer authority and the specific
 Bind or component before issuing results. Reject undeclared names or a
@@ -382,7 +391,11 @@ It never carries the raw route values again. After an `ok` outcome,
 eligible host-issued `send` and `stop` action IDs. Their tokens come from
 `activation_contexts` in the same reply. An accepted `view.renew` supplies
 the complete replacement map and contexts, with omission meaning empty.
-Apply them atomically and discard retired IDs and replaced contexts.
+On every renewal send the lease and grant revision from the latest
+accepted reply. Apply its map and contexts atomically and discard retired
+IDs and replaced contexts, including after a grant change or a second
+or later renewal. Ignore a reply for a superseded request. A new lease
+or grant revision requires fresh composer contexts.
 This lets an open composer receive Stop when a cold Send enters Starting.
 The component ID is the lookup
 key. A composer action ID is not author-defined. Send the exact context
@@ -468,17 +481,24 @@ account menu is the host shell's existing space, settings and sign-out
 surface. Guest and public views receive none of these identity fields.
 
 **Search and counts.** The shell increments `settle_generation` for each
-new settled input within the current lease and resolved Bind. It posts the
-generation, text, optional `match` and the Bind's checked route operands to
-`search.settled`. The host pins the resolved scope, including any collection,
-before acknowledging. It echoes the generation with the Bind, fences older
-settles and accepts an exact replay of the current one. A later window must
-resolve to the pinned scope. A changed route needs a new generation. Require a matching current acknowledgement, then
-clear previous results and request a start-anchored window at offset zero.
-Carry the same generation on every search window request. Match lease,
-Bind and generation before applying a reply, push or plan refusal, even
-if it carries a previously unseen result version. Omit this field on
-non-search windows. The declared `field_filter` stays in the Bind. Exact counts draw as numbers.
+new settled input or scope within the current lease and resolved Bind.
+Send the generation, text, optional `match`, the Bind's checked route
+operands and its `WindowParentRef` when `source.parent` is true to
+`search.settled`. The host checks and pins the collection, parent and full
+ancestry wherever declared before acknowledging. Echo the Bind, generation
+and checked parent when present. Fence older settles and accept only exact
+replay of the current one. A different query, route, collection or parent
+needs a new generation. Clear the old results and selections after the
+matching acknowledgement, then request a start-anchored window at offset
+zero. Send the same parent on per-parent windows and selections, and the
+same generation on all search windows, settled selections and selection
+sets. The host checks the exact scope again before issuing rows, counts,
+contexts or set refs. Match the lease, Bind, requested parent scope and
+generation before applying search replies, pushes or plan refusals. Omit
+generation on requests and results for other Bind types. A forged, stale
+or foreign parent yields an opaque refusal. A valid scope without a
+qualified plan yields `unsupported_plan` on the first window.
+The declared `field_filter` stays in the Bind. Exact counts draw as numbers.
 Estimates draw as “about N”. Omit an unavailable count or badge. Exact empty
 has zero. Explicit selection sets remain limited to 50 stable issued rows.
 The generic renderer omits Select All when more than 50 eligible rows are
@@ -571,7 +591,7 @@ The reminder form calls `reading.remind`, saves the reminder with `item_save` an
 
 The windowed sidebar binds a manual collection with an exact count and shows a Collections section and a Trash Bind. Note rows show the updated date and then the host-indexed snippet, bounded by the [catalogue’s `query.body_excerpt`](../contract/host-catalogue-v2.json). Restore uses a full swipe on an eligible single item. Empty Trash uses the host sheet with a Manager visibility rule, and Share uses its host-owned audience sheet. Rename through Notes’ link-rewriting path resolves and dispatches separately, with Undo fetched through the typed outcome/status route. The separate bulk content list supplies ticks for Bulk Trash, which resolves the checked `selection_ref`, then confirms and dispatches. Move to collection fetches the scoped choice and applies the catalogue’s challenge rule for the destination audience.
 
-The `item-editor` edits the routed `yjs-v1` item. New note invokes `host.item.create` with the Notes manifest defaults and the current route’s collection when present. It commits the new item, membership and Undo together without waking the plugin or showing a challenge, then opens `created` via `then`. Without a collection route the same invoke creates the note without placement. The footer searches the authorized manual collection through `source.collection`. Window, bulk, snooze and search cases are covered by `notes-app.json`, `notes-bulk-and-snooze-app.json` and the search event fixtures.
+The `item-editor` edits the routed `yjs-v1` item. New note invokes `host.item.create` with the Notes manifest defaults and the current route’s collection when present. This sidebar shortcut takes that checked operand from `view.open`. It commits the new item, membership and Undo together without waking the plugin or showing a challenge, then opens `created` via `then`. Without a collection route the same invoke creates the note without placement. The footer searches the authorized manual collection through `source.collection`. Window, bulk, snooze and search cases are covered by `notes-app.json`, `notes-bulk-and-snooze-app.json` and the search event fixtures.
 
 ### 9.3 Threads
 

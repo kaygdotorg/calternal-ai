@@ -1,0 +1,13 @@
+{
+  "definition": "SettledSearchRequest",
+  "value": {
+    "type": "search",
+    "bind": "children",
+    "settle_generation": 8,
+    "text": "text",
+    "parent": {
+      "row": "raw"
+    }
+  },
+  "error": "expected string"
+}

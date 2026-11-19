@@ -1,5 +1,5 @@
 {
-  "definition": "ExecutionAttemptChildAck",
+  "definition": "ExecutionAttemptChildReply",
   "value": {
     "request": "checked-child-request"
   }

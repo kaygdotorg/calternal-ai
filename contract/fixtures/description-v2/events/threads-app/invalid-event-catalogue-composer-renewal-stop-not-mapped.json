@@ -22,29 +22,33 @@
     "activation_id": "stop-pending",
     "activation_context": "newly-eligible-stop"
   },
-  "renew_request": {
-    "type": "lease_renew",
-    "lease_ref": "lease",
-    "grant_revision": "current",
-    "result_versions": {},
-    "renewal_id": "renewing-2",
-    "cache_partition": "personal"
-  },
-  "renew_result": {
-    "lease": {
-      "lease_ref": "lease",
-      "lease_seconds": 15,
-      "grant_revision": "current",
-      "cache_partition": "personal"
-    },
-    "renewal_id": "renewing-2",
-    "request_lease_ref": "lease",
-    "cache_partition": "personal",
-    "retained_results": [],
-    "windows": [],
-    "activation_contexts": {
-      "composer.17": "renewed-send",
-      "composer.20": "newly-eligible-stop"
+  "renewals": [
+    {
+      "request": {
+        "type": "lease_renew",
+        "lease_ref": "lease",
+        "grant_revision": "current",
+        "result_versions": {},
+        "renewal_id": "renewing-2",
+        "cache_partition": "personal"
+      },
+      "result": {
+        "lease": {
+          "lease_ref": "lease",
+          "lease_seconds": 15,
+          "grant_revision": "current",
+          "cache_partition": "personal"
+        },
+        "renewal_id": "renewing-2",
+        "request_lease_ref": "lease",
+        "cache_partition": "personal",
+        "retained_results": [],
+        "windows": [],
+        "activation_contexts": {
+          "composer.17": "renewed-send",
+          "composer.20": "newly-eligible-stop"
+        }
+      }
     }
-  }
+  ]
 }

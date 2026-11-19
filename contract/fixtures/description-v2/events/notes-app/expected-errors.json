@@ -5,5 +5,9 @@
   "invalid-event-catalogue-notes-window-missing-collection.json": "missing required route operand 'collection'",
   "invalid-event-catalogue-notes-selection-missing-route.json": "missing required route operand 'collection'",
   "invalid-event-catalogue-notes-view-open-unlisted-route.json": "undeclared route operand 'unlisted'",
-  "invalid-event-catalogue-notes-search-without-collection.json": "missing required route operand 'collection'"
+  "invalid-event-catalogue-notes-search-without-collection.json": "missing required route operand 'collection'",
+  "invalid-event-catalogue-notes-open-refuses-selector-assignment.json": "undeclared route operand 'view'",
+  "invalid-event-catalogue-notes-component-open-refuses-selector.json": "undeclared route operand 'view'",
+  "invalid-event-catalogue-notes-search-root-refuses-parent.json": "parent scope must match source.parent",
+  "invalid-event-catalogue-notes-search-refuses-extra-route.json": "undeclared route operand 'item'"
 }

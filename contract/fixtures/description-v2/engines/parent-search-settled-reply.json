@@ -1,0 +1,9 @@
+{
+  "definition": "SettledSearchResult",
+  "value": {
+    "type": "search_settled",
+    "bind": "children",
+    "settle_generation": 8,
+    "parent": "checked-parent"
+  }
+}
