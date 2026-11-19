@@ -34,7 +34,7 @@
 
 <div class="scroll" use:chromeTrack>
   <header class="nc-head">
-    {#if shell.narrow}<IconButton icon="sidebar" label="Show mail" onclick={() => shell.toggleSidebar()} />{/if}
+    {#if shell.narrow && id}<IconButton icon="sidebar" label="Show mail" onclick={() => shell.toggleSidebar()} />{/if}
   </header>
   <article class="nc-article">
     <h1 data-chrome-title>{title}</h1>

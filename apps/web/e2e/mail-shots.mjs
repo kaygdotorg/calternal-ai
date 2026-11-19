@@ -19,9 +19,9 @@ for (const scheme of ["light", "dark"]) {
   await shot("attachments", "desktop", scheme, "/mail/199", (p) => p.getByText("receipt-4411.pdf").waitFor());
   await shot("setup", "desktop", scheme, "/mail/setup");
   await shot("notes", "desktop", scheme, "/notes");
-  await shot("list", "phone", scheme, "/mail", (p) => p.getByRole("button", { name: "Show mail" }).click());
+  await shot("list", "phone", scheme, "/mail", (p) => p.getByRole("button", { name: "Show the sidebar" }).click());
   await shot("message", "phone", scheme, "/mail/199", (p) => p.getByText("receipt-4411.pdf").waitFor());
   await shot("setup", "phone", scheme, "/mail/setup");
-  await shot("notes-list", "phone", scheme, "/notes", (p) => p.getByRole("button", { name: /Show notes/ }).click());
+  await shot("notes-list", "phone", scheme, "/notes", (p) => p.getByRole("button", { name: /Show the sidebar/ }).click());
 }
 await b.close(); stop();
