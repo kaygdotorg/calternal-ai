@@ -98,7 +98,7 @@ Row ids are opaque and stable. No position is an authority reference.
 
 ### 2.4 Row template
 
-`title` is one field (one line; there is no second line and no free-form row content). An optional `icon` is a catalogue name, a field’s value or the kind’s own icon. The renderer draws exactly the icons declared by the description. Note and thread item rows omit the leading icon, and thread provider indicators can appear as trailing marks.
+`title` is one field (one line; there is no second line and no free-form row content). An optional `icon` is a catalogue name, a field’s value or the kind’s own icon. An **item row** comes from a Bind of any kind, including notes, threads, collections and layout sections. Notes and Threads declare no leading icon on item rows, whatever the row opens. A **shortcut row** is written directly in the description, like New thread, Automations, Skills, New note, Trash and Settings entries. It keeps its declared icon. The renderer draws exactly the icons declared by the description. Thread provider indicators can appear as trailing marks.
 `marks` (up to three) are trailing dots, counts, texts or icons, each with an optional `when` predicate and a tone. `leadingActions`, `trailingActions` and `menu` are
 `invoke` definitions; only the first leading or trailing action may set `fullSwipe`. `open` navigates (sets a route parameter to the row id) or invokes.
 Use the host-issued row reference for row identity in selection, events and scope. Item rows use the kind’s row reference. Rows of a repeated section use a `LayoutEntryRef`.
@@ -402,7 +402,7 @@ What the renderer needs from the contract, and what it costs:
 
 ## 9. Paper exercises
 
-Run `python3 contract/verify-description.py` with the host catalogue. The fixtures in `contract/fixtures/description-v2/` pair each app with its manifest in `manifests/`. The SDK supplies each package’s own reads and the fixtures include the emitted entries. Section 6 governs the optional member rows used by `threads-nested-catalogue-app.json`.
+Run `python3 contract/verify-description.py` with the host catalogue. The fixtures in `contract/fixtures/description-v2/` pair each app with its manifest in `manifests/`. The SDK supplies each package’s own reads and the fixtures include the emitted entries. Section 6 governs the optional member rows used by `threads-nested-catalogue-app.json`. The Notes and Threads walks follow §2.4: Bind-produced item rows omit leading icons, and authored shortcut rows keep their declared icons.
 
 ### 9.1 Community Reading List and author trial
 

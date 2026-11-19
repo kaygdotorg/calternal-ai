@@ -1162,7 +1162,9 @@ See the [recorded answers](https://git.kayg.org/kayg/calternal-ai/src/commit/3ab
   start leaving before the next window omits the row.
 - **OPEN — Leading icons on plugin item rows.** Decide whether a plugin
   may declare a leading icon while Notes and Threads omit it, or whether
-  every item row omits leading icons. Navigation rows keep their icons.
+  every item row omits leading icons. Item rows come from a Bind, whatever
+  they open. Shortcut rows written directly in the description keep their
+  declared icons (description contract §2.4).
 - **OPEN — Private per-person items.** The Reading List reminder’s viewer
   filter does not grant item-level privacy.
 
