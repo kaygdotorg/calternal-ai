@@ -604,15 +604,18 @@ new installation UUID on the same public origin.
 3. **Authorize the fresh activation.** On dev-01 create a private target
    file with the same unit name and public listener. The override keeps
    `MACHINE_CONNECT` and the provider tag from the approved configuration.
-   After the owner approves, run the preview, then initialize and use
-   step 7 to verify health. Expect `setup: true`. Request any setup code
-   later in the owner's private terminal.
+   Keep the printed target path with the deployment record and use it for
+   later updates of this installation. After the owner approves, run the
+   preview, then initialize and use step 7 to verify health. Expect
+   `setup: true`. Request any setup code later in the owner's private terminal.
 
    ```bash
-   fresh_conf=$(mktemp)
+   install -d -m 0700 "$HOME/.local/state/calternal-ai/targets"
+   fresh_conf=$(mktemp "$HOME/.local/state/calternal-ai/targets/fresh-$revision.XXXXXXXX.conf")
    cat deploy/cloud.conf >"$fresh_conf"
    printf '\nROOT=/srv/calternal-ai/fresh-%s\nHDD_ROOT=/mnt/hdd/calternal-ai/fresh-%s/userdata-hdd\n' \
      "$revision" "$revision" >>"$fresh_conf"
+   printf 'Deployment target: %s\n' "$fresh_conf"
    deploy/deploy.sh --target "$fresh_conf" --image "$revision" --initialize --dry-run
    deploy/deploy.sh --target "$fresh_conf" --image "$revision" --initialize
    ```
