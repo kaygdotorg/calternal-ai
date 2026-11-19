@@ -18,6 +18,16 @@ public final class ChromeStore {
     public var dragging = false
     /// Row the person just tapped: drawn selected at once, before the page has answered; cleared by the next description.
     public var tapped: String?
+    /// The selected row's id: bound to the sidebar `List(selection:)`, so arrow keys, Home, End and type-to-select are the system's.
+    public var selection: String? { didSet { if selection != oldValue { onSelectionChange?() } } }
+    /// Called synchronously when the selection changes (measurement hook; nil normally).
+    @ObservationIgnored public var onSelectionChange: (() -> Void)?
+    /// The last selection the page was told about (the settle task skips repeats).
+    var reportedSelection: String?
+    /// Whether a non-empty search was sent (so clearing the field sends one final empty search).
+    var searchSent = false
+    /// Row height of windowed lists, points (one fixed height: the system list's standard row on this platform).
+    static let windowedRowHeight: CGFloat = 32
     /// True while the search field replaces the sidebar's bottom bar.
     public var searching = false
     /// Text of the search field.
@@ -42,7 +52,11 @@ public final class ChromeStore {
         var same = new
         same.revision = description.revision
         // Pages republish on every store change, often with nothing the chrome draws different: that must cost nothing (no SwiftUI invalidation).
-        if same != description { description = new }
+        if same != description {
+            description = new
+            // The page's choice of selected row follows, unless the person is mid-selection (their pick is reported within 45 ms).
+            if let picked = new.sidebar?.sections?.flatMap(\.rows).first(where: { $0.selected == true })?.id, picked != selection, selection == reportedSelection { selection = picked; reportedSelection = picked }
+        }
         if tapped != nil { tapped = nil }
         if let open = new.sidebar?.open, open != wasOpen { setOpen(open, report: false) }
     }
@@ -61,7 +75,7 @@ public final class ChromeStore {
         onInsets(new)
     }
 
-    /// The layer under the whole window: the person's wallpaper, or on a Mac the system's frost or Liquid Glass (see `ChromeDescription.Appearance.material`).
+    /// The layer under the whole window: the person's wallpaper, or on a Mac Liquid Glass with a frost amount (see `ChromeDescription.Appearance.material`).
     /// The description wins; `localMaterial` (a Mac-only Settings choice) applies only while the description names none. Always `.wallpaper` off the Mac.
     public var baseMaterial: BaseMaterial {
         #if os(macOS)
@@ -70,6 +84,12 @@ public final class ChromeStore {
         .wallpaper
         #endif
     }
+
+    /// How frosted the translucent window is, 0 (pure Liquid Glass) to 1 (fully frosted); the description's value, else the local one, else 0.2.
+    public var frost: Double { min(1, max(0, description.appearance?.frost ?? localFrost)) }
+
+    /// The Mac-only fallback frost amount, set by the app from its own Settings.
+    public var localFrost: Double = 0.2
 
     /// The Mac-only fallback choice, set by the app from its own Settings.
     public var localMaterial: BaseMaterial = .wallpaper
@@ -82,10 +102,8 @@ public final class ChromeStore {
 public enum BaseMaterial: String, Sendable, CaseIterable {
     /// The person's own background picture (default; the same as on the web and phone).
     case wallpaper
-    /// The system's frosted window material over the desktop, across the whole window (opt-in).
-    case frost
-    /// Liquid Glass across the whole window.
-    case glass
+    /// A Mac window of Liquid Glass with a frost amount over it (opt-in): the desktop shows through, frosted as far as the dial says.
+    case translucent
 }
 
 /// How much of the web card the native chrome covers, points.

@@ -1,11 +1,15 @@
 import SwiftUI
 
-/// The whole native shell drawn from a `ChromeDescription`: the wallpaper, the sidebar, and the content card (a web view, supplied by the platform
-/// adapter) with the header over its top. A phone (< 760 pt) shows the card and slides it aside to reveal the sidebar; a desktop shows both as
-/// columns. Gestures are the adapter's job: it sets `store.progress` while a finger drags and the view follows.
+/// The whole native shell drawn from a `ChromeDescription`.
 ///
-/// Costs: the wallpaper is prepared and the veils solved once per change of picture, scheme, Blur/Dim/Tint or window size (`WallpaperModel`); frames only
-/// composite images. The card's content is not redrawn when the sidebar slides: it is moved as one layer. The list is lazy.
+/// * **Mac and iPad-wide** (at least 760 pt): `NavigationSplitView` with the sidebar column and the web card as its detail, the system window toolbar for the
+///   title (principal, centred) and the trailing actions, the system sidebar toggle, system sidebar glass and focus handling. The layer under the window is the
+///   person's wallpaper (`containerBackground(for: .window)`) or, opt-in on a Mac, Liquid Glass with a frost dial over it.
+/// * **Phone** (under 760 pt): the card slides aside to reveal the sidebar beneath it. No system container does this on an iPhone (`NavigationSplitView`
+///   collapses to push navigation), so the slide is custom; the header is system glass buttons, the sidebar the same list as on a Mac.
+///
+/// Gestures belong to the platform adapter: it sets `store.progress` while a finger drags and the phone layout follows. Costs: the wallpaper is prepared
+/// and the veils solved once per change of picture, scheme, Blur/Dim/Tint or window size (`WallpaperModel`); the list is lazy.
 public struct ChromeShellView<WebCard: View>: View {
     private let store: ChromeStore
     private let card: WebCard
@@ -16,7 +20,7 @@ public struct ChromeShellView<WebCard: View>: View {
 
     /// - Parameters:
     ///   - store: The description and local state.
-    ///   - card: The content card's content (the web view). It gets the card pane material behind it; its own background should be clear.
+    ///   - card: The content card's content (the web view). Its own background should be clear.
     public init(store: ChromeStore, @ViewBuilder card: () -> WebCard) {
         self.store = store
         self.card = card()
@@ -32,21 +36,25 @@ public struct ChromeShellView<WebCard: View>: View {
             let dark = store.description.scheme.map { $0 == "dark" } ?? (d.scheme == .dark)
             let chosen = Self.palette(look?.wallpaper, dark: dark)
             let paletteName = picture.map { "image-\($0.key)" } ?? chosen.name
-            let sideWidth = wide && store.description.sidebar != nil ? m.sidebarWidth : 0
-            // The solver needs a non-empty region for every surface it solves (side, card, right), so a wide window always gives both columns a width here; only the left one is drawn.
+            // The solver needs a non-empty region for every surface it solves (side, card, right), so a wide window always gives both columns a width here.
             let input = WallpaperModel.Input(palette: paletteName, dark: dark, blur: look?.blur ?? d.materials.blur, dim: look?.dim ?? d.materials.dim, tint: look?.tint ?? d.materials.tint,
                                              width: Int(size.width), height: Int(size.height), sideWidth: Int(wide ? m.sidebarWidth : 0), rightWidth: Int(wide ? m.rightWidth : 0), inset: Int(m.inset), wide: wide)
-            ZStack {
-                if store.baseMaterial == .wallpaper { Backdrop(model: model, size: size, sideWidth: sideWidth, rightWidth: 0, wide: wide) }
-                if wide { Desktop(store: store, card: card, model: model, size: size) }
-                else { Phone(store: store, card: card, model: model, size: size, insets: insets) }
+            let wallpaper = store.baseMaterial == .wallpaper
+            Group {
+                if wide { Desktop(store: store, card: card) } else { Phone(store: store, card: card, model: model, size: size, insets: insets) }
             }
             .frame(width: size.width, height: size.height)
             .ignoresSafeArea()
+            .background { if !wide && wallpaper { Backdrop(model: model, size: size, sideWidth: 0, rightWidth: 0, wide: false) } }
+            #if os(macOS)
+            .containerBackground(for: .window) { WindowBase(store: store, model: model, wide: wide, size: size) }
+            .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
+            #endif
             .coordinateSpace(name: ShellSpace.window)
             .environment(\.wallpaperContext, model.context)
             .environment(\.accentBase, store.accentBase ?? model.accent ?? Tokens.accentBase)
             .environment(\.uiSize, look?.uiSize ?? 1)
+            .tint(store.accentBase.map { Color(red: $0.r, green: $0.g, blue: $0.b) })   // the page's accent colours selection, marks and prominent buttons
             .preferredColorScheme(store.description.scheme.map { $0 == "dark" ? .dark : .light })
             .task(id: look?.image?.count ?? 0) {
                 guard let url = look?.image, let comma = url.firstIndex(of: ",") else { picture = nil; return }
@@ -57,8 +65,6 @@ public struct ChromeShellView<WebCard: View>: View {
                 }.value.map { (key: $0.0, image: $0.1) }
             }
             .task(id: input) { await model.refresh(input, palette: chosen, picture: picture?.image) }
-            .onAppear { store.settle = d.motion.sheet() }
-            .onChange(of: d.motion) { _, _ in store.settle = d.motion.sheet() }
         }
     }
 
@@ -68,14 +74,87 @@ public struct ChromeShellView<WebCard: View>: View {
     }
 }
 
-// MARK: Header
+#if os(macOS)
+/// The layer under a Mac window. Wallpaper: the person's picture. Translucent: Liquid Glass with a frost dial over it, the structure Apple's materials allow:
+/// the glass is the blur, so no material sits under it; a regular material fades in over it with the dial (0 leaves the glass untouched, 1 reads as a frosted
+/// window) and a faint light tint keeps full frost from reading as a dark scrim.
+private struct WindowBase: View {
+    let store: ChromeStore
+    let model: WallpaperModel
+    let wide: Bool
+    let size: CGSize
 
-/// The header over the card, built from system controls only: glass buttons (`.buttonStyle(.glass)`), a `Menu` for items with entries, in a
-/// `GlassEffectContainer`. The title is centred at the top on every platform (a `ZStack` over the leading and trailing groups, so it stays centred whatever
-/// their widths). No custom press or bounce style: the system glass button animates itself (the earlier custom style scaled the title pill oddly).
-private struct ChromeHeader: View {
+    var body: some View {
+        if store.baseMaterial == .translucent {
+            ZStack {
+                Color.clear.glassEffect(.regular, in: .rect(cornerRadius: 0))
+                Rectangle().fill(.regularMaterial).opacity(store.frost)
+                Rectangle().fill(.white.opacity(store.frost * 0.08))
+            }
+        } else {
+            Backdrop(model: model, size: size, sideWidth: 0, rightWidth: 0, wide: wide)
+        }
+    }
+}
+#endif
+
+// MARK: Desktop
+
+/// The window toolbar content: the title centred (principal) and the trailing actions. System items; the sidebar toggle comes from the split view.
+private struct ChromeToolbar: ToolbarContent {
+    let store: ChromeStore
+
+    var body: some ToolbarContent {
+        let header = store.description.header
+        ToolbarItem(placement: .principal) {
+            if let title = header?.title { Button { store.send(ChromeEvent(type: "header", id: "title")) } label: { Text(title).lineLimit(1) }.accessibilityAddTraits(.isHeader) }
+        }
+        ToolbarItemGroup(placement: .primaryAction) {
+            ForEach(header?.leading ?? []) { item in itemView(item) }
+            ForEach(header?.trailing ?? []) { item in itemView(item) }
+        }
+    }
+
+    @ViewBuilder private func itemView(_ item: ChromeDescription.Item) -> some View {
+        let symbol = item.icon?.name.flatMap(IconName.init(rawValue:))?.symbol ?? item.icon?.symbol ?? IconName.more.symbol
+        if let entries = item.menu, !entries.isEmpty {
+            Menu {
+                ForEach(entries) { entry in
+                    Button(role: entry.role == "destructive" ? .destructive : nil) { store.send(ChromeEvent(type: "header", id: entry.id, rowId: item.id)) } label: {
+                        if let name = entry.icon?.name.flatMap(IconName.init(rawValue:)) { Label(entry.title, systemImage: name.symbol) } else { Text(entry.title) }
+                    }.disabled(entry.disabled == true)
+                }
+            } label: { Label(item.title, systemImage: symbol) }
+        } else {
+            Button { store.send(ChromeEvent(type: "header", id: item.id)) } label: { Label(item.title, systemImage: symbol) }
+        }
+    }
+}
+
+private struct Desktop<WebCard: View>: View {
     @Bindable var store: ChromeStore
-    let showsSidebarButton: Bool
+    let card: WebCard
+    @State private var visibility: NavigationSplitViewVisibility = .all
+
+    var body: some View {
+        NavigationSplitView(columnVisibility: $visibility) {
+            ChromeSidebar(store: store, phone: false, topInset: 0).navigationSplitViewColumnWidth(min: 220, ideal: 270, max: 380)
+        } detail: {
+            ZStack { card.ignoresSafeArea() }
+                .onGeometryChange(for: CGFloat.self) { $0.safeAreaInsets.top } action: { store.setInsets(ChromeInsets(top: $0)) }   // what the toolbar covers
+                .toolbar { ChromeToolbar(store: store) }
+                .accessibilityLabel(store.description.header?.title ?? "Content")
+        }
+        .toolbar(removing: .title)
+    }
+}
+
+// MARK: Phone
+
+/// The phone's header: system glass buttons in a `GlassEffectContainer`, the title centred at the top (a `ZStack` over the leading and trailing groups, so it
+/// stays centred whatever their widths).
+private struct PhoneHeader: View {
+    @Bindable var store: ChromeStore
     @Design private var d
 
     var body: some View {
@@ -84,7 +163,7 @@ private struct ChromeHeader: View {
         GlassEffectContainer(spacing: m.space(3)) {
             ZStack {
                 HStack(spacing: m.space(3)) {
-                    if showsSidebarButton && store.description.sidebar != nil {
+                    if store.description.sidebar != nil {
                         Button { store.setOpen(true) } label: { Image(systemName: IconName.sidebar.symbol) }
                             .buttonStyle(.glass).buttonBorderShape(.circle).accessibilityLabel("Show the sidebar").accessibilityIdentifier("chrome.sidebar.show")
                     }
@@ -94,12 +173,11 @@ private struct ChromeHeader: View {
                 }
                 if let title = header?.title {
                     Button { store.send(ChromeEvent(type: "header", id: "title")) } label: { Text(title).lineLimit(1) }
-                        .buttonStyle(.glass).accessibilityAddTraits(.isHeader).frame(maxWidth: .infinity)
-                        .padding(.horizontal, m.pillHeight * 1.6)   // keep clear of the buttons at both ends
+                        .buttonStyle(.glass).accessibilityAddTraits(.isHeader).frame(maxWidth: .infinity).padding(.horizontal, m.pillHeight * 1.6)
                 }
             }
         }
-        .controlSize(Form.current == .touch ? .large : .regular)
+        .controlSize(.large)
         .padding(.horizontal, m.space(5)).frame(height: m.barHeight)
     }
 
@@ -121,43 +199,6 @@ private struct ChromeHeader: View {
     }
 }
 
-// MARK: Desktop
-
-private struct Desktop<WebCard: View>: View {
-    @Bindable var store: ChromeStore
-    let card: WebCard
-    let model: WallpaperModel
-    let size: CGSize
-    @Design private var d
-
-    var body: some View {
-        let m = d.metrics
-        let hasSidebar = store.description.sidebar != nil
-        let open = hasSidebar && store.progress < 0.5 ? true : false   // desktop: progress 1 means the column is hidden
-        HStack(spacing: 0) {
-            if open {
-                ChromeSidebar(store: store, topInset: m.barHeight, bottomInset: m.pillHeight + m.space(8), phone: false, safeBottom: 0)
-                    .frame(width: m.sidebarWidth).sidebarInk(store.baseMaterial == .wallpaper ? model.context.side : nil, scheme: d.scheme).transition(.opacity)
-            }
-            ChromeCard(material: store.baseMaterial, label: store.description.header?.title ?? "Content") {
-                ZStack(alignment: .top) {
-                    card.frame(maxWidth: .infinity, maxHeight: .infinity)
-                    ChromeHeader(store: store, showsSidebarButton: !open)
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .padding(.horizontal, m.inset)
-        }
-        .animation(d.motion.sheet(), value: open)
-        .onAppear { publish(m) }
-        .onChange(of: open) { _, _ in publish(m) }
-    }
-
-    private func publish(_ m: Metrics) { store.setInsets(ChromeInsets(top: m.barHeight, bottom: 0, leading: store.description.sidebar != nil && store.progress < 0.5 ? m.sidebarWidth : 0)) }
-}
-
-// MARK: Phone
-
 private struct Phone<WebCard: View>: View {
     @Bindable var store: ChromeStore
     let card: WebCard
@@ -173,16 +214,17 @@ private struct Phone<WebCard: View>: View {
         let hasSidebar = store.description.sidebar != nil
         ZStack(alignment: .topLeading) {
             if hasSidebar {
-                ChromeSidebar(store: store, topInset: insets.top + m.barHeight, bottomInset: m.pillHeight + m.space(8) + insets.bottom, phone: true, safeBottom: insets.bottom)
-                    .sidebarInk(store.baseMaterial == .wallpaper ? model.context.side : nil, scheme: d.scheme)
-                    .padding(.trailing, peek)
+                ChromeSidebar(store: store, phone: true, topInset: insets.top)
+                    .sidebarInk(model.context.side, scheme: d.scheme)
+                    .padding(.top, insets.top).padding(.trailing, peek)
                     .frame(width: size.width, height: size.height, alignment: .topLeading)
                     .accessibilityHidden(p < 0.5)
             }
-            ChromeCard(material: store.baseMaterial, label: store.description.header?.title ?? "Content") {
+            // The card keeps the design's pane (the wallpaper's blurred copy under the card veil): there is no system equivalent of a wallpaper pane.
+            Card(label: store.description.header?.title ?? "Content", variant: .pane) {
                 ZStack(alignment: .top) {
                     card.frame(maxWidth: .infinity, maxHeight: .infinity)
-                    ChromeHeader(store: store, showsSidebarButton: true).padding(.top, insets.top)
+                    PhoneHeader(store: store).padding(.top, insets.top)
                 }
             }
             .clipShape(RoundedRectangle(cornerRadius: m.radiusPane * min(1, p * 5), style: .continuous))
@@ -196,33 +238,6 @@ private struct Phone<WebCard: View>: View {
                 }
             }
         }
-        .onAppear { publish(m) }
-    }
-
-    private func publish(_ m: Metrics) { store.setInsets(ChromeInsets(top: insets.top + m.barHeight, bottom: insets.bottom, leading: 0)) }
-}
-
-// MARK: Card
-
-/// The content card: on the person's wallpaper the design's pane (the wallpaper's blurred copy under the card veil); on frost or glass a translucent paper pane on
-/// the same base layer as the sidebars, so sidebars and card do not read as different colours.
-private struct ChromeCard<Content: View>: View {
-    let material: BaseMaterial
-    let label: String
-    @ViewBuilder let content: Content
-    @Design private var d
-
-    var body: some View {
-        if material == .wallpaper {
-            Card(label: label, variant: .pane) { content }
-        } else {
-            let m = d.metrics, t = d.theme
-            let shape = RoundedRectangle(cornerRadius: m.radiusPane, style: .continuous)
-            content
-                .background(shape.fill(t.paper.opacity(d.materials.dim ? 0.5 : 0.28)))
-                .clipShape(shape)
-                .overlay(shape.strokeBorder(t.line, lineWidth: 1))
-                .accessibilityElement(children: .contain).accessibilityLabel(label)
-        }
+        .onAppear { store.setInsets(ChromeInsets(top: insets.top + m.barHeight, bottom: insets.bottom, leading: 0)) }
     }
 }

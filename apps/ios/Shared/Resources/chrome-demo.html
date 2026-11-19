@@ -19,6 +19,9 @@
   /* Floating sidebar: the page moves its own card from the shell's --sidebar-p / --sidebar-w (no CSS transition: the shell animates p itself). */
   [data-sidebar-floating] main { transform: translateX(calc(var(--sidebar-p, 0) * var(--sidebar-w, 0px))); border-radius: calc(var(--sidebar-p, 0) * var(--device-r, 0px));
     background: rgba(20, 18, 14, .45); backdrop-filter: blur(24px); height: 100%; }
+  /* Native chrome: the shell draws the layer under the page (wallpaper, frost or glass), so the page paints none. */
+  [data-native-chrome] .wall { display: none; }
+  [data-native-chrome], [data-native-chrome] body { background: transparent; }
   h1 { font-size: 26px; margin: 8px 0; } p { line-height: 1.5; opacity: .9; }
   textarea { position: fixed; left: 14px; right: 14px; bottom: calc(env(safe-area-inset-bottom) + 10px); height: 50px; box-sizing: border-box;
     border-radius: 25px; border: 0; padding: 14px 18px; font: inherit; color: inherit; background: rgba(255,255,255,.12); backdrop-filter: blur(20px); }
@@ -59,7 +62,7 @@
       selectors: [{ id: 'filter', options: [{ id: 'inbox', title: 'Inbox', badge: String(store.threads.filter(t => t.unread).length) }, { id: 'all', title: 'All Threads' }], selected: store.filter }],
       sections: [{ id: 'main', rows: [{ id: 'new', title: 'New thread', icon: { icon: 'plus' } }, { id: 'automations', title: 'Automations', icon: 'pulse' }, { id: 'skills', title: 'Skills', icon: 'terminal' }] },
         { id: 'threads', title: 'Threads', actions: [{ id: 'add', title: 'New thread', icon: 'plus' }], menu: [{ id: 'read-all', title: 'Mark all read', icon: 'check' }], rows: shown().map(row) },
-        ...(location.hash === '#small' ? [] : [{ id: 'notes', title: 'Notes (5000)', count: 5000, offset: noteOffset(), rows: noteRows() }])],
+        ...(location.hash === '#small' ? [] : location.hash === '#flat' ? [{ id: 'notes', title: 'Notes (5000)', rows: Array.from({ length: 5000 }, (_, i) => ({ id: 'n' + i, title: 'Note ' + (i + 1), detail: 'flat' })) }] : [{ id: 'notes', title: 'Notes (5000)', count: 5000, offset: noteOffset(), rows: noteRows() }])],
       apps: [{ id: 'threads', title: 'Threads', icon: 'threads', selected: true }, { id: 'notes', title: 'Notes', icon: 'notes' }, { id: 'settings', title: 'Settings', icon: 'settings' }],
       account: { id: 'account', initial: 'K', title: 'Account', menu: [{ id: 'space-personal', title: 'Personal', checked: true, sub: 'kayg' }, { id: 'settings', title: 'Settings', icon: 'settings' }, { id: 'signout', title: 'Sign out', icon: 'back', role: 'destructive' }] }, search: { placeholder: 'Search threads' } },
   });
@@ -82,7 +85,8 @@
     const ev = e.detail, lat = Date.now() - ev.sentAt;
     store.toast = 'event ' + JSON.stringify({ type: ev.type, id: ev.id, rowId: ev.rowId, option: ev.option, text: ev.text }) + ' arrived ' + lat.toFixed(0) + ' ms after it was sent';
     N.log(store.toast);
-    if (ev.type === 'row') { if (ev.id === 'new') { store.toast = 'new thread (not wired)'; } else if (store.threads.some(t => t.id === ev.id)) { store.selected = ev.id; store.open = false; } }
+    let skip = false;
+    if (ev.type === 'row') { if (!store.threads.some(t => t.id === ev.id) && ev.id !== 'new') skip = true; if (ev.id === 'new') { store.toast = 'new thread (not wired)'; } else if (store.threads.some(t => t.id === ev.id)) { store.selected = ev.id; store.open = false; } }
     else if (ev.type === 'selector') store.filter = ev.option;
     else if (ev.type === 'refresh') store.toast = 'refresh requested'
     else if (ev.type === 'window') store.win = { from: ev.from, to: ev.to }
@@ -96,7 +100,7 @@
       if (t && ev.id === 'rename' && ev.text) t.title = ev.text;
       if (t && ev.id === 'read') t.unread = !t.unread;
     }
-    publish();
+    if (!skip) publish();   // the shell keeps the selection highlight itself: nothing to republish for a row the page does not track
   });
   addEventListener('calternal:lag', (e) => { store.toast = 'drag lag (ms) ' + JSON.stringify(e.detail); N.log(store.toast); render(); });
   addEventListener('calternal:textsize', (e) => { store.toast = 'text size scale ' + e.detail.scale; render(); });

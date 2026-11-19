@@ -67,6 +67,36 @@ enum Measure {
         }
     }
 
+    private static var changes = 0
+    private static var firstChange: CFTimeInterval = 0
+    private static var lastChange: CFTimeInterval = 0
+    private static var paints: [Double] = []
+    private static var finishTask: Task<Void, Never>?
+
+    /// A selection change in the sidebar list (a key press or a click): counts it and times the next frame (the selection's paint). After 1.5 s without
+    /// another change, prints the `keys` summary: changes per second, the paint delay of each change and the frame hitches over the whole run.
+    static func selectionChanged() {
+        guard enabled else { return }
+        let t = CACurrentMediaTime()
+        if changes == 0 { firstChange = t; paints = []; FrameMeter.shared.start() }
+        changes += 1
+        lastChange = t
+        FrameTick.once { paints.append((CACurrentMediaTime() - t) * 1000) }
+        finishTask?.cancel()
+        finishTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(1500))
+            guard !Task.isCancelled else { return }
+            let r = FrameMeter.shared.snapshot()
+            FrameMeter.shared.stop()
+            let sorted = paints.sorted()
+            func q(_ p: Double) -> Double { sorted.isEmpty ? 0 : (sorted[min(sorted.count - 1, Int(Double(sorted.count - 1) * p))] * 10).rounded() / 10 }
+            let span = max(0.001, lastChange - firstChange)
+            emit("keys", ["selection_changes": changes, "per_second": ((Double(changes) / span) * 10).rounded() / 10, "paint_p50_ms": q(0.5), "paint_p95_ms": q(0.95), "paint_max_ms": q(1),
+                          "frames": r.frames, "hz": r.refreshHz, "hitches": r.hitches, "hitch_pct": (r.hitchRatio * 10000).rounded() / 100, "worst_ms": r.worst])
+            changes = 0
+        }
+    }
+
     /// Runs the scripted drag, scroll and memory measurements once, a few seconds after the chrome first appears.
     /// - Parameters:
     ///   - store: the chrome store whose `progress` the drag drives (phone layout only; on a desktop the sidebar is a column and the drag is skipped).

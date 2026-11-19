@@ -49,6 +49,7 @@ final class ChromeHost: NSObject, UIGestureRecognizerDelegate {
 
         store.send = { [weak self] event in self?.send(event) }
         store.onInsets = { [weak self] insets in self?.publish(insets) }
+        if Measure.enabled { store.onSelectionChange = { Measure.selectionChanged() } }
         edge = UIScreenEdgePanGestureRecognizer(target: self, action: #selector(drag(_:)))
         edge.edges = .left
         edge.delegate = self

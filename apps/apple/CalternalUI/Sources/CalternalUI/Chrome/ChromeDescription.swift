@@ -99,10 +99,11 @@ public struct ChromeDescription: Codable, Equatable, Sendable {
         public var blur: Bool?, dim: Bool?, tint: Bool?
         /// UI size multiplier (`--ui-scale`), 1 by default.
         public var uiSize: Double?
-        /// The window's base layer on a Mac: `"wallpaper"` (default: the person's own background, as on the web and phone), `"frost"` (the system's frosted
-        /// window material showing the desktop through the whole window, opt-in) or `"glass"` (Liquid Glass). Stored once with the account and ignored where it has no
-        /// meaning (iPhone, iPad).
+        /// The window's base layer on a Mac: `"wallpaper"` (default: the person's own background, as on the web and phone) or `"translucent"` (opt-in: Liquid
+        /// Glass with the desktop showing through, plus `frost`). Stored once with the account and ignored where it has no meaning (iPhone, iPad).
         public var material: String?
+        /// How frosted a translucent window is, 0 (pure Liquid Glass) to 1 (fully frosted); default 0.2. Live while the dial is dragged, stored when editing ends.
+        public var frost: Double?
     }
 
     /// The header: one title pill between optional buttons.
