@@ -477,6 +477,350 @@ Rebuilding the reader's scope after an excluded-source change kept every sampled
 Reproduce with the page executable and filter `scoped_threads` under the
 same lock below. The lag test defaults to 100 samples per arm.
 
+## Nested rows and personal sections
+
+The harness uses the sealed revision 12.5 base `bb43b24e`. It opens
+disposable roots through the server's `Store`, uses real `notes.create`,
+`threads.create`, `threads.list`, `sharing.grant` and `sharing.revoke`
+operations, and reuses `authorize_item_access`, the item access epoch and
+the live directory membership view. Turns supplies its own parent
+relationships and cursor-ordered child IDs. The fixture declares the
+Notes relationships and writes the disposable scoped projection from
+authorized real item IDs.
+
+The parent key is (viewer, space, parent, child Bind, sort key, ID).
+A parent reference is random and bound to the view, viewer, Bind, space
+and complete path. An admitted depth-one Turns window checks one live
+item head and one live authority query, reads one exact count and seeks
+one ordered window. A Notes ancestor also reads inherited collection
+roots. Depth three repeats the ancestor check for each ancestor. The
+first and second windows in the fixture visit two and three index
+entries, respectively, and return two and one rows. The read paths run
+zero commits or flushes and require no worker. The shared process-local
+access epoch detects stale projection delivery in the fixture. Product
+maintenance needs audience-scoped invalidation and a delivery fence.
+
+The layout prototype uses `rusqlite` on the disposable authority
+database, so its live-membership check and effect/Undo share one write
+transaction. The backing space uses real Notes items. The fixture's
+item lookup is a seeded projection for that shared-space membership
+case. The transaction takes one membership and one revision read.
+Create takes two more indexed reads, rename one, remove two including
+the removed section's placements. Move to takes four more reads for
+destination, item, prior placement and destination tail. Move up and
+down each take two more reads for placement and neighbor. Undo adds one
+receipt read to membership and revision. Each success uses one FULL
+WAL commit and its sync. There are no independent effect/Undo commits.
+Opening the temporary authority database for prototype transactions
+serializes unrelated writers in that database. Product layout should
+use the per-space writer with a live authority commit fence.
+
+Both runs used `calternal-perf-01-backup01` under
+`/usr/local/bin/perf-lock.sh` and a release binary built on dev-01.
+Each timed cell has 100 repetitions per width. All latency cells are
+p50 / p95 in ms for 256 and 4,096 placements, respectively.
+
+| Injection | Pass condition | Measured | Verdict |
+| --- | --- | --- | --- |
+| Interleave offsets 0 and 2 under two Turns parents in one Bind | Independent exact windows in the real Turns order | 0.961 / 1.064 and 0.933 / 1.226 per four windows. All 800 timed windows matched. | Pass |
+| Nested Notes and Turns, hidden Notes child, invalid refs | Authorized ancestry through depth three. Depth four, cycles, wrong view/Bind/viewer and forged refs confer no rows or counts. | 200 iterations with four correct depth-two/three windows and four denied refs each. Hidden child excluded from both rows and the exact count on all 200 Notes page pairs. Depth four and cycle refused in both runs. | Pass |
+| Revoke a child grant, parent grant and Turns membership | No stale rows or counts. Refresh reflects the child revoke. | Two child revokes. Both stale projections suppressed and both refreshed counts fell from 3 to 2. Zero rows and counts on 1,400 revoked root/descendant reads. | Pass |
+| Stock Turns parent query versus scoped index | Ordered seek under the parent constraint, with bounded visits | Stock query plan uses `item_list (kind=? AND updated_at<?)` with a residual parent predicate. Scoped plan uses `PRIMARY KEY (actor=? AND space=? AND parent=? AND bind=?)`, with no sort. | Existing plan misses, prototype passes |
+| `host.layout.section.create` | Effect and Undo atomic, each p95 ≤40 ms | Edit 6.704 / 8.222 and 6.690 / 10.489. Undo 6.712 / 9.221 and 6.679 / 9.430. | Pass |
+| `host.layout.section.rename` | Effect and Undo atomic, each p95 ≤40 ms | Edit 6.607 / 6.918 and 6.563 / 7.099. Undo 6.588 / 9.803 and 6.545 / 8.750. | Pass |
+| `host.layout.section.remove` | Effect and Undo atomic, each p95 ≤40 ms | Edit 6.984 / 11.348 and 19.044 / 30.974. Undo 8.522 / 14.728 and 45.540 / 49.464. | 40 ms gate misses |
+| `host.layout.move_to` | Effect and Undo atomic, each p95 ≤40 ms | Edit 6.476 / 8.953 and 6.712 / 10.339. Undo 6.459 / 9.121 and 6.632 / 9.926. | Pass |
+| `host.layout.move_up` | Effect and Undo atomic, each p95 ≤40 ms | Edit 6.497 / 8.541 and 6.642 / 10.297. Undo 6.478 / 8.482 and 6.612 / 9.993. | Pass |
+| `host.layout.move_down` | Effect and Undo atomic, each p95 ≤40 ms | Edit 6.931 / 8.769 and 6.702 / 8.083. Undo 6.900 / 8.778 and 6.666 / 7.777. | Pass |
+| Lost reply, process exit and stale or foreign Undo | Neither effect nor Undo before commit. Both survive after commit and during reply publication. Restore exact placement/order. A newer layout edit prevents prior Undo. | 36 process exits across the six operations and two widths. 1,200 clean pre-commit rollbacks and 1,200 successful effect/Undo pairs. All 200 stale and 1,200 foreign Undo attempts refused. | Pass |
+| Personal section windows and live membership | Scope to the authenticated person’s layout. Refuse item-only access, foreign/forged parent ref, and revoked section/placement reads, writes and Undo. | Second member unchanged on all 1,200 owner edits. Zero admitted revoked reads, edits or Undo across 200 membership removals. Each width also refused forged/foreign section refs and an actual item from a different space. | Pass |
+
+### What the specification must change
+
+The sealed text already requires a parent-scoped ordered index. The
+stock Turns query cannot implement this contract at scale. For the
+implementation, maintain the current authorized parent keys and their
+counts at the same scope as the read. Keep unauthorized or stale counts
+and rows unavailable until the replacement projection is ready.
+
+Specify bounded work at the layout commit boundary. A section removal
+should retire the section and its placement generation atomically and
+retain that generation until its Undo expires. Undo should reactivate it
+in one transaction. Copying or rewriting every placement at the
+interactive boundary makes the operation depend on section size.
+
+Build via `nix develop -c cargo test --locked --release -p calternal-server
+--test v2_step0_nested --no-run` on dev-01. Copy the release test executable
+and the Notes, orchestrator and Claude Code manifests to a disposable
+ext4 directory on perf-01. Set `STEP0_PLUGINS` to the copied plugin root
+and `TMPDIR` to the disposable directory. Run the executable under the
+perf lock with `--ignored --exact parent_windows_and_personal_sections
+--nocapture --test-threads=1`. The second arm sets `STEP0_LAYOUT_SIZE=4096`.
+
+### Follow-up — retained section generations
+
+The locked perf-01 run used the prototype's per-person SQLite transaction
+with the actual directory membership view. The three widths use
+synthetic UUID-shaped placement projections. The earlier real-engine
+fixture supplies the two copy-based observations above. Each timed
+foreground cell has 100 repetitions. All latencies are p50 / p95 in ms.
+
+| Injection | Pass condition | Measured | Verdict |
+| --- | --- | --- | --- |
+| Remove and Undo 256 placements | Each p95 ≤40 ms, no placement writes | Remove 6.761 / 8.142. Undo 6.741 / 8.196. | Pass |
+| Remove and Undo 4,096 placements | Same commit work as 256 | Remove 6.728 / 8.186. Undo 6.683 / 9.730. | Pass |
+| Remove and Undo 100,000 placements | Same commit work as 256 and exact retained generation | Remove 6.806 / 8.512. Undo 6.795 / 8.050. | Pass |
+| Foreground key touches and flushes | A single FULL transaction per effect or Undo, no size-dependent writes | Exactly three table rows change each time. The five logical B-tree keys include the layout watermark, section row and active-order entry, and Undo row and expiry entry. Zero placement keys change. At each width both paths made one actual sync call in 99/100 runs. The remaining removal made two sync calls and the remaining Undo made three, with WAL setup/checkpoint work included. | Pass |
+| 200-row live section read before and during retention | No retired rows. Live windows keep the same order and visit bound. | Before → during p95 was 0.097 → 0.130, 0.087 → 0.113, and 0.106 → 0.128 at the three widths. Retired reads refused at p95 0.054, 0.041, and 0.051. | Pass |
+| Reclaim after the Undo deadline | No reclaim before expiry or successful expired Undo. Bounded deletes, no reclaim on foreground commit. | At most 256 placement keys per maintenance step. Reclaimed all 256 / 4,096 / 100,000 in 2 / 17 / 391 successful steps, p95 7.224 / 7.336 / 10.352 ms per step. | Pass |
+
+Removal reads membership and the active section, then bumps and obtains
+the layout revision in the write statement. Undo reads membership,
+Undo and the revision it pins. Each writes one FULL WAL transaction.
+A live section page checks membership, reads the active generation and
+seeks its first 200 placement keys. A retired section read stops at the
+active-section check and visits zero placement keys. Reads commit and
+flush zero times. The expired-Undo index selects one generation per
+maintenance transaction. Each batch deletes the next at most 256 keys.
+The last batch also discards the section marker and expired Undo. An
+exact multiple of 256 uses a separate final metadata transaction. This
+spike uses a 60-second fixture clock. The product retention duration
+follows the host's Undo policy.
+
+In the §4.4 remove row and the catalogue's `atomic_undo_when`, require
+retirement and Undo to name one retained placement generation. Exclude
+retired generations from reads and reactivate the exact generation
+atomically after checking current membership and the post-effect layout
+revision. Reactivation grants no item access. Reclaim only after Undo
+expiry in bounded background batches. Removal and Undo perform zero
+per-placement work.
+
+The benchmark uses the same release test executable and the
+`bounded::retained_layout_generation` filter. Build the Linux
+sync-call probe on dev-01 with
+`nix develop -c cc -O2 -shared -fPIC spikes/plugin-api-v2/layout_sync_probe.c -o target/release/libstep0_layout_sync.so -ldl`.
+Copy it to perf-01 and set `LD_PRELOAD` to its absolute path inside the
+perf lock. The probe counts `fsync` and `fdatasync` calls separately from
+the timing statistic.
+
+## Durable transcript
+
+The disposable loopback service uses the real Turns create/get engine,
+stored space membership and content item authority. It writes transcript
+events and the request receipt through `SpaceStore::commit(durable=true)`
+on the real content journal. The fixture adds a partial (thread, sequence)
+index and uses the existing signed journal cursor inside a thread- and
+viewer-bound proof. The append source is scripted. Provider execution
+and drawing by a renderer are outside this backend measurement.
+
+Each repetition stalls a real TCP writer mid-page with the old reader
+still connected. While stalled, a second connection gets the thread
+through the existing Turns engine. The writer then commits the next
+batch and exits before returning any append ACK. The test restarts the
+server on the same roots, resumes from the old cursor and compares the
+whole page, cursor and receipt on replay. It removes the reader's live
+space membership before trying a revoked reconnect.
+
+| Injection | Pass condition | Measured | Verdict |
+| --- | --- | --- | --- |
+| Warm authorized reconnect after process restart | Committed first screenful p95 ≤150 ms | 32 events, at most 34,781 B. Dial through full scripted-client parse was 1.749 / 2.019 ms p50 / p95 and 2.426 ms max. | Backend pass. Renderer paint remains to be measured. |
+| Old transcript reader stalls mid-frame | Independent control p95 ≤500 ms | 100 partial-write stalls confirmed both before and after the independent `threads.get` request. Control was 7.102 / 8.238 ms p50 / p95 and 55.905 ms max. The stalled 96-event page was at most 104,157 B. | Pass |
+| Cut after FULL commit before ACK, then restart and replay | Stable committed cursor, ordered events and receipt sequence. One durable batch per action. | 100 abrupt exits, zero ACK bytes, 9,600 recovered events. All 100 retries matched the committed receipt and exact 96-event sequence. The next committed position advanced by exactly 96 on each run. | Pass |
+| Reconnect with a revoked membership and previously valid cursor | Zero returned rows and bookmarks | 100 refusals. Each was a fixed 22-byte error with no protected data or bookmark. | Pass |
+
+All 100 samples ran on `calternal-perf-01-backup01` under
+`/usr/local/bin/perf-lock.sh`, using the release executable built on
+dev-01. Each authorized page performs two current item authority checks
+(one live head and one membership/permission lookup each), a scoped
+ordered journal read, and validates and issues the cursor with at most
+two indexed sequence lookups on cache misses. A read has zero commits
+or flushes. The append hot path has one receipt lookup and one FULL WAL
+transaction with its sync. The witness work is separate from the request.
+Replay uses the receipt read only. The control request is an ordinary
+Turns read. The page writer releases SQLite before beginning socket
+delivery, so backpressure cannot carry a database lock into the control
+path.
+
+### What the specification must change
+
+The backend measurements fit both latency bounds. Keep the
+`transcript.page` budget and require a physical thread-and-sequence seek
+within the durable log. Preserve the independent control path and the
+post-commit cursor and receipt. Close the paint measurement with the
+renderer fixture.
+
+Build on dev-01 with `nix develop -c cargo test --locked --release
+-p calternal-server --test v2_step0_transcript --no-run`. Copy the
+executable and the same plugin manifests used for nested rows. Use a
+disposable ext4 directory and set `TMPDIR` and `STEP0_PLUGINS` inside
+the perf lock. Run with `--ignored --exact transcript_recovery_and_control
+--nocapture --test-threads=1`. Keep the executable in place until its
+restart helpers have exited.
+
+## Follow-up — search across all searchable fields
+
+Claimed-text Notes reuse the existing audience-scoped two-column FTS5
+index and one MATCH. The literal AND terms can match across title and
+body within a single item. The probe uses the same 100,000-note corpus,
+with 96,774 authorized in the space and 9,677 in the manual collection.
+It verifies cross-field matches against explicit column predicates. The
+scoped tokenizer and Unicode qualification described above still apply.
+
+Turns reuses the existing title FTS5 schema and the compressed message
+postings and locations from `calternal-content`. We added sparse term
+overlap to the same 100,000-thread, 740,000-message fixture to exercise
+both tiers in each measured window and compare the exact de-duplicated
+order to the independent source oracle. Under one scope snapshot, the
+host takes the title prefix of the rank order and fills the remainder
+from newest matching messages, skipping threads already matched by
+title. One-to-three AND terms match the full title or one message.
+Combining title and message content in a weighted FTS row would lose
+the same-message AND boundary or require another verification step. The
+two existing readers support a strict title-first order directly.
+Title FTS uses the existing claimed-text schema for the measured
+literals. Message tokenization follows the existing Turns rules.
+
+The worker supplies same-generation scoped document frequencies. The
+merge checks one sum and one prefix expansion cap across the two
+indexes before opening the cursors. Titles use the stable thread-ID
+order. Row work includes both sides’ visited entries, block and driver
+rows, and returned IDs. Inputs still have one 160,000-posting and
+4,096-row budget. The probe uses a 200-row window. Each cell is 100
+fresh read-only connections on locked perf-01, with zero commits or
+flushes. Posting bounds include both branches. The decode column is
+actual message posting decode work. FTS5's title/Notes work is bounded
+by the scoped term stats.
+
+| Scope | Query | Posting bound | Message postings decoded at 0 / 200 | Row work at 0 / 200 | Depth 0 p50 / p95 (ms) | Depth 200 p50 / p95 (ms) | Verdict |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | --- |
+| Notes space | 1 term (title) | 36,774 | — / — | 400 / 600 | 0.447 / 0.474 | 0.450 / 0.476 | Pass, 200 rows |
+| Notes space | 2 AND (title and body) | 90,000 | — / — | 400 / 600 | 0.470 / 0.504 | 0.485 / 0.510 | Pass, 200 rows |
+| Notes space | 3 AND (title and body) | 138,387 | — / — | 400 / 600 | 0.487 / 0.517 | 0.523 / 0.557 | Pass, 200 rows |
+| Notes space | Prefix across fields | 133,548 | — / — | 400 / 600 | 5.656 / 5.915 | 5.812 / 5.958 | Pass, 200 rows |
+| Notes collection | 1 term (title) | 3,677 | — / — | 400 / 600 | 0.444 / 0.477 | 0.453 / 0.481 | Pass, 200 rows |
+| Notes collection | 2 AND (title and body) | 9,000 | — / — | 400 / 600 | 0.474 / 0.494 | 0.491 / 0.581 | Pass, 200 rows |
+| Notes collection | 3 AND (title and body) | 13,838 | — / — | 400 / 600 | 0.495 / 0.548 | 0.516 / 0.579 | Pass, 200 rows |
+| Notes collection | Prefix across fields | 13,354 | — / — | 400 / 600 | 0.957 / 0.988 | 0.966 / 0.997 | Pass, 200 rows |
+| Threads space | 1 term | 84,242 | 2,161 / 2,161 | 590 / 1,359 | 0.788 / 0.921 | 1.055 / 1.090 | Pass, 200 rows |
+| Threads space | 2 AND terms | 138,160 | 3,542 / 3,542 | 656 / 1,237 | 0.847 / 0.941 | 1.071 / 1.112 | Pass, 200 rows |
+| Threads space | 3 AND terms | 154,387 | 3,956 / 7,725 | 478 / 721 | 0.721 / 0.765 | 0.875 / 0.967 | Pass, 200 rows |
+| Threads space | Prefix | 138,160 | 3,542 / 3,542 | 632 / 1,401 | 0.892 / 0.999 | 1.156 / 1.192 | Pass, 200 rows |
+| Threads space | Broad-term control | 672,724 | 0 / 0 | 0 / 0 | 0.164 / 0.205 | 0.163 / 0.187 | Refined before read |
+
+
+A hidden Notes title/body edit and a hidden Turns title/message source
+change left the authorized ranked windows and their state unchanged.
+The live Turns worker also indexed an append on a hidden thread while
+the combined viewer window stayed unchanged. The fixtures compare the
+same visible generation after excluding hidden data. Search returns no
+count by default.
+
+| Corpus and worker load | Scoped publication p50 / p95 (ms) | Combined query sees the published append p50 / p95 (ms) |
+| --- | ---: | ---: |
+| Notes idle | 17.287 / 26.454 | 17.412 / 26.531 |
+| Notes busy, 517 competing saves | 18.006 / 55.249 | 18.143 / 55.353 |
+| Turns idle | 36.240 / 46.510 | 36.311 / 46.606 |
+| Turns busy, 1,999 competing appends | 331.490 / 562.559 | 331.606 / 562.630 |
+
+Each lag arm has 100 samples. The combined read observes the same
+published generation with no additional publication transaction. The
+busy Turns run had higher absolute lag than the earlier run. It adds
+only 0.071 ms to the within-run p95 comparison; this measures read
+observation overhead rather than a new write stage. A title change
+belongs to the same authority-versioned publication. These append
+figures cover bodies/messages with a stable title.
+
+### What the specification must change
+
+Make the Bind’s author-declared field filter optional and default to all
+searchable fields. Keep the input match shape independent of that
+filter. Claimed text can match across title and body. The Turns result
+has all matching titles first, then threads ranked by their newest
+matching message, with each thread emitted once. A title or a single
+message must match the full query. Meter both sides together. Use the
+existing authorized generation and refinement rules, including no
+count or contexts on a partial result. The shared depth remains 200.
+
+Build the `v2_step0_page` release executable on dev-01. Run
+`scoped_search_all_fields` under the perf lock for the matrix. Set
+`STEP0_ALL_SEARCH=1` for `scoped_search_worker_lag` and
+`scoped_threads_worker_lag`.
+
+## Host side of the authority spike
+
+The [disposable host](../../spikes/plugin-api-v2/authority/README.md)
+binds loopback and serves the sealed Notes template. The scripted client
+uses real HTTP requests with the fixture's authenticated account tokens.
+The host compiles the reachable revision-12.5 wire schemas with
+`calternal-plugin-host`. A window or settled-selection request carries
+its issued lease in the fixture transport header. Authorization uses
+the real stored directory, Notes resolver, content head and collection
+membership engines. There are no product endpoints or worker changes.
+
+The suite resolves stable rows from checked windows and reconstructs
+durable action inputs from the issued contexts. It realigns membership
+through the existing protected writer. A disposable per-space gate
+linearizes the injected membership revocation with egress, dispatch,
+confirmation, job claim, job park and native approval resolution.
+A forged request receives a fixed error body with no protected material.
+
+The member and guest templates both passed the sealed description
+verifier on dev-01. The host fixture provides start and exact-count End
+windows. An item-only guest receives a title-only projection and a typed
+`end_unavailable` without count authority. `view.open` and the wire
+launch were verified on dev-01 before notifying the renderer lanes.
+
+| Injection | Pass condition | Measured | Verdict |
+| --- | --- | --- | --- |
+| Owner, member, item-only guest, foreign and revoked access | Only the current audience's approved fields and windows | Member and owner received four Notes rows. Named guest received one title and no member fields, count or contexts. Foreign and revoked reads returned one fixed error. Member End got the exact last row. Guest End returned the typed refusal. | Pass |
+| Forge row, route, Bind, context, lease and cached rows | No unauthorized effects, bytes or new contexts | All forged, foreign-actor and wrong-action cases refused in 100 scripted runs. The request decoder rejected renderer-supplied routes and row material outside the sealed shape. | Pass |
+| Untouched prefill, choice and bulk selection | Host resolves exact protected material. Invalid bulk sets, ChoiceRefs and proofs convey no authority. | In 100 runs the untouched title default required a challenge, and dispatch without proof failed. Raw, foreign-context and stale ChoiceRefs failed. The authorized choice updated the real collection once and replayed the receipt. Mixed foreign and duplicate bulk IDs refused; the valid selection required a challenge. | Pass |
+| Duplicate, stale and unrelated churn | One effect on replay. Current action survives unrelated edit, p95 ≤2 s. | 100 Pin and prefill effects, with exactly one commit per accepted activation and zero duplicate commits. Dispatch plus exact replay under unrelated churn was 23.576 / 30.159 ms p50 / p95, 38.935 ms max. Stale contexts failed. | Pass |
+| Race live membership removal against egress, dispatch and confirmation | No stale protected data, effect, or proof | 300 winning revocations. Zero protected bytes or unauthorized effects. Reopening the revoked view refused. | Pass |
+| Pin Undo recovery and stale dependencies | Effect and inverse both survive the named commit. No stale Undo effect. | Ten process exits per cut (before commit, after FULL commit before outbox delivery, and during reply publication). Before commit both absent. After commit both recovered with the same signed Undo ref. 50 live Undo/replays restored once and 50 stale Undo requests refused. | Pass |
+| Native job claim, park and protected approval against revoke | Revoked actor claims, parks and approves zero jobs. A live approval resolves exactly once. | 30 race injections, zero late claims, parks or approvals. Ten real parked native approvals resolved and replayed. The release `approval_reverify` test also passed on dev-01. | Pass |
+| Spoof retained result versions | Host retains only the issued exact current result for the view and partition | In 100 renewals, the exact version survived and the spoofed version was omitted. The host echoed the renewal ID and request lease. | Backend pass. Repaint remains a renderer check. |
+
+Timed calls ran 100 times on `calternal-perf-01-backup01` under
+`/usr/local/bin/perf-lock.sh` with the release binary built on dev-01.
+The 30 Pin cuts and 30 native race injections ran in the same locked
+suite. Zero means zero protected response bytes and excludes the fixed
+error envelope. The p95 upper bound includes the second dispatch's
+receipt replay.
+
+The measured Pin path reads the current member capability at admission
+and under the fence, with two reads at each point for view and editor
+authority. It reads one receipt, rechecks item authority and expected
+head, and loads the one target snapshot for the write. The real
+`Content::write` commits the pin and its inverse-bearing outbox intent
+together. Normal foreground acknowledgment also publishes one FULL
+journal transaction and retires the intent in the content database.
+Those are three WAL commit/sync boundaries in the normal configured
+FULL path, plus separate placement or witness work when pending. The
+receipt replay reads current authority and the existing durable receipt
+with zero new effects or commits. Confirmation staging and view/window
+egress use zero writes or flushes. The choice uses the real bounded
+collection writer. The protected bulk probe qualifies selection and
+confirmation using a fixture ledger. Product multi-item Trash and
+browser-managed repaint remain separate integration cases.
+
+### What the specification must change
+
+The measured host cases require no new sealed behavior. The early host
+fixture had included a member-only field in a guest projection and
+returned a generic error for End without exact count authority. The
+harness now emits the separate approved guest template and the sealed
+typed End refusal. Carry the per-space commit and egress fence into
+the product host and maintain the context's affected dependency set.
+Renderer lease ordering and paint still need end-to-end measurement.
+
+Build on dev-01 with `nix develop -c cargo test --locked --release
+-p calternal-server --test v2_step0_authority --no-run`. Run the
+executable under the perf lock with
+`--ignored sealed_ --nocapture --test-threads=1`, using the copied
+plugin manifests and a disposable ext4 `TMPDIR`. The README supplies
+the unchanged dev-01 launcher for the Svelte and SwiftUI lanes.
+
 ## Reproducing the measurements
 
 Build in the existing lane copy on `calternal-dev-01-compute02`.
@@ -508,6 +852,9 @@ pre-existing recovery test that waits for the debug-only
 `AfterJournalCommit` hook. That test passed in the debug suite.
 
 ## Simplification opportunities
+
+- Share one scoped authority check between activation, preview and replay where the same fence already covers them.
+- Retain retired placement generations under the Undo lifetime and reclaim them in background batches.
 
 - Use the same scoped count for empty, end and arbitrary-jump decisions.
 - Keep a single item receipt namespace and use the committed outbox intent as
