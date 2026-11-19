@@ -200,7 +200,7 @@
     "calternal plugin check": { "id": "string", "version": "string", "host_calls": ["string"], "operations": [{"id":"string","risk":"string","capability":"string"}] },
     "calternal plugin test": { "directory": "string", "passed": "bool" },
     "calternal plugin bench": { "cold": "any", "warm": "any", "three_host_calls": "any" },
-    "calternal plugin review": { "api_version?": "integer", "network_summary?": ["string"], "id": "string", "version": "string", "checksum": "string", "operations": [{"id":"string","risk":"string","capability":"string"}], "host_calls": ["string"], "secrets": ["string"], "complete_manifest": "any", "changes": "any" },
+    "calternal plugin review": { "api_version?": "integer", "network_summary?": ["string"], "credential_route_summary?": [["string"]], "jobs?": ["string"], "schedules?": ["string"], "wait_webhooks?": ["string"], "id": "string", "version": "string", "checksum": "string", "operations": [{"id":"string","risk":"string","capability":"string"}], "host_calls": ["string"], "secrets": ["string"], "complete_manifest": "any", "changes": "any" },
     "calternal plugin pack": { "archive": "string" },
     "calternal plugin package": { "archive": "string", "format": "string", "id": "string", "version": "string", "package_sha256": "string", "screenshots": "integer" },
     "calternal plugin verify-package": { "archive": "string", "format": "string", "id": "string", "version": "string", "package_sha256": "string", "screenshots": "integer" },

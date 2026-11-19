@@ -2,7 +2,8 @@
 use std::{collections::BTreeSet, sync::OnceLock};
 
 use serde::{Deserialize, Deserializer, de};
-use serde_json::{Map, Value};
+use serde_json::Value;
+mod create;
 
 const MANIFEST: &str = include_str!("../../../contract/plugin-manifest-v2.schema.json");
 const V1: &str = include_str!("../../../contract/plugin-manifest-v1.schema.json");
@@ -28,6 +29,7 @@ impl ManifestV2 {
             validator(&contract_json(MANIFEST)).expect("pinned v2 manifest schema compiles")
         });
         validate(validator, &manifest, "v2 manifest")?;
+        check_display_labels(&manifest)?;
         check_declarations(&manifest)?;
         Ok(Self(manifest))
     }
@@ -67,6 +69,7 @@ impl ManifestV2 {
                 ));
             }
         }
+        check_template_operations(&description, &self.0)?;
         Ok(())
     }
 
@@ -103,7 +106,9 @@ fn validator(schema: &Value) -> Result<jsonschema::Validator, String> {
             .prepare()
             .expect("pinned schemas resolve offline")
     });
-    let options = jsonschema::options().with_registry(registry);
+    let options = jsonschema::options()
+        .with_registry(registry)
+        .with_base_uri(format!("{CONTRACT}__embedded__.json"));
     let options = if schema.get("$schema").is_none() {
         options.with_draft(jsonschema::Draft::Draft7)
     } else {
@@ -112,6 +117,131 @@ fn validator(schema: &Value) -> Result<jsonschema::Validator, String> {
     options
         .build(schema)
         .map_err(|_| "schema is invalid or uses an unregistered reference".into())
+}
+
+fn embedded_schema(schema: &Value) -> Result<jsonschema::Validator, String> {
+    fn draft_07(value: &Value) -> bool {
+        value == "http://json-schema.org/draft-07/schema#"
+            || value == "http://json-schema.org/draft-07/schema"
+    }
+
+    fn mixed_drafts(value: &Value) -> bool {
+        match value {
+            Value::Object(fields) => {
+                // A property named $schema may itself be a schema object.
+                // Only URI strings can choose a draft in a nested resource.
+                fields
+                    .get("$schema")
+                    .is_some_and(|uri| uri.is_string() && !draft_07(uri))
+                    || fields.values().any(mixed_drafts)
+            }
+            Value::Array(items) => items.iter().any(mixed_drafts),
+            _ => false,
+        }
+    }
+
+    if schema.get("$schema").is_some_and(|draft| !draft_07(draft)) || mixed_drafts(schema) {
+        return Err("Embedded schemas must use JSON Schema draft-07".into());
+    }
+    // The registry's URI resolver classifies fragments before it decodes
+    // their pointer. Canonicalize an encoded leading slash, preserving the
+    // rest of the URI and the exact signed manifest.
+    fn normalize_fragment(value: &mut Value) {
+        match value {
+            Value::Object(fields) => {
+                if let Some(reference) = fields.get_mut("$ref")
+                    && let Some((document, fragment)) =
+                        reference.as_str().and_then(|r| r.split_once('#'))
+                    && let Some(rest) = fragment
+                        .strip_prefix("%2F")
+                        .or_else(|| fragment.strip_prefix("%2f"))
+                {
+                    *reference = Value::String(format!("{document}#/{rest}"));
+                }
+                for (key, child) in fields {
+                    if !matches!(key.as_str(), "default" | "const" | "enum" | "examples") {
+                        normalize_fragment(child);
+                    }
+                }
+            }
+            Value::Array(items) => items.iter_mut().for_each(normalize_fragment),
+            _ => {}
+        }
+    }
+
+    let mut normalized = schema.clone();
+    normalize_fragment(&mut normalized);
+    validator(&normalized)
+}
+
+fn check_display_labels(value: &Value) -> Result<(), String> {
+    match value {
+        Value::Object(fields) => {
+            for (key, value) in fields {
+                if key == "schema" || key.ends_with("_schema") || key == "default" {
+                    continue;
+                }
+                let valid = |text: &str| {
+                    !text.chars().any(|ch| {
+                        ch.is_control()
+                            || matches!(ch, '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}')
+                    })
+                };
+                if matches!(
+                    key.as_str(),
+                    "label" | "name" | "title" | "purpose" | "description"
+                ) && value.as_str().is_some_and(|text| !valid(text))
+                    || key == "material_inputs"
+                        && value.as_object().is_some_and(|fields| {
+                            fields
+                                .values()
+                                .filter_map(Value::as_str)
+                                .any(|text| !valid(text))
+                        })
+                {
+                    return Err("Manifest labels, names and purposes must omit control and bidirectional override characters".into());
+                }
+                check_display_labels(value)?;
+            }
+        }
+        Value::Array(items) => {
+            for item in items {
+                check_display_labels(item)?;
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+fn check_template_operations(value: &Value, manifest: &Value) -> Result<(), String> {
+    match value {
+        Value::Object(fields) => {
+            if let Some(operation) = value["operation"].as_str() {
+                let host = &catalogue()["operations"][operation];
+                if !entries(manifest, "operations").any(|entry| entry["id"] == operation)
+                    && !(host["generic_invoke"] == true && host["available"] != false)
+                {
+                    return Err(format!(
+                        "Template action invokes undeclared or unavailable operation {operation}"
+                    ));
+                }
+            }
+            for (key, child) in fields {
+                // Inputs may contain arbitrary literal operation-shaped data.
+                if key != "inputs" {
+                    check_template_operations(child, manifest)?;
+                }
+            }
+        }
+        Value::Array(items) => {
+            for item in items {
+                check_template_operations(item, manifest)?;
+            }
+        }
+        _ => {}
+    }
+    Ok(())
 }
 
 fn validate(validator: &jsonschema::Validator, value: &Value, label: &str) -> Result<(), String> {
@@ -193,43 +323,9 @@ fn check_declarations(manifest: &Value) -> Result<(), String> {
                 "Kind {id} must use a safe, non-reserved storage path"
             ));
         }
-        let metadata = validator(&kind["schema"])?;
+        let metadata = embedded_schema(&kind["schema"])?;
         check_fields(kind, id)?;
-        if let Some(create) = kind.get("host_create") {
-            validate(&metadata, &create["defaults"], "host_create defaults")?;
-            if let Some(after) = create.get("after") {
-                let op_id = if let Some(job_id) = after.get("job") {
-                    entries(manifest, "jobs")
-                        .find(|job| &job["id"] == job_id)
-                        .map(|job| &job["run_operation"])
-                        .ok_or("host_create refers to an undeclared job")?
-                } else {
-                    &after["operation"]
-                };
-                let op = operation(op_id).ok_or("host_create refers to an undeclared operation")?;
-                let field = str_field(&op["target"], "field");
-                let input = &op["input_schema"];
-                if field.is_empty()
-                    || op["target"]["kind"] != id
-                    || input["type"] != "object"
-                    || input["additionalProperties"] != false
-                    || input["required"] != serde_json::json!([field])
-                    || !input["properties"]
-                        .as_object()
-                        .is_some_and(|props| props.len() == 1)
-                    || !matches!(
-                        input["properties"][field]["$ref"].as_str(),
-                        Some(
-                            "https://calternal.cloud/contract/host-catalogue-v2.json#/$defs/ItemRef"
-                        )
-                    )
-                {
-                    return Err(
-                        "host_create follow-up must accept only the created kind's ItemRef".into(),
-                    );
-                }
-            }
-        }
+        create::check(manifest, kind, &metadata)?;
     }
     for op in entries(manifest, "operations") {
         let id = str_field(op, "id");
@@ -243,8 +339,8 @@ fn check_declarations(manifest: &Value) -> Result<(), String> {
                 "Operation {id} must use the package or one of its app namespaces"
             ));
         }
-        validator(&op["input_schema"])?;
-        validator(&op["output_schema"])?;
+        embedded_schema(&op["input_schema"])?;
+        embedded_schema(&op["output_schema"])?;
         if let Some(target) = op.get("target")
             && !owns(&target["kind"])
             && !readable(&target["kind"])
@@ -277,14 +373,14 @@ fn check_declarations(manifest: &Value) -> Result<(), String> {
     }
     for setting in entries(manifest, "settings") {
         validate(
-            &validator(&setting["value_schema"])?,
+            &embedded_schema(&setting["value_schema"])?,
             &setting["default"],
             "Setting default",
         )?;
     }
     for route in entries(manifest, "credential_routes") {
-        validator(&route["input_schema"])?;
-        validator(&route["output_schema"])?;
+        embedded_schema(&route["input_schema"])?;
+        embedded_schema(&route["output_schema"])?;
         if !entries(manifest, "secrets").any(|secret| secret["name"] == route["secret"]) {
             return Err("Credential route refers to an undeclared secret".into());
         }
@@ -313,8 +409,13 @@ fn check_fields(kind: &Value, id: &str) -> Result<(), String> {
             "Kind {id} must declare its title field as a string"
         ));
     }
-    for name in ["id", "updated", "trashed", "trashed_at"] {
-        if properties.get(name).is_some() {
+    for name in catalogue()["generic_item_fields"]
+        .as_object()
+        .expect("pinned generic fields")
+        .keys()
+    {
+        // The title field is the declared metadata source of the generated title.
+        if !(name == "title" && title == name) && properties.get(name).is_some() {
             return Err(format!(
                 "Kind {id} uses reserved generic metadata field {name}"
             ));
@@ -326,6 +427,9 @@ fn check_fields(kind: &Value, id: &str) -> Result<(), String> {
                 return Err(format!(
                     "Kind {id} uses reserved generic indexed field {field}"
                 ));
+            }
+            if declaration["source"] == "body_excerpt" || declaration["type"] == "RowImageRef" {
+                continue;
             }
             let ty = match str_field(declaration, "type") {
                 "Number" => "number",
@@ -373,14 +477,15 @@ impl<'de> Deserialize<'de> for Unique {
                 f.write_str("JSON with unique object keys")
             }
 
-            fn visit_map<A: de::MapAccess<'de>>(self, mut map: A) -> Result<Unique, A::Error> {
-                let mut object = Map::new();
-                while let Some((key, Unique(value))) = map.next_entry::<String, Unique>()? {
-                    if object.insert(key, value).is_some() {
-                        return Err(de::Error::custom("duplicate object key"));
-                    }
-                }
-                Ok(Unique(Value::Object(object)))
+            fn visit_map<A: de::MapAccess<'de>>(self, map: A) -> Result<Unique, A::Error> {
+                let object =
+                    calternal_types::unique_json::collect_unique_members::<_, Unique>(map)?;
+                Ok(Unique(Value::Object(
+                    object
+                        .into_iter()
+                        .map(|(key, value)| (key, value.0))
+                        .collect(),
+                )))
             }
 
             fn visit_seq<A: de::SeqAccess<'de>>(self, mut seq: A) -> Result<Unique, A::Error> {
@@ -421,95 +526,4 @@ impl<'de> Deserialize<'de> for Unique {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    const FIXTURE: &[u8] = include_bytes!(
-        "../../../contract/fixtures/description-v2/manifests/reading-list-manifest-v2-app.json"
-    );
-    const TEMPLATE: &[u8] = include_bytes!(
-        "../../../contract/fixtures/description-v2/reading-list-manifest-v2-app.json"
-    );
-
-    #[test]
-    fn installer_reads_sdk_v2_reading_list() {
-        let mut manifest = strict_json(FIXTURE).unwrap();
-        manifest["id"] = "calternal-reading-list".into();
-        let installed = ManifestV2::parse(&serde_json::to_vec(&manifest).unwrap()).unwrap();
-        assert_eq!(installed.id(), "calternal-reading-list");
-        assert!(installed.reads("reading-item"));
-        installed.check_description(TEMPLATE).unwrap();
-    }
-
-    #[test]
-    fn installer_checks_host_create_defaults_and_indexed_field_types() {
-        let mut fixture = strict_json(FIXTURE).unwrap();
-        let kind = &mut fixture["kinds"][0];
-        kind["host_create"] = serde_json::json!({"defaults":{"title":"New item","read":false}});
-        let installed = ManifestV2::parse(&serde_json::to_vec(&fixture).unwrap()).unwrap();
-        assert_eq!(
-            installed.declaration()["kinds"][0]["host_create"]["defaults"]["read"],
-            false
-        );
-        fixture["kinds"][0]["host_create"]["defaults"]["read"] = "false".into();
-        assert!(
-            ManifestV2::parse(&serde_json::to_vec(&fixture).unwrap())
-                .unwrap_err()
-                .contains("host_create defaults")
-        );
-        fixture["kinds"][0]["indexed_fields"]["read"]["type"] = "Text".into();
-        assert!(
-            ManifestV2::parse(&serde_json::to_vec(&fixture).unwrap())
-                .unwrap_err()
-                .contains("Indexed field read")
-        );
-    }
-
-    #[test]
-    fn installer_refuses_malformed_and_unsupported_v2_manifests() {
-        for (bytes, error) in [
-            (b"{}".as_slice(), "pinned schema"),
-            (b"{".as_slice(), "manifest.json"),
-            (
-                br#"{"api_version":2,"api_version":2}"#.as_slice(),
-                "duplicate object key",
-            ),
-            (br#"{"scratch":{}}"#.as_slice(), "Private scratch disks"),
-            (
-                br#"{"kinds":[{"conversation":true}]}"#.as_slice(),
-                "Conversation kinds",
-            ),
-            (
-                br#"{"jobs":[{"placement":"heavy"}]}"#.as_slice(),
-                "Heavy jobs",
-            ),
-        ] {
-            let result = ManifestV2::parse(bytes).unwrap_err();
-            assert!(result.contains(error), "{result}");
-        }
-    }
-
-    #[test]
-    fn installer_refuses_a_reserved_field_and_undeclared_bind() {
-        let mut manifest = strict_json(FIXTURE).unwrap();
-        manifest["kinds"][0]["indexed_fields"]["updated"] =
-            serde_json::json!({"type":"Timestamp","audience":"member_item"});
-        let bytes = serde_json::to_vec(&manifest).unwrap();
-        assert!(
-            ManifestV2::parse(&bytes)
-                .unwrap_err()
-                .contains("reserved generic indexed field updated")
-        );
-
-        let mut manifest = strict_json(FIXTURE).unwrap();
-        manifest["reads"] = serde_json::json!(["reading-item"]);
-        let bytes = serde_json::to_vec(&manifest).unwrap();
-        let manifest = ManifestV2::parse(&bytes).unwrap();
-        assert!(
-            manifest
-                .check_description(TEMPLATE)
-                .unwrap_err()
-                .contains("undeclared kind reading-reminder")
-        );
-    }
-}
+mod tests;

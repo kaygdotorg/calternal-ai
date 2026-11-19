@@ -732,6 +732,7 @@ dependencies = [
  "calternal-fsio",
  "calternal-types",
  "jsonschema",
+ "percent-encoding",
  "semver",
  "serde",
  "serde_json",

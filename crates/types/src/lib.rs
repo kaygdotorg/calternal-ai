@@ -18,6 +18,8 @@ mod owner;
 mod owner_lifecycle;
 mod page;
 mod space_paths;
+/// Strict JSON object-member decoding shared by manifests and settings.
+pub mod unique_json;
 
 pub use actor::{Actor, Via};
 pub use capability::{Capability, CapabilitySet};

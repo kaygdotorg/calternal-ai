@@ -270,7 +270,8 @@ pub struct Registry {
 pub struct Catalog {
     plugins: Vec<Arc<Plugin>>,
     retained: BTreeMap<(String, u32), Arc<Plugin>>,
-    v2: registry_v2::Declarations,
+    declarations: host::DeclarationIndex,
+    v2: BTreeMap<String, Arc<host::ManifestV2>>,
     tool_index: std::sync::OnceLock<String>,
     search: std::sync::OnceLock<Arc<calternal_content::SearchConfig>>,
     slots: slots::SlotIndex,
@@ -516,6 +517,7 @@ impl Catalog {
             };
             out.operations.insert(row.operation.id, (slot, policy));
         }
+        out.declarations = index.into_declarations();
         out.slots = slots::SlotIndex::compile(&out);
         out
     }
@@ -611,16 +613,24 @@ impl Catalog {
 /// Reject plugins whose operations would shadow a host binding or require an
 /// account-level capability that has no space scope.
 fn check_operations(plugin: &Plugin) -> Result<(), String> {
-    for op in &plugin.manifest.operations {
-        if authz::policy(&op.id).is_some() {
-            return Err(format!("operation {} shadows a host operation", op.id));
-        }
-        match host_capability(op.required_capability) {
-            Some(Capability::SpacesList | Capability::SpacesCreate) | None => {
-                return Err(format!("operation {} needs a non-space capability", op.id));
-            }
-            Some(_) => {}
-        }
+    for operation in &plugin.manifest.operations {
+        check_operation(
+            &operation.id,
+            host_capability(operation.required_capability),
+        )?;
+    }
+    Ok(())
+}
+
+fn check_operation(id: &str, capability: Option<Capability>) -> Result<(), String> {
+    if authz::policy(id).is_some() {
+        return Err(format!("Operation {id} shadows a host operation"));
+    }
+    if matches!(
+        capability,
+        None | Some(Capability::SpacesList | Capability::SpacesCreate)
+    ) {
+        return Err(format!("Operation {id} must use a space capability"));
     }
     Ok(())
 }

@@ -90,6 +90,7 @@ impl InstallPackage {
 #[serde(deny_unknown_fields)]
 pub struct PackageV2 {
     manifest: Box<RawValue>,
+    #[serde(deserialize_with = "calternal_types::unique_json::deserialize_unique_members")]
     assets: BTreeMap<String, String>,
 }
 
@@ -296,3 +297,6 @@ pub(in crate::plugins) fn commit_v2(
     }
     tx.commit().map_err(reason)
 }
+
+#[cfg(test)]
+mod tests;

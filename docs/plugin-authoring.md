@@ -49,7 +49,7 @@ to generate an archive. The manifest's `api_version` selects the reader.
 ### Manifest v2
 
 Use `calternal plugin review <source>` to see the declared kinds, Bind reads,
-operations, broker calls and network permissions. For a package that requests
+operations, broker calls, network permissions, credential routes, jobs, schedules and inbound webhooks. For a package that requests
 neither network access nor anonymous host image fetches, the review shows
 **No network access**. The review uses the pinned v2 schemas and verifies the
 SHA-256 of each pinned package asset. Use the review checksum with
@@ -59,7 +59,7 @@ The installer publishes an installation-local declaration for the kind and
 operation registry, with no space activation or worker start. The v2 installer
 currently accepts new packages and supports removal. Updates and space
 enablement are unavailable. Heavy jobs, scratch disks and conversation kinds
-are refused.
+are refused. Revision 13.18 supplies the `host_create` declaration and its checked follow-up shape.
 
 ### Manifest v1
 

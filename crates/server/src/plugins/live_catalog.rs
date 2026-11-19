@@ -307,7 +307,6 @@ fn install_v2(
 ) -> Result<Catalog, String> {
     let manifest = package_store::validate_v2_archive(archive)?;
     let mut next = base.clone();
-    next.check_v2_reads(&manifest)?;
     next.register_v2(manifest.clone())?;
     package_store::commit_v2(appdata, manifest.id(), archive, approval)?;
     Ok(next)
@@ -395,10 +394,7 @@ fn catalog(
         return Err("candidate conflicts with a currently registered plugin".into());
     }
     next.retained = base.retained.clone();
-    next.carry_v2(base, replacement.as_deref())?;
-    if replacement.is_none() {
-        next.remove_v2(id);
-    }
+    next.carry_v2(base, replacement.is_none().then_some(id))?;
     match (base.get(id), replacement) {
         (Some(old), Some(new))
             if !package_store::authority_changed(&new.manifest, &old.manifest) =>
