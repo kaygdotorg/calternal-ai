@@ -7,10 +7,23 @@ import test from "node:test";
 import {
   ContractValidationError,
   parseOperationRequest,
+  prepareContent,
   validateGenUiView,
   validateOperationRequest,
   validateManifestV1,
 } from "../dist/index.js";
+
+test("prepareContent is public and passes a stored revision to the broker", async () => {
+  const input = { kind: "mail-message", item_id: "item", revision: "saved", field: "text" };
+  const result = await prepareContent({
+    async call(method, args) {
+      assert.equal(method, "content_prepare_v1");
+      assert.deepEqual(args, input);
+      return { frame_id: "frame" };
+    },
+  }, input);
+  assert.deepEqual(result, { frame_id: "frame" });
+});
 
 const testDir = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(testDir, "../../..");

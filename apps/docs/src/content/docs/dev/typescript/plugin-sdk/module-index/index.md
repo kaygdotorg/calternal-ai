@@ -113,6 +113,12 @@ Re-exports [parseWorkerFrameV2](/docs/dev/typescript/plugin-sdk/worker-v2/functi
 
 ***
 
+### prepareContent
+
+Re-exports [prepareContent](/docs/dev/typescript/plugin-sdk/worker-v2/functions/preparecontent/)
+
+***
+
 ### readSetting
 
 Re-exports [readSetting](/docs/dev/typescript/plugin-sdk/worker-v2/functions/readsetting/)
