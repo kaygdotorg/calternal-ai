@@ -18,19 +18,25 @@ The default base is `http://127.0.0.1:43125/step0/v2`. Each request sends
 `Authorization: Bearer <fixture bearer>`. Local browser origins can use
 the same endpoint through its CORS preflight.
 
-1. `GET /fixture` returns the sealed template and the currently visible
-   `views.home` or `views.shared` references.
+1. `GET /fixture` returns the manifest, visible `views.home` and
+   `views.shared` refs, and a per-view template under `templates`.
+   The top-level `template` is the member template.
 2. `POST /view.open` takes `{"type":"view_open","view_ref":"…"}`. Keep its
    lease, grant revision and cache partition.
 3. `POST /window` takes the sealed event
    `{"type":"window","request":{"bind":"notes","from":0,"to":20}}`.
    Supply the issued lease ref in the `X-Step0-View-Lease` header. The
-   same header supplies view scope to `POST /selection.settled`.
+   same header supplies view scope to `POST /selection.settled`, whose body
+   is `{"type":"selection","bind":"notes","row":"<issued ID>"}`. Replies are
+   bare catalogue objects. A window plan refusal uses HTTP 422 with the
+   sealed `WindowPlanError`. Other refusals use an HTTP error and an
+   `{"error":"<code>"}` body.
 4. The action endpoints are `POST /activation.resolve`,
    `/activation.confirm`, `/activation.dispatch`, `/choice.options`
-   and `/view.renew`. Send the matching sealed event body.
+   and `/view.renew`. Send the matching sealed event body. Pin’s returned
+   Undo uses `POST /undo` and the current lease header.
 
-The owner account can edit the home and shared Notes views. The second
+The fixture serves the home and shared Notes views. The owner can edit both. The second
 account initially reads the shared view as a member. The scripted
 integration target also exercises item-only sharing and revocation.
 

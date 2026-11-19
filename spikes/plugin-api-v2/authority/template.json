@@ -55,12 +55,6 @@
           }
         ]
       },
-      "sort": [
-        {
-          "field": "updated",
-          "direction": "desc"
-        }
-      ],
       "window": {
         "size": 60,
         "count": "exact"
@@ -141,6 +135,16 @@
                     "bind": "collections"
                   }
                 }
+              }
+            }
+          },
+          {
+            "id": "touch",
+            "title": "Mark reviewed",
+            "operation": "notes.touch",
+            "inputs": {
+              "item": {
+                "row": "id"
               }
             }
           }

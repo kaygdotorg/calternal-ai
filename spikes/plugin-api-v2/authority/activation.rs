@@ -40,6 +40,20 @@ impl Host {
         .is_ok()
     }
 
+    async fn collection_revision(&self, view: &View, id: Uuid) -> Reply<String> {
+        let state = self.state.clone();
+        let space = view.space;
+        tokio::task::spawn_blocking(move || {
+            state
+                .store
+                .content()
+                .live_revision(space, "collections", id)
+        })
+        .await
+        .unwrap()
+        .map_err(|_| HIDDEN)
+    }
+
     pub(super) async fn choices(
         &self,
         who: Identity,
@@ -58,12 +72,14 @@ impl Host {
             if !self.collection_current(who, &view, *id).await {
                 continue;
             }
+            let revision = self.collection_revision(&view, *id).await?;
             let token = Uuid::new_v4();
             self.live.lock().unwrap().choices.insert(
                 token,
                 Choice {
                     context: key,
                     destination: *id,
+                    revision,
                     label: label.clone(),
                 },
             );
@@ -167,7 +183,10 @@ impl Host {
                 {
                     return Err(HIDDEN);
                 }
-                destination = Some(picked.destination);
+                if self.collection_revision(&view, picked.destination).await? != picked.revision {
+                    return Err(STALE);
+                }
+                destination = Some((picked.destination, picked.revision));
                 material
                     .push(json!({"name":"destination","label":"Destination","value":picked.label}));
             }
@@ -305,9 +324,12 @@ impl Host {
             return Err(INVALID);
         }
         self.check_targets(who, &view, &r.targets).await?;
-        if let Some(destination) = r.destination {
-            if !self.collection_current(who, &view, destination).await {
+        if let Some((destination, revision)) = &r.destination {
+            if !self.collection_current(who, &view, *destination).await {
                 return Err(HIDDEN);
+            }
+            if self.collection_revision(&view, *destination).await? != *revision {
+                return Err(STALE);
             }
         }
         let mut live = self.live.lock().unwrap();
@@ -356,21 +378,74 @@ impl Host {
                 return Err(HIDDEN);
             }
         }
-        if let Some(destination) = r.destination {
-            if !self.collection_current(who, &view, destination).await {
+        if let Some((destination, _)) = &r.destination {
+            if !self.collection_current(who, &view, *destination).await {
                 return Err(HIDDEN);
             }
         }
         if let Some(receipt) = current {
-            return Ok(receipt.result["outcome"].clone());
+            if receipt.operation != ctx.action.name() {
+                return Err(CONFLICT);
+            }
+            return Ok(if ctx.action == Action::Choice {
+                json!({"activation_id":r.activation,"state":"ok"})
+            } else {
+                receipt.result["outcome"].clone()
+            });
         }
         self.check_targets(who, &view, &r.targets).await?;
-        if ctx.action == Action::Bulk || ctx.action == Action::Choice {
+        if ctx.action == Action::Choice {
+            return self.move_collection(who, &view, &r, request_key).await;
+        }
+        if ctx.action == Action::Bulk {
             return self
                 .record_set_effect(who, &view, ctx.action, &r, request_key)
                 .await;
         }
         self.edit(who, &view, ctx.action, &r, request_key).await
+    }
+
+    async fn move_collection(
+        &self,
+        who: Identity,
+        view: &View,
+        r: &Resolution,
+        request_key: String,
+    ) -> Reply<Value> {
+        let (id, revision) = r.destination.clone().ok_or(HIDDEN)?;
+        let row = r.targets.first().ok_or(HIDDEN)?.0;
+        let state = self.state.clone();
+        let space = view.space;
+        let activation = r.activation;
+        tokio::task::spawn_blocking(move || {
+            let content = state.store.content();
+            let collection = content.collection(space, id).map_err(|_| HIDDEN)?;
+            if collection.revision != revision {
+                return Err(STALE);
+            }
+            let mut members = collection.collection.members;
+            if !members.contains(&row) {
+                members.push(row);
+            }
+            content
+                .set_collection_members(
+                    space,
+                    id,
+                    &revision,
+                    members,
+                    Request {
+                        account: who.id,
+                        via: None,
+                        id: &request_key,
+                        operation: Action::Choice.name(),
+                        fingerprint: &request_key,
+                    },
+                )
+                .map_err(|_| STALE)?;
+            Ok(json!({"activation_id":activation,"state":"ok"}))
+        })
+        .await
+        .unwrap()
     }
 
     async fn record_set_effect(
@@ -382,7 +457,7 @@ impl Host {
         request_key: String,
     ) -> Reply<Value> {
         // The Step 0 scoped set executor writes one durable fixture action.
-        // The product collection and Trash writers are wired separately.
+        // The product multi-item Trash writer is outside this fixture.
         let state = self.state.clone();
         let space = view.space;
         let log = tokio::task::spawn_blocking(move || state.store.content().live_journal(space))
@@ -394,7 +469,7 @@ impl Host {
             .await
             .map_err(|_| STALE)?
         {
-            return Ok(prior.result["outcome"].clone());
+            return Ok(prior.result["payload"]["outcome"].clone());
         }
         let outcome = json!({"activation_id":r.activation,"state":"ok"});
         let data = json!({"targets":r.targets,"material":r.material,"destination":r.destination});
@@ -435,6 +510,7 @@ impl Host {
         let space = view.space;
         let material = r.material.clone();
         let activation = r.activation;
+        let undo_token = self.undo_ref(who.id, space, activation);
         tokio::task::spawn_blocking(move || {
             let content=state.store.content();
             let before=content.get(space,row).map_err(|_|HIDDEN)?;
@@ -446,8 +522,7 @@ impl Host {
                 Action::Pin=>{
                     inverse=json!({"pinned":before.metadata["pinned"]});
                     metadata["pinned"]=json!(true);
-                    let expiry=calternal_content::format_rfc3339(time::OffsetDateTime::now_utc()+time::Duration::minutes(10));
-                    outcome["undo"]=json!({"ref":Uuid::new_v4(),"label":"Undo pin","expires_at":expiry});
+                    outcome=super::undo::pin_outcome(activation,&undo_token);
                 }
                 Action::Prefill=>metadata["title"]=material[0]["value"].clone(),
                 Action::Ordinary=>metadata["spike_reminded"]=json!(true),

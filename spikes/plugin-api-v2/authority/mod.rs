@@ -1,5 +1,8 @@
 //! Disposable host-side implementation of the sealed activation protocol.
 mod activation;
+mod queue;
+mod undo;
+pub(crate) use undo::{load_undo_key, pin_outcome, undo_token};
 mod views;
 mod wire;
 
@@ -69,7 +72,7 @@ impl Action {
             "rename" => Self::Prefill,
             "choose-destination" => Self::Choice,
             "trash-selected" => Self::Bulk,
-            "remind" => Self::Ordinary,
+            "touch" => Self::Ordinary,
             _ => return None,
         })
     }
@@ -79,7 +82,7 @@ impl Action {
             Self::Prefill => "rename",
             Self::Choice => "choose-destination",
             Self::Bulk => "trash-selected",
-            Self::Ordinary => "remind",
+            Self::Ordinary => "touch",
         }
     }
     fn challenge(self) -> bool {
@@ -107,6 +110,7 @@ struct IssuedWindow {
 struct Choice {
     context: Uuid,
     destination: Uuid,
+    revision: String,
     label: String,
 }
 
@@ -120,7 +124,7 @@ struct Resolution {
     challenge: Option<Uuid>,
     proof: Option<Uuid>,
     selection: Option<Uuid>,
-    destination: Option<Uuid>,
+    destination: Option<(Uuid, String)>,
 }
 
 #[derive(Default)]
@@ -157,6 +161,7 @@ impl Hooks {
 pub(crate) struct Host {
     state: Shared,
     wire: Wire,
+    undo_key: ring::hmac::Key,
     views: HashMap<Uuid, View>,
     owner: AccountId,
     viewer: AccountId,
@@ -185,7 +190,13 @@ fn ref_at(value: &Value, key: &str) -> Reply<Uuid> {
 impl Host {
     pub(crate) async fn create(roots: &calternal_roots::Roots) -> Arc<Self> {
         let packages = fixture::packages();
-        let (state, ids) = tokio::task::block_in_place(|| fixture::open(roots, &packages));
+        let (mut state, ids) = tokio::task::block_in_place(|| fixture::open(roots, &packages));
+        let auth = state.directory.protected_spaces().unwrap().agents();
+        Arc::get_mut(&mut state).unwrap().jobs = tokio::task::block_in_place(|| {
+            calternal_server::plugins::Jobs::open(&roots.appdata)
+                .unwrap()
+                .with_security(auth)
+        });
         let mut make = Vec::new();
         for (index, space) in [ids.shared, ids.personal].into_iter().enumerate() {
             let mut rows = Vec::new();
@@ -233,9 +244,11 @@ impl Host {
         }
         let shared = make[0].0;
         let home = make[1].0;
+        let undo_key = tokio::task::block_in_place(|| load_undo_key(&roots.appdata));
         Arc::new(Self {
             state,
             wire: Wire::new(),
+            undo_key,
             views: make.into_iter().collect(),
             owner: ids.owner,
             viewer: ids.guest,
@@ -309,6 +322,7 @@ impl Host {
             "activation.resolve" => "resolve",
             "activation.confirm" => "confirm",
             "activation.dispatch" => "dispatch",
+            "undo" => "undo_request",
             _ => return Err(HIDDEN),
         };
         if !self.wire.valid(schema, &input) {
@@ -337,6 +351,11 @@ impl Host {
                 return Ok(("proof", self.confirm(who, session, &input).await?));
             }
             "activation.dispatch" => ("outcome", self.dispatch(who, session, &input).await?),
+            "undo" => (
+                "outcome",
+                self.undo(who, session, lease_header.ok_or(HIDDEN)?, &input)
+                    .await?,
+            ),
             _ => unreachable!(),
         };
         assert!(
@@ -371,13 +390,25 @@ async fn bootstrap(State(host): State<Arc<Host>>, headers: HeaderMap) -> Respons
     let operation = async {
         let (who, _) = host.session(&headers)?;
         let mut views = serde_json::Map::new();
+        let mut templates = serde_json::Map::new();
+        let template: Value = serde_json::from_str(include_str!("template.json")).unwrap();
+        let guest: Value = serde_json::from_str(include_str!("guest-template.json")).unwrap();
         for (label, id) in [("shared", host.shared), ("home", host.home)] {
-            if host.audience(who, &host.views[&id]).await.is_some() {
+            if let Some(audience) = host.audience(who, &host.views[&id]).await {
                 views.insert(label.into(), json!(id));
+                templates.insert(
+                    label.into(),
+                    if audience == "guest" {
+                        guest.clone()
+                    } else {
+                        template.clone()
+                    },
+                );
             }
         }
         Ok(
-            json!({"views":views,"template":serde_json::from_str::<Value>(include_str!("template.json")).unwrap()}),
+            json!({"views":views,"templates":templates,"template":template,
+             "manifest":serde_json::from_str::<Value>(include_str!("manifest.json")).unwrap()}),
         )
     };
     reply(operation.await)
@@ -385,6 +416,9 @@ async fn bootstrap(State(host): State<Arc<Host>>, headers: HeaderMap) -> Respons
 
 fn reply(result: Reply<Value>) -> Response {
     match result {
+        Ok(plan) if plan["status"] == 422 && plan["code"] == "unsupported_query_plan" => {
+            (StatusCode::UNPROCESSABLE_ENTITY, Json(plan)).into_response()
+        }
         Ok(value) => Json(value).into_response(),
         Err(ResultRow(status, code)) => (status, Json(json!({"error":code}))).into_response(),
     }

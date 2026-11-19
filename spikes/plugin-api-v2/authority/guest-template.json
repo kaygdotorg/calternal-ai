@@ -1,0 +1,34 @@
+{
+  "version": 2,
+  "kind": "app",
+  "revision": 1,
+  "binds": [
+    {
+      "id": "notes",
+      "source": {
+        "type": "list",
+        "kind": "notes"
+      },
+      "fields": [
+        "title"
+      ],
+      "window": {
+        "size": 60,
+        "count": "none"
+      },
+      "row": {
+        "title": {
+          "field": "title"
+        }
+      }
+    }
+  ],
+  "view": {
+    "title": "Shared Note",
+    "root": {
+      "type": "list",
+      "bind": "notes",
+      "title": "Note"
+    }
+  }
+}

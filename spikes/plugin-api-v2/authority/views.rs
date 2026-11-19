@@ -276,28 +276,46 @@ impl Host {
         }
         let from = input["from"].as_u64().ok_or(INVALID)?;
         let to = input["to"].as_u64().ok_or(INVALID)?;
-        if from >= to || to - from > 200 || from > 500000 || input["anchor"] == "end" {
+        let end = input["anchor"] == "end";
+        if from >= to || to - from > 200 || (!end && from > 500_000) {
             return Err(INVALID);
         }
+        if end && lease.audience == "guest" {
+            return Ok(
+                json!({"status":422,"code":"unsupported_query_plan","reason":"end_unavailable"}),
+            );
+        }
         let write = self.editor(who, &view).await;
+        let mut visible = Vec::new();
+        for &item in &view.rows {
+            if (lease.audience != "guest" || item == view.rows[0])
+                && self.current_item(who, &view, item, false).await
+            {
+                visible.push(item);
+            }
+        }
+        let total = visible.len() as u64;
+        let (start, stop) = if end {
+            (total.saturating_sub(to), total.saturating_sub(from))
+        } else {
+            (from.min(total), to.min(total))
+        };
         let mut rows = Vec::new();
         let mut recorded = Vec::new();
-        let mut total = 0;
-        for &item in &view.rows {
-            if (lease.audience == "guest" && item != view.rows[0])
-                || !self.current_item(who, &view, item, false).await
-            {
-                continue;
-            }
-            total += 1;
-            if total <= from || total > to {
-                continue;
-            }
-            let note = fixture::run(&self.state, who, "notes.get", json!({"id":item}))
+        for &id in &visible[start as usize..stop as usize] {
+            let state = self.state.clone();
+            let space = view.space;
+            let item = tokio::task::spawn_blocking(move || state.store.content().get(space, id))
                 .await
+                .unwrap()
                 .map_err(|_| HIDDEN)?;
-            recorded.push((item, note["note"]["revision"].as_str().unwrap().into()));
-            rows.push(json!({"id":item,"fields":{"title":note["note"]["title"],"pinned":note["note"]["metadata"]["pinned"].as_bool().unwrap_or(false)}}));
+            let mut fields = json!({"title":item.metadata["title"]});
+            if lease.audience != "guest" {
+                fields["updated"] = json!(item.updated_at);
+                fields["pinned"] = json!(item.metadata["pinned"].as_bool().unwrap_or(false));
+            }
+            recorded.push((id, item.revision));
+            rows.push(json!({"id":id,"fields":fields}));
         }
         self.hooks.hit(1).await;
         let _fence = view.gate.lock().await;
@@ -330,9 +348,12 @@ impl Host {
                 },
             );
         }
-        let mut out = json!({"bind":NOTES,"state":if total==0{"empty"}else{"ready"},
+        let mut out = json!({"bind":NOTES,"state":if total==0 && from==0{"empty"}else{"ready"},
             "result_version":version,"offset":from,"rows":rows,"window_ref":reference,"audience":lease.audience,
             "activation_contexts":actions});
+        if end {
+            out["anchor"] = json!("end");
+        }
         if lease.audience != "guest" {
             out["count"] = json!({"mode":"exact","value":total});
         }

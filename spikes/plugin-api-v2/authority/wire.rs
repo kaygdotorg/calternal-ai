@@ -22,6 +22,7 @@ const TYPES: &[(&str, &str)] = &[
     ("confirm", "ConfirmActivation"),
     ("dispatch", "DispatchActivation"),
     ("outcome", "ActionOutcome"),
+    ("undo_request", "UndoRequest"),
     ("renew_request", "LeaseRenewRequest"),
     ("renew", "LeaseRenewResult"),
 ];

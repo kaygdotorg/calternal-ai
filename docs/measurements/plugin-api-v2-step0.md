@@ -746,6 +746,81 @@ Build the `v2_step0_page` release executable on dev-01. Run
 `STEP0_ALL_SEARCH=1` for `scoped_search_worker_lag` and
 `scoped_threads_worker_lag`.
 
+## Host side of the authority spike
+
+The [disposable host](../../spikes/plugin-api-v2/authority/README.md)
+binds loopback and serves the sealed Notes template. The scripted client
+uses real HTTP requests with the fixture's authenticated account tokens.
+The host compiles the reachable revision-12.5 wire schemas with
+`calternal-plugin-host`. A window or settled-selection request carries
+its issued lease in the fixture transport header. Authorization uses
+the real stored directory, Notes resolver, content head and collection
+membership engines. There are no product endpoints or worker changes.
+
+The suite resolves stable rows from checked windows and reconstructs
+durable action inputs from the issued contexts. It realigns membership
+through the existing protected writer. A disposable per-space gate
+linearizes the injected membership revocation with egress, dispatch,
+confirmation, job claim, job park and native approval resolution.
+A forged request receives a fixed error body with no protected material.
+
+The member and guest templates both passed the sealed description
+verifier on dev-01. The host fixture provides start and exact-count End
+windows. An item-only guest receives a title-only projection and a typed
+`end_unavailable` without count authority. `view.open` and the wire
+launch were verified on dev-01 before notifying the renderer lanes.
+
+| Injection | Pass condition | Measured | Verdict |
+| --- | --- | --- | --- |
+| Owner, member, item-only guest, foreign and revoked access | Only the current audience's approved fields and windows | Member and owner received four Notes rows. Named guest received one title and no member fields, count or contexts. Foreign and revoked reads returned one fixed error. Member End got the exact last row. Guest End returned the typed refusal. | Pass |
+| Forge row, route, Bind, context, lease and cached rows | No unauthorized effects, bytes or new contexts | All forged, foreign-actor and wrong-action cases refused in 100 scripted runs. The request decoder rejected renderer-supplied routes and row material outside the sealed shape. | Pass |
+| Untouched prefill, choice and bulk selection | Host resolves exact protected material. Invalid bulk sets, ChoiceRefs and proofs convey no authority. | In 100 runs the untouched title default required a challenge, and dispatch without proof failed. Raw, foreign-context and stale ChoiceRefs failed. The authorized choice updated the real collection once and replayed the receipt. Mixed foreign and duplicate bulk IDs refused; the valid selection required a challenge. | Pass |
+| Duplicate, stale and unrelated churn | One effect on replay. Current action survives unrelated edit, p95 ≤2 s. | 100 Pin and prefill effects, with exactly one commit per accepted activation and zero duplicate commits. Dispatch plus exact replay under unrelated churn was 23.576 / 30.159 ms p50 / p95, 38.935 ms max. Stale contexts failed. | Pass |
+| Race live membership removal against egress, dispatch and confirmation | No stale protected data, effect, or proof | 300 winning revocations. Zero protected bytes or unauthorized effects. Reopening the revoked view refused. | Pass |
+| Pin Undo recovery and stale dependencies | Effect and inverse both survive the named commit. No stale Undo effect. | Ten process exits per cut (before commit, after FULL commit before outbox delivery, and during reply publication). Before commit both absent. After commit both recovered with the same signed Undo ref. 50 live Undo/replays restored once and 50 stale Undo requests refused. | Pass |
+| Native job claim, park and protected approval against revoke | Revoked actor claims, parks and approves zero jobs. A live approval resolves exactly once. | 30 race injections, zero late claims, parks or approvals. Ten real parked native approvals resolved and replayed. The release `approval_reverify` test also passed on dev-01. | Pass |
+| Spoof retained result versions | Host retains only the issued exact current result for the view and partition | In 100 renewals, the exact version survived and the spoofed version was omitted. The host echoed the renewal ID and request lease. | Backend pass. Repaint remains a renderer check. |
+
+Timed calls ran 100 times on `calternal-perf-01-backup01` under
+`/usr/local/bin/perf-lock.sh` with the release binary built on dev-01.
+The 30 Pin cuts and 30 native race injections ran in the same locked
+suite. Zero means zero protected response bytes and excludes the fixed
+error envelope. The p95 upper bound includes the second dispatch's
+receipt replay.
+
+The measured Pin path reads the current member capability at admission
+and under the fence, with two reads at each point for view and editor
+authority. It reads one receipt, rechecks item authority and expected
+head, and loads the one target snapshot for the write. The real
+`Content::write` commits the pin and its inverse-bearing outbox intent
+together. Normal foreground acknowledgment also publishes one FULL
+journal transaction and retires the intent in the content database.
+Those are three WAL commit/sync boundaries in the normal configured
+FULL path, plus separate placement or witness work when pending. The
+receipt replay reads current authority and the existing durable receipt
+with zero new effects or commits. Confirmation staging and view/window
+egress use zero writes or flushes. The choice uses the real bounded
+collection writer. The protected bulk probe qualifies selection and
+confirmation using a fixture ledger. Product multi-item Trash and
+browser-managed repaint remain separate integration cases.
+
+### What the specification must change
+
+The measured host cases require no new sealed behavior. The early host
+fixture had included a member-only field in a guest projection and
+returned a generic error for End without exact count authority. The
+harness now emits the separate approved guest template and the sealed
+typed End refusal. Carry the per-space commit and egress fence into
+the product host and maintain the context's affected dependency set.
+Renderer lease ordering and paint still need end-to-end measurement.
+
+Build on dev-01 with `nix develop -c cargo test --locked --release
+-p calternal-server --test v2_step0_authority --no-run`. Run the
+executable under the perf lock with
+`--ignored sealed_ --nocapture --test-threads=1`, using the copied
+plugin manifests and a disposable ext4 `TMPDIR`. The README supplies
+the unchanged dev-01 launcher for the Svelte and SwiftUI lanes.
+
 ## Reproducing the measurements
 
 Build in the existing lane copy on `calternal-dev-01-compute02`.
@@ -778,6 +853,7 @@ pre-existing recovery test that waits for the debug-only
 
 ## Simplification opportunities
 
+- Share one scoped authority check between activation, preview and replay where the same fence already covers them.
 - Retain retired placement generations under the Undo lifetime and reclaim them in background batches.
 
 - Use the same scoped count for empty, end and arbitrary-jump decisions.
