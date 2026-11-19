@@ -101,6 +101,20 @@ export function routeEvent(kind: string, ev: ChromeEvent): boolean {
  * Starts publishing (once, after the first paint): an effect that rebuilds the description whenever the stores it reads change, and sends it at the next frame; and the listener for the shell's events. `appKind` says which app
  * is open (its provider supplies the body). A no-op without the bridge's `chrome`, and the reply `native: false` leaves the page as it is.
  */
+/**
+ * Before the first paint: when the shell can draw this contract (the bridge has `chrome` and a common version), the page is provisionally in native chrome: `data-native-chrome-pending` on the root hides the page's own sidebar,
+ * drawer, header, wallpaper and card frame (native.css), so nothing of them is ever drawn beside the shell's, whatever the route or the stored drawer says. The answer to the first publication settles it: `native: true` keeps it
+ * (`data-native-chrome-page`), anything else (a refusal, an error, no answer for `PENDING_MS`) withdraws it and the page draws its own. Decided from the bridge's presence, not from a reply.
+ */
+export function earlyNativeChrome(): void {
+  if (!chromeCompatible()) return;
+  const root = document.documentElement;
+  root.setAttribute("data-native-chrome-pending", "");
+  setTimeout(() => { if (!root.hasAttribute("data-native-chrome-page")) root.removeAttribute("data-native-chrome-pending"); }, PENDING_MS);
+}
+/** How long the page waits for the shell's first answer before it draws its own chrome. */
+const PENDING_MS = 5000;
+
 export function startNativeChrome(appKind: () => string): () => void {
   const b = bridge();
   if (!b || !chromeCompatible(b)) return () => {}; // no call, or a contract the shell cannot draw: the page keeps its own chrome
@@ -117,8 +131,10 @@ export function startNativeChrome(appKind: () => string): () => void {
       if ([1, 3, 10, 30].includes(nativeChrome.lat.length)) { try { b.log?.(`chrome publish round trip: last ${ms.toFixed(1)} ms, avg ${(nativeChrome.lat.reduce((x, y) => x + y, 0) / nativeChrome.lat.length).toFixed(1)} ms over ${nativeChrome.lat.length}`); } catch { /* ignored */ } }
       const on = answerIsNative(r);
       if (!on && r?.reason) { try { b.log?.(`chrome refused: ${r.reason}${r.supported ? ` (shell draws ${r.supported.join(", ")})` : ""}`); } catch { /* ignored */ } }
-      if (on !== nativeChrome.native) { nativeChrome.native = on; document.documentElement.toggleAttribute("data-native-chrome-page", on); }
-    } catch (e) { try { b.log?.(`chrome publish failed: ${String((e as Error)?.message ?? e).slice(0, 300)}`); } catch { /* ignored */ } /* the shell did not answer: keep drawing our own */ }
+      if (on !== nativeChrome.native) nativeChrome.native = on;
+      document.documentElement.toggleAttribute("data-native-chrome-page", on);
+      document.documentElement.removeAttribute("data-native-chrome-pending"); // the answer settles it: native keeps `-page`, a refusal draws the page's own
+    } catch (e) { document.documentElement.removeAttribute("data-native-chrome-pending"); try { b.log?.(`chrome publish failed: ${String((e as Error)?.message ?? e).slice(0, 300)}`); } catch { /* ignored */ } /* the shell did not answer: keep drawing our own */ }
   };
   const stop = $effect.root(() => {
     $effect(() => {
