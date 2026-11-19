@@ -12,7 +12,8 @@
   import { pull } from "../lib/pull";
   import AppSwitcher from "./AppSwitcher.svelte";
   import { spaces } from "./spaces.svelte";
-  import { self, signOutNow } from "./self.svelte";
+  import { self } from "./self.svelte";
+  import { accountItems, pickAccountItem } from "./accountMenu";
   import { shell } from "./shell.svelte";
 
   let { app }: { app: AppDef } = $props();
@@ -25,18 +26,8 @@
   const search = $derived(spaces.list.length > 5);
   $effect(() => { self.load(); });
   // Who is signed in comes first (it opens Settings, Account), then the spaces, Settings, and Sign out last: a person sees which account this is and can leave it in two taps (the picture, then the row).
-  const items = $derived<MenuItem[]>([
-    { id: "account", label: self.name, sub: self.email ?? `@${self.username}`, icon: "user" as const },
-    ...spaces.list.map((s) => ({ id: `space:${s.id}`, label: s.name, checked: s.id === spaces.current.id })),
-    { id: "settings", label: "Settings", icon: "settings" as const },
-    { id: "signout", label: "Sign out", icon: "signout" as const, danger: true },
-  ]);
-  function pick(id: string) {
-    if (id === "settings") navigate("/settings/appearance");
-    else if (id === "account") navigate("/settings/account");
-    else if (id === "signout") signOutNow();
-    else { spaces.switchTo(id.slice(6)); navigate("/threads"); }
-  }
+  const items = $derived<MenuItem[]>(accountItems());
+  const pick = (id: string) => void pickAccountItem(id);
 </script>
 
 <div class="side">

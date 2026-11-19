@@ -1,5 +1,23 @@
 # Native-feel audit: onboarding, sign-in, the first thread, Settings (2026-11-19)
 
+## The ten highest-impact changes first (improve-ui procedure: confidence, then impact, then reach, then cost)
+
+Each row: problem, evidence (the before frame on issue #15), one change, scope, confidence.
+
+| # | Problem | Evidence (before frame) | One change | Scope | Confidence |
+|---|---|---|---|---|---|
+| 1 | A person could not see which account they were in or sign out (a secondary button at the bottom of a long page; the picture said "Kay" for everyone) | menu (account page, before: audit-light-thread-settings) | Account menu: the signed-in person, then Sign out, two taps from the picture | every screen on a phone | High, fixed |
+| 2 | A solid band under the status bar and content cut off under the header pills | band-sidebar-before-after (left) | Fade from the screen's top edge across the status area and the pill row | every scrolling page | High, fixed |
+| 3 | The card beside the sidebar had 28 px corners where the display has about 55 (not like bb, ChatGPT, Claude) | band-sidebar-before-after (third frame) | `--card-r` = `--device-r` | every card on a phone | High, fixed |
+| 4 | The wallpaper ended where the page was drawn: flat colour behind the glass keyboard | keyboard frames (before) | `interactive-widget=resizes-visual` and the root mirror | every screen with a keyboard | High, fixed |
+| 5 | Onboarding errors were loose text under the buttons, the back control a text button below the action, the passkey refusal worded as a cancel | onboarding-error-callout (after); before in the owner's screenshots | `Callout` above the action, chevron back, wording by error name and timing | onboarding, sign-in | High, fixed |
+| 6 | The first thread offers a provider that is not signed in, without a word | audit-light-thread-settings (thread) | Warn at the end of onboarding (done); the composer needs a stored check from the server | first run | Medium, web side fixed, server state open |
+| 7 | The accent changes underfoot (amber, purple, green) with no explanation | audit-light-onboarding-signin | Crossfade over `--dur-slow` and one sentence in the Look step | onboarding, Appearance | Medium, open |
+| 8 | Settings rows are flat with free-standing pill fields and buttons squeezed beside text | audit-light-thread-settings (settings) | Grouped inset rows, field on its own line on a phone | Settings | Medium, open |
+| 9 | Sign-in is a natural-width left-aligned button while onboarding's is full width, and it has no entrance | audit-light-onboarding-signin | Full-width primary, the arrival order of onboarding | sign-in | Medium, open |
+| 10 | Nothing a person does is felt: no haptics, browser `confirm()` dialogs, no native sheets | n/a (shell) | `haptic()` behind the bridge (selection, success, warning, error: built), our own confirmation sheet | whole app on iPhone | Medium, haptics built; the sheet open |
+
+
 Against `docs/native-feel.md`. Simulator, Safari, iPhone Pro Max at 440 pt, light and dark; frames are attached to issue #15 (names in the last column). "Fixed" means fixed on `lane/ui-shell` the same day; "Open" needs the owner's decision or the native shell.
 
 | # | Screen | Finding | Rule | Status | Frame |

@@ -47,6 +47,8 @@
   .callout[data-tone="info"] { --tone: var(--ink-2); }
   .ic { display: grid; place-items: center; height: calc(var(--text-ui) * 1.4); color: var(--tone); }
   p { margin: 0; font-size: var(--text-ui); line-height: 1.4; overflow-wrap: anywhere; user-select: text; }
+  /* Reduced motion: the panel fades and no longer rises, over 120 ms (the row still grows: that is layout, not travel). */
+  @media (prefers-reduced-motion: reduce) { .panel, .callout[data-open="true"] .panel { translate: 0 0; transition-duration: 120ms; } }
   /* The announcement: out of sight, in the accessibility tree. */
   .live { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   .callout { position: relative; }

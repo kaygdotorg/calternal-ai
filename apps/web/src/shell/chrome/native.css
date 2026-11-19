@@ -1,0 +1,12 @@
+/*
+ * When the iPhone shell draws the sidebar and the header natively (it sets `data-native-chrome` on the root and `--chrome-top`, `--chrome-bottom`: docs/ios-shell.md, "Native chrome"), the page hides its own and becomes the card:
+ * its sidebar, the pull and peek handles, the card's corner pills, the header line and each app's own header (`data-chrome-header`) are not drawn; the shell's insets replace the safe areas and the bar height, so everything that pads itself by "safe area plus bar" lands
+ * below the native header and above the home indicator without a change in each screen; the card slides by the shell's drag progress (the native sidebar floats over the full-screen web view).
+ */
+html[data-native-chrome] { --safe-top: var(--chrome-top, env(safe-area-inset-top, 0px)); --safe-bottom: var(--chrome-bottom, env(safe-area-inset-bottom, 0px)); --bar-h: 0px; }
+html[data-native-chrome] .shell .side, html[data-native-chrome] .shell .peek, html[data-native-chrome] .shell .edge, html[data-native-chrome] .shell .hdr { display: none !important; }
+/* The floating model: the native sidebar floats over the full-screen web view, and the page moves its own card by the shell's drag progress (`--sidebar-p` 0 to 1, once per display frame, `--sidebar-w` points): no JS and no transition on the transform (the shell animates `p` itself; a transition would lag the finger). */
+html[data-native-chrome] .shell.narrow .mid { transform: translateX(calc(var(--sidebar-p, 0) * var(--sidebar-w, 0px))) !important; transition: none !important; scale: none !important; }
+html[data-native-chrome] .shell.narrow .mid .mid-card { border-radius: calc(var(--sidebar-p, 0) * var(--device-r, 0px)) !important; transition: none !important; }
+/* An app's own header line (the pills at the top of a thread, a note, a page) is the shell's header now. */
+html[data-native-chrome] [data-chrome-header] { display: none !important; }

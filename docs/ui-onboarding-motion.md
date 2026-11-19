@@ -9,6 +9,8 @@ Owner feedback: "the onboarding could use so much more interaction / animation /
 3. **One owner for the edge-swipe back: the page.** The page implements it (a left-edge drag of more than 24 px that follows the finger and commits past a third of the width or a fast flick, the same action as the chevron, absent on the first screen, using the shared press helpers); the native shell's own back gesture is turned off. The page tells the shell when it can go back (a message `canGoBack`), so the shell never has to guess.
 4. Haptics are requests to the shell (a `bridge.haptic(kind)` call that does nothing without the shell): `selection` when the traveller moves, `success` when a step completes, `error` when the info panel opens, `impact` on Start. Nothing is faked on the web.
 
+5. From the mobile-app-design collection (docs/native-feel.md, 19): the timing scale is the tokens (100 to 150, 200 to 300, 300 to 500 ms); **reduced motion is tiered**: slides become a fade of at most 120 ms, opacity, colour, focus rings and the busy ring stay, loops stop, and a script-driven animation listens to the media query's `change`; a pending button is `aria-disabled` and keeps focus; every gesture (the edge-swipe back, a drag) has a button (the chevron); the step heading takes focus and the "step N of M" status is read once; nothing animates a property other than transform or opacity.
+
 ## The idea
 
 The wordmark is the anchor and the stepper is a road. One accent dot (the traveller) is the person; it moves along the road as they go, and everything else responds to it: the wallpaper opens up a little with each step, the card breathes to the size of its content, and the last screen is the arrival.

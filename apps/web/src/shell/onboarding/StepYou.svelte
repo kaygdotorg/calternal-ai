@@ -104,6 +104,7 @@
   /* A screen of this step enters from the side the move came from (forward: from the right) over `--dur-base`, `--ease-out`; reduced motion: the tokens make it instant. */
   .sub { display: grid; gap: var(--s-5); animation: sub-in var(--dur-base) var(--ease-out) backwards; }
   @keyframes sub-in { from { opacity: 0; translate: calc(var(--dir, 1) * var(--s-5)) 0; } }
+  @media (prefers-reduced-motion: reduce) { .sub { animation: sub-fade 120ms linear backwards; } @keyframes sub-fade { from { opacity: 0; } } }
   .note { font-size: var(--text-label); color: var(--ink-3); }
   label { display: grid; gap: var(--s-2); font-size: var(--text-label); color: var(--ink-3); }
   small { font-size: var(--text-label); color: var(--ink-3); } small.err { color: var(--danger); }

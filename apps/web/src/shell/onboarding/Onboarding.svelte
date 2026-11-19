@@ -185,5 +185,10 @@
   .ready { display: flex; align-items: center; gap: var(--s-5); }
   .go { display: flex; gap: var(--s-4); }
   .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
-  @media (prefers-reduced-motion: reduce) { .mark, .steps li, .wrap :global(.card) { animation-delay: 0ms; } }
+  /* Reduced motion keeps a short fade and drops the slide (docs/native-feel.md, 19: movement becomes opacity, at most 120 ms); the arrival delays go. */
+  @media (prefers-reduced-motion: reduce) {
+    .mark, .steps li, .wrap :global(.card) { animation-delay: 0ms; }
+    .in, .in[data-phase="out"], .in[data-phase="pre"] { translate: 0 0 !important; transition-duration: 120ms !important; }
+    .bar :global(.bk) { animation-name: none; }
+  }
 </style>
