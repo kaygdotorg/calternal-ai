@@ -696,6 +696,8 @@ impl Content {
                 }
             }
             let response=result(&root.item);
+            let pool=s.group_storage.clone();
+            let prior=pool.as_ref().map(|_| crate::storage_usage::read(&s.conn)).transpose()?;
             let tx=s.conn.transaction_with_behavior(TransactionBehavior::Immediate).map_err(internal)?;
             root.write(&tx, old_path.as_deref(), &request.account.to_string())?;
             match destination {
@@ -719,7 +721,14 @@ impl Content {
             }
             #[cfg(feature = "perf-timings")]
             let commit = calternal_store::timings::SaveStage::ContentCommit.start();
-            tx.commit().map_err(internal)?;
+            if let (Some(pool), Some(prior)) = (&pool, prior) {
+                let pool = lock(pool);
+                let staged = crate::storage_usage::read(&tx)?;
+                pool.admit(&self.roots.appdata, space, prior, staged)?;
+                tx.commit().map_err(internal)?;
+            } else {
+                tx.commit().map_err(internal)?;
+            }
             #[cfg(feature = "perf-timings")]
             commit.finish();
             (self.fault)(FaultPoint::AfterCommit);

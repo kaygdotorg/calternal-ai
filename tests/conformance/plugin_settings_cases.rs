@@ -40,8 +40,8 @@ async fn badge(f: &Fixture, who: usize, space: &str, text: &str) {
     assert_eq!(result["view"]["source"], format!("Badge({})", json!(text)));
 }
 
-async fn install(f: &Fixture, space: &str) {
-    crate::owned_slot_cases::install(
+async fn install(f: &Fixture, space: &str) -> String {
+    let checksum = crate::owned_slot_cases::install(
         f,
         &source_root().join("tests/plugins/composer-settings"),
         space,
@@ -53,6 +53,7 @@ async fn install(f: &Fixture, space: &str) {
     )
     .await
     .ok();
+    checksum
 }
 
 #[tokio::test]
@@ -227,6 +228,189 @@ async fn a_damaged_file_holds_the_pending_edit_without_pausing_the_space() {
     assert_eq!(persisted["format"], "calternal-plugin-settings/v1");
     assert_eq!(persisted["settings"]["composer-settings/label"], "After");
     assert_eq!(persisted["future"], json!({"manual": true}));
+}
+
+#[tokio::test]
+async fn operator_binds_the_reviewed_fixture_to_hosted_admission() {
+    use crate::erasure_cases::{machine_admin, operator_admin};
+    use crate::requests_cases::Machine;
+
+    let f = Fixture::new().await;
+    let space = f.spaces[0].clone();
+    let checksum = install(&f, &space).await;
+    machine_admin(&f, &["pool-grant", &f.ids[1]]);
+    let code = machine_admin(&f, &["code", "--pool"]);
+    let mut machine = Machine::enroll_with_code(&f, code["code"].as_str().unwrap()).await;
+    let run = || {
+        f.req(
+            "POST",
+            "/api/v1/machines/runs",
+            Some(&f.cookies[1]),
+            json!({"space_id":space,"thread_id":uuid::Uuid::new_v4()}),
+            Some(ORIGIN),
+        )
+    };
+    // Capacity is published by a long poll. An unbound lease gives that poll
+    // a state transition to return, independent of request ordering.
+    let (messages, warm) = tokio::join!(machine.sync_with_slots(&f, json!([]), 8), run());
+    warm.ok();
+    assert!(messages.iter().any(|message| message["type"] == "assign"));
+    operator_admin(
+        &f,
+        "resources",
+        &["set-hook", &space, PLUGIN, "--checksum", &checksum],
+    );
+    let allowed = run().await;
+    allowed.ok();
+    assert_eq!(allowed.body["state"], "assigned", "{}", allowed.body);
+
+    f.op(
+        1,
+        "notes.create",
+        json!({"space_id":space,"title":"Fixture","markdown":"x"}),
+    )
+    .await
+    .ok();
+    let waiting = run().await;
+    waiting.ok();
+    assert_eq!(waiting.body["state"], "waiting");
+    assert_eq!(waiting.body["reason"], "Fixture is waiting");
+    let usage = data(
+        f.op(1, "composer-settings.usage", json!({"space_id":space}))
+            .await,
+    );
+    assert!(
+        usage["text_bytes"]
+            .as_str()
+            .unwrap()
+            .parse::<u64>()
+            .unwrap()
+            > 0
+    );
+
+    f.op(
+        1,
+        "notes.create",
+        json!({"space_id":space,"title":"Long fixture","markdown":"x".repeat(2048)}),
+    )
+    .await
+    .ok();
+    let refused = run().await;
+    refused.ok();
+    assert_eq!(refused.body["state"], "ended");
+    assert_eq!(refused.body["reason"], "Fixture byte ceiling reached");
+
+    operator_admin(&f, "resources", &["set-hook", &space]);
+    let view = f
+        .req(
+            "GET",
+            &format!(
+                "/api/v1/machines/runs/{}",
+                waiting.body["lease_id"].as_str().unwrap()
+            ),
+            Some(&f.cookies[1]),
+            json!({}),
+            Some(ORIGIN),
+        )
+        .await;
+    view.ok();
+    assert_eq!(view.body["state"], "assigned");
+}
+
+#[tokio::test]
+async fn package_state_acknowledges_a_commit_even_if_worker_output_is_invalid() {
+    let mut f = Fixture::new().await;
+    let space = f.spaces[0].clone();
+    install(&f, &space).await;
+    let input = json!({"space_id":space,"value":"saved"});
+    let saved = data(
+        f.op_id(1, "composer-settings.remember", input.clone(), "state-save")
+            .await,
+    );
+    assert_eq!(saved, json!({"revision":"1"}));
+    f.stop();
+    f.start().await;
+    let replay = data(
+        f.op_id(1, "composer-settings.remember", input, "state-save")
+            .await,
+    );
+    assert_eq!(replay, saved);
+    let mismatch = f
+        .op_id(
+            1,
+            "composer-settings.remember",
+            json!({"space_id":space,"value":"changed"}),
+            "state-save",
+        )
+        .await;
+    assert_eq!(mismatch.status, 409);
+    let record = data(
+        f.op(1, "composer-settings.saved", json!({"space_id":space}))
+            .await,
+    );
+    assert_eq!(record["state"]["value"], json!({"value":"saved"}));
+    assert_eq!(record["state"]["revision"], "1");
+}
+
+#[tokio::test]
+async fn an_operator_group_allocation_survives_restart_and_covers_both_spaces() {
+    use crate::erasure_cases::operator_admin;
+
+    let mut f = Fixture::new().await;
+    let group = data(
+        f.op(0, "groups.create", json!({"name":"Shared storage fixture"}))
+            .await,
+    );
+    let group = group["group_id"].as_str().unwrap();
+    let first = f.spaces[0].clone();
+    let second = f.spaces[2].clone();
+    let checksum = install(&f, &second).await;
+    let owner_usage = json!({"space_id":second,"scope":"owner"});
+    operator_admin(
+        &f,
+        "resources",
+        &["set-group-storage", group, "--text-bytes", "5"],
+    );
+    for space in [&first, &second] {
+        operator_admin(&f, "resources", &["set-group", space, group]);
+    }
+    f.op(
+        1,
+        "notes.create",
+        json!({"space_id":first,"title":"One","markdown":"abcd"}),
+    )
+    .await
+    .ok();
+    f.stop();
+    f.start().await;
+    let usage = f
+        .op(1, "composer-settings.usage", owner_usage.clone())
+        .await;
+    assert!(usage.status >= 400, "{}", usage.body);
+    operator_admin(
+        &f,
+        "resources",
+        &["set-hook", &second, PLUGIN, "--checksum", &checksum],
+    );
+    let group_usage = data(
+        f.op(1, "composer-settings.usage", owner_usage.clone())
+            .await,
+    );
+    assert_eq!(group_usage["text_bytes"], "4");
+    assert_eq!(group_usage["binary_bytes"], "0");
+    let space_usage = data(
+        f.op(1, "composer-settings.usage", json!({"space_id":second}))
+            .await,
+    );
+    assert_eq!(space_usage["text_bytes"], "0");
+    let input = json!({"space_id":second,"title":"Two","markdown":"xy"});
+    let refused = f.op(1, "notes.create", input.clone()).await;
+    assert_eq!(refused.status, 409, "{}", refused.body);
+    assert_eq!(refused.body["error"]["details"]["scope"], "group");
+    operator_admin(&f, "resources", &["set-group-storage", group]);
+    f.op(1, "notes.create", input).await.ok();
+    let group_usage = data(f.op(1, "composer-settings.usage", owner_usage).await);
+    assert_eq!(group_usage["text_bytes"], "6");
 }
 
 #[tokio::test]

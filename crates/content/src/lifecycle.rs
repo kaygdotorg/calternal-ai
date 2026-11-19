@@ -73,27 +73,30 @@ pub(crate) fn place_pending(slot: &Slot, fault: fn(crate::FaultPoint)) -> bool {
     })
 }
 
-/// Stops and joins the placement worker before its owner releases the stores.
+/// Owns the placement worker and drains its current pass before releasing stores.
 pub(crate) struct Sweeper {
     stop: Arc<AtomicBool>,
     worker: Option<std::thread::JoinHandle<()>>,
 }
 
 impl Sweeper {
-    /// Wake the placement worker after a commit. Cost: one thread notification.
+    /// Request a placement pass without waiting for disk I/O.
     pub(crate) fn unpark(&self) {
-        if let Some(worker) = &self.worker {
-            worker.thread().unpark();
-        }
+        self.worker
+            .as_ref()
+            .expect("live sweeper")
+            .thread()
+            .unpark();
     }
 }
 
 impl Drop for Sweeper {
     fn drop(&mut self) {
         self.stop.store(true, Ordering::Release);
-        if let Some(worker) = self.worker.take() {
-            worker.thread().unpark();
-            let _ = worker.join();
+        let worker = self.worker.take().expect("live sweeper");
+        worker.thread().unpark();
+        if worker.join().is_err() {
+            tracing::error!("content placement worker panicked during shutdown");
         }
     }
 }
@@ -110,17 +113,17 @@ pub(crate) fn spawn_sweeper(
     idle: Duration,
     fault: fn(crate::FaultPoint),
 ) -> Result<Sweeper> {
-    let stop = Arc::new(AtomicBool::new(false));
-    let shutdown = stop.clone();
     let weak = Arc::downgrade(spaces);
     let root_guard = Arc::downgrade(root_guard);
+    let stop = Arc::new(AtomicBool::new(false));
+    let stopping = stop.clone();
     let worker = std::thread::Builder::new()
         .name("content-sweep".into())
         .spawn(move || {
             let mut wait = Duration::from_secs(30);
             loop {
                 std::thread::park_timeout(wait);
-                if shutdown.load(Ordering::Acquire) {
+                if stopping.load(Ordering::Acquire) {
                     return;
                 }
                 wait = Duration::from_secs(30);
@@ -135,6 +138,9 @@ pub(crate) fn spawn_sweeper(
                     .map(|(id, slot)| (*id, slot.clone()))
                     .collect();
                 for (id, slot) in slots {
+                    if stopping.load(Ordering::Acquire) {
+                        return;
+                    }
                     if let Ok(_step) = lifecycle.step(id.as_uuid())
                         && place_pending(&slot, fault)
                     {

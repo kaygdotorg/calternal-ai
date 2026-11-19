@@ -104,6 +104,8 @@ fn exercise_stop(completion: Completion) {
         .unwrap();
     let token = connect(&service, machine, &key);
     let mut report = SyncRequest {
+        guest_resources: Vec::new(),
+        guest_runtime: Vec::new(),
         ack: 0,
         discards: vec![],
         capacity: Capacity {

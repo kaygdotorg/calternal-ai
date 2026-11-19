@@ -24,7 +24,7 @@
 //! (start a new one), 403 means the machine is revoked (stop everything and exit),
 //! 409 means a lease is fenced (stop that sandbox), 404 an unknown code or lease.
 
-use calternal_types::{AccountId, SpaceId};
+use calternal_types::{AccountId, ResourceOwner, SpaceId};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -164,17 +164,15 @@ pub const MIN_SANDBOX_MEMORY_BYTES: u64 = 2 << 30;
 /// Supported account guest sizing and its usable memory for turns.
 #[derive(Clone, Copy, Debug)]
 pub struct GuestSize {
-    /// Configured RAM, in MiB.
+    /// Configured RAM in MiB.
     pub memory_mib: u32,
 }
 
 impl GuestSize {
-    /// Resolve a configured RAM value against the supported size profiles.
+    /// Validate the operator configuration's RAM size in MiB.
     pub fn from_mib(memory_mib: u32) -> Option<Self> {
-        match memory_mib {
-            512 | 1024 | 2048 | 4096 | 8192 => Some(Self { memory_mib }),
-            _ => None,
-        }
+        ((512..=65_536).contains(&memory_mib) && memory_mib.is_multiple_of(256))
+            .then_some(Self { memory_mib })
     }
 
     /// Host admission reservation, in bytes. Cost: one multiplication.
@@ -234,6 +232,9 @@ pub struct SessionGranted {
     pub lease_ttl_ms: u64,
     /// The longest the server holds a `sync` request open.
     pub poll_hold_ms: u64,
+    /// The server accepts resource observations from this machine.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub guest_resources: bool,
 }
 
 /// Machine capacity. Placement accounts for both held machine slots and the
@@ -284,6 +285,71 @@ pub struct LeaseReport {
     pub sandbox: SandboxState,
 }
 
+/// Maximum managed guests whose resource observations fit in one poll.
+pub const MAX_GUEST_RESOURCES: usize = 64;
+
+/// A resource sample from one bound account guest.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GuestResources {
+    /// Account whose guest disk is bound to this generation.
+    pub account_id: AccountId,
+    /// Unique Firecracker boot instance. A warm guest starts reporting when bound.
+    pub generation: Uuid,
+    /// Guest kernel's estimate of memory available without swapping.
+    pub memory_available_bytes: u64,
+    /// Live thread containers inside the guest at sampling time.
+    pub active_threads: u32,
+    /// Charging scope pinned to this bound guest generation, if configured.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resource_owner: Option<ResourceOwner>,
+}
+
+/// Fence of the lease that first bound a guest to its charging scope.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ResourceAssignment {
+    /// Durable lease receiving the assignment.
+    pub lease_id: Uuid,
+    /// Fence carried by the server's assignment.
+    pub fence: u64,
+}
+
+/// Whether the machine can attest to the end of a measured interval.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RuntimeState {
+    /// Guest was running when it was sampled.
+    Running,
+    /// A machine-managed shutdown completed and its final sample is durable.
+    Stopped,
+    /// The last known sample is durable, but the source cannot attest to the end.
+    Unknown,
+}
+
+/// An idempotent cumulative observation from a bound guest generation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GuestRuntime {
+    /// Account whose guest is measured.
+    pub account_id: AccountId,
+    /// Unique instance of a bound guest.
+    pub generation: Uuid,
+    /// Protected scope pinned by the first assignment, when configured.
+    pub resource_owner: Option<ResourceOwner>,
+    /// Fenced assignment the recipient must validate before accepting a new generation.
+    pub assignment: ResourceAssignment,
+    /// UTC Unix milliseconds at the monotonic clock's start, for period bucketing.
+    pub started_at_ms: i64,
+    /// Cumulative nanoseconds measured while the guest was running.
+    pub running_ns: u64,
+    /// Evidence available for this observation.
+    pub state: RuntimeState,
+}
+
+/// Maximum runtime samples in one signed machine poll.
+pub const MAX_GUEST_RUNTIME: usize = 128;
+
 /// Long-poll request: acknowledge received messages and report state.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -300,6 +366,12 @@ pub struct SyncRequest {
     pub draining: bool,
     /// Every lease the machine holds.
     pub leases: Vec<LeaseReport>,
+    /// Resource observations, at most one authenticated sample per bound guest.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub guest_resources: Vec<GuestResources>,
+    /// Durable cumulative clock observations.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub guest_runtime: Vec<GuestRuntime>,
 }
 
 /// Maximum retained owner erasures delivered alongside regular discards per sync.
@@ -416,6 +488,15 @@ pub struct SandboxSpec {
     pub worker: Option<PluginWorker>,
     /// Resource limits.
     pub limits: Limits,
+    /// Charging scope selected by the server for this hosted guest.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resource_owner: Option<ResourceOwner>,
+    /// Explicit idle timeout for the hosted guest, in seconds.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub guest_idle_seconds: Option<u32>,
+    /// Set by the runner from the authenticated enclosing assignment.
+    #[serde(skip)]
+    pub resource_assignment: Option<ResourceAssignment>,
 }
 
 /// Owner of a provider login. Distinct from the person who requested a turn

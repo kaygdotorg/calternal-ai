@@ -30,6 +30,9 @@ fn mem_available() -> u64 {
 
 fn spec() -> SandboxSpec {
     SandboxSpec {
+        resource_owner: None,
+        guest_idle_seconds: None,
+        resource_assignment: None,
         space_id: Some(SpaceId::new()),
         provider_login: false,
         shared_provider_sponsor: None,

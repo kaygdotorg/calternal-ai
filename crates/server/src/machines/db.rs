@@ -12,7 +12,7 @@
 use std::path::Path;
 use std::time::Duration;
 
-use calternal_auth::machines::MachineRecord;
+use calternal_auth::machines::{MachineRecord, ResourceOwner};
 use calternal_machine::protocol::Owner;
 use calternal_types::{AccountId, SpaceId};
 use rusqlite::{Connection, OptionalExtension, params};
@@ -204,6 +204,8 @@ pub struct LeaseRow {
     pub space: SpaceId,
     /// Account the work runs for.
     pub account: AccountId,
+    /// Protected charging scope pinned for this lease.
+    pub resource_owner: Option<ResourceOwner>,
     /// Space Owner sponsoring a shared lease. The actor remains in account.
     pub shared_sponsor: Option<AccountId>,
     /// Fenced tool scope for an opted-in shared lease.
@@ -274,6 +276,21 @@ pub fn put_lease(c: &Connection, l: &LeaseRow) -> rusqlite::Result<()> {
     Ok(())
 }
 
+/// Insert a lease and its protected resource scope in one FULL commit.
+pub(super) fn put_scoped_lease(c: &mut Connection, row: &LeaseRow) -> rusqlite::Result<()> {
+    let Some(owner) = row.resource_owner else {
+        return put_lease(c, row);
+    };
+    let (kind, id) = super::compute::encode(owner);
+    let tx = c.transaction()?;
+    put_lease(&tx, row)?;
+    tx.execute(
+        "INSERT INTO lease_resource_owners VALUES(?1,?2,?3)",
+        params![row.id.to_string(), kind, id],
+    )?;
+    tx.commit()
+}
+
 /// Insert a private title lease and its classification in one FULL commit.
 pub(super) fn put_title(c: &mut Connection, row: &LeaseRow) -> rusqlite::Result<()> {
     let tx = c.transaction()?;
@@ -284,9 +301,22 @@ pub(super) fn put_title(c: &mut Connection, row: &LeaseRow) -> rusqlite::Result<
 
 /// Commit placement and both erasure locations before sending an assignment.
 /// The location rows outlive timed lease pruning. One FULL transaction.
-pub(super) fn put_assignment(c: &mut Connection, row: &LeaseRow) -> rusqlite::Result<()> {
+pub(super) fn put_assignment(
+    c: &mut Connection,
+    row: &LeaseRow,
+    hosted: bool,
+) -> rusqlite::Result<()> {
     let tx = c.transaction()?;
     put_lease(&tx, row)?;
+    if hosted
+        && row.resource_owner.is_some()
+        && let Some(machine) = row.machine
+    {
+        tx.execute(
+            "INSERT INTO resource_assignments VALUES(?1,?2,?3)",
+            params![row.id.to_string(), row.fence as i64, machine.to_string()],
+        )?;
+    }
     if let Some(machine) = row.machine.filter(|_| !row.worker && !row.background_title) {
         let machine = machine.to_string();
         let account = row.account.to_string();
@@ -324,6 +354,11 @@ fn lease_from(r: &rusqlite::Row<'_>) -> rusqlite::Result<LeaseRow> {
         id: uuid(r.get(0)?).unwrap_or_default(),
         space: typed(1, r.get(1)?)?,
         account: typed(2, r.get(2)?)?,
+        resource_owner: if r.get::<_, Option<String>>(14)?.is_some() {
+            Some(super::compute::decode(r, 14, 15)?)
+        } else {
+            None
+        },
         thread: uuid(r.get(3)?).unwrap_or_default(),
         image: r.get(4)?,
         worker: r.get::<_, bool>(11)? && !background_title,
@@ -336,21 +371,6 @@ fn lease_from(r: &rusqlite::Row<'_>) -> rusqlite::Result<LeaseRow> {
         pinned_machine: uuid(r.get(12)?),
         background_title,
         harness: r
-            .get::<_, Option<String>>(14)?
-            .map(|value| serde_json::from_str(&value))
-            .transpose()
-            .map_err(|error| {
-                rusqlite::Error::FromSqlConversionFailure(
-                    14,
-                    rusqlite::types::Type::Text,
-                    Box::new(error),
-                )
-            })?,
-        shared_sponsor: r
-            .get::<_, Option<String>>(15)?
-            .map(|id| typed(15, id))
-            .transpose()?,
-        shared_tools: r
             .get::<_, Option<String>>(16)?
             .map(|value| serde_json::from_str(&value))
             .transpose()
@@ -361,10 +381,27 @@ fn lease_from(r: &rusqlite::Row<'_>) -> rusqlite::Result<LeaseRow> {
                     Box::new(error),
                 )
             })?,
+        shared_sponsor: r
+            .get::<_, Option<String>>(17)?
+            .map(|id| typed(17, id))
+            .transpose()?,
+        shared_tools: r
+            .get::<_, Option<String>>(18)?
+            .map(|value| serde_json::from_str(&value))
+            .transpose()
+            .map_err(|error| {
+                rusqlite::Error::FromSqlConversionFailure(
+                    18,
+                    rusqlite::types::Type::Text,
+                    Box::new(error),
+                )
+            })?,
     })
 }
 
-const LEASE_COLUMNS: &str = "id, space, account, thread, image, machine, last_machine, fence, state, reason, created_ms, worker, pinned_machine, EXISTS(SELECT 1 FROM title_leases WHERE lease=leases.id), harness, shared_sponsor, shared_tools";
+const LEASE_COLUMNS: &str = "id, space, account, thread, image, machine, last_machine, fence, state, reason, created_ms, worker, pinned_machine, EXISTS(SELECT 1 FROM title_leases WHERE lease=leases.id),
+ (SELECT scope_kind FROM lease_resource_owners WHERE lease=leases.id),
+ (SELECT scope_id FROM lease_resource_owners WHERE lease=leases.id), harness, shared_sponsor, shared_tools";
 
 /// Leases that have not ended, oldest first.
 pub fn active_leases(c: &Connection) -> rusqlite::Result<Vec<LeaseRow>> {
@@ -439,33 +476,42 @@ pub(crate) fn last_thread_machine(
 const ADD_HARNESS: &str =
     "ALTER TABLE leases ADD COLUMN harness TEXT CHECK (harness IS NULL OR json_valid(harness));";
 
+const MACHINE_CHANGES: &[(i64, &str)] = &[
+    (7, TITLE_LEASES),
+    (8, ADD_HARNESS),
+    (9, SPACE_EXECUTION),
+    (
+        10,
+        concat!(
+            include_str!("compute_limits.sql"),
+            include_str!("group_storage.sql"),
+            include_str!("resource_hooks.sql"),
+        ),
+    ),
+    (11, super::runtime::MIGRATION),
+];
+
 /// Return the machine registry schema shared by normal startup and upgrade admission.
 /// Baseline 6 is the first production schema, including durable erased-worker stops.
 pub(crate) fn upgrade_schema() -> calternal_store::migrations::Schema<'static> {
     use calternal_store::migrations::Schema;
 
-    const TITLES: (i64, &str) = (7, TITLE_LEASES);
-    const HARNESS: (i64, &str) = (8, ADD_HARNESS);
-    const SHARED: (i64, &str) = (9, SPACE_EXECUTION);
-    const CURRENT: Schema<'static> =
-        Schema::new("machines.db", 6, &[SCHEMA], &[TITLES, HARNESS, SHARED]);
+    const CURRENT: Schema<'static> = Schema::new("machines.db", 6, &[SCHEMA], MACHINE_CHANGES);
     #[cfg(feature = "test-plugins")]
     if option_env!("CALTERNAL_RELEASE_TEST_MIGRATION") == Some("v7") {
-        const FIXTURE: Schema<'static> = Schema::new(
-            "machines.db",
-            6,
-            &[SCHEMA],
-            &[
-                TITLES,
-                HARNESS,
-                SHARED,
-                (
-                    10,
-                    "CREATE TABLE upgrade_fixture (id INTEGER PRIMARY KEY) STRICT;",
-                ),
-            ],
-        )
-        .with_compatible_creation(8);
+        const FIXTURE_CHANGES: &[(i64, &str)] = &[
+            MACHINE_CHANGES[0],
+            MACHINE_CHANGES[1],
+            MACHINE_CHANGES[2],
+            MACHINE_CHANGES[3],
+            MACHINE_CHANGES[4],
+            (
+                12,
+                "CREATE TABLE upgrade_fixture (id INTEGER PRIMARY KEY) STRICT;",
+            ),
+        ];
+        const FIXTURE: Schema<'static> =
+            Schema::new("machines.db", 6, &[SCHEMA], FIXTURE_CHANGES).with_compatible_creation(8);
         return FIXTURE;
     }
     CURRENT
@@ -475,6 +521,87 @@ pub(crate) fn upgrade_schema() -> calternal_store::migrations::Schema<'static> {
 mod tests {
     use super::*;
     use calternal_store::migrations::{Schema, migrate_release};
+
+    fn through(version: usize) -> Schema<'static> {
+        Schema::new("machines.db", 6, &[SCHEMA], &MACHINE_CHANGES[..version - 6])
+    }
+
+    #[test]
+    fn compute_policy_migration_keeps_existing_leases_unassigned_to_resource_owners() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate_release(&conn, through(9), false).unwrap();
+        let existing = LeaseRow {
+            id: Uuid::new_v4(),
+            space: SpaceId::new(),
+            account: AccountId::new(),
+            resource_owner: None,
+            shared_sponsor: None,
+            shared_tools: None,
+            thread: Uuid::new_v4(),
+            worker: false,
+            background_title: false,
+            image: None,
+            harness: None,
+            machine: None,
+            last_machine: None,
+            pinned_machine: None,
+            fence: 0,
+            state: "waiting".into(),
+            reason: None,
+            created_ms: 1,
+        };
+        put_lease(&conn, &existing).unwrap();
+        migrate_release(&conn, through(10), true).unwrap();
+        assert_eq!(
+            calternal_store::migrations::inspect(&conn, through(9)).unwrap(),
+            10
+        );
+        assert_eq!(
+            lease(&conn, existing.id).unwrap().unwrap().resource_owner,
+            None
+        );
+        conn.execute(
+            "INSERT INTO space_resource_groups VALUES(?1,?2)",
+            params![existing.space.to_string(), uuid::Uuid::now_v7().to_string()],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO group_storage_limits VALUES('group',10,20,NULL)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO resource_hooks VALUES(?1,'community.fixture',?2,NULL)",
+            params![existing.space.to_string(), "a".repeat(64)],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn runtime_migration_preserves_configured_scope_and_starts_with_no_charges() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate_release(&conn, through(10), false).unwrap();
+        conn.execute(
+            "INSERT INTO space_resource_groups VALUES('space','group')",
+            [],
+        )
+        .unwrap();
+        migrate_release(&conn, through(11), true).unwrap();
+        assert_eq!(
+            calternal_store::migrations::inspect(&conn, through(10)).unwrap(),
+            11
+        );
+        let group: String = conn
+            .query_row("SELECT group_id FROM space_resource_groups", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        let clocks: i64 = conn
+            .query_row("SELECT count(*) FROM guest_runtime", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(group, "group");
+        assert_eq!(clocks, 0);
+    }
 
     #[test]
     fn shared_execution_migrates_from_harness_leases() {
@@ -493,11 +620,12 @@ mod tests {
             "INSERT INTO leases (id, space, account, thread, fence, state, created_ms, updated_ms, worker) VALUES (?1, ?2, ?3, ?4, 0, 'waiting', 1, 1, 0)",
             params![lease.to_string(), space.to_string(), actor.to_string(), Uuid::new_v4().to_string()],
         ).unwrap();
-        migrate_release(&conn, upgrade_schema(), true).unwrap();
+        migrate_release(&conn, through(9), true).unwrap();
         assert_eq!(
             calternal_store::migrations::inspect(&conn, previous).unwrap(),
-            upgrade_schema().version()
+            9
         );
+        migrate_release(&conn, through(10), true).unwrap();
         assert_eq!(
             super::lease(&conn, lease).unwrap().unwrap().shared_sponsor,
             None
@@ -534,7 +662,12 @@ mod tests {
         )
         .unwrap();
 
-        migrate_release(&conn, upgrade_schema(), true).unwrap();
+        migrate_release(&conn, through(8), true).unwrap();
+        assert_eq!(
+            calternal_store::migrations::inspect(&conn, through(7)).unwrap(),
+            8
+        );
+        migrate_release(&conn, through(10), true).unwrap();
         let prior = lease(&conn, id).unwrap().unwrap();
         assert_eq!(prior.fence, 11);
         assert_eq!(prior.image.as_deref(), Some("fixture-image"));
@@ -569,6 +702,7 @@ mod tests {
             id: Uuid::new_v4(),
             space: SpaceId::new(),
             account: AccountId::new(),
+            resource_owner: None,
             shared_sponsor: None,
             shared_tools: None,
             thread: Uuid::new_v4(),

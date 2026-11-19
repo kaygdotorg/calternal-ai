@@ -38,6 +38,7 @@ pub(super) async fn verify(
 #[derive(Serialize, Deserialize)]
 pub(super) enum Request {
     Ready,
+    Observe,
     Start(SpaceId, SandboxSpec),
     StartHarness(SpaceId, SandboxSpec, crate::protocol::HarnessSandbox),
     Discard(Uuid, Uuid),
@@ -51,6 +52,10 @@ pub(super) enum Request {
 pub(super) enum Response {
     Ready,
     Error,
+    Resources {
+        memory_available_bytes: u64,
+        active_threads: u32,
+    },
     Output(ChunkEvent),
 }
 

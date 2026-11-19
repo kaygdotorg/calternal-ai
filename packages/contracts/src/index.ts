@@ -248,12 +248,12 @@ bookmark: string, } } | { "Ready": {
  */
 bookmark: string, } } | "ReadinessChanged" | "Reset";
 /**
- * The enrollment command and the deadline for redeeming its one-time code.
+ * The enrollment script and the deadline for redeeming its one-time code.
  */
 
 export type MachineInstallResult = {
 /**
- * One-line shell command containing the private enrollment code.
+ * Readable shell script containing the private enrollment code.
  */
 script: string,
 /**
@@ -828,7 +828,7 @@ export type ManifestCapability = "space.read" | "content.write" | "plugins.use" 
  * The only broker methods a worker may request.
  */
 
-export type HostCallKind = "read_item" | "list_items_v1" | "read_setting_v1" | "content_prepare_v1" | "mail_v1" | "write_item" | "list_collection" | "emit_event" | "start_job" | "checkpoint_job" | "request_secret_handle";
+export type HostCallKind = "read_item" | "list_items_v1" | "read_setting_v1" | "read_space_usage_v1" | "read_runtime_window_v1" | "read_plugin_state_v1" | "cas_plugin_state_v1" | "content_prepare_v1" | "write_item" | "list_collection" | "emit_event" | "start_job" | "checkpoint_job" | "request_secret_handle";
 /**
  * Version-one worker request for an indexed page of its own kind.
  */
@@ -2245,7 +2245,7 @@ preference: ContentFetchPreference, };
  * Stored source fields supported by the content proxy.
  */
 
-export type ContentFetchField = "text" | "mail_html";
+export type ContentFetchField = "text";
 /**
  * A stored field the broker may read to derive proxy references.
  */
@@ -2301,7 +2301,7 @@ export type ManifestContentFetch = {
  */
 profile: ContentFetchProfile,
 /**
- * Up to 32 distinct supported sources owned by the declaring package.
+ * Up to 32 distinct text sources owned by the declaring package.
  */
 sources: Array<ContentFetchSource>, };
 /**
@@ -2313,11 +2313,7 @@ export type ManifestNetwork = {
 /**
  * Anonymous remote assets from stored content. Omit for no proxy access.
  */
-content_fetch?: ManifestContentFetch,
-/**
- * Name of this package's built-in, personal-space IMAPS connection.
- */
-mail_connection?: string, };
+content_fetch?: ManifestContentFetch, };
 /**
  * Plugin menu read without running plugin code. Only documented optional
  * fields may be omitted.

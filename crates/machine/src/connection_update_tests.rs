@@ -127,6 +127,7 @@ async fn waits_for_the_turn_and_server_ack_before_replacing_the_program() {
     let mut release_ready = release_ready;
     let ready = Ready::default();
     let mut ack = 0;
+    let mut guest_reporting = false;
     let result = tokio::time::timeout(
         Duration::from_secs(10),
         session_loop(
@@ -136,6 +137,7 @@ async fn waits_for_the_turn_and_server_ack_before_replacing_the_program() {
             Uuid::new_v4(),
             &ready,
             &mut ack,
+            &mut guest_reporting,
             &mut release_ready,
         ),
     )

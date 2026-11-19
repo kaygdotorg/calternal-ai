@@ -476,8 +476,12 @@ async fn space_erasure_removes_all_owned_roots_and_stays_absent_after_restart() 
 }
 
 pub(super) fn machine_admin(f: &Fixture, args: &[&str]) -> Value {
+    operator_admin(f, "machines", args)
+}
+
+pub(super) fn operator_admin(f: &Fixture, command: &str, args: &[&str]) -> Value {
     let result = Command::new(std::env::var_os("CALTERNAL_SERVER_BIN").unwrap())
-        .args(["--json", "machines"])
+        .args(["--json", command])
         .args(args)
         .arg("--appdata")
         .arg(f.appdata())
