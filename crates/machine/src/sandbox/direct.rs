@@ -198,10 +198,6 @@ impl Sandbox for DirectSandbox {
             let mut paths = vec![self.home.join(".local/bin")];
             if let Some(dir) = &self.cli_dir {
                 paths.push(dir.clone());
-            } else if let Some(exe) = super::cli_program().await
-                && let Some(parent) = exe.parent()
-            {
-                paths.push(parent.to_path_buf());
             }
             paths.extend(std::env::split_paths(
                 &std::env::var_os("PATH").unwrap_or_else(|| "/usr/bin:/bin".into()),

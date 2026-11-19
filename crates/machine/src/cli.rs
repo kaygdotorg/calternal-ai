@@ -461,21 +461,22 @@ async fn run(cmd: Command) -> Result<Reply, CliError> {
         } => {
             let dir = dir.unwrap_or_else(connection::default_dir);
             let root = dir.join("sandboxes");
-            let cli_alias = if matches!(backend, BackendKind::Auto | BackendKind::Direct) {
-                tokio::task::spawn_blocking(direct_cli_alias)
-                    .await
-                    .ok()
-                    .and_then(Result::ok)
-                    .ok_or_else(|| {
+            let (cli_dir, _cli_alias) = if matches!(
+                backend,
+                BackendKind::Auto | BackendKind::Direct
+            ) {
+                let (path, alias) = tokio::task::spawn_blocking(direct_cli_dir).await.map_err(
+                    |_| {
                         CliError::new(
                             "unavailable",
-                            "Could not expose the operation CLI to Direct turns.",
+                            "Could not look up the running machine executable for Direct turns.",
                         )
-                    })?
+                    },
+                )??;
+                (Some(path), alias)
             } else {
-                None
+                (None, None)
             };
-            let cli_dir = cli_alias.as_ref().map(|alias| alias.path().to_path_buf());
             let backend: Arc<dyn Backend> = match backend {
                 BackendKind::Auto => Arc::new(
                     crate::sandbox::configured::ConfiguredBackend::new(root, podman, image)
@@ -540,22 +541,47 @@ async fn run(cmd: Command) -> Result<Reply, CliError> {
     }
 }
 
-/// Install a process-lifetime CLI alias only when the machine executable is
-/// renamed. Cost: one executable lookup and, when needed, one private temporary
-/// directory and symlink. Call from a blocking task.
-fn direct_cli_alias() -> std::io::Result<Option<tempfile::TempDir>> {
-    let executable = std::env::current_exe()?;
+/// Make the running executable available as `calternal` in Direct turns.
+/// Cost: one executable lookup and stat, plus a private temporary directory
+/// and symlink if renamed. Call from a blocking task.
+fn direct_cli_dir() -> Result<(PathBuf, Option<tempfile::TempDir>), CliError> {
+    let executable = std::env::current_exe().map_err(|error| {
+        CliError::new(
+            "unavailable",
+            format!("Could not find the running machine executable for Direct turns: {error}."),
+        )
+    })?;
+    let invalid = |detail| {
+        CliError::new(
+            "unavailable",
+            format!(
+                "Could not provide 'calternal' for Direct turns using {}: {detail}.",
+                executable.display()
+            ),
+        )
+    };
+    if !std::fs::metadata(&executable)
+        .map_err(|error| invalid(error.to_string()))?
+        .is_file()
+    {
+        return Err(invalid("the executable path is not a file".into()));
+    }
     if executable
         .file_name()
         .is_some_and(|name| name == "calternal")
     {
-        return Ok(None);
+        let parent = executable
+            .parent()
+            .ok_or_else(|| invalid("the executable has no parent directory".into()))?;
+        return Ok((parent.to_owned(), None));
     }
-    let dir = tempfile::Builder::new()
+    let alias = tempfile::Builder::new()
         .prefix("calternal-cli-")
-        .tempdir()?;
-    std::os::unix::fs::symlink(executable, dir.path().join("calternal"))?;
-    Ok(Some(dir))
+        .tempdir()
+        .map_err(|error| invalid(error.to_string()))?;
+    std::os::unix::fs::symlink(&executable, alias.path().join("calternal"))
+        .map_err(|error| invalid(error.to_string()))?;
+    Ok((alias.path().to_owned(), Some(alias)))
 }
 
 async fn microvm(root: PathBuf, config: Option<PathBuf>) -> Result<Arc<dyn Backend>, CliError> {
