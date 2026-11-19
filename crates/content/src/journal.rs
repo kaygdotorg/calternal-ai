@@ -76,12 +76,11 @@ impl Journals {
     ) -> Result<SpaceStore> {
         let dir = self.appdata.join("spaces").join(space.to_string());
         calternal_fsio::private::directory(&dir).map_err(internal)?;
-        calternal_fsio::private::file(&dir.join("index.db")).map_err(internal)?;
         calternal_fsio::private::directory(&self.secrets.join("spaces").join(space.to_string()))
             .map_err(internal)?;
         let store = self
-            .run(SpaceStore::open_with(
-                &self.appdata,
+            .run(SpaceStore::open_colocated(
+                &crate::db::space_path(&self.appdata, space),
                 space,
                 &self.secrets,
                 self.options,
@@ -123,8 +122,9 @@ impl Journals {
     /// durably, in one transaction. A different operation or input under the same
     /// request ID is a conflict; a matching one is already recorded and durable.
     /// Pruning retains the receipt while a durable outbox intent can replay it.
-    /// Cost: one indexed read and, when new, one FULL writer transaction (one WAL
-    /// fsync) on the space's writer thread.
+    /// Cost: one indexed read and one writer transaction for a new event.
+    /// A NORMAL publication requires a FULL intent in the same WAL, retained
+    /// until a later durable transaction covers both the receipt and retirement.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn publish(
         &self,
@@ -137,6 +137,7 @@ impl Journals {
         item: Option<Uuid>,
         revision: &str,
         result: Value,
+        durable: bool,
     ) -> Result<()> {
         self.run(async {
             if let Some(prior) = store.idempotency(account, id).await.map_err(internal)? {
@@ -182,7 +183,7 @@ impl Journals {
                         payload_hash: fingerprint.to_owned(),
                         result: serde_json::json!({ "payload": result, "content_item": item }),
                     }),
-                    durable: true,
+                    durable,
                 })
                 .await
                 .map_err(|e| {

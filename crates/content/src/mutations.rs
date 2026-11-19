@@ -192,6 +192,7 @@ impl Content {
                     None,
                     "control",
                     result.clone(),
+                    true,
                 )?;
             }
             Ok(result)
@@ -227,6 +228,7 @@ impl Content {
                 None,
                 "control",
                 response.clone(),
+                true,
             )?;
             Ok(response)
         })

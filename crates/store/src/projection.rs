@@ -23,7 +23,7 @@ impl ProjectionJournal {
         let path = appdata
             .join("spaces")
             .join(space.to_string())
-            .join("index.db");
+            .join("content.db");
         if !path.is_file() {
             return Ok(None);
         }
@@ -36,7 +36,8 @@ impl ProjectionJournal {
             })
             .optional()
             .map_err(Error::internal)?;
-        if binding.as_deref() != Some(space.to_string().as_str()) {
+        let Some(binding) = binding else { return Ok(None) };
+        if binding != space.to_string() {
             return Err(Error::new(
                 ErrorCode::InvalidInput,
                 "journal belongs to another space",

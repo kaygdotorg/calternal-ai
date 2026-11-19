@@ -134,9 +134,21 @@ impl Content {
         request: Request<'_>,
         receipt: impl FnOnce(&str) -> Value,
     ) -> Result<String> {
+        self.append_thread_record_with(space, id, base, metadata, record, request, receipt, |_, _| Ok(()))
+    }
+
+    /// Append with a host-owned mutation in the same FULL space WAL commit.
+    /// The callback may only use the supplied transaction and sequence. Its
+    /// effects must be safe before placement, or fenced until journal publication.
+    #[allow(clippy::too_many_arguments)]
+    pub fn append_thread_record_with(
+        &self, space: SpaceId, id: Uuid, base: &str, metadata: Value, record: &[u8],
+        request: Request<'_>, receipt: impl FnOnce(&str) -> Value,
+        stage: impl FnOnce(&rusqlite::Transaction<'_>, i64) -> Result<()>,
+    ) -> Result<String> {
         let _actor = self.lifecycle.step(request.account.as_uuid())?;
         let (revision, deadline) =
-            self.stage_thread_record(space, id, base, metadata, record, request, receipt)?;
+            self.stage_thread_record(space, id, base, metadata, record, request, receipt, stage)?;
         // Give another prepared checkpoint a bounded chance to join this file
         // barrier. No space lock or async executor thread is held while waiting.
         if let Some(delay) = deadline.checked_duration_since(Instant::now()) {
@@ -161,6 +173,7 @@ impl Content {
         record: &[u8],
         request: Request<'_>,
         receipt: impl FnOnce(&str) -> Value,
+        stage: impl FnOnce(&rusqlite::Transaction<'_>, i64) -> Result<()>,
     ) -> Result<(String, Instant)> {
         if record.is_empty() || record.len() > RECORD_BYTES || !record.ends_with(b"\n") {
             return Err(Error::invalid_input(
@@ -228,12 +241,14 @@ impl Content {
             ).map_err(internal)?;
             staged.outbox(&tx, request, &receipt(&revision))?;
             staged.require_placement(&tx, request)?;
+            stage(&tx, seq)?;
             if cutoff > 0 {
                 tx.execute("DELETE FROM outbox WHERE rowid<=?1", [cutoff])
                     .map_err(internal)?;
             }
             #[cfg(feature = "perf-timings")]
             let commit = calternal_store::timings::SaveStage::ContentCommit.start();
+            (self.fault)(FaultPoint::BeforeThreadAppendCommit);
             tx.commit().map_err(internal)?;
             #[cfg(feature = "perf-timings")]
             commit.finish();

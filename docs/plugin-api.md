@@ -150,7 +150,7 @@ Inbox answer, an approval, a webhook delivery or its deadline. The
 worker invocation ends while the job waits. Interactive operations
 return a job ID from the existing `start_job` broker call to use waits.
 
-Park, cancellation and delivery use the same jobs.db connection and
+Park, cancellation and delivery use the same content.db connection and
 state fence. The first signal commits with the transition to admitted
 and, for Inbox decisions and webhooks, with the replay receipt.
 Duplicate deliveries cannot win the same wait again. The normal job

@@ -613,7 +613,7 @@ fn dormant_outbox_recovery_preserves_the_original_checkpoint_event() {
     drop(db);
     drop(journal);
     drop(content);
-    let db = rusqlite::Connection::open(space_root.join("index.db")).unwrap();
+    let db = rusqlite::Connection::open(space_root.join("content.db")).unwrap();
     db.execute("UPDATE idempotency SET at_ms=0", []).unwrap();
     drop(db);
     let recovered = open(root.path(), |_| {});

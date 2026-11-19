@@ -338,7 +338,7 @@ const scenarioFile="#);
 }
 
 fn expedite(data: &Path, space: &str, id: &str) {
-    let c = rusqlite::Connection::open(data.join("appdata/spaces").join(space).join("jobs.db"))
+    let c = rusqlite::Connection::open(data.join("appdata/spaces").join(space).join("content.db"))
         .unwrap();
     c.execute(
         "UPDATE jobs SET checkpoint=json_set(checkpoint,'$.retry.next_attempt_ms',0) WHERE id=?1",

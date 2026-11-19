@@ -8,6 +8,8 @@ pub enum FaultPoint {
     AfterThreadMessage,
     /// A room update was queued as a preview before the content transaction commits.
     BeforeRoomCommit,
+    /// The append, receipt and job are staged but the FULL transaction is open.
+    BeforeThreadAppendCommit,
     /// Content revision and publication intent committed, before journal publication.
     AfterCommit,
     /// The journal receipt and event committed before the outbox was retired.
@@ -88,6 +90,7 @@ impl FaultPoint {
         match self {
             Self::AfterThreadMessage => "after_thread_message",
             Self::BeforeRoomCommit => "before_room_commit",
+            Self::BeforeThreadAppendCommit => "before_thread_append_commit",
             Self::AfterCommit => "after_commit",
             Self::AfterJournalCommit => "after_journal_commit",
             Self::BeforePlacement => "before_placement",

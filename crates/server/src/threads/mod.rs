@@ -87,6 +87,7 @@ pub(crate) async fn dispatch<D: Directory>(
             (state.clone(), op.to_owned(), rid.to_owned(), input.clone());
         let caller = who.clone();
         let message_actor = actor.clone();
+        let session = session.clone();
         blocking(move || {
             let apply = || {
                 operations::apply(
@@ -98,6 +99,7 @@ pub(crate) async fn dispatch<D: Directory>(
                     &data,
                     id,
                     &message_actor,
+                    Some(SendContext { session, generation, machine: None }),
                 )
             };
             #[cfg(feature = "perf-timings")]
@@ -119,32 +121,7 @@ pub(crate) async fn dispatch<D: Directory>(
         let thread = value["thread"]["id"]
             .as_str()
             .ok_or_else(|| Error::internal("saved thread identity missing"))?;
-        let i = AgentInput {
-            space_id: space.to_string(),
-            thread_id: thread.into(),
-            prompt: input["message"].as_str().unwrap_or("").into(),
-            provider_id: value["thread"]["metadata"]["provider"]
-                .as_str()
-                .unwrap_or("")
-                .into(),
-            mode: serde_json::from_value(value["thread"]["metadata"]["mode"].clone())
-                .map_err(|_| Error::internal("saved mode invalid"))?,
-            model: value["thread"]["metadata"]["model"]
-                .as_str()
-                .ok_or_else(|| Error::internal("saved model missing"))?
-                .into(),
-            options: input
-                .get("reasoning")
-                .cloned()
-                .map(|level| [("effort".into(), level)].into_iter().collect())
-                .unwrap_or_default(),
-            personal_machine: input
-                .get("personal_machine")
-                .and_then(Value::as_bool)
-                .unwrap_or(false),
-            source_app: "threads".into(),
-            ..Default::default()
-        };
+        let i = send_input(space, thread, &input, &value["thread"]["metadata"], None)?;
         let job = crate::turns::admit_thread(
             &state,
             who,
@@ -161,6 +138,32 @@ pub(crate) async fn dispatch<D: Directory>(
         return Ok(json!({"thread":value["thread"],"job":job.view()}));
     }
     Ok(value)
+}
+
+/// Build the same effective input for the durable admission and a replay.
+fn send_input(
+    space: SpaceId, thread: &str, input: &JsonObject, metadata: &Value, machine: Option<&str>,
+) -> Result<AgentInput, Error> {
+    Ok(AgentInput {
+        space_id: space.to_string(),
+        thread_id: thread.into(),
+        prompt: input["message"].as_str().unwrap_or("").into(),
+        provider_id: metadata["provider"].as_str().unwrap_or("").into(),
+        mode: serde_json::from_value(metadata["mode"].clone())
+            .map_err(|_| Error::internal("saved mode invalid"))?,
+        model: metadata["model"].as_str().ok_or_else(|| Error::internal("saved model missing"))?.into(),
+        options: input.get("reasoning").cloned().map(|level| [("effort".into(), level)].into_iter().collect()).unwrap_or_default(),
+        personal_machine: input.get("personal_machine").and_then(Value::as_bool).unwrap_or(false),
+        machine_id: machine.unwrap_or_default().into(),
+        source_app: "threads".into(),
+        ..Default::default()
+    })
+}
+
+struct SendContext<'a> {
+    session: Session,
+    generation: u32,
+    machine: Option<&'a str>,
 }
 
 /// Let background file verification complete without occupying a blocking worker.

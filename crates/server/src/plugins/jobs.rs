@@ -2,7 +2,7 @@
 //!
 //! A job is admitted by a plugin's `start_job` host call and recorded durably before
 //! its ID is returned. Each space keeps its jobs in its own SQLite file,
-//! `<appdata>/spaces/<space-uuid>/jobs.db` (next to the content crate's `content.db`),
+//! `<appdata>/spaces/<space-uuid>/content.db`,
 //! opened on first use; there is no installation-wide jobs connection. Records hold
 //! the plugin, the starting account and its sign-in ([`Session`], an installation ID,
 //! never a token), the run operation and input, the state, the last checkpoint and
@@ -258,7 +258,7 @@ impl Jobs {
     pub(crate) fn thread_latest(&self, space: &str, thread: &str) -> Result<Option<Job>, Error> {
         let conn = self.conn(space)?;
         let c = conn.lock().map_err(db_err)?;
-        c.query_row(&format!("SELECT {COLUMNS} FROM jobs WHERE operation='agent.turn' AND json_extract(input,'$.request.thread_id')=?1 AND json_extract(input,'$.check') IS NOT 1 ORDER BY rowid DESC LIMIT 1"),[thread],|r|row(space,r)).optional().map_err(db_err)
+        c.query_row(&format!("SELECT {COLUMNS} FROM jobs WHERE operation='agent.turn' AND json_extract(input,'$.request.thread_id')=?1 AND json_extract(input,'$.check') IS NOT 1 AND state!='awaiting_thread' ORDER BY rowid DESC LIMIT 1"),[thread],|r|row(space,r)).optional().map_err(db_err)
     }
 
     /// Permits for concurrent runs ([`super::runner::MAX_RUNNING`]). Cost: one clone.
@@ -290,7 +290,7 @@ impl Jobs {
         };
         for entry in dir.flatten() {
             let space = entry.file_name().to_string_lossy().into_owned();
-            if Uuid::parse_str(&space).is_err() || !entry.path().join("jobs.db").is_file() {
+            if Uuid::parse_str(&space).is_err() || !entry.path().join("content.db").is_file() {
                 continue;
             }
             let conn = match jobs.conn(&space) {
@@ -378,15 +378,10 @@ impl Jobs {
         let dir = root.join(space);
         calternal_fsio::private::directory(&dir)
             .map_err(|_| Error::internal("job storage directory"))?;
-        let path = dir.join("jobs.db");
-        calternal_fsio::private::file(&path).map_err(|_| Error::internal("job storage file"))?;
-        let c = Connection::open(&path).map_err(db_err)?;
-        c.pragma_update(None, "synchronous", "FULL")
-            .map_err(db_err)?;
-        c.busy_timeout(Duration::from_secs(5)).map_err(db_err)?;
-        calternal_store::migrations::migrate(&c, upgrade_schema()).map_err(db_err)?;
-        c.pragma_update(None, "journal_mode", "WAL")
-            .map_err(db_err)?;
+        let path = dir.join("content.db");
+        let appdata = root.parent().ok_or_else(|| Error::internal("jobs root"))?;
+        let c = calternal_content::open_space_database(appdata, space_id)?;
+        calternal_store::migrations::initialize_component(&c, hosted_schema()).map_err(db_err)?;
         retain(&c)?;
         let c = Arc::new(JobDatabase::new(c, path, self.lifecycle.clone(), space_id));
         let mut spaces = self.spaces.lock().unwrap_or_else(|p| p.into_inner());
@@ -472,7 +467,7 @@ impl Jobs {
         let conn = self.conn(space)?;
         let c = conn.lock().map_err(db_err)?;
         c.query_row(
-            &format!("SELECT {COLUMNS} FROM jobs WHERE id=?1"),
+            &format!("SELECT {COLUMNS} FROM jobs WHERE id=?1 AND state!='awaiting_thread'"),
             [id],
             |r| row(space, r),
         )
@@ -514,16 +509,50 @@ impl Jobs {
     }
 
     fn admit_job(&self, a: Admission, revision: u32, thread_send: bool) -> Result<String, Error> {
+        let space = a.space.clone();
+        let actor = a.account;
+        let _actor = self.lifecycle.step(actor.as_uuid())?;
+        let id = self.tx(&space, |tx| self.insert_admission(tx, a, revision, thread_send, None))?;
+        self.register_admission(&space, &id);
+        Ok(id)
+    }
+
+    /// Install the jobs component before taking the content WAL write lock.
+    #[cfg(target_os = "linux")]
+    pub(crate) fn prepare_thread_admission(&self, space: &str) -> Result<(), Error> {
+        self.conn(space).map(|_| ())
+    }
+
+    /// Add the initial job and its receipt to the same FULL transaction as
+    /// the Markdown append intent. The journal insertion releases the job
+    /// only after the named file has synced.
+    #[cfg(target_os = "linux")]
+    pub(crate) fn stage_thread_admission(
+        &self,
+        tx: &rusqlite::Transaction<'_>,
+        a: Admission,
+        item: Uuid,
+        seq: i64,
+        request: &str,
+    ) -> Result<(), Error> {
+        self.insert_admission(tx, a, 0, true, Some((item, seq, request)))?;
+        Ok(())
+    }
+
+    /// Populate the in-memory routing cache after the durable job is visible.
+    pub(crate) fn register_admission(&self, space: &str, job: &str) {
+        self.routes.write().unwrap_or_else(|p| p.into_inner()).insert(job.into(), space.into());
+    }
+
+    fn insert_admission(
+        &self, tx: &rusqlite::Transaction<'_>, a: Admission,
+        revision: u32, thread_send: bool, staged: Option<(Uuid, i64, &str)>,
+    ) -> Result<String, Error> {
         let generation = (i64::from(revision) << 32) | i64::from(a.generation);
-        let _actor = self.lifecycle.step(a.account.as_uuid())?;
         let input = bounded_json(&a.input, MAX_CHECKPOINT_BYTES)?;
         let session = serde_json::to_string(&a.session).map_err(|_| Error::internal("encode"))?;
-        let space = a.space.clone();
-        let space_id = calternal_types::SpaceId::parse(&space)?;
-        let _space = self.lifecycle.step(space_id.as_uuid())?;
         let receipt = thread_send
             .then(|| ring::digest::digest(&ring::digest::SHA256, a.request_key.as_bytes()));
-        let id = self.tx(&space, |tx| {
             let now = now_ms();
             if let Some(key) = &receipt
                 && let Some(id) = thread_send_receipt(tx, key.as_ref(), now)?
@@ -569,12 +598,12 @@ impl Jobs {
             }
             let id = Uuid::now_v7().to_string();
             tx.execute(
-                "INSERT INTO jobs VALUES(?1,?2,?3,?4,?5,?6,?7,'admitted','null',0,0,'null',0,?8,?9,NULL)",
-                params![id, a.plugin, a.account.to_string(), session, a.operation, input, a.parent, generation, a.request_key],
+                "INSERT INTO jobs VALUES(?1,?2,?3,?4,?5,?6,?7,?10,'null',0,0,'null',0,?8,?9,NULL)",
+                params![id, a.plugin, a.account.to_string(), session, a.operation, input, a.parent, generation, a.request_key, if staged.is_some() { "awaiting_thread" } else { "admitted" }],
             )
             .map_err(db_err)?;
             if let Some(key) = &receipt {
-                calternal_store::migrations::require_writer_version(tx, THREAD_SEND_RECEIPT_VERSION).map_err(db_err)?;
+
                 let expires = now.saturating_add(
                     i64::try_from(self.receipt_retention.as_millis()).unwrap_or(i64::MAX),
                 );
@@ -590,13 +619,14 @@ impl Jobs {
                     params![key.as_ref(), id, expires],
                 ).map_err(db_err)?;
             }
+            if let Some((item, seq, request)) = staged {
+                let key = receipt.as_ref().ok_or_else(|| Error::internal("missing admission receipt"))?;
+                tx.execute(
+                    "INSERT INTO thread_job_placement VALUES(?1,?2,?3,?4,?5,?6)",
+                    params![item.to_string(), seq, id, key.as_ref(), a.account.to_string(), request],
+                ).map_err(db_err)?;
+            }
             Ok(id)
-        })?;
-        self.routes
-            .write()
-            .unwrap_or_else(|p| p.into_inner())
-            .insert(id.clone(), space);
-        Ok(id)
     }
 
     /// Durably record a checkpoint from the current run; the next run resumes from it
@@ -629,20 +659,37 @@ impl Jobs {
     }
 }
 
-pub(crate) fn upgrade_schema() -> calternal_store::migrations::Schema<'static> {
-    static BATCHES: std::sync::OnceLock<[&'static str; 2]> = std::sync::OnceLock::new();
-    calternal_store::migrations::Schema::new(
-        "jobs.db",
-        2,
-        BATCHES.get_or_init(|| [SCHEMA, crate::threads::turn_events::schema()]),
-        &[
-            (3, waits::SCHEMA),
-            (THREAD_SEND_RECEIPT_VERSION, THREAD_SEND_RECEIPTS),
-        ],
-    )
+fn hosted_schema() -> calternal_store::migrations::Schema<'static> {
+    static BATCHES: std::sync::OnceLock<[&'static str; 5]> = std::sync::OnceLock::new();
+    calternal_store::migrations::Schema::new("jobs", 4, BATCHES.get_or_init(|| [
+        SCHEMA, crate::threads::turn_events::schema(), waits::SCHEMA,
+        THREAD_SEND_RECEIPTS, THREAD_JOB_PLACEMENT,
+    ]), &[])
 }
 
-const THREAD_SEND_RECEIPT_VERSION: i64 = 4;
+const THREAD_JOB_PLACEMENT: &str = "
+    CREATE TABLE thread_job_placement(
+      item TEXT NOT NULL, seq INTEGER NOT NULL, job TEXT NOT NULL,
+      receipt BLOB NOT NULL, account TEXT NOT NULL, request TEXT NOT NULL,
+      PRIMARY KEY(item,seq),
+      FOREIGN KEY(item,seq) REFERENCES versions(item,seq) ON DELETE CASCADE
+    ) STRICT, WITHOUT ROWID;
+    CREATE UNIQUE INDEX thread_job_publication ON thread_job_placement(account,request);
+    CREATE TRIGGER start_placed_thread_job AFTER INSERT ON journal
+      WHEN NEW.kind='threads.send'
+      BEGIN
+        UPDATE jobs SET state='admitted' WHERE state='awaiting_thread'
+          AND id=(SELECT job FROM thread_job_placement WHERE account=NEW.author AND request=NEW.request_id);
+        DELETE FROM thread_job_placement WHERE account=NEW.author AND request=NEW.request_id;
+      END;
+    CREATE TRIGGER cancel_unplaced_thread_job BEFORE DELETE ON thread_job_placement
+      WHEN EXISTS(SELECT 1 FROM jobs WHERE id=OLD.job AND state='awaiting_thread')
+      BEGIN
+        DELETE FROM thread_send_receipts WHERE request_key=OLD.receipt;
+        DELETE FROM jobs WHERE id=OLD.job;
+      END;
+";
+
 const THREAD_SEND_RECEIPTS: &str = "
     CREATE TABLE thread_send_receipts(
         request_key BLOB PRIMARY KEY CHECK(length(request_key)=32),
@@ -670,39 +717,13 @@ fn thread_send_receipt(conn: &Connection, key: &[u8], now: i64) -> Result<Option
 #[cfg(test)]
 mod admission_receipt_tests {
     use super::*;
-    use calternal_store::migrations::{Schema, inspect, migrate_release};
     use serde_json::json;
 
     #[test]
-    fn thread_send_receipt_transition_survives_job_retention_and_restart() {
+    fn thread_send_receipt_survives_job_retention_and_restart() {
         let dir = tempfile::tempdir().unwrap();
         let space = calternal_types::SpaceId::new().to_string();
-        let space_dir = dir.path().join("spaces").join(&space);
-        std::fs::create_dir_all(&space_dir).unwrap();
-        let path = space_dir.join("jobs.db");
-        let initial = [SCHEMA, crate::threads::turn_events::schema()];
-        let previous = Schema::new("jobs.db", 2, &initial, &[(3, waits::SCHEMA)]);
-        let conn = Connection::open(&path).unwrap();
-        migrate_release(&conn, previous, false).unwrap();
-        conn.execute(
-            "INSERT INTO child_results VALUES('p','c','done','null')",
-            [],
-        )
-        .unwrap();
-        let next = upgrade_schema();
-        assert_eq!(next.version(), previous.version() + 1);
-        assert_eq!(next.version(), THREAD_SEND_RECEIPT_VERSION);
-        migrate_release(&conn, next, true).unwrap();
-        assert_eq!(inspect(&conn, previous).unwrap(), next.version());
-        assert_eq!(
-            conn.query_row("SELECT state FROM child_results WHERE child='c'", [], |r| {
-                r.get::<_, String>(0)
-            })
-            .unwrap(),
-            "done"
-        );
-        drop(conn);
-
+        let path = dir.path().join("spaces").join(&space).join("content.db");
         let account = AccountId::new();
         let thread = Uuid::now_v7();
         let key = thread_send_key(account, "saved-send");
@@ -726,7 +747,6 @@ mod admission_receipt_tests {
         drop(jobs);
 
         let conn = Connection::open(&path).unwrap();
-        assert!(inspect(&conn, previous).is_err());
         conn.execute("DELETE FROM jobs WHERE id=?1", [&job])
             .unwrap();
         drop(conn);

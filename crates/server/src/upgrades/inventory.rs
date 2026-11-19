@@ -163,9 +163,9 @@ fn databases(appdata: &Path) -> io::Result<Vec<Database>> {
             "spaces",
             [
                 Some(("content.db", calternal_content::SPACE_SCHEMA)),
-                Some(("index.db", calternal_store::JOURNAL_SCHEMA)),
+                None,
                 Some(("network.db", plugins::network::db::SCHEMA)),
-                Some(("jobs.db", plugins::jobs::upgrade_schema())),
+                None,
                 None,
                 Some(("secrets.db", calternal_secrets::OWNER_SCHEMA)),
             ],

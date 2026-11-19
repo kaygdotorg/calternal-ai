@@ -38,6 +38,8 @@ pub(super) struct Record<'a> {
     pub(super) id: Uuid,
     #[serde(skip)]
     pub(super) links: Links,
+    #[serde(skip)]
+    selected: bool,
     pub(super) role: &'a str,
     pub(super) heading: &'a str,
     pub(super) at: String,
@@ -84,9 +86,10 @@ pub(super) fn append(
     }
     let offset = out.len();
     let parent = links.parent.map_or_else(|| "none".into(), |id| id.to_string());
+    let select = if agent.is_some_and(|(_, p)| p.continues.is_some()) { "no" } else { "yes" };
     write!(
         out,
-        "## {heading}\n<!-- id:{id} role:{role} bytes:{} message:{} version:{} parent:{parent}",
+        "## {heading}\n<!-- id:{id} role:{role} bytes:{} message:{} version:{} parent:{parent} select:{select}",
         text.len(), links.message, links.version
     )
     .expect("write to String");
@@ -204,7 +207,7 @@ pub(super) fn active_version(mut body: &str) -> Result<Option<Uuid>, Error> {
             let (record, tail) = first(body)?;
             let links = record.links;
             if let Some(group) = record.provenance.as_ref().and_then(|p| p.continues) {
-                if versions.get(&links.version) != Some(&(links, group)) {
+                if record.selected || versions.get(&links.version) != Some(&(links, group)) {
                     return Err(invalid());
                 }
             } else {
@@ -213,7 +216,9 @@ pub(super) fn active_version(mut body: &str) -> Result<Option<Uuid>, Error> {
                 {
                     return Err(invalid());
                 }
-                active = Some(links.version);
+                if record.selected {
+                    active = Some(links.version);
+                }
             }
             tail
         };
@@ -226,6 +231,17 @@ pub(super) fn active_version(mut body: &str) -> Result<Option<Uuid>, Error> {
 }
 
 fn first(input: &str) -> Result<(Record<'_>, &str), Error> {
+    // Both notices are generated single lines. The byte-counted authored
+    // body can include the same literal text without affecting framing.
+    let input = if input.starts_with("> Edited: ") {
+        let (notice, rest) = input.split_once("\n\n").ok_or_else(invalid)?;
+        if notice.len() > 512 || notice.contains('\n') {
+            return Err(invalid());
+        }
+        rest.strip_prefix("> The agent started fresh from the edited message.\n\n").unwrap_or(rest)
+    } else {
+        input
+    };
     let (line, rest) = input
         .strip_prefix("## ")
         .and_then(|text| text.split_once('\n'))
@@ -234,7 +250,7 @@ fn first(input: &str) -> Result<(Record<'_>, &str), Error> {
         .strip_prefix("<!-- id:")
         .and_then(|text| text.split_once(" -->\n\n"))
         .ok_or_else(invalid)?;
-    let mut fields = marker.splitn(8, ' ');
+    let mut fields = marker.splitn(9, ' ');
     let id = fields
         .next()
         .and_then(|value| Uuid::parse_str(value).ok())
@@ -253,6 +269,11 @@ fn first(input: &str) -> Result<(Record<'_>, &str), Error> {
     let parent = match fields.next().and_then(|s| s.strip_prefix("parent:")).ok_or_else(invalid)? {
         "none" => None,
         id => Some(read_id(id)?),
+    };
+    let selected = match fields.next().and_then(|s| s.strip_prefix("select:")) {
+        Some("yes") => true,
+        Some("no") => false,
+        _ => return Err(invalid()),
     };
     let turn = fields
         .next()
@@ -288,6 +309,7 @@ fn first(input: &str) -> Result<(Record<'_>, &str), Error> {
         Record {
             id,
             links: Links { message, version, parent },
+            selected,
             role,
             heading: line,
             at,
@@ -344,12 +366,20 @@ mod tests {
         let heading = "Maya · 2026-11-18 19:30:06 +05:30";
         append(&mut body, root, Links::next(&mut meta, root), "person", heading, "original", None);
         append(&mut body, other, Links::next(&mut meta, other), "person", heading, "old reply", None);
-        append(&mut body, edit, Links { message: root, version: edit, parent: None },
+        let mut edited = String::new();
+        append(&mut edited, edit, Links { message: root, version: edit, parent: None },
             "person", heading, "edited", None);
+        write!(body, "{BETWEEN}> Edited: replaces the message of 19:30:06 above.\n\n> The agent started fresh from the edited message.\n\n{edited}").unwrap();
         assert_eq!(active_version(&body).unwrap(), Some(edit));
         write!(body, "{BETWEEN}{SELECT}{other} -->").unwrap();
         assert_eq!(active_version(&body).unwrap(), Some(other));
-        assert_eq!(read(&body).unwrap().len(), 3);
+        let hidden = Uuid::now_v7();
+        let mut frame = String::new();
+        append(&mut frame, hidden, Links { message: hidden, version: hidden, parent: Some(edit) },
+            "person", heading, "reply on the edited branch", None);
+        write!(body, "{BETWEEN}{}", frame.replace("select:yes", "select:no")).unwrap();
+        assert_eq!(active_version(&body).unwrap(), Some(other));
+        assert_eq!(read(&body).unwrap().len(), 4);
         write!(body, "{BETWEEN}{SELECT}{} -->", Uuid::now_v7()).unwrap();
         assert!(active_version(&body).is_err());
     }

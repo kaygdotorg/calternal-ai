@@ -104,6 +104,8 @@ pub struct Receipt {
 pub enum FaultPoint {
     /// Room preview was queued and its content transaction has not committed.
     BeforeRoomCommit,
+    /// The append, receipt and job are staged but the FULL transaction is open.
+    BeforeThreadAppendCommit,
     /// Content and publication intent committed, before any file placement.
     AfterCommit,
     /// The journal receipt and event are durable, with the outbox row still present.

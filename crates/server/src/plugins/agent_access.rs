@@ -1,4 +1,4 @@
-//! Protected authority in auth.db; job execution remains in per-space jobs.db.
+//! Protected authority in auth.db; job execution remains in per-space content.db.
 use super::{
     Jobs,
     job_sql::{db_err, now_ms},

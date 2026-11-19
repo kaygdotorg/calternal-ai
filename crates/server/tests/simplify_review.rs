@@ -61,7 +61,7 @@ fn expired_control_receipt_allows_a_new_request_after_restart() {
         .appdata
         .join("spaces")
         .join(space.to_string())
-        .join("index.db");
+        .join("content.db");
     Connection::open(journal)
         .unwrap()
         .execute("UPDATE idempotency SET at_ms=0", [])

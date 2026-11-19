@@ -1,5 +1,6 @@
 //! Every thread operation is exercised with real passkey sessions and foreign spaces.
 use super::*;
+use rusqlite::OptionalExtension;
 #[path = "threads_cases/memory_admission.rs"]
 mod memory_admission;
 #[path = "threads_cases/snooze.rs"]
@@ -153,6 +154,61 @@ async fn thread_operations_hide_foreign_targets_and_keep_children_after_archive(
     );
 
     evidence("threads-isolation", json!(rows));
+}
+
+#[tokio::test]
+async fn thread_send_crash_at_both_durability_barriers_preserves_one_admission() {
+    for (point, committed, placed) in [
+        ("before_thread_append_commit", false, false),
+        ("after_commit", true, false),
+        ("after_placement", true, true),
+        ("after_journal_commit", true, true),
+    ] {
+        let mut f = Fixture::new().await;
+        let space = f.spaces[0].clone();
+        let created = f.op(1, "threads.create", json!({"space_id":space,"title":"Barrier crash"})).await;
+        created.ok();
+        let id = created.body["data"]["thread"]["id"].as_str().unwrap().to_owned();
+        let db = f.appdata().join("spaces").join(&space).join("content.db");
+        let relative: String = rusqlite::Connection::open(&db).unwrap()
+            .query_row("SELECT path FROM items WHERE id=?1", [&id], |r| r.get(0)).unwrap();
+        let file = f.dir.path().join("userdata-ssd/spaces").join(&space).join(relative);
+        f.stop();
+        let armed = f.dir.path().join("content-fault");
+        std::fs::write(&armed, point).unwrap();
+        f.start().await;
+        let input = json!({"id":id,"message":"Only one accepted record."});
+        let reply = f.client
+            .post(format!("{}/api/v1/operations", f.base))
+            .header("host", "localhost:18080").header("origin", ORIGIN)
+            .header("cookie", &f.cookies[1])
+            .json(&json!({"request_id":"barrier-crash","operation":"threads.send","input":input}))
+            .send().await;
+        assert!(reply.is_err(), "no acknowledgement at {point}");
+        f.stop();
+        std::fs::remove_file(&armed).unwrap();
+        let conn = rusqlite::Connection::open(&db).unwrap();
+        let staged: Option<String> = conn.query_row(
+            "SELECT id FROM jobs WHERE json_extract(input,'$.request.thread_id')=?1",
+            [&id], |r| r.get(0),
+        ).optional().unwrap();
+        assert_eq!(staged.is_some(), committed, "{point}");
+        assert_eq!(std::fs::read_to_string(&file).unwrap().contains("Only one accepted record."), placed, "{point}");
+        drop(conn);
+        f.start().await;
+        let first = f.op_id(1, "threads.send", input.clone(), "barrier-crash").await;
+        first.ok();
+        let job = &first.body["data"]["job"]["id"];
+        if let Some(staged) = staged {
+            assert_eq!(*job, staged, "{point}");
+        }
+        let replay = f.op_id(1, "threads.send", input, "barrier-crash").await;
+        replay.ok();
+        assert_eq!(replay.body["data"]["job"]["id"], *job, "{point}");
+        let stored = f.op(1, "threads.get", json!({"id":id})).await;
+        stored.ok();
+        assert_eq!(stored.body["data"]["thread"]["messages"].as_array().unwrap().len(), 1);
+    }
 }
 
 #[tokio::test]
@@ -566,7 +622,7 @@ async fn saved_thread_events_replay_and_stay_in_the_owning_space() {
     // only that state in this disposable fixture. With no machine, admission
     // and the internal placement claim both remain queued to clients.
     let database =
-        Connection::open(f.appdata().join("spaces").join(space).join("jobs.db")).unwrap();
+        Connection::open(f.appdata().join("spaces").join(space).join("content.db")).unwrap();
     database.busy_timeout(Duration::from_secs(5)).unwrap();
     let changed = database
         .execute(

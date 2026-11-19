@@ -129,7 +129,7 @@ fn tokens_rotate_expire_at_end_and_never_cross_space_or_thread() {
         "the new turn ignored the person's requested wider mode"
     );
     assert!(inherited.grants.is_empty());
-    let raw = std::fs::read(dir.path().join("spaces").join(space).join("jobs.db")).unwrap();
+    let raw = std::fs::read(dir.path().join("spaces").join(space).join("content.db")).unwrap();
     assert!(
         !raw.windows(new.len()).any(|b| b == new.as_bytes()),
         "raw token was stored"

@@ -278,6 +278,7 @@ pub(super) fn append_output(
             .and_then(|n| usize::try_from(n).ok())
             .ok_or_else(|| Error::internal("invalid thread output cursor"))?;
         let current = super::records::tail(body, start, id)?;
+        let links = current.links;
         let heading = if timing.is_null() {
             current.heading.to_owned()
         } else {
@@ -292,7 +293,7 @@ pub(super) fn append_output(
         super::records::append(
             &mut replacement,
             id,
-            current.links,
+            links,
             "agent",
             &heading,
             &combined,

@@ -6,7 +6,7 @@ use rusqlite::{Connection, OpenFlags, OptionalExtension};
 use std::path::Path;
 
 /// The baseline journal and its expiring request receipts.
-const SCHEMA: &str = "CREATE TABLE meta (
+pub(crate) const SCHEMA: &str = "CREATE TABLE meta (
         key   TEXT PRIMARY KEY,
         value TEXT NOT NULL
     ) STRICT;
@@ -37,6 +37,7 @@ pub(crate) fn open_bound_writer(
     path: &Path,
     with_check: bool,
     space: crate::SpaceId,
+    colocated: bool,
 ) -> Result<OpenState> {
     let value = space.to_string();
     // Refuse a journal bound to another space before touching its schema or epoch.
@@ -64,7 +65,7 @@ pub(crate) fn open_bound_writer(
             }
         }
     }
-    let opened = open_writer(path, with_check)?;
+    let opened = open_writer(path, with_check, colocated)?;
     opened
         .conn
         .execute(
@@ -115,10 +116,12 @@ fn tune(conn: &Connection) -> Result<()> {
 }
 
 /// Opens the writer connection and reads its indexed head and restore metadata.
-pub(crate) fn open_writer(path: &Path, with_check: bool) -> Result<OpenState> {
+pub(crate) fn open_writer(path: &Path, with_check: bool, colocated: bool) -> Result<OpenState> {
     let conn = Connection::open(path).map_err(Error::internal)?;
     tune(&conn)?;
-    crate::migrations::migrate(&conn, MIGRATIONS).map_err(Error::internal)?;
+    if !colocated {
+        crate::migrations::migrate(&conn, MIGRATIONS).map_err(Error::internal)?;
+    }
     conn.pragma_update(None, "journal_mode", "WAL")
         .map_err(Error::internal)?;
     let (epoch, epoch_head, highwater_initialized) = ensure_epoch(&conn, with_check)?;

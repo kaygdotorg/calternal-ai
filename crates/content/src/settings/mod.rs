@@ -290,6 +290,7 @@ impl Content {
                 None,
                 PENDING,
                 intent.change.clone(),
+                true,
             )?;
         }
         space

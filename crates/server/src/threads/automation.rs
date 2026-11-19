@@ -23,6 +23,7 @@ pub(crate) async fn admit<D: Directory>(
     let rid = format!("automation-run/{run}");
     let send = rid.clone();
     let turn_prompt = prompt.clone();
+    let chosen_machine = machine.clone();
     let target = retry_verifying(|| {
         let (st, who, name, prompt, audit, send, zone) = (
             st.clone(),
@@ -33,6 +34,7 @@ pub(crate) async fn admit<D: Directory>(
             send.clone(),
             zone.clone(),
         );
+        let chosen_machine = chosen_machine.clone();
         blocking(move || {
             let create = JsonObject::from([
                 ("title".into(), json!(name)),
@@ -68,6 +70,7 @@ pub(crate) async fn admit<D: Directory>(
                             &create,
                             None,
                             &audit,
+                            None,
                         )
                     })?;
                 }
@@ -93,6 +96,7 @@ pub(crate) async fn admit<D: Directory>(
                     &input,
                     Some(run),
                     &audit,
+                    Some(SendContext { session: Session::Static, generation, machine: chosen_machine.as_deref() }),
                 )
             })
         })

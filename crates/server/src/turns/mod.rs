@@ -15,7 +15,7 @@ mod redact;
 pub mod retry;
 mod run;
 pub(crate) mod space_execution;
-mod thread_admission;
+pub(crate) mod thread_admission;
 mod tool_steps;
 mod verify;
 pub(crate) use run::schedule_for_account as schedule_thread;

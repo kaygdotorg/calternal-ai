@@ -57,7 +57,7 @@ pub(super) async fn exercise(server: &Server, data: &TempDir, space: &str) {
     #[cfg(target_os = "linux")]
     assert!(text.contains("\"continues\":"));
     let jobs =
-        rusqlite::Connection::open(data.join(&format!("appdata/spaces/{space}/jobs.db"))).unwrap();
+        rusqlite::Connection::open(data.join(&format!("appdata/spaces/{space}/content.db"))).unwrap();
     assert_eq!(
         jobs.execute(
             "DELETE FROM jobs WHERE id=?1",

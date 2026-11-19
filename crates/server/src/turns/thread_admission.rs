@@ -6,6 +6,39 @@ use crate::{
     plugins::jobs::thread_send_key,
     threads::provider_session::{KEY, ProviderSession},
 };
+/// Prepare a saved turn after the thread metadata has been validated. This
+/// runs before the content transaction and performs a settings lookup.
+#[cfg(target_os = "linux")]
+pub(crate) fn prepare<D: Directory>(
+    state: &Shared<D>,
+    who: &Identity,
+    session: Session,
+    rid: &str,
+    mut input: AgentInput,
+    generation: u32,
+    metadata: &Value,
+) -> Result<Admission, Error> {
+    super::input::validate(&mut input, "agent.run")?;
+    let retry = state.jobs.agent_settings(
+        &who.id.to_string(), None, retry::manifest_defaults(state)?,
+    )?;
+    let space = input.space_id.clone();
+    state.jobs.prepare_thread_admission(&space)?;
+    let resume = ProviderSession::owned(metadata, who.id);
+    Ok(Admission {
+        space,
+        plugin: "calternal-orchestrator".into(),
+        account: who.id,
+        session,
+        operation: "agent.turn".into(),
+        input: json!({"request":input,"check":false,"retry_settings":retry,
+            "thread_request":metadata["pending"],"check_target":input.machine_id,(KEY):resume}),
+        parent: None,
+        generation,
+        request_key: thread_send_key(who.id, rid),
+    })
+}
+
 /// Finish a committed message intent under its content space lock, fencing Trash.
 /// The job key and admission receipt survive a crash between stores. No callback
 /// re-enters content; lock order is content -> jobs. Cost: settings read, current
@@ -21,9 +54,7 @@ pub(crate) async fn admit<D: Directory>(
     intent: Value,
 ) -> Result<Job, Error> {
     super::input::validate(&mut input, "agent.run")?;
-    let defaults = retry::manifest_defaults(state)?;
-    let (st, account) = (state.clone(), who.id.to_string());
-    let settings = blocking(move || st.jobs.agent_settings(&account, None, defaults)).await?;
+
     let (st, space, request_key) = (
         state.clone(),
         input.space_id.clone(),
@@ -61,11 +92,17 @@ pub(crate) async fn admit<D: Directory>(
                             .ok_or_else(|| Error::internal("invalid saved job"));
                     }
                     if let Some(id) = st.jobs.thread_admission(&space, &request_key)? {
+                        st.jobs.register_admission(&space, &id);
+                        if intent["automation_run"].is_object() {
+                            crate::fault::hit(crate::fault::FaultPoint::AutomationAfterJob);
+                        }
                         return Ok(id);
                     }
                     if current.metadata["pending"] != intent {
                         return Err(Error::conflict("the pending send has been superseded"));
                     }
+                    let defaults = retry::manifest_defaults(&st)?;
+                    let settings = st.jobs.agent_settings(&who.id.to_string(), None, defaults)?;
                     let resume = ProviderSession::owned(&current.metadata, who.id);
                     let id = st.jobs.admit_thread(Admission {
                         space,

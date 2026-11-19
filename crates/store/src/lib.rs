@@ -216,8 +216,26 @@ impl SpaceStore {
             state.as_ref().join("spaces").join(space.to_string()),
             options,
             Some(secrets),
+            None,
         )
         .await
+    }
+
+    /// Journal tables installed by the owning space schema. This DDL must run
+    /// before opening a colocated journal.
+    pub const COLOCATED_SCHEMA: &'static str = schema::SCHEMA;
+
+    /// Open the journal on the existing space content WAL. The host must
+    /// initialize the colocated schema and own its space lifecycle before
+    /// calling. Performs the same witness and sequence checks as open_with.
+    pub async fn open_colocated(
+        path: &Path,
+        space: SpaceId,
+        secrets: &Path,
+        options: Options,
+    ) -> Result<Self> {
+        let dir = path.parent().ok_or_else(|| Error::internal("space WAL path"))?;
+        Self::open_bound(space, true, dir, options, Some(secrets), Some(path)).await
     }
 
     /// Returns the validated journal binding. Constant time; no lock, allocation or I/O.
@@ -231,7 +249,7 @@ impl SpaceStore {
         options: Options,
         secrets: Option<&Path>,
     ) -> Result<Self> {
-        Self::open_bound(test_support::test_space(), false, dir, options, secrets).await
+        Self::open_bound(test_support::test_space(), false, dir, options, secrets, None).await
     }
 
     /// Opens (or creates) the store in `dir`. Fast: it only checks the
@@ -257,11 +275,13 @@ impl SpaceStore {
         dir: impl AsRef<Path>,
         options: Options,
         secrets: Option<&Path>,
+        shared_path: Option<&Path>,
     ) -> Result<Self> {
         let dir = dir.as_ref().to_owned();
         let secrets = secrets.map(Path::to_owned);
         let with_check = secrets.is_some();
-        let path = dir.join("index.db");
+        let colocated = shared_path.is_some();
+        let path = shared_path.map_or_else(|| dir.join("index.db"), Path::to_owned);
         let secret_dir = secrets
             .as_ref()
             .map(|root| root.join("spaces").join(space.to_string()));
@@ -277,7 +297,7 @@ impl SpaceStore {
         // `None`, and creating the key below creates the folder.
         let database = tokio::task::spawn_blocking(move || {
             std::fs::create_dir_all(&db_dir).map_err(Error::internal)?;
-            schema::open_bound_writer(&db_path, with_check, space)
+            schema::open_bound_writer(&db_path, with_check, space, colocated)
         });
         let files = match secret_dir {
             Some(secret_dir) => read_secret_files(secret_dir),

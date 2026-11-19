@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS saved_turn_events (
 ) STRICT;
 CREATE INDEX IF NOT EXISTS saved_turn_events_age ON saved_turn_events(created_at);
 CREATE TRIGGER IF NOT EXISTS saved_turn_admitted AFTER INSERT ON jobs
-WHEN NEW.operation = 'agent.turn' AND json_type(NEW.input, '$.thread_request') = 'object'
+WHEN NEW.operation = 'agent.turn' AND NEW.state != 'awaiting_thread' AND json_type(NEW.input, '$.thread_request') = 'object'
 BEGIN
   DELETE FROM saved_turn_events WHERE created_at < unixepoch() - 604800;
   INSERT INTO saved_turn_events(event_id,thread,job,account,state,reason_checkpoint,created_at)

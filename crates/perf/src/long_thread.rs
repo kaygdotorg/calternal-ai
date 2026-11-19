@@ -154,7 +154,7 @@ fn indexed(http: &mut Http, space: &str) -> Result<String> {
 
 fn seed(root: &Path, space: &str, id: &str, threshold: usize) -> Result<usize> {
     let base = root.join("appdata/spaces").join(space);
-    // Select an old-format snapshot within a small reserve for repeated writes.
+    // Select a v2 snapshot within a small reserve for repeated writes.
     // Fixture creation is untimed and runs with the disposable server stopped.
     let identity = format!("---\ncalternal-id: {id}\n");
     let mut low = 1;

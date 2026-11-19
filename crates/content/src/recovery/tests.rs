@@ -59,7 +59,7 @@ impl Fixture {
 
     fn index(&self) -> rusqlite::Connection {
         let path =
-            crate::db::space_path(&self.roots.appdata, self.space).with_file_name("index.db");
+            crate::db::space_path(&self.roots.appdata, self.space);
         rusqlite::Connection::open(path).unwrap()
     }
 }
@@ -95,7 +95,7 @@ fn a_forward_boot_clock_jump_keeps_the_pending_checkpoint_reply() {
         .journals
         .open_store(f.space, restarted.lifecycle())
         .unwrap();
-    let mut space = Space::open(&f.roots.appdata, &f.roots.userdata_ssd, f.space, store).unwrap();
+    let mut space = Space::open(&f.roots.userdata_ssd, f.space, store, crate::open_space_database(&f.roots.appdata, f.space).unwrap()).unwrap();
     let jumped =
         now_ms() + (DEFAULT_RECEIPT_RETENTION + Duration::from_secs(60)).as_millis() as i64;
     // Same cold recovery path and DB order, with the boot wall clock advanced.

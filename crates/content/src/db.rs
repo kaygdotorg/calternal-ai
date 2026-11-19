@@ -50,7 +50,7 @@ pub(crate) struct Space {
     pub(crate) append_group: Option<crate::thread_append::Group>,
     pub(crate) names: HashMap<String, calternal_fsio::names::DirectoryNames>,
 }
-/// The existing per-space SQLite path under the guarded appdata root.
+/// The SQLite path of the space content, journal and job WAL. Does not open it.
 pub(crate) fn space_path(appdata: &Path, id: SpaceId) -> PathBuf {
     appdata
         .join("spaces")
@@ -81,12 +81,14 @@ const THREAD_SNOOZE: &str = "
         BEGIN SELECT RAISE(ABORT, 'invalid thread snooze timestamp'); END;
 ";
 
+#[cfg(test)]
 const SPACE_INITIAL: &[&str] = &[
     SPACE_BASE,
     crate::linked_write::SCHEMA,
     crate::trash::SCHEMA,
 ];
 const COLLECTION_MEMBERS: &str = include_str!("collection_members.sql");
+#[cfg(test)]
 const SPACE_CHANGES: &[(i64, &str)] = &[
     (4, THREAD_SNOOZE),
     (5, COLLECTION_MEMBERS),
@@ -98,15 +100,27 @@ const SPACE_CHANGES: &[(i64, &str)] = &[
         crate::thread_append::revision::SCHEMA,
     ),
 ];
+#[cfg(test)]
 const CONTENT_BASELINE: i64 = 3;
 const CONTENT_SCHEMA_NAME: &str = "space content.db";
 
 pub(crate) const SPACE_SCHEMA: calternal_store::migrations::Schema<'_> =
     calternal_store::migrations::Schema::new(
         CONTENT_SCHEMA_NAME,
-        CONTENT_BASELINE,
-        SPACE_INITIAL,
-        SPACE_CHANGES,
+        crate::thread_append::revision::PATCH_SCHEMA_VERSION,
+        &[
+            SPACE_BASE,
+            crate::linked_write::SCHEMA,
+            crate::trash::SCHEMA,
+            THREAD_SNOOZE,
+            COLLECTION_MEMBERS,
+            crate::rooms::SCHEMA,
+            crate::trash_job::SCHEMA,
+            crate::rename_job::SCHEMA,
+            crate::thread_append::revision::SCHEMA,
+            calternal_store::SpaceStore::COLOCATED_SCHEMA,
+        ],
+        &[],
     );
 
 /// The adjacent production descriptors for the introduction of patch rows.
@@ -126,6 +140,7 @@ pub(crate) fn thread_patch_transition() -> [calternal_store::migrations::Schema<
     })
 }
 
+/// Open and initialize a private SQLite store using its declared schema.
 pub(crate) fn database(
     path: &Path,
     schema: calternal_store::migrations::Schema<'_>,
@@ -147,12 +162,11 @@ pub(crate) fn database(
 }
 impl Space {
     pub(crate) fn open(
-        appdata: &Path,
         userdata_ssd: &Path,
         id: SpaceId,
         journal: calternal_store::SpaceStore,
+        conn: Connection,
     ) -> Result<Self> {
-        let conn = database(&space_path(appdata, id), SPACE_SCHEMA)?;
         conn.execute(
             "INSERT OR IGNORE INTO binding VALUES('space',?1)",
             [id.to_string()],

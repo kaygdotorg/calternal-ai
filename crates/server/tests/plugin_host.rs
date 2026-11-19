@@ -768,7 +768,7 @@ async fn job_is_durable_streams_in_order_checkpoints_and_finishes() {
         f.root
             .join("appdata/spaces")
             .join(&space)
-            .join("jobs.db")
+            .join("content.db")
             .is_file()
     );
     let sub = f.state.jobs.subscribe(&id).unwrap();

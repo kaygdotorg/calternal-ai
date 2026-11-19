@@ -289,7 +289,7 @@ impl Jobs {
     fn has_job_store(&self, space: &str) -> bool {
         self.root
             .as_ref()
-            .is_some_and(|root| root.join(space).join("jobs.db").is_file())
+            .is_some_and(|root| root.join(space).join("content.db").is_file())
     }
 
     /// Find a wait in an authorized space without opening new stores. Reads one

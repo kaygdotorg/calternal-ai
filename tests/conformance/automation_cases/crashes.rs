@@ -52,7 +52,7 @@ fn occurrence(db: &Connection, space: &str, automation: &str, due: i64) -> Optio
 }
 
 fn jobs(f: &Fixture, space: &str) -> Vec<(String, String, u32)> {
-    let file = f.appdata().join("spaces").join(space).join("jobs.db");
+    let file = f.appdata().join("spaces").join(space).join("content.db");
     if !file.is_file() {
         return vec![];
     }

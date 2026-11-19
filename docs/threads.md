@@ -27,7 +27,7 @@ single source of operation policy. `threads.create` makes an empty file;
 `threads.get` returns the Markdown and revision. With a `message_id`, it checks
 the same thread authority and returns one saved record from the current
 revision, using the locator maintained by [search](search.md).
-`threads.send` commits a person's message before admitting the turn;
+`threads.send` saves the message and its turn admission together on Linux;
 `threads.stop` cancels current work. `threads.rename` updates the title and filename
 while preserving the UUID and messages. `threads.archive` hides it from the
 ordinary sidebar and `threads.unarchive` returns it to that list. Both preserve
@@ -38,26 +38,26 @@ Deleted IDs remain resolvable as deleted. Listing children by `parent_thread`
 includes archived children and deleted child tombstones, preserving provenance. A thread credential cannot address another thread,
 even with Full access, and no operation trusts a caller's space hint over its ID.
 
-Send has two recoverable phases. The first records the message and a pending
-intent through the content outbox, then publishes the message receipt. The
-second holds the same space lock while it checks the current head, admits the
-job with a stable key, and stores the admission receipt in that same jobs
-transaction. The admission callback never re-enters content. Trash checks job state under the same content lock. Once its tombstone is
+On Linux a FULL space WAL transaction records the patch, publication intent,
+retry receipt payload and fenced job admission. The writer directly appends
+Markdown and syncs the file. Journal publication then releases the existing job
+and its stable request key in a NORMAL transaction on the same WAL. Trash
+checks job state under the space slot. Once its tombstone is
 durable, protected authority cleanup runs under an item-aware admission check;
 a failure is replayable before deletion is acknowledged. Removing authority before
 the content commit could otherwise forget the saved mode after a failed delete.
 A fresh delete of an existing tombstone can finish cleanup after receipt expiry. Lock order is content → jobs → auth; auth callbacks
 never acquire content or jobs locks. This serializes only one space.
 
-A crash between message placement and admission leaves one visible message.
-Retry the identical `threads.send` with its original request ID: the message
-receipt replays, admission finishes once, and the same job is scheduled. Until
-that retry, another send is refused with the next step. A crash after job admission
-replays its receipt. Job retention never permits a retained admission receipt to
-start work twice.
-After the operator's receipt-retention window, a request is new, as for every
-other write. The default window is seven days. An expired pending intent no
-longer blocks a new send; its saved message is preserved.
+A crash before the FULL commit accepts nothing. A crash afterwards leaves a
+durable intent and the same job ID. On open, recovery puts any absent or torn
+suffix in place, syncs it, then publishes the journal and releases the job.
+If the file was already synced, replay reuses the existing complete record.
+If a power loss rolls back publication, the FULL intent replays it before users
+can open the thread. Every durable retirement also covers the earlier
+projection frames on this WAL. A retry returns the same message and job
+through the operator's receipt-retention window, seven days by default.
+Job retention preserves the admission receipt for that window.
 
 A warm successful send reads metadata and the current revision. Small
 transcripts add a bounded read of at most 8 KiB for the response. The turn
@@ -90,13 +90,14 @@ and syncs the file once for up to four complete records. An output checkpoint
 can join a same-file group during a 2 ms window. Ordinary reads and writes
 close the group first. Each record is prepared in SQLite before its file
 write, and the group's file sync precedes every journal acknowledgement.
-The SQLite write stores the new patch bytes once
-with one FULL content commit and one FULL journal commit before acknowledgement.
-The journal commit publishes the message and its retry receipt together.
+The SQLite write stores the patch and the publication intent once with one FULL
+commit. The grouped Markdown sync is the second foreground barrier. Publication
+then projects the already durable intent into the journal and activates the
+waiting job without an additional FULL commit.
 The published outbox intent keeps its receipt pinned until the next append
 commit retires it or the existing space worker retires the batch after one
 second. A crash before retirement replays publication idempotently and keeps
-the pin in the meantime. Turn admission has its own job-and-receipt commit.
+the pin in the meantime.
 The incremental hasher holds a fixed-size state and a
 4 KiB tail. Ordinary checkpoint appends do not allocate a transcript-sized
 buffer or rehash the file. Message indexing consumes only new fragments
@@ -594,9 +595,12 @@ per month.
 ### Message versions
 
 The v2 file records a physical frame UUID, a stable message UUID, a version UUID,
-and a parent version UUID (`none` at the root). Each new version selects itself.
+and a parent version UUID (`none` at the root). A new version with `select:yes` selects itself. A version appended with
+`select:no` leaves the active version unchanged, including a reply on an
+inactive branch.
 A continuation repeats the same message, version and parent without selecting
-again. An empty file has no selection. The control frame
+again. The parser reserves the visible `> Edited: …` and fresh-agent notices
+before a framed message. An empty file has no selection. The control frame
 `<!-- calternal-select:VERSION-UUID -->` selects an earlier version without
 rewriting any prior frame. Fork operations can reuse the message UUID, assign a
 new version UUID, and point to the selected ancestor. Linear sends use this
@@ -620,12 +624,12 @@ last edited: 2026-11-18T19:30:18+05:30
 > Sign-in was done for Anthropic at 2026-11-18 19:30:04 +05:30.
 
 ## Maya Chen · 2026-11-18 19:30:00 +05:30
-<!-- id:019a8c00-0000-7000-8000-000000000100 role:person bytes:36 message:019a8c00-0000-7000-8000-000000000100 version:019a8c00-0000-7000-8000-000000000100 parent:none -->
+<!-- id:019a8c00-0000-7000-8000-000000000100 role:person bytes:36 message:019a8c00-0000-7000-8000-000000000100 version:019a8c00-0000-7000-8000-000000000100 parent:none select:yes -->
 
 Which release checks are still open?
 
 ## Claude Code via Anthropic (subscription) · Claude Sonnet 5.5 · High · 2026-11-18 19:30:06 +05:30 · 12 s · Thought for 4.0 s
-<!-- id:019a8c00-0000-7000-8000-000000000101 role:agent bytes:161 message:019a8c00-0000-7000-8000-000000000101 version:019a8c00-0000-7000-8000-000000000101 parent:019a8c00-0000-7000-8000-000000000100 turn:019a8c00-0000-7000-8000-000000000110 meta:{"provider_id":"calternal-claude-code","model_id":"claude-sonnet-5-5","reasoning_level":"high","machine_id":null,"duration_ms":12000,"reasoning_ms":4000} -->
+<!-- id:019a8c00-0000-7000-8000-000000000101 role:agent bytes:161 message:019a8c00-0000-7000-8000-000000000101 version:019a8c00-0000-7000-8000-000000000101 parent:019a8c00-0000-7000-8000-000000000100 select:yes turn:019a8c00-0000-7000-8000-000000000110 meta:{"provider_id":"calternal-claude-code","model_id":"claude-sonnet-5-5","reasoning_level":"high","machine_id":null,"duration_ms":12000,"reasoning_ms":4000} -->
 
 The accessibility review is the only open check.
 
@@ -648,17 +652,17 @@ last edited: 2026-11-18T19:42:09+05:30
 # Launch note
 
 ## Mira Patel · 2026-11-18 19:40:00 +05:30
-<!-- id:019a8c00-0000-7000-8000-000000000120 role:person bytes:37 message:019a8c00-0000-7000-8000-000000000120 version:019a8c00-0000-7000-8000-000000000120 parent:none -->
+<!-- id:019a8c00-0000-7000-8000-000000000120 role:person bytes:37 message:019a8c00-0000-7000-8000-000000000120 version:019a8c00-0000-7000-8000-000000000120 parent:none select:yes -->
 
 Draft a sentence for the launch note.
 
 ## fx via Vercel AI Gateway (API) · Claude Sonnet 5.5 · Medium · 2026-11-18 19:40:01 +05:30 · 8 s
-<!-- id:019a8c00-0000-7000-8000-000000000121 role:agent bytes:58 message:019a8c00-0000-7000-8000-000000000121 version:019a8c00-0000-7000-8000-000000000121 parent:019a8c00-0000-7000-8000-000000000120 turn:019a8c00-0000-7000-8000-000000000131 meta:{"provider_id":"calternal-fx","model_id":"claude-sonnet-5-5","reasoning_level":"medium","machine_id":null,"duration_ms":8000,"reasoning_ms":null} -->
+<!-- id:019a8c00-0000-7000-8000-000000000121 role:agent bytes:58 message:019a8c00-0000-7000-8000-000000000121 version:019a8c00-0000-7000-8000-000000000121 parent:019a8c00-0000-7000-8000-000000000120 select:yes turn:019a8c00-0000-7000-8000-000000000131 meta:{"provider_id":"calternal-fx","model_id":"claude-sonnet-5-5","reasoning_level":"medium","machine_id":null,"duration_ms":8000,"reasoning_ms":null} -->
 
 The release makes shared project updates easier to follow.
 
 ## Jules Rivera · 2026-11-18 09:12:00 -05:00
-<!-- id:019a8c00-0000-7000-8000-000000000122 role:person bytes:65 message:019a8c00-0000-7000-8000-000000000122 version:019a8c00-0000-7000-8000-000000000122 parent:019a8c00-0000-7000-8000-000000000121 -->
+<!-- id:019a8c00-0000-7000-8000-000000000122 role:person bytes:65 message:019a8c00-0000-7000-8000-000000000122 version:019a8c00-0000-7000-8000-000000000122 parent:019a8c00-0000-7000-8000-000000000121 select:yes -->
 
 Use this structure for the draft:
 
@@ -667,7 +671,7 @@ Use this structure for the draft:
 - A short summary.
 
 ## Codex via OpenAI · GPT-5.5 · High · 2026-11-18 09:12:01 -05:00 · 8 s
-<!-- id:019a8c00-0000-7000-8000-000000000123 role:agent bytes:49 message:019a8c00-0000-7000-8000-000000000123 version:019a8c00-0000-7000-8000-000000000123 parent:019a8c00-0000-7000-8000-000000000122 turn:019a8c00-0000-7000-8000-000000000133 meta:{"provider_id":"calternal-codex","model_id":"gpt-5.5","reasoning_level":"high","machine_id":null,"duration_ms":8000,"reasoning_ms":null} -->
+<!-- id:019a8c00-0000-7000-8000-000000000123 role:agent bytes:49 message:019a8c00-0000-7000-8000-000000000123 version:019a8c00-0000-7000-8000-000000000123 parent:019a8c00-0000-7000-8000-000000000122 select:yes turn:019a8c00-0000-7000-8000-000000000133 meta:{"provider_id":"calternal-codex","model_id":"gpt-5.5","reasoning_level":"high","machine_id":null,"duration_ms":8000,"reasoning_ms":null} -->
 
 Shared projects now show recent updates together.
 ```
@@ -688,12 +692,12 @@ last edited: 2026-11-18T19:50:21+05:30
 # Compare onboarding notes
 
 ## Maya Chen · 2026-11-18 19:50:00 +05:30
-<!-- id:019a8c00-0000-7000-8000-000000000140 role:person bytes:49 message:019a8c00-0000-7000-8000-000000000140 version:019a8c00-0000-7000-8000-000000000140 parent:none -->
+<!-- id:019a8c00-0000-7000-8000-000000000140 role:person bytes:49 message:019a8c00-0000-7000-8000-000000000140 version:019a8c00-0000-7000-8000-000000000140 parent:none select:yes -->
 
 Compare the setup steps with the short reference.
 
 ## Claude Code via Anthropic (subscription) · Claude Opus 5.5 · High · 2026-11-18 19:50:01 +05:30 · 20 s
-<!-- id:019a8c00-0000-7000-8000-000000000141 role:agent bytes:114 message:019a8c00-0000-7000-8000-000000000141 version:019a8c00-0000-7000-8000-000000000141 parent:019a8c00-0000-7000-8000-000000000140 turn:019a8c00-0000-7000-8000-000000000150 meta:{"provider_id":"calternal-claude-code","model_id":"claude-opus-5-5","reasoning_level":"high","machine_id":null,"duration_ms":20000,"reasoning_ms":null} -->
+<!-- id:019a8c00-0000-7000-8000-000000000141 role:agent bytes:114 message:019a8c00-0000-7000-8000-000000000141 version:019a8c00-0000-7000-8000-000000000141 parent:019a8c00-0000-7000-8000-000000000140 select:yes turn:019a8c00-0000-7000-8000-000000000150 meta:{"provider_id":"calternal-claude-code","model_id":"claude-opus-5-5","reasoning_level":"high","machine_id":null,"duration_ms":20000,"reasoning_ms":null} -->
 
 The reference is missing the account setup step. See [Reference review](<Reference review.md>) for the comparison.
 ```
@@ -713,12 +717,12 @@ archived: true
 # Reference review
 
 ## fx via Vercel AI Gateway (API) · Claude Haiku 5.5 · Low · 2026-11-18 19:50:02 +05:30 · 5 s · Interrupted
-<!-- id:019a8c00-0000-7000-8000-000000000160 role:agent bytes:53 message:019a8c00-0000-7000-8000-000000000160 version:019a8c00-0000-7000-8000-000000000160 parent:none turn:019a8c00-0000-7000-8000-000000000170 meta:{"provider_id":"calternal-fx","model_id":"claude-haiku-5-5","reasoning_level":"low","machine_id":null,"duration_ms":5000,"reasoning_ms":null} -->
+<!-- id:019a8c00-0000-7000-8000-000000000160 role:agent bytes:53 message:019a8c00-0000-7000-8000-000000000160 version:019a8c00-0000-7000-8000-000000000160 parent:none select:yes turn:019a8c00-0000-7000-8000-000000000170 meta:{"provider_id":"calternal-fx","model_id":"claude-haiku-5-5","reasoning_level":"low","machine_id":null,"duration_ms":5000,"reasoning_ms":null} -->
 
 I found the reference and saved the first comparison.
 
 ## fx via Vercel AI Gateway (API) · Claude Haiku 5.5 · Low · 2026-11-18 19:50:12 +05:30 · 7 s · Resumed
-<!-- id:019a8c00-0000-7000-8000-000000000161 role:agent bytes:77 message:019a8c00-0000-7000-8000-000000000161 version:019a8c00-0000-7000-8000-000000000161 parent:019a8c00-0000-7000-8000-000000000160 turn:019a8c00-0000-7000-8000-000000000170 meta:{"provider_id":"calternal-fx","model_id":"claude-haiku-5-5","reasoning_level":"low","machine_id":null,"duration_ms":7000,"reasoning_ms":null} -->
+<!-- id:019a8c00-0000-7000-8000-000000000161 role:agent bytes:77 message:019a8c00-0000-7000-8000-000000000161 version:019a8c00-0000-7000-8000-000000000161 parent:019a8c00-0000-7000-8000-000000000160 select:yes turn:019a8c00-0000-7000-8000-000000000170 meta:{"provider_id":"calternal-fx","model_id":"claude-haiku-5-5","reasoning_level":"low","machine_id":null,"duration_ms":7000,"reasoning_ms":null} -->
 
 The setup note includes account setup. The reference starts at project setup.
 ```
@@ -739,17 +743,17 @@ last edited: 2026-11-18T20:30:41+05:30
 # Weekly release review
 
 ## Automation Weekly release review · 2026-11-18 20:30:00 +05:30
-<!-- id:019a8c00-0000-7000-8000-000000000180 role:automation bytes:43 message:019a8c00-0000-7000-8000-000000000180 version:019a8c00-0000-7000-8000-000000000180 parent:none -->
+<!-- id:019a8c00-0000-7000-8000-000000000180 role:automation bytes:43 message:019a8c00-0000-7000-8000-000000000180 version:019a8c00-0000-7000-8000-000000000180 parent:none select:yes -->
 
 Summarize the release checks due this week.
 
 ## Claude Code via Anthropic (subscription) · Claude Sonnet 5.5 · Provider default · 2026-11-18 20:30:01 +05:30 · 2 s · Failed
-<!-- id:019a8c00-0000-7000-8000-000000000181 role:agent bytes:38 message:019a8c00-0000-7000-8000-000000000181 version:019a8c00-0000-7000-8000-000000000181 parent:019a8c00-0000-7000-8000-000000000180 turn:019a8c00-0000-7000-8000-000000000190 meta:{"provider_id":"calternal-claude-code","model_id":"claude-sonnet-5-5","reasoning_level":null,"machine_id":null,"duration_ms":2000,"reasoning_ms":null} -->
+<!-- id:019a8c00-0000-7000-8000-000000000181 role:agent bytes:38 message:019a8c00-0000-7000-8000-000000000181 version:019a8c00-0000-7000-8000-000000000181 parent:019a8c00-0000-7000-8000-000000000180 select:yes turn:019a8c00-0000-7000-8000-000000000190 meta:{"provider_id":"calternal-claude-code","model_id":"claude-sonnet-5-5","reasoning_level":null,"machine_id":null,"duration_ms":2000,"reasoning_ms":null} -->
 
 Anthropic was temporarily unavailable.
 
 ## Claude Code via Anthropic (subscription) · Claude Sonnet 5.5 · Provider default · 2026-11-18 20:30:33 +05:30 · 8 s · Retry 2
-<!-- id:019a8c00-0000-7000-8000-000000000182 role:agent bytes:29 message:019a8c00-0000-7000-8000-000000000182 version:019a8c00-0000-7000-8000-000000000182 parent:019a8c00-0000-7000-8000-000000000181 turn:019a8c00-0000-7000-8000-000000000190 meta:{"provider_id":"calternal-claude-code","model_id":"claude-sonnet-5-5","reasoning_level":null,"machine_id":null,"duration_ms":8000,"reasoning_ms":null} -->
+<!-- id:019a8c00-0000-7000-8000-000000000182 role:agent bytes:29 message:019a8c00-0000-7000-8000-000000000182 version:019a8c00-0000-7000-8000-000000000182 parent:019a8c00-0000-7000-8000-000000000181 select:yes turn:019a8c00-0000-7000-8000-000000000190 meta:{"provider_id":"calternal-claude-code","model_id":"claude-sonnet-5-5","reasoning_level":null,"machine_id":null,"duration_ms":8000,"reasoning_ms":null} -->
 
 Two checks are due on Friday.
 ```

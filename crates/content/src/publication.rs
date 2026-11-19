@@ -38,9 +38,10 @@ impl Content {
         Ok(())
     }
     /// Publish ordered intents, finishing linked placements and purge intents
-    /// first. Cost: indexed intent/kind/route/receipt reads and one FULL journal
-    /// commit per new event. Other intents retire immediately. Published append
-    /// intents retain their receipt pins until the next patch or a worker commit.
+    /// first. Ordinary events use one FULL journal commit. Thread append
+    /// publication uses a NORMAL projection on the same WAL as its FULL intent.
+    /// A durable retirement necessarily flushes the earlier journal frames; a
+    /// lost projection leaves the intent intact for replay.
     pub(crate) fn publish_pending(&self, space: &mut Space) -> Result<()> {
         loop {
             let row=space.conn.query_row(
@@ -143,6 +144,9 @@ impl Content {
             };
             #[cfg(feature = "perf-timings")]
             let journal = calternal_store::timings::SaveStage::Journal.start();
+            // The committed append intent already contains the event and receipt.
+            // Releasing a staged turn and recording its journal row are one
+            // transaction, after the group has made Markdown durable.
             self.journals.publish(
                 &space.journal,
                 account.parse().map_err(internal)?,
@@ -153,6 +157,7 @@ impl Content {
                 item,
                 &revision,
                 payload,
+                !append,
             )?;
             #[cfg(feature = "perf-timings")]
             journal.finish();

@@ -20,10 +20,9 @@ database until checkpointed. SQLite SHM, locks and sockets are runtime state.
 | Appdata `system/appearance.db` | Mixed | Appearance, new SQLite 1 baseline through the shared runner. Account preferences and original private uploads are authoritative. Shared manifests and eviction pins coordinate with the cache. The production baseline has no appearance database. |
 | Appdata `fonts-cache-v1/` | Derived | Version 1 directories of immutable WOFF2 bytes by family and digest. Startup verifies the published manifest and retires incomplete or orphan fills. |
 | Appdata `system/machines.db` | Authority | Machine placement, SQLite 6 initial schema, advanced to 7 on server startup by the automatic thread-title lease migration. Version 8 adds scoped harness leases. Version 9 adds shared-space execution bindings, the lease sponsor, and the isolated-tool opt-in, which defaults to off. Leases, fences, drain, work locations, discard and erase delivery, and the durable stop record that keeps an erased worker's machine slot reserved until its stop completes. |
-| Appdata `spaces/<id>/content.db` | Mixed | Content, SQLite 5. Item identity, revisions, pending placement, trash and tombstones, kinds, plugin controls, thread snooze state and sharing's collection membership. Version 6 adds live-room kinds and document checkpoints, version 7 adds Trash jobs, version 8 adds rename jobs, and version 9 adds thread revision patches. Listing, labels and links are derived. |
-| Appdata `spaces/<id>/index.db`, `secrets/spaces/<id>/head` | Authority | Space journal, SQLite 2 and binary CHW2. Journal, epoch, receipts and independent head witness. Receipts are pruned after the operator's retention (7 days by default) only on content's command, with every receipt of a surviving outbox intent pinned. The fence adds no stored state. |
+| Appdata `spaces/<id>/content.db` | Mixed | Fresh SQLite 9 baseline. One WAL holds content and revisions, the journal and account-qualified receipts, and the version 4 jobs component. Jobs include admission, retry, checkpoints, signal waits and the event outbox. Listing, labels and links are derived. |
+| Secrets `spaces/<id>/head` | Authority | The journal's independent binary CHW2 witness stays outside SQLite and backups. Receipt retention defaults to seven days. Durable pending intents pin receipts. |
 | Appdata `spaces/<id>/network.db` | Authority | Plugin network, SQLite 1, introduced after the production baseline. Per-person remote content preferences and bounded outbound audit metadata. Absent databases use the default and are initialized by the shared runner on the first saved preference. |
-| Appdata `spaces/<id>/jobs.db` | Authority | Jobs, SQLite 2. Admission, retry and in-flight state, checkpoints, event outbox and retention. Version 3 adds plugin signal waits and decision receipts. Version 4 adds saved-thread admission receipts. |
 | Appdata `accounts/<id>/input.db`, `content.db`, `agent-settings.db` | Authority | Account input, content and jobs. SQLite 2 for drafts and pending input, 1 for protected collections and 1 for retry settings. Input version 3 adds private plugin settings and their receipts. |
 | Appdata `accounts/<id>/onboarding.db` | Authority | Account onboarding, SQLite 1 when a person finishes onboarding. Missing files read as unfinished. The completion marker rides with account settings and is removed by account erasure. |
 | Appdata `accounts/<id>/secrets.db`, `spaces/<id>/secrets.db` | Authority | Secrets, SQLite 1. Sealed values, pending prompts, audit and key state. |
@@ -148,11 +147,6 @@ branch of a SQLite UPSERT can override the dirty-key trigger's
 recovery trigger and witness publication in the write path.
 [Recovery protocol](../crates/recovery/PROTOCOL.md)
 
-The jobs.db 2 → 3 change preserves existing rows and the original
-jobs-table writer shape. A release at version 2 cannot service parked
-plugin signal waits. Qualify downgrade semantics with the exact release
-pair before activating the feature on production data.
-
 ### Item sharing
 
 The fresh production baseline at `c98705d7` includes dormant sharing authority
@@ -163,30 +157,19 @@ independently derived keys.
 
 ### Thread appends
 
-Treat this update as incompatible once thread writes are enabled. The
-production `c98705d7` reader rejects checkpoint control records and the
-`continues` provenance field even though the file still carries the v1 tag.
-A plain person message can use the old framing, but the old database reader
-cannot compose patch-backed revisions. The first new patch or admission
-receipt retires the corresponding older-writer approval. This branch needs
-owner approval and the incompatible restore-point procedure before deployment.
+The owner approved a fresh install on 2026-11-20 before signup. This release
+creates the combined space database at version 9 and writes
+`calternal-thread/v2`. An earlier space database or thread format is refused.
+The fresh install uses no v1 conversion or restore point.
 
-The space content migration from SQLite 8 to 9 adds
-`thread_revision_patches` to the existing descriptor. It leaves every old
-SQLite snapshot and v1 Markdown file unchanged. A new checkpoint records only its bytes and the offset and
-hashes needed to place or read it. It also records the preceding full hash
-and the first patch of a sync group so cold recovery can repair complete and
-torn records in order. The current reader composes patches over
-their immutable base snapshot. The first new patch does require a writer
-that understands the new representation. The first patched commit retires a
-rollback marker that would let an older writer open those heads.
-
-The jobs migration from SQLite 3 to 4 adds `thread_send_receipts`. A saved
-thread turn and its admission receipt now share the job transaction. The
-receipt stores the request-key hash and job ID until the journal retention
-deadline, including after job history eviction. Earlier receipts remain
-readable from the journal. The first new receipt retires an older-writer
-rollback marker because that writer cannot check the new receipt.
+The space WAL contains the content, journal and jobs component. Its FULL
+append transaction records a bounded patch, the journal and receipt intent,
+and any fenced job admission. The Markdown file is directly written and synced
+before journal publication or release of that job. Durable retirement in this
+same WAL also makes prior projection writes durable. A lost projection replays
+from the surviving intent. The content patch records offset and length,
+preceding range and file hashes, and the first patch of the sync group.
+See [thread storage and recovery](threads.md).
 
 ## Release handoff
 
