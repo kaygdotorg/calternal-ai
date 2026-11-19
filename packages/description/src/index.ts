@@ -11,3 +11,4 @@ export { default as ContentList } from "./render/ContentList.svelte";
 export { default as RowView } from "./render/RowView.svelte";
 export { default as StateMessage } from "./render/StateMessage.svelte";
 export { default as Sidebar } from "./render/Sidebar.svelte";
+export { Selection, type SelectionHost } from "./windows/selection.svelte";

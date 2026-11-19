@@ -6,6 +6,7 @@
   import type { HostSession } from "../wire/session";
   import { refusalOf } from "../check";
   import { WindowStore } from "../windows/window-store.svelte";
+  import { Selection } from "../windows/selection.svelte";
   import Sidebar from "./Sidebar.svelte";
   import Node from "./Node.svelte";
 
@@ -14,11 +15,11 @@
     description: AppDescription; session: HostSession;
     /** The icon each kind declares (the host catalogue's for host kinds, a manifest's for a plugin's), for rows whose icon is `kindIcon`. */
     kindIcons?: Record<string, string>; route?: Record<string, string>; role?: "viewer" | "editor" | "manager" | "owner";
-    onopen?: (bind: string, id: string, index: number) => void; onsettle?: (bind: string, id: string, index: number) => void;
+    onopen?: (bind: string, id: string, index: number) => void;
   } = $props();
   const { description, session } = untrack(() => ({ description: props.description, session: props.session }));
   const kindIcons = $derived(props.kindIcons ?? {}), route = $derived(props.route ?? {}), role = $derived(props.role);
-  const onopen = (b: string, id: string, i: number) => props.onopen?.(b, id, i), onsettle = (b: string, id: string, i: number) => props.onsettle?.(b, id, i);
+  const onopen = (b: string, id: string, i: number) => props.onopen?.(b, id, i);
 
   const refusal = refusalOf(description);
   const binds = new Map<string, Bind>((description.binds ?? []).map((b) => [b.id, b]));
@@ -31,11 +32,13 @@
     if (!s) { s = new WindowStore({ bind: b, source: session }); stores.set(id, s); }
     return s;
   }
+  const selections = new Map<string, Selection>();
+  /** The selection of a bind, shared by every place that draws it (the selected row is that bind's `selection` source). */
+  function selectionFor(id: string): Selection { let x = selections.get(id); if (!x) { x = new Selection(id, session); selections.set(id, x); } return x; }
   const kindIconFor = (id: string): string | undefined => { const k = binds.get(id)?.source.kind; return k ? kindIcons[k] : undefined; };
   session.held = () => Object.fromEntries([...stores.values()].filter((s) => s.windowRef && s.resultVersion).map((s) => [s.windowRef!, s.resultVersion!]));
   onDestroy(() => { for (const s of stores.values()) s.destroy(); session.close(); });
 
-  let selected = $state<string | null>(null);
   const header = description.chrome?.header?.title;
   const title = typeof header === "string" ? header : description.view?.title;
 </script>
@@ -46,13 +49,12 @@
   <div class="app" data-app>
     {#if description.chrome?.sidebar}
       <aside class="side" style:width="{description.chrome.sidebar.width ?? 280}px">
-        <Sidebar sidebar={description.chrome.sidebar} {storeFor} {kindIconFor} selectedId={selected} {route} {role}
-          onopen={(b, id, i) => { selected = id; onopen?.(b, id, i); }} onsettle={(b, id, i) => { selected = id; onsettle?.(b, id, i); }} />
+        <Sidebar sidebar={description.chrome.sidebar} {storeFor} {selectionFor} {kindIconFor} {route} {role} {onopen} />
       </aside>
     {/if}
     <main class="main">
       {#if title}<h1 class="h1">{title}</h1>{/if}
-      {#if description.view}<Node node={description.view.root} {storeFor} {kindIconFor} selectedId={selected} {onopen} {onsettle} />{/if}
+      {#if description.view}<Node node={description.view.root} {storeFor} {selectionFor} {kindIconFor} {onopen} />{/if}
     </main>
   </div>
 {/if}

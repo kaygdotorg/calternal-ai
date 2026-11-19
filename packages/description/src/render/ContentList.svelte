@@ -5,19 +5,21 @@
   import { VirtualList, cssPx } from "@calternal/ui";
   import type { Bind, State } from "../model";
   import type { WindowStore } from "../windows/window-store.svelte";
+  import type { Selection } from "../windows/selection.svelte";
   import RowView from "./RowView.svelte";
   import SkeletonRow from "./SkeletonRow.svelte";
   import StateMessage from "./StateMessage.svelte";
 
-  let { store, kindIcon, label, inside = false, selectedId, onopen, onsettle }: {
-    store: WindowStore; kindIcon?: string; label: string; inside?: boolean;
-    /** The id of the row that is selected (read from the list's own selection by the caller). */
-    selectedId?: string | null;
-    /** A row was activated (click or Return). */
+  let { store, selection, kindIcon, label, inside = false, onopen }: {
+    store: WindowStore; selection: Selection; kindIcon?: string; label: string; inside?: boolean;
+    /** The selection settled on a row (after a key burst, or a click): the route opens here. Called once per settle. */
     onopen?: (id: string, index: number) => void;
-    /** The cursor rested on row `index` after a key burst (the settled selection, sent once). */
-    onsettle?: (id: string, index: number) => void;
   } = $props();
+  let vl = $state<{ scrollToIndex(i: number, a?: "centre" | "start"): void }>();
+  let wantEnd = $state(false);
+  // End on a list whose size is not known pages forward; when the last window has arrived the list scrolls to its bottom.
+  $effect(() => { void store.tick; if (wantEnd && store.walkGoal === null && vl && store.length > 0) { wantEnd = false; vl.scrollToIndex(store.length - 1, "start"); } });
+  const choose = (id: string, i: number) => { void selection.settle(id); onopen?.(id, i); };
 
   const bind: Bind = $derived(store.bind);
   const template = $derived(bind.row ?? { title: { field: "title" } });
@@ -45,14 +47,20 @@
   {:else}
     {#if store.state === "refine_query"}<div class="refine"><StateMessage message={refineMessage} /></div>{/if}
     <div class="rows" class:inside>
-      <VirtualList
+      <VirtualList bind:this={vl}
         count={store.length} estimate={rowH} startAtBottom={false} {inside} {label} rowRole="listitem"
         onrange={(first, end) => store.ensure(consumer, first, end)}
-        nav={{ id: (i) => store.row(i)?.id ?? "", indexOf: (id) => store.indexOf(id), selected: () => (selectedId ? store.indexOf(selectedId) : -1), open: (i) => { const r = store.row(i); if (r) onsettle?.(r.id, i); } }}
+        nav={{
+          pageKeys: "scroll",
+          id: (i) => store.row(i)?.id ?? "", indexOf: (id) => store.indexOf(id), selected: () => (selection.drawn ? store.indexOf(selection.drawn) : -1),
+          onmove: (i) => { const r = store.row(i); if (r) selection.paint(r.id); },
+          open: (i) => { const r = store.row(i); if (r) choose(r.id, i); },
+          onjump: (key) => { if (key === "End") { store.jump("end"); wantEnd = store.walkGoal !== null; } },
+        }}
       >
         {#snippet row(i)}
           {@const r = store.row(i)}
-          {#if r}<RowView {template} row={r} {kindIcon} selected={r.id === selectedId} onclick={() => onopen?.(r.id, i)} />
+          {#if r}<RowView {template} row={r} {kindIcon} selected={r.id === selection.drawn} onclick={() => choose(r.id, i)} />
           {:else}<SkeletonRow icon={template.icon !== undefined} width={40 + ((i * 17) % 40)} />{/if}
         {/snippet}
       </VirtualList>

@@ -3,19 +3,20 @@
   // explicit "not drawn yet" block (never silently dropped), so a fixture that uses them shows what is missing.
   import type { ContentNode } from "../model";
   import type { WindowStore } from "../windows/window-store.svelte";
+  import type { Selection } from "../windows/selection.svelte";
   import ContentList from "./ContentList.svelte";
   import Node from "./Node.svelte";
 
-  let { node, storeFor, kindIconFor, selectedId, onopen, onsettle }: {
-    node: ContentNode; storeFor: (bindId: string) => WindowStore | undefined; kindIconFor: (bindId: string) => string | undefined;
-    selectedId?: string | null; onopen?: (bind: string, id: string, index: number) => void; onsettle?: (bind: string, id: string, index: number) => void;
+  let { node, storeFor, selectionFor, kindIconFor, onopen }: {
+    node: ContentNode; storeFor: (bindId: string) => WindowStore | undefined; selectionFor: (bindId: string) => Selection; kindIconFor: (bindId: string) => string | undefined;
+    onopen?: (bind: string, id: string, index: number) => void;
   } = $props();
 </script>
 
 {#if node.type === "stack"}
   <div class="stack" class:row={node.axis === "horizontal"} data-node="stack">
     {#if node.title}<h2 class="h">{node.title}</h2>{/if}
-    {#each node.children as c, k (k)}<Node node={c} {storeFor} {kindIconFor} {selectedId} {onopen} {onsettle} />{/each}
+    {#each node.children as c, k (k)}<Node node={c} {storeFor} {selectionFor} {kindIconFor} {onopen} />{/each}
   </div>
 {:else if node.type === "text"}
   <p class="text {node.style ?? 'body'} {node.tone ?? ''}" data-node="text">{node.text}</p>
@@ -26,7 +27,7 @@
   {#if store}
     <div class="lw" data-node="list" data-bind={node.bind}>
       {#if node.title}<h3 class="lt">{node.title}</h3>{/if}
-      <ContentList {store} kindIcon={kindIconFor(node.bind)} label={node.title ?? node.bind} {selectedId} onopen={(id, i) => onopen?.(node.bind, id, i)} onsettle={(id, i) => onsettle?.(node.bind, id, i)} />
+      <ContentList {store} selection={selectionFor(node.bind)} kindIcon={kindIconFor(node.bind)} label={node.title ?? node.bind} onopen={(id, i) => onopen?.(node.bind, id, i)} />
     </div>
   {/if}
 {:else}

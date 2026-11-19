@@ -4,14 +4,15 @@
   import { Icon, Row } from "@calternal/ui";
   import type { Section, Sidebar } from "../model";
   import type { WindowStore } from "../windows/window-store.svelte";
+  import type { Selection } from "../windows/selection.svelte";
   import ContentList from "./ContentList.svelte";
   import { knownIcon } from "./icons";
   import { marksOf } from "./eval";
 
-  let { sidebar, storeFor, kindIconFor, selectedId, route, role, onopen, onsettle }: {
-    sidebar: Sidebar; storeFor: (bindId: string) => WindowStore | undefined; kindIconFor: (bindId: string) => string | undefined;
-    selectedId?: string | null; route: Record<string, string>; role?: "viewer" | "editor" | "manager" | "owner";
-    onopen?: (bind: string, id: string, index: number) => void; onsettle?: (bind: string, id: string, index: number) => void;
+  let { sidebar, storeFor, selectionFor, kindIconFor, route, role, onopen }: {
+    sidebar: Sidebar; storeFor: (bindId: string) => WindowStore | undefined; selectionFor: (bindId: string) => Selection; kindIconFor: (bindId: string) => string | undefined;
+    route: Record<string, string>; role?: "viewer" | "editor" | "manager" | "owner";
+    onopen?: (bind: string, id: string, index: number) => void;
   } = $props();
 
   const ranks = { viewer: 0, editor: 1, manager: 2, owner: 3 } as const;
@@ -39,7 +40,7 @@
           {/each}
           {#if s.bind}
             {@const store = storeFor(s.bind)}
-            {#if store}<ContentList {store} kindIcon={kindIconFor(s.bind)} label={s.title ?? s.id} inside {selectedId} onopen={(id, i) => onopen?.(s.bind!, id, i)} onsettle={(id, i) => onsettle?.(s.bind!, id, i)} />{/if}
+            {#if store}<ContentList {store} selection={selectionFor(s.bind)} kindIcon={kindIconFor(s.bind)} label={s.title ?? s.id} inside onopen={(id, i) => onopen?.(s.bind!, id, i)} />{/if}
           {/if}
         </section>
       {/if}

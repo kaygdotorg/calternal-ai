@@ -21,6 +21,10 @@ export interface MockOptions {
   /** Lets a test refuse or replace a window reply; return undefined for the normal answer. */
   intercept?: (req: WindowRequestPayload, n: number) => WindowReply | undefined | Promise<WindowReply | undefined>;
   audience?: WindowAudience;
+  /** Refuse with `skip_limit` a start-anchored request whose `from`, or an end-anchored one whose distance, is beyond this (contiguous continuations from the last row stay allowed). */
+  skipLimit?: number;
+  /** Refuse every end anchor with `end_unavailable`. */
+  endUnavailable?: boolean;
 }
 
 /** The in-process host. */
@@ -40,12 +44,19 @@ export class MockHost implements Transport {
   /** The contexts the host would issue for row `i`. */
   contexts(i: number) { return { row: this.id(i), contexts: { open: `ctx-${this.id(i)}` } }; }
 
+  #last: Record<string, number> = {};
+  lastEnd(anchor?: string): number { return this.#last[anchor ?? "start"] ?? -1; }
+  setLast(req: WindowRequestPayload) { this.#last[req.anchor ?? "start"] = req.to; }
   /** A normal answer to a window request over this list. */
   answer(req: WindowRequestPayload): WindowReply {
     const audience = this.opts.audience ?? "own_space_member";
     const exact = (this.opts.count ?? "exact") === "exact";
     if (this.rows === 0 && req.from === 0) return { audience, bind: req.bind, state: "empty", result_version: this.version, offset: 0, rows: [], window_ref: `w-${req.bind}`, ...(exact ? { count: { mode: "exact", value: 0 } } : {}) } as WindowReply;
     const span = Math.min(200, req.to - req.from);
+    const plan = (reason: string) => ({ status: 422, code: "unsupported_query_plan", reason }) as WindowReply;
+    if (req.anchor === "end" && (!exact || this.opts.endUnavailable)) return plan("end_unavailable");
+    if (this.opts.skipLimit !== undefined && req.from > this.opts.skipLimit && req.from !== this.lastEnd(req.anchor)) return plan("skip_limit");
+    this.setLast(req);
     if (req.anchor === "end") {
       // distance zero is the last row; the rows come back in normal order, so the window is [last-to+1, last-from]
       const hi = this.rows - 1 - req.from, lo = Math.max(0, hi - span + 1);

@@ -22,7 +22,7 @@ if (rows === 0) {
   viewRef = f.views[name]!; description = f.templates[name] ?? f.templates.shared!;
 }
 const transport = rows > 0
-  ? new MockHost({ rows, count: (q.get("count") as "exact" | "none") ?? "exact", latencyMs: Number(q.get("latency") ?? 0), fields: (i) => ({ title: `Reading item ${i}`, added: 1_700_000_000 - i, read: i % 7 === 0, updated: 1_700_000_000 - i, pinned: i % 11 === 0 }) })
+  ? new MockHost({ rows, count: (q.get("count") as "exact" | "none") ?? "exact", latencyMs: Number(q.get("latency") ?? 0), skipLimit: q.has("skip") ? Number(q.get("skip")) : undefined, endUnavailable: q.get("noend") === "1", fields: (i) => ({ title: `Reading item ${i}`, added: 1_700_000_000 - i, read: i % 7 === 0, updated: 1_700_000_000 - i, pinned: i % 11 === 0 }) })
   : new HttpTransport({ base: q.get("host")!, bearer });
 const session = new HostSession({ transport });
 const w = window as unknown as Record<string, unknown>;

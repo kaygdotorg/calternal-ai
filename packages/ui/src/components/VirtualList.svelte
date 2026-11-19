@@ -29,7 +29,7 @@
     inside = false,
     rowRole = inside ? "listitem" : "article",
     nav,
-  }: { /** Keyboard navigation of the rows (docs/native-feel.md, list navigation): Up, Down, Home, End, Page Up and Page Down move a cursor through ALL rows (drawn or not), the cursor row paints at once and keeps focus, and `open` (default: click the row's link or button) runs when the cursor settles. */ nav?: { settle?: number; open?: (i: number) => void; selected?: () => number; /** The stable key of row `i` and the row now holding a key (-1: gone), for a list that changes under the cursor (new rows at the top, rows moving): the cursor then follows its row instead of staying at its index. */ id?: (i: number) => string; indexOf?: (key: string) => number }; inside?: boolean; rowRole?: string; topInset?: number; bottomInset?: number; onrange?: (first: number, end: number) => void; count: number; estimate?: number; overscan?: number; label: string; row: Snippet<[number]>; startAtBottom?: boolean } = $props();
+  }: { /** Keyboard navigation of the rows (docs/native-feel.md, list navigation): Up, Down, Home, End, Page Up and Page Down move a cursor through ALL rows (drawn or not), the cursor row paints at once and keeps focus, and `open` (default: click the row's link or button) runs when the cursor settles. */ nav?: { settle?: number; open?: (i: number) => void; selected?: () => number; /** Called at once when the cursor moves to row `i` (the selection has painted): nothing may be sent to a host from here, that is `open`'s job after the cursor rests. */ onmove?: (i: number) => void; /** Called after a Page, Home or End key scrolled the list (the cursor and selection stay): a list whose rows are not all known uses it to page toward the end. */ onjump?: (key: "PageUp" | "PageDown" | "Home" | "End") => void; /** The stable key of row `i` and the row now holding a key (-1: gone), for a list that changes under the cursor (new rows at the top, rows moving): the cursor then follows its row instead of staying at its index. */ id?: (i: number) => string; indexOf?: (key: string) => number }; inside?: boolean; rowRole?: string; topInset?: number; bottomInset?: number; onrange?: (first: number, end: number) => void; count: number; estimate?: number; overscan?: number; label: string; row: Snippet<[number]>; startAtBottom?: boolean } = $props();
 
   let scroller = $state<HTMLDivElement>();
   let sizer = $state<HTMLDivElement>();
@@ -149,13 +149,14 @@
     if (isScrollKey(e.key)) {
       // Scrolls only: the cursor and the selection stay. The focused row may leave the window; the list's own element takes focus then (the sizer is focusable by script, tabindex -1; the scrolling ancestor of an `inside` list is not focusable at all, which is why the earlier refocus did nothing), so the next key still reaches the list.
       const to = v ? scrollTarget(e.key, v.scrollTop, v.clientHeight, v.scrollHeight) : null;
-      if (v && to !== null) { e.preventDefault(); v.scrollTop = to; update(); requestAnimationFrame(() => { const c = inside ? sizer : scroller; if (c && (!c.contains(document.activeElement) || document.activeElement === c)) c.focus({ preventScroll: true }); }); }
+      if (v && to !== null) { e.preventDefault(); v.scrollTop = to; update(); nav.onjump?.(e.key as "PageUp" | "PageDown" | "Home" | "End"); requestAnimationFrame(() => { const c = inside ? sizer : scroller; if (c && (!c.contains(document.activeElement) || document.activeElement === c)) c.focus({ preventScroll: true }); }); }
       return;
     }
     const next = stepIndex(e.key, here, count);
     if (next < 0) return;
     e.preventDefault();
     cursor = next;
+    nav.onmove?.(next);
     cursorKey = nav.id?.(next) ?? null;
     navAt = performance.now();
     ensureVisible(next);
