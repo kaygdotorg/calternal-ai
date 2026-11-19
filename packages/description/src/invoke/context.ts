@@ -8,8 +8,9 @@ export const ACTIONS_KEY = Symbol("description-actions");
 export const provideActions = (c: ActionContext) => setContext(ACTIONS_KEY, c);
 export const useActions = (): ActionContext => getContext<ActionContext>(ACTIONS_KEY);
 
-/** Reads one host-authorized row image by its ref (`query.row_images`); null when the host has none. Held per app, in memory only. */
-export type ImageReader = (ref: string) => Promise<Blob | null>;
+/** Reads one host-authorized row image by its ref (`query.row_images`) as an object URL from the app's bounded cache; null when the host has none. `signal` cancels it. */
+export type ImageReader = (ref: string, signal?: AbortSignal) => Promise<string | null>;
+/** The context key under which an app provides its `ImageReader`. */
 export const IMAGES_KEY = Symbol("description-images");
 
 import type { WindowStore } from "../windows/window-store.svelte";

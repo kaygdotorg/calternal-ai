@@ -17,8 +17,12 @@ export interface WindowSource { window(request: WindowRequestPayload, signal?: A
 export type ListState = "loading" | "ready" | "empty" | "error" | "refine_query";
 
 /** Window requests a second (the contract's cap) and requests in flight at once. */
+/** Window requests a store sends in one second (the contract's cap). */
 export const MAX_REQUESTS_PER_SECOND = 4;
+/** Window requests of one store in flight at once. */
 export const MAX_IN_FLIGHT = 4;
+/** The most rows one store holds. Past it, the rows farthest from what is drawn are dropped (they are asked for again when scrolled back to), so a long scroll through a 500,000-row list stays bounded. */
+export const MAX_ROWS = 2000;
 
 /** Options of a store. */
 export interface WindowStoreOptions {
@@ -41,6 +45,10 @@ export class WindowStore {
   planError = $state<WindowPlanError["reason"] | null>(null);
   /** Bumps once per applied reply; the rows' readers depend on it. */
   tick = $state(0);
+  /** True while the lease has lapsed or its renewal has not confirmed this window: the rows stay in memory but are not drawn as current and offer no contexts (docs/description-contract.md section 6). */
+  hidden = $state(false);
+  /** Bumps whenever the rows may no longer be the ones the selection was made on (reset, a new result set, a re-read): the selection of this bind is then cleared and settled again. */
+  generation = $state(0);
   /** The last `window_ref` and `result_version` the host issued, for lease renewal. */
   windowRef: string | null = null;
   resultVersion: string | null = null;
@@ -49,6 +57,11 @@ export class WindowStore {
   readonly #now: () => number;
   readonly #rows = new Map<number, WindowRow>();
   readonly #contexts = new Map<string, ActionContexts>();
+  /** Row id to index, so the cursor finds its row in O(1) however long the list is. */
+  readonly #ids = new Map<string, number>();
+  /** Replies and in-flight requests of an older query are dropped by epoch; `reset` and `destroy` abort them. */
+  #epoch = 0;
+  #ctl = new AbortController();
   #count: { mode: "exact" | "estimate"; value: number } | null = null;
   #ended = false;
   #loadedEnd = 0;
@@ -93,15 +106,13 @@ export class WindowStore {
   get exact(): boolean { void this.tick; return this.#count?.mode === "exact"; }
   /** The exact total when the host gave one. */
   get total(): number | null { void this.tick; return this.#count?.mode === "exact" ? this.#count.value : null; }
-  /** Rows loaded so far (for tests and the harness). */
-  get loaded(): number { return this.#rows.size; }
 
   /** The row at absolute index `i`, or undefined while it is not loaded (the list draws a skeleton row). */
   row(i: number): WindowRow | undefined { void this.tick; return this.#rows.get(i); }
-  /** The index of the row with the host-issued id (the cursor follows its row when the list changes under it), or -1. */
-  indexOf(id: string): number { void this.tick; for (const [i, r] of this.#rows) if (r.id === id) return i; return -1; }
+  /** The index of the row with the host-issued id (the cursor follows its row when the list changes under it), or -1. O(1). */
+  indexOf(id: string): number { void this.tick; return this.#ids.get(id) ?? -1; }
   /** The activation contexts the host issued with the window for `rowId`: action id to opaque context. */
-  contexts(rowId: string): ActionContexts | undefined { return this.#contexts.get(rowId); }
+  contexts(rowId: string): ActionContexts | undefined { return this.hidden ? undefined : this.#contexts.get(rowId); }
 
   /** The list reports which rows it draws; the store loads what is missing within a margin. `consumer` identifies the drawing list (a bind may be drawn twice). */
   ensure(consumer: unknown, first: number, last: number): void {
@@ -113,7 +124,7 @@ export class WindowStore {
   }
 
   /** Stops the store: no further requests, replies are dropped. */
-  destroy() { this.#dead = true; if (this.#timer) clearTimeout(this.#timer); this.#unsubHold?.(); }
+  destroy() { this.#dead = true; this.#ctl.abort(); if (this.#timer) clearTimeout(this.#timer); this.#unsubHold?.(); }
 
   // ---- requests -------------------------------------------------------------------------------------------------------------------------------
 
@@ -174,9 +185,11 @@ export class WindowStore {
 
   #dispatch(req: WindowRequestPayload, c: number, walk: boolean) {
     if (this.parent) req.parent = this.parent;
+    const epoch = this.#epoch;
     this.#inflight.add(c); this.#sent.push(this.#now()); this.requests++;
     if (walk) this.#walking = true;
-    this.#source.window(req).then((r) => this.#accept(r, req, c, walk), () => this.#failed()).finally(() => { this.#inflight.delete(c); if (walk) this.#walking = false; this.#pump(); });
+    this.#source.window(req, this.#ctl.signal).then((r) => { if (epoch === this.#epoch) this.#accept(r, req, c, walk); }, () => { if (epoch === this.#epoch) this.#failed(); })
+      .finally(() => { if (epoch !== this.#epoch) return; this.#inflight.delete(c); if (walk) this.#walking = false; this.#pump(); });
   }
 
   /** Whether row `i` is known to exist before the walk's goal is reached. */
@@ -194,19 +207,41 @@ export class WindowStore {
     else this.#dispatch({ bind: this.bind.id, from: this.#loadedEnd, to: this.#loadedEnd + this.size }, key, true);
   }
 
-  /** The query changed (a route parameter or the search text): forget everything and read again from the start. */
+  /** The query changed (a route parameter or the search text): everything in flight is aborted and its replies dropped, everything held is forgotten, and the list reads again from the start. */
   reset(): void {
     if (this.#dead) return;
+    this.#epoch++; this.#ctl.abort(); this.#ctl = new AbortController();
+    this.#inflight.clear(); this.#refreshing.clear(); this.#walking = false; this.#sent = [];
     this.#clear(); this.#held = null; this.#stale.clear(); this.#endUnavailable = false; this.resultVersion = null; this.windowRef = null;
-    this.state = "loading"; this.planError = null; this.#bump(); this.#pump();
+    this.state = "loading"; this.planError = null; this.hidden = false; this.generation++; this.#bump(); this.#pump();
   }
 
-  /** After an action succeeded the host's lists may have changed: ask again for what is drawn (a new `result_version` replaces the window, the same one only merges). */
+  /**
+   * After an action succeeded the host's lists may have changed: rows far from what is drawn are dropped (their indices may have shifted), the drawn chunks are asked for again, and each reply overwrites its rows in
+   * place. The selection of the bind is cleared and settled again so its contexts are the fresh ones.
+   */
   refresh(): void {
     if (this.#dead) return;
+    this.#dropFar(this.size);
     for (const [f, l] of this.#visible.values()) for (let c = Math.floor(f / this.size); c * this.size < Math.max(l, f + 1); c++) this.#stale.add(c);
     if (!this.#visible.size) this.#stale.add(0);
+    this.generation++;
     this.#pump();
+  }
+
+  /** The lease was renewed: this window is drawn as current again only if the host named exactly its `window_ref` and `result_version`; otherwise it is read again and stays hidden until that reply. */
+  renewed(retained: readonly { window_ref: string; result_version: string }[]): void {
+    if (this.windowRef && retained.some((r) => r.window_ref === this.windowRef && r.result_version === this.resultVersion)) this.hidden = false;
+    else this.refresh();
+  }
+
+  /** The lease lapsed (false) or is current (true) for the session this store reads under. */
+  setCurrent(current: boolean): void { this.hidden = !current; }
+
+  /** Applies a window the host sent with a lease renewal. */
+  apply(w: WindowResult): void {
+    if (this.#dead || w.bind !== this.bind.id || (w.parent ?? undefined) !== this.parent) return;
+    this.#place(w, { bind: this.bind.id, from: w.offset, to: w.offset + Math.max(1, w.rows.length) });
   }
 
   /** The goal row of a refusal recovery in progress, or null. */
@@ -243,6 +278,8 @@ export class WindowStore {
       case "ready": case "refine_query": break;
     }
     const wasRefresh = this.#refreshing.delete(chunk);
+    // A re-read reply that carries another version still starts no further re-read, but rows far from view were loaded under the old result set: drop them.
+    if (wasRefresh && reply.state === "ready" && this.resultVersion !== null && reply.result_version !== this.resultVersion) this.#dropFar(this.size);
     if (reply.state === "ready" && this.resultVersion !== null && reply.result_version !== this.resultVersion && !wasRefresh) {
       // A new result set replaces the window wholesale, but never in the middle of a key burst.
       if (navHold.held) { this.#held = { reply, req }; return; }
@@ -273,21 +310,32 @@ export class WindowStore {
    */
   #supersede(req: WindowRequestPayload) {
     this.#walk = null; this.#refused.clear(); this.#tailCover = 0; this.#ended = false; this.#count = null; this.#loadedEnd = 0; this.#refreshing.clear();
-    const keep = [...this.#visible.values()];
-    const near = (i: number) => keep.some(([f, l]) => i >= f - this.size && i < l + this.size) || (!keep.length && i < this.size);
-    for (const i of [...this.#rows.keys()]) if (!near(i)) this.#rows.delete(i);
+    this.#dropFar(this.size);
     for (const i of this.#rows.keys()) { this.#loadedEnd = Math.max(this.#loadedEnd, i + 1); this.#stale.add(Math.floor(i / this.size)); }
     this.#stale.delete(Math.floor(req.from / this.size));
+    this.generation++;
   }
 
-  #clear() { this.#walk = null; this.#refused.clear(); this.#tailCover = 0; this.#rows.clear(); this.#contexts.clear(); this.#count = null; this.#ended = false; this.#loadedEnd = 0; }
+  /** Drops the rows (and their contexts) farther than `margin` rows from every drawn range, and forgets that the end of the list was seen. */
+  #dropFar(margin: number) {
+    const keep = [...this.#visible.values()];
+    const near = (i: number) => keep.some(([f, l]) => i >= f - margin && i < l + margin) || (!keep.length && i < margin);
+    for (const i of [...this.#rows.keys()]) if (!near(i)) this.#delRow(i);
+    this.#loadedEnd = 0; for (const i of this.#rows.keys()) this.#loadedEnd = Math.max(this.#loadedEnd, i + 1);
+    this.#ended = false; this.#refreshing.clear();
+  }
+
+  #setRow(i: number, r: WindowRow) { const old = this.#rows.get(i); if (old && old.id !== r.id) { this.#ids.delete(old.id); this.#contexts.delete(old.id); } this.#rows.set(i, r); this.#ids.set(r.id, i); }
+  #delRow(i: number) { const r = this.#rows.get(i); if (!r) return; this.#rows.delete(i); if (this.#ids.get(r.id) === i) { this.#ids.delete(r.id); this.#contexts.delete(r.id); } }
+
+  #clear() { this.#walk = null; this.#refused.clear(); this.#tailCover = 0; this.#rows.clear(); this.#ids.clear(); this.#contexts.clear(); this.#count = null; this.#ended = false; this.#loadedEnd = 0; }
 
   #place(reply: WindowResult, req: WindowRequestPayload) {
     if (reply.state === "ready") { this.resultVersion = reply.result_version; this.windowRef = reply.window_ref; }
-    if (reply.count) { this.#count = reply.count; if (reply.count.mode === "exact") for (const i of [...this.#rows.keys()]) if (i >= reply.count.value) this.#rows.delete(i); }
+    if (reply.count) { this.#count = reply.count; if (reply.count.mode === "exact") for (const i of [...this.#rows.keys()]) if (i >= reply.count.value) this.#delRow(i); }
     let base = reply.offset;
     if (reply.anchor === "end" && this.#count?.mode === "exact") base = this.#count.value - 1 - reply.offset - (reply.rows.length - 1);
-    reply.rows.forEach((r, k) => this.#rows.set(base + k, r as WindowRow));
+    reply.rows.forEach((r, k) => this.#setRow(base + k, r as WindowRow));
     for (const rc of reply.activation_contexts ?? []) this.#contexts.set(rc.row, rc.contexts);
     this.#loadedEnd = Math.max(this.#loadedEnd, base + reply.rows.length);
     if (reply.anchor === "end" && reply.offset <= this.#tailCover) this.#tailCover = Math.max(this.#tailCover, reply.offset + reply.rows.length);
@@ -295,6 +343,8 @@ export class WindowStore {
     if (reply.state === "ready" && req.anchor !== "end" && reply.rows.length < req.to - req.from) { this.#ended = true; this.#loadedEnd = Math.max(base + reply.rows.length, this.#loadedEnd); }
     if (reply.state === "refine_query" || (this.#ended && this.#walk && this.#walk.kind !== "end")) this.#walk = null; // refine_query stops any End or forward paging; the end of the list completes a forward walk
     this.#set(reply.state === "refine_query" ? "refine_query" : "ready", null);
+    this.hidden = false; // a reply under the current lease confirms the rows
+    if (this.#rows.size > MAX_ROWS) this.#dropFar(this.size * 4); // bounded: a long scroll keeps only a window around the view
     this.#bump();
   }
 

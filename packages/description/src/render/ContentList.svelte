@@ -22,12 +22,48 @@
   // End on a list whose size is not known pages forward; when the last window has arrived the list scrolls to its bottom.
   $effect(() => { void store.tick; if (wantEnd && store.walkGoal === null && vl && store.length > 0) { wantEnd = false; vl.scrollToIndex(store.length - 1, "start"); } });
   const app = getContext<AppContext | undefined>(APP_KEY), actions = getContext<ActionContext | undefined>(ACTIONS_KEY);
-  /** The row was chosen (rest after keys, or click): one settled selection, then what the row opens: a route parameter, or an action with the row's host-issued context. */
-  const choose = (id: string, i: number) => {
+  /**
+   * The row was chosen: one settled selection, then what the row opens. A route parameter opens on every choice (the contract: the route opens when the selection settles). An `open.invoke` action runs ONLY on an
+   * explicit activation (click, Enter), never when the cursor merely rests on the row after arrowing: the contract does not make a settled cursor an activation (reported as a gap for revision 14).
+   */
+  const choose = (id: string, i: number, explicit: boolean) => {
     void selection.settle(id); onopen?.(id, i);
     const o = template.open;
     if (o && "route" in o) app?.setRoute(o.route.name, id);
-    else if (o && "invoke" in o && "operation" in o.invoke) void actions?.ui.invoker.run(o.invoke, { context: store.contexts(id)?.[o.invoke.id] });
+    else if (explicit && o && "invoke" in o && "operation" in o.invoke) void actions?.ui.invoker.run(o.invoke, { context: store.contexts(id)?.[o.invoke.id] });
+  };
+
+  // The rows may no longer be the ones the selection was made on (the query changed, an action or Undo changed the list): the selection is cleared and the cursor row, if it is still there, is settled again so its
+  // contexts are the fresh ones; the ticked set is dropped.
+  let again: string | null = null;
+  $effect(() => { void store.generation; untrack(() => { again = selection.drawn; selection.clear(); }); });
+  $effect(() => { void store.tick; untrack(() => { if (again && store.indexOf(again) >= 0) { const id = again; again = null; void selection.settle(id); } }); });
+
+  // One Tab stop per list: the controls inside a row (action buttons, the more button, the disclosure, the tick box) are reached by keys, never by Tab; the list itself (its scroller, or with `inside` the selected or first
+  // row) is the one stop.
+  let root = $state<HTMLElement>();
+  function rove() {
+    if (!root) return;
+    let stop: HTMLElement | null = null, firstMain: HTMLElement | null = null;
+    for (const row of root.querySelectorAll<HTMLElement>("[data-i]")) {
+      const main = row.querySelector<HTMLElement>("button.row");
+      for (const c of row.querySelectorAll<HTMLElement>("button, input, a, select, textarea")) c.tabIndex = -1;
+      if (main) { firstMain ??= main; if (!stop && row.querySelector("[aria-current]")) stop = main; }
+    }
+    if (inside) (stop ?? firstMain)?.setAttribute("tabindex", "0");
+  }
+  $effect(() => {
+    void selection.drawn; void store.tick;
+    if (!root) return;
+    rove();
+    const mo = new MutationObserver(() => rove());
+    mo.observe(root, { childList: true, subtree: true });
+    return () => mo.disconnect();
+  });
+  const onkey = (e: KeyboardEvent) => {
+    if (!multiple || e.key !== " " || !(e.target as HTMLElement).matches?.("button.row")) return;
+    const i = Number((e.target as HTMLElement).closest<HTMLElement>("[data-i]")?.dataset.i); const r = store.row(i);
+    if (r) { e.preventDefault(); selection.toggle(r.id); } // Space ticks in a multiple-selection list; Enter opens
   };
 
   const bind: Bind = $derived(store.bind);
@@ -44,8 +80,8 @@
   const rowH = cssPx("--row-h", 44);
 </script>
 
-<div class="list" data-bind={bind.id} data-state={store.state} data-count={store.length}>
-  {#if store.state === "loading"}
+<div class="list" bind:this={root} onkeydowncapture={onkey} data-bind={bind.id} data-state={store.state} data-count={store.length} data-hidden={store.hidden || undefined}>
+  {#if store.state === "loading" || store.hidden}
     <div class="sk" role="status" aria-label={states.loading?.title ?? "Loading"}>
       {#each skeletons as w, k (k)}<SkeletonRow width={w} icon={template.icon !== undefined} />{/each}
     </div>
@@ -64,13 +100,13 @@
           pageKeys: "scroll",
           id: (i) => store.row(i)?.id ?? "", indexOf: (id) => store.indexOf(id), selected: () => (selection.drawn ? store.indexOf(selection.drawn) : -1),
           onmove: (i) => { const r = store.row(i); if (r) selection.paint(r.id); },
-          open: (i) => { const r = store.row(i); if (r) choose(r.id, i); },
+          open: (i) => { const r = store.row(i); if (r) choose(r.id, i, false); },
           onjump: (key) => { if (key === "End") { store.jump("end"); wantEnd = store.walkGoal !== null; } },
         }}
       >
         {#snippet row(i)}
           {@const r = store.row(i)}
-          {#if r}{#if multiple}<label class="tick"><input type="checkbox" checked={selection.ticked.includes(r.id)} onchange={() => selection.toggle(r.id)} aria-label="Select {r.id}" /></label>{/if}<RowActions {template} row={r} {store} {kindIcon} selected={r.id === selection.drawn} onclick={() => choose(r.id, i)} />
+          {#if r}{#if multiple}<label class="tick"><input type="checkbox" checked={selection.ticked.includes(r.id)} onchange={() => selection.toggle(r.id)} aria-label="Select {r.id}" /></label>{/if}<RowActions {template} row={r} {store} {kindIcon} selected={r.id === selection.drawn} onclick={() => choose(r.id, i, true)} />
           {:else}<SkeletonRow icon={template.icon !== undefined} width={40 + ((i * 17) % 40)} />{/if}
         {/snippet}
       </VirtualList>

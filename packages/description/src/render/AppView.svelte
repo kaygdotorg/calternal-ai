@@ -16,6 +16,7 @@
   import Node from "./Node.svelte";
   import HostComponent from "./HostComponent.svelte";
   import { hostComponents } from "../components/registry";
+  import { ImageCache } from "./images";
   import ActionButton from "./ActionButton.svelte";
 
   // `description` and `session` are fixed for the life of one AppView (a new description or session is a new mount): they are read once.
@@ -40,7 +41,8 @@
   ui.onok = () => { for (const st of stores.values()) st.refresh(); };
   ui.onroute = (name, created) => setRoute(name, created);
   provideActions({ ui, session, onshell: (a) => props.onshell?.(a) });
-  setContext(IMAGES_KEY, (ref: string) => session.image(ref));
+  const images = new ImageCache((ref, signal) => session.image(ref, signal));
+  setContext(IMAGES_KEY, (ref: string, signal?: AbortSignal) => images.get(ref, signal));
   const refusal = refusalOf(description);
   const binds = new Map<string, Bind>((description.binds ?? []).map((b) => [b.id, b]));
   const stores = new Map<string, WindowStore>();
@@ -72,7 +74,10 @@
   const app: AppContext = { storeFor, selectionFor, kindIconFor, route, setRoute, get components() { return { ...hostComponents, ...(props.components ?? {}) } as AppContext["components"]; }, onshell: (a) => props.onshell?.(a), openApp: (id) => props.openApp?.(id) };
   setContext(APP_KEY, app);
   session.held = () => Object.fromEntries([...stores.values()].filter((s) => s.windowRef && s.resultVersion).map((s) => [s.windowRef!, s.resultVersion!]));
-  onDestroy(() => { for (const s of stores.values()) s.destroy(); session.close(); });
+  // The lease: while it has lapsed the rows are not drawn as current and offer no contexts; a renewal repaints only the windows it names as retained and may bring replacement windows (section 6).
+  session.oncurrent = (current) => { for (const s of stores.values()) s.setCurrent(current); if (!current) images.clear(); };
+  session.onrenewed = (r) => { for (const s of stores.values()) { s.renewed(r.retained_results); for (const w of r.windows) s.apply(w); } };
+  onDestroy(() => { for (const s of stores.values()) s.destroy(); images.clear(); session.close(); });
 
   /** The bind whose ticked rows a header action takes as a host-issued selection reference, if its inputs name one. */
   const setBind = (a: Action): string | undefined => { for (const v of Object.values(("inputs" in a ? a.inputs : undefined) ?? {})) { const x = v as { selection?: string; set?: boolean }; if (x.selection && x.set) return x.selection; } return undefined; };

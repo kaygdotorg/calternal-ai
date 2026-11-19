@@ -2,7 +2,9 @@
   // The sidebar of an app description: its title, selectors (a segmented control that sets a route parameter, an option's count from a count bind), sections (literal shortcut rows, a bound list, or one section per row of a
   // layout bind), and the footer (search, apps, account). Bound sections are windowed with `inside`, so the sidebar scrolls once. A section without a title draws no header. `showWhen` hides a section the route or role does
   // not call for. The footer search sends the settled text (250 ms after the last key) and draws the search bind's windows in place of the sections; a cleared field returns to them.
+  import { onDestroy } from "svelte";
   import { Menu, Row, SearchField, Selector, type MenuItem } from "@calternal/ui";
+  import { shellAllowed } from "../invoke/shell";
   import type { Section, Sidebar, Footer } from "../model";
   import { useApp, useActions } from "../invoke/context";
   import ContentList from "./ContentList.svelte";
@@ -21,16 +23,20 @@
   }
 
   // Search: settled text goes to the host, then the search bind's windows are read again.
-  let text = $state(""), timer = 0, sentText = $state("");
+  let text = $state(""), timer = 0, sentText = $state(""), seq = 0;
   const searchBind = $derived(footer?.search?.bind);
   function typed() {
     clearTimeout(timer);
     timer = window.setTimeout(async () => {
       if (!searchBind) return;
-      sentText = text.trim();
-      if (sentText) { await session.exchange("search", { type: "search", bind: searchBind, text: sentText }).catch(() => {}); app.storeFor(searchBind)?.reset(); }
+      const mine = ++seq, t = text.trim();
+      sentText = t;
+      if (!t) return;
+      await session.exchange("search", { type: "search", bind: searchBind, text: t }).catch(() => {});
+      if (mine === seq) app.storeFor(searchBind)?.reset(); // only the newest search reads its results: an older answer landing late must not reset the list again
     }, 250);
   }
+  onDestroy(() => { clearTimeout(timer); seq++; });
   $effect(() => { if (text.trim() === "") sentText = ""; });
   const searching = $derived(!!searchBind && sentText !== "");
 
@@ -85,7 +91,7 @@
       <div class="bar">
         {#each footer.apps ?? [] as a (a.id)}{@const ic = typeof a.icon === "string" ? knownIcon(a.icon) : undefined}<button type="button" class="app" data-app-entry={a.id} aria-label={a.title} title={a.title} onclick={() => app.openApp?.(a.id)}>{a.title}</button>{/each}
         {#if footer.account}<button type="button" class="acct" bind:this={accountEl} aria-label={footer.account.title ?? "Account"} onclick={() => (accountOpen = true)}>{initial ?? "·"}</button>
-          <Menu open={accountOpen} items={accountItems} label={footer.account.title ?? "Account"} trigger={accountEl} onclose={() => (accountOpen = false)} onpick={(id) => { accountOpen = false; const a = (footer.account!.menu ?? []).find((x) => x.id === id); if (a) { if ("operation" in a) void ui.invoker.run(a, { context: session.viewContexts[a.id] }); else app.onshell?.(a); } }} />{/if}
+          <Menu open={accountOpen} items={accountItems} label={footer.account.title ?? "Account"} trigger={accountEl} onclose={() => (accountOpen = false)} onpick={(id) => { accountOpen = false; const a = (footer.account!.menu ?? []).find((x) => x.id === id); if (a) { if ("operation" in a) void ui.invoker.run(a, { context: session.viewContexts[a.id] }); else if (shellAllowed(a)) app.onshell?.(a); } }} />{/if}
       </div>
     </div>
   {/if}

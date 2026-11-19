@@ -61,6 +61,6 @@ export class Selection {
     return r.selection_ref;
   }
 
-  /** Forgets the selection (the list's result set was replaced and the row is gone). */
-  clear(): void { this.drawn = null; this.#settled = null; this.#contexts = null; this.#contextsRow = null; this.#seq++; }
+  /** Forgets the selection and the ticked rows (the list's result set was replaced, or an action changed it: the row, or its context, may be gone). */
+  clear(): void { this.drawn = null; this.ticked = []; this.#settled = null; this.#contexts = null; this.#contextsRow = null; this.#seq++; }
 }

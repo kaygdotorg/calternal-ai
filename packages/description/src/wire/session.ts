@@ -24,6 +24,7 @@ export class HostSession {
   route: Record<string, string> = {};
   #leasedAt = 0;
   #renewalSeq = 0;
+  #closed = false;
   #timer: ReturnType<typeof setTimeout> | null = null;
   #now: () => number;
   #held: () => Record<string, string>;
@@ -45,6 +46,7 @@ export class HostSession {
 
   /** Opens `viewRef` (a ref the host issued: no id is made up here) and starts the renewal timer. */
   async open(viewRef: string): Promise<ViewOpenResult> {
+    this.#closed = false;
     const r = await this.transport.post<ViewOpenResult>("view.open", { type: "view_open", view_ref: viewRef });
     this.#take(r.lease); this.#audience = r.audience; this.#viewContexts = r.activation_contexts;
     this.#schedule();
@@ -64,10 +66,10 @@ export class HostSession {
     return this.transport.post<SelectionContextResult>("selection.settled", body, { lease: this.#lease.lease_ref, signal });
   }
 
-  /** A row image by its host-issued ref, under the lease; null when none (the row draws its fallback). */
-  async image(ref: string): Promise<Blob | null> {
+  /** A row image by its host-issued ref, under the lease; null when none (the row draws its fallback). `signal` cancels the read (the row left the screen). */
+  async image(ref: string, signal?: AbortSignal): Promise<Blob | null> {
     if (!this.#lease || !this.transport.image) return null;
-    try { return await this.transport.image(ref, { lease: this.#lease.lease_ref }); } catch { return null; }
+    try { return await this.transport.image(ref, { lease: this.#lease.lease_ref, signal }); } catch { return null; }
   }
 
   /** Any other sealed event under the lease (activation, choice options, status, undo, selection set). */
@@ -93,13 +95,15 @@ export class HostSession {
     const sent = this.#renewalSeq;
     try {
       const r = await this.transport.post<LeaseRenewResult>("view.renew", req, { lease: l.lease_ref });
+      if (this.#closed || this.#lease !== l) return; // the view closed (or its lease moved on) while the renewal was in flight: nothing to take, no timer to start
       if (sent !== this.#renewalSeq || r.renewal_id !== renewal_id || r.request_lease_ref !== l.lease_ref || r.cache_partition !== l.cache_partition) return; // superseded or not ours: ignored
       this.#take(r.lease); this.#viewContexts = r.activation_contexts; this.oncurrent?.(true); this.onrenewed?.(r);
     } catch { /* keep rows hidden when the lease runs out */ }
+    if (this.#closed) return;
     if (!this.current) this.oncurrent?.(false);
     this.#schedule();
   }
 
   /** Stops renewing (the view closed). */
-  close() { if (this.#timer) clearTimeout(this.#timer); this.#timer = null; this.#lease = null; }
+  close() { this.#closed = true; if (this.#timer) clearTimeout(this.#timer); this.#timer = null; this.#lease = null; }
 }

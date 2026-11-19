@@ -25,8 +25,10 @@
   const trail = $derived((template.trailingActions ?? []) as Action[]);
   const menu = $derived((template.menu ?? []) as Action[]);
   let menuOpen = $state(false), menuAnchor = $state<{ x: number; y: number } | null>(null), moreEl = $state<HTMLElement | null>(null);
-  const items = $derived<MenuItem[]>(menu.map((a) => ({ id: a.id, label: a.title ?? a.id, danger: a.role === "destructive", disabled: off(a) })));
-  async function pick(id: string) { menuOpen = false; const a = menu.find((m) => m.id === id); if (a && "operation" in a) await ui.invoker.run(a, { context: ctx(a) }); }
+  // The keyboard and context menu offers every action of the row: the swipe actions too (a swipe is never the only way), then the declared menu, each once.
+  const every = $derived.by(() => { const seen = new Set<string>(); return [...lead, ...trail, ...menu].filter((a) => !seen.has(a.id) && !!seen.add(a.id)); });
+  const items = $derived<MenuItem[]>(every.map((a) => ({ id: a.id, label: a.title ?? a.id, danger: a.role === "destructive", disabled: off(a) })));
+  async function pick(id: string) { menuOpen = false; const a = every.find((m) => m.id === id); if (a && "operation" in a) await ui.invoker.run(a, { context: ctx(a) }); }
 
   // Swipe (touch only): dragging a row right shows its leading actions, left its trailing ones; past 45% of the row's width the FIRST action of that side runs, but only if it is a full swipe the catalogue allows for its
   // operation (`full_swipe`). The same actions are buttons and menu items, so a swipe is never the only way, and a swipe never opens a confirmation or runs a plugin operation.
@@ -42,19 +44,20 @@
   }
 </script>
 
-<div class="ra" data-actions class:sel={selected} oncontextmenu={(e) => { if (menu.length) { e.preventDefault(); menuAnchor = { x: e.clientX, y: e.clientY }; menuOpen = true; } }}
+<div class="ra" data-actions class:sel={selected} oncontextmenu={(e) => { if (every.length) { e.preventDefault(); menuAnchor = { x: e.clientX, y: e.clientY }; menuOpen = true; } }}
+  onkeydown={(e) => { if (template.children && (e.target as HTMLElement).matches?.("button.row")) { if (e.key === "ArrowRight" && !open) { open = true; e.preventDefault(); } else if (e.key === "ArrowLeft" && open) { open = false; e.preventDefault(); } } }}
   onpointerdown={down} onpointermove={move} onpointerup={up} onpointercancel={() => { drag = false; dx = 0; }} style:transform={dx ? `translateX(${dx}px)` : undefined}>
   <RowView {template} {row} {kindIcon} {selected} {depth} {onclick} />
-  {#if template.children && row.parent_refs?.[template.children.bind]}<button type="button" class="disc" aria-expanded={open} aria-label={open ? "Collapse" : "Expand"} onclick={() => (open = !open)}>{open ? "▾" : "▸"}</button>{/if}
+  {#if template.children && row.parent_refs?.[template.children.bind]}<button type="button" tabindex="-1" class="disc" aria-expanded={open} aria-label={open ? "Collapse" : "Expand"} onclick={() => (open = !open)}>{open ? "▾" : "▸"}</button>{/if}
   {#if lead.length || trail.length || menu.length}
     <div class="acts" role="group" aria-label="Actions">
       {#each lead as a (a.id)}<ActionButton action={a} context={ctx(a)} disabled={off(a)} />{/each}
       {#each trail as a (a.id)}<ActionButton action={a} context={ctx(a)} disabled={off(a)} />{/each}
-      {#if menu.length}<button type="button" class="more" aria-label="More actions" bind:this={moreEl} onclick={() => { menuAnchor = null; menuOpen = true; }}>…</button>{/if}
+      {#if every.length}<button type="button" tabindex="-1" class="more" aria-label="More actions" bind:this={moreEl} onclick={() => { menuAnchor = null; menuOpen = true; }}>…</button>{/if}
     </div>
   {/if}
   {#if open && kids}<ChildRows store={kids} depth={depth + 1} {kindIcon} />{/if}
-  {#if menu.length}<Menu open={menuOpen} {items} label="Actions" onpick={pick} onclose={() => (menuOpen = false)} trigger={moreEl} anchor={menuAnchor ? { left: menuAnchor.x, top: menuAnchor.y, right: menuAnchor.x, bottom: menuAnchor.y } : null} />{/if}
+  {#if every.length}<Menu open={menuOpen} {items} label="Actions" onpick={pick} onclose={() => (menuOpen = false)} trigger={moreEl} anchor={menuAnchor ? { left: menuAnchor.x, top: menuAnchor.y, right: menuAnchor.x, bottom: menuAnchor.y } : null} />{/if}
 </div>
 
 <style>

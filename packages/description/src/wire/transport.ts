@@ -13,10 +13,15 @@ export class HostError extends Error {
   constructor(readonly status: number, readonly code: string | undefined, message: string, readonly body?: unknown) { super(message); this.name = "HostError"; }
 }
 
+/** The shape of a host-issued row image reference (the catalogue's `RowImageRef`). */
+export const ROW_IMAGE_REF = /^[A-Za-z0-9_-]{22,128}$/;
+/** The most bytes of a row image the catalogue allows. */
+export const ROW_IMAGE_MAX_BYTES = 65536;
+
 /** Sends one event and resolves with the host's JSON reply. A 422 window refusal is a reply, not an error. */
 export interface Transport {
   /** Reads a host-authorized row image (`GET row-images/{ref}`); null for 404 (absent, expired, stale or unauthorized). Optional: a transport without it draws the fallback miniature. */
-  image?(ref: string, opts?: { lease?: string }): Promise<Blob | null>;
+  image?(ref: string, opts?: { lease?: string; signal?: AbortSignal }): Promise<Blob | null>;
   post<T>(route: Route, body: unknown, opts?: { lease?: string; signal?: AbortSignal; route?: Record<string, string> }): Promise<T>;
 }
 
@@ -35,18 +40,25 @@ export class HttpTransport implements Transport {
   readonly #base: string; readonly #bearer?: string; readonly #fetch: typeof fetch;
   constructor(o: HttpTransportOptions) { this.#base = o.base.replace(/\/$/, ""); this.#bearer = o.bearer; this.#fetch = o.fetch ?? ((...a) => fetch(...a)); }
 
-  async image(ref: string, opts: { lease?: string } = {}): Promise<Blob | null> {
+  async image(ref: string, opts: { lease?: string; signal?: AbortSignal } = {}): Promise<Blob | null> {
+    // A ref is the host's opaque display reference (`RowImageRef`): anything else is plugin-controlled text (a `..`, a slash) and is never put into a URL that carries the bearer.
+    if (!ROW_IMAGE_REF.test(ref)) return null;
     const headers: Record<string, string> = {};
     if (this.#bearer) headers.authorization = `Bearer ${this.#bearer}`;
     if (opts.lease) headers["x-step0-view-lease"] = opts.lease;
     // The image read is the host's own origin-level route (`/api/v2/row-images/{ref}`), not under the fixture's /step0/v2 base; a relative base (a same-origin proxy) keeps it beside its other routes.
     const root = /^https?:/.test(this.#base) ? `${new URL(this.#base).origin}/api/v2/row-images` : `${this.#base}/row-images`;
-    const res = await this.#fetch(`${root}/${encodeURIComponent(ref)}`, { headers, redirect: "error", cache: "no-store" });
+    const res = await this.#fetch(`${root}/${ref}`, { headers, redirect: "error", cache: "no-store", signal: opts.signal });
     if (!res.ok) return null;
     const type = res.headers.get("content-type") ?? "";
     if (!/^image\/(png|jpeg)/.test(type)) return null;
-    const blob = await res.blob();
-    return blob.size <= 65536 ? blob : null; // the catalogue's byte cap
+    // The catalogue caps an image at 64 KiB: refuse by the declared length before reading, and stop reading at the cap when none was declared.
+    const declared = Number(res.headers.get("content-length") ?? NaN);
+    if (Number.isFinite(declared) && declared > ROW_IMAGE_MAX_BYTES) { await res.body?.cancel(); return null; }
+    const reader = res.body?.getReader(); if (!reader) { const b = await res.blob(); return b.size <= ROW_IMAGE_MAX_BYTES ? b : null; }
+    const parts: Uint8Array[] = []; let size = 0;
+    for (;;) { const { done, value } = await reader.read(); if (done) break; size += value.length; if (size > ROW_IMAGE_MAX_BYTES) { await reader.cancel(); return null; } parts.push(value); }
+    return new Blob(parts as BlobPart[], { type: type.split(";")[0] });
   }
 
   async post<T>(route: Route, body: unknown, opts: { lease?: string; signal?: AbortSignal; route?: Record<string, string> } = {}): Promise<T> {

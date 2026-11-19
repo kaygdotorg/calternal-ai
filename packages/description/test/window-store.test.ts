@@ -142,7 +142,7 @@ describe("a list that changes on every reply (churn)", () => {
     const { store } = await open(host);
     store.ensure("a", 0, 30);
     let missing = 0;
-    for (let k = 0; k < 40; k++) { await vi.advanceTimersByTimeAsync(300); for (let i = 0; i < 30; i++) if (!store.row(i) && store.loaded > 0) missing++; if (k % 5 === 0) store.refresh(); }
+    for (let k = 0; k < 40; k++) { await vi.advanceTimersByTimeAsync(300); for (let i = 0; i < 30; i++) if (!store.row(i)) missing++; if (k % 5 === 0) store.refresh(); }
     expect(missing).toBe(0); expect(store.length).toBe(500); expect(store.resultVersion).not.toBe("rv-1");
   });
 });

@@ -6,6 +6,7 @@
   import type { Action, Interaction } from "../model";
   import { useActions } from "../invoke/context";
   import { knownIcon } from "./icons";
+  import { shellAllowed } from "../invoke/shell";
   import type { Selection } from "../windows/selection.svelte";
 
   let { action, context, interaction, selection, setOf, style = "quiet", disabled = false, onrun }: {
@@ -19,7 +20,7 @@
   const inv = $derived("operation" in action ? action : null);
   async function activate() {
     if (disabled || busy) return;
-    if (!inv) { onshell?.(action); return; }
+    if (!inv) { if (shellAllowed(action)) onshell?.(action); return; } // only the shell controls the contract allows a description to request
     busy = true;
     try {
       let inter = interaction?.();

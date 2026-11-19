@@ -7,6 +7,7 @@
 import type { ActionOutcome, ActivationResolution, ChoiceOptions, Interaction, Invoke, ConfirmationMaterial } from "../model";
 import type { HostSession } from "../wire/session";
 import { oneExchange } from "./catalogue";
+import { HostError } from "../wire/transport";
 
 /** What the interface supplies: its own prompts, picker, protected confirmation sheet and outcome display. */
 export interface InvokerHooks {
@@ -40,7 +41,9 @@ export type Local = { state: "waiting" | "cancelled" };
 const newId = (): string => (globalThis.crypto?.randomUUID?.() ?? `act-${Date.now()}-${Math.random().toString(36).slice(2)}`);
 const STATUS_POLL_MS = [500, 1000, 2000, 4000];
 
+/** Runs activations: resolve, the protected confirmation when the host asks, dispatch, the outcome. One per open app. */
 export class Invoker {
+  /** `session` carries the events; `hooks` is the interface's own prompts, picker, confirmation sheet and outcome display. */
   constructor(private session: HostSession, private hooks: InvokerHooks) {}
   /** Activation keys in flight (action id and context): a second activation of the same thing is ignored while one runs. */
   readonly busy = new Set<string>();
@@ -53,11 +56,13 @@ export class Invoker {
     const key = `${action.id}|${context}`;
     if (this.busy.has(key)) return { state: "waiting" };
     this.busy.add(key);
+    let mayHaveRun = false; // true once a request that could have run the operation has been sent
     try {
       const interaction: Interaction = { ...(a.interaction ?? {}) };
       const asked = await this.#ask(action, context, interaction);
       if (!asked) return { state: "cancelled" };
       const activation_id = newId();
+      mayHaveRun = oneExchange(action.operation); // a one-exchange resolve is also the dispatch
       let reply = await this.session.exchange<ActionOutcome | ActivationResolution>("activation.resolve", { type: "invoke", action_id: action.id, activation_id, activation_context: context, ...(Object.keys(interaction).length ? { interaction } : {}), ...(oneExchange(action.operation) ? { dispatch: true } : {}) });
       let outcome: ActionOutcome;
       if ("state" in reply) outcome = reply;
@@ -70,6 +75,7 @@ export class Invoker {
           const c = await this.session.exchange<{ confirmation_proof: string }>("activation.confirm", { type: "invoke_confirm", activation_id, resolution_ref: res.resolution_ref, confirmation_challenge: res.confirmation_challenge });
           proof = c.confirmation_proof;
         }
+        mayHaveRun = true;
         outcome = await this.session.exchange<ActionOutcome>("activation.dispatch", { type: "invoke_dispatch", activation_id, resolution_ref: res.resolution_ref, ...(proof ? { confirmation_proof: proof } : {}) });
       }
       outcome = await this.#settle(outcome);
@@ -77,8 +83,8 @@ export class Invoker {
       if (outcome.state === "ok" && outcome.created && action.then?.route) this.hooks.route?.(action.then.route.name, outcome.created);
       return outcome;
     } catch (e) {
-      const o: ActionOutcome = { activation_id: "", state: "unknown", code: "unreachable", message: "The host did not answer, so it is not known whether this happened." };
-      void e; this.hooks.outcome?.(action, o); return o; // an unknown outcome is shown, never retried by the interface
+      const o = failure(e, mayHaveRun);
+      this.hooks.outcome?.(action, o); return o; // an unknown outcome is shown, never retried by the interface
     } finally { this.busy.delete(key); }
   }
 
@@ -115,4 +121,14 @@ export class Invoker {
   async undo(ref: string): Promise<boolean> {
     try { const o = await this.session.exchange<ActionOutcome>("undo", { type: "undo", undo_ref: ref }); return o.state === "ok"; } catch { return false; }
   }
+}
+
+/**
+ * What a failed exchange means for the person. The host's own refusal (an HTTP error it wrote: a 4xx, a 409 stale) is shown with the host's words and says nothing ran. A failure before anything that could run the
+ * operation was sent (choice options, the resolve) says nothing happened. Only a lost answer AFTER a request that may have run it is "unknown", and the interface then shows that instead of retrying.
+ */
+export function failure(e: unknown, mayHaveRun: boolean): ActionOutcome {
+  if (e instanceof HostError && e.status >= 400 && e.status < 500) return { activation_id: "", state: e.status === 409 ? "stale" : "error", code: e.code ?? `http_${e.status}`, message: e.message };
+  if (!mayHaveRun) return { activation_id: "", state: "error", code: "not_started", message: e instanceof HostError ? e.message : "The host did not answer. Nothing was changed." };
+  return { activation_id: "", state: "unknown", code: "unreachable", message: "The host did not answer, so it is not known whether this happened." };
 }
