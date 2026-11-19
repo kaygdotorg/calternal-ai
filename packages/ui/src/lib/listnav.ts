@@ -43,7 +43,7 @@ export function wantsKey(e: Pick<KeyboardEvent, "key" | "altKey" | "ctrlKey" | "
 
 /** The one place the settle rule lives (both the `listNav` action and `VirtualList`'s `nav` use it): `rest(fn, ms)` runs `fn` after `ms` without another call, and `cancel()` drops it. */
 export function settler(): { rest(fn: () => void, ms?: number): void; cancel(): void } {
-  let t = 0, raf = 0, painted = true, lastKey = 0;
+  let t = 0, raf = 0, painted = true, lastKey = 0, burstGap = 0;
   const cancel = () => { if (t) { clearTimeout(t); t = 0; } if (raf) { cancelAnimationFrame(raf); raf = 0; } };
   // A busy page can run the timer before it has read the keys that came in meanwhile (each of them would have moved the timer): when input is waiting, the rest has not begun, so wait again.
   const pending = (): boolean => { try { return !!(navigator as Navigator & { scheduling?: { isInputPending?: (o?: { includeContinuous?: boolean }) => boolean } }).scheduling?.isInputPending?.({ includeContinuous: true }); } catch { return false; } };
@@ -51,10 +51,11 @@ export function settler(): { rest(fn: () => void, ms?: number): void; cancel(): 
     cancel,
     rest(fn, ms) {
       cancel();
-      // The rest must be longer than the gap between two repeats of a held key (whatever the system's rate), so it is 1.6 times the gap just seen (30 to 80 ms); a first or single key rests the base 30 ms.
+      // The rest must be longer than any gap between two repeats of a held key (whatever the system's rate, and a slow page delivers them unevenly): 1.6 times the longest gap seen in this burst of keys (45 to 120 ms); a first or single key rests the base. A load must never start while keys are still repeating.
       const now = performance.now(), gap = now - lastKey;
       lastKey = now;
-      ms ??= gap < 200 ? Math.min(80, Math.max(SETTLE_MS, gap * 1.6)) : SETTLE_MS;
+      if (gap < 250) burstGap = Math.max(burstGap, gap); else burstGap = 0;
+      ms ??= Math.min(120, Math.max(SETTLE_MS, burstGap * 1.6));
       // The selection's last paint must commit before the pane's work starts: a frame is asked for with each key, and when the rest is over the open runs at once if that frame has been drawn (it has, unless the page is busy), else after it. The open is a task of its own. A key in between cancels all of it.
       painted = false;
       requestAnimationFrame(() => { painted = true; });
@@ -64,7 +65,7 @@ export function settler(): { rest(fn: () => void, ms?: number): void; cancel(): 
   };
 }
 /** The least milliseconds without a key before the cursor's row is opened (more while a key is repeating: see `settler`). */
-export const SETTLE_MS = 30;
+export const SETTLE_MS = 45;
 
 /** Options of the `listNav` action. */
 export interface ListNavOptions {

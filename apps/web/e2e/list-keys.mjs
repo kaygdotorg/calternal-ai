@@ -13,9 +13,13 @@ let bad = 0;
 const ok = (c, m, note = "") => { console.log(`${c ? "PASS" : "FAIL"}  ${m}${note ? "  " + note : ""}`); if (!c) bad++; };
 const judge = judgeTimings();
 const timing = (c, m, note) => { if (judge) ok(c, m, note); else console.log(`SKIP  ${m}: not judged, the machine is busy  ${note}`); };
+/** Threads under a slowed CPU is the owner-approved known defect (issue #15, "Threads 4x keyboard budget"): its numbers are reported, tagged KNOWN, and do not block; every 1x check, every Notes check and the single-load check block. */
+const KNOWN = "https://git.kayg.org/kayg/calternal-ai/issues/15";
+const timingFor = (surface) => (c, m, note) => (surface === "threads" && RATE_CPU > 1 ? (console.log(`${c ? "PASS" : "KNOWN"}  ${m}  ${note}${c ? "" : `  (known defect, not blocking: ${KNOWN})`}`)) : timing(c, m, note));
 const pct = (xs, q) => { const s = [...xs].sort((a, b) => a - b); return s.length ? s[Math.min(s.length - 1, Math.floor(s.length * q))] : NaN; };
 for (const surface of SURFACES) for (const churn of CHURNS) {
   const tag = `${surface}, churn ${churn ? "on" : "off"}`;
+  const tm = timingFor(surface);
   console.log(`-- ${tag}: ${ROWS} ${surface}, Down held ${SECS} s at ${RATE} per second, CPU ${RATE_CPU}x slower`);
   const path = surface === "threads" ? `/threads?flood=${ROWS}${churn ? "&churn=4" : ""}` : `/notes?flood=${ROWS}${churn ? "&churn=4" : ""}`;
   const { page: p, ctx } = await open(browser, "desktop", "dark", path);
@@ -61,11 +65,11 @@ for (const surface of SURFACES) for (const churn of CHURNS) {
   ok(/Threads|Notes/.test(String(r.focus)), `${tag}: focus stayed in the list`, String(r.focus));
   ok(during.routes <= 1, `${tag}: the main pane was not asked to load while the key was held (only when the selection settled)`, `${during.routes} loads during the hold`);
   ok(!Number.isNaN(shown), `${tag}: the main pane shows the settled item`, `${startPath} -> ${await p.evaluate(() => location.pathname)}`);
-  if (surface === "threads") { const openMs = await p.evaluate(() => performance.getEntriesByName("calternal:thread:open").at(-1)?.duration ?? NaN); console.log(`   the thread's own stamp (calternal:thread:open, view made to first screenful drawn): ${openMs.toFixed(0)} ms at 4x`); timing(openMs <= SHOW_BUDGET, `${tag}: the settled thread is drawn within ${SHOW_BUDGET} ms of its view being made (the shell's stamp, 4x CPU; the 50 ms rest comes before it)`, `${openMs.toFixed(0)} ms`); }
-  timing(shown <= SHOW_BUDGET, `${tag}: the main pane shows the settled item within ${SHOW_BUDGET} ms of the last key`, `${shown} ms`);
-  timing(pct(runs, 0.95) <= FRAME, `${tag}: the handler's p95 is within one frame`, `${pct(runs, 0.95).toFixed(1)} ms of ${FRAME}`);
-  timing(pct(paints, 0.95) <= 2 * FRAME + 8, `${tag}: the moved selection is painted within one frame of each key (p95, to the second frame after the key)`, `${pct(paints, 0.95).toFixed(1)} ms`);
-  timing((during.gaps.length === 0 || pct(during.gaps, 0.95) <= FRAME * 2 + 8) && during.gaps.filter((g) => g > 100).length <= 1, `${tag}: while the key is held the main thread is free again within about two frames (p95 of the heartbeat gaps, at most one over 100 ms)`, `p95 ${(during.gaps.length ? pct(during.gaps, 0.95) : 0).toFixed(0)} ms, max ${during.gap.toFixed(0)} ms`);
+  if (surface === "threads") { const openMs = await p.evaluate(() => performance.getEntriesByName("calternal:thread:open").at(-1)?.duration ?? NaN); console.log(`   the thread's own stamp (calternal:thread:open, view made to first screenful drawn): ${openMs.toFixed(0)} ms at 4x`); tm(openMs <= SHOW_BUDGET, `${tag}: the settled thread is drawn within ${SHOW_BUDGET} ms of its view being made (the shell's stamp, 4x CPU; the 50 ms rest comes before it)`, `${openMs.toFixed(0)} ms`); }
+  tm(shown <= SHOW_BUDGET, `${tag}: the main pane shows the settled item within ${SHOW_BUDGET} ms of the last key`, `${shown} ms`);
+  tm(pct(runs, 0.95) <= FRAME, `${tag}: the handler's p95 is within one frame`, `${pct(runs, 0.95).toFixed(1)} ms of ${FRAME}`);
+  tm(pct(paints, 0.95) <= 2 * FRAME + 8, `${tag}: the moved selection is painted within one frame of each key (p95, to the second frame after the key)`, `${pct(paints, 0.95).toFixed(1)} ms`);
+  tm((during.gaps.length === 0 || pct(during.gaps, 0.95) <= FRAME * 2 + 8) && during.gaps.filter((g) => g > 100).length <= 1, `${tag}: while the key is held the main thread is free again within about two frames (p95 of the heartbeat gaps, at most one over 100 ms)`, `p95 ${(during.gaps.length ? pct(during.gaps, 0.95) : 0).toFixed(0)} ms, max ${during.gap.toFixed(0)} ms`);
   // (not under churn: the stream may insert a row above, so the neighbour can be the open item itself)
   if (!churn) {
   // the settled item at 1x: one more key with the CPU at full speed, the pane must show the new item within the budget (the 4x figure above is for a slow device and only reported)
