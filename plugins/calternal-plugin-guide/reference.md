@@ -82,18 +82,50 @@ manifest field.
 
 This is the value of `network`. On review, explain that the message can
 reference remote images and fonts. Enable the reviewed package in the space.
-Store the HTML in a `mail-message` item and use the saved item ID and revision
-to call the SDK's `prepareContent(context, { kind: "mail-message", item_id,
-revision, field: "text" })` from a declared operation. Return its `frame_id`.
-The client calls `plugins.network.content.get` with the space ID and frame ID,
-then mounts the returned `frame_url` with an empty iframe sandbox. The host
-sanitizes the HTML and checks the viewer, package activation and item revision
-on delivery. Preparing another kind or revision is refused.
+Declare `write_item` as well. Register a reversible operation with
+`required_capability: "content.write"`, `mutates: true` and
+`idempotency: "request_id"`. Its input takes a text kind and the HTML string.
+Its output can be either `{ frame_id }` or `{ error }`.
 
-The preview implements sealed frames and records the viewer's remote-content
-preference. The `images_fonts` profile is for anonymous HTTPS media retrieval
-by host-issued asset reference. Outbound asset delivery is pending in this
-preview. The profile does not accept arbitrary page URLs or retrieve page titles.
+```ts
+import { prepareContent, serveWorker, typedHandlers } from "@calternal/plugin-sdk";
+import manifest from "./manifest.generated.js";
+
+const handlers = typedHandlers(manifest, {
+  async "mail-preview.show"(input, context) {
+    const { kind, text } = input;
+    const saved = await context.call("write_item", { kind, text }) as {
+      id: string; revision: string;
+    };
+    try {
+      return await prepareContent(context, {
+        kind, item_id: saved.id, revision: saved.revision, field: "text",
+      });
+    } catch {
+      return { error: "This source kind or revision cannot be previewed." };
+    }
+  },
+});
+
+serveWorker(manifest, handlers, process.stdin, line =>
+  new Promise<void>((resolve, reject) =>
+    process.stdout.write(line, error => error ? reject(error) : resolve())),
+).catch(() => {
+  process.stderr.write("Worker protocol error.\\n");
+  process.exitCode = 1;
+  process.stdin.destroy();
+});
+```
+
+Pass HTML such as `<img src="https://media.example.org/message.png" alt="Message attachment">`.
+The committed write queues eligible assets. The client calls
+`plugins.network.content.get` with the space ID and frame ID, then mounts the
+returned `frame_url` with an empty iframe sandbox. The host rewrites image
+and font references, fetches them anonymously and serves checked media through
+the proxy. A prepared frame belongs to its viewer. A private address or
+unavailable image has no deliverable asset. If the person's remote-content
+preference is Ask, the client first sends an authenticated POST to the
+frame URL and then opens or reloads it. Never leaves placeholders.
 
 ### C. Open internet
 
