@@ -1,0 +1,397 @@
+# Description contract (v2)
+
+Status: **draft 1** on `lane/description-contract`, for sign-off by the web renderer lane (leads this document) and the native renderer lane (owns the
+review against SwiftUI). The plugins lane keeps runtime, authority and engines and references this document and
+[`contract/description-v2.schema.json`](../contract/description-v2.schema.json) instead of defining its own description schema. Nothing here is built;
+nothing in it is a promise of an implementation.
+
+The schema is checked with `python3 contract/verify-description.py` against the fixtures in `contract/fixtures/description-v2/` (valid ones must pass,
+`invalid-*` ones must fail). The fixtures are the paper exercises of section 9.
+
+Section ownership: **1 to 4, 6, 7, 10** native lane (first draft); **5 (content nodes and host components) and 9** web lane; **8** both. Each side edits its own sections and
+rebases.
+
+## 0. What a description is
+
+A description is data. A host (or a page that relays for it) publishes it; a renderer draws it with its platform's own controls: SwiftUI lists, buttons and
+menus natively, the web client's components on the web. It is never code, never HTML from a plugin, and **it carries no viewer data**: where a person's
+titles, counts or state appear, the description holds a *bind* (a request) and the host fills it at the moment of drawing, under the viewer's rights. Because it
+is data-free, a description can be cached, shared and compared by digest.
+
+Everything below is one contract for chrome (sidebar, header, footer, panel) and content (the card): the same `bind`, the same `invoke`.
+
+## 1. Vocabulary
+
+| Term | Meaning |
+| --- | --- |
+| **kind** | A type of item a plugin or the host declares (`note`, `thread`, `request`, `collection`) with its **indexed fields** and an icon. Threads and trashed items are kinds/fields the host owns. |
+| **bind** | A data-free request: a list window, one item, or a search, with filter, sort and the fields wanted. |
+| **row template** | How an item becomes a row: fields to title, icon, marks and actions. |
+| **row scope** | Inside a row template, `{row: ...}` value sources name the row an action was activated on. |
+| **invoke** | An action: an operation plus named inputs from value sources. |
+| **value source** | Where a value comes from: a literal, the viewer, the route, the selection, a row, a form, a draft, a prompt, or a field of another bind. |
+| **component** | A rich surface the host draws (item editor, transcript, composer, request card, sealed frame), configured by the description. |
+
+## 2. Bind
+
+One definition (`$defs/Bind`):
+
+```json
+{ "id": "notes",
+  "source": { "type": "list", "kind": "note", "collection": { "route": "collection" } },
+  "fields": ["title", "updated", "pinned"],
+  "filter": { "all": [{ "field": "trashed", "op": "eq", "value": { "literal": false } }] },
+  "sort": [{ "field": "updated", "direction": "desc" }],
+  "window": { "size": 60, "count": "exact" },
+  "row": { "title": { "field": "title" }, "icon": { "kindIcon": true }, "open": { "route": { "name": "item", "value": "id" } } },
+  "states": { "empty": { "title": "No notes here" } } }
+```
+
+### 2.1 Sources
+
+* `list`: an index window over a kind's items, optionally one **collection** (a collection id from a literal, the route or the selection, so a collection
+  UUID works; it is not a static pattern).
+* `item`: exactly one item by reference from the route or the selection. A literal row is never accepted.
+* `search`: items of a kind matching a text value source (a form or a draft); the footer search sends the **settled** text only (about 150 ms after the last
+  key), so a bind never re-queries per keystroke.
+
+Threads, trashed items and requests are kinds or indexed fields the host (or Turns) declares: `trashed`, `trashed_at`, `waiting_on`, `pending_for` are host-indexed
+fields, so the Notes Trash and the Threads Inbox are ordinary binds.
+
+### 2.2 Filter and sort
+
+`filter` is up to 16 predicates in `all` and `any` (no nesting) on **declared indexed fields**: `eq ne in lt lte gt gte exists prefix`. Values are value sources:
+`{viewer: person}` makes "waiting on me" writable (`waiting_on eq viewer.person`); `{route: collection}` and `{literal: ...}` complete the set. `sort` is at most two
+indexed fields; the item id is the implicit last key, so order is total and stable across windows.
+
+### 2.3 Windows
+
+The native list and the web list both ask for **index windows**, not cursors, because a long list must size its scroll bar from a count and the person walks it with
+the keyboard at 30 rows a second:
+
+```
+shell -> host   { type: "window", bind: "notes", from: 120, to: 199 }
+host  -> shell  { bind: "notes", revision: 41, state: "ready", count: 5000, offset: 100, rows: [ { id, fields:{...} }, ... ] }
+```
+
+* `window.size` (1 to 200, default 60) is the rows the host returns per request; `count` is `exact`, `estimate` or `none`.
+* The renderer prefetches ahead of the visible rows and, when a key or a drag walks past the edge of what it holds, asks for the next window at once (no
+  settling); the host may answer with a larger range than asked (`offset` and `rows` say what came back).
+* `revision` identifies the result set. A new revision replaces the window wholesale; the renderer skips a replacement equal to what it draws, so a republish that
+  only moved the selection costs nothing.
+* **Live:** with `live: true` the host pushes a changed window (new revision) while the view is open. The renderer applies the **latest** only and, while a key
+  repeats, holds incoming windows until the selection settles (or applies a few a second).
+
+### 2.4 Row template
+
+`title` is one field (one line; there is no second line and no free-form row content). `icon` is a catalogue name, a field's value or the kind's own icon.
+`marks` (up to three) are trailing dots, counts, texts or icons, each with an optional `when` predicate and a tone. `leadingActions`, `trailingActions` and `menu` are
+`invoke` definitions; only the first leading or trailing action may set `fullSwipe`. `open` navigates (sets a route parameter to the row id) or invokes.
+Rows are identified by the item id everywhere: selection, events, scope.
+
+### 2.5 States
+
+`states.empty`, `loading` and `error` are small messages (`title`, `detail`, `icon`, an optional action). Their text is the description's or host-written; never worker
+output. A renderer shows `loading` until the first window arrives, `empty` when `count` is 0, `error` when the host answers `state: "error"`.
+
+### 2.6 What the schema needs from the host (authorization is the host's job)
+
+The description only asks. Before any indexed work the host must:
+
+1. authorize the **kind**, the **collection**, every **filter field**, every **sort field**, the **search** and every **output field** against the viewer, the space and,
+   for a guest, the item's grant;
+2. reject a field not declared indexed by the kind, and a field outside the audience's projection (a guest entitled to titles must not be able to infer hidden
+   metadata from the count of an `eq` filter or from row order: filters, sorts and counts on a field the audience cannot read are refused, not filtered);
+3. produce **host-owned projections** for guests: rows are built by the host from the item's grant, never by plugin code;
+4. cap windows (200 rows), predicates (16), binds per view (16), and bound work by offset.
+
+The renderer never receives a row it was not entitled to; it needs no rule of its own.
+
+## 3. Invoke
+
+One definition (`$defs/Invoke`) used as a content node, a row action, a header action, a footer action or a card action:
+
+```json
+{ "id": "rename", "title": "Rename", "icon": "edit",
+  "operation": "host.item.rename",
+  "inputs": { "item": { "row": "id" },
+              "title": { "prompt": { "title": "Rename note", "initial": { "row": "field", "field": "title" } } } },
+  "preview": { "material": ["item"] },
+  "result": { "show": ["pending", "error", "undo"] } }
+```
+
+### 3.1 Operation and inputs
+
+`operation` is a plugin operation id from the manifest, or a **host built-in** (`host.item.trash`, `host.item.rename`, `host.item.restore`, `host.trash.purge`,
+`host.undo`, `host.approval.resolve`, `host.route.set`, `host.session.end`, `host.item.share`). Built-ins that need no worker run in the host without waking the space
+runtime; a swipe on a row must not start a runtime.
+
+`inputs` maps a name to a value source. There is no literal row and no destination the interface picks at activation: every value is a source the host can
+re-resolve. Sources that live on the device: **row** (the row scope), **selection**, **form** (`{form, field}`: values of a form node held on the device),
+**draft** (`{draft: composerId}`: the composer's text) and **prompt** (the shell asks for text when the action fires). They reach the host in the activation
+request below, resolved and shown.
+
+### 3.2 Activation request and the trusted preview
+
+Activation sends the host a typed request (`$defs/Event`, `type: "invoke"`):
+
+```
+{ type: "invoke", id: "rename", bind: "notes", row: "n-7f3", invocation: "inv-91c…",
+  renderedRevision: 41, inputs: { item: "n-7f3", title: "Q3 plan" } }
+```
+
+* **Resolved against what was rendered.** The host resolves every input source against the state the person saw (`renderedRevision`, the row, the selection at
+  that moment). If the row left the window, the selection moved, or the revision no longer holds, the outcome is `stale` and nothing runs; the shell re-renders
+  and the person acts again. A button labelled Refresh cannot submit a hidden destination or act on a different item after the selection moved.
+* **Trusted preview.** For an operation the host classifies (from the manifest, not from the description) as **mutating or disclosing**, the shell shows the person the
+  *material inputs* before sending: the resolved item, destination, recipient or audience, in the shell's own sheet (system confirmation dialog natively). The
+  description may add material inputs (`preview.material`) or a `confirm`; it cannot remove one the manifest declares. Confirmation binds to the exact resolved
+  inputs and the invocation id: a retry with different inputs asks again.
+* **What the person typed needs no second sheet.** An input that comes from a control the person is looking at and edited themselves (a composer's draft, a form
+  field, a prompt) is shown by that control, which is its preview; the sheet covers the material inputs the person did **not** type: the row, the selection, a
+  route reference, a field of a bind, an audience. A chat send therefore never opens a confirmation sheet; a Share with an audience does.
+* **Retry and idempotency.** `retry: "safe"` (idempotent), `"keyed"` (default: the host de-duplicates by `invocation`, so a retry after a dropped connection does not
+  repeat the effect) or `"never"` (the interface shows an unknown outcome instead of retrying). `pending: "disable"` (default) greys the action while it is in flight.
+* **Full swipe.** A full swipe performs the first action only when it sets `fullSwipe: true`, and never a confirmation.
+
+### 3.3 Identifiers: invocation id, action id, ticket
+
+Three different things must not be confused:
+
+* **`invoke.id`**: the *action id*, chosen by the description's author, stable across revisions (`rename`, `trash`); it names the action in events and in pending state.
+* **`invocation`**: a fresh id **the renderer generates for each activation**. It is the host's idempotency key: the host maps it to its own durable *action request id*
+  and de-duplicates retries by it (`retry: keyed`), so it can be a receipt key on the host side. The renderer keeps it only to match the outcome and to retry.
+* **The space-channel ticket**: opaque, held by the host and the runtime, **never durable, never visible to a renderer, never used as a receipt or an idempotency key**.
+  Descriptions, events and outcomes never carry it.
+
+### 3.4 Outcomes
+
+The host answers (`$defs/InvokeOutcome`): `ok`, `pending` (with a host-owned **status** reference), `error` (a code and a plain message **the host writes**), `stale`,
+`refused`, plus an optional **undo** `{ref, label, expiresAt}`. `result.show` says which of toast, pending, error, undo and status the interface may show. Undo is
+a button that invokes `host.undo` with the ref; the status reference is polled through a host built-in. **Worker payload is never carried to an interface.**
+
+## 4. Chrome v2
+
+`$defs/Chrome` replaces the chrome v1 file that lives on one branch (`contract/chrome-v1.schema.json` on `lane/ios-shell`): a real schema in the repository.
+
+* **`binds`**: every bind of the view, by id; sidebar sections, selector counts, cards, the footer search and components reference them by id (several binds in a
+  view are addressed by id, so `binding.item` is never ambiguous).
+* **`sidebar`**: `cards`, `selectors`, `sections`, `title`/`titleImage`, `width`, `refresh`. A **section** has literal `rows` (fixed shortcuts), a `bind`, or both
+  (literal first), `actions` and `menu` as invokes in its header, a `collapsed` flag only when it folds, and `showWhen {route, equals}` so a selector can switch
+  sections. A section without a `title` draws no header and therefore no header actions.
+* **`selectors`**: a segmented control whose options set a route parameter; an option's `count` is a bind with `count: "exact"`, so Inbox 4 is a bind.
+* **`header`**: a literal title or a field of a bind, and up to two leading and three trailing invokes. The sidebar toggle is the shell's.
+* **`footer`**: `account` (with a menu of invokes), `apps`, `search`.
+* **`panel`**: the right panel, built only of host components (the side chat is a transcript above a composer).
+* **`appearance`**, **`scheme`**, **`accent`**: as in v1; the page's wallpaper values are the web app's defaults.
+
+How the native renderer draws it (the SwiftUI primitive for each part is in `docs/ios-shell.md`): sections are `Section`s of a `List(selection:)` in the sidebar style
+(plain on a phone), rows are `Label` with `.badge`, actions are `swipeActions` and `contextMenu`, selectors are a segmented `Picker`, the footer is a bar with
+glass controls, the header is the system toolbar.
+
+## 5. Content nodes and host components (web lane)
+
+### 5.0 Content nodes (`$defs/View`, `$defs/ContentNode`)
+
+A **view** is the content of the card for one place, as a sibling of chrome: `{version: 2, kind: "view", revision, title?, binds, root}`. It is data-free like chrome:
+binds are requests the host fills; a view never carries a row, a title of a person's item, a message, or HTML. It is drawn with each platform's own controls (Svelte on
+the web, SwiftUI natively); no plugin is written twice, and anything the vocabulary cannot say stays a **host component** (5.1), never plugin-drawn.
+
+| Node | Says | Embeds |
+| --- | --- | --- |
+| `stack` | children in a column or a row, optional title | nodes (depth at most 6, 200 nodes per view, 24 children per stack) |
+| `text` | fixed copy by the author: `title`, `heading`, `body`, `caption`, optional tone | nothing |
+| `notice` | a message panel (tone, title, detail) with an optional action | `invoke` |
+| `button` | an action, label from the invoke's `title`, `primary` or `quiet` | `invoke` |
+| `form` | named fields held on the device, one submit | `invoke` (its inputs read `{form, field}`) |
+| `list` | a bound list; `selectable` adds the keyboard model | `bind` by id (the bind's row template draws the rows) |
+| `detail` | labelled fields of one bound item | `bind` by id (an `item` source) |
+| `component` | a host component (5.1) | `Component` |
+
+* **No free layout.** There are no sizes, colours, fonts, margins or custom controls; spacing, type and motion come from the renderer's tokens, so the web and the
+  Mac and iPhone apps stay one product. Anything beyond the vocabulary is a request to extend it, not a hole to draw through.
+* **Forms** hold their values on the device. A field is checked there (required, length, `url`/`email`/`number`/`date` shape, `choice` among options) and the submit
+  is disabled while a required field is empty or invalid and while the action is pending. The values leave the device only inside the submit's resolved inputs
+  (`{form: id, field: fieldId}`); the form shows what was typed, so by the rule in 3.2 it needs no second sheet, and the trusted preview covers only the inputs the person did not type. After an `ok` outcome the fields clear (`clear: onOk`,
+  the default); after `error` or an unknown outcome they keep what was typed. Errors appear in a `notice` above the submit, never as loose text.
+* **Lists** are binds. `selectable: true` gives the keyboard model of `docs/native-feel.md` section 20 on every platform: Up/Down/Home/End/Page Up/Page Down move
+  the selection through ALL rows (drawn or not), the selection paints at once, and what the selection opens (a route change) happens when it settles, **about 100 ms after the last key** (or key up); nothing crosses the bridge while a key repeats, in either direction
+  (8.4). The web renderer rests 1.6 times the longest gap between repeats in the burst, at least 45 ms and at most 120 ms, which is the same rule measured on the web; a load
+  never starts while keys are still repeating, and a new key cancels the previous load.
+* **Home, End and Page Up/Down** over rows that are not loaded are a renderer duty: it asks the host for the window around the target index (`0`, `count - 1`, the current
+  index plus a page) at once, moves the selection when the rows arrive, and the host only answers windows.
+* **A `list` takes the remaining height of its stack and scrolls itself.** One `list` per scroll region: a `stack` that holds a list does not scroll, and nested scrolling
+  regions are refused (a long list inside a scrolling column loses laziness, selection and windows on every platform). The selected row's id is the `selection` source for that bind.
+* **Selection is not state in the description.** A renderer reads "selected" from the list; a description never carries `selected`.
+* **Budgets** are the host's and the verifier's: at most 16 binds per view, 24 children per stack, depth 6, 200 nodes, 12 form fields, 4 KB per field value.
+
+### 5.1 Host components (`$defs/Component`, five types)
+
+Each is `{type, id, config}` with a typed `config` (a closed object: an unknown key is refused); the host draws it and receives its events directly (no page, no
+plugin code). A description can run a named **invoke** on a component's event where a config says so (`onTitleChange`, `onQuote`, `send`, `stop`); every other event
+is the host's alone.
+
+| Component | Config | Events (typed; handled by the host unless an invoke is named) | Native review |
+| --- | --- | --- | --- |
+| `item-editor` | `item` (route or selection, never a literal id), `mode` edit/read, `showTitle`, `onTitleChange` | `title-change` (the host saves through `host.item.rename`), `link-open`, `presence` (live rooms: an attribute of the item's KIND) | A text view over the item's document (a note's Markdown file directly: no second representation between the editor and the file, an owner rule). A metadata-only save must not rewrite the body. |
+| `turn-transcript` | `thread` (typed thread ref from route or selection), `follow` end/none, `window`, `onQuote` | `quote` (a selected passage), `open-item`, `scrolled-away`, `rendered` (see below) | A host-owned windowed list: the screenful at the end is read first and drawn, the rest follows in steps; rows are appended and updated by the host; heavy parts are the host's. |
+| `composer` | `target`, `placeholder`, `enabled` (a literal or a boolean source), `enabledWhen` (two sources and an operator: a composer has no row, so no row-scoped predicate), `send` (an invoke), `attachments`, `mentions`, `stop` | `draft` (device only), `send`, `stop`, `attach`, `mention` | The draft is held on the device. A native composer is a text field with the system keyboard; attachments use the system pickers. |
+| `request-card` | `request` (typed request ref), `compact` | `resolve` (host.approval.resolve, from the host's own buttons) | One protected record and resolver for a job, a Turn and a host action; the card shows the material arguments (the trusted preview) and cannot be reordered, relabelled or covered by a plugin layout. |
+| `sealed-html-frame` | `frame` (a frame id), `minHeight`, `maxHeight` | `resize` (inside the caps), `open-link` (through the host) | A web view with no network and no top navigation; its message channel and sandbox are fixed by the host. |
+
+**Rules that hold for all five**
+
+* A component is **configured, not wrapped**: a description cannot place it inside anything that clips, scales or virtualises it, and cannot draw over a
+  `request-card`. Its size is the card's (the transcript and editor fill it; the composer is at the bottom; the frame reports its height inside the caps).
+* **Refs are typed.** `thread`, `item` and `request` take a value source that resolves to a reference of that type or the host refuses the description; the host
+  authorises the viewer for the ref (a guest's grant included) before anything is read. The description holds no viewer data.
+* **Drafts.** The composer's text and attachments stay on the device. At activation the host receives a **checked draft payload** (length, attachment count and
+  type, mention targets authorised by the host) and the composer shows it, so the send opens no confirmation sheet (3.2). The draft clears only after `ok`; `error` keeps it.
+* **Streaming** is the host's: the transcript's rows grow and change without a description revision; the host caps the update rate, commits a final message at the
+  end, and drops an in-flight load when the viewer moves to another thread (the old transcript load is cancelled, not finished).
+* **First screenful stamp.** When the transcript has drawn its first screenful the host sets `data-thread-rendered=<thread id>` (web), dispatches
+  `calternal:thread-rendered` and records the measure `calternal:thread:open`; the native app has its own equivalent. The budget is 150 ms from the viewer
+  settling on the thread (4x CPU slowdown as the stand-in for a slow device; today's numbers are in `docs/native-feel.md` section 20 and the open defect).
+* **Reduced motion and keyboard** follow `docs/native-feel.md` for everything a component draws.
+* **Events never carry worker payload.** A component event reaches a named invoke only as typed inputs (an id, a selected passage the person chose).
+
+## 6. What may be cached on the device
+
+`cache.policy` is `account` (default) or `none`; `maxAgeDays` bounds it (1 to 90, default 30).
+
+* Under `account` the shell may keep the **description** and the **last windows** for the first paint at the next launch, in one file of at most 4 MB, keyed by the
+  signed-in account id. A description with host-filled binds holds a person's titles once rows are filled, so: **sign-out deletes it, switching account deletes
+  it, a different account never reads it, and a policy of `none` keeps nothing.**
+* The first paint from cache is marked stale; the host's first window answer replaces it (a different revision) and a row the host no longer returns disappears.
+* The cache is the shell's, not the page's.
+
+## 7. Version negotiation
+
+* The shell advertises the versions it draws (`chromeVersions`, today `[1]`, with this contract `[1, 2]`); the host or page advertises the versions it can produce.
+  The version used is the highest in common. A description carries `version`.
+* A description may carry `requires: [feature, ...]` (for example `bind-search`); a shell that does not know one refuses the description whole, rather than draw it
+  wrongly.
+* A refusal is `{ native: false, reason, supported: [...] }`; the page then draws its own chrome. **v1 stays renderable until retired**: the retirement date is a
+  decision of the owner, recorded in the document.
+* Unknown fields are ignored; unknown enum values in a field the renderer needs refuse the description.
+
+## 8. Native review (SwiftUI)
+
+What the renderer needs from the contract, and what it costs:
+
+1. **Windows, not pages**: `List` with `ForEach` over thousands of rows drops frames; the native list holds a window plus spacer rows sized from `count` and a
+   measured real row height (the system sets row height). Index windows and a count are therefore required. Measured: a held arrow key through a 5,000-row list
+   at 33 keys a second has to ask for windows without settling.
+2. **Selection outside the row models**: a row reads "is selected" from the list, not from the description; the description does not carry `selected` flags for
+   drawing. (A page may still say which row it selected; the shell treats a later change as a reveal request.)
+3. **Equatable rows**: row values are small and comparable so an unchanged row is skipped when a window is replaced.
+4. **While a key repeats, nothing crosses the bridge**: outgoing events (`selection`) go out once after the key settles; incoming windows are held and applied
+   when the selection settles, decoded and compared off the main thread. A republish that only confirms the selection must not touch the list.
+5. **One line per row**, one icon column per list (the system aligns titles by it), single neutral accent: the accent is passed only to the unread mark and a prominent action.
+6. **Swipe actions** need `title`, `icon`, `tone` and `fullSwipe` on the invoke; they draw with the system's swipe look, tinted by tone, never by the root tint.
+7. **Haptics and menus** are the shell's: selection feedback on `route` and `selection` events, a system menu for `menu`.
+8. **Touch targets** are 44 pt; the renderer, not the description, sizes controls.
+9. **The first paint** may come from the cache (section 6) before any host is reachable; therefore binds in the cached description have a defined stale state.
+
+### 8.1 Review of sections 5 and 9 against SwiftUI (native lane)
+
+Everything in 5.0 and 5.1 is drawable with system controls. Findings, in order of consequence:
+
+1. **Settling time.** Section 5.0 says a selection opens its target "about 45 ms after the last key, longer while a key repeats". The native measurement says: nothing crosses
+   the bridge while a key repeats; the target loads when the selection settles, about 100 ms after the last key (or key up). Use that number, and say that outgoing
+   events and incoming windows are both held during a repeat (8.4).
+2. **Home, End and Page keys over rows that are not loaded.** "Through ALL rows (drawn or not)" needs the window protocol: the renderer asks for the window around the target
+   index (`0`, `count - 1`, current plus a page) at once and moves the selection when the rows arrive. State this as a renderer duty; the host only has to answer windows.
+3. **A `list` takes the remaining height of its stack and scrolls itself.** Nested scrolling regions are refused: one `list` per scroll region, and a `stack` that
+   holds a list does not scroll. (A SwiftUI `List` inside a `ScrollView` loses its laziness and selection.)
+4. **Forms** map one to one: `text` TextField, `multiline` TextEditor, `url`/`email`/`number` TextField with the keyboard type, `date` DatePicker, `choice` a menu Picker,
+   `toggle` Toggle; labels use text roles (Dynamic Type), the submit is a prominent button disabled while invalid or pending, the notice sits above it. No change needed.
+5. **`Composer.config.enabled` as a Predicate has no row scope.** A predicate names a field of a row; a composer has none. Use a ValueSource or an explicit
+   `{bind, field}` source (`{bind: "thread", field: "state"}`) compared by an `enabledWhen` predicate; otherwise two renderers will read it differently.
+6. **Set-valued selection** (9.2) is cheap natively (`List(selection: Set<ID>)` with edit mode). Add `selectionMode: "multiple"` to the list node and a source
+   `{selection, set: true}` resolved as an ordered array of at most 50 ids; the trusted preview shows the count and the first titles.
+7. **Selector options from a bind** is cheap (a segmented control up to four options, a menu beyond); add `options: {bind}` with at most 12 rows.
+8. **Share sheet:** make it a host-owned sheet shown by the built-in `host.item.share` (SwiftUI `.sheet`), not a sixth component the description places; one decision for
+   every renderer, and the audience is the sheet's own content (a material input shown by the host, not by the description).
+9. **Date prompt:** extend `prompt` with `kind: "text" | "date" | "datetime"` (a DatePicker in the same sheet). A snooze presets menu works today.
+10. **Nested rows** (child threads) are drawable (`List(children:)`) but conflict with index windows (windows per parent). Defer, as listed.
+11. **Inline rename** as a shell prompt on every platform is right natively (an alert with a text field); accept the web's in-row editor as the web's own.
+12. **Transcript stamp.** `data-thread-rendered` is web only; the native equivalent is a typed `rendered` event plus a signpost and the existing measurement line; the 150 ms
+    budget is measured on a device, not with a CPU slowdown.
+13. **Sealed frame** natively is a WKWebView with a non-persistent data store, a content-blocking rule that refuses every network load, content served from a custom
+    scheme handler, fixed navigation (none) and one fixed message handler. Its height caps are enforced by the host; a frame inside a scrolling stack must not capture
+    vertical scroll when it fits.
+14. **Drag to move** exists in SwiftUI (`draggable`/`dropDestination`) and is not in the vocabulary; defer.
+
+## 9. Paper exercises (fixtures) (web lane)
+
+Fixtures in `contract/fixtures/description-v2/`: chrome (`reading-list.json`, `notes-sidebar.json`, `threads-sidebar.json`, by the native lane) and views
+(`view-reading-list.json`, `view-note.json`, `view-thread.json`), plus `invalid-*` files that must fail (`invalid-view-literal-rows`, `invalid-form-field-type`,
+`invalid-component-config`, `invalid-component-no-send`, `invalid-node-html`, `invalid-view-deep`). Run `python3 contract/verify-description.py`.
+
+### 9.1 Community reading list (`reading-list.json` chrome, `view-reading-list.json` card)
+
+**Written:** a bound list of reading items (title, read mark, a per-row "Mark read" swipe action with `fullSwipe`, an empty state); a **two-field add form**
+(`form` node: title, address; the address is typed in the form, so the add opens no separate sheet); a **per-person reminder**: a `reading-reminder` bind filtered `person eq viewer.person`
+(only the viewer's reminders are returned, authorised by the host) with a `date` field form whose submit names the selected reading item.
+**Cannot be written:**
+* **Notification when a reminder is due** is not a description feature (the plugins lane maps it to the scheduler's `notify_creator`); the description shows the reminders.
+* **Conditional fields** (show "repeat" only after a date), **custom validation messages** and rules beyond shape (https only), **edit in place** of an existing
+  item, **bulk selection** and **load more** (windows only) have no node.
+
+### 9.2 Notes sidebar with thousands of notes, collections, Trash, rename with Undo (`notes-sidebar.json`, `view-note.json`)
+
+**Written:** collections as a bound section whose row sets the route; notes as a list bound to the route's collection, `trashed eq false`, newest first, in index windows
+with an exact count (thousands of rows cost a screenful); Trash as a bind with `trashed eq true` and a count in the selector; Restore with full swipe; Empty Trash as a
+confirmed destructive `host.trash.purge`; **rename with a prompt** whose outcome offers a host-owned **Undo**; the footer search; the editor as an `item-editor`
+component with the title renamed through the host. Selection through thousands of rows with the keyboard is `selectable` (section 5.0).
+**Cannot be written:**
+* **Bulk actions on a multi-selection** (the web's select mode: Trash or Share many): the `selection` source is one id; a set-valued source and a selection mode
+  are missing.
+* **Tag filter chips with counts** (options generated from a bind): a selector's options are literal; options from a bind are missing.
+* **Sections per collection** (a repeater over a bind) and **drag to move** a note into a collection: no repeater, no drag affordance.
+* **Share sheet**: `host.item.share` is an operation, but the sheet (people, groups, links, roles) is a host surface that is not one of the five components. It needs a sixth
+  host component or a built-in sheet defined by the host; the contract does not decide which.
+* **Inline rename in the sidebar** (type in place) is drawn as a shell prompt on every platform; the web's in-row editor is not expressible, and that difference should be
+  accepted deliberately.
+
+### 9.3 Threads sidebar: Inbox of "waiting on me", a composer that sends, an approval card (`threads-sidebar.json`, `view-thread.json`)
+
+**Written:** the Inbox as a bind (`waiting_on eq viewer.person`) with its count in the selector; All Threads; provider icons (a static map over a typed field); state marks;
+archive with Undo; the side chat as `turn-transcript` above a `composer`; a **composer that sends** (`turns.start` with the thread from the route and the text from
+`{draft: composer}`, keyed retry, pending and error shown, the draft cleared only after `ok`); an **approval** as a `request-card` over the protected request record; Stop
+while a turn runs; the first screenful stamp.
+**Cannot be written:**
+* **The composer's controls** (provider, model, reasoning level, permission, runs-on): typed choice controls whose values become operation inputs (`{control: id}`) are missing,
+  and the lists behind them (models per provider, machines) are binds the composer would need to reference.
+* **User-made sections with drag ordering** (the Threads sidebar's own layout) and **child threads nested under a parent row**: a row template has no depth, and ordering is a
+  person's layout stored by the host, with no contract for it.
+* **Snooze** needs a prompt that asks for a **date and time** (the `prompt` source asks for text); a choice of presets (an action sheet of invokes) works, a picker does not.
+* **Token-by-token text in a plain list row** is not needed (only the transcript streams), but a `list` cannot show live progress marks beyond a mark that updates with a new window.
+* The **selection-to-pane** link (selecting a thread opens it) is a route parameter set by the row's `open`; cancelling the previous load is the host's guarantee (5.1).
+
+### 9.4 What this schema needs from the host (authorisation is the plugins lane's)
+
+1. Authorise every bind (kind, collection, filters, sorts, search, output fields) and every ref (`item`, `thread`, `request`, `frame`) against the viewer, the space and a guest's
+   grant **before** any indexed work or read, and reject a field the audience cannot read instead of filtering it (counts and order leak otherwise).
+2. Classify each operation as reading, mutating or disclosing from the manifest, and name the material inputs the trusted preview shows; the description may only add.
+3. Resolve `{row}`, `{selection}`, `{form}`, `{draft}` and `{prompt}` sources against what was rendered (`renderedRevision`) and answer `stale` when it no longer holds.
+4. Provide the host built-ins named here (`host.item.rename`, `host.item.trash`, `host.undo`, `host.approval.resolve`, `host.panel.ask`, `host.turn.stop`, `host.route.set`) so a
+   swipe or a card never wakes a space runtime, and a **checked draft payload** for the composer.
+5. Own the transcript's streaming, appends, rate cap and final commit; and the frame's sandbox.
+
+## 10. Open questions and what this contract does not decide
+
+1. `host.item.patch-metadata` (maps to `item_save`'s metadata arm) and `host.trash.purge` (confirmed, Manager or Owner, as a job) are the plugins lane's, part A.
+2. Reminders notify through `notify_creator` on the existing scheduler (plugins lane, part A).
+3. **Content node types** and the five host components: written in section 5 (web lane), exercised in section 9; the gaps are listed there and are the next vocabulary requests (set-valued selection `{selection, set: true}` of at most 50 ids with `selectionMode: multiple`; selector `options: {bind}` of at most 12 rows; composer typed controls; the share sheet as a host-owned sheet behind `host.item.share`, not a sixth component; `prompt.kind` text/date/datetime; nested rows (windows per parent); drag to move; section repeaters).
+4. **Generic TCP** is outside this contract; the owner's decision is recorded elsewhere and is not a description concern.
+5. **Section repeaters** (one section per item of a bind) are deferred; navigation sections cover the cases above.
+6. The **retirement date of v1** is the owner's.
+
+## 11. Sign-off
+
+* Native renderer lane: **signed off.** Sections 1 to 4 and 6 to 8 are mine; sections 5 and 9 were reviewed against SwiftUI (8.1) and both conditions were met (the typed-input rule
+  in 3.2; settle time, window asks for Home, End and Page, one scroll region per list, a composer `enabled` without a row scope). 17 of 17 fixtures pass
+  (`python3 contract/verify-description.py`). Next vocabulary requests are recorded in section 10.
+* Web renderer lane: sections 5 and 9 and the content nodes written; sign-off by that lane is its own message to the coordinator.

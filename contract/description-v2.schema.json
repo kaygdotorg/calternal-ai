@@ -1,0 +1,2117 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://calternal.cloud/contract/description-v2.schema.json",
+  "title": "Calternal description v2",
+  "description": "The interface DESCRIPTION: data the host or a page publishes and a renderer draws natively or on the web. This revision defines bind, invoke, chrome v2, the host-component slots, the cache rule, the events and results and version negotiation. Content node types are defined by the web renderer lane and added to `$defs.contentNode`.",
+  "type": "object",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/Chrome"
+    },
+    {
+      "$ref": "#/$defs/View"
+    }
+  ],
+  "$defs": {
+    "Id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._:-]{0,63}$",
+      "description": "Stable identifier: lower-case, 1 to 64 characters. Ids are chosen by the author of the description and never change for the same thing across revisions."
+    },
+    "Literal": {
+      "description": "A JSON literal: string, number, boolean or null. Bounded: strings at most 4096 UTF-8 bytes.",
+      "oneOf": [
+        {
+          "type": "string",
+          "maxLength": 4096
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "ValueSource": {
+      "description": "Where a value comes from. A description never carries viewer data; it names a SOURCE and the host (for a bind) or the shell (for an invoke) resolves it. Exactly one key.",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "literal": {
+              "$ref": "#/$defs/Literal"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "literal"
+          ],
+          "description": "A constant."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "viewer": {
+              "enum": [
+                "person",
+                "space",
+                "roles"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "viewer"
+          ],
+          "description": "The signed-in person, the current space or the person's role set in it. Resolved by the host from the session, never from the description."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "route": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]{0,31}$"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "route"
+          ],
+          "description": "A named parameter of the current route (for example the collection or thread in the address). Typed as a reference or string by the field it filters."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "selection": {
+              "$ref": "#/$defs/Id"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "selection"
+          ],
+          "description": "The id of the row selected in the bind with this id (or the item chosen in a selector). Resolved at activation time from what is rendered."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "row": {
+              "enum": [
+                "id",
+                "field"
+              ]
+            },
+            "field": {
+              "$ref": "#/$defs/Id"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "row"
+          ],
+          "description": "Inside a row template only: the id of the row an action was activated on, or one of its fields. This is the row scope: an action on any row names that row, not the selection."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "bind": {
+              "$ref": "#/$defs/Id"
+            },
+            "index": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 199
+            },
+            "field": {
+              "$ref": "#/$defs/FieldName"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "bind",
+            "field"
+          ],
+          "description": "A field of the row at `index` (default 0) of another bind in this view, as rendered: how a card about the first pending request names it."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "form": {
+              "$ref": "#/$defs/Id"
+            },
+            "field": {
+              "$ref": "#/$defs/Id"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "form",
+            "field"
+          ],
+          "description": "A value of a form held on the device (a text field, a toggle) and submitted only when the action fires."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "draft": {
+              "$ref": "#/$defs/Id"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "draft"
+          ],
+          "description": "The draft text of a composer with this id, held on the device until the action fires."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "prompt": {
+              "type": "object",
+              "properties": {
+                "title": {
+                  "type": "string",
+                  "maxLength": 120
+                },
+                "placeholder": {
+                  "type": "string",
+                  "maxLength": 120
+                },
+                "initial": {
+                  "$ref": "#/$defs/ValueSource"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "title"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "prompt"
+          ],
+          "description": "Ask the person for text when the action fires (a rename); `initial` may use the row scope."
+        }
+      ]
+    },
+    "FieldName": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{0,47}$",
+      "description": "A field of a kind, DECLARED INDEXED by the kind's manifest. Anything not declared is rejected by the host before any query runs."
+    },
+    "Predicate": {
+      "type": "object",
+      "properties": {
+        "field": {
+          "$ref": "#/$defs/FieldName"
+        },
+        "op": {
+          "enum": [
+            "eq",
+            "ne",
+            "in",
+            "lt",
+            "lte",
+            "gt",
+            "gte",
+            "exists",
+            "prefix"
+          ]
+        },
+        "value": {
+          "$ref": "#/$defs/ValueSource"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "field",
+        "op"
+      ],
+      "description": "One comparison on an indexed field. `exists` takes no value."
+    },
+    "Filter": {
+      "type": "object",
+      "properties": {
+        "all": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Predicate"
+          },
+          "maxItems": 8
+        },
+        "any": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Predicate"
+          },
+          "maxItems": 8
+        }
+      },
+      "additionalProperties": false,
+      "description": "Predicates combined: all of `all` and at least one of `any` (when present). At most 16 predicates, no nesting. Values come from value sources, so `waiting on me` is {field: waiting_on, op: eq, value: {viewer: person}}."
+    },
+    "Sort": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "field": {
+            "$ref": "#/$defs/FieldName"
+          },
+          "direction": {
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "field"
+        ]
+      },
+      "maxItems": 2,
+      "description": "Up to two indexed fields; the id is the implicit final tie-break, so order is stable across windows."
+    },
+    "BindSource": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "enum": [
+            "list",
+            "item",
+            "search"
+          ],
+          "description": "list: an index window over a kind's items (optionally one collection); item: exactly one item by reference; search: items of one or more kinds matching a text."
+        },
+        "kind": {
+          "$ref": "#/$defs/Id"
+        },
+        "collection": {
+          "description": "Restricts a list to one collection: a collection id from a literal, the route or the selection.",
+          "$ref": "#/$defs/ValueSource"
+        },
+        "ref": {
+          "description": "For `item`: the item reference, from the route or the selection (never a literal row).",
+          "$ref": "#/$defs/ValueSource"
+        },
+        "text": {
+          "description": "For `search`: the query text, from a form or draft.",
+          "$ref": "#/$defs/ValueSource"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "kind"
+      ],
+      "description": "What a bind reads. The host authorizes kind, collection, every filter field, every sort field, the search and the output fields against the viewer, the space and (for a guest) the item's grant BEFORE any indexed work, and projects rows for the audience. The description only asks."
+    },
+    "Marks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "enum": [
+              "dot",
+              "count",
+              "text",
+              "icon"
+            ]
+          },
+          "field": {
+            "$ref": "#/$defs/FieldName"
+          },
+          "value": {
+            "$ref": "#/$defs/Literal"
+          },
+          "when": {
+            "$ref": "#/$defs/Predicate"
+          },
+          "tone": {
+            "enum": [
+              "good",
+              "warn",
+              "bad"
+            ]
+          },
+          "icon": {
+            "$ref": "#/$defs/Icon"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "kind"
+        ],
+        "description": "A trailing mark. Drawn when `when` holds on the row (or always). `count` and `text` show the field or the literal."
+      },
+      "maxItems": 3
+    },
+    "Icon": {
+      "description": "A catalogue icon name, or an object. One icon set; native draws SF Symbols, web its own strokes.",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/Id"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "name": {
+              "$ref": "#/$defs/Id"
+            },
+            "field": {
+              "$ref": "#/$defs/FieldName"
+            },
+            "map": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/Id"
+              },
+              "maxProperties": 32,
+              "description": "A static map from the value of `field` to an icon name, owned by the renderer (provider to its icon); an unmapped value draws the kind's icon."
+            },
+            "kindIcon": {
+              "type": "boolean",
+              "description": "Use the icon the kind declares (a provider's, a note's)."
+            }
+          },
+          "additionalProperties": false,
+          "description": "`field` reads the icon name from the row, or, with `map`, maps the field's value to one."
+        }
+      ]
+    },
+    "RowTemplate": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "const": "id",
+          "description": "The row id is always the item id; rows are identified by it everywhere (selection, events, scope)."
+        },
+        "title": {
+          "type": "object",
+          "properties": {
+            "field": {
+              "$ref": "#/$defs/FieldName"
+            },
+            "fallback": {
+              "type": "string",
+              "maxLength": 120
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "field"
+          ],
+          "description": "One line of text from an indexed field. There is no second line (the web has none); a long title truncates."
+        },
+        "icon": {
+          "$ref": "#/$defs/Icon"
+        },
+        "marks": {
+          "$ref": "#/$defs/Marks"
+        },
+        "selectable": {
+          "type": "boolean",
+          "default": true
+        },
+        "leadingActions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Invoke"
+          },
+          "maxItems": 3,
+          "description": "Swipe-right actions. Only the first may set fullSwipe."
+        },
+        "trailingActions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Invoke"
+          },
+          "maxItems": 3,
+          "description": "Swipe-left actions."
+        },
+        "menu": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Invoke"
+          },
+          "maxItems": 12,
+          "description": "Context menu."
+        },
+        "open": {
+          "description": "What activating the row does: set the route parameter (navigate) or invoke an action.",
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "route": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "pattern": "^[a-z][a-z0-9_]{0,31}$"
+                    },
+                    "value": {
+                      "const": "id"
+                    }
+                  },
+                  "additionalProperties": false,
+                  "required": [
+                    "name",
+                    "value"
+                  ]
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "route"
+              ]
+            },
+            {
+              "type": "object",
+              "properties": {
+                "invoke": {
+                  "$ref": "#/$defs/Invoke"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "invoke"
+              ]
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "title"
+      ],
+      "description": "How an item becomes one row: fields map to title, icon and marks; actions name the row through the row scope. Rows have no free-form content, so the host can project them for any audience."
+    },
+    "State": {
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "detail": {
+          "type": "string",
+          "maxLength": 240
+        },
+        "icon": {
+          "$ref": "#/$defs/Icon"
+        },
+        "action": {
+          "$ref": "#/$defs/Invoke"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "title"
+      ],
+      "description": "A message state for a bind: empty, loading or failed. The title and detail are literals of the description or host-written text; never worker output."
+    },
+    "Bind": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/Id"
+        },
+        "source": {
+          "$ref": "#/$defs/BindSource"
+        },
+        "fields": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/FieldName"
+          },
+          "maxItems": 16,
+          "description": "Indexed fields the row template or counts read: the output projection. Fields the template does not use are not requested."
+        },
+        "filter": {
+          "$ref": "#/$defs/Filter"
+        },
+        "sort": {
+          "$ref": "#/$defs/Sort"
+        },
+        "window": {
+          "type": "object",
+          "properties": {
+            "size": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 60,
+              "description": "Rows the host returns per window request."
+            },
+            "count": {
+              "enum": [
+                "exact",
+                "estimate",
+                "none"
+              ],
+              "default": "exact",
+              "description": "Whether a total accompanies the rows; the native list needs it to size a long list."
+            }
+          },
+          "additionalProperties": false,
+          "description": "Index windows (not cursors): a request names {from, to} indices into the sorted, filtered list; the host answers with count, offset and the rows of that range. The renderer asks for windows as the person scrolls or arrows, with prefetch ahead of the visible rows."
+        },
+        "row": {
+          "$ref": "#/$defs/RowTemplate"
+        },
+        "states": {
+          "type": "object",
+          "properties": {
+            "empty": {
+              "$ref": "#/$defs/State"
+            },
+            "loading": {
+              "$ref": "#/$defs/State"
+            },
+            "error": {
+              "$ref": "#/$defs/State"
+            }
+          },
+          "additionalProperties": false
+        },
+        "live": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether the host pushes changed windows (revision bump) while the view is open."
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "source"
+      ],
+      "description": "ONE definition used by chrome and content: a data-free request for rows, counts or one item. Several binds may be in one view; every reference names its bind id. A description with binds contains no viewer data, so it may be cached and shared."
+    },
+    "InvokeResult": {
+      "type": "object",
+      "properties": {
+        "show": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "toast",
+              "pending",
+              "error",
+              "undo",
+              "status"
+            ]
+          },
+          "uniqueItems": true,
+          "description": "Which host-owned outcomes the interface may show. Default: error and pending."
+        }
+      },
+      "additionalProperties": false,
+      "description": "What the interface may show of an outcome. The outcome values come from the HOST only: ok, a plain error code and message the host writes, pending, a status reference, an undo reference with a label and expiry. Worker payloads are never carried."
+    },
+    "Invoke": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._:-]{0,63}$",
+          "description": "Stable action id, returned in events and used to track pending state and retries."
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "icon": {
+          "$ref": "#/$defs/Icon"
+        },
+        "operation": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9._-]{0,95}$",
+          "description": "A plugin operation id as the manifest declares it, or a host built-in (`host.item.trash`, `host.item.rename`, `host.item.restore`, `host.undo`, `host.approval.resolve`, `host.route.set`). Built-ins that need no worker are executed by the host without waking the space runtime."
+        },
+        "inputs": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/ValueSource"
+          },
+          "maxProperties": 16,
+          "description": "Named inputs and where each comes from. Nothing here is a literal row or a destination chosen by the interface at activation time."
+        },
+        "role": {
+          "enum": [
+            "destructive"
+          ]
+        },
+        "tone": {
+          "enum": [
+            "good",
+            "warn",
+            "bad"
+          ],
+          "description": "Tints a swipe action or button; absent is neutral."
+        },
+        "fullSwipe": {
+          "type": "boolean",
+          "description": "On the first action of a swipe set: a full swipe performs it. Set only on a safe action; a full swipe never opens a confirmation."
+        },
+        "confirm": {
+          "type": "object",
+          "properties": {
+            "title": {
+              "type": "string",
+              "maxLength": 120
+            },
+            "message": {
+              "type": "string",
+              "maxLength": 240
+            },
+            "destructive": {
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "title"
+          ],
+          "description": "Ask first. The host may require a confirmation even when the description does not (see trusted preview)."
+        },
+        "preview": {
+          "type": "object",
+          "properties": {
+            "material": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 8,
+              "description": "Names of inputs that are material (a destination, a target item, a recipient, a recipient scope)."
+            }
+          },
+          "additionalProperties": false,
+          "description": "Trusted preview. For an operation the host classifies as mutating or disclosing, the shell shows the person the RESOLVED value of every material input, resolved at activation time from what is rendered, before sending; the description can add material inputs but cannot remove one the operation's manifest declares."
+        },
+        "retry": {
+          "enum": [
+            "safe",
+            "keyed",
+            "never"
+          ],
+          "default": "keyed",
+          "description": "safe: idempotent; keyed: the host de-duplicates by the invocation id so a retry after a dropped connection does not repeat the effect; never: the interface must not retry and shows the outcome as unknown."
+        },
+        "pending": {
+          "enum": [
+            "disable",
+            "allow"
+          ],
+          "default": "disable"
+        },
+        "result": {
+          "$ref": "#/$defs/InvokeResult"
+        },
+        "disabled": {
+          "description": "Greyed out when the predicate holds on the row or bind scope, or always.",
+          "oneOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "$ref": "#/$defs/Predicate"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "operation"
+      ],
+      "description": "ONE definition used as a content node and as a row, header or footer action. Activation sends the host a typed request {invoke id, operation, resolved inputs, rendered revision, bind id, row id}; the host validates it as an ordinary operation call for the acting person and the item the interface actually rendered."
+    },
+    "SelectorOption": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/Id"
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 60
+        },
+        "count": {
+          "type": "object",
+          "properties": {
+            "bind": {
+              "$ref": "#/$defs/Id"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "bind"
+          ],
+          "description": "A count taken from a bind (with count: exact); the bind need not render rows."
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "title"
+      ]
+    },
+    "Selector": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/Id"
+        },
+        "options": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SelectorOption"
+          },
+          "minItems": 2,
+          "maxItems": 6
+        },
+        "selected": {
+          "$ref": "#/$defs/Id"
+        },
+        "route": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{0,31}$",
+          "description": "Route parameter the selection sets; each option's value is its id."
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "options"
+      ],
+      "description": "A segmented control. Counts come from binds; the options change the route, and binds filter on the route value."
+    },
+    "Section": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/Id"
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 60,
+          "description": "Absent: the section has no header, and therefore no header actions."
+        },
+        "collapsed": {
+          "type": "boolean",
+          "description": "Present only if the section folds (a chevron is drawn); the value is its initial state."
+        },
+        "rows": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "$ref": "#/$defs/Id"
+              },
+              "title": {
+                "type": "string",
+                "maxLength": 120
+              },
+              "icon": {
+                "$ref": "#/$defs/Icon"
+              },
+              "marks": {
+                "$ref": "#/$defs/Marks"
+              },
+              "open": {
+                "description": "As a row template's `open`.",
+                "type": "object"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "title"
+            ],
+            "description": "A literal row: a fixed shortcut (New thread, Automations). Literal rows carry no viewer data."
+          },
+          "maxItems": 24
+        },
+        "bind": {
+          "$ref": "#/$defs/Id"
+        },
+        "showWhen": {
+          "type": "object",
+          "properties": {
+            "route": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]{0,31}$"
+            },
+            "equals": {
+              "type": "string",
+              "maxLength": 64
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "route",
+            "equals"
+          ],
+          "description": "Shown only while this route parameter has this value (the Inbox / All selector switches sections this way)."
+        },
+        "actions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Invoke"
+          },
+          "maxItems": 3
+        },
+        "menu": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Invoke"
+          },
+          "maxItems": 12
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id"
+      ],
+      "description": "A group of rows in the sidebar. Rows are literal shortcuts, or a bind's rows, or both (literal first)."
+    },
+    "App": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/Id"
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 40
+        },
+        "icon": {
+          "$ref": "#/$defs/Icon"
+        },
+        "badge": {
+          "type": "object",
+          "properties": {
+            "bind": {
+              "$ref": "#/$defs/Id"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "bind"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "title"
+      ]
+    },
+    "Card": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/Id"
+        },
+        "tone": {
+          "enum": [
+            "good",
+            "warn",
+            "bad"
+          ]
+        },
+        "icon": {
+          "$ref": "#/$defs/Icon"
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "detail": {
+          "type": "string",
+          "maxLength": 240
+        },
+        "primary": {
+          "$ref": "#/$defs/Invoke"
+        },
+        "secondary": {
+          "$ref": "#/$defs/Invoke"
+        },
+        "when": {
+          "type": "object",
+          "properties": {
+            "bind": {
+              "$ref": "#/$defs/Id"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "bind"
+          ],
+          "description": "Shown while the bind has at least one row (a pending request)."
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "title"
+      ],
+      "description": "An attention card above the sidebar's rows: a title, a detail and up to two actions. A card that serves an approval is a `request-card` component (section 5 of the document)."
+    },
+    "Component": {
+      "description": "A host component: a rich surface the host draws natively; the description only configures it, and its events go to the host (or to the named invoke), not to a page.",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/ItemEditor"
+        },
+        {
+          "$ref": "#/$defs/TurnTranscript"
+        },
+        {
+          "$ref": "#/$defs/Composer"
+        },
+        {
+          "$ref": "#/$defs/RequestCard"
+        },
+        {
+          "$ref": "#/$defs/SealedHtmlFrame"
+        }
+      ]
+    },
+    "Header": {
+      "type": "object",
+      "properties": {
+        "title": {
+          "oneOf": [
+            {
+              "type": "string",
+              "maxLength": 120
+            },
+            {
+              "type": "object",
+              "properties": {
+                "bind": {
+                  "$ref": "#/$defs/Id"
+                },
+                "field": {
+                  "$ref": "#/$defs/FieldName"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "bind",
+                "field"
+              ]
+            }
+          ]
+        },
+        "leading": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Invoke"
+          },
+          "maxItems": 2
+        },
+        "trailing": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Invoke"
+          },
+          "maxItems": 3
+        }
+      },
+      "additionalProperties": false,
+      "description": "The header over the content card: a literal title or one from the selected item, and actions. The sidebar toggle is the shell's."
+    },
+    "Footer": {
+      "type": "object",
+      "properties": {
+        "account": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "initial": {
+              "type": "string",
+              "maxLength": 2
+            },
+            "title": {
+              "type": "string",
+              "maxLength": 60
+            },
+            "menu": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Invoke"
+              },
+              "maxItems": 12
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "initial"
+          ]
+        },
+        "apps": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/App"
+          },
+          "maxItems": 6
+        },
+        "search": {
+          "type": "object",
+          "properties": {
+            "placeholder": {
+              "type": "string",
+              "maxLength": 60
+            },
+            "bind": {
+              "$ref": "#/$defs/Id"
+            }
+          },
+          "additionalProperties": false,
+          "description": "The search control; `bind` is a search bind that receives the settled text."
+        }
+      },
+      "additionalProperties": false,
+      "description": "Account at the left, the apps in the middle, search at the right."
+    },
+    "Sidebar": {
+      "type": "object",
+      "properties": {
+        "open": {
+          "type": "boolean"
+        },
+        "width": {
+          "type": "number",
+          "minimum": 200,
+          "maximum": 420
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 60
+        },
+        "titleImage": {
+          "type": "string",
+          "description": "A data URL of the wordmark image."
+        },
+        "titleImageTemplate": {
+          "type": "boolean"
+        },
+        "cards": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Card"
+          },
+          "maxItems": 3
+        },
+        "selectors": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Selector"
+          },
+          "maxItems": 2
+        },
+        "sections": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Section"
+          },
+          "maxItems": 12
+        },
+        "refresh": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false,
+      "description": "The sidebar column. A single scroll of cards, selectors and sections over the footer."
+    },
+    "Panel": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/Id"
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 60
+        },
+        "open": {
+          "type": "boolean"
+        },
+        "components": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Component"
+          },
+          "maxItems": 4,
+          "description": "Stacked top to bottom; the side chat is a turn-transcript above a composer."
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id"
+      ],
+      "description": "The right panel. Content is host components only."
+    },
+    "Appearance": {
+      "type": "object",
+      "properties": {
+        "wallpaper": {
+          "type": "string"
+        },
+        "image": {
+          "type": "string",
+          "description": "A data URL of the wallpaper picture, at most 960 px wide."
+        },
+        "blur": {
+          "type": "boolean"
+        },
+        "dim": {
+          "type": "boolean"
+        },
+        "tint": {
+          "type": "boolean"
+        },
+        "uiSize": {
+          "type": "number",
+          "minimum": 0.7,
+          "maximum": 1.6
+        },
+        "material": {
+          "enum": [
+            "wallpaper",
+            "translucent"
+          ]
+        },
+        "frost": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      },
+      "additionalProperties": false,
+      "description": "The look the person chose: the same fields the web app's preferences hold."
+    },
+    "Cache": {
+      "type": "object",
+      "properties": {
+        "policy": {
+          "enum": [
+            "account",
+            "none"
+          ],
+          "default": "account",
+          "description": "account: the shell may keep this description for the first paint at the next launch, keyed by the signed-in account, and deletes it on sign-out; none: the shell keeps nothing."
+        },
+        "maxAgeDays": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 90,
+          "default": 30
+        }
+      },
+      "additionalProperties": false,
+      "description": "What the device may keep. A description with host-filled binds names a person's titles once the rows are filled; the cache holds the description (data-free) and, only under `account`, the last windows (bounded to one file of at most 4 MB). Signing out, switching account or a policy of `none` deletes it."
+    },
+    "Chrome": {
+      "type": "object",
+      "properties": {
+        "version": {
+          "const": 2
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "requires": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 16,
+          "description": "Feature names the description needs (for example `bind-search`); a shell that does not know one refuses the description instead of drawing it wrongly."
+        },
+        "scheme": {
+          "enum": [
+            "dark",
+            "light"
+          ]
+        },
+        "accent": {
+          "type": "string",
+          "pattern": "^#[0-9a-fA-F]{6}$"
+        },
+        "appearance": {
+          "$ref": "#/$defs/Appearance"
+        },
+        "cache": {
+          "$ref": "#/$defs/Cache"
+        },
+        "binds": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Bind"
+          },
+          "maxItems": 16,
+          "description": "Every bind of the view, by id. Sidebar sections, selector counts, cards, the footer search and components refer to them by id."
+        },
+        "sidebar": {
+          "$ref": "#/$defs/Sidebar"
+        },
+        "header": {
+          "$ref": "#/$defs/Header"
+        },
+        "footer": {
+          "$ref": "#/$defs/Footer"
+        },
+        "panel": {
+          "$ref": "#/$defs/Panel"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "revision"
+      ],
+      "description": "Chrome v2: the description of the shell around the content card. The shell draws it with system controls (sidebar list, header, footer, panel). Data arrives only through binds."
+    },
+    "Event": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "enum": [
+            "window",
+            "invoke",
+            "route",
+            "selection",
+            "search",
+            "section",
+            "sidebar",
+            "layout",
+            "app",
+            "refresh"
+          ]
+        },
+        "bind": {
+          "$ref": "#/$defs/Id"
+        },
+        "id": {
+          "$ref": "#/$defs/Id"
+        },
+        "row": {
+          "$ref": "#/$defs/Id"
+        },
+        "from": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "to": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "inputs": {
+          "type": "object",
+          "description": "For invoke: the inputs resolved on the device and SHOWN to the person (material inputs)."
+        },
+        "invocation": {
+          "type": "string",
+          "maxLength": 64,
+          "description": "For invoke: a fresh id per activation; the host de-duplicates retries by it."
+        },
+        "renderedRevision": {
+          "type": "integer"
+        },
+        "sentAt": {
+          "type": "number"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "type"
+      ],
+      "description": "Shell to host. In a page-hosted shell the page relays; in a native app without a page the shell sends the same typed request to the host directly."
+    },
+    "BindResult": {
+      "type": "object",
+      "properties": {
+        "bind": {
+          "$ref": "#/$defs/Id"
+        },
+        "revision": {
+          "type": "integer"
+        },
+        "state": {
+          "enum": [
+            "ready",
+            "loading",
+            "error",
+            "empty"
+          ]
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "rows": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "maxLength": 64
+              },
+              "fields": {
+                "type": "object"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "fields"
+            ]
+          },
+          "maxItems": 200
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "bind",
+        "revision",
+        "state"
+      ],
+      "description": "Host to shell: the answer to a window request, projected for this audience."
+    },
+    "InvokeOutcome": {
+      "type": "object",
+      "properties": {
+        "invocation": {
+          "type": "string"
+        },
+        "state": {
+          "enum": [
+            "ok",
+            "pending",
+            "error",
+            "stale",
+            "refused"
+          ]
+        },
+        "code": {
+          "type": "string",
+          "maxLength": 48
+        },
+        "message": {
+          "type": "string",
+          "maxLength": 240,
+          "description": "Plain language, written by the host."
+        },
+        "status": {
+          "type": "string",
+          "maxLength": 64,
+          "description": "A host-owned status reference the interface may poll through a host built-in."
+        },
+        "undo": {
+          "type": "object",
+          "properties": {
+            "ref": {
+              "type": "string",
+              "maxLength": 64
+            },
+            "label": {
+              "type": "string",
+              "maxLength": 60
+            },
+            "expiresAt": {
+              "type": "number"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "ref",
+            "label"
+          ],
+          "description": "A host-owned undo: the interface offers a button that invokes `host.undo` with the ref."
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "invocation",
+        "state"
+      ],
+      "description": "Host to shell: the outcome of an invoke. `stale` means the rendered target changed before activation; the shell re-renders and the person acts again."
+    },
+    "ItemEditor": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "item-editor"
+        },
+        "id": {
+          "$ref": "#/$defs/Id"
+        },
+        "config": {
+          "type": "object",
+          "properties": {
+            "item": {
+              "$ref": "#/$defs/ValueSource",
+              "description": "The item to edit: a route parameter or the selection of a bind, never a literal id."
+            },
+            "mode": {
+              "enum": [
+                "edit",
+                "read"
+              ],
+              "default": "edit"
+            },
+            "showTitle": {
+              "type": "boolean",
+              "default": true,
+              "description": "The item's title is the first line of the editor and renames through host.item.rename."
+            },
+            "onTitleChange": {
+              "$ref": "#/$defs/Invoke",
+              "description": "Optional: run after the host has saved a title change (a route change, a status line). The save itself is the host's."
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "item"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "id",
+        "config"
+      ],
+      "description": "The item's editor, drawn by the host over the item's document (a note's Markdown file directly: there is no second representation between editor and file). Live rooms are an attribute of the item's KIND, not of this component; a metadata-only save does not rewrite the body."
+    },
+    "TurnTranscript": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "turn-transcript"
+        },
+        "id": {
+          "$ref": "#/$defs/Id"
+        },
+        "config": {
+          "type": "object",
+          "properties": {
+            "thread": {
+              "$ref": "#/$defs/ValueSource",
+              "description": "The thread (a typed thread reference from the route or the selection)."
+            },
+            "follow": {
+              "enum": [
+                "end",
+                "none"
+              ],
+              "default": "end",
+              "description": "Open at the end and stay there while the person reads the end; never pull a person who scrolled away."
+            },
+            "window": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 60,
+              "description": "Messages per read; the host reads the screenful first and the rest in steps."
+            },
+            "onQuote": {
+              "$ref": "#/$defs/Invoke",
+              "description": "Optional: what `quote` (a selected passage asked about) does, usually host.panel.ask with the passage as input {selection: text}."
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "thread"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "id",
+        "config"
+      ],
+      "description": "The conversation of one thread: a host-owned windowed list with its own streaming (the host appends and updates rows; the description never receives message text), scroll anchoring and loading in steps. Heavy parts (code, pictures, steps, cards) are the host's. The host stamps `calternal:thread-rendered` when the first screenful is drawn, and drops a load when the viewer moves to another thread."
+    },
+    "Composer": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "composer"
+        },
+        "id": {
+          "$ref": "#/$defs/Id"
+        },
+        "config": {
+          "type": "object",
+          "properties": {
+            "target": {
+              "$ref": "#/$defs/ValueSource",
+              "description": "What a send goes to: usually the thread reference from the route."
+            },
+            "placeholder": {
+              "type": "string",
+              "maxLength": 120
+            },
+            "enabled": {
+              "$ref": "#/$defs/ValueSource",
+              "description": "A literal or a source that resolves to a boolean (for example {bind, field} of an item bind); absent means enabled. A composer has no row, so a row-scoped predicate is not accepted here (use enabledWhen)."
+            },
+            "send": {
+              "$ref": "#/$defs/Invoke",
+              "description": "The invoke a send runs. Its inputs name the draft as {draft: <this composer's id>} and the target as {route|selection}; the host turns the composer's text and attachments into a CHECKED draft payload (length, attachment count and mime, mention targets authorised) before the operation sees them, and clears the draft only after an `ok` outcome (a failed send keeps it)."
+            },
+            "attachments": {
+              "type": "boolean",
+              "default": false
+            },
+            "mentions": {
+              "type": "boolean",
+              "default": false,
+              "description": "@-mentions and /commands the host offers; their targets are authorised by the host, never by the description."
+            },
+            "stop": {
+              "$ref": "#/$defs/Invoke",
+              "description": "Optional: what the Stop control runs while a turn is in flight (host.turn.stop)."
+            },
+            "enabledWhen": {
+              "type": "object",
+              "properties": {
+                "source": {
+                  "$ref": "#/$defs/ValueSource"
+                },
+                "op": {
+                  "enum": [
+                    "eq",
+                    "ne",
+                    "in",
+                    "exists"
+                  ]
+                },
+                "value": {
+                  "$ref": "#/$defs/ValueSource"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "source",
+                "op"
+              ],
+              "description": "Enabled while the source compares true against the value, for example {source: {bind: thread, field: state}, op: ne, value: {literal: archived}}. Both sides are value sources, so no renderer has to guess a row scope."
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "send"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "id",
+        "config"
+      ],
+      "description": "The message box. The draft text lives on the device (it survives a failed send and a route change within the session and is never published); it becomes operation input only through the {draft: id} value source at activation time, and is shown to the person as the material input of a send."
+    },
+    "RequestCard": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "request-card"
+        },
+        "id": {
+          "$ref": "#/$defs/Id"
+        },
+        "config": {
+          "type": "object",
+          "properties": {
+            "request": {
+              "$ref": "#/$defs/ValueSource",
+              "description": "The protected request (a typed request reference): from the route, the selection, or a field of a bind row."
+            },
+            "compact": {
+              "type": "boolean",
+              "default": false
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "request"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "id",
+        "config"
+      ],
+      "description": "A request or approval card. There is ONE protected request record and resolver for a job, a Turn and a host action, so the card names no mechanism. It shows the material arguments the host resolved (what is asked, for what, with which scope) and offers the host's own resolve actions (host.approval.resolve): the description cannot relabel, reorder or hide them, and a plugin layout can never cover the card."
+    },
+    "SealedHtmlFrame": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "sealed-html-frame"
+        },
+        "id": {
+          "$ref": "#/$defs/Id"
+        },
+        "config": {
+          "type": "object",
+          "properties": {
+            "frame": {
+              "$ref": "#/$defs/ValueSource",
+              "description": "A frame id (from an item field or the route): the host holds the content, so a description never carries HTML."
+            },
+            "minHeight": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1200,
+              "default": 120
+            },
+            "maxHeight": {
+              "type": "integer",
+              "minimum": 120,
+              "maximum": 1200,
+              "default": 600
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "frame"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "id",
+        "config"
+      ],
+      "description": "Sealed HTML from a plugin: shown in a frame the host sandboxes (no network, scripts only inside the frame, no top navigation, no access to chrome, a message channel the host fixes). The frame reports its size inside the caps; its links open through the host."
+    },
+    "FormField": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/Id"
+        },
+        "label": {
+          "type": "string",
+          "maxLength": 80
+        },
+        "input": {
+          "enum": [
+            "text",
+            "multiline",
+            "url",
+            "email",
+            "number",
+            "date",
+            "choice",
+            "toggle"
+          ]
+        },
+        "required": {
+          "type": "boolean",
+          "default": false
+        },
+        "maxLength": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4000,
+          "default": 200
+        },
+        "placeholder": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "initial": {
+          "$ref": "#/$defs/Literal"
+        },
+        "options": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "value": {
+                "type": "string",
+                "maxLength": 64
+              },
+              "label": {
+                "type": "string",
+                "maxLength": 80
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "value",
+              "label"
+            ]
+          },
+          "maxItems": 32,
+          "description": "For `choice`."
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "label",
+        "input"
+      ],
+      "description": "One field of a form: a typed control whose value is held on the device and checked there (required, length, url/email shape) before anything is sent."
+    },
+    "TextNode": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "text"
+        },
+        "text": {
+          "type": "string",
+          "maxLength": 2000
+        },
+        "style": {
+          "enum": [
+            "title",
+            "heading",
+            "body",
+            "caption"
+          ],
+          "default": "body"
+        },
+        "tone": {
+          "enum": [
+            "good",
+            "warn",
+            "bad"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "text"
+      ],
+      "description": "Fixed copy written by the description's author. Never viewer data: a person's titles come through a bind."
+    },
+    "NoticeNode": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "notice"
+        },
+        "tone": {
+          "enum": [
+            "good",
+            "warn",
+            "bad"
+          ],
+          "default": "warn"
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "detail": {
+          "type": "string",
+          "maxLength": 240
+        },
+        "action": {
+          "$ref": "#/$defs/Invoke"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "title"
+      ],
+      "description": "A message panel with an optional action (an error or a notice above a form, never loose text under a button)."
+    },
+    "ButtonNode": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "button"
+        },
+        "invoke": {
+          "$ref": "#/$defs/Invoke"
+        },
+        "style": {
+          "enum": [
+            "primary",
+            "quiet"
+          ],
+          "default": "quiet"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "invoke"
+      ],
+      "description": "An action as a button. The label is the invoke's title; the trusted-preview rule applies (the host resolves it against what was rendered)."
+    },
+    "FormNode": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "form"
+        },
+        "id": {
+          "$ref": "#/$defs/Id"
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "fields": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/FormField"
+          },
+          "minItems": 1,
+          "maxItems": 12
+        },
+        "submit": {
+          "$ref": "#/$defs/Invoke",
+          "description": "Its inputs read the fields as {form: <this id>, field: <field id>}; the submit control is disabled while a required field is empty or invalid and while the invoke is pending."
+        },
+        "clear": {
+          "enum": [
+            "onOk",
+            "never"
+          ],
+          "default": "onOk",
+          "description": "Clear the fields after an `ok` outcome; an error or unknown outcome keeps what was typed."
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "id",
+        "fields",
+        "submit"
+      ],
+      "description": "Named fields held on the device plus one submit action: the values reach the host only inside the invoke's resolved inputs, where the person sees the material ones."
+    },
+    "ListNode": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "list"
+        },
+        "bind": {
+          "$ref": "#/$defs/Id",
+          "description": "The id of a bind in `binds` whose source is a `list` or `search`; its row template draws the rows, so a list never carries rows."
+        },
+        "selectable": {
+          "type": "boolean",
+          "default": false,
+          "description": "Arrow keys move a selection through all rows (Up, Down, Home, End, Page Up, Page Down); the selected row's id is the `selection` source for this bind; what the selection opens loads only when it settles."
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 120
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "bind"
+      ],
+      "description": "A bound list. Windows, counts, live updates, empty/loading/error states and row actions come from the bind (sections 2 and 3)."
+    },
+    "DetailNode": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "detail"
+        },
+        "bind": {
+          "$ref": "#/$defs/Id",
+          "description": "A bind whose source is an `item`."
+        },
+        "fields": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "type": "object",
+            "properties": {
+              "label": {
+                "type": "string",
+                "maxLength": 60
+              },
+              "field": {
+                "$ref": "#/$defs/FieldName"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "label",
+              "field"
+            ]
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "bind",
+        "fields"
+      ],
+      "description": "Labelled fields of one bound item (a reminder's due date, a reading item's source)."
+    },
+    "StackNode": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "stack"
+        },
+        "axis": {
+          "enum": [
+            "vertical",
+            "horizontal"
+          ],
+          "default": "vertical"
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "children": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ContentNode"
+          },
+          "minItems": 1,
+          "maxItems": 24
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "children"
+      ],
+      "description": "Layout: children in a column or a row. Depth is at most 6 and a view has at most 200 nodes (checked by the host and by contract/verify-description.py). There is no free layout: no sizes, colours, fonts or margins."
+    },
+    "ComponentNode": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "component"
+        },
+        "component": {
+          "$ref": "#/$defs/Component"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "component"
+      ],
+      "description": "A host component placed in the card."
+    },
+    "ContentNode": {
+      "description": "What a view's card may contain: one closed vocabulary, every node drawn by the renderer's own controls on its platform, so no plugin is written twice.",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/TextNode"
+        },
+        {
+          "$ref": "#/$defs/NoticeNode"
+        },
+        {
+          "$ref": "#/$defs/ButtonNode"
+        },
+        {
+          "$ref": "#/$defs/FormNode"
+        },
+        {
+          "$ref": "#/$defs/ListNode"
+        },
+        {
+          "$ref": "#/$defs/DetailNode"
+        },
+        {
+          "$ref": "#/$defs/StackNode"
+        },
+        {
+          "$ref": "#/$defs/ComponentNode"
+        }
+      ]
+    },
+    "View": {
+      "type": "object",
+      "properties": {
+        "version": {
+          "const": 2
+        },
+        "kind": {
+          "const": "view"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "requires": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 16
+        },
+        "cache": {
+          "$ref": "#/$defs/Cache"
+        },
+        "binds": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Bind"
+          },
+          "maxItems": 16
+        },
+        "root": {
+          "$ref": "#/$defs/ContentNode"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "kind",
+        "revision",
+        "root"
+      ],
+      "description": "The content of the card for one place: data-free like chrome (binds are requests the host fills), drawn with the renderer's own controls. A view uses the same Bind and Invoke as chrome."
+    }
+  }
+}

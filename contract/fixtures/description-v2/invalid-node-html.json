@@ -1,0 +1,9 @@
+{
+  "version": 2,
+  "kind": "view",
+  "revision": 1,
+  "root": {
+    "type": "html",
+    "html": "<script>alert(1)</script>"
+  }
+}
