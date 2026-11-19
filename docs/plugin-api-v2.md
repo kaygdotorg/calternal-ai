@@ -461,14 +461,15 @@ including a relevant source update during confirmation.
    old proof again. Once the receipt has expired an old activation cannot
    recreate the effect.
 
-The host computes required preview/confirmation from the catalogue’s
-effect class or the manifest risk, checked method effects and declared
-`material_inputs`. An interface can add safety prompts. It cannot waive
-the host minimum or set retry mode. Reads can be retried, mutations replay
-only with the same receipt if declared `request_id`, and `never`
-returns outcome unknown after an uncertain dispatch. If plugin logic
-computes a new destination, recipient or data to disclose, check the
-actual material at broker dispatch. Require new protected approval for
+The catalogue sets built-in effects. For a plugin the host combines
+manifest risk and declared `material_inputs` with the checked method’s
+effect classification. An external disclosure changes the effective policy
+even when the operation does not change stored data. The interface may add
+safety prompts within host policy. Effect-free reads can retry. Mutations
+and disclosures require both method and declaration to allow `request_id`
+and use the same receipt. Otherwise return outcome unknown after uncertain
+dispatch. Check destinations, recipients and data computed by plugin logic
+at actual broker dispatch. Require new protected approval for
 anything outside the already confirmed disclosure. The commit/egress
 fence remains the last authority check.
 
@@ -478,8 +479,9 @@ Use exact catalogue names and input/outcome definitions. Only the
 designated host request card and live approver can resolve an approval.
 Only the authorized holder of an eligible host-issued Undo ref can Undo,
 with the original target and current revision checked again. Share uses
-a host-owned audience sheet. Purge or Empty Trash uses a trusted preview,
-Manager/Owner confirmation of a host-pinned set and per-batch authority.
+a host-owned audience sheet. A bulk selection ref is context-bound and
+contains at most 50 eligible items in the fixture. Purge and Empty Trash
+use a trusted preview, Manager/Owner confirmation of a host-pinned set and per-batch authority.
 Status polling uses the originating action’s audience. Panel, composer,
 route and session controls use only their catalogue-designated surfaces.
 The host supplies trusted operation titles and material facts. Enable
