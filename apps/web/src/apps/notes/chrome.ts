@@ -23,7 +23,7 @@ export const notesChrome: ChromeProvider = {
     const current = segments()[0] === "notes" ? segments()[1] : undefined;
     const noteRow = (id: string, title: string, over: Partial<ChromeRow> = {}): ChromeRow => ({ id, title, icon: "notes", selected: current === id, ...over });
     const sections: ChromeSection[] = [
-      { id: "top", title: null, rowKind: "navigation", rows: [{ id: "new", title: "New note", icon: "plus" }, { id: "trash", title: "Trash", icon: "trash", selected: route.path.startsWith("/notes") && route.query.get("view") === "trash" }] },
+      { id: "top", title: null, rows: [{ id: "new", title: "New note", icon: "plus" }, { id: "trash", title: "Trash", icon: "trash", selected: route.path.startsWith("/notes") && route.query.get("view") === "trash" }] },
       { id: "notes", title: notes.space?.name ?? "Notes", ...windowed("notes", notes.list.filter((n) => match(n.title)).map((n) => noteRow(n.id, n.title, { trailingActions: [{ id: "trash", title: "Move to Trash", icon: "trash", role: "destructive" }], menu: noteMenu(n.title) }))) },
     ];
     const cols = collectionList.items.filter((c) => match(c.title));

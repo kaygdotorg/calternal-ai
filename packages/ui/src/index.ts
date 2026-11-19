@@ -21,7 +21,7 @@ export { tip, type Tip } from "./lib/tooltip";
 export { cssPx } from "./lib/css";
 export { cssMs, tokenEase, tokenMs } from "./lib/motion";
 export { haptic, inNativeShell, type HapticKind } from "./lib/haptics";
-export { HOLD_MAX_MS, isNavKey, listNav, navHold, pageSize, settler, stepIndex, wantsKey, type ListNavOptions } from "./lib/listnav";
+export { HOLD_MAX_MS, isNavKey, isScrollKey, listNav, navHold, scrollTarget, settler, stepIndex, wantsKey, type ListNavOptions } from "./lib/listnav";
 export { default as HeaderPill } from "./components/HeaderPill.svelte";
 export { chromeHeader, chromeTrack } from "./header/header.svelte";
 export { trackHeader, type HeaderState } from "./header/track";

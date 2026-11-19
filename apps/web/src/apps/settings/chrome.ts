@@ -15,7 +15,7 @@ export const settingsChrome: ChromeProvider = {
     const page = groups.flatMap((g) => g.pages).find((p) => p.id === current);
     return {
       header: { title: page?.name ?? "Settings" }, selectors: [],
-      sections: groups.map((g) => ({ id: g.id, title: g.name, rowKind: "navigation" as const, rows: g.pages.filter((p) => !q || p.name.toLowerCase().includes(q)).map((p) => ({ id: p.id, title: p.name, icon: p.icon, selected: p.id === current })) })).filter((s) => s.rows.length),
+      sections: groups.map((g) => ({ id: g.id, title: g.name, rows: g.pages.filter((p) => !q || p.name.toLowerCase().includes(q)).map((p) => ({ id: p.id, title: p.name, icon: p.icon, selected: p.id === current })) })).filter((s) => s.rows.length),
       search: { placeholder: "Search settings" },
     };
   },

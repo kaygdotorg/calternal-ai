@@ -22,8 +22,6 @@ describe("native chrome: the Threads provider", () => {
     const b = threadsChrome.describe("");
     expect(b.selectors[0]!.options.map((o) => o.id)).toEqual(["inbox", "all"]);
     expect(b.sections[0]!.id).toBe("top");
-    expect(b.sections[0]!.rowKind).toBe("navigation"); // the shortcuts are places (they keep an icon); the thread sections are items (none)
-    expect(b.sections.slice(1).every((s) => s.rowKind === undefined)).toBe(true);
     const rows = b.sections.flatMap((s) => s.rows).filter((r) => store.get(r.id));
     expect(rows.length).toBeGreaterThan(0);
     expect(["claude", "codex"]).toContain(rows[0]!.icon); // the provider mark by its CalternalUI icon name
@@ -137,7 +135,7 @@ describe("native chrome: the appearance and the schema form", () => {
     const all = Array.from({ length: 300 }, (_, i) => i);
     nativeChrome.windows = { s: [100, 130] };
     const w = windowed("s", all);
-    expect(w.count).toBe(300); expect(w.offset).toBe(80); expect(w.rows[0]).toBe(80); expect(w.rows.length).toBe(70);
+    expect(w.count).toBe(300); expect(w.offset).toBe(85); expect(w.rows[0]).toBe(85); expect(w.rows.length).toBe(60); // 30 asked + 20 margin each side is 70, capped at 60 around the middle
     expect(windowed("short", all.slice(0, 10)).count).toBeUndefined();
     nativeChrome.windows = {};
   });
@@ -147,8 +145,32 @@ describe("native chrome: the appearance and the schema form", () => {
     const all = Array.from({ length: 953 }, (_, i) => i);
     const w = windowedOf("inbox", all, (i) => { built++; return { id: String(i) }; });
     expect(w.count).toBe(953); expect(w.offset).toBe(0); expect(built).toBe(w.rows.length); expect(built).toBeLessThan(100);
+    nativeChrome.windows = { inbox: [761, 909] }; // the shell asked for 148 rows at 761
+    const big = windowedOf("inbox", all, (i) => ({ id: String(i) }));
+    expect(big.rows.length).toBeLessThanOrEqual(60); expect(big.offset!).toBeGreaterThan(740); expect(big.offset! + big.rows.length).toBeGreaterThan(830);
+    nativeChrome.windows = {};
+  });
+  test("the window is stable: key presses that stay inside it publish no new rows, and it moves by a page only near its edge", async () => {
+    const { windowedOf } = await import("./native-chrome.svelte");
+    const all = Array.from({ length: 953 }, (_, i) => i);
+    nativeChrome.windows = { held: [800, 815] };
+    const first = windowedOf("held", all, (i) => i);
+    expect(first.rows.length).toBe(60);
+    // the shell's visible range creeps down a row per key press (an arrow held for 10 rows): the same window each time
+    for (let k = 1; k <= 10; k++) {
+      nativeChrome.windows = { held: [800 + k, 815 + k] };
+      const w = windowedOf("held", all, (i) => i);
+      expect([w.offset, w.rows.length, w.rows[0]]).toEqual([first.offset, first.rows.length, first.rows[0]]);
+    }
+    // near the edge (a few rows to spare) it moves, by a window of 60 rows centred on the request
+    nativeChrome.windows = { held: [self_edge(first), self_edge(first) + 15] };
+    const moved = windowedOf("held", all, (i) => i);
+    expect(moved.offset).not.toBe(first.offset); expect(moved.rows.length).toBe(60);
+    nativeChrome.windows = {};
   });
 });
+
+const self_edge = (w: { offset?: number; rows: unknown[] }) => w.offset! + w.rows.length - 20;
 
 describe("native chrome: the compatibility rule", () => {
   const call = () => Promise.resolve({ native: true });

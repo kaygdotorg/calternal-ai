@@ -7,6 +7,11 @@ describe("say: failures in plain words with the next step", () => {
   test("a refusal for lack of a capability says who can help", () => {
     expect(say(new ServerError("forbidden", "x", 403))).toMatch(/owner or a manager/);
   });
+  test("the server's own `unavailable` (a cooldown, a busy queue) is its words, not an outage; a failure to reach it says so", () => {
+    expect(say(new ServerError("unavailable", "Register this browser or wait a minute before testing again.", 503, true))).toBe("Register this browser or wait a minute before testing again.");
+    expect(say(new ServerError("unavailable", "Can't reach the server.", 502))).toMatch(/Can't reach the server/);
+    expect(say(new TypeError("fetch failed"))).toMatch(/Can't reach the server/);
+  });
   test("a cooldown is worded, with no server text", () => {
     expect(say(new ServerError("rate_limited", "Register this browser or wait a minute before testing again."))).toBe("Too many tries. Wait a minute and try again.");
   });

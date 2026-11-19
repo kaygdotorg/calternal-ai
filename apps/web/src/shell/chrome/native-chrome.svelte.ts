@@ -13,6 +13,7 @@ import { accountItems, pickAccountItem } from "../accountMenu";
 import { self } from "../self.svelte";
 import { switcherApps } from "../switcherApps.svelte";
 import { toSchema } from "./encode";
+import { countsOnly, selectionEchoOnly } from "./diff";
 import type { ChromeBody, ChromeDescription, ChromeEvent, ChromeItem, ChromeProvider } from "./types";
 
 
@@ -84,8 +85,16 @@ export function describe(kind: string, body: ChromeBody, scheme: "light" | "dark
   };
 }
 
+/** The row the shell last chose (a `row` event) and when: its selection echo is not worth a full apply, and while rows keep arriving the shell is stepping through the list (a key repeating). */
+let lastRow: { id: string; at: number } | null = null;
+/** A key repeat is over when no row event came for this long. */
+const REPEAT_MS = 400;
+/** While a key repeats, a publication that only moves counts waits so long since the last one that was sent. */
+const COUNT_EVERY_MS = 1000;
+
 /** Routes an event from the shell: the shell's own (app, account, sidebar, search) here, the rest to the app's provider. Returns whether anything answered it. */
 export function routeEvent(kind: string, ev: ChromeEvent): boolean {
+  if (ev.type === "row" && ev.id) { lastRow = { id: ev.id, at: performance.now() }; }
   switch (ev.type) {
     case "app": if (ev.id) navigate(`/${ev.id}`); return true;
     case "account": if (ev.id && pickAccountItem(ev.id)) return true; return false;
@@ -118,7 +127,7 @@ const PENDING_MS = 5000;
 export function startNativeChrome(appKind: () => string): () => void {
   const b = bridge();
   if (!b || !chromeCompatible(b)) return () => {}; // no call, or a contract the shell cannot draw: the page keeps its own chrome
-  let frame = 0, latest: ChromeDescription | null = null, lastSent = "";
+  let frame = 0, latest: ChromeDescription | null = null, lastSent = "", lastWire: ChromeDescription | null = null, lastAt = 0, held = 0;
   const send = async () => {
     frame = 0;
     const d = latest; if (!d) return;
@@ -127,7 +136,16 @@ export function startNativeChrome(appKind: () => string): () => void {
       const wire = toSchema(d) as ChromeDescription;
       const same = JSON.stringify({ ...wire, revision: 0 });
       if (same === lastSent) return; // nothing in the description changed (a republish for a store that moved something not published): send nothing
-      lastSent = same;
+      if (lastWire) {
+        // The shell already shows the selection it made: an echo of only that is recorded as applied and not sent.
+        if (lastRow && performance.now() - lastRow.at < 2000 && selectionEchoOnly(lastWire, wire, lastRow.id)) { lastSent = same; lastWire = wire; return; }
+        // Under churn the counts move several times a second: while the shell steps through the list, a count-only change waits, at most one a second.
+        if (lastRow && performance.now() - lastRow.at < REPEAT_MS && performance.now() - lastAt < COUNT_EVERY_MS && countsOnly(lastWire, wire)) {
+          if (!held) held = window.setTimeout(() => { held = 0; if (!frame) frame = requestAnimationFrame(() => void send()); }, COUNT_EVERY_MS - (performance.now() - lastAt));
+          return;
+        }
+      }
+      lastSent = same; lastWire = wire; lastAt = performance.now();
       const r = await b.chrome!(wire);
       const ms = performance.now() - t0;
       nativeChrome.lat.push(ms); if (nativeChrome.lat.length > 200) nativeChrome.lat.shift();
@@ -158,11 +176,11 @@ export function startNativeChrome(appKind: () => string): () => void {
     if (handled && (ev.type === "row" || ev.type === "app")) nativeChrome.open = false; // choosing something closes the sidebar
   };
   addEventListener("calternal:chrome", onEvent);
-  return () => { removeEventListener("calternal:chrome", onEvent); stop(); if (frame) cancelAnimationFrame(frame); };
+  return () => { removeEventListener("calternal:chrome", onEvent); stop(); clearTimeout(held); if (frame) cancelAnimationFrame(frame); };
 }
 
 /** The most rows sent for a section that is not windowed, and the margin kept around the window the shell shows. */
-const WHOLE = 80, MARGIN = 20;
+const WHOLE = 80, MARGIN = 20, MAX_WINDOW = 60;
 /**
  * A long section as a window of its rows: all of them when the list is short, else the rows the shell asked for (`window` event) plus a margin, with `count` and `offset` (the shell then draws a list of one fixed row height and
  * keeps spacers for the rest). Reads `nativeChrome.windows`, so a new window republishes.
@@ -170,11 +188,25 @@ const WHOLE = 80, MARGIN = 20;
 export function windowed<T>(sectionId: string, all: T[]): { rows: T[]; count?: number; offset?: number } {
   return windowedOf(sectionId, all, (x) => x);
 }
-/** As `windowed`, but the rows are built from `items` only for the window (a thousand threads cost a window of rows, not a thousand). */
+/** The window last published for each section (rows `[a, b)`): kept while the shell's request stays well inside it, so the published rows do not slide with every key press. */
+const published = new Map<string, [number, number]>();
+/** How close to a window's edge (rows) the request may come before the window moves, when the list continues beyond that edge. */
+const EDGE = 24;
+/**
+ * As `windowed`, but the rows are built from `items` only for the window (a thousand threads cost a window of rows, not a thousand). The window is STABLE: the last one stays while the shell's request lies inside it with
+ * up to `EDGE` rows (a quarter of what the request leaves free) to spare on any side the list continues past (or the request is wider than the window can leave room for and still lies within it); only then does it move, to one of `MAX_WINDOW` rows centred on the request.
+ * A held arrow key that scrolls the shell's list by a row at a time therefore republishes no rows until the cursor nears the edge (the shell lays out every row it is sent: a slid window cost 55 to 80 ms frames).
+ */
 export function windowedOf<T, R>(sectionId: string, items: T[], build: (t: T) => R): { rows: R[]; count?: number; offset?: number } {
   const all = items;
-  if (all.length <= WHOLE) return { rows: all.map(build) };
+  if (all.length <= WHOLE) { published.delete(sectionId); return { rows: all.map(build) }; }
   const [from, to] = nativeChrome.windows[sectionId] ?? [0, WHOLE / 2];
-  const a = Math.max(0, from - MARGIN), b = Math.min(all.length, to + MARGIN);
+  const cur = published.get(sectionId);
+  const edge = Math.max(0, Math.min(EDGE, Math.floor((MAX_WINDOW - (to - from)) / 4)));
+  const inside = (w: [number, number]) => w[1] <= all.length && (w[0] === 0 ? from >= 0 : from - w[0] >= edge) && (w[1] === all.length ? to <= w[1] : w[1] - to >= edge) && to <= w[1];
+  if (cur && inside(cur)) return { rows: all.slice(cur[0], cur[1]).map(build), count: all.length, offset: cur[0] };
+  const mid = Math.floor((from + to) / 2);
+  const a = Math.max(0, Math.min(all.length - MAX_WINDOW, mid - MAX_WINDOW / 2)), b = Math.min(all.length, a + MAX_WINDOW);
+  published.set(sectionId, [a, b]);
   return { rows: all.slice(a, b).map(build), count: all.length, offset: a };
 }
