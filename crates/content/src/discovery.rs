@@ -156,6 +156,9 @@ impl Space {
         cursor: Option<&str>,
         limit: usize,
     ) -> Result<Page<Summary>> {
+        if kind == "notes" && matches!(order, ItemOrder::Updated { label: None }) {
+            return self.native_notes_page(cursor, limit);
+        }
         let position: Option<(String, String)> = cursor
             .map(serde_json::from_str)
             .transpose()
@@ -224,8 +227,9 @@ fn read_head(row: &Row<'_>) -> rusqlite::Result<(String, String, String, String,
 
 impl Content {
     /// Read one indexed page of item summaries in an authorized space, up to
-    /// 1,000 rows. Takes the space lock for one query. Label filters probe the
-    /// exact term key for each candidate in update order. No userdata or body reads.
+    /// 1,000 rows. Takes the space lock. An unfiltered newest Notes page seeks the
+    /// covering window index and reads up to one metadata head per returned key.
+    /// Label filters probe the exact term key per candidate. No body reads.
     pub fn item_page(
         &self,
         space: SpaceId,

@@ -58,6 +58,7 @@ pub use item_head::{ItemHead, ItemHeadReader};
 mod trash;
 mod trash_job;
 mod types;
+mod window;
 use calternal_roots::Roots;
 use calternal_types::{AccountId, Error, ErrorCode, SpaceId};
 pub use collections::StoredCollection;
@@ -76,6 +77,10 @@ pub use types::{
     Summary,
 };
 use uuid::Uuid;
+pub use window::{
+    WindowAccess, WindowAnchor, WindowAudience, WindowCountMode, WindowPlanError, WindowPlanReason,
+    WindowRange, WindowReply, WindowRequest, WindowResult, WindowScope,
+};
 
 /// Installation content service with bounded per-space connections and idle release.
 /// The host retains root locks; opening two services for the same roots is unsupported.

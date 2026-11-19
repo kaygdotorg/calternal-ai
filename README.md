@@ -106,6 +106,10 @@ Every public code change includes matching reference comments. Run `npm run chec
 large-output storage and the public TypeScript product bridge still unfinished.
 The private [request inbox](docs/requests.md) lists agent questions, approvals and
 secret prompts through `calternal requests` and the account feed.
+Unfiltered Notes pages use an ordered covering index maintained with each
+content commit. The [content crate](crates/content/README.md) describes the
+scoped window API and its authority boundary.
+
 The saved Threads preview includes a provider model catalog, live work phases,
 and per-message history. See [manual turns](docs/agent-turns.md) and
 [saved threads](docs/threads.md). Voice and

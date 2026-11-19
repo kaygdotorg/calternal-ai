@@ -174,11 +174,30 @@ fn restart_finishes_content_commit_before_file_placement_and_receipt() {
             |i| json!({"id":i.id}),
         )
     }));
+    // Observe the SQLite commit immediately after the injected interruption,
+    // before reopening the space, publishing its receipt or placing the file.
+    let sqlite =
+        rusqlite::Connection::open(dir.path().join(format!("appdata/spaces/{a}/content.db")))
+            .unwrap();
+    let projected: (String, String, u32) = sqlite
+        .query_row(
+            "SELECT p.item,i.id,s.total FROM window_rows p
+         JOIN items i ON i.id=p.item
+         JOIN window_scopes s USING(collection,audience)
+         WHERE p.collection='notes' AND p.audience='space'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .unwrap();
+    assert_eq!(projected.0, projected.1);
+    assert_eq!(projected.2, 1);
+    drop(sqlite);
     drop(content);
     let content = open(dir.path(), |_| {});
     let items = content.list(a, "notes", 100).unwrap();
     assert_eq!(items.len(), 1);
     let item = content.get(a, items[0].id).unwrap();
+    assert_eq!(item.id.to_string(), projected.0);
     assert_eq!(
         std::fs::read_to_string(content.file_path(a, &item.kind, item.id).unwrap()).unwrap(),
         format!(

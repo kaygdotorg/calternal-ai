@@ -42,7 +42,7 @@ impl Staged {
                 self.path,calternal_fsio::names::fold(&self.path),
                 old_path.filter(|old| *old != self.path),self.expected,
             ],
-        ).map_err(internal)?;
+        ).map_err(crate::window::projection_error)?;
         tx.execute(
             "INSERT INTO versions VALUES(?1,?2,?3,?4,?5,?6,?7)",
             params![

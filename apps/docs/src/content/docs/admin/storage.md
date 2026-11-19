@@ -125,6 +125,23 @@ cannot yet use the server `resolve` wire response: that response requires a
 space ID and has no account-owner alternative. No account ID is substituted for
 a space ID. Account-profile recovery remains the host's responsibility.
 
+Unfiltered `notes.list` uses the ordered window index with its existing
+timestamp and UUID continuation. The content window API also serves explicit
+Notes collections in title order. Each space stores a covering key per
+effective row set and a maintained count and version per nonempty scope.
+Item, membership, Trash and restore changes update those rows in the existing
+content commit. Collection grants to people, groups and public links refer
+to the same explicit collection projection and retain their independent live
+authority checks. A guest window exposes title and a view-scoped row selector.
+Exact counts require explicit disclosure authority.
+
+The content window API takes the catalogue request and returns a ready or
+empty result or a typed plan refusal. Sequential starts seek a checked
+boundary. Arbitrary exact-count jumps walk the covering index from the nearer
+end. The host resolves the Bind and rechecks authority before delivery. See
+the window engine lane report
+for statement counts and rollout requirements.
+
 Main modules are `types` (plain boundary values), `db` (bound metadata/history),
 `files` (registered placement and checked materialization), `journal` (direct
 calls into each space's inherited journal store), `pool` (pooled read connections),
