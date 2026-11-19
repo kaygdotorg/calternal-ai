@@ -1,15 +1,13 @@
 # Calternal Plugin Guide
 
-`calternal-plugin-guide.explain` returns the Markdown reference, walkthrough,
-authoring skill, or the jobs and waits sections. `calternal-plugin-guide.scaffold` returns a validated plugin
-manifest and its local authoring command. `calternal-plugin-guide.check`
-checks a manifest against the SDK's declaration rules.
-`calternal-plugin-guide.publish` puts the reference and walkthrough into the
-current space as one Markdown item. A write uses normal request receipts.
+The v2 authoring material is in the [walkthrough](walkthrough.md),
+[reference](reference.md), and [authoring skill](skills/plugin-authoring/SKILL.md).
+The plugin's `explain` and `publish` operations deliver these documents.
 
-The package worker exercises the same SDK transport and broker as other
-plugins. Run `npm run build:plugins` and `npm run test:plugins` at the checkout root.
+The running preview worker still serves its existing v1 `scaffold` and
+`check` operations. For v2, start with the walkthrough and use the SDK's
+offline build command.
 
-After editing a scaffold source, run
-`npm run docs:examples --workspace @calternal/plugin-guide` to update the
-checked-in guide examples. The build checks that they match their sources.
+After editing `examples/first-list.ts`, run
+`npm run docs:examples -w @calternal/plugin-guide`. The guide build checks
+that the embedded example matches the source and validates its output.

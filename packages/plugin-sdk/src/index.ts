@@ -311,3 +311,16 @@ export { typedHandlers } from "./typed-handlers.js";
 export { parkJob, startJob } from "./job-waits.js";
 /** Signal and checkpoint contracts used by durable job handlers. */
 export type { JobPark, JobSignal, JobWaitSource, ParkedJob } from "./job-waits.js";
+
+/** Assemble a package's manifest declarations and authored app templates. */
+export { definePlugin } from "./author-v2.js";
+/** Attach a data-free app template to a manifest app declaration. */
+export { defineApp } from "./author-v2.js";
+/** Declare a kind and derive its title field from the metadata schema. */
+export { defineKind } from "./author-v2.js";
+/** Declare a worker operation and its allowed effects. */
+export { defineOperation } from "./author-v2.js";
+/** Describe content and supply defaults for its Binds. */
+export { defineView } from "./author-v2.js";
+/** Describe app chrome and supply the same defaults for any Binds it introduces. */
+export { defineChrome } from "./author-v2.js";

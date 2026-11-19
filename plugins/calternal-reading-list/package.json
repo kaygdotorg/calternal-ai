@@ -1,0 +1,17 @@
+{
+  "name": "@calternal/reading-list",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc --noEmit && calternal-build-plugin src/plugin.ts dist src/authoring-only.mjs",
+    "test": "npm run build && vitest run"
+  },
+  "dependencies": {
+    "@calternal/plugin-sdk": "*"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vitest": "^5.0.4"
+  }
+}
