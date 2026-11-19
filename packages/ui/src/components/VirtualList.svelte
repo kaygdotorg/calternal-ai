@@ -147,9 +147,9 @@
     const here = cursor >= 0 ? cursor : at ? Number(at.dataset.i) : nav.selected?.() ?? -1;
     const v = view();
     if (isScrollKey(e.key)) {
-      // Scrolls only: the cursor and the selection stay. The focused row may leave the window; the scroller takes focus then (it is focusable), so the next key still reaches the list.
+      // Scrolls only: the cursor and the selection stay. The focused row may leave the window; the list's own element takes focus then (the sizer is focusable by script, tabindex -1; the scrolling ancestor of an `inside` list is not focusable at all, which is why the earlier refocus did nothing), so the next key still reaches the list.
       const to = v ? scrollTarget(e.key, v.scrollTop, v.clientHeight, v.scrollHeight) : null;
-      if (v && to !== null) { e.preventDefault(); v.scrollTop = to; update(); requestAnimationFrame(() => { if (!v.contains(document.activeElement) || document.activeElement === document.body) v.focus({ preventScroll: true }); }); }
+      if (v && to !== null) { e.preventDefault(); v.scrollTop = to; update(); requestAnimationFrame(() => { const c = inside ? sizer : scroller; if (c && (!c.contains(document.activeElement) || document.activeElement === c)) c.focus({ preventScroll: true }); }); }
       return;
     }
     const next = stepIndex(e.key, here, count);
@@ -245,7 +245,7 @@
 {/snippet}
 {#if inside}
   <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-  <div bind:this={sizer} class="sizer" data-listnav={nav ? "own" : undefined} role="list" aria-label={label} style:height="{total}px" onkeydown={onNavKey} onfocusout={onNavOut}>{@render windowed()}</div>
+  <div bind:this={sizer} class="sizer" data-listnav={nav ? "own" : undefined} role="list" aria-label={label} tabindex={nav ? -1 : undefined} style:height="{total}px" onkeydown={onNavKey} onfocusout={onNavOut}>{@render windowed()}</div>
 {:else}
   <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
   <div bind:this={scroller} class="scroller edge-fade" data-listnav={nav ? "own" : undefined} style:--fade-t="{topInset}px" style:--fade-b="{bottomInset}px" role="feed" aria-label={label} aria-busy="false" tabindex="0" onscroll={onscroll} onwheel={touch} ontouchstart={touch} ontouchmove={touch} onpointerdown={touch} onkeydown={(e) => { touch(); onNavKey(e); }} onfocusout={onNavOut}>

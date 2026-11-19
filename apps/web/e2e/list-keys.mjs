@@ -87,12 +87,15 @@ for (const surface of SURFACES) for (const churn of CHURNS) {
     await p.waitForTimeout(1500); // the settled thread's own load must be over before the jump keys are read
     // Home, End and the Page keys scroll the list and leave the selection (the cursor row) alone (owner decision, 2026-11-19).
     const sel = () => p.evaluate(() => document.querySelector("[data-cursor]")?.getAttribute("data-i") ?? document.querySelector("[aria-current]")?.closest("[data-i]")?.getAttribute("data-i") ?? document.activeElement?.closest("[data-i]")?.getAttribute("data-i") ?? "none");
-    const top = () => p.evaluate(() => (document.querySelector(".scroller[data-listnav]") ?? document.querySelector("[data-listnav=own]"))?.scrollTop ?? -1);
+    // what scrolls is the list's nearest scrollable ancestor (the sidebar), not the list's own element
+    const scrollEl = `(() => { let e = document.querySelector("[data-listnav=own]"); while (e && !/(auto|scroll)/.test(getComputedStyle(e).overflowY)) e = e.parentElement; return e; })()`;
+    const top = () => p.evaluate(`${scrollEl}?.scrollTop ?? -1`);
     const keep = await sel(), t0 = await top(), path0 = await p.evaluate(() => location.pathname);
     await p.keyboard.press("PageDown"); await p.waitForTimeout(150); const t1 = await top();
     await p.keyboard.press("End"); await p.waitForTimeout(300); const t2 = await top();
     await p.keyboard.press("PageUp"); await p.waitForTimeout(150); const t3 = await top();
     await p.keyboard.press("Home"); await p.waitForTimeout(300); const t4 = await top();
+    await p.evaluate(`(() => { const e = ${scrollEl}; if (e) e.scrollTop = ${t0}; })()`); await p.waitForTimeout(400); // back where it was: the cursor row is drawn again
     const same = await sel(), path1 = await p.evaluate(() => location.pathname);
     ok(t1 > t0 && t2 > t1 && t3 < t2 && t4 === 0, `${tag}: Page Down, End, Page Up and Home scroll the list`, `scrollTop ${t0} ${t1} ${t2} ${t3} ${t4}`);
     ok(same === keep && path1 === path0, `${tag}: and the selection stays where it was, nothing is opened`, `selection ${keep} then ${same}`);
