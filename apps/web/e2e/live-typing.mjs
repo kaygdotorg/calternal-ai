@@ -23,9 +23,13 @@ async function measure(query) {
   return { n: keys.length, median: pct(keys, 0.5), p95: pct(keys, 0.95) };
 }
 try {
-  const off = await measure("live=0");
-  const on = await measure("live=1&peer=0");
-  console.log(JSON.stringify({ off, on }));
+  // Three independent page loads of each, interleaved: one load's median varies by a millisecond or more on its own (the page, the machine), so the comparison is between the medians of the three.
+  const offs = [], ons = [];
+  for (let i = 0; i < 3; i++) { offs.push(await measure("live=0")); ons.push(await measure("live=1&peer=0")); }
+  const mid = (xs, k) => pct(xs.map((x) => x[k]), 0.5);
+  const off = { n: Math.min(...offs.map((x) => x.n)), median: mid(offs, "median"), p95: mid(offs, "p95") };
+  const on = { n: Math.min(...ons.map((x) => x.n)), median: mid(ons, "median"), p95: mid(ons, "p95") };
+  console.log(JSON.stringify({ off, on, runs: { off: offs.map((x) => +x.median.toFixed(1)), on: ons.map((x) => +x.median.toFixed(1)) } }));
   ok(on.n > 20 && off.n > 20, "both runs recorded the keystrokes", `${off.n} / ${on.n}`);
   ok(on.median <= Math.max(off.median * 1.25, off.median + 3), "live: the median keystroke costs no more than without", `${on.median.toFixed(1)} vs ${off.median.toFixed(1)} ms`);
   ok(on.p95 <= Math.max(off.p95 * 1.3, off.p95 + 6), "live: the p95 keystroke costs no more than without", `${on.p95.toFixed(1)} vs ${off.p95.toFixed(1)} ms`);

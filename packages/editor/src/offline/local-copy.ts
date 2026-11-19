@@ -32,6 +32,8 @@ const EMPTY_UPDATE = new Uint8Array([0, 0])
 /** Only the numbered updates: every number sorts before every string key. */
 export const updateKeys = () => IDBKeyRange.upperBound(Number.MAX_VALUE)
 /** Past this many stored changes, they're merged into one. */
+/** How long a burst of typing waits before its one IndexedDB write. */
+const QUEUE_MS = 120
 const COMPACT_AT = 500
 
 const toB64 = (u: Uint8Array) => {
@@ -64,6 +66,8 @@ function openDb(name: string): Promise<IDBDatabase> {
 
 
 export class LocalCopy {
+  /** Whether a burst of typing is written in one transaction a moment after it (the default) or each update at once (the tests that count stored updates, such as compaction, turn it off). */
+  static coalesce = true
   private db: IDBDatabase | null
   private readonly walKey: string
   /** Changes not yet confirmed by IndexedDB, oldest first (`l`: a local edit). */
@@ -77,6 +81,9 @@ export class LocalCopy {
   private destroyed = false
   /** Whether the write-ahead list in localStorage may hold entries. */
   private walWritten = false
+  /** Updates not yet handed to IndexedDB: a burst of typing is written in one transaction a moment after it, not one transaction per key (`flushQueue`). They are also in `pending`, so the write-ahead list covers them. */
+  private queued: Uint8Array[] = []
+  private queueTimer: ReturnType<typeof setTimeout> | 0 = 0
 
   private constructor(
     readonly name: string,
@@ -217,14 +224,28 @@ export class LocalCopy {
     const local = this.isLocal(origin)
     const mark = local && this.dirtyAt == null ? (this.dirtyAt = Date.now()) : null
     this.pending.push(local ? { n, u: toB64(update), l: 1 } : { n, u: toB64(update) })
-    const write = this.put([update], mark)
+    this.queued.push(update)
+    // The first unconfirmed edit (which carries the marker) goes at once; the rest of a burst of typing is written together a moment later, off the keystroke.
+    if (mark != null || !LocalCopy.coalesce) this.flushQueue(mark)
+    else if (!this.queueTimer) this.queueTimer = setTimeout(() => this.flushQueue(), QUEUE_MS)
+  }
+
+  /** Hands what is queued to IndexedDB in one transaction (merged into one update); what it confirms leaves `pending`. A failure leaves it in the write-ahead list, which the next open rescues. */
+  private flushQueue(mark: number | null = null) {
+    if (this.queueTimer) clearTimeout(this.queueTimer)
+    this.queueTimer = 0
+    const batch = this.queued
+    if (!batch.length && mark == null) return
+    this.queued = []
+    const upto = this.seq
+    const write = this.put(batch.length > 1 ? [Y.mergeUpdates(batch)] : batch, mark)
     if (++this.stored >= COMPACT_AT) {
       this.stored = 1
       this.compact()
     }
     write.then(
       () => {
-        this.pending = this.pending.filter((e) => e.n > n)
+        this.pending = this.pending.filter((e) => e.n > upto)
         if (this.walWritten) this.writeWal()
       },
       () => {
@@ -235,6 +256,7 @@ export class LocalCopy {
 
   /** The page is going away: save what IndexedDB hasn't confirmed, now. */
   private flush = () => {
+    this.flushQueue()
     if (this.pending.length || this.walWritten) this.writeWal()
   }
 
