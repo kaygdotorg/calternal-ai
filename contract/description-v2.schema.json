@@ -213,6 +213,10 @@
             "prompt"
           ],
           "description": "Ask the person for one answer when the action fires (a rename, a date, a choice); the answer is device-held (`interaction.prompt`, or `interaction.choices` for a choice) and the host previews it like any other value."
+        },
+        {
+          "$ref": "https://calternal.cloud/contract/host-catalogue-v2.json#/$defs/RowActionTarget",
+          "description": "Context-derived operand of a row action: {context: \"item\"} is the underlying item ref of the row (a thread's ThreadRef), {context: \"placement\"} is the row's LayoutEntryRef (only inside a Section.repeat row). The host reconstructs both from the activation context; the renderer sends neither."
         }
       ]
     },
@@ -323,7 +327,7 @@
         },
         "parent": {
           "const": true,
-          "description": "This bind is windowed PER PARENT ROW: it lists the children of one row of another bind (child threads under their parent) or the rows of one user-made section. The renderer asks for its windows with the parent row's reference (`parent` in the window request); the host reconstructs the parent from the activation context and authorizes the child list for that parent. Used only through `RowTemplate.children` or `Section.repeat`."
+          "description": "This bind is windowed PER PARENT ROW: it lists the children of one row of another bind (child threads under their parent) or the rows of one user-made section. **The declared edge (a `RowTemplate.children` or a `Section.repeat`) is the mandatory constraint**: every window request on such a bind carries `request.parent`, a host-issued row ref (`WindowParentRef`, taken from the parent row's `parent_refs`) scoped to that edge and its ancestry, which the host checks on every request. `{parent: true}` in a filter is only an optional extra predicate. A parent bind that no edge references is refused."
         }
       },
       "additionalProperties": false,
@@ -1132,7 +1136,7 @@
             "none"
           ],
           "default": "keep",
-          "description": "keep: the device may persist a MEMBER's own-space rows (only binds with `persist: true`), encrypted, bound to the account and the space, for the retention below, painted at once and then confirmed or corrected by the host; display only, never actions or contexts. Never for a guest or a public view, whatever this says. none: persist no rows."
+          "description": "keep: the device may persist the host-authenticated `MemberRowCacheRecord` of a member's own-space rows for binds with `persist: true` (encrypted, keys bound to the account and the space), painted at once and then confirmed or corrected by the host. Records exist only for an own-space member; guest and public views have no record to persist, whatever this says. none: persist no rows."
         }
       },
       "additionalProperties": false,
@@ -2033,31 +2037,8 @@
       "description": "Ask for rows [from, to) of a bind (optionally for one parent row): the catalogue's WindowRequest is the ONE window envelope ({type: \"window\", request}); this schema cites it and defines no second shape. The answer is the catalogue's WindowResult (bind, parent, window_ref, state, count object, result version, stable opaque row ids and activation contexts)."
     },
     "EventSelection": {
-      "type": "object",
-      "properties": {
-        "type": {
-          "const": "selection"
-        },
-        "bind": {
-          "$ref": "#/$defs/Id"
-        },
-        "row": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 128,
-          "description": "An opaque host-issued row reference (not the description Id pattern)."
-        },
-        "sentAt": {
-          "type": "number"
-        }
-      },
-      "additionalProperties": false,
-      "required": [
-        "type",
-        "bind",
-        "row"
-      ],
-      "description": "The selection moved in a bind's list (sent once after it settles, never during a key repeat)."
+      "$ref": "https://calternal.cloud/contract/host-catalogue-v2.json#/$defs/SettledSelectionRequest",
+      "description": "The selection settled on a row of a bind's list (sent once after it settles, never during a key repeat): the catalogue's SettledSelectionRequest ({type: \"selection\", bind, row}, row an opaque host-issued ref), answered by a SelectionContextResult. Distinct from a bulk SelectionSetRequest (`selection_set`)."
     },
     "EventSelectionSet": {
       "$ref": "https://calternal.cloud/contract/host-catalogue-v2.json#/$defs/SelectionSetRequest",
@@ -2375,6 +2356,10 @@
         "revision"
       ],
       "description": "One app's description: its binds, the chrome and the view, data-free. Rows reach the renderer only as the host's answers to window requests."
+    },
+    "MemberRowCacheRecord": {
+      "$ref": "https://calternal.cloud/contract/host-catalogue-v2.json#/$defs/MemberRowCacheRecord",
+      "description": "The ONLY record the device may write to disk for rows: attached by the host to a window result for an own-space MEMBER (`audience` is the constant own_space_member), with account, space, template digest, bind, offset, issue and expiry, display rows (title, optional subtitle only: no contexts, no action material) and the host's proof; the shell validates it on write and on load. A guest or public window never carries one, so they cannot reach the disk path."
     }
   }
 }

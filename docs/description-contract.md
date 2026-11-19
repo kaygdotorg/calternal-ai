@@ -80,7 +80,7 @@ host  -> shell  { bind: "notes", parent?, window_ref, state: "ready", result_ver
                   rows: [ { id, fields: {...} }, ... ], activation_contexts: [ { row, contexts: { action_id: token } } ] }   // the catalogue's WindowResult
 ```
 
-The two shapes are the catalogue's (`contract/host-catalogue-v2.json`: `WindowRequest`, `WindowResult`); this document cites them and defines no second one. Row ids are opaque and stable;
+The shapes are the catalogue's (`contract/host-catalogue-v2.json`: `WindowRequest`, the **one** envelope; `WindowReply`, which is a `WindowResult` or a typed `WindowPlanError` {status 422, code `unsupported_query_plan`}); this document cites them and defines no second one. A query plan the host does not support is answered with the `WindowPlanError`, never a silent empty window, and the renderer shows the bind's `error` state for it. Row ids are opaque and stable;
 no position is an authority reference.
 
 * A window is the half-open range `[from, to)` of at most 200 rows; the highest supported ranked offset is 100,000 and the host never scans linearly to reach an offset
@@ -104,7 +104,7 @@ Rows are identified by the item id everywhere: selection, events, scope.
 
 ### 2.5 States
 
-`states.empty`, `loading` and `error` are small messages (`title`, `detail`, `icon`, an optional action). Their text is the description's or host-written; never worker
+`states.empty`, `loading` and `error` (also the answer to a `WindowPlanError`) are small messages (`title`, `detail`, `icon`, an optional action). Their text is the description's or host-written; never worker
 output. A renderer shows `loading` until the first window arrives, `empty` when `count` is 0, `error` when the host answers `state: "error"`.
 
 ### 2.6 What the schema needs from the host (authorization is the host's job)
@@ -117,7 +117,7 @@ The description only asks. Before any indexed work the host must:
    metadata from the count of an `eq` filter or from row order: filters, sorts and counts on a field the audience cannot read are refused, not filtered);
 3. produce **host-owned projections** for guests: rows are built by the host from the item's grant, never by plugin code;
 4. authorize the **whole dependency graph** of an app (no bind takes an operand from another; a search is pinned to the audience's corpus; a count is taken over the
-   already-authorized projection); a guest gets an `exact` count only over an explicit shared root/child projection with count disclosure enabled, otherwise `estimate` or `none`;
+   already-authorized projection); a guest gets an `exact` count only over an explicit shared root/child projection with count disclosure enabled, otherwise **`none`** (no estimate), nested windows included;
 5. bound the work: windows of at most 200 rows, 16 predicates, **16 binds per app** (chrome and view together: there is one list), ranked offsets to 100,000, and per actor and
    per space caps on open subscriptions, window bytes and invalidations a second, coalesced before querying; pushes are **host-only** and **never wake the space runtime**;
 6. **deliver activation contexts**: with each window (`WindowResult.activation_contexts`, one entry per row and action), with the view when it opens (`ViewOpenResult`, for the header,
@@ -130,13 +130,14 @@ Plugin API (Part A); this section lists only what the description relies on.
 
 ### 2.7 Nested rows and user-made sections
 
-* **Nested child rows.** A row template may declare `children: {bind}`: a bind whose source has `parent: true` and whose filter uses `{parent: true}` (the parent row, reconstructed by the
-  host). The renderer asks for a parent's children with its own windows (`request.parent`), only when the row is expanded; a row with children draws the system's disclosure control (a `List`
+* **Nested child rows.** A row template may declare `children: {bind}`: a bind whose source has `parent: true`. **The declared edge is the mandatory constraint:** every window request on such a bind
+  carries `request.parent`, a host-issued `WindowParentRef` taken from the parent row's `parent_refs`, scoped to that edge and its ancestry and checked by the host on every request (a parent bind
+  that no edge references is refused by the verifier). `{parent: true}` in a filter is only an optional extra predicate. The renderer asks for a parent's children with its own windows, only when the row is expanded; a row with children draws the system's disclosure control (a `List`
   with `children`/`DisclosureGroup`). Depth is at most 3, counted through the chain; the host checks it and the verifier rejects cycles. Child threads under their parent are this.
-* **User-made sections.** `Section.repeat: {over, rows}` makes one section per row of the bind `over` (the per-person layout the host stores: the host virtual kind `layout_sections` with
+* **User-made sections.** `Section.repeat: {over, rows}` makes one section per row of the bind `over`, which **must read `layout_sections`** (the verifier rejects any other kind; the per-person layout the host stores: the host virtual kind `layout_sections` with
   `id`, `title`, `position`, viewer-only) with each section's rows from the per-parent bind `rows`. The layout is stored and authorized by the host; **Move to, Move up and Move down are host
   operations** (`host.layout.move_to {entry, section}`, `host.layout.move_up` and `host.layout.move_down {entry}`, and `host.layout.section.create`, `rename`, `remove` for personal sections)
-  that a row or section menu names, with a host-issued `LayoutEntryRef`. **Drag is not in the first contract**: a recorded parity exception, with Move to and Move up/down standing in.
+  that a row or section menu names. **Typed, context-derived operands:** a row action names the row's underlying item with `{context: "item"}` (a `ThreadRef` in Threads) and, inside the rows of a `Section.repeat` only, its placement with `{context: "placement"}` (a `LayoutEntryRef`); `host.layout.move_to` takes **either** `thread: {context: "item"}` (adds a placement for an unplaced thread) **or** `entry: {context: "placement"}` (moves a placement), plus a `section` choice (`ChoiceRef`); `move_up` and `move_down` take `entry`; the verifier checks each operand against the catalogue's `input_schema` type. Both operands are reconstructed by the host from the activation context; the renderer sends neither. **Drag is not in the first contract**: a recorded parity exception, with Move to and Move up/down standing in.
 
 ## 3. Invoke
 
@@ -205,8 +206,7 @@ host  -> shell { activation_id, state: ok | pending | error | stale | refused | 
   the host de-duplicates by `activation_id` (a retry after a dropped connection repeats no effect).
 * **Full swipe.** A swipe action may set `fullSwipe` only on the first action of its set **and** only if the catalogue marks its operation `full_swipe: true` (a catalogue entry that commits its effect and Undo together and needs no confirmation: only the entries the catalogue marks); the verifier rejects it on any plugin operation. A full swipe never opens a confirmation.
 * **The context must match the selection DRAWN.** A selection held by the settle window is sent before an activation that uses it, and the action's `activation_context` must be the one the host
-  issued for the stable row actually drawn as selected when the person activates (the host issues a `SelectionContextResult` after each settled selection event, bound to the lease, cache partition,
-  bind and row). The renderer uses a context only if it matches the currently drawn row; if it is missing, **it waits for the host-issued context** and sends nothing. The host never resolves an
+  issued for the stable row actually drawn as selected when the person activates (the renderer sends the catalogue's `SettledSelectionRequest` ({type: "selection", bind, row}, route `selection.settled`, distinct from a bulk `selection_set`), and the host answers with a `SelectionContextResult` bound to the lease, cache partition, bind and row). The renderer uses a context only if it matches the currently drawn row; if it is missing, **it waits for the host-issued context** and sends nothing. The host never resolves an
   activation against whichever selection is current on the server.
 * **No generic route to protected operations** (3.1).
 
@@ -330,7 +330,8 @@ plugin code). A description can run a named **invoke** on a component's event on
   person's item, no count, no account initial and no activation context, so it may be stored (one file of at most 4 MB, keyed by the signed-in account, deleted on sign-out and on account
   switch). `templates: none` keeps nothing.
 * **Q10 (owner decision, 2026-11-19): a MEMBER's own-space rows persist between launches.** Only the rows of binds that opt in (`persist: true`) in the member's own space; **encrypted, with keys
-  bound to the account and the space, on an unlocked device**, **painted at once at the next launch and then confirmed or corrected by the host's first window answer**; retained for at most
+  bound to the account and the space, on an unlocked device, and only as the host-authenticated `MemberRowCacheRecord`** (attached to a window result for an own-space member only: `audience` is the constant `own_space_member`, display rows are title and optional subtitle, nothing actionable; the shell validates it on write and on load; it is the one explicit exemption from the rule that viewer projections are never persisted, and a guest or public window carries no such record, so those rows cannot reach the disk path),
+  , **painted at once at the next launch and then confirmed or corrected by the host's first window answer**; retained for at most
   14 days (or `maxAgeDays` if shorter); **erased on sign-out, on account switch and on any known revocation** (a lost membership, a role change the device learns of, a revoked device). Persisted
   rows are **display only**: they carry no activation context, no resolution reference, no confirmation challenge or proof and no credential, and **every action still needs a fresh host context**
   (the renderer disables actions on a row until the host's window answer has issued one). **Never for a guest or a public view**, whatever the description says; `memberRows: none` keeps nothing.
