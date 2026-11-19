@@ -135,13 +135,14 @@ impl Backend for ConfiguredBackend {
     fn erase_space_runtime(
         &self,
         space: calternal_types::SpaceId,
+        through: Option<u64>,
     ) -> BoxFuture<'_, SandboxResult<()>> {
         Box::pin(async move {
             #[cfg(target_os = "linux")]
             if let Some(vm) = &self.small_vm {
-                return vm.erase(space).await;
+                return vm.erase(space, through).await;
             }
-            let _ = space;
+            let _ = (space, through);
             Err(SandboxError(
                 "Small plugin VM storage is unavailable for erasure".into(),
             ))
@@ -151,15 +152,16 @@ impl Backend for ConfiguredBackend {
     fn start_space<'a>(
         &'a self,
         spec: &'a SandboxSpec,
+        checkpoint: Option<u64>,
     ) -> BoxFuture<'a, SandboxResult<Arc<dyn Sandbox>>> {
         Box::pin(async move {
             #[cfg(target_os = "linux")]
             if self.name() == "podman"
                 && let Some(vm) = &self.small_vm
             {
-                return Ok(vm.start(spec).await? as Arc<dyn Sandbox>);
+                return Ok(vm.start(spec, checkpoint).await? as Arc<dyn Sandbox>);
             }
-            let _ = spec;
+            let _ = (spec, checkpoint);
             Err(SandboxError(
                 "Small plugin VM is unavailable on this machine".into(),
             ))

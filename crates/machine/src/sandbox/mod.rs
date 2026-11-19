@@ -171,6 +171,7 @@ pub trait Backend: Send + Sync + 'static {
     fn erase_space_runtime(
         &self,
         _space: calternal_types::SpaceId,
+        _through: Option<u64>,
     ) -> BoxFuture<'_, SandboxResult<()>> {
         Box::pin(async {
             Err(SandboxError(
@@ -184,6 +185,7 @@ pub trait Backend: Send + Sync + 'static {
     fn start_space<'a>(
         &'a self,
         _spec: &'a SandboxSpec,
+        _checkpoint: Option<u64>,
     ) -> BoxFuture<'a, SandboxResult<Arc<dyn Sandbox>>> {
         Box::pin(async {
             Err(SandboxError(
@@ -215,10 +217,10 @@ pub trait Sandbox: Send + Sync {
         true
     }
 
-    /// Whether this sandbox published a checkpoint during successful release.
-    /// The machine inspects this after teardown acknowledgement. Cost: one load.
-    fn checkpoint_saved(&self) -> bool {
-        false
+    /// Stop the guest and publish the numbered checkpoint if supported.
+    /// True means publication and teardown both completed.
+    fn checkpoint(&self, _counter: u64) -> BoxFuture<'_, SandboxResult<bool>> {
+        Box::pin(async { self.stop().await.map(|()| false) })
     }
 
     /// Run a command in the work directory and stream its output.

@@ -3,14 +3,14 @@ use std::{path::Path, time::Duration};
 
 use serde_json::{Value, json};
 use tokio::{
-    io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader},
+    io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
     net::UnixStream,
 };
 
 use super::{SandboxError, SandboxResult};
 
-/// A checkpoint can be discarded after an explicit refusal. Transport and
-/// local resource failures preserve it for a retry.
+/// An authenticated guest refusal is distinct from a failed exchange.
+/// Only an explicit restored package Start refusal takes the cold Start path.
 #[derive(Debug)]
 pub(super) enum AttemptError {
     /// An endpoint explicitly rejected the checkpoint or operation.
@@ -35,16 +35,12 @@ impl From<AttemptError> for SandboxError {
 
 /// Pause vCPUs through the local Firecracker socket before saving.
 pub(super) async fn pause(socket: &Path) -> SandboxResult<()> {
-    request(socket, "PATCH", "/vm", json!({"state":"Paused"}))
-        .await
-        .map_err(Into::into)
+    request(socket, "PATCH", "/vm", json!({"state":"Paused"})).await
 }
 
 /// Resume a paused guest after a successful snapshot load.
 pub(super) async fn resume(socket: &Path) -> SandboxResult<()> {
-    request(socket, "PATCH", "/vm", json!({"state":"Resumed"}))
-        .await
-        .map_err(Into::into)
+    request(socket, "PATCH", "/vm", json!({"state":"Resumed"})).await
 }
 
 /// Write Firecracker state and full or dirty memory into private draft files.
@@ -65,7 +61,6 @@ pub(super) async fn create(
         }),
     )
     .await
-    .map_err(Into::into)
 }
 
 /// Load state and mapped memory while keeping vCPUs paused and rebinding vsock.
@@ -74,7 +69,7 @@ pub(super) async fn load(
     state: &Path,
     memory: &Path,
     vsock: &Path,
-) -> Result<(), AttemptError> {
+) -> SandboxResult<()> {
     request(
         socket,
         "PUT",
@@ -95,7 +90,7 @@ async fn request(
     method: &'static str,
     path: &'static str,
     body: Value,
-) -> Result<(), AttemptError> {
+) -> SandboxResult<()> {
     let body = serde_json::to_vec(&body).map_err(SandboxError::new)?;
     let request = format!(
         "{method} {path} HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
@@ -120,7 +115,7 @@ async fn request(
                 .position(|&b| b == b'\n')
                 .map_or(part.len(), |i| i + 1);
             if n == 0 || len + n > line.len() {
-                return Err(SandboxError("Invalid Firecracker snapshot response".into()).into());
+                return Err(SandboxError("Invalid Firecracker snapshot response".into()));
             }
             line[len..len + n].copy_from_slice(&part[..n]);
             len += n;
@@ -131,70 +126,10 @@ async fn request(
             part = io.fill_buf().await.map_err(SandboxError::new)?;
         }
         if !line[..len].starts_with(b"HTTP/1.1 204 ") {
-            let error = SandboxError(format!("Firecracker rejected {path}"));
-            return Err(
-                if path == "/snapshot/load"
-                    && line[..len].starts_with(b"HTTP/1.1 400 ")
-                    && load_refused(io).await.unwrap_or(false)
-                {
-                    AttemptError::Refused(error)
-                } else {
-                    error.into()
-                },
-            );
+            return Err(SandboxError(format!("Firecracker rejected {path}")));
         }
         Ok(())
     })
     .await
-    .map_err(|_| {
-        AttemptError::Unavailable(SandboxError(format!("Firecracker timed out on {path}")))
-    })?
-}
-
-// Firecracker exposes only a message in its 400 response. Preserve a
-// checkpoint on a reported OS/resource error or an unreadable response.
-async fn load_refused(io: BufReader<UnixStream>) -> std::io::Result<bool> {
-    let mut bounded = io.take(8192);
-    let mut line = Vec::new();
-    let mut size = None;
-    loop {
-        line.clear();
-        if bounded.read_until(b'\n', &mut line).await? == 0 {
-            return Ok(false);
-        }
-        if line == b"\r\n" {
-            break;
-        }
-        if let Ok(header) = std::str::from_utf8(&line)
-            && let Some((name, value)) = header.split_once(':')
-            && name.eq_ignore_ascii_case("content-length")
-        {
-            size = value
-                .trim()
-                .parse::<usize>()
-                .ok()
-                .filter(|size| *size <= 4096);
-        }
-    }
-    let Some(size) = size else {
-        return Ok(false);
-    };
-    let mut body = vec![0; size];
-    bounded.read_exact(&mut body).await?;
-    let Ok(fault) = serde_json::from_slice::<Value>(&body) else {
-        return Ok(false);
-    };
-    let Some(message) = fault.get("fault_message").and_then(Value::as_str) else {
-        return Ok(false);
-    };
-    let message = message.to_ascii_lowercase();
-    Ok(![
-        "os error ",
-        "no space left",
-        "input/output error",
-        "out of memory",
-        "resource temporarily unavailable",
-    ]
-    .iter()
-    .any(|resource| message.contains(resource)))
+    .map_err(|_| SandboxError(format!("Firecracker timed out on {path}")))?
 }

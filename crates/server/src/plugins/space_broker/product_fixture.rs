@@ -58,6 +58,7 @@ impl Backend for FixtureBackend {
     fn start_space<'a>(
         &'a self,
         spec: &'a SandboxSpec,
+        _checkpoint: Option<u64>,
     ) -> BoxFuture<'a, SandboxResult<Arc<dyn Sandbox>>> {
         self.start(spec)
     }

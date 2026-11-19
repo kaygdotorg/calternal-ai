@@ -107,7 +107,7 @@ exec "$profile/real-firecracker" "$@"
         shared_provider_sponsor: None,
         shared_tools: None,
     };
-    let initial = runtime.start(&spec).await.unwrap();
+    let initial = runtime.start(&spec, None).await.unwrap();
     assert!(
         initial
             .slot
@@ -119,14 +119,14 @@ exec "$profile/real-firecracker" "$@"
             .restored
             .is_none()
     );
-    let blocked = tokio::time::timeout(Duration::from_secs(4), runtime.start(&spec))
+    let blocked = tokio::time::timeout(Duration::from_secs(4), runtime.start(&spec, Some(1)))
         .await
         .expect("same-space gate must have a deadline");
     assert!(blocked.err().unwrap().0.contains("still shutting down"));
     let _ = entropy(&initial).await;
     let saved = initial.saved.clone();
     let binding = initial.binding.clone();
-    initial.release().await.unwrap();
+    assert!(initial.checkpoint(1).await.unwrap());
     drop(initial);
     let base = super::super::snapshot::Generation::current(&saved, &binding)
         .unwrap()
@@ -178,22 +178,27 @@ exec "$profile/real-firecracker" "$@"
     let run = runtime.state.root.join("run");
     let blocked_disk = run.join(&base.disk_name);
     std::fs::create_dir(&blocked_disk).unwrap();
-    assert!(runtime.start(&spec).await.is_err());
+    assert!(runtime.start(&spec, Some(1)).await.is_err());
     assert_eq!(
         Generation::current(&saved, &binding).unwrap().unwrap().id,
         base.id
     );
+    assert_eq!(
+        std::fs::read_to_string(saved.join("current.failures")).unwrap(),
+        "1 1\n"
+    );
     std::fs::remove_dir(blocked_disk).unwrap();
 
-    let first = runtime.start(&spec).await.unwrap();
+    let first = runtime.start(&spec, Some(1)).await.unwrap();
     assert_eq!(
         first.slot.lock().await.vm.as_ref().unwrap().restored,
         Some(base.id)
     );
+    assert!(!saved.join("current.failures").exists());
     let first_draw = entropy(&first).await;
     first.stop().await.unwrap();
     drop(first);
-    let second = runtime.start(&spec).await.unwrap();
+    let second = runtime.start(&spec, Some(1)).await.unwrap();
     assert_eq!(
         second.slot.lock().await.vm.as_ref().unwrap().restored,
         Some(base.id)
@@ -201,7 +206,7 @@ exec "$profile/real-firecracker" "$@"
     let second_draw = entropy(&second).await;
     assert_ne!(first_draw["kernel"], second_draw["kernel"]);
     assert_ne!(first_draw["node"], second_draw["node"]);
-    second.release().await.unwrap();
+    assert!(second.checkpoint(2).await.unwrap());
     drop(second);
     let updated = super::super::snapshot::Generation::current(&saved, &binding)
         .unwrap()
@@ -214,14 +219,14 @@ exec "$profile/real-firecracker" "$@"
 
     // Power loss between Firecracker's component writes and manifest
     // publication leaves a complete draft on disk and the old pointer intact.
-    let interrupted = runtime.start(&spec).await.unwrap();
+    let interrupted = runtime.start(&spec, Some(2)).await.unwrap();
     interrupted.thread.stop().await.unwrap();
     {
         use super::super::{snapshot::Generation, snapshot_api};
         let mut slot = interrupted.slot.lock().await;
         let vm = slot.vm.take().unwrap();
         let control = vm.control_disk.as_ref().unwrap();
-        let draft = Generation::create(&saved, &vm.disk, control).unwrap();
+        let draft = Generation::create(&saved, &vm.disk, control, 3).unwrap();
         let api = vm.api_socket.as_ref().unwrap();
         snapshot_api::pause(api).await.unwrap();
         snapshot_api::create(
@@ -242,7 +247,7 @@ exec "$profile/real-firecracker" "$@"
             .id,
         base.id,
     );
-    let recovered = runtime.start(&spec).await.unwrap();
+    let recovered = runtime.start(&spec, Some(2)).await.unwrap();
     assert_eq!(
         recovered.slot.lock().await.vm.as_ref().unwrap().restored,
         Some(base.id)
@@ -250,6 +255,30 @@ exec "$profile/real-firecracker" "$@"
     let _ = entropy(&recovered).await;
     recovered.stop().await.unwrap();
     drop(recovered);
+
+    // Firecracker can load these components, but the restored guest still
+    // holds the original control key in memory and rejects the new host key.
+    // A failure after load must consume the same restore budget.
+    let control = base.path.join("control");
+    let original = std::fs::read(&control).unwrap();
+    let mut wrong_key = original.clone();
+    wrong_key[0] ^= 1;
+    std::fs::write(&control, wrong_key).unwrap();
+    base.publish(&saved, &binding).unwrap();
+    assert!(runtime.start(&spec, Some(2)).await.is_err());
+    assert_eq!(
+        std::fs::read_to_string(saved.join("current.failures")).unwrap(),
+        "2 1\n"
+    );
+    std::fs::write(&control, original).unwrap();
+    base.publish(&saved, &binding).unwrap();
+    let recovered = runtime.start(&spec, Some(2)).await.unwrap();
+    assert_eq!(
+        recovered.slot.lock().await.vm.as_ref().unwrap().restored,
+        Some(base.id)
+    );
+    recovered.stop().await.unwrap();
+    assert!(!saved.join("current.failures").exists());
 
     // Corrupt a published state file while updating the fixture's manifest
     // metadata so it reaches the actual Firecracker restore failure.
@@ -260,7 +289,14 @@ exec "$profile/real-firecracker" "$@"
             .unwrap()
             .is_some()
     );
-    let cold = runtime.start(&spec).await.unwrap();
+    let before = cold_boots();
+    assert!(runtime.start(&spec, Some(2)).await.is_err());
+    assert!(base.path.exists());
+    assert_eq!(
+        std::fs::read_to_string(saved.join("current.failures")).unwrap(),
+        "2 1\n"
+    );
+    let cold = runtime.start(&spec, Some(2)).await.unwrap();
     assert!(
         cold.slot
             .lock()
@@ -271,6 +307,7 @@ exec "$profile/real-firecracker" "$@"
             .restored
             .is_none()
     );
+    assert_eq!(cold_boots(), before + 1);
     assert!(!base.path.exists());
     let run = runtime.state.root.join("run");
     assert!(!run.join(&base.disk_name).exists());
@@ -279,25 +316,47 @@ exec "$profile/real-firecracker" "$@"
 
     // The old Placement Arc remains live after teardown and must release the
     // space gate for both erasure and the next start.
-    cold.release().await.unwrap();
+    assert!(cold.checkpoint(3).await.unwrap());
     assert!(saved.exists());
     let other = runtime.saved(SpaceId::new());
     std::fs::create_dir(&other).unwrap();
-    runtime.erase(space).await.unwrap();
+    runtime.erase(space, Some(2)).await.unwrap();
+    assert!(saved.exists(), "a late erase must retain a newer copy");
+    runtime.erase(space, None).await.unwrap();
     assert!(!saved.exists());
     assert!(other.exists());
-    let newer = runtime.start(&spec).await.unwrap();
-    newer.release().await.unwrap();
-    // A genuine Podman Start refusal on restore invalidates the checkpoint.
-    // The deliberately oversized package also refuses the single cold attempt.
+    let newer = runtime.start(&spec, None).await.unwrap();
+    assert!(newer.checkpoint(4).await.unwrap());
+    // A genuine Start refusal attempts one cold boot. When that Start also
+    // fails, it preserves the checkpoint for a subsequent valid package.
     let mut oversized = spec.clone();
     oversized.worker.as_mut().unwrap().source =
         "x".repeat(crate::sandbox::worker::MAX_SOURCE_BYTES + 1);
     let before = cold_boots();
-    assert!(runtime.start(&oversized).await.is_err());
+    assert!(runtime.start(&oversized, Some(4)).await.is_err());
     assert_eq!(cold_boots(), before + 1);
-    assert!(!saved.exists());
-    let rebuilt = runtime.start(&spec).await.unwrap();
+    assert_eq!(
+        Generation::current(&saved, &binding)
+            .unwrap()
+            .unwrap()
+            .counter,
+        4
+    );
+    let proven = runtime.start(&spec, Some(4)).await.unwrap();
+    assert!(
+        proven
+            .slot
+            .lock()
+            .await
+            .vm
+            .as_ref()
+            .unwrap()
+            .restored
+            .is_some()
+    );
+    proven.stop().await.unwrap();
+    let rebuilt = runtime.start(&spec, Some(3)).await.unwrap();
+
     assert!(
         rebuilt
             .slot
@@ -309,7 +368,7 @@ exec "$profile/real-firecracker" "$@"
             .restored
             .is_none()
     );
-    rebuilt.release().await.unwrap();
+    assert!(rebuilt.checkpoint(5).await.unwrap());
     let expired = std::time::SystemTime::now() - RETENTION - Duration::from_secs(1);
     std::fs::File::open(saved.join("current"))
         .unwrap()

@@ -105,6 +105,8 @@ pub struct MachineErasureSummary {
     pub machine_id: Uuid,
     /// Instructions awaiting successful receipt.
     pub pending: u64,
+    /// Checkpoint copies fenced after repeated deletion failures.
+    pub unusable_checkpoints: u64,
     /// The machine cannot authenticate and the operator must wipe it.
     pub operator_wipe: bool,
 }

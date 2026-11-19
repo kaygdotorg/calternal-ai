@@ -87,14 +87,25 @@ impl MachineService {
     /// queueing Stop; capacity stays reserved until machine acknowledgement.
     pub(crate) fn sleep_space_run(&self, account: AccountId, lease: Uuid) -> Result<(), Error> {
         let mut st = self.lock()?;
-        st.leases
+        let placement = st
+            .leases
             .get(&lease)
             .filter(|l| {
                 l.row.account == account
+                    && l.row.worker
                     && l.row.image.as_deref()
                         == Some(calternal_machine::sandbox::worker::SPACE_VM_IMAGE)
             })
             .ok_or_else(no_assignment)?;
+        if matches!(
+            placement.state,
+            super::LeaseState::Stopping | super::LeaseState::Ended
+        ) {
+            return Ok(());
+        }
+        let machine = placement.assigned_machine().ok_or_else(no_assignment)?;
+        let space = placement.row.space;
+        st.advance_checkpoint(space, machine, lease)?;
         st.end_with_files(lease, SMALL_VM_IDLE_REASON, &self.settings, true);
         Ok(())
     }
@@ -105,8 +116,9 @@ impl MachineService {
         self.lock()?.require_channel_capacity(space)
     }
 
-    /// Reserve the v2 data channel on an enrolled worker placement. Uses two
-    /// control-plane memory lookups plus an outbox message. No frame uses this lock.
+    /// Reserve the v2 carrier under the scheduler lock on the blocking worker.
+    /// Read the restore proof before queueing the assignment so a concurrent
+    /// erasure cannot authorize an older copy. No frame takes this lock.
     pub(crate) async fn open_space_channel(
         self: &Arc<Self>,
         account: AccountId,
@@ -128,6 +140,7 @@ impl MachineService {
                 fence: lease.row.fence,
                 assignment: Uuid::new_v4(),
                 package,
+                checkpoint: super::checkpoint::proof(&st.db, lease.row.space, machine)?,
             };
             let session = st
                 .machines

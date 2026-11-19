@@ -72,10 +72,14 @@ async fn sweep_inactive(root: &Path) {
 
 /// Erase a checkpoint with no configured small runtime. Do not unlink files
 /// while any Firecracker process from that root still holds the VMM lock.
-pub(crate) async fn erase_unconfigured(sandbox_root: &Path, space: SpaceId) -> SandboxResult<()> {
+pub(crate) async fn erase_unconfigured(
+    sandbox_root: &Path,
+    space: SpaceId,
+    through: Option<u64>,
+) -> SandboxResult<()> {
     let root = sandbox_root.join("space-runtime/microvm");
     if let Some(owner) = lock_inactive(&root).await? {
-        erase_saved(root.join("spaces").join(space.to_string()), owner).await?;
+        erase_through(root.join("spaces").join(space.to_string()), through, owner).await?;
     }
     Ok(())
 }
@@ -104,8 +108,26 @@ async fn lock_inactive(root: &Path) -> SandboxResult<Option<File>> {
 
 /// Remove the checkpoint and flush its parent under the caller’s exclusion.
 pub(super) async fn erase_saved(path: PathBuf, gate: impl Send + 'static) -> SandboxResult<()> {
+    erase_through(path, None, gate).await
+}
+
+/// Erase stale copies under the caller's lock, retaining newer checkpoints.
+pub(super) async fn erase_through(
+    path: PathBuf,
+    through: Option<u64>,
+    gate: impl Send + 'static,
+) -> SandboxResult<()> {
     tokio::task::spawn_blocking(move || {
         let _gate = gate;
+        if let Some(through) = through
+            && match super::snapshot::saved_counter(&path) {
+                Ok(counter) => counter.is_some_and(|counter| counter > through),
+                Err(error) if error.kind() == io::ErrorKind::InvalidData => false,
+                Err(error) => return Err(error),
+            }
+        {
+            return Ok(());
+        }
         match std::fs::remove_dir_all(&path) {
             Ok(()) => calternal_fsio::sync_dir(path.parent().expect("runtime space parent")),
             Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
@@ -154,6 +176,8 @@ mod tests {
             .handle(Down::EraseSpaceRuntime {
                 request_id,
                 space_id: retained,
+                through: None,
+                background: false,
             })
             .await;
         assert!(!spaces.join(retained.to_string()).exists());

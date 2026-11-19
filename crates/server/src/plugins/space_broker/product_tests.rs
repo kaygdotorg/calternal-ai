@@ -234,6 +234,7 @@ async fn exercise_enrolled_runner(vm_config: Option<PathBuf>, end: VmEnd) {
     let supervisor = tokio::spawn(async move {
         let mut ack = 0;
         let mut opened = 0;
+        let mut checkpoint = None;
         loop {
             let mut report = request(ack);
             // During sleep, report the real slot until reaping is complete.
@@ -252,10 +253,16 @@ async fn exercise_enrolled_runner(vm_config: Option<PathBuf>, end: VmEnd) {
                     if opened == 1 {
                         let unavailable = before_claim.check(&service, channel, &token).await;
                         claimed.try_send((channel.clone(), unavailable)).unwrap();
+                    } else if wait_sleep {
+                        assert_eq!(
+                            channel.checkpoint, checkpoint,
+                            "carrier must authorize the saved checkpoint"
+                        );
                     }
                 }
-                if wait_sleep && matches!(&message, Down::SleepSpace { .. }) {
-                    draining.try_send(()).unwrap();
+                if wait_sleep && let Down::SleepSpace { counter, .. } = &message {
+                    checkpoint = Some(*counter);
+                    draining.try_send(*counter).unwrap();
                     drain_gate.acquire().await.unwrap().forget();
                 }
                 sync_runner.handle(message).await;
@@ -337,7 +344,7 @@ async fn exercise_enrolled_runner(vm_config: Option<PathBuf>, end: VmEnd) {
                 .join("space-runtime/microvm/spaces")
                 .join(ids.personal.to_string())
                 .join("current");
-            tokio::time::timeout(Duration::from_secs(80), drain.recv())
+            let checkpoint = tokio::time::timeout(Duration::from_secs(80), drain.recv())
                 .await
                 .unwrap()
                 .expect("idle drain must send the dedicated machine sleep command");
@@ -384,6 +391,11 @@ async fn exercise_enrolled_runner(vm_config: Option<PathBuf>, end: VmEnd) {
                 .lines()
                 .find_map(|line| line.strip_prefix("generation: "))
                 .unwrap();
+            assert!(
+                manifest
+                    .lines()
+                    .any(|line| line == format!("counter: {checkpoint}"))
+            );
             assert!(manifest.contains("storage: full"));
             for file in ["state", "memory", "disk", "control"] {
                 assert!(manifest.contains(&format!("{file}: {generation} ")));

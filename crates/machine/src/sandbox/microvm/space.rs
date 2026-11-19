@@ -72,6 +72,7 @@ impl SmallRuntime {
     pub(in crate::sandbox) async fn start(
         &self,
         spec: &SandboxSpec,
+        checkpoint: Option<u64>,
     ) -> SandboxResult<Arc<Placement>> {
         let space = spec
             .space_id
@@ -99,9 +100,7 @@ impl SmallRuntime {
                 })?,
         );
         let saved = self.saved(space);
-        if super::snapshot::expired(&saved, RETENTION).await? {
-            erase_saved(saved.clone(), gate.clone()).await?;
-        }
+
         let binding = Binding {
             space,
             image: self.state.config.image_digest.clone(),
@@ -124,50 +123,99 @@ impl SmallRuntime {
             .get()
             .cloned()
             .ok_or_else(|| SandboxError("small plugin VM is not initialized".into()))?;
-        let generation = {
-            let saved = saved.clone();
-            let binding = binding.clone();
-            tokio::task::spawn_blocking(move || Generation::current(&saved, &binding))
-                .await
-                .map_err(SandboxError::new)?
-        };
         let run = self.state.root.join("run");
         let request = Request::Start(space, spec.clone());
-        let restored = match generation {
-            Ok(Some(generation)) => {
-                let attempt = async {
-                    let (vm, disk) = self
-                        .restore(&run, &generation, owned.clone(), permit.clone(), &gate)
-                        .await?;
-                    if let Err(error) = vm.control_checked(&request).await {
-                        vm.stop().await?;
-                        return Err(error);
-                    }
-                    Ok((vm, disk))
+        let mut discard_after_start = false;
+        let restored = if let Some(counter) = checkpoint {
+            let generation = async {
+                if super::snapshot::expired(&saved, RETENTION).await? {
+                    erase_saved(saved.clone(), gate.clone()).await?;
+                    return Ok(None);
                 }
-                .await;
-                match attempt {
-                    Ok(restored) => Some(restored),
-                    Err(error) => {
-                        clear_restore_scratch(&run, &generation, gate.clone()).await?;
-                        match error {
-                            AttemptError::Refused(error) => {
-                                tracing::warn!(%space, %error, "small plugin VM checkpoint refused; starting cold");
-                                erase_saved(saved.clone(), gate.clone()).await?;
+                let path = saved.clone();
+                let binding = binding.clone();
+                tokio::task::spawn_blocking(move || Generation::current(&path, &binding))
+                    .await
+                    .map_err(SandboxError::new)?
+                    .map(|generation| generation.filter(|generation| generation.counter == counter))
+                    .map_err(SandboxError::new)
+            }
+            .await;
+            let mut restored = None;
+            let failure = match generation {
+                Ok(Some(generation)) => {
+                    match self
+                        .restore(&run, &generation, owned.clone(), permit.clone(), &gate)
+                        .await
+                    {
+                        // Record a hung guest Start before the host's ten-second
+                        // worker admission deadline can cancel this exchange.
+                        Ok((vm, disk)) => match tokio::time::timeout(
+                            Duration::from_secs(2),
+                            vm.control_checked(&request),
+                        )
+                        .await
+                        .unwrap_or_else(|_| {
+                            Err(SandboxError("Restored plugin Start timed out".into()).into())
+                        }) {
+                            Ok(()) => {
+                                let path = saved.clone();
+                                if let Err(error) = tokio::task::spawn_blocking(move || {
+                                    super::snapshot::reset_failures(&path)
+                                })
+                                .await
+                                .map_err(SandboxError::new)?
+                                .map_err(SandboxError::new)
+                                {
+                                    vm.stop().await?;
+                                    disk.clear().await?;
+                                    return Err(error);
+                                }
+                                restored = Some((vm, disk));
                                 None
                             }
-                            AttemptError::Unavailable(error) => return Err(error),
+                            Err(error) => {
+                                vm.stop().await?;
+                                clear_restore_scratch(&run, &generation, gate.clone()).await?;
+                                match error {
+                                    AttemptError::Refused(_) => {
+                                        discard_after_start = true;
+                                        None
+                                    }
+                                    AttemptError::Unavailable(error) => Some(error),
+                                }
+                            }
+                        },
+                        Err(error) => {
+                            if let Err(cleanup) =
+                                clear_restore_scratch(&run, &generation, gate.clone()).await
+                            {
+                                tracing::warn!(%space, %cleanup, "cannot clean failed restore scratch");
+                            }
+                            Some(error.into())
                         }
                     }
                 }
-            }
-            Ok(None) => None,
-            Err(error) if error.kind() == io::ErrorKind::InvalidData => {
-                tracing::warn!(%space, %error, "refusing inconsistent small VM snapshot; starting cold");
+                Ok(None) => None,
+                Err(error) => Some(error),
+            };
+            if let Some(error) = failure {
+                let path = saved.clone();
+                let exhausted = tokio::task::spawn_blocking(move || {
+                    super::snapshot::failed_restore(&path, counter)
+                })
+                .await
+                .map_err(SandboxError::new)?
+                .map_err(SandboxError::new)?;
+                if !exhausted {
+                    return Err(error);
+                }
+                tracing::warn!(%space, %error, "small VM checkpoint exhausted its restore attempts");
                 erase_saved(saved.clone(), gate.clone()).await?;
-                None
             }
-            Err(error) => return Err(SandboxError::new(error)),
+            restored
+        } else {
+            None
         };
         let (vm, disk) = match restored {
             Some(restored) => restored,
@@ -180,6 +228,13 @@ impl SmallRuntime {
                     Guest::boot_small(&self.state.config, &run, disk.path.clone(), owned, permit)
                         .await?;
                 if let Err(error) = vm.control(&request).await {
+                    vm.stop().await?;
+                    disk.clear().await?;
+                    return Err(error);
+                }
+                if discard_after_start
+                    && let Err(error) = erase_saved(saved.clone(), gate.clone()).await
+                {
                     vm.stop().await?;
                     disk.clear().await?;
                     return Err(error);
@@ -201,7 +256,6 @@ impl SmallRuntime {
             gate: Mutex::new(Some(gate)),
             saved,
             binding,
-            checkpoint: std::sync::atomic::AtomicBool::new(false),
         }))
     }
 
@@ -270,11 +324,15 @@ impl SmallRuntime {
     /// Delete an offline space checkpoint after the runner has stopped its leases.
     /// Keep this space's gate through directory sync so a racing start cannot
     /// reopen or recreate the path mid-erasure.
-    pub(in crate::sandbox) async fn erase(&self, space: SpaceId) -> SandboxResult<()> {
+    pub(in crate::sandbox) async fn erase(
+        &self,
+        space: SpaceId,
+        through: Option<u64>,
+    ) -> SandboxResult<()> {
         let gate = tokio::time::timeout(GATE_WAIT, self.gate(space).lock_owned())
             .await
             .map_err(|_| SandboxError("Small plugin VM is still shutting down".into()))?;
-        erase_saved(self.saved(space), gate).await
+        super::storage::erase_through(self.saved(space), through, gate).await
     }
 }
 
@@ -351,16 +409,11 @@ pub(in crate::sandbox) struct Placement {
     gate: Mutex<Option<PlacementGate>>,
     saved: PathBuf,
     binding: Binding,
-    checkpoint: std::sync::atomic::AtomicBool,
 }
 
 impl Sandbox for Placement {
     fn available(&self) -> bool {
         self.thread.available()
-    }
-
-    fn checkpoint_saved(&self) -> bool {
-        self.checkpoint.load(std::sync::atomic::Ordering::Acquire)
     }
 
     fn exec(
@@ -393,9 +446,14 @@ impl Sandbox for Placement {
     }
 
     fn release(&self) -> BoxFuture<'_, SandboxResult<()>> {
-        Box::pin(async {
+        self.stop()
+    }
+
+    fn checkpoint(&self, counter: u64) -> BoxFuture<'_, SandboxResult<bool>> {
+        Box::pin(async move {
             let quiesced = self.thread.stop().await;
             let mut slot = self.slot.lock().await;
+            let mut published = false;
             if let Some(vm) = slot.vm.take() {
                 let saved = match quiesced {
                     Ok(()) => {
@@ -407,14 +465,12 @@ impl Sandbox for Placement {
                             .as_ref()
                             .expect("live placement holds the gate")
                             .clone();
-                        save(&vm, &self.saved, &self.binding, gate).await
+                        save(&vm, &self.saved, &self.binding, gate, counter).await
                     }
                     Err(error) => Err(error),
                 };
                 match saved {
-                    Ok(()) => self
-                        .checkpoint
-                        .store(true, std::sync::atomic::Ordering::Release),
+                    Ok(()) => published = true,
                     Err(error) => {
                         tracing::warn!(%error, "small plugin VM snapshot failed; preserving previous snapshot")
                     }
@@ -423,7 +479,7 @@ impl Sandbox for Placement {
                 self.disk.clear().await?;
             }
             self.gate.lock().expect("placement gate").take();
-            Ok(())
+            Ok(published)
         })
     }
 }
@@ -433,6 +489,7 @@ async fn save(
     root: &Path,
     binding: &Binding,
     gate: PlacementGate,
+    counter: u64,
 ) -> SandboxResult<()> {
     use super::{
         snapshot::{Generation, clone_or_copy},
@@ -457,7 +514,7 @@ async fn save(
         let draft_gate = gate.clone();
         tokio::task::spawn_blocking(move || {
             let _gate = draft_gate;
-            Generation::create(&root, &disk, &control)
+            Generation::create(&root, &disk, &control, counter)
         })
         .await
         .map_err(SandboxError::new)?

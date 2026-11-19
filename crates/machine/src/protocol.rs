@@ -23,6 +23,9 @@
 //! (start a new one), 403 means the machine is revoked (stop everything and exit),
 //! 409 means a lease is fenced (stop that sandbox), 404 an unknown code or lease.
 
+mod output;
+pub use output::{Chunk, ChunkEvent, ExitInfo, GUEST_LOST, OutputAck, OutputPost, Stream};
+
 use calternal_types::{AccountId, SpaceId};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -228,7 +231,10 @@ pub enum SandboxState {
     /// An authenticated idle drain is saving the small guest's checkpoint.
     SleepPending,
     /// The guest exited after publishing its durable snapshot.
-    CheckpointSaved,
+    CheckpointSaved {
+        /// Server-assigned checkpoint number durably written by this VMM.
+        counter: u64,
+    },
     /// A running guest exited. Provider leases may resume from their last checkpoint.
     Lost,
     /// Could not start, or was closed locally; the server reconciles the lease.
@@ -441,6 +447,9 @@ pub struct SpaceChannelAssignment {
     pub assignment: Uuid,
     /// Package identity verified by the host when it assigned the worker bundle.
     pub package: calternal_plugin_host::space_channel::PackagePin,
+    /// Server proof authorizing only this checkpoint on the assigned machine.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub checkpoint: Option<u64>,
 }
 
 /// A message from the server to a machine.
@@ -457,6 +466,8 @@ pub enum Down {
     SleepSpace {
         /// The small plugin placement to drain.
         lease_id: Uuid,
+        /// Monotonic number persisted by the server before sending sleep.
+        counter: u64,
     },
 
     /// Explicit owner discard; never inferred from lease expiry or elapsed time.
@@ -483,6 +494,12 @@ pub enum Down {
         request_id: Uuid,
         /// Space whose checkpoint and scratch files must be removed.
         space_id: SpaceId,
+        /// For stale-copy cleanup, erase only checkpoints up through this number.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        through: Option<u64>,
+        /// Retry without stopping a live cold placement once the copy is fenced.
+        #[serde(default)]
+        background: bool,
     },
     /// Run work for (space, account, thread) in a site-local sandbox.
     Assign {
@@ -553,80 +570,6 @@ pub enum Down {
         /// Provider turns retain workspace files and the account login home.
         keep_files: bool,
     },
-}
-
-/// Which pipe a chunk came from.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Stream {
-    /// Standard output.
-    Stdout,
-    /// Standard error.
-    Stderr,
-}
-
-/// Machine-generated exit status for a disappearing guest. The registry must
-/// fence the lease and preserve its checkpoint before returning the exit.
-pub const GUEST_LOST: &str = "the sandbox guest stopped";
-
-/// How an exec ended.
-#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
-pub struct ExitInfo {
-    /// Exit code, when the process exited normally.
-    pub code: Option<i32>,
-    /// Terminating signal, when it was killed.
-    pub signal: Option<i32>,
-    /// Why it could not run or was lost; path-free.
-    pub error: Option<String>,
-}
-
-/// One numbered output event. Sequence numbers start at 1 per exec and the
-/// exit event is always last.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Chunk {
-    /// Position in this exec's stream.
-    pub seq: u64,
-    /// The event.
-    #[serde(flatten)]
-    pub event: ChunkEvent,
-}
-
-/// Content of a [`Chunk`].
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum ChunkEvent {
-    /// Bytes from one pipe, base64 (a third larger on the wire than raw).
-    Data {
-        /// Source pipe.
-        stream: Stream,
-        /// Base64 bytes.
-        data: String,
-    },
-    /// The process ended.
-    Exit(ExitInfo),
-}
-
-/// Upload of exec output. The server accepts a prefix that fits its buffer.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct OutputPost {
-    /// The lease.
-    pub lease_id: Uuid,
-    /// The fence the machine holds; a stale fence gets 409.
-    pub fence: u64,
-    /// The exec.
-    pub exec_id: Uuid,
-    /// Consecutive chunks, oldest first.
-    pub chunks: Vec<Chunk>,
-}
-
-/// Back-pressure answer to an [`OutputPost`].
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-pub struct OutputAck {
-    /// Highest sequence number the server holds; resend everything after it.
-    pub acked: u64,
-    /// Set when the server's buffer is full: wait this long before resending.
-    pub retry_after_ms: Option<u64>,
 }
 
 /// Format of the private enrollment handoff and confirmation.

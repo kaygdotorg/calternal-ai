@@ -23,14 +23,26 @@ impl Runner {
         }) else {
             return;
         };
-        if slot.channel_started.swap(true, Ordering::AcqRel) {
+        if slot.restore_checkpoint.set(binding.checkpoint).is_err() {
             return;
         }
+        slot.channel_started.store(true, Ordering::Release);
         let sleep = self.supervise_channel(&binding, &slot).await;
-        // This reservation belongs to a v2 placement and cannot keep its sandbox
-        // after the authenticated channel lease ends.
-        let small = slot.is_small_vm();
-        Self::close(&slot, sleep && small).await;
+        if sleep && slot.is_small_vm() {
+            // Carrier Sleep drains admission. Only ordered machine sync can
+            // authorize a numbered checkpoint. Bound an abandoned drain.
+            if tokio::time::timeout(Duration::from_secs(2), async {
+                while slot.closed.get().is_none() {
+                    tokio::time::sleep(Duration::from_millis(20)).await;
+                }
+            })
+            .await
+            .is_ok()
+            {
+                return;
+            }
+        }
+        Self::close(&slot, false).await;
     }
 
     async fn supervise_channel(&self, binding: &SpaceChannelAssignment, slot: &Slot) -> bool {

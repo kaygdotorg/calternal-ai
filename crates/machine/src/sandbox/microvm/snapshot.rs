@@ -51,6 +51,8 @@ pub(super) struct Binding {
 pub(super) struct Generation {
     /// Unique checkpoint identity.
     pub(super) id: Uuid,
+    /// Server-issued monotonic authorization number.
+    pub(super) counter: u64,
     /// Private generation directory.
     pub(super) path: PathBuf,
     /// Memory image materialization mode.
@@ -63,7 +65,12 @@ pub(super) struct Generation {
 
 impl Generation {
     /// Create a draft under the space gate while keeping the published generation.
-    pub(super) fn create(root: &Path, disk: &Path, control: &Path) -> io::Result<Self> {
+    pub(super) fn create(
+        root: &Path,
+        disk: &Path,
+        control: &Path,
+        counter: u64,
+    ) -> io::Result<Self> {
         calternal_fsio::create_dir_all_durable(root)?;
         let keep = read_manifest(root)?
             .as_deref()
@@ -79,6 +86,7 @@ impl Generation {
         fs::create_dir(&path)?;
         Ok(Self {
             id,
+            counter,
             path,
             storage: Storage::Full,
             disk_name: disk
@@ -116,6 +124,11 @@ impl Generation {
         {
             return Err(invalid());
         }
+        let counter = field("counter: ")?
+            .parse::<u64>()
+            .ok()
+            .filter(|n| *n > 0)
+            .ok_or_else(invalid)?;
         let id = Uuid::parse_str(field("generation: ")?).map_err(|_| invalid())?;
         let storage = match field("storage: ")? {
             "full" => Storage::Full,
@@ -127,6 +140,7 @@ impl Generation {
         let generation = Self {
             path: root.join(id.to_string()),
             id,
+            counter,
             storage,
             disk_name,
             control_name,
@@ -161,10 +175,11 @@ impl Generation {
         commit: impl FnOnce(&Path, &[u8]) -> io::Result<()>,
     ) -> io::Result<()> {
         let mut manifest = format!(
-            "format: 1\nspace: {}\nimage: {}\nfirecracker: {}\ngeneration: {}\nstorage: {}\nactive-disk: {}\nactive-control: {}\n",
+            "format: 1\nspace: {}\nimage: {}\nfirecracker: {}\ncounter: {}\ngeneration: {}\nstorage: {}\nactive-disk: {}\nactive-control: {}\n",
             binding.space,
             binding.image,
             binding.firecracker,
+            self.counter,
             self.id,
             self.storage.label(),
             self.disk_name,
@@ -199,6 +214,46 @@ pub(super) async fn expired(
     };
     let modified = metadata.modified().map_err(super::SandboxError::new)?;
     Ok(modified.elapsed().map_or(true, |age| age >= retention))
+}
+
+/// Read the recorded server number without opening the snapshot components.
+pub(super) fn saved_counter(root: &Path) -> io::Result<Option<u64>> {
+    Ok(read_manifest(root)?.and_then(|manifest| {
+        manifest
+            .lines()
+            .find_map(|line| line.strip_prefix("counter: "))
+            .and_then(|number| number.parse().ok())
+    }))
+}
+
+/// Record at most two consecutive failures for the authorized generation.
+/// The sidecar is scoped to the server number and survives a role restart.
+pub(super) fn failed_restore(root: &Path, counter: u64) -> io::Result<bool> {
+    let path = root.join("current.failures");
+    let mut text = String::new();
+    match File::open(&path) {
+        Ok(file) => {
+            file.take(64).read_to_string(&mut text)?;
+        }
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error),
+    }
+    let exhausted = text.trim() == format!("{counter} 1") || text.trim() == format!("{counter} 2");
+    calternal_fsio::write_atomic_mode(
+        &path,
+        format!("{counter} {}\n", if exhausted { 2 } else { 1 }).as_bytes(),
+        0o600,
+    )?;
+    Ok(exhausted)
+}
+
+/// Reset the failure budget after successful restored package admission.
+pub(super) fn reset_failures(root: &Path) -> io::Result<()> {
+    match fs::remove_file(root.join("current.failures")) {
+        Ok(()) => calternal_fsio::sync_dir(root),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error),
+    }
 }
 
 fn read_manifest(root: &Path) -> io::Result<Option<String>> {
@@ -418,6 +473,7 @@ mod tests {
             };
             let incoming = Generation {
                 id: draft.parse().unwrap(),
+                counter: 2,
                 path: root.join(&draft),
                 storage: Storage::Full,
                 disk_name: "fixture.ext4".into(),
@@ -434,6 +490,7 @@ mod tests {
             root.path(),
             Path::new("fixture.ext4"),
             Path::new("fixture.key"),
+            1,
         )
         .unwrap();
         fill(&old, b"old");
@@ -442,6 +499,7 @@ mod tests {
             root.path(),
             Path::new("fixture.ext4"),
             Path::new("fixture.key"),
+            2,
         )
         .unwrap();
         fill(&new, b"new");

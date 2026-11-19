@@ -2,14 +2,19 @@
 use super::{db, sql, state::State};
 use calternal_machine::protocol::{DiscardReport, Down, OWNER_ERASURE_BATCH};
 use calternal_types::{Error, Owner};
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, OptionalExtension as _, params};
 use std::collections::HashSet;
 use uuid::Uuid;
+
+/// After these failed deletes the copy stays unusable and cold placement can proceed.
+pub(super) const RUNTIME_RETRIES: u32 = 3;
 
 /// Load the set used to keep idle polls free of queue reads.
 pub(super) fn pending_machines(db: &Connection) -> Result<HashSet<Uuid>, Error> {
     let mut statement = db
-        .prepare("SELECT DISTINCT machine FROM machine_erasures")
+        .prepare(
+            "SELECT machine FROM machine_erasures UNION SELECT machine FROM space_runtime_erasures",
+        )
         .map_err(sql)?;
     statement
         .query_map([], |row| uuid(row, 0))
@@ -84,13 +89,14 @@ pub(super) fn queue(
         Owner::Account(_) => "account",
         Owner::Space(_) => "space",
     };
-    let mut runtime = db
-        .prepare(&format!(
-        "INSERT OR IGNORE INTO machine_erasures(machine,account,thread,space_runtime,request_id)
-         SELECT DISTINCT machine,'','',space,lower(hex(randomblob(16)))
-         FROM space_runtime_locations WHERE {owner_field}=?1 RETURNING machine"
-    ))
-        .map_err(sql)?;
+    let mut runtime = db.prepare(&format!(
+        "INSERT INTO space_runtime_erasures(space,machine,request_id,through)
+         SELECT space,machine,lower(hex(randomblob(16))),NULL
+         FROM (SELECT DISTINCT space,machine FROM space_runtime_locations WHERE {owner_field}=?1) WHERE true
+         ON CONFLICT(space,machine) DO UPDATE SET
+           request_id=excluded.request_id,through=NULL,failures=0,retry_after_ms=0
+         WHERE space_runtime_erasures.through IS NOT NULL RETURNING machine"
+    )).map_err(sql)?;
     added.extend(
         runtime
             .query_map([&id], |row| uuid(row, 0))
@@ -98,94 +104,25 @@ pub(super) fn queue(
             .collect::<rusqlite::Result<Vec<_>>>()
             .map_err(sql)?,
     );
-    db.execute(
-        "DELETE FROM space_runtime_checkpoints AS checkpoint
-         WHERE EXISTS (SELECT 1 FROM machine_erasures
-                       WHERE space_runtime=checkpoint.space AND machine=checkpoint.machine)",
-        [],
-    )
-    .map_err(sql)?;
+    if let Owner::Space(_) = owner {
+        db.execute(
+            "DELETE FROM space_runtime_checkpoints WHERE space=?1",
+            [&id],
+        )
+        .map_err(sql)?;
+    } else {
+        db.execute(
+            "UPDATE space_runtime_checkpoints AS checkpoint SET acknowledged=NULL,lease=''
+             WHERE EXISTS(SELECT 1 FROM space_runtime_erasures erase JOIN leases old ON old.id=checkpoint.lease
+                          WHERE erase.space=checkpoint.space AND erase.machine=old.machine AND erase.through IS NULL)", [],
+        ).map_err(sql)?;
+    }
     db.execute(
         &format!("DELETE FROM space_runtime_locations WHERE {owner_field}=?1"),
         [&id],
     )
     .map_err(sql)?;
     Ok(added)
-}
-
-/// Read checkpoint affinity and stale holders at cold placement only.
-pub(super) fn space_placement(
-    db: &Connection,
-    space: calternal_types::SpaceId,
-) -> Result<(Option<Uuid>, HashSet<Uuid>), Error> {
-    use rusqlite::OptionalExtension as _;
-    let space = space.to_string();
-    let newest = db
-        .query_row(
-            "SELECT machine FROM space_runtime_checkpoints WHERE space=?1",
-            [&space],
-            |row| uuid(row, 0),
-        )
-        .optional()
-        .map_err(sql)?;
-    let mut statement = db
-        .prepare_cached(
-            "SELECT machine FROM machine_erasures WHERE space_runtime=?1 AND space_runtime!=''",
-        )
-        .map_err(sql)?;
-    let pending = statement
-        .query_map([space], |row| uuid(row, 0))
-        .map_err(sql)?
-        .collect::<rusqlite::Result<_>>()
-        .map_err(sql)?;
-    Ok((newest, pending))
-}
-
-impl State {
-    /// Commit the acknowledged checkpoint location and erasures for other copies
-    /// together while the registry still retains the old placement reservation.
-    pub(super) fn record_space_checkpoint(
-        &mut self,
-        space: calternal_types::SpaceId,
-        machine: Uuid,
-    ) -> Result<(), Error> {
-        let tx = self.db.transaction().map_err(sql)?;
-        let space = space.to_string();
-        let holder = machine.to_string();
-        let changed = tx
-            .execute(
-                "INSERT INTO space_runtime_checkpoints VALUES(?1,?2)
-             ON CONFLICT(space) DO UPDATE SET machine=excluded.machine
-             WHERE space_runtime_checkpoints.machine!=excluded.machine",
-                params![space, holder],
-            )
-            .map_err(sql)?;
-        if changed == 0 {
-            return Ok(());
-        }
-        let pending = {
-            let mut statement = tx.prepare(
-                "INSERT OR IGNORE INTO machine_erasures(machine,account,thread,space_runtime,request_id)
-                 SELECT machine,'','',space,lower(hex(randomblob(16))) FROM
-                   (SELECT DISTINCT machine,space FROM space_runtime_locations WHERE space=?1 AND machine!=?2)
-                 RETURNING machine"
-            ).map_err(sql)?;
-            statement
-                .query_map(params![space, holder], |row| uuid(row, 0))
-                .map_err(sql)?
-                .collect::<rusqlite::Result<Vec<_>>>()
-                .map_err(sql)?
-        };
-        tx.commit().map_err(sql)?;
-        self.pending_erasure_machines
-            .extend(pending.iter().copied());
-        for machine in pending {
-            if let Some(live) = self.machines.get(&machine).and_then(|m| m.live.as_ref()) {
-                live.notify.notify_one();
-            }
-        }
-        Ok(())
-    }
 }
 
 /// Retire only success reports bound to this machine. A failed removal stays
@@ -206,16 +143,35 @@ pub(super) fn acknowledge(
                 params![request, machine],
             )
             .map_err(sql)?;
+            let space = db.query_row(
+                "DELETE FROM space_runtime_erasures WHERE request_id=?1 AND machine=?2 RETURNING space",
+                params![request, machine], |row| row.get::<_, String>(0),
+            ).optional().map_err(sql)?;
+            if let Some(space) = space {
+                db.execute(
+                    "DELETE FROM space_runtime_locations WHERE space=?1 AND machine=?2
+                     AND NOT EXISTS(SELECT 1 FROM space_runtime_checkpoints WHERE space=?1 AND acknowledged=?2)
+                     AND NOT EXISTS(SELECT 1 FROM leases WHERE space=?1 AND machine=?2 AND state!='ended'
+                         AND image=?3)",
+                    params![space, machine, calternal_machine::sandbox::worker::SPACE_VM_IMAGE],
+                ).map_err(sql)?;
+            }
         } else {
             db.execute(
                 "UPDATE machine_erasures SET retry_after_ms=?3 WHERE request_id=?1 AND machine=?2",
                 params![request, machine, db::now_ms() + 10_000],
             )
             .map_err(sql)?;
+            db.execute(
+                "UPDATE space_runtime_erasures SET retry_after_ms=?3,failures=min(failures+1,?4)
+                 WHERE request_id=?1 AND machine=?2",
+                params![request, machine, db::now_ms() + 10_000, RUNTIME_RETRIES],
+            )
+            .map_err(sql)?;
         }
     }
     db.query_row(
-        "SELECT EXISTS(SELECT 1 FROM machine_erasures WHERE machine=?1)",
+        "SELECT EXISTS(SELECT 1 FROM machine_erasures WHERE machine=?1 UNION ALL SELECT 1 FROM space_runtime_erasures WHERE machine=?1)",
         [machine],
         |r| r.get(0),
     )
@@ -225,7 +181,7 @@ pub(super) fn acknowledge(
 /// Read status without opening or changing a machine session.
 pub(super) fn count(db: &Connection, machine: Uuid) -> Result<u64, Error> {
     db.query_row(
-        "SELECT count(*) FROM machine_erasures WHERE machine=?1",
+        "SELECT (SELECT count(*) FROM machine_erasures WHERE machine=?1) + (SELECT count(*) FROM space_runtime_erasures WHERE machine=?1)",
         [machine.to_string()],
         |r| Ok(r.get::<_, i64>(0)? as u64),
     )
@@ -242,15 +198,19 @@ impl super::MachineService {
         let mut query = state
             .db
             .prepare(
-                "SELECT machine,count(*) FROM machine_erasures GROUP BY machine ORDER BY machine",
+                "SELECT machine,count(*),sum(unusable) FROM (
+                    SELECT machine,0 AS unusable FROM machine_erasures UNION ALL
+                    SELECT machine,failures>=?1 FROM space_runtime_erasures
+                 ) GROUP BY machine ORDER BY machine",
             )
             .map_err(sql)?;
         let rows = query
-            .query_map([], |row| {
+            .query_map([RUNTIME_RETRIES], |row| {
                 let machine = uuid(row, 0)?;
                 Ok(super::admin::MachineErasureSummary {
                     machine_id: machine,
                     pending: row.get::<_, i64>(1)? as u64,
+                    unusable_checkpoints: row.get::<_, i64>(2)? as u64,
                     operator_wipe: state.machines.get(&machine).is_none_or(|m| m.row.revoked),
                 })
             })
@@ -268,8 +228,13 @@ impl State {
         }
         let batch = {
             let mut q = self.db.prepare_cached(
-                "SELECT request_id,account,thread,space_runtime FROM machine_erasures
-                 WHERE machine=?1 AND retry_after_ms<=?2 ORDER BY retry_after_ms,request_id LIMIT ?3"
+                "SELECT request_id,account,thread,space,through,failures FROM (
+                    SELECT request_id,account,thread,'' AS space,NULL AS through,retry_after_ms,0 AS failures
+                    FROM machine_erasures WHERE machine=?1 AND retry_after_ms<=?2
+                    UNION ALL
+                    SELECT request_id,'','',space,through,retry_after_ms,failures
+                    FROM space_runtime_erasures WHERE machine=?1 AND retry_after_ms<=?2
+                 ) ORDER BY retry_after_ms,request_id LIMIT ?3"
             ).map_err(sql)?;
             q.query_map(
                 params![
@@ -291,6 +256,8 @@ impl State {
                         return Ok(Down::EraseSpaceRuntime {
                             request_id,
                             space_id,
+                            through: row.get::<_, Option<i64>>(4)?.map(|counter| counter as u64),
+                            background: row.get::<_, u32>(5)? >= RUNTIME_RETRIES,
                         });
                     }
                     let thread: String = row.get(2)?;
@@ -332,11 +299,13 @@ impl State {
     }
 }
 
-fn uuid(row: &rusqlite::Row<'_>, column: usize) -> rusqlite::Result<Uuid> {
+/// Decode a stored machine or request identifier.
+pub(super) fn uuid(row: &rusqlite::Row<'_>, column: usize) -> rusqlite::Result<Uuid> {
     parse_uuid(row.get(column)?, column)
 }
 
-fn parse_uuid(text: String, column: usize) -> rusqlite::Result<Uuid> {
+/// Turn a malformed stored UUID into a SQLite error.
+pub(super) fn parse_uuid(text: String, column: usize) -> rusqlite::Result<Uuid> {
     Uuid::parse_str(&text).map_err(|error| {
         rusqlite::Error::FromSqlConversionFailure(
             column,

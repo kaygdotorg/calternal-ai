@@ -8,6 +8,7 @@
 //! bounded by about 256 KiB in the channel plus 256 KiB here.
 
 mod erasure;
+mod lifecycle;
 /// Supervision of the isolated v2 package pipe.
 mod space_channel;
 mod upload;
@@ -41,7 +42,9 @@ struct Slot {
     last_use: Mutex<Instant>,
     /// The first terminal action chooses whether teardown preserves files.
     closed: OnceLock<bool>,
-    stop: OnceCell<bool>,
+    stop: OnceCell<Option<u64>>,
+    sleep_counter: OnceLock<u64>,
+    restore_checkpoint: OnceLock<Option<u64>>,
     /// A v2 placement is supervised once and the supervisor owns its teardown.
     channel_started: AtomicBool,
     execs: Mutex<HashSet<Uuid>>,
@@ -63,21 +66,22 @@ impl Slot {
             return self
                 .stop
                 .get_or_try_init(|| async {
-                    let result = if keep_files {
-                        sb.release().await
-                    } else {
-                        sb.stop().await
+                    let result = match self.sleep_counter.get().copied().filter(|_| keep_files) {
+                        Some(counter) => sb
+                            .checkpoint(counter)
+                            .await
+                            .map(|saved| saved.then_some(counter)),
+                        None if keep_files => sb.release().await.map(|()| None),
+                        None => sb.stop().await.map(|()| None),
                     };
-                    result
-                        .map(|()| keep_files && sb.checkpoint_saved())
-                        .map_err(|e| {
-                            tracing::warn!(lease=%self.lease_id,error=%e,"sandbox stop failed");
-                        })
+                    result.map_err(|e| {
+                        tracing::warn!(lease=%self.lease_id,error=%e,"sandbox stop failed");
+                    })
                 })
                 .await
                 .is_ok();
         }
-        let _ = self.stop.set(false);
+        let _ = self.stop.set(None);
         true
     }
 }
@@ -181,8 +185,8 @@ impl Runner {
                 fence: s.fence.load(Ordering::Acquire),
                 sandbox: match s.closed.get() {
                     Some(true) if s.is_small_vm() => {
-                        if s.stop.get() == Some(&true) {
-                            SandboxState::CheckpointSaved
+                        if let Some(&Some(counter)) = s.stop.get() {
+                            SandboxState::CheckpointSaved { counter }
                         } else {
                             SandboxState::SleepPending
                         }
@@ -272,6 +276,8 @@ impl Runner {
                         last_use: Mutex::new(Instant::now()),
                         closed: OnceLock::new(),
                         stop: OnceCell::new(),
+                        sleep_counter: OnceLock::new(),
+                        restore_checkpoint: OnceLock::new(),
                         channel_started: AtomicBool::new(false),
                         execs: Mutex::new(HashSet::new()),
                         inputs: Mutex::new(HashMap::new()),
@@ -421,8 +427,11 @@ impl Runner {
             Down::EraseSpaceRuntime {
                 request_id,
                 space_id,
+                through,
+                background,
             } => {
-                self.erase_space_runtime(request_id, space_id).await;
+                self.erase_space_runtime(request_id, space_id, through, background)
+                    .await;
             }
             Down::Discard {
                 request_id,
@@ -449,14 +458,15 @@ impl Runner {
                     .expect("discards")
                     .insert(request_id, success);
             }
-            Down::SleepSpace { lease_id } => {
+            Down::SleepSpace { lease_id, counter } => {
                 if let Some(slot) = self.slot(lease_id)
                     && slot.spec.worker.is_some()
                     && slot.is_small_vm()
-                    && Self::close(&slot, true).await
-                    && slot.stop.get() != Some(&true)
                 {
-                    self.slots.lock().expect("slots").remove(&lease_id);
+                    slot.sleep_counter.get_or_init(|| counter);
+                    if Self::close(&slot, true).await && !matches!(slot.stop.get(), Some(Some(_))) {
+                        self.slots.lock().expect("slots").remove(&lease_id);
+                    }
                 }
             }
             Down::Stop {
@@ -507,7 +517,7 @@ impl Runner {
                         if !slot.channel_started.load(Ordering::Acquire) {
                             return Err("small plugin VM requires a space carrier".into());
                         }
-                        self.backend.start_space(&slot.spec).await
+                        self.backend.start_space(&slot.spec, slot.restore_checkpoint.get().copied().flatten()).await
                     }
                     None => self.backend.start(&slot.spec).await,
                 };
@@ -536,53 +546,6 @@ impl Runner {
             .get_or_init(|| async { Err("lease ended before sandbox start".into()) })
             .await;
         slot.stop_if_removed().await
-    }
-
-    /// Release idle turn containers after a lease TTL, keeping each logical
-    /// lease and its files. Its next exec starts a new container on this machine.
-    /// Scans at most the assigned slots; only a parked container incurs engine I/O.
-    pub async fn park_idle(&self, idle: Duration) {
-        if self.backend.name() == "direct" {
-            return;
-        }
-        // Slow engine cleanup can outlast a poll. Keep at most one idle sweep
-        // in progress while the connection continues to renew its leases.
-        let Ok(_parking) = self.parking.try_lock() else {
-            return;
-        };
-        for slot in self.all() {
-            if slot.spec.worker.is_some() || slot.closed.get().is_some() {
-                continue;
-            }
-            let Ok(mut cell) = slot.sandbox.try_write() else {
-                continue;
-            };
-            let idle_for = slot.last_use.lock().expect("sandbox last use").elapsed();
-            if idle_for >= idle
-                && let Some(Ok(sb)) = cell.get()
-            {
-                match sb.release().await {
-                    Ok(()) => {
-                        cell.take();
-                    }
-                    Err(e) => {
-                        tracing::warn!(lease = %slot.lease_id, error = %e, "idle sandbox removal failed")
-                    }
-                }
-            }
-        }
-    }
-
-    /// Close machine-owned sandboxes on orderly exit, revocation or lease expiry.
-    /// Provider work and homes remain; worker work is transient. On expiry,
-    /// closed slots stay as tombstones until the server reconciles them.
-    /// Joins in-flight starts. Returns false if any teardown needs a retry.
-    pub async fn release_all(&self) -> bool {
-        let mut closed = true;
-        for slot in self.all() {
-            closed &= Self::close(&slot, slot.spec.worker.is_none()).await;
-        }
-        closed
     }
 
     fn all(&self) -> Vec<Arc<Slot>> {
