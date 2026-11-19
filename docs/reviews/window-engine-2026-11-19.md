@@ -465,9 +465,11 @@ sealed contract bytes match the rebased runtime files.
     and reuse its rollback. The host uses its existing signing key and
     blocking adapter. There is no rank table, per-plugin store or separate
     projection writer.
-13. **Documentation.** Public items carry API comments. The Reading List
-    predecessor passed the Rust and TypeScript docs gate. The exact
-    rebased verification is tracked in the lane report and issue.
+13. **Documentation.** Public items carry API comments. On dev-01, the
+    archived rebase at `299257a0` passed formatting, 54 content tests and
+    30 HTTP tests with `test-plugins`, contract export, the sealed fixture
+    verifier and `scripts/check-docs.sh` (429 pages). Later commits in
+    this series record results in this report.
 14. **Code and report.** The crate README and storage reference describe
     the scoped projection. This dated report records measurement and
     product-route limitations. The sealed source contracts remain
