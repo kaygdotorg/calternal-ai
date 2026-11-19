@@ -47,8 +47,8 @@ installation-wide and is explicitly a cache fence. The v2 delivery check
 needs a per-space grant revision tied to actual grant changes, alongside
 session, activation, cancellation and enrollment invalidation. Calling
 the current broker through the new socket would still use the shared
-authority worker and would skip the required v2 delivery fence. The lane base exposes no per-space
-grant revision with invalidation wired through the authority mutations. An
+authority worker and would skip the required v2 delivery fence. The lane base had no per-space grant revision with invalidation wired
+through the authority mutations. Revision 3 below adds that handle. An
 `item_head` adapter can build on content's indexed live metadata
 and revision access. The adapter should return both from one space-scoped
 head lookup and hide a wrong kind, missing item or foreign target with the
@@ -79,6 +79,29 @@ same opaque error.
    commit-fencing and recovery scope. Keep that surface at one read and
    require the fixture to demonstrate one durable effect on replay.
 
+3. **Delivery grant revisions (§3).** Track awake space assignments in the
+   shared auth writer, bound to the enrolled machine UUID. Connection-local
+   SQLite triggers mark the affected handles before authority writes.
+   Publish a new clean revision after the write job returns to autocommit,
+   including after a rollback. Close the handle when its machine changes
+   enrollment, its assignment moves, or the auth worker exits. Session
+   changes invalidate the account's direct, group, item-share and delegated
+   spaces. The first carrier deployment uses the installation's one
+   root-locked authority writer. This adds no on-disk authority copy.
+   Tickets bind the handle and runtime epoch as well as the revision.
+   Revisions may restart with a new handle. The carrier must separately
+   verify assignment and machine session identity.
+
+The frame path compares the retained revision using one atomic load, zero
+storage reads, zero flushes and no shared worker or lock. Assignment setup
+uses one auth-worker job and a statement with two primary-key existence
+probes. Authority writes retain their existing commit and flush count.
+Space-scoped triggers use a memory lookup, and account, group and role
+changes use indexed relationship queries to identify affected spaces.
+The tracker is bounded to 1,024 active assignments and reclaims dropped
+handles before refusing a new assignment. Its registry mutex only covers
+in-memory operations on the write and assignment paths.
+
 ## Verification and remaining work
 
 On `claude@calternal-dev-01-compute02`, the exact `f3633ca9` source
@@ -92,7 +115,8 @@ existing `cargo test --locked -p calternal-server --test plugin_host --
 --test-threads=1` integration suite passed all 18 tests, including
 malformed child output and the current worker broker path.
 
-The authenticated duplex endpoint, bounded per-package queues and control
+The grant revision is implemented in the auth worker. The authenticated
+duplex endpoint, bounded per-package queues and control
 credit, leases and epochs, current-rights tickets, and item-head broker
 are still open. The physical mid-frame stall, concurrent callback progress,
 immediate local fence, isolated second space, remote expiry and

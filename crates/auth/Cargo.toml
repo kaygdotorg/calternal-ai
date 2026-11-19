@@ -12,7 +12,7 @@ calternal-types.workspace = true
 calternal-core.workspace = true
 calternal-fsio.workspace = true
 calternal-store.workspace = true
-rusqlite.workspace = true
+rusqlite = { workspace = true, features = ["functions"] }
 tokio = { workspace = true, features = ["sync"] }
 thiserror.workspace = true
 uuid = { workspace = true, features = ["v7"] }
