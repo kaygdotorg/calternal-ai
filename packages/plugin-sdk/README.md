@@ -2,7 +2,8 @@
 
 The v2 authoring builders describe a package without a running space. Run
 `npm run build -w @calternal/plugin-sdk` from the checkout root to generate
-TypeScript types from the contract schemas and compile the SDK. Import
+TypeScript types from the contract schemas, bundle the validation inputs,
+and compile the SDK. Import
 `definePlugin`, `defineApp`, `defineKind`, `defineOperation`, `defineView` and
 `defineChrome` from `@calternal/plugin-sdk`.
 
@@ -20,3 +21,8 @@ The [author walkthrough](../../plugins/calternal-plugin-guide/walkthrough.md)
 has a complete first list. The [reading-list package](../../plugins/calternal-reading-list/)
 shows search, forms and host-owned row actions. Package validity at build time
 covers authoring. Installation, authorization and runtime effects belong to the host.
+
+For an already emitted package, import `verifyPackage` from
+`@calternal/plugin-sdk/verify-package` and pass the output directory. It
+checks the manifest, template and worker pins, and descriptions without
+loading the plugin source.

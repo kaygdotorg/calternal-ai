@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, expect, it } from "vitest";
+import { verifyPackage } from "../scripts/verify-package.mjs";
 
 const cli = fileURLToPath(new URL("../scripts/build-author-package.mjs", import.meta.url));
 const sdk = new URL("../dist/index.js", import.meta.url).href;
@@ -50,7 +51,7 @@ it("verifies the emitted template with the generated manifest and pins its bytes
   const result = run(firstList);
   expect(result.stderr).toBe("");
   expect(result.status).toBe(0);
-  expect(result.stdout).toMatch(/ok\s+app-links-/);
+  expect(result.stdout).toMatch(/ok\s+app-0\.json/);
 
   const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
   expect(manifest).toMatchObject({ api_version: 2, reads: ["link"], network: "none", operations: [] });
@@ -73,4 +74,13 @@ it("reports manifest schema failures and refuses a Bind that the manifest never 
   expect(invalidBind.status).toBe(1);
   expect(invalidBind.stdout).toMatch(/missing.*not in.*reads/);
   expect(readFileSync(manifestPath, "utf8")).toBe(previous);
+});
+
+it("rejects an emitted template whose bytes no longer match its pin", async () => {
+  const { output, manifestPath, run } = setup();
+  expect(run(firstList).status).toBe(0);
+  const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+  const asset = join(output, manifest.apps[0].description.template.path);
+  writeFileSync(asset, readFileSync(asset, "utf8") + " ");
+  await expect(verifyPackage(output)).rejects.toThrow(/SHA-256 pin/);
 });

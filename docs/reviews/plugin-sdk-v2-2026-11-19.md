@@ -92,8 +92,28 @@ authoring proof. The public guide documents the checked authoring path.
 The existing preview guide worker serves the text. Its old scaffold and
 check commands still operate on preview manifests.
 
+## Shared generator and verifier follow-up
+
+`packages/contracts/scripts/schema-to-types.mjs` owns reference resolution
+and schema compilation. The SDK selects the manifest and app templates.
+The web renderer's replacement calls `generateDescriptionTypes` with the
+contract directory URL. It keeps its output file and generated drift check.
+The renderer lane owns that adoption.
+
+The SDK checks the emitted files before publishing a manifest. The wrapper
+reads the staged manifest, every app template, and the optional worker once.
+Each asset is hashed when named and again after staging. The wrapper
+presents the description bytes and manifest to the sealed verifier in its
+fixture layout. Python reads each paired template and manifest once. The build
+has zero explicit durability flushes and no runtime path.
+
+To give the verifier a native package mode in a future numbered revision,
+accept a manifest path and the package root, resolve the manifest's selected
+templates, and run the same shape and semantic checks. Keep the fixture suite
+as the default invocation. This would remove the SDK's temporary fixture
+layout and give diagnostics the actual package paths.
+
 ## Simplification opportunities
 
 Give the sealed verifier a package input mode so callers can pass artifacts
-directly, including a list of installed dependency manifests. Move shared
-schema type generation below the SDK and renderers once those lanes integrate.
+directly, including a list of installed dependency manifests. Swift can use the same schema graph when its type generator needs it.
