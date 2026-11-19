@@ -424,12 +424,30 @@ async fn every_registered_operation_has_an_independent_matrix_row() {
         ("calternal-plugin-guide.scaffold", Capability::SpaceRead),
         ("calternal-plugin-guide.check", Capability::SpaceRead),
         ("calternal-plugin-guide.publish", Capability::ContentWrite),
+        (
+            "calternal-plugin-submission-guide.explain",
+            Capability::SpaceRead,
+        ),
+    ];
+    // Personal-space and signed-out behavior is exercised in conformance/mail_cases.rs.
+    let mail = [
+        ("calternal-mail.add-account", Capability::ContentWrite),
+        ("calternal-mail.list-accounts", Capability::SpaceRead),
+        ("calternal-mail.list-folders", Capability::SpaceRead),
+        ("calternal-mail.list-headers", Capability::SpaceRead),
+        ("calternal-mail.read-message", Capability::ContentWrite),
+        ("calternal-mail.mark-read", Capability::ContentWrite),
+        ("calternal-mail.open-snapshot", Capability::SpaceRead),
     ];
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../plugins");
     let registry = Registry::load(&root).snapshot();
     for plugin in registry.plugins() {
         for op in &plugin.manifest.operations {
-            if let Some((_, capability)) = threads.iter().chain(&guide).find(|(id, _)| *id == op.id)
+            if let Some((_, capability)) = threads
+                .iter()
+                .chain(&guide)
+                .chain(&mail)
+                .find(|(id, _)| *id == op.id)
             {
                 assert_eq!(
                     registry.policy(&op.id).unwrap().required,

@@ -61,6 +61,10 @@ async fn exercise(f: &Fixture, implementation: &str, installed_id: &str) -> Valu
             ("calternal-plugin-guide.check", json!({"manifest":{}})),
             ("calternal-plugin-guide.publish", json!({})),
         ],
+        "calternal-mail" => vec![("calternal-mail.list-accounts", json!({}))],
+        "calternal-plugin-submission-guide" => {
+            vec![("calternal-plugin-submission-guide.explain", json!({}))]
+        }
         other => panic!("add behavioral coverage for seeded worker {other}"),
     };
 

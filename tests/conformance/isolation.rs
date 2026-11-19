@@ -37,6 +37,7 @@ mod drafts_cases;
 mod erasure_cases;
 #[path = "live_cases.rs"]
 mod live_cases;
+mod mail_cases;
 mod microvm_cases;
 mod notes_cases;
 mod owned_slot_cases;
