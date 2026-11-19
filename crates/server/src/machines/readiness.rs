@@ -352,7 +352,7 @@ impl MachineService {
                     && (live.guest_size.is_some() && !live.kvm_fallback) == guest
             });
         if !matches {
-            return Err(Error::unavailable(
+            return Err(Error::conflict(
                 "the selected machine does not support the candidate backend",
             ));
         }

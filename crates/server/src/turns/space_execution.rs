@@ -91,7 +91,7 @@ pub(crate) fn resolve<D: Directory>(
         return Ok(None);
     };
     if owner(state, space)? != Some(binding.sponsor) {
-        return Err(Error::unavailable(
+        return Err(Error::conflict(
             "the space Owner must configure a shared machine",
         ));
     }

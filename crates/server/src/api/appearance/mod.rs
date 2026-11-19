@@ -141,12 +141,12 @@ impl Appearance {
             let client = self
                 .client
                 .clone()
-                .ok_or_else(|| Error::unavailable("outside font downloads are disabled"))?;
+                .ok_or_else(|| Error::forbidden("outside font downloads are disabled"))?;
             let permit = self
                 .fills
                 .clone()
                 .try_acquire_owned()
-                .map_err(|_| Error::unavailable("font installer is busy"))?;
+                .map_err(|_| Error::rate_limited("font installer is busy"))?;
             let (tx, rx) = watch::channel(None);
             installs.pending.insert(id.clone(), rx.clone());
             let owner = self.clone();
@@ -185,7 +185,7 @@ impl Appearance {
             return Ok(());
         }
         if !self.installs.lock().await.budget.admit(account, 48, 12) {
-            return Err(Error::unavailable("font install rate limit reached"));
+            return Err(Error::rate_limited("font install rate limit reached"));
         }
         let data = tokio::time::timeout(std::time::Duration::from_secs(300), async {
             let entry = self.catalogue.entry(client, id).await?;

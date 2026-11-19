@@ -215,11 +215,20 @@ async fn schedule_http<D: Directory>(
 pub(crate) fn failure(request_id: Option<String>, e: Error) -> Response {
     let status =
         StatusCode::from_u16(e.code.http_status()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+    let retry_after = (e.code == ErrorCode::RateLimited)
+        .then(|| e.details.as_ref()?.get("retry_after_seconds")?.as_u64())
+        .flatten();
     let mut resp = OperationResponse::<Value>::failure(request_id, e.code, e.message);
     if let (OperationResponse::Failure(f), Some(Value::Object(d))) = (&mut resp, e.details) {
         f.error.details = Some(d.into_iter().collect());
     }
-    json_response(status, &resp)
+    let mut response = json_response(status, &resp);
+    if let Some(seconds) = retry_after {
+        response
+            .headers_mut()
+            .insert(header::RETRY_AFTER, HeaderValue::from(seconds));
+    }
+    response
 }
 
 /// Serialize `body` as a JSON response with `status`.

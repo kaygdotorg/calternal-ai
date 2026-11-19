@@ -97,7 +97,7 @@ impl Admission {
         reserved: u64,
         now: Instant,
     ) -> Result<Reservation, Error> {
-        let busy = || Error::unavailable("Space network budget is exhausted.");
+        let busy = || Error::rate_limited("Space network budget is exhausted.");
         let mut shard = self
             .shard(space)
             .lock()

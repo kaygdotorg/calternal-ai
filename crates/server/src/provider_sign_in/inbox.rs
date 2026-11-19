@@ -97,7 +97,7 @@ impl Inbox {
             !entries.is_empty()
         });
         if !shard.contains_key(&account) && shard.len() >= MAX_SHARD {
-            return Err(Error::unavailable("provider sign-in inbox is busy"));
+            return Err(Error::rate_limited("provider sign-in inbox is busy"));
         }
         f(shard.entry(account).or_default())
     }
@@ -130,7 +130,7 @@ impl Inbox {
                 return Ok((entry.id, None));
             }
             if entries.len() >= MAX_ACCOUNT {
-                return Err(Error::unavailable(
+                return Err(Error::rate_limited(
                     "Too many provider sign-ins for this account.",
                 ));
             }

@@ -126,7 +126,7 @@ async fn open<D: Directory>(
     .await?;
     let receiver = journal
         .subscribe_bounded(state.inputs.limits().listeners)
-        .map_err(|_| Error::unavailable("space live subscriber limit reached"))?;
+        .map_err(|_| Error::rate_limited("space live subscriber limit reached"))?;
     let restored = journal.restored();
     let last = projection(&state, space, target.clone(), caps).await?;
     if !last.active {

@@ -141,7 +141,7 @@ pub(crate) async fn events<D: Directory>(
         let receiver = match journal.subscribe_bounded(state.inputs.limits().listeners) {
             Ok(receiver) => receiver,
             Err(_) => {
-                return crate::api::error_response(Error::unavailable(
+                return crate::api::error_response(Error::rate_limited(
                     "space live subscriber limit reached",
                 ));
             }

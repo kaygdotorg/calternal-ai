@@ -21,7 +21,7 @@ use super::state::{Exec, ExecState, Live, Machine};
 use super::{LeaseState, MachineService, blocking, db};
 use calternal_types::Error;
 
-/// Pending challenges kept at most; beyond it `session/start` answers 503.
+/// Pending challenges kept at most; beyond it `session/start` answers 429.
 const MAX_CHALLENGES: usize = 1024;
 /// A challenge must be signed within this time.
 const CHALLENGE_TTL: Duration = Duration::from_secs(60);
@@ -105,7 +105,7 @@ impl MachineService {
         st.challenges
             .retain(|_, (_, t)| now.duration_since(*t) < CHALLENGE_TTL);
         if st.challenges.len() >= MAX_CHALLENGES {
-            return Err(Error::unavailable("too many pending sessions"));
+            return Err(Error::rate_limited("too many pending sessions"));
         }
         let (challenge, _) = new_token()?;
         st.challenges.insert(challenge.clone(), (machine_id, now));

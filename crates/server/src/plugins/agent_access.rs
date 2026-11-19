@@ -419,7 +419,7 @@ fn retained_scope(
         )
         .map_err(db_err)?;
     if count >= MAX_RETAINED_THREADS_PER_ACCOUNT {
-        return Err(Error::unavailable(
+        return Err(Error::conflict(
             "this account has 1024 retained turn authority records",
         ));
     }

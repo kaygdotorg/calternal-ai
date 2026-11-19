@@ -350,7 +350,7 @@ impl Storage {
                 return Ok(removed);
             }
         }
-        Err(Error::unavailable(
+        Err(Error::conflict(
             "selected families leave no room in the shared font cache",
         ))
     }

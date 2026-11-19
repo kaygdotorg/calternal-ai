@@ -175,7 +175,7 @@ impl MachineService {
             .count()
             >= 16
         {
-            return Err(Error::unavailable("worker input queue is full"));
+            return Err(Error::rate_limited("worker input queue is full"));
         }
         st.push(
             machine,
@@ -237,7 +237,7 @@ impl super::state::State {
             }
         }
         Err(if online {
-            Error::unavailable("Plugin workers are busy. Retry shortly.")
+            Error::rate_limited("Plugin workers are busy. Retry shortly.")
                 .with_details(serde_json::json!({"reason":"worker_capacity"}))
         } else if enrolled {
             Error::unavailable("No pool machine is ready to run containers. Ask an operator to reconnect one or enroll another with Podman.")

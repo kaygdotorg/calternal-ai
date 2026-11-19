@@ -34,7 +34,10 @@ impl<D: Directory> Connection<D> {
                 if access_revoked(&error) {
                     return self.left(&packet.room, Some(&error)).await;
                 }
-                let retry = matches!(error.code, ErrorCode::Unavailable | ErrorCode::Internal);
+                let retry = matches!(
+                    error.code,
+                    ErrorCode::RateLimited | ErrorCode::Unavailable | ErrorCode::Internal
+                );
                 if let Some(member) = self.members.get_mut(&packet.room) {
                     member.resync = true;
                     member.held = None;

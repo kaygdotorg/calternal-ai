@@ -118,7 +118,7 @@ impl Upstream {
             .await
             .admit((), REQUESTS_PER_HOUR, REQUESTS_PER_HOUR)
         {
-            return Err(Error::unavailable("wallpaper fetch limit reached"));
+            return Err(Error::rate_limited("wallpaper fetch limit reached"));
         }
         let reply = netguard::get_with_redirects(
             url,
@@ -220,7 +220,7 @@ mod tests {
         }
         assert_eq!(
             service.get(url.clone(), 10, false).await.unwrap_err().code,
-            ErrorCode::Unavailable
+            ErrorCode::RateLimited
         );
         let later = std::time::Instant::now() + std::time::Duration::from_secs(3600);
         assert!(service.requests.lock().await.admit_at(

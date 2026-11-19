@@ -25,6 +25,8 @@ pub enum ErrorCode {
     InvalidInput,
     /// The serialized body or document exceeds its byte budget (HTTP 413).
     TooLarge,
+    /// A caller or resource has reached a request limit (HTTP 429).
+    RateLimited,
     /// The operation cannot currently be served (HTTP 503).
     Unavailable,
     /// An internal failure occurred; expose only safe diagnostics (HTTP 500 in operation errors).
@@ -41,6 +43,7 @@ impl ErrorCode {
             Self::Conflict => 409,
             Self::InvalidInput => 400,
             Self::TooLarge => 413,
+            Self::RateLimited => 429,
             Self::Unavailable => 503,
             Self::Internal => 500,
         }
@@ -119,6 +122,10 @@ impl Error {
     /// Input outside the operation contract.
     pub fn invalid_input(message: impl Into<String>) -> Self {
         Self::new(ErrorCode::InvalidInput, message)
+    }
+    /// A request refused because a quota or admission limit has been reached.
+    pub fn rate_limited(message: impl Into<String>) -> Self {
+        Self::new(ErrorCode::RateLimited, message)
     }
     /// A temporarily unavailable operation or dependency.
     pub fn unavailable(message: impl Into<String>) -> Self {

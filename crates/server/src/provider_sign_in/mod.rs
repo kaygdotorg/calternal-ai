@@ -109,7 +109,7 @@ fn shared_target<D: Directory>(
         return Err(missing());
     }
     crate::turns::space_execution::resolve(state, machines, space)?
-        .ok_or_else(|| Error::unavailable("configure a shared space machine first"))
+        .ok_or_else(|| Error::conflict("configure a shared space machine first"))
 }
 
 fn result(id: Uuid, status: &str) -> Value {

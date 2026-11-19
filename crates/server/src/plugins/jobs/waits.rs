@@ -117,7 +117,7 @@ impl Jobs {
             ));
         }
         if job.runs >= MAX_RUNS {
-            return Err(Error::unavailable("job run limit reached"));
+            return Err(Error::conflict("job run limit reached"));
         }
         let checkpoint = bounded_json(&park.checkpoint, MAX_CHECKPOINT_BYTES)?;
         let detail = bounded_json(
@@ -140,7 +140,7 @@ impl Jobs {
                 [&job.plugin], |r| Ok((r.get(0)?, r.get(1)?)),
             ).map_err(db_err)?;
             if space_count >= SPACE_LIMIT || package_count >= PACKAGE_LIMIT {
-                return Err(Error::unavailable("durable wait capacity reached"));
+                return Err(Error::rate_limited("durable wait capacity reached"));
             }
             if let WaitSource::Webhook { route, correlation } = &park.source {
                 let prior: bool = tx.query_row(
@@ -468,7 +468,7 @@ impl Jobs {
         }
         let db = self.conn(space)?;
         if !db.admit_webhook() {
-            return Err(Error::unavailable("webhook verification capacity reached"));
+            return Err(Error::rate_limited("webhook verification capacity reached"));
         }
         let conn = db.lock().map_err(db_err)?;
         let wait: Option<String> = conn.query_row(

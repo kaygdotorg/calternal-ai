@@ -137,9 +137,7 @@ pub(crate) fn set_preference(
                 )
                 .map_err(storage)?;
             if changed == 0 {
-                return Err(Error::unavailable(
-                    "Space network preference limit reached.",
-                ));
+                return Err(Error::conflict("Space network preference limit reached."));
             }
         }
     }

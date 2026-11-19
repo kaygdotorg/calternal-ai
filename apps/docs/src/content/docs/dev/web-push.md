@@ -52,6 +52,12 @@ Each account keeps up to eight subscriptions. Re-registering the same
 installation renews its 90-day expiry. Expired entries stop delivering
 immediately and are swept at startup and daily. Account erasure removes the
 account-owned store. A test has a one-minute cooldown per installation.
+During cooldown, `push.test` returns HTTP 429 with `error.code` set to
+`rate_limited` and the message “Register this browser or wait a minute before
+testing again.” `Retry-After` and `error.details.retry_after_seconds` both
+give the remaining time in seconds, rounded up. A full delivery queue gives
+the same code with a one-second retry hint. An installation without a live
+subscription receives HTTP 404.
 
 `accounts/<account UUID>/web-push.db` starts at SQLite version 1, using the
 shared upgrade runner. The server generates its private VAPID key at first

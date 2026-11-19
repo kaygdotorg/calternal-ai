@@ -166,7 +166,7 @@ async fn search<D: Directory>(
         scope = current;
         input = next_input;
     }
-    Err(Error::unavailable("space access changed; retry the search"))
+    Err(Error::conflict("space access changed; retry the search"))
 }
 
 // Threads keep title lookup available before message indexing is enabled. Use

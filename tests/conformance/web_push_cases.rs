@@ -22,6 +22,7 @@ async fn subscriptions_follow_the_signed_in_browser_and_survive_restart() {
         .unwrap();
     assert_eq!(key.len(), 87);
     assert_eq!(initial.body["data"]["devices"], json!([]));
+    assert_eq!(f.op(0, "push.test", json!({})).await.status, 404);
     let auth = "BwcHBwcHBwcHBwcHBwcHBw";
     let endpoint = "https://fcm.googleapis.com/fixture-only";
     assert_eq!(
@@ -60,7 +61,19 @@ async fn subscriptions_follow_the_signed_in_browser_and_survive_restart() {
     let queued = f.op(0, "push.test", json!({})).await;
     queued.ok();
     assert_eq!(queued.body["data"]["queued"], true);
-    assert_eq!(f.op(0, "push.test", json!({})).await.status, 503);
+    let cooldown = f.op(0, "push.test", json!({})).await;
+    assert_eq!(cooldown.status, 429);
+    assert_eq!(cooldown.body["error"]["code"], "rate_limited");
+    assert_eq!(
+        cooldown.body["error"]["message"],
+        "Register this browser or wait a minute before testing again."
+    );
+    let seconds = cooldown.headers["retry-after"].parse::<u64>().unwrap();
+    assert!((1..=60).contains(&seconds));
+    assert_eq!(
+        cooldown.body["error"]["details"]["retry_after_seconds"],
+        seconds
+    );
     f.stop();
     f.start().await;
     let after = f.op(0, "push.devices", json!({})).await;

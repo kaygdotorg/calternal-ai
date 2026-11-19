@@ -178,7 +178,7 @@ pub enum Outcome {
 }
 
 fn busy() -> Error {
-    Error::unavailable("The plugin worker is handling its maximum concurrent invocations. Wait for one to finish before retrying.")
+    Error::rate_limited("The plugin worker is handling its maximum concurrent invocations. Wait for one to finish before retrying.")
         .with_details(serde_json::json!({"reason":"worker_busy"}))
 }
 

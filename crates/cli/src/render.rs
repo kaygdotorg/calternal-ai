@@ -238,6 +238,7 @@ pub fn api_error(error: ApiError, request_id: Option<String>) -> CliError {
             "Fix the input named in the message and run the command again; `--help` shows the options."
         }
         ErrorCode::TooLarge => "Shorten the input, then run the command again.",
+        ErrorCode::RateLimited => "Wait before trying again.",
         ErrorCode::Unavailable => "Check that the server is running at --base-url, then retry.",
         ErrorCode::Internal => "Retry; if it keeps failing, look at the server's log.",
     };
@@ -257,6 +258,7 @@ pub fn api_error(error: ApiError, request_id: Option<String>) -> CliError {
             "Fix the input named in the message, then run the command again; use `--help` for examples."
         }
         ErrorCode::TooLarge => "Shorten the input, then try again.",
+        ErrorCode::RateLimited => "Wait before trying again.",
         ErrorCode::Unavailable => "Check `--base-url` and the server's status, then try again.",
         ErrorCode::Internal => {
             "Retry once; if it keeps failing, ask the server owner to check the log."
@@ -270,6 +272,7 @@ pub fn api_error(error: ApiError, request_id: Option<String>) -> CliError {
         ErrorCode::Conflict => format!("The saved version has changed: {}", error.message),
         ErrorCode::InvalidInput => format!("The server couldn't use that input: {}", error.message),
         ErrorCode::TooLarge => format!("That input is too large: {}", error.message),
+        ErrorCode::RateLimited => error.message.clone(),
         ErrorCode::Unavailable => format!("The server is unavailable: {}", error.message),
         ErrorCode::Internal => format!("The server hit an unexpected problem: {}", error.message),
     };

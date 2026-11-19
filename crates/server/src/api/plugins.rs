@@ -45,7 +45,7 @@ pub(super) fn outcome_value(outcome: Outcome) -> Result<Value, Error> {
     match outcome {
         Outcome::Complete(value) => Ok(value),
         Outcome::InvalidInput(error) => Err(error),
-        Outcome::Refused => Err(Error::unavailable("extension request was refused")),
+        Outcome::Refused => Err(Error::forbidden("extension request was refused")),
         Outcome::Failed(e) => Err(e),
         Outcome::Cancelled => Err(Error::unavailable("extension request was cancelled")),
     }

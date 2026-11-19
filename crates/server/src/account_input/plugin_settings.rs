@@ -132,7 +132,7 @@ impl Inputs {
             })
             .map_err(internal)?;
         if receipts >= MAX_RECEIPTS {
-            return Err(Error::unavailable(
+            return Err(Error::rate_limited(
                 "personal setting receipt capacity reached",
             ));
         }
@@ -148,7 +148,7 @@ impl Inputs {
                     .query_row("SELECT count(*) FROM plugin_settings", [], |r| r.get(0))
                     .map_err(internal)?;
                 if count >= MAX_VALUES {
-                    return Err(Error::unavailable("personal setting capacity reached"));
+                    return Err(Error::conflict("personal setting capacity reached"));
                 }
             }
             tx.execute(

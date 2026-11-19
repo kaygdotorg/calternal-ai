@@ -74,7 +74,7 @@ impl Wallpapers {
             .active
             .clone()
             .try_acquire_owned()
-            .map_err(|_| Error::unavailable("wallpaper service is busy"))?;
+            .map_err(|_| Error::rate_limited("wallpaper service is busy"))?;
         let id = catalog::PHOTOS[slot].0;
         let path = service.dir.join(format!("{id}.{}", r.name));
         if let Some(image) = cache::read(path.clone(), r.max_bytes).await? {

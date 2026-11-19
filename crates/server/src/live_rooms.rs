@@ -91,7 +91,7 @@ pub(crate) async fn entry<D: Directory>(
         .clone()
         .try_acquire_many_owned(wire::FRAME_BYTES as u32);
     let Ok(socket_memory) = socket_memory else {
-        return crate::api::error_response(Error::unavailable("live socket capacity is busy"));
+        return crate::api::error_response(Error::rate_limited("live socket capacity is busy"));
     };
     ws.protocols([VERSION])
         .max_frame_size(wire::FRAME_BYTES)
@@ -256,7 +256,7 @@ impl<D: Directory> Connection<D> {
         self.highest = membership;
         let key = Key::parse(room).ok_or_else(invalid)?;
         if self.members.len() >= MEMBERSHIPS {
-            return Err(Error::unavailable("socket room limit reached"));
+            return Err(Error::rate_limited("socket room limit reached"));
         }
         if self.members.values().any(|existing| existing.key == key) {
             return Err(invalid());

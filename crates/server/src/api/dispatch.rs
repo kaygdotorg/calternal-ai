@@ -562,7 +562,7 @@ pub(super) async fn dispatch_checked<D: Directory>(
                 .clone();
             preview(state, p, plugin, space).await
         }
-        _ => Err(Error::unavailable(
+        _ => Err(Error::not_found(
             "operation has no host binding in this preview",
         )),
     }

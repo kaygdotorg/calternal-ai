@@ -162,7 +162,7 @@ pub async fn dispatch<D: Directory>(
                 .map_err(host_error)?;
                 to_value(SecretsRevokeResult {})
             }
-            _ => Err(Error::unavailable(
+            _ => Err(Error::not_found(
                 "operation has no host binding in this preview",
             )),
         }

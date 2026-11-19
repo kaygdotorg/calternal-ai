@@ -363,7 +363,7 @@ impl Jobs {
             .as_ref()
             .ok_or_else(|| Error::unavailable("jobs are not available on this host"))?;
         let space_id = calternal_types::SpaceId::parse(space)
-            .map_err(|_| Error::unavailable("jobs need a space UUID"))?;
+            .map_err(|_| Error::invalid_input("jobs need a space UUID"))?;
         let _step = self.lifecycle.step(space_id.as_uuid())?;
         let tick = self.tick.fetch_add(1, Ordering::Relaxed) as u64;
         if let Some((c, used)) = self
@@ -513,7 +513,7 @@ impl Jobs {
                 .query_row(&format!("SELECT count(*) FROM jobs WHERE state IN {ACTIVE}"), [], |r| r.get(0))
                 .map_err(db_err)?;
             if active as usize >= MAX_ACTIVE_JOBS_PER_SPACE {
-                return Err(Error::unavailable("too many active jobs in this space")
+                return Err(Error::rate_limited("too many active jobs in this space")
                     .with_details(serde_json::json!({"reason": "job_capacity"})));
             }
             if let Some(parent) = &a.parent {

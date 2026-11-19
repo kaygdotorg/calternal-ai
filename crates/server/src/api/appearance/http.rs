@@ -75,7 +75,7 @@ async fn upload<D: Directory>(
             .uploads
             .clone()
             .try_acquire_owned()
-            .map_err(|_| Error::unavailable("font upload service is busy"))?;
+            .map_err(|_| Error::rate_limited("font upload service is busy"))?;
         let mut multipart = multipart.map_err(|_| invalid())?;
         let (family, files) = tokio::time::timeout(Duration::from_secs(120), parse(&mut multipart))
             .await

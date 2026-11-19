@@ -97,7 +97,7 @@ impl WorkerPool {
                     .is_some_and(|limit| starts.len() >= limit.saturating_mul(2))
                 {
                     return Outcome::Failed(
-                        Error::unavailable("worker admission capacity exhausted")
+                        Error::rate_limited("worker admission capacity exhausted")
                             .with_details(serde_json::json!({"reason":"worker_capacity"})),
                     );
                 }
@@ -116,7 +116,7 @@ impl WorkerPool {
             {
                 Ok(guard) => guard,
                 Err(_) => {
-                    return Outcome::Failed(Error::unavailable(
+                    return Outcome::Failed(Error::rate_limited(
                         "worker admission timed out; retry shortly",
                     ));
                 }
@@ -148,8 +148,11 @@ impl WorkerPool {
                 .await
                 {
                     Ok(Ok(permit)) => permit,
-                    _ => {
-                        return Outcome::Failed(Error::unavailable(
+                    Ok(Err(_)) => {
+                        return Outcome::Failed(Error::unavailable("worker pool is stopping"));
+                    }
+                    Err(_) => {
+                        return Outcome::Failed(Error::rate_limited(
                             "the previous worker is still draining; retry shortly",
                         ));
                     }
@@ -163,8 +166,11 @@ impl WorkerPool {
                 .await
                 {
                     Ok(Ok(permit)) => permit,
-                    _ => {
-                        return Outcome::Failed(Error::unavailable(
+                    Ok(Err(_)) => {
+                        return Outcome::Failed(Error::unavailable("worker pool is stopping"));
+                    }
+                    Err(_) => {
+                        return Outcome::Failed(Error::rate_limited(
                             "worker capacity is still draining; retry shortly",
                         ));
                     }
@@ -284,7 +290,7 @@ impl WorkerPool {
                     Err(mpsc::TrySendError::Full(_)) => {
                         worker.busy.fetch_sub(1, Ordering::AcqRel);
                         self.in_flight.fetch_sub(1, Ordering::AcqRel);
-                        return Outcome::Failed(Error::unavailable(
+                        return Outcome::Failed(Error::rate_limited(
                             "extension worker input queue is full",
                         ));
                     }
@@ -343,7 +349,7 @@ impl WorkerPool {
             }
             None if workers.len() < fixture_limit => Ok(()),
             None => Err(
-                Error::unavailable("extension workers are busy; retry shortly")
+                Error::rate_limited("extension workers are busy; retry shortly")
                     .with_details(serde_json::json!({ "reason": "worker_capacity" })),
             ),
         }

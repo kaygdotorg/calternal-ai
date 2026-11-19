@@ -1642,6 +1642,13 @@
           ]
         },
         {
+          "description": "A caller or resource has reached a request limit (HTTP 429).",
+          "type": "string",
+          "enum": [
+            "rate_limited"
+          ]
+        },
+        {
           "description": "The operation cannot currently be served (HTTP 503).",
           "type": "string",
           "enum": [

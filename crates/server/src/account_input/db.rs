@@ -337,7 +337,7 @@ impl Inputs {
                 Err(e) => return Err(internal(e)),
             }
         }
-        Err(Error::unavailable(
+        Err(Error::rate_limited(
             "account live subscriber cap reached; close a connection or raise CALTERNAL_LIVE_LISTENERS",
         ))
     }

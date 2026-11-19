@@ -78,7 +78,7 @@ impl Jobs {
     /// server-wide bounds. Cost: one map lock and one stream lock.
     pub fn subscribe(&self, id: &str) -> Result<Subscription, Error> {
         let busy = || {
-            Error::unavailable("too many job subscribers; retry shortly")
+            Error::rate_limited("too many job subscribers; retry shortly")
                 .with_details(serde_json::json!({"reason": "subscriber_capacity"}))
         };
         if self.subscribers.fetch_add(1, Ordering::AcqRel) >= MAX_SUBSCRIBERS {

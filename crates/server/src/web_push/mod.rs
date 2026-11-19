@@ -172,7 +172,7 @@ pub(crate) async fn operation<D: Directory>(
             .jobs
             .push
             .get()
-            .ok_or_else(|| Error::unavailable("Web push requires an HTTPS server."))?;
+            .ok_or_else(|| Error::conflict("Web push requires an HTTPS server."))?;
         let _owner = state.store.content().lifecycle().step(account.as_uuid())?;
         let root = state.store.appdata();
         let input = json!(input);
@@ -212,10 +212,15 @@ pub(crate) async fn operation<D: Directory>(
             }
             "push.test" => {
                 let _: AccountInputList = decode(input)?;
-                let slot = push
-                    .queue
-                    .try_reserve()
-                    .map_err(|_| Error::unavailable("Web push queue is busy."))?;
+                let slot = push.queue.try_reserve().map_err(|error| match error {
+                    tokio::sync::mpsc::error::TrySendError::Full(()) => {
+                        Error::rate_limited("Web push queue is busy.")
+                            .with_details(json!({"retry_after_seconds":1}))
+                    }
+                    tokio::sync::mpsc::error::TrySendError::Closed(()) => {
+                        Error::unavailable("Web push is unavailable.")
+                    }
+                })?;
                 let generation = db::admit_test(root, account, installation)?;
                 slot.send(Notice {
                     account,

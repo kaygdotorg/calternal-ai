@@ -203,20 +203,38 @@ pub(super) fn admit_test(
     account: AccountId,
     device: InstallationId,
 ) -> Result<String, Error> {
-    let Some(db) = open(appdata, account, false)? else {
-        return Err(Error::not_found(
-            "Register this browser before sending a test.",
-        ));
+    let unregistered = || Error::not_found("Register this browser before sending a test.");
+    let Some(mut db) = open(appdata, account, false)? else {
+        return Err(unregistered());
     };
+    let tx = db
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(unavailable)?;
     let now = now_ms();
-    let generation = db.query_row(
+    let device = device.to_string();
+    let generation = tx.query_row(
         "UPDATE subscriptions SET test_after=?3 WHERE device=?1 AND expires>?2 AND test_after<=?2 RETURNING generation",
-        params![device.to_string(), now, now + TEST_COOLDOWN_MS],
+        params![device, now, now + TEST_COOLDOWN_MS],
         |r| r.get(0),
     ).optional().map_err(unavailable)?;
-    generation.ok_or_else(|| {
-        Error::unavailable("Register this browser or wait a minute before testing again.")
-    })
+    if let Some(generation) = generation {
+        tx.commit().map_err(unavailable)?;
+        return Ok(generation);
+    }
+    let test_after: i64 = tx
+        .query_row(
+            "SELECT test_after FROM subscriptions WHERE device=?1 AND expires>?2",
+            params![device, now],
+            |r| r.get(0),
+        )
+        .optional()
+        .map_err(unavailable)?
+        .ok_or_else(unregistered)?;
+    let seconds = (test_after - now + 999) / 1000;
+    Err(
+        Error::rate_limited("Register this browser or wait a minute before testing again.")
+            .with_details(serde_json::json!({"retry_after_seconds":seconds})),
+    )
 }
 
 pub(super) fn is_current(

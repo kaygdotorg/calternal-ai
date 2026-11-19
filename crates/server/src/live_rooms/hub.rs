@@ -265,7 +265,7 @@ impl Hub {
         key: &Key,
         account: AccountId,
     ) -> Result<(Lease, watch::Receiver<Option<Termination>>), Error> {
-        let busy = || Error::unavailable("live room capacity is busy; retry shortly");
+        let busy = || Error::rate_limited("live room capacity is busy; retry shortly");
         let mut rooms = self.0.spaces(key.space);
         let key_in_space = (key.kind.clone(), key.item);
         let existing = rooms
@@ -378,7 +378,7 @@ impl Hub {
             .try_acquire_many_owned(
                 cache.state.len().saturating_mul(2).saturating_add(16_384) as u32
             )
-            .map_err(|_| Error::unavailable("live room initial state capacity is busy"))?;
+            .map_err(|_| Error::rate_limited("live room initial state capacity is busy"))?;
         let initial = vec![
             Message::Sync(SyncMessage::SyncStep1(state_vector(&cache.state)?)).encode_v1(),
             Message::Sync(SyncMessage::SyncStep2(cache.state.clone())).encode_v1(),
@@ -519,7 +519,7 @@ impl Room {
             .memory
             .clone()
             .try_acquire_many_owned(bytes.len() as u32)
-            .map_err(|_| Error::unavailable("live room output capacity is busy"))?;
+            .map_err(|_| Error::rate_limited("live room output capacity is busy"))?;
         let _ = self.frames.send(Arc::new(Frame {
             bytes,
             _permit: permit,
@@ -553,7 +553,7 @@ impl Cache {
         let permit = memory
             .clone()
             .try_acquire_many_owned(bytes)
-            .map_err(|_| Error::unavailable("live room state capacity is busy"))?;
+            .map_err(|_| Error::rate_limited("live room state capacity is busy"))?;
         Ok(Self {
             lineage: snapshot.lineage,
             state: snapshot.update,

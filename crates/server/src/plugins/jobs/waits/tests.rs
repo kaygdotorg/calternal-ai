@@ -119,7 +119,7 @@ fn package_capacity_excludes_cancelled_waiters() {
     let blocked = admit(&jobs, &space, "blocked");
     assert_eq!(
         park(&jobs, &space, &blocked).err().unwrap().code,
-        calternal_types::ErrorCode::Unavailable
+        calternal_types::ErrorCode::RateLimited
     );
     let first = &timers[0];
     jobs.cancel(&space, &first.job).unwrap();

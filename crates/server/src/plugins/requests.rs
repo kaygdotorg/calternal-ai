@@ -95,7 +95,7 @@ impl Jobs {
                 params![account,space,thread], |r| Ok((r.get(0)?,r.get(1)?)),
             ).map_err(db_err)?;
             if account_count >= ACCOUNT_LIMIT || thread_count >= THREAD_LIMIT {
-                return Err(Error::unavailable("request limit reached for this account or thread"));
+                return Err(Error::rate_limited("request limit reached for this account or thread"));
             }
             let id = Uuid::now_v7().to_string();
             tx.execute(

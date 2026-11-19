@@ -166,7 +166,7 @@ async fn disabled_font_downloads_leave_account_settings_and_local_status_availab
         info.body["data"],
         json!({"state":"missing","downloads_enabled":false})
     );
-    assert_eq!(f.op(0, "fonts.install", json!({"id":id})).await.status, 503);
+    assert_eq!(f.op(0, "fonts.install", json!({"id":id})).await.status, 403);
     f.op(0, "appearance.patch", json!({"motion":false}))
         .await
         .ok();
