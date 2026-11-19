@@ -22,6 +22,11 @@ public final class ChromeStore {
     public var selection: String? { didSet { if selection != oldValue { onSelectionChange?() } } }
     /// Called synchronously when the selection changes (measurement hook; nil normally).
     @ObservationIgnored public var onSelectionChange: (() -> Void)?
+    /// A selection to make once rows arrive: walking past the edge of a windowed list lands on a one-point sentinel row, the shell asks the page for the next
+    /// window, and when it arrives the selection moves to the row the key press meant.
+    var pending: (section: String, index: Int)?
+    /// The window last requested per windowed section (so a held key asks once per shift).
+    var lastWindowRequest: [String: (from: Int, to: Int)] = [:]
     /// The last selection the page was told about (the settle task skips repeats).
     var reportedSelection: String?
     /// Whether a non-empty search was sent (so clearing the field sends one final empty search).
@@ -49,12 +54,12 @@ public final class ChromeStore {
     public func update(_ new: ChromeDescription) {
         let wasOpen = description.sidebar?.open
         revision = new.revision
-        var same = new
-        same.revision = description.revision
-        // Pages republish on every store change, often with nothing the chrome draws different: that must cost nothing (no SwiftUI invalidation).
-        if same != description {
+        // Pages republish on every store change, often with nothing the chrome draws different: that must cost nothing (no SwiftUI invalidation). The page's
+        // `selected` flags are not drawn (the list's own selection is), so a republication that only moves them is not a change either.
+        if Self.drawn(new) != Self.drawn(description) {
             description = new
             // The page's choice of selected row follows, unless the person is mid-selection (their pick is reported within 45 ms).
+            resolvePendingSelection()
             if let picked = new.sidebar?.sections?.flatMap(\.rows).first(where: { $0.selected == true })?.id, picked != selection, selection == reportedSelection { selection = picked; reportedSelection = picked }
         }
         if tapped != nil { tapped = nil }
@@ -66,6 +71,37 @@ public final class ChromeStore {
         dragging = false
         withAnimation(settle) { progress = open ? 1 : 0 }
         if report { send(ChromeEvent(type: "sidebar", open: open)) }
+    }
+
+    /// Where a row sits in a windowed section: the section and the row's index in the whole list; nil for rows of ordinary sections.
+    func windowedLocation(of rowID: String) -> (section: ChromeDescription.Section, index: Int)? {
+        for section in description.sidebar?.sections ?? [] where (section.count ?? 0) > section.rows.count {
+            if let i = section.rows.firstIndex(where: { $0.id == rowID }) { return (section, (section.offset ?? 0) + i) }
+        }
+        return nil
+    }
+
+    /// Prefix of the ids of the one-point sentinel rows at the edges of a windowed section (`before:`, `after:` plus the section id).
+    static let sentinelPrefix = "__edge:"
+
+    private func resolvePendingSelection() {
+        guard let pending, let section = description.sidebar?.sections?.first(where: { $0.id == pending.section }) else { return }
+        let i = pending.index - (section.offset ?? 0)
+        if section.rows.indices.contains(i) { selection = section.rows[i].id; reportedSelection = selection; self.pending = nil }
+    }
+
+    /// The description reduced to what is drawn: no revision, no `selected` flags.
+    private static func drawn(_ d: ChromeDescription) -> ChromeDescription {
+        var d = d
+        d.revision = nil
+        guard var sidebar = d.sidebar, let sections = sidebar.sections else { return d }
+        sidebar.sections = sections.map { section in
+            var section = section
+            section.rows = section.rows.map { row in var row = row; row.selected = nil; return row }
+            return section
+        }
+        d.sidebar = sidebar
+        return d
     }
 
     /// Shows or hides the sidebar: the phone slides the card, a desktop hides the column.

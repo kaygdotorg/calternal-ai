@@ -54,6 +54,7 @@ public struct ChromeShellView<WebCard: View>: View {
             .environment(\.accentBase, store.accentBase ?? model.accent ?? Tokens.accentBase)
             .environment(\.uiSize, look?.uiSize ?? 1)
             .tint(store.accentBase.map { Color(red: $0.r, green: $0.g, blue: $0.b) })   // the page's accent colours selection, marks and prominent buttons
+            .accentColor(store.accentBase.map { Color(red: $0.r, green: $0.g, blue: $0.b) })   // the list's selection highlight reads the accent colour, not the tint
             .preferredColorScheme(store.description.scheme.map { $0 == "dark" ? .dark : .light })
             .task(id: look?.image?.count ?? 0) {
                 guard let url = look?.image, let comma = url.firstIndex(of: ",") else { picture = nil; return }
@@ -270,6 +271,6 @@ private struct PhonePane: View {
                 VeilLayers(veil: context.card ?? WallpaperBackdrop.floor(.card, d))
             }
         }
-        .frame(width: size.width, height: size.height, alignment: .topLeading).clipped().accessibilityHidden(true)
+        .frame(width: size.width, height: size.height, alignment: .topLeading).clipped().allowsHitTesting(false).accessibilityHidden(true)
     }
 }

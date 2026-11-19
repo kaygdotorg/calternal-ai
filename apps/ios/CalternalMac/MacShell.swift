@@ -60,7 +60,7 @@ final class MacShell: NSObject, BridgePlatform, WKNavigationDelegate, WKUIDelega
         web.setValue(false, forKey: "drawsBackground")   // transparent: the native card material shows through where the page paints nothing
         store.send = { [weak self] event in self?.dispatch(event: "calternal:chrome", detail: event.json(revision: self?.store.revision)) }
         store.onInsets = { [weak self] insets in self?.publish(insets) }
-        if Measure.enabled { store.onSelectionChange = { Measure.selectionChanged() } }
+        if Measure.enabled { store.onSelectionChange = { [weak self] in Measure.selectionChanged(self?.store.selection) } }
     }
 
     /// Loads the start address (once per window).

@@ -280,7 +280,9 @@ private struct WindowedRows<Content: View>: View {
                 firstVisible = max(0, min(total - 1, Int((-minY / h).rounded(.down))))
             }
             .accessibilityHidden(true)
+        if offset > 0 { Color.clear.frame(height: 1).tag("\(ChromeStore.sentinelPrefix)before:\(section.id)").listRowSeparator(.hidden).listRowInsets(EdgeInsets()).accessibilityHidden(true) }
         ForEach(section.rows) { row($0).frame(height: h).clipped() }
+        if after > 0 { Color.clear.frame(height: 1).tag("\(ChromeStore.sentinelPrefix)after:\(section.id)").listRowSeparator(.hidden).listRowInsets(EdgeInsets()).accessibilityHidden(true) }
         Color.clear.frame(height: CGFloat(after) * h).listRowSeparator(.hidden).listRowInsets(EdgeInsets()).selectionDisabled().accessibilityHidden(true)
             .task(id: firstVisible) {
                 try? await Task.sleep(for: .milliseconds(120))
@@ -305,8 +307,33 @@ private struct SettleReporter: View {
                 if !Task.isCancelled { store.searchSent = !store.searchText.isEmpty; store.send(ChromeEvent(type: "search", text: store.searchText)) }
             }
             .task(id: store.selection) {
-                // Native selection and scrolling update at once; the page hears about it after key repeat settles (a held arrow key collapses into its last row).
                 guard let id = store.selection, id != store.reportedSelection else { return }
+                // Walking past the edge of a windowed list: the selection landed on the sentinel. Ask for the next window now (no settling: this is what lets the
+                // keys keep going) and move the selection to the row it meant once the rows arrive.
+                if id.hasPrefix(ChromeStore.sentinelPrefix) {
+                    let parts = id.dropFirst(ChromeStore.sentinelPrefix.count).split(separator: ":", maxSplits: 1).map(String.init)
+                    if parts.count == 2, let section = store.description.sidebar?.sections?.first(where: { $0.id == parts[1] }) {
+                        let before = parts[0] == "before", offset = section.offset ?? 0, edge = before ? offset - 1 : offset + section.rows.count
+                        store.pending = (section.id, edge)
+                        let from = max(0, edge - (before ? 160 : 20)), to = edge + (before ? 20 : 160)
+                        store.lastWindowRequest[section.id] = (from, to)
+                        store.send(ChromeEvent(type: "window", id: section.id, from: from, to: to))
+                    }
+                    return
+                }
+                // Prefetch: a selection within a dozen rows of the window's edge asks for the neighbouring rows before the selection gets there.
+                if let at = store.windowedLocation(of: id) {
+                    let offset = at.section.offset ?? 0, shown = at.section.rows.count
+                    if at.index - offset < 24 && offset > 0 || offset + shown - at.index < 24 && offset + shown < (at.section.count ?? 0) {
+                        let from = max(0, at.index - 80), to = min((at.section.count ?? 1) - 1, at.index + 160)
+                        // One request per window shift, not one per key press while the rows are on their way.
+                        if store.lastWindowRequest[at.section.id].map({ $0.from != from || $0.to != to }) ?? true {
+                            store.lastWindowRequest[at.section.id] = (from, to)
+                            store.send(ChromeEvent(type: "window", id: at.section.id, from: from, to: to))
+                        }
+                    }
+                }
+                // Native selection and scrolling update at once; the page hears about it after key repeat settles (a held arrow key collapses into its last row).
                 try? await Task.sleep(for: .milliseconds(45))
                 if !Task.isCancelled { store.reportedSelection = id; store.send(ChromeEvent(type: "row", id: id)) }
             }

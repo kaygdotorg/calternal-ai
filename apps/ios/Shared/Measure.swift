@@ -51,6 +51,7 @@ enum Measure {
     /// A chrome description arrived from the page (call before applying it).
     static func chromeArrived() {
         guard enabled else { return }
+        armSelection()
         if activity == nil { activity = ProcessInfo.processInfo.beginActivity(options: [.userInitiated, .latencyCritical], reason: "measuring frames") }
         arrival = CACurrentMediaTime()
     }
@@ -72,27 +73,42 @@ enum Measure {
     private static var lastChange: CFTimeInterval = 0
     private static var paints: [Double] = []
     private static var finishTask: Task<Void, Never>?
+    private static var frameTimes: [CFTimeInterval] = []
+    private static var frameStop: (() -> Void)?
+    private static var armedAt: CFTimeInterval = .infinity
+    private static var log: [String] = []
 
-    /// A selection change in the sidebar list (a key press or a click): counts it and times the next frame (the selection's paint). After 1.5 s without
-    /// another change, prints the `keys` summary: changes per second, the paint delay of each change and the frame hitches over the whole run.
-    static func selectionChanged() {
-        guard enabled else { return }
+    /// Selection changes are counted only after this: the programmatic first selection (the page's own `selected` row) happens during the first layout.
+    static func armSelection() { if armedAt == .infinity { armedAt = CACurrentMediaTime() + 6 } }
+
+    /// A selection change in the sidebar list (a key press or a click): counts it, times the next frame (the selection's paint) and logs the row. After 1.5 s
+    /// without another change, prints the `keys` summary: changes per second, the paint delay of each change and the frame hitches over the whole run
+    /// (frames counted here from a display link on the window; a hitch is a gap over 1.5 frame periods).
+    static func selectionChanged(_ id: String?) {
+        guard enabled, CACurrentMediaTime() >= armedAt else { return }
         let t = CACurrentMediaTime()
-        if changes == 0 { firstChange = t; paints = []; FrameMeter.shared.start() }
+        if changes == 0 {
+            firstChange = t; paints = []; frameTimes = []; log = []
+            FrameTick.every { stop in frameTimes.append(CACurrentMediaTime()); frameStop = stop }
+        }
         changes += 1
         lastChange = t
+        log.append(id ?? "-")
         FrameTick.once { paints.append((CACurrentMediaTime() - t) * 1000) }
         finishTask?.cancel()
         finishTask = Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(1500))
             guard !Task.isCancelled else { return }
-            let r = FrameMeter.shared.snapshot()
-            FrameMeter.shared.stop()
+            frameStop?(); frameStop = nil
+            let gaps = zip(frameTimes.dropFirst(), frameTimes).map { ($0 - $1) * 1000 }
+            let period = gaps.isEmpty ? 0 : gaps.sorted()[gaps.count / 2]
+            let hitches = gaps.filter { $0 > period * 1.5 }.count
             let sorted = paints.sorted()
             func q(_ p: Double) -> Double { sorted.isEmpty ? 0 : (sorted[min(sorted.count - 1, Int(Double(sorted.count - 1) * p))] * 10).rounded() / 10 }
             let span = max(0.001, lastChange - firstChange)
             emit("keys", ["selection_changes": changes, "per_second": ((Double(changes) / span) * 10).rounded() / 10, "paint_p50_ms": q(0.5), "paint_p95_ms": q(0.95), "paint_max_ms": q(1),
-                          "frames": r.frames, "hz": r.refreshHz, "hitches": r.hitches, "hitch_pct": (r.hitchRatio * 10000).rounded() / 100, "worst_ms": r.worst])
+                          "frames": gaps.count, "period_ms": (period * 100).rounded() / 100, "hitches": hitches, "hitch_pct": gaps.isEmpty ? 0 : ((Double(hitches) / Double(gaps.count)) * 10000).rounded() / 100,
+                          "worst_gap_ms": ((gaps.max() ?? 0) * 10).rounded() / 10, "first": log.first ?? "-", "last": log.last ?? "-", "sequence_head": Array(log.prefix(8))])
             changes = 0
         }
     }
