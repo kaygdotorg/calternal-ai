@@ -1,8 +1,9 @@
 # Calternal Mail data plugin
 
-Enable the bundled package in your personal space. To install from this
-directory, follow the reviewed package workflow in
-[Author and install a TypeScript plugin](../../docs/plugin-authoring.md). Its named `inbox` connection reaches a
+New installations bundle Mail with activation off. On an existing
+installation, first use the reviewed package workflow in
+[Author and install a TypeScript plugin](../../docs/plugin-authoring.md).
+Then enable Mail in your personal space. Its named `inbox` connection reaches a
 public IMAPS mail server through the Calternal host and uses a password entered
 in Calternal's protected prompt. The plugin has no visual surface.
 
