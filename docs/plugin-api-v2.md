@@ -1,4 +1,4 @@
-# Plugin API v2 · revision 14.9 draft
+# Plugin API v2 · revision 14.10 draft
 
 The first contract covers host-drawn apps, generic items, durable jobs and
 generic conversation and execution engines. Freeze after the §8 spikes. Fixture bounds are test settings. See the
@@ -473,34 +473,43 @@ host-minted Undo action reference.
 
 #### Generic execution, transcript input and protected requests
 
-Prepared Send commits the message, Starting projection and replayable job
-intent under the item fence before any plugin or agent wake. The
+**Execution intents.** Prepared Send and protected Resume are the two
+origins of an execution intent. Apply the
+[catalogue’s `execution_intents` rules](../contract/host-catalogue-v2.json#/execution_intents)
+to either origin. Under the conversation lifecycle fence, close admission
+for archived or deleted heads and a cutover-fenced writer. Reserve the
+same quota for either origin.
+At most one unresolved intent or active attempt occupies a conversation,
+and an intent admits at most one attempt. An authorized replay returns
+the original result. Stop and protected archive pin the exact intent or
+attempt and recheck the starter or live `PluginsManage` and the relevant
+item right. A committed pending-intent refusal survives Undo. Snooze
+and its Undo leave execution state and retry policy alone.
+
+Prepared Send commits its message with the intent, Starting, receipt and
+owning job under that fence before any wake. The
 same-package Send declaration targets its own conversation kind and
 names the replayable job to enqueue. The job declares
 `execution_intent: true`. Its run operation targets the same kind and
 accepts exactly its required target `ItemRef` in a closed input object.
 At install, resolve these declarations and reject aliases from generic
-dispatch, scheduling, or create follow-up into the prepared Send path.
-Only that host composer may admit the job through prepared Send or protected Resume. At claim and replay the host injects
+dispatch, scheduling or create follow-up into the host composer.
+Only the host composer admits its execution-intent job. At claim and
+replay the host injects
 `message.job_context.intent` outside operation input, bound to the exact
 durable intent and owning job receipt. `execution_start` accepts only
 `request_id`. Under the lifecycle fence the host resolves the intent and
 owning receipt from the authenticated job context and rejects missing,
-foreign or retired context. Replay needs no intent echo. A live authorized
-replay returns the admitted result, even with a new request ID, because
-the host admits at most one attempt for the durable intent.
+foreign or retired context. Replay needs no intent echo. Under the shared
+rule it returns the admitted result even with a new request ID.
 The host validates the final material, provider options and eligibility
 against installed declarations. When `steer_live` is set and the prepared
 attempt is still live, Send forwards checked text directly to
 `execution_input` without waking the plugin. The exact attempt is part
 of the prepared proof. A replacement requires a fresh preview. The host
-can issue Stop during Starting, before there is an attempt. Its context
-pins either the exact unresolved intent or the exact admitted attempt.
-The starter or live `PluginsManage` must also hold the relevant item
-right. Stop durably refuses a pending intent, or fences an admitted
-attempt before remote dispatch. A stale control cannot stop its replacement.
-Confirmation for archive pins the same exact target and rechecks both rights
-under the lifecycle fence (§4.4).
+can issue Stop during Starting for either intent origin. Its context
+uses the shared exact-target rule. Stop fences an admitted attempt before
+remote dispatch. See §4.4 for protected archive and Undo.
 
 **Resume after interruption or cutover.** Follow the sealed proposal
 §§A.3, A.5 and C.1. A proved saved provider session may be continued by
@@ -517,11 +526,8 @@ profile. Keep native session data off the wire. Recheck current
 placement, credential qualification and effect ceilings, and require
 reconciliation of uncertain effects before admission.
 
-Under the lifecycle fence allow at most one unresolved intent or active
-attempt in the conversation for Resume, subject to normal admission
-quotas. Commit Starting, a fresh continuation intent, its activation
-receipt and the owning composer job together. Use the existing
-`ExecutionJobContext` and `execution_start` path. Append no message,
+Apply the shared execution-intent rules and use the existing
+`ExecutionJobContext` and `execution_start` path for the fresh continuation. Append no message,
 replay no old effect or approval, and return `pending` with the Starting
 status ref. An exact authorized replay returns the original receipt.
 Resume has no Undo. The eligible person can Stop the exact intent or
@@ -601,7 +607,8 @@ actionable only when the provider marks it approvable and the gateway can
 enforce that exact effect inside the attempt sandbox. A native
 `can_approve: false`, missing approvability, or unproved containment yields
 dismissal only. A card offers Approve with at least one lifetime and Deny
-without lifetimes. Resolve rechecks the live actor, request, approvability
+without lifetimes. An actionable card includes the checked effect material
+required by the catalogue confirmation table. Resolve rechecks the live actor, request, approvability
 and the exact lifetime offered in the context. External effects use a
 separate protected broker action. A one-use decision gates the actual
 gateway dispatch of the checked effect. Replay cannot dispatch it again.
@@ -735,8 +742,8 @@ viewer’s own equality operand only. A conversation’s `active_execution`
 is the nullable `ExecutionRef` for the exact admitted attempt, available only
 to an eligible execution actor on a ready member reply. The parent edge
 names an `ItemRef`.
-Before admission the host may issue a Stop context for a pending intent from
-the composer. That intent has no active execution ref.
+Before admission the host may issue a Stop context for any pending
+execution intent. That intent has no active execution ref.
 
 Compile one dependency graph per view, including chrome and content.
 Check unique in-scope IDs, declared kinds and types, and all binding edges
@@ -921,7 +928,7 @@ contexts together, with omission meaning an empty map. Each context binds the
 exact component, purpose and action ID as well as its lease and grant.
 A composer token cannot be reused by an authored, shell or row action,
 including actions in windows carried by a renewal. Re-evaluate Stop
-against the exact pending intent or current attempt. Repaint only exact `retained_results`
+against the exact unresolved execution intent or current attempt. Repaint only exact `retained_results`
 pairs of `window_ref` and `result_version`. Changed grants or versions
 require fresh authorized windows. Ignore superseded replies and keep rows
 hidden on timeout or refusal. Clear live rows on revocation, sign-out,
@@ -1098,8 +1105,13 @@ only against the issued context, never its current selection.
    uses separate resolve and dispatch. The manifest’s risk declaration
    grants no shortcut. On that ordinary path the host omits `confirm`
    when no challenge is required.
-3. **Confirm and dispatch.** For a challenge, the host returns written
-   material and a one-use proof only after the authorized protected control
+3. **Confirm and dispatch.** For a challenge, resolve returns the material
+   required by the catalogue's [confirmation table](../contract/host-catalogue-v2.json#/confirmation/material_by_kind).
+   Select the row by the checked operation and surface. Derive applicable
+   entries from live checked inputs and effects, including manifest
+   material inputs. The verifier checks table coverage, uniqueness and
+   required material. Refuse a missing, empty or partial preview.
+   The host issues a one-use proof after the authorized protected control
    confirms the exact checked input. Check actor, scope, dependencies and
    fingerprint again at dispatch and consume the proof under the commit
    fence. Only the eligible catalogue shortcut
@@ -1191,9 +1203,9 @@ revisions of all affected resources and refuses if any dependency moved.
 | `host.layout.section.create` | The per-person layout revision transaction creates the section and commits Undo that removes it. |
 | `host.layout.section.rename` | The same layout transaction commits the title change and its prior title for Undo. |
 | `host.layout.section.remove` | One per-person layout revision transaction retires the section and its placement generation and records Undo naming that generation. Retired generations are excluded from reads. Undo rechecks live membership and the post-effect layout revision and reactivates the exact generation in one transaction before its expiry. Reactivation grants no item access. Reclaim expired retired generations in bounded background batches. Removal and Undo perform no per-placement work. |
-| `host.item.archive` | Idle archive requires no active turn, unresolved send intent or pending approval to retire. Saved authority requires a challenge unless it consists only of thread grants that the Step 2 writer retires in the same FULL thread content transaction as archive and that Undo restores together with the thread head. Retiring grants with head-only Undo requires a challenge. Check eligibility and reject fresh turn admission to an archived head under the same commit fence. The FULL thread content transaction records archive and its unarchive Undo together. The current writer commits the head without Undo and enters a separate protected authority transaction, so the shortcut stays ineligible until the Step 2 writer passes. After it passes, eligible idle archive takes one full-swipe exchange without a sheet. For an active turn the host says “The running turn will be stopped.” A confirmed archive that pins an unresolved intent durably refuses it in the same FULL archive and Undo commit. Undo never reopens that intent. |
+| `host.item.archive` | Idle archive uses the shared execution-intent predicate in §3. Saved authority requires a challenge unless it consists only of thread grants that the Step 2 writer retires in the same FULL thread content transaction as archive and that Undo restores together with the thread head. Retiring grants with head-only Undo requires a challenge. Check shared intent admission and archive eligibility under the same commit fence. The FULL thread content transaction records archive and its unarchive Undo together. The current writer commits the head without Undo and enters a separate protected authority transaction, so the shortcut stays ineligible until the Step 2 writer passes. After it passes, eligible idle archive takes one full-swipe exchange without a sheet. For an active attempt the host says “The running execution will be stopped.” For any unresolved execution intent the confirmed path commits its durable refusal with archive and Undo under §3. |
 | `host.item.unarchive` | The FULL thread content transaction records the new head and Undo. A full swipe may unarchive an eligible thread. |
-| `host.item.snooze` | Ineligible. Today’s writer stores one shared manual deadline. The actor-scoped operation stays unavailable until the Step 2 actor-keyed snooze writer commits the actor’s deadline, its index entry and Undo together. Subscription retry state is unaffected. |
+| `host.item.snooze` | Ineligible. Today’s writer stores one shared manual deadline. The actor-scoped operation stays unavailable until the Step 2 actor-keyed writer commits the actor’s deadline, index entry and Undo together. Apply §3’s shared snooze rule. |
 | `host.item.patch-metadata` | The room-checked FULL content transaction records the changed head and Undo for a single boolean toggle. Full swipe covers this case. |
 
 On success, Invoke `then:{route}` may navigate using a
@@ -1448,7 +1460,7 @@ authorizes, commits and delivers.
 | Fixture | Required result |
 | --- | --- |
 | Attempt broker and renewal | A member can enumerate in an ordinary invocation and the attempt can read its admitted item. The same member's attempt gets zero rows, counts or jobs when it requests discovery, supplies the member ticket, or delegates to an indexer. Revoke the item grant during an admitted output and replace the attempt before renewal. Require zero old-attempt effects, delivery or successful renewal after either fence. Mint one checked child request and one transition across replay. Reject forged parent/refs, a stale attempt and changed receipt material. On child admission, recheck all authority and tree quotas. |
-| Cold composer job and Stop | Pause after a durable Send and before claim. Stop using the pending-intent context, restart and admit the job. Require the refusal receipt, zero starts and no effect on a later intent. In the control arm, replay the claimed job with the same and then a new request ID. Require the same admitted result and one start in total. Echoing an intent in the request or calling with missing, foreign or retired host context starts zero runs. |
+| Cold composer job and Stop | For each intent origin, pause after the durable intent and before claim. Stop using the pending-intent context, restart and admit the job. Require the refusal receipt, zero starts and no effect on a later intent. In the control arm, replay the claimed job with the same and then a new request ID. Require the same admitted result and one start in total. Echoing an intent in the request or calling with missing, foreign or retired host context starts zero runs. |
 | Conversation body | A canonical append can be paged and, with corpus rights, its exact bytes can be read through a pinned range. A same-kind package save, staged replacement, history-body restore or room write cannot publish a forged role, provenance or bytes. A title-only viewer gets zero corpus bytes, lengths or bookmarks via transcript, editor, range or export. Revoke after opening a pin and before delivery to cover both readers. |
 | Native approval and lifetime | For each provider offer Approve only on the approvable, contained arm. With native approvability false or containment unproved, forge an approval and require zero dispatches. Use a valid context with an unoffered lifetime and require zero dispatches. An exact offered one-use decision dispatches once, including on replay. |
 | Read from an empty or clipped transcript | Open and follow a new conversation before its first append. Require no fabricated cursor, then one committed UUID and a usable cursor after append. Read a clipped multilingual body across pages and compare exact UTF-8 bytes with the pinned record. A copied or revoked continuation returns the same opaque refusal as an absent ref. |
@@ -1490,27 +1502,31 @@ Pass these end-to-end flows on the selected wall before app migration.
   archive and its unarchive Undo together. Before enabling idle archive,
   crash before and after the commit and during publication. Recover
   neither effect nor Undo before commit and both after it. On a recovered
-  archive, refuse a later Send and verify that unarchive Undo restores
-  the thread head without starting a turn. If the writer retires grants,
+  archive, refuse either origin of new execution intent and verify that
+  unarchive Undo restores the head without starting an attempt. If the writer retires grants,
   also verify retirement and full restoration of those grants with the
-  corresponding head transitions. Exercise these orderings:
+  corresponding head transitions. Run each ordering for prepared Send and
+  protected Resume, including a proved historical binding for Resume:
 
-  1. Commit the send intent before attempting idle archive. Then repeat
+  1. Commit the intent before attempting idle archive. Then repeat
      with the idle archive attempt started first and paused before its
      fenced check until the intent commits. In both cases the committed,
      unresolved intent blocks sheet-free archive.
-  2. Commit a send intent and pause before job admission. Commit a
+  2. Commit an execution intent and pause before job admission. Commit a
      confirmed archive through the challenged path with that matching
      saved intent. The FULL archive and Undo commit also durably refuses
      that exact intent with a plain outcome. Crash before and after that
      commit. After recovery, run unarchive Undo before resuming admission.
      Admission and replay must return the durable refusal with zero starts,
-     even though the head is live again. A fresh Send is the positive control.
-  3. Commit archive first, then attempt Send. The send is refused at
-     intent commit.
+     even though the head is live again. A fresh intent of the same origin is the positive control.
+  3. Commit archive first, then try to commit the intent. Require an
+     opaque refusal with zero new intents, starts and wakes. If a preview
+     was already resolved, use it to prove the commit recheck.
 
-  Replay of a committed admission cannot start a new job. Race a newly
-  active turn, saved authority or pending approval against dispatch and
+  Replay of a committed admission cannot start a new job. Race Send
+  against Resume for the last conversation slot and the last quota slot.
+  Require one admitted intent, one attempt and no second reservation or
+  job. Race a newly active attempt, saved authority or pending approval against dispatch and
   require the protected path if cleanup is needed. Fix the existing dev
   defect in [thread admission](../crates/server/src/turns/thread_admission.rs):
   fresh admission checks deletion and intent identity and currently
@@ -1528,7 +1544,9 @@ Pass these end-to-end flows on the selected wall before app migration.
   commit the actor-keyed deadline, its index entry and Undo. Crash on both
   sides and verify all three commit together. Exercise distinct deadlines
   for two actors on the same thread, changing and clearing each deadline,
-  Undo and stale Undo refusal. Preserve subscription retry state. Enable
+  Undo and stale Undo refusal. In both pending-intent arms assert that
+  snooze and its Undo leave the intent, capacity and execution retry
+  state unchanged. Preserve subscription retry state. Enable
   actor-scoped snooze only after this gate passes.
 
 ### Step 3 — Notes first, then Threads
@@ -1541,12 +1559,19 @@ fixtures, with final revisions, visible authority and durable outcomes equal.
   offline draft, retain body and history, rename and Undo, Trash, restore
   from Trash, and confirm Empty Trash as a Manager. Verify linked-user
   View and revocation, the host Share sheet and bounded
-  bulk Trash/share/collection creation and Choice-from-Bind Move, no worker wake for built-in
-  lifecycle actions, and recover a committed save after rollback.
+  bulk Trash/share and Choice-from-Bind Move, no worker wake for built-in
+  lifecycle actions, and recover a committed save after rollback. Restore
+  a revision the editor already holds in `EditorHead` through
+  [`host.item.restore`](../contract/host-catalogue-v2.json#/operations/host.item.restore)
+  with its checked `source_revision`, current head, live Editor authority,
+  existing FULL commit fence and Undo. History browsing and selecting a
+  revision from its listing are gated below.
 - **Threads.** Ship only after Notes, both Step 2 writer gates and the
   sealed proposal’s [custody and cutover gates][generic-engines] pass.
-  Halt new old-engine admissions and wait for zero live attempts before
-  switching writers. See the [cutover wire audit](reviews/plugin-api-v2-14.8-cutover-wire.md)
+  Halt new old-engine intents and attempts. Drain unresolved intents or
+  verify their existing durable refusals. Require zero active attempts
+  and zero unresolved execution intents of either origin before switching
+  writers. Preserve their receipts and refusal records. See the [cutover wire audit](reviews/plugin-api-v2-14.8-cutover-wire.md)
   for the wire inventory. Migrate a legacy session into protected bindings
   only with authenticated historical proof of its exact account, provider,
   conversation, machine and profile. Retire Resume for an unproved binding
@@ -1597,7 +1622,7 @@ records the same blockers.
 
 | OPEN | Missing contract | Cutover requirement blocked |
 | --- | --- | --- |
-| `renderer_history` | A portable renderer request and reply for listing authorized revisions and selecting a restore source. The [existing `notes.history` operation](../contract/operations.json) is a parity reference and §3 covers engine reads. | Browse Notes history and restore a selected revision. |
+| `renderer_history` | A portable renderer request and reply for browsing authorized revisions and picking one from history. The [existing `notes.history` operation](../contract/operations.json) is a parity reference and §3 covers engine reads. | Browse Notes history and select a revision from the listing. |
 | `linked_user_comments` | A portable checked comment submission and returned comment record for linked users. | Linked-user Comment, including durable creation, delivery and revocation. |
 | `historical_transcript_attribution` | Committed-record fields for historical headings and author, time, machine and login attribution. | Equal rendering and attribution after history restore, projection rebuild and rollback. |
 | `attachment_upload` | A portable, checked composer upload contract that produces a Draft AttachmentRef. The [sealed proposal §A.1][generic-engines-composer] consumes checked refs. [§B.4][generic-engines-uploads] defers the new general file-upload routes. | Submit a draft with a new attachment on an eligible machine. |
@@ -1605,6 +1630,7 @@ records the same blockers.
 | `queued_follow_up` | Portable requests and record state for queuing, viewing, editing, cancelling and submitting follow-ups. | Queue and manage a follow-up independently of direct Send or steer. |
 | `snooze_presets` | The host policy and portable presentation for the offered snooze presets. | Pass the shipped preset snooze workflow using the actor-scoped writer. |
 | `snooze_custom_picker` | The custom snooze picker policy, including supported date/time choices, time zone and defaults. | Pass the shipped custom date/time snooze workflow using the actor-scoped writer. |
+| `collection_creation` | A portable renderer action for creating a host-owned collection, including in the bulk workflow. Broker `collection_create` remains an engine call. | Create a collection from Notes or as part of placing bulk-selected items. |
 
 Run executable catalogue fixtures for both apps, including nested child
 rows and user-made sections. Drag is an Owner-approved parity exception
@@ -1662,7 +1688,7 @@ See the [recorded answers](https://git.kayg.org/kayg/calternal-ai/src/commit/3ab
   qualifies. Scratch activation and Photos-scale I/O and metadata stay
   outside this revision.
 
-### Revision 14.9 draft questions and implementation seams
+### Revision 14.10 draft questions and implementation seams
 
 - Discovery rights, canonical writer and who owns a cross-runner list are
   separate owner questions in [the sealed proposal’s §C][generic-engines].
@@ -1674,7 +1700,7 @@ See the [recorded answers](https://git.kayg.org/kayg/calternal-ai/src/commit/3ab
   profile, supervisor and transport conformance. Manifest validation
   authenticates none of those.
 - The paper walkthrough exercises declarative shapes. The runtime still
-  needs cold Send/intent and child transaction proofs, park race and
+  needs cold execution-intent and child transaction proofs, park race and
   restart qualification, and archive/snooze writers. For child admission, pause the parent job and
   race two fresh requests for the last slot. Require one ACK, one
   `pending_limit` and exactly one committed transition. Repeat with the

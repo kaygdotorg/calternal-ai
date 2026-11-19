@@ -245,3 +245,51 @@ class ReviewCases:
                     self.assertTrue(any(reason in e for e in errors), list(errors))
                 else:
                     self.assertFalse(errors, list(errors))
+
+    def test_every_host_confirmation_requires_its_named_material(self):
+        from description_confirmation import check_confirmation_material
+
+        catalogue = verification.CATALOGUE
+        for kind, rule in catalogue["confirmation"]["material_by_kind"].items():
+            conditions = rule.get("when", {})
+            for fact in (None, *conditions):
+                with self.subTest(kind=kind, fact=fact):
+                    facts = (fact,) if fact else ()
+                    names = rule["required"] + conditions.get(fact, [])
+                    manifest_inputs = ("extra_input",) if kind == "plugin_operation" else ()
+                    material = [{"name": name, "label": name.title(), "value": "Checked"}
+                                for name in (*names, *manifest_inputs)]
+                    resolution = {"confirm": "challenge", "material": material}
+                    errors = Validation()
+                    check_confirmation_material(resolution, kind, facts, errors, catalogue, inputs=manifest_inputs)
+                    self.assertFalse(errors, list(errors))
+                    for entry in material:
+                        errors = Validation()
+                        incomplete = resolution | {"material": [m for m in material if m != entry]}
+                        check_confirmation_material(incomplete, kind, facts, errors, catalogue, inputs=manifest_inputs)
+                        self.assertIn(f"$.material: missing confirmation entry {entry['name']!r}", errors)
+
+    def test_every_pinned_whole_value_pattern_rejects_a_trailing_linebreak(self):
+        import re
+
+        pinned = verification.CATALOGUE, verification.schema, verification.manifest_schema
+        exemplars = ("id", "example.invalid", "op.run", "path/file", "application/pdf",
+                     "2026-11-20T12:00:00Z", "a" * 22, "a" * 43, "a" * 64, "sha256:" + "a" * 64)
+        for document in pinned:
+            def patterns(node):
+                if isinstance(node, dict):
+                    if isinstance(node.get("pattern"), str):
+                        yield node["pattern"]
+                    for child in node.values():
+                        yield from patterns(child)
+                elif isinstance(node, list):
+                    for child in node:
+                        yield from patterns(child)
+            for pattern in set(patterns(document)):
+                with self.subTest(pattern=pattern):
+                    example = next(value for value in exemplars if re.fullmatch(pattern, value))
+                    errors = Validation()
+                    verification.check({"type": "string", "pattern": pattern}, example, "$", errors)
+                    self.assertFalse(errors, list(errors))
+                    verification.check({"type": "string", "pattern": pattern}, example + "\n", "$", errors)
+                    self.assertTrue(any("does not match" in message for message in errors), list(errors))

@@ -12,7 +12,7 @@
   "$defs": {
     "Id": {
       "type": "string",
-      "pattern": "^[a-z0-9][a-z0-9._:-]{0,63}$",
+      "pattern": "^[a-z0-9][a-z0-9._:-]{0,63}(?![\\s\\S])",
       "description": "Stable identifier: lower-case, 1 to 64 characters. Ids are chosen by the author of the description and never change for the same thing across revisions."
     },
     "Literal": {
@@ -67,7 +67,7 @@
           "properties": {
             "route": {
               "type": "string",
-              "pattern": "^[a-z][a-z0-9_]{0,31}$"
+              "pattern": "^[a-z][a-z0-9_]{0,31}(?![\\s\\S])"
             }
           },
           "additionalProperties": false,
@@ -222,7 +222,7 @@
     },
     "FieldName": {
       "type": "string",
-      "pattern": "^[a-z][a-z0-9_]{0,47}$",
+      "pattern": "^[a-z][a-z0-9_]{0,47}(?![\\s\\S])",
       "description": "A field of a kind, DECLARED INDEXED by the kind's manifest. Anything not declared is rejected by the host before any query runs."
     },
     "Predicate": {
@@ -523,7 +523,7 @@
                   "properties": {
                     "name": {
                       "type": "string",
-                      "pattern": "^[a-z][a-z0-9_]{0,31}$"
+                      "pattern": "^[a-z][a-z0-9_]{0,31}(?![\\s\\S])"
                     },
                     "value": {
                       "const": "id"
@@ -893,7 +893,7 @@
       "properties": {
         "id": {
           "type": "string",
-          "pattern": "^[a-z0-9][a-z0-9._:-]{0,63}$",
+          "pattern": "^[a-z0-9][a-z0-9._:-]{0,63}(?![\\s\\S])",
           "description": "The ACTION ID: chosen by the description's author, stable across revisions, unique within the description. It names the action in events and pending state."
         },
         "title": {
@@ -905,7 +905,7 @@
         },
         "operation": {
           "type": "string",
-          "pattern": "^[a-z][a-z0-9._-]{0,95}$",
+          "pattern": "^[a-z][a-z0-9._-]{0,95}(?![\\s\\S])",
           "not": {
             "enum": [
               "host.approval.resolve",
@@ -968,7 +968,7 @@
               "properties": {
                 "name": {
                   "type": "string",
-                  "pattern": "^[a-z][a-z0-9_]{0,31}$"
+                  "pattern": "^[a-z][a-z0-9_]{0,31}(?![\\s\\S])"
                 }
               },
               "additionalProperties": false,
@@ -1040,7 +1040,7 @@
         },
         "route": {
           "type": "string",
-          "pattern": "^[a-z][a-z0-9_]{0,31}$",
+          "pattern": "^[a-z][a-z0-9_]{0,31}(?![\\s\\S])",
           "description": "Route parameter the selection sets; each option's value is its id."
         }
       },
@@ -1068,7 +1068,7 @@
           "properties": {
             "name": {
               "type": "string",
-              "pattern": "^[a-z][a-z0-9_]{0,31}$"
+              "pattern": "^[a-z][a-z0-9_]{0,31}(?![\\s\\S])"
             },
             "value": { "$ref": "#/$defs/ShortcutRouteValue" }
           },
@@ -1151,7 +1151,7 @@
               "properties": {
                 "route": {
                   "type": "string",
-                  "pattern": "^[a-z][a-z0-9_]{0,31}$"
+                  "pattern": "^[a-z][a-z0-9_]{0,31}(?![\\s\\S])"
                 },
                 "equals": {
                   "type": "string",
@@ -2152,7 +2152,7 @@
           "properties": {
             "route": {
               "type": "string",
-              "pattern": "^[a-z][a-z0-9_]{0,31}$"
+              "pattern": "^[a-z][a-z0-9_]{0,31}(?![\\s\\S])"
             }
           },
           "additionalProperties": false,
@@ -2248,7 +2248,7 @@
                   "properties": {
                     "name": {
                       "type": "string",
-                      "pattern": "^[a-z][a-z0-9_]{0,31}$"
+                      "pattern": "^[a-z][a-z0-9_]{0,31}(?![\\s\\S])"
                     },
                     "value": {
                       "$ref": "#/$defs/ValueSource"

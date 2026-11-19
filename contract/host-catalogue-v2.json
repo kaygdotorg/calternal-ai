@@ -6,8 +6,8 @@
     "renderer_history": {
       "status": "OPEN",
       "feature": "Notes",
-      "missing": "A portable renderer request and reply for listing authorized revisions and selecting a restore source.",
-      "blocks": "Browse Notes history and restore a selected revision.",
+      "missing": "A portable renderer request and reply for browsing authorized revisions and picking one from history.",
+      "blocks": "Browse Notes history and select a revision from the listing. Restoring an already-held checked revision remains available under host.item.restore.",
       "cutover": "Disabled until a later numbered revision pins this requirement."
     },
     "linked_user_comments": {
@@ -59,6 +59,13 @@
       "feature": "Threads",
       "missing": "The custom snooze picker policy, including supported date/time choices, time zone and defaults.",
       "blocks": "Pass the shipped custom date/time snooze workflow using the actor-scoped writer.",
+      "cutover": "Disabled until a later numbered revision pins this requirement."
+    },
+    "collection_creation": {
+      "status": "OPEN",
+      "feature": "Notes",
+      "missing": "A portable renderer action for creating a host-owned collection, including in the bulk workflow.",
+      "blocks": "Create a collection from Notes or as part of placing bulk-selected items.",
       "cutover": "Disabled until a later numbered revision pins this requirement."
     }
   },
@@ -549,7 +556,7 @@
       "engine": "execution_stop",
       "effect": "irreversible",
       "idempotency": "request_id",
-      "authority": "The exact pending intent or admitted attempt is reconstructed by the host. The starter or live PluginsManage must also hold the relevant item right. Recheck both under the lifecycle fence.",
+      "authority": "The host reconstructs the exact intent or attempt and applies execution_intents.stop_and_archive.",
       "surfaces": [
         "host_composer",
         "host_execution_control"
@@ -780,11 +787,11 @@
       },
       "atomic_undo": false,
       "atomic_undo_unavailable": "The current writer commits the archived head without Undo, then enters a separate protected authority transaction. Keep both flags false and the challenge in place until the Step 2 idle-archive writer gate passes.",
-      "confirmation_when": "Before the writer gate passes, require a challenge. After it passes, an eligible idle archive resolves and dispatches in one exchange without a sheet. Challenge archive outside atomic_undo_when. Retiring grants with head-only Undo requires a challenge. For an active execution the host-written material says: The running execution will be stopped. A pending intent or active execution requires confirmation bound to that exact target and the current starter or live PluginsManage authority.",
-      "atomic_undo_when": "Idle archive requires no active execution, unresolved send intent or pending approval to retire. Saved authority requires a challenge unless it consists only of item grants that the Step 2 writer retires in the same FULL item content transaction as archive and that Undo restores together with the item head. Retiring grants with head-only Undo requires a challenge. Check idle eligibility under the commit fence. Execution admission rejects a fresh admission to an archived head under the same fence. Commit the archived head and its unarchive Undo in one FULL item content transaction, with no separate cleanup.",
+      "confirmation_when": "Before the writer gate passes, require a challenge. After it passes, an eligible idle archive resolves and dispatches in one exchange without a sheet. Challenge archive outside atomic_undo_when. Retiring grants with head-only Undo requires a challenge. For an active execution the host-written material says: The running execution will be stopped. Any unresolved execution intent or active attempt requires confirmation bound to that exact target and the current starter or live PluginsManage authority.",
+      "atomic_undo_when": "Use the execution_intents idle predicate under the lifecycle fence. Saved authority requires a challenge unless it consists only of item grants that the Step 2 writer retires in the same FULL item content transaction as archive and that Undo restores together with the item head. Retiring grants with head-only Undo requires a challenge. Check idle eligibility under the commit fence. Execution admission rejects a fresh admission to an archived head under the same fence. Commit the archived head and its unarchive Undo in one FULL item content transaction, with no separate cleanup.",
       "full_swipe_when": "After the Step 2 idle-archive atomic writer with Undo passes, enable atomic_undo and full_swipe for the first swipe action with effective confirm:none and the idle condition.",
       "kind_capability": "conversation",
-      "execution_fence": "When confirmation pins an unresolved intent, durably refuse it in the same FULL archive/Undo commit. Undo never clears that refusal. Recheck the live execution-control authority and pinned target under the lifecycle fence."
+      "execution_fence": "Apply execution_intents.stop_and_archive, including the durable exact-intent refusal and its preservation through Undo."
     },
     "host.item.unarchive": {
       "engine": "item lifecycle unarchive",
@@ -864,7 +871,7 @@
         "$ref": "#/$defs/ActionOutcome"
       },
       "atomic_undo": false,
-      "atomic_undo_unavailable": "The current item writer stores one shared manual deadline and cannot implement this actor-scoped operation. Set available to true only after the Step 2 actor-keyed snooze writer gate proves that the actor’s deadline, its index entry and Undo commit together. The host refuses snooze on every route while available is false. Subscription retry state is unaffected.",
+      "atomic_undo_unavailable": "The current item writer stores one shared manual deadline and cannot implement this actor-scoped operation. Set available to true only after the Step 2 actor-keyed snooze writer gate proves that the actor’s deadline, its index entry and Undo commit together. The host refuses snooze on every route while available is false. Subscription retry state is unaffected. Apply execution_intents.snooze to all execution intents.",
       "kind_capability": "conversation"
     },
     "host.collection.move": {
@@ -1199,7 +1206,7 @@
         "$ref": "#/$defs/ResumeOutcome"
       },
       "atomic_undo": false,
-      "rules": "Under the lifecycle fence, require no active attempt or pending intent for the conversation. Reconcile uncertain effects first. Atomically commit one fresh continuation intent, Starting, the activation receipt and the owning composer job without appending a message. The job uses authenticated ExecutionJobContext and execution_start. Do not replay old messages, approvals or the previous execution. Exact authorized replay returns the same receipt. Do not disclose or let the client select session IDs.",
+      "rules": "Use execution_intents.admission. Reconcile uncertain effects before committing a fresh continuation intent through the owning composer job. Append no message. Do not replay old messages, approvals or the previous execution. Exact authorized replay returns the same receipt. Do not disclose or let the client select session IDs.",
       "refusals": {
         "previous_session_unavailable": {
           "state": "refused",
@@ -1224,7 +1231,7 @@
         "admission_limit": {
           "state": "refused",
           "message": "An execution limit was reached.",
-          "rule": "Use existing admission quotas and reserve capacity before committing."
+          "rule": "Apply execution_intents.admission."
         }
       },
       "resolution_schema": {
@@ -1472,13 +1479,13 @@
     "Timestamp": {
       "type": "string",
       "format": "date-time",
-      "pattern": "^[0-9]{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])[Tt](?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]+)?(?:[Zz]|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$(?![\\s\\S])",
+      "pattern": "^[0-9]{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])[Tt](?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]+)?(?:[Zz]|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])(?![\\s\\S])",
       "maxLength": 40,
       "description": "The host emits RFC 3339 timestamps with seconds 00 to 59 only, recording a leap-second instant as second 59 with the fraction clamped to the maximum representable value."
     },
     "KindId": {
       "type": "string",
-      "pattern": "^[a-z][a-z0-9_-]{0,63}$"
+      "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
     },
     "CollectionRef": {
       "$ref": "#/$defs/Ref",
@@ -1705,10 +1712,14 @@
       ],
       "properties": {
         "name": {
-          "$ref": "#/$defs/Text"
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
         },
         "label": {
-          "$ref": "#/$defs/Text"
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
         },
         "value": {}
       }
@@ -1735,7 +1746,8 @@
           "maxItems": 32,
           "items": {
             "$ref": "#/$defs/ConfirmationMaterial"
-          }
+          },
+          "minItems": 1
         },
         "confirm": {
           "$ref": "#/$defs/ConfirmMode",
@@ -2340,7 +2352,7 @@
         },
         "source_state_sha256": {
           "type": "string",
-          "pattern": "^[0-9a-f]{64}$"
+          "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
         },
         "content_type": {
           "enum": [
@@ -2355,7 +2367,7 @@
         },
         "sha256": {
           "type": "string",
-          "pattern": "^[0-9a-f]{64}$"
+          "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
         },
         "component": {
           "$ref": "#/$defs/ActionId"
@@ -3155,7 +3167,7 @@
             },
             "public_key": {
               "type": "string",
-              "pattern": "^[A-Za-z0-9_-]{43}$"
+              "pattern": "^[A-Za-z0-9_-]{43}(?![\\s\\S])"
             }
           }
         }
@@ -3971,7 +3983,7 @@
     },
     "RowImageRef": {
       "type": "string",
-      "pattern": "^[A-Za-z0-9_-]{22,128}$",
+      "pattern": "^[A-Za-z0-9_-]{22,128}(?![\\s\\S])",
       "description": "Host-issued opaque display reference carried in a projected field. It has no sort or filter operators and cannot supply an operation operand. Read through query.row_images."
     },
     "RowImageIcon": {
@@ -3990,11 +4002,11 @@
           "properties": {
             "field": {
               "type": "string",
-              "pattern": "^[a-z][a-z0-9_]{0,47}$"
+              "pattern": "^[a-z][a-z0-9_]{0,47}(?![\\s\\S])"
             },
             "fallback": {
               "type": "string",
-              "pattern": "^[a-z][a-z0-9_]{0,47}$",
+              "pattern": "^[a-z][a-z0-9_]{0,47}(?![\\s\\S])",
               "description": "Projected body_excerpt Text field. Draw a simple document miniature from the freshly authorized snippet when the image is missing or loading. When no snippet is available, draw the document miniature without text."
             },
             "aspect": {
@@ -4321,6 +4333,28 @@
               }
             }
           }
+        },
+        {
+          "if": {
+            "properties": {
+              "actions": {
+                "contains": {
+                  "properties": {
+                    "decision": {
+                      "const": "approve"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "material": {
+                "minItems": 1
+              }
+            }
+          }
         }
       ]
     },
@@ -4448,7 +4482,7 @@
     },
     "ExecutionIntentRef": {
       "$ref": "#/$defs/Ref",
-      "description": "Opaque exact durable intent from prepared Send or protected Resume. Valid only in its owning job context or host-issued execution control."
+      "description": "Opaque exact durable execution intent under execution_intents. Valid only in its owning job context or host-issued execution control."
     },
     "ExecutionJobContext": {
       "type": "object",
@@ -4621,7 +4655,7 @@
         },
         "digest": {
           "type": "string",
-          "pattern": "^[0-9a-f]{64}$"
+          "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
         },
         "ticket": {
           "$ref": "#/$defs/Ref"
@@ -4835,7 +4869,7 @@
         "media_type": {
           "type": "string",
           "maxLength": 127,
-          "pattern": "^[a-z0-9][a-z0-9!#$&^_.+-]*/[a-z0-9][a-z0-9!#$&^_.+-]*$"
+          "pattern": "^[a-z0-9][a-z0-9!#$&^_.+-]*/[a-z0-9][a-z0-9!#$&^_.+-]*(?![\\s\\S])"
         },
         "bytes": {
           "type": "integer",
@@ -4876,7 +4910,8 @@
             "selection_ref": false
           }
         }
-      ]
+      ],
+      "description": "A protected challenge. Apply confirmation.material_by_kind for host.execution.resume."
     }
   },
   "activation_limits": {
@@ -4892,7 +4927,7 @@
       "output": {
         "$ref": "#/$defs/ExecutionStatus"
       },
-      "scope": "Derive the intent and exact owning job receipt from authenticated host job context at claim and replay. Under the lifecycle fence, recheck that binding, live item state, pinned contribution and placement. A live authorized replay returns the existing result even with a new request ID. Each intent can admit at most one attempt. Refuse missing, foreign or retired context.",
+      "scope": "Apply execution_intents.admission. Derive the intent and owning job receipt from authenticated job context at claim and replay. Under the lifecycle fence recheck that binding, live item state, pinned contribution and placement. An authorized replay returns the existing result even with a new request ID. Refuse missing, foreign or retired context.",
       "invocation_context_schema": {
         "$ref": "#/$defs/ExecutionJobContext"
       }
@@ -4931,7 +4966,7 @@
       "output": {
         "$ref": "#/$defs/ExecutionStopResult"
       },
-      "scope": "Check the starter or live PluginsManage and item right under the lifecycle fence. A pending intent is durably refused before admission. An exact admitted attempt is fenced before remote Stop. Never retarget a stale control to its replacement."
+      "scope": "Apply execution_intents.stop_and_archive. Fence an exact admitted attempt before remote Stop."
     },
     "execution_wait": {
       "input": {
@@ -5096,7 +5131,7 @@
       "output_schema": {
         "$ref": "#/$defs/LeaseRenewResult"
       },
-      "scope": "Original authenticated view session and cache partition, with fresh authority for the requested lease and its issued window versions Replace the composer action map and its contexts together after accepting the correlated renewal. Recompute eligibility and retire omitted IDs or replaced contexts. A newly eligible Stop may target a pending intent. Recompute Resume eligibility and require a fresh context if the binding or material changes."
+      "scope": "Original authenticated view session and cache partition, with fresh authority for the requested lease and its issued window versions Replace the composer action map and its contexts together after accepting the correlated renewal. Recompute eligibility and retire omitted IDs or replaced contexts. A newly eligible Stop may target any unresolved execution intent. Recompute Resume eligibility and require a fresh context if the binding or material changes."
     },
     "choice.options": {
       "output_schema": {
@@ -5263,7 +5298,224 @@
     },
     "none": "A host catalogue read, or a host catalogue mutation marked atomic_undo whose engine commits the complete effect and Undo in one recovery-visible transaction and satisfies any atomic_undo_when condition. For mutations the only material may be the drawn target or fields of the submitting form. host.item.create may also use its checked route or literal CollectionRef. For host.collection.move, the checked ChoiceRef and its actor-only destination may use the shortcut under confirmation_when.",
     "challenge": "Irreversible, external, widens_access, bulk sets, declared material_inputs, any destination, recipient, audience or permission, or unproven material. Never bypassed by atomic_undo. Use the confirmation_when rules for host.item.create and host.collection.move.",
-    "ordinary": "Worker operations always use separate resolution and dispatch. A reversible manifest declaration never permits the shortcut. Return a challenge only for required material or effects; otherwise omit confirm."
+    "ordinary": "Worker operations always use separate resolution and dispatch. A reversible manifest declaration never permits the shortcut. Return a challenge only for required material or effects; otherwise omit confirm.",
+    "material_by_kind": {
+      "composer.send": {
+        "required": [
+          "conversation",
+          "provider",
+          "model",
+          "reasoning",
+          "permission",
+          "machine"
+        ],
+        "when": {
+          "has_attachments": [
+            "attachments"
+          ],
+          "has_mentions": [
+            "mentions"
+          ],
+          "has_quote": [
+            "quote"
+          ]
+        }
+      },
+      "host.execution.resume": {
+        "required": [
+          "conversation",
+          "provider",
+          "machine",
+          "profile",
+          "permission"
+        ]
+      },
+      "host.execution.stop": {
+        "required": [
+          "conversation",
+          "effect"
+        ]
+      },
+      "host.item.archive": {
+        "required": [
+          "item",
+          "effect"
+        ],
+        "when": {
+          "stops_execution": [
+            "execution_effect"
+          ],
+          "retires_grants": [
+            "audience"
+          ]
+        }
+      },
+      "host.item.rename": {
+        "required": [
+          "item",
+          "title"
+        ]
+      },
+      "host.item.trash": {
+        "required": [
+          "items",
+          "effect"
+        ]
+      },
+      "host.item.restore": {
+        "required": [
+          "item",
+          "effect"
+        ],
+        "when": {
+          "from_history": [
+            "source_revision"
+          ]
+        }
+      },
+      "host.item.unarchive": {
+        "required": [
+          "item",
+          "effect"
+        ]
+      },
+      "host.item.snooze": {
+        "required": [
+          "item",
+          "until"
+        ]
+      },
+      "host.item.patch-metadata": {
+        "required": [
+          "item",
+          "changes"
+        ]
+      },
+      "host.collection.move": {
+        "required": [
+          "items",
+          "destination",
+          "audience"
+        ]
+      },
+      "host.trash.purge": {
+        "required": [
+          "items",
+          "effect"
+        ]
+      },
+      "host.item.share": {
+        "required": [
+          "items",
+          "audience",
+          "permission"
+        ]
+      },
+      "host.approval.resolve": {
+        "required": [
+          "effect",
+          "decision"
+        ],
+        "when": {
+          "approving": [
+            "lifetime"
+          ]
+        },
+        "request_card": "An actionable card shows the checked effect's named inputs, or its host effect summary when there are no inputs. The offered decisions and lifetime lists carry the rest of the material. The card itself is the protected surface."
+      },
+      "host.panel.ask": {
+        "required": [
+          "destination",
+          "text"
+        ],
+        "when": {
+          "has_item": [
+            "item"
+          ],
+          "has_draft": [
+            "draft"
+          ],
+          "has_quote": [
+            "quote"
+          ]
+        }
+      },
+      "host.session.end": {
+        "required": [
+          "account",
+          "effect"
+        ]
+      },
+      "host.layout.move_to": {
+        "required": [
+          "entry",
+          "section"
+        ]
+      },
+      "host.layout.move_up": {
+        "required": [
+          "entry",
+          "effect"
+        ]
+      },
+      "host.layout.move_down": {
+        "required": [
+          "entry",
+          "effect"
+        ]
+      },
+      "host.layout.section.create": {
+        "required": [
+          "layout",
+          "title"
+        ]
+      },
+      "host.layout.section.rename": {
+        "required": [
+          "entry",
+          "title"
+        ]
+      },
+      "host.layout.section.remove": {
+        "required": [
+          "entry",
+          "effect"
+        ]
+      },
+      "plugin_operation": {
+        "required": [
+          "operation",
+          "effect"
+        ],
+        "when": {
+          "has_target": [
+            "target"
+          ],
+          "has_bulk_selection": [
+            "items"
+          ],
+          "has_destination": [
+            "destination"
+          ],
+          "has_recipient": [
+            "recipient"
+          ],
+          "has_audience": [
+            "audience"
+          ],
+          "has_permission": [
+            "permission"
+          ]
+        }
+      }
+    },
+    "no_challenge_kinds": [
+      "host.item.create",
+      "host.route.set",
+      "host.action.status",
+      "host.undo"
+    ],
+    "material_rule": "Select the row by the checked operation and host surface. Check all material for the exact normalized request under the pinned context. Reject empty lists, duplicate names or missing required entries. For every current checked fact listed in when, require its entries too. Include untouched prefills and all applicable material. Plugin challenges also include present manifest material_inputs as checked by the host. Keys are host-owned except for manifest input names. Render labels and checked values. Explicit default, none or clearing choices are shown with a readable label. The device cannot supply the challenge kind or facts."
   },
   "schedule_create_input": {
     "$ref": "#/$defs/ScheduleCreateInput"
@@ -5295,5 +5547,15 @@
       "provider_icon"
     ],
     "scope": "Check live own-space membership, the paired window and the host offline allowlist. Cache only a prefix of those rows in the same order. Take the title from the row title field. For the secondary line take only eligible plain text parts or the first eligible declared date part. Drop body-backed parts and restricted fields regardless of the display slot. Omit the record if any required title is ineligible. A provider label is ordinary eligible Text metadata from the paired row. The provider icon and provider authority are separate."
+  },
+  "execution_intents": {
+    "origins": [
+      "prepared_send",
+      "protected_resume"
+    ],
+    "admission": "Under the conversation lifecycle fence refuse admission for an archived or deleted head or a cutover-fenced writer. Reserve the same quotas for either origin. Allow at most one unresolved execution intent or active attempt per conversation. Commit Starting, the exact intent, its receipt and owning job together. Exact-intent start admits at most one attempt and an authorized replay returns its existing result.",
+    "stop_and_archive": "Idle archive requires no unresolved execution intent, active attempt or approval to retire. A protected archive pins and durably refuses the exact unresolved execution intent in the FULL archive and Undo transaction. Undo never reopens the refusal. Stop durably refuses the exact unresolved execution intent or fences the exact admitted attempt. Recheck live execution control and item authority under the fence. Do not retarget replacements.",
+    "snooze": "Actor-keyed snooze and Undo only change the actor's deadline and index. Neither mutates, retires, reopens or admits any execution intent, nor changes retries.",
+    "cutover": "Halt new intents and attempts. Drain every unresolved execution intent or verify its existing protected durable refusal and verify zero active attempts and zero unresolved execution intents before switching writers. Preserve intents, refusals and receipts under protected custody. Do not admit or reopen retired intents on the new writer or rollback."
   }
 }

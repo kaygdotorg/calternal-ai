@@ -1,0 +1,32 @@
+{
+  "definition": "ResumeResolution",
+  "value": {
+    "activation_id": "activation-resume",
+    "resolution_ref": "resolved-resume",
+    "confirmation_challenge": "resume-challenge",
+    "confirm": "challenge",
+    "material": [
+      {
+        "name": "conversation",
+        "label": "Conversation",
+        "value": "Example"
+      },
+      {
+        "name": "provider",
+        "label": "Provider",
+        "value": "Provider"
+      },
+      {
+        "name": "machine",
+        "label": "Machine",
+        "value": "Laptop"
+      },
+      {
+        "name": "permission",
+        "label": "Permission",
+        "value": "Ask"
+      }
+    ]
+  },
+  "error": "$.material: missing confirmation entry 'profile'"
+}

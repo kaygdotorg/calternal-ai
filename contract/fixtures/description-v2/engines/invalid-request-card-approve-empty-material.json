@@ -1,0 +1,22 @@
+{
+  "definition": "RequestCardRecord",
+  "value": {
+    "request_ref": "request-ref",
+    "title": "Approve edit",
+    "state": "open",
+    "material": [],
+    "actions": [
+      {
+        "decision": "approve",
+        "lifetimes": [
+          "once"
+        ]
+      },
+      {
+        "decision": "deny"
+      }
+    ],
+    "card_context": "context"
+  },
+  "error": "$.material: fewer than 1 items"
+}

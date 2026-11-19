@@ -15,5 +15,6 @@
   "invalid-event-catalogue-composer-resume-client-binding.json": "unexpected values for this host composer action",
   "invalid-event-catalogue-composer-resume-wrong-context.json": "must match the issued composer action context",
   "invalid-event-catalogue-component-transcript-attachment.json": "$.request.attachment: expected string",
-  "invalid-event-catalogue-composer-resume-guest.json": "Resume requires a member view"
+  "invalid-event-catalogue-composer-resume-guest.json": "Resume requires a member view",
+  "invalid-event-catalogue-composer-resume-challenge-partial.json": "$.material: missing confirmation entry 'machine'"
 }

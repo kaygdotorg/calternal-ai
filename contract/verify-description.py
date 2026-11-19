@@ -18,6 +18,8 @@ import pathlib
 import re
 import sys
 
+from description_confirmation import check_confirmation_material, check_confirmation_table
+from description_intent_trace import check_intent_trace
 from description_input import PackageInput, Validation, check_unique_ids, lexical_path, read_bytes, read_json, resolved_path
 
 from description_events import COMPONENT_TYPES, EventBindings, check_composer_actions, check_composer_invoke, check_event_binding, check_route_capacity, route_operands, validate_component_request, walk
@@ -99,7 +101,7 @@ def semantic(doc, errors, catalogue, manifest, installed_manifests=()):
                             if field_meta(row_fields, operand.get("field"), generic).get("type") == "RowImageRef":
                                 errors.append(f"{path}: RowImageRef cannot supply operation input {name!r}")
             if node.get("fullSwipe"):
-                if not re.search(r"(leadingActions|trailingActions)\[0\]$", path):
+                if not re.search(r"(leadingActions|trailingActions)\[0\]\Z", path):
                     errors.append(f"{path}: fullSwipe is allowed only on the first action of a swipe set")
                 if catalogue is not None and not (entry and entry.get("full_swipe", False)):
                     errors.append(f"{path}: fullSwipe is rejected on {op}: the catalogue does not allow it (plugin operations never may)")
@@ -469,7 +471,8 @@ def validate_description(doc, manifest, installed, errors):
 def validate_composer_capture(capture, bindings, errors):
     """Check a bounded chain of accepted replies before resolving an invoke."""
     base = {"view_open", "event"}
-    if capture.keys() not in (base, base | {"renewals"}) or not bindings or verification.CATALOGUE is None:
+    if (not base <= capture.keys() <= base | {"renewals", "resolution"}
+            or not bindings or verification.CATALOGUE is None):
         errors.append("$: composer capture requires an originating description, view_open and event")
         return
     catalogue = verification.CATALOGUE
@@ -542,8 +545,21 @@ def validate_composer_capture(capture, bindings, errors):
                 errors.append(f"{path}.result.retained_results: must name a requested exact result under the unchanged grant")
         reply = result
         issued = issued_actions(reply, f"{path}.result")
+    event = capture["event"]
     if not errors:
-        check_composer_invoke(capture["event"], reply, issued, errors)
+        check_composer_invoke(event, reply, issued, errors)
+    if not errors and "resolution" in capture:
+        purpose = issued[event["action_id"]][1]
+        kind = "composer.send" if purpose == "send" else f"host.execution.{purpose}"
+        definition = "ResumeResolution" if purpose == "resume" else "ActivationResolution"
+        resolution = capture["resolution"]
+        check({"$ref": f"#/$defs/{definition}"}, resolution, "$.resolution", errors, catalogue)
+        if not errors and resolution["activation_id"] != event["activation_id"]:
+            errors.append("$.resolution.activation_id: must match the originating invoke")
+        facts = [f"has_{name}" for name, value in event.get("interaction", {}).get("draft", {}).items()
+                 if name in ("attachments", "mentions", "quote") and value]
+        if not errors:
+            check_confirmation_material(resolution, kind, facts, errors, catalogue)
 
 
 def validate_event(doc, bindings, errors):
@@ -653,6 +669,12 @@ def run_fixtures():
         except (DuplicateKey, ValueError) as error:
             errors.append(str(error))
         failed |= not report_fixture(file, errors, expected)
+    if verification.CATALOGUE is not None:
+        errors = Validation()
+        check_confirmation_table(errors, verification.CATALOGUE)
+        if errors:
+            print(f"FAIL confirmation material table  {list(errors)!r}")
+            failed = True
     for file in sorted((fixtures_dir / "engines").glob("*.json")):
         if verification.CATALOGUE is None:
             continue
@@ -660,6 +682,11 @@ def run_fixtures():
         case = read_json(file, errors)
         if not errors:
             check({"$ref": f"#/$defs/{case['definition']}"}, case["value"], "$", errors, verification.CATALOGUE)
+        if not errors and case["definition"] in ("ActivationResolution", "ResumeResolution"):
+            kind = "host.execution.resume" if case["definition"] == "ResumeResolution" else case.get("challenge_kind")
+            if case["value"].get("confirm") == "challenge" or kind is not None:
+                check_confirmation_material(case["value"], kind, case.get("checked_facts", ()),
+                                            errors, verification.CATALOGUE, inputs=case.get("material_inputs", ()))
         if not errors and case["definition"] in ("TranscriptPage", "TranscriptUpdate"):
             records_key = "records" if case["definition"] == "TranscriptPage" else "upserts"
             for record in errors.each(case["value"][records_key]):
@@ -671,6 +698,17 @@ def run_fixtures():
         if not errors and case["definition"] == "HostWorkerInvokeFrame":
             manifest = verification.load_checked_manifest(manifests_dir / case["manifest"], errors)
             verification.check_worker_invocation(case["value"], manifest, case.get("job"), errors)
+        want = case.get("error") if case else None
+        passed = any(want in error for error in errors) if want else not errors
+        print(("ok   " if passed else "FAIL ") + file.name + ("" if passed else f"  {list(errors)!r}"))
+        failed |= not passed
+    for file in sorted((fixtures_dir / "intent-races").glob("*.json")):
+        if verification.CATALOGUE is None:
+            continue
+        errors = Validation()
+        case = read_json(file, errors)
+        if not errors:
+            check_intent_trace(case, errors, verification.CATALOGUE)
         want = case.get("error") if case else None
         passed = any(want in error for error in errors) if want else not errors
         print(("ok   " if passed else "FAIL ") + file.name + ("" if passed else f"  {list(errors)!r}"))

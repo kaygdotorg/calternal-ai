@@ -82,13 +82,13 @@
   "definitions": {
     "noNetworkBadge": { "$ref": "host-catalogue-v2.json#/$defs/NoNetworkBadgeManifest" },
     "windowRequest": { "$ref": "host-catalogue-v2.json#/$defs/WindowRequest" },
-    "localId": { "type": "string", "pattern": "^[a-z][a-z0-9]*(?:[-_][a-z0-9]+)*$", "maxLength": 64 },
-    "operationId": { "type": "string", "pattern": "^[a-z][a-z0-9_-]*(?:\\.[a-z][a-z0-9_-]*)+$", "maxLength": 128 },
+    "localId": { "type": "string", "pattern": "^[a-z][a-z0-9]*(?:[-_][a-z0-9]+)*(?![\\s\\S])", "maxLength": 64 },
+    "operationId": { "type": "string", "pattern": "^[a-z][a-z0-9_-]*(?:\\.[a-z][a-z0-9_-]*)+(?![\\s\\S])", "maxLength": 128 },
     "label": { "type": "string", "minLength": 1, "maxLength": 128 },
-    "path": { "type": "string", "minLength": 1, "maxLength": 256, "pattern": "^(?!.*(?:^|/)\\.{1,2}(?:/|$))[A-Za-z0-9_-][A-Za-z0-9._-]*(?:/[A-Za-z0-9_-][A-Za-z0-9._-]*)*$" },
+    "path": { "type": "string", "minLength": 1, "maxLength": 256, "pattern": "^(?!.*(?:^|/)\\.{1,2}(?:/|(?![\\s\\S])))[A-Za-z0-9_-][A-Za-z0-9._-]*(?:/[A-Za-z0-9_-][A-Za-z0-9._-]*)*(?![\\s\\S])" },
     "asset": {
       "type": "object", "additionalProperties": false, "required": ["path", "sha256"],
-      "properties": { "path": { "$ref": "#/definitions/path" }, "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" } }
+      "properties": { "path": { "$ref": "#/definitions/path" }, "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}(?![\\s\\S])" } }
     },
     "icon": {
       "oneOf": [
@@ -126,7 +126,7 @@
         "title_field": { "$ref": "#/definitions/localId", "description": "Ordinary string metadata exposed as the generic title. Declare the named property directly in schema.properties on a metadata root without $ref. Its own schema, after resolving references within the same embedded metadata document, must declare type \"string\" or [\"string\"]. Patterns, combinators, conditionals and literals cannot establish the type. Install rejects a body-derived or extractor-owned source, a reserved host projection, or an indexed source with a narrower audience." },
         "storage": { "$ref": "plugin-manifest-v1.schema.json#/definitions/ManifestPlacement" },
         "claimed_text": { "type": "boolean" },
-        "extension": { "type": "string", "pattern": "^[a-z0-9]{1,16}$" },
+        "extension": { "type": "string", "pattern": "^[a-z0-9]{1,16}(?![\\s\\S])" },
         "schema": { "$ref": "#/definitions/embeddedSchema" },
         "searchable": { "type": "boolean", "description": "Opt a claimed-text kind into the host background search projection and the claimed-text plans in query.search of the host catalogue. The host checks current scope and field authority at query time. Omission or false leaves the kind out of search." },
         "indexed_fields": {
@@ -320,7 +320,7 @@
             },
             "job": {
               "$ref": "#/definitions/localId",
-              "description": "Replayable job to enqueue with the cold Send receipt. Its entry targets this conversation kind."
+              "description": "Replayable job to enqueue with an admitted execution intent receipt. Its entry targets this conversation kind."
             }
           }
         },
@@ -409,7 +409,7 @@
         },
         "image": {
           "type": "string",
-          "pattern": "^sha256:[0-9a-f]{64}$"
+          "pattern": "^sha256:[0-9a-f]{64}(?![\\s\\S])"
         },
         "models": {
           "type": "array",
@@ -591,7 +591,7 @@
       }
     },
     "hostname": {
-      "type": "string", "minLength": 1, "maxLength": 253, "pattern": "^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$",
+      "type": "string", "minLength": 1, "maxLength": 253, "pattern": "^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?(?![\\s\\S])",
       "description": "Exact DNS name, checked and normalized by netguard."
     }
   }

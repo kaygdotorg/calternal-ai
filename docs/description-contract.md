@@ -1,6 +1,6 @@
 # Description contract (v2)
 
-Status: **revision 14.9 draft (based on 13.18)**, paired with the [Plugin API v2 specification](plugin-api-v2.md). The [description schema](../contract/description-v2.schema.json) defines the shared renderer shapes.
+Status: **revision 14.10 draft (based on 13.18)**, paired with the [Plugin API v2 specification](plugin-api-v2.md). The [description schema](../contract/description-v2.schema.json) defines the shared renderer shapes.
 
 The schema is checked with `python3 contract/verify-description.py` against the fixtures in `contract/fixtures/description-v2/` (valid ones must pass,
 `invalid-*` ones must report the reason in their directory’s `expected-errors.json`). The fixtures are the paper exercises of section 9. The verifier uses `replies/origins.json` to resolve each standalone window reply to its description fixture and Bind, then checks every projected value against the kind’s declared field type.
@@ -193,7 +193,7 @@ what is retried and what is shown come from the host catalogue and the manifest.
 exact ids, typed inputs, effect class, `confirm: none | challenge`, authority, whether it may be a generic invoke, whether it may be a full swipe, worker-wake behaviour).
 Built-ins that need no worker run in the host without waking the space runtime; a swipe on a row must not start a runtime. The catalogue, not this document, says which
 operations a description may name; the schema and the verifier reject the ones that belong to a component, an outcome, a sheet or the shell: `host.approval.resolve` (the request
-card), `host.undo` and `host.action.status` (an outcome), `host.panel.ask` (the transcript's quote control), prepared Send and `host.execution.stop` (the composer),
+card), `host.undo` and `host.action.status` (an outcome), `host.panel.ask` (the transcript's quote control), prepared Send, `host.execution.resume` and `host.execution.stop` (the composer),
 `host.trash.purge` and `host.item.share` (protected sheets), `host.route.set` and `host.session.end` (shell controls). A description reaches the Trash and share sheets and the
 shell controls through a `ShellAction` (`shell: {sheet: trash | share}`, `{route}`, `{reload}`, `{signOut}`).
 
@@ -227,7 +227,7 @@ host  -> shell { activation_id, state: ok | pending | error | stale | refused | 
   **A plugin (worker-backed) operation always takes the ordinary path:** a resolve, then a separate dispatch: **two exchanges**, and **no sheet** unless the host says material requires a
   challenge (a destination, recipient, audience or permission, a bulk set, an irreversible, external or access-widening effect, or an input the manifest declares material): then the host
   answers the resolve with a `confirmation_challenge` and a **material** list **it wrote** (values the person did not edit included: untouched prefills, defaults, autofill), the shell
-  shows it in its own protected sheet, `invoke_confirm` returns the challenge, and the host returns a `confirmation_proof` bound to the normalized input and the `activation_id`
+  checks the catalogue’s required material for that challenge kind and shows it in its own protected sheet, `invoke_confirm` returns the challenge, and the host returns a `confirmation_proof` bound to the normalized input and the `activation_id`
   (different input: a new challenge); a challenged action is three exchanges. A description cannot add, remove or relabel anything here. **Typing is never consent**: no value counts as
   confirmed because it was typed; where a challenge is required, the person's confirmation through the protected step is the consent.
 * **Chat send is one exchange, and the final text is message content only.** The composer pre-resolves only when the prepared material changes (provider, model, machine and other options,
@@ -328,7 +328,7 @@ the web, SwiftUI natively); no plugin is written twice, and anything the vocabul
 ### 5.1 Host components (`$defs/Component`, five types)
 
 Each is `{type, id, config}` with a typed `config` (a closed object: an unknown key is refused); the host draws it and receives its events directly (no page, no
-plugin code). A description can run a named **invoke** on a component's event only where a config says so (today only `onTitleChange`); every other event, **including a composer's send and stop and a transcript's quote, is the host's alone**.
+plugin code). A description can run a named **invoke** on a component's event only where a config says so (today only `onTitleChange`); every other event, **including a composer's send, stop and resume and a transcript's quote, is the host's alone**.
 
 | Component | Config | Events (typed; handled by the host unless an invoke is named) | Native review |
 | --- | --- | --- | --- |
@@ -406,7 +406,7 @@ or later renewal. Ignore a reply for a superseded request. A new lease
 or grant revision requires fresh composer contexts. A token remains bound to
 its original component, purpose and action ID. Compare against every
 action context in the reply, including renewed windows.
-This lets an open composer receive Stop when a cold Send enters Starting.
+This lets an open composer receive Stop when any execution intent enters Starting.
 The component ID is the lookup
 key. A composer action ID is not author-defined. Send the exact context
 under that action ID, scoped to the opening view and current lease. Use

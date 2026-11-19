@@ -1,0 +1,61 @@
+{
+  "origin": "protected_resume",
+  "events": [
+    [
+      "commit_intent",
+      "first",
+      "starting"
+    ],
+    [
+      "idle_archive",
+      null,
+      "challenge"
+    ],
+    [
+      "confirmed_archive",
+      "replacement",
+      "stale"
+    ],
+    [
+      "confirmed_archive",
+      "first",
+      "archived_and_refused"
+    ],
+    [
+      "restart",
+      null,
+      "recovered"
+    ],
+    [
+      "undo",
+      null,
+      "restored"
+    ],
+    [
+      "claim",
+      "first",
+      "started"
+    ],
+    [
+      "claim",
+      "first",
+      "refused"
+    ],
+    [
+      "commit_intent",
+      "fresh",
+      "starting"
+    ],
+    [
+      "claim",
+      "fresh",
+      "started"
+    ],
+    [
+      "claim",
+      "fresh",
+      "replayed"
+    ]
+  ],
+  "error": "$.events[6]: expected 'refused' at the execution intent fence"
+}
