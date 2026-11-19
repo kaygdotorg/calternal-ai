@@ -9,6 +9,7 @@ import { launch, serve, BASE } from "./lib.mjs";
 const HOST = process.env.HOST ?? "http://127.0.0.1:43125/step0/v2";
 const bearer = readFileSync(process.env.HOST_BEARER_FILE ?? `${process.env.HOME}/Developer/calternal-ai-lanes/.owner.token`, "utf8").trim();
 const shot = process.argv[2];
+const LISTSEL = process.env.LIST ?? "[data-node=list] [data-i]"; // VIEW=notes LIST="[data-section=notes] [data-i]" runs it on the Notes template
 const stop = await serve(); const browser = await launch();
 let bad = 0;
 const ok = (c, m, note = "") => { console.log(`${c ? "PASS" : "FAIL"}  ${m}${note ? "  " + note : ""}`); if (!c) bad++; };
@@ -17,8 +18,8 @@ const p = await ctx.newPage(); const cdp = await ctx.newCDPSession(p);
 const wire = [];
 p.on("request", (r) => { if (r.method() === "POST" && /activation|choice|undo/.test(r.url())) wire.push({ route: new URL(r.url()).pathname.split("/").pop(), body: r.postDataJSON() }); });
 const replies = []; p.on("response", async (r) => { if (/activation\.resolve/.test(r.url())) replies.push(await r.json().catch(() => ({}))); });
-await p.goto(`${BASE}/?host=${encodeURIComponent(HOST)}&bearer=${encodeURIComponent(bearer)}&viewName=home`);
-const row = p.locator("[data-node=list] [data-i]").first();
+await p.goto(`${BASE}/?host=${encodeURIComponent(HOST)}&bearer=${encodeURIComponent(bearer)}&viewName=${process.env.VIEW ?? "home"}`);
+const row = p.locator(LISTSEL).first();
 await row.waitFor({ timeout: 60000 });
 await p.waitForTimeout(800);
 
