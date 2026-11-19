@@ -20,7 +20,9 @@
     "harness:build": "npm run tokens -w @calternal/ui && vite build -c vite.harness.config.ts",
     "harness": "vite preview -c vite.harness.config.ts",
     "e2e:perf": "node e2e/perf.mjs",
-    "e2e:keys": "node e2e/keys.mjs"
+    "e2e:keys": "node e2e/keys.mjs",
+    "e2e:fixtures": "node e2e/fixtures.mjs",
+    "e2e": "npm run e2e:keys && npm run e2e:fixtures && npm run e2e:perf"
   },
   "peerDependencies": {
     "svelte": "^5.57.1"

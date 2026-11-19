@@ -192,6 +192,13 @@ export class WindowStore {
     else this.#dispatch({ bind: this.bind.id, from: this.#loadedEnd, to: this.#loadedEnd + this.size }, key, true);
   }
 
+  /** The query changed (a route parameter or the search text): forget everything and read again from the start. */
+  reset(): void {
+    if (this.#dead) return;
+    this.#clear(); this.#held = null; this.#stale.clear(); this.#endUnavailable = false; this.resultVersion = null; this.windowRef = null;
+    this.state = "loading"; this.planError = null; this.#bump(); this.#pump();
+  }
+
   /** After an action succeeded the host's lists may have changed: ask again for what is drawn (a new `result_version` replaces the window, the same one only merges). */
   refresh(): void {
     if (this.#dead) return;

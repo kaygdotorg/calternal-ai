@@ -2,7 +2,8 @@
   // A bound list: the windowed rows of one bind drawn with its row template, and its states. It reuses the design system's VirtualList (the only windowed list; one primitive, not forked) and Row, and the store
   // keeps the host's windows. While loading it draws skeleton rows of the real row height; `empty`, `error` and `refine_query` show the bind's own message (the renderer's plain default only for `error` and
   // `refine_query`, which a description may leave unsaid). The list takes the height of its container and scrolls itself, or with `inside` follows the nearest scrolling ancestor (a sidebar).
-  import { untrack } from "svelte";
+  import { getContext, untrack } from "svelte";
+  import { ACTIONS_KEY, APP_KEY, type ActionContext, type AppContext } from "../invoke/context";
   import { VirtualList, cssPx } from "@calternal/ui";
   import type { Bind, State } from "../model";
   import type { WindowStore } from "../windows/window-store.svelte";
@@ -11,8 +12,8 @@
   import SkeletonRow from "./SkeletonRow.svelte";
   import StateMessage from "./StateMessage.svelte";
 
-  let { store, selection, kindIcon, label, inside = false, onopen }: {
-    store: WindowStore; selection: Selection; kindIcon?: string; label: string; inside?: boolean;
+  let { store, selection, kindIcon, label, inside = false, multiple = false, onopen }: {
+    store: WindowStore; selection: Selection; kindIcon?: string; label: string; inside?: boolean; /** `selectionMode: multiple`: rows carry a tick box. */ multiple?: boolean;
     /** The selection settled on a row (after a key burst, or a click): the route opens here. Called once per settle. */
     onopen?: (id: string, index: number) => void;
   } = $props();
@@ -20,7 +21,14 @@
   let wantEnd = $state(false);
   // End on a list whose size is not known pages forward; when the last window has arrived the list scrolls to its bottom.
   $effect(() => { void store.tick; if (wantEnd && store.walkGoal === null && vl && store.length > 0) { wantEnd = false; vl.scrollToIndex(store.length - 1, "start"); } });
-  const choose = (id: string, i: number) => { void selection.settle(id); onopen?.(id, i); };
+  const app = getContext<AppContext | undefined>(APP_KEY), actions = getContext<ActionContext | undefined>(ACTIONS_KEY);
+  /** The row was chosen (rest after keys, or click): one settled selection, then what the row opens: a route parameter, or an action with the row's host-issued context. */
+  const choose = (id: string, i: number) => {
+    void selection.settle(id); onopen?.(id, i);
+    const o = template.open;
+    if (o && "route" in o) app?.setRoute(o.route.name, id);
+    else if (o && "invoke" in o && "operation" in o.invoke) void actions?.ui.invoker.run(o.invoke, { context: store.contexts(id)?.[o.invoke.id] });
+  };
 
   const bind: Bind = $derived(store.bind);
   const template = $derived(bind.row ?? { title: { field: "title" } });
@@ -62,7 +70,7 @@
       >
         {#snippet row(i)}
           {@const r = store.row(i)}
-          {#if r}<RowActions {template} row={r} {store} {kindIcon} selected={r.id === selection.drawn} onclick={() => choose(r.id, i)} />
+          {#if r}{#if multiple}<label class="tick"><input type="checkbox" checked={selection.ticked.includes(r.id)} onchange={() => selection.toggle(r.id)} aria-label="Select {r.id}" /></label>{/if}<RowActions {template} row={r} {store} {kindIcon} selected={r.id === selection.drawn} onclick={() => choose(r.id, i)} />
           {:else}<SkeletonRow icon={template.icon !== undefined} width={40 + ((i * 17) % 40)} />{/if}
         {/snippet}
       </VirtualList>
@@ -75,4 +83,5 @@
   .rows { position: relative; flex: 1; min-height: 0; }
   .rows.inside { flex: none; }
   .refine { flex: none; }
+  .tick { position: absolute; inset-inline-start: 4px; z-index: 1; display: grid; place-items: center; min-width: 28px; min-height: var(--row-h); }
 </style>

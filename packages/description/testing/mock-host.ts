@@ -15,7 +15,11 @@ export interface MockOptions {
   /** Milliseconds each window answer takes. */
   latencyMs?: number;
   /** Fields of row `i`. */
-  fields?: (i: number) => Record<string, unknown>;
+  fields?: (i: number, bind: string) => Record<string, unknown>;
+  /** Rows of a particular bind (an item bind has one); default `rows`. */
+  rowsFor?: (bind: string) => number;
+  /** Bind ids whose rows carry `parent_refs` for each (a description with child binds or repeated sections). */
+  parentBinds?: string[];
   /** Called with each window request (a spy). */
   onWindow?: (req: WindowRequestPayload) => void;
   /** Lets a test refuse or replace a window reply; return undefined for the normal answer. */
@@ -42,7 +46,7 @@ export class MockHost implements Transport {
   /** The id of row `i`. */
   id(i: number): string { return `r-${i}`; }
   /** Fields of row `i`. */
-  fields(i: number): Record<string, unknown> { return this.opts.fields ? this.opts.fields(i) : { title: `Row ${i}`, updated: 1_700_000_000 - i }; }
+  fields(i: number, bind = ""): Record<string, unknown> { return this.opts.fields ? this.opts.fields(i, bind) : { title: `Row ${i}`, updated: 1_700_000_000 - i }; }
   /** The contexts the host would issue for row `i`. */
   contexts(i: number) { return { row: this.id(i), contexts: { open: `ctx-${this.id(i)}` } }; }
 
@@ -51,9 +55,10 @@ export class MockHost implements Transport {
   setLast(req: WindowRequestPayload) { this.#last[req.anchor ?? "start"] = req.to; }
   /** A normal answer to a window request over this list. */
   answer(req: WindowRequestPayload): WindowReply {
+    const n = this.opts.rowsFor ? this.opts.rowsFor(req.bind) : this.rows;
     const audience = this.opts.audience ?? "own_space_member";
     const exact = (this.opts.count ?? "exact") === "exact";
-    if (this.rows === 0 && req.from === 0) return { audience, bind: req.bind, state: "empty", result_version: this.version, offset: 0, rows: [], window_ref: `w-${req.bind}`, ...(exact ? { count: { mode: "exact", value: 0 } } : {}) } as WindowReply;
+    if (n === 0 && req.from === 0) return { audience, bind: req.bind, state: "empty", result_version: this.version, offset: 0, rows: [], window_ref: `w-${req.bind}`, ...(exact ? { count: { mode: "exact", value: 0 } } : {}) } as WindowReply;
     const span = Math.min(200, req.to - req.from);
     const plan = (reason: string) => ({ status: 422, code: "unsupported_query_plan", reason }) as WindowReply;
     if (req.anchor === "end" && (!exact || this.opts.endUnavailable)) return plan("end_unavailable");
@@ -61,13 +66,16 @@ export class MockHost implements Transport {
     this.setLast(req);
     if (req.anchor === "end") {
       // distance zero is the last row; the rows come back in normal order, so the window is [last-to+1, last-from]
-      const hi = this.rows - 1 - req.from, lo = Math.max(0, hi - span + 1);
+      const hi = n - 1 - req.from, lo = Math.max(0, hi - span + 1);
       const idx: number[] = []; for (let i = lo; i <= hi; i++) idx.push(i);
-      return { audience, bind: req.bind, state: "ready", result_version: this.version, offset: this.rows - 1 - hi, anchor: "end", rows: idx.map((i) => ({ id: this.id(i), fields: this.fields(i) })), window_ref: `w-${req.bind}-e`, count: { mode: "exact", value: this.rows }, activation_contexts: idx.map((i) => this.contexts(i)) } as WindowReply;
+      return { audience, bind: req.bind, state: "ready", result_version: this.version, offset: n - 1 - hi, anchor: "end", rows: idx.map((i) => ({ id: this.id(i), fields: this.fields(i, req.bind), ...this.refs(i) })), window_ref: `w-${req.bind}-e`, count: { mode: "exact", value: n }, activation_contexts: idx.map((i) => this.contexts(i)) } as WindowReply;
     }
-    const idx: number[] = []; for (let i = req.from; i < Math.min(this.rows, req.from + span); i++) idx.push(i);
-    return { audience, bind: req.bind, state: "ready", result_version: this.version, offset: req.from, rows: idx.map((i) => ({ id: this.id(i), fields: this.fields(i) })), window_ref: `w-${req.bind}-${req.from}`, ...(exact ? { count: { mode: "exact", value: this.rows } } : {}), activation_contexts: idx.map((i) => this.contexts(i)) } as WindowReply;
+    const idx: number[] = []; for (let i = req.from; i < Math.min(n, req.from + span); i++) idx.push(i);
+    return { audience, bind: req.bind, state: "ready", result_version: this.version, offset: req.from, rows: idx.map((i) => ({ id: this.id(i), fields: this.fields(i, req.bind), ...this.refs(i) })), window_ref: `w-${req.bind}-${req.from}`, ...(exact ? { count: { mode: "exact", value: n } } : {}), activation_contexts: idx.map((i) => this.contexts(i)) } as WindowReply;
   }
+
+  /** The parent refs every row carries when the description has child binds. */
+  refs(i: number) { return this.opts.parentBinds?.length ? { parent_refs: Object.fromEntries(this.opts.parentBinds.map((b) => [b, `p-${b}-${i}`])) } : {}; }
 
   async post<T>(route: Route, body: unknown): Promise<T> {
     this.log.push({ route, body });

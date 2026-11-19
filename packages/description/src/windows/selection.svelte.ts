@@ -8,12 +8,14 @@ import type { ActionContexts } from "../model";
 import type { HostSession } from "../wire/session";
 
 /** The part of a session a selection needs. */
-export type SelectionHost = Pick<HostSession, "selection" | "lease">;
+export type SelectionHost = Pick<HostSession, "selection" | "lease"> & { exchange?: HostSession["exchange"] };
 
 /** The selection of one bind. */
 export class Selection {
   /** The row drawn as selected (the cursor), or null. */
   drawn = $state<string | null>(null);
+  /** Rows ticked in a multiple-selection list (at most 50). */
+  ticked = $state<string[]>([]);
   /** Settled selection requests sent (tests and the harness read it). */
   sent = 0;
   #contexts = $state<ActionContexts | null>(null);
@@ -48,6 +50,16 @@ export class Selection {
 
   /** The context for `action` on the drawn row, or undefined when none was issued for exactly that row (the activation then waits and sends nothing). */
   contextFor(action: string): string | undefined { return this.#contextsRow !== null && this.#contextsRow === this.drawn ? this.#contexts?.[action] : undefined; }
+
+  /** Ticks or unticks a row of a multiple-selection list (the 50th is the last). */
+  toggle(id: string): void { this.ticked = this.ticked.includes(id) ? this.ticked.filter((x) => x !== id) : this.ticked.length < 50 ? [...this.ticked, id] : this.ticked; }
+
+  /** The host-issued reference for the ticked rows (`SelectionSetRequest` -> `SelectionSetResult`); actions name the reference, never the ids. */
+  async ref(): Promise<string | undefined> {
+    if (!this.host.exchange) return undefined;
+    const r = await this.host.exchange<{ selection_ref: string }>("selection.set", { type: "selection_set", bind: this.bind, rows: [...this.ticked] });
+    return r.selection_ref;
+  }
 
   /** Forgets the selection (the list's result set was replaced and the row is gone). */
   clear(): void { this.drawn = null; this.#settled = null; this.#contexts = null; this.#contextsRow = null; this.#seq++; }

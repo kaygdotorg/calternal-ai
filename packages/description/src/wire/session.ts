@@ -20,6 +20,8 @@ export class HostSession {
   #lease: SubscriptionLease | null = null;
   #audience: WindowAudience | null = null;
   #viewContexts: ActionContexts = {};
+  /** The route parameters now in force (selector, open item), for hosts that read them from the transport. */
+  route: Record<string, string> = {};
   #leasedAt = 0;
   #renewalSeq = 0;
   #timer: ReturnType<typeof setTimeout> | null = null;
@@ -52,7 +54,7 @@ export class HostSession {
   /** One window request under the lease. Resolves with the host's reply (a typed refusal included). */
   window(request: WindowRequestPayload, signal?: AbortSignal): Promise<WindowReply> {
     if (!this.#lease) return Promise.reject(new Error("The view is not open."));
-    return this.transport.post<WindowReply>("window", { type: "window", request }, { lease: this.#lease.lease_ref, signal });
+    return this.transport.post<WindowReply>("window", { type: "window", request }, { lease: this.#lease.lease_ref, signal, route: this.route });
   }
 
   /** Tells the host which single row is now selected (the settled selection, section 3.2) and returns the contexts it issued for exactly that row. */

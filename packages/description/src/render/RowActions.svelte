@@ -10,8 +10,14 @@
   import { holds } from "./eval";
   import ActionButton from "./ActionButton.svelte";
   import RowView from "./RowView.svelte";
+  import ChildRows from "./ChildRows.svelte";
+  import { useApp } from "../invoke/context";
 
-  let { template, row, store, kindIcon, selected, onclick }: { template: RowTemplate; row: WindowRow; store: WindowStore; kindIcon?: string; selected: boolean; onclick?: (e: MouseEvent) => void } = $props();
+  let { template, row, store, kindIcon, selected, depth = 0, onclick }: { template: RowTemplate; row: WindowRow; store: WindowStore; kindIcon?: string; selected: boolean; depth?: number; onclick?: (e: MouseEvent) => void } = $props();
+  const app = useApp();
+  const kids = $derived(template.children ? app?.storeFor(template.children.bind, row.parent_refs?.[template.children.bind]) : undefined);
+  let open = $state(false);
+  $effect(() => { if (template.children?.expanded) open = true; });
   const { ui } = useActions();
   const ctx = (a: Action): string | undefined => store.contexts(row.id)?.[a.id];
   const off = (a: Action): boolean => { const d = "disabled" in a ? a.disabled : undefined; return d === true || (typeof d === "object" && d !== null && holds(d, row.fields)); };
@@ -36,7 +42,8 @@
 
 <div class="ra" data-actions class:sel={selected} oncontextmenu={(e) => { if (menu.length) { e.preventDefault(); menuAnchor = { x: e.clientX, y: e.clientY }; menuOpen = true; } }}
   onpointerdown={down} onpointermove={move} onpointerup={up} onpointercancel={() => { drag = false; dx = 0; }} style:transform={dx ? `translateX(${dx}px)` : undefined}>
-  <RowView {template} {row} {kindIcon} {selected} {onclick} />
+  <RowView {template} {row} {kindIcon} {selected} {depth} {onclick} />
+  {#if template.children && row.parent_refs?.[template.children.bind]}<button type="button" class="disc" aria-expanded={open} aria-label={open ? "Collapse" : "Expand"} onclick={() => (open = !open)}>{open ? "▾" : "▸"}</button>{/if}
   {#if lead.length || trail.length || menu.length}
     <div class="acts" role="group" aria-label="Actions">
       {#each lead as a (a.id)}<ActionButton action={a} context={ctx(a)} disabled={off(a)} />{/each}
@@ -44,6 +51,7 @@
       {#if menu.length}<button type="button" class="more" aria-label="More actions" bind:this={moreEl} onclick={() => { menuAnchor = null; menuOpen = true; }}>…</button>{/if}
     </div>
   {/if}
+  {#if open && kids}<ChildRows store={kids} depth={depth + 1} {kindIcon} />{/if}
   {#if menu.length}<Menu open={menuOpen} {items} label="Actions" onpick={pick} onclose={() => (menuOpen = false)} trigger={moreEl} anchor={menuAnchor ? { left: menuAnchor.x, top: menuAnchor.y, right: menuAnchor.x, bottom: menuAnchor.y } : null} />{/if}
 </div>
 
@@ -51,5 +59,6 @@
   .ra { position: relative; touch-action: pan-y; }
   .acts { position: absolute; inset-block: 0; inset-inline-end: var(--s-3); display: none; align-items: center; gap: var(--s-2); }
   .ra:hover .acts, .ra:focus-within .acts, .ra.sel .acts { display: flex; }
+  .disc { position: absolute; inset-inline-start: 0; top: 0; min-width: 20px; min-height: var(--row-h); color: var(--ink-3); }
   .more { min-width: 44px; min-height: 44px; border-radius: var(--r-select); color: var(--ink-2); }
 </style>

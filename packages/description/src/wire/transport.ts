@@ -6,7 +6,7 @@
 /** One route of the exchange; the names are the catalogue's event families. */
 export type Route =
   | "view.open" | "view.renew" | "window" | "selection.settled" | "selection.set"
-  | "activation.resolve" | "activation.confirm" | "activation.dispatch" | "choice.options" | "undo" | "status";
+  | "search" | "activation.resolve" | "activation.confirm" | "activation.dispatch" | "choice.options" | "undo" | "status";
 
 /** A host answer that is not a sealed reply: the HTTP status and, when the body said so, the host's own code and message. */
 export class HostError extends Error {
@@ -17,7 +17,7 @@ export class HostError extends Error {
 export interface Transport {
   /** Reads a host-authorized row image (`GET row-images/{ref}`); null for 404 (absent, expired, stale or unauthorized). Optional: a transport without it draws the fallback miniature. */
   image?(ref: string, opts?: { lease?: string }): Promise<Blob | null>;
-  post<T>(route: Route, body: unknown, opts?: { lease?: string; signal?: AbortSignal }): Promise<T>;
+  post<T>(route: Route, body: unknown, opts?: { lease?: string; signal?: AbortSignal; route?: Record<string, string> }): Promise<T>;
 }
 
 /** Options of the HTTP transport. */
@@ -47,10 +47,12 @@ export class HttpTransport implements Transport {
     return blob.size <= 65536 ? blob : null; // the catalogue's byte cap
   }
 
-  async post<T>(route: Route, body: unknown, opts: { lease?: string; signal?: AbortSignal } = {}): Promise<T> {
+  async post<T>(route: Route, body: unknown, opts: { lease?: string; signal?: AbortSignal; route?: Record<string, string> } = {}): Promise<T> {
     const headers: Record<string, string> = { "content-type": "application/json" };
     if (this.#bearer) headers.authorization = `Bearer ${this.#bearer}`;
     if (opts.lease) headers["x-step0-view-lease"] = opts.lease;
+    // The step 0 fixture takes the route parameters as headers (X-Step0-Route-Item): the sealed contract has the host read them from the view, so this stays in the fixture transport.
+    for (const [k, v] of Object.entries(opts.route ?? {})) headers[`x-step0-route-${k}`] = v;
     const res = await this.#fetch(`${this.#base}/${route}`, { method: "POST", headers, body: JSON.stringify(body), signal: opts.signal });
     const text = await res.text();
     let json: unknown; try { json = text ? JSON.parse(text) : undefined; } catch { json = undefined; }

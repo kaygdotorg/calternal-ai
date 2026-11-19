@@ -5,12 +5,13 @@ import "@calternal/ui/styles";
 import { initInputModality, initScheme } from "@calternal/ui";
 import { AppView, HostSession, HttpTransport, type AppDescription } from "../src";
 import { MockHost } from "../testing/mock-host";
-import reading from "../../../contract/fixtures/description-v2/reading-list-app.json";
-import notes from "../../../contract/fixtures/description-v2/notes-app.json";
+// every sealed description fixture, by file name without the extension
+const all = import.meta.glob("../../../contract/fixtures/description-v2/*.json", { eager: true, import: "default" }) as Record<string, unknown>;
 
 const q = new URLSearchParams(location.search);
 initInputModality(); initScheme();
-const fixtures: Record<string, unknown> = { "reading-list": reading, notes };
+const fixtures: Record<string, unknown> = Object.fromEntries(Object.entries(all).map(([k, v]) => [k.split("/").pop()!.replace(/\.json$/, ""), v]));
+fixtures["reading-list"] = fixtures["reading-list-app"]; fixtures.notes = fixtures["notes-app"];
 const rows = Number(q.get("mock") ?? 0);
 let description = fixtures[q.get("fixture") ?? "reading-list"] as AppDescription;
 let viewRef = q.get("view") ?? "v-mock";
@@ -21,8 +22,9 @@ if (rows === 0) {
   const name = q.get("viewName") ?? "home";
   viewRef = f.views[name]!; description = f.templates[name] ?? f.templates.shared!;
 }
+const parentBinds = (description.binds ?? []).filter((b) => (b.source as { parent?: boolean }).parent).map((b) => b.id);
 const transport = rows > 0
-  ? new MockHost({ rows, count: (q.get("count") as "exact" | "none") ?? "exact", latencyMs: Number(q.get("latency") ?? 0), skipLimit: q.has("skip") ? Number(q.get("skip")) : undefined, endUnavailable: q.get("noend") === "1", fields: (i) => ({ title: `Reading item ${i}`, added: 1_700_000_000 - i, read: i % 7 === 0, updated: 1_700_000_000 - i, pinned: i % 11 === 0 }) })
+  ? new MockHost({ rows, parentBinds, rowsFor: (b) => ((description.binds ?? []).find((x) => x.id === b)?.source.type === "item" ? 1 : rows), count: (q.get("count") as "exact" | "none") ?? "exact", latencyMs: Number(q.get("latency") ?? 0), skipLimit: q.has("skip") ? Number(q.get("skip")) : undefined, endUnavailable: q.get("noend") === "1", fields: (i, bind) => ({ title: `${bind} ${i}`, added: 1_700_000_000 - i, read: i % 7 === 0, updated: 1_700_000_000 - i, pinned: i % 11 === 0, snippet: `Snippet of ${bind} ${i}`, thumbnail: `thumb-${i}-aaaaaaaaaaaaaaaaaaaaaaaa`, due: "Fri", unread: i % 3 === 0 }) })
   : new HttpTransport({ base: q.get("host")!, bearer });
 const session = new HostSession({ transport });
 const w = window as unknown as Record<string, unknown>;
