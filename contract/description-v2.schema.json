@@ -632,7 +632,7 @@
         "persist": {
           "type": "boolean",
           "default": false,
-          "description": "Opt-in: this ROOT bind's own-space rows may be persisted for a member (see Cache.memberRows). Never on a per-parent bind (nested or section rows): the schema refuses it. A guest's or public view's rows are never persisted."
+          "description": "Opt-in: this ROOT bind's own-space rows may be persisted for a member (see Cache.memberRows), and ONLY if every query input is INVARIANT: a `list` source with no collection, reference, search text or parent, and filter operands that are literals or `{viewer: person}` (no route, form, selection or parent operand anywhere in the source, filter or sort). The schema and the verifier refuse `persist` otherwise, and no query identity is added to the record. A guest's or public view's rows are never persisted."
         }
       },
       "additionalProperties": false,
@@ -664,6 +664,53 @@
             "properties": {
               "persist": {
                 "const": false
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "persist": {
+                "const": true
+              }
+            },
+            "required": [
+              "persist"
+            ]
+          },
+          "then": {
+            "properties": {
+              "source": {
+                "properties": {
+                  "type": {
+                    "const": "list"
+                  }
+                },
+                "not": {
+                  "anyOf": [
+                    {
+                      "required": [
+                        "collection"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "ref"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "text"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "parent"
+                      ]
+                    }
+                  ]
+                }
               }
             }
           }
@@ -2062,7 +2109,7 @@
     },
     "EventWindow": {
       "$ref": "https://calternal.cloud/contract/host-catalogue-v2.json#/$defs/WindowRequest",
-      "description": "Ask for rows [from, to) of a bind (optionally for one parent row): the catalogue's WindowRequest is the ONE window envelope ({type: \"window\", request}); this schema cites it and defines no second shape. The answer is the catalogue's **WindowReply**: a `WindowResult` (bind, parent, window_ref, state, count, result version, stable opaque row ids, activation contexts) or a typed `WindowPlanError` ({status: 422, code: unsupported_query_plan}); a consumer must handle both. A refused jump (a `WindowPlanError` for a request beyond the index-skip cap) falls back to paging from the nearer known end of the list (the start when none is known); the bind's `error` state is shown only if that paging is refused too."
+      "description": "Ask for rows [from, to) of a bind (optionally for one parent row): the catalogue's WindowRequest is the ONE window envelope ({type: \"window\", request}); this schema cites it and defines no second shape. The request has an **end-relative form** in the same envelope (`anchor: \"end\"`: from and to are counted back from the last row), which End and near-end jumps use so that no request needs an absolute offset past the skip cap; the absolute form stays capped. The answer is the catalogue's **WindowReply**: a `WindowResult` or a typed `WindowPlanError` ({status: 422, code: unsupported_query_plan, reason}). A consumer handles both: for reason `skip_limit` it pages from the nearer known end (anchor end when that is nearer, else the start); for any other reason, or if that paging is refused too, it shows the bind's `error` state."
     },
     "EventSelection": {
       "$ref": "https://calternal.cloud/contract/host-catalogue-v2.json#/$defs/SettledSelectionRequest",

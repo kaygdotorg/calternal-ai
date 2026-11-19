@@ -230,6 +230,17 @@ def semantic(doc, errors, catalogue, manifest):
                                 if ctx_kind == "item" and owner_kind != "threads": errors.append(f"{path}: {{context: item}} fills a ThreadRef only from a row of kind `threads`, not {owner_kind!r}")
                             if ctx_kind == "placement" and declared_type not in ("LayoutEntryRef", ""): errors.append(f"{path}: {{context: placement}} fills a LayoutEntryRef, not {declared_type}")
                             if ctx_kind == "item" and declared_type == "LayoutEntryRef": errors.append(f"{path}: {{context: item}} cannot fill the LayoutEntryRef input {name!r}")
+                            if declared_type in ("ThreadRef", "ItemRef", "TurnRef", "RequestRef", "CollectionRef", "LayoutEntryRef") and ctx_kind is None:
+                                bare_id = isinstance(source, dict) and source == {"row": "id"}
+                                from_route = isinstance(source, dict) and set(source) == {"route"}
+                                row_ref = (cat_kinds.get(owner_kind) or {}).get("row_ref") if owner_kind in cat_kinds else ("ItemRef" if owner_kind else None)
+                                prompt = source.get("prompt") if isinstance(source, dict) else None
+                                choice_ok = False
+                                if isinstance(prompt, dict) and prompt.get("kind") == "choice":
+                                    option_bind = binds.get(((prompt.get("options") or {}).get("bind")))
+                                    choice_ok = (cat_kinds.get(((option_bind or {}).get("source") or {}).get("kind")) or {}).get("row_ref") == declared_type
+                                if not (from_route or choice_ok or (bare_id and row_ref == declared_type and not owner_in_repeat)):
+                                    errors.append(f"{path}: the {declared_type} input {name!r} of {op} takes only a source of that ref type ({{context}}, a bare row id of a row of that type, or a route), not {json.dumps(source, sort_keys=True)}")
                             if declared_type in ("ChoiceRef", "LayoutSectionRef") and (declared_type == "ChoiceRef" or name == "section"):
                                 prompt = source.get("prompt") if isinstance(source, dict) else None
                                 if not (isinstance(prompt, dict) and prompt.get("kind") == "choice"):
@@ -275,6 +286,17 @@ def semantic(doc, errors, catalogue, manifest):
             kind_id = (bind.get("source") or {}).get("kind")
             if isinstance(kind_id, str) and kind_id not in reads and (manifest.get("_real") or "reads" in manifest):
                 errors.append(f"$.binds[{index}].source: kind {kind_id!r} is not in the manifest's `reads` (every bind needs it, including a package's own kinds)")
+    for index, b in enumerate(binds_list):
+        if not b.get("persist"): continue
+        src = b.get("source") or {}
+        for key in ("collection", "ref", "text", "parent"):
+            if key in src: errors.append(f"$.binds[{index}]: persist needs INVARIANT query inputs: the source has `{key}`")
+        if src.get("type") != "list": errors.append(f"$.binds[{index}]: persist needs a `list` source")
+        for g in ("all", "any"):
+            for pr in (b.get("filter") or {}).get(g, []):
+                value = pr.get("value")
+                if value is not None and not (isinstance(value, dict) and (set(value) == {"literal"} or value == {"viewer": "person"})):
+                    errors.append(f"$.binds[{index}]: persist needs INVARIANT query inputs: the filter operand {json.dumps(value, sort_keys=True)} on {pr.get('field')!r} is not a literal or the viewer")
     parent_binds = {i for i, b in binds.items() if (b.get("source") or {}).get("parent")}
     children_edges = {}
     for bind_id, b in binds.items():
