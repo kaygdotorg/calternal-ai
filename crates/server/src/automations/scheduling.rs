@@ -1,6 +1,7 @@
 //! SQLite schedule cursor and recoverable thread handoffs.
 use super::{definitions::Definition, *};
 mod worker;
+use calternal_content::Request;
 use calternal_core::{AutomationOutcome, AutomationTarget, JobState};
 use calternal_store::migrations::{Schema, migrate};
 use calternal_types::Capability;
@@ -12,6 +13,7 @@ pub(crate) use worker::start;
 const MAX_QUEUED: i64 = 32;
 const RETENTION_MS: i64 = 7 * 24 * 60 * 60 * 1000;
 const BATCH: i64 = 32;
+const NO_MACHINE: &str = "no_machine_available";
 const ACCESS_LOST: &str = "The creator no longer has access to run automations in this space.";
 
 pub(crate) const PATH: &str = "system/automations.db";
@@ -154,7 +156,8 @@ pub(super) fn register(
     let reset = previous.as_ref().is_none_or(|(old, _)| old != &epoch);
     let floor = previous.and_then(|(_, floor)| floor);
     let cursor = if d.enabled {
-        schedule(d)?.next(&d.timezone, d.schedule_start_ms.max(floor.unwrap_or(0)))
+        d.calendar()?
+            .next(&d.timezone, d.schedule_start_ms.max(floor.unwrap_or(0)))
     } else {
         None
     };
@@ -241,9 +244,11 @@ pub(super) fn remove(store: &crate::store::Store, space: SpaceId, id: Uuid) -> R
     tx.commit().map_err(db_error)
 }
 
-fn schedule(d: &Definition) -> Result<Schedule, Error> {
-    Schedule::from_expression(&d.schedule)
-        .ok_or_else(|| Error::unavailable("unsupported calendar expression"))
+fn no_machine() -> Error {
+    Error::conflict(
+        "No machine is available. Connect a machine and select it for this automation, then try again.",
+    )
+    .with_details(json!({"reason":NO_MACHINE}))
 }
 
 fn authority<D: Directory>(state: &Shared<D>, account: AccountId, space: SpaceId) -> bool {
@@ -264,9 +269,27 @@ pub(super) fn validate_machine<D: Directory>(
     state
         .store
         .machines()
-        .ok_or_else(|| Error::unavailable("machines are unavailable"))?
+        .ok_or_else(no_machine)?
         .check_target(creator, Some(id), false)?;
     Ok(())
+}
+
+fn automation_target<D: Directory>(
+    state: &Shared<D>,
+    definition: &Definition,
+) -> Result<Option<Uuid>, Error> {
+    let pin = definition
+        .machine_id
+        .as_deref()
+        .map(Uuid::parse_str)
+        .transpose()
+        .map_err(|_| Error::internal("invalid saved machine"))?;
+    Ok(state
+        .store
+        .machines()
+        .map(|machines| machines.automation_target(definition.creator, pin))
+        .transpose()?
+        .flatten())
 }
 
 #[derive(Clone)]
@@ -364,40 +387,87 @@ pub(super) async fn manual<D: Directory>(
     }
     let id = crate::store::item_id(&input.id)?;
     let st = state.clone();
-    let rid = format!("{}/{}", who.id, rid);
+    let request_id = rid.to_owned();
+    let key = format!("{}/{}", who.id, rid);
     let (run, saved) = blocking(move || {
-        let item = st.store.content().get(space,id)?;
-        let (d, _) = Definition::from_item(&item)?;
-        if status(&st.store,space,id)?.stop_reason.is_some() {
-            return Err(Error::conflict("enable this stopped automation before running it"));
-        }
-        if d.creator != who.id || !authority(&st, who.id, space) {
-            return Err(Error::forbidden("only the creator can start this automation"));
-        }
-        let mut conn = database(&st.store)?;
-        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate).map_err(db_error)?;
-        let existing = tx.query_row(
-            "SELECT id,revision,thread,finished,automation FROM runs WHERE space=?1 AND manual_key=?2",
-            params![space.to_string(),rid],
-            |row| Ok((row.get::<_, String>(0)?,row.get::<_, String>(1)?,row.get::<_, Option<String>>(2)?,row.get::<_, Option<i64>>(3)?,row.get::<_, String>(4)?)),
-        ).optional().map_err(db_error)?;
-        if let Some((run,revision,thread,finished,automation)) = existing {
-            if automation != id.to_string() { return Err(Error::request_reused()); }
-            if finished.is_some() && thread.is_none() {
-                return Err(Error::conflict("the original manual run expired"));
+        let content = st.store.content();
+        let fingerprint = crate::api::fingerprint(
+            "automations.run_now",
+            &JsonObject::from([("id".into(), json!(id)), ("space_id".into(), json!(space))]),
+        );
+        let request = Request {
+            account: who.id,
+            via: None,
+            id: &request_id,
+            operation: "automations.run_now",
+            fingerprint: &fingerprint,
+        };
+        let mut admitted = None;
+        // The space receipt atomically fences concurrent admissions for this
+        // request ID. The outbox key replays a queue commit if publication
+        // of the receipt was interrupted between stores.
+        let receipt = content.admit_item(space, id, request, |item, saved| {
+            let (definition, _) = Definition::from_item(item)?;
+            if definition.creator != who.id || !authority(&st, who.id, space) {
+                return Err(Error::forbidden("only the creator can start this automation"));
             }
-            return Ok((Run { space, automation:id, id: crate::store::item_id(&run)?, scheduled:None, revision }, thread));
+            if let Some(refusal) = saved.as_ref().filter(|result| result["reason"] == NO_MACHINE) {
+                return Ok(refusal.clone());
+            }
+            let mut conn = database(&st.store)?;
+            let stopped: bool = conn.query_row(
+                "SELECT EXISTS(SELECT 1 FROM schedules WHERE space=?1 AND id=?2 AND stop IS NOT NULL)",
+                params![space.to_string(), id.to_string()],
+                |row| row.get(0),
+            ).map_err(db_error)?;
+            if stopped {
+                return Err(Error::conflict("enable this stopped automation before running it"));
+            }
+            let existing = conn.query_row(
+                "SELECT id,revision,thread,finished,automation FROM runs WHERE space=?1 AND manual_key=?2",
+                params![space.to_string(),key],
+                |row| Ok((row.get::<_, String>(0)?,row.get::<_, String>(1)?,row.get::<_, Option<String>>(2)?,row.get::<_, Option<i64>>(3)?,row.get::<_, String>(4)?)),
+            ).optional().map_err(db_error)?;
+            let (run, thread) = if let Some((run, revision, thread, finished, automation)) = existing {
+                if automation != id.to_string() {
+                    return Err(Error::request_reused());
+                }
+                if finished.is_some() && thread.is_none() {
+                    return Err(Error::conflict("the original manual run expired"));
+                }
+                (Run { space, automation:id, id: crate::store::item_id(&run)?, scheduled:None, revision }, thread)
+            } else {
+                if saved.is_some() {
+                    return Err(Error::conflict("the original manual run expired"));
+                }
+                let Some(machine) = automation_target(&st, &definition)? else {
+                    return Ok(json!({"reason":NO_MACHINE}));
+                };
+                let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate).map_err(db_error)?;
+                let run = queue(&tx, space, id, item.revision.clone(), None, Some(&key), now_ms())?
+                    .ok_or_else(|| Error::conflict(
+                        "The run queue is full or this automation is already running. Wait for a run to finish, then try again.",
+                    ).with_details(json!({"reason":"automation_run_busy"})))?;
+                tx.execute("UPDATE runs SET machine=?2 WHERE id=?1",
+                    params![run.id.to_string(), machine.to_string()]).map_err(db_error)?;
+                tx.commit().map_err(db_error)?;
+                (run, None)
+            };
+            let result = json!({"run_id":run.id});
+            admitted = Some((run, thread));
+            Ok(result)
+        })?;
+        if receipt["reason"] == NO_MACHINE {
+            return Err(no_machine());
         }
-        let run = queue(&tx, space, id, item.revision, None, Some(&rid), now_ms())?
-            .ok_or_else(|| Error::unavailable("the automation run queue is full or this automation is already running"))?;
-        tx.commit().map_err(db_error)?;
-        Ok((run,None))
+        admitted.ok_or_else(|| Error::internal("missing admitted automation run"))
     }).await?;
     if let Some(thread) = saved {
         return Ok(json!({"thread_id":thread}));
     }
     let thread = handoff(&state, &run).await?.ok_or_else(|| {
-        Error::unavailable("the automation is queued until its machine is available")
+        Error::conflict("The run is queued. Wait for the machine, then retry the same request.")
+            .with_details(json!({"reason":"automation_run_pending"}))
     })?;
     Ok(json!({"thread_id":thread}))
 }
@@ -489,21 +559,9 @@ async fn handoff<D: Directory>(state: &Shared<D>, run: &Run) -> Result<Option<St
                 |row| row.get(0),
             )
             .map_err(db_error)?;
-        let pin = d
-            .machine_id
-            .as_deref()
-            .map(Uuid::parse_str)
-            .transpose()
-            .map_err(|_| Error::internal("invalid saved machine"))?;
         let candidate = match existing {
             Some(machine) => Some(machine),
-            None => st
-                .store
-                .machines()
-                .map(|m| m.automation_target(d.creator, pin))
-                .transpose()?
-                .flatten()
-                .map(|id| id.to_string()),
+            None => automation_target(&st, &d)?.map(|id| id.to_string()),
         };
         let Some(candidate) = candidate else {
             return Ok(None);

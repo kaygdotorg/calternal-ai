@@ -22,8 +22,8 @@ use std::{
 use uuid::Uuid;
 
 /// Queue a turn; claim prevents duplicate request retries from starting it twice.
-/// Admission is bounded per space. Only placed output readers hold the shared
-/// execution budget; offline-machine queues cannot occupy those slots.
+/// The durable per-space job bound still applies. A fenced machine lease
+/// reserves the execution memory before an output reader starts.
 pub(crate) fn schedule<D: Directory>(
     state: &Shared<D>,
     machines: &Arc<MachineService>,
@@ -203,8 +203,25 @@ async fn execute<D: Directory>(
         .is_some_and(|previous| {
             *previous != json!(shared.map(|target| target.machine))
                 || job.checkpoint["shared_sponsor"] != json!(shared.map(|target| target.sponsor))
+                || job
+                    .checkpoint
+                    .get("shared_tools")
+                    .is_some_and(|old| *old != json!(shared.map(|target| target.tools_enabled)))
         });
-    if route_changed || (shared.is_some() && provider_id != "calternal-claude-code") {
+    use calternal_machine::protocol::{SharedTools, SharedToolsProvider};
+    let shared_tool_provider =
+        shared
+            .filter(|target| target.tools_enabled)
+            .and_then(|_| match provider_id {
+                "calternal-claude-code" => Some(SharedToolsProvider::Claude),
+                "calternal-codex" => Some(SharedToolsProvider::Codex),
+                _ => None,
+            });
+    if route_changed
+        || (shared.is_some()
+            && provider_id != "calternal-claude-code"
+            && shared_tool_provider.is_none())
+    {
         let message = if route_changed {
             "The shared machine changed. Start a new turn to use the new setting."
         } else {
@@ -213,7 +230,7 @@ async fn execute<D: Directory>(
         live.publish(job.runs, &json!({"type":"notice","message":message}));
         return Ok(RunEnd::Failed);
     }
-    let pin = if shared.is_some() {
+    let pin = if shared.is_some() && shared_tool_provider != Some(SharedToolsProvider::Codex) {
         None
     } else {
         let st = state.clone();
@@ -226,21 +243,50 @@ async fn execute<D: Directory>(
         })
         .await?
     };
-    let runtime = pin.as_ref().map(|(pin, legacy)| {
-        let read_only = scope
-            .as_ref()
-            .is_some_and(|scope| scope.mode == AgentMode::LeastAccess);
-        let mut sandbox = crate::plugins::package_store::provider_runtime::sandbox(
-            pin,
-            provider_id.to_owned(),
-            calternal_machine::protocol::ProviderLoginScope::Account(account),
-            read_only,
-        );
-        sandbox.legacy_profile = *legacy;
-        (pin.image.clone(), sandbox)
+    if shared_tool_provider == Some(SharedToolsProvider::Codex) && pin.is_none() {
+        return Err(Error::unavailable(
+            "install the qualified Codex harness before enabling shared tools",
+        ));
+    }
+    let shared_sandbox = shared_tool_provider.map(|provider| {
+        (
+            pin.as_ref().map(|(pin, _)| pin.image.clone()),
+            SharedTools {
+                provider,
+                workspace_read_only: scope
+                    .as_ref()
+                    .is_none_or(|scope| scope.mode != AgentMode::FullAccess),
+            },
+        )
     });
-    let mut checkpoint =
-        super::lease::prepare(state, machines, job, live, space, thread, shared, runtime).await?;
+    let runtime = pin
+        .as_ref()
+        .filter(|_| shared.is_none())
+        .map(|(pin, legacy)| {
+            let read_only = scope
+                .as_ref()
+                .is_some_and(|scope| scope.mode == AgentMode::LeastAccess);
+            let mut sandbox = crate::plugins::package_store::provider_runtime::sandbox(
+                pin,
+                provider_id.to_owned(),
+                calternal_machine::protocol::ProviderLoginScope::Account(account),
+                read_only,
+            );
+            sandbox.legacy_profile = *legacy;
+            (pin.image.clone(), sandbox)
+        });
+    let mut checkpoint = super::lease::prepare(
+        state,
+        machines,
+        job,
+        live,
+        space,
+        thread,
+        shared,
+        runtime,
+        shared_sandbox,
+    )
+    .await?;
     let lease_id = checkpoint["lease_id"]
         .as_str()
         .and_then(|id| Uuid::parse_str(id).ok())
@@ -250,7 +296,7 @@ async fn execute<D: Directory>(
         .get("machine_id")
         .and_then(Value::as_str)
         .and_then(|s| Uuid::parse_str(s).ok());
-    let (machine_id, personal_machine, _permit) = match super::progress::place(
+    let (machine_id, personal_machine) = match super::progress::place(
         state,
         machines,
         job,
@@ -260,7 +306,7 @@ async fn execute<D: Directory>(
     )
     .await?
     {
-        super::progress::Placement::Ready(machine, personal, permit) => (machine, personal, permit),
+        super::progress::Placement::Ready(machine, personal) => (machine, personal),
         super::progress::Placement::Ended(end) => return Ok(end),
     };
     crate::fault::automation_turn(
@@ -380,7 +426,8 @@ async fn execute<D: Directory>(
         (Vec::new(), None)
     };
     let managed = pin.is_some();
-    let interactive = !check && pin.as_ref().is_some_and(|(pin, _)| pin.interactive);
+    let interactive =
+        shared.is_none() && !check && pin.as_ref().is_some_and(|(pin, _)| pin.interactive);
     if let Some((pin, _)) = pin {
         env.push(("CALTERNAL_HARNESS_VERSION".into(), pin.version));
         if let Some(mode) = requested_mode {
@@ -400,7 +447,7 @@ async fn execute<D: Directory>(
     crate::fault::automation_turn(&job.input, crate::fault::FaultPoint::AutomationBeforeExec);
     let exec = blocking(move || {
         if shared.is_some() {
-            return m.shared_turn_exec(account, lease_id, stdin);
+            return m.shared_turn_exec(account, lease_id, env, stdin, shared_tool_provider);
         }
         let argv = super::launch::argv(executable);
         if managed {

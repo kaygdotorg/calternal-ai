@@ -1,10 +1,13 @@
 //! Machine and account capacity accounting under the existing registry lock.
 
-use calternal_machine::protocol::Owner;
+use calternal_machine::protocol::{MIN_SANDBOX_MEMORY_BYTES, Owner};
 use calternal_types::AccountId;
 use uuid::Uuid;
 
 use super::{Machine, State};
+
+/// User-facing reason shared by the run view and the thread projection.
+pub(crate) const MEMORY_WAIT: &str = "Waiting for enough available memory on a machine.";
 
 impl State {
     /// Read the number of leases reserved on this machine from the registry.
@@ -16,6 +19,9 @@ impl State {
     pub(super) fn take_slot(&mut self, machine: Option<Uuid>, account: Option<AccountId>) {
         if let Some(m) = machine.and_then(|id| self.machines.get_mut(&id)) {
             m.assigned += 1;
+            if let Some(live) = &mut m.live {
+                live.memory_reservations += 1;
+            }
             let owner = m.row.owner;
             if owner == Owner::Pool
                 && let Some(account) = account
@@ -50,7 +56,8 @@ impl State {
         }
     }
 
-    pub(super) fn free(&self, m: &Machine) -> usize {
+    /// Number of placements possible under the explicit operator ceiling.
+    pub(super) fn free_slots(&self, m: &Machine) -> usize {
         match &m.live {
             Some(live) if !live.draining && !m.row.draining && !m.row.revoked => {
                 (live.capacity.max_sandboxes as usize)
@@ -60,14 +67,50 @@ impl State {
         }
     }
 
-    /// Combine machine resources and the selected size's account limit.
-    pub(super) fn free_for(&self, m: &Machine, account: AccountId) -> usize {
+    /// Available reservations in the latest report. Charge already admitted
+    /// work conservatively even when some of its RSS is reflected in the sample.
+    /// No reads outside the in-memory machine record.
+    pub(super) fn memory_slots(&self, m: &Machine) -> usize {
+        m.live.as_ref().map_or(0, |live| {
+            let required = live
+                .guest_size
+                .map_or(MIN_SANDBOX_MEMORY_BYTES, |size| size.host_memory_bytes());
+            let bytes = live.capacity.available_memory_bytes.unwrap_or(0);
+            let bytes = if live.capacity.memory_bytes == 0 {
+                bytes
+            } else {
+                bytes.min(live.capacity.memory_bytes)
+            };
+            usize::try_from(bytes / required)
+                .unwrap_or(usize::MAX)
+                .saturating_sub(live.memory_reservations)
+        })
+    }
+
+    /// Available placements after the operator ceiling and host reservations.
+    pub(super) fn free(&self, m: &Machine) -> usize {
+        self.free_slots(m).min(self.memory_slots(m))
+    }
+
+    /// Combine host headroom with the RAM budget of an account guest.
+    pub(super) fn free_for(
+        &self,
+        m: &Machine,
+        account: AccountId,
+        settings: &super::Settings,
+    ) -> usize {
         let free = self.free(m);
         m.live
             .as_ref()
-            .and_then(|live| live.thread_limit)
-            .map_or(free, |limit| {
-                free.min(limit.saturating_sub(self.pool_load.get(&account).copied().unwrap_or(0)))
+            .and_then(|live| live.guest_size)
+            .map_or(free, |size| {
+                let per_turn =
+                    size.turn_memory_bytes(settings.limits.memory_bytes.unwrap_or(1 << 30));
+                let held = self.pool_load.get(&account).copied().unwrap_or(0);
+                free.min(
+                    (size.turn_budget_bytes() / per_turn.max(1)).saturating_sub(held as u64)
+                        as usize,
+                )
             })
     }
 }

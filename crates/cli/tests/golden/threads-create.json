@@ -1,0 +1,20 @@
+{
+  "data": {
+    "thread": {
+      "address": "/threads/019a8c00-0000-7000-8000-000000000001",
+      "id": "019a8c00-0000-7000-8000-000000000001",
+      "markdown": "---\ntitle: New thread\ntitle_source: pending\n---\n",
+      "metadata": {
+        "archived": false,
+        "deleted": false,
+        "message_count": 0,
+        "mode": "approve_for_me",
+        "model": "claude-sonnet-5-5",
+        "provider": "calternal-claude-code",
+        "title": "New thread",
+        "title_source": "pending"
+      }
+    }
+  },
+  "ok": true
+}

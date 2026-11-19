@@ -21,6 +21,7 @@ pub mod connection;
 pub mod enroll;
 pub mod identity;
 pub mod link;
+mod memory;
 mod ownership;
 pub use ownership::{OwnerLock, lock_for_upgrade};
 pub mod protocol;

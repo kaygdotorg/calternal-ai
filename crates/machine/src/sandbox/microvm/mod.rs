@@ -533,7 +533,10 @@ async fn maintain(backend: Weak<State>) {
                 tracing::warn!(%error, "cannot remove exited warm microVM");
             }
         }
-        if warm < state.config.warm_guests && state.capacity.available_permits() > 1 {
+        if warm < state.config.warm_guests
+            && state.capacity.available_permits() > 1
+            && warm_memory_available(state.config.memory_mib).await
+        {
             let started = async {
                 let disk = state.new_disk().await?;
                 match state.boot(disk.clone()).await {
@@ -594,4 +597,19 @@ impl MicrovmBackend {
             Ok(Arc::new(thread) as Arc<dyn Sandbox>)
         })
     }
+}
+
+/// One host sample on the warm-guest maintenance path. Leave one additional
+/// guest reservation available for normal turn placement.
+async fn warm_memory_available(memory_mib: u32) -> bool {
+    let Some(size) = GuestSize::from_mib(memory_mib) else {
+        return false;
+    };
+    tokio::task::spawn_blocking(move || {
+        crate::memory::sample()
+            .1
+            .is_some_and(|available| available >= 2 * size.host_memory_bytes())
+    })
+    .await
+    .unwrap_or(false)
 }

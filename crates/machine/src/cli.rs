@@ -157,8 +157,8 @@ pub enum Command {
         /// Operator configuration file for the experimental microVM backend.
         #[arg(long)]
         microvm_config: Option<PathBuf>,
-        /// Most threads run at once.
-        #[arg(long, default_value_t = 10)]
+        /// Optional operator ceiling on concurrent sandboxes.
+        #[arg(long, default_value_t = u32::MAX)]
         max_sandboxes: u32,
     },
     /// Show this machine's identity and server.

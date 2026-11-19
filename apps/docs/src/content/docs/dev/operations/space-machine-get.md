@@ -63,11 +63,16 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
     "notice": {
       "description": "Notice for the person configuring the provider account.",
       "type": "string"
+    },
+    "tools_enabled": {
+      "description": "Whether the Owner enabled isolated tools for this binding.",
+      "type": "boolean"
     }
   },
   "required": [
     "configured",
-    "notice"
+    "notice",
+    "tools_enabled"
   ],
   "title": "SpaceMachineResult",
   "type": "object"
