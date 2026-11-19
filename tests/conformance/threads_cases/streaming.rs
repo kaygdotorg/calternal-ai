@@ -467,3 +467,45 @@ async fn thread_full_reaches_live_and_saved_reads_without_losing_prior_output() 
     assert!(!text.contains("overflow-segment-32:"));
     assert!(saved["markdown"].as_str().unwrap().len() <= 2 * 1024 * 1024);
 }
+
+#[tokio::test]
+async fn completed_tool_turn_is_saved_in_the_thread_and_on_disk() {
+    let f = Fixture::new().await;
+    let _machine = direct_fixture(&f).await;
+    let space = &f.spaces[0];
+    let created = f.op(1, "threads.create", json!({"space_id":space,"title":"Steps run"})).await;
+    created.ok();
+    let id = &created.body["data"]["thread"]["id"];
+    let sent = f.op(1, "threads.send", json!({"id":id,"message":"scripted-tool-steps"})).await;
+    sent.ok();
+    let job = sent.body["data"]["job"]["id"].as_str().unwrap();
+    let mut feed = Sse::open(&f, &f.cookies[1], job, None).await.unwrap();
+    let end = tokio::time::timeout(Duration::from_secs(30), async {
+        let mut tool = false;
+        loop {
+            let (kind, _, frame) = feed.next().await.expect("terminal turn event");
+            tool |= frame["data"]["event"]["type"] == "tool_started";
+            if kind == "end" {
+                assert!(tool, "{frame}");
+                break frame;
+            }
+        }
+    }).await.expect("fixture tool turn");
+    let saved = f.op(1, "threads.get", json!({"id":id,"space_id":space})).await;
+    saved.ok();
+    let snapshot = &saved.body["data"]["thread"];
+    let markdown = body(snapshot);
+    assert_eq!(snapshot["messages"].as_array().unwrap().len(), 2, "terminal={end}; {markdown}");
+    assert!(markdown.contains("Tool Bash") && markdown.contains("Tool Read"), "{markdown}");
+
+    let path = f.dir.path().join("userdata-ssd/spaces").join(space).join("AI/Chats/Steps run.md");
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        let file = std::fs::read_to_string(&path).unwrap();
+        if file.contains("role:agent") && file.contains("Tool Bash") && file.contains("Tool Read") {
+            break;
+        }
+        assert!(Instant::now() < deadline, "{}: {file}", path.display());
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    }
+}
