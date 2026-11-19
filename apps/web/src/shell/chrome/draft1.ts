@@ -9,13 +9,15 @@ import type { ChromeBadge, ChromeDescription, ChromeItem, ChromeRow, ChromeSecti
 interface DraftItem { id: string; title: string; symbol?: string; role?: "destructive"; disabled?: boolean; menu?: DraftItem[] }
 interface DraftRow { id: string; title: string; detail?: string; symbol?: string; badge?: { kind: "dot" | "count" | "text"; value?: number | string }; selected?: boolean; leadingActions?: DraftItem[]; trailingActions?: DraftItem[]; menu?: DraftItem[] }
 
-const item = (i: ChromeItem): DraftItem => ({ id: i.id, title: i.title, ...(i.symbol ? { symbol: i.symbol } : {}), ...(i.role ? { role: i.role } : {}), ...(i.disabled ? { disabled: true } : {}), ...(i.menu ? { menu: i.menu.map(item) } : {}) });
+/** SF Symbols for the page's icon names, for the first draft's decoder (the shell's own icon set takes over with the next revision). */
+const SF: Record<string, string> = { threads: "bubble.left", notes: "doc.text", settings: "gearshape", plus: "plus", clock: "clock", wrench: "wrench", edit: "pencil", folder: "folder", link: "link", archive: "archivebox", trash: "trash", share: "square.and.arrow.up", more: "ellipsis", user: "person.crop.circle", signout: "rectangle.portrait.and.arrow.right", claude: "asterisk", codex: "chevron.left.forwardslash.chevron.right", question: "questionmark.circle", shield: "checkmark.shield", key: "key", lock: "lock", warning: "exclamationmark.triangle", bell: "bell", stop: "stop.circle", pulse: "waveform.path.ecg", "stop-round": "stop.circle", spark: "sparkles", image: "photo", list: "list.bullet", apps: "square.grid.2x2", file: "doc", terminal: "terminal", info: "info.circle", shield2: "shield" };
+const sf = (i: { icon?: string; symbol?: string }): { symbol?: string } => { const v = i.symbol ?? (i.icon ? SF[i.icon] : undefined); return v ? { symbol: v } : {}; };
+const item = (i: ChromeItem): DraftItem => ({ id: i.id, title: i.title, ...sf(i), ...(i.role ? { role: i.role } : {}), ...(i.disabled ? { disabled: true } : {}), ...(i.menu ? { menu: i.menu.map(item) } : {}) });
 const badge = (b: ChromeBadge | undefined): DraftRow["badge"] => (!b ? undefined : b.kind === "count" ? { kind: "count", value: b.value } : b.kind === "text" ? { kind: "text", value: b.value } : b.tone === "bad" ? { kind: "text", value: "!" } : { kind: "dot" });
-const FALLBACK: Record<string, string> = { claude: "asterisk", codex: "chevron.left.forwardslash.chevron.right" };
 
 const row = (r: ChromeRow): DraftRow => ({
   id: r.id, title: r.title, ...(r.detail ? { detail: r.detail } : {}),
-  ...(r.symbol ? { symbol: r.symbol } : r.icon && "symbol" in r.icon ? { symbol: r.icon.symbol } : r.icon ? { symbol: FALLBACK[r.title.length % 2 ? "claude" : "codex"] } : {}),
+  ...sf(r),
   ...(r.trailing?.[0] ? { badge: badge(r.trailing[0]) } : {}), ...(r.selected ? { selected: true } : {}),
   ...(r.leadingActions?.length ? { leadingActions: r.leadingActions.map(item) } : {}), ...(r.trailingActions?.length ? { trailingActions: r.trailingActions.map(item) } : {}), ...(r.menu?.length ? { menu: r.menu.map(item) } : {}),
 });
@@ -30,7 +32,7 @@ export function toDraft1(d: ChromeDescription): unknown {
       open: d.sidebar.open, title: d.sidebar.title,
       selectors: d.sidebar.selectors.map((s) => ({ id: s.id, selected: s.selected, options: s.options.map((o) => ({ id: o.id, title: o.title })) })),
       sections: d.sidebar.sections.map(section),
-      apps: d.sidebar.apps.map((a) => ({ id: a.id, title: a.title, ...(a.symbol ? { symbol: a.symbol } : {}), selected: a.selected })),
+      apps: d.sidebar.apps.map((a) => ({ id: a.id, title: a.title, ...sf(a), selected: a.selected })),
       account: { id: d.sidebar.account.id, initial: d.sidebar.account.initial, title: d.sidebar.account.title },
       search: d.sidebar.search,
     },

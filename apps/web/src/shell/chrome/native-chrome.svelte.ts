@@ -8,6 +8,7 @@
 import { appearance } from "../../appearance/prefs.svelte";
 import { navigate } from "../../lib/route.svelte";
 import { accentOf } from "./accent";
+import { appearanceOf } from "./appearance";
 import { accountItems, pickAccountItem } from "../accountMenu";
 import { self } from "../self.svelte";
 import { switcherApps } from "../switcherApps.svelte";
@@ -45,18 +46,17 @@ export const nativeChrome = new NativeChrome();
 /** Registers an app's chrome provider. */
 export const registerChrome = (kind: string, p: ChromeProvider): void => nativeChrome.register(kind, p);
 
-const toItem = (m: { id: string; label: string; sub?: string; icon?: string; danger?: boolean; checked?: boolean }): ChromeItem => ({ id: m.id, title: m.label, ...(m.sub ? { sub: m.sub } : {}), ...(m.danger ? { role: "destructive" as const } : {}), ...(m.checked ? { checked: true } : {}), ...(m.icon === "user" ? { symbol: "person.crop.circle" } : m.icon === "settings" ? { symbol: "gearshape" } : m.icon === "signout" ? { symbol: "rectangle.portrait.and.arrow.right" } : {}) });
-const SYMBOL: Record<string, string> = { threads: "bubble.left", notes: "doc.text", settings: "gearshape" };
+const toItem = (m: { id: string; label: string; sub?: string; icon?: string; danger?: boolean; checked?: boolean }): ChromeItem => ({ id: m.id, title: m.label, ...(m.sub ? { sub: m.sub } : {}), ...(m.danger ? { role: "destructive" as const } : {}), ...(m.checked ? { checked: true } : {}), ...(m.icon ? { icon: m.icon } : {}) });
 
 /** The whole description for the current state of the stores: the app's body from its provider, and the shell's parts. Reads reactive state, so call it inside an effect. */
 export function describe(kind: string, body: ChromeBody, scheme: "light" | "dark", revision: number): ChromeDescription {
   return {
-    version: 1, revision, scheme, accent: accentOf(),
+    version: 1, revision, scheme, accent: accentOf(), appearance: appearanceOf(scheme),
     header: body.header,
     sidebar: {
       open: nativeChrome.open, title: appearance.prefs.brand,
       selectors: body.selectors, sections: body.sections,
-      apps: switcherApps().map((a) => ({ id: a.kind, title: a.name, ...(SYMBOL[a.kind] ? { symbol: SYMBOL[a.kind] } : {}), selected: a.kind === kind })),
+      apps: switcherApps().map((a) => ({ id: a.kind, title: a.name, ...(a.icon ? { icon: a.icon } : {}), selected: a.kind === kind })),
       account: { id: "account", initial: [...self.name.trim()][0]?.toUpperCase() ?? "?", title: self.name, menu: accountItems().map(toItem) },
       search: body.search,
     },

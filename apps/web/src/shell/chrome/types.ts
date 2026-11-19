@@ -5,18 +5,18 @@
  * about threads or notes: it draws rows, selectors, apps and buttons. When the contract changes, only this file and `describe` in `native-chrome.svelte.ts` change.
  */
 
-/** An SF Symbol name for the shell, an SVG (the page's own icon, `currentColor` on a 24 grid) or an image (a data URL). */
-export type ChromeIcon = { symbol: string } | { svg: string } | { image: string };
+/** An icon is a CalternalUI icon name (`threads`, `plus`, `settings`, `claude`, `codex`, ...: the page's own icon set, which the shell draws natively); `symbol` stays as the escape for an SF Symbol name. */
+export type ChromeIconName = string;
 
 /** A small mark at a row's end or on a selector option: a dot, a count, a word or a symbol, with a tone. */
-export interface ChromeBadge { kind: "dot" | "count" | "text" | "symbol"; value?: number | string; symbol?: string; tone?: "info" | "warn" | "bad" }
+export interface ChromeBadge { kind: "dot" | "count" | "text" | "icon"; value?: number | string; icon?: ChromeIconName; symbol?: string; tone?: "info" | "warn" | "bad" }
 
 /** A button, a menu entry or a swipe action. `input` asks the shell for a line of text (a rename) and returns it as `text` in the event. */
-export interface ChromeItem { id: string; title: string; symbol?: string; role?: "destructive"; disabled?: boolean; checked?: boolean; sub?: string; input?: { placeholder?: string; value?: string }; menu?: ChromeItem[] }
+export interface ChromeItem { id: string; title: string; icon?: ChromeIconName; symbol?: string; role?: "destructive"; disabled?: boolean; checked?: boolean; sub?: string; input?: { placeholder?: string; value?: string }; menu?: ChromeItem[] }
 
 /** One row of a section. */
 export interface ChromeRow {
-  id: string; title: string; detail?: string; symbol?: string; icon?: ChromeIcon; trailing?: ChromeBadge[]; selected?: boolean;
+  id: string; title: string; detail?: string; icon?: ChromeIconName; symbol?: string; trailing?: ChromeBadge[]; selected?: boolean;
   /** Spoken name and hint when the title alone is not enough. */
   label?: string; hint?: string;
   leadingActions?: ChromeItem[]; trailingActions?: ChromeItem[]; menu?: ChromeItem[];
@@ -28,14 +28,22 @@ export interface ChromeSection { id: string; title: string | null; collapsed?: b
 /** A segmented choice above the lists (Inbox, All Threads). */
 export interface ChromeSelector { id: string; selected: string; options: { id: string; title: string; badge?: ChromeBadge }[] }
 
+/** The person's look, published so the shell can paint the wallpaper, the veils and the accent itself. `wallpaper` is a library id, `auto` or null (none); `url` is the picture's address when the page can give one (the built-in library). Each veil is `[r, g, b, a]` (0 to 255, alpha 0 to 1) per layer. */
+export interface ChromeAppearance {
+  wallpaper: { id: string | null; url?: string }; blur: boolean; dim: boolean; tint: boolean; clarity: number | null; scheme: "light" | "dark"; accent?: string; uiScale: number;
+  veils?: Record<"side" | "card", { tint: [number, number, number, number]; dim: [number, number, number, number]; ink2?: string; ink3?: string }>;
+}
+
 /** The whole description. */
 export interface ChromeDescription {
   version: 1; revision: number; scheme: "light" | "dark"; accent?: string;
+  /** What the shell needs to draw the wallpaper and the glass natively: the picture, the switches, the solved veils (see `appearance.ts`). */
+  appearance?: ChromeAppearance;
   header: { leading?: ChromeItem[]; title: string; trailing?: ChromeItem[] };
   sidebar: {
     open: boolean; title: string;
     selectors: ChromeSelector[]; sections: ChromeSection[];
-    apps: { id: string; title: string; symbol?: string; icon?: ChromeIcon; selected: boolean }[];
+    apps: { id: string; title: string; icon?: ChromeIconName; symbol?: string; selected: boolean }[];
     account: { id: string; initial: string; title: string; menu?: ChromeItem[] };
     search: { placeholder: string };
   };

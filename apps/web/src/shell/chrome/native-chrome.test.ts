@@ -5,6 +5,8 @@ import { view } from "../../apps/threads/view.svelte";
 import { navigate, segments } from "../../lib/route.svelte";
 import { nativeChrome, registerChrome, routeEvent, startNativeChrome } from "./native-chrome.svelte";
 import { store } from "../../apps/threads/store.svelte";
+import { notesChrome } from "../../apps/notes/chrome";
+import { settingsChrome } from "../../apps/settings/chrome";
 import type { ThreadSummary } from "../../apps/threads/model";
 import { spaces } from "../spaces.svelte";
 
@@ -22,7 +24,7 @@ describe("native chrome: the Threads provider", () => {
     expect(b.sections[0]!.id).toBe("top");
     const rows = b.sections.flatMap((s) => s.rows).filter((r) => store.get(r.id));
     expect(rows.length).toBeGreaterThan(0);
-    expect(rows[0]!.icon).toHaveProperty("svg");
+    expect(["claude", "codex"]).toContain(rows[0]!.icon); // the provider mark by its CalternalUI icon name
     expect(rows[0]!.menu!.some((m) => m.id === "rename" && m.input)).toBe(true);
     expect(rows[0]!.trailingActions!.some((a) => a.id === "archive" && a.role === "destructive")).toBe(true);
   });
@@ -79,5 +81,49 @@ describe("native chrome: the publisher", () => {
     expect(chrome).toHaveBeenCalledTimes(2);
     expect((chrome.mock.calls[1]![0] as { revision: number }).revision).toBeGreaterThan(first.revision);
     stop(); delete w.calternalNative; nativeChrome.native = false; nativeChrome.query = "";
+  });
+});
+
+describe("native chrome: the Notes and Settings providers", () => {
+  test("Notes describes its shortcuts and sections, and opens a note, a collection or the Trash", () => {
+    const b = notesChrome.describe("");
+    expect(b.sections[0]!.rows.map((r) => r.id)).toEqual(["new", "trash"]);
+    expect(b.search.placeholder).toBe("Find a note");
+    notesChrome.handle({ type: "row", id: "trash", revision: 1, sentAt: 0 });
+    expect(segments()).toEqual(["notes"]);
+    notesChrome.handle({ type: "row", id: "c:col-1", revision: 2, sentAt: 0 });
+    expect(segments()).toEqual(["collections", "col-1"]);
+    notesChrome.handle({ type: "row", id: "n-1", revision: 3, sentAt: 0 });
+    expect(segments()).toEqual(["notes", "n-1"]);
+    navigate("/threads");
+  });
+  test("Settings lists the pages of its groups, narrowed by the search text, and opens one", () => {
+    const all = settingsChrome.describe("").sections.flatMap((s) => s.rows);
+    expect(all.length).toBeGreaterThan(3);
+    const narrowed = settingsChrome.describe("appear").sections.flatMap((s) => s.rows);
+    expect(narrowed.map((r) => r.id)).toContain("appearance");
+    expect(narrowed.length).toBeLessThan(all.length);
+    settingsChrome.handle({ type: "row", id: "appearance", revision: 1, sentAt: 0 });
+    expect(segments()).toEqual(["settings", "appearance"]);
+    expect(settingsChrome.describe("").header.title).toBe("Appearance");
+    navigate("/threads");
+  });
+});
+
+describe("native chrome: the appearance the shell paints with", () => {
+  test("publishes the wallpaper, the switches, the scheme and the scale (and the solved veils when there are any)", async () => {
+    const { appearanceOf } = await import("./appearance");
+    document.documentElement.style.setProperty("--l-tint", "20 30 40"); document.documentElement.style.setProperty("--l-tint-a", "0.35");
+    document.documentElement.style.setProperty("--l-dim", "10 10 10"); document.documentElement.style.setProperty("--l-dim-a", "0.5");
+    document.documentElement.style.setProperty("--c-tint", "50 60 70"); document.documentElement.style.setProperty("--c-tint-a", "0.8");
+    document.documentElement.style.setProperty("--c-dim", "255 255 255"); document.documentElement.style.setProperty("--c-dim-a", "0.6");
+    const a = appearanceOf("dark");
+    expect(a.scheme).toBe("dark");
+    expect(typeof a.blur).toBe("boolean");
+    expect(a.uiScale).toBeGreaterThan(0);
+    expect(a.veils!.side.tint).toEqual([20, 30, 40, 0.35]);
+    expect(a.veils!.card.dim).toEqual([255, 255, 255, 0.6]);
+    for (const n of ["--l-tint", "--l-tint-a", "--l-dim", "--l-dim-a", "--c-tint", "--c-tint-a", "--c-dim", "--c-dim-a"]) document.documentElement.style.removeProperty(n);
+    expect(appearanceOf("light").veils).toBeUndefined();
   });
 });

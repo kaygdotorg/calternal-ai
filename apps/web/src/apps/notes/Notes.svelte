@@ -98,7 +98,7 @@
   </div>
 
   <div class="scroll">
-  <header class="nc-head" class:windowed>
+  <header class="nc-head" class:windowed data-chrome-header>
     {#if shell.narrow && !windowed}<IconButton icon="sidebar" label="Show notes" onclick={() => shell.toggleSidebar()} />{/if}
     <span class="grow"></span>
     {#if liveMode && live.session && !windowed}<Presence here={live.here} />{/if}
