@@ -45,6 +45,7 @@ async fn waits_for_the_turn_and_server_ack_before_replacing_the_program() {
                     space_id: None,
                     provider_login: false,
                     shared_provider_sponsor: None,
+                    shared_tools: None,
                     account_id: account_id.as_uuid(),
                     thread_id: Uuid::new_v4(),
                     image: None,
