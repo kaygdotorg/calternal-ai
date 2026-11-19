@@ -12,5 +12,7 @@
   "operations": {
     "notes.remind": {}
   },
-  "reads": []
+  "reads": [
+    "notes"
+  ]
 }

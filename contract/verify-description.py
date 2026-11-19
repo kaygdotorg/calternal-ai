@@ -228,8 +228,8 @@ def semantic(doc, errors, catalogue, manifest):
         reads = set(manifest.get("reads", []) or [])
         for index, bind in enumerate(binds_list):
             kind_id = (bind.get("source") or {}).get("kind")
-            if isinstance(kind_id, str) and kind_id not in man_kinds and kind_id not in reads and (manifest.get("_real") or "reads" in manifest):
-                errors.append(f"$.binds[{index}].source: kind {kind_id!r} is neither declared by the package nor in the manifest's `reads`")
+            if isinstance(kind_id, str) and kind_id not in reads and (manifest.get("_real") or "reads" in manifest):
+                errors.append(f"$.binds[{index}].source: kind {kind_id!r} is not in the manifest's `reads` (every bind needs it, including a package's own kinds)")
     header_title = (doc.get("chrome") or {}).get("header", {}).get("title")
     if isinstance(header_title, dict) and header_title.get("bind") in binds and binds[header_title["bind"]].get("source", {}).get("type") != "item":
         errors.append("$.chrome.header.title: a header title takes its text from an `item` bind (the open item), not from a list's first row")

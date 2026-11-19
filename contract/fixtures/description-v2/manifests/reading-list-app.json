@@ -37,5 +37,8 @@
     "reading.add": {},
     "reading.remind": {}
   },
-  "reads": []
+  "reads": [
+    "reading-item",
+    "reading-reminder"
+  ]
 }

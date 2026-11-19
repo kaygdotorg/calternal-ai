@@ -5,7 +5,10 @@
   "version": "1.0.0",
   "icon": "book",
   "network": "none",
-  "reads": [],
+  "reads": [
+    "reading-item",
+    "reading-reminder"
+  ],
   "kinds": [
     {
       "id": "reading-item",
