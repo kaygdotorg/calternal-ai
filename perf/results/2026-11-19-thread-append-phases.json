@@ -1,0 +1,1223 @@
+{
+  "build_host": "calternal-dev-01-compute02",
+  "perf_host": "calternal-perf-01-backup01",
+  "perf_lock": "/usr/local/bin/perf-lock.sh",
+  "append_p95_budget_ms": 40,
+  "warm_samples_per_arm": 30,
+  "measurements": {
+    "patch-large": {
+      "commit": "d10a398d3961486ec3eec9146830cacfc4a81a27",
+      "physical_bytes_before_append": 16727978,
+      "measurements": [
+        {
+          "metric": "threads.16mib.append",
+          "p50": 51.728277000000006,
+          "p95": 64.740374,
+          "p99": 70.10199899999999,
+          "max": 70.10199899999999,
+          "samples": 30,
+          "breached": true
+        },
+        {
+          "metric": "threads.16mib.tail",
+          "p50": 4.218826,
+          "p95": 4.98172,
+          "p99": 5.260413000000001,
+          "max": 5.260413000000001,
+          "samples": 30,
+          "breached": false
+        },
+        {
+          "metric": "threads.16mib.exact",
+          "p50": 3.60854,
+          "p95": 4.191554999999999,
+          "p99": 4.221271000000001,
+          "max": 4.221271000000001,
+          "samples": 30,
+          "breached": false
+        },
+        {
+          "metric": "threads.16mib.message_index_rebuild",
+          "p50": 1208.0647609999999,
+          "p95": 1208.0647609999999,
+          "p99": 1208.0647609999999,
+          "max": 1208.0647609999999,
+          "samples": 1,
+          "breached": false
+        }
+      ],
+      "append_ms": [
+        53.124051,
+        50.49913,
+        50.870917,
+        51.008627000000004,
+        51.221765000000005,
+        58.278085,
+        50.934407,
+        50.261562000000005,
+        52.11238,
+        50.643249000000004,
+        53.286434,
+        70.10199899999999,
+        53.078885,
+        55.882433,
+        54.047425000000004,
+        54.245436,
+        31.955929,
+        51.648537000000005,
+        53.298497,
+        51.569879,
+        51.400511,
+        54.500866,
+        51.396012999999996,
+        51.515917,
+        64.740374,
+        55.956131,
+        51.728277000000006,
+        52.168082,
+        51.541945,
+        59.274153000000005
+      ],
+      "breached": true
+    },
+    "patch-64k": {
+      "commit": "d10a398d3961486ec3eec9146830cacfc4a81a27",
+      "physical_bytes_before_append": 65521,
+      "measurements": [
+        {
+          "metric": "threads.small.append",
+          "p50": 50.065397999999995,
+          "p95": 55.773734999999995,
+          "p99": 58.840324,
+          "max": 58.840324,
+          "samples": 30,
+          "breached": false
+        }
+      ],
+      "append_ms": [
+        51.169183,
+        50.706274,
+        54.815695,
+        32.75634,
+        50.866835,
+        53.264489999999995,
+        49.965622,
+        55.773734999999995,
+        49.891742,
+        49.718477,
+        49.369241,
+        50.062283,
+        53.707781000000004,
+        51.246037,
+        51.504231999999995,
+        50.935503,
+        51.275241,
+        50.355674,
+        50.536284,
+        49.301672999999994,
+        49.433031,
+        49.94391,
+        58.840324,
+        46.015699,
+        50.065397999999995,
+        49.747581,
+        50.624569,
+        49.39569,
+        49.438751,
+        49.589183
+      ],
+      "breached": false
+    },
+    "dev-64k": {
+      "commit": "af0d53eb32c385de4789365bfabec2861ba946a3",
+      "physical_bytes_before_append": 65521,
+      "measurements": [
+        {
+          "metric": "threads.small.append",
+          "p50": 115.679635,
+          "p95": 166.632408,
+          "p99": 166.824696,
+          "max": 166.824696,
+          "samples": 30,
+          "breached": false
+        }
+      ],
+      "append_ms": [
+        117.166729,
+        115.679635,
+        120.030168,
+        130.370824,
+        84.813198,
+        94.644005,
+        107.38441,
+        134.39559500000001,
+        110.143774,
+        119.034687,
+        127.551625,
+        100.953848,
+        81.442362,
+        166.824696,
+        120.09257299999999,
+        128.146061,
+        107.519069,
+        76.617437,
+        118.95322999999999,
+        120.747551,
+        72.512997,
+        124.658558,
+        117.480763,
+        114.536221,
+        70.737389,
+        95.453261,
+        109.692601,
+        91.075918,
+        166.632408,
+        155.54584
+      ],
+      "breached": false
+    },
+    "dev-2mib": {
+      "commit": "af0d53eb32c385de4789365bfabec2861ba946a3",
+      "physical_bytes_before_append": 2047907,
+      "measurements": [
+        {
+          "metric": "threads.2mib.append",
+          "p50": 297.807836,
+          "p95": 333.145888,
+          "p99": 369.158443,
+          "max": 369.158443,
+          "samples": 30,
+          "breached": false
+        }
+      ],
+      "append_ms": [
+        253.432227,
+        246.576998,
+        317.367635,
+        275.83495000000005,
+        304.338307,
+        369.158443,
+        324.13164700000004,
+        277.23170000000005,
+        284.79653,
+        283.82277,
+        329.295032,
+        311.81351,
+        306.962817,
+        286.269322,
+        305.445565,
+        297.807836,
+        274.056869,
+        303.47202400000003,
+        301.959111,
+        288.722884,
+        283.777445,
+        298.84200100000004,
+        298.89851699999997,
+        272.491009,
+        298.08854299999996,
+        333.145888,
+        320.969805,
+        295.332763,
+        294.994949,
+        290.587387
+      ],
+      "breached": false
+    }
+  },
+  "phase_marks_without_syscall_tracing": {
+    "patch-large": {
+      "measure": "patch-large",
+      "response_bytes": {
+        "n": 30,
+        "p50": 1100,
+        "p95": 1100,
+        "max": 1100
+      },
+      "ms": {
+        "http_io_outside_server": {
+          "n": 30,
+          "p50": 0.290206,
+          "p95": 0.33420800000000744,
+          "max": 0.339218
+        },
+        "session_authentication": {
+          "n": 30,
+          "p50": 0.011732,
+          "p95": 0.029886,
+          "max": 0.030728
+        },
+        "request_body_parse": {
+          "n": 30,
+          "p50": 0.043742,
+          "p95": 0.051065,
+          "max": 0.053481
+        },
+        "route_and_authority": {
+          "n": 30,
+          "p50": 0.267652,
+          "p95": 0.385085,
+          "max": 0.58561
+        },
+        "thread_schema_and_activation": {
+          "n": 30,
+          "p50": 0.088236,
+          "p95": 0.119844,
+          "max": 0.13803
+        },
+        "save_worker_handoff": {
+          "n": 30,
+          "p50": 0.086563,
+          "p95": 0.109887,
+          "max": 0.117433
+        },
+        "content_slot_wait": {
+          "n": 30,
+          "p50": 0.000261,
+          "p95": 0.000382,
+          "max": 0.00039
+        },
+        "content_preparation_and_receipt_reads": {
+          "n": 30,
+          "p50": 1.864845,
+          "p95": 2.315891,
+          "max": 2.329345
+        },
+        "record_guard_and_write": {
+          "n": 30,
+          "p50": 0.095849,
+          "p95": 0.177102,
+          "max": 0.247906
+        },
+        "content_commit_span": {
+          "n": 30,
+          "p50": 17.79338,
+          "p95": 21.82201,
+          "max": 24.336724
+        },
+        "markdown_sync": {
+          "n": 30,
+          "p50": 15.935971,
+          "p95": 23.3926,
+          "max": 24.448954
+        },
+        "journal_commit_span": {
+          "n": 30,
+          "p50": 6.833549,
+          "p95": 8.28692,
+          "max": 8.616408
+        },
+        "journal_read_queue_publish": {
+          "n": 30,
+          "p50": 0.315433,
+          "p95": 0.499639,
+          "max": 0.506602
+        },
+        "job_commit_span": {
+          "n": 30,
+          "p50": 6.891747,
+          "p95": 9.792008,
+          "max": 10.075059
+        },
+        "job_settings_and_worker_handoff": {
+          "n": 30,
+          "p50": 0.220924,
+          "p95": 0.259408,
+          "max": 0.263744
+        },
+        "job_admission_without_commit": {
+          "n": 30,
+          "p50": 0.463581,
+          "p95": 0.574699,
+          "max": 0.703301
+        },
+        "job_load_and_reply_handoff": {
+          "n": 30,
+          "p50": 0.161604,
+          "p95": 0.251974,
+          "max": 0.252184
+        },
+        "journal_commit_to_callback_done": {
+          "n": 30,
+          "p50": 0.332114,
+          "p95": 0.471415,
+          "max": 0.478077
+        },
+        "response_construction_and_wake": {
+          "n": 30,
+          "p50": 0.206889,
+          "p95": 0.249469,
+          "max": 0.25552
+        },
+        "json_response_serialization": {
+          "n": 30,
+          "p50": 0.022833,
+          "p95": 0.033755,
+          "max": 0.034946
+        },
+        "delivery_session_recheck": {
+          "n": 30,
+          "p50": 0.031659,
+          "p95": 0.039224,
+          "max": 0.051307
+        },
+        "all_commit_spans": {
+          "n": 30,
+          "p50": 47.877423,
+          "p95": 60.32064,
+          "max": 65.550526
+        },
+        "outside_commit_spans": {
+          "n": 30,
+          "p50": 4.16682,
+          "p95": 5.016083000000007,
+          "max": 5.120751
+        },
+        "non_commit_auth_route_parse_and_schema": {
+          "n": 30,
+          "p50": 0.426192,
+          "p95": 0.55438,
+          "max": 0.739319
+        },
+        "non_commit_content_worker_and_record": {
+          "n": 30,
+          "p50": 2.018391,
+          "p95": 2.546877,
+          "max": 2.55555
+        },
+        "non_commit_journal_receipt_queue_and_publish": {
+          "n": 30,
+          "p50": 0.315433,
+          "p95": 0.499639,
+          "max": 0.506602
+        },
+        "non_commit_job": {
+          "n": 30,
+          "p50": 0.8475,
+          "p95": 1.049562,
+          "max": 1.199473
+        },
+        "non_commit_http_wake_serialization_delivery_and_io": {
+          "n": 30,
+          "p50": 0.564753,
+          "p95": 0.613241,
+          "max": 0.619523
+        }
+      }
+    },
+    "patch-64k": {
+      "measure": "patch-64k",
+      "response_bytes": {
+        "n": 30,
+        "p50": 1098,
+        "p95": 1098,
+        "max": 1098
+      },
+      "ms": {
+        "http_io_outside_server": {
+          "n": 30,
+          "p50": 0.291146,
+          "p95": 0.43172999999999256,
+          "max": 0.470354
+        },
+        "session_authentication": {
+          "n": 30,
+          "p50": 0.012494,
+          "p95": 0.027171,
+          "max": 0.027651
+        },
+        "request_body_parse": {
+          "n": 30,
+          "p50": 0.044072,
+          "p95": 0.056416,
+          "max": 0.06379
+        },
+        "route_and_authority": {
+          "n": 30,
+          "p50": 0.266801,
+          "p95": 0.456326,
+          "max": 7.855178
+        },
+        "thread_schema_and_activation": {
+          "n": 30,
+          "p50": 0.09096,
+          "p95": 0.116538,
+          "max": 0.121918
+        },
+        "save_worker_handoff": {
+          "n": 30,
+          "p50": 0.085761,
+          "p95": 0.112312,
+          "max": 0.115176
+        },
+        "content_slot_wait": {
+          "n": 30,
+          "p50": 0.00027,
+          "p95": 0.000451,
+          "max": 0.000481
+        },
+        "content_preparation_and_receipt_reads": {
+          "n": 30,
+          "p50": 1.823115,
+          "p95": 2.340939,
+          "max": 9.697669
+        },
+        "record_guard_and_write": {
+          "n": 30,
+          "p50": 0.019566,
+          "p95": 0.15963,
+          "max": 0.174618
+        },
+        "content_commit_span": {
+          "n": 30,
+          "p50": 17.206004,
+          "p95": 20.537684,
+          "max": 21.805087
+        },
+        "markdown_sync": {
+          "n": 30,
+          "p50": 15.450798,
+          "p95": 16.309552,
+          "max": 19.231221
+        },
+        "journal_commit_span": {
+          "n": 30,
+          "p50": 6.607804,
+          "p95": 7.262795,
+          "max": 8.922654
+        },
+        "journal_read_queue_publish": {
+          "n": 30,
+          "p50": 0.325953,
+          "p95": 0.428747,
+          "max": 0.430759
+        },
+        "job_commit_span": {
+          "n": 30,
+          "p50": 6.843558,
+          "p95": 7.807678,
+          "max": 9.120295
+        },
+        "job_settings_and_worker_handoff": {
+          "n": 30,
+          "p50": 0.213351,
+          "p95": 0.293291,
+          "max": 0.309171
+        },
+        "job_admission_without_commit": {
+          "n": 30,
+          "p50": 0.471647,
+          "p95": 0.625505,
+          "max": 0.65463
+        },
+        "job_load_and_reply_handoff": {
+          "n": 30,
+          "p50": 0.172905,
+          "p95": 0.236245,
+          "max": 0.2504
+        },
+        "journal_commit_to_callback_done": {
+          "n": 30,
+          "p50": 0.335791,
+          "p95": 0.474691,
+          "max": 0.647537
+        },
+        "response_construction_and_wake": {
+          "n": 30,
+          "p50": 0.206298,
+          "p95": 0.241504,
+          "max": 0.248837
+        },
+        "json_response_serialization": {
+          "n": 30,
+          "p50": 0.024417,
+          "p95": 0.030797,
+          "max": 0.031469
+        },
+        "delivery_session_recheck": {
+          "n": 30,
+          "p50": 0.030427,
+          "p95": 0.051597,
+          "max": 0.068981
+        },
+        "all_commit_spans": {
+          "n": 30,
+          "p50": 45.965677,
+          "p95": 51.327272,
+          "max": 54.415143
+        },
+        "outside_commit_spans": {
+          "n": 30,
+          "p50": 4.283697,
+          "p95": 4.9324769999999925,
+          "max": 19.587317
+        },
+        "non_commit_auth_route_parse_and_schema": {
+          "n": 30,
+          "p50": 0.414999,
+          "p95": 0.635774,
+          "max": 8.008225
+        },
+        "non_commit_content_worker_and_record": {
+          "n": 30,
+          "p50": 2.037147,
+          "p95": 2.472385,
+          "max": 9.795644
+        },
+        "non_commit_journal_receipt_queue_and_publish": {
+          "n": 30,
+          "p50": 0.325953,
+          "p95": 0.428747,
+          "max": 0.430759
+        },
+        "non_commit_job": {
+          "n": 30,
+          "p50": 0.884051,
+          "p95": 1.089066,
+          "max": 1.195216
+        },
+        "non_commit_http_wake_serialization_delivery_and_io": {
+          "n": 30,
+          "p50": 0.560894,
+          "p95": 0.6745369999999925,
+          "max": 0.775477
+        }
+      }
+    }
+  },
+  "sync_only_trace": {
+    "timings": {
+      "commit": "d10a398d3961486ec3eec9146830cacfc4a81a27",
+      "physical_bytes_before_append": 16727978,
+      "measurements": [
+        {
+          "metric": "threads.16mib.append",
+          "p50": 49.325371,
+          "p95": 55.537797,
+          "p99": 59.989305,
+          "max": 59.989305,
+          "samples": 30,
+          "breached": true
+        },
+        {
+          "metric": "threads.16mib.tail",
+          "p50": 130.30010000000001,
+          "p95": 145.77920699999999,
+          "p99": 155.146995,
+          "max": 155.146995,
+          "samples": 30,
+          "breached": true
+        },
+        {
+          "metric": "threads.16mib.exact",
+          "p50": 115.042988,
+          "p95": 123.796986,
+          "p99": 144.254092,
+          "max": 144.254092,
+          "samples": 30,
+          "breached": true
+        },
+        {
+          "metric": "threads.16mib.message_index_rebuild",
+          "p50": 1239.5523660000001,
+          "p95": 1239.5523660000001,
+          "p99": 1239.5523660000001,
+          "max": 1239.5523660000001,
+          "samples": 1,
+          "breached": false
+        }
+      ],
+      "append_ms": [
+        52.717163,
+        47.767928,
+        52.565858,
+        45.628911,
+        46.587423,
+        44.404433,
+        51.234739000000005,
+        54.675377999999995,
+        49.502886000000004,
+        49.325371,
+        47.677126,
+        44.401666,
+        51.354101,
+        44.217511,
+        44.154472,
+        51.494205,
+        51.761545999999996,
+        44.703974,
+        45.702438,
+        52.507397,
+        54.834516,
+        59.989305,
+        55.537797,
+        46.443981,
+        51.752319,
+        44.959272,
+        51.840904,
+        45.356978999999995,
+        47.105993,
+        52.399283999999994
+      ],
+      "breached": true
+    },
+    "phase_marks": {
+      "measure": "sync-only",
+      "response_bytes": {
+        "n": 30,
+        "p50": 1100,
+        "p95": 1100,
+        "max": 1100
+      },
+      "ms": {
+        "http_io_outside_server": {
+          "n": 30,
+          "p50": 1.165938,
+          "p95": 2.7951389999999927,
+          "max": 3.127022
+        },
+        "session_authentication": {
+          "n": 30,
+          "p50": 0.0109,
+          "p95": 0.053009,
+          "max": 0.058119
+        },
+        "request_body_parse": {
+          "n": 30,
+          "p50": 1.593122,
+          "p95": 2.692546,
+          "max": 2.849762
+        },
+        "route_and_authority": {
+          "n": 30,
+          "p50": 1.160169,
+          "p95": 7.80659,
+          "max": 8.799494
+        },
+        "thread_schema_and_activation": {
+          "n": 30,
+          "p50": 0.892306,
+          "p95": 1.16622,
+          "max": 1.169747
+        },
+        "save_worker_handoff": {
+          "n": 30,
+          "p50": 0.876446,
+          "p95": 1.152575,
+          "max": 1.202106
+        },
+        "content_slot_wait": {
+          "n": 30,
+          "p50": 0.00025,
+          "p95": 0.00041,
+          "max": 0.000582
+        },
+        "content_preparation_and_receipt_reads": {
+          "n": 30,
+          "p50": 4.967156,
+          "p95": 6.45498,
+          "max": 12.513325
+        },
+        "record_guard_and_write": {
+          "n": 30,
+          "p50": 0.013275,
+          "p95": 0.019036,
+          "max": 0.022312
+        },
+        "content_commit_span": {
+          "n": 30,
+          "p50": 7.01877,
+          "p95": 10.618389,
+          "max": 11.001718
+        },
+        "markdown_sync": {
+          "n": 30,
+          "p50": 6.572281,
+          "p95": 7.886799,
+          "max": 11.092149
+        },
+        "journal_commit_span": {
+          "n": 30,
+          "p50": 6.739605,
+          "p95": 8.24943,
+          "max": 8.738949
+        },
+        "journal_read_queue_publish": {
+          "n": 30,
+          "p50": 1.264042,
+          "p95": 1.760715,
+          "max": 1.816512
+        },
+        "job_commit_span": {
+          "n": 30,
+          "p50": 6.873007,
+          "p95": 7.822709,
+          "max": 9.092184
+        },
+        "job_settings_and_worker_handoff": {
+          "n": 30,
+          "p50": 1.086781,
+          "p95": 1.675376,
+          "max": 2.412601
+        },
+        "job_admission_without_commit": {
+          "n": 30,
+          "p50": 1.435597,
+          "p95": 1.791895,
+          "max": 2.321811
+        },
+        "job_load_and_reply_handoff": {
+          "n": 30,
+          "p50": 0.273064,
+          "p95": 0.588325,
+          "max": 0.965463
+        },
+        "journal_commit_to_callback_done": {
+          "n": 30,
+          "p50": 1.404709,
+          "p95": 2.063015,
+          "max": 2.276124
+        },
+        "response_construction_and_wake": {
+          "n": 30,
+          "p50": 1.173805,
+          "p95": 1.840946,
+          "max": 2.533667
+        },
+        "json_response_serialization": {
+          "n": 30,
+          "p50": 0.732736,
+          "p95": 1.182722,
+          "max": 1.593482
+        },
+        "delivery_session_recheck": {
+          "n": 30,
+          "p50": 0.904078,
+          "p95": 1.232535,
+          "max": 1.507681
+        },
+        "all_commit_spans": {
+          "n": 30,
+          "p50": 27.241033,
+          "p95": 31.818828,
+          "max": 37.200133
+        },
+        "outside_commit_spans": {
+          "n": 30,
+          "p50": 19.576342,
+          "p95": 26.650160999999994,
+          "max": 29.160737
+        },
+        "non_commit_auth_route_parse_and_schema": {
+          "n": 30,
+          "p50": 4.038323,
+          "p95": 10.6135,
+          "max": 11.400147
+        },
+        "non_commit_content_worker_and_record": {
+          "n": 30,
+          "p50": 5.915619,
+          "p95": 7.278708,
+          "max": 13.563899
+        },
+        "non_commit_journal_receipt_queue_and_publish": {
+          "n": 30,
+          "p50": 1.264042,
+          "p95": 1.760715,
+          "max": 1.816512
+        },
+        "non_commit_job": {
+          "n": 30,
+          "p50": 2.850473,
+          "p95": 3.620618,
+          "max": 4.306176
+        },
+        "non_commit_http_wake_serialization_delivery_and_io": {
+          "n": 30,
+          "p50": 4.111892,
+          "p95": 5.697809,
+          "max": 6.748112
+        }
+      }
+    },
+    "syscalls_matched_by_in_process_commit_timestamps": {
+      "clock_offset_drift_ns": 14,
+      "matched": 30,
+      "misses": [],
+      "windows": [
+        {
+          "sample": 1,
+          "http_ms": 52.717163,
+          "sync_ms": {
+            "content.db-wal": 6.821,
+            "Long thread.md": 6.383,
+            "index.db-wal": 6.776,
+            "jobs.db-wal": 6.652
+          }
+        },
+        {
+          "sample": 2,
+          "http_ms": 47.767928,
+          "sync_ms": {
+            "content.db-wal": 7.105,
+            "Long thread.md": 6.78,
+            "index.db-wal": 6.804,
+            "jobs.db-wal": 6.915
+          }
+        },
+        {
+          "sample": 3,
+          "http_ms": 52.565858,
+          "sync_ms": {
+            "content.db-wal": 6.875,
+            "Long thread.md": 7.828,
+            "index.db-wal": 6.574,
+            "jobs.db-wal": 7.083
+          }
+        },
+        {
+          "sample": 4,
+          "http_ms": 45.628911,
+          "sync_ms": {
+            "content.db-wal": 7.229,
+            "Long thread.md": 6.465,
+            "index.db-wal": 6.548,
+            "jobs.db-wal": 6.644
+          }
+        },
+        {
+          "sample": 5,
+          "http_ms": 46.587423,
+          "sync_ms": {
+            "content.db-wal": 6.807,
+            "Long thread.md": 6.5,
+            "index.db-wal": 6.61,
+            "jobs.db-wal": 6.687
+          }
+        },
+        {
+          "sample": 6,
+          "http_ms": 44.404433,
+          "sync_ms": {
+            "content.db-wal": 6.834,
+            "Long thread.md": 6.388,
+            "index.db-wal": 6.528,
+            "jobs.db-wal": 6.668
+          }
+        },
+        {
+          "sample": 7,
+          "http_ms": 51.234739000000005,
+          "sync_ms": {
+            "content.db-wal": 6.615,
+            "Long thread.md": 6.323,
+            "index.db-wal": 6.408,
+            "jobs.db-wal": 6.467
+          }
+        },
+        {
+          "sample": 8,
+          "http_ms": 54.675377999999995,
+          "sync_ms": {
+            "content.db-wal": 7.237,
+            "Long thread.md": 6.907,
+            "index.db-wal": 6.71,
+            "jobs.db-wal": 6.677
+          }
+        },
+        {
+          "sample": 9,
+          "http_ms": 49.502886000000004,
+          "sync_ms": {
+            "content.db-wal": 6.68,
+            "Long thread.md": 6.465,
+            "index.db-wal": 6.706,
+            "jobs.db-wal": 6.751
+          }
+        },
+        {
+          "sample": 10,
+          "http_ms": 49.325371,
+          "sync_ms": {
+            "content.db-wal": 10.887,
+            "Long thread.md": 6.55,
+            "index.db-wal": 6.624,
+            "jobs.db-wal": 7.375
+          }
+        },
+        {
+          "sample": 11,
+          "http_ms": 47.677126,
+          "sync_ms": {
+            "content.db-wal": 7.093,
+            "Long thread.md": 6.452,
+            "index.db-wal": 8.044,
+            "jobs.db-wal": 6.912
+          }
+        },
+        {
+          "sample": 12,
+          "http_ms": 44.401666,
+          "sync_ms": {
+            "content.db-wal": 6.85,
+            "Long thread.md": 6.571,
+            "index.db-wal": 6.615,
+            "jobs.db-wal": 6.809
+          }
+        },
+        {
+          "sample": 13,
+          "http_ms": 51.354101,
+          "sync_ms": {
+            "content.db-wal": 6.922,
+            "Long thread.md": 6.572,
+            "index.db-wal": 6.657,
+            "jobs.db-wal": 7.075
+          }
+        },
+        {
+          "sample": 14,
+          "http_ms": 44.217511,
+          "sync_ms": {
+            "content.db-wal": 6.937,
+            "Long thread.md": 6.518,
+            "index.db-wal": 6.638,
+            "jobs.db-wal": 6.743
+          }
+        },
+        {
+          "sample": 15,
+          "http_ms": 44.154472,
+          "sync_ms": {
+            "content.db-wal": 6.829,
+            "Long thread.md": 6.508,
+            "index.db-wal": 6.695,
+            "jobs.db-wal": 6.759
+          }
+        },
+        {
+          "sample": 16,
+          "http_ms": 51.494205,
+          "sync_ms": {
+            "content.db-wal": 7.142,
+            "Long thread.md": 6.529,
+            "index.db-wal": 6.549,
+            "jobs.db-wal": 6.805
+          }
+        },
+        {
+          "sample": 17,
+          "http_ms": 51.761545999999996,
+          "sync_ms": {
+            "content.db-wal": 7.033,
+            "Long thread.md": 6.454,
+            "index.db-wal": 6.522,
+            "jobs.db-wal": 6.6
+          }
+        },
+        {
+          "sample": 18,
+          "http_ms": 44.703974,
+          "sync_ms": {
+            "content.db-wal": 6.774,
+            "Long thread.md": 6.546,
+            "index.db-wal": 6.596,
+            "jobs.db-wal": 6.775
+          }
+        },
+        {
+          "sample": 19,
+          "http_ms": 45.702438,
+          "sync_ms": {
+            "content.db-wal": 6.97,
+            "Long thread.md": 6.435,
+            "index.db-wal": 6.578,
+            "jobs.db-wal": 6.6
+          }
+        },
+        {
+          "sample": 20,
+          "http_ms": 52.507397,
+          "sync_ms": {
+            "content.db-wal": 6.786,
+            "Long thread.md": 7.828,
+            "index.db-wal": 6.746,
+            "jobs.db-wal": 6.765
+          }
+        },
+        {
+          "sample": 21,
+          "http_ms": 54.834516,
+          "sync_ms": {
+            "content.db-wal": 6.761,
+            "Long thread.md": 6.569,
+            "index.db-wal": 6.683,
+            "jobs.db-wal": 8.927
+          }
+        },
+        {
+          "sample": 22,
+          "http_ms": 59.989305,
+          "sync_ms": {
+            "content.db-wal": 7.152,
+            "Long thread.md": 7.383,
+            "index.db-wal": 8.122,
+            "jobs.db-wal": 7.689
+          }
+        },
+        {
+          "sample": 23,
+          "http_ms": 55.537797,
+          "sync_ms": {
+            "content.db-wal": 10.405,
+            "Long thread.md": 11.01,
+            "index.db-wal": 8.63,
+            "jobs.db-wal": 6.652
+          }
+        },
+        {
+          "sample": 24,
+          "http_ms": 46.443981,
+          "sync_ms": {
+            "content.db-wal": 6.774,
+            "Long thread.md": 6.522,
+            "index.db-wal": 6.728,
+            "jobs.db-wal": 6.843
+          }
+        },
+        {
+          "sample": 25,
+          "http_ms": 51.752319,
+          "sync_ms": {
+            "content.db-wal": 7.02,
+            "Long thread.md": 6.365,
+            "index.db-wal": 6.653,
+            "jobs.db-wal": 6.983
+          }
+        },
+        {
+          "sample": 26,
+          "http_ms": 44.959272,
+          "sync_ms": {
+            "content.db-wal": 6.705,
+            "Long thread.md": 6.319,
+            "index.db-wal": 6.799,
+            "jobs.db-wal": 6.794
+          }
+        },
+        {
+          "sample": 27,
+          "http_ms": 51.840904,
+          "sync_ms": {
+            "content.db-wal": 6.674,
+            "Long thread.md": 6.537,
+            "index.db-wal": 6.649,
+            "jobs.db-wal": 6.602
+          }
+        },
+        {
+          "sample": 28,
+          "http_ms": 45.356978999999995,
+          "sync_ms": {
+            "content.db-wal": 6.778,
+            "Long thread.md": 6.635,
+            "index.db-wal": 6.642,
+            "jobs.db-wal": 6.705
+          }
+        },
+        {
+          "sample": 29,
+          "http_ms": 47.105993,
+          "sync_ms": {
+            "content.db-wal": 8.973,
+            "Long thread.md": 6.573,
+            "index.db-wal": 6.81,
+            "jobs.db-wal": 6.82
+          }
+        },
+        {
+          "sample": 30,
+          "http_ms": 52.399283999999994,
+          "sync_ms": {
+            "content.db-wal": 8.938,
+            "Long thread.md": 6.432,
+            "index.db-wal": 6.677,
+            "jobs.db-wal": 6.807
+          }
+        }
+      ],
+      "ms": {
+        "content.db-wal": {
+          "n": 30,
+          "p50": 6.875,
+          "p95": 10.405,
+          "max": 10.887
+        },
+        "Long thread.md": {
+          "n": 30,
+          "p50": 6.522,
+          "p95": 7.828,
+          "max": 11.01
+        },
+        "index.db-wal": {
+          "n": 30,
+          "p50": 6.653,
+          "p95": 8.122,
+          "max": 8.63
+        },
+        "jobs.db-wal": {
+          "n": 30,
+          "p50": 6.765,
+          "p95": 7.689,
+          "max": 8.927
+        },
+        "all_four_syscalls": {
+          "n": 30,
+          "p50": 26.867,
+          "p95": 31.436,
+          "max": 36.697
+        },
+        "http_less_the_four_syscalls": {
+          "n": 30,
+          "p50": 19.983423000000002,
+          "p95": 27.144377999999996,
+          "max": 29.643305
+        },
+        "content_commit_excluding_main_sync": {
+          "n": 30,
+          "p50": 0.12660099999999996,
+          "p95": 0.1892459999999998,
+          "max": 0.21338900000000116
+        },
+        "space_slot_wait": {
+          "n": 30,
+          "p50": 0.00025,
+          "p95": 0.00041,
+          "max": 0.000582
+        }
+      }
+    }
+  },
+  "warm_file_io_under_broad_trace": {
+    "warm_appends": 20,
+    "warm_window_file_io": [
+      {
+        "syscall": "read",
+        "bytes": 4096,
+        "count": 20
+      },
+      {
+        "syscall": "write",
+        "bytes": 164,
+        "count": 20
+      }
+    ]
+  },
+  "notes": [
+    "The patched release enables perf-timings for in-process spans. The dev control uses the default release server.",
+    "The sync-only tracer changes the distribution across phases. Use the untraced release marks to assess normal request latency. Commit spans include syscall and in-call time.",
+    "The warm single-record witness read was 4096 bytes. Full-file validation only runs on the background verifier after an absent or changed proof.",
+    "Message search replays backlog in bounded groups of up to 64 patches. Cold builds and changes to the base still need a thread rebuild."
+  ],
+  "focused_content_tests_passed": 38
+}
