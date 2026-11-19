@@ -7,7 +7,7 @@
       "percentile": "p95",
       "budget": 40,
       "unit": "ms",
-      "fixture": "One v1 Markdown thread within 64 KiB of 16 MiB",
+      "fixture": "One v2 Markdown thread within 64 KiB of 16 MiB",
       "measurement": "Warm authenticated HTTP threads.send through durable placement and turn admission",
       "reference": "Inherits the 40 ms save acknowledgement ceiling. Issue #53 locked perf proof."
     },
