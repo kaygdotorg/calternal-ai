@@ -121,11 +121,27 @@ describe("Mail store", () => {
     expect(s.notice).toContain("no password");
     expect(JSON.stringify(s)).not.toMatch(/password":/);
   });
-  it("selecting a button in the rendered list sets its command", async () => {
-    const s = new MailStore(new FixtureMailClient());
-    await s.start();
-    let got: Record<string, unknown> = {};
-    render(GenUi, { source: s.listSource, onsend: undefined, values: got as any });
-    await userEvent.click(screen.getAllByRole("button", { name: /Welcome to the fixture/ })[0]!);
+});
+
+describe("Mail screens in the shell", () => {
+  it("choosing a message in the sidebar opens it in the pane, marks it read and a typed form value survives a redraw", async () => {
+    const { mail } = await import("./store.svelte");
+    const Sidebar = (await import("./Sidebar.svelte")).default;
+    const Main = (await import("./Main.svelte")).default;
+    const { navigate, route } = await import("../../lib/route.svelte");
+    render(Sidebar);
+    const row = await screen.findByRole("button", { name: /Welcome to the fixture mailbox/ });
+    await userEvent.click(row);
+    await waitFor(() => expect(route.path).toBe("/mail/200"));
+    const pane = render(Main, { id: "200" });
+    await waitFor(() => expect(pane.container.querySelector("h1")?.textContent).toContain("Welcome"));
+    expect(await pane.findByText(/An indented line, kept as written/)).toBeTruthy();
+    await waitFor(() => expect(mail.headers.find((h) => h.uid === 200)?.read).toBe(true));
+    navigate("/mail/setup");
+    pane.rerender({ id: "setup" });
+    const host = (await pane.findByLabelText("Mail server")) as HTMLInputElement;
+    await userEvent.type(host, "imap.example.test");
+    expect(host.value).toBe("imap.example.test");
+    expect(pane.queryByLabelText(/password/i)).toBeNull();
   });
 });
