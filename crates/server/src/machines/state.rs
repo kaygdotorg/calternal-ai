@@ -516,7 +516,6 @@ impl State {
         waiting.sort_unstable();
         for (_, _, lease) in waiting {
             let l = &self.leases[&lease];
-            let sponsor = l.row.shared_sponsor.unwrap_or(l.row.account);
             let shared =
                 l.row
                     .shared_sponsor

@@ -189,7 +189,11 @@ impl State {
                         && held.assigned_machine() == Some(machine.row.id)
                 })
                 .count();
-            free = free.min((cap as usize).saturating_sub(held));
+            let remaining = (cap as usize).saturating_sub(held);
+            if remaining == 0 {
+                return None;
+            }
+            free = free.min(remaining);
         }
         Some(free)
     }

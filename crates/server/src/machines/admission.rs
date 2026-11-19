@@ -301,10 +301,10 @@ impl MachineService {
                 })
                 .count()
                 >= bound as usize
-            && !st
-                .machines
-                .values()
-                .any(|machine| st.available_for_lease(machine, &lease, &self.settings) > 0)
+            && !st.machines.values().any(|machine| {
+                st.available_for_lease(machine, &lease, &self.settings)
+                    .is_some_and(|free| free > 0)
+            })
         {
             return Err(Error::unavailable(
                 "Resource queue is full. Retry after capacity frees.",
