@@ -461,11 +461,27 @@ async fn run(cmd: Command) -> Result<Reply, CliError> {
         } => {
             let dir = dir.unwrap_or_else(connection::default_dir);
             let root = dir.join("sandboxes");
+            let cli_alias = if matches!(backend, BackendKind::Auto | BackendKind::Direct) {
+                tokio::task::spawn_blocking(direct_cli_alias)
+                    .await
+                    .ok()
+                    .and_then(Result::ok)
+                    .ok_or_else(|| {
+                        CliError::new(
+                            "unavailable",
+                            "Could not expose the operation CLI to Direct turns.",
+                        )
+                    })?
+            } else {
+                None
+            };
+            let cli_dir = cli_alias.as_ref().map(|alias| alias.path().to_path_buf());
             let backend: Arc<dyn Backend> = match backend {
-                BackendKind::Auto => Arc::new(crate::sandbox::configured::ConfiguredBackend::new(
-                    root, podman, image,
-                )),
-                BackendKind::Direct => Arc::new(DirectBackend::new(root)),
+                BackendKind::Auto => Arc::new(
+                    crate::sandbox::configured::ConfiguredBackend::new(root, podman, image)
+                        .with_cli_dir(cli_dir),
+                ),
+                BackendKind::Direct => Arc::new(DirectBackend::new(root).with_cli_dir(cli_dir)),
                 BackendKind::Microvm => {
                     #[cfg(target_os = "linux")]
                     {
@@ -522,6 +538,24 @@ async fn run(cmd: Command) -> Result<Reply, CliError> {
             Ok(Reply::new(json!({"stopped": true})).line("The machine stopped cleanly."))
         }
     }
+}
+
+/// Install a process-lifetime CLI alias only when the machine executable is
+/// renamed. Cost: one executable lookup and, when needed, one private temporary
+/// directory and symlink. Call from a blocking task.
+fn direct_cli_alias() -> std::io::Result<Option<tempfile::TempDir>> {
+    let executable = std::env::current_exe()?;
+    if executable
+        .file_name()
+        .is_some_and(|name| name == "calternal")
+    {
+        return Ok(None);
+    }
+    let dir = tempfile::Builder::new()
+        .prefix("calternal-cli-")
+        .tempdir()?;
+    std::os::unix::fs::symlink(executable, dir.path().join("calternal"))?;
+    Ok(Some(dir))
 }
 
 async fn microvm(root: PathBuf, config: Option<PathBuf>) -> Result<Arc<dyn Backend>, CliError> {
