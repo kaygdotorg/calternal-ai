@@ -255,8 +255,8 @@
   .mid { min-width: 0; padding: 0 var(--inset); position: relative; }
   .edge { position: absolute; z-index: 6; top: calc(var(--safe-top) + (var(--bar-h) - var(--pill-h)) / 2); }
   .edge.l { left: calc(var(--inset) + var(--s-4)); }
-  /* The header line (HeaderPill) sits beside the sidebar button, or at the card's corner when there is none, and leaves room for the card's own corner controls on the right. */
-  .edge.hl { left: calc(var(--inset) + var(--s-4) + var(--hl-off, 0px)); right: calc(var(--inset) + var(--s-4) + var(--pill-h) * 2); pointer-events: none; display: flex; }
+  /* The header line (HeaderPill) is centred at the top of the card at every width: the same reserve at both sides (the wider of the sidebar buttons at the left and the card's corner controls at the right), so a long line ellipsizes in the middle and never reaches a side control. */
+  .edge.hl { left: calc(var(--inset) + var(--s-4) + max(var(--hl-off, 0px), var(--pill-h) * 2 + var(--s-3))); right: calc(var(--inset) + var(--s-4) + max(var(--hl-off, 0px), var(--pill-h) * 2 + var(--s-3))); pointer-events: none; display: flex; justify-content: center; }
   .mid :global(.mid-card) { height: 100%; overflow: clip; }
   /* The card is the only thing on the background, and it casts nothing onto it: a shadow would be a second layer in the gap beside the card (the owner's seam). It is told apart by its own surface (docs/ui-design-system.md). On a phone it slides over the list, where it does cast one. */
   .shell:not(.narrow) .mid :global(.mid-card) { box-shadow: none; }

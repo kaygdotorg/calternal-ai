@@ -16,7 +16,7 @@
     <h1>Trash</h1>
     <p class="lede">Notes you moved here stay for as long as you keep them. Restore one to put it back where it was, or delete it for good.</p>
     {#if notes.trashed.length}
-      <VirtualList inside count={notes.trashed.length} estimate={64} overscan={600} label="Trash" onrange={(_, end) => { if (end >= notes.trashed.length - 40) void notes.trashPages.next(); }}>
+      <VirtualList inside count={notes.trashed.length} estimate={64} overscan={600} label="Trash" nav={{ open: () => {} }} onrange={(_, end) => { if (end >= notes.trashed.length - 40) void notes.trashPages.next(); }}>
         {#snippet row(i)}{@const n = notes.trashed[i]}{#if n}
         <div class="r"><span class="n"><span class="t">{n.title}</span><span class="h">Deleted {shortDateTime(n.updatedAt)}</span></span>
         <span class="a"><Button text="Restore" variant="secondary" onclick={async () => { await notes.restore(n.id); }} /><Button text="Delete for good" variant="quiet" onclick={() => confirm(`Delete “${n.title}” for good? Its history goes too.`) && notes.purge(n.id)} /></span></div>

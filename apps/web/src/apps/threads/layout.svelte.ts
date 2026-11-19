@@ -28,6 +28,8 @@ interface Stored {
   looseCollapsed?: boolean;
 }
 
+import { floodOf } from "../../lib/flood";
+
 const KEY = "cal.threads.layout";
 
 function read(): Stored {
@@ -37,7 +39,16 @@ function read(): Stored {
   } catch {
     /* first run */
   }
+  const fl = floodOf();
+  if (fl) return floodLayout(fl.count);
   return { sections: [], loose: [] };
+}
+
+/** The flood's arrangement (`?flood`): five named sections holding the first threads in turn, the rest loose. */
+function floodLayout(n: number): Stored {
+  const names = ["Now", "This week", "Mesh", "Notes plugin", "Parked"], sections: Section[] = names.map((name, k) => ({ id: `fl-sec-${k}`, name, collapsed: false, threadIds: [] }));
+  for (let i = 0; i < Math.min(n, 400); i++) sections[i % sections.length]!.threadIds.push(`t-fl-${i}`);
+  return { sections, loose: [] };
 }
 
 class Layout {
@@ -67,7 +78,8 @@ class Layout {
     if (c === null) {
       const placed = new Set(this.sections.flatMap((s) => s.threadIds));
       const order = this.loose.filter((i) => have.has(i) && !placed.has(i));
-      return [...order, ...existing.filter((i) => !order.includes(i) && !placed.has(i))];
+      const ordered = new Set(order);
+      return [...order, ...existing.filter((i) => !ordered.has(i) && !placed.has(i))];
     }
     return (this.sections.find((s) => s.id === c)?.threadIds ?? []).filter((i) => have.has(i));
   }

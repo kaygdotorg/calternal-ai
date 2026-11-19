@@ -7,7 +7,7 @@ import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { cpus, loadavg } from "node:os";
 import { busyNow } from "./lib.mjs";
-const SUITES = ["clarity-perf", "canvas", "composer-fold", "switch", "phone-nav", "sidebar-pull", "palette", "thread-size", "live-typing", "press"];
+const SUITES = ["clarity-perf", "canvas", "composer-fold", "switch", "phone-nav", "sidebar-pull", "palette", "thread-size", "live-typing", "press", "list-keys"];
 const wait = Number(process.env.CAL_QUIET_WAIT_S ?? 900), MAX_CORES = Number(process.env.CAL_QUIET_CORES ?? 2), RETRIES = 2, cores = cpus().length;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 /** Cumulative [busy, total] jiffies of every CPU (/proc/stat's first line). */

@@ -73,13 +73,9 @@ class ThreadsStore {
   /** The clock the Inbox and Snoozed are worked out at; the sidebar moves it to the next time a snoozed thread returns, so a thread comes back by itself. */
   now = $state(Date.now());
   /** The Inbox: the threads that need you and are not snoozed, and why (inbox.ts). */
-  get inbox(): InboxItem[] {
-    return inboxOf(this.threads, this.requests, this.now);
-  }
+  inbox = $derived<InboxItem[]>(inboxOf(this.threads, this.requests, this.now));
   /** The snoozed threads, the soonest to return first. */
-  get snoozed(): SnoozedItem[] {
-    return snoozedOf(this.threads, this.now);
-  }
+  snoozed = $derived<SnoozedItem[]>(snoozedOf(this.threads, this.now));
   /** What plugin jobs wait on, for the Inbox (they belong to no thread). */
   get jobPrompts(): JobPrompt[] { return jobPromptsOf(this.requests); }
 

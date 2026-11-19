@@ -6,6 +6,7 @@
 import { FIXTURE_SPACES } from "../../shell/spaces.svelte";
 import type { ThreadEvents, ThreadsClient } from "./client";
 import { messageAt } from "./generate";
+import { floodOf, floodRng, floodTitle, seedOf } from "../../lib/flood";
 import { addVersion, newFork, stamp, switchTo, tailAt, type Fork } from "./fork";
 import { permissionLabel, runsOnLabel } from "./permissions";
 import type { Answer, Attachment, Change, Message, MessageHit, Permission, Step, ProviderOption, Request, RunInfo, RunsOn, ThreadNotice, ThreadState, ThreadSummary } from "./model";
@@ -101,11 +102,49 @@ function applyScenario(threads: ThreadSummary[], requests: Request[]): void {
   if (s.startsWith("interrupted") || s.startsWith("retrying")) t.state = "waiting";
 }
 
+/** The generator seed of a thread: the character sum for the small fixtures (their messages are relied on), a hash for generated flood threads (the sum repeats across thousands of ids, and every flood thread must read differently). */
+const seedFor = (id: string): number => (id.startsWith("t-fl-") ? seedOf(id) : [...id].reduce((a, c) => a + c.charCodeAt(0), 0));
+
+const STATES: ThreadState[] = ["idle", "idle", "idle", "done", "done", "running", "waiting", "failed"];
+/** The flood's threads (`?flood`, lib/flood.ts): varied titles, states, providers, workspaces and sizes, a time spread over months, some children, some waiting with a question. Deterministic. */
+function floodThreads(n: number): { threads: ThreadSummary[]; requests: Request[] } {
+  const r = floodRng(7), threads: ThreadSummary[] = [], requests: Request[] = [];
+  const spaces = ["calternal-ai", "infraternal", "notes", "mesh"];
+  for (let i = 0; i < n; i++) {
+    const id = `t-fl-${i}`, state = STATES[Math.floor(r() * STATES.length)]!, codex = r() < 0.3;
+    const t = thread(id, floodTitle(r), state, spaces[Math.floor(r() * spaces.length)]!, i * 25 + Math.floor(r() * 25), 6 + Math.floor(r() * (r() < 0.1 ? 600 : 80)), null, codex ? "codex" : "claude", codex ? "gpt-6-1-sol" : "sonnet-5-5");
+    t.spaceId = FIXTURE_SPACES[0]!.id;
+    threads.push(t);
+    if (state === "waiting" && r() < 0.5) requests.push({ id: `r-fl-${i}`, kind: "question", threadId: id, title: floodTitle(r), form: QUESTION_FORM });
+  }
+  return { threads, requests };
+}
+
 /** The in-memory `ThreadsClient`. */
 export class FixtureClient implements ThreadsClient {
   private threadList = seedThreads();
   private requestList = seedRequests();
-  constructor() { applyScenario(this.threadList, this.requestList); }
+  constructor() {
+    applyScenario(this.threadList, this.requestList);
+    const fl = floodOf();
+    if (fl) { const f = floodThreads(fl.count); this.threadList = [...this.threadList, ...f.threads]; this.requestList = [...this.requestList, ...f.requests]; if (fl.churn) this.churn(fl.churn); }
+  }
+  private churnTimer = 0;
+  /** `?churn`: `perSecond` changes a second, from one seeded stream: a thread gets a message (its time, state and count change and it moves to the top), a new thread arrives, one is renamed, one is removed. Fixtures only. */
+  private churn(perSecond: number): void {
+    const r = floodRng(99);
+    let seq = 0;
+    this.churnTimer = window.setInterval(() => {
+      const flood = this.threadList.filter((t) => t.id.startsWith("t-fl-") || t.id.startsWith("t-ch-"));
+      if (!flood.length) return;
+      const pick = flood[Math.floor(r() * flood.length)]!, roll = r();
+      if (roll < 0.55) { this.threadList = [{ ...pick, updatedAt: Date.now(), messageCount: pick.messageCount + 1, state: STATES[Math.floor(r() * STATES.length)]! }, ...this.threadList.filter((t) => t.id !== pick.id)]; }
+      else if (roll < 0.7) { const id = `t-ch-${seq++}`; this.threadList = [{ ...pick, id, title: floodTitle(r), updatedAt: Date.now(), messageCount: 4, state: "running" }, ...this.threadList]; }
+      else if (roll < 0.88) { this.threadList = this.threadList.map((t) => (t.id === pick.id ? { ...t, title: floodTitle(r) } : t)); }
+      else { this.threadList = this.threadList.filter((t) => t.id !== pick.id); }
+      for (const w of this.threadWatchers) w(this.threadList);
+    }, Math.max(20, Math.round(1000 / perSecond)));
+  }
   private extra = new Map<string, Message[]>();
   /** The fork of a thread whose message was edited (fork.ts); one fork point per thread in the fixtures. */
   private forks = new Map<string, Fork>();
@@ -153,7 +192,7 @@ export class FixtureClient implements ThreadsClient {
 
   async messages(threadId: string, from: number, to: number): Promise<Message[]> {
     const t = this.summary(threadId);
-    const seed = [...threadId].reduce((a, c) => a + c.charCodeAt(0), 0);
+    const seed = seedFor(threadId);
     const base = this.extra.get(threadId) ?? [];
     const f = this.forks.get(threadId);
     const orig = f && f.active !== 0 ? f.saved : t.messageCount; // the original version's length: the base is always that version
@@ -169,7 +208,7 @@ export class FixtureClient implements ThreadsClient {
     if (!q) return { hits: [], partial: false };
     const hits: MessageHit[] = [];
     for (const t of this.threadList) {
-      const seed = [...t.id].reduce((a, c) => a + c.charCodeAt(0), 0);
+      const seed = seedFor(t.id);
       const base = this.extra.get(t.id) ?? [];
       const generated = t.messageCount - base.length;
       for (let i = 0; i < Math.min(t.messageCount, 400); i++) {

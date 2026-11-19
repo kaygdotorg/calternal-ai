@@ -17,6 +17,7 @@ import type { Look } from "../../canvas/layout";
 import { serverMode } from "../../server/client";
 import { signOutNow } from "../../shell/self.svelte";
 import { caps } from "../../shell/capabilities.svelte";
+import { inNativeShell, nativeCapabilities } from "../../shell/native";
 
 /** How a setting is edited: a switch, a choice, a field, a button, a drill-in row, or a whole panel of its own that loads on demand. Adding a kind means one branch in SettingRow and nothing else. */
 export type Control =
@@ -53,6 +54,8 @@ export interface Setting {
   get?: () => unknown;
   /** Writes a new value; applied at once (there is no Save). */
   set?: (v: unknown) => void;
+  /** Hides the row while it returns false (reactive); absent: always shown. */
+  when?: () => boolean;
 }
 /** A card of rows with an optional header; `danger` puts it last, under the Danger area header. */
 export interface Group { title?: string; settings: Setting[]; danger?: boolean }
@@ -63,6 +66,8 @@ export interface Section { id: "user" | "space" | "server"; name: string; pages:
 
 const fx = <T,>(id: string, def: T): Pick<Setting, "get" | "set"> => ({ get: () => values.get<T>(id, def), set: (v) => values.set(id, v) });
 const A = appearance;
+/** The Window rows show in a browser (the preference is stored, the web ignores it) and in the Mac app, not where the shell cannot do a window material (the iPhone app). */
+const hasWindowMaterial = (): boolean => !inNativeShell() || nativeCapabilities().includes("window-material");
 const ap = (f: (p: typeof A.prefs) => void) => A.change(f);
 const confirmLater = (what: string) => () => alert(`${what}\n\nThis is a fixture: nothing is changed. The real action asks for confirmation (and a passkey when it changes access).`);
 
@@ -82,6 +87,10 @@ const appearancePage: Page = {
       { id: "appearance.dim", label: "Dim", help: "A neutral veil over the picture so text stays calm.", control: { type: "checkbox" }, get: () => A.prefs.materials.dim, set: (v) => ap((p) => (p.materials.dim = !!v)) },
       { id: "appearance.tint", label: "Tint", help: "A veil in the colour scheme's paper, with a whisper of the picture's hue.", control: { type: "checkbox" }, get: () => A.prefs.materials.tint, set: (v) => ap((p) => (p.materials.tint = !!v)) },
       { id: "appearance.clarity", label: "Clear to tinted", help: "Five steps from Clear (the most wallpaper shows through the sidebars and the card) to Tinted (the least), as in Apple's clear and tinted glass. Balanced is the readable default; Clear can fall under the readability floor but never changes the surface's light or dark. Starts from the system's reduced-transparency and contrast settings.", control: { type: "steps", steps: ["Clear", "Light", "Balanced", "Dense", "Tinted"] }, get: () => Math.round(A.clarity * 4), set: (v) => A.setClarityStep(Math.min(4, Math.max(0, Math.round(v as number))) / 4) },
+    ] },
+    { title: "Window", settings: [
+      { id: "appearance.material", label: "Window background", help: "Applies in the Mac app: Wallpaper shows your wallpaper (the same as everywhere else); Translucent shows the desktop through the window. The web ignores it.", control: { type: "segmented", options: [{ id: "wallpaper", label: "Wallpaper" }, { id: "translucent", label: "Translucent" }] }, get: () => A.prefs.material, set: (v) => ap((p) => (p.material = v === "translucent" ? "translucent" : "wallpaper")), when: hasWindowMaterial },
+      { id: "appearance.frost", label: "Frost", help: "How frosted a translucent window is: none is pure Liquid Glass, full is frosted. Applies in the Mac app.", control: { type: "slider", min: 0, max: 100, unit: " %" }, get: () => Math.round(A.prefs.frost * 100), set: (v) => ap((p) => (p.frost = Math.min(1, Math.max(0, Number(v) / 100)))), when: () => hasWindowMaterial() && A.prefs.material === "translucent" },
     ] },
     { title: "Text", settings: [
       { id: "appearance.ui-size", label: "UI size", help: "One scale for type, spacing and controls together.", control: { type: "slider", min: 80, max: 150, unit: " %" }, get: () => A.prefs.uiSize, set: (v) => ap((p) => (p.uiSize = v as number)) },
@@ -285,7 +294,7 @@ export const visibleSections = (): Section[] => (serverMode() ? serverSections()
 /** The page with this id among the pages this person can see, or undefined (the address is then shown as the Settings start, not as an error). Evaluates `visibleSections`, so it follows the source, the capabilities and the current space. */
 export const pageById = (id: string | undefined): Page | undefined => visibleSections().flatMap((s) => s.pages).find((p) => p.id === id);
 /** Every setting with the page it lives on. */
-export const allSettings = (): { page: Page; setting: Setting }[] => visibleSections().flatMap((s) => s.pages.flatMap((p) => p.groups.flatMap((g) => g.settings.map((setting) => ({ page: p, setting })))));
+export const allSettings = (): { page: Page; setting: Setting }[] => visibleSections().flatMap((s) => s.pages.flatMap((p) => p.groups.flatMap((g) => g.settings.filter((x) => !x.when || x.when()).map((setting) => ({ page: p, setting })))));
 
 // The palette finds every setting by its label, help and section, and opens its address (decided: Settings has no search box of its own).
 registerManifest({

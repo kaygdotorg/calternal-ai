@@ -14,6 +14,7 @@
   import type { Snippet } from "svelte";
   import { untrack } from "svelte";
   import { Fenwick } from "../lib/fenwick";
+  import { pageSize, stepIndex, wantsKey } from "../lib/listnav";
 
   let {
     count,
@@ -27,7 +28,8 @@
     onrange,
     inside = false,
     rowRole = inside ? "listitem" : "article",
-  }: { inside?: boolean; rowRole?: string; topInset?: number; bottomInset?: number; onrange?: (first: number, end: number) => void; count: number; estimate?: number; overscan?: number; label: string; row: Snippet<[number]>; startAtBottom?: boolean } = $props();
+    nav,
+  }: { /** Keyboard navigation of the rows (docs/native-feel.md, list navigation): Up, Down, Home, End, Page Up and Page Down move a cursor through ALL rows (drawn or not), the cursor row paints at once and keeps focus, and `open` (default: click the row's link or button) runs when the cursor settles. */ nav?: { settle?: number; open?: (i: number) => void; selected?: () => number; /** The stable key of row `i` and the row now holding a key (-1: gone), for a list that changes under the cursor (new rows at the top, rows moving): the cursor then follows its row instead of staying at its index. */ id?: (i: number) => string; indexOf?: (key: string) => number }; inside?: boolean; rowRole?: string; topInset?: number; bottomInset?: number; onrange?: (first: number, end: number) => void; count: number; estimate?: number; overscan?: number; label: string; row: Snippet<[number]>; startAtBottom?: boolean } = $props();
 
   let scroller = $state<HTMLDivElement>();
   let sizer = $state<HTMLDivElement>();
@@ -108,8 +110,52 @@
 
   function measure(node: HTMLElement) {
     ro?.observe(node);
-    return { destroy: () => ro?.unobserve(node) };
+    const i = Number(node.dataset.i);
+    rows.set(i, node);
+    return { destroy: () => { ro?.unobserve(node); if (rows.get(i) === node) rows.delete(i); } };
   }
+
+  // ---- Keyboard navigation (`nav`): the cursor is an index, so it can be on a row that is not drawn; the selection paints at once (the row's `data-cursor`), the list scrolls just enough, and what the row opens runs after the cursor settles.
+  let cursor = $state(-1), cursorKey: string | null = null, navTimer = 0, navAt = 0;
+  const focusCursor = () => { const row = rows.get(cursor); if (row && !row.contains(document.activeElement)) (row.querySelector<HTMLElement>("a, button") ?? row).focus({ preventScroll: true }); };
+  // A list that changes under the cursor (churn): the cursor follows its row, and focus returns to it if the row was redrawn.
+  $effect(() => {
+    if (!nav?.indexOf || cursorKey === null) return;
+    const i = nav.indexOf(cursorKey);
+    void count;
+    untrack(() => {
+      // Its row is gone (removed by someone else): the row now at its place takes the cursor, so focus does not fall out of the list.
+      if (i < 0) { cursor = Math.min(cursor, count - 1); cursorKey = cursor >= 0 ? nav.id?.(cursor) ?? null : null; } else if (i !== cursor) cursor = i;
+      if (cursor >= 0) requestAnimationFrame(focusCursor);
+    });
+  });
+  /** Scrolls the least that puts row `i` fully in view (no animation: a held key must not queue animations). */
+  function ensureVisible(i: number) {
+    const v = view();
+    if (!v) return;
+    const top = origin() + tree.prefix(i), bottom = top + (heights[i] ?? estimate);
+    if (top < v.scrollTop + topInset) v.scrollTop = Math.max(0, top - topInset);
+    else if (bottom > v.scrollTop + v.clientHeight - bottomInset) v.scrollTop = bottom - v.clientHeight + bottomInset;
+    update();
+  }
+  function onNavKey(e: KeyboardEvent) {
+    if (!nav || !wantsKey(e) || count === 0) return;
+    const at = (e.target as HTMLElement | null)?.closest<HTMLElement>("[data-i]");
+    const here = cursor >= 0 ? cursor : at ? Number(at.dataset.i) : nav.selected?.() ?? -1;
+    const v = view();
+    const next = stepIndex(e.key, here, count, pageSize(v?.clientHeight ?? 400, total / Math.max(1, count)));
+    if (next < 0) return;
+    e.preventDefault();
+    cursor = next;
+    cursorKey = nav.id?.(next) ?? null;
+    navAt = performance.now();
+    ensureVisible(next);
+    // The row exists once the window has moved to it; focus its link or button then (one frame), so focus stays in the list.
+    requestAnimationFrame(focusCursor);
+    clearTimeout(navTimer);
+    navTimer = window.setTimeout(() => { navTimer = 0; const at = cursorKey !== null && nav.indexOf ? nav.indexOf(cursorKey) : next; if (at < 0) return; if (nav.open) nav.open(at); else rows.get(at)?.querySelector<HTMLElement>("a, button")?.click(); }, nav.settle ?? 50);
+  }
+  function onNavOut(e: FocusEvent) { if (!e.relatedTarget && performance.now() - navAt < 300) return; /* the focused row left the window as the cursor moved away: not the person leaving */ if (!(e.currentTarget as HTMLElement).contains(e.relatedTarget as Node | null)) { clearTimeout(navTimer); cursor = -1; cursorKey = null; } }
 
   function toBottom() {
     if (scroller && stuck) { driven = performance.now(); scroller.scrollTop = scroller.scrollHeight; drivenTop = scroller.scrollTop; }
@@ -185,15 +231,16 @@
 {#snippet windowed()}
   <div class="window" style:transform="translateY({offset + (inside ? 0 : topInset)}px)">
     {#each indices as i (i)}
-      <div class="row" data-i={i} role={rowRole} aria-posinset={i + 1} aria-setsize={count} use:measure>{@render row(i)}</div>
+      <div class="row" data-i={i} data-cursor={cursor === i ? "" : undefined} role={rowRole} aria-posinset={i + 1} aria-setsize={count} use:measure>{@render row(i)}</div>
     {/each}
   </div>
 {/snippet}
 {#if inside}
-  <div bind:this={sizer} class="sizer" role="list" aria-label={label} style:height="{total}px">{@render windowed()}</div>
+  <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+  <div bind:this={sizer} class="sizer" data-listnav={nav ? "own" : undefined} role="list" aria-label={label} style:height="{total}px" onkeydown={onNavKey} onfocusout={onNavOut}>{@render windowed()}</div>
 {:else}
   <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-  <div bind:this={scroller} class="scroller edge-fade" style:--fade-t="{topInset}px" style:--fade-b="{bottomInset}px" role="feed" aria-label={label} aria-busy="false" tabindex="0" onscroll={onscroll} onwheel={touch} ontouchstart={touch} ontouchmove={touch} onpointerdown={touch} onkeydown={touch}>
+  <div bind:this={scroller} class="scroller edge-fade" data-listnav={nav ? "own" : undefined} style:--fade-t="{topInset}px" style:--fade-b="{bottomInset}px" role="feed" aria-label={label} aria-busy="false" tabindex="0" onscroll={onscroll} onwheel={touch} ontouchstart={touch} ontouchmove={touch} onpointerdown={touch} onkeydown={(e) => { touch(); onNavKey(e); }} onfocusout={onNavOut}>
     <div class="sizer" style:height="{total + topInset + bottomInset}px">{@render windowed()}</div>
   </div>
 {/if}
@@ -203,4 +250,7 @@
   .sizer { position: relative; width: 100%; }
   .window { position: absolute; top: 0; left: 0; right: 0; will-change: transform; }
   .row { contain: layout style; }
+  /* The cursor row of keyboard navigation looks as selected as the row it wraps (Row's `aria-current`). */
+  .row[data-cursor] :global(.row) { background: var(--accent-soft); }
+  .row[data-cursor] :global(.row .ic) { color: var(--accent); }
 </style>

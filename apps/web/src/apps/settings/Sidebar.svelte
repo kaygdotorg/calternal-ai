@@ -1,12 +1,12 @@
 <script lang="ts">
   // Settings sidebar: the sections in the groups of docs/ui-craft-and-settings-study.md 11.1 (User, Admin: this space, Admin: server), one selected row.
-  import { Row } from "@calternal/ui";
+  import { listNav, Row } from "@calternal/ui";
   import { href, segments } from "../../lib/route.svelte";
   import { visibleSections } from "./registry";
   const current = $derived(segments()[0] === "settings" ? segments()[1] : undefined);
 </script>
 
-<nav aria-label="Settings">
+<nav aria-label="Settings" use:listNav={{ rows: "a.row" }}>
   {#each visibleSections() as g (g.id)}
     <div class="grp" role="group" aria-labelledby="g-{g.id}">
       <h2 class="section-heading" id="g-{g.id}">{g.name}</h2>

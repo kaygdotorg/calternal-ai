@@ -10,7 +10,7 @@
   import { Button, Icon, IconButton, InlineEditor, Menu, Row, Selector, toast, undoable, type MenuItem } from "@calternal/ui";
   import { href, navigate, segments } from "../../lib/route.svelte";
   import { layout, type Container } from "./layout.svelte";
-  import { pressRow, pressRows, registerPreview, Sheet, type PressBag } from "@calternal/ui";
+  import { listNav, pressRow, pressRows, registerPreview, Sheet, VirtualList, type PressBag } from "@calternal/ui";
   import RequestBar from "./RequestBar.svelte";
   import ThreadPreview from "./ThreadPreview.svelte";
   import { archiveThread, containerName, containersOf, copyThreadLink, runThreadItem, snoozeItems, threadItems, topLevelIds } from "./thread-menu";
@@ -34,7 +34,10 @@
   const top = $derived(topLevelIds());
   const idsIn = (c: Container) => layout.idsOf(c, top);
   const ids0 = $derived(idsIn(null));
-  const kids = (id: string) => shown.filter((t) => t.parentId === id).sort((a, b) => b.updatedAt - a.updatedAt);
+  // Children by parent, built once per change of the list (a row asks for its children, so a per-row filter was one pass over every thread for every drawn row).
+  const kidsBy = $derived.by(() => { const m = new Map<string, ThreadSummary[]>(); for (const t of shown) if (t.parentId) (m.get(t.parentId) ?? m.set(t.parentId, []).get(t.parentId)!).push(t); for (const l of m.values()) l.sort((a, b) => b.updatedAt - a.updatedAt); return m; });
+  const NONE: ThreadSummary[] = [];
+  const kids = (id: string) => kidsBy.get(id) ?? NONE;
   const containers = $derived<Container[]>(containersOf());
   const nameOf = containerName;
 
@@ -52,6 +55,8 @@
   });
   const returns = (s: { until: number; auto: boolean }) => (s.auto ? `Back when the limit resets, ${new Date(s.until).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}` : backLabel(s.until, store.now));
   const TABS = [{ value: "inbox" as const, label: "Inbox" }, { value: "all" as const, label: "All Threads" }];
+  /** A list longer than this is drawn windowed (only the rows near the view exist in the DOM). */
+  const WINDOWED = 60;
   const tab = $derived(view.chosen ?? (items.length || store.jobPrompts.length ? "inbox" : "all"));
 
   // ---- renaming in place ----
@@ -195,13 +200,20 @@
 
 {#snippet list(c: Container, ids: string[])}
   <ul class="threads" ondragover={(e) => { if (dragId) { e.preventDefault(); if (!ids.length) over = { c, index: 0 }; } }} ondrop={(e) => { e.preventDefault(); if (over) dropHere(over.c, over.index); }} role="presentation">
+    {#if ids.length > WINDOWED}
+      <!-- A long list draws only the rows near the view (VirtualList), so thousands of threads cost what a screenful costs; the arrow keys move through all of them (docs/native-feel.md, section 20). -->
+      <VirtualList inside count={ids.length} estimate={40} overscan={200} label="Threads" nav={{ selected: () => ids.indexOf(current ?? ""), id: (i) => ids[i] ?? "", indexOf: (k) => ids.indexOf(k) }}>
+        {#snippet row(i)}{@const t = byId.get(ids[i]!)}{#if t}<ul class="threads" role="presentation">{@render thread(t, c, i, ids.length)}</ul>{/if}{/snippet}
+      </VirtualList>
+    {:else}
     {#each ids as id, i (id)}{#if byId.get(id)}{@render thread(byId.get(id)!, c, i, ids.length)}{/if}{/each}
+    {/if}
     {#if !ids.length && c !== null}<li class="hint" class:over={over?.c === c}>Drag threads here</li>{/if}
   </ul>
 {/snippet}
 
 {#if !empty}<TopEntries />{/if}
-<nav aria-label="Threads" use:swipeRows use:pressRows>
+<nav aria-label="Threads" use:swipeRows use:pressRows use:listNav={{ rows: "a.row, button.row" }}>
   {#if empty}
     <div class="empty">
       <h2>No threads yet</h2>

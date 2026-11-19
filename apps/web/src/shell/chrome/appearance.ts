@@ -28,7 +28,7 @@ async function dataUrl(url: string): Promise<string> {
 export function appearanceOf(onImage: () => void): ChromeAppearance {
   const p = appearance.prefs;
   const id = p.wallpaperId;
-  const out: ChromeAppearance = { wallpaper: id, blur: p.materials.blur, dim: p.materials.dim, tint: p.materials.tint, uiSize: p.uiSize / 100 };
+  const out: ChromeAppearance = { wallpaper: id, blur: p.materials.blur, dim: p.materials.dim, tint: p.materials.tint, uiSize: p.uiSize / 100, material: p.material, frost: p.frost };
   if (id && !NATIVE.has(id) && /^[a-z0-9-]+$/i.test(id)) {
     const have = images.get(id);
     if (have && have !== "pending" && have !== "failed") out.image = have; // in every description: leaving it out makes the shell fall back to the named wallpaper
