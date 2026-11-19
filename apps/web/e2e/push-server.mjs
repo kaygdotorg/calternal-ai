@@ -11,7 +11,8 @@ try {
   server = await startRealServer(PORT, { args: ["--origin", `https://localhost:${PORT + 1}`] });
   tls = await startTlsProxy(server.url, PORT + 1);
   const secure = { ...server, url: tls.url };
-  const b = await chromium.launch();
+  // The service worker script is fetched by the browser itself, which a context option does not cover: the browser ignores certificate errors for this test's self-signed front.
+  const b = await chromium.launch({ args: ["--ignore-certificate-errors"] });
   const p = await openRealServerPage(b, { ignoreHTTPSErrors: true });
   // Before anything loads: permission is granted on the tap, and the browser's push subscription is a stand-in with real keys.
   await p.addInitScript(() => {
