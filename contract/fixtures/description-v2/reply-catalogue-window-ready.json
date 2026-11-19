@@ -1,0 +1,27 @@
+{
+  "bind": "notes",
+  "state": "ready",
+  "result_version": "rv-41",
+  "offset": 0,
+  "window_ref": "w-notes-0",
+  "rows": [
+    {
+      "id": "n-1",
+      "fields": {
+        "title": "Q3 plan",
+        "updated": 1763500000
+      }
+    },
+    {
+      "id": "n-2",
+      "fields": {
+        "title": "Ideas",
+        "updated": 1763400000
+      }
+    }
+  ],
+  "count": {
+    "mode": "exact",
+    "value": 5000
+  }
+}
