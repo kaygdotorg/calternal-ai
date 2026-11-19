@@ -278,3 +278,34 @@ fn restart_replays_a_group_torn_in_either_record_before_serving_it() {
         f.check_receipts(&restarted);
     }
 }
+
+#[test]
+fn first_journal_receipt_recovers_a_lost_group_placement_mark() {
+    static CRASH: AtomicBool = AtomicBool::new(false);
+    let (f, initial) = BatchFixture::new();
+    drop(initial);
+    let content = f.reopen(|point| {
+        if point == FaultPoint::AfterJournalCommit && CRASH.swap(false, Ordering::SeqCst) {
+            panic!("exit after the first append receipt");
+        }
+    });
+    f.prepare_pair(&content);
+    CRASH.store(true, Ordering::SeqCst);
+    let stopped = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _ = content.get(f.space, f.item.id);
+    }));
+    assert!(stopped.is_err());
+    drop(content);
+    // A power loss can discard the NORMAL placement mark even when the
+    // Markdown sync and the first journal receipt are already durable.
+    let db = rusqlite::Connection::open(crate::db::space_path(&f.roots.appdata, f.space)).unwrap();
+    db.execute("UPDATE items SET mat_state='pending' WHERE id=?1", [f.item.id.to_string()]).unwrap();
+    drop(db);
+    OpenOptions::new().append(true).open(&f.file).unwrap().write_all(b"Outside edit.\n").unwrap();
+    let physical = std::fs::read(&f.file).unwrap();
+    let restarted = f.reopen(|_| {});
+    let saved = restarted.get(f.space, f.item.id).unwrap();
+    assert_eq!(saved.bytes, [f.item.bytes.as_slice(), FIRST, SECOND].concat());
+    assert_eq!(std::fs::read(&f.file).unwrap(), physical);
+    f.check_receipts(&restarted);
+}

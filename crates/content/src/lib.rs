@@ -277,8 +277,11 @@ impl Content {
             if opened.append_recovering
                 && !opened.append_group.as_ref().is_some_and(|group| group.accepts(_append_to))
             {
+                let cold_recovery = opened.append_group.is_none();
                 self.publish_pending(opened)?;
-                opened.materialize_pending(self.fault)?;
+                if cold_recovery {
+                    opened.materialize_pending(self.fault)?;
+                }
                 opened.append_recovering = false;
             }
             f(opened)
