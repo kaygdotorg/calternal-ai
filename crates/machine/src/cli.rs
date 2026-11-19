@@ -461,11 +461,9 @@ async fn run(cmd: Command) -> Result<Reply, CliError> {
         } => {
             let dir = dir.unwrap_or_else(connection::default_dir);
             let root = dir.join("sandboxes");
-            let (cli_dir, _cli_alias) = if matches!(
-                backend,
-                BackendKind::Auto | BackendKind::Direct
-            ) {
-                let (path, alias) = tokio::task::spawn_blocking(direct_cli_dir).await.map_err(
+            let (cli_dir, _cli_alias) =
+                if matches!(backend, BackendKind::Auto | BackendKind::Direct) {
+                    let (path, alias) = tokio::task::spawn_blocking(direct_cli_dir).await.map_err(
                     |_| {
                         CliError::new(
                             "unavailable",
@@ -473,10 +471,10 @@ async fn run(cmd: Command) -> Result<Reply, CliError> {
                         )
                     },
                 )??;
-                (Some(path), alias)
-            } else {
-                (None, None)
-            };
+                    (Some(path), alias)
+                } else {
+                    (None, None)
+                };
             let backend: Arc<dyn Backend> = match backend {
                 BackendKind::Auto => Arc::new(
                     crate::sandbox::configured::ConfiguredBackend::new(root, podman, image)
