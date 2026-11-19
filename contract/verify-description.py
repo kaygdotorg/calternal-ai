@@ -162,9 +162,9 @@ def normalize_manifest(m):
     out["_real"] = isinstance(kinds, list) or "api_version" in m
     return out
 
-def semantic(doc, errors, catalogue, manifest):
+def semantic(doc, errors, catalogue, manifest, installed_manifests=()):
     """Unique action ids per document; bind, form, draft and row source scope; fullSwipe placement and catalogue permission; operations, kinds and fields resolved against
-    the host catalogue and the fixture's own manifest (a plugin's kinds and operations); a header title bound to an item bind."""
+    the host catalogue and fixture manifests; only the requester supplies reads and operations; a header title bound to an item bind."""
     if not isinstance(doc, dict): return
     binds_list = [b for b in doc.get("binds", []) if isinstance(b, dict)]
     binds = {b.get("id"): b for b in binds_list}
@@ -172,7 +172,13 @@ def semantic(doc, errors, catalogue, manifest):
     cat_ops = (catalogue or {}).get("operations", {})
     cat_kinds = (catalogue or {}).get("kinds", {})
     man_ops = (manifest or {}).get("operations", {})
-    man_kinds = (manifest or {}).get("kinds", {})
+    man_kinds = dict((manifest or {}).get("kinds", {}))
+    for installed in installed_manifests:
+        for kind_id, kind in installed.get("kinds", {}).items():
+            if kind_id in man_kinds:
+                errors.append(f"$.binds: multiple installed owners for kind {kind_id!r}")
+            else:
+                man_kinds[kind_id] = kind
     children_edges = {b_id: ((b.get("row") or {}).get("children") or {}).get("bind") for b_id, b in binds.items() if ((b.get("row") or {}).get("children") or {}).get("bind")}
     repeat_rows = {n_["repeat"]["rows"] for _, n_ in walk(doc) if isinstance(n_, dict) and isinstance(n_.get("repeat"), dict) and "id" in n_ and "rows" in n_["repeat"]}
     for path, node in walk(doc):
@@ -278,7 +284,7 @@ def semantic(doc, errors, catalogue, manifest):
                         for name in entry.get("target_inputs", []):
                             if isinstance(given.get(name), dict) and "literal" in given[name]: errors.append(f"{path}: target input {name!r} of {op} cannot be a literal")
                 elif manifest is not None and op not in man_ops:
-                    errors.append(f"{path}: operation {op!r} is in neither the host catalogue nor the fixture manifest")
+                    errors.append(f"{path}: operation {op!r} is in neither the host catalogue nor an installed fixture manifest")
                 elif manifest is not None:
                     declared = man_ops[op].get("input_schema") if isinstance(man_ops[op], dict) else None
                     if isinstance(declared, dict) and isinstance(declared.get("properties"), dict):
@@ -382,7 +388,7 @@ def semantic(doc, errors, catalogue, manifest):
                 errors.append(f"{path}: {kind_id!r} needs claimed_text and searchable in its kind manifest to support search")
         if catalogue is not None and kind is None and plugin is None:
             if manifest is not None or kind_id in ("notes", "threads", "collections", "requests"):
-                errors.append(f"{path}: kind {kind_id!r} is in neither the host catalogue nor the fixture manifest")
+                errors.append(f"{path}: kind {kind_id!r} is in neither the host catalogue nor an installed fixture manifest")
             continue
         entry = kind or plugin
         if entry is None: continue
@@ -437,9 +443,17 @@ for file in sorted([*fixtures_dir.glob("*.json"), *fixtures_dir.glob("events/*/*
         print(f"skip {file.name}  (search modes need the host catalogue)")
         continue
     manifest = None
+    installed_manifests = ()
     manifest_file = manifests_dir / file.name.replace("invalid-", "")
     if manifest_file.exists():
         manifest = normalize_manifest(load_strict(manifest_file.read_text()))
+        if package_id := manifest.get("id"):
+            installed_file = manifests_dir / "installed-for" / f"{package_id}.json"
+            if installed_file.exists():
+                installed_manifests = tuple(
+                    normalize_manifest(load_strict((manifests_dir / owner).read_text()))
+                    for owner in load_strict(installed_file.read_text())
+                )
     is_event = file.name.startswith(("event-", "invalid-event-"))
     is_reply = file.name.startswith(("reply-", "invalid-reply-"))
     if doc is not None:
@@ -462,7 +476,7 @@ for file in sorted([*fixtures_dir.glob("*.json"), *fixtures_dir.glob("events/*/*
             check_event_binding(doc, view, errors)
         if not is_event and not is_reply:
             view_limits(doc, errors)
-            semantic(doc, errors, CATALOGUE, manifest)
+            semantic(doc, errors, CATALOGUE, manifest, installed_manifests)
     expect_invalid = file.name.startswith("invalid-")
     ok = bool(errors) if expect_invalid else not errors
     print(("ok   " if ok else "FAIL ") + file.name + ("" if ok else "  " + "; ".join(errors[:4])))

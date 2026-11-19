@@ -764,8 +764,8 @@
       },
       "atomic_undo": false,
       "atomic_undo_unavailable": "The current writer commits the archived head without Undo, then enters a separate protected authority transaction. Keep both flags false and the challenge in place until the Step 2 idle-archive writer gate passes.",
-      "confirmation_when": "Before the writer gate passes, require a challenge. After it passes, an eligible idle archive resolves and dispatches in one exchange without a sheet. Active turns and saved authority or pending approval cleanup make archive irreversible and require a challenge. For an active turn the host-written material says: The running turn will be stopped.",
-      "atomic_undo_when": "Idle thread with no active turn, saved authority or pending approval to retire, checked under the commit fence. Commit the archived head and its unarchive Undo in one FULL thread content transaction, with no separate cleanup.",
+      "confirmation_when": "Before the writer gate passes, require a challenge. After it passes, an eligible idle archive resolves and dispatches in one exchange without a sheet. An active turn, unresolved send intent, saved authority or pending approval cleanup makes archive irreversible and requires a challenge. For an active turn the host-written material says: The running turn will be stopped.",
+      "atomic_undo_when": "Idle thread with no active turn, unresolved send intent, saved authority or pending approval to retire, checked under the commit fence. Turn admission rejects a fresh admission to an archived head under the same fence. Commit the archived head and its unarchive Undo in one FULL thread content transaction, with no separate cleanup.",
       "full_swipe_when": "After the Step 2 idle-archive atomic writer with Undo passes, enable atomic_undo and full_swipe for the first swipe action with effective confirm:none and the idle condition."
     },
     "turns.unarchive": {

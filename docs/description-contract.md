@@ -1,6 +1,6 @@
 # Description contract (v2)
 
-Status: **revision 12**, paired with the [Plugin API v2 specification](plugin-api-v2.md) on `lane/plugin-api-v2-combined`. The [description schema](../contract/description-v2.schema.json) defines the shared renderer shapes.
+Status: **revision 12.1**, paired with the [Plugin API v2 specification](plugin-api-v2.md) on `lane/plugin-api-v2-combined`. The [description schema](../contract/description-v2.schema.json) defines the shared renderer shapes.
 
 The schema is checked with `python3 contract/verify-description.py` against the fixtures in `contract/fixtures/description-v2/` (valid ones must pass,
 `invalid-*` ones must fail). The fixtures are the paper exercises of section 9.
@@ -48,7 +48,7 @@ One definition (`$defs/Bind`):
 * `list`: an index window over a kind's items, optionally one **collection** (a collection id from a literal, the route or the selection, so a collection
   UUID works; it is not a static pattern).
 * `item`: exactly one item by reference from the route or the selection. A literal row is never accepted.
-* `search`: match text from a claimed-text kind whose manifest declares `searchable: true`, or use the Turns-owned search plan in the catalogue. The author declares a `mode` from `SearchMode`. The footer sends settled text through `EventSearch` and the host applies the addressed Bind’s mode. For claimed-text search, `source.collection` selects the authorized manual-collection projection.
+* `search`: match text from a claimed-text kind whose manifest declares `searchable: true`, or use the Turns-owned search plan in the catalogue. A foreign-kind search takes eligibility from its owning package and requires the requesting package’s `reads`. The author declares a `mode` from `SearchMode`. The footer sends settled text through `EventSearch` and the host applies the addressed Bind’s mode. For claimed-text search, `source.collection` selects the authorized manual-collection projection.
 
 Threads, trashed items and requests are kinds or indexed fields the host (or Turns) declares: `trashed`, `trashed_at`, `waiting_on`, `pending_for` are host-indexed
 fields, so the Notes Trash and the Threads Inbox are ordinary binds.

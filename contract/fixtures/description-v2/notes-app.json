@@ -250,7 +250,8 @@
                 "row": "id"
               }
             },
-            "tone": "good"
+            "tone": "good",
+            "fullSwipe": true
           }
         ]
       },

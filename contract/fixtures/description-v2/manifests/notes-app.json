@@ -14,7 +14,7 @@
         "id": "app",
         "template": {
           "path": "notes-app.json",
-          "sha256": "2dfb0a1b3cd9d2ad877c698510cf26f3490295143613d716da392f9b40752171"
+          "sha256": "1392ddfc042cafb758e2ba3e88a4e61c197fa829be87988925a95c10ed06fe91"
         }
       }
     }

@@ -1,4 +1,4 @@
-# Plugin API v2 · revision 12
+# Plugin API v2 · revision 12.1
 
 The first contract covers host-drawn apps, generic items, durable jobs and
 Turns. Freeze after the §8 spikes. Fixture bounds are test settings. See the
@@ -47,8 +47,9 @@ A kind with `claimed_text: true` may declare `searchable: true` to opt into
 the host’s background search projection and the claimed-text plans in
 `query.search`. Omission or false leaves the kind out of search. Notes
 uses this same manifest declaration. The host checks the installed kind’s
-declaration, the Bind’s reads and live scope and field authority at query
-time. Turns owns the separate Threads message index.
+declaration, the requester’s Bind reads and live scope and field authority at query
+time. A foreign-kind search uses the owning installed package’s kind
+declaration and the requesting package’s `reads`. Turns owns the separate Threads message index.
 
 Reject unknown or inconsistent declarations before launch. Reserve `host.` and `turns.` for the host catalogue. Check unique IDs,
 package operation namespace, references, schema compilation offline, pinned
@@ -88,7 +89,7 @@ root or use raw network sockets.
 | --- | --- |
 | Asleep | Serve authorized engine reads and saved templates. An admitted logic call, runnable job or due schedule can wake. A signed wait webhook wakes only via a winning signal that makes a job runnable. Cache misses, page reads, public links and rejected requests do not wake. |
 | Waking | Coalesce wakes into one placement lease. Reserve capacity first. Recheck queued authority before first dispatch. Late startup after cancellation discards the old work. |
-| Awake | Reuse processes between calls. A tap gets a result or `pending` within three seconds of plugin time after a separate wake allowance. A pending call keeps its original ticket, request receipt and status ref. It may continue until that ticket expires. Long work uses a durable job with progress. A package crash retires that process and its tickets. Other packages continue. |
+| Awake | Reuse processes between calls. After the separate wake allowance, the host publishes a result or `pending` at the interactive cutoff below. A pending call keeps its original ticket, request receipt and status ref. It may continue until that ticket expires. Long work uses a durable job with progress. A package crash retires that process and its tickets. Other packages continue. |
 | Draining → going to sleep | Stop admissions to the current epoch, drain within the placement bound, cancel/fence the remainder and retain committed engine effects and checkpoints. Close I/O, stop with acknowledged teardown or durable placement revocation, then sleep. A racing wake coalesces after shutdown. |
 
 Nothing in memory is required to survive sleep. First release proves clean
@@ -125,9 +126,10 @@ login isolation, and self-hosted KVM/no-KVM shapes. Self-hosted operators
 choose the wall with the weaker option labelled. Container tests prove the
 selected fixture wall only.
 
-**Interactive cutoff.** Start the three-second response clock after
-wake and admission. On cutoff issue a host-owned `status_ref` and record
-a bounded diagnostic. Do not launch a second invocation on retry. The
+**Interactive cutoff.** Start the response clock at dispatch after wake
+and admission. If the invocation is still running, return a host-owned
+`status_ref` in the pending reply and record a bounded diagnostic.
+The host publishes `pending` within three seconds of dispatch on every run. On the phone link, the caller receives it within 250 ms of host publication on every run. Do not launch a second invocation on retry. The
 held invocation can still finish under its original authority until
 the 60-second ticket expires. Cancel or expiry fences late effects and
 status presents the last authorized outcome. Durable work needing more
@@ -790,7 +792,7 @@ revisions of all affected resources and refuses if any dependency moved.
 | `host.layout.section.create` | The per-person layout revision transaction creates the section and commits Undo that removes it. |
 | `host.layout.section.rename` | The same layout transaction commits the title change and its prior title for Undo. |
 | `host.layout.section.remove` | The same layout transaction commits removal and retains the section, placements and order for Undo. |
-| `turns.archive` | After the Step 2 idle-archive writer passes, an idle thread with no active turn, saved authority or pending approval to retire can archive in one full-swipe exchange with no sheet. Check those conditions under the commit fence. The FULL thread content transaction records the archived head and its unarchive Undo together. Today’s writer commits the head without Undo and enters a separate protected authority transaction, so the shortcut stays ineligible. Active turns and authority or approval cleanup keep the challenge. For an active turn the host says “The running turn will be stopped.” |
+| `turns.archive` | After the Step 2 idle-archive writer passes, an idle thread with no active turn, unresolved send intent, saved authority or pending approval to retire can archive in one full-swipe exchange with no sheet. Check those conditions under the commit fence. Under the same fence, turn admission refuses a fresh admission to an archived head. The FULL thread content transaction records the archived head and its unarchive Undo together. Today’s writer commits the head without Undo and enters a separate protected authority transaction, so the shortcut stays ineligible. Active turns, unresolved send intents and authority or approval cleanup keep the challenge. For an active turn the host says “The running turn will be stopped.” |
 | `turns.unarchive` | The FULL thread content transaction records the new head and Undo. A full swipe may unarchive an eligible thread. |
 | `turns.snooze` | Ineligible. Today’s writer stores one shared manual deadline. The actor-scoped operation stays unavailable until the Step 2 actor-keyed snooze writer commits the actor’s deadline, its index entry and Undo together. Subscription retry state is unaffected. |
 | `host.item.patch-metadata` | The room-checked FULL content transaction records the changed head and Undo for a single boolean toggle. Full swipe covers this case. |
@@ -964,7 +966,7 @@ and zero-effect assertions must hold on every repetition.
 | **Persisted member rows** | Use an authenticated eligible root Bind. Verify device ciphertext and account/space key separation, reject expired or forged records and erase on known revocation, sign-out and account switch. Paint eligible rows on an unlocked launch, then confirm or correct them against the host. Check that unconfirmed rows have no executable actions and that guest and public windows leave no record. |
 | **Phone cold launch** | Restart the client with an authorized account and a cold connection, with and without an eligible member row record. Start at launch intent and time first paint and first confirmed or corrected rows on the phone link. Require confirmed rows p95 ≤600 ms in both cases. The initial frame uses the local template and unconfirmed rows with a record, or the loading state without one. Confirm no action can run before fresh host context. |
 | **Snapshot randomness** | Independently restore the same snapshot twice and sample the guest kernel and each restored process’s crypto RNG, including Node. Require different bytes for both restores at both layers and require fresh kernel and process randomness before any plugin code. Refuse admission if reseed or fresh process reinitialization cannot establish that. Include reseed time in measured wake. |
-| **Interactive pending** | Force work past three plugin seconds, including a cold wake with the separate measured/fixture allowance. Require caller-visible pending within three seconds after wake and admission on every run, with one diagnostic and one status ref. Poll while it finishes and retry after a lost reply. Never launch again or allow effects after ticket expiry. |
+| **Interactive pending** | Force work past three plugin seconds, including a cold wake with the separate measured/fixture allowance. The host publishes `pending` within three seconds of dispatch on every run. On the phone link, the caller receives it within 250 ms of host publication on every run. Record both timestamps, one diagnostic and one status ref. Poll while it finishes and retry after a lost reply. Never launch again or allow effects after ticket expiry. |
 
 Manual-collection measurements at offsets 10,000 and 90,000 were
 out-of-range controls with zero returned rows. The dense dynamic collection
@@ -1045,9 +1047,17 @@ Pass these end-to-end flows on the selected wall before app migration.
 - **Idle-archive atomic writer with Undo.** In one FULL thread content
   transaction, check the idle condition under the commit fence and record
   archive and its unarchive Undo together. Crash on both sides of commit
-  and require both effect and Undo or neither. Race a newly active turn,
-  saved authority or pending approval against dispatch and require the
-  protected path if cleanup is needed. Refuse stale Undo. Rerun the Step 0
+  and require both effect and Undo or neither. Pause between the send
+  intent commit and job admission and race idle archive in both orders.
+  A committed unresolved intent blocks the idle path. If archive wins,
+  fresh job admission to the archived head fails under the same fence.
+  Replay of a committed admission cannot start a new job. Race a newly
+  active turn, saved authority or pending approval against dispatch and
+  require the protected path if cleanup is needed. Fix the existing dev
+  defect in [thread admission](../crates/server/src/turns/thread_admission.rs):
+  fresh admission checks deletion and intent identity and currently
+  accepts an archived head with a matching unresolved intent. Refuse
+  stale Undo. Rerun the Step 0
   phone activation spike on this writer before enabling idle full swipe.
 - **Actor-keyed snooze writer.** In one FULL thread content transaction,
   commit the actor-keyed deadline, its index entry and Undo. Crash on both
@@ -1093,7 +1103,7 @@ can discard the change. Mail still waits for a later engine contract.
 
 See the [recorded answers](https://git.kayg.org/kayg/calternal-ai/src/commit/3ab27a6bfdff921e11846e22675f9520d12962ae/docs/open-questions.md#recently-decided-2026-11-17-now-in-the-decision-records).
 
-- **Q1 Interactive deadline — DECIDED.** A tap has three seconds of plugin time after a separate short wake allowance. Slower work is a job with progress.
+- **Q1 Interactive deadline — DECIDED.** Host publication has three seconds from dispatch after the separate wake allowance. Section 2 specifies the phone-link delivery allowance. Slower work is a job with progress.
 - **Q2 Tickets and schedules — DECIDED.** 60 seconds per ticket, fresh at each run under the creator’s current rights. Stop on lost rights or departure, notify Managers, and allow scoped Manager takeover of the schedule (§3).
 - **Q3 Guest access to a future host-owned table store — OPEN.** Recommend granting none by default and revisiting only with an explicit item-bound profile.
 - **Q4 Gallery listings — DECIDED.** Icon, description, screenshots, age rating and plain connection disclosures are required for gallery submissions. The manifest stays small. See §7.
