@@ -1,34 +1,44 @@
 /**
- * List navigation, one primitive for every list of rows (docs/native-feel.md): Up and Down move the selection one row (and keep moving at the system's key-repeat rate), Home and End jump to the ends, Page Up and Page Down move a
- * screenful; the row under the cursor paints as selected at once and is kept in view; the thing the row opens (a thread, a note, a page) is opened only when the cursor SETTLES (no key for `settle` ms) or at once on Return, so
+ * List navigation, one primitive for every list of rows (docs/native-feel.md): Up and Down move the selection one row (and keep moving at the system's key-repeat rate); Home, End, Page Up and Page Down only SCROLL the list (to the ends, a screenful) and leave the selection where it is, as on the Mac (owner decision, 2026-11-19); the row under the cursor paints as selected at once and is kept in view; the thing the row opens (a thread, a note, a page) is opened only when the cursor SETTLES (no key for `settle` ms) or at once on Return, so
  * opening is never what makes arrowing slow. Focus stays in the list: the cursor row takes focus. Modified keys (Alt, Ctrl, Meta, Shift) are left alone (reordering, selecting several), as is typing in a field.
  *
- * Two forms of the same behaviour: `listNav`, a Svelte action for lists whose rows are all in the DOM (a sidebar, Settings' pages), and `stepIndex`/`pageSize`, the pure arithmetic a windowed list (`VirtualList`) uses for rows
+ * Two forms of the same behaviour: `listNav`, a Svelte action for lists whose rows are all in the DOM (a sidebar, Settings' pages), and `stepIndex`/`scrollTarget`, the pure arithmetic a windowed list (`VirtualList`) uses for rows
  * that are not drawn. Cost per key: one `querySelectorAll` cached until the list's children change, one focus, one scroll write.
  */
 
 /** The keys the primitive handles. */
-export const NAV_KEYS = ["ArrowUp", "ArrowDown", "Home", "End", "PageUp", "PageDown"] as const;
+export const NAV_KEYS = ["ArrowUp", "ArrowDown", "Home", "End", "PageUp", "PageDown"] as const; // the arrows step the selection; the other four scroll (isScrollKey)
 /** Whether `key` is one of the navigation keys. */
 export const isNavKey = (key: string): boolean => (NAV_KEYS as readonly string[]).includes(key);
 
-/** Rows in a screenful of `viewport` pixels at `rowHeight` each, at least 1 (what Page Up and Page Down move). */
-export const pageSize = (viewport: number, rowHeight: number): number => Math.max(1, Math.floor(viewport / Math.max(1, rowHeight)) - 1);
+/** The keys that scroll the list without moving the selection. */
+export const isScrollKey = (key: string): boolean => key === "Home" || key === "End" || key === "PageUp" || key === "PageDown";
 
 /**
- * Where the cursor goes for `key` from index `i` (-1: none yet) in a list of `count` rows, `page` rows per Page key. The ends stop (no wrap: a list is not a ring); from nowhere Down goes to the first row and Up to the last.
+ * Where a scroll key takes `scrollTop`: Home the start, End the end, a Page key one viewport less a tenth (so a line of context stays), clamped to the scrollable range. Returns null for another key. Pure arithmetic: the caller writes
+ * the scroll position once (no animation, so a held key does not queue any).
+ */
+export function scrollTarget(key: string, scrollTop: number, viewport: number, scrollHeight: number): number | null {
+  const max = Math.max(0, scrollHeight - viewport), page = Math.max(1, viewport * 0.9), clamp = (n: number) => Math.min(max, Math.max(0, n));
+  switch (key) {
+    case "Home": return 0;
+    case "End": return max;
+    case "PageDown": return clamp(scrollTop + page);
+    case "PageUp": return clamp(scrollTop - page);
+    default: return null;
+  }
+}
+
+/**
+ * Where the cursor goes for `key` from index `i` (-1: none yet) in a list of `count` rows, The ends stop (no wrap: a list is not a ring); from nowhere Down goes to the first row and Up to the last.
  * Returns -1 for an empty list or a key that is not a navigation key.
  */
-export function stepIndex(key: string, i: number, count: number, page: number): number {
+export function stepIndex(key: string, i: number, count: number): number {
   if (count <= 0) return -1;
   const clamp = (n: number) => Math.min(count - 1, Math.max(0, n));
   switch (key) {
     case "ArrowDown": return i < 0 ? 0 : clamp(i + 1);
     case "ArrowUp": return i < 0 ? count - 1 : clamp(i - 1);
-    case "PageDown": return i < 0 ? clamp(page - 1) : clamp(i + page);
-    case "PageUp": return i < 0 ? count - 1 : clamp(i - page);
-    case "Home": return 0;
-    case "End": return count - 1;
     default: return -1;
   }
 }
@@ -126,8 +136,8 @@ export function listNav(node: HTMLElement, opts: ListNavOptions) {
     const here = document.activeElement as HTMLElement | null;
     let i = here ? list.findIndex((r) => r === here || r.contains(here)) : -1;
     if (i < 0) i = list.findIndex((r) => r.hasAttribute("aria-current") || r.hasAttribute("data-selected"));
-    const sc = scroller(), rowH = list[Math.max(0, i)]!.offsetHeight || 40;
-    const next = stepIndex(e.key, i, list.length, pageSize(sc?.clientHeight ?? 400, rowH));
+    if (isScrollKey(e.key)) { const sc = scroller(); const to = sc ? scrollTarget(e.key, sc.scrollTop, sc.clientHeight, sc.scrollHeight) : null; if (sc && to !== null) { e.preventDefault(); sc.scrollTop = to; } return; }
+    const next = stepIndex(e.key, i, list.length);
     if (next < 0) return;
     e.preventDefault();
     const row = list[next]!;

@@ -14,7 +14,7 @@
   import type { Snippet } from "svelte";
   import { untrack } from "svelte";
   import { Fenwick } from "../lib/fenwick";
-  import { pageSize, settler, stepIndex, wantsKey } from "../lib/listnav";
+  import { isScrollKey, scrollTarget, settler, stepIndex, wantsKey } from "../lib/listnav";
 
   let {
     count,
@@ -146,7 +146,13 @@
     const at = (e.target as HTMLElement | null)?.closest<HTMLElement>("[data-i]");
     const here = cursor >= 0 ? cursor : at ? Number(at.dataset.i) : nav.selected?.() ?? -1;
     const v = view();
-    const next = stepIndex(e.key, here, count, pageSize(v?.clientHeight ?? 400, total / Math.max(1, count)));
+    if (isScrollKey(e.key)) {
+      // Scrolls only: the cursor and the selection stay. The focused row may leave the window; the scroller takes focus then (it is focusable), so the next key still reaches the list.
+      const to = v ? scrollTarget(e.key, v.scrollTop, v.clientHeight, v.scrollHeight) : null;
+      if (v && to !== null) { e.preventDefault(); v.scrollTop = to; update(); requestAnimationFrame(() => { if (!v.contains(document.activeElement) || document.activeElement === document.body) v.focus({ preventScroll: true }); }); }
+      return;
+    }
+    const next = stepIndex(e.key, here, count);
     if (next < 0) return;
     e.preventDefault();
     cursor = next;

@@ -2,7 +2,7 @@
 // on the main pane after each rest. Runs on the flood fixtures (`?flood`, 5,000 threads and 5,000 notes with varied titles, heavy transcripts, states and sections; lib/flood.ts) with the churn stream off
 // and on (`?churn`: several changes a second), once for the Threads sidebar (All Threads) and once for Notes, with the CPU slowed 4x. Down is held for five seconds at 30 keys per second. Measured: how long the
 // keydown handler runs, how long after each key the moved selection is painted, the heartbeat gaps (how long the main thread was away from other work), how many times the main pane was asked to load during the hold
-// (none: only when the selection settles), and how long after the last key the main pane shows the settled item (budget 150 ms). Also Page Down, End and Home. Timings are judged on a quiet machine (the quiet
+// (none: only when the selection settles), and how long after the last key the main pane shows the settled item (budget 150 ms). Also Page Down, End and Home, which only scroll. Timings are judged on a quiet machine (the quiet
 // list). Usage: node e2e/list-keys.mjs [rows=5000] [seconds=5] [surfaces=threads,notes] [churn=0,1]
 import { judgeTimings, launch, open, serve } from "./lib.mjs";
 const ROWS = Number(process.argv[2] ?? 5000), SECS = Number(process.argv[3] ?? 5), RATE = 30, FRAME = 16.7, SHOW_BUDGET = 150;
@@ -85,11 +85,17 @@ for (const surface of SURFACES) for (const churn of CHURNS) {
   }
   if (!churn) {
     await p.waitForTimeout(1500); // the settled thread's own load must be over before the jump keys are read
-    const at = async () => { let prev = -2; for (let k = 0; k < 40; k++) { const v = await p.evaluate(() => { const e = document.activeElement?.closest("[data-i]"); return e ? Number(e.getAttribute("data-i")) : -1; }); if (v === prev) return v; prev = v; await p.waitForTimeout(80); } return prev; };
-    await p.keyboard.press("End"); const last = await at();
-    await p.keyboard.press("Home"); const top = await at();
-    await p.keyboard.press("PageDown"); const pg = await at();
-    ok(last > 40 && top === 0 && pg > 3 && pg < 80, `${tag}: End, Home and Page Down move to the last loaded row, the first and a page on`, `last ${last}, home ${top}, page ${pg}`);
+    // Home, End and the Page keys scroll the list and leave the selection (the cursor row) alone (owner decision, 2026-11-19).
+    const sel = () => p.evaluate(() => document.querySelector("[data-cursor]")?.getAttribute("data-i") ?? document.querySelector("[aria-current]")?.closest("[data-i]")?.getAttribute("data-i") ?? document.activeElement?.closest("[data-i]")?.getAttribute("data-i") ?? "none");
+    const top = () => p.evaluate(() => (document.querySelector(".scroller[data-listnav]") ?? document.querySelector("[data-listnav=own]"))?.scrollTop ?? -1);
+    const keep = await sel(), t0 = await top(), path0 = await p.evaluate(() => location.pathname);
+    await p.keyboard.press("PageDown"); await p.waitForTimeout(150); const t1 = await top();
+    await p.keyboard.press("End"); await p.waitForTimeout(300); const t2 = await top();
+    await p.keyboard.press("PageUp"); await p.waitForTimeout(150); const t3 = await top();
+    await p.keyboard.press("Home"); await p.waitForTimeout(300); const t4 = await top();
+    const same = await sel(), path1 = await p.evaluate(() => location.pathname);
+    ok(t1 > t0 && t2 > t1 && t3 < t2 && t4 === 0, `${tag}: Page Down, End, Page Up and Home scroll the list`, `scrollTop ${t0} ${t1} ${t2} ${t3} ${t4}`);
+    ok(same === keep && path1 === path0, `${tag}: and the selection stays where it was, nothing is opened`, `selection ${keep} then ${same}`);
   }
   await ctx.close();
 }
