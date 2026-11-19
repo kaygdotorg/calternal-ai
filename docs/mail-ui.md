@@ -30,7 +30,7 @@ the server confirms. A mailbox change (`uid_validity` differs) says "Refresh the
 - No real server: the fixture client implements `MailClient`, which mirrors the operations' shapes. A server client is the next step and needs the operation route for plugin operations.
 - The protected password prompt is unwired for Mail: the shell's secret prompt belongs to the Threads request bar. After adding an account the screen says it waits for the password, and the account lists nothing yet.
 - The sealed HTML frame is not drawn (see gap 2). The reading pane shows the plain text and says there is an HTML version.
-- Remote images are not loaded by the data layer yet; a message with HTML says so. The plugin returns no remote-image flag, so the note shows for every message with HTML.
+- Remote images load only on an explicit authenticated POST to the frame URL from `plugins.network.content.get`, even under Always; Never keeps them off (plugins/calternal-mail/README.md). That request belongs to the sealed frame, so the pane cannot offer it: a message with HTML says images are not loaded on their own. The plugin returns no remote-image flag, so the note shows for every message with HTML.
 - Not checked on a phone or in Safari on the iPhone Simulator; see the lane issue.
 
 ## GenUI gaps
@@ -41,7 +41,7 @@ nothing was added to the shell to work around it.
 | # | Need | Used instead |
 | --- | --- | --- |
 | 1 | An action that invokes an operation (and passes its result back) | `Set` of a `$go` command that the client reads: the state is the interface |
-| 2 | A sealed frame (`frame_id`, the empty-sandbox iframe the plugin guide describes) | `Code` with the plain text, and a note |
+| 2 | A sealed frame (`frame_id`, the empty-sandbox iframe the plugin guide describes) and its "Load remote images" action (authenticated POST to the frame URL) | `Code` with the plain text, and a note |
 | 3 | A protected secret prompt, bound to a plugin's pending request | A note; the prompt itself is outside GenUI by design |
 | 4 | A list row: leading mark, title, sub line, trailing date, long-press menu, swipe, selected state, `Row` link semantics | `Stack` of `Button` (selected is `primary`), `Badge`, `Text`; no long-press |
 | 5 | A page title for the header pill (`data-chrome-title`) and a sticky header | The app draws the heading around the description |

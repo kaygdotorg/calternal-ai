@@ -143,7 +143,7 @@ export function messageView(m: MailMessage, now = Date.now()): string {
   if (h.bytes !== null) pairs.push(`"Size": ${lit(sizeText(h.bytes))}`);
   const parts = [`KeyValue({${pairs.join(", ")}})`];
   if (m.has_html) {
-    parts.push(`Callout("This message also has an HTML version. This view shows the plain text. Remote images in a message are not loaded yet.", "info")`);
+    parts.push(`Callout("This message also has an HTML version. This view shows the plain text. Remote images are never loaded on their own; loading them is an explicit request made from the sealed frame, which this view cannot draw yet.", "info")`);
   }
   parts.push(m.text ? `Code(${lit(m.text)})` : `Callout("This message has no plain-text part.", "neutral")`);
   if (m.attachments.length) {

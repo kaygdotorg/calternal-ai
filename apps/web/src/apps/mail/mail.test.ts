@@ -60,7 +60,7 @@ describe("Mail views", () => {
   it("says remote images are not loaded where a message has HTML, and lists attachments", async () => {
     const c = new FixtureMailClient();
     const m = await c.read(FIXTURE_ACCOUNT.id, "INBOX", 7, 199);
-    expect(messageView(m)).toContain("Remote images in a message are not loaded yet");
+    expect(messageView(m)).toContain("Remote images are never loaded on their own");
     expect(messageView(m)).toContain("receipt-4411.pdf");
   });
   it("draws in the shell's renderer, with no password field", async () => {
