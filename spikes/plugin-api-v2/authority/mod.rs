@@ -1,5 +1,7 @@
 //! Disposable host-side implementation of the sealed activation protocol.
 mod activation;
+mod display;
+use display::{App, Display, Route as DisplayRoute};
 mod queue;
 mod undo;
 pub(crate) use undo::{load_undo_key, pin_outcome, undo_token};
@@ -43,6 +45,7 @@ struct View {
     rows: Vec<Uuid>,
     options: Vec<(Uuid, String)>,
     gate: Arc<Gate<()>>,
+    display: Option<Arc<Display>>,
 }
 
 #[derive(Clone)]
@@ -64,6 +67,7 @@ enum Action {
     Choice,
     Bulk,
     Ordinary,
+    Add,
 }
 impl Action {
     fn from_id(id: &str) -> Option<Self> {
@@ -73,6 +77,7 @@ impl Action {
             "choose-destination" => Self::Choice,
             "trash-selected" => Self::Bulk,
             "touch" => Self::Ordinary,
+            "add" => Self::Add,
             _ => return None,
         })
     }
@@ -83,6 +88,7 @@ impl Action {
             Self::Choice => "choose-destination",
             Self::Bulk => "trash-selected",
             Self::Ordinary => "touch",
+            Self::Add => "add",
         }
     }
     fn challenge(self) -> bool {
@@ -103,6 +109,7 @@ struct IssuedWindow {
     lease: Uuid,
     version: Uuid,
     order: u64,
+    display: Option<(String, u64)>,
     rows: Vec<(Uuid, String)>,
 }
 
@@ -132,6 +139,8 @@ struct Volatile {
     leases: HashMap<Uuid, Lease>,
     contexts: HashMap<Uuid, Context>,
     windows: HashMap<Uuid, IssuedWindow>,
+    display_search: HashMap<Uuid, String>,
+    display_parents: HashMap<Uuid, (Uuid, &'static str, Uuid)>,
     window_order: u64,
     choices: HashMap<Uuid, Choice>,
     resolutions: HashMap<Uuid, Resolution>,
@@ -188,7 +197,7 @@ fn ref_at(value: &Value, key: &str) -> Reply<Uuid> {
 }
 
 impl Host {
-    pub(crate) async fn create(roots: &calternal_roots::Roots) -> Arc<Self> {
+    pub(crate) async fn create_sized(roots: &calternal_roots::Roots, size: usize) -> Arc<Self> {
         let packages = fixture::packages();
         let (mut state, ids) = tokio::task::block_in_place(|| fixture::open(roots, &packages));
         let auth = state.directory.protected_spaces().unwrap().agents();
@@ -239,11 +248,30 @@ impl Host {
                     rows,
                     options,
                     gate: Arc::new(Gate::new(())),
+                    display: None,
                 },
             ));
         }
         let shared = make[0].0;
         let home = make[1].0;
+        for app in [App::Notes, App::Threads, App::Reading] {
+            let display = Display::new(
+                app,
+                if app == App::Reading { 12 } else { size },
+                [ids.owner, ids.guest],
+            );
+            make.push((
+                Uuid::new_v4(),
+                View {
+                    space: ids.shared,
+                    home: false,
+                    rows: vec![],
+                    options: vec![],
+                    gate: Arc::new(Gate::new(())),
+                    display: Some(display),
+                },
+            ));
+        }
         let undo_key = tokio::task::block_in_place(|| load_undo_key(&roots.appdata));
         Arc::new(Self {
             state,
@@ -293,6 +321,7 @@ impl Host {
         lease_header: Option<Uuid>,
         route: &str,
         input: Value,
+        display_route: &DisplayRoute,
     ) -> Reply<(&'static str, Value)> {
         let now = Instant::now();
         {
@@ -302,6 +331,8 @@ impl Host {
                 leases,
                 contexts,
                 windows,
+                display_search,
+                display_parents,
                 choices,
                 resolutions,
                 activations,
@@ -309,9 +340,18 @@ impl Host {
             } = &mut *live;
             contexts.retain(|_, c| leases.contains_key(&c.lease));
             windows.retain(|_, w| leases.contains_key(&w.lease));
+            display_search.retain(|id, _| leases.contains_key(id));
+            display_parents.retain(|_, parent| leases.contains_key(&parent.0));
             choices.retain(|_, c| contexts.contains_key(&c.context));
             resolutions.retain(|_, r| contexts.contains_key(&r.context));
             activations.retain(|_, r| resolutions.contains_key(r));
+        }
+        if route == "search" {
+            return Ok((
+                "search",
+                self.display_search(who, session, lease_header.ok_or(HIDDEN)?, &input)
+                    .await?,
+            ));
         }
         let schema = match route {
             "view.open" => "view_open",
@@ -337,8 +377,14 @@ impl Host {
             "view.renew" => ("renew", self.renew(who, session, &input).await?),
             "window" => (
                 "window",
-                self.window(who, session, lease_header.ok_or(HIDDEN)?, &input["request"])
-                    .await?,
+                self.window(
+                    who,
+                    session,
+                    lease_header.ok_or(HIDDEN)?,
+                    &input["request"],
+                    display_route,
+                )
+                .await?,
             ),
             "selection.settled" => (
                 "selection_context",
@@ -379,7 +425,22 @@ async fn http(
             .get("x-step0-view-lease")
             .and_then(|value| value.to_str().ok())
             .and_then(|value| Uuid::parse_str(value).ok());
-        host.call(actor, session, lease, &route, body)
+        let read_ref = |name| -> Reply<Option<Uuid>> {
+            headers
+                .get(name)
+                .map(|v| {
+                    v.to_str()
+                        .ok()
+                        .and_then(|s| Uuid::parse_str(s).ok())
+                        .ok_or(INVALID)
+                })
+                .transpose()
+        };
+        let display_route = DisplayRoute {
+            item: read_ref("x-step0-route-item")?,
+            collection: read_ref("x-step0-route-collection")?,
+        };
+        host.call(actor, session, lease, &route, body, &display_route)
             .await
             .map(|(_, out)| out)
     };
@@ -406,8 +467,21 @@ async fn bootstrap(State(host): State<Arc<Host>>, headers: HeaderMap) -> Respons
                 );
             }
         }
+        let mut manifests = serde_json::Map::new();
+        let mut fixture = serde_json::Map::new();
+        for (&id, view) in &host.views {
+            if let Some(display) = &view.display {
+                if host.audience(who, view).await.is_some() {
+                    let key = display.app.name();
+                    views.insert(key.into(), json!(id));
+                    templates.insert(key.into(), display.app.template());
+                    manifests.insert(key.into(), display.app.manifest());
+                    fixture.insert(key.into(), json!(display.count()));
+                }
+            }
+        }
         Ok(
-            json!({"views":views,"templates":templates,"template":template,
+            json!({"views":views,"templates":templates,"template":template,"manifests":manifests,"fixture":fixture,
              "manifest":serde_json::from_str::<Value>(include_str!("manifest.json")).unwrap()}),
         )
     };
@@ -454,7 +528,7 @@ async fn local_cors(req: axum::extract::Request, next: axum::middleware::Next) -
         );
         out.headers_mut().insert(
             header::ACCESS_CONTROL_ALLOW_HEADERS,
-            HeaderValue::from_static("authorization,content-type,x-step0-view-lease"),
+            HeaderValue::from_static("authorization,content-type,x-step0-view-lease,x-step0-route-item,x-step0-route-collection"),
         );
         out.headers_mut()
             .insert(header::VARY, HeaderValue::from_static("Origin"));

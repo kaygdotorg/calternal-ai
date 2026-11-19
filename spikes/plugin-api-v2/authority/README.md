@@ -8,6 +8,13 @@ nix develop -c cargo test --locked --release -p calternal-server \
   --test v2_step0_authority -- --ignored --exact serve_authority_fixture --nocapture
 ```
 
+For 5,000 Notes rows and 5,000 root Threads rows, set
+`STEP0_AUTHORITY_SCALE=1` before running the same command. The default
+app views have 12 rows. Set `STEP0_AUTHORITY_CHURN_HZ=3` for three
+mutations per second in each scale list. Churn defaults to zero and is
+bounded to 0–10 Hz. It cycles create, rename and trash. The fixture
+tests renderer behavior over in-memory rows.
+
 The launcher prints the loopback URL and the paths to its two disposable
 bearer files. It creates fresh roots at each launch and removes them at
 normal shutdown. Use `STEP0_AUTHORITY_PORT` to choose another port. A
@@ -18,9 +25,11 @@ The default base is `http://127.0.0.1:43125/step0/v2`. Each request sends
 `Authorization: Bearer <fixture bearer>`. Local browser origins can use
 the same endpoint through its CORS preflight.
 
-1. `GET /fixture` returns the manifest, visible `views.home` and
-   `views.shared` refs, and a per-view template under `templates`.
-   The top-level `template` is the member template.
+1. `GET /fixture` returns view refs and per-view sealed templates under
+   `templates`. `views.notes`, `views.threads` and `views.reading` are the
+   app views with chrome. Their manifests are under `manifests`. The
+   existing `home` and `shared` views still exercise the authority matrix.
+   The top-level `template` is the original small member template.
 2. `POST /view.open` takes `{"type":"view_open","view_ref":"…"}`. Keep its
    lease, grant revision and cache partition.
 3. `POST /window` takes the sealed event
@@ -36,9 +45,30 @@ the same endpoint through its CORS preflight.
    and `/view.renew`. Send the matching sealed event body. Pin’s returned
    Undo uses `POST /undo` and the current lease header.
 
-The fixture serves the home and shared Notes views. The owner can edit both. The second
-account initially reads the shared view as a member. The scripted
-integration target also exercises item-only sharing and revocation.
+Notes uses `notes`, `collections`, `trash`, `trash-count`, `note`,
+`current` and `note-search`. The fixture transport takes
+`X-Step0-Route-Collection` and `X-Step0-Route-Item` on window requests
+for the selected collection or note. To settle a search, send
+`POST /search` with the lease header and
+`{"type":"search","bind":"note-search","text":"Note"}`, then request that
+Bind's window. Reading List uses the same search flow with
+`reading-search`.
+
+Threads uses `waiting` for the Inbox, `all` for root rows, `children` for
+each parent's nested window, `layout` for the viewer's two sections, and
+`in-section` for each section's placements. Use the matching
+`rows[].parent_refs` entry as `request.parent`. Requests across parents
+or edges use the usual lease and ref checks.
+
+The owner can submit Reading List's `add` form. Resolve with
+`action_id:"add"`, its view-level activation context and
+`interaction.form` containing `title` and `url`. Dispatch its resolution on
+the normal dispatch route. The outcome carries `created`, and a new
+`items` window includes the saved fixture row. The fixture stores the
+address locally and does not visit it. Other app actions are present in
+the sealed descriptions for drawing. Original authority actions remain
+available on the small views. The second account reads shared views as
+a member by default.
 
 ```sh
 nix develop -c cargo test --locked --release -p calternal-server \

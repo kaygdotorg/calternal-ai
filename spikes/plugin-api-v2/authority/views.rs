@@ -221,7 +221,11 @@ impl Host {
             .leases
             .insert(lease.id, lease.clone());
         let contexts = if self.editor(who, view).await {
-            self.mint(&lease, None, &[Action::Bulk])
+            match view.display.as_ref().map(|d| d.app) {
+                Some(App::Reading) => self.mint(&lease, None, &[Action::Add]),
+                Some(_) => json!({}),
+                None => self.mint(&lease, None, &[Action::Bulk]),
+            }
         } else {
             json!({})
         };
@@ -269,8 +273,14 @@ impl Host {
         session: Uuid,
         id: Uuid,
         input: &Value,
+        route: &DisplayRoute,
     ) -> Reply<Value> {
         let (lease, view) = self.lease(who, session, id).await?;
+        if let Some(display) = &view.display {
+            return self
+                .display_window(who, &lease, &view, display, input, route)
+                .await;
+        }
         if input["bind"] != NOTES || input.get("parent").is_some() {
             return Err(HIDDEN);
         }
@@ -345,6 +355,7 @@ impl Host {
                     version,
                     order,
                     rows: recorded,
+                    display: None,
                 },
             );
         }
@@ -370,6 +381,9 @@ impl Host {
         let (lease, view) = self.lease(who, session, id).await?;
         let _fence = view.gate.lock().await;
         self.lease(who, session, id).await?;
+        if let Some(display) = &view.display {
+            return self.display_selection(&lease, display, input);
+        }
         if input["bind"] != NOTES {
             return Err(HIDDEN);
         }
@@ -442,6 +456,16 @@ impl Host {
         };
         let mut kept = Vec::new();
         for (id, window) in candidates {
+            if let Some(display) = &view.display {
+                if window
+                    .display
+                    .as_ref()
+                    .is_some_and(|(_, generation)| *generation == display.generation())
+                {
+                    kept.push(json!({"window_ref":id,"result_version":window.version}));
+                }
+                continue;
+            }
             let mut current = true;
             for (row, revision) in &window.rows {
                 if self.current_head(&view, *row).await.ok().as_ref() != Some(revision)

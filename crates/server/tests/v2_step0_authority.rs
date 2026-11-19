@@ -1,6 +1,8 @@
 //! Scripted client and launch command for the disposable sealed host.
 #[path = "../../../spikes/plugin-api-v2/authority/mod.rs"]
 mod authority;
+#[path = "v2_step0_authority/chrome.rs"]
+mod chrome;
 #[path = "v2_step0_authority/crash.rs"]
 mod crash;
 #[path = "../../../spikes/plugin-api-v2/fixture.rs"]
@@ -33,8 +35,12 @@ fn token(path: &Path, name: &str) -> String {
 
 impl ClientFixture {
     async fn new() -> Self {
+        Self::with_rows(12).await
+    }
+
+    async fn with_rows(size: usize) -> Self {
         let root = tempfile::tempdir().unwrap();
-        let host = Host::create(&fixture::roots(root.path())).await;
+        let host = Host::create_sized(&fixture::roots(root.path()), size).await;
         let owner = token(root.path(), "owner");
         let guest = token(root.path(), "guest");
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -207,7 +213,15 @@ async fn sealed_view_and_window() {
 #[ignore = "serve a disposable authority fixture for renderer integration"]
 async fn serve_authority_fixture() {
     let root = tempfile::tempdir().unwrap();
-    let host = Host::create(&fixture::roots(root.path())).await;
+    let size = if std::env::var("STEP0_AUTHORITY_SCALE").as_deref() == Ok("1") {
+        5000
+    } else {
+        12
+    };
+    let churn = std::env::var("STEP0_AUTHORITY_CHURN_HZ").map_or(0, |s| s.parse::<u64>().unwrap());
+    assert!(churn <= 10, "fixture churn must be 0–10 Hz");
+    let host = Host::create_sized(&fixture::roots(root.path()), size).await;
+    let churn_task = host.start_churn(churn);
     let port = std::env::var("STEP0_AUTHORITY_PORT").map_or(43125, |s| s.parse::<u16>().unwrap());
     let listener = tokio::net::TcpListener::bind(("127.0.0.1", port))
         .await
@@ -226,6 +240,9 @@ async fn serve_authority_fixture() {
         })
         .await
         .unwrap();
+    if let Some(task) = churn_task {
+        task.abort();
+    }
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]

@@ -130,6 +130,12 @@ impl Host {
         }
         let fields = interaction.as_object().ok_or(INVALID)?;
         match context.action {
+            Action::Add => {
+                if view.display.as_ref().is_none_or(|d| d.app != App::Reading) {
+                    return Err(HIDDEN);
+                }
+                super::display::reading_input(&interaction)?;
+            }
             Action::Pin | Action::Ordinary => {
                 if !fields.is_empty() {
                     return Err(INVALID);
@@ -360,6 +366,14 @@ impl Host {
             }
         } else if supplied.is_some() {
             return Err(INVALID);
+        }
+        if ctx.action == Action::Add {
+            let display = view
+                .display
+                .as_ref()
+                .filter(|d| d.app == App::Reading)
+                .ok_or(HIDDEN)?;
+            return display.add(who.id, r.activation, &r.interaction);
         }
         let request_key = format!("step0/{}", r.activation);
         let current = {
