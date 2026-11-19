@@ -128,14 +128,16 @@ async fn activate(
         .cloned()
         .chain([plugin.clone()])
         .collect::<Vec<_>>();
-    let retained = base.retained.clone();
+    let original = base.clone();
+    let candidate = plugin.clone();
     let next = crate::blocking::spawn(move || {
         let count = batch.len();
         let mut next = Catalog::from_plugins(batch);
         if next.plugins().len() != count {
             return Err("draft conflicts with a currently registered plugin".into());
         }
-        next.retained = retained;
+        next.retained = original.retained.clone();
+        next.carry_v2(&original, Some(&candidate))?;
         Ok::<_, String>(next)
     })
     .await

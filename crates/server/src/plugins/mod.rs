@@ -31,6 +31,7 @@ pub mod live_catalog;
 mod machine_worker;
 pub(crate) mod network;
 pub mod package_store;
+mod registry_v2;
 mod requests;
 pub(crate) use requests::OnceAdmission;
 pub mod runner;
@@ -269,6 +270,7 @@ pub struct Registry {
 pub struct Catalog {
     plugins: Vec<Arc<Plugin>>,
     retained: BTreeMap<(String, u32), Arc<Plugin>>,
+    v2: registry_v2::Declarations,
     tool_index: std::sync::OnceLock<String>,
     search: std::sync::OnceLock<Arc<calternal_content::SearchConfig>>,
     slots: slots::SlotIndex,

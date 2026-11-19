@@ -183,24 +183,18 @@ fn check_declarations(manifest: &Value) -> Result<(), String> {
     let operation = |id: &Value| entries(manifest, "operations").find(|op| &op["id"] == id);
     for kind in entries(manifest, "kinds") {
         let id = str_field(kind, "id");
-        if ManifestV2::host_owns_kind(id) {
+        if ManifestV2::host_owns_kind(id) || id == "automations" || id.starts_with("skill-") {
             return Err(format!("Kind {id} is reserved by the host"));
         }
-        let metadata = validator(&kind["schema"])?;
-        if let Some(fields) = kind["indexed_fields"].as_object() {
-            for field in fields.keys() {
-                if catalogue()["generic_item_fields"].get(field).is_some() {
-                    return Err(format!(
-                        "Kind {id} uses reserved generic indexed field {field}"
-                    ));
-                }
-                if kind["schema"]["properties"].get(field).is_none() {
-                    return Err(format!(
-                        "Indexed field {field} is missing from kind {id}'s metadata schema"
-                    ));
-                }
-            }
+        let storage = serde_json::from_value(kind["storage"].clone())
+            .map_err(|_| format!("Kind {id} has an invalid storage declaration"))?;
+        if !crate::registry::valid_storage(&storage) {
+            return Err(format!(
+                "Kind {id} must use a safe, non-reserved storage path"
+            ));
         }
+        let metadata = validator(&kind["schema"])?;
+        check_fields(kind, id)?;
         if let Some(create) = kind.get("host_create") {
             validate(&metadata, &create["defaults"], "host_create defaults")?;
             if let Some(after) = create.get("after") {
@@ -308,6 +302,58 @@ fn check_declarations(manifest: &Value) -> Result<(), String> {
     Ok(())
 }
 
+fn check_fields(kind: &Value, id: &str) -> Result<(), String> {
+    let properties = &kind["schema"]["properties"];
+    let title = str_field(kind, "title_field");
+    if !properties
+        .get(title)
+        .is_some_and(|field| declared_type(field, "string"))
+    {
+        return Err(format!(
+            "Kind {id} must declare its title field as a string"
+        ));
+    }
+    for name in ["id", "updated", "trashed", "trashed_at"] {
+        if properties.get(name).is_some() {
+            return Err(format!(
+                "Kind {id} uses reserved generic metadata field {name}"
+            ));
+        }
+    }
+    if let Some(fields) = kind["indexed_fields"].as_object() {
+        for (field, declaration) in fields {
+            if catalogue()["generic_item_fields"].get(field).is_some() {
+                return Err(format!(
+                    "Kind {id} uses reserved generic indexed field {field}"
+                ));
+            }
+            let ty = match str_field(declaration, "type") {
+                "Number" => "number",
+                "Boolean" => "boolean",
+                _ => "string",
+            };
+            if !properties
+                .get(field)
+                .is_some_and(|schema| declared_type(schema, ty))
+            {
+                return Err(format!(
+                    "Indexed field {field} does not match kind {id}'s metadata schema"
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn declared_type(schema: &Value, expected: &str) -> bool {
+    let matches = |ty: &Value| ty == expected || (expected == "number" && ty == "integer");
+    let ty = &schema["type"];
+    matches(ty)
+        || ty.as_array().is_some_and(|types| {
+            types.iter().any(matches) && types.iter().all(|ty| matches(ty) || ty == "null")
+        })
+}
+
 // serde_json::Value accepts the last occurrence of a duplicate key. This visitor
 // applies the same unique-key rule at every object in an untrusted declaration.
 fn strict_json(bytes: &[u8]) -> Result<Value, serde_json::Error> {
@@ -393,6 +439,30 @@ mod tests {
         assert_eq!(installed.id(), "calternal-reading-list");
         assert!(installed.reads("reading-item"));
         installed.check_description(TEMPLATE).unwrap();
+    }
+
+    #[test]
+    fn installer_checks_host_create_defaults_and_indexed_field_types() {
+        let mut fixture = strict_json(FIXTURE).unwrap();
+        let kind = &mut fixture["kinds"][0];
+        kind["host_create"] = serde_json::json!({"defaults":{"title":"New item","read":false}});
+        let installed = ManifestV2::parse(&serde_json::to_vec(&fixture).unwrap()).unwrap();
+        assert_eq!(
+            installed.declaration()["kinds"][0]["host_create"]["defaults"]["read"],
+            false
+        );
+        fixture["kinds"][0]["host_create"]["defaults"]["read"] = "false".into();
+        assert!(
+            ManifestV2::parse(&serde_json::to_vec(&fixture).unwrap())
+                .unwrap_err()
+                .contains("host_create defaults")
+        );
+        fixture["kinds"][0]["indexed_fields"]["read"]["type"] = "Text".into();
+        assert!(
+            ManifestV2::parse(&serde_json::to_vec(&fixture).unwrap())
+                .unwrap_err()
+                .contains("Indexed field read")
+        );
     }
 
     #[test]

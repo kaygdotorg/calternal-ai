@@ -13,7 +13,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use super::{
     Catalog,
-    package_store::{self, Package},
+    package_store::{self, Package, PackageV2},
 };
 use crate::{api::Shared, auth::Directory};
 
@@ -21,7 +21,10 @@ use crate::{api::Shared, auth::Directory};
 mod drafts;
 
 const TIMEOUT: Duration = Duration::from_secs(20);
-const MAX_REQUEST: usize = package_store::MAX_ARCHIVE + 1024;
+// The v2 UTF-8 archive is carried as one string. Its manifest can need
+// up to one extra byte per byte for JSON escaping in the operator frame.
+const MAX_REQUEST: usize =
+    package_store::MAX_ARCHIVE + calternal_plugin_host::MAX_MANIFEST_BYTES + 4096;
 const MAX_REPLY: usize = 4096;
 
 /// Local installation action, authorized by ownership of the private operator socket.
@@ -41,6 +44,13 @@ pub enum Change {
         space: Option<SpaceId>,
         /// Enrolled account whose machine allocation starts the sandbox.
         account: Option<AccountId>,
+    },
+    /// Register a checksum-reviewed v2 package without enabling execution.
+    InstallV2 {
+        /// Exact reviewed v2 archive as UTF-8 JSON.
+        archive: String,
+        /// Reviewed archive checksum.
+        approval: String,
     },
     /// Activate an unpinned package in a single development space.
     #[cfg(feature = "dev-plugin-drafts")]
@@ -69,6 +79,15 @@ pub enum Change {
         /// Registered package identifier.
         id: String,
     },
+}
+
+impl Change {
+    /// Frame the exact archive approved by review, keeping its raw manifest
+    /// intact across the versioned socket envelope. Cost: one serialization.
+    pub fn install_v2(package: &PackageV2, approval: String) -> Result<Self, String> {
+        let archive = String::from_utf8(package.archive()?).map_err(reason)?;
+        Ok(Self::InstallV2 { archive, approval })
+    }
 }
 
 fn socket(appdata: &Path) -> PathBuf {
@@ -257,6 +276,14 @@ async fn apply(
             }
             return result;
         }
+        Change::InstallV2 { archive, approval } => {
+            let next = crate::blocking::spawn(move || {
+                install_v2(&root, &base, archive.as_bytes(), &approval)
+            })
+            .await
+            .map_err(reason)??;
+            state.registry.publish(next);
+        }
         Change::Remove { id } => {
             let prior = base.clone();
             let next = crate::blocking::spawn(move || {
@@ -270,6 +297,20 @@ async fn apply(
         }
     }
     Ok(())
+}
+
+fn install_v2(
+    appdata: &Path,
+    base: &Catalog,
+    archive: &[u8],
+    approval: &str,
+) -> Result<Catalog, String> {
+    let manifest = package_store::validate_v2_archive(archive)?;
+    let mut next = base.clone();
+    next.check_v2_reads(&manifest)?;
+    next.register_v2(manifest.clone())?;
+    package_store::commit_v2(appdata, manifest.id(), archive, approval)?;
+    Ok(next)
 }
 
 async fn activate_install(
@@ -354,6 +395,10 @@ fn catalog(
         return Err("candidate conflicts with a currently registered plugin".into());
     }
     next.retained = base.retained.clone();
+    next.carry_v2(base, replacement.as_deref())?;
+    if replacement.is_none() {
+        next.remove_v2(id);
+    }
     match (base.get(id), replacement) {
         (Some(old), Some(new))
             if !package_store::authority_changed(&new.manifest, &old.manifest) =>
@@ -368,3 +413,6 @@ fn catalog(
     }
     Ok(next)
 }
+
+#[cfg(test)]
+mod tests;

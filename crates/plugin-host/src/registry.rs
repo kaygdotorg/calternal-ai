@@ -40,6 +40,33 @@ fn folder_name(name: &str) -> bool {
         && nfc(name) == name
         && !matches!(fold(name).as_str(), "trash" | ".calternal")
 }
+pub(crate) fn valid_storage(placement: &ManifestPlacement) -> bool {
+    match placement {
+        ManifestPlacement::Visible { folder } => folder_name(folder),
+        ManifestPlacement::VisibleTree {
+            folder,
+            subdirectories,
+        } => {
+            folder_name(folder)
+                && !(folder.eq_ignore_ascii_case("AI")
+                    && subdirectories.first().is_some_and(|name| {
+                        name.eq_ignore_ascii_case("Skills")
+                            || name.eq_ignore_ascii_case("Automations")
+                    }))
+                && !subdirectories.is_empty()
+                && subdirectories.len() <= 8
+                && subdirectories.iter().all(|s| folder_name(s))
+                && !calternal_types::is_reserved_space_path(
+                    &std::iter::once(folder.as_str())
+                        .chain(subdirectories.iter().map(String::as_str))
+                        .collect::<Vec<_>>()
+                        .join("/"),
+                )
+        }
+        ManifestPlacement::Hidden { hidden } => *hidden,
+    }
+}
+
 fn visible_folders(m: &ManifestV1) -> BTreeSet<String> {
     m.kinds
         .iter()
@@ -285,30 +312,7 @@ pub fn validate_manifest_detailed(m: &ManifestV1) -> Result<(), String> {
                 .is_some_and(|value| !value.is_boolean())
             || !extension(x.claimed_text, x.extension.as_deref())
             || !schema(&x.schema)
-            || !match &x.storage {
-                ManifestPlacement::Visible { folder } => folder_name(folder),
-                ManifestPlacement::VisibleTree {
-                    folder,
-                    subdirectories,
-                } => {
-                    folder_name(folder)
-                        && !(folder.eq_ignore_ascii_case("AI")
-                            && subdirectories.first().is_some_and(|name| {
-                                name.eq_ignore_ascii_case("Skills")
-                                    || name.eq_ignore_ascii_case("Automations")
-                            }))
-                        && !subdirectories.is_empty()
-                        && subdirectories.len() <= 8
-                        && subdirectories.iter().all(|s| folder_name(s))
-                        && !calternal_types::is_reserved_space_path(
-                            &std::iter::once(folder.as_str())
-                                .chain(subdirectories.iter().map(String::as_str))
-                                .collect::<Vec<_>>()
-                                .join("/"),
-                        )
-                }
-                ManifestPlacement::Hidden { hidden } => *hidden,
-            }
+            || !valid_storage(&x.storage)
         {
             return invalid(
                 &format!("/kinds/{index}"),

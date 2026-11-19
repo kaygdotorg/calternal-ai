@@ -1,6 +1,7 @@
 //! Local development watch loop. The server validates and activates each build.
-use super::{Change, CliError, Package, Reply, check, live_catalog, local, npm};
+use super::{Change, CliError, Reply, check, live_catalog, local, npm};
 use calternal_cli::output::Output;
+use calternal_server::plugins::package_store::Package;
 use calternal_types::{AccountId, SpaceId};
 use std::{
     collections::BTreeMap,

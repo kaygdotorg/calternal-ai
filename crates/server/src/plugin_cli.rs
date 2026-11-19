@@ -1,9 +1,9 @@
 //! Local TypeScript author commands. Author scripts run as the invoking user.
 use calternal_cli::output::{CliError, Reply};
-use calternal_plugin_host::MAX_MANIFEST_BYTES;
+use calternal_plugin_host::{MAX_MANIFEST_BYTES, ManifestV2};
 use calternal_server::plugins::{
     live_catalog::{self, Change},
-    package_store::{self, Package},
+    package_store::{self, InstallPackage, PackageV2},
 };
 use clap::Subcommand;
 use serde_json::{Value, json};
@@ -176,7 +176,7 @@ fn run(command: PluginCommand) -> Result<Reply, CliError> {
         PluginCommand::Review { source, appdata } => review(&source, appdata.as_deref()),
         PluginCommand::Pack { source, archive } => {
             use std::io::Write;
-            let package = Package::read(&source).map_err(package_error)?;
+            let package = InstallPackage::read(&source).map_err(package_error)?;
             let bytes = package.archive().map_err(package_error)?;
             let mut file = fs::File::create_new(&archive).map_err(local)?;
             file.write_all(&bytes).map_err(local)?;
@@ -260,7 +260,26 @@ fn applied(id: &str, message: &str) -> Reply {
 }
 
 fn install(args: InstallArgs, update: bool) -> Result<Reply, CliError> {
-    let package = Package::read(&args.source).map_err(package_error)?;
+    let package = match InstallPackage::read(&args.source).map_err(package_error)? {
+        InstallPackage::V1(package) => package,
+        InstallPackage::V2(package, manifest) => {
+            if update || args.space.is_some() || args.account.is_some() {
+                return Err(package_error(
+                    "V2 packages can be registered as new packages. Updates and space enablement are unavailable.".into()
+                ));
+            }
+            let id = manifest.id();
+            live_catalog::request(
+                &args.appdata,
+                Change::install_v2(&package, args.approve).map_err(package_error)?,
+            )
+            .map_err(package_error)?;
+            return Ok(
+                Reply::new(json!({"id":id, "api_version":2, "activation":"registered", "status":"Registered declarations"}))
+                    .fields([("Plugin", id), ("Status", "Registered declarations")]),
+            );
+        }
+    };
     let id = package.manifest.id.clone();
     live_catalog::request(
         &args.appdata,
@@ -277,7 +296,10 @@ fn install(args: InstallArgs, update: bool) -> Result<Reply, CliError> {
 }
 
 fn review(source: &Path, appdata: Option<&Path>) -> Result<Reply, CliError> {
-    let package = Package::read(source).map_err(package_error)?;
+    let package = match InstallPackage::read(source).map_err(package_error)? {
+        InstallPackage::V1(package) => package,
+        InstallPackage::V2(package, manifest) => return review_v2(&package, &manifest),
+    };
     let checksum = package.checksum().map_err(package_error)?;
     let manifest = &package.manifest;
     let previous = appdata
@@ -383,6 +405,112 @@ fn review(source: &Path, appdata: Option<&Path>) -> Result<Reply, CliError> {
         reply = reply.line("Spaces must enable the package again after this update.");
     }
     Ok(reply.hint("For all declarations rerun with `--json`. Pass the reviewed SHA-256 to `install` or `update --approve`."))
+}
+
+fn review_v2(package: &PackageV2, manifest: &ManifestV2) -> Result<Reply, CliError> {
+    let checksum = package.checksum().map_err(package_error)?;
+    let data = manifest.declaration();
+    let names = |field: &str, id: &str| {
+        data[field]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|entry| {
+                if id.is_empty() {
+                    entry.as_str()
+                } else {
+                    entry[id].as_str()
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    let operations = data["operations"].as_array().into_iter().flatten();
+    let methods: Vec<_> = operations
+        .clone()
+        .flat_map(|op| op["methods"].as_array().into_iter().flatten())
+        .filter_map(Value::as_str)
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .collect();
+    let operations: Vec<_> = operations
+        .map(|operation| {
+            json!({
+                "id":operation["id"], "risk":operation["risk"],
+                "capability":operation["required_capability"],
+            })
+        })
+        .collect();
+    let rows = operations
+        .iter()
+        .map(|op| {
+            ["id", "risk", "capability"]
+                .into_iter()
+                .map(|field| op[field].as_str().unwrap_or_default().to_owned())
+                .collect()
+        })
+        .collect();
+    let secrets: Vec<_> = data["secrets"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|secret| secret["name"].as_str())
+        .collect();
+    let lines = network_summary(data);
+    let mut reply = Reply::new(json!({
+        "id":manifest.id(), "api_version":2, "version":data["version"],
+        "checksum":checksum, "network_summary":lines,
+        "operations":operations, "host_calls":methods, "secrets":secrets,
+        "complete_manifest":data, "changes":null,
+    }))
+    .fields([
+        ("Plugin", manifest.id().to_owned()),
+        (
+            "Version",
+            data["version"].as_str().unwrap_or_default().to_owned(),
+        ),
+        ("SHA-256", checksum),
+        ("Item kinds", names("kinds", "id")),
+        ("Can read", names("reads", "")),
+        ("Host calls", methods.join(", ")),
+        ("Settings", names("settings", "key")),
+        ("Secrets requested", secrets.join(", ")),
+        ("Providers", names("providers", "id")),
+    ])
+    .table(
+        &["OPERATION", "RISK", "CAPABILITY"],
+        rows,
+        "No operation permissions requested.",
+    );
+    for line in lines {
+        reply = reply.line(line);
+    }
+    Ok(reply.hint("Pass the reviewed SHA-256 to `calternal plugin install --approve` to register this package."))
+}
+
+fn network_summary(manifest: &Value) -> Vec<String> {
+    let network = &manifest["network"];
+    let mut summary = Vec::new();
+    if let Some(sites) = network["fixed_sites"].as_array() {
+        let sites: Vec<_> = sites.iter().filter_map(Value::as_str).collect();
+        summary.push(format!(
+            "Can connect to these HTTPS sites: {}",
+            sites.join(", ")
+        ));
+    }
+    if network["user_servers"] == true {
+        summary.push("Can connect to servers you add.".into());
+    }
+    if network["any_website"] == true {
+        summary.push("Can connect to any website. Owner approval is required before use.".into());
+    }
+    if manifest["content_fetch"] == true {
+        summary.push("Can load remote images through the host.".into());
+    }
+    if summary.is_empty() {
+        summary.push("No network access".into());
+    }
+    summary
 }
 
 fn local(error: std::io::Error) -> CliError {

@@ -13,7 +13,11 @@ use std::{
 
 mod bundled_notes;
 pub(crate) mod provider_runtime;
+mod v2;
 mod worker_cache;
+
+pub use v2::{InstallPackage, PackageV2};
+pub(super) use v2::{commit_v2, validate_v2_archive};
 
 const MAX_WORKER: usize = calternal_machine::sandbox::worker::MAX_SOURCE_BYTES;
 pub(super) const MAX_PACKAGES: usize = 128;
@@ -34,21 +38,30 @@ impl Package {
     /// Read a bounded manifest plus optional dist/worker.js, or one .calplugin
     /// JSON archive. Reject invalid declarations without executing code.
     pub fn read(path: &Path) -> Result<Self, String> {
-        let package = if path.is_dir() {
+        if path.is_dir() {
             let base = path.canonicalize().map_err(reason)?;
             let manifest = safe_member(&base, "manifest.json", MAX_MANIFEST_BYTES)?;
-            let manifest =
-                serde_json::from_slice(&manifest).map_err(|e| format!("manifest.json: {e}"))?;
-            let worker = if base.join("dist/worker.js").exists() {
-                let bytes = safe_member(&base, "dist/worker.js", MAX_WORKER)?;
-                Some(String::from_utf8(bytes).map_err(reason)?)
-            } else {
-                None
-            };
-            Self { manifest, worker }
+            Self::read_directory(&base, &manifest)
         } else {
-            serde_json::from_slice(&read_regular(path, MAX_ARCHIVE)?).map_err(reason)?
+            Self::read_archive(&read_regular(path, MAX_ARCHIVE)?)
+        }
+    }
+
+    fn read_directory(base: &Path, bytes: &[u8]) -> Result<Self, String> {
+        let manifest = serde_json::from_slice(bytes).map_err(|e| format!("manifest.json: {e}"))?;
+        let worker = if base.join("dist/worker.js").exists() {
+            let bytes = safe_member(base, "dist/worker.js", MAX_WORKER)?;
+            Some(String::from_utf8(bytes).map_err(reason)?)
+        } else {
+            None
         };
+        let package = Self { manifest, worker };
+        package.validate()?;
+        Ok(package)
+    }
+
+    fn read_archive(bytes: &[u8]) -> Result<Self, String> {
+        let package: Self = serde_json::from_slice(bytes).map_err(reason)?;
         package.validate()?;
         Ok(package)
     }
@@ -102,10 +115,12 @@ fn read_regular(path: &Path, max: usize) -> Result<Vec<u8>, String> {
     if !fs::symlink_metadata(path).map_err(reason)?.is_file() {
         return Err("package member must be a regular file".into());
     }
+    read_bounded(fs::File::open(path).map_err(reason)?, max)
+}
+
+fn read_bounded(file: fs::File, max: usize) -> Result<Vec<u8>, String> {
     let mut bytes = Vec::new();
-    fs::File::open(path)
-        .map_err(reason)?
-        .take((max + 1) as u64)
+    file.take((max + 1) as u64)
         .read_to_end(&mut bytes)
         .map_err(reason)?;
     if bytes.len() > max {
@@ -182,19 +197,33 @@ fn validate_registered(conn: &Connection, package: &Package) -> Result<(), Strin
         .map_err(reason)?;
     let mut rows = query.query([&package.manifest.id]).map_err(reason)?;
     while let Some(row) = rows.next().map_err(reason)? {
-        let existing = decode(row.get(0).map_err(reason)?, row.get(1).map_err(reason)?)?;
+        let bytes: Vec<u8> = row.get(0).map_err(reason)?;
+        let checksum: String = row.get(1).map_err(reason)?;
+        if v2::archive_version(&bytes)? == 2 {
+            verify_archive(&bytes, &checksum)?;
+            continue;
+        }
+        let existing = decode(bytes, checksum)?;
         index.register(existing.manifest).map_err(reason)?;
     }
     index.register(package.manifest.clone()).map_err(reason)
 }
 
 fn decode(bytes: Vec<u8>, checksum: String) -> Result<Package, String> {
-    let package: Package = serde_json::from_slice(&bytes).map_err(reason)?;
-    if checksum != super::sha256_hex(&bytes) {
-        return Err("installed archive checksum does not match".into());
+    verify_archive(&bytes, &checksum)?;
+    if v2::archive_version(&bytes)? == 2 {
+        return Err("This package uses manifest v2. Review it with the v2 installer.".into());
     }
-    package.validate()?;
-    Ok(package)
+    Package::read_archive(&bytes)
+}
+
+fn verify_archive(bytes: &[u8], checksum: &str) -> Result<(), String> {
+    if bytes.len() > MAX_ARCHIVE || checksum != super::sha256_hex(bytes) {
+        return Err(
+            "installed archive checksum does not match or archive exceeds its byte budget".into(),
+        );
+    }
+    Ok(())
 }
 
 /// Look up the current manifest for an operator's capability comparison.
@@ -591,8 +620,15 @@ pub fn load(
     )?;
     let cache = appdata.join("installed-plugin-workers");
     calternal_fsio::private::directory(&cache).map_err(reason)?;
-    let mut plugins = load_rows(&conn, &cache, "installed_plugins", MAX_PACKAGES)?;
-    let retained = load_rows(&conn, &cache, "retained_plugins", MAX_RETAINED)?;
+    let mut v2 = Vec::new();
+    let mut plugins = load_rows(
+        &conn,
+        &cache,
+        "installed_plugins",
+        MAX_PACKAGES,
+        Some(&mut v2),
+    )?;
+    let retained = load_rows(&conn, &cache, "retained_plugins", MAX_RETAINED, None)?;
     worker_cache::remove_stale(
         &cache,
         plugins
@@ -613,6 +649,9 @@ pub fn load(
     }
     let registry = Registry::from_plugins(plugins);
     let mut catalog = (*registry.snapshot()).clone();
+    for manifest in v2 {
+        catalog.register_v2(manifest)?;
+    }
     catalog.retained = retained
         .into_iter()
         .map(|plugin| {
@@ -631,17 +670,34 @@ fn load_rows(
     cache: &Path,
     table: &str,
     limit: usize,
+    mut v2: Option<&mut Vec<std::sync::Arc<host::ManifestV2>>>,
 ) -> Result<Vec<Plugin>, String> {
     let mut query = conn.prepare(&format!(
-        "SELECT archive, checksum, default_enabled, revision, approval FROM {table} ORDER BY revision"
+        "SELECT archive, checksum, default_enabled, revision, approval, id FROM {table} ORDER BY revision"
     )).map_err(reason)?;
     let mut rows = query.query([]).map_err(reason)?;
     let mut plugins = Vec::new();
+    let mut count = 0;
     while let Some(row) = rows.next().map_err(reason)? {
-        if plugins.len() >= limit {
+        count += 1;
+        if count > limit {
             return Err("the installed plugin catalog exceeds its capacity".into());
         }
-        let package = decode(row.get(0).map_err(reason)?, row.get(1).map_err(reason)?)?;
+        let bytes: Vec<u8> = row.get(0).map_err(reason)?;
+        let checksum: String = row.get(1).map_err(reason)?;
+        if v2::archive_version(&bytes)? == 2 {
+            let entries = v2
+                .as_deref_mut()
+                .ok_or("v2 package cannot be a retained runtime revision")?;
+            verify_archive(&bytes, &checksum)?;
+            let manifest = validate_v2_archive(&bytes)?;
+            if manifest.id() != row.get::<_, String>(5).map_err(reason)? {
+                return Err("installed v2 package ID does not match its archive".into());
+            }
+            entries.push(manifest);
+            continue;
+        }
+        let package = decode(bytes, checksum)?;
         let entry = package.entry(row.get(2).map_err(reason)?);
         let revision: u32 = row.get(3).map_err(reason)?;
         let worker = if let Some(code) = package.worker {
