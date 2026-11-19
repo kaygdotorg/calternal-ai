@@ -11,8 +11,9 @@ cargo fmt --all -- --check
 rustfmt --edition 2024 --config skip_children=true --check tests/conformance/isolation.rs tests/conformance/worker_cases.rs
 ./scripts/check-podman-tests.sh cargo test --locked --workspace --all-features -j6
 cargo build --locked -p calternal-server --features test-plugins -j6
+# The standalone crate has its own lockfile. Run every default target.
 CALTERNAL_SERVER_BIN="$PWD/target/debug/calternal" CARGO_TARGET_DIR="$PWD/target" \
-  ./scripts/check-podman-tests.sh cargo test --locked --manifest-path tests/conformance/Cargo.toml -j6 --test isolation -- --test-threads=1
+  ./scripts/check-podman-tests.sh cargo test --locked --manifest-path tests/conformance/Cargo.toml -j6 -- --test-threads=1
 npm run test:integration
 npm run test:plugins
 if podman version >/dev/null 2>&1; then
