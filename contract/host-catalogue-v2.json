@@ -1513,6 +1513,117 @@
       "minLength": 1,
       "maxLength": 96,
       "description": "Installed provider identifier. Known built-in IDs are icon-map seeds, not a closed allowlist."
+    },
+    "TranscriptCursor": {
+      "$ref": "#/$defs/Ref",
+      "description": "Opaque, checked cursor for a thread and committed event position."
+    },
+    "TranscriptPageRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "thread"
+      ],
+      "properties": {
+        "thread": {
+          "$ref": "#/$defs/ThreadRef"
+        },
+        "after": {
+          "$ref": "#/$defs/TranscriptCursor"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 128
+        }
+      }
+    },
+    "CommittedTranscriptEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "event_id",
+        "kind",
+        "data"
+      ],
+      "properties": {
+        "event_id": {
+          "$ref": "#/$defs/Ref"
+        },
+        "kind": {
+          "$ref": "#/$defs/Text"
+        },
+        "data": {
+          "type": "object",
+          "description": "Host-owned typed event from the admitted Turns schema."
+        }
+      }
+    },
+    "TranscriptPage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "events",
+        "committed_cursor"
+      ],
+      "properties": {
+        "events": {
+          "type": "array",
+          "maxItems": 128,
+          "items": {
+            "$ref": "#/$defs/CommittedTranscriptEvent"
+          }
+        },
+        "committed_cursor": {
+          "$ref": "#/$defs/TranscriptCursor"
+        }
+      }
+    },
+    "SealedFrameOpen": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "frame"
+      ],
+      "properties": {
+        "frame": {
+          "$ref": "#/$defs/DestinationFrameRef"
+        }
+      }
+    },
+    "SealedFrameResize": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "frame",
+        "height"
+      ],
+      "properties": {
+        "frame": {
+          "$ref": "#/$defs/DestinationFrameRef"
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4096
+        }
+      }
+    },
+    "SealedFrameOpenLink": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "frame",
+        "link_ref"
+      ],
+      "properties": {
+        "frame": {
+          "$ref": "#/$defs/DestinationFrameRef"
+        },
+        "link_ref": {
+          "$ref": "#/$defs/Ref"
+        }
+      }
     }
   },
   "activation_limits": {
@@ -1520,5 +1631,36 @@
     "per_viewer": 256,
     "per_space": 4096,
     "resolve_interaction_encoded_bytes": 131072
+  },
+  "component_routes": {
+    "transcript.page": {
+      "input_schema": {
+        "$ref": "#/$defs/TranscriptPageRequest"
+      },
+      "output_schema": {
+        "$ref": "#/$defs/TranscriptPage"
+      },
+      "encoded_page_bytes": 131072,
+      "scope": "Authorized thread and current audience"
+    },
+    "sealed_frame.open": {
+      "input_schema": {
+        "$ref": "#/$defs/SealedFrameOpen"
+      },
+      "scope": "Authorized committed revision and current audience",
+      "max_ref_seconds": 300
+    },
+    "sealed_frame.resize": {
+      "input_schema": {
+        "$ref": "#/$defs/SealedFrameResize"
+      },
+      "scope": "Trusted wrapper for the current frame"
+    },
+    "sealed_frame.open_link": {
+      "input_schema": {
+        "$ref": "#/$defs/SealedFrameOpenLink"
+      },
+      "scope": "Host link ID from the current frame, with fresh route authorization"
+    }
   }
 }

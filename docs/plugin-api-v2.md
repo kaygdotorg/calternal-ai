@@ -381,7 +381,8 @@ before repaint or resume. `stale` and unsupported-renderer fallback contain
 no protected data without a fresh grant check. Draw skeletons without
 authorized session data.
 
-Transcript routes accept a checked Thread ref, a durable committed cursor
+The catalogue gives typed host component routes. `transcript.page`
+accepts a checked Thread ref, a durable committed cursor
 and a bounded page budget (fixture at most 128 events and 128 KiB encoded).
 The cursor identifies the thread and committed position and is checked
 against the current audience. The host publishes ephemeral progress
@@ -397,10 +398,11 @@ a selection or arbitrary source string cannot serve as a quote.
 A sealed frame ref names a committed content revision and belongs to a
 space and audience. Verify it on first use and each asset request. Expire
 fixture refs after five minutes or earlier on grant/session loss or frame
-removal. Serve HTML on a sandboxed host route with no scripts, forms,
+removal. `sealed_frame.open` serves HTML on a sandboxed host route with no scripts, forms,
 popups, same-origin privileges, top navigation or direct network.
 The existing anonymous media proxy can serve approved opaque assets.
-Only the trusted wrapper reports bounded resize and checked link IDs.
+Only the trusted wrapper can call `sealed_frame.resize` or
+`sealed_frame.open_link` with an opaque, checked link ID.
 The host re-resolves links, authorizes internal routes and uses its own
 safe external link affordance after checking scheme and disclosure.
 Never accept a URL/navigation target or data sent by the frame as authority.
@@ -581,7 +583,7 @@ Run timings that claim a performance result on the designated perf VM.
 | --- | --- |
 | **One enrolled channel** | Run two real package processes multiplexed over **one** enrolled channel for Space A and a channel for Space B. Stall A's real write path mid-frame by blocking the carrier receiver until buffers fill. Also run a deliberately slow callback. With a writable carrier, a control frame and the other package’s callback finish within 500 ms while the slow callback is held for 2 s. With the carrier physically stalled, the host fences cancel/revocation within 500 ms and closes the channel within 2 s. Space B makes progress within 2 s throughout. On reconnect reject prior epoch frames/tickets and accept an authorized receipt replay once. Expire the remote lease within 5 s of its last authenticated renewal with no delivered cancel. Assert zero old-lease effects after local fencing. |
 | **Cold indexed page** | Seed 100,000 mixed-visibility rows. At offsets 0, 10,000 and 90,000 test every qualified plan family, including collection + ACL + sort, search audience/rank and indexed filter/count under grant and content churn. Use deepest supported index windows. Record plans and rows visited. Keep window work bounded independent of offset and meter counts separately under matching authority/result versions. Reject unbounded plans. Each window finishes within 500 ms with zero wakes. Invalidate counts and fan out pushes under aggregate caps, with no leak on mid-query revoke. |
-| **Atomic large save** | Write an escape-heavy 2 MiB body through bounded stages. Reconstruct byte-for-byte with revision-pinned range reads, after the live head advances with a 60 s fixture revision pin. Recheck authority per range. Purge and revocation invalidate the pin and refuse later ranges. Race two begins, lose a chunk ACK, replace a chunk with different bytes, cancel mid-stage and crash with an orphan. One reservation per receipt and no partial edit. Race each of revocation, cancellation, epoch loss, enrollment removal and run replacement immediately before and after the recovery-visible commit. Inject crash after content commit before journal publication and after publication before reply. Before commit yields no revision or success receipt. After commit recovers one revision, one journal event and a correctly scoped replay. Save plus reconstruction completes within 5 s on the fixture, and restart reclaims orphan reservations before serving. No worker/hook blocks the commit path. |
+| **Atomic large save** | Write an escape-heavy 2 MiB body through bounded stages. Reconstruct byte-for-byte with revision-pinned range reads after the live head advances with a 60 s fixture revision pin. Recheck authority per range. Purge and revocation invalidate the pin and refuse later ranges. Race two begins, lose a chunk ACK, replace a chunk with different bytes, cancel mid-stage and crash with an orphan. One reservation per receipt and no partial edit. Race each of revocation, cancellation, epoch loss, enrollment removal and run replacement immediately before and after the recovery-visible commit. Inject crash after content commit before journal publication and after publication before reply. Before commit yields no revision or success receipt. After commit recovers one revision, one journal event and a correctly scoped replay. Save plus reconstruction completes within 5 s on the fixture, and restart reclaims orphan reservations before serving. No worker/hook blocks the commit path. |
 | **Durable transcript** | Append batches from a real turn, stall the reader, cut the stream after commit before its ACK, then reconnect from the last committed cursor. Restart the server. Backfill starts within 2 s and matches the durable cursor, stable event sequence and submission receipt without duplicates. A revoked reconnect reveals neither data nor bookmark. Revoke before delivering a page and assert no subsequent bytes or bookmark are disclosed. Slow delivery cannot monopolize the writer. |
 | **Host + renderer authority** | Real renderer and host against both chrome and content. Resolve a real approval and live Bind with an independent member, guest, foreign and revoked matrix. Inject forged row/route/bind values and activation contexts, untouched prefills/draft defaults, built-in and approval-card spoofing, duplicate request IDs, relevant stale dependencies and cache-reopen revocation. Require zero unauthorized effects or rendered bytes, one commit for authorized replay and one valid action completing within 2 s of dispatch during unrelated window churn. Enforce the catalogue query/queue caps. Also race revocation with egress dispatch, job claim/park and protected approval resolution before freezing any of those routes. |
 
