@@ -113,24 +113,52 @@ templates, and run the same shape and semantic checks. Keep the fixture suite
 as the default invocation. This would remove the SDK's temporary fixture
 layout and give diagnostics the actual package paths.
 
-## Independent author trial
+## Independent author trials
 
-Haiku 5.5's first Habit Tracker submission failed TypeScript with four
-diagnostics. It supplied indexed-field names as an array, used `type` in
-form field declarations, and assigned separate untyped row actions whose
-`row: "id"` literal widened to `string`. The task also constrained output
-to the plugin declaration and the author omitted the worker. These are
-guide gaps. The SDK types stay the same. Boolean projection metadata
-duplicates the stored field's spelling across two type vocabularies
-because the projection also needs an explicit audience.
+Both trials gave a fresh Haiku 5.5 at low effort only `GUIDE.md` and
+`TASK.md`. The author wrote files in one pass without reading the
+installed SDK or running commands. The coordinator installed and checked
+the output on dev02. The first-attempt authoring gate passed on Trial 2.
 
-The guide build now type-checks and validates two complete examples. The
-small first list comes first, and a gear list shows the indexed kind,
-form, inline swipes, operation, worker, search, and package assembly. The
-second trial asks for a Recipe Box and explicitly requests both author
-files. The kit passed a clean offline install and an artifact-only smoke
-check on dev02. The independent first-attempt gate awaits the coordinator's
-fresh author run.
+| Trial | Kit directory under SDK thread storage | Result |
+| --- | --- | --- |
+| 1, Habit Tracker | `/home/kayg/.bb/thread-storage/thr_zpaeug44pe/habit-tracker-trial` | Failed TypeScript with four diagnostics. |
+| 2, Recipe Box | `/home/kayg/.bb/thread-storage/thr_zpaeug44pe/recipes-trial` | First-attempt pass. Installation and checks exited 0, the verifier accepted the manifest and description, and the checker reported every required feature. The author wrote a 105-line plugin and the worker. |
+
+In Trial 1, the author counted 21 concepts and identified 14 places where
+the prose left the exact spelling open. The submission supplied indexed
+field names as an array, used `type` for form fields, and declared untyped
+actions separately so their `row: "id"` widened to `string`. The task also
+limited the requested output to the plugin declaration, leaving out the
+worker. Coordinator evidence under
+`/home/kayg/.bb/thread-storage/thr_58j59i9gw3` includes
+`trial1-author-notes.md`, `trial1-plugin.ts`, and `trial1-errors.txt`.
+
+Trial 2 used two complete, checked examples. The eight-concept first list
+came first, followed by a gear list with indexes, form inputs, inline
+swipes, operation, worker, search, and package assembly. The author copied
+the example's operation risk, idempotency, methods and required capability
+and asked for the full allowed values. They also asked if hidden storage
+was required and how to choose single-line or multiline input. The
+coordinator provided `trial2-plugin.ts` and reported those notes. The
+reference table now derives the five enums from the schemas and has an
+independent check for missing or stale values. Placement and text input
+choices are explained next to it.
+
+### Third trial after the runtime is available
+
+Use a pantry expiry review plugin. A worker operation validates inputs and
+saves an expiry date on an authorized item. A replayable job scans a
+bounded set of items in batches and persists progress. A declared schedule
+runs the review once at a fixed due time and notifies the creator.
+
+Give a fresh author the guide and task alone. Exercise the generated package
+against the real runtime with disposable data and a controlled clock.
+Require the operation to persist the expected data, a retry to preserve
+the same effect, a restarted job to resume from its checkpoint, and the
+schedule to deliver once. Revoke access before a later invocation and
+confirm the host refuses the effect. Record worker cleanup and the author's
+uncertainties alongside the first-attempt outcome.
 
 ## Simplification opportunities
 

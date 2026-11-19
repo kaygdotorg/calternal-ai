@@ -204,3 +204,23 @@ process.exitCode = 1;
 ```
 
 <!-- END GENERATED gear-worker -->
+
+## Operation and form field choices
+
+<!-- BEGIN GENERATED field-reference -->
+
+| Field | Allowed values |
+| --- | --- |
+| `risk` | `read`, `reversible`, `irreversible`, `external`, `widens_access` |
+| `idempotency` | `read_only`, `request_id`, `never` |
+| `methods` | `item_head`, `item_range`, `item_history`, `item_save`, `item_trash`, `item_restore`, `item_rename`, `item_rename_status`, `item_rename_undo`, `item_purge`, `empty_trash`, `collection_create`, `collection_membership`, `items_list`, `items_search`, `sharing_check`, `start_job`, `checkpoint_job`, `job_status`, `cancel_job`, `read_setting`, `set_setting`, `request_secret_handle`, `proxy_request`, `credential_call`, `turn_start`, `turn_status`, `turn_cancel`, `turn_follow_up`, `turn_answer`, `schedule_create`, `schedule_remove` |
+| `required_capability` | `space.read`, `content.write`, `plugins.use`, `plugins.manage`, `members.invite`, `members.manage`, `managers.manage`, `space.settings`, `space.transfer`, `space.delete`, `spaces.list`, `spaces.create` |
+| `FormField.input` | `text`, `multiline`, `url`, `email`, `number`, `date`, `choice`, `toggle` |
+
+<!-- END GENERATED field-reference -->
+
+Use `methods` as an array containing only the broker methods the operation
+needs. A `read` operation uses `read_only`. Other risks use `request_id`
+or `never`. A kind must declare storage placement. `{ hidden: true }`
+is one choice. In a form, `text` is single-line and `multiline` accepts
+multiple lines.

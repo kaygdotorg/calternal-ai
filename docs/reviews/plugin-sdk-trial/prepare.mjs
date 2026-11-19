@@ -5,6 +5,7 @@ import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { fieldReference } from "../../../plugins/calternal-plugin-guide/scripts/field-reference.mjs";
 
 const repo = fileURLToPath(new URL("../../../", import.meta.url));
 const sdk = join(repo, "packages/plugin-sdk");
@@ -80,6 +81,8 @@ async function prepare(destination) {
       const example = await readFile(join(repo, "plugins/calternal-plugin-guide/examples", filename), "utf8");
       guide = guide.replace(`<!-- ${filename} -->`, () => `\`\`\`${language}\n${example.trimEnd()}\n\`\`\``);
     }
+    const reference = await fieldReference();
+    guide = guide.replace("<!-- field-reference -->", () => reference);
     await writeFile(join(destination, "GUIDE.md"), guide);
     for (const file of ["TASK.md", "build-and-check.sh", "check.mjs"]) {
       await cp(join(trialSources, file), join(destination, file));

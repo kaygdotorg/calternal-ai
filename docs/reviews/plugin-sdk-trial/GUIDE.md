@@ -39,3 +39,12 @@ npm pkg set type=module
 npm install --offline --ignore-scripts --no-audit --no-fund ./calternal-plugin-sdk-0.1.0.tgz
 sh build-and-check.sh
 ```
+
+## Operation and form field choices
+
+<!-- field-reference -->
+
+Use `methods` as an array of the broker methods the operation needs. A
+`read` operation uses `read_only`. Other risks use `request_id` or
+`never`. A kind must declare storage placement, such as `{ hidden: true }`.
+Choose `text` for one line or `multiline` for multiple lines.
