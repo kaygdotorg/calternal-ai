@@ -282,9 +282,6 @@
         "title": {
           "field": "title"
         },
-        "icon": {
-          "kindIcon": true
-        },
         "menu": [
           {
             "id": "rename-section",

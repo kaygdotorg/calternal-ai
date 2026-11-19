@@ -26,9 +26,6 @@
         "title": {
           "field": "title"
         },
-        "icon": {
-          "kindIcon": true
-        },
         "open": {
           "route": {
             "name": "collection",

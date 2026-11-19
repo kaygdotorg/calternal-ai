@@ -701,7 +701,11 @@ only against the issued context, never its current selection.
    catalogue reads and for catalogue mutations with `atomic_undo: true`
    whose engine commits the complete effect and its Undo in one
    recovery-visible transaction and satisfies any `atomic_undo_when`
-   condition. The mutation’s only material may be
+   condition. Saved authority requires a challenge for idle archive unless
+   it consists only of thread grants retired in the archive’s FULL thread
+   content transaction and restored with the thread head by Undo (§4.4).
+   Retiring grants with head-only Undo requires a challenge.
+   The mutation’s only material may be
    the drawn target or fields of the submitting form. Irreversible,
    external or access-widening effects, bulk sets, declared material
    inputs and any destination, recipient, audience or permission require
@@ -796,7 +800,7 @@ revisions of all affected resources and refuses if any dependency moved.
 | `host.layout.section.create` | The per-person layout revision transaction creates the section and commits Undo that removes it. |
 | `host.layout.section.rename` | The same layout transaction commits the title change and its prior title for Undo. |
 | `host.layout.section.remove` | The same layout transaction commits removal and retains the section, placements and order for Undo. |
-| `turns.archive` | After the Step 2 idle-archive writer passes, an idle thread with no active turn, unresolved send intent, saved authority or pending approval to retire can archive in one full-swipe exchange with no sheet. Check those conditions under the commit fence. Under the same fence, turn admission refuses a fresh admission to an archived head. The FULL thread content transaction records the archived head and its unarchive Undo together. Today’s writer commits the head without Undo and enters a separate protected authority transaction, so the shortcut stays ineligible. Active turns, unresolved send intents and authority or approval cleanup keep the challenge. For an active turn the host says “The running turn will be stopped.” |
+| `turns.archive` | Idle archive requires no active turn, unresolved send intent or pending approval to retire. Saved authority requires a challenge unless it consists only of thread grants that the Step 2 writer retires in the same FULL thread content transaction as archive and that Undo restores together with the thread head. Retiring grants with head-only Undo requires a challenge. Check eligibility and reject fresh turn admission to an archived head under the same commit fence. The FULL thread content transaction records archive and its unarchive Undo together. The current writer commits the head without Undo and enters a separate protected authority transaction, so the shortcut stays ineligible until the Step 2 writer passes. After it passes, eligible idle archive takes one full-swipe exchange without a sheet. For an active turn the host says “The running turn will be stopped.” |
 | `turns.unarchive` | The FULL thread content transaction records the new head and Undo. A full swipe may unarchive an eligible thread. |
 | `turns.snooze` | Ineligible. Today’s writer stores one shared manual deadline. The actor-scoped operation stays unavailable until the Step 2 actor-keyed snooze writer commits the actor’s deadline, its index entry and Undo together. Subscription retry state is unaffected. |
 | `host.item.patch-metadata` | The room-checked FULL content transaction records the changed head and Undo for a single boolean toggle. Full swipe covers this case. |
@@ -964,7 +968,7 @@ and zero-effect assertions must hold on every repetition.
 | **Scoped search** | On locked perf-01 exercise the claimed-text and Turns shapes in their qualified scopes through the depth in `query.search`. Include a searchable community kind alongside Notes. Beyond that depth, assert ready windows with the exact authorized rows and order while both budgets hold. Exhaust each budget separately and assert a `refine_query` window with bounded provisional rows and no count. For Notes check the qualified Unicode cases, refusal before the mark-aware Devanagari rebuild, and CJK segmentation and substring refusal. Meter postings, materialized-row work and count work separately against `query.live_limits`. A broad prefix must start no expansion. During publication lag and stale authority, assert `loading` with no rows, counts or activation contexts. Race revoke against delivery and assert zero stale results. For a reader with a ready search, edit a hidden row and a hidden field. Check before, during and after publication that the visible state, rows, ranks, count and result version stay unchanged. Measure foreground save and save-to-search lag separately. Keep maintenance out of the save transaction and meet the append gate. |
 | **Atomic large save** | Stage an escape-heavy 2 MiB body and reconstruct it by revision-pinned ranges after the head moves, p95 ≤5 s. The 60 s range pin is invalidated by purge or revoke. Race duplicate begin, lost chunk ACK, conflicting bytes, cancel and orphan cleanup. Race revoke, epoch loss, enrollment removal and run replacement on both sides of commit and inject crashes before publication and before reply. No partial edit or success receipt before commit. After commit recover one revision and receipt. |
 | **Durable transcript** | Stall the reader, cut after commit before ACK and restart. First screenful drawn p95 ≤150 ms on a warm authorized reconnect, with the durable cursor, stable event and receipt sequences unchanged. Revoked reconnect reveals neither rows nor bookmarks. An independent control request completes p95 ≤500 ms with the transcript reader stalled. |
-| **Host + renderer authority** | On Svelte Chromium check both formats, a real protected approval and a live Bind. Forge row/route/Bind/context, untouched prefills, bulk IDs, ChoiceRefs, cached data and built-in surfaces. Inject duplicate and stale activations, revocation and unrelated churn. Zero unauthorized effects or rendered bytes, one commit on replay, and unrelated-churn action p95 ≤2 s from dispatch. Race revocation at egress, job claim/park and approval resolve before freezing those routes. For each §4.4 atomic-Undo case, crash before and after the named commit and during publication: recover neither effect nor Undo before commit, and both after it. Concurrently edit a dependency, then require Undo to refuse without another effect. Recover a committed idle archive, refuse a later Send, and verify that unarchive Undo restores the thread head without starting a turn. Exercise ineligible variants and prove the shortcut and full swipe cannot bypass their checks. Delay or spoof lease replies and verify only current, exact retained windows repaint. |
+| **Host + renderer authority** | On Svelte Chromium check both formats, a real protected approval and a live Bind. Forge row/route/Bind/context, untouched prefills, bulk IDs, ChoiceRefs, cached data and built-in surfaces. Inject duplicate and stale activations, revocation and unrelated churn. Zero unauthorized effects or rendered bytes, one commit on replay, and unrelated-churn action p95 ≤2 s from dispatch. Race revocation at egress, job claim/park and approval resolve before freezing those routes. For each §4.4 atomic-Undo case exercised in Step 0, crash before and after the named commit and during publication: recover neither effect nor Undo before commit, and both after it. Concurrently edit a dependency, then require Undo to refuse without another effect. Run idle-archive recovery in Step 2 on its writer. Exercise ineligible variants and prove the shortcut and full swipe cannot bypass their checks. Delay or spoof lease replies and verify only current, exact retained windows repaint. |
 | **Phone activation exchanges** | In the same Chromium phone link fixture, from action intent to host outcome, an eligible swipe and prepared Send each use one exchange. An ordinary plugin operation without a challenge uses two. On the Step 2 archive writer, an idle archive full swipe takes one exchange with no sheet and returns unarchive Undo. An active archive shows the challenge and the host-written stop material. Also exercise the cleanup cases. Require the bounds on every run and report p95 exchange counts and elapsed time. Alter prepared material, including via parsed final text, or drop the Send reply. Require a fresh preview for changed material and replay the exact final text once. |
 | **Keyboard windowing** | 5,000 rows with 30 keys/sec on the phone fixture. At most four window requests in any second and zero selection/navigation events during repeat on every run. Report p95 request rate. After the first real rows paint, capture each viewport frame during the repeat burst. Require zero skeleton-row frames during the steady 30 Hz segment on every run. Same-version prefetch applies while keys repeat; an activation waits for the context of its drawn target. Delay a context for A until B is drawn and verify the activation cannot use A. |
 | **Nested rows and user sections** | On real content and Turns engines, expand two parents and page their children independently. Check depth, ancestry, revocation and a forged parent ref. Create, rename and remove personal sections and Move to, Move up and Move down. Undo each committed edit, verify placement and order, refuse stale Undo, and prove a second member’s layout is unaffected. |
@@ -1052,8 +1056,13 @@ Pass these end-to-end flows on the selected wall before app migration.
 
 - **Idle-archive atomic writer with Undo.** In one FULL thread content
   transaction, check the idle condition under the commit fence and record
-  archive and its unarchive Undo together. Crash on both sides of commit
-  and require both effect and Undo or neither. Exercise these orderings:
+  archive and its unarchive Undo together. Before enabling idle archive,
+  crash before and after the commit and during publication. Recover
+  neither effect nor Undo before commit and both after it. On a recovered
+  archive, refuse a later Send and verify that unarchive Undo restores
+  the thread head without starting a turn. If the writer retires grants,
+  also verify retirement and full restoration of those grants with the
+  corresponding head transitions. Exercise these orderings:
 
   1. Commit the send intent before attempting idle archive. Then repeat
      with the idle archive attempt started first and paused before its
@@ -1078,9 +1087,10 @@ Pass these end-to-end flows on the selected wall before app migration.
 
   Measure how often otherwise-idle threads carry saved thread grants.
   The Step 2 lane uses that result to choose one of two paths. Either
-  retire those grants in the same FULL transaction without a challenge
-  and have Undo restore only the thread head, or retain the challenge
-  and record a parity exception with the measured frequency.
+  retire the grants in the same FULL transaction as archive and have
+  Undo restore them with the thread head in one FULL transaction, or
+  retain the challenge for those threads and record the measured
+  frequency as a parity exception for the Owner.
 - **Actor-keyed snooze writer.** In one FULL thread content transaction,
   commit the actor-keyed deadline, its index entry and Undo. Crash on both
   sides and verify all three commit together. Exercise distinct deadlines
