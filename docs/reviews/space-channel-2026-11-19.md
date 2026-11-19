@@ -167,34 +167,45 @@ read-only SQLite connection for only that space. Preflight and ticket mint
 are separate authorization snapshots so a revoked actor cannot wake a
 worker or obtain a ticket for a worker that finished starting afterward.
 
+7. **Fault-test boundaries (§8).** Use small kernel socket buffers and hold
+   the receiver after observing a physical prefix. Prove the socket closed
+   before a newline arrives. Keep the remote peer open during the lease
+   test so that neither EOF nor a cancel can explain worker exit. Exercise
+   receipt replay separately with the existing content writer and a fresh
+   authorized ticket. Do not add a mutation to the shipped broker to test
+   replay.
+
 ## Verification and remaining work
 
-On `claude@calternal-dev-01-compute02`, the exact `f3633ca9` source
-passed `nix develop -c cargo fmt --all --check` and
-`nix develop -c cargo test --locked -p calternal-plugin-host` (22 tests).
-After installing the pinned JavaScript dependencies with `npm ci`,
-`nix develop -c ./scripts/check-docs.sh` passed workspace and conformance
-checks, rustdoc and the JavaScript documentation checks. Rustdoc emitted
-warnings in unchanged content and shared-types modules. The server's
-existing `cargo test --locked -p calternal-server --test plugin_host --
---test-threads=1` integration suite passed all 18 tests, including
-malformed child output and the current worker broker path.
+The following milestones were verified on
+`claude@calternal-dev-01-compute02` under `nix develop -c`.
 
-The grant revision, tickets, transport and item-head call path are wired.
-The integration fixture uses the normal operation dispatcher, real
-enrollment, and a real Node process behind the server-side HTTP Upgrade
-hop. The machine's TLS origin and external proxy forwarding still need
-a deployment-shaped run. Durable replay is tested with the existing item
-writer after fresh authorization. The shipped broker surface stays
-read-only. The physical fault-injection gate follows this milestone. The physical mid-frame stall, concurrent callback progress,
-immediate local fence, isolated second space, remote expiry and
-fresh-ticket receipt replay are spike evidence only. None has been
-reproven against product code in this lane. The carrier tests still need to
-show control and a second callback within 500 ms p95 while a callback is
-blocked, a local fence within 500 ms p95, and watchdog close and independent
-Space B progress within 2 s p95 during a physical stall. Both package
-processes must stop within 5 s of the last renewal in every run. Replay
-must reject prior-epoch frames and tickets and preserve one effect.
+| Commit | Verification |
+| --- | --- |
+| `f3633ca9` | Existing child decoding and its rejection tests. |
+| `b5d0e5fa` | 107 auth tests. An in-flight session write fences its affected space before commit. An unrelated space stays current. |
+| `66fb93ad` | 24 plugin-host tests, server all-targets/all-features check, and single-use enrolled assignment regression. |
+| `e0246791` | 107 auth tests and ticket denial for missing plugin-use rights, wrong epoch, expiry and a moved grant revision. |
+| `03e173d7` | Three broker regressions and 24 plugin-host tests. The normal dispatcher, enrollment and server-side HTTP Upgrade exchange reach a real Node process. A replay fixture checks the original durable receipt under fresh authorization, rejects the old ticket on a new epoch, and reads the original committed head. |
+
+The carrier tests cover a physical TCP mid-frame stall, both the local
+fence and the watchdog, independent progress on a second TCP space and
+an old-epoch frame carrying the expected next sequence. A two-package
+transport fixture holds one callback for two seconds and checks control
+priority and second-package progress within 500 ms. A separate test
+verifies that a stale queued reply consumes neither delivery nor sequence.
+The real-process expiry test keeps the peer open for the whole fault and
+requires the package to be reaped within five seconds of the last
+renewal. These are development regression bounds.
+
+The approved item-head profile uses one package process per placement.
+The two-package independence regression exercises the product transport
+with two pinned lanes. A combined full gate with two sandboxed packages
+sharing an enrolled placement, the machine's TLS origin and proxy
+forwarding remains to run. The SDK and package integration lane
+([#84](https://git.kayg.org/kayg/calternal-ai/issues/84)) can supply v2
+installation approvals to the new registry. The bundled v1 worker and
+manifest paths remain in use.
 
 ## Simplification opportunities
 

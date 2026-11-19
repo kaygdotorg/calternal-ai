@@ -434,3 +434,6 @@ async fn write_loop(
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod fault_tests;

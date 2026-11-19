@@ -231,7 +231,10 @@ async fn real_package(
         },
     )
     .await;
-    let _ = child.kill().await;
+    if child.try_wait().unwrap().is_none() {
+        child.kill().await.unwrap();
+    }
+    assert!(child.try_wait().unwrap().is_some());
     write.abort();
     read.abort();
     result
@@ -524,3 +527,6 @@ async fn approved_operation_dispatches_over_an_enrolled_http_upgrade() {
     let _ = server.await;
     drop(root);
 }
+
+#[path = "fault_tests.rs"]
+mod fault_tests;
