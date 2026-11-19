@@ -1,0 +1,9 @@
+{
+  "audience": "member",
+  "bind": "note-search",
+  "state": "refine_query",
+  "result_version": null,
+  "offset": 0,
+  "window_ref": null,
+  "rows": []
+}

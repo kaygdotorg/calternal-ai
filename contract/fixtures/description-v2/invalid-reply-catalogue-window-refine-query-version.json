@@ -1,0 +1,22 @@
+{
+  "audience": "member",
+  "bind": "note-search",
+  "state": "refine_query",
+  "result_version": "rv-1",
+  "offset": 0,
+  "window_ref": null,
+  "rows": [
+    {
+      "id": "n-12",
+      "fields": {
+        "title": "Storage layout"
+      }
+    },
+    {
+      "id": "n-31",
+      "fields": {
+        "title": "Storage tiers"
+      }
+    }
+  ]
+}
