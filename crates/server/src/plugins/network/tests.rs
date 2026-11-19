@@ -94,6 +94,7 @@ fn sealed_frame_is_per_person_and_dies_when_the_source_head_changes() {
                 metadata: json!({}),
                 text: r#"<p>hello</p><img src="https://example.com/image.png?key=hidden">"#,
             },
+            |_| {},
         )
         .unwrap();
     let id = saved["id"].as_str().unwrap();
@@ -174,10 +175,22 @@ fn sealed_frame_is_per_person_and_dies_when_the_source_head_changes() {
                 metadata: json!({}),
                 text: "<p>replacement</p>",
             },
+            |_| {},
         )
         .unwrap();
     assert_eq!(
         runtime.block_on(get(&owner_token)).unwrap().status(),
         StatusCode::NOT_FOUND
     );
+}
+
+#[test]
+fn asset_signature_binds_index_and_expiry() {
+    let key = hmac::Key::new(hmac::HMAC_SHA256, &[7; 32]);
+    let frame = Uuid::new_v4();
+    let token = asset_signature(&key, frame, 0, 100);
+    assert!(asset_authorized(&key, frame, 0, 100, &token, 99));
+    assert!(!asset_authorized(&key, frame, 1, 100, &token, 99));
+    assert!(!asset_authorized(&key, frame, 0, 101, &token, 99));
+    assert!(!asset_authorized(&key, frame, 0, 100, &token, 100));
 }

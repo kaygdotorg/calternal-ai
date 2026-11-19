@@ -12,7 +12,7 @@ ExecStart=@ROOT@/releases/current/calternal machine run --dir @ROOT@/machine --b
 Restart=on-failure
 RestartPreventExitStatus=3
 RestartSec=5s
-TimeoutStopSec=105s
+TimeoutStopSec=2s
 
 [Install]
 WantedBy=default.target

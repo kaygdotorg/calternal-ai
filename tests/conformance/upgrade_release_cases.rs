@@ -1,5 +1,6 @@
 //! Cross-release upgrade proof over data written through the live service.
 use super::*;
+use rusqlite::OptionalExtension;
 
 mod fixture;
 use fixture::*;
@@ -124,6 +125,21 @@ async fn release_artifacts_preserve_live_data_in_both_directions() {
     let candidate_id = std::env::var("CALTERNAL_RELEASE_NEXT_IMAGE").unwrap();
     let mut f = Fixture::empty();
     let shape = seed(&mut f, &previous).await;
+    // A store present at cutover takes a different path from a store first
+    // opened by the candidate. Exercise both in the same exact image pair.
+    f.start().await;
+    f.op(0, "threads.list", json!({"space_id":shape["space"]}))
+        .await
+        .ok();
+    f.stop();
+    assert!(
+        f.appdata()
+            .join("spaces")
+            .join(shape["space"].as_str().unwrap())
+            .join("jobs.db")
+            .is_file()
+    );
+
     let workspace_file = f
         .dir
         .path()
@@ -199,6 +215,25 @@ async fn release_artifacts_preserve_live_data_in_both_directions() {
     )
     .await
     .ok();
+    let fresh = f
+        .op(0, "spaces.create", json!({"name":"Created after cutover"}))
+        .await;
+    fresh.ok();
+    let fresh_space = &fresh.body["data"]["space"]["id"];
+    let lazy_jobs = f
+        .appdata()
+        .join("spaces")
+        .join(fresh_space.as_str().unwrap())
+        .join("jobs.db");
+    assert!(!lazy_jobs.exists(), "the jobs store must still be lazy");
+    f.op(0, "threads.list", json!({"space_id":fresh_space}))
+        .await
+        .ok();
+    assert!(
+        lazy_jobs.is_file(),
+        "the candidate never exercised fresh jobs creation"
+    );
+
     let new = f.op(0, "notes.create", json!({
         "space_id":shape["space"],"title":"After cutover","markdown":"Candidate acknowledged this.\n"
     })).await;
@@ -229,6 +264,7 @@ async fn release_artifacts_preserve_live_data_in_both_directions() {
             [revision.as_str().unwrap()],
             |row| row.get::<_, String>(0),
         )
+        .optional()
         .unwrap()
     };
 
@@ -263,7 +299,7 @@ async fn release_artifacts_preserve_live_data_in_both_directions() {
     automation.ok();
     let automation = &automation.body["data"]["automation"];
     f.stop();
-    let before_rollback = lineage(head);
+    let before_rollback = lineage(head).expect("candidate room checkpoint");
     let store = f.appdata().join("system/automations.db");
     let db =
         rusqlite::Connection::open_with_flags(&store, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
@@ -276,6 +312,9 @@ async fn release_artifacts_preserve_live_data_in_both_directions() {
     answer(upgrade(&f, &previous, &["verify"], None));
     prove_visible(&mut f, &previous, &shape).await;
     f.start().await;
+    f.op(0, "threads.list", json!({"space_id":fresh_space}))
+        .await
+        .ok();
     let restored = f.op(0, "notes.get", json!({"id":id})).await;
     restored.ok();
     assert_eq!(
@@ -299,6 +338,7 @@ async fn release_artifacts_preserve_live_data_in_both_directions() {
     })).await;
     written_by_n.ok();
     f.stop();
+    let previous_checkpoint = lineage(&edited_by_n.body["data"]["note"]["revision"]);
     f.release_binary = Some(candidate);
     f.start().await;
     let newer_reopened = f
@@ -349,11 +389,16 @@ async fn release_artifacts_preserve_live_data_in_both_directions() {
         "Previous release updated the same note.\nCandidate appended this.\n"
     );
     f.stop();
-    assert_ne!(
-        lineage(&resumed.body["data"]["note"]["revision"]),
-        before_rollback,
-        "a previous release write must seed a fresh room lineage"
-    );
+    let resumed_checkpoint =
+        lineage(&resumed.body["data"]["note"]["revision"]).expect("resumed room checkpoint");
+    if let Some(previous_checkpoint) = previous_checkpoint {
+        assert_eq!(resumed_checkpoint, previous_checkpoint);
+    } else {
+        assert_ne!(
+            resumed_checkpoint, before_rollback,
+            "a previous release without room checkpoints must seed a fresh lineage"
+        );
+    }
 }
 
 /// Measure from the last acknowledged write on N to the first on N+1. Run only
