@@ -433,10 +433,10 @@ Both authority and count updates still need to share the item transaction.
 
 ### Page and synchronization attribution
 
-The next locked run uses the same instrumented `Content::write` release
+The locked run used the same instrumented `Content::write` release
 binary with the edit trigger enabled and removed, on the 8 KiB zero-idle
 workload. A checksummed static strace 7.2 built on dev-01 follows the
-disposable engine process and journal worker. It records timed `pwrite64`,
+disposable engine process and journal worker. It recorded timed `pwrite64`,
 `fdatasync`, `fsync`, and checkpoint-lock calls. Per-commit markers delimit
 the FULL content transaction from the surrounding save acknowledgment.
 The decoder reads page numbers from WAL frame headers and associates
@@ -451,6 +451,51 @@ two totals in different rows. Batching these saves would still touch each
 affected scope row at least once. Moving the version into memory while
 durably updating its same count row would also retain that page write
 and would need a consistent restart generation.
+
+Both trigger arms completed. The decoder matched all four phase markers
+and reconciled frame bytes with frame headers for all 800 measured saves.
+SQLite used 4,096-byte pages and 24-byte frame headers. WAL bytes below
+include any WAL header written in the commit. Frames equaled distinct
+page IDs at the reported percentiles.
+
+| Scopes | Frames and distinct pages p50 / p95, off → on | WAL bytes p50 / p95, off → on | Checkpoints in commit, per 100 saves, off → on |
+| ---: | ---: | ---: | ---: |
+| 1 | 15 / 16 → 18 / 19 | 61,800 / 65,920 → 74,160 / 78,280 | 2 → 2 |
+| 4 | 15 / 18 → 23 / 26 | 61,800 / 74,160 → 94,760 / 107,120 | 2 → 2 |
+| 16 | 15 / 19 → 47 / 51 | 61,800 / 78,280 → 193,640 / 210,120 | 1 → 5 |
+| 32 | 15 / 18 → 80 / 83 | 61,800 / 74,160 → 329,600 / 341,960 | 1 → 9 |
+
+Across 100 trigger-on saves at the four widths, the identified projection
+leaf touches per save were 1 / 3 / 15 / 32 in `window_cover`, 1 / 4 /
+16 / 32 in `window_rows`, and one in `window_scopes`. The trigger-off
+arm touched none of those projection leaves. The last leaf holds the
+unchanged counts and updated versions together. Endpoint `dbstat` maps
+leave some nonprojection pages unmapped or with changing ownership.
+The traced workload does not support two covering leaves per scope per
+save. The covering index averaged about one leaf per scope. The separate
+row storage contributed about one more, and the scope versions shared a
+leaf. These measurements characterize repeated updates to this warm note.
+They do not measure arbitrary updates across the whole list.
+
+| Scopes | Content sync calls p50 / p95, off → on | Summed content sync ms p50 / p95, off → on | All save sync calls p50 / p95, off → on | Summed all save sync ms p50 / p95, off → on |
+| ---: | ---: | ---: | ---: | ---: |
+| 1 | 1 / 1 → 1 / 1 | 6.954 / 8.691 → 6.888 / 9.700 | 3 / 3 → 3 / 3 | 20.585 / 24.500 → 20.489 / 25.935 |
+| 4 | 1 / 1 → 1 / 1 | 6.995 / 8.923 → 6.824 / 7.995 | 3 / 3 → 3 / 3 | 20.667 / 23.046 → 20.064 / 23.987 |
+| 16 | 1 / 1 → 1 / 1 | 6.974 / 9.059 → 7.261 / 11.213 | 3 / 3 → 3 / 3 | 20.663 / 24.242 → 20.828 / 28.333 |
+| 32 | 1 / 1 → 1 / 3 | 7.802 / 11.074 → 7.556 / 16.258 | 3 / 3 → 3 / 6 | 22.827 / 28.911 → 20.778 / 35.682 |
+
+We classified a checkpoint inside the content-commit timer when the
+process acquired the checkpoint lock and wrote the main content database.
+The normal acknowledgment has three FULL transaction boundaries.
+Checkpoints can issue more kernel syncs within an existing boundary.
+The trace establishes additional WAL traffic and more in-commit
+checkpoints at 16 and 32 scopes. Noncheckpoint sync p95 does not rise
+monotonically. At 32 scopes it was 11.074 ms off and 9.620 ms on.
+The measured WAL amplification and checkpoint frequency account for
+extra work, without identifying a proportional fsync cost for each page
+or reproducing every low-width latency tail from the untraced runs.
+The raw archive and decoded per-save records are retained in lane
+evidence.
 
 ### Disposable options
 
