@@ -158,6 +158,32 @@ async fn full_windows_wait_and_deliver_each_maximum_result() {
             .await
             .is_err()
     );
+    let live = Arc::new(std::sync::atomic::AtomicBool::new(true));
+    let guard = live.clone();
+    let sender = host.sender();
+    let pin = package.clone();
+    let ticket = Uuid::new_v4();
+    let waiting_reply = result(ticket, true);
+    let mut revoked = tokio::spawn(async move {
+        sender
+            .send_checked_wait(&pin, ticket, waiting_reply, move || {
+                guard.load(std::sync::atomic::Ordering::Acquire)
+            })
+            .await
+    });
+    assert!(
+        timeout(Duration::from_millis(30), &mut revoked)
+            .await
+            .is_err()
+    );
+    live.store(false, std::sync::atomic::Ordering::Release);
+    assert_eq!(
+        timeout(Duration::from_millis(500), &mut revoked)
+            .await
+            .unwrap()
+            .unwrap(),
+        Err(Error::Refused)
+    );
     drop(retained);
     timeout(Duration::from_secs(2), async {
         let mut replies = std::collections::HashSet::new();

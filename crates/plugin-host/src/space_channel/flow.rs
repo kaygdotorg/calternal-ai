@@ -90,6 +90,7 @@ impl Shared {
         if message.control() {
             return Err(Error::Refused);
         }
+        let guarded = guard.is_some();
         let mut life = self.live.subscribe();
         let mut pending = Some(self.prepare(Some(package), Some(ticket), message, guard, true)?);
         loop {
@@ -103,6 +104,7 @@ impl Shared {
             tokio::select! {
                 _ = life.wait_for(|live| !*live) => return Err(Error::Invocation),
                 _ = &mut changed => {}
+                _ = tokio::time::sleep(Duration::from_millis(100)), if guarded => {}
             }
         }
     }

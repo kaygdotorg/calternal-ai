@@ -9,7 +9,7 @@ use std::{
         atomic::{AtomicBool, Ordering},
     },
 };
-use tokio::sync::mpsc;
+use tokio::sync::{Semaphore, mpsc};
 
 pub(super) const IDLE: Duration = Duration::from_secs(60);
 pub(super) type Inbox = mpsc::Receiver<SpaceDelivery>;
@@ -25,6 +25,7 @@ pub(super) struct Awake {
     pub(super) epoch: Uuid,
     admission: Arc<InvocationReader>,
     reader: Arc<ItemHeadReader>,
+    tickets: Semaphore,
     inboxes: Mutex<HashMap<Uuid, mpsc::Sender<SpaceDelivery>>>,
 }
 
@@ -73,6 +74,7 @@ impl Awake {
             epoch: connected.channel.epoch(),
             admission: Arc::new(admission),
             reader,
+            tickets: Semaphore::new(MAX_ACTIVE_TICKETS),
             inboxes: Mutex::default(),
         });
         let owner = Arc::downgrade(&awake);
@@ -87,7 +89,7 @@ impl Awake {
                 let delivery = match next {
                     Ok(Some(delivery)) => delivery,
                     Ok(None) => break,
-                    Err(_) if !inboxes.is_empty() => continue,
+                    Err(_) if awake.tickets.available_permits() < MAX_ACTIVE_TICKETS => continue,
                     Err(_) => {
                         // Fence under the same lock that registers new tickets.
                         awake.fence.close();
@@ -124,9 +126,17 @@ impl Awake {
     }
 
     pub(super) async fn invoke(&self, scope: Scope) -> Result<Value, Error> {
-        if scope.epoch != self.epoch || !self.sender.is_live() {
-            return Err(unavailable());
-        }
+        let _permit = {
+            // Claim admission under the same short lock as the idle fence.
+            let _registration = self.inboxes.lock().map_err(|_| unavailable())?;
+            if scope.epoch != self.epoch || !self.sender.is_live() {
+                return Err(unavailable());
+            }
+            self.tickets.try_acquire().map_err(|_| {
+                Error::unavailable("space package is busy; retry shortly")
+                    .with_details(json!({"reason":"space_ticket_capacity"}))
+            })?
+        };
         let admission = self.admission.clone();
         let ticket = Arc::new(
             crate::blocking::spawn(move || Ticket::mint(&admission, scope))
@@ -136,7 +146,7 @@ impl Awake {
         let (send, mut inbox) = mpsc::channel(2);
         {
             let mut inboxes = self.inboxes.lock().map_err(|_| unavailable())?;
-            if !self.sender.is_live() || inboxes.len() >= MAX_ACTIVE_TICKETS {
+            if !self.sender.is_live() {
                 return Err(unavailable());
             }
             inboxes.insert(ticket.id(), send);

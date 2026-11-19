@@ -280,6 +280,12 @@ async fn run(
     cancel: Arc<std::sync::atomic::AtomicBool>,
 ) -> Result<Value, Error> {
     let pin = &ticket.scope.package;
+    let send_error = |_| {
+        ticket
+            .require_live(Instant::now())
+            .err()
+            .unwrap_or_else(unavailable)
+    };
     let pending = ticket.clone();
     let canceled = cancel.clone();
     channel
@@ -301,7 +307,7 @@ async fn run(
             },
         )
         .await
-        .map_err(|_| unavailable())?;
+        .map_err(send_error)?;
     let mut answered: Option<Value> = None;
     let mut tick = tokio::time::interval(Duration::from_millis(100));
     tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -351,7 +357,7 @@ async fn run(
                         },
                     )
                     .await
-                    .map_err(|_| unavailable())?;
+                    .map_err(send_error)?;
             }
             SpaceMessage::Complete { result: Ok(result) } if answered.as_ref() == Some(result) => {
                 ticket.require_live(Instant::now())?;

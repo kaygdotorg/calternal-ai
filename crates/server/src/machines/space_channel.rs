@@ -15,7 +15,8 @@ use std::{sync::Arc, time::Duration};
 use tokio::sync::{oneshot, watch};
 use uuid::Uuid;
 
-// Cold reservations count toward this cap, below Content's 64-space cache.
+// Preview host limit on live streams and reservations, independent of the
+// content cache. The scheduler also enforces each machine's actual capacity.
 const MAX_CHANNELS: usize = 32;
 const OPEN_LIMIT: Duration = Duration::from_secs(5);
 

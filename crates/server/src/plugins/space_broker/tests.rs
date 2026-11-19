@@ -364,3 +364,56 @@ async fn a_ticket_in_flight_keeps_the_carrier_awake_past_idle() {
         .unwrap();
     assert!(!awake.sender.is_live());
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_full_carrier_refuses_with_busy_before_checking_authority() {
+    let fixture = tokio::task::spawn_blocking(Fixture::new).await.unwrap();
+    let (connected, mut runtime) = fixture.carrier().await;
+    let item = tokio::task::block_in_place(|| fixture.write(Uuid::now_v7()));
+    let scope = fixture.scope(&connected.channel, item.id);
+    let reader =
+        tokio::task::block_in_place(|| fixture.content.item_head_reader(fixture.space)).unwrap();
+    runtime.ready(&fixture.pin).unwrap();
+    let awake = Awake::attach(
+        connected,
+        fixture.auth.clone(),
+        Arc::new(reader),
+        &fixture.pin,
+        None,
+        awake::IDLE,
+    )
+    .await
+    .unwrap();
+    let mut calls = tokio::task::JoinSet::new();
+    for _ in 0..MAX_ACTIVE_TICKETS {
+        let awake = awake.clone();
+        let scope = scope.clone();
+        calls.spawn(async move { awake.invoke(scope).await });
+    }
+    for _ in 0..MAX_ACTIVE_TICKETS {
+        let incoming = tokio::time::timeout(Duration::from_secs(2), runtime.receive())
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(matches!(
+            incoming.frame().message,
+            SpaceMessage::Invoke { .. }
+        ));
+    }
+    let denied_actor = Scope {
+        actor: AccountId::new(),
+        ..scope
+    };
+    let busy = awake.invoke(denied_actor.clone()).await.unwrap_err();
+    assert_eq!(busy.code, ErrorCode::Unavailable);
+    assert_eq!(
+        busy.details,
+        Some(json!({"reason":"space_ticket_capacity"}))
+    );
+    calls.abort_all();
+    while calls.join_next().await.is_some() {}
+    assert_eq!(
+        awake.invoke(denied_actor).await.unwrap_err().code,
+        ErrorCode::Forbidden
+    );
+}

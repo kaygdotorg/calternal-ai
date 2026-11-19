@@ -186,7 +186,8 @@ authority again after package startup.
 
 8. **Awake reuse (§§2–3).** The initial profile places one pinned package per
    space, holds one enrolled channel and multiplexes up to four tickets.
-   The scheduler admits up to 32 active or reserved carriers.
+   The preview scheduler admits up to 32 active or reserved carriers per host.
+   This is an operator capacity limit independent of the content cache.
    A space-local wake gate coalesces placement and waits up to the existing
    ten-second worker startup limit for Ready. Reclaim the placement after
    60 seconds without an application frame when no ticket is in flight. This keeps the placement bounded
@@ -198,7 +199,10 @@ authority again after package startup.
    quarter of the byte window. The host and machine wait for data credit
    without taking the control path's reserved capacity. The machine stops
    draining package stdout while it waits. This bounds memory to one pending
-   frame per host ticket and one for the machine relay.
+   frame per host ticket and one for the machine relay. A fifth ticket receives
+   a retryable busy error before mint. A parked guarded send rechecks rights
+   every 100 ms. An oversized child frame that fits the private pipe but
+   exceeds carrier capacity cancels its child invocation before reporting failure.
 
 ## Verification and remaining work
 
@@ -235,8 +239,8 @@ ticket fencing on package disable or uninstall. The approved v2 read route
 has no production caller. The SDK and package integration lane
 ([#84](https://git.kayg.org/kayg/calternal-ai/issues/84)) can supply validated
 v2 approvals. The first product profile has one package per awake space.
-Distinct package windows have transport coverage. A placement serving
-multiple package processes remains future work.
+Distinct package windows have transport coverage. The two-package
+rehearsal behind the TLS proxy remains open.
 
 ## Simplification opportunities
 

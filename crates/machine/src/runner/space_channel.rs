@@ -156,6 +156,8 @@ async fn relay_package(
                         match sender.send_wait(pin, ticket, message).await {
                             Err(ProtocolError::TooLarge) => {
                                 active.remove(&ticket);
+                                let cancel = ChildFrame::encode(frame.invocation_id, ChildMessage::Cancel {})?;
+                                input.send(cancel).await.map_err(|_| ProtocolError::Invocation)?;
                                 sender.send_wait(pin, ticket, SpaceMessage::Complete {
                                     result: Err(calternal_types::ErrorCode::Unavailable),
                                 }).await?;
@@ -168,5 +170,100 @@ async fn relay_package(
                 Some(OutputEvent::Exit(_)) | None => return Err(ProtocolError::Invocation),
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn oversized_child_call_cancels_its_alias_before_reporting_failure() {
+        let pin = PackagePin {
+            package: "fixture".into(),
+            digest: "a".repeat(64),
+        };
+        let space = calternal_types::SpaceId::new();
+        let assignment = Uuid::new_v4();
+        let (host_io, runtime_io) = tokio::io::duplex(4096);
+        let (host, runtime) = tokio::join!(
+            SpaceChannel::host(host_io, space, assignment, vec![pin.clone()]),
+            SpaceChannel::runtime(runtime_io, space, assignment),
+        );
+        let mut host = host.unwrap();
+        let mut runtime = runtime.unwrap();
+        let (input, mut child_input) = tokio::sync::mpsc::channel(2);
+        let (output, events) = tokio::sync::mpsc::channel(2);
+        let relay_pin = pin.clone();
+        let relay = tokio::spawn(async move {
+            relay_package(
+                &mut runtime,
+                &relay_pin,
+                Exec {
+                    input: Some(input),
+                    events,
+                },
+            )
+            .await
+        });
+        tokio::time::timeout(Duration::from_secs(2), async {
+            assert!(matches!(
+                host.receive().await.unwrap().frame().message,
+                SpaceMessage::Ready {}
+            ));
+            let ticket = Uuid::new_v4();
+            host.sender()
+                .send_checked_wait(
+                    &pin,
+                    ticket,
+                    SpaceMessage::Invoke {
+                        operation: "fixture.head".into(),
+                        input: serde_json::json!({}),
+                        deadline_ms: 2_000,
+                    },
+                    || true,
+                )
+                .await
+                .unwrap();
+            let invoke: ChildFrame =
+                serde_json::from_slice(&child_input.recv().await.unwrap()).unwrap();
+            let alias = invoke.invocation_id;
+            let call_id = Uuid::new_v4();
+            let call = |text: String| ChildMessage::HostCall {
+                call_id,
+                method: calternal_plugin_host::space_channel::SpaceMethod::ItemHead,
+                input: serde_json::json!(text),
+            };
+            let overhead = ChildFrame::encode(alias, call(String::new()))
+                .unwrap()
+                .len();
+            let at_pipe_limit =
+                ChildFrame::encode(alias, call("x".repeat(MAX_FRAME_BYTES + 1 - overhead)))
+                    .unwrap();
+            output
+                .send(OutputEvent::Data(
+                    crate::protocol::Stream::Stdout,
+                    at_pipe_limit,
+                ))
+                .await
+                .unwrap();
+            let cancel: ChildFrame =
+                serde_json::from_slice(&child_input.recv().await.unwrap()).unwrap();
+            assert_eq!(cancel.invocation_id, alias);
+            assert!(matches!(cancel.message, ChildMessage::Cancel {}));
+            let terminal = host.receive().await.unwrap();
+            assert_eq!(terminal.frame().ticket, Some(ticket));
+            assert!(matches!(
+                terminal.frame().message,
+                SpaceMessage::Complete {
+                    result: Err(calternal_types::ErrorCode::Unavailable)
+                }
+            ));
+            assert!(host.is_live());
+        })
+        .await
+        .unwrap();
+        host.fence();
+        relay.await.unwrap().unwrap();
     }
 }
