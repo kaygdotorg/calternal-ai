@@ -18,11 +18,12 @@ import pathlib
 import re
 import sys
 
-from description_confirmation import check_confirmation_material, check_confirmation_table
-from description_intent_trace import check_intent_trace
+from description_confirmation import (check_confirmation_exchange, check_confirmation_material,
+                                      check_confirmation_table, check_request_card_material)
+from description_intent_trace import check_attempt_fence_trace, check_intent_trace
 from description_input import PackageInput, Validation, check_unique_ids, lexical_path, read_bytes, read_json, resolved_path
 
-from description_events import COMPONENT_TYPES, EventBindings, check_composer_actions, check_composer_invoke, check_event_binding, check_route_capacity, route_operands, validate_component_request, walk
+from description_events import COMPONENT_TYPES, EventBindings, check_composer_actions, check_composer_invoke, check_event_binding, check_invoke, check_route_capacity, route_operands, validate_component_request, walk
 import description_verification as verification
 
 from description_verification import (
@@ -468,14 +469,19 @@ def validate_description(doc, manifest, installed, errors):
     semantic(doc, errors, verification.CATALOGUE, manifest, installed)
 
 
-def validate_composer_capture(capture, bindings, errors):
+def validate_activation_capture(capture, bindings, errors):
     """Check a bounded chain of accepted replies before resolving an invoke."""
     base = {"view_open", "event"}
-    if (not base <= capture.keys() <= base | {"renewals", "resolution"}
+    if (not base <= capture.keys() <= base | {"renewals", "resolution", "confirmation", "checked_facts"}
             or not bindings or verification.CATALOGUE is None):
         errors.append("$: composer capture requires an originating description, view_open and event")
         return
+    if "confirmation" in capture and "resolution" not in capture:
+        errors.append("$.confirmation: requires the originating resolution")
+        return
     catalogue = verification.CATALOGUE
+    check({"type": "array", "maxItems": 16, "uniqueItems": True, "items": {"type": "string"}},
+          capture.get("checked_facts", []), "$.checked_facts", errors, catalogue)
     capture_fields = {"view_open": "ViewOpenResult", "event": "ResolveActivation"}
     for name, definition in errors.each(capture_fields.items()):
         check({"$ref": f"#/$defs/{definition}"}, capture[name], f"$.{name}", errors, catalogue)
@@ -545,27 +551,46 @@ def validate_composer_capture(capture, bindings, errors):
                 errors.append(f"{path}.result.retained_results: must name a requested exact result under the unchanged grant")
         reply = result
         issued = issued_actions(reply, f"{path}.result")
+    if errors:
+        return
     event = capture["event"]
-    if not errors:
+    action_id = event["action_id"]
+    if action_id in issued or action_id not in origin.actions:
         check_composer_invoke(event, reply, issued, errors)
-    if not errors and "resolution" in capture:
-        purpose = issued[event["action_id"]][1]
+        if errors:
+            return
+        purpose = issued[action_id][1]
         kind = "composer.send" if purpose == "send" else f"host.execution.{purpose}"
-        definition = "ResumeResolution" if purpose == "resume" else "ActivationResolution"
-        resolution = capture["resolution"]
-        check({"$ref": f"#/$defs/{definition}"}, resolution, "$.resolution", errors, catalogue)
-        if not errors and resolution["activation_id"] != event["activation_id"]:
-            errors.append("$.resolution.activation_id: must match the originating invoke")
         facts = [f"has_{name}" for name, value in event.get("interaction", {}).get("draft", {}).items()
                  if name in ("attachments", "mentions", "quote") and value]
-        if not errors:
-            check_confirmation_material(resolution, kind, facts, errors, catalogue)
+        if capture.get("checked_facts"):
+            errors.append("$.checked_facts: composer material comes from the originating invoke")
+    else:
+        check_invoke(event, origin, errors)
+        token = event["activation_context"]
+        row_bind = origin.row_action_binds.get(action_id)
+        if row_bind is None:
+            matches = reply["activation_contexts"].get(action_id) == token
+        else:
+            matches = any(
+                window["bind"] == row_bind and window["audience"] == audience
+                and row["contexts"].get(action_id) == token
+                and any(value["id"] == row["row"] for value in errors.each(window["rows"]))
+                for window in errors.each(reply.get("windows", []))
+                for row in errors.each(window.get("activation_contexts", []))
+            )
+        if not matches:
+            errors.append("$.activation_context: must match the issued host action context")
+        kind = origin.actions[action_id]["operation"]
+        facts = capture.get("checked_facts", ())
+    if not errors and "resolution" in capture:
+        check_confirmation_exchange(capture, kind, facts, errors, catalogue)
 
 
 def validate_event(doc, bindings, errors):
     """Check event shape and contextual Bind and window range requirements."""
     if isinstance(doc, dict) and "view_open" in doc:
-        validate_composer_capture(doc, bindings, errors)
+        validate_activation_capture(doc, bindings, errors)
         return
     check({"$ref": "#/$defs/Event"}, doc, "$", errors)
     if errors:
@@ -687,6 +712,9 @@ def run_fixtures():
             if case["value"].get("confirm") == "challenge" or kind is not None:
                 check_confirmation_material(case["value"], kind, case.get("checked_facts", ()),
                                             errors, verification.CATALOGUE, inputs=case.get("material_inputs", ()))
+        if not errors and case["definition"] == "RequestCardRecord":
+            check_request_card_material(case["value"], errors, verification.CATALOGUE,
+                                        checked=case.get("checked_effect"))
         if not errors and case["definition"] in ("TranscriptPage", "TranscriptUpdate"):
             records_key = "records" if case["definition"] == "TranscriptPage" else "upserts"
             for record in errors.each(case["value"][records_key]):
@@ -713,6 +741,23 @@ def run_fixtures():
         passed = any(want in error for error in errors) if want else not errors
         print(("ok   " if passed else "FAIL ") + file.name + ("" if passed else f"  {list(errors)!r}"))
         failed |= not passed
+    if verification.CATALOGUE is not None:
+        covered = set()
+        for file in sorted((fixtures_dir / "attempt-fences").glob("*.json")):
+            errors = Validation()
+            case = read_json(file, errors)
+            if not errors:
+                check_attempt_fence_trace(case, errors, verification.CATALOGUE)
+            want = case.get("error") if case else None
+            passed = any(want in error for error in errors) if want else not errors
+            if passed and want is None:
+                covered.add(case["action"])
+            print(("ok   " if passed else "FAIL ") + file.name + ("" if passed else f"  {list(errors)!r}"))
+            failed |= not passed
+        required = set(verification.CATALOGUE["attempt_authority_end"]["actions"])
+        if required != covered:
+            print(f"FAIL attempt fences missing passing crash traces: {sorted(required - covered)}")
+            failed = True
     threads = read_json(fixtures_dir / "threads-app.json")
     for file in sorted((fixtures_dir / "provider-marks").glob("*.json")):
         errors = Validation()

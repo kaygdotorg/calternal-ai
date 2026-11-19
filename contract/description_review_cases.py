@@ -257,8 +257,10 @@ class ReviewCases:
                     facts = (fact,) if fact else ()
                     names = rule["required"] + conditions.get(fact, [])
                     manifest_inputs = ("extra_input",) if kind == "plugin_operation" else ()
+                    input_keys = [catalogue["confirmation"]["manifest_input_prefix"] + name
+                                  for name in manifest_inputs]
                     material = [{"name": name, "label": name.title(), "value": "Checked"}
-                                for name in (*names, *manifest_inputs)]
+                                for name in (*names, *input_keys)]
                     resolution = {"confirm": "challenge", "material": material}
                     errors = Validation()
                     check_confirmation_material(resolution, kind, facts, errors, catalogue, inputs=manifest_inputs)

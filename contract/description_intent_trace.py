@@ -53,3 +53,38 @@ def check_intent_trace(trace, errors, catalogue):
             continue
         if observed != expected:
             errors.append(f"$.events[{index}]: expected {expected!r} at the execution intent fence")
+
+
+def check_attempt_fence_trace(trace, errors, catalogue):
+    """Check crash probes with the remote still running and its Stop withheld."""
+    action = trace["action"]
+    rule = catalogue["attempt_authority_end"]["actions"].get(action)
+    if rule is None:
+        errors.append("$.action: unknown attempt authority action")
+        return
+    ends_authority = rule["ends_authority"]
+    cutover = action == "cutover_retirement"
+    before = {"fence_durable": ends_authority, "cleanup_durable": ends_authority,
+              "reply_sent": False, "remote_stops": 0}
+    # Cutover recovers already-persisted cleanup for an earlier authorized
+    # retirement. It has no active attempt to stop as part of the switch.
+    if cutover:
+        before["cleanup_durable"] = False
+        before["prior_cleanup_durable"] = True
+    if trace["after_commit"] != before:
+        errors.append("$.after_commit: wrong durable fence, cleanup or reply state before the crash")
+    expected_probes = {name: "refused" if ends_authority else "allowed"
+                       for name in ("renewal", "broker_effect", "queued_tool", "egress", "descendant_effect")}
+    for point in ("before_dispatch", "after_restart_before_dispatch"):
+        if trace[point] != expected_probes:
+            errors.append(f"$.{point}: wrong authority while remote Stop is withheld")
+    if action == "archive" and trace.get("after_undo_before_dispatch") != expected_probes:
+        errors.append("$.after_undo_before_dispatch: archive Undo reopened fenced authority")
+    if trace["unaffected_attempt"] != "allowed":
+        errors.append("$.unaffected_attempt: retirement cannot fence unrelated authority")
+    expected_stops = 1 if ends_authority and not cutover else 0
+    expected_cleanup = {"new_exact_stops": expected_stops, "replacement_stops": 0}
+    if cutover:
+        expected_cleanup["prior_exact_stops"] = 1
+    if trace["after_cleanup_replay"] != expected_cleanup:
+        errors.append("$.after_cleanup_replay: remote dispatch must reconcile the exact attempt once")

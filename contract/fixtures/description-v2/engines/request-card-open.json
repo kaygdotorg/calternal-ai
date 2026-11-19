@@ -9,6 +9,11 @@
         "name": "item",
         "label": "Item",
         "value": "Research note"
+      },
+      {
+        "name": "effect",
+        "label": "Effect",
+        "value": "Edit Research note"
       }
     ],
     "actions": [
@@ -23,5 +28,9 @@
       }
     ],
     "card_context": "context"
+  },
+  "checked_effect": {
+    "effect": "Edit Research note",
+    "item": "Research note"
   }
 }

@@ -1,0 +1,33 @@
+{
+  "definition": "RequestCardRecord",
+  "value": {
+    "request_ref": "request-ref",
+    "title": "Approve edit",
+    "state": "open",
+    "material": [
+      {
+        "name": "item",
+        "label": "Item",
+        "value": "Research note"
+      },
+      {
+        "name": "effect",
+        "label": "Effect",
+        "value": "Edit Research note"
+      }
+    ],
+    "actions": [
+      {
+        "decision": "approve",
+        "lifetimes": [
+          "once"
+        ]
+      },
+      {
+        "decision": "deny"
+      }
+    ],
+    "card_context": "context"
+  },
+  "error": "capture requires the checked request effect"
+}

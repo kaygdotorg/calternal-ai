@@ -9,6 +9,11 @@
         "name": "item",
         "label": "Item",
         "value": "Research note"
+      },
+      {
+        "name": "effect",
+        "label": "Effect",
+        "value": "Dismiss an unapprovable edit request"
       }
     ],
     "actions": [
@@ -17,5 +22,9 @@
       }
     ],
     "card_context": "context"
+  },
+  "checked_effect": {
+    "effect": "Dismiss an unapprovable edit request",
+    "item": "Research note"
   }
 }

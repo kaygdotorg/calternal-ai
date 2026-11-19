@@ -124,6 +124,7 @@ class EventBindings:
         self.sections = {section["id"]: section for section in errors.each((self.sidebar or {}).get("sections", []))}
         self.binds = {bind["id"]: bind for bind in errors.each(view.get("binds", []))}
         self.actions = {}
+        self.row_action_binds = {}
         self.shell_actions = {}
         self.components = {}
         self.routes = set()
@@ -144,7 +145,7 @@ class EventBindings:
         self.form_fields = {}
         self.choices = set()
         self.multiple = set()
-        for _, node in walk(view, errors):
+        for path, node in walk(view, errors):
             if not isinstance(node, dict):
                 continue
             if isinstance(route := node.get("route"), str):
@@ -160,6 +161,10 @@ class EventBindings:
                 self.multiple.add(node["bind"])
             if isinstance(node.get("operation"), str) and "id" in node:
                 self.actions[node["id"]] = node
+                if path.startswith("$.binds["):
+                    index, _, rest = path.removeprefix("$.binds[").partition("]")
+                    if rest.startswith(".row."):
+                        self.row_action_binds[node["id"]] = view["binds"][int(index)]["id"]
                 self.choices.update(name for name, slot in errors.each(prompt_slots(node, errors).items()) if slot == "choices")
             if "shell" in node:
                 self.shell_actions[node["id"]] = node["shell"]

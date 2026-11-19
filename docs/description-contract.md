@@ -1,6 +1,6 @@
 # Description contract (v2)
 
-Status: **revision 14.10 draft (based on 13.18)**, paired with the [Plugin API v2 specification](plugin-api-v2.md). The [description schema](../contract/description-v2.schema.json) defines the shared renderer shapes.
+Status: **revision 14.11 draft (based on 13.18)**, paired with the [Plugin API v2 specification](plugin-api-v2.md). The [description schema](../contract/description-v2.schema.json) defines the shared renderer shapes.
 
 The schema is checked with `python3 contract/verify-description.py` against the fixtures in `contract/fixtures/description-v2/` (valid ones must pass,
 `invalid-*` ones must report the reason in their directory’s `expected-errors.json`). The fixtures are the paper exercises of section 9. The verifier uses `replies/origins.json` to resolve each standalone window reply to its description fixture and Bind, then checks every projected value against the kind’s declared field type.
@@ -228,7 +228,10 @@ host  -> shell { activation_id, state: ok | pending | error | stale | refused | 
   challenge (a destination, recipient, audience or permission, a bulk set, an irreversible, external or access-widening effect, or an input the manifest declares material): then the host
   answers the resolve with a `confirmation_challenge` and a **material** list **it wrote** (values the person did not edit included: untouched prefills, defaults, autofill), the shell
   checks the catalogue’s required material for that challenge kind and shows it in its own protected sheet, `invoke_confirm` returns the challenge, and the host returns a `confirmation_proof` bound to the normalized input and the `activation_id`
-  (different input: a new challenge); a challenged action is three exchanges. A description cannot add, remove or relabel anything here. **Typing is never consent**: no value counts as
+  (different input: a new challenge); a challenged action is three exchanges.
+  Match the activation ID, resolution ref and challenge to the same
+  accepted resolve. Only prepared Send carries `final_text`. Manifest
+  entries use the `input:<key>` preview name and its declared label. A description cannot add, remove or relabel anything here. **Typing is never consent**: no value counts as
   confirmed because it was typed; where a challenge is required, the person's confirmation through the protected step is the consent.
 * **Chat send is one exchange, and the final text is message content only.** The composer pre-resolves only when the prepared material changes (provider, model, machine and other options,
   attachments, mentions, a quote); the proof binds to that material and not to the text, so one `invoke_confirm` carrying `final_text` (the composer-only arm) confirms and dispatches, and the
@@ -437,7 +440,10 @@ component within the current view lease. Draw the host record and only its
 offered decisions and approval lifetimes. Use the same record's
 `card_context` with `RequestCardResolve`; Approve and Deny are host decisions
 with no author-defined action ID. Every Approve choice offers a nonempty
-list of allowed lifetimes. Send one of those lifetimes. Deny has no
+list of allowed lifetimes. Render decisions and lifetimes only from
+the offered actions. Their values cannot come from material entries.
+The material shows the checked effect and its named details under the
+catalogue's common confirmation checker. Send one offered lifetime. Deny has no
 lifetime. A dismissal-only card offers Deny alone. Keep a closed card
 read-only. Limit each
 delivery to 16 KiB including material. A refusal discloses no card contents.

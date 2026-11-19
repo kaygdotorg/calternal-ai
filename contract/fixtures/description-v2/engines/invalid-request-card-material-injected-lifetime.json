@@ -1,0 +1,42 @@
+{
+  "definition": "RequestCardRecord",
+  "value": {
+    "request_ref": "request-ref",
+    "title": "Approve edit",
+    "state": "open",
+    "material": [
+      {
+        "name": "item",
+        "label": "Item",
+        "value": "Research note"
+      },
+      {
+        "name": "effect",
+        "label": "Effect",
+        "value": "Edit Research note"
+      },
+      {
+        "name": "lifetime",
+        "label": "Lifetime",
+        "value": "forever"
+      }
+    ],
+    "actions": [
+      {
+        "decision": "approve",
+        "lifetimes": [
+          "once"
+        ]
+      },
+      {
+        "decision": "deny"
+      }
+    ],
+    "card_context": "context"
+  },
+  "checked_effect": {
+    "effect": "Edit Research note",
+    "item": "Research note"
+  },
+  "error": "'lifetime' must come from offered actions"
+}

@@ -1,0 +1,123 @@
+{
+  "view_open": {
+    "lease": {
+      "lease_ref": "lease",
+      "lease_seconds": 15,
+      "grant_revision": "current",
+      "cache_partition": "personal"
+    },
+    "activation_contexts": {
+      "composer.17": "context-send"
+    },
+    "composer_actions": {
+      "panel-composer": {
+        "send": "composer.17"
+      }
+    },
+    "audience": "own_space_member"
+  },
+  "event": {
+    "type": "invoke",
+    "action_id": "archive",
+    "activation_id": "archive",
+    "activation_context": "row-archive-proof"
+  },
+  "renewals": [
+    {
+      "request": {
+        "type": "lease_renew",
+        "lease_ref": "lease",
+        "grant_revision": "current",
+        "result_versions": {},
+        "renewal_id": "renewing-2",
+        "cache_partition": "personal"
+      },
+      "result": {
+        "lease": {
+          "lease_ref": "lease",
+          "lease_seconds": 15,
+          "grant_revision": "current",
+          "cache_partition": "personal"
+        },
+        "renewal_id": "renewing-2",
+        "request_lease_ref": "lease",
+        "cache_partition": "personal",
+        "retained_results": [],
+        "windows": [
+          {
+            "bind": "waiting",
+            "state": "ready",
+            "result_version": "current-result",
+            "offset": 0,
+            "rows": [
+              {
+                "id": "conversation-1",
+                "fields": {
+                  "title": "Planning"
+                }
+              }
+            ],
+            "window_ref": "checked-window",
+            "audience": "own_space_member",
+            "activation_contexts": [
+              {
+                "row": "conversation-1",
+                "contexts": {
+                  "archive": "row-archive-proof"
+                }
+              }
+            ]
+          }
+        ],
+        "activation_contexts": {
+          "composer.17": "renewed-send",
+          "composer.20": "newly-eligible-stop"
+        },
+        "composer_actions": {
+          "panel-composer": {
+            "send": "composer.17",
+            "stop": "composer.20"
+          }
+        }
+      }
+    }
+  ],
+  "resolution": {
+    "activation_id": "archive",
+    "resolution_ref": "resolution",
+    "confirm": "challenge",
+    "confirmation_challenge": "checked",
+    "material": [
+      {
+        "name": "item",
+        "label": "Conversation",
+        "value": "Planning"
+      },
+      {
+        "name": "effect",
+        "label": "Effect",
+        "value": "Archive"
+      },
+      {
+        "name": "execution_effect",
+        "label": "Execution",
+        "value": "Refuse the pending continuation"
+      },
+      {
+        "name": "audience",
+        "label": "Audience",
+        "value": "Retire the saved guest grant"
+      }
+    ]
+  },
+  "confirmation": {
+    "type": "invoke_confirm",
+    "activation_id": "archive",
+    "resolution_ref": "foreign",
+    "confirmation_challenge": "checked"
+  },
+  "checked_facts": [
+    "stops_execution",
+    "retires_grants"
+  ]
+}

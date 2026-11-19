@@ -556,7 +556,7 @@
       "engine": "execution_stop",
       "effect": "irreversible",
       "idempotency": "request_id",
-      "authority": "The host reconstructs the exact intent or attempt and applies execution_intents.stop_and_archive.",
+      "authority": "Reconstruct the exact target and apply execution_intents.stop_and_archive and attempt_authority_end.actions.stop.",
       "surfaces": [
         "host_composer",
         "host_execution_control"
@@ -791,7 +791,7 @@
       "atomic_undo_when": "Use the execution_intents idle predicate under the lifecycle fence. Saved authority requires a challenge unless it consists only of item grants that the Step 2 writer retires in the same FULL item content transaction as archive and that Undo restores together with the item head. Retiring grants with head-only Undo requires a challenge. Check idle eligibility under the commit fence. Execution admission rejects a fresh admission to an archived head under the same fence. Commit the archived head and its unarchive Undo in one FULL item content transaction, with no separate cleanup.",
       "full_swipe_when": "After the Step 2 idle-archive atomic writer with Undo passes, enable atomic_undo and full_swipe for the first swipe action with effective confirm:none and the idle condition.",
       "kind_capability": "conversation",
-      "execution_fence": "Apply execution_intents.stop_and_archive, including the durable exact-intent refusal and its preservation through Undo."
+      "execution_fence": "Apply attempt_authority_end.actions.archive in the FULL archive transaction and preserve that fence across Undo."
     },
     "host.item.unarchive": {
       "engine": "item lifecycle unarchive",
@@ -871,7 +871,7 @@
         "$ref": "#/$defs/ActionOutcome"
       },
       "atomic_undo": false,
-      "atomic_undo_unavailable": "The current item writer stores one shared manual deadline and cannot implement this actor-scoped operation. Set available to true only after the Step 2 actor-keyed snooze writer gate proves that the actor’s deadline, its index entry and Undo commit together. The host refuses snooze on every route while available is false. Subscription retry state is unaffected. Apply execution_intents.snooze to all execution intents.",
+      "atomic_undo_unavailable": "The current item writer stores one shared manual deadline and cannot implement this actor-scoped operation. Set available to true only after the Step 2 actor-keyed snooze writer gate proves that the actor’s deadline, its index entry and Undo commit together. The host refuses snooze on every route while available is false. Subscription retry state is unaffected. Apply execution_intents.snooze to all execution intents. See attempt_authority_end.actions.snooze.",
       "kind_capability": "conversation"
     },
     "host.collection.move": {
@@ -4240,7 +4240,8 @@
           "items": {
             "$ref": "#/$defs/ConfirmationMaterial"
           },
-          "maxItems": 32
+          "maxItems": 32,
+          "description": "Checked effect and input details. Apply confirmation.material_by_kind.host.approval.resolve.request_card. Decisions and lifetimes come exclusively from actions."
         },
         "state": {
           "enum": [
@@ -4778,16 +4779,7 @@
       ]
     },
     "ResumeConfirmation": {
-      "allOf": [
-        {
-          "$ref": "#/$defs/ConfirmActivation"
-        },
-        {
-          "properties": {
-            "final_text": false
-          }
-        }
-      ]
+      "$ref": "#/$defs/NoFinalTextConfirmation"
     },
     "ResumeOutcome": {
       "allOf": [
@@ -4912,6 +4904,30 @@
         }
       ],
       "description": "A protected challenge. Apply confirmation.material_by_kind for host.execution.resume."
+    },
+    "PreparedSendConfirmation": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/ConfirmActivation"
+        },
+        {
+          "required": [
+            "final_text"
+          ]
+        }
+      ]
+    },
+    "NoFinalTextConfirmation": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/ConfirmActivation"
+        },
+        {
+          "properties": {
+            "final_text": false
+          }
+        }
+      ]
     }
   },
   "activation_limits": {
@@ -4966,7 +4982,7 @@
       "output": {
         "$ref": "#/$defs/ExecutionStopResult"
       },
-      "scope": "Apply execution_intents.stop_and_archive. Fence an exact admitted attempt before remote Stop."
+      "scope": "Apply attempt_authority_end.actions.stop under execution_intents.stop_and_archive."
     },
     "execution_wait": {
       "input": {
@@ -5421,7 +5437,12 @@
             "lifetime"
           ]
         },
-        "request_card": "An actionable card shows the checked effect's named inputs, or its host effect summary when there are no inputs. The offered decisions and lifetime lists carry the rest of the material. The card itself is the protected surface."
+        "request_card": {
+          "effect_fields": [
+            "effect"
+          ],
+          "rule": "Use the same named-material checker. Require the host's checked effect and its checked named inputs. Derive decision and lifetime entries exclusively from offered actions. Reject their presence as material fields or duplicate offered decisions. A closed card supplies no decisions or lifetimes."
+        }
       },
       "host.panel.ask": {
         "required": [
@@ -5515,7 +5536,8 @@
       "host.action.status",
       "host.undo"
     ],
-    "material_rule": "Select the row by the checked operation and host surface. Check all material for the exact normalized request under the pinned context. Reject empty lists, duplicate names or missing required entries. For every current checked fact listed in when, require its entries too. Include untouched prefills and all applicable material. Plugin challenges also include present manifest material_inputs as checked by the host. Keys are host-owned except for manifest input names. Render labels and checked values. Explicit default, none or clearing choices are shown with a readable label. The device cannot supply the challenge kind or facts."
+    "material_rule": "Select the row by the checked operation and host surface. Check all material for the exact normalized request under the pinned context. Reject empty lists, duplicate names or missing required entries. For every current checked fact listed in when, require its entries too. Include untouched prefills and all applicable material. Plugin challenges also include present manifest material_inputs as checked by the host. Host keys are host-owned. Every manifest input key is projected with manifest_input_prefix and its original local ID, using its declared label and checked value. The prefix is reserved and is unavailable to host entries. Render labels and checked values. Explicit default, none or clearing choices are shown with a readable label. The device cannot supply the challenge kind or facts.",
+    "manifest_input_prefix": "input:"
   },
   "schedule_create_input": {
     "$ref": "#/$defs/ScheduleCreateInput"
@@ -5554,8 +5576,68 @@
       "protected_resume"
     ],
     "admission": "Under the conversation lifecycle fence refuse admission for an archived or deleted head or a cutover-fenced writer. Reserve the same quotas for either origin. Allow at most one unresolved execution intent or active attempt per conversation. Commit Starting, the exact intent, its receipt and owning job together. Exact-intent start admits at most one attempt and an authorized replay returns its existing result.",
-    "stop_and_archive": "Idle archive requires no unresolved execution intent, active attempt or approval to retire. A protected archive pins and durably refuses the exact unresolved execution intent in the FULL archive and Undo transaction. Undo never reopens the refusal. Stop durably refuses the exact unresolved execution intent or fences the exact admitted attempt. Recheck live execution control and item authority under the fence. Do not retarget replacements.",
+    "stop_and_archive": "Idle archive requires no unresolved intent, active attempt or approval to retire. Protected archive and Stop use attempt_authority_end, pin the exact attempt or intent and recheck live execution-control and item authority. Never retarget replacements.",
     "snooze": "Actor-keyed snooze and Undo only change the actor's deadline and index. Neither mutates, retires, reopens or admits any execution intent, nor changes retries.",
     "cutover": "Halt new intents and attempts. Drain every unresolved execution intent or verify its existing protected durable refusal and verify zero active attempts and zero unresolved execution intents before switching writers. Preserve intents, refusals and receipts under protected custody. Do not admit or reopen retired intents on the new writer or rollback."
+  },
+  "attempt_authority_end": {
+    "commit_rule": "Make the local fence and the specific recovery work durable before reporting success or allowing any later admission, renewal, effect or egress. Invalidate queued dispatch and scoped references and fence descendants. Where authority spans databases, durably fence affected spaces before publishing the authority change and block work until reconciled. Keep the exact attempt identity, generation and cleanup key. Dispatch no remote work under the fence. Recover committed cleanup after crash before reply or dispatch. Deduplicate remote teardown by exact attempt, and release quota only after verifying it. Earlier committed effects stay committed.",
+    "actions": {
+      "archive": {
+        "before_reply": "Exact admitted attempt fence or durable pending-intent refusal, archived head, any eligible Undo and deduplicated cleanup record in the same FULL transaction. Undo leaves the fence and refusal in place.",
+        "after_commit": "Exact-attempt Stop and bounded subtree cleanup. Pending intent without an attempt needs no remote Stop.",
+        "ends_authority": true
+      },
+      "stop": {
+        "before_reply": "Exact admitted attempt fence or durable pending-intent refusal, Stop receipt and deduplicated cleanup record under the same lifecycle commit.",
+        "after_commit": "Exact-attempt Stop and verified subtree cleanup.",
+        "ends_authority": true
+      },
+      "snooze": {
+        "before_reply": "None. Actor-keyed snooze and Undo affect only the personal deadline and its index.",
+        "after_commit": "None. Snooze does not dispatch Stop.",
+        "ends_authority": false
+      },
+      "space_erasure": {
+        "before_reply": "Space admission tombstone and recovery-visible authority fence for every affected attempt, descendant and unresolved intent. Record cleanup before acknowledging erasure.",
+        "after_commit": "Stop affected attempts and reclaim space data only after verified teardown.",
+        "ends_authority": true
+      },
+      "account_erasure": {
+        "before_reply": "Account principal fence and a durable affected-space fence before publishing erasure. Retire that principal's attempts, descendants and pending intents. Hold affected spaces closed until reconciliation.",
+        "after_commit": "Stop affected exact attempts and finish account cleanup after teardown.",
+        "ends_authority": true
+      },
+      "membership_revocation": {
+        "before_reply": "Live membership generation and a durable affected-space fence for attempts, descendants and unresolved intents whose authority disappears.",
+        "after_commit": "Stop only attempts that lose their authority and reconcile scope cleanup.",
+        "ends_authority": true
+      },
+      "grant_change": {
+        "before_reply": "Changed effective grant or profile generation and a durable fence for attempts, descendants and intents whose admitted authority no longer holds. A widening grants no additional attempt rights.",
+        "after_commit": "Stop affected exact attempts and reconcile the grant or credential references.",
+        "ends_authority": true
+      },
+      "conversation_erasure": {
+        "before_reply": "Item deletion or purge fence, including affected admitted attempts, descendants and pending intents. Ordinary Trash of an active conversation requires the separately authorized Stop first.",
+        "after_commit": "Stop any affected live attempt on the authorized erase path, then finish bounded purge.",
+        "ends_authority": true
+      },
+      "session_or_job_retirement": {
+        "before_reply": "Invalidated session or scheduled principal, cancelled or replaced current job, and the corresponding attempt, descendant and intent fences.",
+        "after_commit": "Stop the affected attempts and retire their queued work.",
+        "ends_authority": true
+      },
+      "package_or_placement_retirement": {
+        "before_reply": "Invalidated package generation, enrollment, placement or runtime lease and durable fences for its affected attempts and intents.",
+        "after_commit": "Dispatch exact Stops where reachable and reconcile runtime teardown before releasing quota.",
+        "ends_authority": true
+      },
+      "cutover_retirement": {
+        "before_reply": "Old-writer generation and new-admission fence. Switch only after zero active attempts and zero unresolved execution intents. Keep earlier authorized retirement fences and refusals through switch or rollback.",
+        "after_commit": "Replay only outstanding cleanup for already retired attempts. Ordinary cutover issues no new Stop.",
+        "ends_authority": true
+      }
+    }
   }
 }

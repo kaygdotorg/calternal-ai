@@ -1,4 +1,4 @@
-# Plugin API v2 · revision 14.10 draft
+# Plugin API v2 · revision 14.11 draft
 
 The first contract covers host-drawn apps, generic items, durable jobs and
 generic conversation and execution engines. Freeze after the §8 spikes. Fixture bounds are test settings. See the
@@ -326,6 +326,17 @@ Reconcile that mark and committed receipts before allowing new effects.
 A marker or journal flush that does not make recovery authoritative is
 insufficient.
 
+**Ending attempt authority.** The catalogue's
+[`attempt_authority_end` table](../contract/host-catalogue-v2.json#/attempt_authority_end)
+defines the durable fence and post-commit work for each action. In
+confirmed archive the exact admitted-attempt fence and recovery work
+commit in the FULL archive transaction before the reply. Undo leaves the
+fence in force. Before dispatch or after a crash, the local committed
+fence already blocks renewal, queued tools, effects and egress, including
+descendant effects. Remote Stop and verified teardown consume the
+deduplicated recovery work after commit. Release quota after verified
+teardown. Snooze changes the actor's deadline only and schedules no Stop.
+
 If invalidation wins first, roll back provisional work and leave no success
 receipt or visible effect. If commit wins first, keep the effect and recover
 publication exactly once even if the response was lost or the actor later
@@ -508,8 +519,7 @@ attempt is still live, Send forwards checked text directly to
 `execution_input` without waking the plugin. The exact attempt is part
 of the prepared proof. A replacement requires a fresh preview. The host
 can issue Stop during Starting for either intent origin. Its context
-uses the shared exact-target rule. Stop fences an admitted attempt before
-remote dispatch. See §4.4 for protected archive and Undo.
+uses the shared exact-target rule and the attempt-authority table. See §4.4 for protected archive and Undo.
 
 **Resume after interruption or cutover.** Follow the sealed proposal
 §§A.3, A.5 and C.1. A proved saved provider session may be continued by
@@ -607,8 +617,10 @@ actionable only when the provider marks it approvable and the gateway can
 enforce that exact effect inside the attempt sandbox. A native
 `can_approve: false`, missing approvability, or unproved containment yields
 dismissal only. A card offers Approve with at least one lifetime and Deny
-without lifetimes. An actionable card includes the checked effect material
-required by the catalogue confirmation table. Resolve rechecks the live actor, request, approvability
+without lifetimes. The card uses the same named-material checker as an activation preview.
+Show the exact host-checked effect and its named material. Derive
+decisions and lifetimes from the offered actions when validating and
+rendering the card. The material list cannot supply them a second time. Resolve rechecks the live actor, request, approvability
 and the exact lifetime offered in the context. External effects use a
 separate protected broker action. A one-use decision gates the actual
 gateway dispatch of the checked effect. Replay cannot dispatch it again.
@@ -1111,6 +1123,11 @@ only against the issued context, never its current selection.
    entries from live checked inputs and effects, including manifest
    material inputs. The verifier checks table coverage, uniqueness and
    required material. Refuse a missing, empty or partial preview.
+   Manifest material keys appear as `input:<key>` and retain their declared
+   labels and checked values. Host keys are separate. A captured confirmation
+   must use the originating activation ID, resolution ref and challenge.
+   Apply the matching confirmation schema. Only prepared Send supplies
+   `final_text`.
    The host issues a one-use proof after the authorized protected control
    confirms the exact checked input. Check actor, scope, dependencies and
    fingerprint again at dispatch and consume the proof under the commit
@@ -1203,7 +1220,7 @@ revisions of all affected resources and refuses if any dependency moved.
 | `host.layout.section.create` | The per-person layout revision transaction creates the section and commits Undo that removes it. |
 | `host.layout.section.rename` | The same layout transaction commits the title change and its prior title for Undo. |
 | `host.layout.section.remove` | One per-person layout revision transaction retires the section and its placement generation and records Undo naming that generation. Retired generations are excluded from reads. Undo rechecks live membership and the post-effect layout revision and reactivates the exact generation in one transaction before its expiry. Reactivation grants no item access. Reclaim expired retired generations in bounded background batches. Removal and Undo perform no per-placement work. |
-| `host.item.archive` | Idle archive uses the shared execution-intent predicate in §3. Saved authority requires a challenge unless it consists only of thread grants that the Step 2 writer retires in the same FULL thread content transaction as archive and that Undo restores together with the thread head. Retiring grants with head-only Undo requires a challenge. Check shared intent admission and archive eligibility under the same commit fence. The FULL thread content transaction records archive and its unarchive Undo together. The current writer commits the head without Undo and enters a separate protected authority transaction, so the shortcut stays ineligible until the Step 2 writer passes. After it passes, eligible idle archive takes one full-swipe exchange without a sheet. For an active attempt the host says “The running execution will be stopped.” For any unresolved execution intent the confirmed path commits its durable refusal with archive and Undo under §3. |
+| `host.item.archive` | Idle archive uses the shared execution-intent predicate in §3. Saved authority requires a challenge unless it consists only of thread grants that the Step 2 writer retires in the same FULL thread content transaction as archive and that Undo restores together with the thread head. Retiring grants with head-only Undo requires a challenge. Check shared intent admission and archive eligibility under the same commit fence. The FULL thread content transaction records archive and its unarchive Undo together. The current writer commits the head without Undo and enters a separate protected authority transaction, so the shortcut stays ineligible until the Step 2 writer passes. After it passes, eligible idle archive takes one full-swipe exchange without a sheet. For an active attempt the host says “The running execution will be stopped.” The confirmed path applies the pinned-attempt fence or durable intent refusal in the archive transaction under the authority-ending table in §3. |
 | `host.item.unarchive` | The FULL thread content transaction records the new head and Undo. A full swipe may unarchive an eligible thread. |
 | `host.item.snooze` | Ineligible. Today’s writer stores one shared manual deadline. The actor-scoped operation stays unavailable until the Step 2 actor-keyed writer commits the actor’s deadline, index entry and Undo together. Apply §3’s shared snooze rule. |
 | `host.item.patch-metadata` | The room-checked FULL content transaction records the changed head and Undo for a single boolean toggle. Full swipe covers this case. |
@@ -1491,6 +1508,20 @@ Pass these end-to-end flows on the selected wall before app migration.
   write. Complete the remaining §7 cases for surfaces being enabled.
   Snapshot enablement awaits wall measurements and its own recovery proof.
 
+- **Attempt authority after commit.** For every row in the catalogue’s
+  attempt-authority table, cut after its durable commit but before reply
+  and before remote dispatch. Hold the actual carrier Stop and keep the
+  old process reachable for probes. Check renewal, broker effects,
+  queued tool dispatch and egress, including a descendant, before and
+  after recovery without releasing the Stop. For archive also commit
+  Undo before releasing Stop and repeat the probes. Require refusal on
+  the losing authority, no effect on an unrelated attempt and
+  recovery of only the deduplicated cleanup for the exact old IDs.
+  Snooze is the qualified no-stop control. Cutover catches stale old
+  writer claims while recovering prior authorized cleanup and adds no
+  new Stop. The paper traces check the contract. The real host gate
+  must prove the fences and recovery on the writer.
+
 - **Two-collection move writer.** Commit removal from the source,
   addition to the destination and Undo in one FULL content transaction.
   Verify crash recovery and restoration of both memberships on Undo.
@@ -1688,7 +1719,7 @@ See the [recorded answers](https://git.kayg.org/kayg/calternal-ai/src/commit/3ab
   qualifies. Scratch activation and Photos-scale I/O and metadata stay
   outside this revision.
 
-### Revision 14.10 draft questions and implementation seams
+### Revision 14.11 draft questions and implementation seams
 
 - Discovery rights, canonical writer and who owns a cross-runner list are
   separate owner questions in [the sealed proposal’s §C][generic-engines].

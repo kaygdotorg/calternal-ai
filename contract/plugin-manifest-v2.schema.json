@@ -484,7 +484,7 @@
         },
         "creates": { "$ref": "host-catalogue-v2.json#/$defs/KindId" },
         "material_inputs": {
-          "description": "Labels by input key for extra required material. The host enforces its own required preview fields.",
+          "description": "Labels by original input key for extra required material. The host writes each into the preview key space input:<key>. Host material occupies a separate key space.",
           "type": "object", "maxProperties": 32,
           "propertyNames": { "$ref": "#/definitions/localId" },
           "additionalProperties": { "$ref": "#/definitions/label" }
