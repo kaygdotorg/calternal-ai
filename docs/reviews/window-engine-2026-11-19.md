@@ -383,6 +383,27 @@ for a different operation. Its required power-cut evidence and append
 path do not define the Notes save latency fixture.
 [Thread append durability](../thread-append-durability.md).
 
+### Inherited HTTP save gate on both revisions
+
+On locked perf-01, the existing `calternal-perf` Notes scenario ran three
+warm AB/BA pairs with one space, 100,000 notes, the short varying body, and
+100 measured saves per arm. The harness provisioned the shared disposable
+seed through `85add29a` so both revisions could open independent copies
+of the same database. The candidate was `c32a5982`. The timed request,
+subscriptions and placement checks are those of the original scenario.
+All six arms completed and passed file placement checks.
+
+| Pair | Baseline notes.update p50 / p95 | Candidate notes.update p50 / p95 |
+| --- | ---: | ---: |
+| 0 | 37.184 / 61.269 ms | 38.110 / 56.630 ms |
+| 1 | 46.682 / 81.653 ms | 38.356 / 52.893 ms |
+| 2 | 37.387 / 55.879 ms | 37.833 / 52.152 ms |
+
+Every arm exceeded 40 ms p95. Candidate p95 improved in all three pairs.
+The inherited HTTP gate miss predates the projection, and the harness
+exited 1 for the reproduced breach. The separate 8 KiB/zero-idle engine
+regression at 1, 4 and 16 scopes remains open.
+
 ## Review gate
 
 The series was replayed onto `origin/dev` at `f41c3429`. The replay had
