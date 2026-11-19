@@ -16,3 +16,4 @@ jsonschema = { version = "=0.61.2", default-features = false }
 calternal-fsio.workspace = true
 tokio = { workspace = true, features = ["sync"] }
 uuid.workspace = true
+semver = "1.0"

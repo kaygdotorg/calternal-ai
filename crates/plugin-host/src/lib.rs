@@ -9,12 +9,14 @@
 mod bounded;
 mod input_diagnostics;
 mod registry;
+mod registry_v2;
 mod runtime;
 mod slots;
 /// Private wire protocol for an enrolled space runtime.
 pub mod space_channel;
 mod strict_json;
 pub use registry::*;
+pub use registry_v2::ManifestV2;
 pub use runtime::*;
 
 /// Safe boundary failure; never includes plugin input or secret values.
