@@ -76,6 +76,38 @@ impl Link {
         Self::build(base, address, reqwest::Client::builder())
     }
 
+    pub(crate) fn release_link(base: &str, address: Option<&ConnectAddress>) -> Result<Self> {
+        let url = reqwest::Url::parse(base)
+            .map_err(|_| Error::Protocol("machine updates require an HTTPS server".into()))?;
+        if url.scheme() != "https" {
+            return Err(Error::Protocol(
+                "machine updates require an HTTPS server".into(),
+            ));
+        }
+        Self::build(
+            base,
+            address,
+            reqwest::Client::builder().redirect(reqwest::redirect::Policy::none()),
+        )
+    }
+
+    pub(crate) async fn release_get(&self, path: &str) -> Result<reqwest::Response> {
+        let response = self
+            .http
+            .get(format!("{}{path}", self.base))
+            .timeout(Duration::from_secs(120))
+            .send()
+            .await?;
+        if response.status().is_success() {
+            Ok(response)
+        } else {
+            Err(Error::Status {
+                status: response.status().as_u16(),
+                message: "machine release unavailable".into(),
+            })
+        }
+    }
+
     fn build(
         base: &str,
         address: Option<&ConnectAddress>,

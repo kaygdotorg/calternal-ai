@@ -58,7 +58,17 @@ pub(super) type Svc = Option<Extension<Arc<MachineService>>>;
 /// Every machine route. Handlers answer 404 when no [`MachineService`]
 /// extension is installed (tests that build the router without one).
 pub fn routes<D: Directory>() -> Router<Shared<D>> {
+    let release_path = calternal_machine::release::PATH;
     Router::new()
+        .route("/install", get(super::install::installer))
+        .route(
+            &format!("{release_path}/version"),
+            get(super::install::version),
+        )
+        .route(
+            &format!("{release_path}/{{version}}/{{platform}}/{{asset}}"),
+            get(super::install::asset),
+        )
         .route("/api/v1/machine/enroll", post(enrol))
         .route("/api/v1/machine/session/start", post(session_start))
         .route("/api/v1/machine/session/finish", post(session_finish))
@@ -165,7 +175,12 @@ async fn erasure_status(svc: Svc, bytes: Bytes) -> Response {
     )
 }
 
-async fn sync(svc: Svc, headers: HeaderMap, bytes: Bytes) -> Response {
+async fn sync(
+    svc: Svc,
+    shutdown: Option<Extension<crate::shutdown::Shutdown>>,
+    headers: HeaderMap,
+    bytes: Bytes,
+) -> Response {
     reply(
         async {
             let svc = service(svc)?;
@@ -173,7 +188,9 @@ async fn sync(svc: Svc, headers: HeaderMap, bytes: Bytes) -> Response {
             let req: SyncRequest = body(&bytes)?;
             let (s, t) = (svc.clone(), token.clone());
             let machine = blocking(move || s.authenticate(&t)).await?;
-            let messages = svc.sync(machine, &token, req).await?;
+            let messages = svc
+                .sync_until(machine, &token, req, shutdown.as_ref().map(|ext| &ext.0))
+                .await?;
             Ok(SyncResponse { messages })
         }
         .await,
@@ -427,6 +444,7 @@ async fn read_output<D: Directory>(
     svc: Svc,
     Extension(who): Extension<Identity>,
     Path(exec): Path<Uuid>,
+    shutdown: Option<Extension<crate::shutdown::Shutdown>>,
     uri: Uri,
 ) -> Response {
     reply(
@@ -441,8 +459,12 @@ async fn read_output<D: Directory>(
             authorize(&state, &who, space)
                 .await
                 .map_err(|_| Error::not_found("exec not found"))?;
-            svc.read_output(me, exec, after, Duration::from_millis(wait_ms))
-                .await
+            tokio::select! {
+                result = svc.read_output(me, exec, after, Duration::from_millis(wait_ms)) => result,
+                () = crate::shutdown::wait(shutdown.as_ref().map(|ext| &ext.0)) => {
+                    Err(Error::unavailable("the server is shutting down"))
+                }
+            }
         }
         .await,
     )

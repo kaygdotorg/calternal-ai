@@ -94,6 +94,7 @@ pub struct Runner {
     slots: Mutex<HashMap<Uuid, Arc<Slot>>>,
     discards: Mutex<HashMap<Uuid, bool>>,
     parking: tokio::sync::Mutex<()>,
+    uploads: Arc<()>,
 }
 
 impl Runner {
@@ -106,6 +107,7 @@ impl Runner {
             slots: Mutex::new(HashMap::new()),
             discards: Mutex::new(HashMap::new()),
             parking: tokio::sync::Mutex::new(()),
+            uploads: Arc::new(()),
         }
     }
 
@@ -361,8 +363,10 @@ impl Runner {
                 exec_id,
                 argv,
                 stdin,
-                env,
+                mut env,
             } => {
+                env.retain(|(key, _)| key != "CALTERNAL_URL");
+                env.push(("CALTERNAL_URL".into(), self.link.base().to_owned()));
                 self.start_exec(
                     lease_id,
                     fence,
@@ -569,6 +573,14 @@ impl Runner {
             closed &= Self::close(&slot, slot.spec.worker.is_none()).await;
         }
         closed
+    }
+
+    pub(crate) async fn drain_outputs(&self) {
+        // After the session stops dispatching, the count can only fall. Each
+        // exec holds its reference until upload is acknowledged or fenced.
+        while Arc::strong_count(&self.uploads) > 1 {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
     }
 
     fn all(&self) -> Vec<Arc<Slot>> {
