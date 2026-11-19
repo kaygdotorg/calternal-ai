@@ -8,7 +8,7 @@ nothing in it is a promise of an implementation.
 The schema is checked with `python3 contract/verify-description.py` against the fixtures in `contract/fixtures/description-v2/` (valid ones must pass,
 `invalid-*` ones must fail). The fixtures are the paper exercises of section 9.
 
-Section ownership: **1 to 4, 6, 7, 10** native lane (first draft); **5 and the content node types, 9** web lane; **8** both. Each side edits its own sections and
+Section ownership: **1 to 4, 6, 7, 10** native lane (first draft); **5 (content nodes and host components) and 9** web lane; **8** both. Each side edits its own sections and
 rebases.
 
 ## 0. What a description is
@@ -186,17 +186,66 @@ How the native renderer draws it (the SwiftUI primitive for each part is in `doc
 (plain on a phone), rows are `Label` with `.badge`, actions are `swipeActions` and `contextMenu`, selectors are a segmented `Picker`, the footer is a bar with
 glass controls, the header is the system toolbar.
 
-## 5. Host components (web lane leads; native review notes inline)
+## 5. Content nodes and host components (web lane)
 
-Each is `{type, id, config}` in `$defs/Component`; the host draws it and receives its events directly (no page). Proposed configuration, to be settled by the web lane:
+### 5.0 Content nodes (`$defs/View`, `$defs/ContentNode`)
 
-| Component | Config | Events | Native review |
+A **view** is the content of the card for one place, as a sibling of chrome: `{version: 2, kind: "view", revision, title?, binds, root}`. It is data-free like chrome:
+binds are requests the host fills; a view never carries a row, a title of a person's item, a message, or HTML. It is drawn with each platform's own controls (Svelte on
+the web, SwiftUI natively); no plugin is written twice, and anything the vocabulary cannot say stays a **host component** (5.1), never plugin-drawn.
+
+| Node | Says | Embeds |
+| --- | --- | --- |
+| `stack` | children in a column or a row, optional title | nodes (depth at most 6, 200 nodes per view, 24 children per stack) |
+| `text` | fixed copy by the author: `title`, `heading`, `body`, `caption`, optional tone | nothing |
+| `notice` | a message panel (tone, title, detail) with an optional action | `invoke` |
+| `button` | an action, label from the invoke's `title`, `primary` or `quiet` | `invoke` |
+| `form` | named fields held on the device, one submit | `invoke` (its inputs read `{form, field}`) |
+| `list` | a bound list; `selectable` adds the keyboard model | `bind` by id (the bind's row template draws the rows) |
+| `detail` | labelled fields of one bound item | `bind` by id (an `item` source) |
+| `component` | a host component (5.1) | `Component` |
+
+* **No free layout.** There are no sizes, colours, fonts, margins or custom controls; spacing, type and motion come from the renderer's tokens, so the web and the
+  Mac and iPhone apps stay one product. Anything beyond the vocabulary is a request to extend it, not a hole to draw through.
+* **Forms** hold their values on the device. A field is checked there (required, length, `url`/`email`/`number`/`date` shape, `choice` among options) and the submit
+  is disabled while a required field is empty or invalid and while the action is pending. The values leave the device only inside the submit's resolved inputs
+  (`{form: id, field: fieldId}`), where the trusted preview (section 3.2) shows the person the material ones. After an `ok` outcome the fields clear (`clear: onOk`,
+  the default); after `error` or an unknown outcome they keep what was typed. Errors appear in a `notice` above the submit, never as loose text.
+* **Lists** are binds. `selectable: true` gives the keyboard model of `docs/native-feel.md` section 20 on every platform: Up/Down/Home/End/Page Up/Page Down move
+  the selection through ALL rows (drawn or not), the selection paints at once, and what the selection opens (a route change) happens when it settles (about 45 ms
+  after the last key, longer while a key repeats), cancelling the previous load. The selected row's id is the `selection` source for that bind.
+* **Selection is not state in the description.** A renderer reads "selected" from the list; a description never carries `selected`.
+* **Budgets** are the host's and the verifier's: at most 16 binds per view, 24 children per stack, depth 6, 200 nodes, 12 form fields, 4 KB per field value.
+
+### 5.1 Host components (`$defs/Component`, five types)
+
+Each is `{type, id, config}` with a typed `config` (a closed object: an unknown key is refused); the host draws it and receives its events directly (no page, no
+plugin code). A description can run a named **invoke** on a component's event where a config says so (`onTitleChange`, `onQuote`, `send`, `stop`); every other event
+is the host's alone.
+
+| Component | Config | Events (typed; handled by the host unless an invoke is named) | Native review |
 | --- | --- | --- | --- |
-| `item-editor` | `item` (value source: a route or selection reference), `mode` (`edit`/`read`) | `title-change` (an invoke of `host.item.rename`), `link-open` (host handles) | A native editor is a text view over the item's document; **live rooms are an attribute of the kind**, not of the component. A metadata-only save that does not rewrite the body is required (see 10). |
-| `turn-transcript` | `thread` (value source), window as a bind | `quote` (ask in side chat), `open-item` | A long, streaming list: an index-window list with the latest turn growing; the renderer appends. |
-| `composer` | `placeholder`, `enabled`, `send` (an `invoke`) | `draft` (device only), `send` | The draft text is held on the device and becomes operation input through `{draft: composerId}`; it is cleared only after `ok`, kept on `error`. |
-| `request-card` | `request` (value source naming the protected request record) | `resolve` (an invoke of `host.approval.resolve`) | There is **one** protected Inbox record and resolver for a job, a Turn and a host action, so the card needs no mechanism field; approve and deny show the material arguments (the trusted preview). |
-| `sealed-html-frame` | `content` (a digest, host-resolved), `height` policy | `resize`, `open-link` (host handles) | A web view without network, scripts only inside the frame; it cannot reach chrome. |
+| `item-editor` | `item` (route or selection, never a literal id), `mode` edit/read, `showTitle`, `onTitleChange` | `title-change` (the host saves through `host.item.rename`), `link-open`, `presence` (live rooms: an attribute of the item's KIND) | A text view over the item's document (a note's Markdown file directly: no second representation between the editor and the file, an owner rule). A metadata-only save must not rewrite the body. |
+| `turn-transcript` | `thread` (typed thread ref from route or selection), `follow` end/none, `window`, `onQuote` | `quote` (a selected passage), `open-item`, `scrolled-away`, `rendered` (see below) | A host-owned windowed list: the screenful at the end is read first and drawn, the rest follows in steps; rows are appended and updated by the host; heavy parts are the host's. |
+| `composer` | `target`, `placeholder`, `enabled`, `send` (an invoke), `attachments`, `mentions`, `stop` | `draft` (device only), `send`, `stop`, `attach`, `mention` | The draft is held on the device. A native composer is a text field with the system keyboard; attachments use the system pickers. |
+| `request-card` | `request` (typed request ref), `compact` | `resolve` (host.approval.resolve, from the host's own buttons) | One protected record and resolver for a job, a Turn and a host action; the card shows the material arguments (the trusted preview) and cannot be reordered, relabelled or covered by a plugin layout. |
+| `sealed-html-frame` | `frame` (a frame id), `minHeight`, `maxHeight` | `resize` (inside the caps), `open-link` (through the host) | A web view with no network and no top navigation; its message channel and sandbox are fixed by the host. |
+
+**Rules that hold for all five**
+
+* A component is **configured, not wrapped**: a description cannot place it inside anything that clips, scales or virtualises it, and cannot draw over a
+  `request-card`. Its size is the card's (the transcript and editor fill it; the composer is at the bottom; the frame reports its height inside the caps).
+* **Refs are typed.** `thread`, `item` and `request` take a value source that resolves to a reference of that type or the host refuses the description; the host
+  authorises the viewer for the ref (a guest's grant included) before anything is read. The description holds no viewer data.
+* **Drafts.** The composer's text and attachments stay on the device. At activation the host receives a **checked draft payload** (length, attachment count and
+  type, mention targets authorised by the host) and the person sees it as the material input of the send. The draft clears only after `ok`; `error` keeps it.
+* **Streaming** is the host's: the transcript's rows grow and change without a description revision; the host caps the update rate, commits a final message at the
+  end, and drops an in-flight load when the viewer moves to another thread (the old transcript load is cancelled, not finished).
+* **First screenful stamp.** When the transcript has drawn its first screenful the host sets `data-thread-rendered=<thread id>` (web), dispatches
+  `calternal:thread-rendered` and records the measure `calternal:thread:open`; the native app has its own equivalent. The budget is 150 ms from the viewer
+  settling on the thread (4x CPU slowdown as the stand-in for a slow device; today's numbers are in `docs/native-feel.md` section 20 and the open defect).
+* **Reduced motion and keyboard** follow `docs/native-feel.md` for everything a component draws.
+* **Events never carry worker payload.** A component event reaches a named invoke only as typed inputs (an id, a selected passage the person chose).
 
 ## 6. What may be cached on the device
 
@@ -236,51 +285,68 @@ What the renderer needs from the contract, and what it costs:
 8. **Touch targets** are 44 pt; the renderer, not the description, sizes controls.
 9. **The first paint** may come from the cache (section 6) before any host is reachable; therefore binds in the cached description have a defined stale state.
 
-## 9. Paper exercises (fixtures)
+## 9. Paper exercises (fixtures) (web lane)
 
-All three are in `contract/fixtures/description-v2/` and validate against the schema. What is written and what is not:
+Fixtures in `contract/fixtures/description-v2/`: chrome (`reading-list.json`, `notes-sidebar.json`, `threads-sidebar.json`, by the native lane) and views
+(`view-reading-list.json`, `view-note.json`, `view-thread.json`), plus `invalid-*` files that must fail (`invalid-view-literal-rows`, `invalid-form-field-type`,
+`invalid-component-config`, `invalid-component-no-send`, `invalid-node-html`, `invalid-view-deep`). Run `python3 contract/verify-description.py`.
 
-### 9.1 Community reading list: `reading-list.json`
+### 9.1 Community reading list (`reading-list.json` chrome, `view-reading-list.json` card)
 
-Written: a bound list of `reading-item` with a read mark and a per-row "Mark read" swipe action (`fullSwipe`, safe); an empty state; the header's Add invoke
-whose inputs come from a form on the device (`{form: add, field: url}` and `title`), with `url` as a material input.
-**Cannot be written yet (one item left):**
-* the **two-field add form itself**: a `form` content node with named fields (text, URL) that holds values on the device. The value source exists; the node is the
-  web lane's content vocabulary.
-* the **per-person reminder** is not a description feature: the plugins lane maps it to `notify_creator` on the existing scheduler; the description only renders the
-  reminders as another bind with a `due` mark (the one remaining need is the content `form` node for entering it).
+**Written:** a bound list of reading items (title, read mark, a per-row "Mark read" swipe action with `fullSwipe`, an empty state); a **two-field add form**
+(`form` node: title, address; the address is a material input of the add); a **per-person reminder**: a `reading-reminder` bind filtered `person eq viewer.person`
+(only the viewer's reminders are returned, authorised by the host) with a `date` field form whose submit names the selected reading item.
+**Cannot be written:**
+* **Notification when a reminder is due** is not a description feature (the plugins lane maps it to the scheduler's `notify_creator`); the description shows the reminders.
+* **Conditional fields** (show "repeat" only after a date), **custom validation messages** and rules beyond shape (https only), **edit in place** of an existing
+  item, **bulk selection** and **load more** (windows only) have no node.
 
-### 9.2 Notes: `notes-sidebar.json`
+### 9.2 Notes sidebar with thousands of notes, collections, Trash, rename with Undo (`notes-sidebar.json`, `view-note.json`)
 
-Written: Collections as a bound section (a row sets the `collection` route); Notes as a list bound to `route.collection`, filtered `trashed eq false`, newest first,
-paged by index windows (thousands of notes); a pinned mark; a swipe set (Pin, Trash with an undo outcome); a context menu **Rename with a prompt** whose result
-offers **Undo** (a host-owned reference, never worker payload); a Trash view (`trashed eq true`, a count from a bind in the selector, Restore with full swipe, **Empty
-Trash** as a destructive confirmed `host.trash.purge`); the footer search; the header's Share with `item` and `audience` as material inputs.
-**Cannot be written yet:**
-* sections **generated per collection** (a repeater over a bind); Collections is a navigation section instead.
-* the **frontmatter style setting** is a content/editor matter; its save is `host.item.patch-metadata`, which the plugins lane maps to `item_save`'s metadata arm
-  (revision-checked against the room-backed head under the CRDT write fence).
-* the **search results** presentation: the footer search names a `bind` in the schema but the fixture leaves it out (a search bind per kind needs the host's
-  search authorization).
+**Written:** collections as a bound section whose row sets the route; notes as a list bound to the route's collection, `trashed eq false`, newest first, in index windows
+with an exact count (thousands of rows cost a screenful); Trash as a bind with `trashed eq true` and a count in the selector; Restore with full swipe; Empty Trash as a
+confirmed destructive `host.trash.purge`; **rename with a prompt** whose outcome offers a host-owned **Undo**; the footer search; the editor as an `item-editor`
+component with the title renamed through the host. Selection through thousands of rows with the keyboard is `selectable` (section 5.0).
+**Cannot be written:**
+* **Bulk actions on a multi-selection** (the web's select mode: Trash or Share many): the `selection` source is one id; a set-valued source and a selection mode
+  are missing.
+* **Tag filter chips with counts** (options generated from a bind): a selector's options are literal; options from a bind are missing.
+* **Sections per collection** (a repeater over a bind) and **drag to move** a note into a collection: no repeater, no drag affordance.
+* **Share sheet**: `host.item.share` is an operation, but the sheet (people, groups, links, roles) is a host surface that is not one of the five components. It needs a sixth
+  host component or a built-in sheet defined by the host; the contract does not decide which.
+* **Inline rename in the sidebar** (type in place) is drawn as a shell prompt on every platform; the web's in-row editor is not expressible, and that difference should be
+  accepted deliberately.
 
-### 9.3 Threads: `threads-sidebar.json`
+### 9.3 Threads sidebar: Inbox of "waiting on me", a composer that sends, an approval card (`threads-sidebar.json`, `view-thread.json`)
 
-Written: an Inbox of **waiting on me** (`waiting_on eq viewer.person`) with a count in the selector; All Threads; provider icons from a field; a state mark; archive
-with undo; a card shown while the `requests` bind has rows, whose action names the first request through `{bind, field}`; the **side chat** as a transcript above a
-composer; a **composer that sends**: `turns.start` with `thread` from the route and `text` from `{draft: "composer"}`, keyed retry, pending and error shown; an approval
-**request-card** naming its mechanism (`turn-protected-request`).
-**Cannot be written yet:**
-* the **provider to icon** mapping is now writable: `icon: {field, map}` is a static map owned by the renderer over an authorized typed field (it needs no engine
-  permission); an unmapped value draws the kind's icon.
-* **approval** is a single protected Inbox record and resolver for a job, a Turn and a host action (plugins lane, part A), so no mechanism field remains.
-* streaming turns need the transcript to receive appended rows; the window protocol covers replacement, so appending needs `live` windows with an `offset` that
-  grows; fine, but a token-by-token update of the last row is not specified (the host republishes the row).
+**Written:** the Inbox as a bind (`waiting_on eq viewer.person`) with its count in the selector; All Threads; provider icons (a static map over a typed field); state marks;
+archive with Undo; the side chat as `turn-transcript` above a `composer`; a **composer that sends** (`turns.start` with the thread from the route and the text from
+`{draft: composer}`, keyed retry, pending and error shown, the draft cleared only after `ok`); an **approval** as a `request-card` over the protected request record; Stop
+while a turn runs; the first screenful stamp.
+**Cannot be written:**
+* **The composer's controls** (provider, model, reasoning level, permission, runs-on): typed choice controls whose values become operation inputs (`{control: id}`) are missing,
+  and the lists behind them (models per provider, machines) are binds the composer would need to reference.
+* **User-made sections with drag ordering** (the Threads sidebar's own layout) and **child threads nested under a parent row**: a row template has no depth, and ordering is a
+  person's layout stored by the host, with no contract for it.
+* **Snooze** needs a prompt that asks for a **date and time** (the `prompt` source asks for text); a choice of presets (an action sheet of invokes) works, a picker does not.
+* **Token-by-token text in a plain list row** is not needed (only the transcript streams), but a `list` cannot show live progress marks beyond a mark that updates with a new window.
+* The **selection-to-pane** link (selecting a thread opens it) is a route parameter set by the row's `open`; cancelling the previous load is the host's guarantee (5.1).
+
+### 9.4 What this schema needs from the host (authorisation is the plugins lane's)
+
+1. Authorise every bind (kind, collection, filters, sorts, search, output fields) and every ref (`item`, `thread`, `request`, `frame`) against the viewer, the space and a guest's
+   grant **before** any indexed work or read, and reject a field the audience cannot read instead of filtering it (counts and order leak otherwise).
+2. Classify each operation as reading, mutating or disclosing from the manifest, and name the material inputs the trusted preview shows; the description may only add.
+3. Resolve `{row}`, `{selection}`, `{form}`, `{draft}` and `{prompt}` sources against what was rendered (`renderedRevision`) and answer `stale` when it no longer holds.
+4. Provide the host built-ins named here (`host.item.rename`, `host.item.trash`, `host.undo`, `host.approval.resolve`, `host.panel.ask`, `host.turn.stop`, `host.route.set`) so a
+   swipe or a card never wakes a space runtime, and a **checked draft payload** for the composer.
+5. Own the transcript's streaming, appends, rate cap and final commit; and the frame's sandbox.
 
 ## 10. Open questions and what this contract does not decide
 
 1. `host.item.patch-metadata` (maps to `item_save`'s metadata arm) and `host.trash.purge` (confirmed, Manager or Owner, as a job) are the plugins lane's, part A.
 2. Reminders notify through `notify_creator` on the existing scheduler (plugins lane, part A).
-3. **Content node types** (form, text, list, card layouts) and how they embed `bind` and `invoke` (web lane; this document reserves `$defs.contentNode`).
+3. **Content node types** and the five host components: written in section 5 (web lane), exercised in section 9; the gaps are listed there and are the next vocabulary requests (set-valued selection, selector options from a bind, composer controls, a share-sheet component, a date prompt, nested rows).
 4. **Generic TCP** is outside this contract; the owner's decision is recorded elsewhere and is not a description concern.
 5. **Section repeaters** (one section per item of a bind) are deferred; navigation sections cover the cases above.
 6. The **retirement date of v1** is the owner's.
@@ -288,4 +354,4 @@ composer; a **composer that sends**: `turns.start` with `thread` from the route 
 ## 11. Sign-off
 
 * Native renderer lane: draft 1 written; review of sections 1 to 4, 6 to 8 is mine.
-* Web renderer lane: to review and lead; sections 5 and 9 are theirs.
+* Web renderer lane: sections 5 and 9 written (draft 2); the content vocabulary is closed (`stack text notice button form list detail component`), the five component configs are typed, and the verifier checks view depth (6) and node count (200). Sign-off waits for the native lane's review of 5 and for the plugins lane's answer on the host built-ins in 9.4.

@@ -1,0 +1,140 @@
+{
+  "version": 2,
+  "kind": "view",
+  "revision": 1,
+  "binds": [
+    {
+      "id": "waiting",
+      "source": {
+        "type": "list",
+        "kind": "request"
+      },
+      "fields": [
+        "title",
+        "thread"
+      ],
+      "filter": {
+        "all": [
+          {
+            "field": "pending_for",
+            "op": "eq",
+            "value": {
+              "viewer": "person"
+            }
+          },
+          {
+            "field": "thread",
+            "op": "eq",
+            "value": {
+              "route": "thread"
+            }
+          }
+        ]
+      },
+      "window": {
+        "size": 5,
+        "count": "exact"
+      },
+      "row": {
+        "title": {
+          "field": "title"
+        },
+        "icon": {
+          "kindIcon": true
+        }
+      }
+    }
+  ],
+  "root": {
+    "type": "stack",
+    "children": [
+      {
+        "type": "component",
+        "component": {
+          "type": "turn-transcript",
+          "id": "transcript",
+          "config": {
+            "thread": {
+              "route": "thread"
+            },
+            "follow": "end",
+            "onQuote": {
+              "id": "quote",
+              "title": "Ask in side chat",
+              "operation": "host.panel.ask",
+              "inputs": {
+                "text": {
+                  "selection": "text"
+                }
+              }
+            }
+          }
+        }
+      },
+      {
+        "type": "component",
+        "component": {
+          "type": "request-card",
+          "id": "approval",
+          "config": {
+            "request": {
+              "bind": "waiting",
+              "field": "id"
+            }
+          }
+        }
+      },
+      {
+        "type": "component",
+        "component": {
+          "type": "composer",
+          "id": "composer",
+          "config": {
+            "target": {
+              "route": "thread"
+            },
+            "placeholder": "Message",
+            "attachments": true,
+            "mentions": true,
+            "send": {
+              "id": "send",
+              "title": "Send",
+              "operation": "turns.start",
+              "inputs": {
+                "thread": {
+                  "route": "thread"
+                },
+                "text": {
+                  "draft": "composer"
+                }
+              },
+              "preview": {
+                "material": [
+                  "thread"
+                ]
+              },
+              "retry": "keyed",
+              "result": {
+                "show": [
+                  "pending",
+                  "error"
+                ]
+              }
+            },
+            "stop": {
+              "id": "stop",
+              "title": "Stop",
+              "operation": "host.turn.stop",
+              "inputs": {
+                "thread": {
+                  "route": "thread"
+                }
+              },
+              "retry": "safe"
+            }
+          }
+        }
+      }
+    ]
+  }
+}

@@ -60,10 +60,24 @@ def check(node, value, path, errors):
             elif extra is False: errors.append(f"{path}: unknown field {key}")
             elif isinstance(extra, dict): check(extra, v, f"{path}.{key}", errors)
 
+def view_limits(doc, errors):
+    """Limits a JSON schema cannot state: a view's content tree is at most 6 deep and 200 nodes (docs/description-contract.md, section 5.0)."""
+    count = 0
+    def walk(node, depth):
+        nonlocal count
+        count += 1
+        if depth > 6: errors.append("$.root: deeper than 6 levels"); return
+        for child in node.get("children", []) if isinstance(node, dict) else []: walk(child, depth + 1)
+    if isinstance(doc, dict) and doc.get("kind") == "view" and isinstance(doc.get("root"), dict):
+        walk(doc["root"], 1)
+        if count > 200: errors.append(f"$.root: {count} nodes (at most 200)")
+
 failed = False
 for file in sorted((root / "fixtures" / "description-v2").glob("*.json")):
     errors = []
-    check(schema, json.loads(file.read_text()), "$", errors)
+    doc = json.loads(file.read_text())
+    check(schema, doc, "$", errors)
+    view_limits(doc, errors)
     expect_invalid = file.name.startswith("invalid-")
     ok = bool(errors) if expect_invalid else not errors
     print(("ok   " if ok else "FAIL ") + file.name + ("" if ok else "  " + "; ".join(errors[:4])))

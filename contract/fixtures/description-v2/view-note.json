@@ -1,0 +1,51 @@
+{
+  "version": 2,
+  "kind": "view",
+  "revision": 1,
+  "binds": [
+    {
+      "id": "note",
+      "source": {
+        "type": "item",
+        "kind": "note",
+        "ref": {
+          "route": "note"
+        }
+      },
+      "fields": [
+        "title",
+        "updated",
+        "pinned"
+      ]
+    }
+  ],
+  "root": {
+    "type": "stack",
+    "children": [
+      {
+        "type": "component",
+        "component": {
+          "type": "item-editor",
+          "id": "editor",
+          "config": {
+            "item": {
+              "route": "note"
+            },
+            "mode": "edit",
+            "showTitle": true
+          }
+        }
+      },
+      {
+        "type": "detail",
+        "bind": "note",
+        "fields": [
+          {
+            "label": "Updated",
+            "field": "updated"
+          }
+        ]
+      }
+    ]
+  }
+}

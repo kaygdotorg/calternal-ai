@@ -1,0 +1,14 @@
+{
+  "version": 2,
+  "kind": "view",
+  "revision": 1,
+  "root": {
+    "type": "list",
+    "bind": "items",
+    "rows": [
+      {
+        "title": "typed by the plugin"
+      }
+    ]
+  }
+}

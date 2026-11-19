@@ -7,6 +7,9 @@
   "oneOf": [
     {
       "$ref": "#/$defs/Chrome"
+    },
+    {
+      "$ref": "#/$defs/View"
     }
   ],
   "$defs": {
@@ -966,31 +969,24 @@
       "description": "An attention card above the sidebar's rows: a title, a detail and up to two actions. A card that serves an approval is a `request-card` component (section 5 of the document)."
     },
     "Component": {
-      "type": "object",
-      "properties": {
-        "type": {
-          "enum": [
-            "item-editor",
-            "turn-transcript",
-            "composer",
-            "request-card",
-            "sealed-html-frame"
-          ]
+      "description": "A host component: a rich surface the host draws natively; the description only configures it, and its events go to the host (or to the named invoke), not to a page.",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/ItemEditor"
         },
-        "id": {
-          "$ref": "#/$defs/Id"
+        {
+          "$ref": "#/$defs/TurnTranscript"
         },
-        "config": {
-          "type": "object",
-          "description": "Per-component configuration, defined in docs/description-contract.md section 5 and validated by the host."
+        {
+          "$ref": "#/$defs/Composer"
+        },
+        {
+          "$ref": "#/$defs/RequestCard"
+        },
+        {
+          "$ref": "#/$defs/SealedHtmlFrame"
         }
-      },
-      "additionalProperties": false,
-      "required": [
-        "type",
-        "id"
-      ],
-      "description": "A host component: a rich surface the host draws natively and the description only configures. Its events go to the host, not to a page."
+      ]
     },
     "Header": {
       "type": "object",
@@ -1462,6 +1458,642 @@
         "state"
       ],
       "description": "Host to shell: the outcome of an invoke. `stale` means the rendered target changed before activation; the shell re-renders and the person acts again."
+    },
+    "ItemEditor": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "item-editor"
+        },
+        "id": {
+          "$ref": "#/$defs/Id"
+        },
+        "config": {
+          "type": "object",
+          "properties": {
+            "item": {
+              "$ref": "#/$defs/ValueSource",
+              "description": "The item to edit: a route parameter or the selection of a bind, never a literal id."
+            },
+            "mode": {
+              "enum": [
+                "edit",
+                "read"
+              ],
+              "default": "edit"
+            },
+            "showTitle": {
+              "type": "boolean",
+              "default": true,
+              "description": "The item's title is the first line of the editor and renames through host.item.rename."
+            },
+            "onTitleChange": {
+              "$ref": "#/$defs/Invoke",
+              "description": "Optional: run after the host has saved a title change (a route change, a status line). The save itself is the host's."
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "item"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "id",
+        "config"
+      ],
+      "description": "The item's editor, drawn by the host over the item's document (a note's Markdown file directly: there is no second representation between editor and file). Live rooms are an attribute of the item's KIND, not of this component; a metadata-only save does not rewrite the body."
+    },
+    "TurnTranscript": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "turn-transcript"
+        },
+        "id": {
+          "$ref": "#/$defs/Id"
+        },
+        "config": {
+          "type": "object",
+          "properties": {
+            "thread": {
+              "$ref": "#/$defs/ValueSource",
+              "description": "The thread (a typed thread reference from the route or the selection)."
+            },
+            "follow": {
+              "enum": [
+                "end",
+                "none"
+              ],
+              "default": "end",
+              "description": "Open at the end and stay there while the person reads the end; never pull a person who scrolled away."
+            },
+            "window": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 60,
+              "description": "Messages per read; the host reads the screenful first and the rest in steps."
+            },
+            "onQuote": {
+              "$ref": "#/$defs/Invoke",
+              "description": "Optional: what `quote` (a selected passage asked about) does, usually host.panel.ask with the passage as input {selection: text}."
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "thread"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "id",
+        "config"
+      ],
+      "description": "The conversation of one thread: a host-owned windowed list with its own streaming (the host appends and updates rows; the description never receives message text), scroll anchoring and loading in steps. Heavy parts (code, pictures, steps, cards) are the host's. The host stamps `calternal:thread-rendered` when the first screenful is drawn, and drops a load when the viewer moves to another thread."
+    },
+    "Composer": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "composer"
+        },
+        "id": {
+          "$ref": "#/$defs/Id"
+        },
+        "config": {
+          "type": "object",
+          "properties": {
+            "target": {
+              "$ref": "#/$defs/ValueSource",
+              "description": "What a send goes to: usually the thread reference from the route."
+            },
+            "placeholder": {
+              "type": "string",
+              "maxLength": 120
+            },
+            "enabled": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/ValueSource"
+                },
+                {
+                  "$ref": "#/$defs/Predicate"
+                }
+              ],
+              "description": "A literal or a predicate on a bind; absent means enabled."
+            },
+            "send": {
+              "$ref": "#/$defs/Invoke",
+              "description": "The invoke a send runs. Its inputs name the draft as {draft: <this composer's id>} and the target as {route|selection}; the host turns the composer's text and attachments into a CHECKED draft payload (length, attachment count and mime, mention targets authorised) before the operation sees them, and clears the draft only after an `ok` outcome (a failed send keeps it)."
+            },
+            "attachments": {
+              "type": "boolean",
+              "default": false
+            },
+            "mentions": {
+              "type": "boolean",
+              "default": false,
+              "description": "@-mentions and /commands the host offers; their targets are authorised by the host, never by the description."
+            },
+            "stop": {
+              "$ref": "#/$defs/Invoke",
+              "description": "Optional: what the Stop control runs while a turn is in flight (host.turn.stop)."
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "send"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "id",
+        "config"
+      ],
+      "description": "The message box. The draft text lives on the device (it survives a failed send and a route change within the session and is never published); it becomes operation input only through the {draft: id} value source at activation time, and is shown to the person as the material input of a send."
+    },
+    "RequestCard": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "request-card"
+        },
+        "id": {
+          "$ref": "#/$defs/Id"
+        },
+        "config": {
+          "type": "object",
+          "properties": {
+            "request": {
+              "$ref": "#/$defs/ValueSource",
+              "description": "The protected request (a typed request reference): from the route, the selection, or a field of a bind row."
+            },
+            "compact": {
+              "type": "boolean",
+              "default": false
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "request"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "id",
+        "config"
+      ],
+      "description": "A request or approval card. There is ONE protected request record and resolver for a job, a Turn and a host action, so the card names no mechanism. It shows the material arguments the host resolved (what is asked, for what, with which scope) and offers the host's own resolve actions (host.approval.resolve): the description cannot relabel, reorder or hide them, and a plugin layout can never cover the card."
+    },
+    "SealedHtmlFrame": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "sealed-html-frame"
+        },
+        "id": {
+          "$ref": "#/$defs/Id"
+        },
+        "config": {
+          "type": "object",
+          "properties": {
+            "frame": {
+              "$ref": "#/$defs/ValueSource",
+              "description": "A frame id (from an item field or the route): the host holds the content, so a description never carries HTML."
+            },
+            "minHeight": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1200,
+              "default": 120
+            },
+            "maxHeight": {
+              "type": "integer",
+              "minimum": 120,
+              "maximum": 1200,
+              "default": 600
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "frame"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "id",
+        "config"
+      ],
+      "description": "Sealed HTML from a plugin: shown in a frame the host sandboxes (no network, scripts only inside the frame, no top navigation, no access to chrome, a message channel the host fixes). The frame reports its size inside the caps; its links open through the host."
+    },
+    "FormField": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/Id"
+        },
+        "label": {
+          "type": "string",
+          "maxLength": 80
+        },
+        "input": {
+          "enum": [
+            "text",
+            "multiline",
+            "url",
+            "email",
+            "number",
+            "date",
+            "choice",
+            "toggle"
+          ]
+        },
+        "required": {
+          "type": "boolean",
+          "default": false
+        },
+        "maxLength": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4000,
+          "default": 200
+        },
+        "placeholder": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "initial": {
+          "$ref": "#/$defs/Literal"
+        },
+        "options": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "value": {
+                "type": "string",
+                "maxLength": 64
+              },
+              "label": {
+                "type": "string",
+                "maxLength": 80
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "value",
+              "label"
+            ]
+          },
+          "maxItems": 32,
+          "description": "For `choice`."
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "label",
+        "input"
+      ],
+      "description": "One field of a form: a typed control whose value is held on the device and checked there (required, length, url/email shape) before anything is sent."
+    },
+    "TextNode": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "text"
+        },
+        "text": {
+          "type": "string",
+          "maxLength": 2000
+        },
+        "style": {
+          "enum": [
+            "title",
+            "heading",
+            "body",
+            "caption"
+          ],
+          "default": "body"
+        },
+        "tone": {
+          "enum": [
+            "good",
+            "warn",
+            "bad"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "text"
+      ],
+      "description": "Fixed copy written by the description's author. Never viewer data: a person's titles come through a bind."
+    },
+    "NoticeNode": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "notice"
+        },
+        "tone": {
+          "enum": [
+            "good",
+            "warn",
+            "bad"
+          ],
+          "default": "warn"
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "detail": {
+          "type": "string",
+          "maxLength": 240
+        },
+        "action": {
+          "$ref": "#/$defs/Invoke"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "title"
+      ],
+      "description": "A message panel with an optional action (an error or a notice above a form, never loose text under a button)."
+    },
+    "ButtonNode": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "button"
+        },
+        "invoke": {
+          "$ref": "#/$defs/Invoke"
+        },
+        "style": {
+          "enum": [
+            "primary",
+            "quiet"
+          ],
+          "default": "quiet"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "invoke"
+      ],
+      "description": "An action as a button. The label is the invoke's title; the trusted-preview rule applies (the host resolves it against what was rendered)."
+    },
+    "FormNode": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "form"
+        },
+        "id": {
+          "$ref": "#/$defs/Id"
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "fields": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/FormField"
+          },
+          "minItems": 1,
+          "maxItems": 12
+        },
+        "submit": {
+          "$ref": "#/$defs/Invoke",
+          "description": "Its inputs read the fields as {form: <this id>, field: <field id>}; the submit control is disabled while a required field is empty or invalid and while the invoke is pending."
+        },
+        "clear": {
+          "enum": [
+            "onOk",
+            "never"
+          ],
+          "default": "onOk",
+          "description": "Clear the fields after an `ok` outcome; an error or unknown outcome keeps what was typed."
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "id",
+        "fields",
+        "submit"
+      ],
+      "description": "Named fields held on the device plus one submit action: the values reach the host only inside the invoke's resolved inputs, where the person sees the material ones."
+    },
+    "ListNode": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "list"
+        },
+        "bind": {
+          "$ref": "#/$defs/Id",
+          "description": "The id of a bind in `binds` whose source is a `list` or `search`; its row template draws the rows, so a list never carries rows."
+        },
+        "selectable": {
+          "type": "boolean",
+          "default": false,
+          "description": "Arrow keys move a selection through all rows (Up, Down, Home, End, Page Up, Page Down); the selected row's id is the `selection` source for this bind; what the selection opens loads only when it settles."
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 120
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "bind"
+      ],
+      "description": "A bound list. Windows, counts, live updates, empty/loading/error states and row actions come from the bind (sections 2 and 3)."
+    },
+    "DetailNode": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "detail"
+        },
+        "bind": {
+          "$ref": "#/$defs/Id",
+          "description": "A bind whose source is an `item`."
+        },
+        "fields": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "type": "object",
+            "properties": {
+              "label": {
+                "type": "string",
+                "maxLength": 60
+              },
+              "field": {
+                "$ref": "#/$defs/FieldName"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "label",
+              "field"
+            ]
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "bind",
+        "fields"
+      ],
+      "description": "Labelled fields of one bound item (a reminder's due date, a reading item's source)."
+    },
+    "StackNode": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "stack"
+        },
+        "axis": {
+          "enum": [
+            "vertical",
+            "horizontal"
+          ],
+          "default": "vertical"
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "children": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ContentNode"
+          },
+          "minItems": 1,
+          "maxItems": 24
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "children"
+      ],
+      "description": "Layout: children in a column or a row. Depth is at most 6 and a view has at most 200 nodes (checked by the host and by contract/verify-description.py). There is no free layout: no sizes, colours, fonts or margins."
+    },
+    "ComponentNode": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "component"
+        },
+        "component": {
+          "$ref": "#/$defs/Component"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "component"
+      ],
+      "description": "A host component placed in the card."
+    },
+    "ContentNode": {
+      "description": "What a view's card may contain: one closed vocabulary, every node drawn by the renderer's own controls on its platform, so no plugin is written twice.",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/TextNode"
+        },
+        {
+          "$ref": "#/$defs/NoticeNode"
+        },
+        {
+          "$ref": "#/$defs/ButtonNode"
+        },
+        {
+          "$ref": "#/$defs/FormNode"
+        },
+        {
+          "$ref": "#/$defs/ListNode"
+        },
+        {
+          "$ref": "#/$defs/DetailNode"
+        },
+        {
+          "$ref": "#/$defs/StackNode"
+        },
+        {
+          "$ref": "#/$defs/ComponentNode"
+        }
+      ]
+    },
+    "View": {
+      "type": "object",
+      "properties": {
+        "version": {
+          "const": 2
+        },
+        "kind": {
+          "const": "view"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "requires": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 16
+        },
+        "cache": {
+          "$ref": "#/$defs/Cache"
+        },
+        "binds": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Bind"
+          },
+          "maxItems": 16
+        },
+        "root": {
+          "$ref": "#/$defs/ContentNode"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "kind",
+        "revision",
+        "root"
+      ],
+      "description": "The content of the card for one place: data-free like chrome (binds are requests the host fills), drawn with the renderer's own controls. A view uses the same Bind and Invoke as chrome."
     }
   }
 }

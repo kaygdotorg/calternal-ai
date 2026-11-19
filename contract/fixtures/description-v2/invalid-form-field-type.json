@@ -1,0 +1,21 @@
+{
+  "version": 2,
+  "kind": "view",
+  "revision": 1,
+  "root": {
+    "type": "form",
+    "id": "f",
+    "fields": [
+      {
+        "id": "x",
+        "label": "X",
+        "input": "html"
+      }
+    ],
+    "submit": {
+      "id": "s",
+      "title": "Go",
+      "operation": "a.b"
+    }
+  }
+}
