@@ -63,7 +63,7 @@ describe("native chrome: the publisher", () => {
   });
   test("publishes a description with a rising revision when a store changes, and keeps the shell's answer", async () => {
     const chrome = vi.fn().mockResolvedValue({ native: true });
-    w.calternalNative = { chrome, log: vi.fn() };
+    w.calternalNative = { chrome, log: vi.fn(), chromeVersions: [1] } as never;
     registerChrome("threads", threadsChrome);
     view.chosen = "all";
     const stop = startNativeChrome(() => "threads");
@@ -141,42 +141,43 @@ describe("native chrome: the appearance and the schema form", () => {
 
 describe("native chrome: the compatibility rule", () => {
   const call = () => Promise.resolve({ native: true });
-  test("no call, or a shell that advertises contract versions without ours: native chrome stays off", () => {
+  test("no call, no chromeVersions (an older shell), an empty list or no common version: the page does not call and draws its own", () => {
     expect(chromeCompatible(undefined)).toBe(false);
     expect(chromeCompatible({})).toBe(false);
-    expect(chromeCompatible({ chrome: call, chromeContract: 2 })).toBe(false);
-    expect(chromeCompatible({ chrome: call, chromeContract: [2, 3] })).toBe(false);
+    expect(chromeCompatible({ chrome: call })).toBe(false);
+    expect(chromeCompatible({ chrome: call, chromeVersions: [] })).toBe(false);
+    expect(chromeCompatible({ chrome: call, chromeVersions: [2, 3] })).toBe(false);
   });
-  test("a shell that advertises ours, or none (one from before the negotiation), is tried", () => {
-    expect(chromeCompatible({ chrome: call, chromeContract: PAGE_CONTRACT })).toBe(true);
-    expect(chromeCompatible({ chrome: call, chromeContract: [1, 2] })).toBe(true);
-    expect(chromeCompatible({ chrome: call })).toBe(true);
+  test("a shell whose chromeVersions include the page's version is published to", () => {
+    expect(chromeCompatible({ chrome: call, chromeVersions: [PAGE_CONTRACT] })).toBe(true);
+    expect(chromeCompatible({ chrome: call, chromeVersions: [1, 2] })).toBe(true);
   });
-  test("an answer counts as native only when it says so, for our contract", () => {
+  test("an answer is native only when it says native true; a refusal with a reason is off", () => {
     expect(answerIsNative({ native: true })).toBe(true);
-    expect(answerIsNative({ native: true, contract: PAGE_CONTRACT })).toBe(true);
-    expect(answerIsNative({ native: true, contract: 2 })).toBe(false);
     expect(answerIsNative({ native: false })).toBe(false);
+    expect(answerIsNative({ native: false, reason: "unsupported-version", supported: [2] } as never)).toBe(false);
     expect(answerIsNative({} as never)).toBe(false);
     expect(answerIsNative(null)).toBe(false);
   });
-  test("a shell that draws a contract we do not speak is withdrawn and the page keeps its own chrome", async () => {
-    const chrome = vi.fn().mockResolvedValue({ native: true, contract: 2 });
-    w.calternalNative = { chrome, log: vi.fn() };
+  test("a refusal leaves the page's own chrome, and the log says why", async () => {
+    const chrome = vi.fn().mockResolvedValue({ native: false, reason: "unsupported-version", supported: [2] });
+    const log = vi.fn();
+    w.calternalNative = { chrome, log, chromeVersions: [1] } as never;
     registerChrome("threads", threadsChrome);
     const stop = startNativeChrome(() => "threads");
     flushSync();
     await new Promise((r) => requestAnimationFrame(() => r(null)));
     await Promise.resolve(); await Promise.resolve();
     expect(nativeChrome.native).toBe(false);
-    expect(chrome).toHaveBeenLastCalledWith(null);
+    expect(log.mock.calls.some((c) => String(c[0]).includes("refused: unsupported-version"))).toBe(true);
     stop(); delete w.calternalNative;
   });
-  test("a shell that advertises only another contract is never published to", () => {
-    const chrome = vi.fn();
-    w.calternalNative = { chrome, chromeContract: 9 } as never;
-    const stop = startNativeChrome(() => "threads");
-    expect(chrome).not.toHaveBeenCalled();
-    stop(); delete w.calternalNative;
+  test("a shell with no chromeVersions, or none in common, is never published to", () => {
+    for (const bridge of [{ chrome: vi.fn() }, { chrome: vi.fn(), chromeVersions: [9] }]) {
+      w.calternalNative = bridge as never;
+      const stop = startNativeChrome(() => "threads");
+      expect(bridge.chrome).not.toHaveBeenCalled();
+      stop(); delete w.calternalNative;
+    }
   });
 });
