@@ -549,10 +549,23 @@ impl Host {
         let version = Uuid::new_v4();
         let mut wire_rows = Vec::with_capacity(selected.len());
         let mut contexts = Vec::new();
-        if editor && !actions::row_actions(display.app, bind).is_empty() {
-            let protected: std::collections::HashSet<_> =
+        let row_actions = actions::row_actions(display.app, bind);
+        if editor && !row_actions.is_empty() {
+            let selected_ids: std::collections::HashSet<_> =
                 selected.iter().map(|row| row.id).collect();
-            actions::release_display_contexts(&mut live, lease, &protected);
+            let retained = live
+                .contexts
+                .values()
+                .filter(|context| {
+                    context.lease == lease.id
+                        && context.row.is_some_and(|id| selected_ids.contains(&id))
+                        && row_actions.contains(&context.action)
+                })
+                .count();
+            let needed = (selected.len() * row_actions.len())
+                .min(256)
+                .saturating_sub(retained);
+            self.release_display_contexts(&mut live, lease, &selected_ids, needed);
         }
         for row in &selected {
             let mut body = row.wire(bind, person);
@@ -656,7 +669,12 @@ impl Host {
             let actions = actions::row_actions(display.app, bind);
             let mut issued = self.mint_in(&mut live, lease, requested.clone(), actions);
             if !actions.is_empty() && issued.as_object().is_some_and(|map| map.is_empty()) {
-                actions::release_display_contexts(&mut live, lease, &[row].into_iter().collect());
+                self.release_display_contexts(
+                    &mut live,
+                    lease,
+                    &[row].into_iter().collect(),
+                    actions.len(),
+                );
                 issued = self.mint_in(&mut live, lease, requested, actions);
             }
             issued

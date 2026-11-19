@@ -92,7 +92,6 @@ pub(in crate::authority) fn row_actions(app: App, bind: &str) -> &'static [Actio
     }
 }
 
-
 pub(super) struct Receipt {
     outcome: Value,
     undo: Option<(Uuid, Uuid, &'static str, Value, Instant)>,
@@ -457,19 +456,33 @@ impl Host {
     }
 }
 
-pub(super) fn release_display_contexts(
-    live: &mut Volatile,
-    lease: &Lease,
-    protected: &std::collections::HashSet<Uuid>,
-) {
-    let pending = live
-        .resolutions
-        .values()
-        .map(|r| r.context)
-        .collect::<std::collections::HashSet<_>>();
-    live.contexts.retain(|id, context| {
-        context.lease != lease.id
-            || context.row.is_none_or(|row| protected.contains(&row))
-            || pending.contains(id)
-    });
+impl Host {
+    pub(super) fn release_display_contexts(
+        &self,
+        live: &mut Volatile,
+        lease: &Lease,
+        protected: &std::collections::HashSet<Uuid>,
+        needed: usize,
+    ) {
+        let excess = needed.saturating_sub(self.context_room(live, lease));
+        if excess == 0 {
+            return;
+        }
+        let pending: std::collections::HashSet<_> =
+            live.resolutions.values().map(|r| r.context).collect();
+        let evicted: Vec<_> = live
+            .contexts
+            .iter()
+            .filter(|(id, context)| {
+                context.lease == lease.id
+                    && context.row.is_some_and(|row| !protected.contains(&row))
+                    && !pending.contains(id)
+            })
+            .take(excess)
+            .map(|(id, _)| *id)
+            .collect();
+        for id in evicted {
+            live.contexts.remove(&id);
+        }
+    }
 }

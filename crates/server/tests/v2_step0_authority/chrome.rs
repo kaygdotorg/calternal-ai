@@ -303,6 +303,9 @@ async fn sealed_chrome_actions_at_scale() {
         .ok(&f.owner, "window", Some(lease), page("notes", 4996))
         .await;
     assert_eq!(fresh["rows"][0]["fields"]["title"], "Renamed deep row");
+    // An unrelated prefetch fitting the lease budget must leave this row usable.
+    f.ok(&f.owner, "window", Some(lease), page("notes", 4500))
+        .await;
     let collection = f.ok(&f.owner,"choice.options",None,json!({"type":"choice_options",
         "activation_context":fresh["activation_contexts"][0]["contexts"]["move"],"slot":"collection"})).await;
     assert_eq!(collection["bind"], "collections");

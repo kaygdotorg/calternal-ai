@@ -174,25 +174,6 @@ impl Host {
         actions: &[Action],
     ) -> Value {
         let mut result = serde_json::Map::new();
-        let spaces = state
-            .leases
-            .iter()
-            .filter(|(_, p)| self.views[&p.view].space == self.views[&lease.view].space)
-            .map(|(id, _)| *id)
-            .collect::<std::collections::HashSet<_>>();
-        let person = state
-            .leases
-            .iter()
-            .filter(|(_, p)| p.actor == lease.actor)
-            .map(|(id, _)| *id)
-            .collect::<std::collections::HashSet<_>>();
-        let count = |state: &Volatile, leases: &std::collections::HashSet<_>| {
-            state
-                .contexts
-                .values()
-                .filter(|c| leases.contains(&c.lease))
-                .count()
-        };
         let existing = |action: Action| {
             state.contexts.iter().find_map(|(id, prior)| {
                 (prior.lease == lease.id
@@ -207,7 +188,7 @@ impl Host {
             .map(|action| (*action, existing(*action)))
             .collect();
         let needed = issued.iter().filter(|(_, id)| id.is_none()).count();
-        if count(state, &spaces) + needed > 4096 || count(state, &person) + needed > 256 {
+        if needed > self.context_room(state, lease) {
             return json!({});
         }
         for (action, id) in issued {
@@ -222,6 +203,20 @@ impl Host {
             result.insert(action.name().into(), json!(id));
         }
         Value::Object(result)
+    }
+
+    pub(super) fn context_room(&self, state: &Volatile, lease: &Lease) -> usize {
+        let space = self.views[&lease.view].space;
+        let (mut viewer, mut space_count) = (0usize, 0usize);
+        for context in state.contexts.values() {
+            if let Some(issued) = state.leases.get(&context.lease) {
+                viewer += usize::from(issued.actor == lease.actor);
+                space_count += usize::from(self.views[&issued.view].space == space);
+            }
+        }
+        256usize
+            .saturating_sub(viewer)
+            .min(4096usize.saturating_sub(space_count))
     }
 
     pub(super) async fn open_view(&self, who: Identity, session: Uuid, id: Uuid) -> Reply<Value> {
