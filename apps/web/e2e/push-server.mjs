@@ -37,13 +37,13 @@ try {
   ok(listed.ok && typeof listed.data?.application_server_key === "string" && listed.data.devices.length === 0, "the server has a public key and no device yet", JSON.stringify(listed).slice(0, 200));
   await p.getByRole("button", { name: "Turn on for this device" }).click();
   await p.getByRole("button", { name: "Send a test" }).waitFor({ timeout: 20000 }).catch(() => {});
-  ok(await p.getByRole("button", { name: "Send a test" }).count() === 1, "turning on registers this device (push.subscribe) and the page shows it is on", (await p.getByRole("alert").innerText().catch(() => "")).slice(0, 160));
+  ok(await p.getByRole("button", { name: "Send a test" }).count() === 1, "turning on registers this device (push.subscribe) and the page shows it is on", (await p.getByRole("alert").allInnerTexts().catch(() => [])).join(" | ").slice(0, 160));
   const after = await op(p, "push.devices", {});
   ok(after.data?.devices?.some((d) => d.current), "the server lists this device as the current one", JSON.stringify(after.data?.devices ?? after).slice(0, 200));
   await p.getByRole("button", { name: "Send a test" }).click(); await p.waitForTimeout(800);
   ok(await p.getByText(/test notification is on its way/).count() === 1, "a test is queued (push.test)");
   await p.getByRole("button", { name: "Send a test" }).click(); await p.waitForTimeout(800);
-  ok(await p.getByRole("alert").count() === 1, "a second test within a minute is refused in words", (await p.getByRole("alert").innerText().catch(() => "")).slice(0, 160));
+  ok(await p.getByRole("alert").filter({ hasText: /minute/ }).count() === 1, "a second test within a minute is refused in words", (await p.getByRole("alert").allInnerTexts().catch(() => [])).join(" | ").slice(0, 200));
   await p.getByRole("button", { name: "Turn off" }).click(); await p.waitForTimeout(1000);
   ok(await p.getByRole("button", { name: "Turn on for this device" }).count() === 1 && !((await op(p, "push.devices", {})).data?.devices ?? []).length, "turning off removes the device (push.unsubscribe) and puts the page back");
   await b.close();
