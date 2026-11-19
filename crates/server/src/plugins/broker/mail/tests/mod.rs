@@ -11,98 +11,98 @@ use calternal_secrets::{RequestId, SecretValue};
 
 #[tokio::test]
 async fn mail_prompt_is_account_owned_and_connection_fenced() {
-    let root = tempfile::tempdir().unwrap();
-    let roots = calternal_roots::Roots {
-        appdata: root.path().join("appdata"),
-        userdata_ssd: root.path().join("ssd"),
-        userdata_hdd: root.path().join("hdd"),
-    };
-    let store = Store::open(
-        &roots,
-        Uuid::new_v4(),
-        true,
-        calternal_content::DEFAULT_RECEIPT_RETENTION,
-    )
-    .unwrap();
-    let directory = StoredDirectory::load_or_create(&roots.appdata).unwrap();
-    let identity = |role: &str| {
-        let token = std::fs::read(roots.appdata.join(format!("dev-tokens/{role}.token"))).unwrap();
-        directory.authenticate(&token).unwrap()
-    };
-    let owner = identity("owner");
-    let guest = identity("guest");
-    let spaces = directory.spaces.list(owner.id).unwrap();
-    let personal = spaces.iter().find(|space| space.personal).unwrap().id;
-    let shared = spaces.iter().find(|space| !space.personal).unwrap().id;
-    let manifest = serde_json::from_str(include_str!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../../plugins/calternal-mail/manifest.json"
-    )))
-    .unwrap();
-    let plugin = Plugin::new(
-        TrustedEntry {
-            id: "calternal-mail".into(),
-            version: "0.1.0".into(),
-            manifest: "manifest.json".into(),
-            worker: None,
-            worker_sha256: None,
-            default_enabled: true,
-        },
-        manifest,
-        None,
-    )
-    .unwrap();
-    assert!(!default_row(&plugin).enabled);
-    let actor = Actor::account(owner.id);
-    store
-        .provision_plugin(personal, actor.clone(), &plugin.kind_registrations(), &[])
-        .unwrap();
-    store
-        .set_plugin_enabled(
-            actor.clone(),
-            "enable-mail",
-            "plugins.enable",
-            "enable-mail",
-            personal,
-            &plugin.manifest.id,
-            default_row(&plugin),
+    tokio::task::spawn_blocking(|| {
+        let root = tempfile::tempdir().unwrap();
+        let roots = calternal_roots::Roots {
+            appdata: root.path().join("appdata"),
+            userdata_ssd: root.path().join("ssd"),
+            userdata_hdd: root.path().join("hdd"),
+        };
+        let store = Store::open(
+            &roots,
+            Uuid::new_v4(),
             true,
-            |_| json!({}),
+            calternal_content::DEFAULT_RECEIPT_RETENTION,
         )
         .unwrap();
-    let generation = activation(&store, personal, &plugin).unwrap().generation;
-    let state = Arc::new(AppState {
-        inputs: store.account_inputs(),
-        store,
-        directory,
-        registry: Registry::from_plugins(vec![plugin]),
-        workers: WorkerPool::new(None),
-        jobs: Jobs::disabled(),
-        allowed_hosts: allowed_hosts(0),
-        blocking: crate::blocking::RequestWorkers::new().unwrap(),
-    });
-    let plugin = state
-        .registry
-        .snapshot()
-        .get("calternal-mail")
-        .unwrap()
-        .clone();
-    let broker = |identity, space| {
-        SpaceHost::new(
-            state.clone(),
-            identity,
-            Session::Static,
-            space,
-            plugin.clone(),
-            generation,
-            "mail".into(),
+        let directory = StoredDirectory::load_or_create(&roots.appdata).unwrap();
+        let identity = |role: &str| {
+            let token = std::fs::read(roots.appdata.join(format!("dev-tokens/{role}.token"))).unwrap();
+            directory.authenticate(&token).unwrap()
+        };
+        let owner = identity("owner");
+        let guest = identity("guest");
+        let spaces = directory.spaces.list(owner.id).unwrap();
+        let personal = spaces.iter().find(|space| space.personal).unwrap().id;
+        let shared = spaces.iter().find(|space| !space.personal).unwrap().id;
+        let manifest = serde_json::from_str(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../plugins/calternal-mail/manifest.json"
+        )))
+        .unwrap();
+        let plugin = Plugin::new(
+            TrustedEntry {
+                id: "calternal-mail".into(),
+                version: "0.1.0".into(),
+                manifest: "manifest.json".into(),
+                worker: None,
+                worker_sha256: None,
+                default_enabled: true,
+            },
+            manifest,
+            None,
         )
-    };
-    let guest_id = guest.id;
-    let owner_broker = broker(owner, personal);
-    let shared_broker = broker(owner, shared);
-    let foreign_broker = broker(guest, personal);
-    tokio::task::spawn_blocking(move || {
+        .unwrap();
+        assert!(!default_row(&plugin).enabled);
+        let actor = Actor::account(owner.id);
+        store
+            .provision_plugin(personal, actor.clone(), &plugin.kind_registrations(), &[])
+            .unwrap();
+        store
+            .set_plugin_enabled(
+                actor.clone(),
+                "enable-mail",
+                "plugins.enable",
+                "enable-mail",
+                personal,
+                &plugin.manifest.id,
+                default_row(&plugin),
+                true,
+                |_| json!({}),
+            )
+            .unwrap();
+        let generation = activation(&store, personal, &plugin).unwrap().generation;
+        let state = Arc::new(AppState {
+            inputs: store.account_inputs(),
+            store,
+            directory,
+            registry: Registry::from_plugins(vec![plugin]),
+            workers: WorkerPool::new(None),
+            jobs: Jobs::disabled(),
+            allowed_hosts: allowed_hosts(0),
+            blocking: crate::blocking::RequestWorkers::new().unwrap(),
+        });
+        let plugin = state
+            .registry
+            .snapshot()
+            .get("calternal-mail")
+            .unwrap()
+            .clone();
+        let broker = |identity, space| {
+            SpaceHost::new(
+                state.clone(),
+                identity,
+                Session::Static,
+                space,
+                plugin.clone(),
+                generation,
+                "mail".into(),
+            )
+        };
+        let guest_id = guest.id;
+        let owner_broker = broker(owner, personal);
+        let shared_broker = broker(owner, shared);
+        let foreign_broker = broker(guest, personal);
         let mut request = json!({
             "connection": "inbox",
             "endpoint": {"host": "MAIL.example.test", "port": 993, "username": "reader"},
