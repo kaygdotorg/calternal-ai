@@ -171,6 +171,8 @@ def semantic(doc, errors, catalogue, manifest):
     cat_kinds = (catalogue or {}).get("kinds", {})
     man_ops = (manifest or {}).get("operations", {})
     man_kinds = (manifest or {}).get("kinds", {})
+    children_edges = {b_id: ((b.get("row") or {}).get("children") or {}).get("bind") for b_id, b in binds.items() if ((b.get("row") or {}).get("children") or {}).get("bind")}
+    repeat_rows = {n_["repeat"]["rows"] for _, n_ in walk(doc) if isinstance(n_, dict) and isinstance(n_.get("repeat"), dict) and "id" in n_ and "rows" in n_["repeat"]}
     for path, node in walk(doc):
         if isinstance(node, dict) and node.get("type") == "form" and "id" in node: forms[node["id"]] = path
         if isinstance(node, dict) and node.get("type") == "composer" and "id" in node: composers[node["id"]] = path
@@ -198,14 +200,29 @@ def semantic(doc, errors, catalogue, manifest):
                             if schema_in and name not in schema_in: errors.append(f"{path}: {op} has no input {name!r}")
                         for name in (entry.get("input_schema") or {}).get("required", []):
                             if name not in given: errors.append(f"{path}: {op} needs input {name!r}")
+                        owner_bind = None
+                        m_owner = re.match(r"^\$\.binds\[(\d+)\]", path)
+                        if m_owner: owner_bind = binds_list[int(m_owner.group(1))]
+                        owner_kind = ((owner_bind or {}).get("source") or {}).get("kind")
+                        owner_in_repeat = (owner_bind or {}).get("id") in repeat_rows
                         for name, source in given.items():
                             declared_type = ((schema_in.get(name) or {}).get("$ref") or "").rsplit("/", 1)[-1]
                             ctx_kind = source.get("context") if isinstance(source, dict) and set(source) == {"context"} else None
                             if declared_type == "LayoutEntryRef" and ctx_kind != "placement": errors.append(f"{path}: input {name!r} of {op} is a LayoutEntryRef: it takes {{context: placement}}")
-                            if declared_type == "ThreadRef" and ctx_kind not in ("item", None): errors.append(f"{path}: input {name!r} of {op} is a ThreadRef: it takes {{context: item}} or a route, not {{context: {ctx_kind}}}")
+                            if declared_type == "ThreadRef":
+                                if ctx_kind == "placement": errors.append(f"{path}: input {name!r} of {op} is a ThreadRef: it cannot take {{context: placement}}")
+                                if owner_in_repeat and ctx_kind != "item": errors.append(f"{path}: in the rows of a Section.repeat the row id is a placement (LayoutEntryRef): the ThreadRef input {name!r} of {op} must be {{context: item}}, not the bare row id")
+                                if ctx_kind == "item" and owner_kind != "threads": errors.append(f"{path}: {{context: item}} fills a ThreadRef only from a row of kind `threads`, not {owner_kind!r}")
                             if ctx_kind == "placement" and declared_type not in ("LayoutEntryRef", ""): errors.append(f"{path}: {{context: placement}} fills a LayoutEntryRef, not {declared_type}")
-                        if op == "host.layout.move_to" and (("thread" in given) == ("entry" in given)):
-                            errors.append(f"{path}: host.layout.move_to takes exactly one of `thread` (add an unplaced thread) or `entry` (move a placement)")
+                        for branches_key in ("oneOf", "anyOf"):
+                            branches = (entry.get("input_schema") or {}).get(branches_key)
+                            if branches:
+                                satisfied = [b for b in branches if all(r in given for r in b.get("required", []))]
+                                if (branches_key == "oneOf" and len(satisfied) != 1) or (branches_key == "anyOf" and not satisfied):
+                                    errors.append(f"{path}: {op} inputs {sorted(given)} satisfy {len(satisfied)} of the schema's {branches_key} branches")
+                        if op == "host.layout.move_to":
+                            if ("thread" in given) == ("entry" in given): errors.append(f"{path}: host.layout.move_to takes exactly one of `thread` (add an unplaced thread) or `entry` (move a placement)")
+                            if "section" not in given: errors.append(f"{path}: host.layout.move_to needs a `section` choice")
                         for name in entry.get("target_inputs", []):
                             if isinstance(given.get(name), dict) and "literal" in given[name]: errors.append(f"{path}: target input {name!r} of {op} cannot be a literal")
                 elif manifest is not None and op not in man_ops:
@@ -253,10 +270,9 @@ def semantic(doc, errors, catalogue, manifest):
         if rep.get("over") in parent_binds: errors.append(f"{sec_path}: repeat.over must be a top-level bind, not a per-parent one")
         if "bind" in sec or sec.get("rows"): errors.append(f"{sec_path}: a repeated section has no `bind` or literal `rows` of its own")
     referenced = set(children_edges.values())
-    repeat_rows = set()
     for sec_path, sec in [(p_, n_) for p_, n_ in walk(doc) if isinstance(n_, dict) and "repeat" in n_ and "id" in n_]:
         rep = sec["repeat"]
-        if rep.get("rows") in binds: referenced.add(rep["rows"]); repeat_rows.add(rep["rows"])
+        if rep.get("rows") in binds: referenced.add(rep["rows"])
         over = binds.get(rep.get("over"))
         if over is not None and (over.get("source") or {}).get("kind") != "layout_sections":
             errors.append(f"{sec_path}: repeat.over must be a bind that reads `layout_sections` (the per-person layout the host stores)")
@@ -267,6 +283,7 @@ def semantic(doc, errors, catalogue, manifest):
             m = re.match(r"^\$\.binds\[(\d+)\]", path)
             owner = binds_list[int(m.group(1))].get("id") if m else None
             if owner not in repeat_rows: errors.append(f"{path}: {{context: placement}} is legal only inside the rows of a Section.repeat")
+            elif owner in set(children_edges.values()): errors.append(f"{path}: this bind is both a section's rows and a child-rows bind: a placement operand would be usable from the child edge, where the row is no placement")
     def depth(bind_id, seen=()):
         if bind_id in seen: errors.append(f"$.binds: children cycle through {bind_id!r}"); return 0
         nxt = children_edges.get(bind_id)

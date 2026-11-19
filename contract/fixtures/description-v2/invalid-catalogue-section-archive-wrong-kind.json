@@ -1,0 +1,63 @@
+{
+  "version": 2,
+  "kind": "app",
+  "revision": 1,
+  "binds": [
+    {
+      "id": "layout",
+      "source": {
+        "type": "list",
+        "kind": "layout_sections"
+      },
+      "fields": [
+        "title"
+      ],
+      "row": {
+        "title": {
+          "field": "title"
+        }
+      }
+    },
+    {
+      "id": "rows",
+      "source": {
+        "type": "list",
+        "kind": "collections",
+        "parent": true
+      },
+      "fields": [
+        "title"
+      ],
+      "row": {
+        "title": {
+          "field": "title"
+        },
+        "menu": [
+          {
+            "id": "archive",
+            "title": "Archive",
+            "operation": "turns.archive",
+            "inputs": {
+              "thread": {
+                "context": "item"
+              }
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "chrome": {
+    "sidebar": {
+      "sections": [
+        {
+          "id": "mine",
+          "repeat": {
+            "over": "layout",
+            "rows": "rows"
+          }
+        }
+      ]
+    }
+  }
+}
