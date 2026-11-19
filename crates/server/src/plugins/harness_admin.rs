@@ -61,8 +61,7 @@ pub(crate) async fn dispatch<D: Directory>(
                 .map_err(|_| Error::not_found("space not found"))?;
             let machine = Uuid::parse_str(&request.machine_id)
                 .map_err(|_| Error::not_found("machine not found"))?;
-            let machines =
-                machines.ok_or_else(|| Error::unavailable("machines are not enabled"))?;
+            let machines = machines.ok_or_else(|| Error::conflict("machines are not enabled"))?;
             let plugin = state
                 .registry
                 .snapshot()

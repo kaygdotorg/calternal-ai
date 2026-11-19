@@ -58,7 +58,7 @@ pub(crate) async fn dispatch<D: Directory>(
         .await;
     }
     if row.id.starts_with("provider.sign_in.") {
-        let machines = machines.ok_or_else(|| Error::unavailable("machines are not enabled"))?;
+        let machines = machines.ok_or_else(|| Error::conflict("machines are not enabled"))?;
         return crate::provider_sign_in::dispatch(state, machines, person, session, row.id, input)
             .await;
     }
@@ -86,7 +86,7 @@ pub(crate) async fn dispatch<D: Directory>(
                 let i: RequestAskInput = decode(input)?;
                 let label = crate::question_form::label(&i.form)?;
                 let machines =
-                    machines.ok_or_else(|| Error::unavailable("machines are not enabled"))?;
+                    machines.ok_or_else(|| Error::conflict("machines are not enabled"))?;
                 let id = park(&st, &machines, &a, || {
                     st.jobs.agent_wait_request(
                         &a,

@@ -47,8 +47,16 @@ pub(super) fn outcome_value(outcome: Outcome) -> Result<Value, Error> {
         Outcome::InvalidInput(error) => Err(error),
         Outcome::Refused => Err(Error::forbidden("extension request was refused")),
         Outcome::Failed(e) => Err(e),
-        Outcome::Cancelled => Err(Error::unavailable("extension request was cancelled")),
+        Outcome::Cancelled => Err(Error::conflict("extension request was cancelled")),
     }
+}
+
+#[cfg(test)]
+#[test]
+fn cancelled_worker_invocation_is_a_conflict() {
+    let result = outcome_value(Outcome::Cancelled).unwrap_err();
+    assert_eq!(result.code, calternal_types::ErrorCode::Conflict);
+    assert_eq!(result.message, "extension request was cancelled");
 }
 
 /// A generated-UI view in a plugin result must be version 2, at most 64 KiB, and

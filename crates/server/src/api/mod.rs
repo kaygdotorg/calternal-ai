@@ -451,7 +451,7 @@ async fn operations<D: Directory>(State(state): State<Shared<D>>, req: Request) 
                             )
                             .await
                         }
-                        None => Err(Error::unavailable("machines are not enabled")),
+                        None => Err(Error::conflict("machines are not enabled")),
                     }
                 } else {
                     dispatch_scoped_inner(

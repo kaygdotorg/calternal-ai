@@ -295,7 +295,7 @@ async fn start<D: Directory>(
             &name,
         )
         .map_err(|_| Error::unavailable("Provider sign-in registration could not be read."))?
-        .ok_or_else(|| Error::unavailable("Provider sign-in is not configured."))
+        .ok_or_else(|| Error::conflict("Provider sign-in is not configured."))
     })
     .await?;
     let target = Target {

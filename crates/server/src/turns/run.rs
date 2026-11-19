@@ -244,7 +244,7 @@ async fn execute<D: Directory>(
         .await?
     };
     if shared_tool_provider == Some(SharedToolsProvider::Codex) && pin.is_none() {
-        return Err(Error::unavailable(
+        return Err(Error::conflict(
             "install the qualified Codex harness before enabling shared tools",
         ));
     }

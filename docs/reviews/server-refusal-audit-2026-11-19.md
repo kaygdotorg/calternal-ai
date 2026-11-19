@@ -23,8 +23,8 @@ The locations below are relative to `crates/server/src/`.
 | [api/wallpapers/mod.rs:77](../../crates/server/src/api/wallpapers/mod.rs#L77) | 429 | wallpaper service is busy |
 | [api/wallpapers/upstream.rs:121](../../crates/server/src/api/wallpapers/upstream.rs#L121) | 429 | wallpaper fetch limit reached |
 | [live.rs:144](../../crates/server/src/live.rs#L144) | 429 | space live subscriber limit reached |
-| [live_rooms.rs:95](../../crates/server/src/live_rooms.rs#L95) | 429 | live socket capacity is busy |
-| [live_rooms.rs:282](../../crates/server/src/live_rooms.rs#L282) | 429 | socket room limit reached |
+| [live_rooms.rs:97](../../crates/server/src/live_rooms.rs#L97) | 429 | live socket capacity is busy |
+| [live_rooms.rs:284](../../crates/server/src/live_rooms.rs#L284) | 429 | socket room limit reached |
 | [live_rooms/hub.rs:268](../../crates/server/src/live_rooms/hub.rs#L268) | 429 | live room capacity is busy. Retry shortly |
 | [live_rooms/hub.rs:381](../../crates/server/src/live_rooms/hub.rs#L381) | 429 | live room initial state capacity is busy |
 | [live_rooms/hub.rs:522](../../crates/server/src/live_rooms/hub.rs#L522) | 429 | live room output capacity is busy |
@@ -56,9 +56,16 @@ The locations below are relative to `crates/server/src/`.
 | [secrets.rs:165](../../crates/server/src/secrets.rs#L165) | 404 | operation has no host binding in this preview |
 | [turns/space_execution.rs:94](../../crates/server/src/turns/space_execution.rs#L94) | 409 | the space Owner must configure a shared machine |
 | [web_push/db.rs:206](../../crates/server/src/web_push/db.rs#L206) | 404 | Register this browser before sending a test |
-| [web_push/db.rs:235](../../crates/server/src/web_push/db.rs#L235) | 429 | Register this browser or wait a minute before testing again |
+| [web_push/db.rs:234](../../crates/server/src/web_push/db.rs#L234) | 429 | Register this browser or wait a minute before testing again |
 | [web_push/mod.rs:175](../../crates/server/src/web_push/mod.rs#L175) | 409 | Web push requires an HTTPS server |
 | [web_push/mod.rs:217](../../crates/server/src/web_push/mod.rs#L217) | 429 | Web push queue is busy |
+| [api/mod.rs:454](../../crates/server/src/api/mod.rs#L454) | 409 | Machine execution is disabled |
+| [api/plugins.rs:50](../../crates/server/src/api/plugins.rs#L50) | 409 | Invocation was explicitly cancelled |
+| [plugins/harness_admin.rs:64](../../crates/server/src/plugins/harness_admin.rs#L64) | 409 | Machine execution is disabled |
+| [requests.rs:61](../../crates/server/src/requests.rs#L61) | 409 | Machine execution is disabled |
+| [requests.rs:89](../../crates/server/src/requests.rs#L89) | 409 | Machine execution is disabled |
+| [provider_sign_in/mod.rs:298](../../crates/server/src/provider_sign_in/mod.rs#L298) | 409 | Installed provider has no sign-in registration |
+| [turns/run.rs:248](../../crates/server/src/turns/run.rs#L248) | 409 | Shared tools require a qualified Codex harness pin |
 
 ## Operational cases reviewed
 
@@ -67,14 +74,11 @@ A caller-facing refusal would need a distinct cause at the source.
 
 | Location | Result may depend on |
 | --- | --- |
-| [api/plugins.rs:50](../../crates/server/src/api/plugins.rs#L50) | Worker cancellation, shutdown, or lost execution |
 | [api/dispatch.rs:513](../../crates/server/src/api/dispatch.rs#L513) | Bundle availability and verification |
 | [api/sharing/guest.rs:72](../../crates/server/src/api/sharing/guest.rs#L72) | Guest document load or storage failure, with guest limits handled separately |
-| [requests.rs:61](../../crates/server/src/requests.rs#L61), [requests.rs:89](../../crates/server/src/requests.rs#L89) | Machine service availability |
-| [provider_sign_in/mod.rs:298](../../crates/server/src/provider_sign_in/mod.rs#L298) | Installed provider registration |
 | [machines/workers.rs:129](../../crates/server/src/machines/workers.rs#L129), [machines/workers.rs:243](../../crates/server/src/machines/workers.rs#L243), [machines/workers.rs:246](../../crates/server/src/machines/workers.rs#L246) | Lease readiness, missing pool enrollment, or disconnected pool |
 | [machines/admission.rs:230](../../crates/server/src/machines/admission.rs#L230), [machines/admission.rs:303](../../crates/server/src/machines/admission.rs#L303) | Sandbox availability and machine placement |
-| [turns/run.rs:158](../../crates/server/src/turns/run.rs#L158), [turns/run.rs:164](../../crates/server/src/turns/run.rs#L164), [turns/run.rs:248](../../crates/server/src/turns/run.rs#L248) | Installed provider, adapter, or qualified harness availability |
+| [turns/run.rs:158](../../crates/server/src/turns/run.rs#L158), [turns/run.rs:164](../../crates/server/src/turns/run.rs#L164) | Installed provider or adapter availability |
 | [turns/mod.rs:644](../../crates/server/src/turns/mod.rs#L644) | Installed plugin availability |
 
 ## Simplification opportunities
