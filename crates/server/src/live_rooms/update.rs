@@ -1,7 +1,6 @@
 //! Binary sync admission, durable check ordering, and protocol refusals.
 
 use super::*;
-use calternal_content::Request as WriteRequest;
 use calternal_types::ErrorCode;
 use yrs::{
     encoding::read::{Cursor, Read},
@@ -107,68 +106,15 @@ impl<D: Directory> Connection<D> {
             if let Some(end) = *member.termination.borrow() {
                 return Err(end.error());
             }
-            let (key, lineage, content, account) = (
-                member.key.clone(),
-                member.lineage.clone(),
-                self.content.clone(),
-                self.account,
-            );
-            let preview = member.lease.preview();
-            let result = disk(move || {
-                let mut data = Vec::with_capacity(bytes.len() + 128);
-                data.extend_from_slice(key.item.as_bytes());
-                data.extend_from_slice(lineage.as_bytes());
-                data.extend_from_slice(&bytes);
-                let fingerprint = crate::store::sha256_hex(&data);
-                let request_id = format!("room/{fingerprint:0>128}");
-                let operation = format!("{}.room-update", key.kind);
-                let request = WriteRequest {
-                    account,
-                    via: None,
-                    id: &request_id,
-                    operation: &operation,
-                    fingerprint: &fingerprint,
-                };
-                let apply = || {
-                    content.apply_room_update(
-                        key.space,
-                        &key.kind,
-                        key.item,
-                        &lineage,
-                        &bytes,
-                        request,
-                        |update| preview.publish(update),
-                    )
-                };
-                let mut result = apply();
-                if result.as_ref().err().is_some_and(|error| {
-                    error
-                        .details
-                        .as_ref()
-                        .and_then(|detail| detail["reason"].as_str())
-                        == Some("external_change")
-                }) && content.reconcile_room_file(key.space, &key.kind, key.item, account)?
-                {
-                    result = apply();
-                }
-                preview.finish(result.is_ok());
-                match result {
-                    Ok(_) => Ok(()),
-                    Err(error) => {
-                        if content
-                            .receipt(key.space, account, &request_id)?
-                            .is_some_and(|r| {
-                                r.operation == operation && r.fingerprint == fingerprint
-                            })
-                        {
-                            Ok(())
-                        } else {
-                            Err(error)
-                        }
-                    }
-                }
-            })
-            .await;
+            let result = member
+                .lease
+                .write(
+                    self.content.clone(),
+                    self.account,
+                    member.lineage.clone(),
+                    bytes,
+                )
+                .await;
             if let Err(error) = result {
                 if error
                     .details

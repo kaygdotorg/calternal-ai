@@ -396,6 +396,35 @@ impl Content {
         request: Request<'_>,
         preview: impl Fn(&[u8]) -> Result<()>,
     ) -> Result<Item> {
+        self.apply_room_updates(
+            space,
+            kind,
+            item,
+            lineage,
+            &[crate::RoomUpdate {
+                author: request.account,
+                bytes: update,
+            }],
+            request,
+            preview,
+        )
+    }
+
+    /// Commit the queued updates for one lineage together, preserving each
+    /// author's delta in order and publishing one resulting revision. A bad
+    /// update rolls back the whole group. Duplicate updates produce no row.
+    /// Cost: one checkpoint load and one shared durable commit for the group.
+    #[allow(clippy::too_many_arguments)]
+    pub fn apply_room_updates(
+        &self,
+        space: SpaceId,
+        kind: &str,
+        item: Uuid,
+        lineage: &str,
+        updates: &[crate::RoomUpdate<'_>],
+        request: Request<'_>,
+        preview: impl Fn(&[u8]) -> Result<()>,
+    ) -> Result<Item> {
         self.write_placed(
             space,
             Some(item),
@@ -404,7 +433,7 @@ impl Content {
             Value::Null,
             Body::Wire {
                 lineage,
-                update,
+                updates,
                 preview: &preview,
             },
             request,
@@ -680,6 +709,9 @@ impl Content {
             let item=Item {id,space,kind:kind.into(),metadata,bytes:bytes.into_owned(),revision:Staged::version(seq),updated_at:now_rfc3339()};
             if live && room.is_none() {
                 room = Some(s.seed_checkpoint(&item)?);
+            }
+            if let Some(checkpoint) = &mut room {
+                checkpoint.attribute(request.via);
             }
             let mut root = Staged {item,seq,path,expected,room};
             let mut candidates = Vec::new();

@@ -20,7 +20,7 @@ database until checkpointed. SQLite SHM, locks and sockets are runtime state.
 | Appdata `system/appearance.db` | Mixed | Appearance, new SQLite 1 baseline through the shared runner. Account preferences and original private uploads are authoritative. Shared manifests and eviction pins coordinate with the cache. The production baseline has no appearance database. |
 | Appdata `fonts-cache-v1/` | Derived | Version 1 directories of immutable WOFF2 bytes by family and digest. Startup verifies the published manifest and retires incomplete or orphan fills. |
 | Appdata `system/machines.db` | Authority | Machine placement, SQLite 6 initial schema, advanced to 7 on server startup by the automatic thread-title lease migration. Version 8 adds scoped harness leases. Version 9 adds shared-space execution bindings, the lease sponsor, and the isolated-tool opt-in, which defaults to off. Leases, fences, drain, work locations, discard and erase delivery, and the durable stop record that keeps an erased worker's machine slot reserved until its stop completes. |
-| Appdata `spaces/<id>/content.db` | Mixed | Content, SQLite 5. Item identity, revisions, pending placement, trash and tombstones, kinds, plugin controls, thread snooze state and sharing's collection membership. Version 6 adds live-room kinds and document checkpoints, version 7 adds Trash jobs, and version 8 adds rename jobs. Listing, labels and links are derived. |
+| Appdata `spaces/<id>/content.db` | Mixed | Content, SQLite 5. Item identity, revisions, pending placement, trash and tombstones, kinds, plugin controls, thread snooze state and sharing's collection membership. Version 6 adds live-room kinds and document checkpoints, version 7 adds Trash jobs, and version 8 adds rename jobs, and version 9 adds live update history. Listing, labels and links are derived. |
 | Appdata `spaces/<id>/index.db`, `secrets/spaces/<id>/head` | Authority | Space journal, SQLite 2 and binary CHW2. Journal, epoch, receipts and independent head witness. Receipts are pruned after the operator's retention (7 days by default) only on content's command, with every receipt of a surviving outbox intent pinned. The fence adds no stored state. |
 | Appdata `spaces/<id>/network.db` | Authority | Plugin network, SQLite 1, introduced after the production baseline. Per-person remote content preferences and bounded outbound audit metadata. Absent databases use the default and are initialized by the shared runner on the first saved preference. |
 | Appdata `spaces/<id>/jobs.db` | Authority | Jobs, SQLite 2. Admission, retry and in-flight state, checkpoints, event outbox and retention. Version 3 adds plugin signal waits and decision receipts. |
@@ -53,6 +53,14 @@ checkpoints and 16 MiB total. Purge removes them with the referenced revisions.
 The preceding writer ignores these tables. A head written without a
 checkpoint is a new lineage on the next live access. Older live bases cannot
 be merged automatically across that boundary.
+
+Content schema version 9 adds the append-only `room_history` table.
+It references existing revisions and shares their purge semantics.
+An older writer can still read and write its usual tables. On the
+first new capture after an older writer's edit, the current state is
+saved as a replay anchor before the next delta. Existing checkpoints,
+IDs and revisions keep their form. A fresh version 9 store declares
+compatibility with version 8 through the shared migration runner.
 
 The installed package catalog advances from SQLite version 1 to 2. The
 shared runner adds live editing to the original bundled Notes archive

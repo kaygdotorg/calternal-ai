@@ -25,6 +25,27 @@ a new lineage on demand. An explicit purge clears room checkpoints through
 the revision foreign key. See [Upgrades](upgrades.md) for the schema and
 the recovery contract.
 
+Each committed live revision also records the applied Yjs updates in
+`room_history`, ordered by revision and position within it. New items
+record their seed. Each edit keeps its authorized account, with agent
+or plugin provenance when supplied by the host. Outside edits are
+marked separately. An older writer can still use the content store.
+The next captured edit after an older writer records the pre-edit state
+as a replay anchor, so the intervening snapshot is recoverable without
+inventing the missing edit attribution.
+
+A room drains up to 32 queued wire updates across connections and 8 MiB
+of input in order into one content transaction, without a batching timer. Updates keep
+their own authors and commit with one checkpoint, revision and outbox
+intent. The receipt follows journal publication. An invalid update
+refuses the group before preview, then the writer tries each update in
+order so valid authors can continue. The queue holds at most 32 waiting
+updates and charges their bytes to the existing 512 MiB host room budget.
+
+A stored update is at most 8 MiB. As in the reference app, history is
+retained until permanent item purge, with no time or count pruning.
+Checkpoint pruning and receipt expiry do not trim it.
+
 One server owns the installation's locked roots for its lifetime.
 A second server cannot open those roots concurrently. After a crash the
 next owner replays committed publication intents and loads the saved

@@ -116,3 +116,152 @@ fn initial_state_is_read_only_and_wire_replay_keeps_the_same_lineage() {
     assert!(!folder.join(temp).exists());
     assert!(!folder.join(intent).exists());
 }
+
+#[test]
+fn room_history_replays_each_authors_delta_in_commit_order() {
+    replay_room_history(false);
+}
+
+#[test]
+fn grouped_room_updates_keep_two_authors_at_one_revision() {
+    replay_room_history(true);
+}
+
+fn replay_room_history(grouped: bool) {
+    use yrs::GetString;
+
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    let content = Content::open(
+        Roots {
+            appdata: root.join("appdata"),
+            userdata_ssd: root.join("ssd"),
+            userdata_hdd: root.join("hdd"),
+        },
+        root.join("secrets"),
+        std::time::Duration::ZERO,
+        calternal_content::DEFAULT_RECEIPT_RETENTION,
+        |_| {},
+    )
+    .unwrap();
+    let space = SpaceId::new();
+    let alice = AccountId::new();
+    let bob = AccountId::new();
+    let request = |account, id| Request {
+        account,
+        via: None,
+        id,
+        operation: "documents.update",
+        fingerprint: id,
+    };
+    content
+        .register_kind(
+            space,
+            "documents",
+            Placement::Visible {
+                folder: "Documents".into(),
+            },
+            FileFormat::Markdown,
+        )
+        .unwrap();
+    content.enable_live_editing(space, "documents").unwrap();
+    let item = content
+        .write(
+            space,
+            None,
+            "documents",
+            None,
+            json!({"title":"Document"}),
+            b"abc",
+            request(alice, "create"),
+            |_| json!({}),
+        )
+        .unwrap();
+    let state = content.room_snapshot(space, "documents", item.id).unwrap();
+    let client = Doc::new();
+    let text = client.get_or_insert_text("md");
+    client
+        .transact_mut()
+        .apply_update(Update::decode_v1(&state.update).unwrap())
+        .unwrap();
+    let inserted = {
+        let mut txn = client.transact_mut();
+        text.insert(&mut txn, 3, "!");
+        txn.encode_update_v1()
+    };
+    let deleted = {
+        let mut txn = client.transact_mut();
+        text.remove_range(&mut txn, 0, 1);
+        txn.encode_update_v1()
+    };
+    if grouped {
+        content
+            .apply_room_updates(
+                space,
+                "documents",
+                item.id,
+                &state.lineage,
+                &[
+                    calternal_content::RoomUpdate {
+                        author: bob,
+                        bytes: &inserted,
+                    },
+                    calternal_content::RoomUpdate {
+                        author: alice,
+                        bytes: &deleted,
+                    },
+                ],
+                request(bob, "group"),
+                |_| Ok(()),
+            )
+            .unwrap();
+    } else {
+        for (author, id, edit) in [(bob, "insert", &inserted), (alice, "delete", &deleted)] {
+            content
+                .apply_room_update(
+                    space,
+                    "documents",
+                    item.id,
+                    &state.lineage,
+                    edit,
+                    request(author, id),
+                    |_| Ok(()),
+                )
+                .unwrap();
+        }
+    }
+    drop(content);
+
+    let db = rusqlite::Connection::open(root.join(format!("appdata/spaces/{space}/content.db")))
+        .unwrap();
+    let mut rows = db.prepare(
+        "SELECT author, update_bytes, seq FROM room_history WHERE item=?1 AND lineage=?2 ORDER BY seq, ordinal"
+    ).unwrap();
+    let changes = rows
+        .query_map([item.id.to_string(), state.lineage], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, Vec<u8>>(1)?,
+                row.get::<_, i64>(2)?,
+            ))
+        })
+        .unwrap()
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .unwrap();
+    assert_eq!(changes.len(), 3);
+    assert_eq!(changes[1].2 == changes[2].2, grouped);
+    let replay = Doc::new();
+    let text = replay.get_or_insert_text("md");
+    for ((author, update, _), (expected_author, expected_text)) in
+        changes
+            .into_iter()
+            .zip([(alice, "abc"), (bob, "abc!"), (alice, "bc!")])
+    {
+        assert_eq!(author, expected_author.to_string());
+        replay
+            .transact_mut()
+            .apply_update(Update::decode_v1(&update).unwrap())
+            .unwrap();
+        assert_eq!(text.get_string(&replay.transact()), expected_text);
+    }
+}

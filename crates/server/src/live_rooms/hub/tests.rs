@@ -47,6 +47,10 @@ async fn last_grant_eviction_fences_preview_for_just_the_affected_account() {
     cut.changed().await.unwrap();
     assert_eq!(*cut.borrow(), Some(Termination::AccessRevoked));
     assert_eq!(*other.borrow(), None);
-    let error = alice.preview().publish(&[0, 0]).unwrap_err();
+    let error = alice
+        .room
+        .preview(alice.id)
+        .publish(&[0, 0], [])
+        .unwrap_err();
     assert!(super::super::access_revoked(&error));
 }

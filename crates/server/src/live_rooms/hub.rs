@@ -3,6 +3,7 @@ mod cache;
 mod presence;
 #[cfg(test)]
 mod tests;
+mod writes;
 use calternal_content::{Content, RoomSnapshot};
 use calternal_types::{AccountId, Error, SpaceId};
 use std::{
@@ -126,6 +127,7 @@ pub(super) struct Room {
     _cache_permit: OwnedSemaphorePermit,
     durability: watch::Sender<Durability>,
     next_file_scan: Mutex<Instant>,
+    writes: Mutex<writes::Queue>,
 }
 
 #[derive(Default)]
@@ -142,11 +144,13 @@ pub(super) struct Preview {
 }
 
 impl Preview {
-    pub(super) fn publish(&self, update: &[u8]) -> Result<(), Error> {
+    fn publish(&self, update: &[u8], others: impl IntoIterator<Item = Uuid>) -> Result<(), Error> {
         let participants = self.room.members.lock().unwrap();
-        let participant = participants.get(&self.member).ok_or_else(closed)?;
-        if let Some(end) = *participant.termination.borrow() {
-            return Err(end.error());
+        for member in std::iter::once(self.member).chain(others) {
+            let participant = participants.get(&member).ok_or_else(closed)?;
+            if let Some(end) = *participant.termination.borrow() {
+                return Err(end.error());
+            }
         }
         self.room.durability.send_modify(|state| {
             state.last += 1;
@@ -297,6 +301,7 @@ impl Hub {
                 _cache_permit: permit,
                 durability: watch::channel(Durability::default()).0,
                 next_file_scan: Mutex::new(Instant::now() + SCAN_INTERVAL),
+                writes: Mutex::default(),
             });
             rooms
                 .entry(key.space)
@@ -462,14 +467,6 @@ impl Lease {
         }
         *next = now + SCAN_INTERVAL;
         true
-    }
-
-    pub(super) fn preview(&self) -> Preview {
-        Preview {
-            room: self.room.clone(),
-            member: self.id,
-            generation: Cell::new(None),
-        }
     }
 
     pub(super) async fn wait_durable(&self) -> Result<(), Error> {

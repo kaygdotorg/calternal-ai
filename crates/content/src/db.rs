@@ -90,8 +90,10 @@ pub(crate) const SPACE_SCHEMA: calternal_store::migrations::Schema<'_> =
             (6, crate::rooms::SCHEMA),
             (7, crate::trash_job::SCHEMA),
             (8, crate::rename_job::SCHEMA),
+            (9, crate::rooms::HISTORY_SCHEMA),
         ],
-    );
+    )
+    .with_compatible_creation(8);
 
 pub(crate) fn database(
     path: &Path,
@@ -293,6 +295,19 @@ mod tests {
         ],
     );
 
+    const RENAME_RELEASE: Schema<'_> = Schema::new(
+        "space content.db",
+        3,
+        SPACE_INITIAL,
+        &[
+            (4, THREAD_SNOOZE),
+            (5, COLLECTION_MEMBERS),
+            (6, crate::rooms::SCHEMA),
+            (7, crate::trash_job::SCHEMA),
+            (8, crate::rename_job::SCHEMA),
+        ],
+    );
+
     #[test]
     fn baseline_threads_survive_the_snooze_migration_and_rollback_writer() {
         let conn = Connection::open_in_memory().unwrap();
@@ -405,6 +420,34 @@ mod tests {
     }
 
     #[test]
+    fn room_history_migration_keeps_v8_writes_and_fresh_reads_compatible() {
+        for fresh in [false, true] {
+            let conn = Connection::open_in_memory().unwrap();
+            if !fresh {
+                migrate_release(&conn, RENAME_RELEASE, false).unwrap();
+            }
+            migrate_release(&conn, SPACE_SCHEMA, true).unwrap();
+            calternal_store::migrations::migrate(&conn, RENAME_RELEASE).unwrap();
+            conn.execute_batch(
+                "INSERT INTO kinds VALUES('documents','[]');
+                 INSERT INTO items VALUES ('item','documents','{}','v1',1,'now','Doc.md','doc.md',NULL,'materialized',NULL);
+                 INSERT INTO versions VALUES ('item',1,'v1','{}',X'41','now','owner');
+                 INSERT INTO room_checkpoints VALUES('item',1,'lineage',X'0000');",
+            ).unwrap();
+            assert_eq!(
+                calternal_store::migrations::inspect(&conn, SPACE_SCHEMA).unwrap(),
+                9
+            );
+            assert_eq!(
+                conn.query_row("SELECT count(*) FROM room_history", [], |r| r
+                    .get::<_, i64>(0))
+                    .unwrap(),
+                0
+            );
+        }
+    }
+
+    #[test]
     fn room_migration_preserves_prior_writer_and_is_atomic() {
         let conn = Connection::open_in_memory().unwrap();
         migrate_release(&conn, SHARING_RELEASE, false).unwrap();
@@ -486,7 +529,7 @@ mod tests {
              INSERT INTO notes_trash_targets VALUES('job','note','v1');",
         )
         .unwrap();
-        migrate_release(&conn, SPACE_SCHEMA, true).unwrap();
+        migrate_release(&conn, RENAME_RELEASE, true).unwrap();
         assert_eq!(
             calternal_store::migrations::inspect(&conn, EMPTY_TRASH_RELEASE).unwrap(),
             8

@@ -52,7 +52,7 @@ pub use search::{
 mod revision_slice;
 mod rooms;
 use lifecycle::{Cache, Slot, spawn_sweeper, sweep};
-pub use rooms::{LiveEdit, LiveTextEdit, RoomSnapshot};
+pub use rooms::{LiveEdit, LiveTextEdit, RoomSnapshot, RoomUpdate};
 mod trash;
 mod trash_job;
 mod types;

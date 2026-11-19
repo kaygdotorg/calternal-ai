@@ -57,7 +57,7 @@ impl Staged {
         )
         .map_err(internal)?;
         if let Some(room) = &self.room {
-            room.write(tx, item.id, self.seq)?;
+            room.write(tx, item.id, self.seq, account)?;
         }
         Ok(())
     }

@@ -2,6 +2,9 @@
 //! with its content revision and outbox intent under the owning space lock.
 mod diff;
 mod external;
+mod history;
+pub(crate) use history::HISTORY_SCHEMA;
+use history::HistoryUpdate;
 pub(crate) mod style;
 mod wire;
 pub use wire::RoomSnapshot;
@@ -24,6 +27,14 @@ pub enum LiveEdit<'a> {
     Patch(&'a [LiveTextEdit]),
 }
 
+/// A single authenticated author's update in a room history commit.
+pub struct RoomUpdate<'a> {
+    /// Account whose authorized socket submitted this update.
+    pub author: calternal_types::AccountId,
+    /// Yjs version-one update bytes.
+    pub bytes: &'a [u8],
+}
+
 #[derive(Clone, Copy)]
 pub(crate) enum Body<'a> {
     Replace(&'a [u8]),
@@ -34,7 +45,7 @@ pub(crate) enum Body<'a> {
     },
     Wire {
         lineage: &'a str,
-        update: &'a [u8],
+        updates: &'a [RoomUpdate<'a>],
         preview: &'a dyn Fn(&[u8]) -> Result<()>,
     },
 }
@@ -48,8 +59,15 @@ impl Body<'_> {
             Self::Live(LiveEdit::Append(text)) => {
                 Content::validate_write_size(metadata, text.as_bytes())
             }
-            Self::Wire { update, .. } => {
-                if update.len() > MAX_STATE_BYTES {
+            Self::Wire { updates, .. } => {
+                if updates.is_empty()
+                    || updates.len() > 32
+                    || updates
+                        .iter()
+                        .map(|update| update.bytes.len().min(MAX_STATE_BYTES + 1))
+                        .sum::<usize>()
+                        > MAX_STATE_BYTES
+                {
                     return Err(Error::invalid_input("live update exceeds its size limit"));
                 }
                 Ok(())
@@ -101,6 +119,9 @@ struct Document {
 pub(crate) struct Checkpoint {
     lineage: String,
     state: Vec<u8>,
+    history: Vec<HistoryUpdate>,
+    has_history: bool,
+    via: Option<calternal_types::Via>,
 }
 
 impl Document {
@@ -134,15 +155,7 @@ impl Document {
 
     fn change(&self, body: Body<'_>) -> Result<Vec<u8>> {
         let edits = match body {
-            Body::Wire {
-                lineage, update, ..
-            } => {
-                if self.lineage != lineage {
-                    return Err(Error::conflict("room lineage changed")
-                        .with_details(serde_json::json!({"reason":"lineage_changed"})));
-                }
-                return wire::apply_client_update(&self.doc, update);
-            }
+            Body::Wire { .. } => unreachable!("wire groups are applied in order"),
             Body::Replace(bytes) | Body::Outside { bytes, .. } => {
                 let (_, text) = style::Style::split(markdown(bytes)?);
                 diff::edits(&self.text(), &text)
@@ -189,6 +202,9 @@ impl Document {
         Ok(Checkpoint {
             lineage: self.lineage.clone(),
             state,
+            history: Vec::new(),
+            has_history: false,
+            via: None,
         })
     }
 }
@@ -279,12 +295,18 @@ impl Space {
 
     fn checkpoint(&self, id: Uuid, seq: i64) -> Result<Option<Checkpoint>> {
         self.conn
-            .prepare_cached("SELECT lineage,state FROM room_checkpoints WHERE item=?1 AND seq=?2")
+            .prepare_cached(
+                "SELECT c.lineage,c.state,EXISTS(SELECT 1 FROM room_history h WHERE h.item=c.item AND h.seq=c.seq)
+                 FROM room_checkpoints c WHERE c.item=?1 AND c.seq=?2",
+            )
             .map_err(internal)?
             .query_row(params![id.to_string(), seq], |r| {
                 Ok(Checkpoint {
                     lineage: r.get(0)?,
                     state: r.get(1)?,
+                    history: Vec::new(),
+                    has_history: r.get(2)?,
+                    via: None,
                 })
             })
             .optional()
@@ -303,39 +325,86 @@ impl Space {
         body: Body<'_>,
     ) -> Result<(Vec<u8>, Checkpoint, Option<Vec<u8>>)> {
         let retained = self.checkpoint(current.id, seq)?;
+        let mut history = Vec::new();
         let live = match retained {
-            Some(checkpoint) => Document::load(checkpoint)?,
-            None if current.revision == base => Document::seed(current)?,
+            Some(checkpoint) => {
+                if !checkpoint.has_history {
+                    history.push(HistoryUpdate::new("anchor", checkpoint.state.clone()));
+                }
+                Document::load(checkpoint)?
+            }
+            None if current.revision == base => {
+                let doc = Document::seed(current)?;
+                history.push(HistoryUpdate::new("anchor", doc.checkpoint()?.state));
+                doc
+            }
             None => return Err(stale()),
         };
-        let preview = if base == current.revision {
-            let update = live.change(body)?;
-            matches!(body, Body::Wire { .. }).then_some(update)
-        } else {
-            let (base_seq, base_metadata): (i64, String) = self
-                .conn
-                .prepare_cached("SELECT seq,metadata FROM versions WHERE item=?1 AND revision=?2")
-                .map_err(internal)?
-                .query_row(params![current.id.to_string(), base], |r| {
-                    Ok((r.get(0)?, r.get(1)?))
-                })
-                .optional()
-                .map_err(internal)?
-                .ok_or_else(stale)?;
-            let checkpoint = self.checkpoint(current.id, base_seq)?.ok_or_else(stale)?;
-            if checkpoint.lineage != live.lineage {
-                return Err(stale());
+        let preview = if let Body::Wire {
+            lineage, updates, ..
+        } = body
+        {
+            if live.lineage != lineage {
+                return Err(Error::conflict("room lineage changed")
+                    .with_details(serde_json::json!({"reason":"lineage_changed"})));
             }
-            let base_metadata: Value = serde_json::from_str(&base_metadata).map_err(internal)?;
-            if matches!(body, Body::Replace(_)) && current.metadata != base_metadata {
-                if *metadata == base_metadata {
-                    *metadata = current.metadata.clone();
-                } else if *metadata != current.metadata {
-                    return Err(stale());
+            let before = (updates.len() > 1).then(|| live.doc.transact().state_vector());
+            let mut preview = vec![0, 0];
+            for update in updates {
+                let delta = wire::apply_client_update(&live.doc, update.bytes)?;
+                if delta != [0, 0] {
+                    if before.is_none() {
+                        preview = delta.clone();
+                    }
+                    history.push(HistoryUpdate::new("edit", delta).by(update.author));
                 }
             }
-            let fork = Document::load(checkpoint)?;
-            apply(&live.doc, &fork.change(body)?)?;
+            if let Some(before) = before
+                && history.iter().any(HistoryUpdate::is_edit)
+            {
+                preview = live.doc.transact().encode_diff_v1(&before);
+            }
+            Some(preview)
+        } else {
+            let update = if base == current.revision {
+                live.change(body)?
+            } else {
+                let (base_seq, base_metadata): (i64, String) = self
+                    .conn
+                    .prepare_cached(
+                        "SELECT seq,metadata FROM versions WHERE item=?1 AND revision=?2",
+                    )
+                    .map_err(internal)?
+                    .query_row(params![current.id.to_string(), base], |r| {
+                        Ok((r.get(0)?, r.get(1)?))
+                    })
+                    .optional()
+                    .map_err(internal)?
+                    .ok_or_else(stale)?;
+                let checkpoint = self.checkpoint(current.id, base_seq)?.ok_or_else(stale)?;
+                if checkpoint.lineage != live.lineage {
+                    return Err(stale());
+                }
+                let base_metadata: Value =
+                    serde_json::from_str(&base_metadata).map_err(internal)?;
+                if matches!(body, Body::Replace(_)) && current.metadata != base_metadata {
+                    if *metadata == base_metadata {
+                        *metadata = current.metadata.clone();
+                    } else if *metadata != current.metadata {
+                        return Err(stale());
+                    }
+                }
+                let fork = Document::load(checkpoint)?;
+                let update = fork.change(body)?;
+                apply(&live.doc, &update)?;
+                update
+            };
+            let source = if matches!(body, Body::Outside { .. }) {
+                "outside"
+            } else {
+                "edit"
+            };
+            history.push(HistoryUpdate::new(source, update));
             None
         };
         let file_bytes = match body {
@@ -343,28 +412,61 @@ impl Space {
             _ => &current.bytes,
         };
         let (style, _) = style::Style::split(markdown(file_bytes)?);
-        Ok((style.encode(&live.text()), live.checkpoint()?, preview))
+        let mut checkpoint = live.checkpoint()?;
+        checkpoint.history = history;
+        Ok((style.encode(&live.text()), checkpoint, preview))
     }
 
     pub(crate) fn seed_checkpoint(&self, item: &Item) -> Result<Checkpoint> {
-        Document::seed(item)?.checkpoint()
+        let mut checkpoint = Document::seed(item)?.checkpoint()?;
+        checkpoint
+            .history
+            .push(HistoryUpdate::new("seed", checkpoint.state.clone()));
+        Ok(checkpoint)
     }
 }
 
 impl Checkpoint {
-    pub(crate) fn rewrite(self, bytes: &[u8]) -> Result<Self> {
-        let doc = Document::load(self)?;
-        doc.change(Body::Replace(bytes))?;
-        doc.checkpoint()
+    pub(crate) fn attribute(&mut self, via: Option<&calternal_types::Via>) {
+        self.via = via.cloned();
     }
 
-    pub(crate) fn write(&self, tx: &Transaction<'_>, item: Uuid, seq: i64) -> Result<()> {
+    pub(crate) fn rewrite(mut self, bytes: &[u8]) -> Result<Self> {
+        let doc = Document::load(Checkpoint {
+            lineage: self.lineage.clone(),
+            state: std::mem::take(&mut self.state),
+            history: Vec::new(),
+            has_history: false,
+            via: None,
+        })?;
+        let update = doc.change(Body::Replace(bytes))?;
+        self.history.push(HistoryUpdate::new("edit", update));
+        self.state = doc.checkpoint()?.state;
+        Ok(self)
+    }
+
+    pub(crate) fn write(
+        &self,
+        tx: &Transaction<'_>,
+        item: Uuid,
+        seq: i64,
+        account: &str,
+    ) -> Result<()> {
         let item = item.to_string();
         tx.execute(
             "INSERT INTO room_checkpoints VALUES(?1,?2,?3,?4)",
             params![item, seq, self.lineage, self.state],
         )
         .map_err(internal)?;
+        history::record(
+            tx,
+            &item,
+            seq,
+            &self.lineage,
+            account,
+            self.via.as_ref(),
+            &self.history,
+        )?;
         tx.execute(
             "DELETE FROM room_checkpoints WHERE item=?1 AND seq IN (
                 SELECT seq FROM (SELECT seq,
