@@ -1,4 +1,5 @@
 //! Admit one immutable Markdown record and place it through the existing outbox.
+use super::group::{Group, named};
 use super::{io, proof, revision::Revision};
 use crate::{
     Content, Error, FaultPoint, Item, Request, Result, SpaceId, Summary,
@@ -11,7 +12,6 @@ use calternal_fsio::beneath::Folder;
 use rusqlite::{OptionalExtension, TransactionBehavior, params};
 use serde_json::{Value, json};
 use std::time::Instant;
-use super::group::{Group, named};
 use uuid::Uuid;
 
 pub(super) const IDENTITY_BYTES: usize = "calternal-id: ".len() + 36 + 1;
@@ -135,14 +135,17 @@ impl Content {
         receipt: impl FnOnce(&str) -> Value,
     ) -> Result<String> {
         let _actor = self.lifecycle.step(request.account.as_uuid())?;
-        let (revision, deadline) = self.stage_thread_record(space, id, base, metadata, record, request, receipt)?;
+        let (revision, deadline) =
+            self.stage_thread_record(space, id, base, metadata, record, request, receipt)?;
         // Give another prepared checkpoint a bounded chance to join this file
         // barrier. No space lock or async executor thread is held while waiting.
         if let Some(delay) = deadline.checked_duration_since(Instant::now()) {
             std::thread::sleep(delay);
         }
         self.with_space(space, |s| {
-            let saved = self.journals.receipt(&s.journal, request.account, request.id)?;
+            let saved = self
+                .journals
+                .receipt(&s.journal, request.account, request.id)?;
             if !saved.is_some_and(|receipt| receipt.fingerprint == request.fingerprint) {
                 return Err(blocked());
             }
@@ -192,7 +195,7 @@ impl Content {
             }
             let folder = Folder::open_existing(&s.files).map_err(internal)?;
             let stamp = proof::Stamp::new(&folder.file_identity(&head.path).map_err(proof::file_error)?);
-            let mut ready = s.require_proof(id, &head, head.seq, offset, stamp)?;
+            let mut ready = s.require_proof(id, &head, head.seq, offset, stamp.clone())?;
             if ready.stamp.len() != offset as u64 {
                 return Err(blocked());
             }
@@ -254,7 +257,6 @@ impl Content {
             Ok((revision, deadline))
         })
     }
-
 }
 
 impl Space {
@@ -289,7 +291,14 @@ impl Space {
         offset: usize,
         actual: proof::Stamp,
     ) -> Result<proof::Ready> {
-        self.require_proof_at(id, head, seq, offset, actual, head.file_hash.as_deref().ok_or_else(blocked)?)
+        self.require_proof_at(
+            id,
+            head,
+            seq,
+            offset,
+            actual,
+            head.file_hash.as_deref().ok_or_else(blocked)?,
+        )
     }
 
     pub(super) fn require_proof_at(
@@ -346,19 +355,34 @@ impl Space {
         item: &str,
         revision: &str,
     ) -> Result<bool> {
-        let batch = self.conn.prepare_cached(
-            "SELECT p.batch_start,i.seq,first.prior_digest
+        let batch = self
+            .conn
+            .prepare_cached(
+                "SELECT p.batch_start,i.seq,first.prior_digest
              FROM outbox o JOIN versions v ON v.item=o.item AND v.revision=o.revision
              JOIN items i ON i.id=v.item
              JOIN thread_revision_patches p ON p.item=i.id AND p.seq=i.seq
              JOIN thread_revision_patches first ON first.item=p.item AND first.seq=p.batch_start
              WHERE o.account=?1 AND o.request=?2 AND i.id=?3 AND o.revision=?4
-               AND i.mat_state='pending' AND v.seq=p.batch_start"
-        ).map_err(internal)?.query_row(params![account,request,item,revision], |r| Ok((
-            r.get::<_, i64>(0)?, r.get::<_, i64>(1)?, r.get::<_, String>(2)?,
-        ))).optional().map_err(internal)?;
-        let Some((first, last, prior)) = batch else { return Ok(false) };
-        let tx = self.conn.transaction_with_behavior(TransactionBehavior::Immediate).map_err(internal)?;
+               AND i.mat_state='pending' AND v.seq=p.batch_start",
+            )
+            .map_err(internal)?
+            .query_row(params![account, request, item, revision], |r| {
+                Ok((
+                    r.get::<_, i64>(0)?,
+                    r.get::<_, i64>(1)?,
+                    r.get::<_, String>(2)?,
+                ))
+            })
+            .optional()
+            .map_err(internal)?;
+        let Some((first, last, prior)) = batch else {
+            return Ok(false);
+        };
+        let tx = self
+            .conn
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(internal)?;
         let changed = tx.execute(
             "UPDATE items SET (metadata,revision,seq,updated_at) =
                   (SELECT metadata,revision,seq,updated_at FROM versions WHERE item=?1 AND seq=?2-1),
@@ -372,16 +396,17 @@ impl Space {
         tx.execute(
             "DELETE FROM outbox WHERE item=?1 AND revision IN
                 (SELECT revision FROM versions WHERE item=?1 AND seq BETWEEN ?2 AND ?3)",
-            params![item,first,last],
-        ).map_err(internal)?;
+            params![item, first, last],
+        )
+        .map_err(internal)?;
         tx.execute(
             "DELETE FROM versions WHERE item=?1 AND seq BETWEEN ?2 AND ?3",
-            params![item,first,last],
-        ).map_err(internal)?;
+            params![item, first, last],
+        )
+        .map_err(internal)?;
         tx.commit().map_err(internal)?;
         Ok(true)
     }
-
 }
 
 #[cfg(test)]

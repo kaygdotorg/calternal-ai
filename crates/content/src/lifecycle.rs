@@ -26,9 +26,9 @@ impl Slot {
     /// on right now counts as in use.
     pub(crate) fn in_use(&self) -> bool {
         match self.space.try_lock() {
-            Ok(space) => space
-                .as_ref()
-                .is_some_and(|s| s.pending_since.is_some() || s.published_appends.is_some() || !s.journal.is_unused()),
+            Ok(space) => space.as_ref().is_some_and(|s| {
+                s.pending_since.is_some() || s.published_appends.is_some() || !s.journal.is_unused()
+            }),
             Err(_) => true,
         }
     }

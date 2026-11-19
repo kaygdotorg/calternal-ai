@@ -113,18 +113,26 @@ impl Space {
     /// A receipt for the first patch proves the whole file group was synced
     /// before journal publication. Restore a lost placement mark on restart
     /// without changing an outside edit made after that publication.
-    pub(crate) fn recover_published_thread_group(&mut self, item: &str, revision: &str) -> Result<bool> {
+    pub(crate) fn recover_published_thread_group(
+        &mut self,
+        item: &str,
+        revision: &str,
+    ) -> Result<bool> {
         if self.append_group.is_some() {
             return Ok(false);
         }
-        let found = self.conn.query_row(
-            "SELECT i.seq,p.file_digest
+        let found = self
+            .conn
+            .query_row(
+                "SELECT i.seq,p.file_digest
              FROM items i JOIN thread_revision_patches p ON p.item=i.id AND p.seq=i.seq
              JOIN versions v ON v.item=i.id AND v.seq=p.batch_start
              WHERE i.id=?1 AND i.mat_state='pending' AND v.revision=?2",
-            params![item, revision],
-            |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)),
-        ).optional().map_err(internal)?;
+                params![item, revision],
+                |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)),
+            )
+            .optional()
+            .map_err(internal)?;
         let Some((seq, digest)) = found else {
             return Ok(false);
         };
@@ -158,20 +166,25 @@ impl Space {
         fault: fn(FaultPoint),
     ) -> Result<(proof::Ready, File)> {
         let records = {
-            let mut stmt = self.conn.prepare_cached(
-                "SELECT p.offset,p.witness,p.digest,p.prior_digest,p.file_digest,v.bytes
+            let mut stmt = self
+                .conn
+                .prepare_cached(
+                    "SELECT p.offset,p.witness,p.digest,p.prior_digest,p.file_digest,v.bytes
                  FROM thread_revision_patches p JOIN versions v USING(item,seq)
                  WHERE p.item=?1 AND p.seq BETWEEN ?2 AND ?3 AND p.batch_start=?2
-                 ORDER BY p.seq"
-            ).map_err(internal)?;
-            stmt.query_map(params![id.to_string(), first, head.seq], |r| Ok((
-                r.get::<_, u32>(0)? as usize + IDENTITY_BYTES,
-                r.get::<_, [u8; 32]>(1)?,
-                r.get::<_, [u8; 32]>(2)?,
-                r.get::<_, String>(3)?,
-                r.get::<_, String>(4)?,
-                r.get::<_, Vec<u8>>(5)?,
-            )))
+                 ORDER BY p.seq",
+                )
+                .map_err(internal)?;
+            stmt.query_map(params![id.to_string(), first, head.seq], |r| {
+                Ok((
+                    r.get::<_, u32>(0)? as usize + IDENTITY_BYTES,
+                    r.get::<_, [u8; 32]>(1)?,
+                    r.get::<_, [u8; 32]>(2)?,
+                    r.get::<_, String>(3)?,
+                    r.get::<_, String>(4)?,
+                    r.get::<_, Vec<u8>>(5)?,
+                ))
+            })
             .map_err(internal)?
             .collect::<rusqlite::Result<Vec<_>>>()
             .map_err(internal)?
@@ -186,10 +199,13 @@ impl Space {
         if length > last.0 + last.5.len() {
             return Err(blocked());
         }
-        let mut ready = self.require_proof_at(id, head, first - 1, records[0].0, stamp, &records[0].3)?;
+        let mut ready =
+            self.require_proof_at(id, head, first - 1, records[0].0, stamp, &records[0].3)?;
         let mut next = records[0].0;
         for (offset, witness, digest, prior, full, record) in records {
-            if offset != next || record.is_empty() || record.len() > RECORD_BYTES
+            if offset != next
+                || record.is_empty()
+                || record.len() > RECORD_BYTES
                 || ready.hasher.finalize().to_hex().as_str() != prior
                 || blake3::hash(&record).as_bytes() != &digest
             {
@@ -198,9 +214,14 @@ impl Space {
             next += record.len();
             fault(FaultPoint::BeforePlacement);
             io::place(
-                &mut file, length.min(next) as u64, offset as u64, witness.into(), &record,
+                &mut file,
+                length.min(next) as u64,
+                offset as u64,
+                witness.into(),
+                &record,
                 Folder::check_append_lease,
-            ).map_err(proof::file_error)?;
+            )
+            .map_err(proof::file_error)?;
             length = length.max(next);
             ready.advance(&record);
             if ready.hasher.finalize().to_hex().as_str() != full {

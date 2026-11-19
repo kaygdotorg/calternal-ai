@@ -64,7 +64,8 @@ fn append(
     } else if control {
         return Ok(());
     }
-    let prefix = document::prefix_bytes(&content.thread_prefix_for_append(space, id, &head.revision)?)?;
+    let prefix =
+        document::prefix_bytes(&content.thread_prefix_for_append(space, id, &head.revision)?)?;
     let mut frame = String::from("\n");
     if control {
         frame.push_str(records::CONTROL);

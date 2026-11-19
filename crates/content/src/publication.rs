@@ -56,7 +56,20 @@ impl Content {
                     r.get::<_,String>(6)?,r.get::<_,Option<String>>(7)?,r.get::<_,Option<String>>(8)?,r.get::<_,bool>(9)?,r.get::<_,i64>(10)?,r.get::<_,bool>(11)?,
                 )),
             ).optional().map_err(internal)?;
-            let Some((account, request, op, fp, id, revision, result, kind, state, place_related, rowid, append)) = row
+            let Some((
+                account,
+                request,
+                op,
+                fp,
+                id,
+                revision,
+                result,
+                kind,
+                state,
+                place_related,
+                rowid,
+                append,
+            )) = row
             else {
                 return Ok(());
             };
@@ -66,14 +79,17 @@ impl Content {
                 && space.append_group.is_none()
                 && let Some(item) = id.as_deref()
             {
-                self.journals.receipt(&space.journal, account.parse().map_err(internal)?, &request)?.is_some()
+                self.journals
+                    .receipt(&space.journal, account.parse().map_err(internal)?, &request)?
+                    .is_some()
                     && space.recover_published_thread_group(item, &revision)?
             } else {
                 false
             };
             #[cfg(not(target_os = "linux"))]
             let placement_already_durable = false;
-            if place_related && !placement_already_durable
+            if place_related
+                && !placement_already_durable
                 && let Err(error) = space.place_related(&account, &request, self.fault)
             {
                 #[cfg(target_os = "linux")]
@@ -143,7 +159,9 @@ impl Content {
             #[cfg(debug_assertions)]
             (self.fault)(crate::FaultPoint::AfterJournalCommit);
             if append {
-                let started = space.published_appends.map_or_else(Instant::now, |(_, at)| at);
+                let started = space
+                    .published_appends
+                    .map_or_else(Instant::now, |(_, at)| at);
                 space.published_appends = Some((rowid, started));
                 continue;
             }
@@ -176,9 +194,13 @@ impl Space {
         if started.elapsed() < Duration::from_secs(1) {
             return true;
         }
-        let result = self.conn.pragma_update(None, "synchronous", "FULL").and_then(|()| {
-            self.conn.execute("DELETE FROM outbox WHERE rowid<=?1", [through])
-        });
+        let result = self
+            .conn
+            .pragma_update(None, "synchronous", "FULL")
+            .and_then(|()| {
+                self.conn
+                    .execute("DELETE FROM outbox WHERE rowid<=?1", [through])
+            });
         if let Err(error) = result {
             tracing::warn!(space = %self.id, ?error, "append outbox retirement deferred");
             return true;
