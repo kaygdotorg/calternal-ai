@@ -274,9 +274,11 @@ fn lookup(c: &rusqlite::Connection, key: &[u8]) -> Result<Option<Live>> {
 /// Every live Installation of a user, newest first.
 pub(crate) async fn list(inner: &Inner, user: AccountId) -> Result<Vec<Installation>> {
     let now = now_ms();
+    // Room authorization samples the authority epoch around this session
+    // read. Only changes belong on the auth worker's write queue.
     inner
         .db
-        .run(move |c| {
+        .read(move |c| {
             let mut st = c
                 .prepare(
                     "SELECT i.id, i.kind, i.name, i.created_at, i.last_seen_at

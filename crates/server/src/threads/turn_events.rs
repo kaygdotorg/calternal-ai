@@ -4,7 +4,11 @@ use calternal_content::Content;
 use calternal_store::{Commit, ErrorCode, IdemWrite, SpaceStore, StampedEvent};
 use calternal_types::{AccountId, SpaceId};
 use serde_json::json;
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
+use tokio::time::Instant;
+
+const PAGE: i64 = 64;
+const RETIRE_DELAY: Duration = Duration::from_millis(250);
 
 /// Journal kind shared by publication and caller-scoped delivery.
 pub(crate) const KIND: &str = "threads.turn_state_changed";
@@ -71,37 +75,75 @@ impl Publisher {
         }
         let publisher = self.clone();
         tokio::spawn(async move {
+            let mut through = 0;
+            let mut retire_at = None;
+            let mut journal = None;
             loop {
-                if let Err(error) = publisher.drain(space, &conn).await {
-                    tracing::warn!(%space, %error, "saved turn journal publication deferred");
+                let more = match publisher
+                    .drain_page(space, &conn, &mut journal, &mut through)
+                    .await
+                {
+                    Ok(more) => more,
+                    Err(error) => {
+                        tracing::warn!(%space, %error, "saved turn journal publication deferred");
+                        false
+                    }
+                };
+                if through > 0 && retire_at.is_none() {
+                    retire_at = Some(Instant::now() + RETIRE_DELAY);
                 }
-                if !conn.continue_publication() {
-                    return;
+                if retire_at.is_some_and(|at| at <= Instant::now()) {
+                    let write = conn.clone();
+                    let retry = match blocking(move || write.retire_turn_events(through, PAGE))
+                        .await
+                    {
+                        Ok(retry) => retry,
+                        Err(error) => {
+                            tracing::warn!(%space, %error, "saved turn outbox retirement deferred");
+                            true
+                        }
+                    };
+                    retire_at = retry.then(|| Instant::now() + RETIRE_DELAY);
+                    if !retry {
+                        through = 0;
+                    }
                 }
+                if more || conn.continue_publication(retire_at.is_none()) {
+                    continue;
+                }
+                let Some(at) = retire_at else { return };
+                let _ = tokio::time::timeout_at(at, conn.wait_for_publication()).await;
             }
         });
     }
 
-    async fn drain(&self, space: SpaceId, conn: &Arc<JobDatabase>) -> Result<(), String> {
-        let content = self.content.clone();
-        let journal = blocking(move || content.live_journal(space)).await?;
-        loop {
-            let read = conn.clone();
-            let events = blocking(move || read_page(&read)).await?;
-            let Some(last) = events.last().map(|e| e.seq) else {
-                return Ok(());
-            };
-            for event in events {
-                event.publish(&journal).await?;
-            }
-            let write = conn.clone();
-            blocking(move || {
-                write
-                    .lock()?
-                    .execute("DELETE FROM saved_turn_events WHERE seq <= ?1", [last])
-            })
-            .await?;
+    /// Advance the in-memory frontier only after each durable journal
+    /// publication. A restart begins at zero and the event IDs deduplicate.
+    async fn drain_page(
+        &self,
+        space: SpaceId,
+        conn: &Arc<JobDatabase>,
+        journal: &mut Option<SpaceStore>,
+        through: &mut i64,
+    ) -> Result<bool, String> {
+        let read = conn.clone();
+        let after = *through;
+        let events = blocking(move || read_page(&read, after)).await?;
+        let more = events.len() == PAGE as usize;
+        if events.is_empty() {
+            return Ok(false);
         }
+        if journal.is_none() {
+            let content = self.content.clone();
+            *journal = Some(blocking(move || content.live_journal(space)).await?);
+        }
+        let journal = journal.as_ref().expect("opened above");
+        for event in events {
+            let seq = event.seq;
+            event.publish(journal).await?;
+            *through = seq;
+        }
+        Ok(more)
     }
 }
 
@@ -150,12 +192,13 @@ impl Event {
     }
 }
 
-fn read_page(conn: &JobDatabase) -> Result<Vec<Event>, rusqlite::Error> {
+fn read_page(conn: &JobDatabase, after: i64) -> Result<Vec<Event>, rusqlite::Error> {
     let conn = conn.lock()?;
     let mut stmt = conn.prepare_cached(
-        "SELECT seq,event_id,thread,job,account,state,reason_checkpoint FROM saved_turn_events ORDER BY seq LIMIT 64",
+        "SELECT seq,event_id,thread,job,account,state,reason_checkpoint
+         FROM saved_turn_events WHERE seq>?1 ORDER BY seq LIMIT ?2",
     )?;
-    stmt.query_map([], |row| {
+    stmt.query_map([after, PAGE], |row| {
         let account = row.get::<_, String>(4)?.parse().map_err(|e| {
             rusqlite::Error::FromSqlConversionFailure(4, rusqlite::types::Type::Text, Box::new(e))
         })?;
@@ -178,4 +221,87 @@ async fn blocking<T: Send + 'static, E: std::fmt::Display>(
     crate::blocking::spawn(move || run().map_err(|e| e.to_string()))
         .await
         .map_err(|e| e.to_string())?
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn saved_turn_retirement_batches_published_rows_and_replays_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let roots = calternal_roots::Roots {
+            appdata: dir.path().join("appdata"),
+            userdata_ssd: dir.path().join("ssd"),
+            userdata_hdd: dir.path().join("hdd"),
+        };
+        let content = Arc::new(
+            Content::open(
+                roots.clone(),
+                dir.path().join("secrets"),
+                Duration::from_secs(60),
+                calternal_content::DEFAULT_RECEIPT_RETENTION,
+                |_| {},
+            )
+            .unwrap(),
+        );
+        let jobs = crate::plugins::Jobs::open(&roots.appdata).unwrap();
+        let space = SpaceId::new();
+        let conn = jobs.conn(&space.to_string()).unwrap();
+        let account = AccountId::new().to_string();
+        let insert = |seq: i64| {
+            conn.lock()
+                .unwrap()
+                .execute(
+                    "INSERT INTO saved_turn_events VALUES
+                        (?1,'evt-'||?1,'thread','job',?2,'admitted','{}',unixepoch())",
+                    rusqlite::params![seq, account],
+                )
+                .unwrap();
+        };
+        insert(1);
+        insert(2);
+        let publisher = Publisher::new(content.clone());
+        let mut through = 0;
+        let mut journal = None;
+        assert!(
+            !publisher
+                .drain_page(space, &conn, &mut journal, &mut through)
+                .await
+                .unwrap()
+        );
+        assert_eq!(through, 2);
+        assert_eq!(read_page(&conn, 0).unwrap().len(), 2);
+        let mut after_restart = 0;
+        publisher
+            .drain_page(space, &conn, &mut journal, &mut after_restart)
+            .await
+            .unwrap();
+        assert_eq!(after_restart, through);
+        assert_eq!(content.journal(space).unwrap().len(), 2);
+        insert(3);
+
+        // A foreground transaction holds the SQLite write lock. The
+        // retirement connection returns promptly and leaves all rows.
+        let held = conn.lock().unwrap();
+        held.execute_batch("BEGIN IMMEDIATE").unwrap();
+        std::thread::scope(|scope| {
+            let (send, receive) = std::sync::mpsc::channel();
+            let db = &conn;
+            scope.spawn(move || {
+                let _ = send.send(db.retire_turn_events(through, 1));
+            });
+            let result = receive.recv_timeout(Duration::from_secs(2));
+            held.execute_batch("ROLLBACK").unwrap();
+            drop(held);
+            assert!(result.unwrap().unwrap());
+        });
+        assert_eq!(read_page(&conn, 0).unwrap().len(), 3);
+        assert!(conn.retire_turn_events(through, 1).unwrap());
+        assert_eq!(read_page(&conn, 0).unwrap()[0].seq, 2);
+        assert!(!conn.retire_turn_events(through, 1).unwrap());
+        let remaining = read_page(&conn, 0).unwrap();
+        assert_eq!(remaining.len(), 1);
+        assert_eq!(remaining[0].seq, 3);
+    }
 }

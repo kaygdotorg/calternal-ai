@@ -1642,7 +1642,7 @@
           ]
         },
         {
-          "description": "A caller or resource has reached a request limit (HTTP 429).",
+          "description": "A temporary refusal, such as a quota, cooldown, or unsettled authority (HTTP 429).",
           "type": "string",
           "enum": [
             "rate_limited"

@@ -225,9 +225,7 @@ async fn schedule_http<D: Directory>(
 pub(crate) fn failure(request_id: Option<String>, e: Error) -> Response {
     let status =
         StatusCode::from_u16(e.code.http_status()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
-    let retry_after = (e.code == ErrorCode::RateLimited)
-        .then(|| e.details.as_ref()?.get("retry_after_seconds")?.as_u64())
-        .flatten();
+    let retry_after = e.retry_after_ms().map(|ms| ms.div_ceil(1000));
     let mut resp = OperationResponse::<Value>::failure(request_id, e.code, e.message);
     if let (OperationResponse::Failure(f), Some(Value::Object(d))) = (&mut resp, e.details) {
         f.error.details = Some(d.into_iter().collect());
@@ -239,6 +237,16 @@ pub(crate) fn failure(request_id: Option<String>, e: Error) -> Response {
             .insert(header::RETRY_AFTER, HeaderValue::from(seconds));
     }
     response
+}
+
+#[cfg(test)]
+#[test]
+fn retry_after_header_rounds_up_from_milliseconds() {
+    let error = Error::rate_limited("Wait briefly.")
+        .with_retry_after(std::time::Duration::from_millis(250));
+    let response = error_response(error);
+    assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(response.headers()[header::RETRY_AFTER], "1");
 }
 
 /// Serialize `body` as a JSON response with `status`.

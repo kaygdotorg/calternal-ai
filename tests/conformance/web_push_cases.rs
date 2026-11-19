@@ -70,10 +70,10 @@ async fn subscriptions_follow_the_signed_in_browser_and_survive_restart() {
     );
     let seconds = cooldown.headers["retry-after"].parse::<u64>().unwrap();
     assert!((1..=60).contains(&seconds));
-    assert_eq!(
-        cooldown.body["error"]["details"]["retry_after_seconds"],
-        seconds
-    );
+    let millis = cooldown.body["error"]["details"]["retry_after_ms"]
+        .as_u64()
+        .unwrap();
+    assert_eq!(millis.div_ceil(1000), seconds);
     f.stop();
     f.start().await;
     let after = f.op(0, "push.devices", json!({})).await;

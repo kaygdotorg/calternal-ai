@@ -230,10 +230,9 @@ pub(super) fn admit_test(
         .optional()
         .map_err(unavailable)?
         .ok_or_else(unregistered)?;
-    let seconds = (test_after - now + 999) / 1000;
     Err(
         Error::rate_limited("Register this browser or wait a minute before testing again.")
-            .with_details(serde_json::json!({"retry_after_seconds":seconds})),
+            .with_retry_after(Duration::from_millis((test_after - now) as u64)),
     )
 }
 

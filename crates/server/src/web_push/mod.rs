@@ -215,7 +215,7 @@ pub(crate) async fn operation<D: Directory>(
                 let slot = push.queue.try_reserve().map_err(|error| match error {
                     tokio::sync::mpsc::error::TrySendError::Full(()) => {
                         Error::rate_limited("Web push queue is busy.")
-                            .with_details(json!({"retry_after_seconds":1}))
+                            .with_retry_after(Duration::from_secs(1))
                     }
                     tokio::sync::mpsc::error::TrySendError::Closed(()) => {
                         Error::unavailable("Web push is unavailable.")

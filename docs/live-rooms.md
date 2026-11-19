@@ -65,7 +65,9 @@ and the lineage of any persisted local copy. Accept `joined` only when
 `room` and `membership` match the pending join. Require `info.lineage`,
 verify `info.id` against the requested item UUID, and require
 `info.text === "md"` before binding. A `join_failed` control includes
-the public error. Drop frames for old memberships. Leave with the same
+the public error. If authority stays in transition, the code is
+`rate_limited` and `details.retry_after_ms` gives the delay before a fresh join.
+Drop frames for old memberships. Leave with the same
 address and nonce.
 
 Binary frames start with a lib0 var-string `@<membership>/<room>`,
@@ -103,7 +105,9 @@ edits across reconnect. A join refusal with error.code "conflict" and
 error.details.reason "lineage_changed" calls for recovering only the
 local diff from the last confirmed base. Retain the
 recovery intent when it cannot be applied safely. A transport rejoin
-or editor state alone must never clear the pending marker.
+or editor state alone must never clear the pending marker. Each reconnect
+checks current access. If the account lost View while disconnected, the
+new join returns `join_failed` with `error.code: "not_found"`.
 
 When an established membership loses View, the server sends a JSON text
 control with `type: "left"`, the `room` and `membership`, and
@@ -124,7 +128,18 @@ even value it observed before and after a successful check. An odd value
 pauses delivery. The next packet on that membership revalidates View
 after an epoch change, with no eager scan of other memberships. Join
 checks View and writes check Edit. The post-commit eviction hook cuts
-off queued frames for recipients who lost their last grant.
+off queued frames for recipients who lost View. A surviving grant or
+space role can still authorize the account.
+
+Once the revoke commits, the host stops admitting edits from that
+membership and approving room frames for its transport. Edit admission uses a stable
+authority revision. An edit already admitted can finish for peers who
+still have View. If eviction reaches the writer before its preview enters
+fanout, the edit is aborted. Each frame needs a current View decision
+after its WebSocket is writable, even when the update was accepted and
+queued earlier. The host submits an approved frame in the same poll.
+A handoff approved before commit can finish, and bytes already in
+WebSocket or operating-system buffers can arrive after commit.
 
 On a stable epoch a production peer frame uses one current session
 statement, zero item or grant statements, and zero plugin activation

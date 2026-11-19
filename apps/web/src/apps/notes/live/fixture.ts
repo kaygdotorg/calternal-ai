@@ -39,6 +39,9 @@ export function fixtureTransport(noteId: string, text: string, lineage: () => st
   if (!room) { room = roomFor(noteId, text); rooms.set(noteId, room); const q = new URLSearchParams(location.search); if (q.get("peer") !== "0") { collaborator(room); for (let k = 2; k <= Math.min(12, Number(q.get("peers") ?? 1)); k++) joiner(room, k); } } // `?peer=0`: alone in the room (the typing measurement)
   const r = room;
   const t = memoryTransport(() => r, lineage, onLineage);
+  // The in-memory room answers on the same thread as the page, which a real server does not: its work is moved a little after the keystroke instead of into its frame (order is kept: every send waits the same time).
+  const sendNow = t.send.bind(t);
+  t.send = (d) => void setTimeout(() => sendNow(d), 30);
   let down = false;
   const connect = t.connect.bind(t);
   const closes: Array<(code: number, reason: string) => void> = [];

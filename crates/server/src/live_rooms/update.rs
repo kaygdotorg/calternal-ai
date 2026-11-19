@@ -94,6 +94,9 @@ impl<D: Directory> Connection<D> {
         }
     }
 
+    /// Admit an edit at a stable Edit decision. Revocation rejects later
+    /// admissions. An admitted edit can finish for other authorized peers
+    /// unless eviction reaches its author before it enters preview fanout.
     async fn update(&mut self, address: &str, bytes: Vec<u8>, step2: bool) -> Result<(), Error> {
         let member = self.members.get(address).ok_or_else(closed)?;
         if member.resync && !step2 {

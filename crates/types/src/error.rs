@@ -25,7 +25,7 @@ pub enum ErrorCode {
     InvalidInput,
     /// The serialized body or document exceeds its byte budget (HTTP 413).
     TooLarge,
-    /// A caller or resource has reached a request limit (HTTP 429).
+    /// A temporary refusal, such as a quota, cooldown, or unsettled authority (HTTP 429).
     RateLimited,
     /// The operation cannot currently be served (HTTP 503).
     Unavailable,
@@ -127,6 +127,23 @@ impl Error {
     pub fn rate_limited(message: impl Into<String>) -> Self {
         Self::new(ErrorCode::RateLimited, message)
     }
+    /// Attach a retry delay to a rate-limit refusal with millisecond precision.
+    /// The operation envelope exposes the delay as `retry_after_ms`.
+    pub fn with_retry_after(self, delay: std::time::Duration) -> Self {
+        debug_assert_eq!(self.code, ErrorCode::RateLimited);
+        self.with_details(serde_json::json!({
+            "retry_after_ms": delay.as_millis().min(u128::from(u64::MAX)) as u64
+        }))
+    }
+
+    /// Return the retry delay in milliseconds for a rate-limit refusal.
+    pub fn retry_after_ms(&self) -> Option<u64> {
+        if self.code != ErrorCode::RateLimited {
+            return None;
+        }
+        self.details.as_ref()?.get("retry_after_ms")?.as_u64()
+    }
+
     /// A temporarily unavailable operation or dependency.
     pub fn unavailable(message: impl Into<String>) -> Self {
         Self::new(ErrorCode::Unavailable, message)

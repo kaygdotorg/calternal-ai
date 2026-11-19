@@ -76,6 +76,8 @@
   const STATE = { saved: "Saved", dirty: "Not saved yet", saving: "Saving…", conflict: "Changed elsewhere", waiting: "Can't reach the server. Your text is still here and saves when it is back", failed: "Not saved" } as const;
   // The server is back: send what could not be sent.
   $effect(() => { if (link.state === "ok" && notes.saveState === "waiting") void flush(); });
+  // While the server is away a save is not failing, it is waiting (the client repeats it with its original request id until the server answers): the line says the text is safe, as it does for a write that was queued.
+  const stateLine = $derived(link.state === "reconnecting" && (notes.saveState === "saving" || notes.saveState === "dirty") ? STATE.waiting : STATE[notes.saveState]);
   let toc = $state(false);
   const uid = $props.id();
 </script>
@@ -100,7 +102,7 @@
     {#if shell.narrow && !windowed}<IconButton icon="sidebar" label="Show notes" onclick={() => shell.toggleSidebar()} />{/if}
     <span class="grow"></span>
     {#if liveMode && live.session && !windowed}<Presence here={live.here} />{/if}
-    {#if notes.note}<span class="state" role="status" aria-live="polite" data-state={liveMode ? undefined : notes.saveState}>{liveMode ? live.save : STATE[notes.saveState]}</span>{/if}
+    {#if notes.note}<span class="state" role="status" aria-live="polite" data-state={liveMode ? undefined : notes.saveState}>{liveMode ? live.save : stateLine}</span>{/if}
     {#if !windowed && notes.note}
       {#if sharedBy}
         <button type="button" class="owner" bind:this={shareEl} aria-label="Shared by {sharedBy.shared_by}. Who can see this" aria-haspopup="dialog" use:tip={{ label: `Shared by ${sharedBy.shared_by}`, side: "bottom" }} onclick={() => openShare({ kind: "notes", id: notes.note!.id }, notes.note!.title, shareEl ?? null)}><Avatar name={sharedBy.shared_by} size="md" /></button>

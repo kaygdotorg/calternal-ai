@@ -54,8 +54,8 @@ immediately and are swept at startup and daily. Account erasure removes the
 account-owned store. A test has a one-minute cooldown per installation.
 During cooldown, `push.test` returns HTTP 429 with `error.code` set to
 `rate_limited` and the message “Register this browser or wait a minute before
-testing again.” `Retry-After` and `error.details.retry_after_seconds` both
-give the remaining time in seconds, rounded up. A full delivery queue gives
+testing again.” `error.details.retry_after_ms` gives the remaining time in
+milliseconds. The HTTP `Retry-After` header rounds up to whole seconds. A full delivery queue gives
 the same code with a one-second retry hint. An installation without a live
 subscription receives HTTP 404.
 

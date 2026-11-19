@@ -18,21 +18,47 @@ import { LocalIntent } from './intent'
 /** How another person is drawn: a display name and a colour (from their account, resolved by the browser). */
 export interface Person { name: string; color: string; colorLight: string }
 
-/** Presence as the cursor plugin reads it: every state, with `user` resolved from the account the room stamped on it. */
+/**
+ * Presence as the cursor plugin reads it: every state, with `user` resolved from the account the room stamped on it. Off the keystroke: this person's own cursor is handed to the room when the browser is idle (at most 150 ms
+ * later; a cursor may lag a frame, the text never does), however many times the plugin sets it meanwhile, and the other people's states are built once per change, not once per keystroke.
+ */
 class Named {
-  constructor(private readonly inner: Awareness, private readonly resolve: (account: string) => Person) {}
+  private cursor: unknown
+  private dirty = false
+  private timer = 0
+  private cache: Map<number, Record<string, unknown>> | null = null
+  private readonly drop = () => { this.cache = null }
+  constructor(private readonly inner: Awareness, private readonly resolve: (account: string) => Person) { inner.on('update', this.drop) }
   get doc(): Y.Doc { return this.inner.doc }
   on(name: 'change', f: (...a: never[]) => void): void { this.inner.on(name, f) }
   off(name: 'change', f: (...a: never[]) => void): void { this.inner.off(name, f) }
-  getLocalState() { return this.inner.getLocalState() }
-  setLocalStateField(field: string, value: unknown): void { this.inner.setLocalStateField(field, value) }
+  /** The local state as the plugin should see it now: with the cursor it has just set, even if the room has not been told yet. */
+  getLocalState() {
+    const s = this.inner.getLocalState()
+    return this.dirty && s ? { ...s, cursor: this.cursor } : s
+  }
+  setLocalStateField(field: string, value: unknown): void {
+    if (field !== 'cursor') return this.inner.setLocalStateField(field, value)
+    this.cursor = value
+    this.dirty = true
+    if (this.timer) return
+    const idle = (globalThis as { requestIdleCallback?: (f: () => void, o?: { timeout: number }) => number }).requestIdleCallback
+    this.timer = idle ? idle(this.flush, { timeout: 150 }) : (setTimeout(this.flush, 80) as unknown as number)
+  }
+  private flush = () => {
+    this.timer = 0
+    if (!this.dirty) return
+    this.dirty = false
+    this.inner.setLocalStateField('cursor', this.cursor)
+  }
   getStates(): Map<number, Record<string, unknown>> {
+    if (this.cache) return this.cache
     const out = new Map<number, Record<string, unknown>>()
     for (const [id, state] of this.inner.getStates()) {
       const account = typeof state.account_id === 'string' ? state.account_id : ''
       out.set(id, { ...state, user: account ? this.resolve(account) : { name: 'Someone', color: '#888', colorLight: '#8884' } })
     }
-    return out
+    return (this.cache = out)
   }
 }
 

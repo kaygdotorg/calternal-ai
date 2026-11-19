@@ -26,7 +26,7 @@
   import ReasonMark from "./ReasonMark.svelte";
 
   // A fresh account: nothing listed, no section made, and the list has loaded (so it is not just still arriving).
-  const empty = $derived(store.ready && store.threads.length === 0 && layout.sections.length === 0);
+  const empty = $derived(store.ready && store.threads.length === 0 && layout.sections.length === 0 && store.jobPrompts.length === 0);
   const current = $derived(segments()[0] === "threads" ? segments()[1] : undefined);
   const shown = $derived(store.threads.filter((t) => t.spaceId === spaces.current.id)); // only the current space's threads
   const byId = $derived(new Map(shown.map((t) => [t.id, t])));
@@ -52,7 +52,7 @@
   });
   const returns = (s: { until: number; auto: boolean }) => (s.auto ? `Back when the limit resets, ${new Date(s.until).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}` : backLabel(s.until, store.now));
   const TABS = [{ value: "inbox" as const, label: "Inbox" }, { value: "all" as const, label: "All Threads" }];
-  const tab = $derived(chosen ?? (items.length ? "inbox" : "all"));
+  const tab = $derived(chosen ?? (items.length || store.jobPrompts.length ? "inbox" : "all"));
 
   // ---- renaming in place ----
   let editing = $state<{ kind: "thread" | "section"; id: string } | null>(null);

@@ -225,9 +225,10 @@ impl<D: Directory> Connection<D> {
 
 async fn wait_for_revision(deadline: Instant) -> Result<(), Error> {
     if Instant::now() >= deadline {
-        return Err(Error::unavailable(
-            "room authority is changing; reconnect to retry",
-        ));
+        return Err(
+            Error::rate_limited("Room authority is changing. Retry shortly.")
+                .with_retry_after(Duration::from_millis(250)),
+        );
     }
     tokio::time::sleep(RETRY).await;
     Ok(())
@@ -236,6 +237,13 @@ async fn wait_for_revision(deadline: Instant) -> Result<(), Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn authority_wait_expires_with_a_retry_delay() {
+        let error = wait_for_revision(Instant::now()).await.unwrap_err();
+        assert_eq!(error.code, ErrorCode::RateLimited);
+        assert_eq!(error.details.unwrap()["retry_after_ms"], 250);
+    }
 
     #[test]
     fn cached_views_require_the_same_clean_revision() {
