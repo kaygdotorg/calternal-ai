@@ -120,7 +120,13 @@
       "id": "calternal-mail.list-accounts",
       "input_schema": {
         "type": "object",
-        "properties": {},
+        "properties": {
+          "cursor": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2048
+          }
+        },
         "required": [],
         "additionalProperties": false
       },

@@ -51,9 +51,10 @@ const handlers = {
     }) as ItemRef;
     return { id: saved.id, revision: saved.revision, ...prompt };
   },
-  "calternal-mail.list-accounts": async (_value, context) => {
-    const page = await listItems(context, { kind: ACCOUNTS, limit: 16 });
-    return { accounts: page.items };
+  "calternal-mail.list-accounts": async (value, context) => {
+    const { cursor } = value as { cursor?: string };
+    const page = await listItems(context, { kind: ACCOUNTS, cursor, limit: 16 });
+    return { accounts: page.items, next_cursor: page.next_cursor };
   },
   "calternal-mail.list-folders": async (value, context) => {
     const { account_id } = value as AccountInput;

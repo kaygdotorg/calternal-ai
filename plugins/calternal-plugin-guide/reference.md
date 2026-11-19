@@ -62,8 +62,14 @@ that destination, the balance operation and the data sent to it. The person
 adds their credential in the host. On a balance read, the host attaches the
 credential for that service and returns the response to the worker. A redirect
 to another service or a trade request is outside that approval. Named outbound
-connections are designed into the contract. This preview has no named
-connection manifest field or callable broker method.
+connections are designed into the contract. The implemented named protocol
+is IMAPS. For a mail reader, declare `"mail_connection": "inbox"` in
+`network` and add `mail_v1` to `host_calls`. A worker calls
+`context.call("mail_v1", { connection: "inbox", endpoint: { host, port,
+username }, action })` in the person's personal space. Set
+`action.type` to `request_password` to ask for a protected account prompt.
+The built-in protocol owns login and returns only mail data. See the
+Mail package for the folder, header, message and seen-flag requests.
 
 ### B. Content fetch
 
@@ -88,7 +94,9 @@ revision, field: "text" })` from a declared operation. Return its `frame_id`.
 The client calls `plugins.network.content.get` with the space ID and frame ID,
 then mounts the returned `frame_url` with an empty iframe sandbox. The host
 sanitizes the HTML and checks the viewer, package activation and item revision
-on delivery. Preparing another kind or revision is refused.
+on delivery. Preparing another kind or revision is refused. A named Mail
+package can also declare a non-text `.eml` kind with `field: "mail_html"`
+to prepare the inline HTML from its stored snapshot.
 
 The preview implements sealed frames and records the viewer's remote-content
 preference. The `images_fonts` profile is for anonymous HTTPS media retrieval

@@ -229,10 +229,9 @@ pub fn authority_changed(old: &ManifestV1, new: &ManifestV1) -> bool {
         .network
         .as_ref()
         .and_then(|network| network.content_fetch.as_ref());
-    let mail = |manifest: &ManifestV1| {
-        manifest.network.as_ref().and_then(|network| network.mail_connection.clone())
-    };
-    (mail(new).is_some() && mail(new) != mail(old)) || new_content.is_some_and(|new| {
+    let old_mail = old.network.as_ref().and_then(|network| network.mail_connection.as_ref());
+    let new_mail = new.network.as_ref().and_then(|network| network.mail_connection.as_ref());
+    (new_mail.is_some() && new_mail != old_mail) || new_content.is_some_and(|new| {
         old_content.is_none_or(|old| {
             new.profile != old.profile
                 || new

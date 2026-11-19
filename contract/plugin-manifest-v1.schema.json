@@ -195,6 +195,13 @@
           "enum": [
             "text"
           ]
+        },
+        {
+          "description": "The inline HTML part of the item's stored RFC 5322/MIME message.",
+          "type": "string",
+          "enum": [
+            "mail_html"
+          ]
         }
       ]
     },
@@ -262,6 +269,13 @@
           "type": "string",
           "enum": [
             "content_prepare_v1"
+          ]
+        },
+        {
+          "description": "Use a declared account-owned IMAPS connection through the host.",
+          "type": "string",
+          "enum": [
+            "mail_v1"
           ]
         },
         {
@@ -608,6 +622,13 @@
             {
               "type": "null"
             }
+          ]
+        },
+        "mail_connection": {
+          "description": "Name of this package's built-in, personal-space IMAPS connection.",
+          "type": [
+            "string",
+            "null"
           ]
         }
       },

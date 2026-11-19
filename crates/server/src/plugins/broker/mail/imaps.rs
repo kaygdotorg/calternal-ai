@@ -227,7 +227,10 @@ pub(super) fn execute<S: Read + Write>(
         Action::MarkRead { folder, uid_validity, uid } => {
             let mailbox = refused(session.select(&folder))?;
             if mailbox.uid_validity != Some(uid_validity) { return Err(Error::Refused); }
-            refused(session.uid_store(uid.to_string(), "+FLAGS.SILENT (\\Seen)"))?;
+            let stored = refused(session.uid_store(uid.to_string(), "+FLAGS (\\Seen)"))?;
+            if !stored.iter().any(|row| row.uid == Some(uid) && row.flags().contains(&Flag::Seen)) {
+                return Err(Error::Refused);
+            }
             Ok(json!({ "read": true }))
         }
     }
@@ -271,7 +274,7 @@ struct Parts {
 }
 
 fn parameter<'a>(params: &'a BodyParams<'a>, key: &str) -> Option<&'a str> {
-    params.as_ref()?.iter().find_map(|(name, value)| name.eq_ignore_ascii_case(key).then_some(*value))
+    params.as_ref()?.iter().find_map(|(name, value)| name.split('*').next().is_some_and(|base| base.eq_ignore_ascii_case(key)).then_some(*value))
 }
 
 fn filename<'a>(part: &'a BodyContentCommon<'a>) -> Option<&'a str> {
@@ -355,10 +358,19 @@ fn read_section<S: Read + Write>(
     }.filter(|bytes| bytes.len() <= MAX_MIME && bytes.ends_with(b"\r\n\r\n")).ok_or(Error::Refused)?;
     let bytes = response.section(&SectionPath::Part(path, None))
         .filter(|bytes| bytes.len() <= MAX_PART).ok_or(Error::Refused)?;
+    let (headers, _) = mailparse::parse_headers(header).map_err(|_| Error::Refused)?;
+    let allowed_type = headers.get_first_value("Content-Type")
+        .map(|content_type| mailparse::parse_content_type(&content_type).mimetype)
+        .unwrap_or_else(|| "text/plain".into());
+    if !matches!(allowed_type.as_str(), "text/plain" | "text/html")
+        || headers.get_all_values("Content-Type").len() > 1
+        || headers.get_first_value("Content-Disposition").is_some_and(|disposition| {
+            mailparse::parse_content_disposition(&disposition).disposition
+                == mailparse::DispositionType::Attachment
+        })
+    { return Err(Error::Refused); }
     let input = [header, bytes].concat();
     let parsed = mailparse::parse_mail(&input).map_err(|_| Error::Refused)?;
-    if !parsed.ctype.mimetype.eq_ignore_ascii_case("text/plain")
-        && !parsed.ctype.mimetype.eq_ignore_ascii_case("text/html") { return Err(Error::Refused); }
     let decoded = parsed.get_body().map_err(|_| Error::Refused)?;
     if decoded.len() > MAX_PART { return Err(Error::Refused); }
     Ok(Some(decoded))
@@ -397,7 +409,15 @@ pub(in crate::plugins) fn snapshot_html(bytes: &[u8]) -> Option<String> {
     if bytes.len() > MAX_PART * 4 { return None; }
     let (headers, _) = mailparse::parse_headers(bytes).ok()?;
     if headers.get_first_value("X-Calternal-Snapshot").as_deref() != Some("inline-text-only") { return None; }
-    let mail = mailparse::parse_mail(bytes).ok()?;
-    let part = mail.subparts.iter().find(|part| part.ctype.mimetype == "text/html")?;
-    part.get_body().ok().filter(|html| html.len() <= MAX_PART)
+    // Look for the exact inline part emitted by snapshot(). Parsing arbitrary
+    // recursive MIME here would also accept messages written through file sync.
+    let marker = b"\r\n--calternal-mail-snapshot\r\nContent-Type: text/html; charset=utf-8\r\nContent-Transfer-Encoding: base64\r\n\r\n";
+    let start = bytes.windows(marker.len()).position(|window| window == marker)? + marker.len();
+    let encoded = bytes[start..].strip_suffix(b"--calternal-mail-snapshot--\r\n")?;
+    let base64: Vec<_> = encoded.iter().copied().filter(|b| !b.is_ascii_whitespace()).collect();
+    let html = String::from_utf8(STANDARD.decode(base64).ok()?).ok()?;
+    (html.len() <= MAX_PART).then_some(html)
 }
+
+#[cfg(test)]
+mod tests;

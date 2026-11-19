@@ -502,7 +502,7 @@ pub struct ManifestNetwork {
 pub struct ManifestContentFetch {
     /// Host-enforced media and transport policy.
     pub profile: ContentFetchProfile,
-    /// Up to 32 distinct text sources owned by the declaring package.
+    /// Up to 32 distinct supported sources owned by the declaring package.
     #[schemars(length(min = 1, max = 32))]
     pub sources: Vec<ContentFetchSource>,
 }

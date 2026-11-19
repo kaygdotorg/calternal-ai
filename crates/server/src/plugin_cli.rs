@@ -356,6 +356,16 @@ fn review(source: &Path, appdata: Option<&Path>) -> Result<Reply, CliError> {
         ("Host calls", calls.join(", ")),
         ("Secret names", manifest.secrets.join(", ")),
     ]);
+    if let Some(name) = manifest
+        .network
+        .as_ref()
+        .and_then(|network| network.mail_connection.as_deref())
+    {
+        reply = reply.fields([(
+            "Named mail connection",
+            format!("{name}: personal-space IMAPS to an account-configured public TLS endpoint. Uses a protected password; may set the read flag."),
+        )]);
+    }
     if let Some(fetch) = manifest
         .network
         .as_ref()
