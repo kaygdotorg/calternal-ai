@@ -13,7 +13,7 @@ mod space_channel;
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use base64::Engine;
@@ -47,12 +47,11 @@ struct Slot {
     // uncontended write guard so it cannot remove a container during exec.
     sandbox: RwLock<SandboxCell>,
     last_use: Mutex<Instant>,
-    /// Set when the slot left the map; whoever then sees a started sandbox stops it.
-    removed: AtomicBool,
+    /// The first terminal action chooses whether teardown preserves files.
+    closed: OnceLock<bool>,
     stop: OnceCell<()>,
     /// A v2 placement is supervised once and the supervisor owns its teardown.
     channel_started: AtomicBool,
-    keep_files: AtomicBool,
     execs: Mutex<HashSet<Uuid>>,
     inputs: Mutex<
         HashMap<Uuid, tokio::sync::watch::Receiver<Option<tokio::sync::mpsc::Sender<Vec<u8>>>>>,
@@ -60,15 +59,19 @@ struct Slot {
 }
 
 impl Slot {
+    fn is_small_vm(&self) -> bool {
+        self.spec.image.as_deref() == Some(crate::sandbox::worker::SPACE_VM_IMAGE)
+    }
+
     /// Stop the sandbox once, if the slot was removed and its start succeeded.
     async fn stop_if_removed(&self) -> bool {
-        if self.removed.load(Ordering::Acquire)
+        if let Some(&keep_files) = self.closed.get()
             && let Some(Ok(sb)) = self.sandbox.read().await.get()
         {
             return self
                 .stop
                 .get_or_try_init(|| async {
-                    let result = if self.keep_files.load(Ordering::Acquire) {
+                    let result = if keep_files {
                         sb.release().await
                     } else {
                         sb.stop().await
@@ -171,19 +174,19 @@ impl Runner {
             .map(|s| LeaseReport {
                 lease_id: s.lease_id,
                 fence: s.fence.load(Ordering::Acquire),
-                sandbox: if s.removed.load(Ordering::Acquire) {
-                    SandboxState::Failed {
+                sandbox: match s.closed.get() {
+                    Some(true) if s.is_small_vm() => SandboxState::SleepPending,
+                    Some(_) => SandboxState::Failed {
                         reason: "the local lease expired or is closing".into(),
-                    }
-                } else {
-                    match s.sandbox.try_read().ok().as_deref().and_then(OnceCell::get) {
+                    },
+                    None => match s.sandbox.try_read().ok().as_deref().and_then(OnceCell::get) {
                         None => SandboxState::Starting,
                         Some(Err(reason)) => SandboxState::Failed {
                             reason: reason.clone(),
                         },
                         Some(Ok(sandbox)) if !sandbox.available() => SandboxState::Lost,
                         Some(Ok(_)) => SandboxState::Running,
-                    }
+                    },
                 },
             })
             .collect()
@@ -256,10 +259,9 @@ impl Runner {
                             denied.map(|reason| Err(reason.into())),
                         )),
                         last_use: Mutex::new(Instant::now()),
-                        removed: AtomicBool::new(false),
+                        closed: OnceLock::new(),
                         stop: OnceCell::new(),
                         channel_started: AtomicBool::new(false),
-                        keep_files: AtomicBool::new(false),
                         execs: Mutex::new(HashSet::new()),
                         inputs: Mutex::new(HashMap::new()),
                     })
@@ -267,7 +269,7 @@ impl Runner {
                 .clone()
         };
         slot.fence.fetch_max(fence, Ordering::AcqRel);
-        if slot.spec.image.as_deref() == Some(crate::sandbox::worker::SPACE_VM_IMAGE) {
+        if slot.is_small_vm() {
             // An assignment alone is insufficient to start the plugin wall.
             // The enrolled carrier validates the binding before wake.
             return;
@@ -405,6 +407,12 @@ impl Runner {
                 self.erase_owner_data(request_id, account_id, thread_id)
                     .await;
             }
+            Down::EraseSpaceRuntime {
+                request_id,
+                space_id,
+            } => {
+                self.erase_space_runtime(request_id, space_id).await;
+            }
             Down::Discard {
                 request_id,
                 account_id,
@@ -429,6 +437,15 @@ impl Runner {
                     .lock()
                     .expect("discards")
                     .insert(request_id, success);
+            }
+            Down::SleepSpace { lease_id } => {
+                if let Some(slot) = self.slot(lease_id)
+                    && slot.spec.worker.is_some()
+                    && slot.is_small_vm()
+                    && Self::close(&slot, true).await
+                {
+                    self.slots.lock().expect("slots").remove(&lease_id);
+                }
             }
             Down::Stop {
                 lease_id,
@@ -466,7 +483,7 @@ impl Runner {
     ) -> Result<Arc<dyn Sandbox>, String> {
         let result = sandbox
             .get_or_init(|| async {
-                if slot.removed.load(Ordering::Acquire) {
+                if slot.closed.get().is_some() {
                     return Err("lease ended before sandbox start".into());
                 }
                 if slot.spec.worker.is_some() && self.backend.preference() == "direct" {
@@ -474,7 +491,7 @@ impl Runner {
                 }
                 let started = match &slot.harness {
                     Some(harness) => self.backend.start_harness(&slot.spec, harness).await,
-                    None if slot.spec.image.as_deref() == Some(crate::sandbox::worker::SPACE_VM_IMAGE) => {
+                    None if slot.is_small_vm() => {
                         if !slot.channel_started.load(Ordering::Acquire) {
                             return Err("small plugin VM requires a space carrier".into());
                         }
@@ -491,15 +508,14 @@ impl Runner {
             })
             .await
             .clone();
-        if slot.removed.load(Ordering::Acquire) {
+        if slot.closed.get().is_some() {
             return Err("lease ended".into());
         }
         result
     }
 
     async fn close(slot: &Slot, keep_files: bool) -> bool {
-        slot.keep_files.store(keep_files, Ordering::Release);
-        slot.removed.store(true, Ordering::Release);
+        slot.closed.get_or_init(|| keep_files);
         // Join any start already in progress. Closing remains visible in the
         // slot map even if the connection future is cancelled during teardown.
         slot.sandbox
@@ -523,7 +539,7 @@ impl Runner {
             return;
         };
         for slot in self.all() {
-            if slot.spec.worker.is_some() || slot.removed.load(Ordering::Acquire) {
+            if slot.spec.worker.is_some() || slot.closed.get().is_some() {
                 continue;
             }
             let Ok(mut cell) = slot.sandbox.try_write() else {

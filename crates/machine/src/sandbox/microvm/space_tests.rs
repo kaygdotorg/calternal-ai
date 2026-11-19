@@ -50,9 +50,11 @@ async fn small_snapshot_reseeds_recovers_after_interruption_and_rejects_mixed_fi
         .rand_bytes(5)
         .tempdir_in(path.parent().unwrap())
         .unwrap();
-    let runtime = SmallRuntime::load(root.path().to_path_buf(), &path)
-        .await
-        .unwrap();
+    let runtime = Arc::new(
+        SmallRuntime::load(root.path().to_path_buf(), &path)
+            .await
+            .unwrap(),
+    );
     runtime.initialize().await.unwrap();
     let space = calternal_types::SpaceId::new();
     let spec = SandboxSpec {
@@ -82,14 +84,60 @@ async fn small_snapshot_reseeds_recovers_after_interruption_and_rejects_mixed_fi
             .restored
             .is_none()
     );
+    let blocked = tokio::time::timeout(Duration::from_secs(4), runtime.start(&spec))
+        .await
+        .expect("same-space gate must have a deadline");
+    assert!(blocked.err().unwrap().0.contains("still shutting down"));
     let _ = entropy(&initial).await;
     let saved = initial.saved.clone();
-    let image = initial.image.clone();
+    let binding = initial.binding.clone();
     initial.release().await.unwrap();
     drop(initial);
-    let base = super::super::snapshot::Generation::current(&saved, &image)
+    let base = super::super::snapshot::Generation::current(&saved, &binding)
         .unwrap()
         .unwrap();
+
+    // Resume the same checkpoint without the explicit reseed exchange.
+    // VMGenID may update entropy, but it cannot acknowledge the host's request
+    // or authorize either guest readiness or package startup.
+    {
+        let _gate = runtime.gate(space).lock_owned().await;
+        let run = runtime.state.root.join("run");
+        let disk = run.join(&base.disk_name);
+        let control = run.join(&base.control_name);
+        for (name, path) in [("disk", &disk), ("control", &control)] {
+            super::super::snapshot::clone_or_copy(&base.path.join(name), path).unwrap();
+        }
+        let vm = Guest::load_small(
+            &runtime.state.config,
+            &run,
+            &base,
+            disk.clone(),
+            control,
+            runtime.state.owned.get().unwrap().clone(),
+            Arc::new(runtime.state.capacity.clone().try_acquire_owned().unwrap()),
+        )
+        .await
+        .unwrap();
+        assert!(vm.control(&Request::SmallReady).await.is_err());
+        assert!(
+            vm.control(&Request::Start(space, spec.clone()))
+                .await
+                .is_err()
+        );
+        let mut unmarked = spec.clone();
+        unmarked.image = None;
+        assert!(vm.control(&Request::Start(space, unmarked)).await.is_err());
+        let mut seed = [0; 32];
+        ring::rand::SecureRandom::fill(&ring::rand::SystemRandom::new(), &mut seed).unwrap();
+        vm.control(&Request::ReseedSmall(seed)).await.unwrap();
+        vm.control(&Request::SmallReady).await.unwrap();
+        vm.control(&Request::Start(space, spec.clone()))
+            .await
+            .unwrap();
+        vm.stop().await.unwrap();
+        std::fs::remove_file(disk).unwrap();
+    }
 
     let first = runtime.start(&spec).await.unwrap();
     assert_eq!(
@@ -109,7 +157,7 @@ async fn small_snapshot_reseeds_recovers_after_interruption_and_rejects_mixed_fi
     assert_ne!(first_draw["node"], second_draw["node"]);
     second.release().await.unwrap();
     drop(second);
-    let updated = super::super::snapshot::Generation::current(&saved, &image)
+    let updated = super::super::snapshot::Generation::current(&saved, &binding)
         .unwrap()
         .unwrap();
     assert_ne!(
@@ -142,7 +190,7 @@ async fn small_snapshot_reseeds_recovers_after_interruption_and_rejects_mixed_fi
     }
     drop(interrupted);
     assert_eq!(
-        super::super::snapshot::Generation::current(&saved, &image)
+        super::super::snapshot::Generation::current(&saved, &binding)
             .unwrap()
             .unwrap()
             .id,
@@ -157,11 +205,15 @@ async fn small_snapshot_reseeds_recovers_after_interruption_and_rejects_mixed_fi
     recovered.stop().await.unwrap();
     drop(recovered);
 
-    // Replacing the file under its original name cannot make it match the
-    // recorded generation. The small runtime must boot instead.
-    let memory = base.path.join("memory");
-    std::fs::rename(&memory, base.path.join("displaced")).unwrap();
-    std::fs::write(&memory, b"wrong generation").unwrap();
+    // Corrupt a published state file while updating the fixture's manifest
+    // metadata so it reaches the actual Firecracker restore failure.
+    std::fs::write(base.path.join("state"), b"invalid Firecracker state").unwrap();
+    base.publish(&saved, &binding).unwrap();
+    assert!(
+        super::super::snapshot::Generation::current(&saved, &binding)
+            .unwrap()
+            .is_some()
+    );
     let cold = runtime.start(&spec).await.unwrap();
     assert!(
         cold.slot
@@ -173,6 +225,29 @@ async fn small_snapshot_reseeds_recovers_after_interruption_and_rejects_mixed_fi
             .restored
             .is_none()
     );
+    assert!(!base.path.exists());
+    let run = runtime.state.root.join("run");
+    assert!(!run.join(&base.disk_name).exists());
+    assert!(!run.join(&base.control_name).exists());
     let _ = entropy(&cold).await;
-    cold.stop().await.unwrap();
+
+    // The old Placement Arc remains live after teardown and must release the
+    // space gate for both erasure and the next start.
+    cold.release().await.unwrap();
+    assert!(saved.exists());
+    let other = runtime.saved(SpaceId::new());
+    std::fs::create_dir(&other).unwrap();
+    runtime.erase(space).await.unwrap();
+    assert!(!saved.exists());
+    assert!(other.exists());
+    let newer = runtime.start(&spec).await.unwrap();
+    newer.release().await.unwrap();
+    let expired = std::time::SystemTime::now() - RETENTION - Duration::from_secs(1);
+    std::fs::File::open(saved.join("current"))
+        .unwrap()
+        .set_modified(expired)
+        .unwrap();
+    runtime.sweep_expired().await.unwrap();
+    assert!(!saved.exists());
+    assert!(other.exists());
 }

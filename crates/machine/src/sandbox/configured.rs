@@ -20,7 +20,7 @@ pub struct ConfiguredBackend {
     podman: PodmanBackend,
     selected: AtomicU8,
     #[cfg(target_os = "linux")]
-    small_vm: Option<super::microvm::SmallRuntime>,
+    small_vm: Option<Arc<super::microvm::SmallRuntime>>,
 }
 impl ConfiguredBackend {
     /// Build both cheap backend configurations; no process starts or file I/O.
@@ -41,7 +41,9 @@ impl ConfiguredBackend {
         #[cfg(target_os = "linux")]
         {
             let mut configured = self;
-            configured.small_vm = Some(super::microvm::SmallRuntime::load(root, path).await?);
+            configured.small_vm = Some(Arc::new(
+                super::microvm::SmallRuntime::load(root, path).await?,
+            ));
             Ok(configured)
         }
         #[cfg(not(target_os = "linux"))]
@@ -128,6 +130,22 @@ impl Backend for ConfiguredBackend {
         return self.name() == "podman" && self.small_vm.is_some();
         #[cfg(not(target_os = "linux"))]
         false
+    }
+
+    fn erase_space_runtime(
+        &self,
+        space: calternal_types::SpaceId,
+    ) -> BoxFuture<'_, SandboxResult<()>> {
+        Box::pin(async move {
+            #[cfg(target_os = "linux")]
+            if let Some(vm) = &self.small_vm {
+                return vm.erase(space).await;
+            }
+            let _ = space;
+            Err(SandboxError(
+                "Small plugin VM storage is unavailable for erasure".into(),
+            ))
+        })
     }
 
     fn start_space<'a>(

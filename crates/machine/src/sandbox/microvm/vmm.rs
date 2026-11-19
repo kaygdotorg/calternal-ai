@@ -28,7 +28,7 @@ pub(super) struct Guest {
     pub(super) control_disk: Option<PathBuf>,
     pub(super) restored: Option<Uuid>,
     pub(super) key: Arc<hmac::Key>,
-    _permit: OwnedSemaphorePermit,
+    _permit: Arc<OwnedSemaphorePermit>,
     _network: Option<super::network::Lease>,
 }
 
@@ -41,15 +41,16 @@ impl Guest {
         permit: OwnedSemaphorePermit,
         network: Option<super::network::Lease>,
     ) -> SandboxResult<Self> {
-        Self::boot_profile(config, run, disk, owned, permit, network, false).await
+        Self::boot_profile(config, run, disk, owned, Arc::new(permit), network, false).await
     }
 
+    /// Boot the offline guest and wait for its cold reseed acknowledgement.
     pub(super) async fn boot_small(
         config: &Config,
         run: &Path,
         disk: PathBuf,
         owned: Arc<File>,
-        permit: OwnedSemaphorePermit,
+        permit: Arc<OwnedSemaphorePermit>,
     ) -> SandboxResult<Self> {
         Self::boot_profile(config, run, disk, owned, permit, None, true).await
     }
@@ -59,7 +60,7 @@ impl Guest {
         run: &Path,
         disk: PathBuf,
         owned: Arc<File>,
-        permit: OwnedSemaphorePermit,
+        permit: Arc<OwnedSemaphorePermit>,
         network: Option<super::network::Lease>,
         small: bool,
     ) -> SandboxResult<Self> {
@@ -185,6 +186,7 @@ impl Guest {
         }
     }
 
+    /// Resume, reseed and check guest admission. Stop the VMM on any failure.
     pub(super) async fn restore_small(
         config: &Config,
         run: &Path,
@@ -192,7 +194,39 @@ impl Guest {
         disk: PathBuf,
         control_disk: PathBuf,
         owned: Arc<File>,
-        permit: OwnedSemaphorePermit,
+        permit: Arc<OwnedSemaphorePermit>,
+    ) -> SandboxResult<Self> {
+        let guest =
+            Self::load_small(config, run, generation, disk, control_disk, owned, permit).await?;
+        let ready = tokio::time::timeout(Duration::from_secs(2), async {
+            let mut seed = [0; 32];
+            SystemRandom::new()
+                .fill(&mut seed)
+                .map_err(|_| SandboxError("Cannot get fresh small VM entropy".into()))?;
+            guest.control(&Request::ReseedSmall(seed)).await?;
+            guest.control(&Request::SmallReady).await
+        })
+        .await;
+        match ready {
+            Ok(Ok(())) => Ok(guest),
+            _ => {
+                guest.stop().await?;
+                Err(SandboxError(
+                    "Small plugin VM restore could not reseed and become ready".into(),
+                ))
+            }
+        }
+    }
+
+    /// Resume the VMM with package admission still closed in the guest.
+    pub(super) async fn load_small(
+        config: &Config,
+        run: &Path,
+        generation: &super::snapshot::Generation,
+        disk: PathBuf,
+        control_disk: PathBuf,
+        owned: Arc<File>,
+        permit: Arc<OwnedSemaphorePermit>,
     ) -> SandboxResult<Self> {
         use super::snapshot_api;
         let socket = run.join(format!(
@@ -226,7 +260,7 @@ impl Guest {
             _permit: permit,
             _network: None,
         };
-        let ready = async {
+        let ready = tokio::time::timeout(Duration::from_secs(3), async {
             let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
             while !tokio::fs::try_exists(&api_socket)
                 .await
@@ -246,21 +280,10 @@ impl Guest {
                 &guest.socket,
             )
             .await?;
-            snapshot_api::resume(&api_socket).await?;
-            let mut seed = [0; 32];
-            SystemRandom::new()
-                .fill(&mut seed)
-                .map_err(|_| SandboxError("Cannot get fresh small VM entropy".into()))?;
-            guest
-                .control(&Request::ReseedSmall(seed))
-                .await
-                .map_err(|_| SandboxError("Small plugin VM restore could not reseed".into()))?;
-            guest
-                .control(&Request::SmallReady)
-                .await
-                .map_err(|_| SandboxError("Small plugin VM did not acknowledge readiness".into()))
-        }
-        .await;
+            snapshot_api::resume(&api_socket).await
+        })
+        .await
+        .unwrap_or_else(|_| Err(SandboxError("Small plugin VM restore timed out".into())));
         if let Err(error) = ready {
             guest.stop().await?;
             return Err(error);

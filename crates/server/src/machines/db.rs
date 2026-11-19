@@ -87,6 +87,25 @@ ALTER TABLE leases ADD COLUMN shared_sponsor TEXT;
 ALTER TABLE leases ADD COLUMN shared_tools TEXT CHECK (shared_tools IS NULL OR json_valid(shared_tools));
 ";
 
+const SPACE_RUNTIME_ERASURE: &str = "
+CREATE TABLE space_runtime_locations(
+ space TEXT NOT NULL, account TEXT NOT NULL, machine TEXT NOT NULL,
+ PRIMARY KEY(space,account,machine)
+) STRICT, WITHOUT ROWID;
+CREATE INDEX space_runtime_locations_account ON space_runtime_locations(account);
+ALTER TABLE machine_erasures RENAME TO old_machine_erasures;
+CREATE TABLE machine_erasures(
+ machine TEXT NOT NULL, account TEXT NOT NULL, thread TEXT NOT NULL,
+ space_runtime TEXT NOT NULL DEFAULT '',
+ request_id TEXT NOT NULL UNIQUE, retry_after_ms INTEGER NOT NULL DEFAULT 0,
+ PRIMARY KEY(machine,account,thread,space_runtime)
+) STRICT, WITHOUT ROWID;
+INSERT INTO machine_erasures(machine,account,thread,request_id,retry_after_ms)
+ SELECT machine,account,thread,request_id,retry_after_ms FROM old_machine_erasures;
+DROP TABLE old_machine_erasures;
+CREATE INDEX machine_erasure_delivery ON machine_erasures(machine,retry_after_ms,request_id);
+";
+
 pub(crate) use calternal_types::now_ms;
 
 /// Open the private placement database and apply any supported migrations.
@@ -282,7 +301,7 @@ pub(super) fn put_title(c: &mut Connection, row: &LeaseRow) -> rusqlite::Result<
     tx.commit()
 }
 
-/// Commit placement and both erasure locations before sending an assignment.
+/// Commit placement and its erasure provenance before sending an assignment.
 /// The location rows outlive timed lease pruning. One FULL transaction.
 pub(super) fn put_assignment(c: &mut Connection, row: &LeaseRow) -> rusqlite::Result<()> {
     let tx = c.transaction()?;
@@ -302,6 +321,18 @@ pub(super) fn put_assignment(c: &mut Connection, row: &LeaseRow) -> rusqlite::Re
         tx.execute(
             "INSERT OR IGNORE INTO account_home_locations VALUES(?1,?2)",
             params![account, machine],
+        )?;
+    }
+    if let Some(machine) = row.machine
+        && row.image.as_deref() == Some(calternal_machine::sandbox::worker::SPACE_VM_IMAGE)
+    {
+        tx.execute(
+            "INSERT OR IGNORE INTO space_runtime_locations VALUES(?1,?2,?3)",
+            params![
+                row.space.to_string(),
+                row.account.to_string(),
+                machine.to_string()
+            ],
         )?;
     }
     tx.commit()
@@ -447,8 +478,13 @@ pub(crate) fn upgrade_schema() -> calternal_store::migrations::Schema<'static> {
     const TITLES: (i64, &str) = (7, TITLE_LEASES);
     const HARNESS: (i64, &str) = (8, ADD_HARNESS);
     const SHARED: (i64, &str) = (9, SPACE_EXECUTION);
-    const CURRENT: Schema<'static> =
-        Schema::new("machines.db", 6, &[SCHEMA], &[TITLES, HARNESS, SHARED]);
+    const VM_ERASURE: (i64, &str) = (10, SPACE_RUNTIME_ERASURE);
+    const CURRENT: Schema<'static> = Schema::new(
+        "machines.db",
+        6,
+        &[SCHEMA],
+        &[TITLES, HARNESS, SHARED, VM_ERASURE],
+    );
     #[cfg(feature = "test-plugins")]
     if option_env!("CALTERNAL_RELEASE_TEST_MIGRATION") == Some("v7") {
         const FIXTURE: Schema<'static> = Schema::new(
@@ -459,8 +495,9 @@ pub(crate) fn upgrade_schema() -> calternal_store::migrations::Schema<'static> {
                 TITLES,
                 HARNESS,
                 SHARED,
+                VM_ERASURE,
                 (
-                    10,
+                    11,
                     "CREATE TABLE upgrade_fixture (id INTEGER PRIMARY KEY) STRICT;",
                 ),
             ],

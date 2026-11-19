@@ -80,6 +80,29 @@ pub(super) fn queue(
         db.execute("DELETE FROM workspace_locations WHERE space=?1", [&id])
             .map_err(sql)?;
     }
+    let owner_field = match owner {
+        Owner::Account(_) => "account",
+        Owner::Space(_) => "space",
+    };
+    let mut runtime = db
+        .prepare(&format!(
+        "INSERT OR IGNORE INTO machine_erasures(machine,account,thread,space_runtime,request_id)
+         SELECT DISTINCT machine,'','',space,lower(hex(randomblob(16)))
+         FROM space_runtime_locations WHERE {owner_field}=?1 RETURNING machine"
+    ))
+        .map_err(sql)?;
+    added.extend(
+        runtime
+            .query_map([&id], |row| uuid(row, 0))
+            .map_err(sql)?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(sql)?,
+    );
+    db.execute(
+        &format!("DELETE FROM space_runtime_locations WHERE {owner_field}=?1"),
+        [&id],
+    )
+    .map_err(sql)?;
     Ok(added)
 }
 
@@ -163,7 +186,7 @@ impl State {
         }
         let batch = {
             let mut q = self.db.prepare_cached(
-                "SELECT request_id,account,thread FROM machine_erasures
+                "SELECT request_id,account,thread,space_runtime FROM machine_erasures
                  WHERE machine=?1 AND retry_after_ms<=?2 ORDER BY retry_after_ms,request_id LIMIT ?3"
             ).map_err(sql)?;
             q.query_map(
@@ -173,9 +196,24 @@ impl State {
                     OWNER_ERASURE_BATCH as i64
                 ],
                 |row| {
+                    let request_id = uuid(row, 0)?;
+                    let space: String = row.get(3)?;
+                    if !space.is_empty() {
+                        let space_id = space.parse().map_err(|error| {
+                            rusqlite::Error::FromSqlConversionFailure(
+                                3,
+                                rusqlite::types::Type::Text,
+                                Box::new(error),
+                            )
+                        })?;
+                        return Ok(Down::EraseSpaceRuntime {
+                            request_id,
+                            space_id,
+                        });
+                    }
                     let thread: String = row.get(2)?;
                     Ok(Down::Erase {
-                        request_id: uuid(row, 0)?,
+                        request_id,
                         account_id: uuid(row, 1)?,
                         thread_id: if thread.is_empty() {
                             None
@@ -196,12 +234,15 @@ impl State {
             .into_iter()
             .flat_map(|m| &m.outbox)
             .filter_map(|e| match e.message {
-                Down::Erase { request_id, .. } => Some(request_id),
+                Down::Erase { request_id, .. } | Down::EraseSpaceRuntime { request_id, .. } => {
+                    Some(request_id)
+                }
                 _ => None,
             })
             .collect();
         for message in batch {
-            if matches!(&message, Down::Erase { request_id, .. } if !queued.contains(request_id)) {
+            if matches!(&message, Down::Erase { request_id, .. } | Down::EraseSpaceRuntime { request_id, .. } if !queued.contains(request_id))
+            {
                 self.push(machine, message);
             }
         }

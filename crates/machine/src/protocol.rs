@@ -225,6 +225,8 @@ pub enum SandboxState {
     Running,
     /// A paused sandbox.
     Frozen,
+    /// An authenticated idle drain is saving the small guest's checkpoint.
+    SleepPending,
     /// A running guest exited. Provider leases may resume from their last checkpoint.
     Lost,
     /// Could not start, or was closed locally; the server reconciles the lease.
@@ -449,6 +451,12 @@ pub enum Down {
         channel: SpaceChannelAssignment,
     },
 
+    /// Stop an idle small plugin guest and preserve a checkpoint.
+    SleepSpace {
+        /// The small plugin placement to drain.
+        lease_id: Uuid,
+    },
+
     /// Explicit owner discard; never inferred from lease expiry or elapsed time.
     Discard {
         /// Durable request identity, scoped to this enrolled machine.
@@ -466,6 +474,13 @@ pub enum Down {
         account_id: Uuid,
         /// A workspace within the account. Absent means the entire account tree.
         thread_id: Option<Uuid>,
+    },
+    /// Delete a private small VM checkpoint using the durable erasure queue.
+    EraseSpaceRuntime {
+        /// Request identity acknowledged only after physical removal.
+        request_id: Uuid,
+        /// Space whose checkpoint and scratch files must be removed.
+        space_id: SpaceId,
     },
     /// Run work for (space, account, thread) in a site-local sandbox.
     Assign {

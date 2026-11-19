@@ -16,9 +16,12 @@ use crate::sandbox::{
     Backend, OutputEvent, Sandbox, SandboxError, SandboxResult, podman::PodmanBackend,
 };
 
+const SMALL_READY: &str = "/run/agent/small-ready";
+
 struct Agent {
     backend: PodmanBackend,
     key: ring::hmac::Key,
+    small: bool,
     threads: Mutex<HashMap<Uuid, Arc<dyn Sandbox>>>,
 }
 
@@ -39,6 +42,7 @@ pub async fn run_agent(
         backend,
         key: ring::hmac::Key::new(ring::hmac::HMAC_SHA256, &token),
         threads: Mutex::new(HashMap::new()),
+        small: std::env::var_os("CALTERNAL_SMALL_GUEST").is_some(),
     });
     let listener = UnixListener::bind(socket).map_err(SandboxError::new)?;
     let connections = Arc::new(Semaphore::new(512));
@@ -98,14 +102,19 @@ impl Agent {
     async fn control(&self, request: Request) -> SandboxResult<()> {
         match request {
             Request::Ready => Ok(()),
-            Request::SmallReady
-                if tokio::fs::try_exists("/run/calternal-small-ready")
-                    .await
-                    .map_err(SandboxError::new)? =>
-            {
-                Ok(())
+            Request::SmallReady => {
+                let _threads = self.threads.lock().await;
+                small_ready().await
             }
-            Request::SmallReady => Err(SandboxError("small plugin kernel was not reseeded".into())),
+            Request::QuiesceSmall => {
+                let threads = self.threads.lock().await;
+                if !threads.is_empty() {
+                    return Err(SandboxError("small plugin guest was not drained".into()));
+                }
+                tokio::fs::remove_file(SMALL_READY)
+                    .await
+                    .map_err(SandboxError::new)
+            }
             Request::ReseedSmall(seed) => {
                 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
                 // The small guest snapshots only after the package and its
@@ -126,15 +135,31 @@ impl Agent {
                         "small plugin guest reseed was not acknowledged".into(),
                     ));
                 }
-                Ok(())
+                tokio::fs::write(SMALL_READY, [])
+                    .await
+                    .map_err(SandboxError::new)
             }
             Request::Start(space, mut spec) => {
                 spec.space_id = Some(space);
+                if self.small {
+                    // Serialize this guest's package startup with Quiesce and
+                    // Reseed until the sandbox occupies the placement.
+                    let mut threads = self.threads.lock().await;
+                    small_ready().await?;
+                    let sandbox = self.backend.start(&spec).await?;
+                    threads.insert(spec.thread_id, sandbox);
+                    return Ok(());
+                }
                 let sandbox = self.backend.start(&spec).await?;
                 self.threads.lock().await.insert(spec.thread_id, sandbox);
                 Ok(())
             }
             Request::StartHarness(space, mut spec, harness) => {
+                if self.small {
+                    return Err(SandboxError(
+                        "small plugin guest cannot start a harness".into(),
+                    ));
+                }
                 spec.space_id = Some(space);
                 let sandbox = self.backend.start_harness(&spec, &harness).await?;
                 self.threads.lock().await.insert(spec.thread_id, sandbox);
@@ -159,6 +184,17 @@ impl Agent {
             }
             Request::Exec(..) => unreachable!(),
         }
+    }
+}
+
+async fn small_ready() -> SandboxResult<()> {
+    if tokio::fs::try_exists(SMALL_READY)
+        .await
+        .map_err(SandboxError::new)?
+    {
+        Ok(())
+    } else {
+        Err(SandboxError("small plugin kernel was not reseeded".into()))
     }
 }
 

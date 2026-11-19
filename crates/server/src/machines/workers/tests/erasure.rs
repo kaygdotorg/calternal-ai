@@ -172,3 +172,98 @@ fn exercise_stop(completion: Completion) {
         .unwrap();
     assert_eq!(rows, 0);
 }
+
+#[test]
+fn dormant_space_runtime_erasure_replays_for_both_owners() {
+    use calternal_machine::protocol::DiscardReport;
+    use calternal_types::Owner as ErasedOwner;
+    use rusqlite::params;
+    for erase_account in [false, true] {
+        let dir = tempfile::tempdir().unwrap();
+        let (service, account) = open(dir.path());
+        let (machine, key) = ready_machine_with_key(&service, Owner::Pool, 1);
+        let spaces =
+            calternal_auth::spaces::Spaces::open(&dir.path().join("system/auth.db")).unwrap();
+        let space = spaces.seed_development().unwrap().personal;
+        service.set_pool_grant(account, true).unwrap();
+        {
+            let mut state = service.lock().unwrap();
+            state
+                .machines
+                .get_mut(&machine)
+                .unwrap()
+                .live
+                .as_mut()
+                .unwrap()
+                .capacity
+                .small_plugin_vm = true;
+        }
+        let run = service
+            .request_space_vm(
+                account,
+                Uuid::new_v4(),
+                PluginWorker {
+                    space_id: space,
+                    source: "fixture".into(),
+                },
+            )
+            .unwrap();
+        {
+            let state = service.lock().unwrap();
+            let stored: bool = state.db.query_row(
+                "SELECT EXISTS(SELECT 1 FROM space_runtime_locations WHERE space=?1 AND account=?2 AND machine=?3)",
+                params![space.to_string(), account.to_string(), machine.to_string()],
+                |row| row.get(0),
+            ).unwrap();
+            assert!(stored, "assignment must persist checkpoint provenance");
+        }
+        service.sleep_space_run(account, run.lease_id).unwrap();
+        let owner = if erase_account {
+            ErasedOwner::Account(account)
+        } else {
+            ErasedOwner::Space(space)
+        };
+        service.retire_owner(owner).unwrap();
+        drop(service);
+
+        let (service, _) = open(dir.path());
+        let token = connect(&service, machine, &key);
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_time()
+            .build()
+            .unwrap();
+        let mut report = SyncRequest {
+            ack: 0,
+            discards: vec![],
+            capacity: Capacity::default(),
+            draining: false,
+            leases: vec![],
+        };
+        let messages = runtime
+            .block_on(service.sync(machine, &token, report.clone()))
+            .unwrap();
+        let request = messages
+            .iter()
+            .find_map(|message| match message.message {
+                Down::EraseSpaceRuntime {
+                    request_id,
+                    space_id,
+                } if space_id == space => Some(request_id),
+                _ => None,
+            })
+            .expect("pool machine must receive the durable space checkpoint erase after restart");
+        report.ack = messages.iter().map(|m| m.seq).max().unwrap();
+        report.discards.push(DiscardReport {
+            request_id: request,
+            success: true,
+        });
+        runtime
+            .block_on(service.sync(machine, &token, report))
+            .unwrap();
+        let state = service.lock().unwrap();
+        assert_eq!(
+            super::super::super::erasure_queue::count(&state.db, machine).unwrap(),
+            0
+        );
+    }
+}

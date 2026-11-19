@@ -85,6 +85,7 @@ impl Awake {
         let epoch = awake.epoch;
         tokio::spawn(async move {
             let mut drain = false;
+            let mut stop = false;
             loop {
                 let next = tokio::time::timeout(idle, connected.channel.receive()).await;
                 let Some(awake) = owner.upgrade() else { break };
@@ -97,10 +98,13 @@ impl Awake {
                     Err(_) if awake.tickets.available_permits() < MAX_ACTIVE_TICKETS => continue,
                     Err(_) => {
                         // Fence under the same lock that registers new tickets.
-                        if placement.as_ref().is_some_and(|(_, place)| place.sleepable) {
+                        if placement.is_some() {
                             drain = connected.channel.request_remote_sleep().is_ok();
                         }
-                        // Reject another ticket while the drain frame is queued.
+                        if !drain {
+                            stop = connected.channel.request_remote_stop().is_ok();
+                        }
+                        // Reject another ticket while the control frame is queued.
                         awake.accepting.store(false, Ordering::Release);
                         break;
                     }
@@ -114,7 +118,7 @@ impl Awake {
                     inboxes.remove(&id);
                 }
             }
-            if drain {
+            if drain || stop {
                 let mut life = connected.channel.lifetime();
                 let _ =
                     tokio::time::timeout(Duration::from_millis(500), life.wait_for(|live| !*live))

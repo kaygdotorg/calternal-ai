@@ -12,7 +12,7 @@ use calternal_plugin_host::{
 impl Runner {
     pub(super) async fn open_space_channel(self: Arc<Self>, binding: SpaceChannelAssignment) {
         let Some(slot) = self.slot(binding.lease_id).filter(|slot| {
-            !slot.removed.load(Ordering::Acquire)
+            slot.closed.get().is_none()
                 && slot.fence.load(Ordering::Acquire) == binding.fence
                 && slot
                     .spec
@@ -28,7 +28,7 @@ impl Runner {
         let sleep = self.supervise_channel(&binding, &slot).await;
         // This reservation belongs to a v2 placement and cannot keep its sandbox
         // after the authenticated channel lease ends.
-        let small = slot.spec.image.as_deref() == Some(crate::sandbox::worker::SPACE_VM_IMAGE);
+        let small = slot.is_small_vm();
         Self::close(&slot, sleep && small).await;
     }
 
@@ -40,9 +40,7 @@ impl Runner {
         else {
             return false;
         };
-        if slot.removed.load(Ordering::Acquire)
-            || slot.fence.load(Ordering::Acquire) != binding.fence
-        {
+        if slot.closed.get().is_some() || slot.fence.load(Ordering::Acquire) != binding.fence {
             return false;
         }
         let mut life = channel.lifetime();
@@ -53,22 +51,16 @@ impl Runner {
                 .sandbox(slot, &guard)
                 .await
                 .map_err(|_| ProtocolError::Invocation)?;
-            let mut argv = [
+            let argv = [
                 "node",
                 "--permission",
                 "--allow-fs-read=.",
                 "--disallow-code-generation-from-strings",
                 "--max-old-space-size=128",
+                "worker.js",
             ]
             .map(str::to_owned)
             .to_vec();
-            if slot.spec.image.as_deref() == Some(crate::sandbox::worker::SPACE_VM_IMAGE) {
-                argv.extend([
-                    "--require".into(),
-                    format!("./{}", crate::sandbox::worker::PRIME_RANDOM_FILE),
-                ]);
-            }
-            argv.push("worker.js".into());
             let exec = sandbox
                 .exec(ExecRequest {
                     argv,

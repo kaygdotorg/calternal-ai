@@ -23,7 +23,7 @@ for arg in $(cat /proc/cmdline); do
   case "$arg" in
     calternal_small_guest=1)
       /opt/calternal-microvm-agent --reseed-small-boot
-      touch /run/calternal-small-ready
+      small_ready=1
       ;;
     calternal_net=*)
       settings=${arg#calternal_net=}
@@ -57,7 +57,9 @@ chown -R 1000:1000 /sys/fs/cgroup/agent
 mkdir -p /run/agent /run/user/1000 /data/home /data/sandboxes
 chown 1000:1000 /run/agent /run/user/1000 /data/home /data/sandboxes
 chmod 700 /run/agent /run/user/1000
-if [ -f /run/calternal-small-ready ]; then
+if [ "${small_ready:-0}" = 1 ]; then
+  touch /run/agent/small-ready
+  export CALTERNAL_SMALL_GUEST=1
   # Root owns the kernel entropy update. Only the trusted guest agent can
   # reach this socket. The package worker profile denies socket creation.
   socat UNIX-LISTEN:/run/calternal-reseed.sock,user=agent,mode=0600,fork,max-children=1 \

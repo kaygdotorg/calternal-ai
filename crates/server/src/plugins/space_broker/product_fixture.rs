@@ -51,6 +51,17 @@ impl Backend for FixtureBackend {
         self.direct.erase(account, thread)
     }
 
+    fn supports_small_plugin_vm(&self) -> bool {
+        true
+    }
+
+    fn start_space<'a>(
+        &'a self,
+        spec: &'a SandboxSpec,
+    ) -> BoxFuture<'a, SandboxResult<Arc<dyn Sandbox>>> {
+        self.start(spec)
+    }
+
     fn start<'a>(
         &'a self,
         spec: &'a SandboxSpec,

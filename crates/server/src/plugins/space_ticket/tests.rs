@@ -46,6 +46,10 @@ fn ticket_is_refused_after_grant_revision_moves_or_epoch_changes() {
     spaces
         .set_role(ids.owner, ids.shared, ids.guest, "editor")
         .unwrap();
+    // The role write can reply before its worker publishes the clean latch.
+    // A queued authority read joins publication before testing the new rights.
+    let published = spaces.grant_revision(ids.shared, machine.id).unwrap();
+    assert_eq!(reader.grants().current(), published.current());
     let ticket = Ticket::mint(&reader, scope.clone()).unwrap();
     let mut frame = SpaceFrame {
         v: 1,

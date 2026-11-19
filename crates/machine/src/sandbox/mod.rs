@@ -166,6 +166,19 @@ pub trait Backend: Send + Sync + 'static {
         false
     }
 
+    /// Erase a space's offline VM checkpoint after its placements are stopped.
+    /// Refuse if the configured backend cannot establish that deletion succeeded.
+    fn erase_space_runtime(
+        &self,
+        _space: calternal_types::SpaceId,
+    ) -> BoxFuture<'_, SandboxResult<()>> {
+        Box::pin(async {
+            Err(SandboxError(
+                "Small plugin VM storage is unavailable for erasure".into(),
+            ))
+        })
+    }
+
     /// Start an offline plugin-space placement. Called only after the enrolled
     /// carrier opens. Backends without the configured wall refuse before I/O.
     fn start_space<'a>(

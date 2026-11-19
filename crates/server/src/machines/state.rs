@@ -388,6 +388,9 @@ impl State {
         let machine = l.row.machine;
         let assigned = l.assigned_machine();
         let worker = l.row.worker;
+        let checkpoint = worker
+            && keep_files
+            && l.row.image.as_deref() == Some(calternal_machine::sandbox::worker::SPACE_VM_IMAGE);
         let stopping = worker
             && machine.is_some_and(|id| self.machines.get(&id).is_some_and(|m| !m.row.revoked));
         l.row.fence += 1;
@@ -427,14 +430,16 @@ impl State {
                     },
                 );
             }
-            self.push(
-                m,
+            let command = if checkpoint {
+                Down::SleepSpace { lease_id: lease }
+            } else {
                 Down::Stop {
                     lease_id: lease,
                     reason: why.into(),
                     keep_files,
-                },
-            );
+                }
+            };
+            self.push(m, command);
         }
     }
 
@@ -652,6 +657,15 @@ impl State {
                     }
                     _ => {}
                 }
+            } else if l.state == LeaseState::Stopping
+                && l.row.machine == Some(machine)
+                && l.row.image.as_deref()
+                    == Some(calternal_machine::sandbox::worker::SPACE_VM_IMAGE)
+                && r.sandbox == SandboxState::SleepPending
+            {
+                // The idle command is already queued. A machine may report the
+                // save before it can acknowledge the old slot's teardown.
+                continue;
             } else if l.state == LeaseState::Waiting
                 && l.row.last_machine == Some(machine)
                 && self

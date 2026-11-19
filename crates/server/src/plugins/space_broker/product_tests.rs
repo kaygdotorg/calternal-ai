@@ -48,9 +48,7 @@ async fn exercise_enrolled_runner(vm_config: Option<PathBuf>, end: VmEnd) {
         store::Store,
     };
     use calternal_machine::{
-        protocol::{
-            Capacity, Down, Owner, SyncRequest,
-        },
+        protocol::{Capacity, Down, Owner, SyncRequest},
         runner::Runner,
     };
 
@@ -145,7 +143,7 @@ async fn exercise_enrolled_runner(vm_config: Option<PathBuf>, end: VmEnd) {
         store.bind_machines(&service);
         service.set_pool_grant(ids.owner, true).unwrap();
         let approvals = [ids.personal, ids.shared].map(|space| {
-            let mut approval = ApprovedItemHead::new(
+            ApprovedItemHead::new(
                 space,
                 PackagePin {
                     package: "calternal-head-fixture".into(),
@@ -160,12 +158,7 @@ async fn exercise_enrolled_runner(vm_config: Option<PathBuf>, end: VmEnd) {
                 "notes".into(),
                 child_source(),
             )
-            .unwrap();
-            approval.container_fixture = vm_config.is_none();
-            if wait_sleep && space == ids.personal {
-                approval.idle_fixture = Some(Duration::from_millis(350));
-            }
-            approval
+            .unwrap()
         });
         let registry = Registry::empty()
             .with_space_item_heads(Vec::from(approvals))
@@ -185,7 +178,6 @@ async fn exercise_enrolled_runner(vm_config: Option<PathBuf>, end: VmEnd) {
     });
     let api = router(state.clone(), None).layer(axum::Extension(service.clone()));
     let server = tokio::spawn(async move { axum::serve(listener, api).await.unwrap() });
-    let small_vm = vm_config.is_some();
     let request = move |ack| SyncRequest {
         ack,
         draining: false,
@@ -193,7 +185,7 @@ async fn exercise_enrolled_runner(vm_config: Option<PathBuf>, end: VmEnd) {
         leases: vec![],
         capacity: Capacity {
             cpus: 1,
-            small_plugin_vm: small_vm,
+            small_plugin_vm: true,
             available_memory_bytes: Some(64 << 30),
             max_sandboxes: 2,
             ..Default::default()
@@ -236,11 +228,20 @@ async fn exercise_enrolled_runner(vm_config: Option<PathBuf>, end: VmEnd) {
     let before_claim = routes.clone();
     let owner_token = token.clone();
     let (claimed, mut claim) = tokio::sync::mpsc::channel(1);
+    let (draining, mut drain) = tokio::sync::mpsc::channel(1);
+    let continue_drain = Arc::new(tokio::sync::Semaphore::new(0));
+    let drain_gate = continue_drain.clone();
     let supervisor = tokio::spawn(async move {
         let mut ack = 0;
         let mut opened = 0;
         loop {
-            for envelope in service.sync(machine, &token, request(ack)).await.unwrap() {
+            let mut report = request(ack);
+            // During sleep, report the real slot until reaping is complete.
+            // The fault cases withhold reports to isolate the carrier fence.
+            if wait_sleep {
+                report.leases = sync_runner.reports();
+            }
+            for envelope in service.sync(machine, &token, report).await.unwrap() {
                 ack = ack.max(envelope.seq);
                 let message = envelope.message;
                 if matches!(message, Down::Assign { .. }) {
@@ -252,6 +253,10 @@ async fn exercise_enrolled_runner(vm_config: Option<PathBuf>, end: VmEnd) {
                         let unavailable = before_claim.check(&service, channel, &token).await;
                         claimed.try_send((channel.clone(), unavailable)).unwrap();
                     }
+                }
+                if wait_sleep && matches!(&message, Down::SleepSpace { .. }) {
+                    draining.try_send(()).unwrap();
+                    drain_gate.acquire().await.unwrap().forget();
                 }
                 sync_runner.handle(message).await;
                 if opened == 2 {
@@ -332,6 +337,37 @@ async fn exercise_enrolled_runner(vm_config: Option<PathBuf>, end: VmEnd) {
                 .join("space-runtime/microvm/spaces")
                 .join(ids.personal.to_string())
                 .join("current");
+            tokio::time::timeout(Duration::from_secs(80), drain.recv())
+                .await
+                .unwrap()
+                .expect("idle drain must send the dedicated machine sleep command");
+            let approval = state
+                .registry
+                .space_item_head(ids.personal, "fixture.head")
+                .unwrap();
+            let old_epoch = {
+                let awake = approval.wake.awake.lock().await;
+                let awake = awake.as_ref().unwrap();
+                assert!(awake.drain_waiter().is_some());
+                awake.epoch
+            };
+            let requests: Vec<_> = (0..10).map(|i| format!("wake-{i}")).collect();
+            let calls =
+                futures_util::future::join_all(requests.iter().map(|request| {
+                    dispatch_read(request, ids.personal, items[0].id, "fixture.head")
+                }));
+            tokio::pin!(calls);
+            assert!(futures_util::poll!(&mut calls).is_pending());
+            {
+                let awake = approval
+                    .wake
+                    .awake
+                    .try_lock()
+                    .expect("arrivals must wait outside the wake gate");
+                assert_eq!(awake.as_ref().unwrap().epoch, old_epoch);
+                assert!(awake.as_ref().unwrap().drain_waiter().is_some());
+            }
+            continue_drain.add_permits(1);
             let manifest = tokio::time::timeout(Duration::from_secs(20), async {
                 loop {
                     if !tokio::fs::try_exists(format!("/proc/{pid}")).await.unwrap()
@@ -359,11 +395,6 @@ async fn exercise_enrolled_runner(vm_config: Option<PathBuf>, end: VmEnd) {
                         > 0
                 );
             }
-            let requests: Vec<_> = (0..10).map(|i| format!("wake-{i}")).collect();
-            let calls =
-                futures_util::future::join_all(requests.iter().map(|request| {
-                    dispatch_read(request, ids.personal, items[0].id, "fixture.head")
-                }));
             let mut successes = 0;
             for result in tokio::time::timeout(Duration::from_secs(20), calls)
                 .await

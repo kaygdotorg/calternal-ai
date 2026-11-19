@@ -32,10 +32,6 @@ pub struct ApprovedItemHead {
     kind: String,
     worker_source: String,
     wake: Arc<Wake>,
-    #[cfg(test)]
-    container_fixture: bool,
-    #[cfg(test)]
-    idle_fixture: Option<Duration>,
 }
 
 impl std::fmt::Debug for ApprovedItemHead {
@@ -89,10 +85,6 @@ impl ApprovedItemHead {
             kind,
             worker_source,
             wake: Arc::default(),
-            #[cfg(test)]
-            container_fixture: false,
-            #[cfg(test)]
-            idle_fixture: None,
         })
     }
 }
@@ -135,7 +127,6 @@ struct HeldPlacement {
     account: AccountId,
     lease: Uuid,
     runtime: tokio::runtime::Handle,
-    sleepable: bool,
     settled: bool,
 }
 
@@ -249,19 +240,7 @@ async fn wake_space<D: Directory>(
     let runtime = tokio::runtime::Handle::current();
     let placement = crate::blocking::spawn(move || {
         scheduler.check_space_channel_available(pinned.space)?;
-        #[cfg(not(test))]
-        let sleepable = true;
-        #[cfg(test)]
-        let sleepable = !pinned.container_fixture;
-        let place = MachineService::request_space_vm;
-        #[cfg(test)]
-        let place = if pinned.container_fixture {
-            MachineService::request_worker
-        } else {
-            place
-        };
-        let run = place(
-            &scheduler,
+        let run = scheduler.request_space_vm(
             account,
             Uuid::new_v4(),
             PluginWorker {
@@ -274,7 +253,6 @@ async fn wake_space<D: Directory>(
             account,
             lease: run.lease_id,
             runtime,
-            sleepable,
             settled: false,
         })
     })
@@ -293,16 +271,13 @@ async fn wake_space<D: Directory>(
         .protected_spaces()
         .cloned()
         .ok_or_else(unavailable)?;
-    let idle = awake::IDLE;
-    #[cfg(test)]
-    let idle = approval.idle_fixture.unwrap_or(idle);
     Awake::attach(
         connected,
         authority,
         Arc::new(reader),
         &approval.package,
         Some((Arc::downgrade(&approval.wake), placement)),
-        idle,
+        awake::IDLE,
     )
     .await
 }
