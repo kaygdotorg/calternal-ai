@@ -5,7 +5,7 @@ async function fresh(serverOn: boolean, list: () => Promise<{ spaces: { id: stri
   vi.resetModules();
   localStorage.clear(); localStorage.setItem("cal.server", serverOn ? "1" : "0");
   const client = await import("../server/client");
-  client.server.spaces.list = list as typeof client.server.spaces.list;
+  client.server.spaces.list = list as unknown as typeof client.server.spaces.list;
   return import("./spaces.svelte");
 }
 
