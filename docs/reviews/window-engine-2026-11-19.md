@@ -431,6 +431,106 @@ auto-checkpoint work, or block-device sync latency within the content
 commit. Isolate those costs before changing the durable projection layout.
 Both authority and count updates still need to share the item transaction.
 
+### Page and synchronization attribution
+
+The next locked run uses the same instrumented `Content::write` release
+binary with the edit trigger enabled and removed, on the 8 KiB zero-idle
+workload. A checksummed static strace 7.2 built on dev-01 follows the
+disposable engine process and journal worker. It records timed `pwrite64`,
+`fdatasync`, `fsync`, and checkpoint-lock calls. Per-commit markers delimit
+the FULL content transaction from the surrounding save acknowledgment.
+The decoder reads page numbers from WAL frame headers and associates
+them with B-trees using before/after `dbstat` maps. Traced saves are
+mechanism measurements. The untraced runs give the latency comparisons.
+
+The current `window_scopes` stores total and version in one row. The 8 KiB
+arm changes sort keys and versions while retaining the same membership,
+so the trigger leaves the totals unchanged. The short Step 0 arm moves
+one membership between two scopes at widths greater than one. It changes
+two totals in different rows. Batching these saves would still touch each
+affected scope row at least once. Moving the version into memory while
+durably updating its same count row would also retain that page write
+and would need a consistent restart generation.
+
+### Disposable options
+
+The option harness compares unchanged FULL maintenance, the existing
+`window_rows` primary key stored `WITHOUT ROWID`, and two separate-file
+NORMAL-WAL variants. It runs 100 saves at 1, 4, 16 and 32 effective scopes
+on both the 8 KiB zero-idle fixture and the warm short-body Step 0 shape.
+The size and warmed-count checks run outside acknowledgment.
+
+The separate file stores rows, visible titles, counts and watermark.
+Foreground mode adds its bounded journal replay tick to save time.
+Background mode sends a nonblocking hint through the existing
+projection worker's queue and measures publication lag separately.
+One save is outstanding in this fixture. An explicit hint is necessary
+with zero idle retention because the content slot can close before the
+worker polls active slots. Worker code for this experiment lives only
+in the disposable dev copy.
+
+Dev-01 smoke checked the packed layout, both sidecar readers and the
+short body's rotating exact counts. The sidecar process-exit case cut
+after the item acknowledgment and before sidecar publication. On
+reopen, the source held the new title and the sidecar held the prior
+title and watermark. Reading the durable journal repaired the sidecar
+to the latest title and generation. This is a process-exit check.
+It does not qualify hardware power loss, a long backlog, or live
+production authority across the two stores.
+
+### Proposed revision 14 — Journal-backed window generations
+
+**Decision for the owner.** Should a Notes save be allowed to acknowledge
+before the ordered window and count reflect that save? The current v2
+qualification keeps the item, authorized ordered keys and maintained
+counts in the same transaction. A different answer changes what renderers
+can safely show immediately after a save and after restart. For example, a
+member changes an article's title and its order in a 100,000-row list.
+Today the next valid current window observes the committed ordering.
+A journal-backed index may still have the previous generation when that
+same window is requested.
+
+The authoritative item, membership and grant updates stay durable on the
+existing commit path. A rebuildable projection may publish a generation in
+one transaction in its own database. That transaction includes the row
+snapshots used for materialization, exact per-scope totals, and the durable
+journal epoch and watermark. On startup the host checks the current epoch,
+authoritative outbox and relevant authority before reading an index. A
+mismatch, interrupted publication or lost sidecar WAL holds the view in
+loading until bounded durable replay or rebuild verifies the publication.
+Replay from a durable watermark is idempotent. Older/newer source epochs
+cannot be combined. Scope admission still enforces the 32-scope bound
+inside the authoritative mutation.
+
+For a foreground sidecar publish, the host waits for the verified current
+generation before acknowledging a successful current-list edit. The window
+can return exact counts from that generation. If the item committed and
+publication failed, a retry with the same request ID resumes from the
+durable receipt and waits for publication. It never repeats the item write.
+
+For a background publish, the item acknowledgment can precede the new
+window. A ready reply from the last published generation needs an explicit
+stale marker and opaque generation token. Its rows and count must come
+from the same snapshot, with current authority checked before reading
+and again before release. The existing current `exact` count is omitted
+while stale. A distinct snapshot-exact count would need its own typed
+marker, renderer treatment and owner decision. If scope authority, grant
+revision or eligibility changed and the old row set cannot be proven safe,
+return loading without rows or a count. Renewal and cache reuse fence the
+generation as well as grant revision. A superseded snapshot cannot authorize
+an action against the live head.
+
+**Recommendation before the option results.** Keep the current transactional
+contract and merge gate. A same-transaction layout keeps the sealed freshness and crash behavior
+and avoids a second store. Its cost is the foreground WAL traffic measured
+here. A foreground sidecar can preserve the current read-after-ack promise,
+but adds an independently recoverable tick, a publication failure state,
+and two watermarks to verify. Background replay removes that tick from
+save acknowledgment, and adds a visible publication interval, a renderer
+protocol change and a fail-closed recovery state. Choose an asynchronous
+design only after its crash, revocation, backlog and exact-count behavior
+passes a product gate independent of save p95.
+
 ## Review gate
 
 The series was replayed onto `origin/dev` at `f41c3429`. The replay had
