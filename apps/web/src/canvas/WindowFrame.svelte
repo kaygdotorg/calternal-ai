@@ -6,7 +6,7 @@
   // frame line at its middle (infraternal D177). The right edge and the boundary below it resize between neighbours. Every control has the warm tooltip with its shortcut. Focus follows the press. The window that is not focused is dimmed by a neutral veil and its controls recede; the
   // focused one has no ring (both changes ease on the motion tokens and can be interrupted).
   import { setContext, type Snippet } from "svelte";
-  import { Avatar, Card, Grip, HeaderPill, Icon, InlineEditor, Panel, Pill, tip } from "@calternal/ui";
+  import { Avatar, Card, cssPx, Grip, HeaderPill, Icon, InlineEditor, Panel, Pill, tip } from "@calternal/ui";
   import { shell } from "../shell/shell.svelte";
   import WindowPresence from "../apps/notes/live/WindowPresence.svelte";
   import type { IconName } from "@calternal/ui";
@@ -33,9 +33,9 @@
   let trW = $state(0);
   let draft = $state("");
   $effect(() => { if (renaming) draft = title; });
-  /** The padlock appears near the top edge (the frame's 44 px hit area around its middle). */
+  /** The padlock appears when the pointer is in the title row or just under it, around the window's middle; it hangs under the row (the title is centred in the row, and nothing sits under another control). */
   let near = $state(false);
-  const nearTop = (e: PointerEvent) => { const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); near = e.clientY - r.top < 44 && Math.abs(e.clientX - (r.left + r.width / 2)) < 90; };
+  const nearTop = (e: PointerEvent) => { const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); const bar = cssPx("--bar-h", 52), dy = e.clientY - r.top; near = dy >= 0 && dy < bar + 40 && Math.abs(e.clientX - (r.left + r.width / 2)) < 90; };
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -45,7 +45,7 @@
     <svg viewBox="0 0 24 24" aria-hidden="true"><path class="shackle" d="M8.5 11V8a3.5 3.5 0 0 1 7 0v3" /><rect x="5" y="11" width="14" height="9.5" rx="2.5" /></svg>
   </button>
   {#if !ownTitle}
-    <div class="tl" style:max-width="calc(100% - {trW}px - var(--pad-region) * 2 - var(--s-3))">{#if shell.narrow}<Pill icon="sidebar" label="Show {win.kind}" onclick={() => shell.toggleSidebar()} />{/if}<Panel radius="pill" class="wt"><Icon name={icon} inline />{#if renaming}<InlineEditor class="title-edit" label="Rename thread" bind:value={draft} autoselect onsubmit={() => onrename?.(draft)} oncancel={() => oncancelrename?.()} onblur={() => onrename?.(draft)} />{:else}<span class="nm">{title}</span>{/if}</Panel>{#if win.kind === "settings" && focused}<HeaderPill />{/if}</div>
+    <div class="tl" style:--reserve="{trW}px">{#if shell.narrow}<span class="sb"><Pill icon="sidebar" label="Show {win.kind}" onclick={() => shell.toggleSidebar()} /></span>{/if}<div class="mid-t"><Panel radius="pill" class="wt"><Icon name={icon} inline />{#if renaming}<InlineEditor class="title-edit" label="Rename thread" bind:value={draft} autoselect onsubmit={() => onrename?.(draft)} oncancel={() => oncancelrename?.()} onblur={() => onrename?.(draft)} />{:else}<span class="nm">{title}</span>{/if}</Panel>{#if win.kind === "settings" && focused}<HeaderPill />{/if}</div></div>
   {/if}
   <div class="tr" bind:clientWidth={trW}>
     <Panel radius="pill" class="wacts">
@@ -79,18 +79,23 @@
   :global(.card.win:not([data-focused])) :is(.tl, .tr) { opacity: 0.6; }
   /* Where the app's own header keeps its pills (a bar-high row under the safe area, `--pad-region` from the sides), so the window's controls line up with the title pill the Threads view draws. */
   .tl, .tr { position: absolute; z-index: 5; top: calc(var(--safe-top) + (var(--bar-h) - var(--pill-h)) / 2); display: flex; }
-  .tl { left: var(--pad-region); gap: var(--s-3); }
+  /* The title is centred in the window at every width (the sidebar button at the left, the actions at the right, the title between): the row is as wide as the window less the pad, with the same reserve at both sides (the wider of the actions and the sidebar button) so the middle is the window's own middle, and a long title ellipsizes in the middle region and never pushes a side control. Its empty parts let pointer events through. */
+  .tl { left: var(--pad-region); right: var(--pad-region); justify-content: center; pointer-events: none; padding-left: max(calc(var(--s-8) + var(--s-3)), min(var(--reserve, 0px), calc(100% - var(--reserve, 0px) - 96px))); padding-right: max(var(--reserve, 0px), calc(var(--s-8) + var(--s-3))); }
+  .tl > :global(*) { pointer-events: auto; }
+  .tl .sb { position: absolute; left: 0; top: 0; }
+  .tl .mid-t { display: flex; gap: var(--s-3); min-width: 0; max-width: 100%; }
   .tr { right: var(--pad-region); }
-  :global(.card.win[data-edge~="l"]) .tl, :global(.card.win[data-edge="lr"]) .tl { margin-left: var(--edge-l, 0px); }
+  
+  :global(.card.win[data-edge~="l"]) .tl .sb, :global(.card.win[data-edge="lr"]) .tl .sb { left: var(--edge-l, 0px); }
   :global(.wt) { display: inline-flex; align-items: center; gap: var(--s-3); height: var(--pill-h); max-width: 100%; padding: 0 var(--s-5); font-size: var(--text-ui); font-weight: var(--strong-weight); }
-  .tl { min-width: 0; }
+  .tl { min-width: 0; box-sizing: border-box; }
   :global(.wt) { min-width: 0; }
   .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   :global(.wacts) { display: inline-flex; align-items: center; height: var(--pill-h); padding: 0 var(--s-2); gap: 2px; }
   .tr button { display: inline-grid; place-items: center; width: calc(var(--pill-h) - var(--s-2)); height: calc(var(--pill-h) - var(--s-2)); border-radius: 50%; color: var(--ink-2); transition: background-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out); }
   @media (hover: hover) and (pointer: fine) { .tr button:hover { background: var(--hover); color: var(--ink); } }
-  /* The padlock (infraternal D177, packages/ui styles.css .ui-window-lock): centred at the top edge, the shackle above its body; a 44 px hit area, no chip. */
-  .lock { position: absolute; z-index: 6; top: 2px; left: 50%; width: 44px; height: 44px; margin-left: -22px; display: grid; place-items: center; border-radius: var(--r-select); color: var(--ink); opacity: 0; pointer-events: none; transition: opacity var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out); }
+  /* The padlock (infraternal D177, packages/ui styles.css .ui-window-lock): centred under the title row (the title is centred above it, so the two never overlap), the shackle above its body; a 44 px hit area, no chip. */
+  .lock { position: absolute; z-index: 6; top: calc(var(--safe-top) + var(--bar-h) - 4px); left: 50%; width: 44px; height: 44px; margin-left: -22px; display: grid; place-items: center; border-radius: var(--r-select); color: var(--ink); opacity: 0; pointer-events: none; transition: opacity var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out); }
   .lock svg { width: var(--glyph); height: var(--glyph); fill: none; stroke: currentColor; stroke-width: var(--glyph-stroke); stroke-linecap: round; stroke-linejoin: round; overflow: visible; }
   .shackle { transform-origin: 8.5px 11px; transition: transform var(--dur-base) var(--ease-out); transform: translateY(-3px) rotate(-22deg); }
   :global(.win[data-locked]) .shackle { transform: none; }

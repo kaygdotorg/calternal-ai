@@ -24,6 +24,28 @@
 
   let { id }: { id: string } = $props();
   let conv = $state<Conversation>();
+  // The header's menu, the contrast hazards and the selection actions are made after the first frame of a thread; everything that sets the height under the messages (notices, request bar, composer) is there from the first, so the list is never moved by it.
+  let late = $state(false);
+  $effect(() => { void id; late = false; let r2 = 0; const r1 = requestAnimationFrame(() => { r2 = requestAnimationFrame(() => (late = true)); }); return () => { cancelAnimationFrame(r1); cancelAnimationFrame(r2); }; });
+  // The thread's open is stamped for the native shell and the timing suite: `calternal:thread:open` is a performance measure from the view being made to the first screenful being drawn (read it with `performance.getEntriesByName`), the same moment is the `calternal:thread-rendered` event on `window` and `data-thread-rendered` on the root (the thread's id).
+  $effect(() => {
+    const t = id;
+    performance.mark("calternal:thread:start", { detail: { id: t } });
+    delete document.documentElement.dataset.threadRendered;
+    return () => { delete document.documentElement.dataset.threadRendered; };
+  });
+  $effect(() => {
+    const c = conv; void c?.rev;
+    if (!c || c.count === 0 || c.id !== id || document.documentElement.dataset.threadRendered === id) return;
+    if (!c.get(c.count - 1)) return; // the screenful at the end has not been read yet
+    const t = id;
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      if (id !== t || document.documentElement.dataset.threadRendered === t) return;
+      document.documentElement.dataset.threadRendered = t;
+      try { performance.measure("calternal:thread:open", { start: "calternal:thread:start", detail: { id: t } }); } catch { /* no start mark */ }
+      window.dispatchEvent(new CustomEvent("calternal:thread-rendered", { detail: { id: t, ms: performance.getEntriesByName("calternal:thread:open").at(-1)?.duration ?? null } }));
+    }));
+  });
   let list = $state<ReturnType<typeof VirtualList>>();
   let listEl = $state<HTMLElement>();
   let bottomEl = $state<HTMLElement>();
@@ -80,7 +102,7 @@
   // Pictures scrolling under the floating pills raise those pills' fill (pill-contrast hazards).
   let headerEl = $state<HTMLElement>();
   $effect(() => {
-    if (!listEl || !headerEl) return;
+    if (!listEl || !headerEl || !late) return; // after the first frame: the pills' contrast follows the messages scrolling under them, nothing to follow before it
     const h = headerEl;
     return hazards(listEl, () => [...h.querySelectorAll<HTMLElement>(".pill, .title"), ...document.querySelectorAll<HTMLElement>(".hdr .hp")]);
   });
@@ -151,7 +173,7 @@
       <Panel class="title" radius="pill"><InlineEditor class="title-edit" label="Rename thread" bind:value={draftTitle} autoselect onsubmit={commitTitle} oncancel={() => (renaming = false)} onblur={commitTitle} /></Panel>
     {/if}
     <span class="grow"></span>
-    {#if summary && !windowed}
+    {#if summary && !windowed && late}
       <Pill icon="more" label="Thread actions" aria-haspopup="menu" aria-expanded={menuOpen} bind:el={moreEl} onclick={() => (menuOpen = !menuOpen)} />
       <Menu open={menuOpen} items={[...threadItems(summary), { id: "panel", label: shell.rightOpen ? "Hide side panel" : "Show side panel", icon: "sidebar-right" as const }]} label="Thread actions" trigger={moreEl} morph onclose={() => (menuOpen = false)} onpick={(item) => { menuOpen = false; if (item === "panel") shell.toggleRight(); else if (summary) runThreadItem(item, summary, startRename); }} />
     {/if}
@@ -166,7 +188,7 @@
       </div>
     {:else if conv}
       {#key conv.id}
-        <VirtualList bind:this={list} count={total} estimate={150} label="Messages" topInset={barH} bottomInset={bottomH} onrange={(a, b) => conv?.ensure(a, b)}>
+        <VirtualList bind:this={list} count={total} estimate={150} overscan={300} label="Messages" topInset={barH} bottomInset={bottomH} onrange={(a, b) => conv?.ensure(a, b)}>
           {#snippet row(i)}
             {#if conv && i < conv.count}
               {@const m = conv.get(i)}
@@ -185,14 +207,14 @@
 
   {#if summary}
     <div class="bottom" bind:this={bottomEl}>
-      <div class="inner">
+      <div class="inner" >
         <ThreadNotices thread={summary} onnew={() => void startThread().then((t) => navigate(`/threads/${t.id}`), (e: Error) => toast(`Could not start a thread: ${e.message}`))} onresume={() => client.resume(id).catch((e: Error) => toast(`Could not resume: ${e.message}`))} oncheck={() => client.check(id).then(() => toast("Checked"), (e: Error) => toast(`Could not check: ${e.message}`))} />
         <RequestBar requests={reqs} onanswer={(rid, a) => client.answer(rid, a).catch((e: Error) => toast(`Not sent: ${e.message}`))} />
         <Composer thread={summary} providers={store.providers} machines={store.machines} onpermission={(p) => client.setPermission(id, p)} onrunson={(r) => client.setRunsOn(id, r)} onreasoning={(l) => client.setReasoning(id, l)} ontype={() => void client.signInTyping?.(id)} onattach={(f, progress) => client.upload(id, f, progress)} onsend={(t, files) => { const undo = conv?.begin(); return client.send(id, t, crypto.randomUUID(), files).catch((e: Error) => { undo?.(); toast(`Not sent: ${e.message}`); throw e; }); }} onstop={() => client.stop(id).catch((e: Error) => toast(`Could not stop: ${e.message}`))} onprovider={(p, m) => client.setProvider(id, p, m)} />
       </div>
     </div>
   {/if}
-  <SelectionActions root={listEl} oncomment={(t) => bridge.comment(t)} onask={(t) => bridge.ask(t)} />
+  {#if late}<SelectionActions root={listEl} oncomment={(t) => bridge.comment(t)} onask={(t) => bridge.ask(t)} />{/if}
 </div>
 
 <style>

@@ -28,7 +28,11 @@ interface Stored {
   looseCollapsed?: boolean;
 }
 
+import { floodOf } from "../../lib/flood";
+
 const KEY = "cal.threads.layout";
+/** The set of ids of each `existing` array idsOf has been given (arrays are replaced, never changed, so the array is the key). */
+const haves = new WeakMap<string[], Set<string>>();
 
 function read(): Stored {
   try {
@@ -37,7 +41,16 @@ function read(): Stored {
   } catch {
     /* first run */
   }
+  const fl = floodOf();
+  if (fl) return floodLayout(fl.count);
   return { sections: [], loose: [] };
+}
+
+/** The flood's arrangement (`?flood`): five named sections holding the first threads in turn, the rest loose. */
+function floodLayout(n: number): Stored {
+  const names = ["Now", "This week", "Mesh", "Notes plugin", "Parked"], sections: Section[] = names.map((name, k) => ({ id: `fl-sec-${k}`, name, collapsed: false, threadIds: [] }));
+  for (let i = 0; i < Math.min(n, 400); i++) sections[i % sections.length]!.threadIds.push(`t-fl-${i}`);
+  return { sections, loose: [] };
 }
 
 class Layout {
@@ -63,11 +76,13 @@ class Layout {
 
   /** The ordered ids of a container, restricted to `existing` ids (threads gone from the space drop out), with unplaced threads (loose only) appended in the given order. */
   idsOf(c: Container, existing: string[]): string[] {
-    const have = new Set(existing);
+    let have = haves.get(existing);
+    if (!have) haves.set(existing, (have = new Set(existing))); // one Set per list of ids, not one per container (six containers asked of five thousand ids at every change)
     if (c === null) {
       const placed = new Set(this.sections.flatMap((s) => s.threadIds));
       const order = this.loose.filter((i) => have.has(i) && !placed.has(i));
-      return [...order, ...existing.filter((i) => !order.includes(i) && !placed.has(i))];
+      const ordered = new Set(order);
+      return [...order, ...existing.filter((i) => !ordered.has(i) && !placed.has(i))];
     }
     return (this.sections.find((s) => s.id === c)?.threadIds ?? []).filter((i) => have.has(i));
   }

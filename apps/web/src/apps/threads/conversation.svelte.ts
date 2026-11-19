@@ -26,6 +26,8 @@ export interface Turn {
 }
 
 const PAGE = 100;
+/** The most rows read in any one step after the rows asked for. */
+const STEP = 10;
 
 /**
  * An agent message as this page saw its turn: the saved file may not record how long it worked or what it thought (an older file, or a provider that does not say), but this page measured it.
@@ -66,6 +68,8 @@ export class Conversation {
   /** The rows last asked for, so rows that arrive later (the count grew) are read without waiting for a scroll. */
   private want: [number, number] = [0, 0];
   private off: () => void;
+  /** Set when the thread is closed: pages still being read in steps are dropped. */
+  private dead = false;
 
   constructor(
     private client: ThreadsClient,
@@ -108,17 +112,26 @@ export class Conversation {
     return this.cache.get(i);
   }
 
-  /** Makes sure the pages covering `[from, to)` are read or being read. */
+  /** Makes sure the pages covering `[from, to)` are read or being read. A thread opens with as little work as can be drawn: first the rows asked for (what the list has drawn), then the rest of the page, in steps of at most `STEP` rows, one per task, so no one task is long and each one is dropped when the thread is closed or the selection has moved on (`dispose`). */
   ensure(from: number, to: number): void {
     this.want = [from, to];
     for (let p = Math.floor(from / PAGE); p <= Math.floor((Math.min(to, this.count) - 1) / PAGE); p++) {
       if (this.loading.has(p)) continue;
       this.loading.add(p);
-      void this.client.messages(this.id, p * PAGE, (p + 1) * PAGE).then((ms) => {
-        ms.forEach((m, k) => this.cache.set(p * PAGE + k, m));
-        noteRecent(this.id, this.count, (i) => this.cache.get(i));
-        this.rev++;
-      });
+      const a = p * PAGE, b = Math.min((p + 1) * PAGE, this.count);
+      const lo = Math.max(a, from), hi = Math.min(b, to, this.count);
+      const take = (ms: Message[], at: number) => { ms.forEach((m, k) => this.cache.set(at + k, m)); noteRecent(this.id, this.count, (i) => this.cache.get(i)); this.rev++; };
+      // The order of the pieces: the last rows asked for, the rest of what was asked, then the rest of the page (nearer the end first), each cut to STEP rows.
+      const pieces: [number, number][] = [];
+      const add = (x: number, y: number) => { for (let s = y; s > x; s -= STEP) pieces.push([Math.max(x, s - STEP), s]); };
+      if (hi > lo) pieces.push([lo, hi]); // what was asked for arrives together (rows the list has drawn must not change height one by one under a list pinned to its end)
+      add(hi, b); add(a, lo);
+      const step = () => {
+        const r = pieces.shift();
+        if (!r || this.dead) return;
+        void this.client.messages(this.id, r[0], r[1]).then((ms) => { if (this.dead) return; take(ms, r[0]); setTimeout(step, 0); });
+      };
+      step();
     }
   }
 
@@ -134,6 +147,7 @@ export class Conversation {
 
   /** Stops watching. */
   dispose(): void {
+    this.dead = true;
     this.off();
   }
 }

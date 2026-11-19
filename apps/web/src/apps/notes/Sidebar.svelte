@@ -1,6 +1,6 @@
 <script lang="ts">
   // Notes sidebar: the current space's notes (the fixture's, or the server's in server mode), newest first, and a way to make a new one.
-  import { Button, Icon, IconButton, Menu, Panel, pressRow, pressRows, registerPreview, Row, SearchField, VirtualList, failed, type MenuItem, type PressBag } from "@calternal/ui";
+  import { Button, Icon, IconButton, listNav, Menu, Panel, pressRow, pressRows, registerPreview, Row, SearchField, VirtualList, failed, type MenuItem, type PressBag } from "@calternal/ui";
   import { say } from "../../server/say";
   import NotePressPreview from "./NotePressPreview.svelte";
   import { href, navigate, route, segments } from "../../lib/route.svelte";
@@ -88,7 +88,7 @@
 </script>
 
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions: one delegated listener for every row (the rows are the interactive elements) -->
-<nav aria-label="Notes" onclickcapture={pickClick} onkeydown={selectKey} use:pressRows use:twoFinger={{ kind: "note" }}>
+<nav aria-label="Notes" onclickcapture={pickClick} onkeydown={selectKey} use:pressRows use:twoFinger={{ kind: "note" }} use:listNav={{ rows: "a.row" }}>
   {#if notes.space}<p class="section-heading first">{notes.space.name}</p>{/if}
   {#if notes.tags.length}
     <div class="tags" role="group" aria-label="Filter by tag">
@@ -104,7 +104,7 @@
   {:else}
   {#if notes.list.length}
     <!-- Only the rows near the view exist in the DOM (VirtualList), however many notes there are; the next page is read when the window nears the last loaded row. -->
-    <VirtualList inside count={notes.list.length} estimate={40} overscan={600} label="Notes" onrange={(_, end) => { if (end >= notes.list.length - 40) void notes.notePages.next(); }}>
+    <VirtualList inside count={notes.list.length} estimate={40} overscan={600} label="Notes" nav={{ selected: () => notes.list.findIndex((n) => n.id === current), id: (i) => notes.list[i]?.id ?? "", indexOf: (k) => notes.list.findIndex((n) => n.id === k) }} onrange={(_, end) => { if (end >= notes.list.length - 40) void notes.notePages.next(); }}>
       {#snippet row(i)}{@const n = notes.list[i]}{#if n}<div class="li" role="presentation" data-select-id={n.id} data-picked={selection.ids.has(n.id) || undefined} use:pressRow={() => bagOf(n)}>
     {#if renaming === n.id}
       <input class="ren" aria-label="Note title" bind:value={draft} onkeydown={(e) => { if (e.key === "Enter") commit(n); else if (e.key === "Escape") renaming = null; }} onblur={() => commit(n)} use:focusNow />

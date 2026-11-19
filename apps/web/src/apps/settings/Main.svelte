@@ -35,7 +35,7 @@
 {#snippet groups()}
 {#each page!.groups as g}
       <SettingGroup title={g.title} danger={g.danger}>
-        {#each g.settings as s (s.id)}<SettingRow {s} highlighted={lit === s.id} />{/each}
+        {#each g.settings.filter((x) => !x.when || x.when()) as s (s.id)}<SettingRow {s} highlighted={lit === s.id} />{/each}
       </SettingGroup>
     {/each}
 {/snippet}

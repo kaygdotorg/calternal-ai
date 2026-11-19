@@ -10,7 +10,7 @@
   import { Button, Icon, IconButton, InlineEditor, Menu, Row, Selector, toast, undoable, type MenuItem } from "@calternal/ui";
   import { href, navigate, segments } from "../../lib/route.svelte";
   import { layout, type Container } from "./layout.svelte";
-  import { pressRow, pressRows, registerPreview, Sheet, type PressBag } from "@calternal/ui";
+  import { listNav, pressRow, pressRows, registerPreview, Sheet, VirtualList, type PressBag } from "@calternal/ui";
   import RequestBar from "./RequestBar.svelte";
   import ThreadPreview from "./ThreadPreview.svelte";
   import { archiveThread, containerName, containersOf, copyThreadLink, runThreadItem, snoozeItems, threadItems, topLevelIds } from "./thread-menu";
@@ -34,7 +34,10 @@
   const top = $derived(topLevelIds());
   const idsIn = (c: Container) => layout.idsOf(c, top);
   const ids0 = $derived(idsIn(null));
-  const kids = (id: string) => shown.filter((t) => t.parentId === id).sort((a, b) => b.updatedAt - a.updatedAt);
+  // Children by parent, built once per change of the list (a row asks for its children, so a per-row filter was one pass over every thread for every drawn row).
+  const kidsBy = $derived.by(() => { const m = new Map<string, ThreadSummary[]>(); for (const t of shown) if (t.parentId) (m.get(t.parentId) ?? m.set(t.parentId, []).get(t.parentId)!).push(t); for (const l of m.values()) l.sort((a, b) => b.updatedAt - a.updatedAt); return m; });
+  const NONE: ThreadSummary[] = [];
+  const kids = (id: string) => kidsBy.get(id) ?? NONE;
   const containers = $derived<Container[]>(containersOf());
   const nameOf = containerName;
 
@@ -52,9 +55,19 @@
   });
   const returns = (s: { until: number; auto: boolean }) => (s.auto ? `Back when the limit resets, ${new Date(s.until).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}` : backLabel(s.until, store.now));
   const TABS = [{ value: "inbox" as const, label: "Inbox" }, { value: "all" as const, label: "All Threads" }];
+  // The generated-UI renderer (cards in messages, questions in the request bar) is its own chunk: fetched once the list has been idle for a moment, so the first thread a person opens does not wait for it.
+  $effect(() => { const h = setTimeout(() => void import("../../genui/GenUi.svelte"), 1500); return () => clearTimeout(h); });
+  /** A list longer than this is drawn windowed (only the rows near the view exist in the DOM). */
+  const WINDOWED = 60;
   const tab = $derived(view.chosen ?? (items.length || store.jobPrompts.length ? "inbox" : "all"));
 
   // ---- renaming in place ----
+  /** The thread whose row is hovered, focused or pressed: the only row that draws its buttons. */
+  let hot = $state<string | null>(null);
+  let hotTimer = 0, arrowAt = 0;
+  const arrowKey = (e: KeyboardEvent) => { if (/^(Arrow(Up|Down)|Home|End|Page(Up|Down))$/.test(e.key)) arrowAt = performance.now(); };
+  /** A pointer makes a row hot at once; focus only after a rest (a held arrow key moves focus through hundreds of rows: none of them should draw its buttons on the way). */
+  const hotOf = (e: Event) => { const id = (e.target as Element | null)?.closest?.<HTMLElement>("[data-tid]")?.dataset.tid; if (!id || id === hot) return; clearTimeout(hotTimer); if (e.type === "focusin" && performance.now() - arrowAt < 300) hotTimer = window.setTimeout(() => (hot = id), 150); else hot = id; };
   let editing = $state<{ kind: "thread" | "section"; id: string } | null>(null);
   const LOOSE = "__loose__";
   let draft = $state("");
@@ -154,16 +167,19 @@
 {#snippet line(t: ThreadSummary, depth: number, selected: boolean)}
   {@const sw = swipeOf(t)}
   <SwipeRow lead={sw.lead} trail={sw.trail} busy={() => dragId !== null}>
-    <div class="rw">
+    <div class="rw" data-tid={t.id}>
       <Row {depth} title={t.title} href={href(`/threads/${t.id}`)} {selected}>
         {#snippet leading()}<span class="mark" class:pulse={t.state === "running"}><Icon inline name={t.provider} /></span>{/snippet}
         {#snippet trailing()}<span class="tail"><StateMark state={t.state} /></span>{/snippet}
       </Row>
-      <span class="acts">
-        <IconButton small icon="link" label="Copy link" onclick={() => copyLink(t)} />
-        <IconButton small icon="archive" label="Archive" onclick={() => void archive(t)} />
-        <IconButton small icon="more" label="More actions" aria-haspopup="menu" onclick={(e) => menuFrom(e.currentTarget as HTMLElement, t)} />
-      </span>
+      <!-- The row's buttons exist only while it is hovered, focused or pressed (`hot`): a list of thousands draws one set, not thousands. -->
+      {#if hot === t.id}
+        <span class="acts">
+          <IconButton small icon="link" label="Copy link" onclick={() => copyLink(t)} />
+          <IconButton small icon="archive" label="Archive" onclick={() => void archive(t)} />
+          <IconButton small icon="more" label="More actions" aria-haspopup="menu" onclick={(e) => menuFrom(e.currentTarget as HTMLElement, t)} />
+        </span>
+      {/if}
     </div>
   </SwipeRow>
 {/snippet}
@@ -195,13 +211,20 @@
 
 {#snippet list(c: Container, ids: string[])}
   <ul class="threads" ondragover={(e) => { if (dragId) { e.preventDefault(); if (!ids.length) over = { c, index: 0 }; } }} ondrop={(e) => { e.preventDefault(); if (over) dropHere(over.c, over.index); }} role="presentation">
+    {#if ids.length > WINDOWED}
+      <!-- A long list draws only the rows near the view (VirtualList), so thousands of threads cost what a screenful costs; the arrow keys move through all of them (docs/native-feel.md, section 20). -->
+      <VirtualList inside count={ids.length} estimate={40} overscan={200} label="Threads" nav={{ selected: () => ids.indexOf(current ?? ""), id: (i) => ids[i] ?? "", indexOf: (k) => ids.indexOf(k) }}>
+        {#snippet row(i)}{@const t = byId.get(ids[i]!)}{#if t}<ul class="threads" role="presentation">{@render thread(t, c, i, ids.length)}</ul>{/if}{/snippet}
+      </VirtualList>
+    {:else}
     {#each ids as id, i (id)}{#if byId.get(id)}{@render thread(byId.get(id)!, c, i, ids.length)}{/if}{/each}
+    {/if}
     {#if !ids.length && c !== null}<li class="hint" class:over={over?.c === c}>Drag threads here</li>{/if}
   </ul>
 {/snippet}
 
 {#if !empty}<TopEntries />{/if}
-<nav aria-label="Threads" use:swipeRows use:pressRows>
+<nav aria-label="Threads" onkeydowncapture={arrowKey} onpointerover={hotOf} onfocusin={hotOf} onpointerdown={hotOf} onpointerleave={() => { if (!document.activeElement?.closest("nav[aria-label=Threads]")) hot = null; }} use:swipeRows use:pressRows use:listNav={{ rows: "a.row, button.row" }}>
   {#if empty}
     <div class="empty">
       <h2>No threads yet</h2>

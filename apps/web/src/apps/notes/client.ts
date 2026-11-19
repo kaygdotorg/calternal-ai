@@ -4,6 +4,7 @@
  */
 import { ServerClient, ServerError } from "../../server/client";
 import { FIXTURE_SPACES } from "../../shell/spaces.svelte";
+import { floodOf, floodRng, floodTitle } from "../../lib/flood";
 
 /** One page of a list: its rows and the cursor for the next page (null at the end). A cursor is opaque, belongs to the account, space and filter that made it, and may stop working (the server restarted): the caller then starts over. */
 export interface Page<T> { items: T[]; next: string | null }
@@ -91,6 +92,29 @@ export function longNote(words = 50_000): string {
 export class FixtureNotes implements NotesClient {
   private notes = new Map<string, Note>([...SEED, ["n-long", "The long note", longNote()] as [string, string, string]].map(([id, title, markdown], i) => [id, { id, spaceId: id.startsWith("n-i") ? FIXTURE_SPACES[1]!.id : FIXTURE_SPACES[0]!.id, title, markdown, revision: "1", updatedAt: new Date(Date.UTC(2026, 10, 17, 9, 50 - i)).toISOString() }]));
   private listeners = new Set<() => void>();
+  /** `?notes=N` or `?flood` (fixtures only, lib/flood.ts) adds generated notes to the first space: varied titles and sizes (headings, tables, code, tags), times across months; `?churn` then creates, renames and trashes some several times a second. */
+  constructor() {
+    const fl = floodOf(), extra = Math.min(20000, fl ? fl.count : Number(new URLSearchParams(location.search).get("notes")) || 0);
+    const r = floodRng(11);
+    const tags = ["#plan", "#idea", "#meeting", "#infra", "#design", "#todo"];
+    for (let i = 0; i < extra; i++) {
+      const title = floodTitle(r), long = r() < 0.1, tag = tags[Math.floor(r() * tags.length)]!;
+      const body = [`# ${title}`, `${tag} ${r() < 0.5 ? "#draft" : ""}`, ...Array.from({ length: long ? 120 : 3 + Math.floor(r() * 12) }, (_, k) => k % 9 === 4 ? "| Suite | Result |\n| --- | --- |\n| store | passed |" : k % 9 === 7 ? "```rust\nfn main() { println!(\"flood\"); }\n```" : `Line ${k + 1} of note ${i + 1}: ${floodTitle(r)}.`)].join("\n\n");
+      this.notes.set(`n-g${i}`, { id: `n-g${i}`, spaceId: FIXTURE_SPACES[0]!.id, title, markdown: body, revision: "1", updatedAt: new Date(Date.UTC(2026, 10, 16, 9, 0) - i * 41_000 - Math.floor(r() * 40_000)).toISOString() });
+    }
+    if (fl?.churn) {
+      let seq = 0;
+      window.setInterval(() => {
+        const ids = [...this.notes.keys()].filter((k) => k.startsWith("n-g") || k.startsWith("n-ch"));
+        if (!ids.length) return;
+        const id = ids[Math.floor(r() * ids.length)]!, n = this.notes.get(id)!, roll = r();
+        if (roll < 0.4) { const nid = `n-ch${seq++}`; this.notes.set(nid, { ...n, id: nid, title: floodTitle(r), revision: "1", updatedAt: new Date().toISOString() }); }
+        else if (roll < 0.8) this.notes.set(id, { ...n, title: floodTitle(r), revision: String(Number(n.revision) + 1), updatedAt: new Date().toISOString() });
+        else { this.notes.delete(id); this.trashed.set(id, { ...n, updatedAt: new Date().toISOString() }); }
+        this.ping();
+      }, Math.max(20, Math.round(1000 / fl.churn)));
+    }
+  }
   async spaces(): Promise<Space[]> { return FIXTURE_SPACES; }
   async list(spaceId: string, tag?: string, cursor?: string): Promise<Page<NoteSummary>> { return pageOf([...this.notes.values()].filter((n) => n.spaceId === spaceId && (!tag || this.tagsOf(n).some((t) => t === tag || t.startsWith(`${tag}/`)))).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).map(({ markdown: _m, revision: _r, ...s }) => s), cursor); }
   async get(_s: string, id: string): Promise<Note> {
@@ -115,7 +139,9 @@ export class FixtureNotes implements NotesClient {
     return next;
   }
   private trashed = new Map<string, Note>();
-  private tagsOf = (n: Note): string[] => [...new Set([...n.markdown.matchAll(/(?:^|\s)#([\p{L}\d_/-]+)/gu)].map((m) => m[1]!))];
+  private tagMemo = new Map<string, string[]>();
+  /** The tags of a note's text, read once per text (the list, the tag filter and the tag counts all ask, and a flood has thousands of notes). */
+  private tagsOf = (n: Note): string[] => { let t = this.tagMemo.get(n.markdown); if (!t) { t = [...new Set([...n.markdown.matchAll(/(?:^|\s)#([\p{L}\d_/-]+)/gu)].map((m) => m[1]!))]; if (this.tagMemo.size > 50000) this.tagMemo.clear(); this.tagMemo.set(n.markdown, t); } return t; };
   async rename(id: string, revision: string, title: string): Promise<Note> { const n = await this.get("", id); return this.update("", id, revision || n.revision, title, n.markdown.replace(/^# .*/m, `# ${title}`)); }
   async remove(id: string): Promise<void> { const n = await this.get("", id); this.notes.delete(id); this.trashed.set(id, { ...n, updatedAt: new Date().toISOString() }); this.ping(); }
   async restore(id: string): Promise<Note> { const n = this.trashed.get(id); if (!n) throw new ServerError("not_found", "not in the trash"); this.trashed.delete(id); this.notes.set(id, n); this.ping(); return n; }

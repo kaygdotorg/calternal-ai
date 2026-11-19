@@ -26,6 +26,10 @@ export interface Prefs {
   materials: { blur: boolean; dim: boolean; tint: boolean };
   /** The UI size, percent: one scale for type, spacing and controls together (`--ui-scale`). */
   uiSize: number;
+  /** What a window's background is in the Mac app (the web ignores it, the preference is the person's and follows them): `wallpaper` (the default whenever a wallpaper is set, as on the web), or `translucent` (Liquid Glass with the desktop showing through, plus `frost`). */
+  material: "wallpaper" | "translucent";
+  /** How frosted a translucent Mac window is, 0 (pure Liquid Glass) to 1 (fully frosted). Live while the slider is dragged, written when editing rests (`persistSoon`). */
+  frost: number;
   /** The order the person chose for the apps in the switcher (app kinds, first to last); apps not listed follow in their own order. */
   appOrder: string[];
   /** The theme (palette) in use: a preset id whose palette applies, or null for the built-in tokens. Independent of the wallpaper. */
@@ -55,6 +59,8 @@ export const DEFAULTS: Prefs = {
   wallpaperId: "auto",
   materials: { blur: true, dim: true, tint: true },
   uiSize: 100,
+  material: "wallpaper",
+  frost: 0.2,
   appOrder: [],
   themeId: null,
   presetId: tokens.appearance["default-preset"],

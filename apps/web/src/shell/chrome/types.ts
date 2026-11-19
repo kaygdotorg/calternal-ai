@@ -16,7 +16,7 @@ export interface ChromeItem { id: string; title: string; icon?: ChromeIconName; 
 
 /** One row of a section. */
 export interface ChromeRow {
-  id: string; title: string; detail?: string; icon?: ChromeIconName; symbol?: string; trailing?: ChromeBadge[]; selected?: boolean;
+  id: string; title: string; icon?: ChromeIconName; symbol?: string; trailing?: ChromeBadge[]; selected?: boolean;
   /** Spoken name and hint when the title alone is not enough. */
   label?: string; hint?: string;
   leadingActions?: ChromeItem[]; trailingActions?: ChromeItem[]; menu?: ChromeItem[];
@@ -30,7 +30,7 @@ export interface ChromeSection { id: string; title: string | null; collapsed?: b
 export interface ChromeSelector { id: string; selected: string; options: { id: string; title: string; badge?: ChromeBadge }[] }
 
 /** The person's look, published so the shell can paint the wallpaper and the glass natively (contract/chrome-v1.schema.json): `wallpaper` is `auto`, a name the shell knows (`dune`, `aurora`, `ember`) or a library id (then `image` carries the picture once, as a PNG or JPEG data URL, and the shell blurs and solves the veils itself), or null for none. */
-export interface ChromeAppearance { wallpaper: string | null; blur: boolean; dim: boolean; tint: boolean; uiSize: number; image?: string }
+export interface ChromeAppearance { wallpaper: string | null; blur: boolean; dim: boolean; tint: boolean; uiSize: number; material: "wallpaper" | "translucent"; frost: number; image?: string }
 
 /** The whole description. */
 export interface ChromeDescription {

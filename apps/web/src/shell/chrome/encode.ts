@@ -11,7 +11,7 @@ const item = (i: ChromeItem): Record<string, unknown> => ({
 });
 const badge = (b: ChromeBadge): Record<string, unknown> => ({ kind: b.kind, ...(b.kind === "icon" ? { value: b.icon ?? b.symbol ?? "" } : b.value !== undefined ? { value: String(b.value) } : {}), ...(b.tone ? { tone: b.tone } : {}) });
 const row = (r: ChromeRow): Record<string, unknown> => ({
-  id: r.id, title: r.title, ...(r.detail ? { detail: r.detail } : {}), ...(r.icon ? { icon: r.icon } : r.symbol ? { icon: { symbol: r.symbol } } : {}), ...(r.trailing?.length ? { trailing: r.trailing.map(badge) } : {}),
+  id: r.id, title: r.title, ...(r.icon ? { icon: r.icon } : r.symbol ? { icon: { symbol: r.symbol } } : {}), ...(r.trailing?.length ? { trailing: r.trailing.map(badge) } : {}),
   ...(r.selected ? { selected: true } : {}), ...(r.label ? { label: r.label } : {}), ...(r.hint ? { hint: r.hint } : {}),
   ...(r.leadingActions?.length ? { leadingActions: r.leadingActions.map(item) } : {}), ...(r.trailingActions?.length ? { trailingActions: r.trailingActions.map(item) } : {}), ...(r.menu?.length ? { menu: r.menu.map(item) } : {}),
 });

@@ -117,6 +117,8 @@ describe("native chrome: the appearance and the schema form", () => {
     expect(["string", "object"]).toContain(typeof a.wallpaper); // a name, or null for none
     expect(typeof a.blur).toBe("boolean");
     expect(a.uiSize).toBeGreaterThan(0);
+    expect(a.material).toBe("wallpaper");
+    expect(a.frost).toBeCloseTo(0.2);
   });
   test("the encoder keeps icons as names, badge values as strings, and windows a long section with count and offset", async () => {
     const { toSchema } = await import("./encode");

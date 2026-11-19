@@ -5,6 +5,10 @@
  */
 interface Bridge { appearance?: (o: { scheme: "light" | "dark"; background: string }) => Promise<unknown>; ready?: () => Promise<unknown> }
 const bridge = (): Bridge | undefined => (window as unknown as { calternalNative?: Bridge }).calternalNative;
+/** The shell's capabilities (`calternalNative.capabilities`, for example `window-material` on the Mac app); empty in a browser. */
+export function nativeCapabilities(): string[] { const c = (window as unknown as { calternalNative?: { capabilities?: unknown } }).calternalNative?.capabilities; return Array.isArray(c) ? c.filter((x): x is string => typeof x === "string") : []; }
+/** Whether the page runs inside a native shell. */
+export const inNativeShell = (): boolean => !!(window as unknown as { calternalNative?: unknown }).calternalNative;
 let lastAppearance = "";
 
 /** Reports the scheme and the colour behind the page to the shell, when it changed since the last report. */

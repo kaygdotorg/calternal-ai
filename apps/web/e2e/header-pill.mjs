@@ -20,6 +20,8 @@ try {
     ok(s.on && s.text === want, `${device}: a section heading that has passed the line is in the pill`, `${s.text} (want ${want})`);
     const clear = await p.evaluate(() => { const h = document.querySelector(".hdr")?.getBoundingClientRect(), b = document.querySelector(".edge.l")?.getBoundingClientRect(); return !h || !b || h.left >= b.right - 1 || h.top >= b.bottom || h.bottom <= b.top; });
     ok(clear, `${device}: the pill does not overlap the sidebar button`);
+    const mid = await p.evaluate(() => { const h = (document.querySelector("[data-win][data-focused] .mid-t") ?? document.querySelector(".hdr .hp"))?.getBoundingClientRect(), c = (document.querySelector("[data-win][data-focused]") ?? document.querySelector(".mid-card"))?.getBoundingClientRect(); return h && c ? Math.abs(h.left + h.width / 2 - (c.left + c.width / 2)) : 999; });
+    ok(mid <= 2, `${device}: the pill is centred at the top of the card`, `${mid.toFixed(1)} px off`);
     await sc.evaluate((e) => { e.scrollTop = 0; }); await p.waitForTimeout(500);
     s = await state(p);
     ok(!s.on && s.title === "1", `${device}: scrolled back the pill leaves and the title returns`);

@@ -4,12 +4,13 @@
   import { Icon, IconButton, Menu, toast, type MenuItem } from "@calternal/ui";
   import { bridge } from "./compose.svelte";
   import type { Message } from "./model";
+  import { clock } from "./clock";
   // `armed`: the message has been pointed at or focused (or there is no hover). The three controls and the menu are only created then, so a long list does not
   // pay for hundreds of controls nobody has reached for.
   // `onedit` is given for the person's own messages when the client can edit (the edit is another version of the thread from this message on); `onversion` for a message that has more than one version.
   let { message, armed = false, onedit, onversion }: { message: Message; armed?: boolean; onedit?: () => void; onversion?: (version: number) => void } = $props();
   const text = $derived(message.blocks.flatMap((b) => (b.type === "text" ? [b.text] : [])).join("\n\n"));
-  const time = $derived(new Date(message.at).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: "UTC" }));
+  const time = $derived(clock.format(new Date(message.at)));
   let menu = $state(false);
   let more = $state<HTMLButtonElement>();
   const items = $derived<MenuItem[]>([...(onedit ? [{ id: "edit", label: "Edit message", icon: "edit" as const }] : []), { id: "quote", label: "Quote in the message box" }, { id: "link", label: "Copy link to this message" }]);

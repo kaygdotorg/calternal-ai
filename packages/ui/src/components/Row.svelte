@@ -41,9 +41,9 @@
   .row.tall { min-height: var(--row-h-settings); }
   .row:active { scale: var(--press-scale); }
   @media (hover: hover) and (pointer: fine) { .row:not([aria-current]):hover { background: var(--hover); } }
-  .row[aria-current] { background: var(--accent-soft); }
+  .row[aria-current], .row[data-cursor] { background: var(--accent-soft); }
   .ic { flex: none; display: grid; color: var(--ink-2); }
-  .row[aria-current] .ic { color: var(--accent); }
+  .row[aria-current] .ic, .row[data-cursor] .ic { color: var(--accent); }
   .txt { flex: 1; min-width: 0; display: grid; }
   .t, .s { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .s { display: flex; align-items: center; gap: var(--s-2); }

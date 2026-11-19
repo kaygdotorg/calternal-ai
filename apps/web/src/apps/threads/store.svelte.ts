@@ -6,6 +6,7 @@ import { inboxOf, jobPromptsOf, snoozedOf, type InboxItem, type JobPrompt, type 
 import type { SignInRequest } from "./model";
 import type { ThreadsClient } from "./client";
 import { FixtureClient } from "./fixtures";
+import { perFrame } from "../../lib/per-frame";
 import { server, serverMode } from "../../server/client";
 import { ServerThreads } from "../../server/threads-client";
 import type { ProviderOption, Request, ThreadSummary } from "./model";
@@ -15,8 +16,9 @@ export const client: ThreadsClient = serverMode() ? new ServerThreads(server) : 
 
 /** Threads, requests and providers as runes. */
 class ThreadsStore {
-  threads = $state<ThreadSummary[]>([]);
-  requests = $state<Request[]>([]);
+  /** Replaced whole by every update (never changed in place), so no per-thread signals: a deep `$state` over thousands of threads made every pass over the list a pass through proxies. */
+  threads = $state.raw<ThreadSummary[]>([]);
+  requests = $state.raw<Request[]>([]);
   providers = $state<ProviderOption[]>([]);
   machines = $state<string[]>([]);
   ready = $state(false);
@@ -29,7 +31,7 @@ class ThreadsStore {
     this.providers = p;
     this.machines = m;
     this.ready = true;
-    client.watchThreads((x) => (this.threads = x));
+    client.watchThreads(perFrame((x: ThreadSummary[]) => (this.threads = x)));
     client.watchRequests((x) => this.setRequests(x));
   }
 
@@ -73,13 +75,9 @@ class ThreadsStore {
   /** The clock the Inbox and Snoozed are worked out at; the sidebar moves it to the next time a snoozed thread returns, so a thread comes back by itself. */
   now = $state(Date.now());
   /** The Inbox: the threads that need you and are not snoozed, and why (inbox.ts). */
-  get inbox(): InboxItem[] {
-    return inboxOf(this.threads, this.requests, this.now);
-  }
+  inbox = $derived<InboxItem[]>(inboxOf(this.threads, this.requests, this.now));
   /** The snoozed threads, the soonest to return first. */
-  get snoozed(): SnoozedItem[] {
-    return snoozedOf(this.threads, this.now);
-  }
+  snoozed = $derived<SnoozedItem[]>(snoozedOf(this.threads, this.now));
   /** What plugin jobs wait on, for the Inbox (they belong to no thread). */
   get jobPrompts(): JobPrompt[] { return jobPromptsOf(this.requests); }
 
