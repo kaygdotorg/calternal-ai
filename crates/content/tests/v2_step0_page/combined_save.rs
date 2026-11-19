@@ -9,6 +9,9 @@ use serde_json::json;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
+const MAX_SCOPES: i64 = 256;
+const MEMBERS_PER_SCOPE: i64 = 6_000;
+
 const PROJECTION: &str = "
     CREATE TABLE fixed_audiences(audience INTEGER PRIMARY KEY);
     CREATE TABLE save_projection_target(id TEXT PRIMARY KEY);
@@ -38,7 +41,7 @@ fn save(
     scopes: i64,
     run: usize,
 ) -> Item {
-    let moving = (scopes != 0).then_some(16 + run % 2);
+    let moving = (scopes != 0).then_some(MAX_SCOPES + (run % 2) as i64);
     let key = format!("combined-{scopes}-{run}");
     // Match the ordinary small, distinct body used by the existing note-save
     // arm in crates/perf/src/notes_scenario.rs.
@@ -68,10 +71,15 @@ fn set_scope(db: &mut Connection, initial: &Item, scopes: i64, old_target: Optio
     if let Some(old_target) = old_target {
         tx.execute(
             "DELETE FROM scoped_membership WHERE collection=?1
-             AND audience BETWEEN 1 AND 17
+             AND audience BETWEEN 1 AND ?4
              AND newest=-CAST(unixepoch(?2,'subsec')*1000 AS INTEGER)
              AND id=?3",
-            params![DYNAMIC, old_target.updated_at, old_target.id.to_string()],
+            params![
+                DYNAMIC,
+                old_target.updated_at,
+                old_target.id.to_string(),
+                MAX_SCOPES + 1
+            ],
         )
         .unwrap();
     }
@@ -90,20 +98,22 @@ fn set_scope(db: &mut Connection, initial: &Item, scopes: i64, old_target: Optio
         tx.execute(
             "INSERT INTO scoped_membership
              SELECT ?1,audience,-CAST(unixepoch(?2,'subsec')*1000 AS INTEGER),?3 FROM fixed_audiences
-             UNION ALL SELECT ?1,16,-CAST(unixepoch(?2,'subsec')*1000 AS INTEGER),?3",
-             params![DYNAMIC,initial.updated_at,initial.id.to_string()],
+             UNION ALL SELECT ?1,?4,-CAST(unixepoch(?2,'subsec')*1000 AS INTEGER),?3",
+             params![DYNAMIC,initial.updated_at,initial.id.to_string(),MAX_SCOPES],
         ).unwrap();
     }
     tx.commit().unwrap();
 }
 
 fn verify(writer: &Connection, item: &Item, scopes: i64) {
+    let moving = item.metadata["moving_audience"].as_i64();
     let keys: i64 = writer
         .query_row(
             "SELECT count(*) FROM scoped_membership
-         WHERE collection=?1 AND audience BETWEEN 1 AND 17
+         WHERE collection=?1
+         AND audience IN (SELECT audience FROM fixed_audiences UNION ALL SELECT ?4)
          AND newest=-CAST(unixepoch(?2,'subsec')*1000 AS INTEGER) AND id=?3",
-            params![DYNAMIC, item.updated_at, item.id.to_string()],
+            params![DYNAMIC, item.updated_at, item.id.to_string(), moving],
             |row| row.get(0),
         )
         .unwrap();
@@ -111,19 +121,18 @@ fn verify(writer: &Connection, item: &Item, scopes: i64) {
     if scopes > 0 {
         let counts: (i64, i64) = writer
             .query_row(
-                "SELECT (SELECT n FROM scoped_counts WHERE collection=1 AND audience=16),
-                    (SELECT n FROM scoped_counts WHERE collection=1 AND audience=17)",
-                [],
+                "SELECT (SELECT n FROM scoped_counts WHERE collection=1 AND audience=?1),
+                    (SELECT n FROM scoped_counts WHERE collection=1 AND audience=?2)",
+                [MAX_SCOPES, MAX_SCOPES + 1],
                 |r| Ok((r.get(0)?, r.get(1)?)),
             )
             .unwrap();
-        let moving = item.metadata["moving_audience"].as_u64().unwrap();
         assert_eq!(
             counts,
-            if moving == 16 {
-                (6001, 6000)
+            if moving == Some(MAX_SCOPES) {
+                (MEMBERS_PER_SCOPE + 1, MEMBERS_PER_SCOPE)
             } else {
-                (6000, 6001)
+                (MEMBERS_PER_SCOPE, MEMBERS_PER_SCOPE + 1)
             }
         );
     }
@@ -137,12 +146,17 @@ pub(super) fn exercise(content: &Content, space: SpaceId, path: &Path) {
     writer.execute_batch(PROJECTION).unwrap();
     let tx = writer.transaction().unwrap();
     populate_membership(&tx, "main");
-    for audience in 2..=17 {
+    for audience in 2..=MAX_SCOPES + 1 {
         tx.execute(
             "INSERT INTO scoped_membership
              SELECT ?1,?2,newest,id FROM scoped_membership WHERE collection=?1 AND audience=1
-             ORDER BY newest,id LIMIT 6000 OFFSET ?3",
-            params![DYNAMIC, audience, audience * 4000],
+             ORDER BY newest,id LIMIT ?3 OFFSET ?4",
+            params![
+                DYNAMIC,
+                audience,
+                MEMBERS_PER_SCOPE,
+                (audience * 4_000) % 85_000
+            ],
         )
         .unwrap();
     }
@@ -161,7 +175,16 @@ pub(super) fn exercise(content: &Content, space: SpaceId, path: &Path) {
     assert!(registered);
     let actor = AccountId::new();
     let mut last = None;
-    for scopes in [0, 1, 4, 16] {
+    let widths = [0, 1, 4, 16, 32, 64, 256];
+    let selected = std::env::var("STEP0_SCOPE").ok().map(|value| {
+        let width = value.parse().unwrap();
+        assert!(widths.contains(&width));
+        width
+    });
+    for scopes in widths
+        .into_iter()
+        .filter(|width| selected.is_none_or(|selected| *width == selected))
+    {
         let mut item = save(content, space, actor, None, scopes, 0);
         content.materialize(space, item.id).unwrap();
         set_scope(&mut writer, &item, scopes, last.as_ref());

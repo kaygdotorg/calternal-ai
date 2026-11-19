@@ -69,11 +69,16 @@ fn jumps(db: &Path, writer: &Connection) {
         params![DYNAMIC, AUDIENCE, WINDOW as i64, 10_000],
     );
     for collection in [DYNAMIC, MANUAL] {
-        for offset in OFFSETS {
+        let total = count(writer, collection);
+        let mut offsets = OFFSETS.to_vec();
+        if collection == MANUAL {
+            offsets.extend([total - WINDOW as i64, total - 1, total]);
+            offsets.sort_unstable();
+        }
+        for offset in offsets {
             let mut elapsed = Vec::new();
             let mut visits = Vec::new();
             let mut vm = Vec::new();
-            let total = count(writer, collection);
             // Independent forward walk checks the reverse offset and row order.
             let expected = fetch(
                 writer,
