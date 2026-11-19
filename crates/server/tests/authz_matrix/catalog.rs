@@ -75,12 +75,33 @@ async fn every_registered_operation_has_an_independent_matrix_row() {
         "notes.delete",
         "notes.restore",
         "notes.rename",
+        "notes.rename.status",
+        "notes.rename.undo",
         "notes.lookup",
         "tags.list",
         "tags.lookup",
         "trash.list",
         "trash.purge",
+        "trash.empty.preview",
+        "trash.empty",
+        "trash.empty.status",
         "resolve", // dedicated address matrix in resolver.rs
+        // Dedicated item sharing fixtures in resolver.rs.
+        "collections.get",
+        "collections.list",
+        "collections.create",
+        "collections.set_members",
+        "sharing.list",
+        "sharing.mark_seen",
+        "sharing.rescue",
+        "sharing.audiences",
+        "sharing.shared_with_me",
+        "sharing.grant",
+        "sharing.revoke",
+        "sharing.link_create",
+        "sharing.link_update",
+        "sharing.link_copy",
+        "sharing.set_link_policy",
         "spaces.list",
         "wallpapers.list", // signed-in installation catalog in conformance/wallpaper_cases.rs
         "spaces.create",
@@ -128,16 +149,53 @@ async fn every_registered_operation_has_an_independent_matrix_row() {
             "{op}"
         );
     }
+    // Owner-only installation policy is exercised in conformance/harness_admin_cases.rs.
+    for op in [
+        "harnesses.list",
+        "harnesses.stage",
+        "harnesses.activate",
+        "harnesses.rollback",
+    ] {
+        assert!(stored_rows.insert(op), "duplicate harness operation {op}");
+        assert_eq!(
+            fixture
+                .state
+                .registry
+                .snapshot()
+                .policy(op)
+                .unwrap()
+                .required,
+            Capability::ServerSettings,
+            "{op}"
+        );
+    }
     // Manual-turn controls are covered by provider_turns.rs and agent_cases conformance.
     stored_rows.extend(
         calternal_core::AGENT_OPERATIONS
             .iter()
-            .map(|(id, _, _)| *id),
+            .map(|(id, _, _)| *id)
+            .filter(|id| !matches!(*id, "space.machine.get" | "space.machine.set")),
     );
     // Request isolation and the instructions role matrix use real passkey
     // sessions in conformance/requests_cases.rs.
     // Package setting access uses the real sessions in plugin_settings_cases.rs.
     for (id, required) in [
+        ("push.subscribe", Capability::SpaceRead),
+        ("push.unsubscribe", Capability::SpaceRead),
+        ("push.devices", Capability::SpaceRead),
+        ("push.test", Capability::SpaceRead),
+        ("plugins.network.content.get", Capability::PluginsUse),
+        (
+            "plugins.network.content.preference.get",
+            Capability::PluginsUse,
+        ),
+        (
+            "plugins.network.content.preference.set",
+            Capability::PluginsUse,
+        ),
+        ("plugins.diagnostics", Capability::PluginsManage),
+        ("plugins.personal_settings.get", Capability::SpaceRead),
+        ("plugins.personal_settings.set", Capability::SpaceRead),
         ("plugins.settings.get", Capability::SpaceSettings),
         ("plugins.settings.set", Capability::SpaceSettings),
         ("provider.sign_in.start", Capability::PluginsUse),
@@ -150,6 +208,8 @@ async fn every_registered_operation_has_an_independent_matrix_row() {
         ("requests.approve", Capability::PluginsUse),
         ("requests.deny", Capability::PluginsUse),
         ("space.instructions", Capability::SpaceSettings),
+        ("space.machine.get", Capability::SpaceRead),
+        ("space.machine.set", Capability::SpaceSettings),
     ] {
         assert!(stored_rows.insert(id), "duplicate request operation {id}");
         assert_eq!(
@@ -185,6 +245,64 @@ async fn every_registered_operation_has_an_independent_matrix_row() {
             "{id}"
         );
         assert!(!declaration.mutates, "{id}");
+    }
+    for id in [
+        "skills.read",
+        "skills.create",
+        "skills.update",
+        "skills.remove",
+        "automations.preview_schedule",
+        "automations.list",
+        "automations.read",
+        "automations.create",
+        "automations.update",
+        "automations.enable",
+        "automations.pause",
+        "automations.remove",
+        "automations.run_now",
+        "automations.next_run",
+        "automations.last_run",
+    ] {
+        assert!(
+            stored_rows.insert(id),
+            "duplicate automation operation {id}"
+        );
+        let catalog = fixture.state.registry.snapshot();
+        let policy = catalog.policy(id).unwrap();
+        assert_eq!(policy.scope, Scope::Space, "{id}");
+        let expected = match id {
+            "skills.read"
+            | "automations.preview_schedule"
+            | "automations.list"
+            | "automations.read"
+            | "automations.next_run"
+            | "automations.last_run" => Capability::SpaceRead,
+            _ => Capability::ContentWrite,
+        };
+        assert_eq!(policy.required, expected, "{id}");
+    }
+    // These handlers use a dedicated person-session dispatcher. Their
+    // authorization and account isolation are covered in font_cases.rs.
+    let appearance = [
+        "appearance.get",
+        "appearance.patch",
+        "fonts.catalogue",
+        "fonts.install",
+        "fonts.status",
+        "fonts.faces",
+        "fonts.list",
+        "fonts.remove",
+    ];
+    for id in appearance {
+        assert!(calternal_core::is_appearance_operation(id), "{id}");
+        assert!(
+            fixture.state.registry.snapshot().policy(id).is_none(),
+            "{id}"
+        );
+        assert!(
+            stored_rows.insert(id),
+            "duplicate appearance operation {id}"
+        );
     }
     let rows: BTreeSet<_> = rows.union(&stored_rows).copied().collect();
     assert_eq!(
@@ -240,6 +358,17 @@ async fn every_registered_operation_has_an_independent_matrix_row() {
                 .iter()
                 .map(|op| op.id().to_owned()),
         )
+        .chain(
+            calternal_core::AUTOMATION_OPERATIONS
+                .iter()
+                .map(|op| op.id.to_owned()),
+        )
+        .chain(
+            calternal_server::authz::sharing_policies()
+                .iter()
+                .map(|p| p.operation.to_string()),
+        )
+        .chain(appearance.into_iter().map(str::to_owned))
         .chain(plugin_rows.iter().map(|p| (*p).to_owned()))
         .collect();
     assert_eq!(
@@ -256,10 +385,21 @@ async fn every_registered_operation_has_an_independent_matrix_row() {
             + calternal_server::authz::people_policies().len()
             + calternal_core::NOTE_OPERATIONS.len()
             + calternal_core::SearchOperation::ALL.len()
+            + calternal_core::AUTOMATION_OPERATIONS.len()
+            + calternal_server::authz::sharing_policies().len()
+            + appearance.len()
             + plugin_rows.len(),
         MATRIX.len() + stored_rows.len(),
         "duplicate policy"
     );
+    for op in [
+        "push.subscribe",
+        "push.unsubscribe",
+        "push.devices",
+        "push.test",
+    ] {
+        assert_eq!(catalog.policy(op).unwrap().scope, Scope::Account, "{op}");
+    }
     for &(op, _) in ONBOARDING_MATRIX {
         assert_eq!(catalog.policy(op).unwrap().scope, Scope::Account, "{op}");
     }
@@ -278,12 +418,20 @@ async fn every_registered_operation_has_an_independent_matrix_row() {
         ("threads.unarchive", Capability::ContentWrite),
         ("threads.delete", Capability::ContentWrite),
     ];
-    // The guide's real session and activation matrix is in conformance/plugin_slot_cases.rs.
+    // The plugin guide also has a session and activation matrix in conformance/plugin_slot_cases.rs.
     let guide = [
+        (
+            "calternal-plugin-submission-guide.explain",
+            Capability::SpaceRead,
+        ),
         ("calternal-plugin-guide.explain", Capability::SpaceRead),
         ("calternal-plugin-guide.scaffold", Capability::SpaceRead),
         ("calternal-plugin-guide.check", Capability::SpaceRead),
         ("calternal-plugin-guide.publish", Capability::ContentWrite),
+        (
+            "calternal-plugin-submission-guide.explain",
+            Capability::SpaceRead,
+        ),
     ];
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../plugins");
     let registry = Registry::load(&root).snapshot();

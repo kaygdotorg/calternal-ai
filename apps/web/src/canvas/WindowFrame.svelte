@@ -6,13 +6,14 @@
   // frame line at its middle (infraternal D177). The right edge and the boundary below it resize between neighbours. Every control has the warm tooltip with its shortcut. Focus follows the press. The window that is not focused is dimmed by a neutral veil and its controls recede; the
   // focused one has no ring (both changes ease on the motion tokens and can be interrupted).
   import { setContext, type Snippet } from "svelte";
-  import { Card, Grip, Icon, InlineEditor, Panel, Pill, tip } from "@calternal/ui";
+  import { Avatar, Card, Grip, HeaderPill, Icon, InlineEditor, Panel, Pill, tip } from "@calternal/ui";
   import { shell } from "../shell/shell.svelte";
+  import WindowPresence from "../apps/notes/live/WindowPresence.svelte";
   import type { IconName } from "@calternal/ui";
   import type { Look, Win } from "./layout";
   export type WinAction = "max" | "share" | "menu" | "lock";
-  let { win, title, nth = 1, renaming = false, onrename, oncancelrename, wNow, hNow, icon, ownTitle, focused, maximised, canMax, look, paper, density, hasBelow, edge, kbd, onfocus, onaction, onresizew, onresizeh, children }: {
-    win: Win; title: string; /** The title pill is an editor (Rename in the window's menu). */ renaming?: boolean; onrename?: (to: string) => void; oncancelrename?: () => void; /** Which of several windows with this title this is (1 for the first): the landmark labels must differ. */ nth?: number; /** The column's width and the window's height share, in percent: the resize handles' current values. */ wNow: number; hNow: number; icon: IconName; /** The app draws its own title pill (Threads). */ ownTitle: boolean; focused: boolean; maximised: boolean; /** There is another window to be full screen among: a lone window is full already, so it has no full screen control. */ canMax: boolean; look: Look;
+  let { win, title, nth = 1, sharedBy, renaming = false, onrename, oncancelrename, wNow, hNow, icon, ownTitle, focused, maximised, canMax, look, paper, density, hasBelow, edge, kbd, onfocus, onaction, onresizew, onresizeh, children }: {
+    win: Win; title: string; /** Who shared this note with the person, when someone else owns it: their avatar then takes the Share button's place and opens the same sheet. */ sharedBy?: string; /** The title pill is an editor (Rename in the window's menu). */ renaming?: boolean; onrename?: (to: string) => void; oncancelrename?: () => void; /** Which of several windows with this title this is (1 for the first): the landmark labels must differ. */ nth?: number; /** The column's width and the window's height share, in percent: the resize handles' current values. */ wNow: number; hNow: number; icon: IconName; /** The app draws its own title pill (Threads). */ ownTitle: boolean; focused: boolean; maximised: boolean; /** There is another window to be full screen among: a lone window is full already, so it has no full screen control. */ canMax: boolean; look: Look;
     /** The scheme's paper as `r g b` and the density of a transparent window (frost.ts). */ paper: string; density: number; hasBelow: boolean; /** Which edge of the area this window touches, for the shell's sidebar pills. */ edge: "l" | "r" | "lr" | "";
     kbd: Record<string, string>; onfocus: () => void; onaction: (a: WinAction, source: "pointer" | "key", el: HTMLElement) => void; onresizew: (dx: number) => void; onresizeh: (dy: number) => void; children: Snippet;
   } = $props();
@@ -28,6 +29,8 @@
   const startAt = (axis: "x" | "y") => (e: PointerEvent) => { last = axis === "x" ? e.clientX : e.clientY; };
   const moveBy = (axis: "x" | "y", report: (d: number) => void) => (e: PointerEvent) => { const p = axis === "x" ? e.clientX : e.clientY; report(p - last); last = p; };
   const keyBy = (grow: string, shrink: string, report: (d: number) => void) => (e: KeyboardEvent) => { const step = e.shiftKey ? 64 : 16; if (e.key === grow) report(step); else if (e.key === shrink) report(-step); else return; e.preventDefault(); };
+  /** The actions pill's width (presence, share, menu): the title pill gives way to it, never the other way round. */
+  let trW = $state(0);
   let draft = $state("");
   $effect(() => { if (renaming) draft = title; });
   /** The padlock appears near the top edge (the frame's 44 px hit area around its middle). */
@@ -42,12 +45,14 @@
     <svg viewBox="0 0 24 24" aria-hidden="true"><path class="shackle" d="M8.5 11V8a3.5 3.5 0 0 1 7 0v3" /><rect x="5" y="11" width="14" height="9.5" rx="2.5" /></svg>
   </button>
   {#if !ownTitle}
-    <div class="tl">{#if shell.narrow}<Pill icon="sidebar" label="Show {win.kind}" onclick={() => shell.toggleSidebar()} />{/if}<Panel radius="pill" class="wt"><Icon name={icon} inline />{#if renaming}<InlineEditor class="title-edit" label="Rename thread" bind:value={draft} autoselect onsubmit={() => onrename?.(draft)} oncancel={() => oncancelrename?.()} onblur={() => onrename?.(draft)} />{:else}<span class="nm">{title}</span>{/if}</Panel></div>
+    <div class="tl" style:max-width="calc(100% - {trW}px - var(--pad-region) * 2 - var(--s-3))">{#if shell.narrow}<Pill icon="sidebar" label="Show {win.kind}" onclick={() => shell.toggleSidebar()} />{/if}<Panel radius="pill" class="wt"><Icon name={icon} inline />{#if renaming}<InlineEditor class="title-edit" label="Rename thread" bind:value={draft} autoselect onsubmit={() => onrename?.(draft)} oncancel={() => oncancelrename?.()} onblur={() => onrename?.(draft)} />{:else}<span class="nm">{title}</span>{/if}</Panel>{#if win.kind === "settings" && focused}<HeaderPill />{/if}</div>
   {/if}
-  <div class="tr">
+  <div class="tr" bind:clientWidth={trW}>
     <Panel radius="pill" class="wacts">
+      {#if win.kind === "notes"}<WindowPresence item={win.item} />{/if}
       {#if canMax || maximised}<button type="button" aria-label={maximised ? "Restore the window" : "Full screen"} aria-pressed={maximised} use:tip={{ label: maximised ? "Restore" : "Full screen", kbd: kbd.max, side: "bottom" }} onclick={act("max")}><Icon name={maximised ? "restore" : "expand"} /></button>{/if}
-      <button type="button" aria-label="Share" aria-haspopup="menu" use:tip={{ label: "Share", side: "bottom" }} onclick={act("share")}><Icon name="share" /></button>
+      {#if sharedBy}<button type="button" class="owner" aria-label="Shared by {sharedBy}. Who can see this" aria-haspopup="dialog" use:tip={{ label: `Shared by ${sharedBy}`, side: "bottom" }} onclick={act("share")}><Avatar name={sharedBy} size="md" /></button>
+      {:else}<button type="button" aria-label="Share" aria-haspopup="menu" use:tip={{ label: "Share", side: "bottom" }} onclick={act("share")}><Icon name="share" /></button>{/if}
       <button type="button" aria-label={more} aria-haspopup="menu" use:tip={{ label: more, side: "bottom" }} onclick={act("menu")}><Icon name="more" /></button>
     </Panel>
   </div>
@@ -78,6 +83,8 @@
   .tr { right: var(--pad-region); }
   :global(.card.win[data-edge~="l"]) .tl, :global(.card.win[data-edge="lr"]) .tl { margin-left: var(--edge-l, 0px); }
   :global(.wt) { display: inline-flex; align-items: center; gap: var(--s-3); height: var(--pill-h); max-width: 100%; padding: 0 var(--s-5); font-size: var(--text-ui); font-weight: var(--strong-weight); }
+  .tl { min-width: 0; }
+  :global(.wt) { min-width: 0; }
   .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   :global(.wacts) { display: inline-flex; align-items: center; height: var(--pill-h); padding: 0 var(--s-2); gap: 2px; }
   .tr button { display: inline-grid; place-items: center; width: calc(var(--pill-h) - var(--s-2)); height: calc(var(--pill-h) - var(--s-2)); border-radius: 50%; color: var(--ink-2); transition: background-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out); }

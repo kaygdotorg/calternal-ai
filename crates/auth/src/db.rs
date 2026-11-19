@@ -15,17 +15,19 @@ use std::time::Duration;
 
 mod role_batch;
 
+const AUTH_CHANGES: &[(i64, &str)] = &[
+    (12, include_str!("account_details.sql")),
+    (13, include_str!("oidc.sql")),
+    (14, include_str!("sharing.sql")),
+];
+
 /// Auth store descriptor shared with the locked deployment coordinator. No I/O.
 pub const MIGRATIONS: calternal_store::migrations::Schema<'_> =
     calternal_store::migrations::Schema::new(
         "auth.db",
         11,
         &[include_str!("schema.sql")],
-        &[
-            include_str!("account_details.sql"),
-            include_str!("oidc.sql"),
-            include_str!("sharing.sql"),
-        ],
+        AUTH_CHANGES,
     );
 
 /// A handle to the dedicated auth.db worker. Its bounded mailbox serializes
@@ -76,6 +78,7 @@ impl Db {
     /// Does not validate root pairing or recover lost installation state;
     /// callers must apply those guards before allowing database creation.
     pub fn open(path: &Path) -> Result<Self> {
+        let _revision = calternal_types::begin_item_access_change();
         let mut connection = open_conn(path)?;
         let (worker, mut inbox) = tokio::sync::mpsc::channel::<Job>(64);
         let db = Self {
@@ -93,7 +96,10 @@ impl Db {
                     ACTIVE_SINK.with(|s| *s.borrow_mut() = sink.get().cloned());
                     let before = connection.total_changes();
                     match job {
-                        Job::Single(job) => job(&mut connection),
+                        Job::Single(job) => {
+                            let _revision = calternal_types::begin_item_access_change();
+                            job(&mut connection);
+                        }
                         Job::Read(read) => read(&connection),
                         Job::Role(first) => {
                             let mut batch = vec![first];
@@ -108,6 +114,7 @@ impl Db {
                                     Err(_) => break,
                                 }
                             }
+                            let _revision = calternal_types::begin_item_access_change();
                             role_batch::execute(&mut connection, batch);
                         }
                     }
@@ -327,7 +334,7 @@ mod port_tests {
         let path = dir.path().join("auth.db");
         Connection::open(&path)
             .unwrap()
-            .pragma_update(None, "user_version", 16)
+            .pragma_update(None, "user_version", 15)
             .unwrap();
         assert!(Db::open(&path).is_err());
         let fresh = dir.path().join("fresh.db");

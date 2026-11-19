@@ -2,6 +2,7 @@
 //! The Threads engine persists conversations through content and calls this admission path.
 pub mod access;
 mod admission;
+pub(crate) mod control;
 mod input;
 mod instructions;
 mod launch;
@@ -13,6 +14,7 @@ pub(crate) mod reason;
 mod redact;
 pub mod retry;
 mod run;
+pub(crate) mod space_execution;
 mod thread_admission;
 mod tool_steps;
 mod verify;
@@ -90,6 +92,15 @@ pub async fn dispatch<D: Directory>(
             return Err(Error::forbidden("a person must check machine onboarding"));
         }
         return crate::machines::colocated::onboarding(state, machines, who.id).await;
+    }
+    if space_execution::is_setting(op) {
+        if agent.is_some() {
+            return Err(Error::forbidden("a person must manage space execution"));
+        }
+        if !session.is_live(&state.directory).await {
+            return Err(Error::unauthorized("sign in again first"));
+        }
+        return space_execution::dispatch(state, machines, who, op, input).await;
     }
     let verify = op == calternal_core::MACHINES_VERIFY;
     if verify {
@@ -355,7 +366,75 @@ pub async fn dispatch<D: Directory>(
             };
             Ok(json!({"job":load(&state,&job.id).await?.view_for(who.id),"discard":status}))
         }
+        "agent.steer" | "agent.approval" => {
+            if op == "agent.approval" && i.approve {
+                fresh(&state, &session).await?;
+            }
+            let command = if op == "agent.steer" {
+                if i.prompt.trim().is_empty() {
+                    return Err(Error::invalid_input("steering needs a message"));
+                }
+                calternal_core::ProviderCommand::Steer { prompt: i.prompt }
+            } else {
+                if i.approval_id.is_empty() || i.approval_id.len() > 128 {
+                    return Err(Error::invalid_input("invalid provider approval ID"));
+                }
+                calternal_core::ProviderCommand::Approve {
+                    request_id: i.approval_id,
+                    approved: i.approve,
+                }
+            };
+            let live = state.jobs.live(&job.id);
+            let run = job.runs;
+            blocking(move || {
+                admission.apply(|| {
+                    if !live.is_current(run) {
+                        return Err(Error::conflict("provider turn is no longer active"));
+                    }
+                    live.provider_control
+                        .lock()
+                        .map_err(|_| Error::internal("provider control unavailable"))?
+                        .as_mut()
+                        .filter(|control| control.run == run)
+                        .ok_or_else(|| Error::conflict("provider does not accept live input"))?
+                        .send(&machines, command)?;
+                    Ok(Value::Null)
+                })
+            })
+            .await?;
+            Ok(json!({"job":load(&state,&job.id).await?.view_for(who.id)}))
+        }
         "agent.stop" => {
+            let live = state.jobs.live(&job.id);
+            let run = job.runs;
+            let svc = machines.clone();
+            let control_live = live.clone();
+            let sent = blocking(move || {
+                let mut control = control_live
+                    .provider_control
+                    .lock()
+                    .map_err(|_| Error::internal("provider control unavailable"))?;
+                Ok(control
+                    .as_mut()
+                    .filter(|control| control.run == run)
+                    .is_some_and(|control| {
+                        control
+                            .send(&svc, calternal_core::ProviderCommand::Stop)
+                            .is_ok()
+                    }))
+            })
+            .await?;
+            if sent {
+                let mut changed = live.watch();
+                let _ = tokio::time::timeout(std::time::Duration::from_secs(2), async {
+                    while live.is_current(run) {
+                        if changed.changed().await.is_err() {
+                            break;
+                        }
+                    }
+                })
+                .await;
+            }
             let (st, sp, id) = (state.clone(), job.space.clone(), job.id.clone());
             let (svc, ending) = (machines.clone(), job.clone());
             blocking(move || {
@@ -548,7 +627,7 @@ async fn stop_machine(machines: &Arc<MachineService>, job: &Job) -> Result<(), E
     Ok(())
 }
 
-pub(super) async fn enabled_generation<D: Directory>(
+pub(crate) async fn enabled_generation<D: Directory>(
     state: &Shared<D>,
     space: &str,
     plugin: &str,

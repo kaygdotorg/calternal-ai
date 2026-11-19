@@ -2,8 +2,9 @@
 // Usage: node e2e/shell-audit.mjs (after `npm run build`). Exits 1 on any miss.
 import { readFileSync } from "node:fs";
 import { chromium } from "playwright";
-import { serve, BASE, DEVICES, expandComposer } from "./lib.mjs";
+import { serve, BASE, DEVICES, expandComposer, win } from "./lib.mjs";
 const stop = await serve(); const b = await chromium.launch(); let bad = 0;
+const allThreadsTab = async (page) => { const t = page.getByRole("tab", { name: /All Threads/ }); if (await t.count()) { await t.click(); await page.waitForTimeout(250); } }; // a waiting plugin prompt makes the Inbox the default tab: these checks count every thread of the space
 const ok = (c, m, note = "") => { console.log(`${c ? "PASS" : "FAIL"}  ${m}${note ? "  " + note : ""}`); if (!c) bad++; };
 const fresh = async (dev, path, scheme = "light") => { const ctx = await b.newContext({ ...dev, colorScheme: scheme, reducedMotion: "no-preference" }); const page = await ctx.newPage(); await page.goto(BASE + path); await page.waitForSelector("html[data-ready]"); await page.waitForTimeout(1200); return { ctx, page }; };
 const wallpapers = JSON.parse(readFileSync("wallpapers.json", "utf8"));
@@ -52,7 +53,7 @@ const wallpapers = JSON.parse(readFileSync("wallpapers.json", "utf8"));
   ok((await page.evaluate(() => JSON.parse(localStorage.getItem("cal.appearance") ?? "{}").streamText ?? false)) === false, "Message text is not streamed by default");
   // composer menus: pickers with icons and search
   await expandComposer(page);
-  await page.locator(".chip[data-chip=model] .pill").first().click(); await page.waitForTimeout(300);
+  await win(page).locator(".chip[data-chip=model] .pill").first().click(); await page.waitForTimeout(300);
   const picker = page.getByRole("dialog", { name: /Provider/ }); // a menu with a search field is a dialog holding the search and the menu
   ok((await picker.locator("input[type=search]").count()) > 0 && (await picker.locator("svg").count()) > 0, "Pickers show an icon per provider and have an inline search field"); await page.keyboard.press("Escape");
   // message actions
@@ -65,8 +66,9 @@ const wallpapers = JSON.parse(readFileSync("wallpapers.json", "utf8"));
   ok((await page.getByRole("button", { name: /Comment/ }).count()) > 0 && (await page.getByRole("button", { name: /Ask in side chat/i }).count()) > 0, "Selecting text offers Comment and Ask in Side Chat");
   const cap = await page.locator("aside.side footer nav[aria-label='Apps'] .opt").evaluateAll((l) => l.map((e) => e.getAttribute("aria-label")));
   ok(cap.join(",") === "Threads,Notes,Settings", "App switcher: an icon-only capsule of three apps in the sidebar's footer", cap.join(","));
+  await allThreadsTab(page);
   const personal = await page.locator("aside.side nav[aria-label=Threads] a.row").count();
-  await page.getByRole("button", { name: /Account, spaces and settings/ }).click(); await page.getByRole("menuitemradio", { name: "Infra" }).click(); await page.waitForTimeout(500);
+  await page.getByRole("button", { name: /Account, spaces and settings/ }).click(); await page.getByRole("menuitemradio", { name: "Infra" }).click(); await page.waitForTimeout(500); await allThreadsTab(page);
   const infra = await page.locator("aside.side nav[aria-label=Threads] a.row").allInnerTexts();
   ok(infra.length > 0 && infra.length < personal && infra.every((t) => /Mesh|rollout/i.test(t)) && page.url().endsWith("/threads"), "The sidebar lists only the current space's threads; addresses do not change (decision B)", infra.map((t) => t.trim().slice(0, 16)).join(", "));
   await page.keyboard.press("Control+k"); await page.waitForSelector(".pal-input"); await page.locator(".pal-input").fill("slow after restart"); await page.waitForTimeout(500);
@@ -162,10 +164,11 @@ const wallpapers = JSON.parse(readFileSync("wallpapers.json", "utf8"));
   const items = await page.locator("[role^=menuitem]").evaluateAll((e) => e.map((d) => [d.textContent.trim(), d.getBoundingClientRect().height]));
   ok(items.length >= 3 && items.some(([t]) => /Settings/.test(t)) && items.every(([, h]) => h >= 36), "Phone: the account picture opens the spaces and Settings with touch-sized rows", JSON.stringify(items));
   await page.keyboard.press("Escape"); await page.waitForTimeout(200);
-  ok((await page.locator(".grip").count()) === 0, "Phone: no resize handles");
+  ok((await page.locator(".grip").evaluateAll((g) => g.filter((e) => e.getBoundingClientRect().width > 0 && getComputedStyle(e).visibility !== "hidden" && getComputedStyle(e).display !== "none").length)) === 0, "Phone: no resize handles");
   const f = await page.evaluate(() => { const r = document.querySelector("aside.side footer").getBoundingClientRect(); return r.bottom <= innerHeight + 1; });
   ok(f, "Phone: the footer is in view");
-  await page.getByRole("button", { name: /Account, spaces and settings/ }).click(); await page.locator("[role^=menuitem]", { hasText: "Infra" }).click(); await page.waitForTimeout(500);
+  await allThreadsTab(page);
+  await page.getByRole("button", { name: /Account, spaces and settings/ }).click(); await page.locator("[role^=menuitem]", { hasText: "Infra" }).click(); await page.waitForTimeout(500); await allThreadsTab(page);
   ok((await page.locator("aside.side nav[aria-label=Threads] a.row").count()) > 0 && (await page.locator("aside.side nav[aria-label=Threads] a.row").allInnerTexts()).every((t) => /Mesh|rollout/i.test(t)), "Phone: choosing a space changes the list");
   await page.goto(BASE + "/settings/appearance?firstrun=0"); await page.waitForSelector("html[data-ready]"); await page.waitForTimeout(600);
   ok((await page.getByRole("button", { name: "Show the sidebar" }).count()) === 1, "Phone: the Settings page has a button for its sidebar");

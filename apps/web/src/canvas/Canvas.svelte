@@ -10,6 +10,9 @@
   import { appFor } from "../apps/registry";
   import { client as threadClient, store } from "../apps/threads/store.svelte";
   import { notes } from "../apps/notes/store.svelte";
+  import { openShare } from "../apps/notes/share/share.svelte";
+  import { incoming } from "../apps/notes/share/incoming.svelte";
+  import { collectionList } from "../apps/notes/share/collections-list.svelte";
   import { runThreadItem, threadItems } from "../apps/threads/thread-menu";
   import { href, navigate, route, segments } from "../lib/route.svelte";
   import { ariaKeys, show as showChord, shortcuts } from "../lib/shortcuts.svelte";
@@ -287,7 +290,7 @@
     const t = to.trim(), cur = store.get(w.item);
     if (t && cur && t !== cur.title) void threadClient.rename(cur.id, t).catch((e: Error) => toast(`Not renamed: ${e.message}`));
   }
-  const titleOf = (kind: string, item: string) => (kind === "threads" ? store.get(item)?.title : notes.list.find((n) => n.id === item)?.title) ?? appFor(kind)?.name ?? kind;
+  const titleOf = (kind: string, item: string) => (kind === "threads" ? store.get(item)?.title : kind === "collections" ? collectionList.items.find((c) => c.id === item)?.title : notes.list.find((n) => n.id === item)?.title) ?? appFor(kind)?.name ?? kind;
   /** The next thread or note that has no window yet. */
   function nextOf(kind: string): string | null {
     const open = new Set(canvas.all().filter((w) => w.kind === kind).map((w) => w.item));
@@ -352,6 +355,8 @@
     if (!w) return;
     if (a === "max") toggleMax(id, source);
     else if (a === "lock") canvas.toggleLock(id);
+    // A note's or collection's Share is its own sheet (people, groups, links): the same one its header pill opens; a thread keeps the link menu.
+    else if (a === "share" && (w.kind === "notes" || w.kind === "collections")) openShare({ kind: w.kind, id: w.item }, titleOf(w.kind, w.item), target);
     else { const r = target.getBoundingClientRect(); menu = { x: r.right, y: r.bottom, id, kind: a === "share" ? "share" : "window" }; }
   }
   function pick(item: string) {
@@ -410,7 +415,7 @@
             {#each c.wins as w, k (w.id)}
               {#if !maxed || w.id === canvas.max}
                 <div class="slot" style:flex="{mine ? 1 : w.weight} 1 0" style:min-height="0">
-                  <WindowFrame win={w} title={titleOf(w.kind, w.item)} nth={nthOf(w)} renaming={renamingWin === w.id} onrename={(to) => renameWin(w, to)} oncancelrename={() => (renamingWin = null)} wNow={Math.round(proportionOf(c, canvas.cols.length, vw) * 100)} hNow={Math.round((w.weight / c.wins.reduce((a, x) => a + x.weight, 0)) * 100)} icon={iconOf(w.kind)} ownTitle={false} focused={canvas.focus === w.id} maximised={mine} look={canvasPrefs.look}
+                  <WindowFrame win={w} title={titleOf(w.kind, w.item)} nth={nthOf(w)} sharedBy={w.kind === "notes" ? incoming.of(w.item)?.shared_by : undefined} renaming={renamingWin === w.id} onrename={(to) => renameWin(w, to)} oncancelrename={() => (renamingWin = null)} wNow={Math.round(proportionOf(c, canvas.cols.length, vw) * 100)} hNow={Math.round((w.weight / c.wins.reduce((a, x) => a + x.weight, 0)) * 100)} icon={iconOf(w.kind)} ownTitle={false} focused={canvas.focus === w.id} maximised={mine} look={canvasPrefs.look}
                     canMax={canvas.all().length > 1 && !shell.narrow} paper={page.paper.join(" ")} {density} hasBelow={k < c.wins.length - 1} edge={i === 0 && i === canvas.cols.length - 1 ? "lr" : i === 0 ? "l" : i === canvas.cols.length - 1 ? "r" : ""} {kbd}
                     onfocus={() => focusWin(w.id)} onaction={(a, source, target) => act(w.id, a, source, target)}
                     onresizew={(dx) => resizeWidth(c.id, i, dx)} onresizeh={(dy) => canvas.dragBoundary(c.id, k, dy, el?.querySelector<HTMLElement>(`[data-col="${c.id}"]`)?.clientHeight ?? vh)}>

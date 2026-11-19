@@ -47,6 +47,7 @@
 pub mod admin;
 mod admission;
 mod capacity;
+pub(crate) use capacity::MEMORY_WAIT;
 /// Local deployment enrollment and the first-owner onboarding operation.
 pub mod colocated;
 pub mod db;
@@ -61,6 +62,7 @@ mod owners;
 pub mod provider;
 pub(crate) mod readiness;
 mod sessions;
+pub(crate) mod space_execution;
 mod state;
 mod workers;
 

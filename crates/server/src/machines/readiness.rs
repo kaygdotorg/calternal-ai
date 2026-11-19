@@ -1,8 +1,8 @@
 //! Caller-scoped placement and provider observations from the existing registry.
 use super::{LeaseState, Machine, MachineService, Settings, State, db};
 use calternal_core::{
-    MachineExecution, MachineReadiness, PersonalMachineReadiness, ProviderCheck, ProviderReadiness,
-    ReadinessResult,
+    MachineExecution, MachineReadiness, PersonalMachineReadiness, ProviderBlocked, ProviderCheck,
+    ProviderReadiness, ReadinessResult,
 };
 use calternal_machine::protocol::Owner;
 use calternal_types::{AccountId, Error, SpaceId};
@@ -177,26 +177,34 @@ impl MachineService {
         let mut pool = Vec::new();
         for machine in st.eligible(account, pin) {
             let online = connected(machine, &self.settings);
-            let available = online && st.free_for(machine, account) != 0;
+            let available = online && st.free_for(machine, account, &self.settings) != 0;
             let checks = machine.checks.get(&account);
             let providers = providers
                 .iter()
                 .map(|(provider, enabled)| {
-                    let check = checks
-                        .and_then(|checks| checks.get(*provider))
+                    let observation = checks.and_then(|checks| checks.get(*provider));
+                    let check = observation
                         .filter(|check| check.at.elapsed() < CHECK_TTL)
                         .map(|check| check.value.clone());
-                    let ready = available
-                        && *enabled
-                        && check
-                            .as_ref()
-                            .is_some_and(|check| check.installed && check.signed_in);
+                    let blocked = match &check {
+                        _ if !*enabled => Some(ProviderBlocked::Disabled),
+                        _ if !online => Some(ProviderBlocked::MachineOffline),
+                        _ if !available => Some(ProviderBlocked::MachineBusy),
+                        None if observation.is_some() => Some(ProviderBlocked::CheckStale),
+                        None => Some(ProviderBlocked::CheckRequired),
+                        Some(check) if !check.installed => {
+                            Some(ProviderBlocked::RuntimeUnavailable)
+                        }
+                        Some(check) if !check.signed_in => Some(ProviderBlocked::SignInRequired),
+                        Some(_) => None,
+                    };
                     (
                         (*provider).to_owned(),
                         ProviderReadiness {
                             enabled: *enabled,
                             check,
-                            ready,
+                            ready: blocked.is_none(),
+                            blocked,
                             title_blocked: machine
                                 .title_blocked
                                 .as_ref()
@@ -265,6 +273,26 @@ impl MachineService {
             .ok_or_else(|| Error::not_found("machine not found"))
     }
 
+    /// Select a currently connected eligible automation target. An explicit target
+    /// belongs to the creator, and the default uses an entitled pool sandbox.
+    /// Cost is one registry lock and the caller's indexed candidate set.
+    pub(crate) fn automation_target(
+        &self,
+        account: AccountId,
+        target: Option<Uuid>,
+    ) -> Result<Option<Uuid>, Error> {
+        let st = self.lock()?;
+        Ok(st
+            .eligible(account, target)
+            .filter(|m| match target {
+                Some(_) => m.row.owner == (Owner::Account { id: account }),
+                None => m.row.owner == Owner::Pool,
+            })
+            .filter(|m| connected(m, &self.settings) && st.free_for(m, account, &self.settings) > 0)
+            .map(|m| m.row.id)
+            .min())
+    }
+
     /// Authorize one exact target for verification, independent of pool entitlement.
     /// Cost is one registry lookup. Returns whether it is a pool diagnostic.
     pub(crate) fn verify_target(
@@ -284,6 +312,51 @@ impl MachineService {
             Some(Owner::Pool) if pool_admin => Ok(true),
             _ => Err(Error::not_found("machine not found")),
         }
+    }
+
+    /// Drop observations made against a prior version of one provider.
+    /// One registry lock and no disk writes.
+    pub(crate) fn invalidate_harness_checks(&self, id: &str) -> Result<(), Error> {
+        let mut st = self.lock()?;
+        let mut accounts = std::collections::HashSet::new();
+        for machine in st.machines.values_mut() {
+            for (account, providers) in &mut machine.checks {
+                if providers.remove(id).is_some() {
+                    accounts.insert(*account);
+                }
+            }
+        }
+        for account in accounts {
+            st.readiness.change(account);
+        }
+        Ok(())
+    }
+
+    /// Require the selected diagnostic machine to report the candidate's
+    /// backend and the isolated harness protocol. No machine-side calls.
+    pub(crate) fn verify_harness_target(
+        &self,
+        account: AccountId,
+        id: Uuid,
+        guest: bool,
+    ) -> Result<bool, Error> {
+        let pool = self.verify_target(account, id, true)?;
+        let st = self.lock()?;
+        let matches = st
+            .machines
+            .get(&id)
+            .and_then(|machine| machine.live.as_ref())
+            .is_some_and(|live| {
+                live.harness_protocol
+                    && !live.direct
+                    && (live.guest_size.is_some() && !live.kvm_fallback) == guest
+            });
+        if !matches {
+            return Err(Error::unavailable(
+                "the selected machine does not support the candidate backend",
+            ));
+        }
+        Ok(pool)
     }
 
     /// Cache a bounded Check event only while the same account still holds the
@@ -373,7 +446,13 @@ impl MachineService {
         account: AccountId,
         pin: Option<Uuid>,
         position: Option<usize>,
+        memory_wait: bool,
     ) -> Result<Value, Error> {
+        if memory_wait {
+            return Ok(
+                json!({"code":"waiting_for_memory","message":super::MEMORY_WAIT,"queue_position":position}),
+            );
+        }
         let st = self.lock()?;
         let mut enrolled = false;
         let mut online = false;

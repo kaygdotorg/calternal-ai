@@ -1,17 +1,12 @@
 //! Resolve the deployment footprint through each writer's frozen schema descriptor.
 
-use std::{
-    collections::BTreeSet,
-    fs, io,
-    os::unix::fs::FileTypeExt,
-    path::{Path, PathBuf},
-};
+use std::{collections::BTreeSet, ffi::OsStr, io, path::Path};
 
 use calternal_store::migrations::{Schema, inspect, migrate_release};
 use rusqlite::{Connection, OpenFlags};
 use uuid::Uuid;
 
-use super::{COPY_DIR, Deployment, INTENT, Root};
+use super::{Deployment, Root};
 
 struct Database {
     relative: String,
@@ -30,10 +25,21 @@ fn sqlite(error: rusqlite::Error) -> io::Error {
 }
 
 fn connection(path: &Path, flags: OpenFlags) -> io::Result<Connection> {
-    let conn = Connection::open_with_flags(path, flags).map_err(sqlite)?;
+    let conn = Connection::open_with_flags(path, flags | OpenFlags::SQLITE_OPEN_NOFOLLOW)
+        .map_err(sqlite)?;
     conn.busy_timeout(std::time::Duration::from_secs(5))
         .map_err(sqlite)?;
     Ok(conn)
+}
+
+pub(super) fn account_count(appdata: &Path) -> io::Result<i64> {
+    let relative = "system/auth.db";
+    if !super::snapshot::check_source(appdata, relative)? {
+        return Err(io::Error::other("the installation has no auth database"));
+    }
+    let db = connection(&appdata.join(relative), OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+    db.query_row("SELECT count(*) FROM users", [], |row| row.get(0))
+        .map_err(sqlite)
 }
 
 type Paths = BTreeSet<(Root, String)>;
@@ -41,45 +47,15 @@ type Paths = BTreeSet<(Root, String)>;
 pub(super) struct Inventory {
     databases: Vec<Database>,
     paths: Paths,
-    recovery_segment: Option<uuid::Uuid>,
+    full: Option<Vec<super::full::Entry>>,
 }
 
 impl Inventory {
-    pub(super) fn plan(deploy: &Deployment, incompatible: bool) -> io::Result<Self> {
+    pub(super) fn plan(deploy: &Deployment, incompatible: bool, live: bool) -> io::Result<Self> {
         let appdata = &deploy.roots.appdata;
         let mut databases = databases(appdata)?;
         databases.retain(|database| database.version < database.schema.version());
         let mut paths = Paths::new();
-        let recovery_dir = deploy.roots.userdata_ssd.join(".calternal/recovery");
-        let recovery_segment = if calternal_recovery::Coordinator::stored_version(
-            &recovery_dir,
-            deploy.installation,
-        )
-        .map_err(io::Error::other)?
-            == 3
-        {
-            if !incompatible {
-                return Err(io::Error::other(
-                    "security recovery v3 to v4 requires an incompatible upgrade and full restore point",
-                ));
-            }
-            let next = uuid::Uuid::now_v7();
-            paths.insert((Root::Ssd, format!(".calternal/recovery/log-{next}.bin")));
-            for suffix in ["", "-wal", "-shm", "-journal"] {
-                paths.insert((Root::Appdata, format!("system/auth.db{suffix}")));
-            }
-            Some(next)
-        } else {
-            None
-        };
-        if incompatible {
-            for role in super::ROLES {
-                let Ok(root) = deploy.root(role) else {
-                    continue;
-                };
-                disk_files(root, Path::new(""), role, &mut paths)?;
-            }
-        }
         for database in &databases {
             for ending in ["", "-wal", "-shm", "-journal"] {
                 paths.insert((Root::Appdata, format!("{}{ending}", database.relative)));
@@ -101,10 +77,18 @@ impl Inventory {
                 paths.insert((Root::Appdata, format!("secrets/spaces/{}/head", owner.0)));
             }
         }
+        let full = if incompatible {
+            Some(super::full::plan(deploy, std::mem::take(&mut paths), live)?)
+        } else {
+            for (role, path) in &paths {
+                super::snapshot::check_source(deploy.root(*role)?, path)?;
+            }
+            None
+        };
         Ok(Self {
             databases,
             paths,
-            recovery_segment,
+            full,
         })
     }
 
@@ -116,23 +100,15 @@ impl Inventory {
         candidate: String,
         additive: bool,
     ) -> io::Result<usize> {
-        let copies = self.paths.len();
-        deploy.prepare(previous, candidate, self.paths)?;
-        if let Some(segment) = self.recovery_segment {
-            let conn = connection(
-                &deploy.roots.appdata.join("system/auth.db"),
-                OpenFlags::SQLITE_OPEN_READ_WRITE,
-            )?;
-            conn.execute_batch("PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON;")
-                .map_err(sqlite)?;
-            calternal_recovery::Coordinator::migrate_from_v3(
-                &deploy.roots.userdata_ssd.join(".calternal/recovery"),
-                deploy.installation,
-                &conn,
-                segment,
-            )
-            .map_err(io::Error::other)?;
-        }
+        let copies = if let Some(entries) = self.full {
+            let count = entries.len();
+            deploy.prepare_full(previous, candidate, entries)?;
+            count
+        } else {
+            let count = self.paths.len();
+            deploy.prepare(previous, candidate, self.paths)?;
+            count
+        };
         for database in self.databases {
             let conn = database.open(&deploy.roots.appdata, OpenFlags::SQLITE_OPEN_READ_WRITE)?;
             conn.execute_batch("PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON;")
@@ -154,11 +130,8 @@ fn databases(appdata: &Path) -> io::Result<Vec<Database>> {
     let mut entries = Vec::new();
     let mut inspect_one = |relative: String, schema: Schema<'static>| -> io::Result<()> {
         let path = appdata.join(&relative);
-        match fs::symlink_metadata(&path) {
-            Ok(meta) if meta.is_file() => {}
-            Ok(_) => return Err(io::Error::other("database must be a regular file")),
-            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
-            Err(error) => return Err(error),
+        if !super::snapshot::check_source(appdata, &relative)? {
+            return Ok(());
         }
         let conn = connection(&path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
         let version = inspect(&conn, schema).map_err(sqlite)?;
@@ -171,7 +144,12 @@ fn databases(appdata: &Path) -> io::Result<Vec<Database>> {
     };
     for (relative, schema) in [
         ("system/auth.db", calternal_auth::db::MIGRATIONS),
+        ("system/appearance.db", crate::api::appearance::SCHEMA),
         ("system/machines.db", machines::db::upgrade_schema()),
+        (
+            crate::automations::scheduling::PATH,
+            crate::automations::scheduling::SCHEMA,
+        ),
         ("system/content-index.db", calternal_content::ROUTE_SCHEMA),
         (
             "installed-plugins.sqlite3",
@@ -186,6 +164,7 @@ fn databases(appdata: &Path) -> io::Result<Vec<Database>> {
             [
                 Some(("content.db", calternal_content::SPACE_SCHEMA)),
                 Some(("index.db", calternal_store::JOURNAL_SCHEMA)),
+                Some(("network.db", plugins::network::db::SCHEMA)),
                 Some(("jobs.db", plugins::jobs::upgrade_schema())),
                 None,
                 Some(("secrets.db", calternal_secrets::OWNER_SCHEMA)),
@@ -196,13 +175,14 @@ fn databases(appdata: &Path) -> io::Result<Vec<Database>> {
             [
                 Some(("content.db", calternal_content::ACCOUNT_SCHEMA)),
                 Some(("input.db", account_input::UPGRADE_SCHEMA)),
+                Some(("web-push.db", crate::web_push::db::SCHEMA)),
                 Some(("agent-settings.db", plugins::AGENT_SETTINGS_SCHEMA)),
                 Some(("onboarding.db", crate::onboarding::SCHEMA)),
                 Some(("secrets.db", calternal_secrets::OWNER_SCHEMA)),
             ],
         ),
     ] {
-        for id in owners(&appdata.join(scope))? {
+        for id in owners(appdata, scope)? {
             for (file, schema) in schemas.into_iter().flatten() {
                 inspect_one(format!("{scope}/{id}/{file}"), schema)?;
             }
@@ -211,20 +191,17 @@ fn databases(appdata: &Path) -> io::Result<Vec<Database>> {
     Ok(entries)
 }
 
-fn owners(root: &Path) -> io::Result<Vec<Uuid>> {
-    let entries = match fs::read_dir(root) {
-        Ok(entries) => entries,
+fn owners(appdata: &Path, scope: &str) -> io::Result<Vec<Uuid>> {
+    let root = super::tree::Tree::open(appdata)?;
+    let dir = match root.directory(OsStr::new(scope)) {
+        Ok(dir) => dir,
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
         Err(error) => return Err(error),
     };
     let mut ids = Vec::new();
-    for entry in entries {
-        let entry = entry?;
-        let name = entry.file_name();
+    for name in dir.names()? {
         if let Some(id) = name.to_str().and_then(|name| Uuid::parse_str(name).ok()) {
-            if !entry.file_type()?.is_dir() {
-                return Err(io::Error::other("owner storage is not a directory"));
-            }
+            dir.directory(&name)?;
             ids.push(id);
         }
     }
@@ -234,31 +211,38 @@ fn owners(root: &Path) -> io::Result<Vec<Uuid>> {
 /// Count only regular source files, and use the existing role roots as the
 /// only pathname authorities. The private deployment manifest encodes UTF-8.
 fn disk_files(root: &Path, prefix: &Path, role: Root, files: &mut Paths) -> io::Result<()> {
-    let directory = root.join(prefix);
-    for entry in fs::read_dir(directory)? {
-        let entry = entry?;
-        let relative: PathBuf = prefix.join(entry.file_name());
-        if relative == Path::new(COPY_DIR)
-            || relative == Path::new(INTENT)
-            || relative == Path::new(".lock")
-            || relative == Path::new(".machine-role.lock")
-        {
-            continue;
-        }
-        let kind = entry.file_type()?;
-        if kind.is_dir() {
-            disk_files(root, &relative, role, files)?;
-        } else if kind.is_file() {
-            let relative = relative
-                .to_str()
-                .ok_or_else(|| io::Error::other("snapshot path is not UTF-8"))?;
-            files.insert((role, relative.to_owned()));
-        } else if !kind.is_socket() {
-            // Name the entry so the operator can move it; the roots stay untouched.
-            return Err(io::Error::other(format!(
-                "{role:?} root entry {} is a symlink or special file; a full restore point copies only regular files",
-                relative.display()
-            )));
+    let root = super::tree::Tree::open(root)?;
+    let directory = root.directory(prefix.as_os_str())?;
+    selective_files(&directory, prefix, role, files)
+}
+
+fn selective_files(
+    directory: &super::tree::Tree,
+    prefix: &Path,
+    role: Root,
+    files: &mut Paths,
+) -> io::Result<()> {
+    use rustix::fs::FileType;
+    for name in directory.names()? {
+        let relative = prefix.join(&name);
+        let kind = FileType::from_raw_mode(directory.inspect(&name)?.st_mode);
+        match kind {
+            FileType::Directory => {
+                selective_files(&directory.directory(&name)?, &relative, role, files)?
+            }
+            FileType::RegularFile => {
+                let relative = relative
+                    .to_str()
+                    .ok_or_else(|| io::Error::other("snapshot path is not UTF-8"))?;
+                files.insert((role, relative.to_owned()));
+            }
+            FileType::Socket => {}
+            _ => {
+                return Err(io::Error::other(format!(
+                    "{role:?} root entry {} cannot be included in a selective restore point",
+                    relative.display()
+                )));
+            }
         }
     }
     Ok(())
@@ -312,26 +296,4 @@ fn recovery(deploy: &Deployment) -> io::Result<calternal_recovery::Coordinator> 
     }
     calternal_recovery::Coordinator::open(&recovery_dir, deploy.installation)
         .map_err(io::Error::other)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn full_restore_point_names_a_symlink_it_cannot_copy() {
-        let dir = tempfile::tempdir().unwrap();
-        let work = dir.path().join("sandboxes/accounts/a/threads/t/work");
-        fs::create_dir_all(&work).unwrap();
-        fs::write(work.join("Saved.md"), b"saved").unwrap();
-        std::os::unix::fs::symlink("Saved.md", work.join("link")).unwrap();
-        let mut paths = Paths::new();
-        let error = disk_files(dir.path(), Path::new(""), Root::Machine, &mut paths).unwrap_err();
-        let message = error.to_string();
-        assert!(
-            message.contains("sandboxes/accounts/a/threads/t/work/link"),
-            "{message}"
-        );
-        assert!(work.join("link").is_symlink());
-    }
 }

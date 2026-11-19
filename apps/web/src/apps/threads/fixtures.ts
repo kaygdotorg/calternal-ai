@@ -45,10 +45,14 @@ $how="Squash"
 $tests=true
 Form([Input($branch,"Branch name"), Choice($how,["Rebase","Merge","Squash"],"How should I land it?"), Toggle($tests,"Run the full suite first")], "Before I open the pull request")`;
 
+const JOB_FORM = `$channel="announcements"\nForm([Choice($channel,["announcements","engineering","general"],"Post to")], "Release notes")`;
+
 function seedRequests(): Request[] {
   return [
     { id: "r-q", kind: "question", threadId: "t-wait", title: "Before I open the pull request", form: QUESTION_FORM },
     { id: "r-a", kind: "approval", threadId: "t-wait", title: "Run a command outside the workspace", action: "Push the branch to the Forgejo remote", command: "git push origin lane/invites", lifetimes: ["once", "thread"] },
+    { id: "r-jq", kind: "question", threadId: "", jobId: "j-notes", title: "Release notes: which channel should I post to?", form: JOB_FORM },
+    { id: "r-ja", kind: "approval", threadId: "", jobId: "j-sync", title: "Approval needed", action: "Calendar sync wants to delete 3 stale events", command: "calendar.events.delete (3 events)", lifetimes: ["once"] },
     { id: "r-s", kind: "secret", threadId: "t-secret", name: "FORGEJO_TOKEN", label: "Forgejo access token", why: "To publish pages to the wiki. The agent gets a handle, never the value.", scope: "personal", required: true, expiresAt: Date.now() + 15 * MIN },
   ];
 }
@@ -68,6 +72,7 @@ function applyScenario(threads: ThreadSummary[], requests: Request[]): void {
   try { s = new URLSearchParams(location.search).get("scenario"); } catch { /* not in a page */ }
   if (!s) return;
   if (s === "empty") { threads.length = 0; requests.length = 0; return; }
+  if (s === "empty-with-prompt") { threads.length = 0; const keep = requests.filter((r) => r.jobId && !r.threadId); requests.length = 0; requests.push(...keep); return; } // no thread, but a plugin job waits on the person
   if (s === "quiet") { requests.length = 0; for (const x of threads) { x.notice = undefined; if (x.state === "failed" || x.state === "waiting") x.state = "idle"; } return; }
   const t = threads.find((x) => x.id === "t-idle");
   if (!t) return;

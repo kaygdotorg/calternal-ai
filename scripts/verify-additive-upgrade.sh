@@ -1,16 +1,9 @@
 #!/usr/bin/env bash
-# Prove the two exact local images and publish evidence for the selected mode.
+# Prove the two exact local images before publishing unattended upgrade evidence.
 set -euo pipefail
 umask 077
-test_name=release_artifacts_preserve_live_data_in_both_directions
-format=calternal-upgrade-proof/v1
-if [[ ${1:-} == --incompatible ]]; then
-  shift
-  test_name=release_artifacts_migrate_security_receipts_from_v3_to_v4
-  format=calternal-incompatible-upgrade-proof/v1
-fi
 if [[ $# != 3 ]]; then
-  printf '%s\n' 'Usage: verify-additive-upgrade.sh [--incompatible] PREVIOUS_IMAGE CANDIDATE_IMAGE PROOF_OUTPUT' >&2
+  printf '%s\n' 'Usage: verify-additive-upgrade.sh PREVIOUS_IMAGE CANDIDATE_IMAGE PROOF_OUTPUT' >&2
   exit 2
 fi
 previous_image=$1 candidate_image=$2 proof_output=$3
@@ -46,11 +39,11 @@ extract "$candidate" "$temporary/candidate"
 export CALTERNAL_RELEASE_N_BIN=$temporary/previous/calternal CALTERNAL_RELEASE_NEXT_BIN=$temporary/candidate/calternal
 export CALTERNAL_RELEASE_N_IMAGE=$previous CALTERNAL_RELEASE_NEXT_IMAGE=$candidate
 npm run build:plugins
-scripts/check-podman-tests.sh cargo test --locked -j6 --manifest-path tests/conformance/Cargo.toml --features release-upgrade \
-  --test isolation "$test_name" -- --test-threads=1
+scripts/check-podman-tests.sh cargo test --locked -j"${CARGO_BUILD_JOBS:-6}" --manifest-path tests/conformance/Cargo.toml --features release-upgrade \
+  --test isolation release_artifacts_preserve_live_data_in_both_directions -- --test-threads=1
 
 # Publish evidence only after both actual release executables have served the data.
 stage=$(mktemp -- "${proof_output}.XXXXXXXX")
-printf '{"format":"%s","previous":"%s","candidate":"%s"}\n' \
-  "$format" "$previous" "$candidate" > "$stage"
+printf '{"format":"calternal-upgrade-proof/v1","previous":"%s","candidate":"%s"}\n' \
+  "$previous" "$candidate" > "$stage"
 mv -T -- "$stage" "$proof_output"

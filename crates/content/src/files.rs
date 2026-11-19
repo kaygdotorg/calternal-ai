@@ -6,6 +6,7 @@ use calternal_fsio::{names, rename_safely, write_atomic_mode};
 use rusqlite::{OptionalExtension, params};
 use std::{
     fs::{self, File},
+    io::Read,
     path::Path,
 };
 use uuid::Uuid;
@@ -29,9 +30,27 @@ fn hash(path: &Path) -> Result<Option<String>> {
         Ok(_) => Ok(Some(file_hash(&fs::read(path).map_err(internal)?))),
     }
 }
+pub(crate) fn bounded_file(root: &Path, rel: &str) -> Result<Option<Vec<u8>>> {
+    let root = calternal_fsio::beneath::Folder::open_existing(root).map_err(internal)?;
+    let file = match root.open_file(rel) {
+        Ok(file) => file,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(_) => return Err(blocked()),
+    };
+    let limit = crate::MAX_DOCUMENT_BYTES as u64 + 8192;
+    let mut bytes = Vec::new();
+    file.take(limit + 1)
+        .read_to_end(&mut bytes)
+        .map_err(internal)?;
+    if bytes.len() as u64 > limit {
+        return Err(blocked());
+    }
+    Ok(Some(bytes))
+}
+
 pub(crate) fn validate_kind(kind: &str) -> Result<()> {
     if !kind.is_empty()
-        && kind.len() <= 64
+        && (kind.len() <= 64 || (kind.starts_with("skill-") && kind.len() <= 70))
         && kind
             .bytes()
             .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
@@ -89,6 +108,14 @@ fn folder(placement: &Placement, kind: &str) -> String {
         Placement::Hidden { plugin_id } => format!(".calternal/{plugin_id}/{kind}"),
     }
 }
+fn skill_bundle(placement: &Placement) -> bool {
+    matches!(
+        placement,
+        Placement::VisibleTree { folder, subdirectories }
+            if folder == "AI" && subdirectories.len() == 2 && subdirectories[0] == "Skills"
+    )
+}
+
 const MARKDOWN_FORMAT: &str = "format: calternal-note/v1\n";
 
 pub(crate) fn encoded(item: &Item, format: &FileFormat) -> Result<Vec<u8>> {
@@ -124,8 +151,52 @@ pub(crate) fn encoded(item: &Item, format: &FileFormat) -> Result<Vec<u8>> {
         Ok(item.bytes.clone())
     }
 }
+const DESTINATION_OCCUPIED: &str = "destination_occupied";
+
+fn occupied_destination() -> Error {
+    blocked().with_details(serde_json::json!({"reason":DESTINATION_OCCUPIED}))
+}
+
+pub(crate) fn destination_occupied(error: &Error) -> bool {
+    error
+        .details
+        .as_ref()
+        .and_then(|value| value["reason"].as_str())
+        == Some(DESTINATION_OCCUPIED)
+}
+
+// A case-only move uses a fixed staging name so startup can resume it. If
+// the destination was claimed in the meantime, preserve the competing file
+// and put the original back exclusively when its old name is still free.
+fn finish_case_move(staged: &Path, original: &Path, destination: &Path) -> Result<()> {
+    let Err(error) = rename_safely(staged, destination) else {
+        return Ok(());
+    };
+    if error.kind() != std::io::ErrorKind::AlreadyExists {
+        return Err(internal(error));
+    }
+    if rename_safely(staged, original).is_ok() {
+        return Err(occupied_destination());
+    }
+    Err(Error::conflict(
+        "the competing file was preserved and the original note is in its staging file",
+    )
+    .with_details(
+        serde_json::json!({"staged_name":staged.file_name().and_then(|name|name.to_str())}),
+    ))
+}
+
+pub(crate) fn encoded_live(item: &Item) -> Result<Vec<u8>> {
+    let (style, body) =
+        crate::rooms::style::Style::split(std::str::from_utf8(&item.bytes).map_err(internal)?);
+    let mut input = item.clone();
+    input.bytes = body.as_bytes().to_vec();
+    let wrapped = encoded(&input, &FileFormat::Markdown)?;
+    Ok(style.encode(std::str::from_utf8(&wrapped).map_err(internal)?))
+}
+
 impl Space {
-    fn registration(&self, kind: &str) -> Result<(Placement, FileFormat)> {
+    pub(crate) fn registration(&self, kind: &str) -> Result<(Placement, FileFormat)> {
         if let Some(definition) = self.registrations.borrow().get(kind) {
             return Ok(definition.clone());
         }
@@ -154,7 +225,10 @@ impl Space {
     }
     /// UUID names avoid Trash collisions; placement remains the existing guarded move.
     pub(crate) fn trash_path(&self, kind: &str, id: Uuid) -> Result<String> {
-        let (_, format) = self.registration(kind)?;
+        let (placement, format) = self.registration(kind)?;
+        if skill_bundle(&placement) {
+            return Ok(format!(".trash/skill-{id}/SKILL.md"));
+        }
         let extension = match format {
             FileFormat::Markdown => "md".to_owned(),
             FileFormat::Opaque { extension } => extension,
@@ -201,6 +275,17 @@ impl Space {
             let (parent, name) = path.rsplit_once('/')?;
             (parent == folder && name.ends_with(&suffix)).then_some(name.to_owned())
         };
+        // A portable skill bundle has a fixed entry point. A competing
+        // SKILL.md belongs to the directory's existing owner.
+        if skill_bundle(&placement) {
+            let path = format!("{folder}/SKILL.md");
+            if taken("skill.md")? {
+                return Err(Error::conflict(
+                    "this skill directory already contains SKILL.md",
+                ));
+            }
+            return Ok(path);
+        }
         // Keep a collision suffix once assigned. A later save must not quietly
         // change a readable path merely because an earlier filename was freed.
         if let Some(path) = current
@@ -243,19 +328,20 @@ impl Space {
         };
         Ok(format!("{folder}/{candidate}"))
     }
-    pub(crate) fn check_file(&mut self, id: Uuid) -> Result<Option<String>> {
-        let head = self.header(id)?;
-        self.check_header(id, &head)
-    }
-    /// Check the current file once against an already loaded header. The caller
-    /// holds the space lock; conflicts durably block this item and preserve bytes.
     pub(crate) fn check_header(
         &mut self,
         id: Uuid,
         head: &crate::db::Header,
     ) -> Result<Option<String>> {
         ensure_item_path(&head.path)?;
-        let found = match hash(&self.files.join(&head.path)) {
+        let path = self.files.join(&head.path);
+        let found = if self.live_editing(&head.kind)? {
+            calternal_fsio::recover_exact(&path).map_err(internal)?;
+            bounded_file(&self.files, &head.path).map(|bytes| bytes.as_deref().map(file_hash))
+        } else {
+            hash(&path)
+        };
+        let found = match found {
             Ok(found) => found,
             Err(e) if e.code == calternal_types::ErrorCode::Conflict => {
                 self.block(id)?;
@@ -308,6 +394,7 @@ impl Space {
             file_hash: expected,
             old_path: old,
             path,
+            revision,
             ..
         } = head;
         if state == "purged" || state == "purging" {
@@ -327,15 +414,33 @@ impl Space {
             loaded = self.get(id)?;
             &loaded
         };
-        let (_, format) = self.registration(&item.kind)?;
-        let bytes = encoded(item, &format)?;
+        let (placement, format) = self.registration(&item.kind)?;
+        let live = self.live_editing(&item.kind)?;
+        let bytes = if live {
+            encoded_live(item)?
+        } else {
+            encoded(item, &format)?
+        };
         let new_hash = file_hash(&bytes);
         ensure_item_path(&path)?;
-        let path = self.files.join(path);
+        let relative = path;
+        let path = self.files.join(&relative);
+        if live {
+            calternal_fsio::recover_exact(&path).map_err(internal)?;
+        }
         let dir = path.parent().ok_or_else(|| internal("parent"))?;
-        // Normally prepared by `choose_path`; recreate only if it vanished since.
-        if !fs::symlink_metadata(dir).is_ok_and(|metadata| metadata.is_dir()) {
-            calternal_fsio::private::directory(dir).map_err(internal)?;
+        let bundle_move = skill_bundle(&placement)
+            && old
+                .as_deref()
+                .is_some_and(|old| self.files.join(old).parent() != Some(dir));
+        // A bundle move claims the destination directory itself.
+        let prepare = if bundle_move {
+            dir.parent().ok_or_else(|| internal("parent"))?
+        } else {
+            dir
+        };
+        if !fs::symlink_metadata(prepare).is_ok_and(|metadata| metadata.is_dir()) {
+            calternal_fsio::private::directory(prepare).map_err(internal)?;
         }
         let result = (|| {
             let moved_from = old.as_deref();
@@ -343,21 +448,45 @@ impl Space {
             if let Some(old) = &old {
                 ensure_item_path(old)?;
                 let old = self.files.join(old);
+                if bundle_move {
+                    let source = old.parent().ok_or_else(|| internal("bundle parent"))?;
+                    if hash(&old)? == expected && expected.is_some() {
+                        fault(FaultPoint::BeforePlacement);
+                        rename_safely(source, dir).map_err(|error| {
+                            if error.kind() == std::io::ErrorKind::AlreadyExists {
+                                blocked()
+                            } else {
+                                internal(error)
+                            }
+                        })?;
+                    } else if !fs::symlink_metadata(source).is_ok_and(|entry| entry.is_dir())
+                        && hash(&path)?.as_deref() == Some(&new_hash)
+                    {
+                        calternal_fsio::sync_dir(prepare).map_err(internal)?;
+                        calternal_fsio::sync_dir(
+                            source.parent().ok_or_else(|| internal("bundle parent"))?,
+                        )
+                        .map_err(internal)?;
+                    } else {
+                        return Err(blocked());
+                    }
+                    moved = true;
+                }
                 let moving = dir.join(format!(".calternal-move-{id}"));
                 // A fixed private staging name makes both halves of case-only
                 // rename replayable. Every move refuses an occupied destination.
-                if old != path && hash(&old)? == expected && expected.is_some() {
+                if !bundle_move && old != path && hash(&old)? == expected && expected.is_some() {
                     if names::fold(old.to_str().unwrap_or(""))
                         == names::fold(path.to_str().unwrap_or(""))
                     {
                         if !moving.exists() {
                             rename_safely(&old, &moving).map_err(internal)?;
                         }
-                        rename_safely(&moving, &path).map_err(internal)?;
+                        finish_case_move(&moving, &old, &path)?;
                     } else {
                         rename_safely(&old, &path).map_err(|e| {
                             if e.kind() == std::io::ErrorKind::AlreadyExists {
-                                blocked()
+                                occupied_destination()
                             } else {
                                 internal(e)
                             }
@@ -365,11 +494,20 @@ impl Space {
                     }
                     moved = true;
                 } else if hash(&moving)? == expected && expected.is_some() {
-                    rename_safely(&moving, &path).map_err(internal)?;
+                    finish_case_move(&moving, &old, &path)?;
                     moved = true;
                 }
             }
-            let found = hash(&path)?;
+            let live_base = if live {
+                bounded_file(&self.files, &relative)?
+            } else {
+                None
+            };
+            let found = if live {
+                live_base.as_deref().map(file_hash)
+            } else {
+                hash(&path)?
+            };
             if found.as_deref() == Some(&new_hash) {
                 // A checked move began with a fully placed revision and fsio
                 // has synced both directories. Replays reestablish that boundary.
@@ -408,6 +546,16 @@ impl Space {
                             internal(e)
                         }
                     })?;
+                } else if live {
+                    let base = live_base.as_deref().ok_or_else(blocked)?;
+                    let prepared = calternal_fsio::Prepared::new_mode(&path, &bytes, 0o600)
+                        .map_err(internal)?;
+                    if prepared
+                        .place_exact_recoverable(Some(base))
+                        .map_err(internal)?
+                    {
+                        return Err(blocked());
+                    }
                 } else {
                     // Same checked-copy contract as the preview: external writers
                     // racing the final hash/replace interval remain out of scope.
@@ -420,7 +568,10 @@ impl Space {
             Ok(())
         })();
         if let Err(e) = result {
-            if e.code == calternal_types::ErrorCode::Conflict {
+            if e.code == calternal_types::ErrorCode::Conflict
+                && !(destination_occupied(&e)
+                    && crate::rename_job::owns_unpublished_root(&self.conn, id, &revision)?)
+            {
                 self.block(id)?;
             }
             return Err(e);
@@ -476,11 +627,50 @@ impl Space {
                         && nonce.bytes().all(|c| c.is_ascii_hexdigit())
                         && entry.file_type().is_ok_and(|t| t.is_file())
                     {
-                        fs::remove_file(entry.path()).map_err(internal)?;
+                        // The prepared image may hold a displaced outside edit.
+                        // Recover the durable exchange before deleting stray temps.
+                        if self.live_editing(&kind)? {
+                            calternal_fsio::recover_exact(&entry.path().with_file_name(final_name))
+                                .map_err(internal)?;
+                        }
+                        match fs::remove_file(entry.path()) {
+                            Ok(()) => {}
+                            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                            Err(error) => return Err(internal(error)),
+                        }
                     }
                 }
             }
         }
         Ok(())
+    }
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_case_move_collision_preserves_the_competing_file_and_the_original() {
+        let dir = tempfile::tempdir().unwrap();
+        let old = dir.path().join("Name.md");
+        let new = dir.path().join("name.md");
+        let stage = dir.path().join(".calternal-move-fixture");
+        fs::write(&new, b"competing destination").unwrap();
+        fs::write(&stage, b"original note").unwrap();
+        assert!(finish_case_move(&stage, &old, &new).is_err());
+        assert_eq!(fs::read(&old).unwrap(), b"original note");
+        assert_eq!(fs::read(&new).unwrap(), b"competing destination");
+
+        fs::write(&old, b"competing original path").unwrap();
+        fs::write(&stage, b"original note").unwrap();
+        let error = finish_case_move(&stage, &old, &new).unwrap_err();
+        assert_eq!(
+            error.details.unwrap()["staged_name"],
+            ".calternal-move-fixture"
+        );
+        assert_eq!(fs::read(&old).unwrap(), b"competing original path");
+        assert_eq!(fs::read(&new).unwrap(), b"competing destination");
+        assert_eq!(fs::read(&stage).unwrap(), b"original note");
     }
 }

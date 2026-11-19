@@ -38,12 +38,76 @@ impl Content {
     /// Read a live item's metadata in an authorized space without loading its
     /// current body or reading the userdata file. Cost: one indexed head read.
     pub fn live_metadata(&self, space: SpaceId, kind: &str, item: Uuid) -> Result<Value> {
+        self.with_live_metadata(space, kind, item, Ok)
+    }
+
+    /// Run a bounded control mutation against a current item while holding its
+    /// space lock. The callback may commit authority using the auth worker and
+    /// must not re-enter content. Holding this lock across that commit fences
+    /// it against trash, restore and purge. Cost: one indexed metadata read
+    /// plus the callback's authority work.
+    pub fn with_live_metadata<T>(
+        &self,
+        space: SpaceId,
+        kind: &str,
+        item: Uuid,
+        run: impl FnOnce(Value) -> Result<T>,
+    ) -> Result<T> {
         self.with_space(space, |s| {
             let metadata: String = s.conn.query_row(
-                "SELECT metadata FROM items WHERE id=?1 AND kind=?2 AND substr(path,1,7) <> '.trash/'",
+                "SELECT metadata FROM items WHERE id=?1 AND kind=?2 AND mat_state NOT IN ('purged','purging') AND substr(path,1,7) <> '.trash/'",
                 params![item.to_string(),kind], |r| r.get(0),
             ).optional().map_err(internal)?.ok_or_else(missing)?;
-            serde_json::from_str(&metadata).map_err(internal)
+            run(serde_json::from_str(&metadata).map_err(internal)?)
+        })
+    }
+
+    /// Verify a known space and item kind, and read its inherited grant roots
+    /// under one space lock. The callback may use the auth worker and must not
+    /// re-enter content. This keeps lifecycle and collection membership stable
+    /// through authorization. Cost: one indexed live-head lookup, plus one
+    /// reverse membership lookup for Notes, with zero body reads or flushes.
+    pub fn with_live_share_scope<T>(
+        &self,
+        space: SpaceId,
+        kind: &str,
+        item: Uuid,
+        run: impl FnOnce(Vec<Uuid>) -> Result<T>,
+    ) -> Result<T> {
+        self.with_space(space, |s| {
+            s.conn
+                .prepare_cached(
+                    "SELECT 1 FROM items WHERE id=?1 AND kind=?2
+                 AND mat_state NOT IN ('purged','purging') AND substr(path,1,7) <> '.trash/'",
+                )
+                .map_err(internal)?
+                .query_row(params![item.to_string(), kind], |_| Ok(()))
+                .optional()
+                .map_err(internal)?
+                .ok_or_else(missing)?;
+            let collections = if kind == "notes" {
+                s.sharing_collections(item)?
+            } else {
+                Vec::new()
+            };
+            run(collections)
+        })
+    }
+
+    /// Read a live item's current revision in an authorized space. Hides Trash
+    /// and purging or purged entries. Cost: one indexed head lookup without bytes.
+    pub fn live_revision(&self, space: SpaceId, kind: &str, item: Uuid) -> Result<String> {
+        self.with_space(space, |s| {
+            s.conn
+                .query_row(
+                    "SELECT revision FROM items WHERE id=?1 AND kind=?2
+                 AND substr(path,1,7) <> '.trash/' AND mat_state NOT IN ('purged','purging')",
+                    params![item.to_string(), kind],
+                    |row| row.get(0),
+                )
+                .optional()
+                .map_err(internal)?
+                .ok_or_else(missing)
         })
     }
 
@@ -82,85 +146,77 @@ impl Content {
         request: Request<'_>,
     ) -> Result<Value> {
         let _actor = self.lifecycle.step(request.account.as_uuid())?;
-        self.with_space(space, |s| self.purge_selected(s, kind, item, None, request))
+        self.with_space(space, |s| {
+            self.purge_selected(s, kind, item, None, None, request)
+        })
     }
 
-    /// Sweep one physical space in bounded pages, unblocking other requests
-    /// between items. The cutoff is rechecked under the lock before each purge so
-    /// a restore followed by another delete cannot inherit the old deadline.
-    /// Cost: indexed pages plus the ordinary purge cost per expired item.
+    /// Purge at most 16 expired items and release the space writer between
+    /// items. Rechecks the deletion deadline at placement so a restored and
+    /// re-deleted item keeps its own retention. True means to schedule another turn.
     pub fn expire_trash(
         &self,
         space: SpaceId,
         kind: &str,
         cutoff: &str,
         operation: &str,
-    ) -> Result<()> {
-        let mut cursor = (String::new(), String::new());
-        loop {
-            let rows = self.with_space(space, |s| {
-                let mut stmt = s
-                    .conn
-                    .prepare_cached(
-                        "SELECT i.updated_at,i.id,v.author
-                     FROM items i JOIN versions v ON v.item=i.id AND v.seq=i.seq
-                     WHERE i.kind=?1 AND substr(i.path,1,7) = '.trash/'
-                     AND i.mat_state NOT IN ('purged','blocked') AND i.updated_at < ?2
-                     AND (i.updated_at,i.id) > (?3,?4)
-                     ORDER BY i.updated_at,i.id LIMIT 100",
-                    )
-                    .map_err(internal)?;
-                let rows = stmt
-                    .query_map(params![kind, cutoff, cursor.0, cursor.1], |r| {
-                        Ok((
-                            r.get::<_, String>(0)?,
-                            r.get::<_, String>(1)?,
-                            r.get::<_, String>(2)?,
-                        ))
-                    })
-                    .map_err(internal)?;
-                rows.collect::<rusqlite::Result<Vec<_>>>().map_err(internal)
-            })?;
-            if rows.is_empty() {
-                return Ok(());
-            }
-            for (at, id, author) in rows {
-                let item = Uuid::parse_str(&id).map_err(internal)?;
-                let account = AccountId::parse(&author).map_err(internal)?;
-                // Recovery retains the admitted ID in the outbox. A fresh sweep
-                // can generate a fresh ID because a purged item is never eligible.
-                let rid = Uuid::now_v7().to_string();
-                let result = self.with_space(space, |s| {
-                    self.purge_selected(
-                        s,
-                        kind,
-                        item,
-                        Some(cutoff),
-                        Request {
-                            account,
-                            via: None,
-                            id: &rid,
-                            operation,
-                            fingerprint: &rid,
-                        },
-                    )
-                });
-                if let Err(e) = result
-                    && !matches!(e.code, ErrorCode::NotFound | ErrorCode::Conflict)
-                {
-                    return Err(e);
-                }
-                cursor = (at, id);
+    ) -> Result<bool> {
+        const PAGE: usize = 16;
+        let rows = self.with_space(space, |s| {
+            let mut stmt = s
+                .conn
+                .prepare_cached(
+                    "SELECT i.id,v.author
+                 FROM items i JOIN versions v ON v.item=i.id AND v.seq=i.seq
+                 WHERE i.kind=?1 AND substr(i.path,1,7) = '.trash/'
+                 AND i.mat_state NOT IN ('purged','blocked') AND i.updated_at < ?2
+                 ORDER BY i.updated_at,i.id LIMIT ?3",
+                )
+                .map_err(internal)?;
+            stmt.query_map(params![kind, cutoff, PAGE as i64], |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+            })
+            .map_err(internal)?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(internal)
+        })?;
+        let more = rows.len() == PAGE;
+        for (id, author) in rows {
+            let item = Uuid::parse_str(&id).map_err(internal)?;
+            let account = AccountId::parse(&author).map_err(internal)?;
+            let rid = Uuid::now_v7().to_string();
+            let result = self.with_space(space, |s| {
+                self.purge_selected(
+                    s,
+                    kind,
+                    item,
+                    Some(cutoff),
+                    None,
+                    Request {
+                        account,
+                        via: None,
+                        id: &rid,
+                        operation,
+                        fingerprint: &rid,
+                    },
+                )
+            });
+            if let Err(e) = result
+                && !matches!(e.code, ErrorCode::NotFound | ErrorCode::Conflict)
+            {
+                return Err(e);
             }
         }
+        Ok(more)
     }
 
-    fn purge_selected(
+    pub(crate) fn purge_selected(
         &self,
         s: &mut Space,
         kind: &str,
         id: Uuid,
         cutoff: Option<&str>,
+        expected_revision: Option<&str>,
         request: Request<'_>,
     ) -> Result<Value> {
         self.publish_pending(s)?;
@@ -177,8 +233,8 @@ impl Content {
             .conn
             .query_row(
                 "SELECT path,mat_state,revision FROM items WHERE id=?1 AND kind=?2
-             AND (?3 IS NULL OR updated_at < ?3)",
-                params![id.to_string(), kind, cutoff],
+             AND (?3 IS NULL OR updated_at < ?3) AND (?4 IS NULL OR revision=?4)",
+                params![id.to_string(), kind, cutoff, expected_revision],
                 |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
             )
             .optional()
@@ -193,6 +249,7 @@ impl Content {
             ));
         }
         s.place(id, self.fault)?;
+        let _revision = calternal_types::begin_item_access_change();
         let response = json!({"id":id, "state":"deleted"});
         let tx = s
             .conn
@@ -253,6 +310,7 @@ impl Space {
         id: &str,
         account: &str,
         request: &str,
+        operation: &str,
         fault: fn(FaultPoint),
     ) -> Result<bool> {
         let intent: Option<(String, Option<String>)> = self
@@ -318,6 +376,7 @@ impl Space {
             "UPDATE items SET metadata='{}',file_hash=NULL,old_path=NULL,mat_state='purged' WHERE id=?1",
             [id],
         ).map_err(internal)?;
+        crate::trash_job::retire_purge(&tx, operation, request, id)?;
         tx.commit().map_err(internal)?;
         Ok(true)
     }

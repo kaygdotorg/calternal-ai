@@ -43,7 +43,11 @@
           "delay_ms": { "type": "integer", "minimum": 0, "maximum": 1000 },
           "every": { "type": "integer", "minimum": 1, "maximum": 1000 },
           "children": { "type": "integer", "minimum": 0, "maximum": 8 },
-          "value": { "type": "integer" }
+          "value": { "type": "integer" },
+          "wait": { "enum": ["deadline", "question", "approval", "webhook"] },
+          "deadline_ms": { "type": "integer" },
+          "correlation": { "type": "string" },
+          "question_source": { "type": "string" }
         },
         "required": ["steps", "delay_ms", "every"],
         "additionalProperties": false
@@ -57,11 +61,11 @@
       "id": "jobs-demo.run",
       "input_schema": {
         "type": "object",
-        "properties": { "job_id": { "type": "string" }, "input": { "type": "object" }, "checkpoint": {}, "children": { "type": "array" } },
+        "properties": { "job_id": { "type": "string" }, "input": { "type": "object" }, "checkpoint": {}, "children": { "type": "array" }, "signal": { "type": "object" } },
         "required": ["job_id", "input", "checkpoint", "children"],
         "additionalProperties": false
       },
-      "output_schema": { "type": "object", "properties": { "status": { "enum": ["done", "waiting"] } }, "required": ["status"] },
+      "output_schema": { "type": "object", "properties": { "status": { "enum": ["done", "waiting", "parked"] } }, "required": ["status"] },
       "required_capability": "plugins.use",
       "mutates": false,
       "idempotency": "read_only", "risk": "read"
@@ -72,9 +76,9 @@
   "attention": [],
   "settings": [],
   "schedules": [],
-  "webhooks": [],
-  "secrets": [],
+  "webhooks": [{"id":"delivery","operation":"jobs-demo.write"}],
+  "secrets": ["delivery"],
   "hooks": [],
   "themes": [],
-  "host_calls": ["write_item", "list_items_v1", "start_job", "checkpoint_job"]
+  "host_calls": ["write_item", "list_items_v1", "start_job", "checkpoint_job", "request_secret_handle"]
 }

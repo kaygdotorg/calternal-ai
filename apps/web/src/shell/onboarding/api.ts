@@ -83,7 +83,7 @@ export const serverApi: OnboardingApi = {
     }
   },
   async providers() {
-    const r = await readiness(spaces.current.id);
+    const r = await readiness(await spaces.whenCurrent());
     return r.machines.flatMap((m) => Object.entries(m.providers).flatMap(([id, p]) => p ? [{
       machineId: m.machine_id, machineName: m.name ?? "Machine", id, name: providerName(id),
       state: !p.enabled ? "off" as const : p.ready ? "signed_in" as const : !p.check ? "unknown" as const : !p.check.installed ? "not_installed" as const : !p.check.signed_in ? "not_signed_in" as const : "unknown" as const,

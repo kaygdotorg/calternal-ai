@@ -1,4 +1,4 @@
-use crate::{Cell, Result, Snapshot, Table, err, invalid};
+use crate::{CURRENT, Cell, Result, Snapshot, Table, err, invalid};
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -56,7 +56,7 @@ const SPECS: &[(&str, char, &str)] = &[
     ("space_role_capabilities", '0', ""),
     ("development_directory", '0', ""),
 ];
-/// Comparable private owner record used for delta capture and migration.
+/// Comparable private owner record used for delta capture and recovery.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub(crate) struct Record {
     /// Recovery record version, independent of SQLite migration numbers.
@@ -80,9 +80,9 @@ fn key_expr(kind: char, owner: &str, prefix: &str) -> String {
         "CASE WHEN {value} IS NULL THEN '{GLOBAL}' ELSE '{kind}'||replace(lower({value}),'-','') END"
     )
 }
-/// Installs the chain witness and the selected format's change triggers.
+/// Installs the chain witness and the v4 authority and receipt triggers.
 /// Marks the existing rows for the first protected publication.
-pub(crate) fn initialize(c: &Connection, version: u32) -> Result<()> {
+pub(crate) fn initialize(c: &Connection) -> Result<()> {
     let tx = rusqlite::Transaction::new_unchecked(c, rusqlite::TransactionBehavior::Immediate)
         .map_err(err)?;
     let initialized: bool = tx
@@ -115,10 +115,10 @@ pub(crate) fn initialize(c: &Connection, version: u32) -> Result<()> {
         for event in ["INSERT", "UPDATE", "DELETE"] {
             let mut exprs = Vec::new();
             if event != "INSERT" {
-                exprs.push(capture_key(version, table, *kind, owner, "OLD"));
+                exprs.push(capture_key(table, *kind, owner, "OLD"));
             }
             if event != "DELETE" {
-                exprs.push(capture_key(version, table, *kind, owner, "NEW"));
+                exprs.push(capture_key(table, *kind, owner, "NEW"));
             }
             let when = if event == "UPDATE" && ["passkeys", "installations"].contains(table) {
                 let (_, columns) = schema(&tx, table)?;
@@ -147,8 +147,8 @@ pub(crate) fn initialize(c: &Connection, version: u32) -> Result<()> {
     tx.commit().map_err(err)
 }
 
-fn capture_key(version: u32, table: &str, kind: char, owner: &str, prefix: &str) -> String {
-    if version == crate::CURRENT && table == "space_receipts" {
+fn capture_key(table: &str, kind: char, owner: &str, prefix: &str) -> String {
+    if table == "space_receipts" {
         crate::receipts::trigger_key(prefix)
     } else {
         key_expr(kind, owner, prefix)
@@ -194,12 +194,11 @@ fn schema(c: &Connection, table: &str) -> Result<(String, Vec<String>)> {
         .map_err(err)?;
     Ok((schema, stmt.column_names().map(str::to_owned).collect()))
 }
-/// Captures one format-three delta record with indexed predicates and normalized telemetry.
+/// Captures one v4 delta record with indexed predicates and normalized telemetry.
 pub(crate) fn capture_record(
     c: &Connection,
     installation: Uuid,
     key: &str,
-    version: u32,
 ) -> Result<Option<Record>> {
     if !crate::key_ok(key) {
         return Err(invalid());
@@ -226,14 +225,14 @@ pub(crate) fn capture_record(
     }
     let mut tables = BTreeMap::new();
     for (name, owner_kind, owner) in SPECS {
-        if version == crate::CURRENT && *name == "space_receipts" && kind != '0' {
+        if *name == "space_receipts" && kind != '0' {
             continue;
         }
         if kind != '0' && kind != *owner_kind {
             continue;
         }
         let (schema, columns) = schema(c, name)?;
-        let filter = if version == crate::CURRENT && *name == "space_receipts" {
+        let filter = if *name == "space_receipts" {
             "0".into()
         } else if *owner_kind == '0' {
             if kind == '0' { "1".into() } else { "0".into() }
@@ -295,7 +294,7 @@ pub(crate) fn capture_record(
         );
     }
     let mut record = Record {
-        version: 3,
+        version: CURRENT,
         installation,
         key: key.into(),
         tables,
@@ -366,7 +365,7 @@ fn sort_tables(tables: &mut BTreeMap<String, Table>) {
             .sort_by_cached_key(|r| serde_json::to_vec(r).expect("cells serialize"));
     }
 }
-/// Joins current snapshot/log records into format-three rebuild input with global schemas.
+/// Joins current snapshot/log records into v4 rebuild input with global schemas.
 pub(crate) fn assemble(
     installation: Uuid,
     transaction: Uuid,
@@ -379,7 +378,7 @@ pub(crate) fn assemble(
         .ok_or_else(invalid)?;
     let mut tables = global.tables.clone();
     for record in records.iter().filter(|r| r.key != GLOBAL) {
-        if record.version != 3 || record.installation != installation {
+        if record.version != CURRENT || record.installation != installation {
             return Err(invalid());
         }
         for (name, table) in &record.tables {
@@ -392,7 +391,7 @@ pub(crate) fn assemble(
     }
     sort_tables(&mut tables);
     let snapshot = Snapshot {
-        version: 3,
+        version: CURRENT,
         installation,
         transaction,
         sequence,
@@ -418,9 +417,9 @@ pub(crate) fn ids(snapshot: &Snapshot, table: &str, column: &str) -> Result<Vec<
         })
         .collect()
 }
-/// Checks format three, protected inventory, cell widths and account/space identity separation.
+/// Checks the format version, protected inventory, cell widths and account/space identity separation.
 pub(crate) fn validate(snapshot: &Snapshot, installation: Uuid) -> Result<()> {
-    if snapshot.version != 3
+    if snapshot.version != CURRENT
         || snapshot.installation != installation
         || snapshot.sequence == 0
         || SPECS
@@ -445,11 +444,10 @@ pub(crate) fn validate(snapshot: &Snapshot, installation: Uuid) -> Result<()> {
     }
     Ok(())
 }
-/// Captures all records for startup comparison or upgrade, never on the mutation path.
+/// Captures all records for startup comparison, never on the mutation path.
 pub(crate) fn records(
     c: &Connection,
     installation: Uuid,
-    version: u32,
 ) -> Result<BTreeMap<String, Record>> {
     let mut keys = vec![GLOBAL.into()];
     for &(kind, table) in OWNER_TABLES {
@@ -466,7 +464,7 @@ pub(crate) fn records(
     }
     keys.into_iter()
         .map(|key| {
-            let value = capture_record(c, installation, &key, version)?.ok_or_else(invalid)?;
+            let value = capture_record(c, installation, &key)?.ok_or_else(invalid)?;
             Ok((key, value))
         })
         .collect()
@@ -474,6 +472,12 @@ pub(crate) fn records(
 
 #[cfg(test)]
 pub(crate) fn capture(c: &Connection, installation: Uuid, sequence: u64) -> Result<Snapshot> {
-    let records = records(c, installation, 3)?.into_values().collect();
-    assemble(installation, Uuid::now_v7(), sequence, records)
+    let records = records(c, installation)?.into_values().collect();
+    let mut snapshot = assemble(installation, Uuid::now_v7(), sequence, records)?;
+    let table = snapshot.tables.get_mut("space_receipts").ok_or_else(invalid)?;
+    for (key, receipt) in crate::receipts::capture(c)?.0 {
+        table.rows.push(crate::receipts::cells(&key, &receipt));
+    }
+    sort_tables(&mut snapshot.tables);
+    Ok(snapshot)
 }

@@ -58,13 +58,100 @@ run_upgrade() {
     --userdata-hdd "$hdd" --installation-id "$installation" --machine-dir "$root/machine" "$@"
 }
 
+upgrade_quiet() {
+  local output
+  if ! output=$(run_upgrade "$@"); then
+    printf '%s\n' "$output" >&2
+    return 1
+  fi
+}
+
+refers_to_candidate() {
+  local status=$1 id=$2
+  grep -Eq '"phase"[[:space:]]*:[[:space:]]*"committed"' <<< "$status" &&
+    grep -Eq '"candidate"[[:space:]]*:[[:space:]]*"'"$id"'"' <<< "$status"
+}
+
+clear_recovery_pin() {
+  unlink "$releases/pending-recovery" && sync "$releases"
+}
+
+seal_activation() {
+  sync "$quadlets/$name.container" "$systemd/$machine" "$quadlets" "$systemd" "$releases" &&
+    clear_recovery_pin
+}
+
+stop_probe() {
+  podman stop --ignore "$name-upgrade-probe" >/dev/null &&
+    podman rm --ignore "$name-upgrade-probe" >/dev/null
+}
+
+recovered_activation=
 recover_pending() {
   [[ -n $current ]] || return 0
-  local status
+  local status pinned id
+  if [[ -L $releases/pending-recovery ]]; then
+    pinned=$(realpath -- "$releases/pending-recovery") || return 1
+    [[ $pinned == "$releases"/release.* && -d $pinned ]] || return 1
+    id=$(<"$pinned/image.id")
+    [[ $id =~ ^[a-f0-9]{64}$ ]] || return 1
+    status=$(run_upgrade "$pinned" status) || return 1
+    if refers_to_candidate "$status" "$id"; then
+      # The committed decision wins even when activation was interrupted.
+      if [[ $current != "$pinned" ]]; then
+        remember_previous || return 1
+      fi
+      stop_roles && upgrade_quiet "$pinned" recover && activate "$pinned" || return 1
+      current=$pinned
+      seal_activation || return 1
+      recovered_activation=$id
+      return 0
+    elif grep -Eq '"needs_recovery"[[:space:]]*:[[:space:]]*true' <<< "$status"; then
+      stop_roles && stop_probe && upgrade_quiet "$pinned" recover && activate "$current" || return 1
+    fi
+    clear_recovery_pin || return 1
+    if [[ $pinned != "$current" ]]; then rm -rf -- "$pinned" || return 1; fi
+    return 0
+  fi
   status=$(run_upgrade "$current" status) || return 1
   if grep -Eq '"needs_recovery"[[:space:]]*:[[:space:]]*true' <<< "$status"; then
-    stop_roles && run_upgrade "$current" recover >/dev/null && activate "$current"
+    stop_roles && upgrade_quiet "$current" recover && activate "$current"
   fi
+}
+
+pin_recovery() {
+  local release=$1 stage
+  printf '%s\n' "$name-upgrade-probe" > "$release/probe.name" || return 1
+  # The shipped Quadlet calls the current release's launcher. Update that
+  # launcher atomically before publishing any v2 intent.
+  stage=$(mktemp "$current/.recover-start.XXXXXXXX") || return 1
+  install -m 0700 "$release/recover-start.sh" "$stage" &&
+    sync "$stage" && mv -Tf -- "$stage" "$current/recover-start.sh" &&
+    sync "$current" "$release/calternal" "$release/probe.name" "$release/image.id" \
+      "$release/server.container" "$release/machine.service" "$release/recover-start.sh" "$release" &&
+    set_pointer "$release" pending-recovery && sync "$releases"
+}
+
+probe_candidate() {
+  local id=$1 attempt result=1
+  podman run --detach --name "$name-upgrade-probe" --network=none --read-only --cap-drop=all \
+    --security-opt=no-new-privileges --userns=keep-id:uid=10001,gid=10001 \
+    --user=10001:10001 --stop-timeout=90 \
+    --volume "$root/appdata:/data/appdata:Z" --volume "$root/userdata-ssd:/data/userdata-ssd:Z" \
+    --volume "$hdd:/data/userdata-hdd:Z" --env-file "$secrets" --env-file "$public" \
+    --entrypoint /usr/local/bin/calternal "$id" serve --bind-ip 127.0.0.1 --port 8080 \
+    --appdata /data/appdata --userdata-ssd /data/userdata-ssd --userdata-hdd /data/userdata-hdd \
+    --web-dir /app/web --plugin-root /app/plugins --upgrade-probe "$id" >/dev/null || return 1
+  for ((attempt=0; attempt<60; attempt++)); do
+    if podman healthcheck run "$name-upgrade-probe" >/dev/null 2>&1; then
+      result=0
+      break
+    fi
+    [[ $(podman inspect --format '{{.State.Running}}' "$name-upgrade-probe") == true ]] || break
+    sleep 1
+  done
+  if ((result)); then podman logs "$name-upgrade-probe" >&2 || true; fi
+  stop_probe && return "$result"
 }
 
 stop_unit() {
@@ -136,7 +223,9 @@ diagnose_machine_connection() {
 }
 
 start_machine() {
-  sysd enable "$machine" >/dev/null || return 1
+  if ! sysd is-enabled --quiet "$machine"; then
+    sysd enable "$machine" >/dev/null || return 1
+  fi
   if sysd is-failed --quiet "$machine"; then sysd reset-failed "$machine" || return 1; fi
   local type
   type=$(sysd show --property=Type --value "$machine") || return 1
@@ -147,13 +236,30 @@ start_machine() {
   return 1
 }
 
+units_current() {
+  local release=$1 loaded
+  # The old release pointer is the installation record for the last reload.
+  # An interrupted activation before the reload still points at the old units.
+  [[ -n $current ]] &&
+    cmp -s "$current/server.container" "$release/server.container" &&
+    cmp -s "$current/machine.service" "$release/machine.service" &&
+    cmp -s "$release/server.container" "$quadlets/$name.container" &&
+    cmp -s "$release/machine.service" "$systemd/$machine" || return 1
+  loaded=$(sysd show "$server" "$machine" --property=LoadState,NeedDaemonReload |
+    sed '/^$/d' | LC_ALL=C sort) || return 1
+  [[ $loaded == $'LoadState=loaded\nLoadState=loaded\nNeedDaemonReload=no\nNeedDaemonReload=no' ]]
+}
+
 activate() {
   local release=$1
-  podman tag "$(<"$release/image.id")" "$image:current" &&
-    set_pointer "$release" current &&
+  if ! units_current "$release"; then
     install -m 0644 "$release/server.container" "$quadlets/$name.container" &&
-    install -m 0644 "$release/machine.service" "$systemd/$machine" &&
-    sysd daemon-reload || return 1
+      install -m 0644 "$release/machine.service" "$systemd/$machine" &&
+      sysd daemon-reload || return 1
+    sync "$quadlets/$name.container" "$systemd/$machine" "$quadlets" "$systemd" || return 1
+  fi
+  podman tag "$(<"$release/image.id")" "$image:current" &&
+    set_pointer "$release" current || return 1
   if sysd is-failed --quiet "$server"; then sysd reset-failed "$server" || return 1; fi
   sysd start --no-block "$server" || return 1
   wait_for_http || { log 'The published HTTP listener did not become ready.'; return 1; }
@@ -263,30 +369,63 @@ case $action in
     [[ -d $root/appdata && -d $root/userdata-ssd && -d $hdd ]] ||
       die 'Storage directories are missing. Use --initialize only for first setup.'
     recover_pending || die 'Could not recover the pending deployment. Keep both roles stopped.'
+    if [[ $recovered_activation == "$id" ]]; then
+      discard_candidate "$tag" "$id"
+      log "Release $tag is healthy at $origin/."
+      show_setup "$reveal"
+      exit 0
+    fi
     if [[ -n $current && $incompatible == 0 && -z ${compatibility_proof:-} ]]; then
       die 'Supply the compatibility proof for the two release images.'
     fi
     candidate=$(mktemp -d "$releases/release.XXXXXXXX")
-    trap '[[ $(realpath -- "$releases/current" 2>/dev/null || true) == "$candidate" ]] || rm -rf -- "$candidate"' EXIT
+    trap '[[ $(realpath -- "$releases/current" 2>/dev/null || true) == "$candidate" ||
+             $(realpath -- "$releases/pending-recovery" 2>/dev/null || true) == "$candidate" ]] ||
+             rm -rf -- "$candidate"' EXIT
     prepare_release "$candidate" "$id" || die 'Could not stage the image and units.'
     old_previous=
     if [[ -d $releases/previous ]]; then old_previous=$(realpath -- "$releases/previous"); fi
-    stop_roles || die 'Could not stop the current Calternal-AI services.'
     if [[ -n $current ]]; then
       declare -a approval
+      previous_id=$(<"$current/image.id")
       if [[ $incompatible == 1 ]]; then
         approval=(--incompatible)
       else
         printf '%s\n' "$compatibility_proof" > "$candidate/upgrade-proof.json"
         approval=(--proof "$candidate/upgrade-proof.json")
       fi
-      if ! run_upgrade "$candidate" prepare --previous "$(<"$current/image.id")" \
-           --candidate "$id" "${approval[@]}" >/dev/null ||
-         ! run_upgrade "$candidate" commit --candidate "$id" >/dev/null; then
-        run_upgrade "$candidate" recover >/dev/null &&
+      upgrade_quiet "$candidate" preflight --previous "$previous_id" --candidate "$id" \
+        "${approval[@]}" || die 'Upgrade preflight refused. The current services are still running.'
+      if [[ $incompatible == 1 ]]; then
+        pin_recovery "$candidate" || die 'Could not pin the candidate recovery executable.'
+      fi
+    fi
+    stop_roles || die 'Could not stop the current Calternal-AI services.'
+    if [[ -n $current ]]; then
+      if ! upgrade_quiet "$candidate" prepare --previous "$previous_id" --candidate "$id" "${approval[@]}" ||
+         { [[ $incompatible == 1 ]] && ! probe_candidate "$id"; }; then
+        upgrade_quiet "$candidate" recover &&
           restore || die 'Data recovery failed. Keep the instance stopped.'
+        if [[ $incompatible == 1 ]]; then
+          clear_recovery_pin || die 'Could not retire the completed recovery pin.'
+        fi
         die 'Upgrade preparation failed. The previous release is serving its original data.'
       fi
+      if ! upgrade_quiet "$candidate" commit --candidate "$id"; then
+        status=$(run_upgrade "$candidate" status) || die 'Cannot inspect the cutover decision. Keep both roles stopped.'
+        if refers_to_candidate "$status" "$id"; then
+          die 'The cutover is committed. Retry deployment to finish recovery and activation.'
+        fi
+        upgrade_quiet "$candidate" recover &&
+          restore || die 'Data recovery failed. Keep the instance stopped.'
+        if [[ $incompatible == 1 ]]; then
+          clear_recovery_pin || die 'Could not retire the completed recovery pin.'
+        fi
+        die 'Upgrade commit refused. The previous release is serving its original data.'
+      fi
+    fi
+    if [[ $incompatible == 1 ]]; then
+      remember_previous || die 'The cutover is committed. Retry deployment to finish activation.'
     fi
     if ! activate "$candidate"; then
       if [[ $incompatible == 1 ]]; then
@@ -298,23 +437,25 @@ case $action in
       discard_candidate "$tag" "$id"
       die 'Deployment failed.'
     fi
-    remember_previous || die 'The new release is healthy, but the rollback pointer could not be updated.'
+    if [[ $incompatible == 1 ]]; then
+      seal_activation || die 'The new release is healthy, but its recovery pin could not be retired.'
+    else
+      remember_previous || die 'The new release is healthy, but the rollback pointer could not be updated.'
+    fi
     if [[ $old_previous == "$releases"/release.* && $old_previous != "$current" ]]; then
       rm -rf -- "$old_previous"
     fi
     discard_candidate "$tag" "$id"
-    if ! podman image prune --force --filter "label=org.calternal.deploy.repository=$image" >/dev/null; then
-      log 'Could not reclaim untagged images for this instance.'
-    fi
     log "Release $tag is healthy at $origin/."
     show_setup "$reveal"
     ;;
   rollback)
-    [[ $# == 0 && -n $current && -d $releases/previous ]] || die 'No previous release is available.'
-    previous=$(realpath -- "$releases/previous")
+    [[ $# == 0 && -n $current ]] || die 'No current release is available.'
     recover_pending || die 'Could not recover the pending deployment.'
+    [[ -d $releases/previous ]] || die 'No previous release is available.'
+    previous=$(realpath -- "$releases/previous")
     stop_roles || die 'Could not stop the current Calternal-AI services.'
-    if ! run_upgrade "$previous" verify >/dev/null || ! activate "$previous"; then
+    if ! upgrade_quiet "$previous" verify || ! activate "$previous"; then
       restore || die 'Rollback and recovery both failed. Inspect the local journal.'
       die 'Rollback failed. The current release is back in service.'
     fi

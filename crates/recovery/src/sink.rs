@@ -5,6 +5,7 @@ impl RecoverySink for Coordinator {
         &self.serial
     }
     fn reconcile(&self, c: &Connection) -> calternal_auth::Result<()> {
+        let _revision = calternal_types::begin_item_access_change();
         let run = || -> Result<()> {
             if !c.is_autocommit() {
                 return Err(invalid());
@@ -19,12 +20,12 @@ impl RecoverySink for Coordinator {
             if !exists && (s.image.head.sequence > 0 || s.pending.is_some() || !s.tail.is_empty()) {
                 return Err(invalid());
             }
-            state::initialize(c, self.version)?;
+            state::initialize(c)?;
             self.replay_loaded(c, &mut s)?;
             self.compact(&mut s, false)?;
             // Only the snapshot-selected segment participates in validation.
             self.remove_obsolete_segments(&s.image.segment)?;
-            let repair = self.version == CURRENT && !s.compared;
+            let repair = !s.compared;
             if s.image.committed_sequence > 0 && !repair {
                 // Reuse the verified current map, but retain the existing cache's
                 // replacement detection before exposing authority. The host owns
@@ -120,7 +121,7 @@ impl Coordinator {
         let tx =
             rusqlite::Transaction::new_unchecked(conn, rusqlite::TransactionBehavior::Immediate)
                 .map_err(err)?;
-        let mut records = state::records(&tx, self.installation, CURRENT)?;
+        let mut records = state::records(&tx, self.installation)?;
         let receipts = receipts::capture(&tx)?;
         let changed = {
             let cache = self.gate.lock().map_err(err)?;

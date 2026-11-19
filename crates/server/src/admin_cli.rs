@@ -207,6 +207,43 @@ pub fn account_recover(
     }
 }
 
+/// Send one operator test message through the live server's SMTP queue.
+/// Costs one local socket request and one bounded delivery attempt.
+pub fn mail_test(
+    appdata: &Path,
+    installation_id: &str,
+    recipient: &str,
+) -> Result<Reply, CliError> {
+    let id = uuid::Uuid::parse_str(installation_id).map_err(|_| bad_uuid("installation"))?;
+    let request = Request::MailTest {
+        recipient: recipient.to_owned(),
+    };
+    match admin::ask_server(appdata, id, request).map_err(|e| CliError::new("failed", e.message))? {
+        Some(Response::MailTest {
+            accepted: Some(true),
+        }) => {
+            Ok(Reply::new(json!({"accepted":true})).line("SMTP server accepted the test message."))
+        }
+        Some(Response::MailTest {
+            accepted: Some(false),
+        }) => Err(CliError::new(
+            "mail_delivery_failed",
+            "SMTP acceptance could not be confirmed.",
+        )
+        .hint("Check the recipient and the server's SMTP settings, then try again.")),
+        Some(Response::MailTest { accepted: None }) => Err(CliError::new(
+            "mail_not_configured",
+            "Account mail is not configured on the running server.",
+        )
+        .hint("Configure SMTP on the server and restart it.")),
+        None => Err(CliError::new(
+            "server_unavailable",
+            "Start the server and run as the server's user.",
+        )),
+        _ => Err(unexpected()),
+    }
+}
+
 /// Inspect one space's receipt-pruning health through the live admin socket.
 /// Costs one socket round trip and the server's read-only inspection.
 pub fn receipt_status(
@@ -405,9 +442,15 @@ pub fn machines(cmd: MachinesCmd, out: &Output) -> Result<Reply, CliError> {
 /// `calternal plugin-digest`: the SHA-256 of each trusted worker bundle and
 /// whether `trusted-plugins.json` pins it. Cost: reads and hashes each bundle once.
 pub fn plugin_digest(root: &Path) -> Reply {
+    digest_reply(root, &plugins::registry_entries())
+}
+
+/// Format the digest report for the selected distribution entries, reading
+/// each worker once. The CLI supplies the compiled trust seed.
+pub(super) fn digest_reply(root: &Path, entries: &[plugins::TrustedEntry]) -> Reply {
     let mut rows = Vec::new();
     let mut workers = Vec::new();
-    for e in plugins::registry_entries() {
+    for e in entries {
         let Some(w) = &e.worker else { continue };
         let (digest, state, pinned) = match plugins::file_sha256(&root.join(w)) {
             Ok(d) => {

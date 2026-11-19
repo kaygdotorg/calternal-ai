@@ -48,6 +48,82 @@ Hooks and context contributions are scoped to the enabling space. Context is
 labelled evidence bounded by a deadline. It cannot rewrite the person's prompt.
 The plugin and host apply the operation, risk and scope rules at every boundary.
 
+## Network permissions
+
+The network design distinguishes four classes by how the plugin chooses a
+destination and who approves it. A worker makes requests through the host
+broker. Its own network sockets and ambient credentials are unavailable.
+
+### A. Named connections
+
+**Example: a portfolio balance reader.** The package declares the brokerage's
+HTTPS service and requests a read-only credential. The space manager reviews
+that destination, the balance operation and the data sent to it. The person
+adds their credential in the host. On a balance read, the host attaches the
+credential for that service and returns the response to the worker. A redirect
+to another service or a trade request is outside that approval. Named outbound
+connections are designed into the contract. This preview has no named
+connection manifest field or callable broker method.
+
+### B. Content fetch
+
+**Example: a stored mail message.** Register a package-owned text kind named
+`mail-message`. Declare `content_prepare_v1` in `host_calls` and add this
+manifest field.
+
+```json
+{
+  "content_fetch": {
+    "profile": "images_fonts",
+    "sources": [{ "kind": "mail-message", "field": "text" }]
+  }
+}
+```
+
+This is the value of `network`. On review, explain that the message can
+reference remote images and fonts. Enable the reviewed package in the space.
+Store the HTML in a `mail-message` item and use the saved item ID and revision
+to call the SDK's `prepareContent(context, { kind: "mail-message", item_id,
+revision, field: "text" })` from a declared operation. Return its `frame_id`.
+The client calls `plugins.network.content.get` with the space ID and frame ID,
+then mounts the returned `frame_url` with an empty iframe sandbox. The host
+sanitizes the HTML and checks the viewer, package activation and item revision
+on delivery. Preparing another kind or revision is refused.
+
+The `images_fonts` profile retrieves anonymous HTTPS media in the
+background. The sealed frame displays cached media through signed host
+references after checking the viewer's current remote-content preference.
+The profile serves supported images and fonts and excludes linked page titles.
+
+Content fetch can disclose data through the hostname, path or query that a
+plugin puts in a stored media URL. Always may send that URL at ingest even
+when nobody opens the item. There are no caller cookies, credentials or
+referrer headers. The proxy limits each plugin to 16 distinct hostnames per
+space per minute, including redirects. Managers can see the latest 32
+attempted hostnames in `plugins.diagnostics` through `fetch_hosts`.
+
+### C. Open internet
+
+**Example: an RSS reader with user-added feeds.** The author discloses that the
+worker can choose public destinations from subscriptions at runtime. The space
+Owner or Manager approves the broad public scope. On refresh, the proposed
+broker checks the addresses resolved for each feed and redirect, performs
+bounded public HTTP retrieval, and returns the result. A private target remains
+refused under the public grant. Public arbitrary HTTP is a design example.
+This preview has no callable open-internet broker method.
+
+### D. Private network and execution origin
+
+**Example: a read-only home automation dashboard.** The package requests
+HTTPS access to the controller on a chosen enrolled machine's network.
+Approval names the origin, destination, protocol, port, package and space.
+The machine owner approves a personal machine, or an operator approves a pool
+machine. When the dashboard refreshes, the host checks the invocation and the
+selected origin, and that machine's broker dials the approved controller.
+Removing the machine revokes that origin, and the request cannot fall back to
+the server. Private outbound access is a design example. This preview has no
+callable private-network broker method.
+
 ## Interface and addresses
 
 Return `view: { genui_version: 2, source: "..." }` for a portable generated view.
@@ -154,8 +230,7 @@ there is no next page.
 ## Durable jobs and progress
 
 Use a mutating start operation with a request ID. Declare `start_job` in
-`host_calls`, then call it with
-`{operation: "package.run", input: { /* payload */ }}`. The reply has
+`host_calls`, then use the SDK helper `startJob(context, {operation: "package.run", input})`. The reply has
 `job_id`. The named run operation must be declared by the same plugin
 and have no item target. The broker admits the durable job and starts a
 separate run invocation. Returning the admission result does not run it
@@ -190,3 +265,289 @@ authenticated same-origin connection. The SSE `chunk` event includes
 For disposable development bearer credentials, read the bearer from
 the supplied token file without echoing it and send the server's base
 URL as the `Origin` header. Keep both outside fixture logs.
+
+### Wait for a signal
+
+Return `parkJob` from a replayable job run. Declare `parked` in the run's
+output schema and allow an optional `signal` property in its input schema.
+Use a deadline source when no other signal should wake the job. The question
+example below also handles deadlines.
+
+#### A job with one text answer
+
+Scaffold the complete example, including its manifest, handler, form, README
+and fixture test.
+
+```sh
+calternal plugin new question-job --template question
+cd question-job
+npm install
+calternal plugin check .
+calternal plugin test .
+```
+
+The public `waits` topic prints the complete example files. The `jobs` topic
+includes admission and progress as well.
+
+```sh
+calternal invoke calternal-plugin-guide.explain --input "{\"space_id\":\"$SPACE_ID\",\"topic\":\"waits\"}"
+```
+
+The example keeps the form in `question.form.json`. Import this file as the
+form in the job's parked output so `plugin check` can validate the same form
+that the worker sends. The JSON's `source` is GenUI source. Form arguments are
+the controls and the label in that order. `Input` takes a bound string and a
+label. Here `$text` creates the submitted field named `text`.
+
+The start operation uses `plugins.use` and declares the `start_job` host call.
+Use the SDK's `startJob` to get a typed `{ job_id }` reply. `content.write`
+is for editing content, and `space.read` is for reads. After adding or
+renaming an operation, document its full ID under the title in `README.md`.
+
+The run's manifest uses `oneOf` on its optional `signal` field and a
+`const` on each branch's `kind`. This lets `typedHandlers` infer
+`signal.value.text` after checking for `"answer"`. Park the first run with
+a saved checkpoint and a future deadline in Unix milliseconds. Return the
+answer or a timeout result on the next run.
+
+<!-- BEGIN GENERATED question -->
+
+##### manifest.json
+
+```json
+{
+  "id": "question-job",
+  "name": "question-job",
+  "icon": "puzzle",
+  "version": "0.1.0",
+  "api_version": 1,
+  "kinds": [],
+  "collections": [],
+  "views": [],
+  "attention": [],
+  "settings": [],
+  "schedules": [],
+  "webhooks": [],
+  "secrets": [],
+  "hooks": [],
+  "themes": [],
+  "host_calls": ["start_job"],
+  "operations": [
+    {
+      "id": "question-job.start",
+      "input_schema": { "type": "object", "additionalProperties": false },
+      "output_schema": {
+        "type": "object",
+        "properties": { "job_id": { "type": "string" } },
+        "required": ["job_id"]
+      },
+      "required_capability": "plugins.use",
+      "mutates": true,
+      "idempotency": "request_id",
+      "risk": "reversible"
+    },
+    {
+      "id": "question-job.run",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "job_id": { "type": "string" },
+          "input": { "type": "object" },
+          "checkpoint": {},
+          "children": { "type": "array" },
+          "signal": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "kind": { "const": "answer" },
+                  "value": {
+                    "type": "object",
+                    "properties": { "text": { "type": "string" } },
+                    "required": ["text"]
+                  }
+                },
+                "required": ["kind", "value"]
+              },
+              {
+                "type": "object",
+                "properties": { "kind": { "const": "deadline" } },
+                "required": ["kind"]
+              }
+            ]
+          }
+        },
+        "required": ["job_id", "input", "checkpoint", "children"],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": { "status": { "type": "string", "enum": ["parked", "done"] } },
+        "required": ["status"]
+      },
+      "required_capability": "plugins.use",
+      "mutates": false,
+      "idempotency": "read_only",
+      "risk": "read"
+    },
+    {
+      "id": "question-job.answer",
+      "input_schema": {
+        "type": "object",
+        "properties": { "text": { "type": "string" } },
+        "required": ["text"],
+        "additionalProperties": false
+      },
+      "output_schema": { "type": "object" },
+      "required_capability": "plugins.use",
+      "mutates": false,
+      "idempotency": "read_only",
+      "risk": "read"
+    }
+  ]
+}
+```
+
+##### question.form.json
+
+```json
+{
+  "genui_version": 2,
+  "source": "$text=\"\"\nForm([Input($text, \"What should the job use?\")], \"Job question\")"
+}
+```
+
+##### worker.ts
+
+```ts
+import { parkJob, serveWorker, startJob, typedHandlers, validateGenUiView } from "@calternal/plugin-sdk";
+import manifest from "./manifest.generated.js";
+import question from "./question.form.json" with { type: "json" };
+
+const form = validateGenUiView(question);
+
+const handlers = typedHandlers(manifest, {
+  "question-job.start": async (_, context) =>
+    startJob(context, { operation: "question-job.run", input: {} }),
+
+  "question-job.run": async ({ signal }) => {
+    if (signal?.kind === "answer") {
+      return { status: "done", result: { answer: signal.value.text } };
+    }
+    if (signal?.kind === "deadline") {
+      return { status: "done", result: { timed_out: true } };
+    }
+    return parkJob({
+      checkpoint: { phase: "asked" },
+      reason: "Waiting for a text answer",
+      deadline_ms: Date.now() + 20_000,
+      source: { kind: "question", form, schema_operation: "question-job.answer" },
+    });
+  },
+
+  // The host validates submitted fields against this operation's input schema.
+  "question-job.answer": async () => ({}),
+});
+
+serveWorker(manifest, handlers, process.stdin, line =>
+  new Promise<void>((resolve, reject) =>
+    process.stdout.write(line, error => error ? reject(error) : resolve())),
+).catch(() => {
+  process.stderr.write("Worker protocol error. Check that the host speaks worker-v2.\n");
+  process.exitCode = 1;
+  process.stdin.destroy();
+});
+```
+
+##### worker.test.mjs
+
+```js
+import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
+import { test } from "node:test";
+import { fixtureWorker } from "@calternal/plugin-sdk/testing";
+
+test("starts a job and handles a typed answer or deadline", async () => {
+  const job_id = "01900000-0000-7000-8000-000000000008";
+  const fixture = fixtureWorker(spawn(process.execPath, ["dist/worker.js"]), {
+    start_job(request) {
+      assert.deepEqual(request, { operation: "question-job.run", input: {} });
+      return { job_id };
+    },
+  });
+  try {
+    assert.deepEqual(await fixture.invoke("question-job.start", {}), { job_id });
+    const run = { job_id, input: {}, checkpoint: null, children: [] };
+    const parked = await fixture.invoke("question-job.run", run);
+    assert.equal(parked.status, "parked");
+    assert.equal(parked.wait.source.kind, "question");
+    const resumed = { ...run, checkpoint: parked.wait.checkpoint };
+    assert.deepEqual(
+      await fixture.invoke("question-job.run", { ...resumed, signal: { kind: "answer", value: { text: "Blue" } } }),
+      { status: "done", result: { answer: "Blue" } },
+    );
+    assert.deepEqual(
+      await fixture.invoke("question-job.run", { ...resumed, signal: { kind: "deadline" } }),
+      { status: "done", result: { timed_out: true } },
+    );
+  } finally {
+    await fixture.close();
+  }
+});
+```
+
+<!-- END GENERATED question -->
+
+With the development environment sourced, load the draft and start a job.
+
+```sh
+calternal plugin dev . --once
+calternal invoke question-job.start --json --input "{\"space_id\":\"$SPACE_ID\"}"
+calternal invoke requests.list --json --input '{}'
+```
+
+In the Inbox output, find the row whose `job_id` matches the start reply.
+Use that row's `id` for `REQUEST_ID` below, and use the ID from the start
+reply for `JOB_ID`. Answer before the deadline.
+
+```sh
+calternal invoke requests.answer --json --input '{"id":"REQUEST_ID","answer":{"text":"Blue"}}'
+calternal invoke jobs.get --json --input '{"job_id":"JOB_ID"}'
+```
+
+The job finishes with `{"answer":"Blue"}`. Start a second job, leave it
+unanswered, and check for `{"timed_out":true}` after the deadline.
+
+If an emitted question is malformed, `jobs.get` returns
+`result.diagnostics` with the path and source position, what was expected
+and what was found. `calternal plugin test` applies the same GenUI validator
+when a fixture invocation returns a parked question. Exercise at least the
+first run in the fixture to verify a form constructed by the handler.
+
+Use `{kind: "question", form, schema_operation}` to ask the job's starter
+a question in the existing Inbox. `form` is a GenUI view containing one
+Form with no actions. The host validates the answer against the input
+schema of `schema_operation` from this package and sends
+`{kind: "answer", value}` to the next run. An approval uses
+`{kind: "approval"}` and resumes with `{kind: "approval", approved}`.
+The decision is scoped to this wait. It confers no host permissions.
+
+`jobs.get` and the job stream show an active wait's reason and deadline.
+`jobs.cancel` cancels the wait. Keep private data out of the reason and
+shared result. The next run receives `{kind: "deadline"}` if no valid
+signal reaches the job first. A package can park eight waits per space,
+within a space-wide maximum of 32. Deadlines are future Unix milliseconds
+within seven days. A rejected park fails the job with `result.wait_error`.
+
+The host commits one winning signal and resumes from the saved checkpoint.
+A process crash can re-invoke a replayable handler with the same signal
+and checkpoint. Design that handler for replay and use the broker's
+receipt-backed calls for durable effects.
+
+To inspect a parked job or cancel it from the CLI, use the job ID from
+the start result. Inbox decisions use the request ID from
+`calternal invoke requests.list --json --input '{}'`. The listing
+identifies plugin prompts with `job_id`. Submit the answer with
+`requests.answer` and `{"id":"…","answer":{…}}`, or use
+`requests.deny` with `{"id":"…"}`. `requests.approve` takes
+`{"id":"…","lifetime":"once"}` and requires a fresh passkey session.

@@ -18,17 +18,20 @@ use webauthn_authenticator_rs::{WebauthnAuthenticator, softpasskey::SoftPasskey}
 use webauthn_rs::prelude::{CreationChallengeResponse, RequestChallengeResponse};
 
 mod agent_cases;
+mod automation_cases;
 /// Plugin job cases: streams, restart, cancellation, sign-out and space isolation.
 #[path = "jobs_cases.rs"]
 mod jobs_cases;
 mod kind_page_cases;
 mod people_cases;
 
+mod harness_admin_cases;
 mod provider_sign_in_cases;
 mod requests_cases;
 mod requests_review_cases;
 mod threads_cases;
 
+mod content_fetch_cases;
 mod cursor_cases;
 mod deploy_cases;
 mod drafts_cases;
@@ -39,18 +42,22 @@ mod microvm_cases;
 mod notes_cases;
 mod owned_slot_cases;
 mod perf_cases;
+mod plugin_diagnostics_cases;
 mod plugin_parity_cases;
 mod plugin_settings_cases;
 mod plugin_slot_cases;
 
+mod font_cases;
 mod onboarding_cases;
 mod search_cases;
 mod setup_code_cases;
+mod sharing_cases;
 mod simplify_review_cases;
 mod upgrade_handoff_cases;
 #[cfg(feature = "release-upgrade")]
 mod upgrade_release_cases;
 mod wallpaper_cases;
+mod web_push_cases;
 mod worker_cases;
 mod worker_delivery_cases;
 
@@ -210,6 +217,16 @@ impl Fixture {
             .unwrap_or_else(|| repo.join("plugins"));
         let mut command = Command::new(binary);
         command.env_clear();
+        if let Ok(origin) = std::fs::read_to_string(self.dir.path().join("content-fetch-origin")) {
+            command.env("CALTERNAL_TEST_CONTENT_FETCH_ORIGIN", origin);
+            command.env("CALTERNAL_CONTENT_FETCH_DENY_CIDRS", "93.184.215.18/32");
+        }
+        if self.dir.path().join("web-push-local").is_file() {
+            command.env("CALTERNAL_TEST_WEB_PUSH_LOCAL", "1");
+        }
+        if self.dir.path().join("fonts-off").is_file() {
+            command.env("CALTERNAL_FONT_DOWNLOADS", "off");
+        }
         if self.dir.path().join("wallpaper-cache-case").is_file() {
             command.env("CALTERNAL_UNSPLASH_KEY", "fixture-only");
         }
@@ -636,6 +653,16 @@ async fn all_operations_hide_foreign_ids() {
             json!({"space_id":missing}),
         ),
         (
+            "space.machine.get",
+            json!({"space_id":f.spaces[0]}),
+            json!({"space_id":missing}),
+        ),
+        (
+            "space.machine.set",
+            json!({"space_id":f.spaces[0],"machine_id":null}),
+            json!({"space_id":missing,"machine_id":null}),
+        ),
+        (
             "spaces.set_role",
             json!({"space_id":f.spaces[0],"account_id":f.ids[1],"role":"reader"}),
             json!({"space_id":missing,"account_id":f.ids[1],"role":"reader"}),
@@ -669,6 +696,21 @@ async fn all_operations_hide_foreign_ids() {
             "notes.create",
             json!({"space_id":f.spaces[0],"title":"x","markdown":"x"}),
             json!({"space_id":missing,"title":"x","markdown":"x"}),
+        ),
+        (
+            "plugins.network.content.get",
+            json!({"space_id":f.spaces[0],"frame_id":missing}),
+            json!({"space_id":missing,"frame_id":missing}),
+        ),
+        (
+            "plugins.network.content.preference.get",
+            json!({"space_id":f.spaces[0]}),
+            json!({"space_id":missing}),
+        ),
+        (
+            "plugins.network.content.preference.set",
+            json!({"space_id":f.spaces[0],"preference":"ask"}),
+            json!({"space_id":missing,"preference":"ask"}),
         ),
         (
             "plugins.list",
@@ -707,6 +749,7 @@ async fn all_operations_hide_foreign_ids() {
         ),
     ];
     cases.extend(notes_cases::foreign_cases(&f.spaces[0], &n, &missing));
+    cases.extend(automation_cases::foreign_cases(&f.spaces[0], &missing));
     let catalog = f
         .req(
             "GET",
@@ -726,8 +769,13 @@ async fn all_operations_hide_foreign_ids() {
 
     covered.extend(requests_cases::OPERATIONS.iter().copied());
     covered.extend(provider_sign_in_cases::OPERATIONS.iter().copied());
+    covered.extend(harness_admin_cases::OPERATIONS.iter().copied());
     covered.extend(plugin_settings_cases::OPERATIONS.iter().copied());
+    covered.extend(plugin_diagnostics_cases::OPERATIONS.iter().copied());
     covered.extend(search_cases::OPERATIONS.iter().copied());
+    covered.extend(sharing_cases::OPERATIONS.iter().copied());
+    covered.extend(web_push_cases::OPERATIONS.iter().copied());
+    covered.extend(font_cases::OPERATIONS.iter().copied());
     // Private account input is exercised with real sessions in drafts_cases.rs.
     covered.extend([
         "drafts.save",
@@ -2778,6 +2826,15 @@ const MACHINE_ROUTES: &[(&str, &str)] = &[
 impl Fixture {
     /// Machine-protocol request with an optional machine bearer and no cookie.
     async fn machine(&self, path: &str, bearer: Option<&str>, body: Value) -> Answer {
+        self.try_machine(path, bearer, body).await.unwrap()
+    }
+
+    async fn try_machine(
+        &self,
+        path: &str,
+        bearer: Option<&str>,
+        body: Value,
+    ) -> Result<Answer, reqwest::Error> {
         let mut r = self
             .client
             .post(format!("{}{path}", self.base))
@@ -2786,15 +2843,15 @@ impl Fixture {
         if let Some(b) = bearer {
             r = r.bearer_auth(b);
         }
-        let r = r.send().await.unwrap();
+        let r = r.send().await?;
         let status = r.status().as_u16();
-        let text = r.text().await.unwrap();
-        Answer {
+        let text = r.text().await?;
+        Ok(Answer {
             status,
             body: serde_json::from_str(&text).unwrap_or(json!({"raw":text})),
             headers: BTreeMap::new(),
             micros: 0,
-        }
+        })
     }
 }
 
@@ -2881,7 +2938,7 @@ async fn machines_and_runs_are_owner_private() {
     session.ok();
     let token = session.body["token"].as_str().unwrap().to_owned();
     // Sync and output refuse a missing or unknown bearer.
-    let sync = json!({"ack":0,"capacity":{"cpus":1,"memory_bytes":0,"max_sandboxes":2,"running_sandboxes":0},"draining":false,"leases":[]});
+    let sync = json!({"ack":0,"capacity":{"cpus":1,"memory_bytes":0,"available_memory_bytes":68719476736_u64,"max_sandboxes":2,"running_sandboxes":0},"draining":false,"leases":[]});
     for bearer in [None, Some("cm1_unknown")] {
         assert_eq!(
             f.machine("/api/v1/machine/sync", bearer, sync.clone())
@@ -3161,5 +3218,186 @@ async fn secret_management_is_separate_from_use_and_space_settings() {
             |r| r.get::<_, bool>(0)
         )
         .unwrap()
+    );
+}
+
+#[tokio::test]
+async fn shared_space_machine_routes_member_turns_without_granting_management() {
+    let f = Fixture::new().await;
+    let machine = requests_cases::Machine::enroll(&f).await;
+    let id = machine.id;
+    let shared = &f.spaces[3]; // Account B is an Editor here.
+    let managed = &f.spaces[4]; // Account B is a Manager here.
+    for (op, input) in [
+        ("space.machine.get", json!({"space_id":shared})),
+        (
+            "space.machine.set",
+            json!({"space_id":shared,"machine_id":id}),
+        ),
+    ] {
+        let reply = f
+            .req(
+                "POST",
+                "/api/v1/operations",
+                None,
+                json!({"operation":op,"request_id":"space-machine-anonymous","input":input}),
+                Some(ORIGIN),
+            )
+            .await;
+        assert_eq!(reply.status, 401, "{op}: {}", reply.body);
+    }
+    let denied = f
+        .op(
+            2,
+            "space.machine.set",
+            json!({"space_id":shared,"machine_id":id}),
+        )
+        .await;
+    assert_eq!(denied.status, 403, "{}", denied.body);
+    let spoof = f
+        .op(
+            1,
+            "space.machine.set",
+            json!({"space_id":shared,"machine_id":uuid::Uuid::nil()}),
+        )
+        .await;
+    assert_eq!(spoof.status, 404, "{}", spoof.body);
+    f.op(
+        2,
+        "space.machine.set",
+        json!({"space_id":managed,"machine_id":id}),
+    )
+    .await
+    .ok();
+    f.op(
+        1,
+        "space.machine.set",
+        json!({"space_id":shared,"machine_id":id}),
+    )
+    .await
+    .ok();
+    let read = f
+        .op(2, "space.machine.get", json!({"space_id":shared}))
+        .await;
+    read.ok();
+    assert_eq!(read.body["data"]["configured"], true);
+    assert_eq!(read.body["data"]["tools_enabled"], false);
+    assert_eq!(read.body["data"]["machine_id"], Value::Null);
+    assert!(
+        read.body["data"]["notice"]
+            .as_str()
+            .unwrap()
+            .contains("one person")
+    );
+    let denied = f
+        .op(
+            2,
+            "provider.sign_in.start",
+            json!({
+                "space_id":shared,"provider_id":"calternal-claude-code","shared":true
+            }),
+        )
+        .await;
+    assert_eq!(denied.status, 404, "{}", denied.body);
+    let run = f
+        .op(
+            2,
+            "agent.run",
+            json!({
+                "space_id":shared, "thread_id":uuid::Uuid::now_v7(), "prompt":"hello"
+            }),
+        )
+        .await;
+    run.ok();
+    let mut machine = machine;
+    let messages = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        loop {
+            let batch = machine.sync(&f, json!([])).await;
+            if let Some(assign) = batch.into_iter().find(|event| event["type"] == "assign") {
+                break assign;
+            }
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(messages["account_id"], f.ids[2]);
+    assert_eq!(messages["spec"]["shared_provider_sponsor"], f.ids[1]);
+
+    let code = f
+        .req(
+            "POST",
+            "/api/v1/machines/codes",
+            Some(&f.cookies[2]),
+            json!({}),
+            Some(ORIGIN),
+        )
+        .await;
+    code.ok();
+    let mut personal =
+        requests_cases::Machine::enroll_with_code(&f, code.body["code"].as_str().unwrap()).await;
+    f.op(2, "agent.run", json!({
+        "space_id":shared, "thread_id":uuid::Uuid::now_v7(), "prompt":"private route", "personal_machine":true
+    })).await.ok();
+    let own_assignment = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        loop {
+            let batch = personal.sync(&f, json!([])).await;
+            if let Some(assign) = batch.into_iter().find(|event| event["type"] == "assign") {
+                break assign;
+            }
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(own_assignment["account_id"], f.ids[2]);
+    assert!(own_assignment["spec"]["shared_provider_sponsor"].is_null());
+
+    let refused = f
+        .op(
+            2,
+            "space.machine.set",
+            json!({
+                "space_id":managed,"machine_id":id,"tools_enabled":true
+            }),
+        )
+        .await;
+    assert_eq!(refused.status, 403, "{}", refused.body);
+    let approved = f
+        .op(
+            1,
+            "space.machine.set",
+            json!({
+                "space_id":shared,"machine_id":id,"tools_enabled":true
+            }),
+        )
+        .await;
+    approved.ok();
+    assert_eq!(approved.body["data"]["tools_enabled"], true);
+    f.op(
+        2,
+        "agent.run",
+        json!({
+            "space_id":shared, "thread_id":uuid::Uuid::now_v7(), "prompt":"isolated tool",
+            "provider_id":"calternal-claude-code"
+        }),
+    )
+    .await
+    .ok();
+    let tools_assignment = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        loop {
+            let batch = machine.sync(&f, json!([])).await;
+            if let Some(assign) = batch.into_iter().find(|event| event["type"] == "assign") {
+                break assign;
+            }
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(
+        tools_assignment["spec"]["shared_tools"]["provider"],
+        "claude"
+    );
+    assert_eq!(
+        tools_assignment["spec"]["shared_tools"]["workspace_read_only"],
+        true
     );
 }

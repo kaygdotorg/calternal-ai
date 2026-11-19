@@ -71,16 +71,26 @@ const THREAD_SNOOZE: &str = "
         BEGIN SELECT RAISE(ABORT, 'invalid thread snooze timestamp'); END;
 ";
 
+const COLLECTION_MEMBERS: &str = include_str!("collection_members.sql");
+
+const SPACE_INITIAL: &[&str] = &[
+    SPACE_BASE,
+    crate::linked_write::SCHEMA,
+    crate::trash::SCHEMA,
+];
+
 pub(crate) const SPACE_SCHEMA: calternal_store::migrations::Schema<'_> =
     calternal_store::migrations::Schema::new(
         "space content.db",
         3,
+        SPACE_INITIAL,
         &[
-            SPACE_BASE,
-            crate::linked_write::SCHEMA,
-            crate::trash::SCHEMA,
+            (4, THREAD_SNOOZE),
+            (5, COLLECTION_MEMBERS),
+            (6, crate::rooms::SCHEMA),
+            (7, crate::trash_job::SCHEMA),
+            (8, crate::rename_job::SCHEMA),
         ],
-        &[THREAD_SNOOZE, include_str!("collection_members.sql")],
     );
 
 pub(crate) fn database(
@@ -252,14 +262,36 @@ mod tests {
     use super::*;
     use calternal_store::migrations::{Schema, migrate_release};
 
-    const INITIAL: &[&str] = &[
-        SPACE_BASE,
-        crate::linked_write::SCHEMA,
-        crate::trash::SCHEMA,
-    ];
-    const BASELINE: Schema<'_> = Schema::new("space content.db", 3, INITIAL, &[]);
+    const BASELINE: Schema<'_> = Schema::new("space content.db", 3, SPACE_INITIAL, &[]);
     const SNOOZE_RELEASE: Schema<'_> =
-        Schema::new("space content.db", 3, INITIAL, &[THREAD_SNOOZE]);
+        Schema::new("space content.db", 3, SPACE_INITIAL, &[(4, THREAD_SNOOZE)]);
+    const SHARING_RELEASE: Schema<'_> = Schema::new(
+        "space content.db",
+        3,
+        SPACE_INITIAL,
+        &[(4, THREAD_SNOOZE), (5, COLLECTION_MEMBERS)],
+    );
+    const ROOMS_RELEASE: Schema<'_> = Schema::new(
+        "space content.db",
+        3,
+        SPACE_INITIAL,
+        &[
+            (4, THREAD_SNOOZE),
+            (5, COLLECTION_MEMBERS),
+            (6, crate::rooms::SCHEMA),
+        ],
+    );
+    const EMPTY_TRASH_RELEASE: Schema<'_> = Schema::new(
+        "space content.db",
+        3,
+        SPACE_INITIAL,
+        &[
+            (4, THREAD_SNOOZE),
+            (5, COLLECTION_MEMBERS),
+            (6, crate::rooms::SCHEMA),
+            (7, crate::trash_job::SCHEMA),
+        ],
+    );
 
     #[test]
     fn baseline_threads_survive_the_snooze_migration_and_rollback_writer() {
@@ -340,14 +372,14 @@ mod tests {
         ).unwrap();
         conn.execute("CREATE TABLE note_collection_members(collision TEXT)", [])
             .unwrap();
-        assert!(migrate_release(&conn, SPACE_SCHEMA, true).is_err());
+        assert!(migrate_release(&conn, SHARING_RELEASE, true).is_err());
         assert_eq!(
             calternal_store::migrations::inspect(&conn, SNOOZE_RELEASE).unwrap(),
             4
         );
         conn.execute("DROP TABLE note_collection_members", [])
             .unwrap();
-        migrate_release(&conn, SPACE_SCHEMA, true).unwrap();
+        migrate_release(&conn, SHARING_RELEASE, true).unwrap();
         assert_eq!(
             calternal_store::migrations::inspect(&conn, SNOOZE_RELEASE).unwrap(),
             5
@@ -370,5 +402,103 @@ mod tests {
         conn.execute("UPDATE items SET path='.trash/collection.json'", [])
             .unwrap();
         assert!(member().is_none());
+    }
+
+    #[test]
+    fn room_migration_preserves_prior_writer_and_is_atomic() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate_release(&conn, SHARING_RELEASE, false).unwrap();
+        conn.execute_batch(
+            "INSERT INTO kinds VALUES('documents','[]');
+             INSERT INTO items VALUES ('item','documents','{}','v1',1,'now','Doc.md','doc.md',NULL,'materialized',NULL);
+             INSERT INTO versions VALUES ('item',1,'v1','{}',X'41','now','owner');
+             CREATE TABLE room_checkpoints(conflicts_with_migration INT);",
+        ).unwrap();
+        assert!(migrate_release(&conn, ROOMS_RELEASE, true).is_err());
+        assert_eq!(
+            calternal_store::migrations::inspect(&conn, SHARING_RELEASE).unwrap(),
+            5
+        );
+        let flag_table: bool = conn
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM sqlite_schema WHERE name='room_kinds')",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert!(!flag_table);
+        conn.execute_batch("DROP TABLE room_checkpoints").unwrap();
+        migrate_release(&conn, ROOMS_RELEASE, true).unwrap();
+        assert_eq!(
+            calternal_store::migrations::inspect(&conn, ROOMS_RELEASE).unwrap(),
+            6
+        );
+        assert_eq!(
+            calternal_store::migrations::inspect(&conn, SHARING_RELEASE).unwrap(),
+            6
+        );
+        conn.execute_batch(
+            "INSERT INTO room_kinds VALUES('documents');
+             INSERT INTO room_checkpoints VALUES('item',1,'lineage',X'0000');
+             INSERT INTO versions VALUES ('item',2,'v2','{}',X'42','now','owner');
+             UPDATE items SET revision='v2',seq=2 WHERE id='item';",
+        )
+        .unwrap();
+        let body: Vec<u8> = conn.query_row(
+            "SELECT bytes FROM versions JOIN items ON versions.item=items.id AND versions.seq=items.seq",
+            [], |r| r.get(0),
+        ).unwrap();
+        assert_eq!(body, b"B");
+    }
+
+    #[test]
+    fn empty_trash_migration_preserves_an_existing_deleted_note() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate_release(&conn, ROOMS_RELEASE, false).unwrap();
+        conn.execute_batch(
+            "INSERT INTO items VALUES ('note','notes','{}','v1',1,'now','.trash/note.md','.trash/note.md',NULL,'materialized',NULL);
+             INSERT INTO versions VALUES ('note',1,'v1','{}',X'41','now','owner');
+             INSERT INTO trash_origins VALUES ('note','Notes/Saved.md');",
+        )
+        .unwrap();
+        migrate_release(&conn, EMPTY_TRASH_RELEASE, true).unwrap();
+        assert_eq!(
+            calternal_store::migrations::inspect(&conn, ROOMS_RELEASE).unwrap(),
+            7
+        );
+        let note: (String, Vec<u8>, i64) = conn
+            .query_row(
+                "SELECT path,bytes,(SELECT count(*) FROM notes_trash_jobs)
+                 FROM trash_origins JOIN versions USING(item) WHERE item='note'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(note, ("Notes/Saved.md".to_owned(), vec![b'A'], 0));
+    }
+
+    #[test]
+    fn rename_migration_preserves_an_admitted_empty_trash_job() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate_release(&conn, EMPTY_TRASH_RELEASE, false).unwrap();
+        conn.execute_batch(
+            "INSERT INTO notes_trash_jobs(id,actor,count,bytes) VALUES('job','owner',1,1);
+             INSERT INTO notes_trash_targets VALUES('job','note','v1');",
+        )
+        .unwrap();
+        migrate_release(&conn, SPACE_SCHEMA, true).unwrap();
+        assert_eq!(
+            calternal_store::migrations::inspect(&conn, EMPTY_TRASH_RELEASE).unwrap(),
+            8
+        );
+        let pending: (String, String, i64) = conn
+            .query_row(
+                "SELECT item,revision,(SELECT count(*) FROM notes_rename_steps)
+                 FROM notes_trash_targets WHERE job='job'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(pending, ("note".to_owned(), "v1".to_owned(), 0));
     }
 }

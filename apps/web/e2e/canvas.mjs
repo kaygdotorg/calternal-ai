@@ -40,7 +40,7 @@ async function seam(p) {
 }
 const key = async (p, chord) => { await p.keyboard.press(chord); await p.waitForTimeout(150); };
 try {
-  { const { page, ctx } = await open(browser, "desktop", "dark", "/threads/t-idle"); if (process.env.CAL_CANVAS !== "1") ok((await page.locator("[data-canvas]").count()) === 0, "without ?canvas=1 nothing changes (no canvas)"); else console.log("SKIP  without ?canvas=1 nothing changes: card-only, the canvas is forced on by CAL_CANVAS"); await ctx.close(); }
+  { const { page, ctx } = await open(browser, "desktop", "dark", "/threads/t-idle?canvas=0"); ok((await page.locator("[data-canvas]").count()) === 0, "?canvas=0 shows the one card (no canvas), whatever the build's default"); await ctx.close(); }
   for (const scheme of ["dark", "light"]) {
     console.log(`-- ${scheme}`);
     const { page: p, ctx } = await open(browser, "desktop", scheme, "/threads?canvas=1");
@@ -257,7 +257,13 @@ try {
     await cdp.send("Emulation.setCPUThrottlingRate", { rate: 1 });
     if (!clear) {
       for (let i = 0; i < 4; i++) await key(p, "Alt+Shift+KeyN");
-      await p.mouse.wheel(0, -9999); await p.waitForTimeout(500);
+      // Over a window that is not focused, where a wheel pans the canvas (over the focused window it would scroll inside it, and the pan stops when that window slides under a still pointer): the one that is on screen.
+      const area = await p.locator("[data-canvas]").first().boundingBox();
+      for (const w of await p.locator("[data-win]:not([data-focused])").all()) { const b = await w.boundingBox(); if (b && b.x >= area.x && b.x + b.width <= area.x + area.width + 1) { await p.mouse.move(b.x + b.width / 2, b.y + b.height / 2); break; } }
+      await p.mouse.wheel(0, -9999);
+      // The pan eases to its end and the columns it leaves unmount one per frame: wait until the position has stopped moving, then give the unmounting its frames.
+      for (let last = -1, still = 0, i = 0; i < 60 && still < 4; i++) { await p.waitForTimeout(100); const now = await p.evaluate(() => JSON.parse(localStorage.getItem("cal.canvas")).x); still = now === last ? still + 1 : 0; last = now; }
+      await p.waitForTimeout(600);
       const all = await p.evaluate(() => JSON.parse(localStorage.getItem("cal.canvas")).cols.reduce((n, c) => n + c.wins.length, 0));
       const mounted = await p.evaluate(() => document.querySelectorAll("[data-win]").length);
       ok(mounted < all, "windows far from the screen are not mounted (not laid out, not painted)", `${mounted} of ${all} windows in the DOM`);

@@ -1,9 +1,11 @@
 //! Local upgrade snapshot and activation state, held under the installation locks.
 
+mod full;
 mod intent;
 mod inventory;
 mod proof;
 mod snapshot;
+mod tree;
 
 #[cfg(test)]
 mod intent_tests;
@@ -59,25 +61,8 @@ impl Deployment {
         Intent::load(&self.roots.appdata.join(INTENT), self.installation)
     }
 
-    fn publish(&self, intent: &Intent) -> io::Result<()> {
+    fn publish(&self, intent: &mut Intent) -> io::Result<()> {
         intent.publish(&self.roots.appdata.join(INTENT))
-    }
-
-    fn copy(&self, role: Root, index: usize) -> io::Result<PathBuf> {
-        Ok(self.root(role)?.join(COPY_DIR).join(index.to_string()))
-    }
-
-    fn discard_copies(&self) -> io::Result<()> {
-        for role in ROLES {
-            let Ok(root) = self.root(role) else { continue };
-            let folder = calternal_fsio::beneath::Folder::open_existing(root)?;
-            match folder.remove_tree(COPY_DIR) {
-                Ok(()) => folder.sync()?,
-                Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-                Err(error) => return Err(error),
-            }
-        }
-        Ok(())
     }
 
     // The published intent follows every synced backup. No mutation is allowed
@@ -88,14 +73,7 @@ impl Deployment {
         candidate: String,
         paths: BTreeSet<(Root, String)>,
     ) -> io::Result<()> {
-        if self
-            .read()?
-            .is_some_and(|intent| intent.phase != Phase::Committed)
-        {
-            return Err(io::Error::other(
-                "finish recovering the previous upgrade first",
-            ));
-        }
+        self.require_clean()?;
         for (_, path) in &paths {
             let relative = snapshot::relative(path)?;
             if relative.starts_with(COPY_DIR) || path == INTENT || path == ".lock" {
@@ -104,18 +82,21 @@ impl Deployment {
                 ));
             }
         }
-        self.discard_copies()?;
+        full::discard(self)?;
         let mut intent = Intent::copying(self.installation, previous, candidate);
-        self.publish(&intent)?;
-        let mut directories = BTreeSet::new();
+        self.publish(&mut intent)?;
+        let mut directories = std::collections::BTreeMap::new();
         let mut files = Vec::with_capacity(paths.len());
         for (index, (role, path)) in paths.into_iter().enumerate() {
             let root = self.root(role)?;
-            let directory = root.join(COPY_DIR);
-            if directories.insert(directory.clone()) {
-                calternal_fsio::private::directory(&directory)?;
+            if let std::collections::btree_map::Entry::Vacant(slot) = directories.entry(role) {
+                let folder = tree::Tree::open(root)?;
+                slot.insert(folder.mkdir(std::ffi::OsStr::new(COPY_DIR))?);
             }
-            let copy = snapshot::save(root, &path, &self.copy(role, index)?)?;
+            let copy = snapshot::save(root, &path, index)?;
+            if let Some(proof) = &copy {
+                snapshot::validate(root, index, proof)?;
+            }
             files.push(SavedFile {
                 root: role,
                 path,
@@ -123,13 +104,41 @@ impl Deployment {
             });
             hit(FaultPoint::UpgradeCopied);
         }
-        for directory in directories {
-            calternal_fsio::sync_dir(&directory)?;
+        for directory in directories.values() {
+            directory.sync()?;
         }
         intent.phase = Phase::Preparing;
         intent.files = files;
-        self.publish(&intent)?;
+        self.publish(&mut intent)?;
         hit(FaultPoint::UpgradeIntent);
+        Ok(())
+    }
+
+    fn prepare_full(
+        &self,
+        previous: String,
+        candidate: String,
+        mut entries: Vec<full::Entry>,
+    ) -> io::Result<()> {
+        self.require_clean()?;
+        full::discard(self)?;
+        let mut intent = Intent::copying(self.installation, previous, candidate);
+        intent.make_full();
+        self.publish(&mut intent)?;
+        full::capture(self, &mut entries)?;
+        intent.entries = Some(entries);
+        intent.phase = Phase::Preparing;
+        self.publish(&mut intent)?;
+        hit(FaultPoint::UpgradeIntent);
+        Ok(())
+    }
+
+    fn require_clean(&self) -> io::Result<()> {
+        if self.read()?.is_some_and(|intent| intent.needs_recovery()) {
+            return Err(io::Error::other(
+                "finish recovering the previous upgrade first",
+            ));
+        }
         Ok(())
     }
 
@@ -147,16 +156,16 @@ impl Deployment {
         }
         if intent.phase == Phase::Preparing {
             intent.phase = Phase::Committed;
-            self.publish(&intent)?;
+            self.publish(&mut intent)?;
             hit(FaultPoint::UpgradeCommitted);
         }
         self.finish_committed(&mut intent)
     }
 
     fn finish_committed(&self, intent: &mut Intent) -> io::Result<()> {
-        if !intent.files.is_empty() {
-            self.discard_copies()?;
-            intent.files.clear();
+        if intent.needs_recovery() {
+            full::discard(self)?;
+            intent.retire();
             self.publish(intent)?;
         }
         Ok(())
@@ -166,42 +175,70 @@ impl Deployment {
         let Some(mut intent) = self.read()? else {
             return Ok(None);
         };
-        if intent.phase == Phase::Committed {
-            return Err(io::Error::other(
-                "the committed upgrade cannot restore old bytes",
-            ));
+        match intent.phase {
+            Phase::Committed => {
+                return Err(io::Error::other(
+                    "the committed upgrade cannot restore old bytes",
+                ));
+            }
+            Phase::Preparing => {
+                if let Some(entries) = &intent.entries {
+                    full::restore(self, entries)?;
+                    intent.make_full();
+                } else {
+                    self.restore_files(&intent)?;
+                    intent.files.clear();
+                }
+                hit(FaultPoint::UpgradeRestored);
+                intent.phase = Phase::Copying;
+                self.publish(&mut intent)?;
+            }
+            // Copying has no complete manifest. Only private backup bytes
+            // can be discarded, including after an interrupted restore cleanup.
+            Phase::Copying => {}
         }
+        full::discard(self)?;
+        let path = self.roots.appdata.join(INTENT);
+        intent::remove(&path)?;
+        Ok(Some(intent.previous))
+    }
+
+    fn restore_files(&self, intent: &Intent) -> io::Result<()> {
         // Refuse before replacing even one authority if any backup is missing or corrupt.
         for (index, saved) in intent.files.iter().enumerate() {
             snapshot::relative(&saved.path)?;
             if let Some(proof) = &saved.copy {
-                snapshot::validate(&self.copy(saved.root, index)?, proof)?;
+                snapshot::validate(self.root(saved.root)?, index, proof)?;
             }
         }
         for (index, saved) in intent.files.iter().enumerate() {
             snapshot::restore(
                 self.root(saved.root)?,
                 &saved.path,
-                &self.copy(saved.root, index)?,
+                index,
                 saved.copy.as_ref(),
             )?;
             hit(FaultPoint::UpgradeRestoreFile);
         }
-        hit(FaultPoint::UpgradeRestored);
-        intent.phase = Phase::Copying;
-        intent.files.clear();
-        self.publish(&intent)?;
-        self.discard_copies()?;
-        let path = self.roots.appdata.join(INTENT);
-        std::fs::remove_file(&path)?;
-        calternal_fsio::sync_dir(path.parent().expect("intent has a parent"))?;
-        Ok(Some(intent.previous))
+        Ok(())
     }
 }
 
-/// One privileged action run with all required data locks held. An upgrade
-/// caller first stops the server and the co-located machine role.
+/// A privileged deployment action. Preflight and status can run while both
+/// services are up. The remaining actions require stopped roles and data locks.
 pub enum Action {
+    /// Check the evidence and restore-point footprint while both roles may serve.
+    /// Acquires no writer locks and never publishes an intent.
+    Preflight {
+        /// Current release image digest.
+        previous: String,
+        /// Candidate release image digest.
+        candidate: String,
+        /// Explicit owner-approved full restore point and incompatible mode.
+        incompatible: bool,
+        /// Test-gate evidence required for unattended updates.
+        proof: Option<PathBuf>,
+    },
     /// Capture the named release boundary, migrate and verify changed stores.
     Prepare {
         /// Current release image digest.
@@ -222,13 +259,16 @@ pub enum Action {
     Status,
     /// Restore an incomplete deployment, replayably, before serving requests.
     Recover,
+    /// Count all accounts, including disabled accounts, under the stopped data locks.
+    AccountCount,
     /// Check that this release understands the current database and recovery formats.
     Verify,
 }
 
-/// Run one local deployment action. Takes installation and optional machine
-/// locks for its whole update or restore. Snapshot and migration I/O cost
-/// depends on the files selected. Unknown versions fail closed.
+/// Run one local deployment action. Updates and recovery hold the installation
+/// and optional machine locks. A read-only preflight checks the live footprint
+/// for refusals before the operator stops either role. I/O cost depends on the
+/// selected files and stores. Unknown versions fail closed.
 pub fn run(
     roots: Roots,
     machine: Option<PathBuf>,
@@ -240,11 +280,30 @@ pub fn run(
         return Ok(
             match Intent::load(&roots.appdata.join(INTENT), installation)? {
                 Some(intent) => {
-                    json!({"phase":intent.phase,"previous":intent.previous,"candidate":intent.candidate,"needs_recovery":intent.phase!=Phase::Committed || !intent.files.is_empty()})
+                    json!({"phase":intent.phase,"previous":intent.previous,"candidate":intent.candidate,"needs_recovery":intent.needs_recovery()})
                 }
                 None => json!({"phase":"none","needs_recovery":false}),
             },
         );
+    }
+    if let Action::Preflight {
+        previous,
+        candidate,
+        incompatible,
+        proof,
+    } = action
+    {
+        check_approval(&previous, &candidate, incompatible, proof.as_deref())?;
+        calternal_roots::check_pairing(&roots, installation)?;
+        let machine = validate_machine_path(&roots, machine)?;
+        let deploy = Deployment {
+            roots,
+            machine,
+            installation,
+        };
+        deploy.require_clean()?;
+        inventory::Inventory::plan(&deploy, incompatible, true)?;
+        return Ok(json!({"verified":true}));
     }
     let machine = validate_machine_path(&roots, machine)?;
     let _roots = calternal_roots::prepare(&roots, installation, false)?;
@@ -266,11 +325,8 @@ pub fn run(
             incompatible,
             proof,
         } => {
-            proof::check_release_ids(&previous, &candidate)?;
-            if !incompatible {
-                proof::require(proof.as_deref(), &previous, &candidate)?;
-            }
-            let inventory = inventory::Inventory::plan(&deploy, incompatible)?;
+            check_approval(&previous, &candidate, incompatible, proof.as_deref())?;
+            let inventory = inventory::Inventory::plan(&deploy, incompatible, false)?;
             hit(FaultPoint::UpgradeVersionsChecked);
             let files = inventory.apply(&deploy, previous, candidate, !incompatible)?;
             hit(FaultPoint::UpgradeMigrated);
@@ -283,7 +339,9 @@ pub fn run(
             deploy.commit(&candidate)?;
             Ok(json!({"phase":"committed"}))
         }
-        Action::Status => unreachable!("handled before taking data locks"),
+        Action::Status | Action::Preflight { .. } => {
+            unreachable!("handled before taking data locks")
+        }
         Action::Recover => {
             let restored = match deploy.read()? {
                 Some(intent) if intent.phase != Phase::Committed => deploy.restore()?,
@@ -295,6 +353,10 @@ pub fn run(
             };
             Ok(json!({"restored_previous":restored}))
         }
+        Action::AccountCount => {
+            deploy.require_clean()?;
+            Ok(json!({"accounts": inventory::account_count(&deploy.roots.appdata)?}))
+        }
         Action::Verify => {
             inventory::verify(&deploy)?;
             Ok(json!({"verified":true}))
@@ -302,12 +364,42 @@ pub fn run(
     }
 }
 
+fn check_approval(
+    previous: &str,
+    candidate: &str,
+    incompatible: bool,
+    path: Option<&Path>,
+) -> io::Result<()> {
+    proof::check_release_ids(previous, candidate)?;
+    if !incompatible {
+        proof::require(path, previous, candidate)?;
+    }
+    Ok(())
+}
+
 /// Refuse server startup while a snapshot still owns the release decision. The
 /// host holds its validated root locks. Reads one bounded owner-only file.
-pub(crate) fn check_start(appdata: &Path, installation: Uuid) -> io::Result<()> {
-    if Intent::load(&appdata.join(INTENT), installation)?
-        .is_some_and(|intent| intent.phase != Phase::Committed || !intent.files.is_empty())
-    {
+pub(crate) fn check_start(
+    appdata: &Path,
+    installation: Uuid,
+    probe: Option<&str>,
+) -> io::Result<()> {
+    let intent = Intent::load(&appdata.join(INTENT), installation)?;
+    if let Some(candidate) = probe {
+        return match intent {
+            Some(intent)
+                if intent.phase == Phase::Preparing
+                    && intent.entries.is_some()
+                    && intent.candidate == candidate =>
+            {
+                Ok(())
+            }
+            _ => Err(io::Error::other(
+                "a private probe requires a prepared full restore point for this image",
+            )),
+        };
+    }
+    if intent.is_some_and(|intent| intent.needs_recovery()) {
         return Err(io::Error::other(
             "An upgrade is incomplete. Recover it through the deployment command before starting the server.",
         ));
@@ -325,10 +417,22 @@ fn validate_machine_path(roots: &Roots, machine: Option<PathBuf>) -> io::Result<
     if !metadata.is_dir() {
         return Err(io::Error::other("the machine root must be a directory"));
     }
-    let path = path.canonicalize()?;
+    // Keep the configured spelling: canonicalizing a symlinked ancestor
+    // would turn a redirected machine root into a valid snapshot source.
+    tree::Tree::open(&path)?;
+    let path = if path.is_absolute() {
+        path
+    } else {
+        std::env::current_dir()?.join(path)
+    };
+    use std::os::unix::fs::MetadataExt;
     for root in [&roots.appdata, &roots.userdata_ssd, &roots.userdata_hdd] {
         let root = root.canonicalize()?;
-        if root.starts_with(&path) || path.starts_with(&root) {
+        let other = std::fs::metadata(&root)?;
+        if root.starts_with(&path)
+            || path.starts_with(&root)
+            || (other.dev(), other.ino()) == (metadata.dev(), metadata.ino())
+        {
             return Err(io::Error::other(
                 "the machine root must be separate from the server roots",
             ));

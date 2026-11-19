@@ -129,9 +129,10 @@ Input: `docs/reviews/plugin-and-client-map-sol.md`.
   (`docs/measurements/sandbox-hybrid.md`). CPU is shared by weights at both levels.
 - Drafts live until sent or erased, capped by count and size per account. A message queued
   while offline stays until sent or cancelled; after 7 days it asks before sending.
-- Plugin network access: none by default. A plugin declares destinations in its manifest;
-  a Manager approves them at enable time; the plugin fetches through the server, which
-  logs the request, attaches secrets by handle and may cache results. No raw sockets.
+- Plugin workers have no sockets. A manifest requests distinct named, content
+  fetch, open internet and private grants. The trusted host enforces the current
+  per-space approval and remote-content preferences. See the
+  [network contract](plugin-interface-proposal.md#brokered-network-capabilities).
 - Protocols that need long-lived connections (mail: IMAP, JMAP, SMTP) are Rust engines in
   the server behind a contract, with every outbound connection through one guard
   (the existing app's netguard, ADR 0071); the plugin is the product layer on top.
@@ -140,6 +141,54 @@ Input: `docs/reviews/plugin-and-client-map-sol.md`.
   and the space's instructions at `AI/AGENTS.md`. A person's own skills, automations,
   instructions and starred prompts are the same files in their personal space.
 
+
+## Durable job waits
+
+The [author reference](../plugins/calternal-plugin-guide/reference.md)
+shows how a replayable job run returns a checkpoint and waits for an
+Inbox answer, an approval, a webhook delivery or its deadline. The
+worker invocation ends while the job waits. Interactive operations
+return a job ID from the existing `start_job` broker call to use waits.
+
+Park, cancellation and delivery use the same jobs.db connection and
+state fence. The first signal commits with the transition to admitted
+and, for Inbox decisions and webhooks, with the replay receipt.
+Duplicate deliveries cannot win the same wait again. The normal job
+scheduler rechecks the original sign-in, capability, package revision
+and activation. Once admitted, ordinary job restart and effect-receipt
+rules apply. After a later checkpoint the signal is no longer included.
+Signal payloads are limited to 16 KiB and are retained with the owning
+job. Job retention and account erasure also remove their waits.
+
+### Signed webhook delivery
+
+Declare a webhook `id` and schema `operation` in `webhooks`, and include
+the same `id` in `secrets`. Configure at least 32 random key bytes for the
+package's space secret of that name through the trusted secret flow. The
+host uses the declared operation's cached input schema for the delivery.
+It hands the payload to the resumed run.
+
+Park with `{kind: "webhook", route, correlation}` using a fresh UUID for
+each wait. The sender posts JSON to
+`/api/v1/plugin-webhooks/<space>/<package>/<route>/<job>/<correlation>`.
+Set `X-Calternal-Timestamp` to Unix seconds and `X-Calternal-Signature`
+to the hexadecimal HMAC-SHA256 of the timestamp, LF, `POST`, LF,
+exact path, LF and raw body bytes. Requests accept a five-minute clock
+skew and up to 16 KiB of body bytes. Verification has a short body
+timeout and a 60 attempts/minute budget per cached space. A 202
+acknowledges the first accepted delivery or an identical replay.
+Keep signing keys out of worker state and logs.
+
+## Personal plugin settings
+
+A package may declare `scope: "personal"` on a typed setting. A signed-in
+space member can read and edit only their own override through
+`plugins.personal_settings.get` and `plugins.personal_settings.set`.
+Address the space UUID, package and key. For edits submit the last stored
+`base`, the next `value` and a request ID. Null restores the manifest
+default. A stale base conflicts and an identical retry replays its receipt.
+The worker’s existing setting broker resolves the authenticated person's
+value. An edit wakes that person's account feed without publishing the value.
 
 ## Space plugin settings
 
@@ -167,7 +216,28 @@ Once the file is valid, recovery reapplies the pending key and keeps other
 edits. A competing edit to the same key becomes a conflict. Unrelated
 operations stay available during repair.
 
+## Installed plugin diagnostics
+
+A space Owner or Manager can call `plugins.diagnostics` with the space UUID
+and an installed package ID. The response reports the selected revision,
+its last observed readiness, recent reason codes, and up to 4 KiB of the
+last failed worker’s stderr from that space. Readiness is observed when the
+worker starts and stops. The endpoint does not start a worker.
+
+Diagnostics retain up to eight failures and one stderr tail per space and
+up to 64 spaces per package revision. Records expire after an hour and
+are cleared when the server restarts. The host never records operation
+inputs or outputs in the error history. Worker stderr is private to the
+space's managers. Authors should keep secrets and personal data out of it.
+
 ## Author diagnostics
+
+Use `calternal plugin new NAME --template question` for a complete job that
+asks one Inbox question and has a deadline. The static form in
+`question.form.json` uses the same checker as live requests.
+`calternal plugin test` also validates parked question forms returned by
+SDK fixture invocations. The guide worker exposes `jobs` and `waits`
+topics with the example manifest, question form and worker.
 
 `calternal plugin new` creates a directory under the current directory and
 prints the root worker, fixture test and next commands. Source the local
@@ -185,6 +255,93 @@ request ID when an invocation slot is free.
 The SDK fixture captures a subprocess's exit status or signal and up to
 4 KiB of its stderr. Fixture diagnostics are local to the author. The live
 worker protocol still treats a failed handler as a failed invocation.
+
+## Sealed plugin content
+
+For the image and font proxy, declare `network.content_fetch` and
+`content_prepare_v1`. The declaration names the `images_fonts` profile and at
+most 32 of the package's text kinds through `sources`, for example
+`{"kind":"mail-message","field":"text"}`. Prepare an exact, live stored item
+revision through `prepareContent(context, {kind, item_id, revision, field})`.
+The host takes the person and space from the invocation. It returns only an
+opaque frame ID. Caller-supplied URLs have no direct fetch operation.
+
+Read frame metadata with `plugins.network.content.get`, passing the space
+and frame IDs. The host rechecks the viewer, source revision and plugin
+activation. Mount the returned frame URL with a sandbox that enables no
+features. External navigation goes through the host's explicit action using
+the returned links. Frame references expire after five minutes or on eviction.
+
+Use `plugins.network.content.preference.get` and
+`plugins.network.content.preference.set` with the space UUID to read or edit
+the signed-in person's choice. Defaults are Always, with Ask for explicit
+loads and Never for placeholders. Committed broker writes queue eligible
+media before the frame is opened.
+Opening a frame for an item last committed more than 90 days ago can queue
+the older-content fallback. Items marked as junk never fetch. For Ask mode,
+the host can explicitly POST the authenticated frame URL with the normal
+same-origin session. HTTP 202 acknowledges the action. Open or reload the
+frame to display any queued media. Recent opens alone cause no upstream
+requests. The media URL signs the viewer’s short-lived frame, asset index, and expiry.
+The host rechecks live session, permission, source revision,
+plugin activation, and the current preference before serving.
+
+Remote media URLs can carry data in their hostname, path or query. A plugin
+that can write a declared source can put data there and trigger outbound
+requests under Always. The proxy's anonymity strips host-provided identifying
+headers, while the destination receives the plugin-supplied URL. Each plugin
+can contact up to 16 distinct hostnames per space per rolling minute, counting
+redirect destinations. Managers can see the latest 32 attempted hostnames in
+`plugins.diagnostics` as `fetch_hosts`. Paths and queries stay out of diagnostics.
+
+The server fetches image and font bytes off the request path. HTTPS GET on
+443 uses a generic `calternal` User-Agent without cookies, credentials,
+referrers, retries, or environment proxies. The guard checks every DNS
+answer, connects to the first checked address, and repeats its checks on
+redirects.
+It refuses IP literals, nonpublic addresses, attached interface networks
+and the configured public origin hostname and its resolved addresses. The
+server resolves its origin at startup and refreshes that set every minute,
+retaining the last confirmed addresses after a failed refresh. Startup logs
+a warning when the additional deny-range setting is empty. Set
+`CALTERNAL_CONTENT_FETCH_DENY_CIDRS` to comma-separated CIDRs for additional
+internal or hairpin public ranges. An invalid configured CIDR disables
+outbound media. On DNS64/NAT64 networks, set
+`CALTERNAL_CONTENT_FETCH_NAT64_PREFIX` to the deployment's IPv6 translation
+prefix. The proxy refuses that entire prefix. Supported lengths are 32, 40,
+48, 56, 64 and 96. See the [OWASP SSRF prevention guidance](https://cheatsheetseries.owasp.org/cheatsheets/Server_Side_Request_Forgery_Prevention_Cheat_Sheet.html).
+
+Each asset allows 10 MB, three redirects, 5 seconds to connect and 10
+seconds total for outbound work. Only checked PNG, JPEG, GIF, WebP, AVIF,
+WOFF, WOFF2, TrueType and OpenType are served. SVG, HTML and unrecognized
+or conflicting types are refused. A read can wait for work already queued.
+Unavailable assets return a generic 404. Dropped work returns HTTP 429 with
+`Retry-After: 60` and a plain-text message. The installation admits 128 queued or
+running assets, 16 running assets and two concurrent hops per checked IP.
+Each plugin may hold up to 16
+queue slots across spaces, with at most eight in any one space. The rolling
+limits are 60 source fetches per plugin and space per minute, 120 hops per
+space per minute, four active hops per space and 64 MiB per space per hour.
+Redirects spend the space hop budget and reuse the plugin's source slot.
+Space budgets include reservations for outstanding reads and conservatively
+charge failed reads of unknown size.
+
+The viewer-scoped memory cache has 16 shards of up to 32 MiB and 256
+entries each, for at most 512 MiB and 4,096 entries installation-wide.
+Successful entries are reusable for 24 hours and refusals for one minute.
+Expiry is enforced on lookup and expired entries are removed on shard
+access. Restart clears the cache. Audit keeps up to 10,000 records per
+space for seven days, with host, outcome and byte counts. URLs, payloads
+and credentials do not enter audit. These operational limits are
+provisional. Review them with observed mail-ingest burst sizes, asset
+hit rates, refusal and timeout counts, and VM memory pressure.
+
+In debug servers built with `test-plugins`, set
+`CALTERNAL_TEST_CONTENT_FETCH_ORIGIN=http://127.0.0.1:<port>` for a local
+upstream fixture. Stored HTTPS references to `content-fetch.test` use
+that exact listener. The normal URL, redirect, type, size and time rules
+still apply. The fixture can return a small PNG for the trial kit. The
+service accepts no loopback transport override in a production build.
 
 ## Open
 
@@ -268,8 +425,12 @@ the selected space. The caller needs both declared capabilities. Admission,
 approval, item and space checks still run when a rendered action invokes the
 operation. Where a slot fills, the first eligible contributions in package ID
 and local contribution ID order win. A disable or removal is reflected by the
-next listing. The planned scoped reactive values feed will deliver that change
-to the slot owner. The existing `plugins` array remains a manifest and
+next listing. The owner can open
+`GET /api/v1/plugin-slots/live?space_id=…&plugin_id=…&slot_id=…` with the
+person's normal sign-in. Each SSE data frame is an `OwnedSlotUpdate`
+containing the full current grant-filtered projection. An inactive update
+clears the mount. Reconnect for the latest snapshot. This stream shares
+the space journal's listener budget. The existing `plugins` array remains a manifest and
 activation inventory.
 
 Fixed host targets retain their string names. Sealed renderer paths at
@@ -310,7 +471,7 @@ Before any revision loads, the state is `failed`. The server keeps one failed
 candidate per package in the development space, for at most 16 packages, and
 clears it on the next successful publication. Nothing in diagnostics is
 written to disk, so it follows no database or file format and needs no
-migration. A restart drops it. A production server has no diagnostics view.
+migration. A restart drops it. Installed packages use the separate manager operation described above.
 
 ## Page a plugin's own kinds
 
@@ -352,3 +513,24 @@ sections enter the command list as navigation commands in the Settings group.
 from the current catalog snapshot. Live install, update, disable and removal
 take effect on the next request.
 See [Search and palette lookups](search.md).
+
+
+## Live editing
+
+A Markdown kind can opt in by declaring `"x-calternal-live-editing": true`
+in its root kind schema. The annotation is compatible with older manifest
+readers. The host registers the opt-in when the kind is provisioned for a
+space. It owns merge and persistence for the kind. A replacement must name
+the opaque revision it was based on. The host merges against that base while
+it remains retained in the current lineage. An unavailable base returns a
+conflict before any write. Retrying with the same request ID follows the
+existing receipt contract.
+
+
+Instead of `text` and `metadata`, `write_item` can pass an `edit` object
+for an existing live item. Use `{"type":"append","text":"…"}` with no
+`base_revision`, or `{"type":"patch","changes":[{"at":0,"delete":0,"insert":"…"}]}`
+with a `base_revision`. A patch accepts at most 256 non-overlapping changes.
+Positions and lengths are UTF-16 units on grapheme boundaries in the base.
+Both operations preserve the current metadata and use the normal write receipt.
+See [Live editing service](live-rooms.md) for wire and authority details.

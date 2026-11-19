@@ -186,25 +186,39 @@ export function scheduleMaterial(): void {
   flushLater();
 }
 
+/** The part of a frame the material may take: the rest of the surfaces wait for the next frame, so a page with many floating surfaces never makes one long task (a Clear to tinted step with a canvas of windows was one 200 ms task at 4x). */
+const BUDGET_MS = 6;
+/** Surfaces read (their rectangles) and not yet written, carried over to the next frame. */
+let pending: [HTMLElement, Entry, Frac, { left: number; top: number; right: number; bottom: number }][] = [];
+
 function flushLater(): void {
   if (frame || typeof requestAnimationFrame === "undefined") return;
   frame = requestAnimationFrame(() => {
     frame = 0;
-    const todo = all ? surfaces.keys() : fresh.values();
-    all = false;
     const scheme = currentScheme();
     const form = currentForm();
     const w = innerWidth || 1;
     const h = innerHeight || 1;
-    const reads: [HTMLElement, Entry, Frac, { left: number; top: number; right: number; bottom: number }][] = [];
-    for (const el of todo) {
-      const e = surfaces.get(el);
-      if (!e) continue;
-      const r = el.getBoundingClientRect();
-      reads.push([el, e, { x0: r.left / w, y0: r.top / h, x1: r.right / w, y1: r.bottom / h }, { left: r.left, top: r.top, right: r.right, bottom: r.bottom }]);
+    // A new change (or a new surface) starts from the top: what is left of the last one is read again with everything else.
+    if (all || fresh.size) {
+      const todo = all ? surfaces.keys() : fresh.values();
+      const reads: typeof pending = [];
+      for (const el of todo) {
+        const e = surfaces.get(el);
+        if (!e) continue;
+        const r = el.getBoundingClientRect();
+        reads.push([el, e, { x0: r.left / w, y0: r.top / h, x1: r.right / w, y1: r.bottom / h }, { left: r.left, top: r.top, right: r.right, bottom: r.bottom }]);
+      }
+      // A surface already waiting stays waiting (unless this pass has it): newest rectangles win.
+      const have = new Set(reads.map((x) => x[0]));
+      pending = [...reads, ...pending.filter((x) => !have.has(x[0]) && surfaces.has(x[0]))];
+      fresh.clear();
+      all = false;
     }
-    fresh.clear();
-    for (const [el, e, f, rect] of reads) {
+    const t0 = performance.now();
+    while (pending.length && performance.now() - t0 < BUDGET_MS) {
+      const [el, e, f, rect] = pending.shift()!;
+      if (!surfaces.has(el)) continue;
       const behind = behindLuminance(scheme, f);
       const m = material(scheme, behind, e.role, form);
       const read = source?.(rect, scheme); // (the source reads pictures it already holds, not the page)
@@ -213,6 +227,7 @@ function flushLater(): void {
       el.style.setProperty("--mat-blur", `${m.blur}px`);
       el.dataset.behind = behind > 0.5 ? "light" : "dark";
     }
+    if (pending.length) flushLater();
   });
 }
 

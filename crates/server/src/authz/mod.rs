@@ -42,6 +42,8 @@ pub enum Constraint {
     PluginInvocation,
     /// The caller must be the job's starting account or hold `plugins.manage`.
     JobOwner,
+    /// Sharing handlers check current target-specific account and space authority.
+    Sharing,
 }
 
 /// Immutable policy associated with one operation binding: a host row from
@@ -248,14 +250,45 @@ pub fn policy(operation: &str) -> Option<&'static Policy> {
             })
             .collect()
     });
+    static AUTOMATION: std::sync::OnceLock<Vec<Policy>> = std::sync::OnceLock::new();
+    let automation = AUTOMATION.get_or_init(|| {
+        calternal_core::AUTOMATION_OPERATIONS
+            .iter()
+            .map(|op| Policy {
+                operation: Cow::Borrowed(op.id),
+                required: op.capability,
+                scope: Scope::Space,
+                constraint: Constraint::None,
+            })
+            .collect()
+    });
     POLICIES
         .iter()
         .chain(search)
+        .chain(automation)
+        .chain(sharing_policies())
         .chain(notes)
         .chain(account)
         .chain(agent_policies())
         .chain(people_policies())
         .find(|p| p.operation == operation)
+}
+
+/// Host rows derived from the shared wire catalogue. The sharing binding
+/// authorizes each target and isolates all operations from agent credentials.
+pub fn sharing_policies() -> &'static [Policy] {
+    static POLICIES: std::sync::OnceLock<Vec<Policy>> = std::sync::OnceLock::new();
+    POLICIES.get_or_init(|| {
+        calternal_core::SHARING_OPERATIONS
+            .iter()
+            .map(|op| Policy {
+                operation: Cow::Borrowed(op.id),
+                required: Capability::SpaceRead,
+                scope: Scope::Account,
+                constraint: Constraint::Sharing,
+            })
+            .collect()
+    })
 }
 
 /// Host policies derived from the people operation declarations, initialized once.
@@ -369,7 +402,9 @@ pub fn agent_policies() -> &'static [Policy] {
                 operation: Cow::Borrowed(*id),
                 required: if *id == calternal_core::MACHINES_ONBOARDING {
                     Capability::ServerSettings
-                } else if *id == "agent.events" {
+                } else if *id == calternal_core::SPACE_MACHINE_SET {
+                    Capability::SpaceSettings
+                } else if matches!(*id, "agent.events" | calternal_core::SPACE_MACHINE_GET) {
                     Capability::SpaceRead
                 } else {
                     Capability::PluginsUse
@@ -378,6 +413,8 @@ pub fn agent_policies() -> &'static [Policy] {
                     *id,
                     "agent.run"
                         | "agent.check"
+                        | calternal_core::SPACE_MACHINE_GET
+                        | calternal_core::SPACE_MACHINE_SET
                         | calternal_core::AGENT_READINESS
                         | calternal_core::MACHINES_VERIFY
                 ) {

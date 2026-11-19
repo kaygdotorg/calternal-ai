@@ -20,6 +20,8 @@ pub(crate) use agent_settings::UPGRADE_SCHEMA as AGENT_SETTINGS_SCHEMA;
 pub mod broker;
 #[cfg(feature = "dev-plugin-drafts")]
 mod draft_diagnostics;
+pub(crate) mod harness_admin;
+pub(crate) mod installed_diagnostics;
 pub mod job_api;
 pub mod job_sql;
 mod job_streams;
@@ -27,12 +29,14 @@ pub mod jobs;
 pub mod live;
 pub mod live_catalog;
 mod machine_worker;
+pub(crate) mod network;
 pub mod package_store;
 mod requests;
 pub(crate) use requests::OnceAdmission;
 pub mod runner;
 pub mod session;
 pub(crate) mod settings;
+pub(crate) mod signals;
 mod slots;
 pub mod worker;
 
@@ -69,7 +73,7 @@ struct TrustedFile {
     plugins: Vec<TrustedEntry>,
 }
 
-/// One compiled-in trusted plugin entry. Paths are relative to `--plugin-root`.
+/// A distribution plugin entry. Paths are relative to `--plugin-root`.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TrustedEntry {
@@ -104,6 +108,8 @@ pub struct Plugin {
     pub schemas: Arc<host::CompiledSchemas>,
     revision: u32,
     activation_approval: u32,
+    /// In-memory readiness and worker failures, scoped per space.
+    pub(crate) installed_diagnostics: installed_diagnostics::RuntimeDiagnostics,
     #[cfg(feature = "dev-plugin-drafts")]
     draft_space: Option<SpaceId>,
     #[cfg(feature = "dev-plugin-drafts")]
@@ -161,6 +167,7 @@ impl Plugin {
             unavailable: None,
             schemas,
             revision: 0,
+            installed_diagnostics: Default::default(),
             activation_approval: 0,
             #[cfg(feature = "dev-plugin-drafts")]
             draft_space: None,
@@ -204,8 +211,9 @@ impl Plugin {
     /// Visible kinds become top-level folders; hidden kinds live under
     /// `.calternal/<plugin-id>/<kind>/`. Claimed text is stored as Markdown; any other
     /// kind is stored unparsed under its declared extension (manifest validation
-    /// guarantees one). Cost: O(kinds) small allocations.
-    pub fn kind_registrations(&self) -> Vec<(String, Placement, FileFormat)> {
+    /// guarantees one). The last tuple field carries the live-editing opt-in. Cost: O(kinds)
+    /// small allocations.
+    pub fn kind_registrations(&self) -> Vec<(String, Placement, FileFormat, bool)> {
         self.manifest
             .kinds
             .iter()
@@ -231,7 +239,7 @@ impl Plugin {
                     },
                     _ => FileFormat::Markdown,
                 };
-                (kind.id.clone(), placement, format)
+                (kind.id.clone(), placement, format, kind.live_editing())
             })
             .collect()
     }
@@ -245,10 +253,12 @@ impl Plugin {
 
 /// Atomically published plugin catalog. Reader snapshots never lock the catalog writer.
 #[derive(Debug, Default)]
-pub struct Registry(
-    arc_swap::ArcSwap<Catalog>,
-    #[cfg(feature = "dev-plugin-drafts")] draft_diagnostics::FailedCandidates,
-);
+pub struct Registry {
+    catalog: arc_swap::ArcSwap<Catalog>,
+    changes: tokio::sync::watch::Sender<u64>,
+    #[cfg(feature = "dev-plugin-drafts")]
+    failed_candidates: draft_diagnostics::FailedCandidates,
+}
 
 /// Immutable installed plugins and their derived operation policy.
 #[derive(Clone, Debug, Default)]
@@ -262,7 +272,8 @@ pub struct Catalog {
     operations: BTreeMap<String, (usize, Policy)>,
 }
 
-/// Parse the compiled-in trusted plugin list. Cost: one small JSON parse.
+/// Parse the source tree's reference catalog for fixtures and digest reports.
+/// Serving installations use the distribution file. Cost: one small JSON parse.
 pub fn registry_entries() -> Vec<TrustedEntry> {
     let file: TrustedFile =
         serde_json::from_str(TRUSTED_JSON).expect("compiled-in trusted-plugins.json is valid");
@@ -300,29 +311,38 @@ pub fn host_capability(capability: ManifestCapability) -> Option<Capability> {
 impl Registry {
     /// Pin the catalog for one admission or lookup. Cost: one atomic reference load.
     pub fn snapshot(&self) -> Arc<Catalog> {
-        self.0.load_full()
+        self.catalog.load_full()
     }
 
     /// Publish a fully validated snapshot. Existing references stay valid for admitted work.
     fn publish(&self, catalog: Catalog) {
-        self.0.store(Arc::new(catalog));
+        self.catalog.store(Arc::new(catalog));
+        self.changes
+            .send_modify(|value| *value = value.wrapping_add(1));
     }
 
     /// Build the initial catalog from known packages. Cost: validates the supplied declarations.
     pub fn from_plugins(plugins: Vec<Plugin>) -> Self {
-        Self(
-            arc_swap::ArcSwap::from_pointee(Catalog::from_plugins(
+        Self {
+            catalog: arc_swap::ArcSwap::from_pointee(Catalog::from_plugins(
                 plugins.into_iter().map(Arc::new).collect(),
             )),
+            changes: Default::default(),
             #[cfg(feature = "dev-plugin-drafts")]
-            Default::default(),
-        )
+            failed_candidates: Default::default(),
+        }
     }
 
     /// Failed development candidates, kept in memory for author inspection.
     #[cfg(feature = "dev-plugin-drafts")]
     pub(crate) fn failed_drafts(&self) -> &draft_diagnostics::FailedCandidates {
-        &self.1
+        &self.failed_candidates
+    }
+
+    /// Subscribe to content-free catalog changes for an already admitted live feed.
+    /// Cost: one shared watch receiver. A wake requires a new authorized projection.
+    pub(crate) fn changes(&self) -> tokio::sync::watch::Receiver<u64> {
+        self.changes.subscribe()
     }
 
     /// An empty registry: no plugin operations exist. Cost: none.
@@ -336,7 +356,7 @@ impl Registry {
     pub fn load(plugin_root: &Path) -> Self {
         let plugins = registry_entries()
             .into_iter()
-            .filter_map(|entry| match load_one(plugin_root, &entry, None) {
+            .filter_map(|entry| match load_one(plugin_root, &entry) {
                 Ok(plugin) => Some(plugin),
                 Err(why) => {
                     tracing::warn!(plugin = %entry.id, reason = %why, "fixture plugin not loaded");
@@ -477,6 +497,19 @@ impl Catalog {
         self.plugins.iter().find(|p| p.manifest.id == id)
     }
 
+    /// Choose the distribution's default provider if installed, otherwise the
+    /// first available provider. An installation with no provider keeps its
+    /// normal thread metadata default until a provider is installed.
+    pub(crate) fn default_provider(&self) -> &str {
+        self.plugins
+            .iter()
+            .filter(|plugin| plugin.manifest.provider.is_some() && plugin.unavailable.is_none())
+            .max_by_key(|plugin| plugin.entry.default_enabled)
+            .map_or("calternal-claude-code", |plugin| {
+                plugin.manifest.id.as_str()
+            })
+    }
+
     /// Find code already pinned to an invocation or durable job. Removed and narrowed
     /// revisions disappear at publication. Cost: one bounded lookup.
     pub(crate) fn revision(&self, id: &str, revision: u32) -> Option<&Arc<Plugin>> {
@@ -556,7 +589,13 @@ pub fn activation(store: &Store, space: SpaceId, plugin: &Plugin) -> Result<Plug
 /// Row used before a space stores any activation for `plugin`.
 pub fn default_row(plugin: &Plugin) -> PluginRow {
     PluginRow {
-        enabled: plugin.entry.default_enabled && plugin.unavailable.is_none(),
+        enabled: plugin.entry.default_enabled
+            && plugin.unavailable.is_none()
+            && plugin
+                .manifest
+                .network
+                .as_ref()
+                .is_none_or(|network| network.content_fetch.is_none()),
         generation: 1,
         approval: plugin.activation_approval,
     }
@@ -570,26 +609,19 @@ fn rel_path_ok(p: &str) -> bool {
             .all(|c| matches!(c, std::path::Component::Normal(_)))
 }
 
-fn load_one(root: &Path, entry: &TrustedEntry, fallback: Option<&[u8]>) -> Result<Plugin, String> {
+fn load_one(root: &Path, entry: &TrustedEntry) -> Result<Plugin, String> {
     if !rel_path_ok(&entry.manifest) {
         return Err("registry manifest path invalid".into());
     }
     let path = root.join(&entry.manifest);
-    let bytes = match std::fs::symlink_metadata(&path) {
-        Ok(meta) => {
-            if !meta.file_type().is_file() {
-                return Err("manifest is not a regular file".into());
-            }
-            if meta.len() > host::MAX_MANIFEST_BYTES as u64 {
-                return Err("manifest too large".into());
-            }
-            Cow::Owned(std::fs::read(&path).map_err(|e| format!("manifest: {e}"))?)
-        }
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound && fallback.is_some() => {
-            Cow::Borrowed(fallback.expect("checked fallback"))
-        }
-        Err(e) => return Err(format!("manifest: {e}")),
-    };
+    let meta = std::fs::symlink_metadata(&path).map_err(|e| format!("manifest: {e}"))?;
+    if !meta.file_type().is_file() {
+        return Err("manifest is not a regular file".into());
+    }
+    if meta.len() > host::MAX_MANIFEST_BYTES as u64 {
+        return Err("manifest too large".into());
+    }
+    let bytes = std::fs::read(&path).map_err(|e| format!("manifest: {e}"))?;
     let manifest = host::parse_manifest(&bytes).map_err(|e| format!("manifest invalid: {e}"))?;
     let mut unavailable = None;
     let worker = match &entry.worker {

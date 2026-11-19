@@ -175,6 +175,17 @@ pub(super) enum Cmd {
         #[arg(long, env = "CALTERNAL_INSTALLATION_ID")]
         installation_id: String,
     },
+    /// Send a test message through the running server's account mail service.
+    MailTest {
+        /// Recipient mailbox for the test message.
+        recipient: String,
+        /// The running server's appdata directory.
+        #[arg(long)]
+        appdata: PathBuf,
+        /// The installation UUID configured for the running server.
+        #[arg(long, env = "CALTERNAL_INSTALLATION_ID")]
+        installation_id: String,
+    },
     /// Inspect receipt-pruning health for one space through the private admin socket.
     ReceiptStatus {
         /// Space UUID to inspect.
@@ -252,6 +263,10 @@ pub(super) enum Cmd {
         /// was built with the `test-plugins` feature.
         #[arg(long)]
         test_plugin_root: Option<PathBuf>,
+        /// Internal deployment readiness probe for a prepared candidate image.
+        /// Requires loopback binding and serves only the health endpoint.
+        #[arg(long, hide = true, conflicts_with_all = ["create", "development"])]
+        upgrade_probe: Option<String>,
         /// How long a machine's leases survive without a sync, in milliseconds.
         #[arg(long, default_value_t = 90_000)]
         machine_lease_ttl_ms: u64,

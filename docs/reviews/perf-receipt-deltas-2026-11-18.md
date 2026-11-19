@@ -2,6 +2,10 @@
 
 [Forgejo #52](https://git.kayg.org/kayg/calternal-ai/issues/52)
 
+The November 20 owner decision superseded the rollout plan below. V4 ships
+on freshly provisioned roots. The v3 conversion and its release-pair test
+were removed. The measurements below describe the earlier artifact pair.
+
 The v4 security log keeps the 64 MiB segment threshold and writes one
 ordered delta for the receipt tuples affected by a transaction. Authority
 changes still cross the proposal sync, SQLite witness commit and resolution

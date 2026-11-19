@@ -94,7 +94,7 @@ pub enum Command {
         /// Space UUID where the diagnostic can run.
         #[arg(long)]
         space_id: String,
-        /// Provider plugin to check. Defaults to Claude Code.
+        /// Provider plugin to check. Uses the server default when omitted.
         #[arg(long, default_value = "")]
         provider: String,
         /// Person credential used to check machine ownership.
@@ -157,8 +157,8 @@ pub enum Command {
         /// Operator configuration file for the experimental microVM backend.
         #[arg(long)]
         microvm_config: Option<PathBuf>,
-        /// Most threads run at once.
-        #[arg(long, default_value_t = 10)]
+        /// Optional operator ceiling on concurrent sandboxes.
+        #[arg(long, default_value_t = u32::MAX)]
         max_sandboxes: u32,
     },
     /// Show this machine's identity and server.
@@ -236,7 +236,12 @@ pub fn main(cmd: Command, out: &Output) -> i32 {
             );
         }
     };
-    out.finish(rt.block_on(run(cmd)))
+    let machine_role = matches!(&cmd, Command::Run { .. });
+    let result = rt.block_on(run(cmd));
+    if machine_role {
+        rt.shutdown_background();
+    }
+    out.finish(result)
 }
 
 /// The error for a machine-role failure, with the next step chosen from its kind.
@@ -461,11 +466,26 @@ async fn run(cmd: Command) -> Result<Reply, CliError> {
         } => {
             let dir = dir.unwrap_or_else(connection::default_dir);
             let root = dir.join("sandboxes");
+            let (cli_dir, _cli_alias) =
+                if matches!(backend, BackendKind::Auto | BackendKind::Direct) {
+                    let (path, alias) = tokio::task::spawn_blocking(direct_cli_dir).await.map_err(
+                    |_| {
+                        CliError::new(
+                            "unavailable",
+                            "Could not look up the running machine executable for Direct turns.",
+                        )
+                    },
+                )??;
+                    (Some(path), alias)
+                } else {
+                    (None, None)
+                };
             let backend: Arc<dyn Backend> = match backend {
-                BackendKind::Auto => Arc::new(crate::sandbox::configured::ConfiguredBackend::new(
-                    root, podman, image,
-                )),
-                BackendKind::Direct => Arc::new(DirectBackend::new(root)),
+                BackendKind::Auto => Arc::new(
+                    crate::sandbox::configured::ConfiguredBackend::new(root, podman, image)
+                        .with_cli_dir(cli_dir),
+                ),
+                BackendKind::Direct => Arc::new(DirectBackend::new(root).with_cli_dir(cli_dir)),
                 BackendKind::Microvm => {
                     #[cfg(target_os = "linux")]
                     {
@@ -522,6 +542,49 @@ async fn run(cmd: Command) -> Result<Reply, CliError> {
             Ok(Reply::new(json!({"stopped": true})).line("The machine stopped cleanly."))
         }
     }
+}
+
+/// Make the running executable available as `calternal` in Direct turns.
+/// Cost: one executable lookup and stat, plus a private temporary directory
+/// and symlink if renamed. Call from a blocking task.
+fn direct_cli_dir() -> Result<(PathBuf, Option<tempfile::TempDir>), CliError> {
+    let executable = std::env::current_exe().map_err(|error| {
+        CliError::new(
+            "unavailable",
+            format!("Could not find the running machine executable for Direct turns: {error}."),
+        )
+    })?;
+    let invalid = |detail| {
+        CliError::new(
+            "unavailable",
+            format!(
+                "Could not provide 'calternal' for Direct turns using {}: {detail}.",
+                executable.display()
+            ),
+        )
+    };
+    if !std::fs::metadata(&executable)
+        .map_err(|error| invalid(error.to_string()))?
+        .is_file()
+    {
+        return Err(invalid("the executable path is not a file".into()));
+    }
+    if executable
+        .file_name()
+        .is_some_and(|name| name == "calternal")
+    {
+        let parent = executable
+            .parent()
+            .ok_or_else(|| invalid("the executable has no parent directory".into()))?;
+        return Ok((parent.to_owned(), None));
+    }
+    let alias = tempfile::Builder::new()
+        .prefix("calternal-cli-")
+        .tempdir()
+        .map_err(|error| invalid(error.to_string()))?;
+    std::os::unix::fs::symlink(&executable, alias.path().join("calternal"))
+        .map_err(|error| invalid(error.to_string()))?;
+    Ok((alias.path().to_owned(), Some(alias)))
 }
 
 async fn microvm(root: PathBuf, config: Option<PathBuf>) -> Result<Arc<dyn Backend>, CliError> {

@@ -21,12 +21,23 @@ use crate::protocol::SandboxSpec;
 /// Starts process sandboxes under one root directory.
 pub struct DirectBackend {
     root: PathBuf,
+    cli_dir: Option<PathBuf>,
 }
 
 impl DirectBackend {
     /// Workspaces and persistent homes live under `root/accounts/<account-id>`.
     pub fn new(root: impl Into<PathBuf>) -> Self {
-        Self { root: root.into() }
+        Self {
+            root: root.into(),
+            cli_dir: None,
+        }
+    }
+
+    /// Supply the machine-owned directory containing the operation CLI alias.
+    /// Cost: one path assignment. The machine role owns the directory lifetime.
+    pub(crate) fn with_cli_dir(mut self, dir: Option<PathBuf>) -> Self {
+        self.cli_dir = dir;
+        self
     }
 }
 
@@ -116,6 +127,11 @@ impl Backend for DirectBackend {
                 } else {
                     account.join("threads").join(spec.thread_id.to_string())
                 };
+                if spec.shared_provider_sponsor.is_some() {
+                    return Err(SandboxError(
+                        "a shared provider login requires sandbox isolation".into(),
+                    ));
+                }
                 let (home, login) = super::provider_home::prepare(account, &dir, spec).await?;
                 let work = dir.join("work");
                 tokio::fs::create_dir_all(&work).await.map_err(|e| {
@@ -126,6 +142,7 @@ impl Backend for DirectBackend {
                 }
                 Ok(Arc::new(DirectSandbox {
                     dir,
+                    cli_dir: self.cli_dir.clone(),
                     work: spec.code_directory.clone().unwrap_or(work),
                     worker: spec.worker.is_some(),
                     home,
@@ -149,6 +166,7 @@ impl Backend for DirectBackend {
 /// One thread's process sandbox.
 pub struct DirectSandbox {
     dir: PathBuf,
+    cli_dir: Option<PathBuf>,
     work: PathBuf,
     home: PathBuf,
     login: PathBuf,
@@ -178,10 +196,8 @@ impl Sandbox for DirectSandbox {
             let mut cmd = tokio::process::Command::new(program);
             request.validate_env_names()?;
             let mut paths = vec![self.home.join(".local/bin")];
-            if let Some(exe) = super::cli_program().await
-                && let Some(parent) = exe.parent()
-            {
-                paths.push(parent.to_path_buf());
+            if let Some(dir) = &self.cli_dir {
+                paths.push(dir.clone());
             }
             paths.extend(std::env::split_paths(
                 &std::env::var_os("PATH").unwrap_or_else(|| "/usr/bin:/bin".into()),
@@ -260,6 +276,8 @@ mod tests {
         SandboxSpec {
             space_id: Some(calternal_types::SpaceId::new()),
             provider_login: false,
+            shared_provider_sponsor: None,
+            shared_tools: None,
             code_directory: None,
             worker: None,
             account_id: Uuid::new_v4(),

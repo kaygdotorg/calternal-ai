@@ -1,19 +1,23 @@
 <script lang="ts">
   // Notes sidebar: the current space's notes (the fixture's, or the server's in server mode), newest first, and a way to make a new one.
-  import { Button, Icon, IconButton, Menu, Row, VirtualList, failed, type MenuItem } from "@calternal/ui";
+  import { Button, Icon, IconButton, Menu, Panel, pressRow, pressRows, registerPreview, Row, SearchField, VirtualList, failed, type MenuItem, type PressBag } from "@calternal/ui";
   import { say } from "../../server/say";
+  import NotePressPreview from "./NotePressPreview.svelte";
   import { href, navigate, route, segments } from "../../lib/route.svelte";
   import { spaces } from "../../shell/spaces.svelte";
   import { notes } from "./store.svelte";
   import { reach } from "../../lib/reach";
   import { shell } from "../../shell/shell.svelte";
-  import { incoming } from "./share/incoming.svelte";
+  import { incoming, incomingCollections } from "./share/incoming.svelte";
+  import { collectionList } from "./share/collections-list.svelte";
   import { beginSelect, endSelect, selectAll, allPicked, selection, selecting, toggleId, pickRange, provideList, setPicked } from "../../lib/select.svelte";
   import { collectionTitle, createCollection } from "./share/collections";
+  import { twoFinger } from "../../lib/two-finger";
   import ShareHost from "./share/ShareHost.svelte";
   import { openShare, shareUi } from "./share/share.svelte";
     // What others have shared with the person, read once (the live stream refreshes it when the sharing lane publishes it).
-  $effect(() => { void incoming.pages.refresh().catch(() => {}); });
+  $effect(() => { const space = notes.space?.id; if (space) void collectionList.load(space); });
+  $effect(() => { void incoming.pages.refresh().catch(() => {}); void incomingCollections.pages.refresh().catch(() => {}); });
   // The list follows the space the shell is showing.
   $effect(() => { void notes.useSpace(spaces.current.id); });
   const current = $derived(segments()[0] === "notes" ? segments()[1] : undefined);
@@ -48,6 +52,12 @@
     const row = (document.activeElement as HTMLElement | null)?.closest<HTMLElement>("[data-select-id]");
     if (e.key === " " && row) { e.preventDefault(); toggleId(row.dataset.selectId!, true); }
   }
+  /** The picked notes go to the Trash together (one toast, one Undo). */
+  async function trashSelection() {
+    const picked = [...selection.ids].map((id) => notes.list.find((n) => n.id === id)).filter((n): n is NonNullable<typeof n> => !!n);
+    endSelect();
+    await notes.removeMany(picked.map((n) => ({ id: n.id, title: n.title })));
+  }
   /** One picked note is shared as itself; several become a collection (`collections.create`) that is shared. */
   async function shareSelection(from: HTMLElement) {
     const ids = [...selection.ids];
@@ -58,12 +68,16 @@
     try {
       const item = ids.length === 1 ? { kind: "notes" as const, id: ids[0]! } : { kind: "collections" as const, id: (await createCollection(space, title, ids)).id };
       endSelect();
+      if (item.kind === "collections") { navigate(`/collections/${item.id}`); void collectionList.load(space); }
       openShare(item, title, from);
     } catch (e) { failed(say(e, "share these notes")); }
   }
   let renaming = $state<string | null>(null), draft = $state("");
   const items: MenuItem[] = [{ id: "rename", label: "Rename" }, { id: "select", label: "Select" }, { id: "trash", label: "Move to Trash", danger: true }];
   const menuAt = (e: MouseEvent, note: (typeof notes.list)[number], el?: HTMLElement) => { e.preventDefault(); e.stopPropagation(); const r = el?.getBoundingClientRect(); ctx = { x: r?.right ?? e.clientX, y: r?.bottom ?? e.clientY, note }; };
+  registerPreview<string>("note", NotePressPreview);
+  /** What a held or right-clicked row says to the shared press (ui/lib/press.ts): the same menu as the three dots, and a preview of the note's top. */
+  const bagOf = (n: (typeof notes.list)[number]): PressBag => ({ label: `Note: ${n.title}`, items: () => items, onpick: (id) => { if (id === "rename") { renaming = n.id; draft = n.title; } else if (id === "select") beginSelect("note", n.id); else void notes.remove(n.id, n.title); }, preview: { kind: "note", item: n.id } });
   function pick(id: string) { const c = ctx; ctx = null; if (!c) return; if (id === "rename") { renaming = c.note.id; draft = c.note.title; } else if (id === "select") beginSelect("note", c.note.id); else void notes.remove(c.note.id, c.note.title); }
   const focusNow = (el: HTMLElement) => { el.focus(); (el as HTMLInputElement).select(); };
   const commit = (n: (typeof notes.list)[number]) => { const t = draft; renaming = null; void notes.rename(n, t); };
@@ -74,7 +88,7 @@
 </script>
 
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions: one delegated listener for every row (the rows are the interactive elements) -->
-<nav aria-label="Notes" onclickcapture={pickClick} onkeydown={selectKey}>
+<nav aria-label="Notes" onclickcapture={pickClick} onkeydown={selectKey} use:pressRows use:twoFinger={{ kind: "note" }}>
   {#if notes.space}<p class="section-heading first">{notes.space.name}</p>{/if}
   {#if notes.tags.length}
     <div class="tags" role="group" aria-label="Filter by tag">
@@ -84,22 +98,14 @@
     {#if allTags && notes.tagPages.more}<div class="end" aria-hidden="true" use:reach={() => notes.tagPages.next()}></div>{/if}
     </div>
   {/if}
-  {#if picking}
-    <div class="bulk" role="toolbar" aria-label="Selected notes">
-      <span class="cnt" role="status">{selection.ids.size} selected</span>
-      <Button variant="primary" text="Share" disabled={!selection.ids.size} onclick={(e) => void shareSelection(e.currentTarget)} />
-      <Button variant="quiet" text={allPicked() ? "Deselect all" : "Select all"} onclick={() => (allPicked() ? setPicked([]) : selectAll())} />
-      <Button variant="quiet" text="Done" onclick={endSelect} />
-    </div>
-  {/if}
-  <input class="find" type="search" aria-label="Find a note by title" placeholder="Find a note" bind:value={q} autocomplete="off" />
+  <SearchField class="find" bind:value={q} label="Find a note by title" placeholder="Find a note" />
   {#if hits}
     <ul>{#each hits as n (n.id)}<li><Row title={n.title} icon="notes" href={href(`/notes/${n.id}`)} selected={current === n.id} /></li>{:else}<li class="none">No note starts with “{q.trim()}”.</li>{/each}</ul>
   {:else}
   {#if notes.list.length}
     <!-- Only the rows near the view exist in the DOM (VirtualList), however many notes there are; the next page is read when the window nears the last loaded row. -->
     <VirtualList inside count={notes.list.length} estimate={40} overscan={600} label="Notes" onrange={(_, end) => { if (end >= notes.list.length - 40) void notes.notePages.next(); }}>
-      {#snippet row(i)}{@const n = notes.list[i]}{#if n}<div class="li" role="presentation" data-select-id={n.id} data-picked={selection.ids.has(n.id) || undefined} oncontextmenu={(e) => menuAt(e, n)}>
+      {#snippet row(i)}{@const n = notes.list[i]}{#if n}<div class="li" role="presentation" data-select-id={n.id} data-picked={selection.ids.has(n.id) || undefined} use:pressRow={() => bagOf(n)}>
     {#if renaming === n.id}
       <input class="ren" aria-label="Note title" bind:value={draft} onkeydown={(e) => { if (e.key === "Enter") commit(n); else if (e.key === "Escape") renaming = null; }} onblur={() => commit(n)} use:focusNow />
     {:else}
@@ -110,18 +116,31 @@
   {:else}<ul><li class="none">{notes.error || "No notes yet."}{#if notes.error} <button type="button" class="retry" onclick={() => notes.retry()}>Try again</button>{/if}</li></ul>{/if}
   {/if}
   {#if !hits}{#if notes.notePages.error}<p class="cap" role="alert">{notes.notePages.error} <button type="button" class="retry" onclick={() => notes.notePages.retry()}>Try again</button></p>{/if}{/if}
-  {#if !hits && incoming.items.length}
+  {#if !hits && collectionList.items.length}
+    <div role="group" aria-label="Collections" class="grp">
+      <p class="section-heading later">Collections</p>
+      <ul>
+        {#each collectionList.items as c (c.id)}
+          <li><Row title={c.title} icon="folder" href={href(`/collections/${c.id}`)} selected={route.path === `/collections/${c.id}`} /></li>
+        {/each}
+      </ul>
+    </div>
+  {/if}
+  {#if !hits && (incoming.items.length || incomingCollections.items.length)}
     <div role="group" aria-label="Shared with me" class="grp">
       <p class="section-heading later">Shared with me</p>
       <ul>
         {#each incoming.items as s (s.item.id)}
           <li><Row title={s.title} icon="notes" href={href(`/notes/${s.item.id}`)} selected={current === s.item.id}>{#snippet trailing()}{#if s.unread}<span class="dot" role="img" aria-label="Changed since you last looked"></span>{/if}{/snippet}</Row></li>
         {/each}
+        {#each incomingCollections.items as s (s.item.id)}
+          <li><Row title={s.title} icon="folder" href={href(`/collections/${s.item.id}`)} selected={route.path === `/collections/${s.item.id}`}>{#snippet trailing()}{#if s.unread}<span class="dot" role="img" aria-label="Changed since you last looked"></span>{/if}{/snippet}</Row></li>
+        {/each}
       </ul>
     </div>
   {/if}
-  <button type="button" class="new" onclick={create}>New note</button>
-  <a class="new trash" href={href("/notes?view=trash")} aria-current={route.query.get("view") === "trash" ? "page" : undefined}>Trash</a>
+  <button type="button" class="new" onclick={create}><Icon name="plus" inline /> New note</button>
+  <a class="new trash" href={href("/notes?view=trash")} aria-current={route.query.get("view") === "trash" ? "page" : undefined}><Icon name="trash" inline /> Trash</a>
   {#if notes.waiting.length}
     <div class="wait" role="group" aria-label="Waiting to send">
       <p class="section-heading">Waiting to send</p>
@@ -134,8 +153,18 @@
       {/each}
     </div>
   {/if}
+  {#if picking}
+    <Panel class="bulk" radius="card" dense floating role="toolbar" aria-label="Selected notes">
+      <span class="cnt" role="status">{selection.ids.size} selected</span>
+      <Button variant="primary" text="Share" disabled={!selection.ids.size} onclick={(e) => void shareSelection(e.currentTarget)} />
+      <Button variant="destructive" text="Move to Trash" disabled={!selection.ids.size} onclick={() => void trashSelection()} />
+      <Button variant="quiet" text={allPicked() ? "Deselect all" : "Select all"} onclick={() => (allPicked() ? setPicked([]) : selectAll())} />
+      <Button variant="quiet" text="Done" onclick={endSelect} />
+    </Panel>
+  {/if}
 </nav>
-{#if shareUi.item?.kind === "collections"}<ShareHost item={shareUi.item} />{/if}
+<!-- A collection that is open draws its own sheet (CollectionView); this one is for a collection just made and not open. -->
+{#if shareUi.item?.kind === "collections" && route.path !== `/collections/${shareUi.item.id}`}<ShareHost item={shareUi.item} />{/if}
 <Menu open={!!ctx} {items} label="Note actions" anchor={ctx ? { left: ctx.x, top: ctx.y, right: ctx.x, bottom: ctx.y } : null} placement="bottom" onclose={() => (ctx = null)} onpick={pick} />
 
 <style>
@@ -153,17 +182,19 @@
   /* The group is a grid like the nav, so its heading keeps the shared distances (the nav gap above it is part of the space above). */
   .grp { display: grid; gap: var(--s-2); }
   .later { margin-top: calc(var(--section-above) - var(--s-2)); }
-  .bulk { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-1); padding: 0 var(--s-5) var(--s-2); }
+  /* The bar is the last thing in the list and sticks to the bottom of the scroller, above the bottom tier, so it is in reach however far the list is scrolled (a sticky bottom holds an element that would scroll off the bottom edge). */
+  nav :global(.bulk) { position: sticky; bottom: var(--s-2); z-index: 2; background: color-mix(in oklab, var(--paper) 90%, transparent); display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-1); padding: var(--s-3) var(--s-4); }
   .cnt { flex: 1 1 100%; font-size: var(--text-label); font-weight: var(--strong-weight); color: var(--ink-2); }
   .li[data-picked] :global(.row) { background: var(--accent-soft); }
   .dot { width: var(--s-3); height: var(--s-3); border-radius: 50%; background: var(--accent); }
   .trash { display: flex; align-items: center; }
-  .find { margin: 0 var(--s-5) var(--s-2); min-height: var(--row-h); padding: 0 var(--s-4); border: 0; border-radius: var(--r-pill); background: rgb(var(--ink-rgb) / 0.06); color: var(--ink); font-size: var(--text-label); }
+  /* The shared search field (its text is the touch body size, 17 pt: a smaller one makes iOS Safari zoom the page when it is focused). */
+  nav :global(.find) { margin: 0 var(--s-5) var(--s-2); }
   .end { height: 1px; flex-basis: 100%; }
   .cap { padding: var(--s-2) var(--s-5); font-size: var(--text-label); color: var(--ink-3); }
   .none { padding: var(--s-4) var(--s-5); color: var(--ink-3); font-size: var(--text-label); }
   .wait { display: grid; gap: var(--s-1); margin-top: var(--s-4); }
   .w { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-1); padding: var(--s-2) var(--s-5); font-size: var(--text-label); }
   .wt { flex: 1 1 100%; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .new { text-align: start; min-height: var(--row-h); padding: 0 var(--s-5); border-radius: var(--r-select); color: var(--ink-3); font-size: var(--text-label); font-weight: var(--strong-weight); }
+  .new { display: flex; align-items: center; gap: var(--s-3); text-align: start; min-height: var(--row-h); padding: 0 var(--s-5); border-radius: var(--r-select); color: var(--ink-3); font-size: var(--text-label); font-weight: var(--strong-weight); }
 </style>

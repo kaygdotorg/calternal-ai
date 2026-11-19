@@ -10,8 +10,9 @@ use base64::Engine;
 use base64::engine::general_purpose::STANDARD as B64;
 use calternal_auth::token::{hash32, normalize_setup_token, random32};
 use calternal_machine::protocol::{
-    Capacity, ChunkEvent, Down, EnrolRequest, EnrolResponse, Envelope, OutputAck, OutputPost,
-    Owner, PROTOCOL_VERSION, SessionFinish, SessionGranted, SyncRequest, session_message,
+    Capacity, ChunkEvent, Down, EnrolRequest, EnrolResponse, Envelope, HARNESS_PROTOCOL_VERSION,
+    OutputAck, OutputPost, Owner, PROTOCOL_VERSION, SessionFinish, SessionGranted, SyncRequest,
+    session_message,
 };
 use tokio::sync::Notify;
 use uuid::Uuid;
@@ -150,7 +151,7 @@ impl MachineService {
     /// unfinished exec. A new `boot_id` means the machine role restarted: execs it
     /// was running are reported lost.
     pub fn session_finish(&self, f: &SessionFinish) -> Result<SessionGranted, Error> {
-        if f.protocol != PROTOCOL_VERSION {
+        if !(5..=PROTOCOL_VERSION).contains(&f.protocol) {
             return Err(Error::invalid_input("unsupported machine protocol version"));
         }
         let mut st = self.lock()?;
@@ -180,7 +181,7 @@ impl MachineService {
         } else if !matches!(f.backend.as_str(), "direct" | "podman" | "auto") {
             return Err(Error::invalid_input("unsupported machine backend"));
         }
-        let thread_limit = super::microvm::active_limit(&f.backend, f.guest_memory_mib)?;
+        let guest_size = super::microvm::guest_size(&f.backend, f.guest_memory_mib)?;
         let backend = if kvm_fallback {
             "podman"
         } else if f.backend == "auto" {
@@ -206,8 +207,15 @@ impl MachineService {
         machine.live = Some(Live {
             session: hash,
             direct: backend == "direct",
+            harness_protocol: f.protocol >= HARNESS_PROTOCOL_VERSION,
+            shared_tools: f.protocol >= calternal_machine::protocol::SHARED_TOOLS_PROTOCOL_VERSION
+                && backend == "podman",
+            shared_provider: f.protocol
+                >= calternal_machine::protocol::SHARED_PROVIDER_PROTOCOL_VERSION
+                && backend == "podman",
             kvm_fallback,
-            thread_limit,
+            guest_size,
+            memory_reservations: 0,
             outbox: VecDeque::new(),
             next_seq: 1,
             polls: 0,
@@ -228,6 +236,20 @@ impl MachineService {
             .map(|l| l.row.id)
             .collect();
         for lease in held {
+            if st.leases[&lease].row.shared_sponsor.is_some()
+                && ((st.leases[&lease].row.shared_tools.is_some()
+                    && f.protocol < calternal_machine::protocol::SHARED_TOOLS_PROTOCOL_VERSION)
+                    || f.protocol < calternal_machine::protocol::SHARED_PROVIDER_PROTOCOL_VERSION
+                    || backend != "podman")
+            {
+                st.end_with_files(
+                    lease,
+                    "shared provider login requires current Podman machine",
+                    &self.settings,
+                    true,
+                );
+                continue;
+            }
             if rebooted && (super::microvm::is_requested(&backend) || kvm_fallback) {
                 let keep_files = !st.leases[&lease].row.worker;
                 super::microvm::lost(st, f.machine_id, lease, &self.settings, keep_files);
@@ -275,8 +297,18 @@ impl MachineService {
         token: &str,
         req: SyncRequest,
     ) -> Result<Vec<Envelope>, Error> {
+        self.sync_until(machine_id, token, req, None).await
+    }
+
+    pub(super) async fn sync_until(
+        self: &Arc<Self>,
+        machine_id: Uuid,
+        token: &str,
+        req: SyncRequest,
+        shutdown: Option<&crate::shutdown::Shutdown>,
+    ) -> Result<Vec<Envelope>, Error> {
         let session = hash32(token);
-        let reports = !req.discards.is_empty();
+        let ready = req.draining || !req.discards.is_empty();
         let svc = self.clone();
         let notify = blocking(move || svc.sync_begin(machine_id, &session, &req)).await?;
         let _guard = PollGuard {
@@ -287,14 +319,16 @@ impl MachineService {
         loop {
             let svc = self.clone();
             let pending = blocking(move || svc.outbox(machine_id, &session)).await?;
-            if reports || !pending.is_empty() {
+            if ready || !pending.is_empty() {
                 return Ok(pending);
             }
-            if tokio::time::timeout_at(deadline, notify.notified())
-                .await
-                .is_err()
-            {
-                return Ok(Vec::new());
+            tokio::select! {
+                () = crate::shutdown::wait(shutdown) => return Ok(Vec::new()),
+                result = tokio::time::timeout_at(deadline, notify.notified()) => {
+                    if result.is_err() {
+                        return Ok(Vec::new());
+                    }
+                }
             }
         }
     }
@@ -314,12 +348,23 @@ impl MachineService {
             .transpose()?;
         live_mut(st.machines.get_mut(&machine_id), session)?;
         st.finish_discards(machine_id, &req.discards)?;
+        let assigned = st.machines[&machine_id].assigned;
         let live = live_mut(st.machines.get_mut(&machine_id), session)?;
         live.outbox.retain(|e| e.seq > req.ack);
         let readiness_changed = live.capacity.max_sandboxes != req.capacity.max_sandboxes
             || live.capacity.running_sandboxes != req.capacity.running_sandboxes
+            || live.capacity.available_memory_bytes != req.capacity.available_memory_bytes
             || live.draining != req.draining;
         live.capacity = req.capacity;
+        // Closing or not-yet-reported leases still count against this sample.
+        // The next report can prove the machine has reclaimed their memory.
+        let observed = assigned.max(req.capacity.running_sandboxes as usize);
+        live.memory_reservations = if req.ack >= live.next_seq.saturating_sub(1) {
+            observed
+        } else {
+            // A report can predate a sent Assign or Stop on the same session.
+            observed.max(live.memory_reservations)
+        };
         live.draining = req.draining;
         live.polls += 1;
         let notify = live.notify.clone();
@@ -357,6 +402,7 @@ impl MachineService {
         for envelope in queued {
             let lease = match &envelope.message {
                 Down::Assign { lease_id, .. }
+                | Down::AssignHarness { lease_id, .. }
                 | Down::Exec { lease_id, .. }
                 | Down::Input { lease_id, .. } => Some(lease_id),
                 _ => None,

@@ -21,6 +21,23 @@ const cheapWallpaper = () => ({
   },
 });
 
+/**
+ * `virtual:contract-reads`: the ids of the operations `contract/operations.json` says do not change anything (`mutates: false`), read when the build starts. The client sends these before the session
+ * is confirmed and holds every other operation, so the set must come from the contract itself and never from a list kept by hand (one place per fact).
+ */
+const contractReads = () => {
+  const id = "virtual:contract-reads";
+  return {
+    name: "contract-reads",
+    resolveId: (s: string) => (s === id ? `\0${id}` : null),
+    load: (s: string) => {
+      if (s !== `\0${id}`) return null;
+      const ops = JSON.parse(readFileSync(join(__dirname, "../../contract/operations.json"), "utf8")) as { id: string; mutates: boolean }[];
+      return `export default ${JSON.stringify(ops.filter((o) => !o.mutates).map((o) => o.id).sort())};`;
+    },
+  };
+};
+
 // A single-page app: every path (docs/addresses.md) is served index.html. Fonts are subset files copied by scripts/fonts.mjs.
 // `/api` goes to the real server (`calternal serve --development`, default 127.0.0.1:3210). The server checks Host and Origin against its own address, so the proxy
 // presents the server's own: changeOrigin sets Host, and the origin header is rewritten to the target. Use with `?server=1&token=<dev token>`.
@@ -30,7 +47,7 @@ const api = { "/api": { target, changeOrigin: true, headers: { origin: target } 
 export default defineConfig({
   // CAL_BASE mounts the app under a path (the preview host serves it at /ai/).
   base: process.env.CAL_BASE ?? "/",
-  plugins: [svelte(), cheapWallpaper()],
+  plugins: [svelte(), cheapWallpaper(), contractReads()],
   server: { port: 5174, strictPort: true, proxy: api },
   preview: { port: 4174, strictPort: true, proxy: api },
   // CAL_OUT builds somewhere other than dist, so a build for the preview host (base /ai/) never replaces the one the e2e scripts serve (base /).

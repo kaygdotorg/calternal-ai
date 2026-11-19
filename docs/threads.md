@@ -151,11 +151,13 @@ The turn-state entry carries `data.job_id`, `data.state` (the sidebar label) and
 wakes both list and detail subscribers. The feed rechecks current space access and
 item ownership on replay and delivery. Turn state uses a space-local outbox
 written in the existing job transaction. One drain per cached space job connection reads at
-most 64 entries per page, appends each through the existing FULL journal commit,
-then retires the page in one jobs commit. The drain releases the jobs lock before
-taking the content lock or awaiting the writer. Publication retries on subsequent
-job transactions and recovery. Pending entries are eligible for pruning after
-seven days. The journal's operator-configured receipt retention bounds deduplication.
+most 64 entries per page and appends each through the existing FULL journal commit.
+It groups published rows for 250 ms and retires up to 64 in one background jobs
+commit. Retirement uses a separate connection and retries if the writer is busy.
+The drain releases the jobs lock before taking the content lock or awaiting the
+writer. On restart, retained rows replay using the same journal event IDs. Pending
+entries are eligible for pruning after seven days. The journal's operator-configured
+receipt retention bounds deduplication.
 
 ### Read one checkpoint addition
 
@@ -315,6 +317,7 @@ following reason payloads use Unix milliseconds for timestamps.
 | --- | --- |
 | `idle`, `queued`, `completed`, `cancelled` | No turn, pending admission, completed work, or cancelled work |
 | `no_machine`, `waiting_for_capacity` | Placement wait with `queue_position` |
+| `waiting_for_memory` | A connected eligible machine lacks available memory for another reservation. Includes a plain `message` and `queue_position`. |
 | `machine_offline` | Placement wait with `queue_position` and `since_ms` (last contact when known) |
 | `provider_signed_out` | `provider`, the re-authentication `message` and the reported `sign_in_command` |
 | `waiting_on_person` | Private `request_id` visible to the turn account |
@@ -368,6 +371,8 @@ plugin path, the native manifest is available from the binary if the working
 directory lacks `plugins/calternal-orchestrator/manifest.json`. Deployments
 using `--plugin-root` provide their own trusted plugin tree. An authorized
 fresh space lists zero threads before any conversation is created.
+
+The [Skills and Automations operations](automations.md) cover portable skill bundles and scheduled turn admission.
 
 ## Readable file format
 

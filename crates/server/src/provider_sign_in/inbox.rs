@@ -20,7 +20,10 @@ pub(super) struct Target {
     pub machine: Uuid,
     pub provider: String,
     pub label: String,
+    pub login_scope: calternal_machine::protocol::ProviderLoginScope,
+    pub policy: crate::plugins::package_store::provider_runtime::SignInPolicy,
     pub retry: bool,
+    pub shared: Option<crate::machines::space_execution::SpaceExecution>,
 }
 
 #[derive(serde::Deserialize)]
@@ -57,6 +60,7 @@ impl Entry {
             id: self.id.to_string(),
             space_id: Some(self.target.space.to_string()),
             thread_id: self.target.thread.map(|thread| thread.to_string()),
+            job_id: None,
             detail: RequestDetail::ProviderSignIn {
                 provider_id: self.target.provider.clone(),
                 label: if self.target.retry {
@@ -108,7 +112,9 @@ impl Inbox {
             if let Some(entry) = entries.iter_mut().find(|e| {
                 e.outcome.is_none()
                     && e.target.machine == target.machine
+                    && e.target.shared == target.shared
                     && e.target.provider == target.provider
+                    && e.target.login_scope == target.login_scope
             }) {
                 if entry.target.space != target.space {
                     return Err(Error::conflict(

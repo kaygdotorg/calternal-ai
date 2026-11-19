@@ -2,6 +2,7 @@
  * Reactive state for the Notes app: the current space's note list (read a page at a time as it is scrolled, a tag filter), the open note and its save state (saved, saving, conflict, offline), the Trash, and the private draft, kept current by
  * the backend's change feed. The backend is the fixture by default and the real server in server mode (server/client.ts). A save never touches what the editor shows (`view`), so typing is never overwritten.
  */
+import { rememberTop } from "./tops";
 import { spaces as shellSpaces } from "../../shell/spaces.svelte";
 import { server, serverMode } from "../../server/client";
 import { Paged } from "./paged.svelte";
@@ -12,7 +13,8 @@ import { say } from "../../server/say";
 import { failed, undoable } from "@calternal/ui";
 import { navigate, segments } from "../../lib/route.svelte";
 import { sharing } from "./share/sharing";
-import { changedBlocks, rescueLine, textKey } from "./share/rescue";
+import { textKey } from "./share/rescue";
+import { rescueEdits } from "./share/owed";
 
 class NotesStore {
   client: NotesClient = serverMode() ? new ServerNotes(server) : new FixtureNotes();
@@ -89,7 +91,8 @@ class NotesStore {
     if (!n || !this.space) return;
     try {
       const latest = await this.client.get(this.space.id, n.id);
-      if (latest.revision === n.revision) return;
+      // The read took a while: the open note may have been saved (or changed) meanwhile, so compare with the note as it is NOW (this person's own save, whose journal entry started this read, is not a change from elsewhere).
+      if (this.note?.id !== n.id || latest.revision === this.note.revision) return;
       if (this.saveState === "saved") { this.note = latest; this.show(latest); await this.reloadInput(); }
       else if (this.saveState !== "saving") { this.conflict = latest; this.saveState = "conflict"; }
     } catch { /* gone or away: the list refresh and the banner tell it */ }
@@ -121,6 +124,26 @@ class NotesStore {
     try { await this.trashPages.refresh(); this.error = ""; } catch (e) { this.error = say(e, "load the Trash"); }
   }
   /** Moves a note to the Trash with an Undo; if it is the open note the card goes back to the list. */
+  /**
+   * Moves several notes to the Trash at once (the multi-select bar): one request each, one list read after, one toast with one Undo that brings them all back. A note that fails stays where it is and is named in one failure toast. Cost: n requests, one refresh.
+   */
+  async removeMany(items: { id: string; title: string }[]): Promise<void> {
+    const done: string[] = [], bad: string[] = [];
+    for (const n of items) {
+      try { await this.client.remove(n.id); this.notePages.drop(n.id); done.push(n.id); } catch { bad.push(n.title); }
+    }
+    if (done.length) {
+      await this.refresh();
+      if (segments()[0] === "notes" && done.includes(segments()[1] ?? "")) navigate("/notes");
+      undoable("note.trash.bulk", "bulk", `Moved ${done.length} ${done.length === 1 ? "note" : "notes"} to the Trash`, async () => {
+        let ok = true;
+        for (const id of done) { try { await this.client.restore(id); } catch { ok = false; } }
+        await this.refresh();
+        return ok;
+      }, true);
+    }
+    if (bad.length) failed(`Couldn't move ${bad.length === 1 ? `\u201c${bad[0]}\u201d` : `${bad.length} notes`} to the Trash. Nothing else changed.`);
+  }
   async remove(id: string, title: string): Promise<void> {
     try {
       await this.client.remove(id);
@@ -182,9 +205,10 @@ class NotesStore {
     if (!id || !this.space) { this.note = null; return; }
     try {
       this.note = await this.client.get(this.space.id, id);
+      rememberTop(this.note.id, this.note.markdown);
       this.show(this.note); this.saveState = "saved"; this.conflict = null; this.typing = false;
       this.error = ""; this.errorCode = "";
-      if (this.note.spaceId !== this.space.id) shellSpaces.switchTo(this.note.spaceId); // a note of another space (from the palette, a link): that space becomes current
+      if (this.note.spaceId !== this.space.id && shellSpaces.list.some((s) => s.id === this.note!.spaceId)) shellSpaces.switchTo(this.note.spaceId); // a note of another space (from the palette, a link): that space becomes current (a note shared from a space the person is not in stays where it is)
     } catch (e) { this.note = null; this.error = say(e, "open the note"); this.errorCode = e instanceof ServerError ? e.code : ""; }
     await this.reloadInput();
   }
@@ -197,7 +221,7 @@ class NotesStore {
     this.saveState = "saving";
     const t0 = performance.now();
     try {
-      const saved = await this.client.update(this.space.id, this.note.id, this.note.revision, title, markdown);
+      const saved = await this.client.update(this.note.spaceId, this.note.id, this.note.revision, title, markdown);
       this.lastSaveMs = performance.now() - t0;
       this.note = saved;
       this.saveState = "saved"; this.conflict = null; this.error = "";
@@ -216,7 +240,7 @@ class NotesStore {
       if (e instanceof ServerError && (e.code === "forbidden" || e.code === "not_found")) {
         // Access ended while the person was writing: their edits are kept, not lost.
         this.saveState = "failed";
-        await this.rescue(this.note.title, this.note.markdown, markdown, `${this.note.id}:${textKey(markdown)}`);
+        await this.rescue(this.note.id, this.note.title, this.note.markdown, markdown, `${this.note.id}:${textKey(markdown)}`);
         return false;
       }
       if (e instanceof ServerError && e.code === "conflict") {
@@ -253,13 +277,8 @@ class NotesStore {
    * Access to a shared note ended and a write of it was refused: sends only the blocks the person changed (against the text they started from) with the cached title to `sharing.rescue`, which keeps them as a note in their
    * personal space, and says in one line where they went. `requestId` is stable for the same text, so a retry is the same request. Nothing else is touched; if the rescue itself fails the person is told and the text stays here.
    */
-  async rescue(title: string, base: string, local: string, requestId: string): Promise<void> {
-    const blocks = changedBlocks(base, local);
-    if (!blocks.length) { this.error = `You can no longer open “${title}”. You had changed nothing in it.`; return; }
-    try {
-      const { note } = await sharing.rescue(title, blocks, requestId);
-      this.error = rescueLine(title, note.title);
-    } catch (e) { this.error = `${say(e, "keep your edits")} Your text is still here.`; }
+  async rescue(noteId: string, title: string, base: string, local: string, requestId: string): Promise<void> {
+    this.error = await rescueEdits(noteId, title, base, local, requestId);
   }
   /** Sends a waiting write now; if the server is still away it stays queued. A write refused because access ended is kept as a rescue note and leaves the queue. */
   async sendWaiting(id: string): Promise<void> {
@@ -268,7 +287,7 @@ class NotesStore {
     catch (e) {
       if (w && e instanceof ServerError && (e.code === "forbidden" || e.code === "not_found")) {
         const base = this.note?.id === w.itemId ? this.note.markdown : "";
-        await this.rescue(String(w.input.title ?? this.note?.title ?? "a note"), base, String(w.input.markdown ?? ""), w.id);
+        await this.rescue(w.itemId, String(w.input.title ?? this.note?.title ?? "a note"), base, String(w.input.markdown ?? ""), w.id);
         await this.input.cancel(id).catch(() => {});
       } else this.error = say(e, "send the waiting change");
     }

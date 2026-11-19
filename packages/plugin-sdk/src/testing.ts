@@ -1,4 +1,5 @@
 /** Fixture host for exercising a plugin's actual worker wire protocol. */
+import { spawnSync } from "node:child_process";
 import { encodeWorkerFrameV2, parseWorkerFrameV2, type WorkerFrameV2 } from "./worker-v2.js";
 import type { HostCallKind } from "./manifest-v1.js";
 
@@ -11,11 +12,30 @@ type Child = {
   kill(): unknown;
 };
 
+
+function validateQuestion(data: unknown): void {
+  const bin = process.env.CALTERNAL_PLUGIN_TEST_BIN;
+  if (!bin || !data || typeof data !== "object" || !("status" in data) || data.status !== "parked"
+    || !("wait" in data) || !data.wait || typeof data.wait !== "object" || !("source" in data.wait)) return;
+  const source = data.wait.source;
+  if (!source || typeof source !== "object" || !("kind" in source) || source.kind !== "question") return;
+  const check = spawnSync(bin, ["plugin", "check-question", "--json"], {
+    input: "form" in source ? JSON.stringify(source.form) : "", encoding: "utf8",
+    timeout: 2_000, maxBuffer: 64 * 1024,
+  });
+  if (check.error) throw check.error;
+  if (check.status !== 0) {
+    const error = JSON.parse(check.stdout).error;
+    throw new Error(error.message);
+  }
+}
+
 /** Exercise operations using a disposable worker and local callback fixtures.
  * Runs one invocation at a time. Only the worker receives the dummy authority.
  * Unhandled callbacks fail closed. The deadline bounds fixture waits.
  * A child that exits before answering reports its exit status or signal and
  * the last 4 KiB of stderr. Spawn with piped stdin, stdout and stderr.
+ * Under `calternal plugin test`, each parked question uses the host validator.
  */
 export function fixtureWorker(
   child: Child,
@@ -68,7 +88,14 @@ export function fixtureWorker(
         const { invocation_id, message } = parseWorkerFrameV2(tail.slice(0, newline));
         tail = tail.slice(newline + 1);
         if (!waiting || waiting.id !== invocation_id) throw new Error("unexpected fixture reply");
-        if (message.type === "complete") waiting.success(message.data);
+        if (message.type === "complete") {
+          try {
+            validateQuestion(message.data);
+            waiting.success(message.data);
+          } catch (error) {
+            waiting.fail(error instanceof Error ? error : new Error("question validation failed"));
+          }
+        }
         else if (message.type === "host_call") {
           const fixture = fixtures[message.method];
           send({

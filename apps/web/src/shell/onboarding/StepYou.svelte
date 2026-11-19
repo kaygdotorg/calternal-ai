@@ -53,7 +53,7 @@
 
 <form onsubmit={(e) => { e.preventDefault(); if (sub === "who" && !userProblem && name.trim() && (demo || who !== "owner" || token.trim())) { sub = "email"; error = ""; } else if (sub === "email") afterEmail(); else if (sub === "code") void confirm(); else if (sub === "passkey") void create(); }}>
   {#if sub === "who"}
-    <p class="note">{lead} Say who you are; the next screens ask for your email and make your passkey. There is no password.</p>
+    <p class="note">{lead} Say who you are; the next screens {required ? "ask for your email address" : "let you add an email address"} and make your passkey. There is no password.</p>
     {#if who === "owner" && !demo}<label>Setup code<input name="token" bind:value={token} autocomplete="off" spellcheck="false" required /></label>{/if}
     <label>Your name<input name="name" bind:value={name} autocomplete="name" required /></label>
     <label>Username<input name="username" bind:value={username} autocomplete="username" autocapitalize="none" spellcheck="false" oninput={() => (touched = true)} aria-invalid={touched && !!userProblem} /><small class:err={touched && !!userProblem}>{touched && userProblem ? userProblem : "3 to 32 letters, digits or hyphens. It is how others find you."}</small></label>

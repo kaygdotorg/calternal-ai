@@ -1,5 +1,6 @@
 //! Threads product engine: manifest policy, content files and the existing turn engine.
 //! All durable work runs on blocking workers; no independent store or global lock.
+pub(crate) mod automation;
 mod delta;
 mod document;
 mod headings;
@@ -66,9 +67,9 @@ pub(crate) async fn dispatch<D: Directory>(
         if id.is_some_and(|id| a.thread().ok() != Some(id)) || op == "threads.create" {
             return Err(Error::not_found("item not found"));
         }
-        if input.contains_key("mode") {
+        if input.contains_key("mode") || input.contains_key("personal_machine") {
             return Err(Error::forbidden(
-                "a person must choose the thread permission mode",
+                "a person must choose the thread permission mode or execution machine",
             ));
         }
     }
@@ -116,6 +117,10 @@ pub(crate) async fn dispatch<D: Directory>(
                 .cloned()
                 .map(|level| [("effort".into(), level)].into_iter().collect())
                 .unwrap_or_default(),
+            personal_machine: input
+                .get("personal_machine")
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
             source_app: "threads".into(),
             ..Default::default()
         };

@@ -7,10 +7,11 @@
 //! [`Store::open`] validates and locks the three roots through `calternal-roots`
 //! before it creates or opens anything, and holds those locks for its lifetime.
 mod plugin_items;
+pub(crate) use plugin_items::PluginItemWrite;
 
 use crate::fault::{self, FaultPoint};
 use calternal_content::{Content, Item, Request};
-use calternal_core::{Note, NoteSummary, NoteVersion};
+use calternal_core::{Note, NoteResult, NoteSummary, NoteVersion};
 use calternal_types::Error;
 use calternal_types::{AccountId, SpaceId};
 use std::time::Duration;
@@ -25,13 +26,22 @@ use uuid::Uuid;
 pub struct Store {
     /// Shared with live streams and account inputs; never behind a store-wide lock.
     content: std::sync::Arc<Content>,
+    live_rooms: crate::live_rooms::Hub,
     /// The appdata root (account-input databases live under it).
     appdata: std::path::PathBuf,
     /// The three roots this store validated and locked.
     roots: calternal_roots::Roots,
     secrets: std::sync::Arc<calternal_secrets::LocalStore>,
     installation: Uuid,
+    pub(crate) notes_trash_days: std::sync::OnceLock<u32>,
+    pub(crate) notes_maintenance_wake: std::sync::Arc<tokio::sync::Notify>,
+    /// Account appearance service and bounded installation font cache.
+    pub(crate) appearance: std::sync::Arc<crate::api::appearance::Appearance>,
     machines: std::sync::OnceLock<std::sync::Weak<crate::machines::MachineService>>,
+    /// Bounded viewer-scoped references for sealed plugin content.
+    pub(crate) plugin_frames: crate::plugins::network::frames::Frames,
+    /// Bounded background Class B proxy and viewer-scoped media cache.
+    pub(crate) plugin_fetch: crate::plugins::network::fetch::Service,
     /// Process-lifetime key for authenticated, stateless list cursors.
     pub(crate) cursor_key: ring::hmac::Key,
     // Dropped last: every database and file handle above closes first.
@@ -64,6 +74,7 @@ fn io_err(context: &'static str, e: std::io::Error) -> Error {
 }
 fn content_fault(point: calternal_content::FaultPoint) {
     fault::hit(match point {
+        calternal_content::FaultPoint::BeforeRoomCommit => FaultPoint::BeforeRoomCommit,
         calternal_content::FaultPoint::AfterCommit => FaultPoint::AfterCommit,
         calternal_content::FaultPoint::AfterJournalCommit => FaultPoint::AfterJournalCommit,
         calternal_content::FaultPoint::BeforePlacement => FaultPoint::BeforePlacement,
@@ -192,11 +203,41 @@ impl Store {
         create: bool,
         receipt_retention: Duration,
     ) -> Result<Self, Error> {
+        Self::open_guarded(roots, installation, create, receipt_retention, None)
+    }
+
+    /// Open the prepared installation for a private readiness probe. The
+    /// candidate must match its full restore point. Takes the same locks as
+    /// ordinary startup and may perform startup writes covered by that point.
+    /// The caller must expose only the health route on a private listener.
+    #[doc(hidden)]
+    pub fn open_upgrade_probe(
+        roots: &calternal_roots::Roots,
+        installation: Uuid,
+        receipt_retention: Duration,
+        candidate: &str,
+    ) -> Result<Self, Error> {
+        Self::open_guarded(
+            roots,
+            installation,
+            false,
+            receipt_retention,
+            Some(candidate),
+        )
+    }
+
+    fn open_guarded(
+        roots: &calternal_roots::Roots,
+        installation: Uuid,
+        create: bool,
+        receipt_retention: Duration,
+        probe: Option<&str>,
+    ) -> Result<Self, Error> {
         let locks = std::sync::Arc::new(
             calternal_roots::prepare(roots, installation, create)
                 .map_err(|e| Error::unavailable(format!("storage roots refused: {e}")))?,
         );
-        crate::upgrades::check_start(&roots.appdata, installation)
+        crate::upgrades::check_start(&roots.appdata, installation, probe)
             .map_err(|error| Error::unavailable(error.to_string()))?;
         let root = roots.appdata.clone();
         calternal_fsio::private::directory(&root).map_err(|e| io_err("create data dir", e))?;
@@ -217,17 +258,45 @@ impl Store {
         let cursor_key =
             ring::hmac::Key::generate(ring::hmac::HMAC_SHA256, &ring::rand::SystemRandom::new())
                 .map_err(|_| Error::unavailable("cursor entropy unavailable"))?;
+        let appearance = std::sync::Arc::new(crate::api::appearance::Appearance::open(
+            &root,
+            locks.clone(),
+        )?);
         Ok(Self {
             cursor_key,
+            plugin_frames: Default::default(),
+            plugin_fetch: Default::default(),
+            appearance,
             content: std::sync::Arc::new(content),
+            live_rooms: crate::live_rooms::Hub::default(),
             appdata: root.clone(),
             roots: roots.clone(),
             secrets: std::sync::Arc::new(secrets),
             installation,
+            notes_trash_days: std::sync::OnceLock::new(),
+            notes_maintenance_wake: std::sync::Arc::new(tokio::sync::Notify::new()),
             machines: std::sync::OnceLock::new(),
             _roots: locks,
         })
     }
+    pub(crate) fn live_rooms(&self) -> &crate::live_rooms::Hub {
+        &self.live_rooms
+    }
+
+    /// Evict all of an account's live sessions on an item after its last
+    /// effective read grant is revoked. Call after the grant commits.
+    /// Cost: bounded registry and participant lookups, no storage or awaits.
+    pub fn evict_live_room_account(
+        &self,
+        space: SpaceId,
+        kind: &str,
+        item: Uuid,
+        account: AccountId,
+    ) {
+        self.live_rooms
+            .evict_item_account(space, kind, item, account);
+    }
+
     /// Returns the generic item service for trusted host integrations such as
     /// plugin kind/standard-collection provisioning. Every caller must enforce
     /// current authority before opening a selected account or space.
@@ -344,8 +413,8 @@ impl Store {
     /// without its previous body. Cost: one metadata read plus one shared write
     /// header, and two checked file reads (admission and deferred placement).
     /// Three FULL SSD commits precede acknowledgment; file/directory syncs follow
-    /// within one second. A linked rename reads its bounded indexed source set
-    /// and completes guarded placement synchronously.
+    /// within one second. A title change places its root and returns the durable
+    /// job ID for bounded source edits and undo.
     #[allow(clippy::too_many_arguments)]
     pub fn update(
         &self,
@@ -358,7 +427,9 @@ impl Store {
         base_revision: &str,
         title: Option<&str>,
         markdown: &str,
-    ) -> Result<Note, Error> {
+        allow_link_rewrites: bool,
+        shared_authority: Option<&calternal_auth::spaces::Spaces>,
+    ) -> Result<NoteResult, Error> {
         let id = item_id(id)?;
         let current = self.content.live_metadata(space_id, "notes", id)?;
         let old_title = current["title"].as_str().unwrap_or("");
@@ -382,8 +453,37 @@ impl Store {
         };
         calternal_core::validate_title(title)?;
         calternal_core::validate_markdown(&markdown)?;
-        let updated = if title == old_title {
-            self.content.write(
+        if title != old_title && !allow_link_rewrites {
+            return Err(Error::forbidden(
+                "renaming a shared note requires space edit access",
+            ));
+        }
+        if let Some(authority) = shared_authority {
+            let updated = self.content.write_shared_note(
+                space_id,
+                id,
+                base_revision,
+                crate::notes::metadata(title, &markdown)?,
+                markdown.as_bytes(),
+                request,
+                |i| serde_json::json!({"note":note(i)}),
+                |collections| {
+                    if authority
+                        .can_edit_shared_item(actor.account, space_id, id, collections)
+                        .map_err(crate::auth::auth_error)?
+                    {
+                        Ok(())
+                    } else {
+                        Err(Error::not_found("item not found"))
+                    }
+                },
+            )?;
+            Ok(NoteResult {
+                note: note(&updated),
+                job_id: None,
+            })
+        } else if title == old_title {
+            let updated = self.content.write(
                 space_id,
                 Some(id),
                 "notes",
@@ -392,9 +492,15 @@ impl Store {
                 markdown.as_bytes(),
                 request,
                 |i| serde_json::json!({"note":note(i)}),
-            )?
+            )?;
+            Ok(NoteResult {
+                note: note(&updated),
+                job_id: None,
+            })
         } else {
-            self.content.write_with_links(
+            let job = Uuid::now_v7();
+            let updated = self.content.write_with_links(
+                job,
                 space_id,
                 id,
                 "notes",
@@ -402,12 +508,26 @@ impl Store {
                 serde_json::json!({"title":title}),
                 markdown.as_bytes(),
                 request,
-                |i| serde_json::json!({"note":note(i)}),
+                |i| serde_json::json!({"note":note(i),"job_id":job}),
                 |item, old, new| crate::notes::retarget(item, old, new, old_title, title, id),
-            )?
-        };
-        Ok(note(&updated))
+            )?;
+            self.advance_note_rename_job(space_id, job);
+            Ok(NoteResult {
+                note: note(&updated),
+                job_id: Some(job.to_string()),
+            })
+        }
     }
+    pub(crate) fn advance_note_rename_job(&self, space: SpaceId, job: Uuid) {
+        if let Err(error) = self
+            .content
+            .rename_job_batch(space, Some(job), crate::notes::retarget)
+        {
+            tracing::warn!(%space, %job, code=?error.code, "Notes rename first batch deferred");
+        }
+        self.notes_maintenance_wake.notify_one();
+    }
+
     /// Provisions a plugin in one space: registers each declared kind's placement
     /// and format, then creates (or returns) each standard collection with its
     /// stable ID. Idempotent; a changed placement for an existing kind is refused.
@@ -421,14 +541,18 @@ impl Store {
             String,
             calternal_content::Placement,
             calternal_content::FileFormat,
+            bool,
         )],
         collections: &[(String, String, String)],
     ) -> Result<(), Error> {
         let space = space_id;
         let actor = actor.into();
-        for (kind, placement, format) in kinds {
+        for (kind, placement, format, live_editing) in kinds {
             self.content
                 .register_kind(space, kind, placement.clone(), format.clone())?;
+            if *live_editing {
+                self.content.enable_live_editing(space, kind)?;
+            }
         }
         if collections.is_empty() {
             return Ok(());
@@ -491,6 +615,7 @@ impl Store {
             operation,
             fingerprint,
         };
+        let _room_activation_edit = self.live_rooms.begin_activation_edit(space_id);
         self.content
             .set_control(space_id, request, &plugin_key(plugin_id), |current| {
                 let current = current.map(plugin_row).transpose()?.unwrap_or(default);

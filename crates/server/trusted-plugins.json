@@ -13,7 +13,7 @@
       "version": "0.1.0",
       "manifest": "calternal-notes-insights/manifest.json",
       "worker": "calternal-notes-insights/dist/worker.js",
-      "worker_sha256": "45468846891c3d09a7eee594302bb172bc6554b2c48cd766bf4accafbae2114c",
+      "worker_sha256": "8efbbd69e0a75498fa2cc99b1e6e6c12c9cd88a3bf004c29457ec523b0dcf7ae",
       "default_enabled": false
     },
     {
@@ -37,7 +37,15 @@
       "version": "0.1.0",
       "manifest": "calternal-plugin-guide/manifest.json",
       "worker": "calternal-plugin-guide/dist/worker.js",
-      "worker_sha256": "19a616cd39194f2b10b04561269aa56b22dc1d0ab40b2fb7f189610e25aa97b6",
+      "worker_sha256": "f9748aefecda25c4491a6e195879c02fb384fc35a98cccfe0a899f2b5098b2c7",
+      "default_enabled": false
+    },
+    {
+      "id": "calternal-plugin-submission-guide",
+      "version": "0.1.0",
+      "manifest": "calternal-plugin-submission-guide/manifest.json",
+      "worker": "calternal-plugin-submission-guide/dist/worker.js",
+      "worker_sha256": "c6e3d9856acadadd9cde6954e0388171fdf58a5eb8794a4a361658857cd02170",
       "default_enabled": false
     }
   ]

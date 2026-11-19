@@ -1,6 +1,6 @@
 // Dev-only proof through the deployed web origin. Uses an ephemeral software passkey.
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { readFileSync, statSync, writeFileSync } from "node:fs";
 import { request as httpsRequest } from "node:https";
 import { createRequire } from "node:module";
@@ -9,14 +9,40 @@ import { setTimeout as sleep } from "node:timers/promises";
 const { chromium } = createRequire(new URL("../apps/web/package.json", import.meta.url))("playwright");
 
 process.umask(0o077);
-const unit = "calternal-ai-rehearsal";
-const [phase, origin, root] = process.argv.slice(2);
-assert.ok(["setup", "fixture", "verify", "restart", "real"].includes(phase) && origin && root);
+const [phase, origin, root, target, tag, proof, runArgument] = process.argv.slice(2);
+const unit = process.env.CALTERNAL_REHEARSAL_UNIT ?? "calternal-ai-rehearsal";
+const settingUp = ["setup", "upgrade-setup"].includes(phase);
+assert.ok(["setup", "fixture", "verify", "restart", "real", "upgrade-setup", "upgrade"].includes(phase)
+  && origin && root);
 const session = join(root, "rehearsal-session.json");
 const cli = join(root, "releases/current/calternal");
 const machine = join(root, "machine");
 const sandbox = join(machine, "sandboxes");
 const marker = join(root, "rehearsal-thread.json");
+
+function containerPhases(oldContainer, newContainer, since) {
+  const entries = execFileSync("journalctl", [
+    "--user", "-u", `${unit}.service`, "--since", `@${Math.floor(since / 1000)}`,
+    "--output=json", "--no-pager",
+  ], { encoding: "utf8" }).trim().split("\n").map(line => JSON.parse(line));
+  const at = (event, id) => {
+    const entry = entries.find(row => typeof row.MESSAGE === "string"
+      && row.MESSAGE.includes(`container ${event} ${id} `));
+    assert.ok(entry, `no Podman ${event} event for ${id}`);
+    return Number(entry.__REALTIME_TIMESTAMP) / 1000;
+  };
+  const died = at("died", oldContainer);
+  const removed = at("remove", oldContainer);
+  const created = at("create", newContainer);
+  const started = at("start", newContainer);
+  assert.ok(died <= removed && removed <= created && created <= started, "Podman event order");
+  const ms = (end, start) => Number((end - start).toFixed(1));
+  return {
+    podman_teardown_ms: ms(removed, died),
+    between_containers_ms: ms(created, removed),
+    podman_startup_ms: ms(started, created),
+  };
+}
 
 function systemctl(...args) {
   execFileSync("systemctl", ["--user", ...args], { stdio: "inherit" });
@@ -61,12 +87,24 @@ const browser = await chromium.launch();
 try {
   const context = await browser.newContext({
     ignoreHTTPSErrors: true,
-    ...(phase === "setup" ? {} : { storageState: session }),
+    ...(settingUp ? {} : { storageState: session }),
   });
   const page = await context.newPage();
-  const shell = await page.goto(origin, { waitUntil: "domcontentloaded" });
+  const shell = settingUp
+    ? await context.request.get(origin)
+    : await page.goto(origin, { waitUntil: "domcontentloaded" });
   assert.equal(shell.status(), 200);
   assert.match(shell.headers()["content-security-policy"], /script-src 'self'/);
+  if (settingUp) {
+    // Use the deployed origin for WebAuthn while keeping the app's first-owner
+    // navigation out of the fixture's credential ceremony.
+    const ceremonyPage = new URL("/__rehearsal-passkey", origin).href;
+    await page.route(ceremonyPage, route => route.fulfill({
+      contentType: "text/html",
+      body: "<!doctype html><title>Rehearsal passkey</title>",
+    }));
+    await page.goto(ceremonyPage);
+  }
   const api = async (path, data) => {
     const response = await context.request.fetch(`${origin}/api/v1/${path}`, {
       method: data === undefined ? "GET" : "POST", data,
@@ -74,6 +112,11 @@ try {
     });
     assert.ok(response.ok(), `${path}: HTTP ${response.status()}`);
     return response.json();
+  };
+  const assertSignedIn = async () => {
+    const { setup, signed_in: signedIn } = await api("auth/status");
+    assert.equal(setup, false);
+    assert.equal(signedIn, true);
   };
   const op = async (operation, input = {}) => (await api("operations", {
     operation, input, request_id: crypto.randomUUID(),
@@ -87,13 +130,15 @@ try {
     return current.state === "done";
   };
 
-  if (phase === "setup") {
-    for (let index = 0; index < 20; index++) {
-      assert.equal(await anonymousSetup("127.0.0.10"), 400);
+  if (settingUp) {
+    if (phase === "setup") {
+      for (let index = 0; index < 20; index++) {
+        assert.equal(await anonymousSetup("127.0.0.10"), 400);
+      }
+      assert.equal(await anonymousSetup("127.0.0.10"), 429);
+      assert.equal(await anonymousSetup("127.0.0.11"), 400);
+      console.log("Trusted proxy separates source buckets and overwrites spoofed forwarding headers.");
     }
-    assert.equal(await anonymousSetup("127.0.0.10"), 429);
-    assert.equal(await anonymousSetup("127.0.0.11"), 400);
-    console.log("Trusted proxy separates source buckets and overwrites spoofed forwarding headers.");
 
     const tokenFile = join(root, "appdata/setup.token");
     assert.equal(statSync(tokenFile).mode & 0o777, 0o600);
@@ -112,12 +157,167 @@ try {
         publicKey: PublicKeyCredential.parseCreationOptionsFromJSON(options),
       })).toJSON(), start.options.publicKey);
     await api("auth/setup/finish", { ceremony: start.ceremony, credential, device: "Dev rehearsal" });
-    assert.deepEqual(await api("auth/status"), { setup: false, signed_in: true });
+    await assertSignedIn();
+    if (phase === "upgrade-setup") {
+      // Start the measured browser visit as an owner who finished onboarding.
+      assert.deepEqual(await op("onboarding.finish"), { finished: true });
+    }
     await context.storageState({ path: session });
     console.log("First owner registered a resident software passkey at the configured HTTPS origin.");
 
   }
-  if (["setup", "fixture", "real"].includes(phase)) {
+  if (phase === "upgrade") {
+    const run = Number(runArgument);
+    const driver = process.env.CALTERNAL_REHEARSAL_DRIVER;
+    assert.ok(target && tag && proof && driver && Number.isInteger(run) && run >= 1 && run <= 10,
+      "upgrade needs a disposable target, image tag, proof, deployment driver and run number");
+    const deploy = join(driver, "deploy.sh");
+    const rollback = join(driver, "rollback.sh");
+    const imageId = () => execFileSync("podman", [
+      "container", "inspect", "--format", "{{.Image}}", unit,
+    ], { encoding: "utf8" }).trim().replace(/^sha256:/, "");
+    // The driver moves this pointer after stopping the old service and before
+    // starting the new one. Classify only requests sent and acknowledged on
+    // the same side of that move.
+    const serving = () => readFileSync(join(root, "releases/current/image.id"), "utf8").trim();
+    const previous = imageId();
+    const evidence = JSON.parse(readFileSync(proof, "utf8"));
+    assert.equal(previous, evidence.previous);
+    await page.locator("html[data-ready]").waitFor({ timeout: 15_000 });
+    await assertSignedIn();
+    await wait("enrolled machine online", async () => (await op("machines.onboarding")).ready);
+    const space = (await op("spaces.list")).spaces.find(s => s.personal && s.role === "owner").id;
+    const deployArgs = ["--target", target, "--image", tag, "--compatibility-proof"];
+    const wrongProof = join(root, "wrong-proof.json");
+    writeFileSync(wrongProof, JSON.stringify({ ...evidence, candidate: evidence.previous }));
+    const beforePid = execFileSync("podman", [
+      "container", "inspect", "--format", "{{.State.Pid}}", unit,
+    ], { encoding: "utf8" });
+    assert.throws(() => execFileSync(deploy, [...deployArgs, wrongProof],
+      { stdio: ["ignore", "pipe", "pipe"] }), error => {
+      assert.match(String(error.stderr), /preflight refused/i);
+      return true;
+    });
+    assert.equal(execFileSync("podman", ["container", "inspect", "--format", "{{.State.Pid}}", unit],
+      { encoding: "utf8" }), beforePid);
+    await assertSignedIn();
+    console.log("Invalid proof was refused while the original container and owner session stayed up.");
+
+    assert.equal(imageId(), previous);
+    execFileSync("podman", ["tag", evidence.candidate, `localhost/${unit}:${tag}`]);
+    await wait("old machine online", async () => (await op("machines.onboarding")).ready);
+    await page.evaluate(async space => {
+      const query = new URLSearchParams({ subscriptions: JSON.stringify([{ space_id: space, bookmark: null }]) });
+      const streams = ["/api/v1/account/live", `/api/v1/live?${query}`].map(path => new EventSource(path));
+      window.rehearsalEventStreams = streams;
+      await Promise.all(streams.map(stream => new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error("authenticated event stream did not become ready")), 10000);
+        const ready = event => {
+          if (JSON.parse(event.data).type !== "ready") return;
+          clearTimeout(timer);
+          stream.removeEventListener("message", ready);
+          resolve();
+        };
+        stream.addEventListener("message", ready);
+      })));
+    }, space);
+    console.log("Authenticated account and space event streams are open.");
+    const samples = [];
+    let deployResult;
+    let deployError;
+    const schedule = () => ({
+      operation: "notes.create",
+      input: { space_id: space, title: `Upgrade ${run} ${crypto.randomUUID()}`, markdown: "Acknowledged write probe" },
+      request_id: crypto.randomUUID(),
+    });
+    let pending = schedule();
+    const write = async () => {
+      const startedOn = serving();
+      let status;
+      let note;
+      try {
+        const response = await context.request.post(`${origin}/api/v1/operations`, {
+          data: pending, headers: { origin }, timeout: 1000,
+        });
+        status = response.status();
+        if (response.ok()) {
+          note = (await response.json()).data.note;
+        }
+      } catch {
+        status = 0;
+      }
+      const at = performance.now();
+      samples.push({ at, status, note, image: startedOn === serving() ? startedOn : null });
+      if (note) pending = schedule();
+    };
+    await write();
+    assert.ok(samples[0].note);
+    const banner = page.getByRole("status").filter({ hasText: "Reconnecting…" });
+    // Start watching before the switch. The request probe also works when the
+    // app doesn't visibly display the banner during a short handoff.
+    const bannerSeen = banner.waitFor({ state: "visible", timeout: 0 })
+      .then(() => true, () => false);
+    const containerId = () => execFileSync("podman", [
+      "container", "inspect", "--format", "{{.Id}}", unit,
+    ], { encoding: "utf8" }).trim();
+    const oldContainer = containerId();
+    const journalSince = Date.now();
+    const child = spawn(deploy, [...deployArgs, proof], {
+      stdio: "inherit", detached: true,
+    });
+    const done = new Promise((resolve, reject) => {
+      child.once("error", reject);
+      child.once("exit", (code, signal) => resolve({ code, signal }));
+    });
+    void done.then(value => { deployResult = value; }, error => { deployError = error; });
+    const started = performance.now();
+    try {
+      while (!deployResult || !samples.at(-1).note) {
+        // Allow the configured stop deadline plus staging and machine startup
+        // on a shared development host. The five-second budget is measured separately.
+        assert.ok(performance.now() - started < 240_000, "deploy and first new write timed out");
+        await sleep(40);
+        await write();
+        if (deployError) throw deployError;
+        if (deployResult) assert.equal(deployResult.code, 0, "deploy failed");
+      }
+    } finally {
+      if (!deployResult && child.pid) {
+        // This private process group includes the driver and the lab SSH shim.
+        try {
+          process.kill(-child.pid, "SIGTERM");
+        } catch (error) {
+          if (error.code !== "ESRCH") throw error;
+        }
+        await done;
+      }
+    }
+
+    assert.equal(imageId(), evidence.candidate);
+    const old = samples.findLast(sample => sample.note && sample.image === previous);
+    const next = samples.find(sample => sample.note && sample.image === evidence.candidate);
+    assert.ok(old && next && next.at > old.at, "missing acknowledgements around the write gap");
+    assert.ok(samples.some(sample => !sample.note && sample.at > old.at && sample.at < next.at),
+      "no write failure was sampled during the stop");
+    assert.equal((await op("notes.get", { id: old.note.id })).note.id, old.note.id);
+    assert.equal((await op("notes.get", { id: next.note.id })).note.id, next.note.id);
+    await assertSignedIn();
+    console.log(JSON.stringify({
+      run, gap_ms: Number((next.at - old.at).toFixed(1)),
+      ...containerPhases(oldContainer, containerId(), journalSince),
+      lost_samples: samples.filter(sample => !sample.note).length,
+      failure_statuses: [...new Set(samples.filter(sample => !sample.note).map(sample => sample.status))],
+      reconnect_banner: await Promise.race([bannerSeen, sleep(600).then(() => false)]),
+    }));
+    // The handoff above keeps the tab open. The untimed rollback check needs
+    // only the session cookie and the acknowledged note.
+    await page.close();
+    execFileSync(rollback, ["--target", target], { stdio: "inherit" });
+    assert.equal(imageId(), previous);
+    assert.equal((await op("notes.get", { id: next.note.id })).note.id, next.note.id);
+  } else if (phase === "upgrade-setup") {
+    // This phase only initializes the disposable owner's browser session.
+  } else if (["setup", "fixture", "real"].includes(phase)) {
     await wait("enrolled machine online", async () =>
       (await op("machines.onboarding")).ready);
 
@@ -142,7 +342,7 @@ try {
       console.log("Enrolled machine completed a fixture turn, saved its Markdown and released its container.");
     }
   } else {
-    assert.deepEqual(await api("auth/status"), { setup: false, signed_in: true });
+    await assertSignedIn();
     const saved = JSON.parse(readFileSync(marker, "utf8"));
     assert.equal((await job(saved.id)).state, "done");
     const output = join(root, "userdata-ssd/spaces", saved.space, "AI/Chats", `${saved.title}.md`);

@@ -6,7 +6,7 @@
   import ShareHost from "./share/ShareHost.svelte";
   import { openShare } from "./share/share.svelte";
   import { incoming } from "./share/incoming.svelte";
-  import { live, liveOn } from "./live/live.svelte";
+  import { liveNotice, liveOf, liveOn, settleOwedNow } from "./live/live.svelte";
   import Presence from "./live/Presence.svelte";
   import { shell } from "../../shell/shell.svelte";
   import NoteEditor from "./NoteEditor.svelte";
@@ -23,12 +23,21 @@
   let { id }: { id?: string } = $props();
   // Live editing (`?live=1`): the note is a room, other people's cursors and presence show, and the room (not an HTTP save) keeps the text. Off by default; nothing of it loads when off.
   const liveMode = liveOn();
+  // Edits owed to the personal space after access ended are sent now and whenever the browser comes back online.
+  $effect(() => {
+    const go = () => void settleOwedNow();
+    go(); addEventListener("online", go);
+    return () => removeEventListener("online", go);
+  });
   const noteId = $derived(notes.note?.id);
+  /** This note's room: a window in the canvas has its own, so several notes can be live at once. */
+  const live = $derived(liveOf(noteId ?? ""));
   $effect(() => {
     const nid = noteId;
     if (!liveMode || !nid) return;
-    untrack(() => void live.open(notes.note!.spaceId, nid, notes.note!.markdown));
-    return () => live.close();
+    const room = liveOf(nid);
+    untrack(() => void room.open(notes.note!.spaceId, nid, notes.note!.markdown));
+    return () => room.close();
   });
   let moreOpen = $state(false);
   let moreEl = $state<HTMLButtonElement>();
@@ -67,6 +76,8 @@
   const STATE = { saved: "Saved", dirty: "Not saved yet", saving: "Saving…", conflict: "Changed elsewhere", waiting: "Can't reach the server. Your text is still here and saves when it is back", failed: "Not saved" } as const;
   // The server is back: send what could not be sent.
   $effect(() => { if (link.state === "ok" && notes.saveState === "waiting") void flush(); });
+  // While the server is away a save is not failing, it is waiting (the client repeats it with its original request id until the server answers): the line says the text is safe, as it does for a write that was queued.
+  const stateLine = $derived(link.state === "reconnecting" && (notes.saveState === "saving" || notes.saveState === "dirty") ? STATE.waiting : STATE[notes.saveState]);
   let toc = $state(false);
   const uid = $props.id();
 </script>
@@ -90,8 +101,8 @@
   <header class="nc-head" class:windowed>
     {#if shell.narrow && !windowed}<IconButton icon="sidebar" label="Show notes" onclick={() => shell.toggleSidebar()} />{/if}
     <span class="grow"></span>
-    {#if liveMode && live.session}<Presence here={live.here} />{/if}
-    {#if notes.note}<span class="state" role="status" aria-live="polite" data-state={liveMode ? undefined : notes.saveState}>{liveMode ? live.save : STATE[notes.saveState]}</span>{/if}
+    {#if liveMode && live.session && !windowed}<Presence here={live.here} />{/if}
+    {#if notes.note}<span class="state" role="status" aria-live="polite" data-state={liveMode ? undefined : notes.saveState}>{liveMode ? live.save : stateLine}</span>{/if}
     {#if !windowed && notes.note}
       {#if sharedBy}
         <button type="button" class="owner" bind:this={shareEl} aria-label="Shared by {sharedBy.shared_by}. Who can see this" aria-haspopup="dialog" use:tip={{ label: `Shared by ${sharedBy.shared_by}`, side: "bottom" }} onclick={() => openShare({ kind: "notes", id: notes.note!.id }, notes.note!.title, shareEl ?? null)}><Avatar name={sharedBy.shared_by} size="md" /></button>
@@ -123,7 +134,7 @@
         <p class="draft" role="alert">Someone changed this note while you were editing it. Your text is kept here. <Button variant="primary" text="Keep mine" onclick={() => notes.keepMine(titleOf(editor?.current() ?? latest), editor?.current() ?? latest)} /> <Button variant="quiet" text="Use theirs" onclick={() => notes.takeTheirs()} /></p>
       {/if}
       {#if notes.error}<p class="err" role="alert">{notes.error}</p>{/if}
-      {#if liveMode && live.notice}<p class="err" role="alert">{live.notice}</p>{/if}
+      {#if liveNotice.text}<p class="err" role="alert">{liveNotice.text}</p>{/if}
     {:else}
       <h1>{notes.error ? (notes.errorCode === "unavailable" ? "Can't reach the server" : notes.errorCode === "forbidden" ? "You can't open this note" : id ? "Note not found" : "Notes") : id ? "Note not found" : "Notes"}</h1>
       <p class="lede">{notes.error || (id ? "It may have been removed, or you may not have access." : notes.list.length ? "Choose a note on the left, or make a new one." : "A note is a page of Markdown that you and your agents can read and edit. This space has none yet.")}</p>

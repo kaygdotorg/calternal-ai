@@ -55,7 +55,12 @@ Generated operation schemas. Capability and risk are shown only when the catalog
 - [notes.restore](./notes-restore/): Restore a note from its space's Trash
 - [trash.list](./trash-list/): List a page of up to 100 notes in the space's Trash
 - [trash.purge](./trash-purge/): Permanently delete a note from Trash
+- [trash.empty.preview](./trash-empty-preview/): Count notes and retained version bytes before emptying Trash
+- [trash.empty](./trash-empty/): Start a resumable job to permanently purge the confirmed Trash selection
+- [trash.empty.status](./trash-empty-status/): Read progress of an Empty Trash job
 - [notes.rename](./notes-rename/): Rename a note at its current revision
+- [notes.rename.status](./notes-rename-status/): Read progress of a Notes rename or its inverse
+- [notes.rename.undo](./notes-rename-undo/): Restore the original name and linked revisions from a completed rename
 - [notes.lookup](./notes-lookup/): Find a page of up to 100 notes by title prefix
 - [tags.list](./tags-list/): List a page of up to 100 tags and their current note counts
 - [tags.lookup](./tags-lookup/): Find a page of up to 100 tags by name prefix
@@ -65,6 +70,36 @@ Generated operation schemas. Capability and risk are shown only when the catalog
 - [people.lookup](./people-lookup/): Find mentionable accounts and groups in a space.
 - [skills.list](./skills-list/): List visible space skills and their descriptions.
 - [plugins.manifests](./plugins-manifests/): List palette contributions from enabled plugins.
+- [skills.read](./skills-read/): Read the portable document of a named skill
+- [skills.create](./skills-create/): Create a portable skill in its own space folder
+- [skills.update](./skills-update/): Write a new revision of a skill document
+- [skills.remove](./skills-remove/): Move a skill bundle to Trash
+- [automations.preview_schedule](./automations-preview-schedule/): Parse a schedule and preview it in your account zone
+- [automations.list](./automations-list/): List a space's automation definitions and status
+- [automations.read](./automations-read/): Read an automation and its prompt
+- [automations.create](./automations-create/): Create an automation for your account
+- [automations.update](./automations-update/): Update your automation at a known revision
+- [automations.enable](./automations-enable/): Enable scheduled runs for your automation
+- [automations.pause](./automations-pause/): Pause future runs for an automation
+- [automations.remove](./automations-remove/): Move an automation definition to Trash
+- [automations.run_now](./automations-run-now/): Start a thread for your automation
+- [automations.next_run](./automations-next-run/): Read the next scheduled run
+- [automations.last_run](./automations-last-run/): Read the latest automation outcome
+- [collections.get](./collections-get/): Read a saved notes collection and its current revision
+- [collections.list](./collections-list/): List saved notes collections in a space
+- [collections.create](./collections-create/): Save an explicit set of notes in one space
+- [collections.set_members](./collections-set-members/): Replace a saved collection's explicit notes
+- [sharing.mark_seen](./sharing-mark-seen/): Mark a received item share as seen
+- [sharing.rescue](./sharing-rescue/): Save the caller's blocked offline edits as a private note
+- [sharing.list](./sharing-list/): List sharing controls and grants for an item
+- [sharing.audiences](./sharing-audiences/): Find visible people or groups to share an item with
+- [sharing.shared_with_me](./sharing-shared-with-me/): List items shared with the signed-in account, including membership edit access for collections
+- [sharing.grant](./sharing-grant/): Set view or edit access for one named audience
+- [sharing.revoke](./sharing-revoke/): Revoke one item grant, including while the item is in Trash
+- [sharing.link_create](./sharing-link-create/): Issue a read-only public link
+- [sharing.link_update](./sharing-link-update/): Change a public link's label or expiry
+- [sharing.link_copy](./sharing-link-copy/): Retrieve an authorized public link URL
+- [sharing.set_link_policy](./sharing-set-link-policy/): Set the authority needed to manage public links
 - [drafts.save](./drafts-save/): drafts save
 - [drafts.list](./drafts-list/): drafts list
 - [drafts.get](./drafts-get/): drafts get
@@ -75,8 +110,30 @@ Generated operation schemas. Capability and risk are shown only when the catalog
 - [pending.cancel](./pending-cancel/): pending cancel
 - [pending.confirm](./pending-confirm/): pending confirm
 - [pending.submit](./pending-submit/): pending submit
+- [appearance.get](./appearance-get/): Read this person's appearance preferences
+- [appearance.patch](./appearance-patch/): Patch this person's appearance preferences
+- [fonts.catalogue](./fonts-catalogue/): Search the bounded shared catalogue
+- [fonts.install](./fonts-install/): Install a catalogue family for this installation
+- [fonts.status](./fonts-status/): Check a family's local availability
+- [fonts.faces](./fonts-faces/): Generate same-origin face rules
+- [fonts.list](./fonts-list/): List shared and caller-owned fonts
+- [fonts.remove](./fonts-remove/): Remove a caller-owned family
+- [push.subscribe](./push-subscribe/): Register this browser for thread notifications
+- [push.unsubscribe](./push-unsubscribe/): Remove one of your push subscriptions
+- [push.devices](./push-devices/): List your registered push devices and the public VAPID key
+- [push.test](./push-test/): Queue a test push to this browser
+- [plugins.diagnostics](./plugins-diagnostics/): Inspect an installed plugin's readiness and recent worker failures
+- [plugins.network.content.get](./plugins-network-content-get/): Get a prepared sealed content frame
+- [plugins.network.content.preference.get](./plugins-network-content-preference-get/): Read your remote content preference
+- [plugins.network.content.preference.set](./plugins-network-content-preference-set/): Set your remote content preference
+- [plugins.personal_settings.get](./plugins-personal-settings-get/): Read your own declared plugin setting
+- [plugins.personal_settings.set](./plugins-personal-settings-set/): Edit your own declared plugin setting
 - [plugins.settings.get](./plugins-settings-get/): Read a declared space plugin setting
 - [plugins.settings.set](./plugins-settings-set/): Edit a declared space plugin setting
+- [harnesses.list](./harnesses-list/): List installed harnesses and their tested updates
+- [harnesses.stage](./harnesses-stage/): Smoke-test a candidate harness runtime in a disposable sandbox
+- [harnesses.activate](./harnesses-activate/): Select an exact smoke-tested harness runtime for new work
+- [harnesses.rollback](./harnesses-rollback/): Restore a previously tested harness runtime
 - [provider.sign_in.start](./provider-sign-in-start/): Start a private provider sign-in
 - [provider.sign_in.answer](./provider-sign-in-answer/): Supply a code to the official provider login
 - [provider.sign_in.status](./provider-sign-in-status/): Read a private provider sign-in result
@@ -87,6 +144,8 @@ Generated operation schemas. Capability and risk are shown only when the catalog
 - [requests.approve](./requests-approve/): Approve with a fresh verified passkey
 - [requests.deny](./requests-deny/): Decline a pending approval
 - [space.instructions](./space-instructions/): Read or replace standing space instructions
+- [space.machine.get](./space-machine-get/): Read the execution setting for a space
+- [space.machine.set](./space-machine-set/): Set the shared execution machine for a space
 - [machines.install](./machines-install/): Create a single-use personal machine enrollment script
 - [machines.onboarding](./machines-onboarding/): Check whether the installation has an enrolled, available machine
 - [machines.verify](./machines-verify/): Verify a selected machine and provider sign-in
@@ -98,6 +157,8 @@ Generated operation schemas. Capability and risk are shown only when the catalog
 - [agent.run](./agent-run/): Send a prompt to the selected provider in a machine sandbox
 - [agent.events](./agent-events/): Read ordered live turn events and the durable checkpoint
 - [agent.discard](./agent-discard/): Explicitly discard a stopped turn workspace, retaining its account home
+- [agent.steer](./agent-steer/): Add input to the current interactive provider turn
+- [agent.approval](./agent-approval/): Resolve an approval from the current interactive provider turn
 - [agent.stop](./agent-stop/): Cancel your turn, or a turn you can manage
 - [agent.resume](./agent-resume/): Explicitly resume an interrupted turn from its checkpoint
 - [agent.mode](./agent-mode/): Change a thread permission mode and rotate its token

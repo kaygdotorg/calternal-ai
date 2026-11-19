@@ -360,8 +360,9 @@ These are design decisions. The broker has yet to be implemented.
 A public bank, broker, workout or provider API declares exact hosts and
 protocols. For IMAP or SMTP, the manifest can identify a destination setting
 and bound its protocol and ports. The grant binds the exact configured host
-and port to the setting, package and space. A person may add or change a
-host inside the Manager-approved envelope without another Manager approval.
+and port to the setting, package, space and person. A person owns the hosts
+and credentials they add and may change them inside the Manager-approved
+envelope without another Manager approval.
 The broker validates the entered host, port and protocol before use.
 Endpoint discovery and redirects must stay within the approved service
 envelope. Protected credential handles let the host attach credentials
@@ -405,13 +406,15 @@ arbitrary audio enclosure requires a broader reviewed profile or class C.
   in a sealed frame without scripts or same-origin access, inside the host's
   opaque card. Its CSP permits only authorized proxied assets. The person can still open an
   ordinary external link through a host-controlled navigation action.
-- The ingest queue owns scheduled fetches. Opening the content shows cached
-  assets or placeholders. An automatic fetch on open would give the sender
-  the reading time. With Ask, wait for the person's
+- The ingest queue owns scheduled fetches. Opening content inside the
+  ingest window shows cached assets or placeholders. With Ask, wait for the person's
   decision about loading remote content. With Always, fetch at ingest for
-  eligible items, dropping known tracker forms. With Never, show placeholders.
-  Ask can disclose the time of the person's explicit approval. Backfill,
-  out-of-window items and junk need the policy below.
+  eligible items, dropping known tracker forms. Always is the default.
+  With Never, show placeholders. Ask can disclose the time of the person's
+  explicit approval. Fetch newest first within the mail window of 90 days
+  or 5,000 threads, whichever is larger. Opening older content uses the same
+  proxy subject to the viewer's preference and can disclose the open time.
+  Junk never fetches.
 
 URLs are a data channel. A plugin with access to space data could put text,
 identifiers or encoded bytes in a URL inside the content it submits. The
@@ -500,8 +503,6 @@ These are design walkthroughs. Each needs a fixture before shipment.
 
 | Choice | Options and costs |
 | --- | --- |
-| Endpoint and credential ownership | Decide when a configured endpoint and its credential belong to the person or the space. Personal scope isolates connections and credentials. Shared scope supports shared workflows and needs visibility and revocation rules. |
-| Content preference and backfill | Ask first exposes the choice early. Always retains the earlier mail default and sends public fetches automatically. Never starts with placeholders. The inherited ingest window uses 90 days or 5,000 threads and excludes junk. Decide whether to load older items only on explicit request or during bounded backfill. Explicit load can disclose reading time. |
 | Content fetch profiles | Ship the existing image/font profile first. Review HTML metadata, audio and other enclosures independently. More types cover more view and feed cases and increase what the proxy must validate, cache and serve. |
 | Private-origin payloads | Decide which payloads may be sent through a member-owned origin. Wider forwarding covers more local integrations and requires clear disclosure authority. |
 | Budgets and visibility | Measure mail sync, finance polling and interactive loads to set per-space caps and retention. Choose how Managers and origin owners see the audit and test revocation with long-lived connections. |
@@ -509,6 +510,29 @@ These are design walkthroughs. Each needs a fixture before shipment.
 
 The grant classes and approval flows above are the accepted design. Delivery
 order, benchmark thresholds and the remaining operational details are open.
+
+#### Provisional operating limits
+
+Issue #58 starts with four outbound calls or handles in flight, 120 starts
+per minute, and 64 MiB of network traffic per hour per space. An unsuccessful
+start still counts. TCP handles expire after 30 seconds without activity or
+five minutes total, within the invocation lifetime. Each broker chunk is at
+most 64 KiB. Each person can configure up to 32 named endpoints per package
+and space.
+
+Content fetch accepts at most 64 asset references per source revision and
+2 KiB per URL. The profile's limits above apply independently of the
+per-space limits. Audit keeps up to 10,000 rows per space for up to seven days.
+The initial ingress target is 256 KiB per body, 60 requests per minute per
+route, a five-minute signature window, and up to 1,024 live replay receipts
+per route.
+
+Adjust the outbound and reference limits using mail ingest bursts,
+interactive asset coverage, finance polling and shared installation capacity.
+Adjust TCP lifetimes using measured useful stream durations and revocation
+latency. Adjust cache and audit retention using miss rates, peak disk use and
+the incident review window. Adjust ingress using measured retry behavior
+and recipient queue pressure.
 
 ## Swift clients
 
@@ -658,8 +682,8 @@ contains the detailed constraints for the 24 previously adopted capabilities.
 | bb-lite fork existing server, app or runner entry and profiles | Decided, unbuilt | Fork one part of a default feature and keep updating the other parts. |
 | bb status, logs, lifecycle timings, safe mode and bb-lite audit chain | Decided, unbuilt | See why a plugin needs setup, view handler latency and disable scoped plugins together. |
 | bb-lite live data, changed notifications and audience-scoped events | Decided, unbuilt | Publish a typed value to one account and refresh its subscribers without polling. Job streams are built. |
-| pi-durable typed signals and deadlines, replayable parked tools | Decided, unbuilt | Wait for a webhook or deadline with no live worker, then resume from a checkpoint. |
-| pi-durable parked approval gates and argument-bound decisions | Decided, partially built | Park any declared tool on approval, then re-run its gates. Calternal's protected approvals currently cover the host turn path. |
+| pi-durable typed signals and deadlines, replayable parked tools | Durable job waits | Park a replayable job on a signed webhook, Inbox decision or deadline, then continue from its checkpoint. |
+| pi-durable parked approval gates and argument-bound decisions | Job approvals and protected native turn approvals | Park a job for a one-time Inbox decision. Native turns use their existing argument-bound approval gates. |
 | pi-durable `afterRun`, `afterFailedRun`, `onYield`, after-tools decisions; bb lifecycle retry | Decided, unbuilt | Schedule follow-up testing and withhold an answer until the child work completes. Calternal's core retries do not expose this as a plugin point. |
 | bb workflow scripts and pi-durable Code Mode | Decided, unbuilt | Replay a deterministic tool pipeline without repeating successful calls. The reference Wasm runtime is outside the current platform rule. |
 | bb lifecycle events for thread, turn, tools, environment, host and startup | Decided, unbuilt | Subscribe a plugin to changes and run scoped follow-up work without polling. |
@@ -677,7 +701,7 @@ contains the detailed constraints for the 24 previously adopted capabilities.
 | bb reusable app components and hooks for chat, source, diff, Info, model picker, icons, navigation and composer | Decided, unbuilt | Reuse production components with host focus, theme and state. Static GenUI has a smaller catalog. |
 | bb browser extension state, query/mutation caching and tab-context hooks | Proposed | Bind a control to typed scoped host state and invalidate its query on change. |
 | bb theme tokens, theme preview, code colors and fonts; bb-lite theme bundles and author reload | Decided, unbuilt as a plugin lifecycle | Test a complete theme, including native tokens and a code palette, before enabling it. |
-| bb and bb-lite typed settings, pickers, scoped values and on-change handlers | Typed shared settings, worker reads and scoped journal invalidation built. Per-person pickers and subscriptions for slot owners remain unbuilt. | Declare a per-person selector or react to another plugin's contribution through a live subscription. |
+| bb and bb-lite typed settings, pickers, scoped values and on-change handlers | Typed shared settings, worker reads and scoped journal invalidation built. Per-person primitive settings and owned-slot subscriptions are available. Richer pickers remain planned. | Declare a per-person selector or react to another plugin's contribution through a live subscription. |
 | bb and bb-lite install/setup and teardown lifecycle | Decided, unbuilt for authored handlers | Seed package defaults during activation and dispose a watcher when disabled. |
 | bb typed RPC and bb-lite operations, client/CLI/agent doors and breaking-change lock | Built for public operations | Expose one schema-checked operation. Typed cross-plugin RPC and consumer compatibility ranges remain unbuilt. |
 | bb hand-written plugin CLI commands and bb-lite combined CLI routes | Proposed | Group several operations under a plugin-owned command with help and completion. Currently use `calternal invoke`. |

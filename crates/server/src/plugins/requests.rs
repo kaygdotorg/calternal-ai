@@ -69,7 +69,7 @@ impl Jobs {
         let (space, job, app) = (a.space.clone(), a.job.clone(), app.to_owned());
         let action = bounded_json(action, DETAIL_LIMIT)?;
         let cutoff = self.approval_cutoff();
-        self.security_change(move |tx| {
+        let (id, inserted) = self.security_change(move |tx| {
             let valid: bool = tx.query_row(
                 "SELECT EXISTS(SELECT 1 FROM agent_access WHERE account=?1 AND space=?2 AND thread=?3 AND job=?4)",
                 params![account,space,thread,job], |r| r.get(0),
@@ -81,7 +81,7 @@ impl Jobs {
                 "SELECT id FROM agent_approvals WHERE job=?1 AND kind=?2 AND app=?3 AND write_access=?4 AND action_hash IS ?5 AND status='pending'",
                 params![job,kind,app,write,action_hash], |r| r.get(0),
             ).optional().map_err(db_err)? {
-                return Ok(id);
+                return Ok((id, false));
             }
             tx.execute(
                 "DELETE FROM agent_approvals WHERE (account=?1 OR (space=?3 AND thread=?4)) AND
@@ -102,7 +102,32 @@ impl Jobs {
                 "INSERT INTO agent_approvals(id,job,account,space,thread,app,write_access,kind,action,action_hash) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)",
                 params![id,job,account,space,thread,app,write,kind,action,action_hash],
             ).map_err(db_err)?;
-            Ok(id)
+            Ok((id, true))
+        })?;
+        if inserted && let Some(push) = self.push.get() {
+            push.thread(
+                a.actor.account,
+                &a.space,
+                &a.thread()?.to_string(),
+                Some(id.clone()),
+            );
+        }
+        Ok(id)
+    }
+
+    /// Recheck a queued notification against the protected request row.
+    pub(crate) fn push_request_pending(
+        &self,
+        account: AccountId,
+        request: &str,
+    ) -> Result<bool, Error> {
+        let id = request.to_owned();
+        self.security_read(move |db| {
+            db.query_row(
+                "SELECT EXISTS(SELECT 1 FROM agent_approvals WHERE id=?1 AND account=?2 AND status='pending')",
+                params![id, account.to_string()],
+                |row| row.get(0),
+            ).map_err(db_err)
         })
     }
 
@@ -134,7 +159,7 @@ impl Jobs {
                         app, write, lifetimes: approval_lifetimes(risk, write)?.to_vec(), action,
                     }
                 };
-                Ok(PersonRequest { id, space_id: Some(space), thread_id: Some(thread), detail })
+                Ok(PersonRequest { id, space_id: Some(space), thread_id: Some(thread), job_id: None, detail })
             }).collect()
         })
     }

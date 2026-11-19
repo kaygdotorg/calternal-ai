@@ -177,56 +177,17 @@ const STEPS: &[Step] = &[
 ];
 
 #[test]
-fn migration_preserves_the_v3_witness_and_seeds_row_receipts() {
+fn v3_snapshot_is_refused_without_rewriting_it() {
     let f = Fixture::new();
-    f.seed_receipt();
-    let old = Coordinator::open_version(
-        &f.root,
-        f.install,
-        DEFAULT_THRESHOLD,
-        Arc::new(|_| Ok(())),
-        LEGACY,
-    )
-    .unwrap();
-    let mut db = f.connection();
-    old.reconcile(&db).unwrap();
-    let tx = db.transaction().unwrap();
-    let id = old.prepare(&tx).unwrap();
-    tx.commit().unwrap();
-    old.complete(&db, &id).unwrap();
-    let before = old.validate_and_read().unwrap();
-    let pin = old.checkpoint().unwrap();
+    let coordinator = f.coordinator();
+    let mut image = coordinator.load().unwrap().image;
+    assert_eq!(image.version, CURRENT);
+    image.version = 3;
+    let obsolete = encode(&image).unwrap();
+    coordinator.store.snapshot(&obsolete).unwrap();
+
     assert!(Coordinator::open(&f.root, f.install).is_err());
-    let segment = Uuid::now_v7();
-    Coordinator::migrate_from_v3(&f.root, f.install, &db, segment).unwrap();
-    assert_eq!(
-        Coordinator::stored_version(&f.root, f.install).unwrap(),
-        CURRENT
-    );
-    assert!(old.validate_and_read().is_err());
-    let current = f.coordinator();
-    assert_eq!(
-        current.validate_and_read_at(&pin).unwrap().tables,
-        before.tables
-    );
-    assert_eq!(
-        current.validate_and_read().unwrap().tables["space_receipts"]
-            .rows
-            .len(),
-        1
-    );
-    assert_eq!(
-        current
-            .store
-            .names()
-            .unwrap()
-            .into_iter()
-            .filter(|name| Coordinator::segment_name(name))
-            .collect::<Vec<_>>(),
-        [format!("log-{segment}.bin")]
-    );
-    current.reconcile(&db).unwrap();
-    current.validate_against_witness(&db).unwrap();
+    assert_eq!(coordinator.store.read("snapshot.json").unwrap(), obsolete);
 }
 
 #[test]

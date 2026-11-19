@@ -1,0 +1,14 @@
+Thread:   019a8c00-0000-7000-8000-000000000001
+Title:    New thread
+Address:  /threads/019a8c00-0000-7000-8000-000000000001
+State:    active
+Provider:  calternal-claude-code
+Model:  claude-sonnet-5-5
+Permission mode:  approve_for_me
+Messages:  0
+
+---
+title: New thread
+title_source: pending
+---
+Next: calternal threads --help; retry an uncertain send with its original --request-id.

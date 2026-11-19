@@ -1,4 +1,4 @@
-//! Checksummed framing and the logical image shared by replay and migration.
+//! Checksummed framing and the logical image used by replay and reconstruction.
 use super::*;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

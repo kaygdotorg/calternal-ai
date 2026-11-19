@@ -104,10 +104,30 @@ impl Machine {
         discards: Value,
         slots: u32,
     ) -> Vec<Value> {
-        let r = f.machine("/api/v1/machine/sync",Some(&self.token),json!({
-            "ack":self.ack,"capacity":{"cpus":1,"memory_bytes":0,"max_sandboxes":slots,"running_sandboxes":0},
+        self.try_sync(f, discards, slots).await.unwrap()
+    }
+
+    pub(super) async fn try_sync(
+        &mut self,
+        f: &Fixture,
+        discards: Value,
+        slots: u32,
+    ) -> Result<Vec<Value>, reqwest::Error> {
+        self.try_sync_with_memory(f, discards, slots, Some(64 << 30))
+            .await
+    }
+
+    pub(super) async fn try_sync_with_memory(
+        &mut self,
+        f: &Fixture,
+        discards: Value,
+        slots: u32,
+        memory: Option<u64>,
+    ) -> Result<Vec<Value>, reqwest::Error> {
+        let r = f.try_machine("/api/v1/machine/sync",Some(&self.token),json!({
+            "ack":self.ack,"capacity":{"cpus":1,"memory_bytes":0,"available_memory_bytes":memory,"max_sandboxes":slots,"running_sandboxes":self.leases.len()},
             "draining":false,"leases":self.leases,"discards":discards,
-        })).await;
+        })).await?;
         r.ok();
         let mut messages = Vec::new();
         for envelope in r.body["messages"].as_array().unwrap() {
@@ -120,7 +140,7 @@ impl Machine {
             }
             messages.push(data.clone());
         }
-        messages
+        Ok(messages)
     }
 
     pub(super) async fn erasure_status(&self, f: &Fixture, valid: bool) -> Answer {
@@ -149,7 +169,16 @@ impl Machine {
     }
 
     pub(super) async fn output(&self, f: &Fixture, exec: &Value, chunks: Value) {
-        f.machine(
+        self.try_output(f, exec, chunks).await.unwrap().ok();
+    }
+
+    pub(super) async fn try_output(
+        &self,
+        f: &Fixture,
+        exec: &Value,
+        chunks: Value,
+    ) -> Result<Answer, reqwest::Error> {
+        f.try_machine(
             "/api/v1/machine/output",
             Some(&self.token),
             json!({
@@ -158,7 +187,6 @@ impl Machine {
             }),
         )
         .await
-        .ok();
     }
 
     pub(super) async fn next_token(&mut self, f: &Fixture) -> String {
@@ -337,7 +365,7 @@ async fn request_operations_keep_questions_approvals_and_secrets_account_private
         .await;
     warm.ok();
     let assigned = f.machine("/api/v1/machine/sync",Some(&spare.token),json!({
-        "ack":0,"capacity":{"cpus":1,"memory_bytes":0,"max_sandboxes":2,"running_sandboxes":0},
+        "ack":0,"capacity":{"cpus":1,"memory_bytes":0,"available_memory_bytes":68719476736_u64,"max_sandboxes":2,"running_sandboxes":0},
         "draining":false,"leases":[],
     })).await;
     assigned.ok();

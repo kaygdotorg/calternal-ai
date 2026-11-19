@@ -488,6 +488,24 @@ impl Spaces {
         self.change(actor, Some(space), SpaceChange::Delete)
             .map(|_| ())
     }
+    /// Read the current owner of a shared space. Personal and absent spaces
+    /// return None. The caller must separately check the person's capability.
+    /// Cost: one primary-key lookup on the authority worker.
+    pub fn shared_execution_owner(&self, space: SpaceId) -> Result<Option<AccountId>> {
+        self.db.read_blocking(move |c| {
+            let owner = c
+                .query_row(
+                    "SELECT s.owner_account FROM spaces s JOIN users u ON u.id=s.owner_account
+                        WHERE s.id=?1 AND s.personal_for IS NULL AND u.disabled_at IS NULL",
+                    [space.to_string()],
+                    |row| row.get::<_, String>(0),
+                )
+                .optional()
+                .map_err(sql)?;
+            owner.map(account).transpose()
+        })
+    }
+
     /// Lists only the account's current memberships; server admin adds no access.
     pub fn list(&self, actor: AccountId) -> Result<Vec<Space>> {
         self.run(move |c| list(c, actor))

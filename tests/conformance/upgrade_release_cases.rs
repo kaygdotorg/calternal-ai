@@ -1,136 +1,9 @@
 //! Cross-release upgrade proof over data written through the live service.
 use super::*;
+use rusqlite::OptionalExtension;
 
 mod fixture;
 use fixture::*;
-
-#[tokio::test]
-async fn release_artifacts_migrate_security_receipts_from_v3_to_v4() {
-    let previous = binary("CALTERNAL_RELEASE_N_BIN");
-    let candidate = binary("CALTERNAL_RELEASE_NEXT_BIN");
-    let old_id = std::env::var("CALTERNAL_RELEASE_N_IMAGE").unwrap();
-    let new_id = std::env::var("CALTERNAL_RELEASE_NEXT_IMAGE").unwrap();
-    let mut f = Fixture::empty();
-    let shape = seed(&mut f, &previous).await;
-    let input = json!({"name":"Receipt proof"});
-    let request = "upgrade:receipt/東京";
-    f.start().await;
-    let original = f.op_id(0, "spaces.create", input.clone(), request).await;
-    original.ok();
-    let receipt = original.body["data"].clone();
-    let disposable = f
-        .op(0, "spaces.create", json!({"name":"Deleted before upgrade"}))
-        .await;
-    disposable.ok();
-    let delete_input = json!({"space_id":disposable.body["data"]["space"]["id"]});
-    let deleted = f
-        .op_id(0, "spaces.delete", delete_input.clone(), "delete-on-v3")
-        .await;
-    deleted.ok();
-    f.stop();
-    let root = f.dir.path().join("userdata-ssd/.calternal/recovery");
-    let snapshot = root.join("snapshot.json");
-    let version = || {
-        serde_json::from_slice::<Value>(&std::fs::read(&snapshot).unwrap()[32..]).unwrap()["version"]
-            .as_u64().unwrap()
-    };
-    let prepare = |f: &Fixture| {
-        upgrade(
-            f,
-            &candidate,
-            &[
-                "prepare",
-                "--previous",
-                &old_id,
-                "--candidate",
-                &new_id,
-                "--incompatible",
-            ],
-            None,
-        )
-    };
-
-    assert_eq!(version(), 3);
-    let baseline_snapshot = std::fs::read(&snapshot).unwrap();
-    let evidence = proof(&f);
-    let additive = upgrade(
-        &f,
-        &candidate,
-        &[
-            "prepare",
-            "--previous",
-            PREVIOUS,
-            "--candidate",
-            CANDIDATE,
-            "--proof",
-            evidence.to_str().unwrap(),
-        ],
-        None,
-    );
-    assert!(!additive.status.success());
-    assert!(String::from_utf8_lossy(&additive.stdout).contains("requires an incompatible upgrade"));
-    assert_eq!(std::fs::read(&snapshot).unwrap(), baseline_snapshot);
-
-    answer(prepare(&f));
-    assert_eq!(version(), 4);
-    let new_snapshot: Value =
-        serde_json::from_slice(&std::fs::read(&snapshot).unwrap()[32..]).unwrap();
-    let temporary_segment = root.join(new_snapshot["segment"].as_str().unwrap());
-    assert!(temporary_segment.is_file());
-    assert_eq!(
-        answer(upgrade(&f, &previous, &["recover"], None))["restored_previous"],
-        old_id
-    );
-    assert_eq!(std::fs::read(&snapshot).unwrap(), baseline_snapshot);
-    assert!(!temporary_segment.exists());
-    prove_visible(&mut f, &previous, &shape).await;
-
-    answer(prepare(&f));
-    answer(upgrade(
-        &f,
-        &candidate,
-        &["commit", "--candidate", &new_id],
-        None,
-    ));
-    prove_visible(&mut f, &candidate, &shape).await;
-    f.start().await;
-    let replay = f.op_id(0, "spaces.create", input, request).await;
-    replay.ok();
-    assert_eq!(replay.body["data"], receipt);
-    let replay_delete = f
-        .op_id(0, "spaces.delete", delete_input, "delete-on-v3")
-        .await;
-    replay_delete.ok();
-    assert_eq!(replay_delete.body["data"], deleted.body["data"]);
-    let next = f
-        .op_id(
-            0,
-            "spaces.create",
-            json!({"name":"Candidate authority write"}),
-            "after-upgrade",
-        )
-        .await;
-    next.ok();
-    f.stop();
-    let committed = std::fs::read(&snapshot).unwrap();
-    assert!(!upgrade(&f, &previous, &["verify"], None).status.success());
-    f.release_binary = Some(previous);
-    f.start_checked(true, true).await;
-    f.stop();
-    assert_eq!(std::fs::read(&snapshot).unwrap(), committed);
-    f.release_binary = Some(candidate);
-    f.start().await;
-    let replay_next = f
-        .op_id(
-            0,
-            "spaces.create",
-            json!({"name":"Candidate authority write"}),
-            "after-upgrade",
-        )
-        .await;
-    replay_next.ok();
-    assert_eq!(replay_next.body["data"], next.body["data"]);
-}
 
 #[tokio::test]
 async fn release_upgrade_proves_compatible_handoff_and_refuses_an_incompatible_downgrade() {
@@ -252,6 +125,54 @@ async fn release_artifacts_preserve_live_data_in_both_directions() {
     let candidate_id = std::env::var("CALTERNAL_RELEASE_NEXT_IMAGE").unwrap();
     let mut f = Fixture::empty();
     let shape = seed(&mut f, &previous).await;
+    // A store present at cutover takes a different path from a store first
+    // opened by the candidate. Exercise both in the same exact image pair.
+    f.start().await;
+    f.op(0, "threads.list", json!({"space_id":shape["space"]}))
+        .await
+        .ok();
+    f.stop();
+    assert!(
+        f.appdata()
+            .join("spaces")
+            .join(shape["space"].as_str().unwrap())
+            .join("jobs.db")
+            .is_file()
+    );
+
+    let workspace_file = f
+        .dir
+        .path()
+        .join("machine")
+        .join(shape["workspace"].as_str().unwrap());
+    let original = std::fs::read(&workspace_file).unwrap();
+    // Exercise recovery of the old binary's own manifest and saved payloads.
+    // The shipped baseline writes v1 even for a full restore point.
+    answer(upgrade(
+        &f,
+        &previous,
+        &[
+            "prepare",
+            "--previous",
+            &previous_id,
+            "--candidate",
+            &candidate_id,
+            "--incompatible",
+        ],
+        None,
+    ));
+    assert_eq!(
+        answer(upgrade(&f, &previous, &["status"], None))["phase"],
+        "preparing"
+    );
+    std::fs::write(&workspace_file, b"interrupted change").unwrap();
+    assert_eq!(
+        answer(upgrade(&f, &candidate, &["recover"], None))["restored_previous"],
+        previous_id
+    );
+    assert_eq!(std::fs::read(&workspace_file).unwrap(), original);
+    prove_visible(&mut f, &previous, &shape).await;
+
     let evidence = f.dir.path().join("artifact-proof.json");
     std::fs::write(
         &evidence,
@@ -287,26 +208,137 @@ async fn release_artifacts_preserve_live_data_in_both_directions() {
     prove_visible(&mut f, &candidate, &shape).await;
     f.release_binary = Some(candidate.clone());
     f.start().await;
+    f.op(
+        0,
+        "plugins.enable",
+        json!({"space_id":shape["space"],"plugin_id":"calternal-notes"}),
+    )
+    .await
+    .ok();
+    let fresh = f
+        .op(0, "spaces.create", json!({"name":"Created after cutover"}))
+        .await;
+    fresh.ok();
+    let fresh_space = &fresh.body["data"]["space"]["id"];
+    let lazy_jobs = f
+        .appdata()
+        .join("spaces")
+        .join(fresh_space.as_str().unwrap())
+        .join("jobs.db");
+    assert!(!lazy_jobs.exists(), "the jobs store must still be lazy");
+    f.op(0, "threads.list", json!({"space_id":fresh_space}))
+        .await
+        .ok();
+    assert!(
+        lazy_jobs.is_file(),
+        "the candidate never exercised fresh jobs creation"
+    );
+
     let new = f.op(0, "notes.create", json!({
         "space_id":shape["space"],"title":"After cutover","markdown":"Candidate acknowledged this.\n"
     })).await;
     new.ok();
     let id = new.body["data"]["note"]["id"].clone();
+    let edited = f
+        .op(
+            0,
+            "notes.update",
+            json!({
+                "id":id,
+                "base_revision":new.body["data"]["note"]["revision"],
+                "markdown":"Candidate stored a live checkpoint.\n"
+            }),
+        )
+        .await;
+    edited.ok();
+    let head = &edited.body["data"]["note"]["revision"];
+    let space = shape["space"].as_str().unwrap();
+    let content_db = f.appdata().join("spaces").join(space).join("content.db");
+    let lineage = |revision: &Value| {
+        let db =
+            Connection::open_with_flags(&content_db, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+                .unwrap();
+        db.query_row(
+            "SELECT lineage FROM room_checkpoints JOIN versions USING(item,seq)
+             WHERE versions.revision=?1",
+            [revision.as_str().unwrap()],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .unwrap()
+    };
+
+    // The candidate adds this store at version 1. The previous release must
+    // still run and make writes with the candidate's store and file present.
+    let space = &shape["space"];
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    let minute = (now / 60 + 720) % 1440;
+    let words = format!("daily at {}:{:02}", minute / 60, minute % 60);
+    let preview = f
+        .op(
+            0,
+            "automations.preview_schedule",
+            json!({"space_id":space,"schedule_text":words}),
+        )
+        .await;
+    preview.ok();
+    let timing = &preview.body["data"];
+    let automation = f
+        .op(
+            0,
+            "automations.create",
+            json!({
+                "space_id":space,"name":"Upgrade smoke test","prompt":"Verify the handoff.",
+                "schedule_text":words,"schedule":timing["schedule"],"timezone":timing["timezone"],
+            }),
+        )
+        .await;
+    automation.ok();
+    let automation = &automation.body["data"]["automation"];
     f.stop();
+    let before_rollback = lineage(head).expect("candidate room checkpoint");
+    let store = f.appdata().join("system/automations.db");
+    let db =
+        rusqlite::Connection::open_with_flags(&store, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .unwrap();
+    let version: i64 = db
+        .pragma_query_value(None, "user_version", |row| row.get(0))
+        .unwrap();
+    assert_eq!(version, 1);
+    drop(db);
     answer(upgrade(&f, &previous, &["verify"], None));
     prove_visible(&mut f, &previous, &shape).await;
     f.start().await;
+    f.op(0, "threads.list", json!({"space_id":fresh_space}))
+        .await
+        .ok();
     let restored = f.op(0, "notes.get", json!({"id":id})).await;
     restored.ok();
     assert_eq!(
         restored.body["data"]["note"]["markdown"],
-        "Candidate acknowledged this.\n"
+        "Candidate stored a live checkpoint.\n"
     );
+    let edited_by_n = f
+        .op(
+            0,
+            "notes.update",
+            json!({
+                "id":id,
+                "base_revision":head,
+                "markdown":"Previous release updated the same note.\n"
+            }),
+        )
+        .await;
+    edited_by_n.ok();
     let written_by_n = f.op(0, "notes.create", json!({
         "space_id":shape["space"],"title":"After rollback","markdown":"Previous release acknowledged this.\n"
     })).await;
     written_by_n.ok();
     f.stop();
+    let previous_checkpoint = lineage(&edited_by_n.body["data"]["note"]["revision"]);
     f.release_binary = Some(candidate);
     f.start().await;
     let newer_reopened = f
@@ -321,6 +353,52 @@ async fn release_artifacts_preserve_live_data_in_both_directions() {
         newer_reopened.body["data"]["note"]["markdown"],
         "Previous release acknowledged this.\n"
     );
+    let reopened = f
+        .op(
+            0,
+            "automations.read",
+            json!({"space_id": space,"id":automation["id"]}),
+        )
+        .await;
+    reopened.ok();
+    let reopened = &reopened.body["data"]["automation"];
+    for field in [
+        "id",
+        "revision",
+        "schedule",
+        "schedule_text",
+        "timezone",
+        "next_run_ms",
+    ] {
+        assert_eq!(reopened[field], automation[field], "{field}");
+    }
+    let resumed = f
+        .op(
+            0,
+            "notes.update",
+            json!({
+                "id":id,
+                "base_revision":edited_by_n.body["data"]["note"]["revision"],
+                "markdown":"Previous release updated the same note.\nCandidate appended this.\n"
+            }),
+        )
+        .await;
+    resumed.ok();
+    assert_eq!(
+        resumed.body["data"]["note"]["markdown"],
+        "Previous release updated the same note.\nCandidate appended this.\n"
+    );
+    f.stop();
+    let resumed_checkpoint =
+        lineage(&resumed.body["data"]["note"]["revision"]).expect("resumed room checkpoint");
+    if let Some(previous_checkpoint) = previous_checkpoint {
+        assert_eq!(resumed_checkpoint, previous_checkpoint);
+    } else {
+        assert_ne!(
+            resumed_checkpoint, before_rollback,
+            "a previous release without room checkpoints must seed a fresh lineage"
+        );
+    }
 }
 
 /// Measure from the last acknowledged write on N to the first on N+1. Run only

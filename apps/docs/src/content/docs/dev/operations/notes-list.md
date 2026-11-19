@@ -8,13 +8,14 @@ title: "notes.list"
 
 List a page of up to 100 live notes, optionally under a tag
 
-Capability: not declared in this catalogue; the host policy remains authoritative.
+Capability: space.read.
 
 ## Declaration
 
 ```json
 {
   "risk": "read",
+  "required_capability": "space.read",
   "id": "notes.list",
   "description": "List a page of up to 100 live notes, optionally under a tag",
   "mutates": false

@@ -30,6 +30,13 @@ impl ConfiguredBackend {
             selected: AtomicU8::new(0),
         }
     }
+
+    /// Supply the private operation CLI alias if the owner selects Direct.
+    /// Cost: one path assignment. The machine role owns the directory lifetime.
+    pub(crate) fn with_cli_dir(mut self, dir: Option<PathBuf>) -> Self {
+        self.direct = self.direct.with_cli_dir(dir);
+        self
+    }
 }
 impl Backend for ConfiguredBackend {
     fn initialize(&self) -> BoxFuture<'_, SandboxResult<()>> {
@@ -90,6 +97,18 @@ impl Backend for ConfiguredBackend {
             }
         })
     }
+    fn start_harness<'a>(
+        &'a self,
+        spec: &'a SandboxSpec,
+        harness: &'a crate::protocol::HarnessSandbox,
+    ) -> BoxFuture<'a, SandboxResult<Arc<dyn Sandbox>>> {
+        if self.name() == "podman" {
+            self.podman.start_harness(spec, harness)
+        } else {
+            self.direct.start_harness(spec, harness)
+        }
+    }
+
     fn start<'a>(
         &'a self,
         spec: &'a SandboxSpec,

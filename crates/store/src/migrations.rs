@@ -12,31 +12,63 @@ pub struct Schema<'a> {
     name: &'a str,
     baseline: i64,
     initial: &'a [&'a str],
-    changes: &'a [&'a str],
+    changes: &'a [(i64, &'a str)],
+    compatible_creation: Option<i64>,
 }
 
 impl<'a> Schema<'a> {
     /// Declare the schema at its first supported version. Opening an unversioned
-    /// database applies every initial batch. Each subsequent batch adds one version.
-    /// Use SQL without transaction controls. Cost is constant and allocation-free.
+    /// database applies every initial batch. Subsequent entries pair an explicit
+    /// target version with its SQL. Reject duplicates and gaps, starting at
+    /// baseline plus one. Use SQL without transaction controls. Validation is
+    /// allocation-free and runs at compile time for a constant descriptor.
     pub const fn new(
         name: &'a str,
         baseline: i64,
         initial: &'a [&'a str],
-        changes: &'a [&'a str],
+        changes: &'a [(i64, &'a str)],
     ) -> Self {
         assert!(baseline > 0, "schema versions start at one");
+        let mut index = 0;
+        let mut expected = baseline;
+        while index < changes.len() {
+            expected = expected.checked_add(1).expect("migration version overflow");
+            assert!(
+                changes[index].0 == expected,
+                "migration versions must be consecutive"
+            );
+            index += 1;
+        }
         Self {
             name,
             baseline,
             initial,
             changes,
+            compatible_creation: None,
         }
+    }
+
+    /// Name an older, tested writer that can use this store when first
+    /// created at the current version. The declaration covers all writes
+    /// the current release can subsequently make to that store. Prove both
+    /// directions with the exact release pair before shipping it. The
+    /// runner writes the original per-file marker in the creation transaction.
+    /// No I/O. An already versioned store never gains this evidence on ordinary open.
+    pub const fn with_compatible_creation(mut self, older: i64) -> Self {
+        assert!(
+            older >= self.baseline && older < self.version(),
+            "compatible creation must name an older supported schema"
+        );
+        self.compatible_creation = Some(older);
+        self
     }
 
     /// Version written after all declared batches. No I/O.
     pub const fn version(self) -> i64 {
-        self.baseline + self.changes.len() as i64
+        match self.changes.last() {
+            Some(&(version, _)) => version,
+            None => self.baseline,
+        }
     }
 }
 
@@ -80,12 +112,17 @@ fn apply(conn: &Connection, schema: Schema<'_>, additive: bool) -> Result<()> {
         have = schema.baseline;
         tx.pragma_update(None, "user_version", have)?;
     }
-    for batch in &schema.changes[(have - schema.baseline) as usize..] {
+    for &(version, batch) in &schema.changes[(have - schema.baseline) as usize..] {
         tx.execute_batch(batch)?;
-        have += 1;
+        have = version;
         tx.pragma_update(None, "user_version", have)?;
     }
-    if additive && previous > 0 {
+    let older = if previous == 0 {
+        schema.compatible_creation
+    } else {
+        additive.then_some(previous)
+    };
+    if let Some(older) = older {
         tx.execute_batch(&format!(
             "CREATE TABLE IF NOT EXISTS {COMPATIBLE}(
              singleton INTEGER PRIMARY KEY CHECK(singleton=1),
@@ -93,7 +130,7 @@ fn apply(conn: &Connection, schema: Schema<'_>, additive: bool) -> Result<()> {
         ))?;
         tx.execute(
             &format!("INSERT OR REPLACE INTO {COMPATIBLE} VALUES(1,?1,?2,?3)"),
-            params![schema.name, previous, have],
+            params![schema.name, older, have],
         )?;
     }
     tx.commit()

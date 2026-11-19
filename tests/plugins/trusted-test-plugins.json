@@ -5,7 +5,15 @@
       "version": "0.1.0",
       "manifest": "jobs-demo/manifest.json",
       "worker": "jobs-demo/worker.js",
-      "worker_sha256": "f090b80df690bcc15ebf2c9b4337420452f37361e45845e47312556974e5a1d5",
+      "worker_sha256": "fb75029a7e3f8d1d15440f62cfb2aa60e78dd3bd0ef89a6af2d1f35b2e4d0b62",
+      "default_enabled": false
+    },
+    {
+      "id": "content-fetch-demo",
+      "version": "0.1.0",
+      "manifest": "content-fetch-demo/manifest.json",
+      "worker": "content-fetch-demo/worker.js",
+      "worker_sha256": "fc5cff61be4760740a4dd08b641386a1d3b60499275e72bbb440c7710132a552",
       "default_enabled": false
     }
   ]

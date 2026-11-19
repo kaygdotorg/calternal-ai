@@ -6,9 +6,8 @@ request is acknowledged. It returns validated rebuild input, not a rebuilt DB.
 The host supplies a pinned installation UUID, trusted ancestry, root locks and
 isolation from tenant/same-UID plugins; every writer must use the auth barrier.
 Only an empty mode-0700 directory is provisioned. Files are mode 0600, accessed
-through pinned no-follow descriptors. The stopped-installation upgrade runner
-can rewrite the shipped format 3 under a full restore point. The service opens
-format 4.
+through pinned no-follow descriptors. The service opens format 4 and refuses
+older formats. The v4 deployment starts on freshly provisioned roots.
 
 Format and records
 ------------------
@@ -45,6 +44,14 @@ not publish. Recovered expiry is the last protected capture's absolute value;
 rebuilding must enforce wall-clock expiry, preserve revocation and force all
 devices to resync under current authority. Stored schema text is descriptive, never SQL to execute blindly.
 The write audit and regression inventory are in [the dated review](../../docs/reviews/recovery-review-2026-11-17.md).
+
+Protected writers implement insert-or-update with a plain `UPDATE` followed
+by a plain `INSERT` when no row matched, inside one protected transaction.
+The update branch of an outer SQLite UPSERT can override the dirty trigger's
+`INSERT OR IGNORE`. A repeated owner key can then abort the write even though
+the authority row itself is valid. The
+[account recovery test](src/account_tests.rs) exercises this conflict, then
+publishes the plain update and validates it against the database witness.
 
 Publication and proof
 ---------------------

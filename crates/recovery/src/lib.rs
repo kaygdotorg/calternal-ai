@@ -3,7 +3,6 @@
 #![deny(rustdoc::broken_intra_doc_links)]
 
 mod log;
-mod migration;
 mod model;
 mod receipts;
 mod sink;
@@ -27,7 +26,6 @@ use uuid::Uuid;
 
 const DEFAULT_THRESHOLD: u64 = 64 * 1024 * 1024;
 const CURRENT: u32 = 4;
-const LEGACY: u32 = 3;
 // The hourly maintenance worker can arrive up to one hour after this threshold.
 const RETIRED_RECEIPT_COMPACT_MS: i64 = 23 * 60 * 60 * 1000;
 const ZERO: &str = "0000000000000000000000000000000000000000000000000000000000000000";
@@ -35,7 +33,7 @@ const ZERO: &str = "000000000000000000000000000000000000000000000000000000000000
 /// Read the opt-in for startup phase diagnostics in an instrumented binary.
 /// Costs one environment lookup and enables stderr timings for value `1`.
 #[cfg(feature = "perf-timings")]
-pub fn startup_timings_enabled() -> bool {
+fn startup_timings_enabled() -> bool {
     std::env::var_os("CALTERNAL_STARTUP_TIMINGS").is_some_and(|value| value == "1")
 }
 
@@ -73,7 +71,6 @@ pub struct Coordinator {
     gate: Mutex<Option<Loaded>>,
     serial: Mutex<()>,
     threshold: u64,
-    version: u32,
 }
 impl Coordinator {
     /// Opens a mode-0700 Linux root; provisions only an entirely empty directory.
@@ -101,15 +98,6 @@ impl Coordinator {
         threshold: u64,
         observe: Arc<dyn Fn(Step) -> Result<()> + Send + Sync>,
     ) -> Result<Self> {
-        Self::open_version(root, installation, threshold, observe, CURRENT)
-    }
-    fn open_version(
-        root: &Path,
-        installation: Uuid,
-        threshold: u64,
-        observe: Arc<dyn Fn(Step) -> Result<()> + Send + Sync>,
-        version: u32,
-    ) -> Result<Self> {
         if threshold == 0 {
             return Err(invalid());
         }
@@ -120,14 +108,13 @@ impl Coordinator {
             gate: Mutex::new(None),
             serial: Mutex::new(()),
             threshold,
-            version,
         };
         if empty {
             let segment = format!("log-{}.bin", Uuid::now_v7());
             this.store.create(&segment)?;
             this.store.snapshot(&encode(&Image {
-                version,
-                head: Checkpoint {
+                version: CURRENT,
+                    head: Checkpoint {
                     installation,
                     sequence: 0,
                     digest: ZERO.into(),
@@ -161,15 +148,13 @@ impl Coordinator {
     }
     fn load(&self) -> Result<Loaded> {
         let image: Image = decode(&self.store.read("snapshot.json")?)?;
-        if image.version != self.version {
+        if image.version != CURRENT {
             return Err(err(format!(
                 "unsupported security recovery format {}; expected {}",
-                image.version, self.version
+                image.version, CURRENT
             )));
         }
-        if (self.version == LEGACY
-            && (!image.receipts.is_empty() || image.retired_receipt_ms.is_some()))
-            || image.head.installation != self.installation
+        if image.head.installation != self.installation
             || !Self::segment_name(&image.segment)
             || image.committed_sequence > image.head.sequence
             || (image.head.sequence == 0
@@ -227,8 +212,7 @@ impl Coordinator {
                     && (!delta.is_empty() || receipts.is_some()) =>
                 {
                     if receipts.as_ref().is_some_and(|r| {
-                        self.version != CURRENT
-                            || r.rows.is_empty()
+                        r.rows.is_empty()
                             || !crate::receipts::ordered(&r.rows)
                     }) {
                         return Err(invalid());
@@ -268,12 +252,11 @@ impl Coordinator {
         if !key_ok(key)
             || record.key != key
             || record.installation != self.installation
-            || record.version != 3
-            || (self.version == CURRENT
-                && record
+            || record.version != CURRENT
+            || record
                     .tables
                     .get("space_receipts")
-                    .is_some_and(|table| key != state::GLOBAL || !table.rows.is_empty()))
+                    .is_some_and(|table| key != state::GLOBAL || !table.rows.is_empty())
         {
             return Err(invalid());
         }
@@ -395,6 +378,7 @@ impl Coordinator {
     /// Also repairs witnessed torn marker tails and uncommitted torn proposals.
     /// A recreated database or a chain/witness mismatch refuses recovery.
     pub fn replay(&self, c: &Connection) -> Result<()> {
+        let _revision = calternal_types::begin_item_access_change();
         let mut cache = self.gate.lock().map_err(err)?;
         let mut s = self.load_cached(&mut cache)?;
         self.replay_loaded(c, &mut s)?;
@@ -483,16 +467,14 @@ impl Coordinator {
         let mut delta = BTreeMap::new();
         let mut receipt_delta = BTreeMap::new();
         for key in state::dirty(c)? {
-            if self.version == CURRENT
-                && let Some(key) = receipts::dirty_key(&key)?
-            {
+            if let Some(key) = receipts::dirty_key(&key)? {
                 let value = receipts::get(c, &key)?;
                 if s.image.receipts.0.get(&key) != value.as_ref() {
                     receipt_delta.insert(key, value);
                 }
                 continue;
             }
-            let value = state::capture_record(c, self.installation, &key, self.version)?;
+            let value = state::capture_record(c, self.installation, &key)?;
             if s.image.records.get(&key) != value.as_ref() {
                 delta.insert(key, value);
             }

@@ -23,6 +23,9 @@ pub(super) async fn guard<D: Directory>(
     #[cfg(feature = "perf-timings")]
     let entry_ns = (path == "/api/v1/operations").then(calternal_types::perf_monotonic_ns);
     let api = is_api(&path);
+    let guest_read = path.starts_with("/s/") && matches!(*req.method(), Method::GET | Method::HEAD);
+    // An opaque sealed frame uses a narrow signed media URL rather than cookies.
+    let signed_media = crate::plugins::network::http::is_asset_read(req.method(), &path);
     let deny = |e: Error| -> Response {
         if api {
             failure(None, e)
@@ -45,9 +48,12 @@ pub(super) async fn guard<D: Directory>(
         }
         // Machine protocol routes authenticate the machine themselves.
         let account_route = path.starts_with("/api/v1/auth/")
-            || path.starts_with(calternal_machine::protocol::PATH_PREFIX);
+            || path.starts_with(calternal_machine::protocol::PATH_PREFIX)
+            || (*req.method() == axum::http::Method::POST
+                && path.starts_with(crate::plugins::signals::PREFIX));
         if api
             && !account_route
+            && !signed_media
             && bearer(req.headers()).is_none()
             && let Some(service) = state.directory.http_auth()
             && req
@@ -58,7 +64,11 @@ pub(super) async fn guard<D: Directory>(
             break 'resp deny(Error::unauthorized("missing or invalid session"));
         }
 
-        if !account_route && let Some(origin) = req.headers().get(header::ORIGIN) {
+        if !account_route
+            && !signed_media
+            && !guest_read
+            && let Some(origin) = req.headers().get(header::ORIGIN)
+        {
             let expected = if bearer(req.headers())
                 .and_then(|t| state.directory.authenticate(t))
                 .is_some()
@@ -92,11 +102,13 @@ pub(super) async fn guard<D: Directory>(
             .and_then(|v| v.to_str().ok())
             == Some("cross-site")
             && !provider_callback
+            && !guest_read
+            && !signed_media
         {
             break 'resp deny(Error::forbidden("cross-site request denied"));
         }
         let sign_in_wallpaper = super::wallpapers::is_sign_in_request(req.method(), &path);
-        if api && !account_route && !sign_in_wallpaper {
+        if api && !account_route && !signed_media && !sign_in_wallpaper {
             // The installation travels with the request so plugin work can recheck it.
             let session = if let Some(service) = state.directory.http_auth() {
                 crate::account_http::identify(service, req.headers())
@@ -181,11 +193,12 @@ pub(super) async fn guard<D: Directory>(
         let response = response.await;
         if api
             && !account_route
+            && !signed_media
             && !sign_in_wallpaper
             && (response.status().is_success()
                 || response
                     .extensions()
-                    .get::<super::wallpapers::ImageResponse>()
+                    .get::<super::assets::CacheResponse>()
                     .is_some())
             && !(agent_admitted.is_some()
                 && response
@@ -231,15 +244,24 @@ pub(super) async fn guard<D: Directory>(
         response
     };
     let mut resp = resp;
-    let cacheable_image = resp
+    let cacheable_asset = resp
         .extensions()
-        .get::<super::wallpapers::ImageResponse>()
+        .get::<super::assets::CacheResponse>()
         .is_some();
+    let sealed = resp
+        .extensions()
+        .get::<crate::plugins::network::http::SealedFrame>()
+        .map(|frame| frame.0.clone());
+    let is_sealed = sealed.is_some();
     let h = resp.headers_mut();
-    h.insert(
-        header::CONTENT_SECURITY_POLICY,
-        HeaderValue::from_static(CSP),
-    );
+    if let Some(sealed) = sealed {
+        h.insert(header::CONTENT_SECURITY_POLICY, sealed);
+    } else if !h.contains_key(header::CONTENT_SECURITY_POLICY) {
+        h.insert(
+            header::CONTENT_SECURITY_POLICY,
+            HeaderValue::from_static(CSP),
+        );
+    }
     h.insert(
         header::X_CONTENT_TYPE_OPTIONS,
         HeaderValue::from_static("nosniff"),
@@ -248,8 +270,11 @@ pub(super) async fn guard<D: Directory>(
         header::REFERRER_POLICY,
         HeaderValue::from_static("no-referrer"),
     );
-    h.insert(header::X_FRAME_OPTIONS, HeaderValue::from_static("DENY"));
-    if api && !cacheable_image {
+    h.insert(
+        header::X_FRAME_OPTIONS,
+        HeaderValue::from_static(if is_sealed { "SAMEORIGIN" } else { "DENY" }),
+    );
+    if api && !cacheable_asset {
         h.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
     }
     resp

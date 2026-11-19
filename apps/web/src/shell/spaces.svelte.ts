@@ -40,6 +40,11 @@ class Spaces {
   }
   /** Replaces the list (the server's), keeping the current space when it is still there. */
   setList(l: SpaceInfo[]): void { if (l.length) this.list = l; }
+  /**
+   * The current space's id once the server's list is in. In server mode `current` is a fixture placeholder until `load()` has run, and no operation may carry a fixture id (the server answers
+   * `not_found` for it): code that can run before the list is loaded (a screen right after sign-up) takes the id from here. In fixtures mode it resolves at once.
+   */
+  async whenCurrent(): Promise<string> { await this.load(); return this.current.id; }
   private loading: Promise<void> | null = null;
   /**
    * Reads the signed-in person's spaces from the real server (`spaces.list`; fixtures stay when it is not selected). The personal space is the one the server marks (`personal: true`) and comes first in the list. A failure keeps what is shown and is tried again on the next call. One request; later callers share it.

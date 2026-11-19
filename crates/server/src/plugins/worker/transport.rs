@@ -1,5 +1,8 @@
 //! Machine sandbox startup and bounded protocol frame transport.
 use super::*;
+use calternal_machine::sandbox::worker::STDERR_TAIL_BYTES as STDERR_BYTES;
+
+pub(super) type StderrTail = Arc<Mutex<Vec<u8>>>;
 
 /// Start one worker process and its threads. The pinned digest is rechecked first.
 pub(super) async fn spawn(
@@ -48,6 +51,8 @@ pub(super) async fn spawn(
     let spec = SandboxSpec {
         space_id: Some(space),
         provider_login: false,
+        shared_provider_sponsor: None,
+        shared_tools: None,
         // Operator-installed packages always start from the private copy of
         // verified bytes. Explicit in-memory fixtures can supply test assets.
         code_directory: (plugin.revision == 0 && backend.name() != "machine")
@@ -100,23 +105,34 @@ pub(super) async fn spawn(
                 "plugin worker sandbox unavailable; check the enrolled machine runtime",
             )
         })?;
+    let stderr = StderrTail::default();
     if requires_ready {
-        tokio::time::timeout(WORKER_START_TIMEOUT, readiness(&mut exec))
+        let ready = tokio::time::timeout(WORKER_START_TIMEOUT, readiness(&mut exec, &stderr))
             .await
-            .map_err(|_| Error::unavailable("plugin worker readiness timed out"))??;
+            .map_err(|_| Error::unavailable("plugin worker readiness timed out"))
+            .and_then(|result| result);
+        if let Err(error) = ready {
+            let bytes = stderr.lock().unwrap_or_else(|e| e.into_inner());
+            plugin
+                .installed_diagnostics
+                .fault(space, "worker_handshake", &bytes);
+            return Err(error);
+        }
     }
     let input = exec
         .input
         .take()
         .ok_or_else(|| Error::unavailable("worker stdin unavailable"))?;
+    let plugin = plugin.clone();
     crate::blocking::spawn(move || {
         let (events, rx) = mpsc::sync_channel(64);
         let (frames, frames_rx) = mpsc::sync_channel::<Vec<u8>>(MAX_QUEUE);
         let reader_events = events.clone();
         let reader_runtime = runtime.clone();
+        let reader_stderr = stderr.clone();
         std::thread::Builder::new()
             .name("plugin-worker-read".into())
-            .spawn(move || read_frames(exec, reader_events, reader_runtime))
+            .spawn(move || read_frames(exec, reader_events, reader_runtime, reader_stderr))
             .map_err(|_| Error::unavailable("extension worker could not start"))?;
         std::thread::Builder::new()
             .name("plugin-worker-write".into())
@@ -130,7 +146,10 @@ pub(super) async fn spawn(
             .map_err(|_| Error::unavailable("extension worker could not start"))?;
         let alive = Arc::new(AtomicBool::new(true));
         let busy = Arc::new(AtomicUsize::new(0));
+        plugin.installed_diagnostics.ready(space);
         let thread = Thread {
+            plugin,
+            stderr,
             _process: process,
             session,
             space,
@@ -158,7 +177,10 @@ pub(super) async fn spawn(
 }
 
 // The worker must echo the exact challenge before it receives an invocation.
-async fn readiness(exec: &mut calternal_machine::sandbox::Exec) -> Result<(), Error> {
+async fn readiness(
+    exec: &mut calternal_machine::sandbox::Exec,
+    stderr: &StderrTail,
+) -> Result<(), Error> {
     use calternal_machine::{protocol::Stream, sandbox::OutputEvent};
     let nonce = uuid::Uuid::new_v4();
     let challenge =
@@ -184,8 +206,8 @@ async fn readiness(exec: &mut calternal_machine::sandbox::Exec) -> Result<(), Er
                     return Ok(());
                 }
             }
+            OutputEvent::Data(Stream::Stderr, bytes) => append_stderr(stderr, &bytes),
             OutputEvent::Exit(_) => break,
-            _ => {}
         }
     }
     Err(invalid())
@@ -196,6 +218,7 @@ fn read_frames(
     mut exec: calternal_machine::sandbox::Exec,
     events: SyncSender<Event>,
     runtime: tokio::runtime::Handle,
+    stderr: StderrTail,
 ) {
     use calternal_machine::{protocol::Stream, sandbox::OutputEvent};
     runtime.block_on(async move {
@@ -213,12 +236,22 @@ fn read_frames(
                         return;
                     }
                 }
+            } else if let OutputEvent::Data(Stream::Stderr, bytes) = event {
+                append_stderr(&stderr, &bytes);
             } else if matches!(event, OutputEvent::Exit(_)) {
                 break;
             }
         }
         let _ = events.send(Event::Closed);
     });
+}
+
+fn append_stderr(tail: &StderrTail, bytes: &[u8]) {
+    let bytes = &bytes[bytes.len().saturating_sub(STDERR_BYTES)..];
+    let mut tail = tail.lock().unwrap_or_else(|e| e.into_inner());
+    let discard = (tail.len() + bytes.len()).saturating_sub(STDERR_BYTES);
+    tail.drain(..discard);
+    tail.extend_from_slice(bytes);
 }
 
 /// Owns teardown even when a cold start fails or loses an admission race.

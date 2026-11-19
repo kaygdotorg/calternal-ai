@@ -81,3 +81,62 @@ describe("rescue", () => {
     expect(rescueLine("Plan", "Your edits to Plan")).toBe("You can no longer open “Plan”. Your edits were kept as “Your edits to Plan” in your personal space.");
   });
 });
+
+import { owedStore, rescueEdits, settleOwed, type Owed } from "./owed";
+describe("rescue owed", () => {
+  const memory = () => { const m = new Map<string, Owed>(); return { m, put: async (o: Owed) => void m.set(o.requestId, o), all: async () => [...m.values()], remove: async (id: string) => void m.delete(id) }; };
+  it("is kept when the server is away, tried again, and sent once", async () => {
+    const mem = memory(); owedStore(mem);
+    localStorage.setItem("cal.fixture.rescue-down", "1"); localStorage.removeItem("cal.fixture.rescued");
+    const line = await rescueEdits("n-1", "Plan", "# Plan\n\nOne.", "# Plan\n\nOne.\n\nMine.", "n-1:abc");
+    expect(line).toMatch(/kept on this device/);
+    expect(mem.m.size).toBe(1);
+    expect(await settleOwed()).toEqual([]); // still away
+    expect(mem.m.size).toBe(1);
+    localStorage.removeItem("cal.fixture.rescue-down");
+    const lines = await settleOwed();
+    expect(lines).toHaveLength(1); expect(lines[0]).toMatch(/Your edits to Plan/);
+    expect(mem.m.size).toBe(0);
+    expect(await settleOwed()).toEqual([]);
+    expect(JSON.parse(localStorage.getItem("cal.fixture.rescued")!)).toHaveLength(1);
+  });
+  it("owes nothing when nothing was changed", async () => {
+    const mem = memory(); owedStore(mem);
+    expect(await rescueEdits("n-1", "Plan", "# Plan", "# Plan", "n-1:x")).toMatch(/changed nothing/);
+    expect(mem.m.size).toBe(0);
+  });
+});
+
+import { createCollection, getCollection, setMembers } from "./collections";
+describe("collections (fixtures)", () => {
+  it("reads titles, edits the members against the revision, and refuses a stale one", async () => {
+    const made = await createCollection("s", "Two notes", ["n-3", "n-4"]);
+    expect(made.revision).toBe("1");
+    const c = await getCollection(made.id).catch((e) => e);
+    // The notes store is the real fixtures here; its titles are read lazily.
+    expect(c.members?.map((m: { id: string }) => m.id)).toEqual(["n-3", "n-4"]);
+    const next = await setMembers(made.id, c.revision, ["n-4"]);
+    expect(next.revision).toBe("2");
+    await expect(setMembers(made.id, c.revision, ["n-3"])).rejects.toMatchObject({ code: "conflict" });
+    expect((await getCollection(made.id)).members.map((m) => m.id)).toEqual(["n-4"]);
+    await expect(getCollection("c-nope")).rejects.toMatchObject({ code: "not_found" });
+  });
+  it("the shared-with-me fixture lists collections apart from notes", async () => {
+    const s = new FixtureSharing();
+    expect((await s.shared_with_me("collections")).items.map((i) => i.item.id)).toEqual(["c-demo"]);
+    expect((await s.shared_with_me("notes")).items.every((i) => i.item.kind === "notes")).toBe(true);
+  });
+});
+
+import { listCollections } from "./collections";
+describe("collections: can_edit and list", () => {
+  it("a read-only collection refuses a change and says can_edit false", async () => {
+    expect((await getCollection("c-ro")).can_edit).toBe(false);
+    await expect(setMembers("c-ro", "1", [])).rejects.toMatchObject({ code: "forbidden" });
+    expect((await getCollection("c-demo")).can_edit).toBe(true);
+  });
+  it("lists the space's collections", async () => {
+    const ids = (await listCollections("s")).items.map((c) => c.id);
+    expect(ids).toEqual(expect.arrayContaining(["c-demo", "c-ro"]));
+  });
+});

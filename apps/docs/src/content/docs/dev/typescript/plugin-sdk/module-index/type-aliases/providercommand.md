@@ -2,7 +2,7 @@
 title: "plugin-sdk: index/type-aliases/ProviderCommand"
 ---
 
-<!-- Generated from: packages/plugin-sdk/src/index.ts, packages/plugin-sdk/src/manifest-v1.ts, packages/plugin-sdk/src/space-paths.ts, packages/plugin-sdk/src/stdio-worker.ts, packages/plugin-sdk/src/testing.ts, packages/plugin-sdk/src/typed-handlers.ts, packages/plugin-sdk/src/worker-v2.ts. Rebuild: npm run docs:site -->
+<!-- Generated from: packages/plugin-sdk/src/index.ts, packages/plugin-sdk/src/job-waits.ts, packages/plugin-sdk/src/manifest-v1.ts, packages/plugin-sdk/src/space-paths.ts, packages/plugin-sdk/src/stdio-worker.ts, packages/plugin-sdk/src/testing.ts, packages/plugin-sdk/src/typed-handlers.ts, packages/plugin-sdk/src/worker-v2.ts. Rebuild: npm run docs:site -->
 
 > **Preview: the app is not released.** This site describes a development preview and accepted designs; it does not establish production readiness.
 
@@ -14,7 +14,7 @@ title: "plugin-sdk: index/type-aliases/ProviderCommand"
 
 # Type Alias: ProviderCommand
 
-> **ProviderCommand** = \{ `type`: `"check"`; \} \| \{ `cwd`: `string`; `instructions`: `string`; `model`: `string`; `options`: `{ [key in string]?: unknown }`; `resume`: `string` \| `null`; `type`: `"start"`; \} \| \{ `context`: [`ProviderContext`](/docs/dev/typescript/plugin-sdk/module-index/type-aliases/providercontext/)[]; `prompt`: `string`; `type`: `"send"`; \} \| \{ `prompt`: `string`; `type`: `"steer"`; \} \| \{ `type`: `"stop"`; \}
+> **ProviderCommand** = \{ `type`: `"check"`; \} \| \{ `cwd`: `string`; `instructions`: `string`; `model`: `string`; `options`: `{ [key in string]?: unknown }`; `resume`: `string` \| `null`; `type`: `"start"`; \} \| \{ `context`: [`ProviderContext`](/docs/dev/typescript/plugin-sdk/module-index/type-aliases/providercontext/)[]; `prompt`: `string`; `type`: `"send"`; \} \| \{ `prompt`: `string`; `type`: `"steer"`; \} \| \{ `approved`: `boolean`; `request_id`: `string`; `type`: `"approve"`; \} \| \{ `type`: `"stop"`; \}
 
 Commands accepted by an adapter; one active turn per adapter.
 
@@ -101,6 +101,28 @@ New message, bounded by the command budget.
 #### type
 
 > **type**: `"steer"`
+
+***
+
+### Type Literal
+
+\{ `approved`: `boolean`; `request_id`: `string`; `type`: `"approve"`; \}
+
+#### approved
+
+> **approved**: `boolean`
+
+Authorize this request within the existing sandbox boundary.
+
+#### request\_id
+
+> **request\_id**: `string`
+
+Opaque ID emitted by this run's adapter.
+
+#### type
+
+> **type**: `"approve"`
 
 ***
 

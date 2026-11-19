@@ -2,7 +2,7 @@
 title: "plugin-sdk: testing/functions/fixtureWorker"
 ---
 
-<!-- Generated from: packages/plugin-sdk/src/index.ts, packages/plugin-sdk/src/manifest-v1.ts, packages/plugin-sdk/src/space-paths.ts, packages/plugin-sdk/src/stdio-worker.ts, packages/plugin-sdk/src/testing.ts, packages/plugin-sdk/src/typed-handlers.ts, packages/plugin-sdk/src/worker-v2.ts. Rebuild: npm run docs:site -->
+<!-- Generated from: packages/plugin-sdk/src/index.ts, packages/plugin-sdk/src/job-waits.ts, packages/plugin-sdk/src/manifest-v1.ts, packages/plugin-sdk/src/space-paths.ts, packages/plugin-sdk/src/stdio-worker.ts, packages/plugin-sdk/src/testing.ts, packages/plugin-sdk/src/typed-handlers.ts, packages/plugin-sdk/src/worker-v2.ts. Rebuild: npm run docs:site -->
 
 > **Preview: the app is not released.** This site describes a development preview and accepted designs; it does not establish production readiness.
 
@@ -21,6 +21,7 @@ Runs one invocation at a time. Only the worker receives the dummy authority.
 Unhandled callbacks fail closed. The deadline bounds fixture waits.
 A child that exits before answering reports its exit status or signal and
 the last 4 KiB of stderr. Spawn with piped stdin, stdout and stderr.
+Under `calternal plugin test`, each parked question uses the host validator.
 
 ## Parameters
 

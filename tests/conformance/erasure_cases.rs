@@ -70,6 +70,20 @@ async fn account_erasure_requires_authority_fresh_proof_and_transfer() {
         })
     };
     let account = f.ids[1].clone();
+    f.op(
+        1,
+        "appearance.patch",
+        json!({"brand":"appearance to erase"}),
+    )
+    .await
+    .ok();
+    f.op(
+        0,
+        "appearance.patch",
+        json!({"brand":"appearance to retain"}),
+    )
+    .await
+    .ok();
     let private = f.spaces[0].clone();
     let shared = f.spaces[3].clone();
     let own = personal(&f, 1).await;
@@ -296,6 +310,19 @@ async fn account_erasure_requires_authority_fresh_proof_and_transfer() {
         }
     }
     erased(&f, "accounts", &account);
+    let appearance = Connection::open(f.appdata().join("system/appearance.db")).unwrap();
+    let remaining: u32 = appearance
+        .query_row(
+            "SELECT count(*) FROM appearance WHERE account=?1",
+            [&account],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(remaining, 0);
+    assert_eq!(
+        f.op(0, "appearance.get", json!({})).await.body["data"]["brand"],
+        "appearance to retain"
+    );
     erased(&f, "spaces", &own);
     erased(&f, "spaces", &private);
     erased(&f, "spaces", group_space);
