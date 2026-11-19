@@ -102,7 +102,7 @@
   // Pictures scrolling under the floating pills raise those pills' fill (pill-contrast hazards).
   let headerEl = $state<HTMLElement>();
   $effect(() => {
-    if (!listEl || !headerEl) return;
+    if (!listEl || !headerEl || !late) return; // after the first frame: the pills' contrast follows the messages scrolling under them, nothing to follow before it
     const h = headerEl;
     return hazards(listEl, () => [...h.querySelectorAll<HTMLElement>(".pill, .title"), ...document.querySelectorAll<HTMLElement>(".hdr .hp")]);
   });
@@ -173,7 +173,7 @@
       <Panel class="title" radius="pill"><InlineEditor class="title-edit" label="Rename thread" bind:value={draftTitle} autoselect onsubmit={commitTitle} oncancel={() => (renaming = false)} onblur={commitTitle} /></Panel>
     {/if}
     <span class="grow"></span>
-    {#if summary && !windowed}
+    {#if summary && !windowed && late}
       <Pill icon="more" label="Thread actions" aria-haspopup="menu" aria-expanded={menuOpen} bind:el={moreEl} onclick={() => (menuOpen = !menuOpen)} />
       <Menu open={menuOpen} items={[...threadItems(summary), { id: "panel", label: shell.rightOpen ? "Hide side panel" : "Show side panel", icon: "sidebar-right" as const }]} label="Thread actions" trigger={moreEl} morph onclose={() => (menuOpen = false)} onpick={(item) => { menuOpen = false; if (item === "panel") shell.toggleRight(); else if (summary) runThreadItem(item, summary, startRename); }} />
     {/if}
@@ -216,7 +216,7 @@
       </div>
     </div>
   {/if}
-  <SelectionActions root={listEl} oncomment={(t) => bridge.comment(t)} onask={(t) => bridge.ask(t)} />
+  {#if late}<SelectionActions root={listEl} oncomment={(t) => bridge.comment(t)} onask={(t) => bridge.ask(t)} />{/if}
 </div>
 
 <style>

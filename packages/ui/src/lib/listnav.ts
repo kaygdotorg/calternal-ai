@@ -43,22 +43,28 @@ export function wantsKey(e: Pick<KeyboardEvent, "key" | "altKey" | "ctrlKey" | "
 
 /** The one place the settle rule lives (both the `listNav` action and `VirtualList`'s `nav` use it): `rest(fn, ms)` runs `fn` after `ms` without another call, and `cancel()` drops it. */
 export function settler(): { rest(fn: () => void, ms?: number): void; cancel(): void } {
-  let t = 0, raf = 0;
+  let t = 0, raf = 0, painted = true, lastKey = 0;
   const cancel = () => { if (t) { clearTimeout(t); t = 0; } if (raf) { cancelAnimationFrame(raf); raf = 0; } };
   // A busy page can run the timer before it has read the keys that came in meanwhile (each of them would have moved the timer): when input is waiting, the rest has not begun, so wait again.
   const pending = (): boolean => { try { return !!(navigator as Navigator & { scheduling?: { isInputPending?: (o?: { includeContinuous?: boolean }) => boolean } }).scheduling?.isInputPending?.({ includeContinuous: true }); } catch { return false; } };
   return {
     cancel,
-    rest(fn, ms = SETTLE_MS) {
+    rest(fn, ms) {
       cancel();
-      // The rest is over: the selection's last paint commits first (next frame), and only then, in a task of its own, the pane's work starts. A key in between cancels all of it.
-      const arm = () => { t = window.setTimeout(() => { t = 0; if (pending()) { arm(); return; } raf = requestAnimationFrame(() => { raf = 0; t = window.setTimeout(() => { t = 0; fn(); }, 0); }); }, ms); };
+      // The rest must be longer than the gap between two repeats of a held key (whatever the system's rate), so it is 1.6 times the gap just seen (30 to 80 ms); a first or single key rests the base 30 ms.
+      const now = performance.now(), gap = now - lastKey;
+      lastKey = now;
+      ms ??= gap < 200 ? Math.min(80, Math.max(SETTLE_MS, gap * 1.6)) : SETTLE_MS;
+      // The selection's last paint must commit before the pane's work starts: a frame is asked for with each key, and when the rest is over the open runs at once if that frame has been drawn (it has, unless the page is busy), else after it. The open is a task of its own. A key in between cancels all of it.
+      painted = false;
+      requestAnimationFrame(() => { painted = true; });
+      const arm = () => { t = window.setTimeout(() => { t = 0; if (pending()) { arm(); return; } if (painted) fn(); else raf = requestAnimationFrame(() => { raf = 0; t = window.setTimeout(() => { t = 0; fn(); }, 0); }); }, ms); };
       arm();
     },
   };
 }
-/** Milliseconds without a key before the cursor's row is opened: above the gap between two repeats of a held key, below what a person feels as waiting. */
-export const SETTLE_MS = 50;
+/** The least milliseconds without a key before the cursor's row is opened (more while a key is repeating: see `settler`). */
+export const SETTLE_MS = 30;
 
 /** Options of the `listNav` action. */
 export interface ListNavOptions {

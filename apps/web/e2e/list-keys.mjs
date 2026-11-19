@@ -6,6 +6,7 @@
 // list). Usage: node e2e/list-keys.mjs [rows=5000] [seconds=5] [surfaces=threads,notes] [churn=0,1]
 import { judgeTimings, launch, open, serve } from "./lib.mjs";
 const ROWS = Number(process.argv[2] ?? 5000), SECS = Number(process.argv[3] ?? 5), RATE = 30, FRAME = 16.7, SHOW_BUDGET = 150;
+const RATE_CPU = Number(process.env.CAL_CPU ?? 4);
 const SURFACES = (process.argv[4] ?? "threads,notes").split(","), CHURNS = (process.argv[5] ?? "0,1").split(",").map(Number);
 const stop = await serve(); const browser = await launch();
 let bad = 0;
@@ -15,7 +16,7 @@ const timing = (c, m, note) => { if (judge) ok(c, m, note); else console.log(`SK
 const pct = (xs, q) => { const s = [...xs].sort((a, b) => a - b); return s.length ? s[Math.min(s.length - 1, Math.floor(s.length * q))] : NaN; };
 for (const surface of SURFACES) for (const churn of CHURNS) {
   const tag = `${surface}, churn ${churn ? "on" : "off"}`;
-  console.log(`-- ${tag}: ${ROWS} ${surface}, Down held ${SECS} s at ${RATE} per second, CPU 4x slower`);
+  console.log(`-- ${tag}: ${ROWS} ${surface}, Down held ${SECS} s at ${RATE} per second, CPU ${RATE_CPU}x slower`);
   const path = surface === "threads" ? `/threads?flood=${ROWS}${churn ? "&churn=4" : ""}` : `/notes?flood=${ROWS}${churn ? "&churn=4" : ""}`;
   const { page: p, ctx } = await open(browser, "desktop", "dark", path);
   const nav = surface === "threads" ? "nav[aria-label=Threads]" : "nav[aria-label=Notes]";
@@ -34,7 +35,7 @@ for (const surface of SURFACES) for (const churn of CHURNS) {
     const ch = new MessageChannel(); let last = performance.now(); ch.port1.onmessage = () => { const t = performance.now(), g = t - last; if (g > w.__gap) w.__gap = g; if (g > 16) w.__gaps.push(g); last = t; setTimeout(() => ch.port2.postMessage(0), 0); }; w.__beat = () => { last = performance.now(); ch.port2.postMessage(0); };
   });
   const cdp = await ctx.newCDPSession(p);
-  await cdp.send("Emulation.setCPUThrottlingRate", { rate: 4 });
+  await cdp.send("Emulation.setCPUThrottlingRate", { rate: RATE_CPU });
   await p.evaluate(() => { window.__path0 = location.pathname; window.__beat(); });
   const n = SECS * RATE, t0 = Date.now();
   for (let i = 0; i < n; i++) { const due = t0 + (i * 1000) / RATE; const wait = due - Date.now(); if (wait > 0) await p.waitForTimeout(wait); await p.keyboard.press("ArrowDown"); }
@@ -51,7 +52,9 @@ for (const surface of SURFACES) for (const churn of CHURNS) {
   await p.waitForTimeout(400);
   const r = await p.evaluate(() => ({ keys: window.__keys, routes: window.__routes, focus: document.activeElement?.closest("nav")?.getAttribute("aria-label") ?? document.activeElement?.tagName }));
   await cdp.send("Emulation.setCPUThrottlingRate", { rate: 1 });
+  const stampMs = surface === "threads" ? await p.evaluate(() => performance.getEntriesByName("calternal:thread:open").at(-1)?.duration ?? NaN) : NaN;
   const runs = r.keys.map((k) => k.run), paints = r.keys.filter((k) => Number.isFinite(k.paint)).map((k) => k.paint);
+  console.log(`TABLE | ${RATE_CPU}x | ${surface} | churn ${churn ? "on" : "off"} | stamp ${Number.isNaN(stampMs) ? "-" : stampMs.toFixed(0)} ms | last key to pane ${shown} ms | paint p95 ${pct(paints, 0.95).toFixed(1)} ms | heartbeat p95 ${(during.gaps.length ? pct(during.gaps, 0.95) : 0).toFixed(0)} ms (max ${during.gap.toFixed(0)})`);
   console.log(`   ${r.keys.length} keys: handler p50 ${pct(runs, 0.5).toFixed(1)} p95 ${pct(runs, 0.95).toFixed(1)} max ${Math.max(...runs).toFixed(1)} ms; paint after key p50 ${pct(paints, 0.5).toFixed(1)} p95 ${pct(paints, 0.95).toFixed(1)} max ${Math.max(...paints).toFixed(1)} ms; heartbeat gaps over 16 ms: ${during.gaps.length}, p95 ${(during.gaps.length ? pct(during.gaps, 0.95) : 0).toFixed(0)} ms, max ${during.gap.toFixed(0)} ms; main pane shows the settled item ${shown} ms after the last key; ${during.routes} loads during the hold`);
   ok(r.keys.length >= n * 0.9, `${tag}: every key was delivered to the page`, `${r.keys.length} of ${n}`);
   ok(r.keys.filter((k) => k.moved).length >= r.keys.length * 0.9, `${tag}: every key moved the selection`, `${r.keys.filter((k) => k.moved).length} moved`);

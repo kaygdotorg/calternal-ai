@@ -6,6 +6,7 @@ import { inboxOf, jobPromptsOf, snoozedOf, type InboxItem, type JobPrompt, type 
 import type { SignInRequest } from "./model";
 import type { ThreadsClient } from "./client";
 import { FixtureClient } from "./fixtures";
+import { perFrame } from "../../lib/per-frame";
 import { server, serverMode } from "../../server/client";
 import { ServerThreads } from "../../server/threads-client";
 import type { ProviderOption, Request, ThreadSummary } from "./model";
@@ -30,7 +31,7 @@ class ThreadsStore {
     this.providers = p;
     this.machines = m;
     this.ready = true;
-    client.watchThreads((x) => (this.threads = x));
+    client.watchThreads(perFrame((x: ThreadSummary[]) => (this.threads = x)));
     client.watchRequests((x) => this.setRequests(x));
   }
 

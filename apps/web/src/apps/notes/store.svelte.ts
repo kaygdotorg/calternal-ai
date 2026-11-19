@@ -15,6 +15,7 @@ import { navigate, segments } from "../../lib/route.svelte";
 import { sharing } from "./share/sharing";
 import { textKey } from "./share/rescue";
 import { rescueEdits } from "./share/owed";
+import { perFrame } from "../../lib/per-frame";
 
 class NotesStore {
   client: NotesClient = serverMode() ? new ServerNotes(server) : new FixtureNotes();
@@ -64,7 +65,7 @@ class NotesStore {
       this.spaces = serverMode() ? shellSpaces.list : await this.client.spaces();
       this.space = this.spaces.find((s) => s.id === shellSpaces.current.id) ?? this.spaces[0] ?? null;
       await this.refresh();
-      if (this.space) this.stop = this.client.watch(this.space.id, () => void this.follow());
+      if (this.space) this.stop = this.client.watch(this.space.id, perFrame(() => void this.follow()));
       await this.reloadInput();
       this.stopInput = this.input.watch(() => void this.reloadInput());
     } catch (e) {
@@ -78,7 +79,7 @@ class NotesStore {
     this.space = next;
     void this.tagPages.reset().catch(() => {}); this.trashPages.clear();
     this.stop?.();
-    this.stop = this.client.watch(next.id, (c) => void this.follow(c));
+    this.stop = this.client.watch(next.id, perFrame((c?: Change) => void this.follow(c)));
     await this.notePages.reset();
   }
   /**
