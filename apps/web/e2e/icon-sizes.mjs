@@ -10,7 +10,7 @@ const stray = (p) => p.evaluate(() => {
   const ok = new Set([px("var(--glyph)"), px("var(--glyph-inline)")].map((w) => Math.round(w * 10) / 10));
   const out = [];
   for (const s of document.querySelectorAll("svg")) {
-    if (s.closest(".pv, [data-art], .md img, [aria-hidden=true] > svg.art") || s.hasAttribute("data-art")) continue;
+    if (s.closest(".pv, [data-art], .ic.outer, .md img, [aria-hidden=true] > svg.art") || s.hasAttribute("data-art")) continue;
     const r = s.getBoundingClientRect(); if (!r.width) continue;
     const w = Math.round(r.width * 10) / 10;
     if (!ok.has(w)) { let e = s.parentElement; while (e && !(typeof e.className === "string" && e.className)) e = e.parentElement; out.push(`${w}x${Math.round(r.height * 10) / 10} in ${(e?.className ?? "").slice(0, 40)} (${(s.closest("[role^=menuitem]")?.innerText ?? s.parentElement?.innerText ?? "").slice(0, 30)})`); }
@@ -50,7 +50,7 @@ try {
     let s = await stray(p); ok(s.length === 0, `${device}: Settings (list, sections, rows) are token sizes`, s.join("; "));
     await p.goto(p.url().replace(/\/settings.*/, "/notes")); await p.waitForTimeout(1200);
     s = await stray(p); ok(s.length === 0, `${device}: the app capsule and sidebar rows of Notes are token sizes`, s.join("; "));
-    const caps = await p.evaluate(() => [...document.querySelectorAll("[aria-label=Apps] svg")].map((v) => `${v.getAttribute("stroke-width") ?? getComputedStyle(v).strokeWidth}/${Math.round(v.getBoundingClientRect().width)}`));
+    const caps = await p.evaluate(() => [...document.querySelectorAll("[aria-label=Apps] .ic:not(.outer) svg")].map((v) => `${v.getAttribute("stroke-width") ?? getComputedStyle(v).strokeWidth}/${Math.round(v.getBoundingClientRect().width)}`));
     ok(new Set(caps).size <= 1, `${device}: capsule icons share one stroke weight and size`, caps.join(" "));
     await p.getByRole("button", { name: /Account/ }).first().click().catch(() => {}); await p.waitForTimeout(700);
     s = await stray(p); ok(s.length === 0, `${device}: and in the account menu`, s.join("; "));

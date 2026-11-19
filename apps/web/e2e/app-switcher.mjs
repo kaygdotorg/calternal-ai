@@ -54,7 +54,7 @@ for (const phone of [false, true]) {
     ok((await page.evaluate(() => document.activeElement?.getAttribute("aria-label"))) === "Notes", `${where}: the right arrow moves focus to the next app`);
     await page.keyboard.press("End"); await page.waitForTimeout(500);
     const e = await geom(page);
-    ok((await page.evaluate(() => document.activeElement?.getAttribute("aria-label"))) === "App 17" && e.whole >= 1, `${where}: End goes to the last app and scrolls it into the middle`);
+    ok((await page.evaluate(() => document.activeElement?.getAttribute("aria-label"))) === "App 16" && e.whole >= 1, `${where}: End goes to the last app and scrolls it into the middle`);
     await page.keyboard.press("Home"); await page.waitForTimeout(500); await page.keyboard.press("ArrowRight"); await page.waitForTimeout(400);
     await page.keyboard.press("Enter"); await page.waitForURL(/\/notes/, { waitUntil: "commit" });
     await page.waitForTimeout(700);
@@ -78,7 +78,7 @@ for (const phone of [false, true]) {
 {
   const { ctx, page } = await open(false, "/threads?firstrun=0", ["settings", "threads"]);
   const g = await geom(page);
-  ok(g.labels.join(",") === "Settings,Threads,Notes", "the person's order is the order shown", g.labels.join(","));
+  ok(g.labels.join(",") === "Settings,Threads,Notes,Mail", "the person's order is the order shown", g.labels.join(","));
   await ctx.close();
 }
 // ---- the collapsed sidebar: a two-part pill with a dropdown of apps
@@ -89,7 +89,7 @@ for (const phone of [false, true]) {
   ok((await pill.count()) === 1 && (await pill.getByRole("button").count()) === 2, "collapsed: one pill with two parts, the sidebar and the current app");
   await pill.getByRole("button", { name: "Apps: Threads" }).click(); await page.waitForTimeout(500);
   const rows = await page.getByRole("menuitemradio").evaluateAll((e) => e.map((x) => `${x.textContent.trim()}${x.getAttribute("aria-checked") === "true" ? "*" : ""}`));
-  ok(rows.join(",") === "Threads*,Notes,Settings", "…its dropdown lists the apps with their names, the current one checked", rows.join(","));
+  ok(rows.join(",") === "Threads*,Notes,Mail,Settings", "…its dropdown lists the apps with their names, the current one checked", rows.join(","));
   await page.getByRole("menuitemradio", { name: "Notes" }).click(); await page.waitForURL(/\/notes/, { waitUntil: "commit" });
   ok(/\/notes/.test(page.url()), "…and choosing one opens it");
   await pill.getByRole("button", { name: "Show the sidebar" }).click(); await page.waitForTimeout(500);
@@ -101,7 +101,7 @@ for (const phone of [false, true]) {
   const { ctx, page } = await open(false, "/settings/appearance/appearance.app-order?firstrun=0");
   await page.getByRole("button", { name: "Move Notes up" }).click(); await page.waitForTimeout(300);
   const g = await geom(page);
-  ok(g.labels.join(",") === "Notes,Threads,Settings", "Settings, Appearance, Apps: Move Notes up changes the capsule", g.labels.join(","));
+  ok(g.labels.join(",") === "Notes,Threads,Mail,Settings", "Settings, Appearance, Apps: Move Notes up changes the capsule", g.labels.join(","));
   await ctx.close();
 }
 await b.close(); stop(); process.exit(bad ? 1 : 0);
