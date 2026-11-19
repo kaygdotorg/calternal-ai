@@ -2,8 +2,7 @@
   // Draws parsed Markdown (lib/md.ts). Links open in a new tab with noopener. Code blocks scroll sideways, never wrap.
   import { scrollCue } from "@calternal/ui";
   import { parseMore, type Inline, type Parsed } from "./md";
-  /** `light`: code blocks and pictures are boxes of about their height instead (a thread's first frame; they are drawn a frame later and the text is already there). */
-  let { text, caret = false, light = false }: { text: string; caret?: boolean; light?: boolean } = $props();
+  let { text, caret = false }: { text: string; caret?: boolean } = $props();
   // A message that grows (a streaming one) keeps the blocks it has finished and parses only its last, unfinished block again.
   let kept: Parsed | undefined;
   const blocks = $derived((kept = parseMore(kept, text)).blocks);
@@ -21,8 +20,6 @@
     {:else if b.t === "h"}<p class="h" role="heading" aria-level="2">{@render inl(b.v)}</p>
     {:else if b.t === "ul"}<ul>{#each b.v as li}<li>{@render inl(li)}</li>{/each}</ul>
     {:else if b.t === "ol"}<ol>{#each b.v as li}<li>{@render inl(li)}</li>{/each}</ol>
-    {:else if light && b.t === "img"}<div class="ph" style:height="9rem" aria-hidden="true"></div>
-    {:else if light && b.t === "code"}<div class="ph" style:height="{Math.min(28, b.v.split("\n").length + 1) * 1.5}em" aria-hidden="true"></div>
     {:else if b.t === "img"}<img class="media" data-media src={b.src} alt={b.alt} loading="lazy" decoding="async" />
     {:else}<!-- svelte-ignore a11y_no_noninteractive_tabindex --><pre use:scrollCue={"x"} tabindex="0" spellcheck="false" translate="no" autocapitalize="off" aria-label="Code{b.lang ? `, ${b.lang}` : ''}"><code>{b.v}</code></pre>{/if}
   {/each}
@@ -36,7 +33,6 @@
   ul { list-style: disc; } ol { list-style: decimal; }
   li::marker { color: var(--ink-3); }
   code { font-family: var(--font-mono); font-size: var(--text-code); padding: 0 var(--s-2); border-radius: var(--r-select); background: rgb(var(--ink-rgb) / 0.07); }
-  .ph { border-radius: var(--r-card); background: rgb(var(--ink-rgb) / 0.05); }
   .media { display: block; max-width: 100%; max-height: 22rem; border-radius: var(--r-card); object-fit: cover; }
   pre { margin: 0; padding: var(--s-5) var(--s-6); border-radius: var(--r-card); background: rgb(var(--ink-rgb) / 0.06); overflow-x: auto; overscroll-behavior-x: contain; touch-action: pan-x pan-y; /* a code block scrolls sideways under a finger even inside the card, whose own touch-action is pan-y for the sidebar pull (a scroller is the end of that intersection) */ font-size: var(--text-label); line-height: 1.6; }
   /* Code is never underlined: no spell-check squiggle, no auto-detected link, no translation, whatever the browser would add. */

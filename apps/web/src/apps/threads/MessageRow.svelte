@@ -45,23 +45,11 @@
   // What the message starts with decides where the mark goes (lead-mark.css): inline in the first paragraph, inside a first row, or on a line of its own before a list, code, picture or card.
   const lead = $derived(rowFirst ? "lead-row" : message.blocks[0]?.type === "text" && !/^\s*([-*+]\s|\d+[.)]\s|```|~~~|\||>|!\[)/.test(message.blocks[0].text) ? "lead-text" : "lead-own");
   // Message actions are created on first hover or focus (touch has no hover: they are there from the start).
-  // An agent message far from the screen is not drawn yet: the row is a box of about its height until it is near the view (one observer per row, released once drawn), so a thread opens by drawing what is on screen, not the Markdown, code and steps of every row the list keeps around it. Without IntersectionObserver (tests) it is drawn at once.
-  let drawn = $state(true); // (a message far from the screen was drawn lazily here once; it moved heights under a list pinned to its end, so every message is drawn when its row is)
-  const pendingH = $derived(Math.max(48, Math.min(900, message.blocks.reduce((h, b) => h + (b.type === "text" ? 24 * Math.ceil(b.text.length / 85) + 12 : b.type === "steps" ? 40 : b.type === "card" ? 220 : 40), 16))));
-  // The heavy parts (code blocks, pictures, the steps) are boxes of about their height for the first frame the message is drawn and are filled in a frame later: the first frame of a thread is its text.
-  let rich = $state(true); // (the heavy parts were light boxes for a frame once; their height change moved a list pinned to its end, so they are drawn with the message)
-  $effect(() => { if (!drawn || rich) return; let b = 0; const a = requestAnimationFrame(() => { b = requestAnimationFrame(() => (rich = true)); }); return () => { cancelAnimationFrame(a); cancelAnimationFrame(b); }; });
-  function watch(node: HTMLElement) {
-    if (drawn) return;
-    const io = new IntersectionObserver((es) => { if (es.some((e) => e.isIntersecting)) { drawn = true; io.disconnect(); } }, { rootMargin: "120px" });
-    io.observe(node);
-    return { destroy: () => io.disconnect() };
-  }
   let armed = $state(typeof matchMedia === "function" && matchMedia("(hover: none)").matches);
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<div class="msg {message.role}" class:agent-row={message.role === "agent"} data-hit={hit ? "" : undefined} onpointerenter={() => (armed = true)} onfocusin={() => (armed = true)} onkeydown={vkey} use:watch>
+<div class="msg {message.role}" class:agent-row={message.role === "agent"} data-hit={hit ? "" : undefined} onpointerenter={() => (armed = true)} onfocusin={() => (armed = true)} onkeydown={vkey}>
   {#if message.role === "user"}
     <div class="col end">
       {#if editing}
@@ -71,17 +59,15 @@
       {/if}
       <MessageActions {message} {armed} onedit={canEdit && !editing ? edit : undefined} onversion={version} />
     </div>
-  {:else if !drawn}
-    <div class="pending" style:height="{pendingH}px" aria-hidden="true"></div>
   {:else}
     <div class="agent lead-host {lead}" id={message.id}>
       <div class="lead" class:row={rowFirst}><ProviderMark by={message.by} {provider} {providers} row={rowFirst} /></div>
       {#each message.blocks as b}
-        {#if b.type === "text"}<Md text={clip(b.text)} light={!rich} />
+        {#if b.type === "text"}<Md text={clip(b.text)} />
         {:else if b.type === "thought"}<Thought text={b.text} ms={b.ms} />
         {:else if b.type === "file"}<span class="file"><Icon name={b.kind === "image" ? "image" : "file"} inline />{b.name}</span>
-        {:else if b.type === "steps"}{#if rich}<Steps steps={b.steps} ms={b.ms} />{:else}<div class="ph" style:height="2.5rem" aria-hidden="true"></div>{/if}
-        {:else if b.type === "card"}{#if GenUi && rich}<GenUi source={b.source} />{:else}<div class="ph" style:height="9rem" aria-hidden="true"></div>{/if}
+        {:else if b.type === "steps"}<Steps steps={b.steps} ms={b.ms} />
+        {:else if b.type === "card"}{#if GenUi}<GenUi source={b.source} />{/if}
         {:else}
           {@const t = store.get(b.threadId)}
           {#if t}<a class="child" href={href(`/threads/${t.id}`)}><Icon name="branch" inline /><span>{t.title}</span><small>{t.state}</small></a>{/if}
@@ -94,7 +80,6 @@
 </div>
 
 <style>
-  .ph { border-radius: var(--r-card); background: rgb(var(--ink-rgb) / 0.05); }
   .editor { display: grid; gap: var(--s-3); width: min(100%, 36rem); padding: var(--s-4) var(--s-5); border-radius: var(--r-card); background: rgb(var(--ink-rgb) / 0.06); }
   .eb { display: flex; justify-content: flex-end; gap: var(--s-2); }
   .clipped { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-3); color: var(--ink-3); font-size: var(--text-label); }
