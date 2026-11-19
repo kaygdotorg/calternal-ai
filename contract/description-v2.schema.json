@@ -1781,11 +1781,7 @@
           "type": "object",
           "properties": {
             "viewer": {
-              "enum": [
-                "person",
-                "space",
-                "roles"
-              ]
+              "const": "person"
             }
           },
           "additionalProperties": false,
