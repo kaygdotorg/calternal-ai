@@ -78,6 +78,12 @@ struct ChromeDescription: Codable, Equatable {
         var open: Bool?
         /// Heading at the top (the wordmark).
         var title: String?
+        /// The heading as a picture (`data:image/png;base64,...`, transparent background) for a face the device does not have; wins over `title` when it decodes.
+        var titleImage: String?
+        /// True draws `titleImage` as a template (tinted with the text colour).
+        var titleImageTemplate: Bool?
+        /// Attention cards above the sections ("waiting for you"): a title, optional detail and one or two buttons.
+        var cards: [Card]?
         /// True when pulling the list down is a refresh: the shell shows the native control and sends a `refresh` event.
         var refresh: Bool?
         /// Segmented choices under the heading (for example Inbox / All).
@@ -90,6 +96,24 @@ struct ChromeDescription: Codable, Equatable {
         var account: Account?
         /// The search control at the bottom right; absent hides it.
         var search: Search?
+    }
+
+    /// A card asking for attention, with up to two buttons.
+    struct Card: Codable, Equatable, Identifiable {
+        /// Identifier; button taps send an `action` event with `rowId` = this id.
+        var id: String
+        /// Main text.
+        var title: String
+        /// Secondary text.
+        var detail: String?
+        /// Picture before the title.
+        var icon: Icon?
+        /// `"info"` (default), `"warn"` or `"bad"`: tints the card.
+        var tone: String?
+        /// The main button (filled).
+        var primary: Item?
+        /// The second button (plain).
+        var secondary: Item?
     }
 
     /// A segmented choice.
@@ -123,8 +147,12 @@ struct ChromeDescription: Codable, Equatable {
         var menu: [Item]?
         /// Visible buttons on the heading (the "+" that adds to this section); tapping sends an `action` with `rowId` = the section id.
         var actions: [Item]?
-        /// The rows.
+        /// The rows the page sent. With `count` set these are only a window of the list, starting at `offset`.
         var rows: [Row]
+        /// Total number of rows when the page sends only a window (long lists); the shell draws placeholders for the rest and sends `window` events as the person scrolls.
+        var count: Int?
+        /// Index of `rows[0]` within the full list; 0 when absent.
+        var offset: Int?
     }
 
     /// One row: an item to open or an action to run.
@@ -205,7 +233,7 @@ struct ChromeDescription: Codable, Equatable {
 /// What the person did in the native chrome; encoded as the `detail` of the page's
 /// `calternal:chrome` event: `{type, id?, rowId?, option?, text?, open?, revision, sentAt}`.
 struct ChromeEvent {
-    /// `row`, `action`, `menu`, `selector`, `app`, `header`, `account`, `search`, `section`, `sidebar`, `refresh`.
+    /// `row`, `action`, `menu`, `selector`, `app`, `header`, `account`, `search`, `section`, `sidebar`, `refresh`, `window`.
     var type: String
     /// Id of the thing acted on (row, app, selector, header item, section, action).
     var id: String?
@@ -217,6 +245,10 @@ struct ChromeEvent {
     var text: String?
     /// For `sidebar` events: whether the sidebar is now open.
     var open: Bool?
+    /// For `window` events: first visible row index of the section `id`.
+    var from: Int?
+    /// For `window` events: last visible row index (inclusive).
+    var to: Int?
 
     /// JSON text for the page, stamped with the revision the shell was showing and a send time (milliseconds since 1970) for latency measurement.
     func json(revision: Int?) -> String {
@@ -226,6 +258,8 @@ struct ChromeEvent {
         if let option { dict["option"] = option }
         if let text { dict["text"] = text }
         if let open { dict["open"] = open }
+        if let from { dict["from"] = from }
+        if let to { dict["to"] = to }
         if let revision { dict["revision"] = revision }
         let data = (try? JSONSerialization.data(withJSONObject: dict, options: [.sortedKeys])) ?? Data("{}".utf8)
         return String(data: data, encoding: .utf8) ?? "{}"

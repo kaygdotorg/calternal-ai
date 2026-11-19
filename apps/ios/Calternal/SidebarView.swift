@@ -22,8 +22,12 @@ struct SidebarView: View {
         let sidebar = model.description.sidebar
         ZStack(alignment: .bottom) {
             List {
-                if let title = sidebar?.title {
-                    Text(title).font(.custom("Snell Roundhand", size: 34).weight(.bold)).padding(.top, 8)
+                if let title = sidebar?.title ?? sidebar?.titleImage.map({ _ in "" }) {
+                    heading(sidebar, fallback: title).padding(.top, 8)
+                        .listRowSeparator(.hidden).listRowBackground(Color.clear)
+                }
+                ForEach(sidebar?.cards ?? []) { card in
+                    CardView(card: card) { item in model.send(ChromeEvent(type: "action", id: item.id, rowId: card.id)) }
                         .listRowSeparator(.hidden).listRowBackground(Color.clear)
                 }
                 ForEach(sidebar?.selectors ?? []) { selector in
@@ -35,7 +39,11 @@ struct SidebarView: View {
                 ForEach(sidebar?.sections ?? []) { section in
                     Section {
                         if section.collapsed != true {
-                            ForEach(section.rows) { row in rowView(row) }
+                            if let total = section.count, total > section.rows.count {
+                                WindowedRows(section: section, total: total, model: model) { row in rowView(row) }
+                            } else {
+                                ForEach(section.rows) { row in rowView(row) }
+                            }
                         }
                     } header: { sectionHeader(section) }
                 }
@@ -58,15 +66,29 @@ struct SidebarView: View {
             Button("Cancel", role: .cancel) {}
         }
         .frame(width: model.sidebarWidth)
+        .background { if model.floating { Rectangle().fill(.clear).glassEffect(.regular, in: .rect(cornerRadius: 40)).ignoresSafeArea() } }
         .frame(maxWidth: .infinity, alignment: .leading)
         .preferredColorScheme(model.isDark ? .dark : .light)
+    }
+
+    // MARK: Heading
+
+    @ViewBuilder
+    private func heading(_ sidebar: ChromeDescription.Sidebar?, fallback: String) -> some View {
+        if let url = sidebar?.titleImage, let comma = url.firstIndex(of: ","),
+           let data = Data(base64Encoded: String(url[url.index(after: comma)...])), let image = UIImage(data: data) {
+            Image(uiImage: image).renderingMode(sidebar?.titleImageTemplate == true ? .template : .original)
+                .resizable().scaledToFit().frame(height: 44, alignment: .leading).accessibilityLabel(sidebar?.title ?? "")
+        } else {
+            Text(fallback).font(.custom("Snell Roundhand", size: 34).weight(.bold))
+        }
     }
 
     // MARK: Rows
 
     @ViewBuilder
     private func rowView(_ row: ChromeDescription.Row) -> some View {
-        Button { model.send(ChromeEvent(type: "row", id: row.id)) } label: {
+        Button { model.tapped = row.id; model.send(ChromeEvent(type: "row", id: row.id)) } label: {
             HStack(spacing: 12) {
                 icon(row.icon)
                 VStack(alignment: .leading, spacing: 2) {
@@ -79,13 +101,13 @@ struct SidebarView: View {
             .accessibilityLabel(row.label ?? row.title).accessibilityHint(row.hint ?? "")
             .accessibilityAddTraits(row.selected == true ? .isSelected : [])
             .accessibilityValue((row.trailing ?? []).compactMap(spoken).joined(separator: ", "))
-            .padding(.vertical, 4)
+            .padding(.vertical, 4).frame(minHeight: 44)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .listRowSeparator(.hidden)
         .listRowBackground(RoundedRectangle(cornerRadius: 14, style: .continuous)
-            .fill(row.selected == true ? Color.primary.opacity(0.12) : Color.clear).padding(.horizontal, 6))
+            .fill(row.selected == true || model.tapped == row.id ? Color.primary.opacity(0.12) : Color.clear).padding(.horizontal, 6))
         .swipeActions(edge: .leading, allowsFullSwipe: true) { actionButtons(row.leadingActions, row: row.id) }
         .swipeActions(edge: .trailing, allowsFullSwipe: true) { actionButtons(row.trailingActions, row: row.id) }
         .contextMenu { menuItems(row.menu, owner: row.id) }
@@ -272,4 +294,60 @@ private struct SearchField: View {
             if !Task.isCancelled { model.send(ChromeEvent(type: "search", text: model.searchText)) }
         }
     }
+}
+
+/// An attention card: tinted glass with a title, detail and up to two buttons.
+private struct CardView: View {
+    let card: ChromeDescription.Card
+    let act: (ChromeDescription.Item) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                if let symbol = card.icon?.symbol { Image(systemName: symbol).foregroundStyle(tint) }
+                Text(card.title).font(.subheadline.weight(.semibold))
+            }
+            if let detail = card.detail { Text(detail).font(.footnote).foregroundStyle(.secondary) }
+            HStack {
+                if let secondary = card.secondary { Button(secondary.title) { act(secondary) }.buttonStyle(.glass) }
+                if let primary = card.primary { Button(primary.title) { act(primary) }.buttonStyle(.glassProminent) }
+            }
+        }
+        .padding(14).frame(maxWidth: .infinity, alignment: .leading)
+        .glassEffect(.regular.tint(tint.opacity(0.18)), in: .rect(cornerRadius: 20))
+        .accessibilityElement(children: .contain)
+    }
+
+    private var tint: Color { card.tone == "bad" ? .red : card.tone == "warn" ? .orange : .accentColor }
+}
+
+/// Rows of a long list of which the page sent only a window: loaded rows draw normally, the rest are
+/// placeholders, and the visible index range is reported (debounced) as a `window` event so the page
+/// can send the rows that are needed.
+private struct WindowedRows<Row: View>: View {
+    let section: ChromeDescription.Section
+    let total: Int
+    let model: ChromeModel
+    let row: (ChromeDescription.Row) -> Row
+    @State private var onScreen: Set<Int> = []
+    private var visible: ClosedRange<Int>? { onScreen.min().flatMap { low in onScreen.max().map { low...$0 } } }
+
+    var body: some View {
+        let offset = section.offset ?? 0
+        ForEach(0..<total, id: \.self) { index in
+            if index >= offset, index - offset < section.rows.count {
+                row(section.rows[index - offset]).onAppear { onScreen.insert(index) }.onDisappear { onScreen.remove(index) }
+            } else {
+                Text("Loading").font(.body).redacted(reason: .placeholder).padding(.vertical, 4)
+                    .listRowSeparator(.hidden).listRowBackground(Color.clear)
+                    .onAppear { onScreen.insert(index) }.onDisappear { onScreen.remove(index) }
+            }
+        }
+        .task(id: onScreen) {
+            guard let visible else { return }
+            try? await Task.sleep(for: .milliseconds(120))
+            if !Task.isCancelled { model.send(ChromeEvent(type: "window", id: section.id, from: visible.lowerBound, to: visible.upperBound)) }
+        }
+    }
+
 }

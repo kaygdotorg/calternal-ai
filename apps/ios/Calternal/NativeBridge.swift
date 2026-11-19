@@ -40,6 +40,9 @@ final class NativeBridge: NSObject, WKScriptMessageHandlerWithReply {
             menu(body, reply: replyHandler)
         case "chrome":
             host?.setChrome(body["chrome"], reply: replyHandler)
+        case "applied":
+            host?.chromeLayout?.applied(seq: body["seq"] as? Int ?? 0)
+            replyHandler(nil, nil)
         case "ping":
             replyHandler(["t": Date().timeIntervalSince1970 * 1000], nil)
         case "log":

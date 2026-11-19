@@ -16,6 +16,9 @@
   main { box-sizing: border-box; height: 100%; overflow: auto; padding: calc(var(--chrome-top) + 12px) 18px 120px; overscroll-behavior: contain; }
   /* The page's own header, shown only when the shell does not draw it. */
   body:not([data-x]) .own { display: block; } .own { display: none; padding: 8px 0; opacity: .8; }
+  /* Floating sidebar: the page moves its own card from the shell's --sidebar-p / --sidebar-w (no CSS transition: the shell animates p itself). */
+  [data-sidebar-floating] main { transform: translateX(calc(var(--sidebar-p, 0) * var(--sidebar-w, 0px))); border-radius: calc(var(--sidebar-p, 0) * var(--device-r, 0px));
+    background: rgba(20, 18, 14, .45); backdrop-filter: blur(24px); height: 100%; }
   h1 { font-size: 26px; margin: 8px 0; } p { line-height: 1.5; opacity: .9; }
   textarea { position: fixed; left: 14px; right: 14px; bottom: calc(env(safe-area-inset-bottom) + 10px); height: 50px; box-sizing: border-box;
     border-radius: 25px; border: 0; padding: 14px 18px; font: inherit; color: inherit; background: rgba(255,255,255,.12); backdrop-filter: blur(20px); }
@@ -36,7 +39,7 @@
   const store = {
     threads: Array.from({ length: 14 }, (_, i) => ({ id: 't' + i, title: ['Expired invite test', 'Plan the storage layout', 'Passkey flake on dev VM', 'Notes editor port', 'Release checklist', 'Why is CI slow', 'Wallpaper picker', 'Sidebar rework', 'Haptics bridge', 'Push design', 'Icon ideas', 'Settings copy', 'Keyboard glass', 'Top band'][i],
       time: ['06:10', '06:07', 'Yesterday', 'Yesterday', 'Mon', 'Mon', 'Sun', 'Sun', 'Sat', 'Sat', 'Fri', 'Fri', 'Thu', 'Thu'][i], unread: i % 4 === 1, pinned: false })),
-    selected: 't0', filter: 'all', query: '', open: false, revision: 0, toast: '', lat: [],
+    selected: 't0', card: true, win: { from: 0, to: 20 }, filter: 'all', query: '', open: false, revision: 0, toast: '', lat: [],
   };
   const shown = () => store.threads.filter(t => (store.filter === 'all' || t.unread) && t.title.toLowerCase().includes(store.query.toLowerCase()))
     .sort((a, b) => b.pinned - a.pinned);
@@ -45,14 +48,18 @@
     leadingActions: [{ id: 'pin', title: t.pinned ? 'Unpin' : 'Pin', symbol: 'pin' }],
     trailingActions: [{ id: 'archive', title: 'Archive', symbol: 'archivebox', role: 'destructive' }, { id: 'read', title: t.unread ? 'Mark read' : 'Mark unread', symbol: 'envelope.badge' }],
     menu: [{ id: 'rename', title: 'Rename', symbol: 'pencil', input: { placeholder: 'Name', value: t.title } }, { id: 'pin', title: 'Pin', symbol: 'pin' }, { id: 'archive', title: 'Archive', symbol: 'archivebox', role: 'destructive' }] });
+  const noteOffset = () => Math.max(0, store.win.from - 20);
+  const noteRows = () => { const o = noteOffset(), n = Math.min(5000, store.win.to + 20) - o + 1; return Array.from({ length: Math.max(0, n) }, (_, i) => ({ id: 'n' + (o + i), title: 'Note ' + (o + i + 1), detail: 'windowed' })); };
   const describe = () => ({
     version: 1, revision: ++store.revision, scheme: 'dark', accent: '#d9822b',
     header: { title: (store.threads.find(t => t.id === store.selected) || { title: 'Threads' }).title,
       trailing: [{ id: 'more', title: 'More', symbol: 'ellipsis', menu: [{ id: 'rename', title: 'Rename', symbol: 'pencil' }, { id: 'share', title: 'Share', symbol: 'square.and.arrow.up' }, { id: 'archive', title: 'Archive', symbol: 'archivebox', role: 'destructive' }] }] },
     sidebar: { open: store.open, title: 'Calternal', refresh: true,
+      cards: store.card ? [{ id: 'wait1', title: 'Passkey needs your approval', detail: 'The dev VM is asking to continue.', tone: 'warn', icon: { symbol: 'exclamationmark.triangle' }, primary: { id: 'approve', title: 'Approve' }, secondary: { id: 'deny', title: 'Deny' } }] : [],
       selectors: [{ id: 'filter', options: [{ id: 'inbox', title: 'Inbox', badge: String(store.threads.filter(t => t.unread).length) }, { id: 'all', title: 'All Threads' }], selected: store.filter }],
       sections: [{ id: 'main', rows: [{ id: 'new', title: 'New thread', icon: { symbol: 'plus' } }, { id: 'automations', title: 'Automations', icon: { symbol: 'clock' } }, { id: 'skills', title: 'Skills', icon: { symbol: 'wrench' } }] },
-        { id: 'threads', title: 'Threads', actions: [{ id: 'add', title: 'New thread', symbol: 'plus' }], menu: [{ id: 'read-all', title: 'Mark all read', symbol: 'checkmark.circle' }], rows: shown().map(row) }],
+        { id: 'threads', title: 'Threads', actions: [{ id: 'add', title: 'New thread', symbol: 'plus' }], menu: [{ id: 'read-all', title: 'Mark all read', symbol: 'checkmark.circle' }], rows: shown().map(row) },
+        { id: 'notes', title: 'Notes (5000)', count: 5000, offset: noteOffset(), rows: noteRows() }],
       apps: [{ id: 'threads', title: 'Threads', symbol: 'bubble.left', selected: true }, { id: 'notes', title: 'Notes', symbol: 'doc.text' }, { id: 'settings', title: 'Settings', symbol: 'gearshape' }],
       account: { id: 'account', initial: 'K', title: 'Account', menu: [{ id: 'space-personal', title: 'Personal', checked: true, sub: 'kayg' }, { id: 'settings', title: 'Settings', symbol: 'gearshape' }, { id: 'signout', title: 'Sign out', symbol: 'rectangle.portrait.and.arrow.right', role: 'destructive' }] }, search: { placeholder: 'Search threads' } },
   });
@@ -78,6 +85,8 @@
     if (ev.type === 'row') { if (ev.id === 'new') { store.toast = 'new thread (not wired)'; } else if (store.threads.some(t => t.id === ev.id)) { store.selected = ev.id; store.open = false; } }
     else if (ev.type === 'selector') store.filter = ev.option;
     else if (ev.type === 'refresh') store.toast = 'refresh requested'
+    else if (ev.type === 'window') store.win = { from: ev.from, to: ev.to }
+    else if (ev.type === 'action' && ev.rowId === 'wait1') store.card = false
     else if (ev.type === 'search') store.query = ev.text || '';
     else if (ev.type === 'sidebar') store.open = ev.open;
     else if (ev.type === 'action' || ev.type === 'menu') {
@@ -89,6 +98,8 @@
     }
     publish();
   });
+  addEventListener('calternal:lag', (e) => { store.toast = 'drag lag (ms) ' + JSON.stringify(e.detail); N.log(store.toast); render(); });
+  addEventListener('calternal:textsize', (e) => { store.toast = 'text size scale ' + e.detail.scale; render(); });
   if (N) {
     N.appearance({ scheme: 'dark', background: '#16120e' });
     publish().then(async () => {

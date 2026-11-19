@@ -11,6 +11,10 @@ final class ChromeModel {
     var description: ChromeDescription
     /// Width of the visible sidebar column, points.
     var sidebarWidth: CGFloat = 320
+    /// True when the sidebar floats over the full-screen web view as glass (the page moves its own card) instead of sitting behind a sliding card.
+    var floating = false
+    /// Row the person just tapped: drawn selected at once, before the page has answered; cleared by the next description.
+    var tapped: String?
     /// True while the search field replaces the bottom bar.
     var searching = false
     /// Text of the search field.
