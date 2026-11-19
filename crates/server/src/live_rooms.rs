@@ -1,5 +1,6 @@
 //! Versioned WebSocket transport for opted-in host content rooms.
 mod access;
+mod delivery;
 mod hub;
 mod update;
 mod wire;
@@ -22,6 +23,7 @@ use axum::{
 };
 use calternal_content::Content;
 use calternal_types::{AccountId, Error};
+use futures_util::SinkExt;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::{collections::HashMap, sync::Arc, time::Duration};
@@ -416,23 +418,57 @@ impl<D: Directory> Connection<D> {
 
     async fn send(&mut self, address: &str, bytes: &[u8]) -> Result<(), Error> {
         for frame in wire::frames(address, bytes) {
-            let Some(member) = self.members.get(address) else {
-                return Ok(());
-            };
-            let hub = self.host.store.live_rooms();
-            let refresh = member.proof.refresh_needed(
-                hub.item_authority_epoch(),
-                hub.activation_epoch(member.key.space),
-            );
-            if member.termination.borrow().is_some() {
-                return self.left(address, None).await;
+            if !self
+                .send_member(address, ws::Message::Binary(frame.into()))
+                .await?
+            {
+                break;
             }
-            if refresh && let Err(error) = self.authorize_member(member, false).await {
-                return self.left(address, Some(&error)).await;
-            }
-            self.frame(ws::Message::Binary(frame.into())).await?;
         }
         Ok(())
+    }
+
+    /// Check current View at the socket handoff, after waiting for readiness.
+    /// Revocation cuts off room data still queued at the host. A handoff
+    /// approved before commit can finish and socket buffers can still drain.
+    /// Each chunk needs its own approval. A stable epoch adds no storage reads.
+    async fn send_member(&mut self, address: &str, frame: ws::Message) -> Result<bool, Error> {
+        let mut frame = Some(frame);
+        let deadline = Instant::now() + IO_TIMEOUT;
+        loop {
+            let Some(member) = self.members.get(address) else {
+                return Ok(false);
+            };
+            if member.termination.borrow().is_some() {
+                self.left(address, None).await?;
+                return Ok(false);
+            }
+            let hub = self.host.store.live_rooms();
+            let handed_off = tokio::time::timeout_at(
+                deadline,
+                delivery::stage(&mut self.socket, &mut frame, || {
+                    member.termination.borrow().is_none()
+                        && !member.proof.refresh_needed(
+                            hub.item_authority_epoch(),
+                            hub.activation_epoch(member.key.space),
+                        )
+                }),
+            )
+            .await
+            .map_err(|_| closed())?
+            .map_err(|_| closed())?;
+            if handed_off {
+                tokio::time::timeout_at(deadline, self.socket.flush())
+                    .await
+                    .map_err(|_| closed())?
+                    .map_err(|_| closed())?;
+                return Ok(true);
+            }
+            if let Err(error) = self.authorize_member(member, false).await {
+                self.left(address, Some(&error)).await?;
+                return Ok(false);
+            }
+        }
     }
 
     async fn json(&mut self, value: Value) -> Result<(), Error> {

@@ -131,6 +131,16 @@ checks View and writes check Edit. The post-commit eviction hook cuts
 off queued frames for recipients who lost View. A surviving grant or
 space role can still authorize the account.
 
+Once the revoke commits, the host stops admitting edits from that
+membership and approving room frames for its transport. Edit admission uses a stable
+authority revision. An edit already admitted can finish for peers who
+still have View. If eviction reaches the writer before its preview enters
+fanout, the edit is aborted. Each frame needs a current View decision
+after its WebSocket is writable, even when the update was accepted and
+queued earlier. The host submits an approved frame in the same poll.
+A handoff approved before commit can finish, and bytes already in
+WebSocket or operating-system buffers can arrive after commit.
+
 On a stable epoch a production peer frame uses one current session
 statement, zero item or grant statements, and zero plugin activation
 statements. A View refresh adds three reads for Notes. A changed plugin
