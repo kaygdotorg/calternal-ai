@@ -1,0 +1,8 @@
+{
+  "type": "window",
+  "request": {
+    "bind": "all",
+    "from": 600000,
+    "to": 600100
+  }
+}

@@ -632,7 +632,7 @@
         "persist": {
           "type": "boolean",
           "default": false,
-          "description": "Opt-in: this ROOT bind's own-space rows may be persisted for a member (see Cache.memberRows). Never on a per-parent bind (nested or section rows): the schema refuses it. A guest's or public view's rows are never persisted."
+          "description": "Opt-in: this ROOT bind's own-space rows may be persisted for a member (see Cache.memberRows), and ONLY if every query input is INVARIANT: a `list` source with no reference, search text or parent and with at most a LITERAL collection restriction, and filter operands that are literals or `{viewer: person}` (an account-bound viewer operand stays invariant); no route, form, selection or parent operand anywhere in the source, filter or sort. The record is start-anchored (an end-relative window is never persisted). The schema and the verifier refuse `persist` otherwise, and no query identity is added to the record. A guest's or public view's rows are never persisted."
         }
       },
       "additionalProperties": false,
@@ -664,6 +664,127 @@
             "properties": {
               "persist": {
                 "const": false
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "persist": {
+                "const": true
+              }
+            },
+            "required": [
+              "persist"
+            ]
+          },
+          "then": {
+            "properties": {
+              "source": {
+                "properties": {
+                  "type": {
+                    "const": "list"
+                  },
+                  "collection": {
+                    "type": "object",
+                    "required": [
+                      "literal"
+                    ]
+                  }
+                },
+                "not": {
+                  "anyOf": [
+                    {
+                      "required": [
+                        "ref"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "text"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "parent"
+                      ]
+                    }
+                  ]
+                }
+              },
+              "filter": {
+                "type": "object",
+                "properties": {
+                  "all": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "value": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "literal": {}
+                              },
+                              "required": [
+                                "literal"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "viewer": {
+                                  "const": "person"
+                                }
+                              },
+                              "required": [
+                                "viewer"
+                              ],
+                              "additionalProperties": false
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  "any": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "value": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "literal": {}
+                              },
+                              "required": [
+                                "literal"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "viewer": {
+                                  "const": "person"
+                                }
+                              },
+                              "required": [
+                                "viewer"
+                              ],
+                              "additionalProperties": false
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
               }
             }
           }
@@ -2062,7 +2183,7 @@
     },
     "EventWindow": {
       "$ref": "https://calternal.cloud/contract/host-catalogue-v2.json#/$defs/WindowRequest",
-      "description": "Ask for rows [from, to) of a bind (optionally for one parent row): the catalogue's WindowRequest is the ONE window envelope ({type: \"window\", request}); this schema cites it and defines no second shape. The answer is the catalogue's **WindowReply**: a `WindowResult` (bind, parent, window_ref, state, count, result version, stable opaque row ids, activation contexts) or a typed `WindowPlanError` ({status: 422, code: unsupported_query_plan}); a consumer must handle both. A refused jump (a `WindowPlanError` for a request beyond the index-skip cap) falls back to paging from the nearer known end of the list (the start when none is known); the bind's `error` state is shown only if that paging is refused too."
+      "description": "Ask for rows [from, to) of a bind (optionally for one parent row): the catalogue's WindowRequest is the ONE window envelope ({type: \"window\", request}); this schema cites it and defines no second shape. `anchor` is `start` (the default: absolute offsets, capped) or `end` (the end-relative form: [from, to) is counted back from the last row, width at most 200; distances may exceed the absolute cap), which End and near-end jumps use so no request needs an absolute offset past the skip cap; a result for an end-anchored request echoes `anchor: end` and an offset that is the distance of the nearest returned row from the end, with rows in the bind's normal order. The answer is the catalogue's **WindowReply**: a `WindowResult` or a typed `WindowPlanError` ({status: 422, code: unsupported_query_plan, reason: skip_limit | unsupported_plan | materialization_limit}). A consumer handles both: for `skip_limit` it re-requests with `anchor: end` (or pages from the start) from the nearer known end; for any other reason, or if that paging is refused too, it shows the bind's `error` state."
     },
     "EventSelection": {
       "$ref": "https://calternal.cloud/contract/host-catalogue-v2.json#/$defs/SettledSelectionRequest",

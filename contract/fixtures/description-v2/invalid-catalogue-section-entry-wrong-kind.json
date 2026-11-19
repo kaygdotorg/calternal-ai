@@ -1,0 +1,39 @@
+{
+  "version": 2,
+  "kind": "app",
+  "revision": 1,
+  "binds": [
+    {
+      "id": "t",
+      "source": {
+        "type": "list",
+        "kind": "threads"
+      },
+      "fields": [
+        "title"
+      ],
+      "row": {
+        "title": {
+          "field": "title"
+        },
+        "menu": [
+          {
+            "id": "rn",
+            "title": "Rename section",
+            "operation": "host.layout.section.rename",
+            "inputs": {
+              "entry": {
+                "context": "item"
+              },
+              "title": {
+                "prompt": {
+                  "title": "Rename"
+                }
+              }
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

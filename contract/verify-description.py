@@ -230,6 +230,26 @@ def semantic(doc, errors, catalogue, manifest):
                                 if ctx_kind == "item" and owner_kind != "threads": errors.append(f"{path}: {{context: item}} fills a ThreadRef only from a row of kind `threads`, not {owner_kind!r}")
                             if ctx_kind == "placement" and declared_type not in ("LayoutEntryRef", ""): errors.append(f"{path}: {{context: placement}} fills a LayoutEntryRef, not {declared_type}")
                             if ctx_kind == "item" and declared_type == "LayoutEntryRef": errors.append(f"{path}: {{context: item}} cannot fill the LayoutEntryRef input {name!r}")
+                            REF_TYPES = {k.get("row_ref") for k in cat_kinds.values() if k.get("row_ref")} | {"ItemRef", "LayoutEntryRef"}   # every ref a row can be or give
+                            move_to_destination = (op, name) == ("host.layout.move_to", "section")   # a destination choice, checked below
+                            row_ref_of_owner = (cat_kinds.get(owner_kind) or {}).get("row_ref") if owner_kind in cat_kinds else ("ItemRef" if owner_kind else None)
+                            if declared_type in REF_TYPES and ctx_kind == "item" and declared_type != row_ref_of_owner and not move_to_destination:
+                                errors.append(f"{path}: {{context: item}} gives the row's own {row_ref_of_owner} and cannot fill the {declared_type} input {name!r} of {op}")
+                            strict_thread = (op, name) == ("host.layout.move_to", "thread")
+                            if strict_thread and not (ctx_kind == "item" or (isinstance(source, dict) and source == {"row": "id"})):
+                                errors.append(f"{path}: the `thread` of host.layout.move_to takes only {{context: item}} or the bare id of a threads row, not {json.dumps(source, sort_keys=True)}")
+                            if declared_type in REF_TYPES and ctx_kind is None and not move_to_destination:
+                                bare_id = isinstance(source, dict) and source == {"row": "id"}
+                                from_route = isinstance(source, dict) and set(source) == {"route"}
+                                row_ref = (cat_kinds.get(owner_kind) or {}).get("row_ref") if owner_kind in cat_kinds else ("ItemRef" if owner_kind else None)
+                                prompt = source.get("prompt") if isinstance(source, dict) else None
+                                choice_ok = False
+                                if isinstance(prompt, dict) and prompt.get("kind") == "choice":
+                                    option_bind = binds.get(((prompt.get("options") or {}).get("bind")))
+                                    choice_ok = (cat_kinds.get(((option_bind or {}).get("source") or {}).get("kind")) or {}).get("row_ref") == declared_type
+                                if strict_thread: from_route = choice_ok = False
+                                if not (from_route or choice_ok or (bare_id and row_ref == declared_type and not owner_in_repeat)):
+                                    errors.append(f"{path}: the {declared_type} input {name!r} of {op} takes only a source of that ref type ({{context}}, a bare row id of a row of that type, or a route), not {json.dumps(source, sort_keys=True)}")
                             if declared_type in ("ChoiceRef", "LayoutSectionRef") and (declared_type == "ChoiceRef" or name == "section"):
                                 prompt = source.get("prompt") if isinstance(source, dict) else None
                                 if not (isinstance(prompt, dict) and prompt.get("kind") == "choice"):
@@ -275,6 +295,19 @@ def semantic(doc, errors, catalogue, manifest):
             kind_id = (bind.get("source") or {}).get("kind")
             if isinstance(kind_id, str) and kind_id not in reads and (manifest.get("_real") or "reads" in manifest):
                 errors.append(f"$.binds[{index}].source: kind {kind_id!r} is not in the manifest's `reads` (every bind needs it, including a package's own kinds)")
+    for index, b in enumerate(binds_list):
+        if not b.get("persist"): continue
+        src = b.get("source") or {}
+        for key in ("ref", "text", "parent"):
+            if key in src: errors.append(f"$.binds[{index}]: persist needs INVARIANT query inputs: the source has `{key}`")
+        if "collection" in src and not (isinstance(src["collection"], dict) and set(src["collection"]) == {"literal"}):
+            errors.append(f"$.binds[{index}]: persist allows only a LITERAL collection restriction, not {json.dumps(src['collection'], sort_keys=True)}")
+        if src.get("type") != "list": errors.append(f"$.binds[{index}]: persist needs a `list` source")
+        for g in ("all", "any"):
+            for pr in (b.get("filter") or {}).get(g, []):
+                value = pr.get("value")
+                if value is not None and not (isinstance(value, dict) and (set(value) == {"literal"} or value == {"viewer": "person"})):
+                    errors.append(f"$.binds[{index}]: persist needs INVARIANT query inputs: the filter operand {json.dumps(value, sort_keys=True)} on {pr.get('field')!r} is not a literal or the viewer")
     parent_binds = {i for i, b in binds.items() if (b.get("source") or {}).get("parent")}
     children_edges = {}
     for bind_id, b in binds.items():
@@ -365,6 +398,11 @@ for file in sorted((root / "fixtures" / "description-v2").glob("*.json")):
     is_reply = file.name.startswith(("reply-", "invalid-reply-"))
     if doc is not None:
         check({"$ref": "#/$defs/Event"} if is_event else {"$ref": "#/$defs/WindowReply"} if is_reply else schema, doc, "$", errors)
+        if is_event and isinstance(doc, dict) and doc.get("type") == "window" and isinstance(doc.get("request"), dict) and CATALOGUE is not None:
+            req = doc["request"]; limit = ((CATALOGUE.get("query") or {}).get("window") or {}).get("max_request_span")
+            if isinstance(req.get("from"), int) and isinstance(req.get("to"), int):
+                if not req["from"] < req["to"]: errors.append(f"$.request: from ({req['from']}) must be below to ({req['to']})")
+                if limit is not None and req["to"] - req["from"] > limit: errors.append(f"$.request: the span {req['to'] - req['from']} exceeds the catalogue's max_request_span ({limit})")
         if not is_event and not is_reply:
             view_limits(doc, errors)
             semantic(doc, errors, CATALOGUE, manifest)
