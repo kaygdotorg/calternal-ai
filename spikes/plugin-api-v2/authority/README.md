@@ -30,10 +30,13 @@ the same endpoint through its CORS preflight.
    app views with chrome. Their manifests are under `manifests`. The
    existing `home` and `shared` views still exercise the authority matrix.
    The app templates, manifests and wire validator pin
-   [revision 13.15](https://git.kayg.org/kayg/calternal-ai/src/commit/40ce0396ed3155f792d4d1f287b5987f2b2d0cc6/contract/fixtures/description-v2).
+   [revision 13.18](https://git.kayg.org/kayg/calternal-ai/src/commit/195935f4dbed93d660f79ed4bde27c00fffd550f/contract/fixtures/description-v2).
    The Notes toolbar also mounts the pinned Notes bulk fixture's Trash action.
    Notes projects snippets for secondary text and the row-image fallback.
-   No preview asset refs are issued.
+   Every third initial Notes row includes a sample thumbnail when the
+   source revision is current. Fetch it from the view host at
+   `GET /api/v2/row-images/{ref}` with the bearer and lease header.
+   Once the source head changes the old ref returns an opaque 404.
    The top-level `template` is the original small member template.
 2. `POST /view.open` takes `{"type":"view_open","view_ref":"…"}`. Keep its
    lease, grant revision and cache partition.

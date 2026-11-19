@@ -1,0 +1,47 @@
+{
+  "api_version": 2,
+  "id": "fixture-projection",
+  "name": "Projection fixture",
+  "version": "1.0.0",
+  "icon": "folder",
+  "network": "none",
+  "apps": [
+    {
+      "id": "fixture",
+      "name": "Projection fixture",
+      "icon": "folder",
+      "description": {
+        "id": "app",
+        "template": {
+          "path": "invalid-catalogue-search-field-filter-unknown.json",
+          "sha256": "3cc0f480d4ff03ef4815b3b590333fb1484a5baee65f584096841c7fa53bea99"
+        }
+      }
+    }
+  ],
+  "kinds": [
+    {
+      "icon": "folder",
+      "title_field": "title",
+      "storage": {
+        "hidden": true
+      },
+      "claimed_text": true,
+      "schema": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          }
+        }
+      },
+      "id": "notes",
+      "searchable": true,
+      "indexed_fields": {}
+    }
+  ],
+  "operations": [],
+  "reads": [
+    "notes"
+  ]
+}

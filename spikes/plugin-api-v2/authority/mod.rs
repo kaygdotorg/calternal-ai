@@ -1,5 +1,6 @@
 //! Disposable host-side implementation of the sealed activation protocol.
 mod activation;
+mod images;
 use display::actions as display_actions;
 mod display;
 use display::{App, Display, Route as DisplayRoute};
@@ -303,6 +304,7 @@ impl Host {
         Router::new()
             .route("/step0/v2/{route}", post(http))
             .route("/step0/v2/fixture", get(bootstrap))
+            .route("/api/v2/row-images/{image_ref}", get(images::read))
             .layer(DefaultBodyLimit::max(96 * 1024))
             .layer(axum::middleware::from_fn(local_cors))
             .with_state(self)
@@ -483,7 +485,7 @@ async fn bootstrap(State(host): State<Arc<Host>>, headers: HeaderMap) -> Respons
             }
         }
         Ok(
-            json!({"views":views,"templates":templates,"template":template,"manifests":manifests,"fixture":fixture,
+            json!({"contract_revision":"13.18","views":views,"templates":templates,"template":template,"manifests":manifests,"fixture":fixture,
              "manifest":serde_json::from_str::<Value>(include_str!("manifest.json")).unwrap()}),
         )
     };

@@ -308,7 +308,7 @@
             "item",
             "search"
           ],
-          "description": "list: an index window over a kind's items (optionally one collection); item: exactly one item by reference; search: match text in a qualified kind under the author’s required mode and the catalogue’s query.search policy."
+          "description": "list: an index window over a kind's items (optionally one collection); item: exactly one item by reference; search: match text in a qualified kind under the catalogue’s query.search policy, over all searchable fields by default."
         },
         "kind": {
           "$ref": "#/$defs/Id"
@@ -329,8 +329,8 @@
           "const": true,
           "description": "This bind is windowed PER PARENT ROW: it lists the children of one row of another bind (child threads under their parent) or the rows of one user-made section. **The declared edge (a `RowTemplate.children` or a `Section.repeat`) is the mandatory constraint**: every window request on such a bind carries `request.parent`, a host-issued row ref (`WindowParentRef`, taken from the parent row's `parent_refs`) scoped to that edge and its ancestry, which the host checks on every request. `{parent: true}` in a filter is only an optional extra predicate. A parent bind that no edge references is refused."
         },
-        "mode": {
-          "$ref": "https://calternal.cloud/contract/host-catalogue-v2.json#/$defs/SearchMode"
+        "field_filter": {
+          "$ref": "https://calternal.cloud/contract/host-catalogue-v2.json#/$defs/SearchFieldFilter"
         }
       },
       "additionalProperties": false,
@@ -348,14 +348,9 @@
               }
             }
           },
-          "then": {
-            "required": [
-              "mode"
-            ]
-          },
           "else": {
             "properties": {
-              "mode": false
+              "field_filter": false
             }
           }
         }
@@ -412,7 +407,8 @@
           "type": "object",
           "properties": {
             "name": {
-              "$ref": "#/$defs/Id"
+              "$ref": "#/$defs/Id",
+              "description": "The symbol to draw, or the fallback symbol when the projected field has no usable icon name."
             },
             "field": {
               "$ref": "#/$defs/FieldName"
@@ -423,7 +419,7 @@
                 "$ref": "#/$defs/Id"
               },
               "maxProperties": 32,
-              "description": "A static map from the value of `field` to an icon name, owned by the renderer (provider to its icon); an unmapped value draws the kind's icon."
+              "description": "A static map from the value of `field` to an icon name. An unmapped value uses `name` if supplied, or the kind icon."
             },
             "kindIcon": {
               "type": "boolean",
@@ -434,6 +430,22 @@
           "description": "`field` reads the icon name from the row, or, with `map`, maps the field's value to one."
         }
       ]
+    },
+    "NonSwipeFlag": {
+      "properties": { "fullSwipe": { "const": false } }
+    },
+    "NonSwipeAction": {
+      "allOf": [{ "$ref": "#/$defs/Action" }, { "$ref": "#/$defs/NonSwipeFlag" }]
+    },
+    "NonSwipeInvoke": {
+      "allOf": [{ "$ref": "#/$defs/Invoke" }, { "$ref": "#/$defs/NonSwipeFlag" }]
+    },
+    "SwipeActionSet": {
+      "type": "array",
+      "prefixItems": [{ "$ref": "#/$defs/Action" }],
+      "items": { "$ref": "#/$defs/NonSwipeAction" },
+      "maxItems": 3,
+      "description": "Only the first action may enable full swipe. The host catalogue determines eligibility."
     },
     "RowTemplate": {
       "type": "object",
@@ -457,10 +469,28 @@
           "required": [
             "field"
           ],
-          "description": "One line of text from an indexed field. There is no second line (the web has none); a long title truncates."
+          "description": "One ellipsised title line from a declared field."
+        },
+        "secondary": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 3,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["field", "format"],
+            "properties": {
+              "field": { "$ref": "#/$defs/FieldName" },
+              "format": { "enum": ["relative_date", "short_date", "text"] }
+            }
+          },
+          "description": "Optional ellipsised secondary line under the title, in secondary colour. Parts read projected fields in order; date formats require Timestamp and text requires Text. Join present parts with a space, middle dot and space. Omit an absent part and its separator. Format relative dates at draw time against the local clock, without host pushes. Rows without the declaration have one line."
         },
         "icon": {
-          "$ref": "#/$defs/Icon"
+          "oneOf": [
+            { "$ref": "#/$defs/Icon" },
+            { "$ref": "https://calternal.cloud/contract/host-catalogue-v2.json#/$defs/RowImageIcon" }
+          ]
         },
         "marks": {
           "$ref": "#/$defs/Marks"
@@ -469,26 +499,12 @@
           "type": "boolean",
           "default": true
         },
-        "leadingActions": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/Action"
-          },
-          "maxItems": 3,
-          "description": "Swipe-right actions. Only the first may set fullSwipe."
-        },
-        "trailingActions": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/Action"
-          },
-          "maxItems": 3,
-          "description": "Swipe-left actions."
-        },
+        "leadingActions": { "$ref": "#/$defs/SwipeActionSet" },
+        "trailingActions": { "$ref": "#/$defs/SwipeActionSet" },
         "menu": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/Action"
+            "$ref": "#/$defs/NonSwipeAction"
           },
           "maxItems": 12,
           "description": "Context menu."
@@ -526,7 +542,7 @@
               "type": "object",
               "properties": {
                 "invoke": {
-                  "$ref": "#/$defs/Action"
+                  "$ref": "#/$defs/NonSwipeAction"
                 }
               },
               "additionalProperties": false,
@@ -558,7 +574,7 @@
       "required": [
         "title"
       ],
-      "description": "How an item becomes one row: fields map to title, icon and marks; actions name the row through the row scope. Rows have no free-form content, so the host can project them for any audience."
+      "description": "How an item becomes one row: fields map to title, optional secondary line, icon and marks; actions name the row through the row scope. Rows have no free-form content, so the host can project them for any audience."
     },
     "State": {
       "type": "object",
@@ -575,7 +591,7 @@
           "$ref": "#/$defs/Icon"
         },
         "action": {
-          "$ref": "#/$defs/Action"
+          "$ref": "#/$defs/NonSwipeAction"
         }
       },
       "additionalProperties": false,
@@ -583,6 +599,9 @@
         "title"
       ],
       "description": "A message state for a bind: empty, loading or failed. The title and detail are literals of the description or host-written text; never worker output."
+    },
+    "NonParentPredicate": {
+      "properties": { "value": { "not": { "required": ["parent"] } } }
     },
     "Bind": {
       "type": "object",
@@ -670,6 +689,26 @@
       ],
       "description": "ONE definition used by chrome and content: a data-free request for rows, counts or one item. Several binds may be in one view; every reference names its bind id. A description with binds contains no viewer data, so it may be cached and shared.",
       "allOf": [
+        {
+          "if": {
+            "properties": {
+              "source": {
+                "required": ["parent"],
+                "properties": { "parent": { "const": true } }
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "filter": {
+                "properties": {
+                  "all": { "items": { "$ref": "#/$defs/NonParentPredicate" } },
+                  "any": { "items": { "$ref": "#/$defs/NonParentPredicate" } }
+                }
+              }
+            }
+          }
+        },
         {
           "if": {
             "properties": {
@@ -1007,6 +1046,49 @@
       ],
       "description": "A segmented control. Counts come from binds; the options change the route, and binds filter on the route value."
     },
+    "ShortcutRouteValue": {
+      "$ref": "#/$defs/ValueSource",
+      "properties": {
+        "literal": { "$ref": "#/$defs/Id" }
+      }
+    },
+    "ShortcutOpen": {
+      "description": "Open a named route or invoke a declared action from a shortcut row. A literal route value uses the same Id as EventRoute.row.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "route": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]{0,31}$"
+            },
+            "value": { "$ref": "#/$defs/ShortcutRouteValue" }
+          },
+          "required": ["name"]
+        },
+        "invoke": {
+          "$ref": "#/$defs/NonSwipeAction",
+          "properties": {
+            "shell": {
+              "properties": {
+                "route": {
+                  "properties": {
+                    "value": { "$ref": "#/$defs/ShortcutRouteValue" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "oneOf": [
+        { "required": ["route"] },
+        { "required": ["invoke"] }
+      ]
+    },
     "Section": {
       "type": "object",
       "properties": {
@@ -1041,8 +1123,7 @@
                 "$ref": "#/$defs/Marks"
               },
               "open": {
-                "description": "As a row template's `open`.",
-                "type": "object"
+                "$ref": "#/$defs/ShortcutOpen"
               }
             },
             "additionalProperties": false,
@@ -1100,14 +1181,14 @@
         "actions": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/Action"
+            "$ref": "#/$defs/NonSwipeAction"
           },
           "maxItems": 3
         },
         "menu": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/Action"
+            "$ref": "#/$defs/NonSwipeAction"
           },
           "maxItems": 12
         },
@@ -1155,6 +1236,20 @@
         }
       ]
     },
+    "HeaderAction": {
+      "$ref": "#/$defs/NonSwipeAction",
+      "properties": {
+        "inputs": {
+          "additionalProperties": { "$ref": "#/$defs/HeaderInput" }
+        }
+      }
+    },
+    "HeaderInput": {
+      "not": { "anyOf": [{ "required": ["row"] }, { "required": ["bind", "field"] }] },
+      "properties": {
+        "prompt": { "properties": { "initial": { "$ref": "#/$defs/HeaderInput" } } }
+      }
+    },
     "Header": {
       "type": "object",
       "properties": {
@@ -1185,14 +1280,14 @@
         "leading": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/Action"
+            "$ref": "#/$defs/HeaderAction"
           },
           "maxItems": 2
         },
         "trailing": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/Action"
+            "$ref": "#/$defs/HeaderAction"
           },
           "maxItems": 3
         }
@@ -1216,7 +1311,7 @@
             "menu": {
               "type": "array",
               "items": {
-                "$ref": "#/$defs/Action"
+                "$ref": "#/$defs/NonSwipeAction"
               },
               "maxItems": 12
             }
@@ -1448,7 +1543,7 @@
               "description": "The item's title is the first line of the editor and renames through host.item.rename."
             },
             "onTitleChange": {
-              "$ref": "#/$defs/Invoke",
+              "$ref": "#/$defs/NonSwipeInvoke",
               "description": "Optional: run after the host has saved a title change (a route change, a status line). The save itself is the host's."
             }
           },
@@ -1777,7 +1872,7 @@
           "maxLength": 240
         },
         "action": {
-          "$ref": "#/$defs/Invoke"
+          "$ref": "#/$defs/NonSwipeInvoke"
         }
       },
       "additionalProperties": false,
@@ -1794,7 +1889,7 @@
           "const": "button"
         },
         "invoke": {
-          "$ref": "#/$defs/Invoke"
+          "$ref": "#/$defs/NonSwipeInvoke"
         },
         "style": {
           "enum": [
@@ -1833,7 +1928,7 @@
           "maxItems": 12
         },
         "submit": {
-          "$ref": "#/$defs/Invoke",
+          "$ref": "#/$defs/NonSwipeInvoke",
           "description": "Its inputs read the fields as {form: <this id>, field: <field id>}; the submit control is disabled while a required field is empty or invalid and while the invoke is pending."
         },
         "clear": {
@@ -1867,7 +1962,7 @@
         "selectable": {
           "type": "boolean",
           "default": false,
-          "description": "Arrow keys move a selection through all rows (Up, Down, Home, End, Page Up, Page Down); the selected row's id is the `selection` source for this bind; what the selection opens loads only when it settles."
+          "description": "Up and Down move selection through the rows. Home, End, Page Up and Page Down scroll without changing selection. The selected row's id is the selection source for this Bind. Its route loads when selection settles."
         },
         "title": {
           "type": "string",
@@ -2280,6 +2375,9 @@
         "bind": {
           "$ref": "#/$defs/Id"
         },
+        "match": {
+          "$ref": "https://calternal.cloud/contract/host-catalogue-v2.json#/$defs/SearchMatchShape"
+        },
         "text": {
           "type": "string",
           "maxLength": 200
@@ -2290,7 +2388,7 @@
         "type",
         "text"
       ],
-      "description": "Send the settled text for the named search Bind, or for the active footer search Bind when bind is omitted. The authenticated view supplies the Bind and its author-declared mode. The event carries no mode."
+      "description": "Send the settled text for the named search Bind, or for the active footer search Bind when bind is omitted. The authenticated Bind supplies the optional field filter. The event supplies text and may request a match shape independently."
     },
     "EventSection": {
       "type": "object",
@@ -2494,6 +2592,63 @@
       "additionalProperties": false,
       "description": "The shell around the content card: sidebar, header, footer, right panel. Data arrives only through the app's binds."
     },
+    "ContentDepthSeven": {
+      "required": [
+        "children"
+      ],
+      "properties": {
+        "children": {
+          "contains": {
+            "required": [
+              "children"
+            ],
+            "properties": {
+              "children": {
+                "contains": {
+                  "required": [
+                    "children"
+                  ],
+                  "properties": {
+                    "children": {
+                      "contains": {
+                        "required": [
+                          "children"
+                        ],
+                        "properties": {
+                          "children": {
+                            "contains": {
+                              "required": [
+                                "children"
+                              ],
+                              "properties": {
+                                "children": {
+                                  "contains": {
+                                    "required": [
+                                      "children"
+                                    ],
+                                    "properties": {
+                                      "children": {
+                                        "contains": {
+                                          "type": "object"
+                                        }
+                                      }
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "ViewBody": {
       "type": "object",
       "properties": {
@@ -2502,7 +2657,8 @@
           "maxLength": 120
         },
         "root": {
-          "$ref": "#/$defs/ContentNode"
+          "$ref": "#/$defs/ContentNode",
+          "not": { "$ref": "#/$defs/ContentDepthSeven" }
         }
       },
       "additionalProperties": false,
@@ -2560,7 +2716,7 @@
     },
     "MemberRowCacheRecord": {
       "$ref": "https://calternal.cloud/contract/host-catalogue-v2.json#/$defs/MemberRowCacheRecord",
-      "description": "The ONLY record the device may write to disk for rows: attached by the host to a window result for an own-space MEMBER (`audience` is the constant own_space_member), with account, space, template digest, bind, offset, issue and expiry, display rows (title, optional subtitle only: no contexts, no action material) and the host's proof; the shell validates it on write and on load. A guest or public window never carries one, so they cannot reach the disk path."
+      "description": "The ONLY record the device may write to disk for rows: attached by the host to a window result for an own-space MEMBER (`audience` is the constant own_space_member), with account, space, template digest, bind, offset, issue and expiry, display rows (title and optional subtitle text or typed subtitle_timestamp for a date, no contexts or action material) and the host's proof; the shell validates it on write and on load. A guest or public window never carries one, so they cannot reach the disk path."
     },
     "WindowReply": {
       "$ref": "https://calternal.cloud/contract/host-catalogue-v2.json#/$defs/WindowReply",

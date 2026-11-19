@@ -1,0 +1,71 @@
+{
+  "version": 2,
+  "kind": "app",
+  "revision": 1,
+  "binds": [
+    {
+      "id": "all",
+      "source": {
+        "type": "search",
+        "kind": "notes"
+      },
+      "fields": [
+        "title"
+      ]
+    },
+    {
+      "id": "body",
+      "source": {
+        "type": "search",
+        "kind": "notes",
+        "field_filter": "body"
+      },
+      "fields": [
+        "title"
+      ]
+    },
+    {
+      "id": "title",
+      "source": {
+        "type": "search",
+        "kind": "notes",
+        "field_filter": "title"
+      },
+      "fields": [
+        "title"
+      ]
+    },
+    {
+      "id": "collection-terms",
+      "source": {
+        "type": "search",
+        "kind": "notes",
+        "collection": {
+          "literal": "c8f6722d-7350-4c67-b395-17a84249b68c"
+        }
+      },
+      "fields": [
+        "title"
+      ]
+    },
+    {
+      "id": "messages",
+      "source": {
+        "type": "search",
+        "kind": "threads",
+        "field_filter": "messages"
+      },
+      "fields": [
+        "title"
+      ]
+    }
+  ],
+  "chrome": {
+    "footer": {
+      "search": {
+        "placeholder": "Search",
+        "bind": "all"
+      }
+    }
+  }
+}

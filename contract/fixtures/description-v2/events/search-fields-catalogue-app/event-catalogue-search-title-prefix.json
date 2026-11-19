@@ -1,0 +1,6 @@
+{
+  "type": "search",
+  "bind": "title",
+  "text": "storage",
+  "match": "prefix"
+}

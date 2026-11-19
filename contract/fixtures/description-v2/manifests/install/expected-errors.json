@@ -1,0 +1,11 @@
+{
+  "invalid-duplicate-manifest-jobs.json": "$.jobs[1].id: duplicate id 'label-album'",
+  "invalid-duplicate-manifest-kinds.json": "$.kinds[1].id: duplicate id 'albums'",
+  "invalid-duplicate-manifest-operations.json": "$.operations[1].id: duplicate id 'albums.label'",
+  "invalid-embedded-schema.json": "$.operations[0].output_schema.type:",
+  "invalid-empty-manifest.json": "$: missing api_version",
+  "invalid-host-create-after-item-ref-array-pointer-out-of-range.json": "unresolvable embedded schema reference '#/definitions/entries/allOf/1'",
+  "invalid-host-create-after-job-input.json": "$.kinds.albums.host_create.after: entry must accept only the created ItemRef of 'albums' at target.field",
+  "invalid-reserved-generic-field.json": "$.kinds.albums.indexed_fields.updated: reserved host generic field",
+  "invalid-unresolvable-embedded-schema.json": "unresolvable embedded schema reference '#/definitions/missing'"
+}

@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://calternal.cloud/contract/host-catalogue-v2.json",
-  "description": "Review contract for host kinds, operations, query limits and the activation exchange. A reference shape conveys no authority. The host semantic loader still validates scope, profiles, contracts and dependencies.",
+  "description": "Review contract for host kinds, operations, query limits and the activation exchange. A reference shape conveys no authority. The host semantic loader still validates scope, profiles, contracts and dependencies. A description, manifest, event or reply conforms only if it passes contract/verify-description.py at the pinned revision. The JSON Schemas define necessary structural rules and are insufficient on their own. A schema validator used alone must assert formats, including calendar validity for date-time. Differences in verifier-only rule classes are by design.",
   "reserved_operation_prefixes": [
     "host.",
     "turns."
@@ -36,11 +36,14 @@
           "type": "ProviderId",
           "index_owner": "turns",
           "audience": "member_item",
-          "nullable": false,
-          "known_values": [
-            "calternal-claude-code",
-            "calternal-codex"
-          ]
+          "nullable": false
+        },
+        "provider_icon": {
+          "type": "Text",
+          "index_owner": null,
+          "audience": "member_item",
+          "nullable": true,
+          "description": "Host-projected catalogue symbol for the installed provider contribution identified by the thread's provider. Emit it only after the provider_marks binding check. On a missing or conflicting binding, omit the field so the row template uses its generic fallback symbol."
         },
         "state": {
           "type": "Text",
@@ -154,7 +157,47 @@
       "description": "Section repeater source for the live member’s own layout scoped to space and app. Section.repeat.over must read layout_sections. In repeated item windows the host binds a placement reference and an underlying item reference separately in the action context."
     }
   },
+  "provider_marks": {
+    "trust": "A provider-specific mark name belongs to the verified publisher identified by a trusted signed gallery entry or an explicit operator checksum pin. The signed entry or operator pin binds the approved package artifact and publisher identity to the canonical mark names it owns. A checksum without an explicit publisher and mark binding does not establish mark ownership.",
+    "install": "Verify the installed artifact and its publisher using the existing gallery signature or operator checksum pin. Record the canonical mark name, verified publisher, installed package identity, provider contribution ID, pinned manifest digest and trusted ownership source. Record a usable distinctive mark only if the verified publisher owns that name. Do not grant an unowned mark based on installation order. Calternal providers use the same rules.",
+    "projection": "Emit provider_icon only when the active installed contribution matches the recorded binding and its verified publisher still owns the mark. Omit it on missing trust, missing ownership or any conflict, including on a fresh or offline host without verified ownership data. Recheck on installation updates, uninstalls and trust changes. The row draws its generic fallback symbol when the field is omitted."
+  },
   "operations": {
+    "host.item.create": {
+      "engine": "generic item creation",
+      "effect": "reversible",
+      "idempotency": "request_id",
+      "authority": "Live content creation authority in the current space and the owning installed kind’s host_create declaration. For optional collection placement check live authority to edit membership in that collection in the same space under the commit fence.",
+      "surfaces": ["authorized_template_action", "host_item_control"],
+      "generic_invoke": true,
+      "full_swipe": false,
+      "worker_wake": "never",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind"],
+        "properties": {
+          "kind": { "$ref": "#/$defs/KindId", "description": "The host resolves this from the template’s declared literal kind and checks its owning manifest." },
+          "collection": { "$ref": "#/$defs/CollectionRef", "description": "Optional. Take only a server-resolved route operand or a template literal. Omit when the named route parameter is absent. Apply the opaque collection refusal to any supplied ref that is absent, foreign, unreadable or not editable." }
+        }
+      },
+      "outcome_schema": { "$ref": "#/$defs/ActionOutcome" },
+      "atomic_undo": true,
+      "confirmation_when": "No challenge, including for a shared collection. The checked operation creates a new empty item and exposes no existing material.",
+      "refusals": {
+        "collection_unavailable": {
+          "state": "refused",
+          "message": "This collection is unavailable.",
+          "rule": "Use the same outer status and ActionOutcome code and message for a supplied ref that is absent, foreign, unreadable or not editable. Look up the ref only in the current space and return no collection-specific fields. At resolve and dispatch check this access before any quota or dependency result that could reveal the collection. For an otherwise authentic host.item.create activation whose collection was deleted or lost edit access after resolve, the opaque collection_unavailable outcome takes precedence over the generic stale dependency outcome."
+        },
+        "create_limit_reached": {
+          "state": "refused",
+          "message": "This item could not be created because a limit was reached.",
+          "rule": "Check the normal item and collection membership quotas under the commit fence. Refuse the whole transaction when either would be exceeded."
+        }
+      },
+      "atomic_undo_when": "Validate the opted-in kind’s defaults. Under the same fence check authority and the normal item and membership quotas, then commit the empty item, its optional collection membership and Undo in one FULL content transaction. Record the item head, item-wide membership and sharing revisions and revision of the introduced membership, if any. Undo checks live authority and all these revisions under the fence and refuses if any changed. On success it removes the item and the membership introduced by this create together. Return the created ref only after commit. Optional declared package follow-up runs separately after commit and cannot delay this no-wake operation."
+    },
     "host.item.rename": {
       "engine": "item_rename",
       "effect": "reversible",
@@ -947,7 +990,8 @@
         "$ref": "#/$defs/ActionOutcome"
       },
       "atomic_undo": true,
-      "atomic_undo_when": "Single-collection membership edit in the FULL content transaction with its Undo. A move across two collections is ineligible until both membership changes commit together."
+      "atomic_undo_when": "The destination’s effective audience contains only the actor and the FULL content transaction commits the complete move and its Undo. A move across two collections is ineligible until both membership changes commit together.",
+      "confirmation_when": "Require a challenge only if the destination collection’s effective audience contains anyone other than the actor. Recheck under the commit fence. If the destination becomes shared, require a fresh challenge before dispatch."
     },
     "host.layout.move_to": {
       "engine": "personal layout placement with complete effect and Undo committed together",
@@ -1177,8 +1221,11 @@
         "$ref": "#/$defs/ActionOutcome"
       },
       "atomic_undo": true,
-      "atomic_undo_when": "Commit the removal and Undo carrying the section and its original placements and order in one per-person layout revision transaction."
+      "atomic_undo_when": "One per-person layout revision transaction retires the section and its placement generation and commits Undo for that generation. Until Undo expires, retain the generation and exclude it from reads. Undo rechecks live membership and the post-effect layout revision and reactivates the exact generation atomically. Reactivation grants no item access. Reclaim expired retired generations in bounded background batches. Removal and Undo perform no per-placement work."
     }
+  },
+  "planned_operation_replacements": {
+    "turns.*": "Replace these host operations with the orchestrator plugin composed from the generic durable stream, machine container execution under scoped rights, and approval request. The replacement remains open."
   },
   "query": {
     "operators": {
@@ -1249,6 +1296,22 @@
       "effective_scopes_per_item": 32,
       "search_input_postings_per_window": 160000
     },
+    "body_excerpt": {
+      "max_utf8_bytes": 160,
+      "description": "A claimed-text kind may declare an indexed Text field with source body_excerpt. The host index produces the first plain text after the title, collapses whitespace and truncates at a UTF-8 character boundary within max_utf8_bytes. Expose it only to a viewer authorized for the body and the declared field. Writers cannot supply the derived value."
+    },
+    "row_images": {
+      "read": "GET /api/v2/row-images/{ref}",
+      "provenance": "The host marks an image body-derived from trusted provenance, including a device snapshot of the body or a job output produced from it. A manifest flag alone cannot determine provenance. Without established provenance, withhold the image.",
+      "retention": "Retain an image only while its source revision is retained. Purge it when that revision is erased, or with all its revisions when the item is purged. An old-revision image is not eligible for a current row.",
+      "ref_schema": { "$ref": "#/$defs/RowImageRef" },
+      "content_types": ["image/png", "image/jpeg"],
+      "max_bytes": 65536,
+      "max_pixel_edge": 128,
+      "authorization": "Only the host may mint a ref, in an authorized ready window. Bind it to the account, space, live view lease, row, item revision, field and exact asset. Resolve through the host origin with authentication and recheck the binding and live item and image-field authority before sending bytes. For a body-derived image also recheck live body authority at fetch, even when the item and image-field grants remain valid. Return the same opaque 404 for absent, expired, stale, oversized or unauthorized images. No redirects, worker wake or outbound fetch.",
+      "cache": "Use Cache-Control: no-store on the HTTP reply. Keep decoded images only in renderer memory keyed by ref for a currently authorized row. Drop them on row or ref replacement, revocation, lease loss or account switch. Omit refs and images from persisted member rows and refine_query replies.",
+      "draw": "Request the image asynchronously. While a navigation key repeats, defer new image reads and cancel reads in flight. Once the key settles, fetch only still-visible rows' current refs. While loading or unavailable, use the declared RowImageIcon fallback if present; otherwise leave the image slot blank."
+    },
     "cross_bind_operands": "Forbidden in the first query slice. Action and component references to upstream fields still require one authorized projected row and a checked dependency edge.",
     "scope_limit_refusal": {
       "status": 422,
@@ -1270,8 +1333,12 @@
             2,
             3
           ],
-          "qualification": "Compile each full-text literal and token prefix using the published generation’s own qualified FTS5 tokenizer. Apply the token and posting bounds to those tokens and that generation’s term statistics. A tokenizer change requires a rebuilt generation and matching term statistics. Accented Latin and Cyrillic qualify. Refuse Devanagari full text, including token prefixes, with unsupported_query_plan until a rebuilt generation with the mark-aware categories is ready. CJK qualifies only for a whole unspaced run or its leading prefix. Implicit word segmentation and interior substring matching are unsupported_query_plan. Literal folded-title prefixes use the title index and preserve accents and marks.",
+          "qualification": "Compile each full-text literal and token prefix using the published generation’s own qualified FTS5 tokenizer. Apply the token and posting bounds to those tokens and that generation’s term statistics. A tokenizer change requires a rebuilt generation and matching term statistics. Accented Latin and Cyrillic qualify. Refuse Devanagari full text, including token prefixes, with unsupported_query_plan until a rebuilt generation with the mark-aware categories is ready. CJK qualifies only for a whole unspaced run or its leading prefix. Implicit word segmentation and interior substring matching are unsupported_query_plan.",
           "categories": "L* N* Co M*"
+        },
+        "match": "For all, match authorized title and body together in the published scope-local FTS index. An AND query may match terms in different fields of the same item. Return each item once in the kind’s stable scope-local order.",
+        "field_filter_schema": {
+          "$ref": "#/$defs/ClaimedTextSearchFilter"
         }
       },
       "turns": {
@@ -1279,21 +1346,26 @@
         "scopes": [
           "space"
         ],
-        "qualification": "Use the existing message index with the message_terms tokenizer, which splits at non-alphanumeric characters and lowercases Unicode. Terms must match within the same authorized message. For terms and prefix, return distinct threads ordered by the newest matching authorized message timestamp and message UUID. For title_prefix use the folded title and thread UUID order. Meter location and returned ID lookups, block bodies visited and driver descriptors read against the row-work budget. Combined title and message relevance is unqualified."
+        "tokenizer": "Titles use the existing claimed-text FTS5 tokenizer. Messages use the existing message_terms tokenizer, which splits at non-alphanumeric characters and lowercases Unicode.",
+        "qualification": "For all, match the full query against an authorized title or within one authorized message. Emit distinct threads with title matches first, in stable thread ID order, followed by message-only matches ordered by the newest matching authorized message timestamp and message UUID. A thread matching both appears once in the title tier. Reuse the authority-versioned title and message indexes under one scope snapshot. Deduplicate token expansions across both sources and sum their posting bounds and row work under the existing shared budgets. Field filters restrict this same matching and delivery path.",
+        "field_filter_schema": {
+          "$ref": "#/$defs/TurnsSearchFilter"
+        }
       },
       "qualified_depth": 200,
       "max_authorized_items_per_scope": 100000,
       "max_literal_and_terms": 3,
       "max_token_prefix_expansions": 32,
       "qualification": "For each ready authority-versioned Bind, qualify its supported literal-term and prefix modes for windows up to query.window.max_request_span starting at offsets through qualified_depth. Serve later windows while both query.live_limits budgets for scoped postings and materialized rows hold. Use only the kind’s authorized scopes, order and scope-local statistics. Refuse unqualified shapes, scopes and sorts with unsupported_query_plan. End anchors are unavailable for search. The host returns WindowPlanError with reason end_unavailable and the renderer pages forward for End.",
-      "publication": "The existing background search worker maintains the projection and same-generation term statistics independently of save acknowledgement. Check live access to the scope, searchable fields and output fields before evaluation. Readiness and invalidation compare revisions of the viewer’s authorized row-and-field projection, never a space-wide watermark. While that projection is behind or stale after revocation, return loading with no rows, count or activation contexts. A hidden-only edit leaves the visible search state, result version, rows, ranks and counts unchanged during and after publication. Fence cached results on revocation and recheck authority on delivery. Deny access if the scope is no longer authorized.",
+      "publication": "The host owns the qualified list and search projections of item text and declared indexed fields. Its index maintains the list projections, and its existing background search worker maintains the search projections and same-generation term statistics independently of save acknowledgement. Check live access to the scope, searchable fields and output fields before evaluation. Readiness and invalidation compare revisions of the viewer’s authorized row-and-field projection, never a space-wide watermark. While that projection is behind or stale after revocation, return loading with no rows, count or activation contexts. A hidden-only edit leaves the visible search state, result version, rows, ranks and counts unchanged during and after publication. Fence cached results on revocation and recheck authority on delivery. Deny access if the scope is no longer authorized.",
       "refinement": "Bound scoped posting work using same-generation term frequencies. When an otherwise qualified query exhausts the scoped-posting or materialized-row budget, return refine_query with only bounded provisional rows from the same authorized query and published generation. A prefix exceeding either the expansion cap or the posting budget returns refine_query without starting expansion and can include only already-issued rows for that query, audience and generation. Omit count, activation contexts and member cache record. Provisional replies have null result_version and window_ref.",
       "count": "Non-search lists use maintained per-scope counts. Claimed-text exact search counts measure qualified matches in a ready authorized projection under the separate count-work and rate budgets and require exact-count authority. Search defaults to count mode none. Search estimates and exact distinct-thread search counts are unqualified. Refuse an unqualified count request with unsupported_query_plan.",
-      "mode_schema": {
-        "$ref": "#/$defs/SearchMode"
-      },
       "request_schema": {
         "$ref": "#/$defs/SearchWindowRequest"
+      },
+      "field_filter": "Optional on the Bind. Default all. Claimed-text kinds allow all, title or body. Turns allows all, title or messages. The request match shape is independent of the field filter and defaults to literal AND terms. A prefix is explicitly requested as one token prefix.",
+      "match_schema": {
+        "$ref": "#/$defs/SearchMatchShape"
       }
     }
   },
@@ -1337,7 +1409,9 @@
     "Timestamp": {
       "type": "string",
       "format": "date-time",
-      "maxLength": 40
+      "pattern": "^[0-9]{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])[Tt](?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]+)?(?:[Zz]|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$(?![\\s\\S])",
+      "maxLength": 40,
+      "description": "The host emits RFC 3339 timestamps with seconds 00 to 59 only, recording a leap-second instant as second 59 with the fraction clamped to the maximum representable value."
     },
     "KindId": {
       "type": "string",
@@ -1800,7 +1874,8 @@
         },
         "fields": {
           "type": "object",
-          "maxProperties": 32
+          "maxProperties": 32,
+          "additionalProperties": { "$ref": "#/$defs/Scalar" }
         },
         "parent_refs": {
           "type": "object",
@@ -2372,7 +2447,8 @@
         "AccountRef",
         "ProviderId",
         "LayoutSectionRef",
-        "LayoutEntryRef"
+        "LayoutEntryRef",
+        "RowImageRef"
       ]
     },
     "ViewerRole": {
@@ -3110,9 +3186,15 @@
                 "$ref": "#/$defs/Text"
               },
               "subtitle": {
-                "$ref": "#/$defs/Text"
+                "$ref": "#/$defs/Text",
+                "description": "Host-allowlisted offline text only. Dates use subtitle_timestamp. The host checks source provenance and excludes every body-derived part before signing."
+              },
+              "subtitle_timestamp": {
+                "$ref": "#/$defs/Timestamp",
+                "description": "Authorized timestamp of the first declared date part, if approved for offline display. Use the format of that part from the pinned row template on the device. For Notes this is the date from its secondary line."
               }
-            }
+            },
+            "not": { "required": ["subtitle", "subtitle_timestamp"] }
           }
         },
         "proof": {
@@ -3120,7 +3202,7 @@
           "description": "Host authentication of the complete record excluding this proof, verified against the expected host on disk write and load. Conveys no action or renewal authority."
         }
       },
-      "description": "The only persistable viewer projection. Issue only on an opted-in, ready or empty start-anchored root window for a live own-space member whose Bind has invariant query inputs. A list may name a literal collection. No reference, search text, route, form, selection or parent operand in its source, filter or sort. Authenticate the account, space, template, Bind, window and offset. Contains only issued display text, never row IDs, contexts, action material or credentials."
+      "description": "The only persistable viewer projection. Issue only on an opted-in, ready or empty start-anchored root window for a live own-space member whose Bind has invariant query inputs. A list may name a literal collection. No reference, search text, route, form, selection or parent operand in its source, filter or sort. Authenticate the account, space, template, Bind, window and offset. The host builds the display record from the authoritative title and host-allowlisted non-body display fields approved for offline use. Exclude body excerpts and any field marked body_derived from every display part, regardless of its template position. Omit the record if any required title is ineligible. Body-derived parts appear only from a fresh authorized window. Never include row IDs, contexts, action material or credentials."
     },
     "WindowPlanError": {
       "type": "object",
@@ -3189,22 +3271,71 @@
       "default": "start",
       "description": "start counts from the first row; end counts backward from the last authorized row, with zero at the last row. The end anchor is available only for a non-search Bind whose effective authorized count mode is exact."
     },
-    "SearchMode": {
-      "oneOf": [
+    "ClaimedTextSearchFilter": {
+      "enum": [
+        "all",
+        "title",
+        "body"
+      ]
+    },
+    "TurnsSearchFilter": {
+      "enum": [
+        "all",
+        "title",
+        "messages"
+      ]
+    },
+    "SearchFieldFilter": {
+      "anyOf": [
         {
-          "const": "terms",
-          "description": "Combine one or more compiled literal tokens with AND, up to query.search.max_literal_and_terms."
+          "$ref": "#/$defs/ClaimedTextSearchFilter"
         },
         {
-          "const": "prefix",
-          "description": "Compile one literal token prefix, bounded by query.search.max_token_prefix_expansions."
-        },
-        {
-          "const": "title_prefix",
-          "description": "Match a literal folded-title prefix."
+          "$ref": "#/$defs/TurnsSearchFilter"
         }
       ],
-      "description": "The description author selects the search mode. The renderer sends text. The host applies the declared mode and does not infer it from the text. Raw Boolean, phrase and fuzzy query syntax and mixtures of terms and prefixes are unqualified."
+      "default": "all"
+    },
+    "SearchMatchShape": {
+      "enum": [
+        "terms",
+        "prefix"
+      ],
+      "default": "terms",
+      "description": "Terms combines compiled literal tokens with AND within query.search.max_literal_and_terms. Prefix explicitly requests one literal token prefix within query.search.max_token_prefix_expansions. Punctuation never chooses the match shape. Raw Boolean, phrase and fuzzy syntax and mixtures of terms and prefixes are unqualified."
+    },
+    "RowImageRef": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{22,128}$",
+      "description": "Host-issued opaque display reference carried in a projected field. It has no sort or filter operators and cannot supply an operation operand. Read through query.row_images."
+    },
+    "RowImageIcon": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "image"
+      ],
+      "properties": {
+        "image": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field"
+          ],
+          "properties": {
+            "field": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]{0,47}$"
+            },
+            "fallback": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]{0,47}$",
+              "description": "Projected body_excerpt Text field. Draw a simple document miniature from the freshly authorized snippet when the image is missing or loading. When no snippet is available, draw the document miniature without text."
+            }
+          }
+        }
+      },
+      "description": "The description names a projected field of type RowImageRef. The renderer reads it as specified by query.row_images. Use the optional fallback according to query.row_images."
     },
     "SearchWindowRequest": {
       "$ref": "#/$defs/WindowRequest",
@@ -3392,8 +3523,8 @@
     "schema": {
       "$ref": "#/$defs/ConfirmMode"
     },
-    "none": "A host catalogue read, or a host catalogue mutation marked atomic_undo whose engine commits the complete effect and Undo in one recovery-visible transaction and satisfies any atomic_undo_when condition. For mutations the only material may be the drawn target or fields of the submitting form.",
-    "challenge": "Irreversible, external, widens_access, bulk sets, declared material_inputs, any destination, recipient, audience or permission, or unproven material. Never bypassed by atomic_undo.",
+    "none": "A host catalogue read, or a host catalogue mutation marked atomic_undo whose engine commits the complete effect and Undo in one recovery-visible transaction and satisfies any atomic_undo_when condition. For mutations the only material may be the drawn target or fields of the submitting form. host.item.create may also use its checked route or literal CollectionRef. For host.collection.move, the checked ChoiceRef and its actor-only destination may use the shortcut under confirmation_when.",
+    "challenge": "Irreversible, external, widens_access, bulk sets, declared material_inputs, any destination, recipient, audience or permission, or unproven material. Never bypassed by atomic_undo. Use the confirmation_when rules for host.item.create and host.collection.move.",
     "ordinary": "Worker operations always use separate resolution and dispatch. A reversible manifest declaration never permits the shortcut. Return a challenge only for required material or effects; otherwise omit confirm."
   },
   "schedule_create_input": {

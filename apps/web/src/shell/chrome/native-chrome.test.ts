@@ -22,6 +22,8 @@ describe("native chrome: the Threads provider", () => {
     const b = threadsChrome.describe("");
     expect(b.selectors[0]!.options.map((o) => o.id)).toEqual(["inbox", "all"]);
     expect(b.sections[0]!.id).toBe("top");
+    expect(b.sections[0]!.rowKind).toBe("navigation"); // the shortcuts are places (they keep an icon); the thread sections are items (none)
+    expect(b.sections.slice(1).every((s) => s.rowKind === undefined)).toBe(true);
     const rows = b.sections.flatMap((s) => s.rows).filter((r) => store.get(r.id));
     expect(rows.length).toBeGreaterThan(0);
     expect(["claude", "codex"]).toContain(rows[0]!.icon); // the provider mark by its CalternalUI icon name
@@ -138,6 +140,13 @@ describe("native chrome: the appearance and the schema form", () => {
     expect(w.count).toBe(300); expect(w.offset).toBe(80); expect(w.rows[0]).toBe(80); expect(w.rows.length).toBe(70);
     expect(windowed("short", all.slice(0, 10)).count).toBeUndefined();
     nativeChrome.windows = {};
+  });
+  test("rows are built only for the window (a thousand threads cost a window of rows)", async () => {
+    const { windowedOf } = await import("./native-chrome.svelte");
+    let built = 0;
+    const all = Array.from({ length: 953 }, (_, i) => i);
+    const w = windowedOf("inbox", all, (i) => { built++; return { id: String(i) }; });
+    expect(w.count).toBe(953); expect(w.offset).toBe(0); expect(built).toBe(w.rows.length); expect(built).toBeLessThan(100);
   });
 });
 

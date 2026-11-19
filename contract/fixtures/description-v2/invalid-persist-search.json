@@ -7,8 +7,7 @@
       "id": "b",
       "source": {
         "type": "search",
-        "kind": "notes",
-        "mode": "terms"
+        "kind": "notes"
       },
       "fields": [
         "title"

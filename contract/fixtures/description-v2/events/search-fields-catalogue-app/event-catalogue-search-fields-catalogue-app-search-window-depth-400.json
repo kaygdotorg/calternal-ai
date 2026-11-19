@@ -1,0 +1,9 @@
+{
+  "type": "window",
+  "request": {
+    "bind": "all",
+    "from": 400,
+    "to": 600,
+    "anchor": "start"
+  }
+}

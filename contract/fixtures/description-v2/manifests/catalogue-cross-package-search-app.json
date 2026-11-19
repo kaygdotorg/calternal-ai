@@ -14,7 +14,7 @@
         "id": "app",
         "template": {
           "path": "catalogue-cross-package-search-app.json",
-          "sha256": "bed322ee9dae4ff4e69d857b9fd2550b35036679ca89779eed2c8da4c94df720"
+          "sha256": "bc671fb53894caead3d7baf1abf21aea389f1c98ad4fc88f63fad0c20b830cab"
         }
       }
     }

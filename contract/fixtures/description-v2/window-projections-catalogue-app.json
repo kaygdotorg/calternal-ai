@@ -1,0 +1,72 @@
+{
+  "version": 2,
+  "kind": "app",
+  "revision": 1,
+  "binds": [
+    {
+      "id": "typed",
+      "source": {
+        "type": "list",
+        "kind": "projection-values"
+      },
+      "fields": [
+        "field_text",
+        "field_number",
+        "field_boolean",
+        "field_timestamp",
+        "field_itemref",
+        "field_collectionref",
+        "field_threadref",
+        "field_turnref",
+        "field_requestref",
+        "field_accountref",
+        "field_providerid",
+        "field_layoutsectionref",
+        "field_layoutentryref",
+        "field_rowimageref"
+      ]
+    },
+    {
+      "id": "all-own-space-notes",
+      "source": {
+        "type": "list",
+        "kind": "notes"
+      },
+      "persist": true,
+      "fields": [
+        "title",
+        "updated",
+        "snippet"
+      ],
+      "row": {
+        "title": {
+          "field": "title"
+        },
+        "secondary": [
+          {
+            "field": "updated",
+            "format": "relative_date"
+          },
+          {
+            "field": "snippet",
+            "format": "text"
+          }
+        ]
+      }
+    },
+    {
+      "id": "snoozable-threads",
+      "source": {
+        "type": "list",
+        "kind": "threads"
+      },
+      "fields": [
+        "title",
+        "snoozed_until"
+      ]
+    }
+  ],
+  "cache": {
+    "memberRows": "keep"
+  }
+}

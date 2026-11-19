@@ -15,7 +15,7 @@
         "id": "app",
         "template": {
           "path": "threads-app.json",
-          "sha256": "c34ce50a8f613229bc55ba5147f4a5f74b593e87cac3503ba662eb2826a28468"
+          "sha256": "61e8ef6bddcca6465e12071da122fa97d58bea6eae4c6ec4380a5ca940c6418d"
         }
       }
     }

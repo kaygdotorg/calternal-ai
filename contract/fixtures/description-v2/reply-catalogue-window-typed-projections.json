@@ -1,0 +1,33 @@
+{
+  "audience": "member",
+  "bind": "typed",
+  "state": "ready",
+  "result_version": "rv-41",
+  "offset": 0,
+  "window_ref": "w-notes-0",
+  "rows": [
+    {
+      "id": "fixture-row",
+      "fields": {
+        "field_text": "A label",
+        "field_number": 1.25,
+        "field_boolean": true,
+        "field_timestamp": "2026-11-19T16:10:05.25+05:30",
+        "field_itemref": "sample-itemref",
+        "field_collectionref": "sample-collectionref",
+        "field_threadref": "sample-threadref",
+        "field_turnref": "sample-turnref",
+        "field_requestref": "sample-requestref",
+        "field_accountref": "sample-accountref",
+        "field_providerid": "sample-providerid",
+        "field_layoutsectionref": "sample-layoutsectionref",
+        "field_layoutentryref": "sample-layoutentryref",
+        "field_rowimageref": "image_ref_abcdefghijklm"
+      }
+    }
+  ],
+  "count": {
+    "mode": "exact",
+    "value": 1
+  }
+}

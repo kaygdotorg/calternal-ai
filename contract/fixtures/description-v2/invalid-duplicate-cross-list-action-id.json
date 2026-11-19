@@ -1,0 +1,36 @@
+{
+  "version": 2,
+  "kind": "app",
+  "revision": 1,
+  "chrome": {
+    "sidebar": {
+      "sections": [
+        {
+          "id": "x",
+          "title": "X",
+          "actions": [
+            {
+              "id": "same",
+              "title": "A",
+              "operation": "notes.pin",
+              "inputs": {}
+            }
+          ]
+        },
+        {
+          "id": "y",
+          "title": "Y",
+          "actions": [
+            {
+              "id": "same",
+              "title": "Reload",
+              "shell": {
+                "reload": true
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

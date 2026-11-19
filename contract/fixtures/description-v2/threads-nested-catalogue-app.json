@@ -15,7 +15,7 @@
       },
       "fields": [
         "title",
-        "provider",
+        "provider_icon",
         "state",
         "waiting_on"
       ],
@@ -48,16 +48,6 @@
           {
             "kind": "text",
             "field": "state"
-          },
-          {
-            "kind": "icon",
-            "icon": {
-              "field": "provider",
-              "map": {
-                "calternal-claude-code": "claude",
-                "calternal-codex": "codex"
-              }
-            }
           }
         ],
         "menu": [
@@ -92,7 +82,11 @@
               }
             }
           }
-        ]
+        ],
+        "icon": {
+          "field": "provider_icon",
+          "name": "threads"
+        }
       },
       "states": {
         "empty": {
@@ -108,7 +102,7 @@
       },
       "fields": [
         "title",
-        "provider",
+        "provider_icon",
         "state",
         "updated"
       ],
@@ -131,16 +125,6 @@
           {
             "kind": "text",
             "field": "state"
-          },
-          {
-            "kind": "icon",
-            "icon": {
-              "field": "provider",
-              "map": {
-                "calternal-claude-code": "claude",
-                "calternal-codex": "codex"
-              }
-            }
           }
         ],
         "menu": [
@@ -178,6 +162,10 @@
         ],
         "children": {
           "bind": "children"
+        },
+        "icon": {
+          "field": "provider_icon",
+          "name": "threads"
         }
       }
     },
@@ -190,7 +178,7 @@
       },
       "fields": [
         "title",
-        "provider",
+        "provider_icon",
         "state"
       ],
       "sort": [
@@ -211,16 +199,6 @@
           {
             "kind": "text",
             "field": "state"
-          },
-          {
-            "kind": "icon",
-            "icon": {
-              "field": "provider",
-              "map": {
-                "calternal-claude-code": "claude",
-                "calternal-codex": "codex"
-              }
-            }
           }
         ],
         "menu": [
@@ -255,7 +233,11 @@
               }
             }
           }
-        ]
+        ],
+        "icon": {
+          "field": "provider_icon",
+          "name": "threads"
+        }
       }
     },
     {
@@ -323,7 +305,7 @@
       },
       "fields": [
         "title",
-        "provider",
+        "provider_icon",
         "state"
       ],
       "window": {
@@ -338,16 +320,6 @@
           {
             "kind": "text",
             "field": "state"
-          },
-          {
-            "kind": "icon",
-            "icon": {
-              "field": "provider",
-              "map": {
-                "calternal-claude-code": "claude",
-                "calternal-codex": "codex"
-              }
-            }
           }
         ],
         "menu": [
@@ -404,7 +376,11 @@
               }
             }
           }
-        ]
+        ],
+        "icon": {
+          "field": "provider_icon",
+          "name": "threads"
+        }
       }
     }
   ],

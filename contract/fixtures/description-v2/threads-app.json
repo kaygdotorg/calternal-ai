@@ -11,7 +11,7 @@
       },
       "fields": [
         "title",
-        "provider",
+        "provider_icon",
         "state",
         "updated"
       ],
@@ -62,16 +62,6 @@
                 "literal": "failed"
               }
             }
-          },
-          {
-            "kind": "icon",
-            "icon": {
-              "field": "provider",
-              "map": {
-                "calternal-claude-code": "claude",
-                "calternal-codex": "codex"
-              }
-            }
           }
         ],
         "open": {
@@ -93,7 +83,11 @@
             },
             "role": "destructive"
           }
-        ]
+        ],
+        "icon": {
+          "field": "provider_icon",
+          "name": "threads"
+        }
       },
       "states": {
         "empty": {
@@ -109,7 +103,7 @@
       },
       "fields": [
         "title",
-        "provider",
+        "provider_icon",
         "state",
         "updated"
       ],
@@ -137,16 +131,6 @@
                 "literal": "waiting"
               }
             }
-          },
-          {
-            "kind": "icon",
-            "icon": {
-              "field": "provider",
-              "map": {
-                "calternal-claude-code": "claude",
-                "calternal-codex": "codex"
-              }
-            }
           }
         ],
         "open": {
@@ -154,6 +138,10 @@
             "name": "thread",
             "value": "id"
           }
+        },
+        "icon": {
+          "field": "provider_icon",
+          "name": "threads"
         }
       }
     },
@@ -200,8 +188,7 @@
       "id": "thread-search",
       "source": {
         "type": "search",
-        "kind": "threads",
-        "mode": "terms"
+        "kind": "threads"
       },
       "fields": [
         "title"
@@ -315,7 +302,7 @@
       "components": [
         {
           "type": "turn-transcript",
-          "id": "transcript",
+          "id": "panel-transcript",
           "config": {
             "thread": {
               "route": "thread"
@@ -334,7 +321,7 @@
         },
         {
           "type": "composer",
-          "id": "composer",
+          "id": "panel-composer",
           "config": {
             "thread": {
               "route": "thread"

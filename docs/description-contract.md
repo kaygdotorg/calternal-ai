@@ -1,9 +1,13 @@
 # Description contract (v2)
 
-Status: **revision 12.3**, paired with the [Plugin API v2 specification](plugin-api-v2.md) on `lane/plugin-api-v2-combined`. The [description schema](../contract/description-v2.schema.json) defines the shared renderer shapes.
+Status: **revision 13.18**, paired with the [Plugin API v2 specification](plugin-api-v2.md). The [description schema](../contract/description-v2.schema.json) defines the shared renderer shapes.
 
 The schema is checked with `python3 contract/verify-description.py` against the fixtures in `contract/fixtures/description-v2/` (valid ones must pass,
-`invalid-*` ones must fail). The fixtures are the paper exercises of section 9.
+`invalid-*` ones must report the reason in their directory’s `expected-errors.json`). The fixtures are the paper exercises of section 9. The verifier uses `replies/origins.json` to resolve each standalone window reply to its description fixture and Bind, then checks every projected value against the kind’s declared field type.
+
+To verify emitted artifacts, run `python3 contract/verify-description.py --package DIR` or supply `--manifest FILE` with explicit `--app FILE` paths. Replies require an origins file only when present.
+
+A description, manifest, event or reply conforms only if it passes contract/verify-description.py at the pinned revision. The JSON Schemas define necessary structural rules and are insufficient on their own. A schema validator used alone must assert formats, including calendar validity for date-time. Differences in verifier-only rule classes are by design. [Rule classes and enforcement](plugin-api-v2.md#7-author-sdk-and-conformance)
 
 ## 0. What a description is
 
@@ -48,7 +52,7 @@ One definition (`$defs/Bind`):
 * `list`: an index window over a kind's items, optionally one **collection** (a collection id from a literal, the route or the selection, so a collection
   UUID works; it is not a static pattern).
 * `item`: exactly one item by reference from the route or the selection. A literal row is never accepted.
-* `search`: match text from a claimed-text kind whose manifest declares `searchable: true`, or use the Turns-owned search plan in the catalogue. A foreign-kind search takes eligibility from its owning package and requires the requesting package’s `reads`. The author declares a `mode` from `SearchMode`. The footer sends settled text through `EventSearch` and the host applies the addressed Bind’s mode. For claimed-text search, `source.collection` selects the authorized manual-collection projection.
+* `search`: match text from a claimed-text kind whose manifest declares `searchable: true`, or use the Turns-owned search plan in the catalogue. A foreign-kind search takes eligibility from its owning package and requires the requesting package’s `reads`. Search covers all authorized searchable fields by default. An author may narrow it with the catalogue’s optional `source.field_filter`. The footer sends settled text through `EventSearch`. Its optional `match` chooses literal AND terms or a single literal token prefix independently of the field filter. For claimed-text search, `source.collection` selects the authorized manual-collection projection.
 
 Threads, trashed items and requests are kinds or indexed fields the host (or Turns) declares: `trashed`, `trashed_at`, `waiting_on`, `pending_for` are host-indexed
 fields, so the Notes Trash and the Threads Inbox are ordinary binds.
@@ -98,7 +102,18 @@ Row ids are opaque and stable. No position is an authority reference.
 
 ### 2.4 Row template
 
-`title` is one field (one line; there is no second line and no free-form row content). An optional `icon` is a catalogue name, a field’s value or the kind’s own icon. An **item row** comes from a Bind of any kind, including notes, threads, collections and layout sections. Notes and Threads declare no leading icon on item rows, whatever the row opens. A **shortcut row** is written directly in the description, like New thread, Automations, Skills, New note, Trash and Settings entries. It keeps its declared icon. The renderer draws exactly the icons declared by the description. Thread provider indicators can appear as trailing marks.
+`title` draws one ellipsised line from a declared field. The optional
+`secondary` line draws below it in the secondary colour and is also
+ellipsised. It is an ordered list of up to three declared projected fields,
+each formatted as `relative_date`, `short_date` or `text`. Join present
+parts with ` · ` and omit absent parts and their separators. Date formats
+take timestamps and text takes plain text. The [catalogue’s `Timestamp`](../contract/host-catalogue-v2.json) uses RFC 3339 with seconds 00 to 59 only, and the host records any leap second as second 59 with the fraction clamped.
+The renderer computes relative
+dates at draw time from the local clock and refreshes them without host
+pushes. Rows without `secondary` stay single-line. Row text comes only from
+fields.
+
+Any plugin may declare a leading icon on a Bind-produced item row. The optional `icon` may name a symbol, derive from a row field or kind, or use the catalogue’s `RowImageIcon` to select a small host-authorized image from a projected `RowImageRef` field. Follow the catalogue’s `query.row_images` read and cache rules. The renderer draws exactly the icons declared by the description. Thread rows use the host-projected `provider_icon` only when the provider mark binding matches the installed contribution. Missing publisher verification, missing mark ownership or a conflicting binding uses the declared generic fallback symbol. A note preview fits a portrait area of about 30 × 36 pt. Note rows declare the current device thumbnail and its `image.fallback` snippet field. While the thumbnail loads or when none is available, draw a simple document miniature from the freshly authorised snippet. If no authorised snippet is available, draw the document miniature without text. Shortcut rows retain their declared icons.
 `marks` (up to three) are trailing dots, counts, texts or icons, each with an optional `when` predicate and a tone. `leadingActions`, `trailingActions` and `menu` are
 `invoke` definitions; only the first leading or trailing action may set `fullSwipe`. `open` navigates (sets a route parameter to the row id) or invokes.
 Use the host-issued row reference for row identity in selection, events and scope. Item rows use the kind’s row reference. Rows of a repeated section use a `LayoutEntryRef`.
@@ -202,6 +217,7 @@ host  -> shell { activation_id, state: ok | pending | error | stale | refused | 
   and a host-issued `selection_ref`. **The event never carries a resolved row, selection, route, bind value, target item or viewer; if a modified client adds one, the schema
   refuses the field and the host ignores it.** There is no single revision number: the context names the versions it depends on, so a row that merely scrolled out of the window or moved
   because of unrelated changes is **still actionable**; only a change to the target, its scope or a dependency makes the activation `stale` (nothing ran).
+  For an otherwise authentic host.item.create activation whose collection was deleted or lost edit access after resolve, the opaque collection_unavailable outcome takes precedence over the generic stale dependency outcome.
 * **Confirmation is derived from the catalogue, never from the description** (`confirm: none | challenge`). **A sheet-free, one-exchange mutation (`confirm: none`) exists only for
   catalogue entries whose engine commits the complete effect and its Undo together** (the catalogue's `atomic_undo: true`, worker-free). **The catalogue's flag decides, not this document or the description:** an operation is sheet-free only where the catalogue sets `atomic_undo`, and Trash, Restore and rename are not until the catalogue establishes complete effect plus Undo at one commit for them. A manifest's
   `risk` or `reversible` declaration grants **no** eligibility. For these the shell sends the resolve with `dispatch: true` and the host answers with the outcome, **one exchange**.
@@ -253,7 +269,7 @@ list only when the host's next window no longer contains it.
   id, so a reference is never ambiguous and a bind is declared once.
 * **`chrome.sidebar`**: `selectors`, `sections`, `title`, `width`, `refresh`. A **section** has literal `rows` (fixed shortcuts), a `bind`, or both (literal first), `actions` and `menu` in
   its header, a `collapsed` flag only when it folds, a `repeat` (user-made sections, 2.7) instead of `bind`/`rows`, and `showWhen` (a route parameter's value, or `minRole` so Empty Trash is not offered to an Editor). A section without a `title` draws
-  no header and therefore no header actions. There are no cards: a shortcut row or a `ShellAction` row covers what a card did; an approval is the `request-card` component.
+  no header and therefore no header actions. A shortcut's literal route value, including one set by its shell action, must be an `Id` that the renderer can send in `EventRoute.row`. There are no cards: a shortcut row or a `ShellAction` row covers what a card did; an approval is the `request-card` component.
 * **`selectors`**: a segmented control whose options set a route parameter; an option's `count` is a bind with `count: "exact"`, so Inbox 4 is a bind.
 * **`chrome.header`**: a literal title or a field of an **item** bind (the open item, never a list's first row), and up to two leading and three trailing actions. The sidebar toggle is the shell's.
 * **`chrome.footer`**: `account` (an id, a title and a menu; the shell draws the person's initial from the session, so a persisted template holds no person data), `apps`, `search` (the footer
@@ -291,13 +307,8 @@ the web, SwiftUI natively); no plugin is written twice, and anything the vocabul
   is disabled while a required field is empty or invalid and while the action is pending. The values leave the device only inside the submit's resolved inputs
   (`{form: id, field: fieldId}`); the form shows what was typed, and by the rule in 3.2 the host still previews every material field (typing is never consent); a form may present that list in place. After an `ok` outcome the fields clear (`clear: onOk`,
   the default); after `error` or an unknown outcome they keep what was typed. Errors appear in a `notice` above the submit, never as loose text.
-* **Lists** are binds. `selectable: true` gives the keyboard model of `docs/native-feel.md` section 20 on every platform: Up/Down/Home/End/Page Up/Page Down move
-  the selection through all rows and paints it at once. The route opens when selection settles, about 100 ms after the last key or on key up. Selection and navigation events wait during repeats. Apply prefetch replies for the result version already drawn at once. Hold only version-changing pushes until selection settles. Prefetch requests still cross, up to the normal request cap (section 8, item 4). The contract's figure is about 100 ms; the web renderer's rest is adaptive: 1.6 times the longest gap between repeats in the burst, at least 45 ms and at most 120 ms, which is the same rule measured on the web; a load
-  never starts while keys are still repeating, and a new key cancels the previous load.
-* **Home, End and Page Up/Down** over rows that are not loaded are a renderer duty. The host answers windows and the renderer moves selection when the target arrives.
-  Home asks for `[0, n)` from the start. On a non-search Bind with exact count authority, End requests `anchor: end` from zero and Page Up/Down may use the end anchor near the tail.
-  Search End and End without exact-count authority page forward from the last loaded row. Follow the recovery rule in §2.3
-  and retain the target during jump recovery. A view with count mode `none` shows no scroll extent implying a total.
+* **Lists** are binds. On every platform, Up and Down move the selection through the rows when `selectable: true`. The route opens when selection settles, about 100 ms after the last key or on key up. Selection and navigation events wait during repeats. Apply prefetch replies for the result version already drawn at once. Hold only version-changing pushes until selection settles. Prefetch requests still cross up to the normal request cap (§8). The web renderer waits 1.6 times the longest gap between repeats in the burst, between 45 and 120 ms. A route load starts only after repeats settle, and a new arrow cancels the previous load.
+* **Home, End and Page Up/Down** scroll the list without changing selection on any platform. The renderer requests unloaded windows for the viewport. Home asks for the initial window. On a non-search Bind with exact count authority, End requests the end anchor and Page Up/Down may use it near the tail. Search End and End without exact count authority page forward from the last loaded row. Follow §2.3 during recovery. Count-free views show no extent implying a total.
 * **Search refinement** uses the `refine_query` Bind state in §2.5.
 * **A `list` takes the remaining height of its stack and scrolls itself.** One `list` per scroll region: a `stack` that holds a list does not scroll, and nested scrolling
   regions are refused (a long list inside a scrolling column loses laziness, selection and windows on every platform). The selected row's id is the `selection` source for that bind.
@@ -345,7 +356,7 @@ plugin code). A description can run a named **invoke** on a component's event on
   person's item, no count, no account initial and no activation context, so it may be stored (one file of at most 4 MB, keyed by the signed-in account, deleted on sign-out and on account
   switch). `templates: none` keeps nothing.
 * **Q10 (owner decision, 2026-11-19): own-space member rows can persist.** Only opted-in root windows without route-dependent or parent scope are eligible, and only for binds whose query inputs are **invariant**: a `list` source with at most a literal collection and no reference, search text, route, form, selection or parent operand anywhere in the source, filter or sort (account-bound `{viewer: person}` stays invariant); the schema and the verifier refuse `persist` otherwise, no query identity is added to the record, and only start-anchored windows are persisted.
-  Accept only `MemberRowCacheRecord`, the display-only exception to session-only projections. The authenticated `ViewOpenResult` and `WindowResult` name the audience.
+  Accept only `MemberRowCacheRecord`, the display-only exception to session-only projections. Its host-approved offline display fields exclude every body-derived part. For Notes the cached secondary line keeps the authorised date as `subtitle_timestamp`. Format it from the local clock at draw time using the pinned template. Reserve the same line height until a fresh authorised reply adds the snippet. The authenticated `ViewOpenResult` and `WindowResult` name the audience.
   The schema permits the record only on ready or empty start-anchored own-space member replies without a parent. Before writing, match it to the authenticated active view and window.
   On write and load check the schema, host proof, scope, opt-ins and expiry (§4.2 of the Plugin API). Load only into the matching own-space root display.
   Encrypt with account- and space-bound keys. On an unlocked device paint at launch as unconfirmed, then confirm or correct the rows with the first host answer.
@@ -390,10 +401,10 @@ What the renderer needs from the contract, and what it costs:
 2. **Selection outside the row models**: a row reads "is selected" from the list, not from the description; the description does not carry `selected` flags for
    drawing. (A page may still say which row it selected; the shell treats a later change as a reveal request.)
 3. **Equatable rows**: row values are small and comparable so an unchanged row is skipped when a window is replaced.
-4. **While a key repeats, no selection or row event crosses the bridge**: those go out once after the key settles (about 100 ms after the last key). Window **requests** for
+4. **Up and Down move selection. Home, End and Page Up/Down only scroll** on every platform. While an arrow repeats, selection and row events go out once after the key settles (about 100 ms after the last key). Window **requests** for
    prefetch may cross, coalesced to at most 4 a second; replies to prefetch for the result version already drawn are applied at once and only pushes that change the version are held until the selection settles,
    decoded and compared off the main thread; a held selection is flushed before an activation is sent. A republish that only confirms the selection must not touch the list.
-5. **One line per row**, one aligned icon column where the description supplies leading icons, single neutral accent: the accent is passed only to the unread mark and a prominent action.
+5. **One title line**, then the declared secondary line in the secondary colour. Ellipsise both lines. Rows without a secondary line stay single-line. Use one aligned icon column where the description supplies leading icons. While a navigation key repeats, defer image fetches and cancel reads in flight. After it settles, fetch only still-visible rows’ current refs. For a note without a current thumbnail, draw the miniature from the authorised snippet, or the document miniature without text before the snippet is available. Use a single neutral accent: the accent is passed only to the unread mark and a prominent action.
 6. **Swipe actions** need `title`, `icon`, `tone` and `fullSwipe` on the invoke; they draw with the system's swipe look, tinted by tone, never by the root tint.
 7. **Haptics and menus** are the shell's: selection feedback on `route` and `selection` events, a system menu for `menu`.
 8. **Touch targets** are 44 pt; the renderer, not the description, sizes controls.
@@ -402,25 +413,25 @@ What the renderer needs from the contract, and what it costs:
 
 ## 9. Paper exercises
 
-Run `python3 contract/verify-description.py` with the host catalogue. The fixtures in `contract/fixtures/description-v2/` pair each app with its manifest in `manifests/`. The SDK supplies each package’s own reads and the fixtures include the emitted entries. Section 6 governs the optional member rows used by `threads-nested-catalogue-app.json`. The Notes and Threads walks follow §2.4: Bind-produced item rows omit leading icons, and authored shortcut rows keep their declared icons.
+Run `python3 contract/verify-description.py` with the host catalogue. The fixtures in `contract/fixtures/description-v2/` pair each app with its manifest in `manifests/`. The SDK supplies each package’s own reads and the fixtures include the emitted entries. Section 6 governs the optional member rows used by `threads-nested-catalogue-app.json`. The Notes and Threads walks follow §2.4. Threads shows the installed provider contribution’s icon or its fallback symbol. Note rows use the current thumbnail or miniature. Notes collection rows use the kind icon.
 
 ### 9.1 Community Reading List and author trial
 
-The list binds `reading-item` and shows a title, read mark and empty state. Mark read uses a first full swipe through the host metadata toggle, with one exchange, Undo and no runtime wake. The two-field Add form calls `reading.add` and opens the host-minted `created` ref through `then`. The footer searches the same kind, which declares `searchable: true`, using a `terms` Bind.
+The list binds `reading-item` and shows a title, read mark and empty state. Mark read uses a first full swipe through the host metadata toggle, with one exchange, Undo and no runtime wake. The two-field Add form calls `reading.add` and opens the host-minted `created` ref through `then`. The footer searches all authorized searchable fields of the same opted-in kind. New blank item uses the manifest’s `host_create` defaults through `host.item.create`, commits Undo with the item, and opens it through `then` without waking the plugin.
 
-The reminder form calls `reading.remind`, saves the reminder with `item_save` and enrolls the declared `reading.reminder-due` operation using `schedule_create` with a one-date calendar and `notify_creator`. The list scopes its reminder Bind by `person eq viewer.person`. That filter supplies a personal view of otherwise member-authorized items. Private per-person items remain open in the API’s owner questions. The SDK defaults for a first list and the required author trial are in the API’s §§7–8.
+The reminder form calls `reading.remind`, saves the reminder with `item_save` and enrolls the declared `reading.reminder-due` operation using `schedule_create` with a one-date calendar and `notify_creator`. The example keeps the reminder in the person’s own space. A reminder about a shared item lives there and points to the shared item under §5 of the API. The person filter only controls which reminder rows the list shows. The SDK defaults for a first list and the required author trial are in the API’s §§7–8.
 
 ### 9.2 Notes
 
-The windowed sidebar binds a manual collection with an exact count and shows a Collections section and a Trash Bind. Restore uses a full swipe on an eligible single item. Empty Trash uses the host sheet with a Manager visibility rule, and Share uses its host-owned audience sheet. Rename through Notes’ link-rewriting path resolves and dispatches separately, with Undo fetched through the typed outcome/status route. Bulk Trash resolves the checked `selection_ref`, then confirms and dispatches. Move to collection fetches the scoped choice, resolves it, confirms and dispatches.
+The windowed sidebar binds a manual collection with an exact count and shows a Collections section and a Trash Bind. Note rows show the updated date and then the host-indexed snippet, bounded by the [catalogue’s `query.body_excerpt`](../contract/host-catalogue-v2.json). Restore uses a full swipe on an eligible single item. Empty Trash uses the host sheet with a Manager visibility rule, and Share uses its host-owned audience sheet. Rename through Notes’ link-rewriting path resolves and dispatches separately, with Undo fetched through the typed outcome/status route. Bulk Trash resolves the checked `selection_ref`, then confirms and dispatches. Move to collection fetches the scoped choice and applies the catalogue’s challenge rule for the destination audience.
 
-The `item-editor` edits the routed `yjs-v1` item. New note invokes the plugin and follows `created` via `then`. The footer searches the authorized manual collection through `source.collection`. Window, bulk, snooze and search cases are covered by `notes-app.json`, `notes-bulk-and-snooze-app.json` and the search event fixtures.
+The `item-editor` edits the routed `yjs-v1` item. New note invokes `host.item.create` with the Notes manifest defaults and the current route’s collection when present. It commits the new item, membership and Undo together without waking the plugin or showing a challenge, then opens `created` via `then`. Without a collection route the same invoke creates the note without placement. The footer searches the authorized manual collection through `source.collection`. Window, bulk, snooze and search cases are covered by `notes-app.json`, `notes-bulk-and-snooze-app.json` and the search event fixtures.
 
 ### 9.3 Threads
 
 Inbox filters `waiting_on eq viewer.person` with an exact count on that viewer’s projection. All Threads supports per-parent child windows and personal sections repeated over `layout_sections`. Section rows distinguish the placement address from the underlying thread (§2.7). The host supplies Move to, Move up/down and section create, rename and remove. Drag remains the recorded Q11 parity exception.
 
-New thread uses `turns.create` and `then`. The composer uses host provider, model, reasoning, permission and machine controls, checked attachments and mentions, and prepared one-exchange Send. The host streams `transcript.page` and live updates and owns the approval card and follow-up. Message search uses `terms` and title search uses `title_prefix`, each in its own Bind. Each footer field addresses one Bind. The API’s Step 2 writer gates control idle archive full swipe with Undo and per-actor snooze. An active archive uses a challenge.
+New thread uses `turns.create` and `then`. The composer uses host provider, model, reasoning, permission and machine controls, checked attachments and mentions, and prepared one-exchange Send. The host streams `transcript.page` and live updates and owns the approval card and follow-up. The footer searches authorized titles and messages in one Bind. The catalogue’s optional field filter can restrict that Bind to titles or messages. The API’s Step 2 writer gates control idle archive full swipe with Undo and per-actor snooze. An active archive uses a challenge.
 
 The `threads-app.json` and `threads-nested-catalogue-app.json` fixtures exercise the composer, Bind and layout shapes. The paired `search-page-boundary` fixtures show a full first page followed by a zero-row `ready` window, which preserves the rows on screen. Their later-page `empty` variant is refused. The window reply fixtures also cover exact-count End, a guest refusal, refinement and the member cache record.
 

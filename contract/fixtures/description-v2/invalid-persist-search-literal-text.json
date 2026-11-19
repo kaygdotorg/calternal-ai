@@ -10,8 +10,7 @@
         "kind": "notes",
         "text": {
           "literal": "storage"
-        },
-        "mode": "terms"
+        }
       },
       "fields": [
         "title"

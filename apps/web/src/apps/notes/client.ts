@@ -116,7 +116,14 @@ export class FixtureNotes implements NotesClient {
     }
   }
   async spaces(): Promise<Space[]> { return FIXTURE_SPACES; }
-  async list(spaceId: string, tag?: string, cursor?: string): Promise<Page<NoteSummary>> { return pageOf([...this.notes.values()].filter((n) => n.spaceId === spaceId && (!tag || this.tagsOf(n).some((t) => t === tag || t.startsWith(`${tag}/`)))).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).map(({ markdown: _m, revision: _r, ...s }) => s), cursor); }
+  /** The newest-first summaries of a space, built once per change (every write pings): a flood of thousands of notes would otherwise be filtered, sorted and mapped on the main thread for every page read, which no real client does (the server answers a page from its index). */
+  private summaries = new Map<string, NoteSummary[]>();
+  private summariesOf(spaceId: string): NoteSummary[] {
+    let v = this.summaries.get(spaceId);
+    if (!v) { v = [...this.notes.values()].filter((n) => n.spaceId === spaceId).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).map(({ markdown: _m, revision: _r, ...x }) => x); this.summaries.set(spaceId, v); }
+    return v;
+  }
+  async list(spaceId: string, tag?: string, cursor?: string): Promise<Page<NoteSummary>> { if (!tag) return pageOf(this.summariesOf(spaceId), cursor); return pageOf([...this.notes.values()].filter((n) => n.spaceId === spaceId && (!tag || this.tagsOf(n).some((t) => t === tag || t.startsWith(`${tag}/`)))).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).map(({ markdown: _m, revision: _r, ...s }) => s), cursor); }
   async get(_s: string, id: string): Promise<Note> {
     const n = this.notes.get(id);
     if (!n) throw new ServerError("not_found", "note not found");
@@ -151,7 +158,7 @@ export class FixtureNotes implements NotesClient {
   async lookupNotes(spaceId: string, prefix: string): Promise<NoteTarget[]> { return [...this.notes.values()].filter((n) => n.spaceId === spaceId && n.title.toLowerCase().startsWith(prefix.toLowerCase())).map((n) => ({ id: n.id, title: n.title })); }
   async lookupTags(spaceId: string, prefix: string): Promise<TagInfo[]> { return (await this.tags(spaceId)).items.filter((t) => t.name.toLowerCase().startsWith(prefix.toLowerCase())); }
   watch(_s: string, onChange: (change?: Change) => void): () => void { this.listeners.add(onChange); return () => this.listeners.delete(onChange); }
-  private ping() { for (const l of this.listeners) l(); }
+  private ping() { this.summaries.clear(); for (const l of this.listeners) l(); }
 }
 
 /** The real server, for the operations it already offers. */

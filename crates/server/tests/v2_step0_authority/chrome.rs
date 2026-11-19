@@ -115,7 +115,8 @@ async fn sealed_chrome_catalogue() {
             .as_str()
             .is_some_and(|text| !text.is_empty())
     );
-    assert!(fields.get("thumbnail").is_none());
+    assert!(fields["thumbnail"].is_string());
+    assert!(page["rows"][1]["fields"].get("thumbnail").is_none());
     let trash = f
         .ok(&f.owner, "window", Some(lease), win("trash-count", None))
         .await;
@@ -401,4 +402,106 @@ async fn sealed_chrome_actions_at_scale() {
     let placed = f.ok(&f.owner, "window", Some(lease), nested).await;
     assert_eq!(placed["count"]["value"], 7);
     assert!(placed["activation_contexts"][0]["contexts"]["move-up-in-section"].is_string());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[ignore = "disposable revision 13.18 end window and image read"]
+async fn sealed_chrome_end_and_images() {
+    let f = ClientFixture::with_rows(5000).await;
+    let fixtures = f.bootstrap(&f.owner).await;
+    assert_eq!(fixtures["contract_revision"], "13.18");
+    let open = f
+        .ok(
+            &f.owner,
+            "view.open",
+            None,
+            open(&fixtures["views"]["notes"]),
+        )
+        .await;
+    let lease = &open["lease"]["lease_ref"];
+    let payload = |anchor, from, to| json!({"type":"window","request":{"bind":"notes","from":from,"to":to,"anchor":anchor}});
+    let first = f
+        .ok(&f.owner, "window", Some(lease), payload("start", 0, 4))
+        .await;
+    let last = f
+        .ok(
+            &f.owner,
+            "window",
+            Some(lease),
+            payload("start", 4997, 5000),
+        )
+        .await;
+    for _ in 0..10 {
+        let end = f
+            .ok(&f.owner, "window", Some(lease), payload("end", 0, 3))
+            .await;
+        assert_eq!(end["count"], json!({"mode":"exact","value":5000}));
+        assert_eq!(end["anchor"], "end");
+        assert_eq!(end["rows"], last["rows"]);
+    }
+    assert_eq!(
+        f.call(
+            &f.owner,
+            "window",
+            Some(&json!(uuid::Uuid::new_v4())),
+            payload("end", 0, 3)
+        )
+        .await
+        .0,
+        404
+    );
+    let root = f.base.strip_suffix("/step0/v2").unwrap();
+    let image = first["rows"][0]["fields"]["thumbnail"].as_str().unwrap();
+    let url = format!("{root}/api/v2/row-images/{image}");
+    let get = |account: &str, lease: &Value| {
+        f.http
+            .get(&url)
+            .bearer_auth(account)
+            .header("x-step0-view-lease", lease.as_str().unwrap())
+    };
+    let picture = get(&f.owner, lease).send().await.unwrap();
+    assert_eq!(picture.status().as_u16(), 200);
+    assert_eq!(picture.headers()["content-type"], "image/png");
+    assert_eq!(picture.headers()["cache-control"], "no-store");
+    assert!(
+        picture
+            .bytes()
+            .await
+            .unwrap()
+            .starts_with(b"\x89PNG\r\n\x1a\n")
+    );
+    assert_eq!(
+        get(&f.guest, lease).send().await.unwrap().status().as_u16(),
+        404
+    );
+    assert_eq!(
+        f.http
+            .get(&url)
+            .bearer_auth(&f.owner)
+            .send()
+            .await
+            .unwrap()
+            .status()
+            .as_u16(),
+        404
+    );
+
+    let context = &first["activation_contexts"][0]["contexts"]["pin"];
+    f.ok(
+        &f.owner,
+        "activation.resolve",
+        None,
+        json!({"type":"invoke","action_id":"pin",
+        "activation_id":uuid::Uuid::new_v4(),"activation_context":context,"dispatch":true}),
+    )
+    .await;
+    assert_eq!(
+        get(&f.owner, lease).send().await.unwrap().status().as_u16(),
+        404
+    );
+    let after = f
+        .ok(&f.owner, "window", Some(lease), payload("start", 0, 1))
+        .await;
+    assert!(after["rows"][0]["fields"].get("thumbnail").is_none());
+    assert!(after["rows"][0]["fields"]["snippet"].is_string());
 }

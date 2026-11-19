@@ -1,0 +1,90 @@
+{
+  "threads-app.json": {
+    "thread-search": [
+      "invalid-reply-catalogue-search-page-boundary-empty.json",
+      "invalid-reply-catalogue-window-ready-zero-rows-at-start.json",
+      "reply-catalogue-search-page-boundary-first.json",
+      "reply-catalogue-search-page-boundary-next.json",
+      "reply-catalogue-window-search-empty-no-count.json"
+    ],
+    "all": [
+      "invalid-reply-catalogue-window-end-estimate.json",
+      "invalid-reply-catalogue-window-end-no-count.json",
+      "invalid-reply-catalogue-window-end-with-record.json",
+      "invalid-reply-catalogue-window-guest-record.json",
+      "invalid-reply-catalogue-window-nested-record.json",
+      "invalid-reply-catalogue-window-public-record.json",
+      "reply-catalogue-window-end-result.json",
+      "invalid-reply-catalogue-window-cache-from-nonpersistent-bind.json"
+    ]
+  },
+  "notes-app.json": {
+    "notes": [
+      "invalid-reply-catalogue-window-empty-estimate.json",
+      "invalid-reply-catalogue-window-empty-exact-nonzero.json",
+      "invalid-reply-catalogue-window-extra-field.json",
+      "invalid-reply-catalogue-window-loading-count.json",
+      "invalid-reply-catalogue-window-plan-error-no-reason.json",
+      "invalid-reply-catalogue-window-plan-error-unknown-reason.json",
+      "invalid-reply-catalogue-window-plan-error-wrong-code.json",
+      "invalid-reply-catalogue-window-ready-missing-counted-rows.json",
+      "invalid-reply-catalogue-window-ready-more-rows-than-count.json",
+      "invalid-reply-catalogue-window-ready-no-version.json",
+      "reply-catalogue-window-empty-exact-zero.json",
+      "reply-catalogue-window-loading.json",
+      "reply-catalogue-window-plan-error-end-unavailable.json",
+      "reply-catalogue-window-plan-error-materialization-limit.json",
+      "reply-catalogue-window-plan-error-unsupported-plan.json",
+      "reply-catalogue-window-plan-error.json",
+      "reply-catalogue-window-ready.json"
+    ],
+    "note-search": [
+      "invalid-reply-catalogue-window-refine-query-contexts.json",
+      "invalid-reply-catalogue-window-refine-query-count.json",
+      "invalid-reply-catalogue-window-refine-query-record.json",
+      "invalid-reply-catalogue-window-refine-query-version.json",
+      "reply-catalogue-window-refine-query-no-rows.json",
+      "reply-catalogue-window-refine-query.json"
+    ]
+  },
+  "window-projections-catalogue-app.json": {
+    "snoozable-threads": [
+      "invalid-reply-catalogue-window-kind-timestamp.json",
+      "reply-catalogue-window-nullable-projection.json"
+    ],
+    "all-own-space-notes": [
+      "invalid-reply-catalogue-window-member-record-formatted-date.json",
+      "invalid-reply-catalogue-window-member-record-leap-second.json",
+      "reply-catalogue-window-member-record-note-date.json"
+    ],
+    "typed": [
+      "invalid-reply-catalogue-window-projected-accountref.json",
+      "invalid-reply-catalogue-window-projected-boolean.json",
+      "invalid-reply-catalogue-window-projected-collectionref.json",
+      "invalid-reply-catalogue-window-projected-itemref.json",
+      "invalid-reply-catalogue-window-projected-layoutentryref.json",
+      "invalid-reply-catalogue-window-projected-layoutsectionref.json",
+      "invalid-reply-catalogue-window-projected-null.json",
+      "invalid-reply-catalogue-window-projected-number.json",
+      "invalid-reply-catalogue-window-projected-providerid.json",
+      "invalid-reply-catalogue-window-projected-requestref.json",
+      "invalid-reply-catalogue-window-projected-rowimageref.json",
+      "invalid-reply-catalogue-window-projected-scalar-array.json",
+      "invalid-reply-catalogue-window-projected-text.json",
+      "invalid-reply-catalogue-window-projected-threadref.json",
+      "invalid-reply-catalogue-window-projected-timestamp.json",
+      "invalid-reply-catalogue-window-projected-turnref.json",
+      "invalid-reply-catalogue-window-projected-undeclared.json",
+      "reply-catalogue-window-typed-projections.json",
+      "invalid-reply-catalogue-window-projected-scalar-object.json"
+    ]
+  },
+  "threads-nested-catalogue-app.json": {
+    "all": [
+      "reply-catalogue-window-member-record.json",
+      "invalid-reply-catalogue-window-cache-bind-mismatch.json",
+      "invalid-reply-catalogue-window-cache-window-ref-mismatch.json",
+      "invalid-reply-catalogue-window-cache-offset-mismatch.json"
+    ]
+  }
+}

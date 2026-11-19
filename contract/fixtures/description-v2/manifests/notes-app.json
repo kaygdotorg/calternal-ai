@@ -14,7 +14,7 @@
         "id": "app",
         "template": {
           "path": "notes-app.json",
-          "sha256": "bad89ef468d321a7003dbe28ad3313333a85462704a833a5d2b082664165884f"
+          "sha256": "7f5d5a8142dafe1a9990e6c16a0ec0c291558bd06670f807c68f28b8a3f5ff58"
         }
       }
     }
@@ -49,49 +49,30 @@
         "pinned": {
           "type": "Boolean",
           "audience": "member_item"
+        },
+        "snippet": {
+          "type": "Text",
+          "audience": "member_item",
+          "source": "body_excerpt"
+        },
+        "thumbnail": {
+          "type": "RowImageRef",
+          "audience": "member_item",
+          "body_derived": true
         }
       },
       "searchable": true,
-      "live_room": "yjs-v1"
+      "live_room": "yjs-v1",
+      "host_create": {
+        "defaults": {
+          "title": "Untitled"
+        }
+      }
     }
   ],
   "reads": [
     "collections",
     "notes"
   ],
-  "operations": [
-    {
-      "id": "notes.create",
-      "title": "New note",
-      "input_schema": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [],
-        "properties": {
-          "collection": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 128
-          }
-        }
-      },
-      "output_schema": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [],
-        "properties": {}
-      },
-      "required_capability": "content.write",
-      "risk": "reversible",
-      "idempotency": "request_id",
-      "methods": [
-        "item_save"
-      ],
-      "creates": "notes"
-    }
-  ],
-  "worker": {
-    "path": "dist/fixture.js",
-    "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
-  }
+  "operations": []
 }

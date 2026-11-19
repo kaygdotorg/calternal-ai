@@ -7,8 +7,7 @@
       "id": "search",
       "source": {
         "type": "search",
-        "kind": "reading-item",
-        "mode": "terms"
+        "kind": "reading-item"
       },
       "fields": [
         "title"

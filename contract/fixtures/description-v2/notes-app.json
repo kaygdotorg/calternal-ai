@@ -31,6 +31,9 @@
             "name": "collection",
             "value": "id"
           }
+        },
+        "icon": {
+          "kindIcon": true
         }
       },
       "states": {
@@ -51,7 +54,9 @@
       "fields": [
         "title",
         "updated",
-        "pinned"
+        "pinned",
+        "snippet",
+        "thumbnail"
       ],
       "filter": {
         "all": [
@@ -79,6 +84,16 @@
           "field": "title",
           "fallback": "Untitled"
         },
+        "secondary": [
+          {
+            "field": "updated",
+            "format": "relative_date"
+          },
+          {
+            "field": "snippet",
+            "format": "text"
+          }
+        ],
         "marks": [
           {
             "kind": "icon",
@@ -174,7 +189,13 @@
               }
             }
           }
-        ]
+        ],
+        "icon": {
+          "image": {
+            "field": "thumbnail",
+            "fallback": "snippet"
+          }
+        }
       },
       "states": {
         "empty": {
@@ -201,7 +222,10 @@
       },
       "fields": [
         "title",
-        "trashed_at"
+        "trashed_at",
+        "updated",
+        "snippet",
+        "thumbnail"
       ],
       "filter": {
         "all": [
@@ -229,6 +253,16 @@
           "field": "title",
           "fallback": "Untitled"
         },
+        "secondary": [
+          {
+            "field": "updated",
+            "format": "relative_date"
+          },
+          {
+            "field": "snippet",
+            "format": "text"
+          }
+        ],
         "selectable": true,
         "trailingActions": [
           {
@@ -244,7 +278,13 @@
             "tone": "good",
             "fullSwipe": true
           }
-        ]
+        ],
+        "icon": {
+          "image": {
+            "field": "thumbnail",
+            "fallback": "snippet"
+          }
+        }
       },
       "states": {
         "empty": {
@@ -308,13 +348,15 @@
       "source": {
         "type": "search",
         "kind": "notes",
-        "mode": "terms",
         "collection": {
           "route": "collection"
         }
       },
       "fields": [
-        "title"
+        "title",
+        "updated",
+        "snippet",
+        "thumbnail"
       ],
       "window": {
         "size": 30,
@@ -324,10 +366,26 @@
         "title": {
           "field": "title"
         },
+        "secondary": [
+          {
+            "field": "updated",
+            "format": "relative_date"
+          },
+          {
+            "field": "snippet",
+            "format": "text"
+          }
+        ],
         "open": {
           "route": {
             "name": "item",
             "value": "id"
+          }
+        },
+        "icon": {
+          "image": {
+            "field": "thumbnail",
+            "fallback": "snippet"
           }
         }
       }
@@ -372,8 +430,11 @@
                 "invoke": {
                   "id": "create",
                   "title": "New note",
-                  "operation": "notes.create",
+                  "operation": "host.item.create",
                   "inputs": {
+                    "kind": {
+                      "literal": "notes"
+                    },
                     "collection": {
                       "route": "collection"
                     }

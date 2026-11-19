@@ -61,6 +61,7 @@ impl App {
 struct Row {
     id: Uuid,
     rev: Uuid,
+    image_revision: Option<Uuid>,
     fields: Value,
 }
 impl Row {
@@ -68,6 +69,7 @@ impl Row {
         Self {
             id: Uuid::new_v4(),
             rev: Uuid::new_v4(),
+            image_revision: None,
             fields,
         }
     }
@@ -218,13 +220,24 @@ impl Display {
 
     fn sample(app: App, i: usize, at: time::OffsetDateTime) -> Row {
         let at = calternal_content::format_rfc3339(at);
-        Row::new(match app {
+        let mut row = Row::new(match app {
             App::Notes => json!({"title":format!("Note {:05}",i+1),"updated":at,"pinned":i%17==0,
                 "snippet":format!("Fixture note {} · A short excerpt for the leading preview and second line.",i+1)}),
             App::Threads => json!({"title":format!("Thread {:05}",i+1),"updated":at,
                 "state":"idle"}),
             App::Reading => json!({"title":format!("Reading item {}",i+1),"added":at,"read":false}),
-        })
+        });
+        if app == App::Notes && i % 3 == 0 {
+            row.image_revision = Some(row.rev);
+        }
+        row
+    }
+
+    pub(super) fn has_image(&self, row_id: Uuid, revision: Uuid) -> bool {
+        self.app == App::Notes
+            && self.rows.lock().unwrap().active.iter().any(|row| {
+                row.id == row_id && row.rev == revision && row.image_revision == Some(revision)
+            })
     }
 
     pub(super) fn count(&self) -> usize {
@@ -450,16 +463,20 @@ impl Host {
                 json!({"status":422,"code":"unsupported_query_plan","reason":"end_unavailable"}),
             );
         }
-        let member = route
-            .collection
-            .map(|id| {
-                display
-                    .collections
-                    .iter()
-                    .position(|r| r.id == id)
-                    .ok_or(HIDDEN)
-            })
-            .transpose()?;
+        let member = if display.app == App::Notes && matches!(bind, "notes" | "note-search") {
+            route
+                .collection
+                .map(|id| {
+                    display
+                        .collections
+                        .iter()
+                        .position(|r| r.id == id)
+                        .ok_or(HIDDEN)
+                })
+                .transpose()?
+        } else {
+            None
+        };
         let mut filtered = Vec::new();
         let mut counted: Option<&[Row]> = None;
         match (display.app, bind) {
@@ -569,6 +586,13 @@ impl Host {
         }
         for row in &selected {
             let mut body = row.wire(bind, person);
+            if display.app == App::Notes
+                && lease.audience != "guest"
+                && bind == "notes"
+                && row.image_revision == Some(row.rev)
+            {
+                body["fields"]["thumbnail"] = json!(self.row_image_ref(lease.id, row.id, row.rev));
+            }
             let edge = match bind {
                 "all" if rows.children.contains_key(&row.id) => Some("children"),
                 "layout" => Some("in-section"),

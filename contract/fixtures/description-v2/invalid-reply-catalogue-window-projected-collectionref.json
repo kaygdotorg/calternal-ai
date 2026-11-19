@@ -1,0 +1,20 @@
+{
+  "audience": "member",
+  "bind": "typed",
+  "state": "ready",
+  "result_version": "rv-41",
+  "offset": 0,
+  "window_ref": "w-notes-0",
+  "rows": [
+    {
+      "id": "fixture-row",
+      "fields": {
+        "field_collectionref": true
+      }
+    }
+  ],
+  "count": {
+    "mode": "exact",
+    "value": 1
+  }
+}

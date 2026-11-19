@@ -1,0 +1,26 @@
+{
+  "version": 2,
+  "kind": "app",
+  "revision": 1,
+  "binds": [
+    {
+      "id": "terms",
+      "source": {
+        "type": "list",
+        "kind": "notes",
+        "field_filter": "title"
+      },
+      "fields": [
+        "title"
+      ]
+    }
+  ],
+  "chrome": {
+    "footer": {
+      "search": {
+        "placeholder": "Search",
+        "bind": "terms"
+      }
+    }
+  }
+}

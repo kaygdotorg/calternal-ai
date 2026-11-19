@@ -1,0 +1,105 @@
+{
+  "api_version": 2,
+  "id": "window-projections",
+  "name": "Window projections",
+  "version": "1.0.0",
+  "icon": "folder",
+  "network": "none",
+  "reads": [
+    "projection-values",
+    "notes",
+    "threads"
+  ],
+  "apps": [
+    {
+      "id": "projections",
+      "name": "Window projections",
+      "icon": "folder",
+      "description": {
+        "id": "app",
+        "template": {
+          "path": "window-projections-catalogue-app.json",
+          "sha256": "ef925fa3c5ce19846062e5d2dbfd5104f80d2cf2d4afbbe5e12d2882e3d9aab9"
+        }
+      }
+    }
+  ],
+  "kinds": [
+    {
+      "id": "projection-values",
+      "icon": "folder",
+      "title_field": "title",
+      "storage": {
+        "hidden": true
+      },
+      "claimed_text": true,
+      "schema": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          }
+        }
+      },
+      "indexed_fields": {
+        "field_text": {
+          "type": "Text",
+          "audience": "member_item"
+        },
+        "field_number": {
+          "type": "Number",
+          "audience": "member_item"
+        },
+        "field_boolean": {
+          "type": "Boolean",
+          "audience": "member_item"
+        },
+        "field_timestamp": {
+          "type": "Timestamp",
+          "audience": "member_item"
+        },
+        "field_itemref": {
+          "type": "ItemRef",
+          "audience": "member_item"
+        },
+        "field_collectionref": {
+          "type": "CollectionRef",
+          "audience": "member_item"
+        },
+        "field_threadref": {
+          "type": "ThreadRef",
+          "audience": "member_item"
+        },
+        "field_turnref": {
+          "type": "TurnRef",
+          "audience": "member_item"
+        },
+        "field_requestref": {
+          "type": "RequestRef",
+          "audience": "member_item"
+        },
+        "field_accountref": {
+          "type": "AccountRef",
+          "audience": "member_item"
+        },
+        "field_providerid": {
+          "type": "ProviderId",
+          "audience": "member_item"
+        },
+        "field_layoutsectionref": {
+          "type": "LayoutSectionRef",
+          "audience": "member_item"
+        },
+        "field_layoutentryref": {
+          "type": "LayoutEntryRef",
+          "audience": "member_item"
+        },
+        "field_rowimageref": {
+          "type": "RowImageRef",
+          "audience": "member_item"
+        }
+      }
+    }
+  ],
+  "operations": []
+}
