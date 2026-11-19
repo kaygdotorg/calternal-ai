@@ -64,17 +64,25 @@ Renew only against the live session or scheduled principal, grants, package
 generation, eligible placement and exact attempt. Recheck authority at broker
 effects and output egress. Revoke fences both immediately and stops renewal.
 
-An independent machine supervisor owns the attempt's cgroup subtree and
-credential/network gateway. It can contain all tools and harness processes,
-including descendants that start a new session. At most 5 s after the last
-authenticated renewal, it fences dispatch and queued egress at the gateway,
-freezes the entire subtree and reports its fence when contact resumes.
-Discard unsubmitted requests. Treat requests already dispatched as uncertain
-until reconciled. Kill within 10 minutes of the last authenticated renewal, or immediately
-on an authenticated exact-attempt host Stop. Only this supervisor may thaw, after
-fresh host authority and a safe transport continuation for the exact attempt.
-Direct and any placement without this proof remain disabled, including on
-personal machines. [Current freezer and Direct behavior][podman] · [Direct code][direct]
+An independent machine supervisor contains all tool and harness processes,
+including descendants that start a new session. A machine-local watchdog
+outside the supervisor owns the freezer, kill timer and gateway fence.
+It accepts host renewal only with a fresh heartbeat from the current
+supervisor generation and records it for the exact attempt. A heartbeat
+may be at most 2 s old. On heartbeat loss or within 5 s of the last
+renewal, whichever comes first, the watchdog fences queued dispatch
+and egress and freezes the cgroup subtree. It keeps both deadlines when the supervisor dies or hangs. Any
+placement must tear down the subtree and close the gateway if the watchdog
+itself is lost. Discard unsubmitted requests. Treat dispatched effects as
+uncertain until reconciled.
+
+Kill within 10 minutes of the last authenticated renewal or immediately
+on an authenticated exact-attempt host Stop. Only the watchdog can
+release the fence after the supervisor verifies safe transport and
+presents fresh, one-use host renewal for the exact attempt and current
+watchdog fence. Supervisor loss invalidates earlier thaw authority.
+Direct and unproven placements remain disabled, including on personal
+machines. [Current freezer][podman] · [Direct code][direct]
 
 A frozen attempt holds memory, capacity, workspace and locks. Keep the
 reservations until verified death or continued ownership after thaw. Keep
@@ -102,11 +110,14 @@ remain disabled. [Manual turns][turns] · [Provider protocol][provider] ·
 [Claude Code][claude] · [Codex][codex]
 
 `execution_input` binds bounded, receipt-checked steer input to the exact
-live attempt. `execution_spawn_child` atomically reserves process, memory and
-queued-work capacity against the whole tree by receipt before placement.
-Propose depth three and eight total attempts (including pending) for the
-spike. Compute child rights as the intersection of live ancestor grants.
-Check that intersection at every broker effect and renewal. Fence the
+live attempt. Under the tree reservation fence, `execution_spawn_child`
+checks the exact current parent attempt, the requesting actor's live
+spawn authority for that parent and the target kind and placement.
+Atomically reserve process, memory and queued-work capacity across the
+tree by receipt. Propose depth three and eight attempts including pending.
+Grant the intersection of the request, the caller's live authority and
+every ancestor's admitted item refs and effect ceilings. Recheck the live
+caller and ancestor grants at broker effects and renewal. Fence the
 subtree on ancestor revocation and release quota after verified cleanup.
 The host commits the parent edge for any conversation kind under admission.
 
@@ -126,26 +137,43 @@ external effect before retry. The package can use durable timers to retry
 a provider failure whose effect is known safe. [Machine output path][output]
 
 The adapter in the agent container emits a display envelope based on
-`provider-events-v1`. Allow only inert assistant text and reasoning text
-where the field policy permits it, and bounded tool summary text with
-checked attachment and link refs. The host stamps the role, attribution
+`provider-events-v1`. Persist only inert assistant text and bounded tool
+summaries and checked attachment and link refs eligible for the entire
+conversation transcript audience. The host stamps the role, attribution
 and record IDs. Render escaped text or eligible safe Markdown. No raw
 HTML, description, action, trusted notice or renderer state comes from
 the adapter. Provider question, approval, session, usage and done frames
 are private protocol input. Mint lifecycle transitions and protected
 controls only from supervisor evidence or checked broker/Inbox records.
 
-The host scrubs before publication and writes checked display content to
-the canonical Markdown file (interim, Q3). Use the content journal to stage
-the file change and commit a recoverable byte boundary, receipt and
-consumed-input cursor. ACK delivery only after durable publication. Stable
-page IDs derive from the framed record and byte range. Event logs, pages
-and message indexes are rebuildable from the file. Keep the bounded
-parser/scrubber carry in attempt-private durable state with the consumed
-cursor, before reclaiming any prefix, including on cursor-only commits.
-Private frames, carry, native sessions and checkpoints are excluded from
-display, exports, search, shared logs and ordinary backups.
-[Provider event schema][provider-events]
+Use one audience for all persisted transcript records. Exclude reasoning
+or any other material that needs a narrower policy from the file and
+public projection. Keep Inbox controls and private provider data outside
+the transcript. Scrub before writing the canonical Markdown file
+(interim, Q3). The content journal makes the committed file boundary,
+receipt and consumed-input checkpoint recoverable. The machine ingest
+ACK follows contiguous spool persistence. The distinct publication ACK
+follows the durable file boundary and receipt. Keep the bounded
+parser/scrubber carry with the consumed checkpoint before reclaiming any
+prefix, including on cursor-only commits. Private frames, carry, native
+sessions and checkpoints stay out of display, exports, search, shared logs
+and ordinary backups. [Provider event schema][provider-events]
+
+Choose record-level cursors so canonical Markdown stays plain and
+old-readable. Use the stable UUID and order of its framed message records.
+A cursor is scoped to the conversation and live viewer authority. Reopen
+and refresh the cursor's boundary record on reconnect, including an active
+record that may have grown, then continue in record order. The renderer
+replaces the boundary row by UUID. Preserve the existing page byte cap.
+A long record can supply a clipped preview and a checked revision-pinned
+range ref for its own body. Coalesced token frame IDs and their boundaries
+are transient. Page and search projections rebuild from file records.
+Revise sealed §4.2 and the description contract’s transcript read route
+and catalogue cursor, plus the §8 “Durable transcript” gate, to require
+stable record IDs, order, cursors and exactly-once durable receipts across
+replay. Drop stable token-event
+sequence reconstruction. Keep the latency and revoked-reconnect gates.
+[Sealed plan][sealed]
 
 An `execution` wait is bound to the owning job, package and attempt.
 Park atomically against the observed durable transition cursor. In the
@@ -162,7 +190,14 @@ space. Meter sustained input at 256 KiB/s and 64 frames/s per attempt,
 four FULL commits/s per attempt and eight per space. Reserve foreground
 writer capacity. Apply credits and interrupt after 30 s of stalled drain
 on a live link. Frozen attempts use their separate recovery deadline.
-Bound display retention by item policy. [Transcript spike][measurements]
+Persist the retirement deadline when the attempt terminates or its
+recovery fence expires. Bar reuse then and start reclaim no later than
+ten minutes afterward. Sweep expired spool before new admission on
+restart, in steps of at most 4 MiB and 256 records. Finish expired cleanup
+within 30 s of the deadline, or within 30 s of restart if the deadline
+passed offline. Release quota
+only after verified cleanup. Cleanup preserves committed transcript
+records. Bound display retention by item policy. [Transcript spike][measurements]
 
 ### A.4 Protected requests
 
@@ -197,9 +232,15 @@ First qualify both adapters and the independent runner. Integrate Notes.
 For Threads, stop new old-engine admissions and wait for zero active
 attempts. Preserve workspace custody, grants, pending intents and receipts.
 Under the fenced writer, parse legacy `provider-session` comments and
-the corresponding metadata into protected session bindings keyed by
-account, provider, conversation, machine and profile. Verify the binding
-before removing its public-file/metadata copy in an idempotent migration.
+metadata. Migrate into protected bindings keyed by account, provider,
+conversation, machine and profile only when an authenticated historical
+record ties that exact session to the profile. The profile currently
+signed into the machine is insufficient. If historical proof is missing,
+retire native Resume for that binding. Keep the thread readable and show
+the authorized person who attempts Resume: “Previous session unavailable.
+Start a new session.” A fresh execution needs current approval and checked context.
+Remove legacy file/metadata copies in either case by an idempotent
+migration. [Legacy session binding][bindings]
 Sweep the file, metadata, history and journal for legacy private copies.
 Keep public revision history available after sanitizing its private
 fields. Quarantine unsanitized copies and pre-existing backups under
@@ -208,7 +249,7 @@ exports and restore inputs. Block cutover until a new ordinary backup
 can restore the complete public history without those private copies. Thread
 message bytes, their stable IDs and public rendering must remain equal.
 Raw whole-file hashes can change only for verified removal of private
-records. Saved bindings allow authorized Resume.
+records. Only proven protected bindings allow authorized Resume.
 
 Keep the current length-framed Markdown message format: valid role,
 UUID, heading, UTF-8 byte count and existing agent provenance fields.
@@ -380,12 +421,18 @@ deduplicated elements and a scoped value/order index. Each tag count is
 over distinct authorized rows. Qualify combined predicates separately.
 Preserve the sealed 32-effective-scope cap and two keys per scope for
 the existing scalar-only plan. In the numbered revision, add an explicit
-total budget for every save with extraction: propose 64 tag elements
+total index budget for saves and scope mutations. Propose 64 tag elements
 per field, 256 UTF-8 bytes per element, and 1,152 total old/new covering,
-membership and count keys per item commit across all fields and scopes.
-Count hierarchical expansions and changes offered by every writer.
-Validate and meter the combined change before writing. Refuse over-budget
-new changes with a typed limit. Never truncate a valid legacy tag set.
+membership and count keys per foreground transaction across all items,
+fields and scopes. Count hierarchical expansions and all affected keys.
+Apply this to saves, sharing, membership and Undo, including scope-only
+changes. Preflight the effective scopes and total work under the write
+fence. Refuse an over-budget scope addition or ordinary mutation with
+typed `index_work_limit` before any effect. A mandatory access revoke
+always fences the grant first. If synchronous cleanup exceeds the bound,
+refuse the affected cached projection until a bounded background pass
+reconciles it. Neither rows nor counts may use the obsolete scope.
+Never truncate a valid legacy tag set.
 Block Notes cutover if existing items exceed qualified limits or the
 worst-case save misses 40 ms p95. If needed, bring the measured parity
 tradeoff to the owner before changing the contract. [Sealed save gate][sealed]
@@ -473,10 +520,10 @@ flushes. Start with an independent-runner paper exercise.
 | --- | --- |
 | Generic runner, tool and lifecycle authority | Use generic routes from a package-owned conversation with both shipped adapters and an independent one. Exercise Send, request, steer, child, Stop, archive, Undo and snooze. Submit an approved native reply with a changed tool digest and replay a consumed grant. Require zero dispatches for either. Race concurrent child starts at the tree cap, ancestor revoke, and archive against another actor's or a replacement attempt. Assert zero over-reservations, stale execution effects, or unauthorized archive. Forge title-only refs and concealed Inbox activity. Their rows, counts and versions must reveal nothing. |
 | Sleeping-space Send and park | On the sealed link require one prepared exchange and p95 ≤500 ms to painted durable Starting. Require container-ready p95 ≤8 s for one wake and ≤15 s at 20 concurrent wakes. Report first token separately. Commit a terminal/approval transition immediately before and after the park boundary, plus an exact replay. Require one continuation in each arm, zero duplicated starts and zero plugin wakes for tokens. |
-| Transport loss and recovery | Cut the real machine carrier while a provider request is queued and a detached tool session is active. Restart for 30 s and 5 min. Exercise both a surviving provider transport and a remote peer timeout. Freeze all processes, queued dispatch and egress ≤5 s after renewal. Fresh proof and safe transport permit same-attempt thaw. An uncertain dispatched effect requires reconciliation and explicit Resume, with no automatic replay. Kill by 10 min or on authenticated host Stop. Stop broker effects and output at revocation. Retain sealed 150 ms first-screen and 500 ms independent-control p95 limits. |
-| Stream custody and load | Cut before private spool commit, after commit before ACK, and after ACK before file commit. Split an issued credential across frames and cut after checkpoint but before the suffix. Replay ordinary text once and never publish the credential. Saturate admitted frame, spool and commit limits. Require bounded queues and foreground latency. A shape-valid forged action, lifecycle event or notice produces no trusted control. |
-| File cutover and rollback | With no live attempts, extract legacy session state and rebuild with projections deleted. Require exact historical message bytes, IDs and render equality. Canonical file or ordinary backup carries no private session data. Write new records and rebuild on the rollback target with projections again removed. Require identical post-cutover render, no missing or duplicate commits, and no lost protected binding. Refuse switch if the release pair fails. |
-| Notes extractors and tags | Compare every qualified output and tag-filtered count to the current scanner and a mixed-visibility oracle, including frontmatter, inline hierarchy and excluded code/link syntax. Exercise rooms and ordinary save at peak qualified input, scope and total-key limits. Require p95 ≤40 ms, zero wakes, atomic field visibility and no hidden count change. Refuse above-budget plans and writes without effects. Report committed-field and background search publication lag separately. |
+| Transport and supervisor loss | Cut the real carrier with a queued provider request and detached tool session. Restart for 30 s and 5 min with surviving and timed-out provider transports. Separately kill and hang the supervisor. The watchdog must fence the gateway and freeze the entire subtree within 5 s of renewal, kill by 10 min or on authenticated Stop, and verify cleanup before releasing quota. Reject stale thaw after supervisor loss. Only fresh proof and a safe provider transport permit same-attempt thaw. An uncertain effect requires reconciliation and explicit Resume. Require zero post-fence egress and the sealed first-screen and independent-control gates. |
+| Stream custody and load | Cut after spool persistence before ingest ACK, after file publication before publication ACK, and after publication ACK before spool reclamation. Split an issued credential across frames and restart after the first checkpoint. Require exact replay once with no credential or forged trusted control. Abandon attempts at quota and restart across retirement expiry. Assert reclaim within the deadline and unchanged committed records. For 120 s offer twice the space byte/frame limits across four attempts using 4 KiB frames. After warm-up require at least 90% of both space limits in accepted work. Account for every offered frame as accepted, replayed or explicitly backpressured/rejected and reconcile all accepted work after drain. Require bounded queue/commit work and, during load, p95 ≤40 ms save, ≤100 ms first cold window, ≤150 ms first transcript screen and ≤500 ms independent control, using the sealed measurement boundaries. |
+| File cutover and rollback | At zero live attempts migrate both proven and unprovable legacy bindings. Delete projections and rebuild. Require exact historical message bodies, record IDs/order and render equality. The unproven binding shows the fresh-session notice and never attempts native Resume. Canonical files and ordinary backups carry no private state. Write and rebuild on the rollback target with projections removed. Reopen from a record cursor and refresh a grown tail once by ID. Assert identical records and receipts, no missing or duplicate messages, no revoked rows or bookmarks and protected custody of each proven binding. |
+| Notes extractors, tags and scope changes | Compare qualified outputs and scoped counts against the old scanner and a mixed-visibility oracle. Exercise rooms and saves at peak input and key limits. Add a maximum-size tag set to a scope, revoke membership or a share, then exercise authorized Undo and over-budget expansion. Require p95 ≤40 ms for saves and eligible scope adds and Undo, and p95 ≤500 ms to revoke fencing. Require typed refusal without effects on expansion, immediate denial after the revoke fence even during bounded cleanup, zero wakes and no stale or hidden counts. Report committed-field and background search publication lag separately. |
 | Notes device previews | Require save intent to durable ACK p95 ≤40 ms, local capture to paint p95 ≤100 ms and ACK to current paint on a second authorized viewer p95 ≤2 s. Race a merged room save and copied grant, then cut around bytes and pointer commits. Show only the last authorized stale image until replacement. Assert zero revoked bytes or stale-authorization `304`, cleanup within the staging deadline and zero preview-driven wakes. |
 
 ### C.2 Deferred qualification
@@ -513,7 +560,8 @@ defines no first-release batch contract.
 Revise the manifest, description schema, catalogue, verifier and fixtures
 together for §A.6, common execution/events, protected requests, declarative
 extractors, generic cold create, Notes derived images and row fields, and
-the tag set write budget. Carry forward default all-field search with an
+the tag set write budget. In the same revision apply §A.3’s record-level
+transcript and single-audience contract. Carry forward default all-field search with an
 optional field filter. Remove the planned first-release table store.
 Qualify every new route against the sealed authority matrix. Reserve the
 heavy-job design and Photos contracts for a separate revision.
@@ -592,6 +640,18 @@ heavy-job volume and bulk paths with their first consumer.
 | 15. Offered-load qualification | R1.14, R1.16, R2.19 | §C.2 deferred offered-source rate, age and reconciliation |
 | 16. Server provider policy | R1.09 | §A.5 checked entry-point and notice contributions |
 
+## Fourth review disposition
+
+| Finding | Earlier partial findings covered | Where addressed |
+| --- | --- | --- |
+| 1. Supervisor loss | R1.02, R2.01, R3.01 | §§A.2, C.1 independent watchdog, kill/hang and stale thaw |
+| 2. Child admission | R2.07, R3.06 | §§A.2, A.6, C.1 live caller, exact parent and target under reservation |
+| 3. Rebuildable transcript | R2.18, R3.09 | §§A.3, A.5, C.1, C.3 record cursors, one audience and sealed changes |
+| 4. Legacy profile proof | R1.08, R2.03, R3.09 | §§A.5, C.1 historical binding proof or a fresh session |
+| 5. Spool retirement | R1.06, R3.04 | §§A.3, C.1 durable expiry and bounded reclaim |
+| 6. Scope-mutation key budget | R2.11, R3.10 | §§B.5, C.1 preflight, typed refusal and immediate revoke |
+| 7. Reachable cuts and load scoring | R2.19 | §§A.3, C.1 distinct ACK boundaries, frame accounting and numeric gates |
+
 [owners]: https://git.kayg.org/kayg/calternal-ai/src/commit/85add29af840b225dd9a83cae2e5cd4ce3aecfc9/docs/open-questions.md
 [sealed]: ../plugin-api-v2.md
 [description]: ../description-contract.md
@@ -613,3 +673,4 @@ heavy-job volume and bulk paths with their first consumer.
 [records]: ../../crates/server/src/threads/records.rs
 [sessions]: ../../crates/server/src/threads/document.rs
 [tags]: ../../crates/server/src/notes/tags.rs
+[bindings]: ../../crates/server/src/threads/provider_session.rs
