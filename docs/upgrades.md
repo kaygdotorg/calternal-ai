@@ -325,8 +325,27 @@ Neither service needed SIGKILL. The largest recorded in-process drain
 was 49 ms for each role, including the untimed rollbacks and teardown.
 In the slowest run, the old server drained in 2 ms, but its unit took
 another 2.1 seconds to finish stopping. The next container then took
-1.4 seconds to initialize after creation. Instrument Podman teardown and
-activation before adjusting the application deadline further.
+1.4 seconds to initialize after creation.
+
+The next rehearsal used `b01e8619` for both images, with the same additive
+machines fixture and the candidate image already staged. The driver reused
+the installed Quadlet and machine unit when their contents were unchanged.
+The ten write gaps were 7.480, 1.702, 1.961, 2.029, 2.694, 2.495, 1.599,
+1.785, 2.792 and 1.339 seconds. Nine met the budget. The exact image-pair
+proof passed, all ten rollbacks retained the candidate write, and all ten
+browser sessions stayed signed in. The proxy returned 502 during the gap
+and the tab did not show the reconnect banner.
+
+| Measurement | Minimum | Median | Maximum |
+| --- | ---: | ---: | ---: |
+| Write acknowledgement gap | 1.339 s | 1.995 s | 7.480 s |
+| Podman teardown, exit to removal | 215 ms | 289 ms | 977 ms |
+| Old container removal to new container creation | 644 ms | 997 ms | 5,630 ms |
+| Podman startup, creation to start | 205 ms | 371 ms | 968 ms |
+
+The interval between containers includes locked migration preparation,
+commit and unit activation. The longest gap in this series was dominated
+by the interval between containers.
 
 The browser can treat proxy 502, 503 and 504 as temporary unavailability,
 show the reconnect state and retry with the original request IDs.
