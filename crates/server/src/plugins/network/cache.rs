@@ -12,7 +12,7 @@ const SHARDS: usize = 16;
 const SHARD_BYTES: usize = 32 * 1024 * 1024;
 const SHARD_ENTRIES: usize = 256;
 const READY_TTL: Duration = Duration::from_secs(24 * 3600);
-const FAILED_TTL: Duration = Duration::from_secs(60);
+pub(super) const FAILED_TTL: Duration = Duration::from_secs(60);
 const PENDING_TTL: Duration = Duration::from_secs(30);
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]

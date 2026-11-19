@@ -320,8 +320,8 @@ Each asset allows 10 MB, three redirects, 5 seconds to connect and 10
 seconds total for outbound work. Only checked PNG, JPEG, GIF, WebP, AVIF,
 WOFF, WOFF2, TrueType and OpenType are served. SVG, HTML and unrecognized
 or conflicting types are refused. A read can wait for work already queued.
-Unavailable assets return a generic 404. Dropped work returns HTTP 503 with
-the reason `content_fetch_capacity`. The installation admits 128 queued or
+Unavailable assets return a generic 404. Dropped work returns HTTP 429 with
+`Retry-After: 60` and a plain-text message. The installation admits 128 queued or
 running assets, 16 running assets and two concurrent hops per checked IP.
 Each plugin may hold up to 16
 queue slots across spaces, with at most eight in any one space. The rolling

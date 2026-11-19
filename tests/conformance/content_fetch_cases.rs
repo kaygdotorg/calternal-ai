@@ -328,7 +328,10 @@ async fn queue_capacity_has_a_distinct_asset_failure() {
         .await;
     assert_eq!(assets.len(), 9);
     let dropped = f.asset(&assets[8]).await;
-    assert_eq!(dropped.status(), 503);
-    let details = dropped.text().await.unwrap();
-    assert!(details.contains("content_fetch_capacity"), "{details}");
+    assert_eq!(dropped.status(), 429);
+    assert_eq!(dropped.headers()["Retry-After"], "60");
+    assert_eq!(
+        dropped.text().await.unwrap(),
+        "Remote media is busy. Try again in a minute."
+    );
 }

@@ -153,13 +153,22 @@ pub(crate) async fn asset<D: Directory>(
         if expiry <= asset_now() || !std::sync::Arc::ptr_eq(&current, &after) {
             return Err(missing());
         }
-        let asset = asset.map_err(|failure| match failure {
-            super::cache::Failure::Unavailable => missing(),
-            super::cache::Failure::Capacity => {
-                calternal_types::Error::unavailable("Remote media capacity exhausted")
-                    .with_details(serde_json::json!({"reason":"content_fetch_capacity"}))
+        let asset = match asset {
+            Ok(asset) => asset,
+            Err(super::cache::Failure::Unavailable) => return Err(missing()),
+            Err(super::cache::Failure::Capacity) => {
+                let mut response = (
+                    axum::http::StatusCode::TOO_MANY_REQUESTS,
+                    "Remote media is busy. Try again in a minute.",
+                )
+                    .into_response();
+                response.headers_mut().insert(
+                    header::RETRY_AFTER,
+                    HeaderValue::from(super::cache::FAILED_TTL.as_secs()),
+                );
+                return Ok(response);
             }
-        })?;
+        };
         Ok::<_, calternal_types::Error>(
             (
                 [
