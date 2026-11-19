@@ -82,9 +82,6 @@
           "field": "title",
           "fallback": "Untitled"
         },
-        "icon": {
-          "kindIcon": true
-        },
         "marks": [
           {
             "kind": "icon",
@@ -234,9 +231,6 @@
         "title": {
           "field": "title",
           "fallback": "Untitled"
-        },
-        "icon": {
-          "kindIcon": true
         },
         "selectable": true,
         "trailingActions": [

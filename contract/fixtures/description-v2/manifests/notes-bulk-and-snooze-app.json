@@ -14,7 +14,7 @@
         "id": "app",
         "template": {
           "path": "notes-bulk-and-snooze-app.json",
-          "sha256": "b2d61a2a176f10a17ef4d2aa1e9255135489508a23e051271a4b7113bdd5640e"
+          "sha256": "42872c3ada60c765e9fec8c8052901eba0e8e3127e653a690f500c495bb22fe2"
         }
       }
     }

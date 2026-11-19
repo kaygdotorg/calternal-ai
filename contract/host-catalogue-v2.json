@@ -804,6 +804,7 @@
     },
     "turns.snooze": {
       "engine": "actor-scoped thread snooze",
+      "available": false,
       "effect": "reversible",
       "idempotency": "request_id",
       "authority": "Member changing their own thread snooze",
@@ -844,7 +845,7 @@
         "$ref": "#/$defs/ActionOutcome"
       },
       "atomic_undo": false,
-      "atomic_undo_unavailable": "The current thread writer stores one shared manual deadline and cannot implement this actor-scoped operation. Keep the operation unavailable until the Step 2 actor-keyed snooze writer gate proves that the actor’s deadline, its index entry and Undo commit together. Subscription retry state is unaffected."
+      "atomic_undo_unavailable": "The current thread writer stores one shared manual deadline and cannot implement this actor-scoped operation. Set available to true only after the Step 2 actor-keyed snooze writer gate proves that the actor’s deadline, its index entry and Undo commit together. The host refuses snooze on every route while available is false. Subscription retry state is unaffected."
     },
     "turns.follow_up": {
       "engine": "turn_follow_up",

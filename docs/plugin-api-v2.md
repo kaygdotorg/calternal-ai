@@ -1,4 +1,4 @@
-# Plugin API v2 · revision 12.1
+# Plugin API v2 · revision 12.3
 
 The first contract covers host-drawn apps, generic items, durable jobs and
 Turns. Freeze after the §8 spikes. Fixture bounds are test settings. See the
@@ -622,6 +622,9 @@ with account- and space-bound keys and retain for at most 14 days or
 `cache.maxAgeDays` if shorter. Erase on sign-out, account switch or known
 revocation. Every action requires a fresh host context.
 
+For the 600 ms phone cold-launch gate in §8, use the same connection
+flight with and without the member row record. Use TLS resumption and pipeline authentication, `view.open` and the first windows in one application flight. The host handles them in that order.
+
 The catalogue gives typed host component routes. `transcript.page`
 accepts a checked Thread ref, a durable committed cursor
 and a bounded page budget (fixture at most 128 events and 128 KiB encoded).
@@ -685,6 +688,7 @@ only against the issued context, never its current selection.
 1. **Resolve.** Accept action/activation IDs, the context and declared
    typed device interactions only. Reconstruct server-owned route, row,
    viewer, Bind values and action from host state and the context.
+   Refuse catalogue operations with `available: false` at resolve and dispatch.
    Validate form/prompt slots and host draft refs. Bulk resolve may submit
    up to 50 stable IDs from the context-bound Bind. Reauthorize every ID
    against that snapshot and return a scoped `selection_ref` inside the
@@ -876,8 +880,9 @@ from shared contract models.
 
 For a first list, `defineView` supplies the standard Bind window and count
 defaults and the shell’s empty, loading and error messages. It defaults the
-row title to the generated `title` field and the row icon to `kindIcon`.
-`defineChrome` uses those same Bind and row defaults for sidebar sections.
+row title to the generated `title` field. Notes and Threads item rows omit
+leading icons. Generic item-row icon defaults await the Owner’s decision
+below. `defineChrome` uses the same Bind and title defaults for sidebar sections.
 The SDK defaults `title_field` to a declared string `title`, adds the
 package’s own kinds to `reads`, and emits `network: "none"` and an empty
 `operations` list when omitted. Window and count defaults follow the
@@ -959,12 +964,12 @@ and zero-effect assertions must hold on every repetition.
 | **Scoped search** | On locked perf-01 exercise the claimed-text and Turns shapes in their qualified scopes through the depth in `query.search`. Include a searchable community kind alongside Notes. Beyond that depth, assert ready windows with the exact authorized rows and order while both budgets hold. Exhaust each budget separately and assert a `refine_query` window with bounded provisional rows and no count. For Notes check the qualified Unicode cases, refusal before the mark-aware Devanagari rebuild, and CJK segmentation and substring refusal. Meter postings, materialized-row work and count work separately against `query.live_limits`. A broad prefix must start no expansion. During publication lag and stale authority, assert `loading` with no rows, counts or activation contexts. Race revoke against delivery and assert zero stale results. For a reader with a ready search, edit a hidden row and a hidden field. Check before, during and after publication that the visible state, rows, ranks, count and result version stay unchanged. Measure foreground save and save-to-search lag separately. Keep maintenance out of the save transaction and meet the append gate. |
 | **Atomic large save** | Stage an escape-heavy 2 MiB body and reconstruct it by revision-pinned ranges after the head moves, p95 ≤5 s. The 60 s range pin is invalidated by purge or revoke. Race duplicate begin, lost chunk ACK, conflicting bytes, cancel and orphan cleanup. Race revoke, epoch loss, enrollment removal and run replacement on both sides of commit and inject crashes before publication and before reply. No partial edit or success receipt before commit. After commit recover one revision and receipt. |
 | **Durable transcript** | Stall the reader, cut after commit before ACK and restart. First screenful drawn p95 ≤150 ms on a warm authorized reconnect, with the durable cursor, stable event and receipt sequences unchanged. Revoked reconnect reveals neither rows nor bookmarks. An independent control request completes p95 ≤500 ms with the transcript reader stalled. |
-| **Host + renderer authority** | On Svelte Chromium check both formats, a real protected approval and a live Bind. Forge row/route/Bind/context, untouched prefills, bulk IDs, ChoiceRefs, cached data and built-in surfaces. Inject duplicate and stale activations, revocation and unrelated churn. Zero unauthorized effects or rendered bytes, one commit on replay, and unrelated-churn action p95 ≤2 s from dispatch. Race revocation at egress, job claim/park and approval resolve before freezing those routes. For each §4.4 atomic-Undo case, crash before and after the named commit and during publication: recover neither effect nor Undo before commit, and both after it. Concurrently edit a dependency, then require Undo to refuse without another effect. Exercise ineligible variants and prove the shortcut and full swipe cannot bypass their checks. Delay or spoof lease replies and verify only current, exact retained windows repaint. |
+| **Host + renderer authority** | On Svelte Chromium check both formats, a real protected approval and a live Bind. Forge row/route/Bind/context, untouched prefills, bulk IDs, ChoiceRefs, cached data and built-in surfaces. Inject duplicate and stale activations, revocation and unrelated churn. Zero unauthorized effects or rendered bytes, one commit on replay, and unrelated-churn action p95 ≤2 s from dispatch. Race revocation at egress, job claim/park and approval resolve before freezing those routes. For each §4.4 atomic-Undo case, crash before and after the named commit and during publication: recover neither effect nor Undo before commit, and both after it. Concurrently edit a dependency, then require Undo to refuse without another effect. Recover a committed idle archive, refuse a later Send, and verify that unarchive Undo restores the thread head without starting a turn. Exercise ineligible variants and prove the shortcut and full swipe cannot bypass their checks. Delay or spoof lease replies and verify only current, exact retained windows repaint. |
 | **Phone activation exchanges** | In the same Chromium phone link fixture, from action intent to host outcome, an eligible swipe and prepared Send each use one exchange. An ordinary plugin operation without a challenge uses two. On the Step 2 archive writer, an idle archive full swipe takes one exchange with no sheet and returns unarchive Undo. An active archive shows the challenge and the host-written stop material. Also exercise the cleanup cases. Require the bounds on every run and report p95 exchange counts and elapsed time. Alter prepared material, including via parsed final text, or drop the Send reply. Require a fresh preview for changed material and replay the exact final text once. |
 | **Keyboard windowing** | 5,000 rows with 30 keys/sec on the phone fixture. At most four window requests in any second and zero selection/navigation events during repeat on every run. Report p95 request rate. After the first real rows paint, capture each viewport frame during the repeat burst. Require zero skeleton-row frames during the steady 30 Hz segment on every run. Same-version prefetch applies while keys repeat; an activation waits for the context of its drawn target. Delay a context for A until B is drawn and verify the activation cannot use A. |
 | **Nested rows and user sections** | On real content and Turns engines, expand two parents and page their children independently. Check depth, ancestry, revocation and a forged parent ref. Create, rename and remove personal sections and Move to, Move up and Move down. Undo each committed edit, verify placement and order, refuse stale Undo, and prove a second member’s layout is unaffected. |
 | **Persisted member rows** | Use an authenticated eligible root Bind. Verify device ciphertext and account/space key separation, reject expired or forged records and erase on known revocation, sign-out and account switch. Paint eligible rows on an unlocked launch, then confirm or correct them against the host. Check that unconfirmed rows have no executable actions and that guest and public windows leave no record. |
-| **Phone cold launch** | Restart the client with an authorized account and a cold connection, with and without an eligible member row record. Start at launch intent and time first paint and first confirmed or corrected rows on the phone link. Require confirmed rows p95 ≤600 ms in both cases. The initial frame uses the local template and unconfirmed rows with a record, or the loading state without one. Confirm no action can run before fresh host context. |
+| **Phone cold launch** | Restart the client with an authorized account and a cold connection, with and without an eligible member row record. Start at launch intent and time first paint and first confirmed or corrected rows on the phone link. Require confirmed rows p95 ≤600 ms in both cases. Use TLS resumption and pipeline authentication, `view.open` and the first windows in one application flight. The host handles them in that order. The initial frame uses the local template and unconfirmed rows with a record, or the loading state without one. Confirm no action can run before fresh host context. |
 | **Snapshot randomness** | Independently restore the same snapshot twice and sample the guest kernel and each restored process’s crypto RNG, including Node. Require different bytes for both restores at both layers and require fresh kernel and process randomness before any plugin code. Refuse admission if reseed or fresh process reinitialization cannot establish that. Include reseed time in measured wake. |
 | **Interactive pending** | Force work past three plugin seconds, including a cold wake with the separate measured/fixture allowance. The host publishes `pending` within three seconds of dispatch on every run. On the phone link, the caller receives it within 250 ms of host publication on every run. Record both timestamps, one diagnostic and one status ref. Poll while it finishes and retry after a lost reply. Never launch again or allow effects after ticket expiry. |
 
@@ -1022,7 +1027,8 @@ cases all pass, the author uses only public documentation/SDK input, there
 are zero failed commands, and a second verifier run passes unchanged.
 Exercise the Reading List paper walk with its form, full swipe, search and
 created/then, plus a typed parked question with answer and deadline and an
-intentional refusal/retry with an actionable response.'
+intentional refusal/retry with an actionable response.
+
 ### Step 2 — Integrate placement and engines
 
 Pass these end-to-end flows on the selected wall before app migration.
@@ -1069,6 +1075,12 @@ Pass these end-to-end flows on the selected wall before app migration.
   accepts an archived head with a matching unresolved intent. Refuse
   stale Undo. Rerun the Step 0
   phone activation spike on this writer before enabling idle full swipe.
+
+  Measure how often otherwise-idle threads carry saved thread grants.
+  The Step 2 lane uses that result to choose one of two paths. Either
+  retire those grants in the same FULL transaction without a challenge
+  and have Undo restore only the thread head, or retain the challenge
+  and record a parity exception with the measured frequency.
 - **Actor-keyed snooze writer.** In one FULL thread content transaction,
   commit the actor-keyed deadline, its index entry and Undo. Crash on both
   sides and verify all three commit together. Exercise distinct deadlines
@@ -1138,6 +1150,9 @@ See the [recorded answers](https://git.kayg.org/kayg/calternal-ai/src/commit/3ab
   field can feed both Binds.
 - **OPEN — Start the row’s leave animation on `ok`.** Decide whether to
   start leaving before the next window omits the row.
+- **OPEN — Leading icons on plugin item rows.** Decide whether a plugin
+  may declare a leading icon while Notes and Threads omit it, or whether
+  every item row omits leading icons. Navigation rows keep their icons.
 - **OPEN — Private per-person items.** The Reading List reminder’s viewer
   filter does not grant item-level privacy.
 

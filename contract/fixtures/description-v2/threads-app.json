@@ -40,13 +40,6 @@
         "title": {
           "field": "title"
         },
-        "icon": {
-          "field": "provider",
-          "map": {
-            "calternal-claude-code": "claude",
-            "calternal-codex": "codex"
-          }
-        },
         "marks": [
           {
             "kind": "dot",
@@ -67,6 +60,16 @@
               "op": "eq",
               "value": {
                 "literal": "failed"
+              }
+            }
+          },
+          {
+            "kind": "icon",
+            "icon": {
+              "field": "provider",
+              "map": {
+                "calternal-claude-code": "claude",
+                "calternal-codex": "codex"
               }
             }
           }
@@ -124,13 +127,6 @@
         "title": {
           "field": "title"
         },
-        "icon": {
-          "field": "provider",
-          "map": {
-            "calternal-claude-code": "claude",
-            "calternal-codex": "codex"
-          }
-        },
         "marks": [
           {
             "kind": "dot",
@@ -139,6 +135,16 @@
               "op": "eq",
               "value": {
                 "literal": "waiting"
+              }
+            }
+          },
+          {
+            "kind": "icon",
+            "icon": {
+              "field": "provider",
+              "map": {
+                "calternal-claude-code": "claude",
+                "calternal-codex": "codex"
               }
             }
           }

@@ -44,17 +44,20 @@
         "title": {
           "field": "title"
         },
-        "icon": {
-          "field": "provider",
-          "map": {
-            "calternal-claude-code": "claude",
-            "calternal-codex": "codex"
-          }
-        },
         "marks": [
           {
             "kind": "text",
             "field": "state"
+          },
+          {
+            "kind": "icon",
+            "icon": {
+              "field": "provider",
+              "map": {
+                "calternal-claude-code": "claude",
+                "calternal-codex": "codex"
+              }
+            }
           }
         ],
         "menu": [
@@ -124,17 +127,20 @@
         "title": {
           "field": "title"
         },
-        "icon": {
-          "field": "provider",
-          "map": {
-            "calternal-claude-code": "claude",
-            "calternal-codex": "codex"
-          }
-        },
         "marks": [
           {
             "kind": "text",
             "field": "state"
+          },
+          {
+            "kind": "icon",
+            "icon": {
+              "field": "provider",
+              "map": {
+                "calternal-claude-code": "claude",
+                "calternal-codex": "codex"
+              }
+            }
           }
         ],
         "menu": [
@@ -201,17 +207,20 @@
         "title": {
           "field": "title"
         },
-        "icon": {
-          "field": "provider",
-          "map": {
-            "calternal-claude-code": "claude",
-            "calternal-codex": "codex"
-          }
-        },
         "marks": [
           {
             "kind": "text",
             "field": "state"
+          },
+          {
+            "kind": "icon",
+            "icon": {
+              "field": "provider",
+              "map": {
+                "calternal-claude-code": "claude",
+                "calternal-codex": "codex"
+              }
+            }
           }
         ],
         "menu": [
@@ -328,17 +337,20 @@
         "title": {
           "field": "title"
         },
-        "icon": {
-          "field": "provider",
-          "map": {
-            "calternal-claude-code": "claude",
-            "calternal-codex": "codex"
-          }
-        },
         "marks": [
           {
             "kind": "text",
             "field": "state"
+          },
+          {
+            "kind": "icon",
+            "icon": {
+              "field": "provider",
+              "map": {
+                "calternal-claude-code": "claude",
+                "calternal-codex": "codex"
+              }
+            }
           }
         ],
         "menu": [

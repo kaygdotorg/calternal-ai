@@ -1,6 +1,6 @@
 # Description contract (v2)
 
-Status: **revision 12.1**, paired with the [Plugin API v2 specification](plugin-api-v2.md) on `lane/plugin-api-v2-combined`. The [description schema](../contract/description-v2.schema.json) defines the shared renderer shapes.
+Status: **revision 12.3**, paired with the [Plugin API v2 specification](plugin-api-v2.md) on `lane/plugin-api-v2-combined`. The [description schema](../contract/description-v2.schema.json) defines the shared renderer shapes.
 
 The schema is checked with `python3 contract/verify-description.py` against the fixtures in `contract/fixtures/description-v2/` (valid ones must pass,
 `invalid-*` ones must fail). The fixtures are the paper exercises of section 9.
@@ -39,7 +39,7 @@ One definition (`$defs/Bind`):
   "filter": { "all": [{ "field": "trashed", "op": "eq", "value": { "literal": false } }] },
   "sort": [{ "field": "updated", "direction": "desc" }],
   "window": { "size": 60, "count": "exact" },
-  "row": { "title": { "field": "title" }, "icon": { "kindIcon": true }, "open": { "route": { "name": "item", "value": "id" } } },
+  "row": { "title": { "field": "title" }, "open": { "route": { "name": "item", "value": "id" } } },
   "states": { "empty": { "title": "No notes here" } } }
 ```
 
@@ -98,7 +98,7 @@ Row ids are opaque and stable. No position is an authority reference.
 
 ### 2.4 Row template
 
-`title` is one field (one line; there is no second line and no free-form row content). `icon` is a catalogue name, a field's value or the kind's own icon.
+`title` is one field (one line; there is no second line and no free-form row content). An optional `icon` is a catalogue name, a field’s value or the kind’s own icon. The renderer draws exactly the icons declared by the description. Note and thread item rows omit the leading icon, and thread provider indicators can appear as trailing marks.
 `marks` (up to three) are trailing dots, counts, texts or icons, each with an optional `when` predicate and a tone. `leadingActions`, `trailingActions` and `menu` are
 `invoke` definitions; only the first leading or trailing action may set `fullSwipe`. `open` navigates (sets a route parameter to the row id) or invokes.
 Use the host-issued row reference for row identity in selection, events and scope. Item rows use the kind’s row reference. Rows of a repeated section use a `LayoutEntryRef`.
@@ -393,7 +393,7 @@ What the renderer needs from the contract, and what it costs:
 4. **While a key repeats, no selection or row event crosses the bridge**: those go out once after the key settles (about 100 ms after the last key). Window **requests** for
    prefetch may cross, coalesced to at most 4 a second; replies to prefetch for the result version already drawn are applied at once and only pushes that change the version are held until the selection settles,
    decoded and compared off the main thread; a held selection is flushed before an activation is sent. A republish that only confirms the selection must not touch the list.
-5. **One line per row**, one icon column per list (the system aligns titles by it), single neutral accent: the accent is passed only to the unread mark and a prominent action.
+5. **One line per row**, one aligned icon column where the description supplies leading icons, single neutral accent: the accent is passed only to the unread mark and a prominent action.
 6. **Swipe actions** need `title`, `icon`, `tone` and `fullSwipe` on the invoke; they draw with the system's swipe look, tinted by tone, never by the root tint.
 7. **Haptics and menus** are the shell's: selection feedback on `route` and `selection` events, a system menu for `menu`.
 8. **Touch targets** are 44 pt; the renderer, not the description, sizes controls.
@@ -436,8 +436,8 @@ The `threads-app.json` and `threads-nested-catalogue-app.json` fixtures exercise
 
 ## 10. Open questions and what this contract does not decide
 
-1. `host.item.patch-metadata` (maps to `item_save`'s metadata arm) and `host.trash.purge` (confirmed, Manager or Owner, as a job) are the plugins lane's, part A.
-2. Reminders notify through `notify_creator` on the existing scheduler (plugins lane, part A).
+1. [Metadata patch](../contract/host-catalogue-v2.json#/operations/host.item.patch-metadata) uses the metadata arm of `item_save`. [Trash purge](../contract/host-catalogue-v2.json#/operations/host.trash.purge) is a confirmed Manager or Owner job.
+2. Reminders use the scheduler’s [`notify_creator`](../contract/host-catalogue-v2.json#/$defs/ScheduleCreateInput/properties/notify_creator).
 3. **Generic TCP** is outside this contract; the owner's decision is recorded elsewhere and is not a description concern.
 4. **Section repeaters** (one section per row of a bind) and **nested child rows** are in the first contract (owner decision Q11, `Section.repeat`, `RowTemplate.children`); **drag** is a recorded parity exception, with Move to, Move up and Move down standing in.
 5. The **retirement date of v1** is the owner's.
