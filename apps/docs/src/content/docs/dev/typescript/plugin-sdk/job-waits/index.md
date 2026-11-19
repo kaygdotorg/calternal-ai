@@ -27,3 +27,4 @@ title: "plugin-sdk: job-waits/README"
 ## Functions
 
 - [parkJob](/docs/dev/typescript/plugin-sdk/job-waits/functions/parkjob/)
+- [startJob](/docs/dev/typescript/plugin-sdk/job-waits/functions/startjob/)

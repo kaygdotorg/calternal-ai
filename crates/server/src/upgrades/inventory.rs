@@ -165,7 +165,7 @@ fn databases(appdata: &Path) -> io::Result<Vec<Database>> {
             [
                 Some(("content.db", calternal_content::ACCOUNT_SCHEMA)),
                 Some(("input.db", account_input::UPGRADE_SCHEMA)),
-                None,
+                Some(("web-push.db", crate::web_push::db::SCHEMA)),
                 Some(("agent-settings.db", plugins::AGENT_SETTINGS_SCHEMA)),
                 Some(("onboarding.db", crate::onboarding::SCHEMA)),
                 Some(("secrets.db", calternal_secrets::OWNER_SCHEMA)),

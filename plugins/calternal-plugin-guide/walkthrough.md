@@ -16,19 +16,147 @@
 8. Show the manifest, operation risks and host calls to the administrator
    who will review and activate the package.
 
-For a reading-list plugin, declare the `reading-items` kind and the
-`list_items_v1` host call. In its read operation, pass the declared kind
-and the optional incoming cursor to the SDK:
+## Generated status view starter
+
+The files below come from the default `calternal plugin new my-plugin`
+scaffold. The fixture invokes its view operation over the worker protocol.
+
+<!-- BEGIN GENERATED view -->
+
+### manifest.json
+
+```json
+{
+  "id": "my-plugin",
+  "name": "my-plugin",
+  "icon": "puzzle",
+  "version": "0.1.0",
+  "api_version": 1,
+  "kinds": [
+    {
+      "id": "my-plugin",
+      "schema": {
+        "type": "object"
+      },
+      "storage": {
+        "hidden": true
+      },
+      "claimed_text": true
+    }
+  ],
+  "operations": [
+    {
+      "id": "my-plugin.hello",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "reads": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "view": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "view"
+        ],
+        "additionalProperties": false
+      },
+      "required_capability": "space.read",
+      "mutates": false,
+      "idempotency": "read_only",
+      "risk": "read"
+    }
+  ],
+  "slots": [
+    {
+      "id": "hello",
+      "label": "Plugin status",
+      "slot": "card_window",
+      "renderer": {
+        "type": "generated",
+        "operation": "my-plugin.hello"
+      }
+    }
+  ],
+  "collections": [],
+  "views": [],
+  "attention": [],
+  "settings": [],
+  "schedules": [],
+  "webhooks": [],
+  "secrets": [],
+  "hooks": [],
+  "themes": [],
+  "host_calls": [
+    "read_item"
+  ]
+}
+```
+
+### worker.ts
 
 ```ts
-import { listItems } from "@calternal/plugin-sdk";
+/** Example plugin with a manifest-typed operation and a portable view. */
+import { serveWorker, typedHandlers } from "@calternal/plugin-sdk";
+import manifest from "./manifest.generated.js";
 
-const page = await listItems(context, {
-  kind: "reading-items",
-  limit: 25,
-  cursor: input.cursor,
+const handlers = typedHandlers(manifest, {
+  "my-plugin.hello": async (input, context) => {
+    if (input.reads) {
+      await context.callAll(Array.from({ length: 3 }, () => ["read_item", {
+        kind: "my-plugin",
+        item_id: "01900000-0000-7000-8000-000000000003",
+      }] as const));
+    }
+    return { view: { genui_version: 2, source: 'Row([Metric("Plugin", "Ready")])' } };
+  },
+});
+
+serveWorker(manifest, handlers, process.stdin, line =>
+  new Promise<void>((resolve, reject) =>
+    process.stdout.write(line, error => error ? reject(error) : resolve())),
+).catch(() => {
+  process.stderr.write("Worker protocol error. Check that the host speaks worker-v2.\n");
+  process.exitCode = 1;
+  process.stdin.destroy();
 });
 ```
+
+### worker.test.mjs
+
+```js
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import { fixtureWorker } from "@calternal/plugin-sdk/testing";
+import { spawn } from "node:child_process";
+
+test("returns a generated view over the worker protocol", async () => {
+  const fixture = fixtureWorker(spawn(process.execPath, ["dist/worker.js"]));
+  try {
+    const view = await fixture.invoke("my-plugin.hello", {});
+    assert.equal(view.view.genui_version, 2);
+    assert.match(view.view.source, /Plugin/);
+  } finally {
+    await fixture.close();
+  }
+});
+```
+
+<!-- END GENERATED view -->
+
+## Reading-list plugins
+
+Declare the `reading-items` kind and the `list_items_v1` host call. Call
+`listItems(context, { kind: "reading-items", limit: 25, cursor: input.cursor })`
+from the SDK in the read operation.
 
 Use `page.items` to populate the generated list and return
 `page.next_cursor` in the declared result. Declare the read operation

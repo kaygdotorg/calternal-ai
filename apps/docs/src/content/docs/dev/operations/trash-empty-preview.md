@@ -8,14 +8,14 @@ title: "trash.empty.preview"
 
 Count notes and retained version bytes before emptying Trash
 
-Capability: content.purge.
+Capability: space.settings.
 
 ## Declaration
 
 ```json
 {
   "risk": "read",
-  "required_capability": "content.purge",
+  "required_capability": "space.settings",
   "id": "trash.empty.preview",
   "description": "Count notes and retained version bytes before emptying Trash",
   "mutates": false

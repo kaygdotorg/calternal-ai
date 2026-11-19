@@ -15,19 +15,28 @@ async fn empty_trash_requires_confirmation_and_manager_authority() {
     )
     .unwrap();
     drop(db);
-    let auth = rusqlite::Connection::open(f.appdata().join("system/auth.db")).unwrap();
-    auth.execute_batch(
-        "DELETE FROM space_role_capabilities WHERE capability='content.purge';
-         PRAGMA user_version=14;",
+    f.start().await;
+    let auth = rusqlite::Connection::open_with_flags(
+        f.appdata().join("system/auth.db"),
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
     )
     .unwrap();
+    assert_eq!(
+        auth.pragma_query_value(None, "user_version", |row| row.get::<_, i64>(0))
+            .unwrap(),
+        14,
+    );
     drop(auth);
-    f.start().await;
     let managed = data(
         f.op(2, "trash.empty.preview", json!({"space_id":f.spaces[4]}))
             .await,
     );
     assert_eq!(managed["count"], 0);
+    let manager_space = &f.spaces[4];
+    let manager_note = f.note(2, manager_space).await;
+    let manager_target = json!({"id":manager_note["id"]});
+    f.op(2, "notes.delete", manager_target.clone()).await.ok();
+    f.op(2, "trash.purge", manager_target).await.ok();
     let id = &old["id"];
     let target = json!({"id":id});
     f.op(2, "notes.delete", target.clone()).await.ok();

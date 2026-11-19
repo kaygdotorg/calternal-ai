@@ -32,6 +32,110 @@ item_id: string,
  */
 text: string, };
 /**
+ * Register or renew the signed-in installation's browser subscription.
+ */
+
+export type PushSubscribeInput = {
+/**
+ * Browser PushSubscription endpoint, restricted to supported HTTPS providers.
+ */
+endpoint: string,
+/**
+ * Unpadded base64url-encoded uncompressed P-256 public key.
+ */
+p256dh: string,
+/**
+ * Unpadded base64url-encoded 16-byte browser authentication secret.
+ */
+auth: string, };
+/**
+ * Remove an installation belonging to the signed-in account.
+ */
+
+export type PushUnsubscribeInput = {
+/**
+ * Installation UUID returned by push.devices.
+ */
+device_id: string, };
+/**
+ * One active subscription, with no endpoint or browser key material.
+ */
+
+export type PushDevice = {
+/**
+ * Revocable installation UUID.
+ */
+device_id: string,
+/**
+ * Display name from the installation directory.
+ */
+name: string,
+/**
+ * Whether the current credential belongs to this installation.
+ */
+current: boolean,
+/**
+ * Server-enforced expiry in Unix milliseconds.
+ */
+expires_at_ms: bigint, };
+/**
+ * Subscription inventory and the public browser application server key.
+ */
+
+export type PushDevices = {
+/**
+ * Unpadded base64url VAPID public key for PushManager.subscribe.
+ */
+application_server_key: string,
+/**
+ * The signed-in account's live subscriptions.
+ */
+devices: Array<PushDevice>, };
+/**
+ * Outcome of an idempotent subscription removal.
+ */
+
+export type PushRemoved = {
+/**
+ * True when a stored subscription was removed.
+ */
+removed: boolean, };
+/**
+ * Best-effort admission of a test notification for the current installation.
+ */
+
+export type PushQueued = {
+/**
+ * True when the background worker accepted the test.
+ */
+queued: boolean, };
+/**
+ * The only status values delivered to a browser push receiver.
+ */
+
+export type PushStatus = "needs_you" | "finished" | "test";
+/**
+ * Browser notification payload, encrypted before the relay receives it.
+ */
+
+export type PushPayload = {
+/**
+ * Current thread title, or a fixed application title for a test.
+ */
+title: string,
+/**
+ * Notification label. No message, tool output, or request text.
+ */
+status: PushStatus,
+/**
+ * Owning space UUID for click routing. Absent for a test push.
+ */
+space_id?: string,
+/**
+ * Thread UUID for click routing. Absent for a test push.
+ */
+thread_id?: string, };
+/**
  * Account-private list input. No caller-supplied account is accepted.
  */
 
@@ -208,6 +312,53 @@ sandbox_started: boolean,
  * The provider's check, absent if it did not report an outcome.
  */
 provider: ProviderCheck | null, };
+/**
+ * Input for reading the execution setting.
+ */
+
+export type SpaceMachineGet = {
+/**
+ * Space UUID.
+ */
+space_id: string, };
+/**
+ * Input for setting the shared execution machine.
+ */
+
+export type SpaceMachineSet = {
+/**
+ * Enable isolated tools on this machine. Only the space Owner may enable them.
+ */
+tools_enabled: boolean | null,
+/**
+ * Shared space UUID.
+ */
+space_id: string,
+/**
+ * Owner's sandbox machine UUID or null to clear the setting.
+ */
+machine_id: string | null, };
+/**
+ * Current space execution setting and the notice shown during setup.
+ */
+
+export type SpaceMachineResult = {
+/**
+ * Whether the Owner enabled isolated tools for this binding.
+ */
+tools_enabled: boolean,
+/**
+ * Whether a shared machine is configured.
+ */
+configured: boolean,
+/**
+ * Selected machine UUID, visible only with permission to change it.
+ */
+machine_id: string | null,
+/**
+ * Notice for the person configuring the provider account.
+ */
+notice: string, };
 /**
  * Select the space and optionally a saved thread's placement constraint.
  */
@@ -414,7 +565,11 @@ machine_id: string | null,
 /**
  * Use an entitled anonymous pool machine. Mutually exclusive with machine_id.
  */
-pool: boolean, };
+pool: boolean,
+/**
+ * Sign in to the configured space login using space.settings authority.
+ */
+shared: boolean, };
 /**
  * Supply a browser authorization code to the original official process.
  */
@@ -2289,6 +2444,10 @@ direct: boolean,
  * Check an entitled pool machine without exposing its identity.
  */
 pool: boolean,
+/**
+ * Use the caller's machine and login for this turn in a configured shared space.
+ */
+personal_machine: boolean,
 /**
  * Thread UUID for check/run; no thread file is created in step one.
  */

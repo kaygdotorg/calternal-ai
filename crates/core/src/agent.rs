@@ -34,6 +34,9 @@ pub struct AgentInput {
     pub direct: bool,
     /// Check an entitled pool machine without exposing its identity.
     pub pool: bool,
+    /// Use the caller's machine and login for this turn in a configured shared space.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub personal_machine: bool,
     /// Thread UUID for check/run; no thread file is created in step one.
     pub thread_id: String,
     /// Job UUID for job operations. A thread credential can omit it for access.request.
@@ -69,8 +72,60 @@ pub struct AgentInput {
     pub after: u64,
 }
 
+/// Read the execution setting for a space.
+pub const SPACE_MACHINE_GET: &str = "space.machine.get";
+
+/// Set or clear the shared execution machine.
+pub const SPACE_MACHINE_SET: &str = "space.machine.set";
+
+/// Input for reading the execution setting.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(deny_unknown_fields)]
+pub struct SpaceMachineGet {
+    /// Space UUID.
+    pub space_id: String,
+}
+
+/// Input for setting the shared execution machine.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(deny_unknown_fields)]
+pub struct SpaceMachineSet {
+    /// Enable isolated tools on this machine. Only the space Owner may enable them.
+    #[serde(default)]
+    pub tools_enabled: Option<bool>,
+    /// Shared space UUID.
+    pub space_id: String,
+    /// Owner's sandbox machine UUID or null to clear the setting.
+    #[serde(deserialize_with = "crate::models::required_nullable_string")]
+    #[schemars(schema_with = "crate::models::nullable_string_schema")]
+    pub machine_id: Option<String>,
+}
+
+/// Current space execution setting and the notice shown during setup.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS)]
+pub struct SpaceMachineResult {
+    /// Whether the Owner enabled isolated tools for this binding.
+    pub tools_enabled: bool,
+    /// Whether a shared machine is configured.
+    pub configured: bool,
+    /// Selected machine UUID, visible only with permission to change it.
+    pub machine_id: Option<String>,
+    /// Notice for the person configuring the provider account.
+    pub notice: String,
+}
+
 /// Manual provider operations. This table feeds discovery, policy and instruction indexes.
 pub const AGENT_OPERATIONS: &[(&str, &str, bool)] = &[
+    (
+        SPACE_MACHINE_GET,
+        "Read the execution setting for a space",
+        false,
+    ),
+    (
+        SPACE_MACHINE_SET,
+        "Set the shared execution machine for a space",
+        true,
+    ),
     (
         crate::MACHINES_INSTALL,
         "Create a single-use personal machine enrollment script",
@@ -200,6 +255,7 @@ pub fn builtin_operation_risk(id: &str, mutates: bool) -> OperationRisk {
         return op.risk;
     }
     match id {
+        SPACE_MACHINE_SET => OperationRisk::WidensAccess,
         "plugins.enable" | "agent.mode" | "access.request" | "machines.set" => {
             OperationRisk::WidensAccess
         }

@@ -91,7 +91,7 @@ authorized caller. Ordinary note reads, writes, and pickers see only active
 notes. A foreign caller receives the same not-found response as for an
 unknown UUID. A purged note retains its UUID tombstone so its address can
 report the deletion. Editors have `content.write` for delete and restore.
-Permanent removal and its preview require `content.purge`, held by the Manager
+Permanent removal and its preview require `space.settings`, held by the Manager
 and Owner roles. A restored note gets its original path if free, or a numbered
 path when occupied. Placement never replaces a competing destination.
 

@@ -81,22 +81,27 @@ impl Jobs {
             RunEnd::RetryWaiting => (JobState::RetryWaiting, "null".into()),
             RunEnd::Interrupted => (JobState::Interrupted, "null".into()),
             RunEnd::OutcomeUnknown => (JobState::OutcomeUnknown, "null".into()),
-            RunEnd::WaitRejected(message) => (
-                JobState::Failed,
-                serde_json::json!({"wait_error": message}).to_string(),
-            ),
+            RunEnd::WaitRejected(error) => {
+                let mut result = serde_json::json!({"wait_error": error.message});
+                if let Some(diagnostics) = error.details.and_then(|mut details| {
+                    details.get_mut("diagnostics").map(serde_json::Value::take)
+                }) {
+                    result["diagnostics"] = diagnostics;
+                }
+                (JobState::Failed, result.to_string())
+            }
             RunEnd::Failed => (JobState::Failed, "null".into()),
         };
-        let wake = self.tx(space, |tx| {
-            let current: Option<(String, u32, Option<String>, String, bool)> = tx
+        let finished = self.tx(space, |tx| {
+            let current: Option<(String, u32, Option<String>, String, bool, String, Option<String>)> = tx
                 .query_row(
-                    "SELECT state,runs,parent,operation,json_extract(input,'$.verify') IS 1 FROM jobs WHERE id=?1",
+                    "SELECT state,runs,parent,operation,json_extract(input,'$.verify') IS 1,account,CASE WHEN operation='agent.turn' AND json_extract(input,'$.check') IS NOT 1 AND json_type(input,'$.request.thread_id')='text' THEN json_extract(input,'$.request.thread_id') END FROM jobs WHERE id=?1",
                     [id],
-                    |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
+                    |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?)),
                 )
                 .optional()
                 .map_err(db_err)?;
-            let Some((s, runs, parent, operation, diagnostic)) = current else {
+            let Some((s, runs, parent, operation, diagnostic, account, thread)) = current else {
                 return Ok(None);
             };
             if !matches!(s.as_str(), "placing" | "running") || runs != run {
@@ -129,12 +134,20 @@ impl Jobs {
             {
                 wake.extend(report(tx, &parent, id, state, &result)?);
             }
-            Ok(Some(wake))
+            let notification = (operation == "agent.turn" && !diagnostic && state == JobState::Done)
+                .then(|| thread.and_then(|thread| calternal_types::AccountId::parse(&account).ok().map(|account| (account, thread))))
+                .flatten();
+            Ok(Some((wake, notification)))
         })?;
-        let Some(wake) = wake else {
+        let Some((wake, notification)) = finished else {
             return Ok(Vec::new());
         };
         self.settle_run(id, run);
+        if let Some((account, thread)) = notification
+            && let Some(push) = self.push.get()
+        {
+            push.thread(account, space, &thread, None);
+        }
         Ok(wake)
     }
 

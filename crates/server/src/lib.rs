@@ -35,8 +35,13 @@ mod onboarding;
 mod provider_sign_in;
 mod requests;
 
+/// Shared GenUI question validation for live jobs and local plugin authoring.
+pub mod question_form;
+
 pub(crate) mod threads;
 
 /// Local release-coordinator commands and startup fencing.
 pub mod shutdown;
 pub mod upgrades;
+
+mod web_push;

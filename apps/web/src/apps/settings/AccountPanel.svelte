@@ -9,9 +9,15 @@
   import { say } from "../../server/say";
   import { setName } from "../../server/people";
   import { shortDate } from "../../lib/format";
+  import { providers, start, unlink, type Provider } from "../../server/oidc";
   import "./panel.css";
   let me = $state<Me | null>(null), keys = $state<Passkey[]>([]), places = $state<InstallationRow[]>([]);
   let error = $state(""), busy = $state(false), renaming = $state<string | null>(null), draft = $state("");
+  let outside = $state<Provider[]>([]);
+  $effect(() => { void providers().then((l) => (outside = l)); });
+  const linked = $derived(me?.provider_links ?? []);
+  const nameOf = (id: string) => outside.find((p) => p.id === id)?.label ?? linked.find((l) => l.provider_id === id)?.label ?? id;
+  const lone = $derived(keys.length === 0 && linked.length < 2);
   async function load() {
     try { [me, keys, places] = await Promise.all([account.me(), account.passkeys(), account.installations()]); error = ""; }
     catch (e) { error = say(e, "load your account"); }
@@ -62,6 +68,21 @@
     </div>
   {/each}
   <div class="r"><span class="n"><span class="t">Add a passkey</span><span class="h">On this device, or one nearby.</span></span><Button text="Add a passkey…" disabled={busy} onclick={() => act(() => account.addPasskey(`Passkey ${keys.length + 1}`))} /></div>
+  {#if outside.length || linked.length}
+    <h2>Other ways to sign in</h2>
+    {#each linked as l (l.provider_id)}
+      <div class="r" data-setting="account.provider.{l.provider_id}">
+        <span class="n"><span class="t">{nameOf(l.provider_id)}</span><span class="h">{me?.sign_in_provider === l.provider_id ? "You signed in with this." : "Linked to this account."}</span></span>
+        <Button text="Unlink" variant="quiet" disabled={busy || lone} onclick={() => confirm(`Unlink ${nameOf(l.provider_id)}? You will no longer be able to sign in with it.`) && act(() => unlink(l.provider_id))} />
+      </div>
+    {/each}
+    {#each outside.filter((p) => !linked.some((l) => l.provider_id === p.id)) as p (p.id)}
+      <div class="r" data-setting="account.provider.{p.id}">
+        <span class="n"><span class="t">{p.label}</span><span class="h">Sign in with it as well as a passkey.</span></span>
+        <Button text="Link…" disabled={busy} onclick={() => act(() => start(p.id, "link"))} />
+      </div>
+    {/each}
+  {/if}
   <h2>Signed in on</h2>
   {#each places as p (p.id)}
     <div class="r" data-setting="account.installation.{p.id}">

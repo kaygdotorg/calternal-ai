@@ -17,7 +17,7 @@ database until checkpointed. SQLite SHM, locks and sockets are runtime state.
 | Appdata `system/auth.db` | Authority | Auth, SQLite 14. Accounts, passkeys, sessions, roles, memberships, invites, approvals, machine identity and grants, erasures, key fingerprints and protected receipts. Versions 12 and 13 add account recovery and provider sign-in. Version 14 adds dormant sharing grants. Version 15 adds the sharing purge capability grants. |
 | Appdata `system/appearance.db` | Mixed | Appearance, new SQLite 1 baseline through the shared runner. Account preferences and original private uploads are authoritative. Shared manifests and eviction pins coordinate with the cache. The production baseline has no appearance database. |
 | Appdata `fonts-cache-v1/` | Derived | Version 1 directories of immutable WOFF2 bytes by family and digest. Startup verifies the published manifest and retires incomplete or orphan fills. |
-| Appdata `system/machines.db` | Authority | Machine placement, SQLite 6 initial schema, advanced to 7 on server startup by the automatic thread-title lease migration. Version 8 adds scoped harness leases. Leases, fences, drain, work locations, discard and erase delivery, and the durable stop record that keeps an erased worker's machine slot reserved until its stop completes. |
+| Appdata `system/machines.db` | Authority | Machine placement, SQLite 6 initial schema, advanced to 7 on server startup by the automatic thread-title lease migration. Version 8 adds scoped harness leases. Version 9 adds shared-space execution bindings, the lease sponsor, and the isolated-tool opt-in, which defaults to off. Leases, fences, drain, work locations, discard and erase delivery, and the durable stop record that keeps an erased worker's machine slot reserved until its stop completes. |
 | Appdata `spaces/<id>/content.db` | Mixed | Content, SQLite 5. Item identity, revisions, pending placement, trash and tombstones, kinds, plugin controls, thread snooze state and sharing's collection membership. Version 6 adds live-room kinds and document checkpoints, version 7 adds Trash jobs, and version 8 adds rename jobs. Listing, labels and links are derived. |
 | Appdata `spaces/<id>/index.db`, `secrets/spaces/<id>/head` | Authority | Space journal, SQLite 2 and binary CHW2. Journal, epoch, receipts and independent head witness. Receipts are pruned after the operator's retention (7 days by default) only on content's command, with every receipt of a surviving outbox intent pinned. The fence adds no stored state. |
 | Appdata `spaces/<id>/network.db` | Authority | Plugin network, SQLite 1, introduced after the production baseline. Per-person remote content preferences and bounded outbound audit metadata. Absent databases use the default and are initialized by the shared runner on the first saved preference. |
@@ -25,6 +25,8 @@ database until checkpointed. SQLite SHM, locks and sockets are runtime state.
 | Appdata `accounts/<id>/input.db`, `content.db`, `agent-settings.db` | Authority | Account input, content and jobs. SQLite 2 for drafts and pending input, 1 for protected collections and 1 for retry settings. Input version 3 adds private plugin settings and their receipts. |
 | Appdata `accounts/<id>/onboarding.db` | Authority | Account onboarding, SQLite 1 when a person finishes onboarding. Missing files read as unfinished. The completion marker rides with account settings and is removed by account erasure. |
 | Appdata `accounts/<id>/secrets.db`, `spaces/<id>/secrets.db` | Authority | Secrets, SQLite 1. Sealed values, pending prompts, audit and key state. |
+| Appdata `accounts/<id>/web-push.db` | Authority | Browser push, SQLite 1. At most eight 90-day subscriptions per account, scoped by installation. |
+| Appdata `system/web-push-vapid-v1.der` | Authority | Browser push signing key; bounded P-256 SEC1 DER with a versioned filename. Preserve it with the subscription databases. |
 | Appdata `system/invite.key`, account and space `secret.key` | Authority | Auth and secrets. Fixed 32-byte payloads with v1 key derivation and ciphertext binding. Preserve bytes, ownership and mode with their database. |
 | Appdata `installed-plugins.sqlite3` and `installed-plugin-workers/` | Mixed | Package store, production SQLite 1. Version 2 adds live editing to the original bundled Notes archive. Version 3 adds reviewed provider runtime metadata and the shipped provider's sign-in registration, preserving installed and retained archives, checksums, activation approvals and revisions. Manifest API version 1 describes the package contract. Extracted worker copies are a cache reused across restarts only when they match the archive bytes, so they carry no version. Development drafts are disposable. |
 | Appdata `system/content-index.db`, `spaces/<id>/search-v2.db`, `spaces/<id>/search-messages-v1.all.db`, `wallpapers/` | Derived | Content routing, SQLite 1. Retain the exact route catalogue across upgrades. Item search is SQLite 2 at generation 3. Message search, with its postings and thread-location index, is SQLite 1 at generation 1. Wallpaper cache follows its rendition catalogue. |
@@ -69,10 +71,9 @@ for an older release only under the explicit, tested compatibility policy.
 
 Production image `c98705d74bcf` has auth version 14, content version 5
 and machines version 6. After live rooms at content version 6, Empty Trash
-and rename queues follow at versions 7 and 8. Auth version 15 adds the
-Manager and Owner purge grant.
-The prior writer still allows Editors to purge. Treat this rollout as
-incompatible and use the owner-approved restore point for rollback.
+and rename queues follow at versions 7 and 8. Notes uses the existing
+`space.settings` capability for permanent Trash removal and keeps auth
+at version 14.
 
 Message search generation 2 drops the redundant thread-location index and
 rebuilds under the projection worker. Its SQLite schema version stays 1.

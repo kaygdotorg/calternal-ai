@@ -1,5 +1,7 @@
 //! Every thread operation is exercised with real passkey sessions and foreign spaces.
 use super::*;
+#[path = "threads_cases/memory_admission.rs"]
+mod memory_admission;
 #[path = "threads_cases/snooze.rs"]
 mod snooze;
 #[path = "threads_cases/streaming.rs"]

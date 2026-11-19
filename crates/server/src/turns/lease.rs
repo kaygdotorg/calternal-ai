@@ -11,7 +11,9 @@ pub(super) async fn prepare<D: Directory>(
     live: &Arc<crate::plugins::live::Live>,
     space: SpaceId,
     thread: Uuid,
+    shared: Option<crate::machines::space_execution::SpaceExecution>,
     runtime: Option<(String, calternal_machine::protocol::HarnessSandbox)>,
+    shared_sandbox: Option<(Option<String>, calternal_machine::protocol::SharedTools)>,
 ) -> Result<Value, Error> {
     let account = job.account;
     let mut initial = job.checkpoint.clone();
@@ -64,6 +66,8 @@ pub(super) async fn prepare<D: Directory>(
                 let machine =
                     pin.ok_or_else(|| Error::internal("pool diagnostic has no target"))?;
                 m.request_pool_diagnostic(space, account, thread, machine)?
+            } else if let Some(target) = shared {
+                m.request_shared(space, account, thread, target, false, shared_sandbox)?
             } else {
                 m.request_run_on(space, account, thread, None, pin)?
             };
@@ -72,6 +76,9 @@ pub(super) async fn prepare<D: Directory>(
             }
             lease = Some(admitted.lease_id);
             initial["lease_id"] = json!(admitted.lease_id);
+            initial["shared_sponsor"] = json!(shared.map(|target| target.sponsor));
+            initial["shared_machine"] = json!(shared.map(|target| target.machine));
+            initial["shared_tools"] = json!(shared.map(|target| target.tools_enabled));
             Ok(initial)
         });
         if result.is_err() {

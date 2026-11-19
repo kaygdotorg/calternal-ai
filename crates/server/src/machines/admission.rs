@@ -1,5 +1,6 @@
 //! Shared fenced lease admission for agents and plugin workers.
 use super::*;
+use space_execution::SpaceExecution;
 
 impl MachineService {
     /// Ask to run work for (space, account, thread); blocks (one commit). Returns
@@ -37,6 +38,7 @@ impl MachineService {
             false,
             false,
             None,
+            None,
         )
     }
 
@@ -60,6 +62,7 @@ impl MachineService {
             false,
             false,
             None,
+            None,
         )
     }
 
@@ -81,6 +84,7 @@ impl MachineService {
             false,
             false,
             true,
+            None,
             None,
         )
     }
@@ -104,6 +108,33 @@ impl MachineService {
             true,
             false,
             None,
+            None,
+        )
+    }
+
+    /// Admit a fenced shared turn or private sign-in scratch lease.
+    /// Requires the current binding and uses the ordinary lease admission commit.
+    pub(crate) fn request_shared(
+        &self,
+        space: SpaceId,
+        actor: AccountId,
+        thread: Uuid,
+        target: SpaceExecution,
+        sign_in: bool,
+        sandbox: Option<(Option<String>, calternal_machine::protocol::SharedTools)>,
+    ) -> Result<RunView, Error> {
+        self.request_work(
+            space,
+            actor,
+            thread,
+            sandbox.as_ref().and_then(|(image, _)| image.clone()),
+            None,
+            Some(target.machine),
+            false,
+            sign_in,
+            false,
+            None,
+            Some((target, sandbox.map(|(_, tools)| tools))),
         )
     }
 
@@ -131,6 +162,7 @@ impl MachineService {
             sign_in,
             false,
             Some(harness),
+            None,
         )
     }
 
@@ -149,6 +181,10 @@ impl MachineService {
         provider_login: bool,
         background_title: bool,
         harness: Option<calternal_machine::protocol::HarnessSandbox>,
+        shared: Option<(
+            SpaceExecution,
+            Option<calternal_machine::protocol::SharedTools>,
+        )>,
     ) -> Result<RunView, Error> {
         let _account = self
             .lifecycle
@@ -160,14 +196,30 @@ impl MachineService {
             .get()
             .map(|l| l.step(space.as_uuid()))
             .transpose()?;
+        let _sponsor = shared
+            .map(|(target, _)| target)
+            .filter(|target| target.sponsor != account)
+            .and_then(|target| {
+                self.lifecycle
+                    .get()
+                    .map(|l| l.step(target.sponsor.as_uuid()))
+            })
+            .transpose()?;
         let mut st = self.lock()?;
         let st = &mut *st;
+        if let Some((mut target, tools)) = shared {
+            target.tools_enabled = tools.is_some();
+            st.require_execution(space, target)?;
+        }
+        let shared_sponsor = shared.map(|(target, _)| target.sponsor);
+        let shared_tools = shared.and_then(|(_, tools)| tools);
         if background_title
             && !pinned_machine
                 .and_then(|id| st.machines.get(&id))
                 .is_some_and(|m| {
                     m.row.owner == (calternal_machine::protocol::Owner::Account { id: account })
                         && m.live.as_ref().is_some_and(|live| !live.direct)
+                        && super::readiness::connected(m, &self.settings)
                         && st.free(m) > 0
                         && !st.leases.values().any(|l| {
                             l.row.background_title && l.assigned_machine() == Some(m.row.id)
@@ -189,6 +241,8 @@ impl MachineService {
             if l.row.account != account
                 || l.row.space != space
                 || l.row.pinned_machine != pinned_machine
+                || l.row.shared_sponsor != shared_sponsor
+                || l.row.shared_tools != shared_tools
                 || l.row.harness != harness
                 || l.row.image != image
             {
@@ -205,6 +259,8 @@ impl MachineService {
             id: Uuid::new_v4(),
             space,
             account,
+            shared_sponsor,
+            shared_tools,
             thread,
             image,
             harness,

@@ -106,12 +106,15 @@ pub(crate) async fn run_at(
     result.unwrap_or(Ok(())).and(drained)
 }
 
-async fn announce_drain(link: &Link, runner: &Runner, ack: u64) {
+async fn announce_drain(link: &Link, runner: &Arc<Runner>, ack: u64) {
     // An older or an unreachable server may not answer immediately. Closing
     // local sandboxes must still proceed before the shutdown deadline.
+    let Ok(capacity) = capacity(runner).await else {
+        return;
+    };
     let req = SyncRequest {
         ack,
-        capacity: runner.capacity(),
+        capacity,
         draining: true,
         leases: runner.reports(),
         discards: runner.discard_reports(),
@@ -128,6 +131,13 @@ async fn announce_drain(link: &Link, runner: &Runner, ack: u64) {
     {
         runner.ack_discards(&req.discards);
     }
+}
+
+async fn capacity(runner: &Arc<Runner>) -> Result<crate::protocol::Capacity> {
+    let runner = runner.clone();
+    tokio::task::spawn_blocking(move || runner.capacity())
+        .await
+        .map_err(|error| Error::Protocol(error.to_string()))
 }
 
 async fn session_loop(
@@ -166,9 +176,10 @@ async fn session_loop(
         }
         *ack = 0;
         loop {
+            let capacity = capacity(runner).await?;
             let req = SyncRequest {
                 ack: *ack,
-                capacity: runner.capacity(),
+                capacity,
                 draining: false,
                 leases: runner.reports(),
                 discards: runner.discard_reports(),

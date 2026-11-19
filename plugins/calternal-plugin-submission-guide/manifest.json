@@ -1,0 +1,33 @@
+{
+  "id": "calternal-plugin-submission-guide",
+  "name": "Calternal Plugin Submission Guide",
+  "version": "0.1.0",
+  "icon": "book",
+  "api_version": 1,
+  "operations": [
+    {
+      "id": "calternal-plugin-submission-guide.explain",
+      "input_schema": { "type": "object", "additionalProperties": false },
+      "output_schema": {
+        "type": "object",
+        "properties": { "markdown": { "type": "string" } },
+        "required": ["markdown"],
+        "additionalProperties": false
+      },
+      "required_capability": "space.read",
+      "idempotency": "read_only",
+      "mutates": false,
+      "risk": "read"
+    }
+  ],
+  "collections": [],
+  "views": [],
+  "attention": [],
+  "settings": [],
+  "schedules": [],
+  "webhooks": [],
+  "secrets": [],
+  "hooks": [],
+  "themes": [],
+  "host_calls": []
+}

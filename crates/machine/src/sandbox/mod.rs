@@ -25,6 +25,7 @@ pub mod direct;
 pub mod microvm;
 pub mod podman;
 mod provider_home;
+mod shared_broker;
 pub mod worker;
 
 use std::future::Future;
