@@ -50,6 +50,8 @@ struct Slot {
     /// Set when the slot left the map; whoever then sees a started sandbox stops it.
     removed: AtomicBool,
     stop: OnceCell<()>,
+    /// A v2 placement is supervised once and the supervisor owns its teardown.
+    channel_started: AtomicBool,
     keep_files: AtomicBool,
     execs: Mutex<HashSet<Uuid>>,
     inputs: Mutex<
@@ -255,6 +257,7 @@ impl Runner {
                         last_use: Mutex::new(Instant::now()),
                         removed: AtomicBool::new(false),
                         stop: OnceCell::new(),
+                        channel_started: AtomicBool::new(false),
                         keep_files: AtomicBool::new(false),
                         execs: Mutex::new(HashSet::new()),
                         inputs: Mutex::new(HashMap::new()),

@@ -22,12 +22,13 @@ impl Runner {
         }) else {
             return;
         };
+        if slot.channel_started.swap(true, Ordering::AcqRel) {
+            return;
+        }
         self.supervise_channel(&binding, &slot).await;
         // This reservation belongs to a v2 placement and cannot keep its sandbox
         // after the authenticated channel lease ends.
-        if slot.fence.load(Ordering::Acquire) == binding.fence {
-            Self::close(&slot, false).await;
-        }
+        Self::close(&slot, false).await;
     }
 
     async fn supervise_channel(&self, binding: &SpaceChannelAssignment, slot: &Slot) {
