@@ -632,7 +632,7 @@
         "persist": {
           "type": "boolean",
           "default": false,
-          "description": "Opt-in: this bind's own-space rows may be persisted for a member (see Cache.memberRows). A guest's or public view's rows are never persisted."
+          "description": "Opt-in: this ROOT bind's own-space rows may be persisted for a member (see Cache.memberRows). Never on a per-parent bind (nested or section rows): the schema refuses it. A guest's or public view's rows are never persisted."
         }
       },
       "additionalProperties": false,
@@ -640,7 +640,35 @@
         "id",
         "source"
       ],
-      "description": "ONE definition used by chrome and content: a data-free request for rows, counts or one item. Several binds may be in one view; every reference names its bind id. A description with binds contains no viewer data, so it may be cached and shared."
+      "description": "ONE definition used by chrome and content: a data-free request for rows, counts or one item. Several binds may be in one view; every reference names its bind id. A description with binds contains no viewer data, so it may be cached and shared.",
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "source": {
+                "properties": {
+                  "parent": {
+                    "const": true
+                  }
+                },
+                "required": [
+                  "parent"
+                ]
+              }
+            },
+            "required": [
+              "source"
+            ]
+          },
+          "then": {
+            "properties": {
+              "persist": {
+                "const": false
+              }
+            }
+          }
+        }
+      ]
     },
     "Invoke": {
       "type": "object",
@@ -922,7 +950,7 @@
             "over",
             "rows"
           ],
-          "description": "User-made sections: one section per row of the bind `over` (the per-person layout the host stores: its title is the row's title, its order the person's order), each section's rows from the per-parent bind `rows` (`source.parent: true`, `{parent: true}` in its filter). The host stores and authorizes the layout; moving a row or a section is a host operation (Move to, Move up, Move down in the catalogue), never a description."
+          "description": "User-made sections: one section per row of the bind `over` (the per-person layout the host stores: its title is the row's title, its order the person's order), each section's rows from the per-parent bind `rows` (`source.parent: true`; the declared edge is the mandatory constraint and a `{parent: true}` filter is only an optional extra predicate). The host stores and authorizes the layout; moving a row or a section is a host operation (Move to, Move up, Move down in the catalogue), never a description. A per-parent bind is consumed ONLY through its edge: no ordinary section, list or count may reference it."
         }
       },
       "additionalProperties": false,
@@ -1140,7 +1168,7 @@
         }
       },
       "additionalProperties": false,
-      "description": "What the device may keep. Only data-free templates persist. Rows the host filled are session-only (memory, partitioned by session, space and audience, cleared on revocation, link closure, sign-out and account switch, never written to storage) and are never painted before the host has authorised the viewer now. Activation contexts, resolution references, confirmation challenges and proofs are never stored (docs/description-contract.md 6)."
+      "description": "What the device may keep: a data-free template, and (Q10) for a MEMBER only, the host-authenticated `MemberRowCacheRecord` of an opted-in ROOT window of their own space (no nested or per-parent windows, nothing route-dependent) painted at once and then confirmed or corrected by the host. Everything else the host filled (a guest's or a public view's rows, counts, contexts, resolution references, challenges, proofs, credentials) is session-only: memory, partitioned by session, space and audience, cleared on revocation, link closure, sign-out and account switch, never written to storage (docs/description-contract.md 6)."
     },
     "Event": {
       "description": "Shell to host. In a page-hosted shell the page relays; in a native app without a page the shell sends the same typed request to the host directly. Each variant has its own required fields. The three activation events are the host catalogue's (ResolveActivation, ConfirmActivation, DispatchActivation: action_id, activation_id, activation_context, interaction; the shell sends no resolved row, route or bind value, and the host reconstructs every server-owned source). Also the catalogue's view_open, lease_renew, choice_options, undo and action_status requests (each cited, none redefined).",
@@ -2034,7 +2062,7 @@
     },
     "EventWindow": {
       "$ref": "https://calternal.cloud/contract/host-catalogue-v2.json#/$defs/WindowRequest",
-      "description": "Ask for rows [from, to) of a bind (optionally for one parent row): the catalogue's WindowRequest is the ONE window envelope ({type: \"window\", request}); this schema cites it and defines no second shape. The answer is the catalogue's WindowResult (bind, parent, window_ref, state, count object, result version, stable opaque row ids and activation contexts)."
+      "description": "Ask for rows [from, to) of a bind (optionally for one parent row): the catalogue's WindowRequest is the ONE window envelope ({type: \"window\", request}); this schema cites it and defines no second shape. The answer is the catalogue's **WindowReply**: a `WindowResult` (bind, parent, window_ref, state, count, result version, stable opaque row ids, activation contexts) or a typed `WindowPlanError` ({status: 422, code: unsupported_query_plan}); a consumer must handle both, and shows the bind's `error` state for the refusal."
     },
     "EventSelection": {
       "$ref": "https://calternal.cloud/contract/host-catalogue-v2.json#/$defs/SettledSelectionRequest",
@@ -2224,7 +2252,7 @@
             "view.renew",
             "choice.options"
           ],
-          "description": "The host route the call uses. The route names are the catalogue's `component_routes` keys; the request and reply shapes are the catalogue's (TranscriptPageRequest, ComposerOptionRequest, ChoiceOptionsRequest, ViewOpenRequest, ShareSheetRequest, ...), cited, never defined here."
+          "description": "The host route a COMPONENT's call uses. This enum is a SUBSET of the catalogue's `component_routes` (the ones a component or prompt reaches through `EventComponent`); routes the shell reaches directly have their own event: `selection.settled` is the shell's direct `EventSelection` ({type: selection}), `window` is `EventWindow`, `selection_set` is `EventSelectionSet`. Request and reply shapes are the catalogue's (TranscriptPageRequest, ComposerOptionRequest, ChoiceOptionsRequest, ViewOpenRequest, ShareSheetRequest, ...), cited, never defined here."
         },
         "request": {
           "type": "object"
@@ -2360,6 +2388,10 @@
     "MemberRowCacheRecord": {
       "$ref": "https://calternal.cloud/contract/host-catalogue-v2.json#/$defs/MemberRowCacheRecord",
       "description": "The ONLY record the device may write to disk for rows: attached by the host to a window result for an own-space MEMBER (`audience` is the constant own_space_member), with account, space, template digest, bind, offset, issue and expiry, display rows (title, optional subtitle only: no contexts, no action material) and the host's proof; the shell validates it on write and on load. A guest or public window never carries one, so they cannot reach the disk path."
+    },
+    "WindowReply": {
+      "$ref": "https://calternal.cloud/contract/host-catalogue-v2.json#/$defs/WindowReply",
+      "description": "The shared reply to a window request: a WindowResult or a typed WindowPlanError. Cited, never defined here."
     }
   }
 }
