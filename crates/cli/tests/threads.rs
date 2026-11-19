@@ -10,6 +10,10 @@ use time::UtcOffset;
 fn thread_results_have_readable_width_adaptation_and_stable_json() {
     let samples = [
         (
+            "create",
+            json!({"thread":{"id":"019a8c00-0000-7000-8000-000000000001","address":"/threads/019a8c00-0000-7000-8000-000000000001","metadata":{"title":"New thread","title_source":"pending","archived":false,"deleted":false,"provider":"calternal-claude-code","model":"claude-sonnet-5-5","mode":"approve_for_me","message_count":0},"markdown":"---\ntitle: New thread\ntitle_source: pending\n---\n"}}),
+        ),
+        (
             "list",
             json!({"threads":[{"id":"019a8c00-0000-7000-8000-000000000001","metadata":{"title":"Long conversation title that should wrap clearly","archived":false,"message_count":17,"provider":"calternal-claude-code","model":"sonnet","mode":"least_access","last_activity_at":"2026-11-17T12:00:00.000Z"},"turn_state":"waiting","turn_reason":{"code":"waiting_on_person","request_id":"019a8c00-0000-7000-8000-000000000002"}}]}),
         ),

@@ -70,6 +70,13 @@ an archive.
    immediately. Removal fences its remaining broker calls. Space content
    remains under the normal storage rules.
 
+To change the bundled distribution, review its entries and defaults in
+`crates/server/trusted-plugins.json`. Run `npm run build:plugins` and
+`npm run pin:plugins` to derive the worker hashes from the selected bundles.
+Use `npm run pin:plugins -- --check` to verify the hashes. The digest test
+derives its expected inventory from the seed. Authorization expectations and
+behavioral examples remain independent test inputs.
+
 Shipped packages seed the same installation-local SQLite catalog on first
 server start. The catalog holds at most 128 packages, each with a 256 KiB
 manifest and a 1 MiB bundled worker. Each record holds the reviewed archive and
@@ -94,3 +101,13 @@ packages is a separate integration.
 
 See the [plugin API decisions](plugin-api.md) and the
 [interface proposal](plugin-interface-proposal.md).
+
+
+## Gallery submission
+
+Enable `calternal-plugin-submission-guide` and invoke
+`calternal-plugin-submission-guide.explain` in your space for the listing
+format, screenshot requirements, permissions statement and review checklist.
+Run `calternal plugin package . NAME.calsubmission` after the package checks
+pass. The submissions repository can run `calternal plugin verify-package`
+on the same archive offline.

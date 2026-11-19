@@ -28,6 +28,7 @@ fn command(args: &[&str]) -> Command {
         .env("NO_COLOR", "1")
         .env("RUST_LOG", "off")
         .env_remove("COLUMNS")
+        .env_remove("CALTERNAL_STARTUP_TIMINGS")
         .env_remove("CALTERNAL_FAULT");
     c
 }
@@ -309,12 +310,44 @@ fn machines_list_empty_and_unusable_data_dir() {
 
 #[test]
 fn plugin_digest_lists_workers_and_reports_usage_errors() {
-    case(
+    let root = tempfile::tempdir().unwrap();
+    let args = [
         "plugin-digest",
-        &["plugin-digest", "--plugin-root", "/nonexistent-plugins"],
-        "calternal plugin-digest",
-        &|s| s.to_owned(),
-    );
+        "--plugin-root",
+        root.path().to_str().unwrap(),
+    ];
+    let human = run(&args);
+    assert_eq!(human.exit, Some(0));
+    assert!(human.stderr.is_empty());
+    let json = run(&[&args[..], &["--json"]].concat());
+    assert_eq!(json.exit, Some(0));
+    assert!(json.stderr.is_empty());
+    let report: Value = serde_json::from_str(&json.stdout).unwrap();
+    assert_shape("calternal plugin-digest", &report);
+    let seed: Value = serde_json::from_str(include_str!("../trusted-plugins.json")).unwrap();
+    let expected: Vec<_> = seed["plugins"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|entry| Some((entry["id"].as_str().unwrap(), entry["worker"].as_str()?)))
+        .collect();
+    let rows = report["data"]["workers"].as_array().unwrap();
+    assert_eq!(rows.len(), expected.len());
+    for (row, (id, worker)) in rows.iter().zip(expected) {
+        assert_eq!(row["id"], id);
+        assert_eq!(row["worker"], worker);
+        assert_eq!(row["pinned"], false);
+        assert!(row["sha256"].is_null());
+        assert!(row["state"].as_str().unwrap().starts_with("unreadable:"));
+        assert!(
+            human.stdout.lines().any(|line| {
+                line.strip_prefix(id).is_some_and(|rest| {
+                    rest.starts_with(' ') && rest.trim_start().starts_with(worker)
+                })
+            }),
+            "missing worker {id} in human output"
+        );
+    }
     case(
         "plugin-digest-usage",
         &["plugin-digest", "--plugin-root"],
@@ -355,6 +388,10 @@ fn machine_status_and_enroll_failures_say_what_to_do() {
 }
 
 fn serve_start(extra: &[&str], json: bool) -> (String, Option<i32>) {
+    serve_start_with_timings(extra, json, false)
+}
+
+fn serve_start_with_timings(extra: &[&str], json: bool, timings: bool) -> (String, Option<i32>) {
     let d = tempfile::tempdir().unwrap();
     let dir = data(&d.path().join("appdata"));
     let (ssd, hdd) = (
@@ -382,7 +419,11 @@ fn serve_start(extra: &[&str], json: bool) -> (String, Option<i32>) {
     if json {
         args.push("--json");
     }
-    let mut child = command(&args)
+    let mut cmd = command(&args);
+    if timings {
+        cmd.env("CALTERNAL_STARTUP_TIMINGS", "1");
+    }
+    let mut child = cmd
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -423,6 +464,28 @@ fn serve_start(extra: &[&str], json: bool) -> (String, Option<i32>) {
         None => text,
     };
     (transcript(exit, &text, &err), exit)
+}
+
+#[cfg(feature = "perf-timings")]
+#[test]
+fn startup_timing_opt_in_reports_bind_and_publication() {
+    let (output, exit) = serve_start_with_timings(&[], true, true);
+    assert_eq!(exit, Some(0));
+    let stderr = output.split_once("--- stderr ---\n").unwrap().1;
+    for label in [
+        "listener_bind_us",
+        "startup_publish_us",
+        "pre_announce_total_us",
+    ] {
+        assert!(
+            stderr.lines().any(|line| {
+                line.strip_prefix("STARTUP ")
+                    .and_then(|line| line.split_once(' '))
+                    .is_some_and(|(name, micros)| name == label && micros.parse::<u64>().is_ok())
+            }),
+            "missing {label}: {stderr}"
+        );
+    }
 }
 
 #[test]

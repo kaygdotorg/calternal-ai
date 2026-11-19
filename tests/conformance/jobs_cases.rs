@@ -370,6 +370,29 @@ async fn plugin_question_wait_survives_restart_and_replays_only_the_first_answer
 }
 
 #[tokio::test]
+async fn plugin_question_failure_exposes_the_form_diagnostics() {
+    let f = Fixture::new().await;
+    let space = &f.spaces[0];
+    let mut input = wait_input("question", 60_000);
+    input["question_source"] = json!("Form({title: %})");
+    let id = start_job(&f, 1, space, input).await;
+    let failed = until(&f, 1, &id, |job| job["state"] == "failed").await;
+    let diagnostic = &failed["result"]["diagnostics"][0];
+    assert!(
+        diagnostic["path"]
+            .as_str()
+            .unwrap()
+            .contains("/form/source")
+    );
+    assert!(
+        diagnostic["expected"]
+            .as_str()
+            .is_some_and(|s| !s.is_empty())
+    );
+    assert!(diagnostic["got"].as_str().is_some_and(|s| !s.is_empty()));
+}
+
+#[tokio::test]
 async fn plugin_deadline_resumes_after_restart_and_cancel_wins_once() {
     let mut f = Fixture::new().await;
     let space = f.spaces[0].clone();

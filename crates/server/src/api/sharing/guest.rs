@@ -4,7 +4,9 @@ use super::*;
 use axum::Extension;
 use axum::extract::Path;
 use axum::response::Html;
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use calternal_auth::limit::{Limiter, TargetLimiter};
+use ring::hmac;
 use tokio::sync::Semaphore;
 
 const SOURCE_PER_MINUTE: u32 = 60;
@@ -83,7 +85,7 @@ async fn open<D: Directory>(
             header::CONTENT_SECURITY_POLICY,
             "default-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'",
         ),
-        (header::VARY, "Accept"),
+        (header::VARY, "Accept, Cookie, Authorization"),
     ] {
         response
             .headers_mut()
@@ -122,7 +124,15 @@ async fn load<D: Directory>(
     let secret = path.get("secret").ok_or_else(missing)?;
     let note = path
         .get("note")
-        .map(|s| s.parse::<usize>().map_err(|_| missing()))
+        .map(|value| {
+            let (position, tag) = value.split_once('.').ok_or_else(missing)?;
+            let position = position.parse::<usize>().map_err(|_| missing())?;
+            if tag.len() != 43 {
+                return Err(missing());
+            }
+            let tag = URL_SAFE_NO_PAD.decode(tag).map_err(|_| missing())?;
+            Ok::<_, Error>((position, tag))
+        })
         .transpose()?;
     let link = http
         .auth
@@ -144,27 +154,28 @@ async fn load<D: Directory>(
                 Ok((json!({"title":note.title,"markdown":note.markdown}),space,kind,id))
             }
             "collections" => {
-                let collection = content.live_metadata(space, "collections", id)?;
-                if !eligible("collections", &collection) {
-                    return Err(missing());
-                }
-                let members = collection["members"].as_array().ok_or_else(missing)?;
-                if let Some(position) = note {
-                    let id = members.get(position).and_then(Value::as_str)
-                        .and_then(|member| Uuid::parse_str(member).ok()).ok_or_else(missing)?;
+                let saved = collections::live(s, space, id)?;
+                let members = saved.collection.members;
+                if let Some((position, tag)) = note {
+                    let id = *members.get(position).ok_or_else(missing)?;
+                    hmac::verify(&s.cursor_key, &member_message(grant, id), &tag)
+                        .map_err(|_| missing())?;
                     let note = s.get(space, &id.to_string())?;
                     return Ok((json!({"title":note.title,"markdown":note.markdown,"back":root}),space,"notes".into(),id));
                 }
                 let mut rows = Vec::new();
-                for (position, member) in members.iter().enumerate().skip(offset).take(50) {
-                    let Some(note) = member.as_str().and_then(|s| Uuid::parse_str(s).ok()) else { continue; };
+                for (position, &note) in members.iter().enumerate().skip(offset).take(50) {
                     match content.live_metadata(space, "notes", note) {
-                        Ok(metadata) => rows.push(json!({"title":metadata["title"],"href":format!("{root}/notes/{position}")})),
+                        Ok(metadata) => {
+                            let tag = hmac::sign(&s.cursor_key, &member_message(grant, note));
+                            let tag = URL_SAFE_NO_PAD.encode(tag.as_ref());
+                            rows.push(json!({"title":metadata["title"],"href":format!("{root}/notes/{position}.{tag}")}));
+                        }
                         Err(e) if e.code == ErrorCode::NotFound => (),
                         Err(e) => return Err(e),
                     }
                 }
-                let mut response = json!({"title":collection["title"],"members":rows});
+                let mut response = json!({"title":saved.collection.title,"members":rows});
                 if offset + 50 < members.len() {
                     response["next"] = json!(format!("{root}?after={}",offset + 50));
                 }
@@ -173,11 +184,23 @@ async fn load<D: Directory>(
             _ => Err(missing()),
         }
     }).await?;
-    if let Some((account, _)) = crate::account_http::identify(http, headers).await {
-        let (caps, _) =
-            crate::resolve::item_capabilities(state, account, space, &item_kind, item_id).await?;
-        if caps.is_some_and(|caps| caps.contains(calternal_types::Capability::SpaceRead)) {
-            value["item"] = json!({"kind":item_kind,"id":item_id});
+    if let Some(session) = crate::account_http::identify(http, headers).await {
+        let access = crate::resolve::authorize_item_access(
+            state,
+            space,
+            &item_kind,
+            item_id,
+            session.0,
+            SharePermission::View,
+        )
+        .await;
+        match access {
+            Ok(()) if crate::account_http::identify(http, headers).await == Some(session) => {
+                value["item"] = json!({"kind":item_kind,"id":item_id});
+            }
+            Ok(()) => (),
+            Err(error) if error.code == ErrorCode::NotFound => (),
+            Err(error) => return Err(error.into()),
         }
     }
     if !http
@@ -189,6 +212,16 @@ async fn load<D: Directory>(
         return Err(missing().into());
     }
     Ok(value)
+}
+
+// A slot is only a lookup hint. Bind the opaque selector to one note and one
+// link so a membership change can never direct its old URL to another note.
+fn member_message(grant: Uuid, note: Uuid) -> [u8; 33] {
+    let mut message = [0; 33];
+    // Operation cursors under the same key start with a text account UUID.
+    message[1..17].copy_from_slice(grant.as_bytes());
+    message[17..].copy_from_slice(note.as_bytes());
+    message
 }
 
 // The host supplies a safe fallback for external guests. The web lane owns the

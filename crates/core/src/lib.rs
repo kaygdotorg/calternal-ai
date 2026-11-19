@@ -40,6 +40,8 @@ pub use plugin_settings::*;
 
 mod provider;
 pub use provider::*;
+mod harness;
+pub use harness::*;
 
 mod agent;
 pub use agent::*;
@@ -57,6 +59,8 @@ pub use people::*;
 
 mod provider_sign_in;
 pub use provider_sign_in::*;
+mod web_push;
+pub use web_push::*;
 mod requests;
 pub use requests::*;
 

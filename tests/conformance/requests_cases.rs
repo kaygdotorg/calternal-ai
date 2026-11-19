@@ -113,8 +113,19 @@ impl Machine {
         discards: Value,
         slots: u32,
     ) -> Result<Vec<Value>, reqwest::Error> {
+        self.try_sync_with_memory(f, discards, slots, Some(64 << 30))
+            .await
+    }
+
+    pub(super) async fn try_sync_with_memory(
+        &mut self,
+        f: &Fixture,
+        discards: Value,
+        slots: u32,
+        memory: Option<u64>,
+    ) -> Result<Vec<Value>, reqwest::Error> {
         let r = f.try_machine("/api/v1/machine/sync",Some(&self.token),json!({
-            "ack":self.ack,"capacity":{"cpus":1,"memory_bytes":0,"max_sandboxes":slots,"running_sandboxes":0},
+            "ack":self.ack,"capacity":{"cpus":1,"memory_bytes":0,"available_memory_bytes":memory,"max_sandboxes":slots,"running_sandboxes":self.leases.len()},
             "draining":false,"leases":self.leases,"discards":discards,
         })).await?;
         r.ok();
@@ -354,7 +365,7 @@ async fn request_operations_keep_questions_approvals_and_secrets_account_private
         .await;
     warm.ok();
     let assigned = f.machine("/api/v1/machine/sync",Some(&spare.token),json!({
-        "ack":0,"capacity":{"cpus":1,"memory_bytes":0,"max_sandboxes":2,"running_sandboxes":0},
+        "ack":0,"capacity":{"cpus":1,"memory_bytes":0,"available_memory_bytes":68719476736_u64,"max_sandboxes":2,"running_sandboxes":0},
         "draining":false,"leases":[],
     })).await;
     assigned.ok();

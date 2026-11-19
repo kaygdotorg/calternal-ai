@@ -213,13 +213,19 @@ pub(crate) fn mutate_or_read(
                     storage(e)
                 }
             })?;
-        let mut markdown = String::new();
+        let mut bytes = Vec::new();
         file.take(DOCUMENT_BYTES as u64 + 1)
-            .read_to_string(&mut markdown)
+            .read_to_end(&mut bytes)
             .map_err(storage)?;
-        if markdown.len() > DOCUMENT_BYTES {
-            return Err(Error::unavailable("SKILL.md exceeds the document limit"));
+        if bytes.len() > DOCUMENT_BYTES {
+            return Err(Error::conflict(
+                "SKILL.md is too large. Reduce it to 256 KiB or less, then open it again.",
+            )
+            .with_details(json!({"reason":"document_too_large"})));
         }
+        let markdown = String::from_utf8(bytes).map_err(|_| {
+            Error::invalid_input("Save SKILL.md as UTF-8 text, then open it again.")
+        })?;
         let revision = crate::store::sha256_hex(markdown.as_bytes());
         return super::to_value(SkillResult {
             skill: SkillDocument {

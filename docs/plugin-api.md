@@ -232,6 +232,13 @@ space's managers. Authors should keep secrets and personal data out of it.
 
 ## Author diagnostics
 
+Use `calternal plugin new NAME --template question` for a complete job that
+asks one Inbox question and has a deadline. The static form in
+`question.form.json` uses the same checker as live requests.
+`calternal plugin test` also validates parked question forms returned by
+SDK fixture invocations. The guide worker exposes `jobs` and `waits`
+topics with the example manifest, question form and worker.
+
 `calternal plugin new` creates a directory under the current directory and
 prints the root worker, fixture test and next commands. Source the local
 development env before using `calternal`, Node.js or npm. `calternal plugin dev`

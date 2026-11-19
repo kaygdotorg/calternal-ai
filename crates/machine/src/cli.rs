@@ -94,7 +94,7 @@ pub enum Command {
         /// Space UUID where the diagnostic can run.
         #[arg(long)]
         space_id: String,
-        /// Provider plugin to check. Defaults to Claude Code.
+        /// Provider plugin to check. Uses the server default when omitted.
         #[arg(long, default_value = "")]
         provider: String,
         /// Person credential used to check machine ownership.
@@ -157,8 +157,8 @@ pub enum Command {
         /// Operator configuration file for the experimental microVM backend.
         #[arg(long)]
         microvm_config: Option<PathBuf>,
-        /// Most threads run at once.
-        #[arg(long, default_value_t = 10)]
+        /// Optional operator ceiling on concurrent sandboxes.
+        #[arg(long, default_value_t = u32::MAX)]
         max_sandboxes: u32,
     },
     /// Show this machine's identity and server.

@@ -21,6 +21,7 @@ use std::sync::{Arc, Mutex};
 use rustix::process::{Pid, Signal, kill_process_group, test_kill_process_group};
 use uuid::Uuid;
 
+use super::shared_broker::{Broker, ToolSandbox};
 use super::{Backend, BoxFuture, Exec, ExecRequest, Sandbox, SandboxError, SandboxResult};
 use crate::protocol::{Limits, SandboxSpec};
 
@@ -191,6 +192,24 @@ impl Backend for PodmanBackend {
         &'a self,
         spec: &'a SandboxSpec,
     ) -> BoxFuture<'a, SandboxResult<Arc<dyn Sandbox>>> {
+        self.start_container(spec, None)
+    }
+
+    fn start_harness<'a>(
+        &'a self,
+        spec: &'a SandboxSpec,
+        harness: &'a crate::protocol::HarnessSandbox,
+    ) -> BoxFuture<'a, SandboxResult<Arc<dyn Sandbox>>> {
+        self.start_container(spec, Some(harness))
+    }
+}
+
+impl PodmanBackend {
+    fn start_container<'a>(
+        &'a self,
+        spec: &'a SandboxSpec,
+        harness: Option<&'a crate::protocol::HarnessSandbox>,
+    ) -> BoxFuture<'a, SandboxResult<Arc<dyn Sandbox>>> {
         Box::pin(async move {
             let root = self.canonical_root().await?;
             let name = Self::container_name(spec.account_id, spec.thread_id);
@@ -207,7 +226,21 @@ impl Backend for PodmanBackend {
                 } else {
                     account.join("threads").join(spec.thread_id.to_string())
                 };
-                let (home, login) = super::provider_home::prepare(account, &dir, spec).await?;
+                if spec.shared_tools.is_some()
+                    && (self.guest || self.kvm_fallback || spec.provider_login
+                        || spec.shared_provider_sponsor.is_none() || spec.worker.is_some()
+                        || harness.is_some())
+                {
+                    return Err(SandboxError("shared tools require a dedicated Podman harness".into()));
+                }
+                let (home, login) = if spec.shared_tools.is_some() {
+                    (PathBuf::new(), PathBuf::new())
+                } else { match harness {
+                    Some(harness) => super::provider_home::prepare_harness(
+                        account, &dir, spec, harness,
+                    ).await?,
+                    None => super::provider_home::prepare(account, &dir, spec).await?,
+                }};
                 let work = dir.join("work");
                 tokio::fs::create_dir_all(&work).await.map_err(|e| {
                     SandboxError(format!("cannot create work directory: {}", e.kind()))
@@ -231,7 +264,11 @@ impl Backend for PodmanBackend {
                 };
                 let label = format!("org.calternal.thread={}", spec.thread_id);
                 let home_mount = format!("{}:/home/agent", home.display());
-                let mount = format!("{}:/work", work.display());
+                let mount = if harness.is_some_and(|harness| harness.workspace_read_only) {
+                    format!("{}:/work:ro", work.display())
+                } else {
+                    format!("{}:/work", work.display())
+                };
                 let memory = memory_bytes.unwrap_or(DEFAULT_MEMORY_BYTES).to_string();
                 let pids = pids.unwrap_or(DEFAULT_PIDS).to_string();
                 let mut args: Vec<String> = [
@@ -246,26 +283,51 @@ impl Backend for PodmanBackend {
                     &memory,
                     "--pids-limit",
                     &pids,
-                    "--volume",
-                    &mount,
-                    "--volume",
-                    &home_mount,
-                    "--workdir",
-                    "/work",
-                    "--env",
-                    "HOME=/home/agent",
                 ]
                 .iter()
                 .map(|s| s.to_string())
                 .collect();
-                if spec.worker.is_none() {
-                    let mode = if spec.provider_login { "rw" } else { "ro" };
+                let broker = if let Some(tools) = spec.shared_tools {
+                    let space = spec.space_id.ok_or_else(|| SandboxError("missing sandbox space".into()))?;
+                    let broker = Broker::start(&root, &dir, space, tools.provider, ToolSandbox {
+                        podman: self.podman.clone(),
+                        image: image.to_owned(),
+                        root_label: ownership::root_label(&root),
+                        work: work.clone(),
+                        writable: !tools.workspace_read_only,
+                    }).await?;
+                    args.extend([
+                        "--pull=never".into(), "--network=none".into(), "--read-only".into(),
+                        "--pid=private".into(), "--ipc=private".into(), "--cap-drop=all".into(),
+                        "--security-opt=no-new-privileges".into(), "--http-proxy=false".into(),
+                        "--log-driver=none".into(), "--image-volume=ignore".into(), "--tmpfs".into(), "/home/agent:mode=0700".into(),
+                        "--volume".into(), format!("{}:/run/calternal-broker:ro", broker.directory.display()),
+                        "--env".into(), "HOME=/home/agent".into(),
+                    ]);
+                    Some(broker)
+                } else {
+                    args.extend([
+                        "--volume".into(), mount, "--volume".into(), home_mount,
+                        "--workdir".into(), "/work".into(), "--env".into(), "HOME=/home/agent".into(),
+                    ]);
+                    None
+                };
+                if spec.worker.is_none() && broker.is_none() {
+                    let login_env = if harness.is_some() {
+                        "CALTERNAL_PROVIDER_LOGIN_DIR=/run/calternal-provider-login"
+                    } else {
+                        "CALTERNAL_CLAUDE_LOGIN_DIR=/run/calternal-provider-login"
+                    };
+                    let mode = if harness.is_some_and(|harness| !harness.legacy_profile) || spec.provider_login { "rw" } else { "ro" };
                     args.extend([
                         "--volume".into(),
                         format!("{}:/run/calternal-provider-login:{mode}", login.display()),
                         "--env".into(),
-                        "CALTERNAL_CLAUDE_LOGIN_DIR=/run/calternal-provider-login".into(),
+                        login_env.into(),
                     ]);
+                    if harness.is_some() && !self.guest {
+                        args.push("--pull=never".into());
+                    }
                     if spec.provider_login {
                         args.extend(["--env".into(), "CALTERNAL_PROVIDER_LOGIN=1".into()]);
                     }
@@ -330,6 +392,7 @@ impl Backend for PodmanBackend {
                 #[cfg(target_os = "linux")]
                 if !self.guest
                     && spec.worker.is_none()
+                    && broker.is_none()
                     && let Some(exe) = super::cli_program().await
                 {
                     args.extend([
@@ -379,6 +442,7 @@ impl Backend for PodmanBackend {
                     dir,
                     clients: Mutex::new(HashSet::new()),
                     worker: spec.worker.is_some(),
+                    broker,
                 }) as Arc<dyn Sandbox>)
             }
             .await;
@@ -398,6 +462,7 @@ pub struct PodmanSandbox {
     /// Process groups of local `podman exec` clients, killed on release.
     clients: Mutex<HashSet<i32>>,
     worker: bool,
+    broker: Option<Broker>,
 }
 
 impl Sandbox for PodmanSandbox {
@@ -412,12 +477,22 @@ impl Sandbox for PodmanSandbox {
                 "exec",
                 "-i",
                 "--workdir",
-                if self.worker { "/plugin" } else { "/work" },
+                if self.worker {
+                    "/plugin"
+                } else if self.broker.is_some() {
+                    "/home/agent"
+                } else {
+                    "/work"
+                },
             ]);
             for (k, v) in &request.env {
                 // Podman resolves a name-only --env from its own environment.
                 // Values, especially thread credentials, never enter host argv.
                 cmd.arg("--env").arg(k).env(k, v);
+            }
+            if let Some(broker) = &self.broker {
+                cmd.args(["--env", "CALTERNAL_GATEWAY_TOKEN"])
+                    .env("CALTERNAL_GATEWAY_TOKEN", &broker.access);
             }
             cmd.arg(&self.container);
             if self.worker {
@@ -473,6 +548,10 @@ impl Sandbox for PodmanSandbox {
 
     fn release(&self) -> BoxFuture<'_, SandboxResult<()>> {
         Box::pin(async move {
+            if let Some(broker) = &self.broker {
+                broker.close();
+                let _ = tokio::fs::remove_dir_all(&broker.directory).await;
+            }
             ownership::remove(&self.podman, &[&self.container]).await?;
             for &g in self.clients.lock().expect("clients").iter() {
                 if let Some(pid) = Pid::from_raw(g) {
@@ -505,6 +584,7 @@ mod argv_tests {
             dir: dir.path().join("work"),
             clients: Mutex::new(HashSet::new()),
             worker: false,
+            broker: None,
         };
         let mut exec = sandbox
             .exec(ExecRequest {

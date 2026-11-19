@@ -1,0 +1,21 @@
+{
+  "version": "0.170.0",
+  "executable": "/usr/local/bin/codex",
+  "source": "@openai/codex@0.170.0",
+  "interactive": true,
+  "login_command": "codex login --device-auth",
+  "login_locations": [
+    "https://auth.openai.com/codex/device"
+  ],
+  "integrity": "sha512-dwoughgqjiik++CFaNkjQ5y6pJO6LUzu5P1z8Hy4LUeJ+aIYcX/QO1P5rOQnHmBG4agOM7Y+hc4LtVo/a4GFiw==",
+  "linux_artifacts": {
+    "x64": {
+      "source": "@openai/codex@0.170.0-linux-x64",
+      "integrity": "sha512-6cCZJaZL17tiTAvhd1Pirt8vsV1dP8CfG94+IHygUO4m24oYLQrIInJJLyKzcMv/uUonbu1dF2JmcXhA/s5bsg=="
+    },
+    "arm64": {
+      "source": "@openai/codex@0.170.0-linux-arm64",
+      "integrity": "sha512-mJLm5eia/GcukCrRfVEnYVD5dOXGE7cmpd9dJ/ixkSiKifzDAPaGq83ZEmwVhk3PxbdTPUSLRpnXZQKbNS5HoA=="
+    }
+  }
+}

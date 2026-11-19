@@ -75,14 +75,20 @@ async fn every_registered_operation_has_an_independent_matrix_row() {
         "notes.delete",
         "notes.restore",
         "notes.rename",
+        "notes.rename.status",
+        "notes.rename.undo",
         "notes.lookup",
         "tags.list",
         "tags.lookup",
         "trash.list",
         "trash.purge",
+        "trash.empty.preview",
+        "trash.empty",
+        "trash.empty.status",
         "resolve", // dedicated address matrix in resolver.rs
         // Dedicated item sharing fixtures in resolver.rs.
         "collections.get",
+        "collections.list",
         "collections.create",
         "collections.set_members",
         "sharing.list",
@@ -143,16 +149,41 @@ async fn every_registered_operation_has_an_independent_matrix_row() {
             "{op}"
         );
     }
+    // Owner-only installation policy is exercised in conformance/harness_admin_cases.rs.
+    for op in [
+        "harnesses.list",
+        "harnesses.stage",
+        "harnesses.activate",
+        "harnesses.rollback",
+    ] {
+        assert!(stored_rows.insert(op), "duplicate harness operation {op}");
+        assert_eq!(
+            fixture
+                .state
+                .registry
+                .snapshot()
+                .policy(op)
+                .unwrap()
+                .required,
+            Capability::ServerSettings,
+            "{op}"
+        );
+    }
     // Manual-turn controls are covered by provider_turns.rs and agent_cases conformance.
     stored_rows.extend(
         calternal_core::AGENT_OPERATIONS
             .iter()
-            .map(|(id, _, _)| *id),
+            .map(|(id, _, _)| *id)
+            .filter(|id| !matches!(*id, "space.machine.get" | "space.machine.set")),
     );
     // Request isolation and the instructions role matrix use real passkey
     // sessions in conformance/requests_cases.rs.
     // Package setting access uses the real sessions in plugin_settings_cases.rs.
     for (id, required) in [
+        ("push.subscribe", Capability::SpaceRead),
+        ("push.unsubscribe", Capability::SpaceRead),
+        ("push.devices", Capability::SpaceRead),
+        ("push.test", Capability::SpaceRead),
         ("plugins.network.content.get", Capability::PluginsUse),
         (
             "plugins.network.content.preference.get",
@@ -177,6 +208,8 @@ async fn every_registered_operation_has_an_independent_matrix_row() {
         ("requests.approve", Capability::PluginsUse),
         ("requests.deny", Capability::PluginsUse),
         ("space.instructions", Capability::SpaceSettings),
+        ("space.machine.get", Capability::SpaceRead),
+        ("space.machine.set", Capability::SpaceSettings),
     ] {
         assert!(stored_rows.insert(id), "duplicate request operation {id}");
         assert_eq!(
@@ -359,6 +392,14 @@ async fn every_registered_operation_has_an_independent_matrix_row() {
         MATRIX.len() + stored_rows.len(),
         "duplicate policy"
     );
+    for op in [
+        "push.subscribe",
+        "push.unsubscribe",
+        "push.devices",
+        "push.test",
+    ] {
+        assert_eq!(catalog.policy(op).unwrap().scope, Scope::Account, "{op}");
+    }
     for &(op, _) in ONBOARDING_MATRIX {
         assert_eq!(catalog.policy(op).unwrap().scope, Scope::Account, "{op}");
     }
@@ -379,6 +420,10 @@ async fn every_registered_operation_has_an_independent_matrix_row() {
     ];
     // The guide's real session and activation matrix is in conformance/plugin_slot_cases.rs.
     let guide = [
+        (
+            "calternal-plugin-submission-guide.explain",
+            Capability::SpaceRead,
+        ),
         ("calternal-plugin-guide.explain", Capability::SpaceRead),
         ("calternal-plugin-guide.scaffold", Capability::SpaceRead),
         ("calternal-plugin-guide.check", Capability::SpaceRead),

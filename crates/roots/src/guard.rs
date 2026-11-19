@@ -23,14 +23,14 @@ pub struct RootLocks {
     _directories: [OwnedFd; 3],
 }
 
-/// Validates three roles against an externally pinned installation UUID, then
-/// locks all three together. `create` permits only explicit first setup of empty
-/// or missing directories; it cannot repair any paired or occupied installation.
-/// New setup publishes role-bearing markers durably, but creates no databases.
-/// Partial lock acquisition releases earlier locks on failure. Validation errors
-/// create neither directories nor lock files; I/O failures during explicit setup
-/// may leave partial setup which requires deliberate offline recovery.
-pub fn prepare(roots: &Roots, installation: Uuid, create: bool) -> io::Result<RootLocks> {
+struct RootProbe {
+    paths: [PathBuf; 3],
+    probes: Vec<Probe>,
+    paired: Vec<Option<String>>,
+    setup: bool,
+}
+
+fn probe_installation(roots: &Roots, installation: Uuid, create: bool) -> io::Result<RootProbe> {
     let paths =
         [&roots.userdata_ssd, &roots.userdata_hdd, &roots.appdata].map(|p| absolute_plain(p));
     let [a, b, c] = paths;
@@ -45,7 +45,7 @@ pub fn prepare(roots: &Roots, installation: Uuid, create: bool) -> io::Result<Ro
         }
     }
     // Pin every existing prefix before considering creation of a missing root.
-    let mut probes = paths
+    let probes = paths
         .iter()
         .map(|p| Probe::open(p))
         .collect::<io::Result<Vec<_>>>()?;
@@ -102,6 +102,37 @@ pub fn prepare(roots: &Roots, installation: Uuid, create: bool) -> io::Result<Ro
             return Err(invalid("root roles alias the same directory"));
         }
     }
+    Ok(RootProbe {
+        paths,
+        probes,
+        paired,
+        setup,
+    })
+}
+
+/// Check the existing root markers, roles, authority path and lock entries
+/// without taking writer locks or creating files. A live deployment preflight
+/// uses this check before stopping services and repeats it through [prepare]
+/// once the roles have stopped. Opens only the configured root descriptors and
+/// their guard files, and refuses an unpaired, missing or aliased root.
+pub fn check_pairing(roots: &Roots, installation: Uuid) -> io::Result<()> {
+    probe_installation(roots, installation, false).map(|_| ())
+}
+
+/// Validates three roles against an externally pinned installation UUID, then
+/// locks all three together. `create` permits only explicit first setup of empty
+/// or missing directories; it cannot repair any paired or occupied installation.
+/// New setup publishes role-bearing markers durably, but creates no databases.
+/// Partial lock acquisition releases earlier locks on failure. Validation errors
+/// create neither directories nor lock files; I/O failures during explicit setup
+/// may leave partial setup which requires deliberate offline recovery.
+pub fn prepare(roots: &Roots, installation: Uuid, create: bool) -> io::Result<RootLocks> {
+    let RootProbe {
+        paths,
+        mut probes,
+        paired,
+        setup,
+    } = probe_installation(roots, installation, create)?;
     for probe in &mut probes {
         probe.create_missing()?;
     }
