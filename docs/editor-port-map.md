@@ -70,3 +70,9 @@ Each step is one or more small commits on this lane's branch, with the old tests
 - Spaces and UUIDs: rooms are `<space>/notes/<item>`, links are `/notes/<uuid>` (ADR 0062), no file paths or `Home`.
 - Our server: saves and receipts go through `notes.update`/live rooms (already in `sync/`); no `block-jobs` operations exist yet, so "Make it a note" and "Move to note" stay disabled with the reason until they do.
 - Attachments do not exist yet: Photos, Camera, File, embeds of files stay disabled with the reason (as the old app's own seam did).
+
+## Status (2026-11-20)
+
+- **In the package, compiled and tested**: every old file in the map above except `daily/` and `markdown/` (left out, see the map) is under `packages/editor/src` beside our `src/block` rewrite, with the old tests (61 files, 489 cases; all pass; `tsc --noEmit` clean). Added: `isRemote`/`isOwnTyping` (origins.ts), `visible-text.ts` and `block-id.ts` (from `@calternal/text`), the old package's dependencies and exports. Nothing in `apps/web` uses the old modules yet.
+- **Not yet done**: swapping the host (`NoteEditor.svelte`, `live.svelte.ts`) onto `createEditor` and deleting `src/block` is an app-side change, and waits for the plugin API. Until then `createBlockEditor`, `BlockEditor.view`, `apply(c, "command")` and `origin` (the style lane's contract) keep working unchanged.
+- **Open decision**: our `sync/client.ts` sends the cross-tab hints at idle (a keystroke-cost change from the live-typing work); the old round-6 model tests pin hints sent at once and fail with it. The old behaviour is restored (old wins); the live-typing gate must be re-measured on the swap, and if it fails the cost has to come out some other way, never by relaxing the old tests.
