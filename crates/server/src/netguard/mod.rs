@@ -32,13 +32,14 @@ pub(crate) fn client_for(
 /// denied by the resolver. Refreshes attached addresses for each client build.
 pub(crate) fn content_client(
     ranges: &str,
+    nat64: Option<&str>,
     timeout: Duration,
     fixture: bool,
 ) -> io::Result<reqwest::Client> {
     build(
         None,
         timeout,
-        Arc::new(local::Local::load(ranges)?),
+        Arc::new(local::Local::load(ranges, nat64)?),
         fixture,
     )
     .map_err(io::Error::other)

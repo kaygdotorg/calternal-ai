@@ -293,7 +293,10 @@ It refuses IP literals, nonpublic addresses, attached interface networks
 and the configured public origin hostname. Set
 `CALTERNAL_CONTENT_FETCH_DENY_CIDRS` to comma-separated CIDRs for additional
 internal or hairpin public ranges. An invalid configured CIDR disables
-outbound media. See the [OWASP SSRF prevention guidance](https://cheatsheetseries.owasp.org/cheatsheets/Server_Side_Request_Forgery_Prevention_Cheat_Sheet.html).
+outbound media. On DNS64/NAT64 networks, set
+`CALTERNAL_CONTENT_FETCH_NAT64_PREFIX` to the deployment's IPv6 translation
+prefix. The proxy refuses that entire prefix. Supported lengths are 32, 40,
+48, 56, 64 and 96. See the [OWASP SSRF prevention guidance](https://cheatsheetseries.owasp.org/cheatsheets/Server_Side_Request_Forgery_Prevention_Cheat_Sheet.html).
 
 Each asset allows 10 MB, three redirects, 5 seconds to connect and 10
 seconds total for outbound work. Only checked PNG, JPEG, GIF, WebP, AVIF,

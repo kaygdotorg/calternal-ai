@@ -39,7 +39,8 @@ pub(crate) struct Service {
     queue: Arc<Semaphore>,
     running: Semaphore,
     limits: Mutex<Limits>,
-    ranges: String,
+    ranges: std::ffi::OsString,
+    nat64: Option<std::ffi::OsString>,
     #[cfg(all(feature = "test-plugins", debug_assertions))]
     fixture: Option<Fixture>,
 }
@@ -55,7 +56,8 @@ impl Default for Service {
                 plugins: HashMap::new(),
                 hosts: HashMap::new(),
             }),
-            ranges: std::env::var("CALTERNAL_CONTENT_FETCH_DENY_CIDRS").unwrap_or_default(),
+            ranges: std::env::var_os("CALTERNAL_CONTENT_FETCH_DENY_CIDRS").unwrap_or_default(),
+            nat64: std::env::var_os("CALTERNAL_CONTENT_FETCH_NAT64_PREFIX"),
             #[cfg(all(feature = "test-plugins", debug_assertions))]
             fixture: Fixture::configured(),
         }
@@ -270,8 +272,12 @@ async fn finish_audit<D: Directory>(
 
 /// Build the checked transport on a blocking worker. One interface enumeration
 /// and one TLS client construction per fetch. No socket or DNS work here.
-async fn build_client(ranges: String, fixture: bool) -> io::Result<Client> {
-    crate::blocking::spawn(move || netguard::content_client(&ranges, TIMEOUT, fixture))
+async fn build_client(ranges: std::ffi::OsString, nat64: Option<std::ffi::OsString>, fixture: bool) -> io::Result<Client> {
+    crate::blocking::spawn(move || {
+        let ranges = ranges.to_str().ok_or_else(refused)?;
+        let nat64 = nat64.as_ref().map(|value| value.to_str().ok_or_else(refused)).transpose()?;
+        netguard::content_client(ranges, nat64, TIMEOUT, fixture)
+    })
         .await
         .map_err(io::Error::other)?
 }
@@ -287,7 +293,7 @@ async fn retrieve<D: Directory>(
     let fixture = service.fixture.is_some();
     #[cfg(not(all(feature = "test-plugins", debug_assertions)))]
     let fixture = false;
-    let client = build_client(service.ranges.clone(), fixture).await.ok()?;
+    let client = build_client(service.ranges.clone(), service.nat64.clone(), fixture).await.ok()?;
     let own_host = state
         .directory
         .http_auth()
@@ -426,7 +432,7 @@ mod client_tests {
 
     #[tokio::test(flavor = "current_thread")]
     async fn background_client_reports_configuration_errors() {
-        assert!(build_client("not-a-cidr".into(), false).await.is_err());
-        assert!(build_client(String::new(), false).await.is_ok());
+        assert!(build_client("not-a-cidr".into(), None, false).await.is_err());
+        assert!(build_client(Default::default(), None, false).await.is_ok());
     }
 }
