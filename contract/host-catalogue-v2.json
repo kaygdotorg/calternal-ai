@@ -2424,16 +2424,13 @@
       }
     },
     "ExecutionStart": {
+      "description": "Only the request ID. The host derives the intent from the authenticated job invocation.",
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "intent",
         "request_id"
       ],
       "properties": {
-        "intent": {
-          "$ref": "#/$defs/ExecutionIntentRef"
-        },
         "request_id": {
           "$ref": "#/$defs/Ref"
         }
@@ -4620,7 +4617,7 @@
       "output": {
         "$ref": "#/$defs/ExecutionStatus"
       },
-      "scope": "An admitted replayable composer job receives ExecutionJobContext from the host at claim and resume. Compare its intent, exact owning job receipt, current item state, pinned contribution and placement under the lifecycle fence before reserving by receipt. Caller input cannot mint job context.",
+      "scope": "Derive the intent and exact owning job receipt from authenticated host job context at claim and replay. Under the lifecycle fence, recheck that binding, live item state, pinned contribution and placement. A live authorized replay returns the existing result even with a new request ID. Each intent can admit at most one attempt. Refuse missing, foreign or retired context.",
       "invocation_context_schema": {
         "$ref": "#/$defs/ExecutionJobContext"
       }
@@ -4956,7 +4953,7 @@
       "index_owner": "content",
       "audience": "shared_projection",
       "nullable": false,
-      "description": "The kind’s declared ordinary Text metadata source. Install rejects a body-derived source, extractor output, host-owned projection and an indexed source whose declared audience is narrower than shared_projection. Use the same authorized source for list, shared title, title search and offline display."
+      "description": "The kind’s ordinary Text metadata source with a canonical declaration under the manifest’s title_field rule. Install rejects a body-derived source, extractor output, host-owned projection and an indexed source whose declared audience is narrower than shared_projection. Use the same authorized source for list, shared title, title search and offline display."
     },
     "updated": {
       "type": "Timestamp",

@@ -1,4 +1,4 @@
-"""Revision 14.6 fixtures for metadata types, contexts and reserved namespaces."""
+"""Revision 14 review fixtures for metadata types, contexts and reserved namespaces."""
 
 import json
 from unittest.mock import patch
@@ -74,13 +74,18 @@ class ReviewCases:
         self.replace_template(doc)
         self.verify(failure="states.empty.action.inputs.entry: {context: placement} is legal only inside")
 
-    def test_draft7_string_only_title_spellings(self):
+    def test_canonical_title_declaration(self):
         original = self.manifest.read_bytes()
+        reason = "title_field: generic title requires a canonical string declaration in schema.properties"
         string = {"type": "string"}
         others = {"type": ["object", "array", "boolean", "null", "number"]}
-        fields = [
+        canonical = [
             string, {"type": ["string"]}, {"type": ["string"], "minLength": 1},
-            {"$ref": "#/definitions/label"}, {"$ref": "https://calternal.cloud/contract/host-catalogue-v2.json#/$defs/Text"},
+            {"$ref": "#/definitions/label"},
+            {"type": "string", "oneOf": [{"const": "Title"}, {"pattern": "^Other"}]},
+        ]
+        negative = [
+            {"$ref": "https://calternal.cloud/contract/host-catalogue-v2.json#/$defs/Text"},
             {"const": "Title"}, {"enum": ["A", "B"]},
             {"allOf": [{"type": ["string", "null"]}, {"not": {"type": "null"}}]},
             {"allOf": [{"type": ["string", "null"]}, {"not": {"const": None}}]},
@@ -90,8 +95,6 @@ class ReviewCases:
             {"oneOf": [True, others]}, {"not": others},
             {"if": string, "then": True, "else": False},
             {"if": others, "then": False},
-        ]
-        negative = [
             True, False, {"type": ["string", "null"]}, {"enum": ["A", False]},
             {"anyOf": [string, {"type": "boolean"}]},
             {"$ref": "#/definitions/number", "type": "string"},
@@ -99,7 +102,7 @@ class ReviewCases:
             {"if": string, "then": True},
             {"allOf": [string, {"type": "number"}]},
         ]
-        for shape, valid in [(shape, True) for shape in fields] + [(shape, False) for shape in negative]:
+        for shape, valid in [(shape, True) for shape in canonical] + [(shape, False) for shape in negative]:
             with self.subTest(shape=shape):
                 manifest = json.loads(original)
                 metadata = manifest["kinds"][0]["schema"]
@@ -110,10 +113,12 @@ class ReviewCases:
                 if valid:
                     self.assertFalse(errors, list(errors))
                 else:
-                    self.assertTrue(any("title_field: generic title requires declared string metadata" in e
-                                        for e in errors), list(errors))
+                    self.assertTrue(any(reason in e for e in errors), list(errors))
 
         for wrapper in (
+            {"properties": {"title": {}}, "patternProperties": {"^title$": string}},
+            {"patternProperties": {"^title$": string}},
+            {"properties": {"title": {}}, "additionalProperties": string},
             {"$ref": "#/definitions/metadata", "definitions": {"metadata": {"properties": {"title": string}}}},
             {"allOf": [{"properties": {"title": {"type": ["string", "null"]}}},
                        {"properties": {"title": {"not": {"type": "null"}}}}]},
@@ -127,18 +132,18 @@ class ReviewCases:
                 manifest["kinds"][0]["schema"] = wrapper
                 errors = Validation()
                 verification.parse_manifest(json.dumps(manifest), errors)
-                self.assertFalse(errors, list(errors))
+                self.assertTrue(any(reason in e for e in errors), list(errors))
 
         for scoped_type in ("string", "number"):
             with self.subTest(scoped_type=scoped_type):
                 manifest = json.loads(original)
                 manifest["kinds"][0]["schema"] = {
-                    "$ref": "scoped-title",
+                    "properties": {"title": {"$ref": "scoped-title#/definitions/alias"}},
                     "definitions": {
                         "label": {"type": "number" if scoped_type == "string" else "string"},
                         "scoped": {"$id": "scoped-title", "type": "object",
-                                   "definitions": {"label": {"type": scoped_type}},
-                                   "properties": {"title": {"$ref": "#/definitions/label"}}},
+                                   "definitions": {"label": {"type": scoped_type},
+                                                   "alias": {"$ref": "#/definitions/label"}}},
                     },
                 }
                 errors = Validation()
@@ -146,8 +151,54 @@ class ReviewCases:
                 if scoped_type == "string":
                     self.assertFalse(errors, list(errors))
                 else:
-                    self.assertTrue(any("title_field: generic title requires declared string metadata" in e
-                                        for e in errors), list(errors))
+                    self.assertTrue(any(reason in e for e in errors), list(errors))
+
+    def test_index_types_are_declared_independently_of_metadata(self):
+        self.stage("notes-tags-app")
+        original = json.loads(self.manifest.read_bytes())
+        kind = original["kinds"][0]
+        kind["schema"]["properties"]["tags"] = {"type": "array", "items": {"type": "string"}}
+        template = json.loads((self.package / self.template).read_bytes())
+        bind = next(b for b in template["binds"] if b["id"] == "notes")
+        self.manifest.write_text(json.dumps(original))
+        self.replace_template(template)
+        self.verify()
+
+        # A metadata array cannot stand in for the declared extractor destination type.
+        tags = kind["indexed_fields"].pop("tags")
+        errors = Validation()
+        verification.parse_manifest(json.dumps(original), errors)
+        self.assertTrue(any("output 'tags' requires a declared indexed field type" in e for e in errors), list(errors))
+
+        # With no extractor, a metadata array still cannot serve a contains operand.
+        kind.pop("extractors")
+        self.manifest.write_text(json.dumps(original))
+        self.replace_template(template)
+        self.verify(failure="contains requires a TextSet and one Text operand")
+
+        # Even a declared set cannot sort. A canonical generic scalar can.
+        kind["indexed_fields"]["tags"] = tags
+        self.manifest.write_text(json.dumps(original))
+        bind["sort"] = [{"field": "tags", "direction": "asc"}]
+        self.replace_template(template)
+        self.verify(failure="TextSet cannot be a sort key")
+        bind["sort"] = [{"field": "updated", "direction": "desc"}]
+        self.replace_template(template)
+        self.verify()
+
+        self.stage("threads-nested-catalogue-app")
+        template = json.loads((self.package / self.template).read_bytes())
+        bind = next(b for b in template["binds"] if b["id"] == "in-section")
+        bind["sort"] = [{"field": "provider_icon", "direction": "asc"}]
+        self.replace_template(template)
+        self.verify(failure="sort field 'provider_icon' requires a declared indexed field type")
+
+        self.stage("threads-app")
+        template = json.loads((self.package / self.template).read_bytes())
+        bind = next(b for b in template["binds"] if b["source"]["kind"] == "requests")
+        bind["sort"] = [{"field": "title", "direction": "asc"}]
+        self.replace_template(template)
+        self.verify(failure="sort field 'title' requires a declared indexed field type")
 
     def test_offline_provider_label_requires_its_paired_text_source(self):
         reply = json.loads((self.fixtures / "reply-catalogue-window-member-record.json").read_bytes())

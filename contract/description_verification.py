@@ -541,7 +541,10 @@ def check_manifest_install(manifest, kind_schema_links, errors):
         separators = {}
         for extractor in errors.each(kind.get("extractors", [])):
             field = extractor["output"]
-            output = fields.get(field, {})
+            output = fields.get(field)
+            if output is None:
+                errors.append(f"{path}.extractors: output {field!r} requires a declared indexed field type")
+                continue
             if field in outputs and output.get("type") != "TextSet":
                 errors.append(f"{path}.extractors: repeated output {field!r} requires TextSet")
             outputs.add(field)
@@ -566,8 +569,8 @@ def check_manifest_install(manifest, kind_schema_links, errors):
                   title_meta.get("type") != "Text" or title_meta.get("audience") != generic["title"]["audience"]
               ))):
             errors.append(f"{path}.title_field: generic title requires an unrestricted metadata source")
-        elif not declared_title_text(kind["schema"], title, kind_schema_links[kind_id], resolve, errors):
-            errors.append(f"{path}.title_field: generic title requires declared string metadata")
+        elif not declared_title_text(kind["schema"], title, kind_schema_links[kind_id], errors):
+            errors.append(f"{path}.title_field: generic title requires a canonical string declaration in schema.properties")
         host_create = kind.get("host_create") or {}
         for field in errors.each(host_create.get("defaults", {})):
             if field in outputs:

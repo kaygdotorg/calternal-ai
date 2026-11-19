@@ -318,7 +318,7 @@ def semantic(doc, errors, catalogue, manifest, installed_manifests=()):
             continue
         entry = kind or plugin
         if entry is None: continue
-        generic = (catalogue or {}).get("generic_item_fields", {})
+        generic = catalogue["generic_item_fields"] if entry.get("includes_generic_item_fields", kind is None) else {}
         known = field_names(entry, errors, generic) | {"id"}
         predicates = [pred for group in errors.each(("all", "any")) for pred in errors.each(bind.get("filter", {}).get(group, []))]
         sorts = bind.get("sort", [])
@@ -344,9 +344,13 @@ def semantic(doc, errors, catalogue, manifest, installed_manifests=()):
         for f in errors.each(used):
             if f not in known: errors.append(f"{path}: field {f!r} is not a field of kind {kind_id!r}")
         for sort in errors.each(sorts):
-            field_type = field_meta(entry, sort["field"]).get("type")
+            field = sort["field"]
+            meta = field_meta(entry, field, generic)
+            field_type = meta.get("type")
             if field_type in ("RowImageRef", "TextSet"):
                 errors.append(f"{path}: {field_type} cannot be a sort key")
+            elif field in known and (field_type is None or ("index_owner" in meta and meta["index_owner"] is None)):
+                errors.append(f"{path}: sort field {field!r} requires a declared indexed field type")
         for pred in errors.each(predicates):
             field_type = field_meta(entry, pred["field"]).get("type")
             operation, operand = pred["op"], pred.get("value", {})

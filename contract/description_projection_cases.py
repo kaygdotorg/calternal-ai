@@ -104,8 +104,8 @@ class ProjectionCases:
 
     def test_title_sources_must_be_declared_metadata(self):
         original = self.manifest.read_bytes()
-        for metadata, expected in ((None, "requires declared string metadata"),
-                                   ({"type": "number"}, "requires declared string metadata"),
+        for metadata, expected in ((None, "requires a canonical string declaration in schema.properties"),
+                                   ({"type": "number"}, "requires a canonical string declaration in schema.properties"),
                                    ({"$ref": "#/definitions/headline"}, None)):
             with self.subTest(metadata=metadata):
                 manifest = json.loads(original)

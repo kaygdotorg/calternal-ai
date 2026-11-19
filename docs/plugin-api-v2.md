@@ -1,4 +1,4 @@
-# Plugin API v2 · revision 14.6 draft
+# Plugin API v2 · revision 14.7 draft
 
 The first contract covers host-drawn apps, generic items, durable jobs and
 generic conversation and execution engines. Freeze after the §8 spikes. Fixture bounds are test settings. See the
@@ -48,6 +48,20 @@ labels and may require a preview in addition to
 the operation’s labeled `material_inputs` keyed by input field. An operation that
 declares `creates` can expose only a ref that the owning host engine
 recorded in the committed receipt and the viewer may currently open.
+Declare the property named by `title_field` directly in the kind’s
+`schema.properties`. A root `$ref` replaces that declaration under Draft 7.
+After following any property `$ref` chain within the embedded
+metadata document, the property schema declares `"type": "string"` or
+`"type": ["string"]`. Patterns, combinators, conditionals and literals can
+constrain values but cannot establish the declaration. Install refuses a
+title with no such declaration.
+
+For indexed fields, the canonical declaration is the explicit catalogue
+`FieldType` in the kind’s `indexed_fields` or in the host catalogue for a
+host field. Extractor destinations, set-valued fields and operands, and
+sort keys use that declaration. The metadata schema and stored values
+cannot establish an index type.
+
 A kind’s optional `host_create` declaration opts its schema-valid item
 defaults into the generic host create (§4.4). The optional checked
 collection placement belongs to the same host transaction. At install, resolve any
@@ -467,8 +481,12 @@ At install, resolve these declarations and reject aliases from generic
 dispatch, scheduling, or create follow-up into the prepared Send path.
 Only that composer may admit the job. At claim and replay the host injects
 `message.job_context.intent` outside operation input, bound to the exact
-durable intent and owning job receipt. `execution_start` compares it under
-the lifecycle fence and refuses a supplied, foreign or retired intent.
+durable intent and owning job receipt. `execution_start` accepts only
+`request_id`. Under the lifecycle fence the host resolves the intent and
+owning receipt from the authenticated job context and rejects missing,
+foreign or retired context. Replay needs no intent echo. A live authorized
+replay returns the admitted result, even with a new request ID, because
+the host admits at most one attempt for the durable intent.
 The host validates the final material, provider options and eligibility
 against installed declarations. When `steer_live` is set and the prepared
 attempt is still live, Send forwards checked text directly to
@@ -654,7 +672,7 @@ The catalogue owns generic `id`, `title`, `updated`, `trashed` and
 Kind declarations name an icon, a string title field and indexed fields
 using the catalogue’s type and audience vocabularies. The host derives
 generic fields from the engine record. Install checks the generic title
-source before any projection exists. It must be ordinary Text metadata.
+source before any projection exists. It must be ordinary Text metadata declared as in §1.
 Reject extractor outputs, including `body_excerpt`, other body-derived
 fields, host-owned aliases and an indexed source with narrower delivery
 than the generic title. Use the same provenance for title search and
@@ -1367,7 +1385,7 @@ authorizes, commits and delivers.
 | Fixture | Required result |
 | --- | --- |
 | Attempt broker and renewal | A member can enumerate in an ordinary invocation and the attempt can read its admitted item. The same member's attempt gets zero rows, counts or jobs when it requests discovery, supplies the member ticket, or delegates to an indexer. Revoke the item grant during an admitted output and replace the attempt before renewal. Require zero old-attempt effects, delivery or successful renewal after either fence. Mint one checked child request and one transition across replay. Reject forged parent/refs, a stale attempt and changed receipt material. On child admission, recheck all authority and tree quotas. |
-| Cold composer job and Stop | Pause after a durable Send and before claim. Stop using the pending-intent context, restart and admit the job. Require the refusal receipt, zero starts and no effect on a later intent. In the control arm the claimed job receives the exact intent and starts once on replay. Supplying a sibling intent or calling without injected context starts zero runs. |
+| Cold composer job and Stop | Pause after a durable Send and before claim. Stop using the pending-intent context, restart and admit the job. Require the refusal receipt, zero starts and no effect on a later intent. In the control arm, replay the claimed job with the same and then a new request ID. Require the same admitted result and one start in total. Echoing an intent in the request or calling with missing, foreign or retired host context starts zero runs. |
 | Conversation body | A canonical append can be paged and, with corpus rights, its exact bytes can be read through a pinned range. A same-kind package save, staged replacement, history-body restore or room write cannot publish a forged role, provenance or bytes. A title-only viewer gets zero corpus bytes, lengths or bookmarks via transcript, editor, range or export. Revoke after opening a pin and before delivery to cover both readers. |
 | Native approval and lifetime | For each provider offer Approve only on the approvable, contained arm. With native approvability false or containment unproved, forge an approval and require zero dispatches. Use a valid context with an unoffered lifetime and require zero dispatches. An exact offered one-use decision dispatches once, including on replay. |
 | Read from an empty or clipped transcript | Open and follow a new conversation before its first append. Require no fabricated cursor, then one committed UUID and a usable cursor after append. Read a clipped multilingual body across pages and compare exact UTF-8 bytes with the pinned record. A copied or revoked continuation returns the same opaque refusal as an absent ref. |
@@ -1540,7 +1558,7 @@ See the [recorded answers](https://git.kayg.org/kayg/calternal-ai/src/commit/3ab
   qualifies. Scratch activation and Photos-scale I/O and metadata stay
   outside this revision.
 
-### Revision 14.6 draft questions and implementation seams
+### Revision 14.7 draft questions and implementation seams
 
 - Discovery rights, canonical writer and who owns a cross-runner list are
   separate owner questions in [the sealed proposal’s §C][generic-engines].

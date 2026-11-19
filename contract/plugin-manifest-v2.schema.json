@@ -123,14 +123,14 @@
       "properties": {
         "id": { "$ref": "host-catalogue-v2.json#/$defs/KindId" },
         "icon": { "$ref": "#/definitions/icon" },
-        "title_field": { "$ref": "#/definitions/localId", "description": "Ordinary string metadata exposed as the generic title. Install rejects a body-derived or extractor-owned source, a reserved host projection, or an indexed source with a narrower audience." },
+        "title_field": { "$ref": "#/definitions/localId", "description": "Ordinary string metadata exposed as the generic title. Declare the named property directly in schema.properties on a metadata root without $ref. Its own schema, after resolving references within the same embedded metadata document, must declare type \"string\" or [\"string\"]. Patterns, combinators, conditionals and literals cannot establish the type. Install rejects a body-derived or extractor-owned source, a reserved host projection, or an indexed source with a narrower audience." },
         "storage": { "$ref": "plugin-manifest-v1.schema.json#/definitions/ManifestPlacement" },
         "claimed_text": { "type": "boolean" },
         "extension": { "type": "string", "pattern": "^[a-z0-9]{1,16}$" },
         "schema": { "$ref": "#/definitions/embeddedSchema" },
         "searchable": { "type": "boolean", "description": "Opt a claimed-text kind into the host background search projection and the claimed-text plans in query.search of the host catalogue. The host checks current scope and field authority at query time. Omission or false leaves the kind out of search." },
         "indexed_fields": {
-          "description": "Uses only package field names. At install the host rejects any name reserved by generic_item_fields in the host catalogue, including derived declarations.",
+          "description": "Uses only package field names. Each field explicitly declares a catalogue FieldType for queries, sort keys and extractor outputs. Metadata schemas and values do not determine index types. At install the host rejects any name reserved by generic_item_fields in the host catalogue, including derived declarations.",
           "type": "object", "maxProperties": 32,
           "propertyNames": { "$ref": "#/definitions/localId" },
           "additionalProperties": {

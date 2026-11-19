@@ -1,6 +1,6 @@
 # Description contract (v2)
 
-Status: **revision 14.6 draft (based on 13.18)**, paired with the [Plugin API v2 specification](plugin-api-v2.md). The [description schema](../contract/description-v2.schema.json) defines the shared renderer shapes.
+Status: **revision 14.7 draft (based on 13.18)**, paired with the [Plugin API v2 specification](plugin-api-v2.md). The [description schema](../contract/description-v2.schema.json) defines the shared renderer shapes.
 
 The schema is checked with `python3 contract/verify-description.py` against the fixtures in `contract/fixtures/description-v2/` (valid ones must pass,
 `invalid-*` ones must report the reason in their directory’s `expected-errors.json`). The fixtures are the paper exercises of section 9. The verifier uses `replies/origins.json` to resolve each standalone window reply to its description fixture and Bind, then checks every projected value against the kind’s declared field type.

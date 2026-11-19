@@ -20,5 +20,6 @@
   "invalid-host-create-default-summary.json": ".host_create.defaults.summary: extractor-owned output",
   "invalid-host-create-default-snippet.json": ".host_create.defaults.snippet: extractor-owned output",
   "invalid-host-create-default-image.json": ".host_create.defaults.thumbnail: host-owned image slot",
-  "invalid-generic-title-from-body.json": ".title_field: generic title cannot use a body-derived source"
+  "invalid-generic-title-from-body.json": ".title_field: generic title cannot use a body-derived source",
+  "invalid-generic-title-pattern-only-type.json": ".title_field: generic title requires a canonical string declaration in schema.properties"
 }
