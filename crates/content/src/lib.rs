@@ -257,8 +257,7 @@ impl Content {
         if held.is_none() {
             let conn = open_space_database(&self.roots.appdata, id)?;
             let journal = self.journals.open_store(id, self.lifecycle.clone())?;
-            let mut opened =
-                Space::open(&self.roots.userdata_ssd, id, journal, conn)?;
+            let mut opened = Space::open(&self.roots.userdata_ssd, id, journal, conn)?;
             self.recover_space(&mut opened)?;
             *held = Some(opened);
             slot.visibility
@@ -677,5 +676,7 @@ mod tests {
 /// Open the component writer on the versioned per-space WAL. Host callers must
 /// hold the owner lifecycle across the open and each subsequent I/O step.
 pub fn open_space_database(appdata: &std::path::Path, id: SpaceId) -> Result<rusqlite::Connection> {
-    db::database(&db::space_path(appdata, id), db::SPACE_SCHEMA)
+    let conn = db::database(&db::space_path(appdata, id), db::SPACE_SCHEMA)?;
+    discovery::install(&conn)?;
+    Ok(conn)
 }

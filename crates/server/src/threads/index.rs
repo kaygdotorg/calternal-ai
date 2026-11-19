@@ -2,12 +2,10 @@
 use crate::{
     api::Shared,
     auth::Directory,
-    plugins::{job_sql, jobs::JobDatabase},
+    plugins::job_sql,
 };
 use calternal_types::{AccountId, Error, Page, SpaceId};
-use rusqlite::Connection;
 use serde_json::Value;
-use std::path::Path;
 use uuid::Uuid;
 
 /// Indexed thread summary with the saved turn's current display state.
@@ -26,27 +24,6 @@ pub(super) struct Row {
     pub(super) turn_reason: Value,
 }
 
-fn connection<D: Directory>(
-    state: &Shared<D>,
-    space: SpaceId,
-) -> Result<std::sync::Arc<JobDatabase>, Error> {
-    let conn = state.jobs.conn(&space.to_string())?;
-    let attached = {
-        let locked = conn.lock().map_err(index_error)?;
-        is_attached(&locked)
-    };
-    if !attached {
-        // Initialize the content schema before attaching. Release the jobs lock
-        // above first: writer paths acquire content before jobs.
-        state.store.content().live_journal(space)?;
-    }
-    Ok(conn)
-}
-
-fn is_attached(conn: &Connection) -> bool {
-    conn.db_name(2).is_ok_and(|name| name == "thread_content")
-}
-
 fn index_error(error: rusqlite::Error) -> Error {
     tracing::error!(%error, "thread index read failed");
     Error::internal("could not read the thread index")
@@ -57,10 +34,10 @@ fn index_error(error: rusqlite::Error) -> Error {
 const SUMMARIES: &str = "SELECT i.id, i.metadata, i.revision, i.updated_at, (
          SELECT json_array(j.state,j.account,__REASON__) FROM main.jobs j
          WHERE j.operation='agent.turn' AND json_extract(j.input,'$.request.thread_id') = +i.id
-         AND json_extract(j.input,'$.check') IS NOT 1
+         AND json_extract(j.input,'$.check') IS NOT 1 AND j.state!='awaiting_thread'
          ORDER BY j.rowid DESC LIMIT 1
      )
-     FROM thread_content.items i WHERE i.kind='threads'
+     FROM items i WHERE i.kind='threads'
      AND i.updated_at<=?1 AND (i.updated_at<?1 OR i.id>?2)
      AND (?3 IS NOT NULL OR json_extract(i.metadata,'$.deleted') IS NOT 1)
      AND (?3 IS NOT NULL OR ?4 OR json_extract(i.metadata,'$.archived') IS NOT 1)
@@ -72,32 +49,9 @@ fn summaries() -> &'static str {
     SQL.get_or_init(|| SUMMARIES.replace("__REASON__", &crate::turns::reason::sql("j.")))
 }
 
-fn attach(conn: &Connection) -> Result<(), Error> {
-    if !is_attached(&conn) {
-        let database = conn
-            .path()
-            .ok_or_else(|| Error::internal("jobs database has no path"))?;
-        let path = Path::new(database).with_file_name("content.db");
-        let mut uri = String::from("file:");
-        // The installation path may contain URI delimiters such as # and ?.
-        for &byte in path.as_os_str().as_encoded_bytes() {
-            if byte.is_ascii_alphanumeric() || b"/-._~".contains(&byte) {
-                uri.push(char::from(byte));
-            } else {
-                use std::fmt::Write;
-                write!(uri, "%{byte:02X}").expect("formatting into String");
-            }
-        }
-        uri.push_str("?mode=ro");
-        conn.execute("ATTACH DATABASE ?1 AS thread_content", [&uri])
-            .map_err(index_error)?;
-    }
-    Ok(())
-}
-
 /// List the authorized space's threads with a single indexed query and no body
 /// reads. Filters run before the limit, the last delivered key continues the
-/// page, and a cold connection attaches the same-space index read-only.
+/// page. The content and job indexes share the space connection.
 pub(super) fn page<D: Directory>(
     state: &Shared<D>,
     space: SpaceId,
@@ -113,9 +67,8 @@ pub(super) fn page<D: Directory>(
         .map_err(|_| Error::invalid_input("invalid page cursor"))?;
     // RFC 3339 timestamps sort before the first-page bound.
     let (updated_at, id) = position.unwrap_or_else(|| ("~".into(), String::new()));
-    let conn = connection(state, space)?;
+    let conn = state.jobs.conn(&space.to_string())?;
     let conn = conn.lock().map_err(index_error)?;
-    attach(&conn)?;
     let mut stmt = conn.prepare_cached(summaries()).map_err(index_error)?;
     let rows = stmt
         .query_map(
@@ -169,23 +122,22 @@ pub(crate) fn readiness_context<D: Directory>(
     thread: Option<Uuid>,
     account: calternal_types::AccountId,
 ) -> Result<(Option<Uuid>, Value), Error> {
-    let conn = connection(state, space)?;
+    let conn = state.jobs.conn(&space.to_string())?;
     let conn = conn.lock().map_err(index_error)?;
-    attach(&conn)?;
     let mut stmt = conn.prepare_cached(
         "SELECT i.id, (
             SELECT CASE WHEN j.account=?2 AND j.state IN ('waiting','admitted','placing','running','interrupted','retry_waiting')
                 THEN json_extract(j.checkpoint,'$.request_machine') END
             FROM main.jobs j WHERE j.operation='agent.turn'
                 AND json_extract(j.input,'$.request.thread_id')=+i.id
-                AND json_extract(j.input,'$.check') IS NOT 1
+                AND json_extract(j.input,'$.check') IS NOT 1 AND j.state!='awaiting_thread'
             ORDER BY j.rowid DESC LIMIT 1
         ), (
-            SELECT json_group_object(key,json(value)) FROM thread_content.controls
+            SELECT json_group_object(key,json(value)) FROM controls
             WHERE key >= ?3 AND key < ?4
         )
         FROM (SELECT 1)
-        LEFT JOIN thread_content.items i ON i.id=?1 AND i.kind='threads'
+        LEFT JOIN items i ON i.id=?1 AND i.kind='threads'
           AND json_extract(i.metadata,'$.deleted') IS NOT 1",
     ).map_err(index_error)?;
     let start = crate::store::plugin_key("");
@@ -232,16 +184,6 @@ mod tests {
         let space = SpaceId::new().to_string();
         let conn = jobs.conn(&space).unwrap();
         let conn = conn.lock().unwrap();
-        conn.execute_batch(
-            "ATTACH DATABASE ':memory:' AS thread_content;
-             CREATE TABLE thread_content.items(
-                id TEXT PRIMARY KEY, kind TEXT NOT NULL, metadata TEXT NOT NULL,
-                revision TEXT NOT NULL, updated_at TEXT NOT NULL
-             ) STRICT;
-             CREATE INDEX thread_content.item_list ON items(kind,updated_at DESC,id);",
-        )
-        .unwrap();
-
         let mut stmt = conn
             .prepare(&format!("EXPLAIN QUERY PLAN {}", summaries()))
             .unwrap();

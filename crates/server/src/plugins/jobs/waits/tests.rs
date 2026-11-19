@@ -65,8 +65,12 @@ fn jobs_v2_migrates_with_existing_rows_and_a_failed_batch_rolls_back() {
         calternal_store::migrations::inspect(&conn, waits).unwrap(),
         3
     );
-    assert_eq!(conn.query_row("SELECT state FROM jobs WHERE id=?1", [&row],
-        |r| r.get::<_, String>(0)).unwrap(), "admitted");
+    assert_eq!(
+        conn.query_row("SELECT state FROM jobs WHERE id=?1", [&row], |r| r
+            .get::<_, String>(0))
+            .unwrap(),
+        "admitted"
+    );
 }
 
 #[test]

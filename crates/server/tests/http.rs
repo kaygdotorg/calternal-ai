@@ -517,7 +517,10 @@ fn crash_points_recover_without_duplicates() {
             let st = srv.child.wait().unwrap();
             assert!(!st.success(), "{point}: process should abort");
         }
-        let journal_path = d.0.join("appdata/spaces").join(&personal).join("content.db");
+        let journal_path =
+            d.0.join("appdata/spaces")
+                .join(&personal)
+                .join("content.db");
         let original_reply = (point == "after_journal_commit").then(|| {
             let index = rusqlite::Connection::open(&journal_path).unwrap();
             let raw: String = index

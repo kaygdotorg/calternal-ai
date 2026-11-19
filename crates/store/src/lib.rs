@@ -234,7 +234,9 @@ impl SpaceStore {
         secrets: &Path,
         options: Options,
     ) -> Result<Self> {
-        let dir = path.parent().ok_or_else(|| Error::internal("space WAL path"))?;
+        let dir = path
+            .parent()
+            .ok_or_else(|| Error::internal("space WAL path"))?;
         Self::open_bound(space, true, dir, options, Some(secrets), Some(path)).await
     }
 
@@ -249,7 +251,15 @@ impl SpaceStore {
         options: Options,
         secrets: Option<&Path>,
     ) -> Result<Self> {
-        Self::open_bound(test_support::test_space(), false, dir, options, secrets, None).await
+        Self::open_bound(
+            test_support::test_space(),
+            false,
+            dir,
+            options,
+            secrets,
+            None,
+        )
+        .await
     }
 
     /// Opens (or creates) the store in `dir`. Fast: it only checks the

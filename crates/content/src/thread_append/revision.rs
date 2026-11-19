@@ -1,4 +1,4 @@
-//! Byte-range reads across an immutable legacy snapshot and later append records.
+//! Byte-range reads across a thread snapshot and later immutable append records.
 use crate::{Result, types::internal};
 use rusqlite::{Connection, OptionalExtension, params};
 use std::ops::Range;
@@ -6,7 +6,7 @@ use std::ops::Range;
 /// First writer version that can read a head stored as an append patch.
 pub(crate) const PATCH_SCHEMA_VERSION: i64 = 9;
 
-/// Add immutable revision ranges to the existing content database.
+/// Immutable revision ranges in the fresh space baseline.
 pub(crate) const SCHEMA: &str = "
 CREATE TABLE thread_revision_patches(
     item TEXT NOT NULL,
@@ -143,22 +143,22 @@ mod tests {
     use super::*;
 
     #[test]
-    fn old_revisions_and_bounded_ranges_across_patches_are_readable_after_migration() {
-        use calternal_store::migrations::{inspect, migrate_release, require_writer_version};
+    fn fresh_schema_supports_bounded_reads_across_snapshots_and_patches() {
+        use calternal_store::migrations::{inspect, migrate};
+
+        let previous = Connection::open_in_memory().unwrap();
+        previous.pragma_update(None, "user_version", 8).unwrap();
+        assert!(migrate(&previous, crate::db::SPACE_SCHEMA).is_err());
 
         let mut db = Connection::open_in_memory().unwrap();
-        let [previous, patch_release] = crate::db::thread_patch_transition();
-        assert_eq!(patch_release.version(), previous.version() + 1);
-        assert_eq!(patch_release.version(), PATCH_SCHEMA_VERSION);
-        migrate_release(&db, previous, false).unwrap();
+        migrate(&db, crate::db::SPACE_SCHEMA).unwrap();
+        assert_eq!(inspect(&db, crate::db::SPACE_SCHEMA).unwrap(), PATCH_SCHEMA_VERSION);
         db.execute_batch(
             "INSERT INTO items VALUES ('t','threads','{}','v1',1,'now','thread.md','thread.md',NULL,'materialized',NULL);
              INSERT INTO versions VALUES ('t',1,'v1','{}',X'616263','now','owner');",
         )
         .unwrap();
 
-        migrate_release(&db, patch_release, true).unwrap();
-        assert_eq!(inspect(&db, previous).unwrap(), patch_release.version());
         assert_eq!(
             Revision::get(&db, "t".into(), 1)
                 .unwrap()
@@ -169,7 +169,6 @@ mod tests {
         );
 
         let tx = db.transaction().unwrap();
-        require_writer_version(&tx, PATCH_SCHEMA_VERSION).unwrap();
         tx.execute_batch(
             "INSERT INTO versions VALUES
              ('t',2,'v2','{}',X'6465','now','owner'),
@@ -181,7 +180,6 @@ mod tests {
         )
         .unwrap();
         tx.commit().unwrap();
-        assert!(inspect(&db, previous).is_err());
         for (seq, range, expected) in [
             (1, 0..3, b"abc".as_slice()),
             (2, 2..5, b"cde"),

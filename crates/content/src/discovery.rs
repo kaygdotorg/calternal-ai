@@ -16,7 +16,13 @@ pub(crate) fn install(conn: &Connection) -> Result<()> {
     if generation == GENERATION {
         return Ok(());
     }
-    let tx = conn.unchecked_transaction().map_err(internal)?;
+    let tx = rusqlite::Transaction::new_unchecked(conn, rusqlite::TransactionBehavior::Immediate)
+        .map_err(internal)?;
+    let generation = tx.pragma_query_value(None, "application_id", |r| r.get::<_, i64>(0))
+        .map_err(internal)?;
+    if generation == GENERATION {
+        return Ok(());
+    }
     tx.execute_batch(
         "DROP TRIGGER IF EXISTS item_terms_insert;
          DROP TRIGGER IF EXISTS item_terms_update;

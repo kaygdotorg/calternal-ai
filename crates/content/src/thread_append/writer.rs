@@ -134,7 +134,16 @@ impl Content {
         request: Request<'_>,
         receipt: impl FnOnce(&str) -> Value,
     ) -> Result<String> {
-        self.append_thread_record_with(space, id, base, metadata, record, request, receipt, |_, _| Ok(()))
+        self.append_thread_record_with(
+            space,
+            id,
+            base,
+            metadata,
+            record,
+            request,
+            receipt,
+            |_, _| Ok(()),
+        )
     }
 
     /// Append with a host-owned mutation in the same FULL space WAL commit.
@@ -142,8 +151,14 @@ impl Content {
     /// effects must be safe before placement, or fenced until journal publication.
     #[allow(clippy::too_many_arguments)]
     pub fn append_thread_record_with(
-        &self, space: SpaceId, id: Uuid, base: &str, metadata: Value, record: &[u8],
-        request: Request<'_>, receipt: impl FnOnce(&str) -> Value,
+        &self,
+        space: SpaceId,
+        id: Uuid,
+        base: &str,
+        metadata: Value,
+        record: &[u8],
+        request: Request<'_>,
+        receipt: impl FnOnce(&str) -> Value,
         stage: impl FnOnce(&rusqlite::Transaction<'_>, i64) -> Result<()>,
     ) -> Result<String> {
         let _actor = self.lifecycle.step(request.account.as_uuid())?;
@@ -230,9 +245,6 @@ impl Content {
             };
             let cutoff = s.published_append_cutoff();
             let tx = s.conn.transaction_with_behavior(TransactionBehavior::Immediate).map_err(internal)?;
-            calternal_store::migrations::require_writer_version(
-                &tx, super::revision::PATCH_SCHEMA_VERSION,
-            ).map_err(internal)?;
             staged.write(&tx, None, &request.account.to_string())?;
             tx.execute(
                 "INSERT INTO thread_revision_patches VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)",

@@ -89,18 +89,6 @@ const SPACE_INITIAL: &[&str] = &[
 ];
 const COLLECTION_MEMBERS: &str = include_str!("collection_members.sql");
 #[cfg(test)]
-const SPACE_CHANGES: &[(i64, &str)] = &[
-    (4, THREAD_SNOOZE),
-    (5, COLLECTION_MEMBERS),
-    (6, crate::rooms::SCHEMA),
-    (7, crate::trash_job::SCHEMA),
-    (8, crate::rename_job::SCHEMA),
-    (
-        crate::thread_append::revision::PATCH_SCHEMA_VERSION,
-        crate::thread_append::revision::SCHEMA,
-    ),
-];
-#[cfg(test)]
 const CONTENT_BASELINE: i64 = 3;
 const CONTENT_SCHEMA_NAME: &str = "space content.db";
 
@@ -122,23 +110,6 @@ pub(crate) const SPACE_SCHEMA: calternal_store::migrations::Schema<'_> =
         ],
         &[],
     );
-
-/// The adjacent production descriptors for the introduction of patch rows.
-#[cfg(test)]
-pub(crate) fn thread_patch_transition() -> [calternal_store::migrations::Schema<'static>; 2] {
-    let patch_index = SPACE_CHANGES
-        .iter()
-        .position(|(version, _)| *version == crate::thread_append::revision::PATCH_SCHEMA_VERSION)
-        .expect("the content schema includes the thread patch step");
-    [patch_index, patch_index + 1].map(|step_count| {
-        calternal_store::migrations::Schema::new(
-            CONTENT_SCHEMA_NAME,
-            CONTENT_BASELINE,
-            SPACE_INITIAL,
-            &SPACE_CHANGES[..step_count],
-        )
-    })
-}
 
 /// Open and initialize a private SQLite store using its declared schema.
 pub(crate) fn database(
@@ -180,7 +151,6 @@ impl Space {
         if bound != id.to_string() {
             return Err(internal("wrong space binding"));
         }
-        crate::discovery::install(&conn)?;
         #[cfg(feature = "perf-timings")]
         let conn = calternal_store::timings::with_sql_profile(conn, "content");
         Ok(Self {

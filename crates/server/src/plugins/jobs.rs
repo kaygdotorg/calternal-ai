@@ -498,6 +498,7 @@ impl Jobs {
 
     /// Admit a saved turn and record its request key in the same FULL job
     /// transaction. The receipt survives the bounded completed-job history.
+    #[cfg(any(test, not(target_os = "linux")))]
     pub(crate) fn admit_thread(&self, a: Admission) -> Result<String, Error> {
         self.admit_job(a, 0, true)
     }
@@ -512,7 +513,9 @@ impl Jobs {
         let space = a.space.clone();
         let actor = a.account;
         let _actor = self.lifecycle.step(actor.as_uuid())?;
-        let id = self.tx(&space, |tx| self.insert_admission(tx, a, revision, thread_send, None))?;
+        let id = self.tx(&space, |tx| {
+            self.insert_admission(tx, a, revision, thread_send, None)
+        })?;
         self.register_admission(&space, &id);
         Ok(id)
     }
@@ -541,92 +544,147 @@ impl Jobs {
 
     /// Populate the in-memory routing cache after the durable job is visible.
     pub(crate) fn register_admission(&self, space: &str, job: &str) {
-        self.routes.write().unwrap_or_else(|p| p.into_inner()).insert(job.into(), space.into());
+        self.routes
+            .write()
+            .unwrap_or_else(|p| p.into_inner())
+            .insert(job.into(), space.into());
+    }
+
+    /// Wake the existing journal drain after an append has activated its job.
+    pub(crate) fn wake_saved_thread(&self, space: &str) {
+        if let Some(publisher) = &self.thread_events
+            && let Ok(conn) = self.conn(space)
+        {
+            publisher.wake(space, conn);
+        }
     }
 
     fn insert_admission(
-        &self, tx: &rusqlite::Transaction<'_>, a: Admission,
-        revision: u32, thread_send: bool, staged: Option<(Uuid, i64, &str)>,
+        &self,
+        tx: &rusqlite::Transaction<'_>,
+        a: Admission,
+        revision: u32,
+        thread_send: bool,
+        staged: Option<(Uuid, i64, &str)>,
     ) -> Result<String, Error> {
         let generation = (i64::from(revision) << 32) | i64::from(a.generation);
         let input = bounded_json(&a.input, MAX_CHECKPOINT_BYTES)?;
         let session = serde_json::to_string(&a.session).map_err(|_| Error::internal("encode"))?;
         let receipt = thread_send
             .then(|| ring::digest::digest(&ring::digest::SHA256, a.request_key.as_bytes()));
-            let now = now_ms();
-            if let Some(key) = &receipt
-                && let Some(id) = thread_send_receipt(tx, key.as_ref(), now)?
-            {
-                return Ok(id);
+        let now = now_ms();
+        if let Some(key) = &receipt
+            && let Some(id) = thread_send_receipt(tx, key.as_ref(), now)?
+        {
+            return Ok(id);
+        }
+        if let Some(id) = tx
+            .query_row(
+                "SELECT id FROM jobs WHERE request_key=?1",
+                [&a.request_key],
+                |r| r.get::<_, String>(0),
+            )
+            .optional()
+            .map_err(db_err)?
+        {
+            return Ok(id);
+        }
+        if a.operation == "agent.turn" {
+            let thread = a.input["request"]["thread_id"]
+                .as_str()
+                .ok_or_else(|| Error::invalid_input("turn needs a thread UUID"))?;
+            let active:bool=tx.query_row(&format!("SELECT EXISTS(SELECT 1 FROM jobs WHERE operation='agent.turn' AND json_extract(input,'$.request.thread_id')=?1 AND json_extract(input,'$.check') IS NOT 1 AND state IN {ACTIVE})"),[thread],|r|r.get(0)).map_err(db_err)?;
+            if active {
+                return Err(Error::conflict(
+                    "this thread already has active or interrupted work",
+                ));
             }
-            if let Some(id) = tx
-                .query_row("SELECT id FROM jobs WHERE request_key=?1", [&a.request_key], |r| {
-                    r.get::<_, String>(0)
-                })
-                .optional()
-                .map_err(db_err)?
-            {
-                return Ok(id);
-            }
-            if a.operation=="agent.turn" {
-                let thread=a.input["request"]["thread_id"].as_str().ok_or_else(||Error::invalid_input("turn needs a thread UUID"))?;
-                let active:bool=tx.query_row(&format!("SELECT EXISTS(SELECT 1 FROM jobs WHERE operation='agent.turn' AND json_extract(input,'$.request.thread_id')=?1 AND json_extract(input,'$.check') IS NOT 1 AND state IN {ACTIVE})"),[thread],|r|r.get(0)).map_err(db_err)?;
-                if active{return Err(Error::conflict("this thread already has active or interrupted work"));}
-            }
-            let active: i64 = tx
-                .query_row(&format!("SELECT count(*) FROM jobs WHERE state IN {ACTIVE}"), [], |r| r.get(0))
-                .map_err(db_err)?;
-            if active as usize >= MAX_ACTIVE_JOBS_PER_SPACE {
-                return Err(Error::unavailable("too many active jobs in this space")
-                    .with_details(serde_json::json!({"reason": "job_capacity"})));
-            }
-            if let Some(parent) = &a.parent {
-                let ok: Option<(String, String)> = tx
-                    .query_row("SELECT plugin,state FROM jobs WHERE id=?1", [parent], |r| {
-                        Ok((r.get(0)?, r.get(1)?))
-                    })
-                    .optional()
-                    .map_err(db_err)?;
-                let children: i64 = tx
-                    .query_row("SELECT count(*) FROM jobs WHERE parent=?1", [parent], |r| r.get(0))
-                    .map_err(db_err)?;
-                if !ok.is_some_and(|(p, s)| p == a.plugin && !parse_state(&s).is_final())
-                    || children as usize >= MAX_CHILDREN
-                {
-                    return Err(Error::invalid_input("parent job cannot take a child"));
-                }
-            }
-            let id = Uuid::now_v7().to_string();
-            tx.execute(
-                "INSERT INTO jobs VALUES(?1,?2,?3,?4,?5,?6,?7,?10,'null',0,0,'null',0,?8,?9,NULL)",
-                params![id, a.plugin, a.account.to_string(), session, a.operation, input, a.parent, generation, a.request_key, if staged.is_some() { "awaiting_thread" } else { "admitted" }],
+        }
+        let active: i64 = tx
+            .query_row(
+                &format!("SELECT count(*) FROM jobs WHERE state IN {ACTIVE}"),
+                [],
+                |r| r.get(0),
             )
             .map_err(db_err)?;
-            if let Some(key) = &receipt {
-
-                let expires = now.saturating_add(
-                    i64::try_from(self.receipt_retention.as_millis()).unwrap_or(i64::MAX),
-                );
-                tx.execute(
-                    "DELETE FROM thread_send_receipts WHERE request_key IN
+        if active as usize >= MAX_ACTIVE_JOBS_PER_SPACE {
+            return Err(Error::unavailable("too many active jobs in this space")
+                .with_details(serde_json::json!({"reason": "job_capacity"})));
+        }
+        if let Some(parent) = &a.parent {
+            let ok: Option<(String, String)> = tx
+                .query_row("SELECT plugin,state FROM jobs WHERE id=?1", [parent], |r| {
+                    Ok((r.get(0)?, r.get(1)?))
+                })
+                .optional()
+                .map_err(db_err)?;
+            let children: i64 = tx
+                .query_row("SELECT count(*) FROM jobs WHERE parent=?1", [parent], |r| {
+                    r.get(0)
+                })
+                .map_err(db_err)?;
+            if !ok.is_some_and(|(p, s)| p == a.plugin && !parse_state(&s).is_final())
+                || children as usize >= MAX_CHILDREN
+            {
+                return Err(Error::invalid_input("parent job cannot take a child"));
+            }
+        }
+        let id = Uuid::now_v7().to_string();
+        tx.execute(
+            "INSERT INTO jobs VALUES(?1,?2,?3,?4,?5,?6,?7,?10,'null',0,0,'null',0,?8,?9,NULL)",
+            params![
+                id,
+                a.plugin,
+                a.account.to_string(),
+                session,
+                a.operation,
+                input,
+                a.parent,
+                generation,
+                a.request_key,
+                if staged.is_some() {
+                    "awaiting_thread"
+                } else {
+                    "admitted"
+                }
+            ],
+        )
+        .map_err(db_err)?;
+        if let Some(key) = &receipt {
+            let expires = now.saturating_add(
+                i64::try_from(self.receipt_retention.as_millis()).unwrap_or(i64::MAX),
+            );
+            tx.execute(
+                "DELETE FROM thread_send_receipts WHERE request_key IN
                      (SELECT request_key FROM thread_send_receipts WHERE expires_ms<=?1
                       ORDER BY expires_ms LIMIT 128)",
-                    [now],
-                ).map_err(db_err)?;
-                tx.execute(
+                [now],
+            )
+            .map_err(db_err)?;
+            tx.execute(
                     "INSERT INTO thread_send_receipts VALUES(?1,?2,?3)
                      ON CONFLICT(request_key) DO UPDATE SET job=excluded.job,expires_ms=excluded.expires_ms",
                     params![key.as_ref(), id, expires],
                 ).map_err(db_err)?;
-            }
-            if let Some((item, seq, request)) = staged {
-                let key = receipt.as_ref().ok_or_else(|| Error::internal("missing admission receipt"))?;
-                tx.execute(
-                    "INSERT INTO thread_job_placement VALUES(?1,?2,?3,?4,?5,?6)",
-                    params![item.to_string(), seq, id, key.as_ref(), a.account.to_string(), request],
-                ).map_err(db_err)?;
-            }
-            Ok(id)
+        }
+        if let Some((item, seq, request)) = staged {
+            let key = receipt
+                .as_ref()
+                .ok_or_else(|| Error::internal("missing admission receipt"))?;
+            tx.execute(
+                "INSERT INTO thread_job_placement VALUES(?1,?2,?3,?4,?5,?6)",
+                params![
+                    item.to_string(),
+                    seq,
+                    id,
+                    key.as_ref(),
+                    a.account.to_string(),
+                    request
+                ],
+            )
+            .map_err(db_err)?;
+        }
+        Ok(id)
     }
 
     /// Durably record a checkpoint from the current run; the next run resumes from it
@@ -661,10 +719,20 @@ impl Jobs {
 
 fn hosted_schema() -> calternal_store::migrations::Schema<'static> {
     static BATCHES: std::sync::OnceLock<[&'static str; 5]> = std::sync::OnceLock::new();
-    calternal_store::migrations::Schema::new("jobs", 4, BATCHES.get_or_init(|| [
-        SCHEMA, crate::threads::turn_events::schema(), waits::SCHEMA,
-        THREAD_SEND_RECEIPTS, THREAD_JOB_PLACEMENT,
-    ]), &[])
+    calternal_store::migrations::Schema::new(
+        "jobs",
+        4,
+        BATCHES.get_or_init(|| {
+            [
+                SCHEMA,
+                crate::threads::turn_events::schema(),
+                waits::SCHEMA,
+                THREAD_SEND_RECEIPTS,
+                THREAD_JOB_PLACEMENT,
+            ]
+        }),
+        &[],
+    )
 }
 
 const THREAD_JOB_PLACEMENT: &str = "

@@ -30,13 +30,22 @@ impl ProjectionJournal {
         let conn = schema::open_reader(&path)?;
         conn.pragma_update(None, "cache_size", -128)
             .map_err(Error::internal)?;
+        let initialized: bool = conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_schema WHERE name='meta' AND type='table')",
+            [], |row| row.get(0),
+        ).map_err(Error::internal)?;
+        if !initialized {
+            return Ok(None);
+        }
         let binding = conn
             .query_row("SELECT value FROM meta WHERE key='space_id'", [], |row| {
                 row.get::<_, String>(0)
             })
             .optional()
             .map_err(Error::internal)?;
-        let Some(binding) = binding else { return Ok(None) };
+        let Some(binding) = binding else {
+            return Ok(None);
+        };
         if binding != space.to_string() {
             return Err(Error::new(
                 ErrorCode::InvalidInput,

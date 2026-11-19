@@ -48,9 +48,10 @@ pub(crate) async fn dispatch<D: Directory>(
         .and_then(Value::as_str)
         .and_then(|s| SpaceId::parse(s).ok())
         .ok_or_else(|| Error::not_found("space not found"))?;
-    let generation =
-        crate::turns::enabled_generation(&state, &space.to_string(), "calternal-orchestrator")
-            .await?;
+    let space_key = space.to_string();
+    let generation = retry_verifying(|| {
+        crate::turns::enabled_generation(&state, &space_key, "calternal-orchestrator")
+    }).await?;
     let catalog = state.registry.snapshot();
     let plugin = catalog
         .get("calternal-orchestrator")
@@ -99,7 +100,11 @@ pub(crate) async fn dispatch<D: Directory>(
                     &data,
                     id,
                     &message_actor,
-                    Some(SendContext { session, generation, machine: None }),
+                    Some(SendContext {
+                        session,
+                        generation,
+                        machine: None,
+                    }),
                 )
             };
             #[cfg(feature = "perf-timings")]
@@ -142,7 +147,11 @@ pub(crate) async fn dispatch<D: Directory>(
 
 /// Build the same effective input for the durable admission and a replay.
 fn send_input(
-    space: SpaceId, thread: &str, input: &JsonObject, metadata: &Value, machine: Option<&str>,
+    space: SpaceId,
+    thread: &str,
+    input: &JsonObject,
+    metadata: &Value,
+    machine: Option<&str>,
 ) -> Result<AgentInput, Error> {
     Ok(AgentInput {
         space_id: space.to_string(),
@@ -151,9 +160,19 @@ fn send_input(
         provider_id: metadata["provider"].as_str().unwrap_or("").into(),
         mode: serde_json::from_value(metadata["mode"].clone())
             .map_err(|_| Error::internal("saved mode invalid"))?,
-        model: metadata["model"].as_str().ok_or_else(|| Error::internal("saved model missing"))?.into(),
-        options: input.get("reasoning").cloned().map(|level| [("effort".into(), level)].into_iter().collect()).unwrap_or_default(),
-        personal_machine: input.get("personal_machine").and_then(Value::as_bool).unwrap_or(false),
+        model: metadata["model"]
+            .as_str()
+            .ok_or_else(|| Error::internal("saved model missing"))?
+            .into(),
+        options: input
+            .get("reasoning")
+            .cloned()
+            .map(|level| [("effort".into(), level)].into_iter().collect())
+            .unwrap_or_default(),
+        personal_machine: input
+            .get("personal_machine")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
         machine_id: machine.unwrap_or_default().into(),
         source_app: "threads".into(),
         ..Default::default()

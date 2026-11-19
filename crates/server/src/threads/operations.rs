@@ -291,6 +291,7 @@ pub(super) fn apply<D: Directory>(
                 "this thread already has active or interrupted work",
             ));
         }
+        #[cfg(not(target_os = "linux"))]
         if item.metadata["pending"].is_object() {
             let pending = &item.metadata["pending"];
             let account = pending["account"]
@@ -419,7 +420,13 @@ pub(super) fn apply<D: Directory>(
             let send = _send.ok_or_else(|| Error::internal("missing saved turn context"))?;
             let agent = super::send_input(space, &id.to_string(), data, &metadata, send.machine)?;
             let admission = crate::turns::thread_admission::prepare(
-                st, who, send.session, request_id, agent, send.generation, &metadata,
+                st,
+                who,
+                send.session,
+                request_id,
+                agent,
+                send.generation,
+                &metadata,
             )?;
             content.append_thread_record_with(
                 space,
@@ -442,7 +449,10 @@ pub(super) fn apply<D: Directory>(
                     reply["intent"] = item.metadata["pending"].clone();
                     reply.clone()
                 },
-                |tx, seq| st.jobs.stage_thread_admission(tx, admission, id, seq, request_id),
+                |tx, seq| {
+                    st.jobs
+                        .stage_thread_admission(tx, admission, id, seq, request_id)
+                },
             )?;
         }
         #[cfg(not(target_os = "linux"))]

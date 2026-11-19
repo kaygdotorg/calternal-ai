@@ -19,9 +19,10 @@ pub(crate) fn prepare<D: Directory>(
     metadata: &Value,
 ) -> Result<Admission, Error> {
     super::input::validate(&mut input, "agent.run")?;
-    let retry = state.jobs.agent_settings(
-        &who.id.to_string(), None, retry::manifest_defaults(state)?,
-    )?;
+    let retry =
+        state
+            .jobs
+            .agent_settings(&who.id.to_string(), None, retry::manifest_defaults(state)?)?;
     let space = input.space_id.clone();
     state.jobs.prepare_thread_admission(&space)?;
     let resume = ProviderSession::owned(metadata, who.id);
@@ -39,10 +40,43 @@ pub(crate) fn prepare<D: Directory>(
     })
 }
 
+/// Read the job already committed with the patch. The placement journal
+/// transaction has released it. Cost: two indexed jobs reads on one worker.
+#[cfg(target_os = "linux")]
+pub(crate) async fn admit<D: Directory>(
+    state: &Shared<D>,
+    who: Identity,
+    _session: Session,
+    _actor: calternal_types::Actor,
+    rid: &str,
+    input: AgentInput,
+    _generation: u32,
+    intent: Value,
+) -> Result<Job, Error> {
+    let st = state.clone();
+    let space = input.space_id.clone();
+    let key = thread_send_key(who.id, rid);
+    blocking(move || {
+        let expired = || Error::conflict("this turn has expired; inspect the thread and use a new request_id");
+        let id = st.jobs.thread_admission(&space, &key)?.ok_or_else(expired)?;
+        let job = st.jobs.get(&space, &id)?.ok_or_else(expired)?;
+        if job.account != who.id || job.input["request"] != json!(input) {
+            return Err(Error::request_reused());
+        }
+        st.jobs.register_admission(&space, &id);
+        st.jobs.wake_saved_thread(&space);
+        if intent["automation_run"].is_object() {
+            crate::fault::hit(crate::fault::FaultPoint::AutomationAfterJob);
+        }
+        Ok(job)
+    }).await
+}
+
 /// Finish a committed message intent under its content space lock, fencing Trash.
 /// The job key and admission receipt survive a crash between stores. No callback
 /// re-enters content; lock order is content -> jobs. Cost: settings read, current
 /// head and receipt reads, one FULL commit for the job and receipt, and a job read.
+#[cfg(not(target_os = "linux"))]
 pub(crate) async fn admit<D: Directory>(
     state: &Shared<D>,
     who: Identity,
@@ -93,6 +127,7 @@ pub(crate) async fn admit<D: Directory>(
                     }
                     if let Some(id) = st.jobs.thread_admission(&space, &request_key)? {
                         st.jobs.register_admission(&space, &id);
+                        st.jobs.wake_saved_thread(&space);
                         if intent["automation_run"].is_object() {
                             crate::fault::hit(crate::fault::FaultPoint::AutomationAfterJob);
                         }
@@ -102,7 +137,9 @@ pub(crate) async fn admit<D: Directory>(
                         return Err(Error::conflict("the pending send has been superseded"));
                     }
                     let defaults = retry::manifest_defaults(&st)?;
-                    let settings = st.jobs.agent_settings(&who.id.to_string(), None, defaults)?;
+                    let settings = st
+                        .jobs
+                        .agent_settings(&who.id.to_string(), None, defaults)?;
                     let resume = ProviderSession::owned(&current.metadata, who.id);
                     let id = st.jobs.admit_thread(Admission {
                         space,

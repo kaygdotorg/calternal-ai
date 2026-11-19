@@ -148,9 +148,8 @@ seeks the list index by update time and item UUID, filters before the limit,
 and looks up the latest job by index for each returned row and one lookahead.
 It reads no message bytes and performs zero flushes. Pass `next_cursor` back
 as `cursor` with the same space and filters. The cursor is scoped to the
-current account, and `null` marks the last page. The jobs connection attaches the same space's content
-database read-only, once per cached connection. A cold read also opens the
-existing indexes. Static metadata is mirrored in Markdown and can be indexed
+current account, and `null` marks the last page. The query joins the content and jobs indexes on the same space connection.
+A cold read opens the space database. Static metadata is mirrored in Markdown and can be indexed
 again from its envelope. Live state comes from the retained jobs index. Full
 file-only reconstruction is a separate foundation feature.
 

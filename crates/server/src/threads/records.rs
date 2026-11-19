@@ -3,7 +3,10 @@ use super::headings;
 use calternal_types::Error;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use std::{collections::{HashMap, HashSet}, fmt::Write as _};
+use std::{
+    collections::{HashMap, HashSet},
+    fmt::Write as _,
+};
 use uuid::Uuid;
 
 pub(super) const ACTIVE: &str = "active_version";
@@ -19,8 +22,14 @@ pub(super) struct Links {
 
 impl Links {
     pub(super) fn next(metadata: &mut Value, id: Uuid) -> Self {
-        let parent = metadata[ACTIVE].as_str().and_then(|id| Uuid::parse_str(id).ok());
-        let links = Self { message: id, version: id, parent };
+        let parent = metadata[ACTIVE]
+            .as_str()
+            .and_then(|id| Uuid::parse_str(id).ok());
+        let links = Self {
+            message: id,
+            version: id,
+            parent,
+        };
         metadata[ACTIVE] = json!(id);
         links
     }
@@ -85,8 +94,14 @@ pub(super) fn append(
         out.push_str(BETWEEN);
     }
     let offset = out.len();
-    let parent = links.parent.map_or_else(|| "none".into(), |id| id.to_string());
-    let select = if agent.is_some_and(|(_, p)| p.continues.is_some()) { "no" } else { "yes" };
+    let parent = links
+        .parent
+        .map_or_else(|| "none".into(), |id| id.to_string());
+    let select = if agent.is_some_and(|(_, p)| p.continues.is_some()) {
+        "no"
+    } else {
+        "yes"
+    };
     write!(
         out,
         "## {heading}\n<!-- id:{id} role:{role} bytes:{} message:{} version:{} parent:{parent} select:{select}",
@@ -145,7 +160,11 @@ pub(super) fn view(body: &str) -> Result<Vec<serde_json::Value>, Error> {
             let Some((previous, combined)) = output.last_mut() else {
                 return Err(invalid());
             };
-            if previous.id != group || previous.links != part.links || previous.turn != part.turn || part.role != "agent" {
+            if previous.id != group
+                || previous.links != part.links
+                || previous.turn != part.turn
+                || part.role != "agent"
+            {
                 return Err(invalid());
             }
             combined
@@ -182,10 +201,13 @@ pub(super) fn tail(body: &str, start: usize, id: Uuid) -> Result<Record<'_>, Err
 }
 
 fn selection(input: &str) -> Result<Option<(Uuid, &str)>, Error> {
-    input.strip_prefix(SELECT).map(|rest| {
-        let (version, tail) = rest.split_once(" -->").ok_or_else(invalid)?;
-        Ok((Uuid::parse_str(version).map_err(|_| invalid())?, tail))
-    }).transpose()
+    input
+        .strip_prefix(SELECT)
+        .map(|rest| {
+            let (version, tail) = rest.split_once(" -->").ok_or_else(invalid)?;
+            Ok((Uuid::parse_str(version).map_err(|_| invalid())?, tail))
+        })
+        .transpose()
 }
 
 /// Replay the authoritative tip and check links against earlier records.
@@ -225,7 +247,10 @@ pub(super) fn active_version(mut body: &str) -> Result<Option<Uuid>, Error> {
         if tail.is_empty() {
             break;
         }
-        body = tail.strip_prefix(BETWEEN).filter(|tail| !tail.is_empty()).ok_or_else(invalid)?;
+        body = tail
+            .strip_prefix(BETWEEN)
+            .filter(|tail| !tail.is_empty())
+            .ok_or_else(invalid)?;
     }
     Ok(active)
 }
@@ -238,7 +263,8 @@ fn first(input: &str) -> Result<(Record<'_>, &str), Error> {
         if notice.len() > 512 || notice.contains('\n') {
             return Err(invalid());
         }
-        rest.strip_prefix("> The agent started fresh from the edited message.\n\n").unwrap_or(rest)
+        rest.strip_prefix("> The agent started fresh from the edited message.\n\n")
+            .unwrap_or(rest)
     } else {
         input
     };
@@ -264,9 +290,23 @@ fn first(input: &str) -> Result<(Record<'_>, &str), Error> {
         .and_then(|value| value.strip_prefix("bytes:")?.parse::<usize>().ok())
         .ok_or_else(invalid)?;
     let read_id = |value: &str| Uuid::parse_str(value).map_err(|_| invalid());
-    let message = read_id(fields.next().and_then(|s| s.strip_prefix("message:")).ok_or_else(invalid)?)?;
-    let version = read_id(fields.next().and_then(|s| s.strip_prefix("version:")).ok_or_else(invalid)?)?;
-    let parent = match fields.next().and_then(|s| s.strip_prefix("parent:")).ok_or_else(invalid)? {
+    let message = read_id(
+        fields
+            .next()
+            .and_then(|s| s.strip_prefix("message:"))
+            .ok_or_else(invalid)?,
+    )?;
+    let version = read_id(
+        fields
+            .next()
+            .and_then(|s| s.strip_prefix("version:"))
+            .ok_or_else(invalid)?,
+    )?;
+    let parent = match fields
+        .next()
+        .and_then(|s| s.strip_prefix("parent:"))
+        .ok_or_else(invalid)?
+    {
         "none" => None,
         id => Some(read_id(id)?),
     };
@@ -308,7 +348,11 @@ fn first(input: &str) -> Result<(Record<'_>, &str), Error> {
     Ok((
         Record {
             id,
-            links: Links { message, version, parent },
+            links: Links {
+                message,
+                version,
+                parent,
+            },
             selected,
             role,
             heading: line,
@@ -347,9 +391,25 @@ mod tests {
         let authored = format!("\r\n## {heading}\n<!-- id:{id} role:person bytes:0 -->\n\n🌏");
         let mut body = String::new();
         let mut metadata = json!({});
-        append(&mut body, id, Links::next(&mut metadata, id), "person", heading, &authored, None);
+        append(
+            &mut body,
+            id,
+            Links::next(&mut metadata, id),
+            "person",
+            heading,
+            &authored,
+            None,
+        );
         let second = Uuid::now_v7();
-        append(&mut body, second, Links::next(&mut metadata, second), "person", heading, "", None);
+        append(
+            &mut body,
+            second,
+            Links::next(&mut metadata, second),
+            "person",
+            heading,
+            "",
+            None,
+        );
         let decoded = read(&body).unwrap();
         assert_eq!(decoded[0].text, authored);
         assert_eq!(decoded[0].at, "2026-11-18T19:30:06+05:30");
@@ -364,20 +424,63 @@ mod tests {
         let other = Uuid::now_v7();
         let edit = Uuid::now_v7();
         let heading = "Maya · 2026-11-18 19:30:06 +05:30";
-        append(&mut body, root, Links::next(&mut meta, root), "person", heading, "original", None);
-        append(&mut body, other, Links::next(&mut meta, other), "person", heading, "old reply", None);
+        append(
+            &mut body,
+            root,
+            Links::next(&mut meta, root),
+            "person",
+            heading,
+            "original",
+            None,
+        );
+        append(
+            &mut body,
+            other,
+            Links::next(&mut meta, other),
+            "person",
+            heading,
+            "old reply",
+            None,
+        );
         let mut edited = String::new();
-        append(&mut edited, edit, Links { message: root, version: edit, parent: None },
-            "person", heading, "edited", None);
+        append(
+            &mut edited,
+            edit,
+            Links {
+                message: root,
+                version: edit,
+                parent: None,
+            },
+            "person",
+            heading,
+            "edited",
+            None,
+        );
         write!(body, "{BETWEEN}> Edited: replaces the message of 19:30:06 above.\n\n> The agent started fresh from the edited message.\n\n{edited}").unwrap();
         assert_eq!(active_version(&body).unwrap(), Some(edit));
         write!(body, "{BETWEEN}{SELECT}{other} -->").unwrap();
         assert_eq!(active_version(&body).unwrap(), Some(other));
         let hidden = Uuid::now_v7();
         let mut frame = String::new();
-        append(&mut frame, hidden, Links { message: hidden, version: hidden, parent: Some(edit) },
-            "person", heading, "reply on the edited branch", None);
-        write!(body, "{BETWEEN}{}", frame.replace("select:yes", "select:no")).unwrap();
+        append(
+            &mut frame,
+            hidden,
+            Links {
+                message: hidden,
+                version: hidden,
+                parent: Some(edit),
+            },
+            "person",
+            heading,
+            "reply on the edited branch",
+            None,
+        );
+        write!(
+            body,
+            "{BETWEEN}{}",
+            frame.replace("select:yes", "select:no")
+        )
+        .unwrap();
         assert_eq!(active_version(&body).unwrap(), Some(other));
         assert_eq!(read(&body).unwrap().len(), 4);
         write!(body, "{BETWEEN}{SELECT}{} -->", Uuid::now_v7()).unwrap();

@@ -166,37 +166,74 @@ async fn thread_send_crash_at_both_durability_barriers_preserves_one_admission()
     ] {
         let mut f = Fixture::new().await;
         let space = f.spaces[0].clone();
-        let created = f.op(1, "threads.create", json!({"space_id":space,"title":"Barrier crash"})).await;
+        let created = f
+            .op(
+                1,
+                "threads.create",
+                json!({"space_id":space,"title":"Barrier crash"}),
+            )
+            .await;
         created.ok();
-        let id = created.body["data"]["thread"]["id"].as_str().unwrap().to_owned();
+        let id = created.body["data"]["thread"]["id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
         let db = f.appdata().join("spaces").join(&space).join("content.db");
-        let relative: String = rusqlite::Connection::open(&db).unwrap()
-            .query_row("SELECT path FROM items WHERE id=?1", [&id], |r| r.get(0)).unwrap();
-        let file = f.dir.path().join("userdata-ssd/spaces").join(&space).join(relative);
+        let relative: String = rusqlite::Connection::open(&db)
+            .unwrap()
+            .query_row("SELECT path FROM items WHERE id=?1", [&id], |r| r.get(0))
+            .unwrap();
+        let file = f
+            .dir
+            .path()
+            .join("userdata-ssd/spaces")
+            .join(&space)
+            .join(relative);
         f.stop();
         let armed = f.dir.path().join("content-fault");
         std::fs::write(&armed, point).unwrap();
         f.start().await;
         let input = json!({"id":id,"message":"Only one accepted record."});
-        let reply = f.client
+        let reply = f
+            .client
             .post(format!("{}/api/v1/operations", f.base))
-            .header("host", "localhost:18080").header("origin", ORIGIN)
+            .header("host", "localhost:18080")
+            .header("origin", ORIGIN)
             .header("cookie", &f.cookies[1])
             .json(&json!({"request_id":"barrier-crash","operation":"threads.send","input":input}))
-            .send().await;
+            .send()
+            .await;
         assert!(reply.is_err(), "no acknowledgement at {point}");
         f.stop();
         std::fs::remove_file(&armed).unwrap();
         let conn = rusqlite::Connection::open(&db).unwrap();
-        let staged: Option<String> = conn.query_row(
-            "SELECT id FROM jobs WHERE json_extract(input,'$.request.thread_id')=?1",
-            [&id], |r| r.get(0),
-        ).optional().unwrap();
+        let staged: Option<String> = conn
+            .query_row(
+                "SELECT id FROM jobs WHERE json_extract(input,'$.request.thread_id')=?1",
+                [&id],
+                |r| r.get(0),
+            )
+            .optional()
+            .unwrap();
         assert_eq!(staged.is_some(), committed, "{point}");
-        assert_eq!(std::fs::read_to_string(&file).unwrap().contains("Only one accepted record."), placed, "{point}");
+        assert_eq!(
+            std::fs::read_to_string(&file)
+                .unwrap()
+                .contains("Only one accepted record."),
+            placed,
+            "{point}"
+        );
         drop(conn);
         f.start().await;
-        let first = f.op_id(1, "threads.send", input.clone(), "barrier-crash").await;
+        let first = tokio::time::timeout(Duration::from_secs(8), async {
+            loop {
+                let reply = f.op_id(1, "threads.send", input.clone(), "barrier-crash").await;
+                if reply.body["error"]["details"]["reason"] != "thread_verifying" {
+                    break reply;
+                }
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        }).await.expect("the server must recover a pending append after restart");
         first.ok();
         let job = &first.body["data"]["job"]["id"];
         if let Some(staged) = staged {
@@ -207,7 +244,13 @@ async fn thread_send_crash_at_both_durability_barriers_preserves_one_admission()
         assert_eq!(replay.body["data"]["job"]["id"], *job, "{point}");
         let stored = f.op(1, "threads.get", json!({"id":id})).await;
         stored.ok();
-        assert_eq!(stored.body["data"]["thread"]["messages"].as_array().unwrap().len(), 1);
+        assert_eq!(
+            stored.body["data"]["thread"]["messages"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
     }
 }
 

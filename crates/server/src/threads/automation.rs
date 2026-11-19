@@ -14,9 +14,10 @@ pub(crate) async fn admit<D: Directory>(
     scheduled: Option<i64>,
     zone: String,
 ) -> Result<(String, String), Error> {
-    let generation =
-        crate::turns::enabled_generation(state, &space.to_string(), "calternal-orchestrator")
-            .await?;
+    let space_key = space.to_string();
+    let generation = retry_verifying(|| {
+        crate::turns::enabled_generation(state, &space_key, "calternal-orchestrator")
+    }).await?;
     let st = state.clone();
     let actor = calternal_types::Actor::plugin(who.id, "calternal-orchestrator");
     let audit = actor.clone();
@@ -96,7 +97,11 @@ pub(crate) async fn admit<D: Directory>(
                     &input,
                     Some(run),
                     &audit,
-                    Some(SendContext { session: Session::Static, generation, machine: chosen_machine.as_deref() }),
+                    Some(SendContext {
+                        session: Session::Static,
+                        generation,
+                        machine: chosen_machine.as_deref(),
+                    }),
                 )
             })
         })

@@ -199,8 +199,7 @@ fn compatible(conn: &Connection, have: i64, schema: Schema<'_>) -> Result<bool> 
 /// user_version is independent. A fresh component is installed atomically;
 /// an unknown installed version fails closed. Run before using the component.
 pub fn initialize_component(conn: &Connection, schema: Schema<'_>) -> Result<()> {
-    const EXISTS: &str =
-        "SELECT EXISTS(SELECT 1 FROM sqlite_schema WHERE name='_calternal_components' AND type='table')";
+    const EXISTS: &str = "SELECT EXISTS(SELECT 1 FROM sqlite_schema WHERE name='_calternal_components' AND type='table')";
     fn installed(conn: &Connection, name: &str) -> Result<Option<i64>> {
         if !conn.query_row(EXISTS, [], |row| row.get::<_, bool>(0))? {
             return Ok(None);
@@ -209,14 +208,16 @@ pub fn initialize_component(conn: &Connection, schema: Schema<'_>) -> Result<()>
             "SELECT version FROM _calternal_components WHERE name=?1",
             [name],
             |row| row.get(0),
-        ).optional()
+        )
+        .optional()
     }
     fn checked(have: Option<i64>, schema: Schema<'_>) -> Result<bool> {
         match have {
             Some(version) if version == schema.version() => Ok(true),
             None => Ok(false),
             _ => Err(rusqlite::Error::InvalidParameterName(format!(
-                "unsupported {} component version", schema.name
+                "unsupported {} component version",
+                schema.name
             ))),
         }
     }
@@ -227,12 +228,17 @@ pub fn initialize_component(conn: &Connection, schema: Schema<'_>) -> Result<()>
     if checked(installed(&tx, schema.name)?, schema)? {
         return Ok(());
     }
-    tx.execute_batch("CREATE TABLE IF NOT EXISTS _calternal_components(
-        name TEXT PRIMARY KEY, version INTEGER NOT NULL) STRICT;")?;
+    tx.execute_batch(
+        "CREATE TABLE IF NOT EXISTS _calternal_components(
+        name TEXT PRIMARY KEY, version INTEGER NOT NULL) STRICT;",
+    )?;
     for batch in schema.initial {
         tx.execute_batch(batch)?;
     }
-    assert!(schema.changes.is_empty(), "component schema must declare a fresh baseline");
+    assert!(
+        schema.changes.is_empty(),
+        "component schema must declare a fresh baseline"
+    );
     tx.execute(
         "INSERT INTO _calternal_components VALUES(?1,?2)",
         params![schema.name, schema.baseline],
