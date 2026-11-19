@@ -319,8 +319,31 @@ Wake below is a fresh launch with existing images and uncontrolled cache residen
 4. **Self-host isolation.** Label native rootless Podman siblings **weaker isolation** than Firecracker. Siblings separate PID, mount and network namespaces but share the host kernel and, in this fixture, the same user namespace. Nested native Podman would also share the host kernel, and the tested configurations failed to start. gVisor adds a userspace kernel that handles workload syscalls before they reach the Linux host. Its measured deployment used a shared cohort resource cap. With idle cohorts, the median for both timed stages combined was 1.04 s for one agent and 2.04 s for three, and PSS was 735 and 848 MiB. Native siblings took 1.08 and 2.18 s, with 215 and 242 MiB PSS. [gVisor architecture](https://gvisor.dev/docs/)
 5. **Randomness on restore.** Synchronous Node crypto emitted the same 32 bytes in all 20 default restores, despite 20 distinct kernel draws. Kernel-only reseeding still returned one distinct Node result. Kernel plus Node/OpenSSL reseeding gave 20 distinct draws from each, with broker p50/p95/max of 219/316/341 ms versus 89/115/119 ms by default. The difference between broker medians was 130 ms. The Node stage including both draws measured 6.07 ms p50 with both reseeds versus 4.27 ms with kernel-only seeding. The result supports a wake gate that refreshes each resumed long-lived RNG before it serves requests. The probe covered one Node process.
 
+## Whole-file read over the space channel
+
+A disposable four-vCPU, 2 GiB Firecracker guest read the payloads over AF_VSOCK. The host broker joined Firecracker’s Unix socket, checked one immutable authority row keyed by caller, file ID and requested revision, then opened that saved file and streamed it with `sendfile`. Authority timing covers the indexed rusqlite query and row fetch against a static fixture table. Product authorization, revocation and Photos decoding are outside this test. The guest issued at most 4 MiB of credit per stream at a time, measured file latency from request through the final byte, and checked the length and file ID markers at both ends.
+
+Each corpus held 40,000 MiB of fully allocated files. With only 26 GiB free on native XFS, this arm used a 41 GiB reflink-enabled XFS filesystem on a disposable `/dev/loop0` with direct I/O enabled. Its sparse backing file was `~/space-runtime-measure/xfs-followup/bulk.img` on perf-01’s ext4 `/dev/sda1`. The 200 large files held 40,000 MiB of physical payload. Each 4 MiB file reflinked a different, nonoverlapping range from those extents. Within each size layout, every logical payload byte came from a distinct storage offset. The two layouts shared the physical extents. This kept both layouts within the disk reserve. Before each run the driver evicted both layouts’ payload files with `POSIX_FADV_DONTNEED` and sampled residency with `mincore`. Startup, corpus generation and authority setup were outside the timer. CPU columns report CPU seconds per elapsed second. Firecracker CPU includes vCPU execution and overlaps the guest reader CPU.
+
+| Files | Each MiB | Streams | Wall s | MB/s | Per-file ms p50 / p95 / max | Authority µs p50 / p95 / max | Broker cores | Firecracker cores | Guest reader cores |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 10000 | 4 | 1 | 128.9 | 325.5 | 12.36 / 17.66 / 45.79 | 58.00 / 75.39 / 370.35 | 0.10 | 0.99 | 0.06 |
+| 10000 | 4 | 4 | 76.4 | 548.7 | 28.13 / 46.18 / 115.49 | 72.23 / 180.88 / 1,856.78 | 0.25 | 1.98 | 0.26 |
+| 10000 | 4 | 8 | 71.7 | 585.4 | 54.04 / 81.37 / 244.28 | 70.35 / 284.96 / 4,512.37 | 0.30 | 2.25 | 0.39 |
+| 200 | 200 | 1 | 120.3 | 348.6 | 591.84 / 675.47 / 815.14 | 59.97 / 94.04 / 437.07 | 0.10 | 1.09 | 0.06 |
+| 200 | 200 | 4 | 75.2 | 557.7 | 1,477.28 / 1,709.15 / 1,855.10 | 79.87 / 388.65 / 1,131.30 | 0.24 | 2.02 | 0.28 |
+| 200 | 200 | 8 | 70.5 | 594.9 | 2,795.76 / 3,102.16 / 3,255.86 | 72.26 / 277.06 / 1,030.75 | 0.26 | 2.31 | 0.40 |
+
+All 30,600 reads completed with one successful check each. The sampled payload pages were fully evicted before all six runs. Authority median was 58–80 µs and p95 was 75–389 µs. The table reports one complete corpus pass per cell. Broker and Firecracker columns omit other host kernel workers. The guest column is CPU charged to the reader process.
+
+**What this means for the design.** Use four streams as the starting limit for a heavy-job VM. They delivered 549–558 MB/s, 94% of the eight-stream throughput, with a lower file-latency p95 and lower CPU use. For this fixture, 300 MB/s at one stream and 500 MB/s at four are reasonable qualification targets. Publish a rate for a deployment after qualifying its storage and production broker. The wire contract can guarantee bounded in-flight data and back pressure independently of provisioning.
+
+The earlier 2 MiB range fixture’s 168.45 ms p95 covers staging, commit, head advance and reconstruction with 32 range calls. That is about 12.4 MB/s when expressed as bytes divided by elapsed time for that workflow. The workload and timing boundary differ from transfer-only streaming. [Step 0 range measurements](plugin-api-v2-step0.md#atomic-large-save)
+
+The wire should open a whole-file read with an item and requested revision, pin that exact immutable revision for the stream, and return the length and a stream ID after authorizing the caller identified by the enrolled channel. Carry ordered binary frames and enforce bounded byte credits on each stream and across the VM. Close the pin on completion, cancellation or expiry. Route revocation through stream cancellation so returning credit does not perform a new authority lookup. The benchmark checked immutable revisions and flow control. It did not exercise revocation.
+
 ## Simplification opportunities
 
 The guest relay and stdio adapter share a newline-delimited frame format, so one driver can validate the operation and timing boundary for all three walls.
 
-Keep one space-level snapshot and launch agents inside it. Use the same readiness check for native and gVisor siblings, and make reseeding part of the resume protocol.
+Keep one current snapshot generation per space and VM role. Reuse the broker’s stream flow control for large files, and gate readiness on reseeding and the workload check.
