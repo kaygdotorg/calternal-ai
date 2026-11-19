@@ -2,6 +2,7 @@ use super::*;
 use crate::{DEFAULT_RECEIPT_RETENTION, Request, journal::lock};
 use calternal_types::SpaceId;
 use serde_json::{Value, json};
+#[cfg(debug_assertions)]
 use std::sync::{Mutex, mpsc};
 
 const REQUEST_ID: &str = "checkpoint:resume";
@@ -180,9 +181,12 @@ fn unreadable_outbox_skips_pruning() {
         .unwrap();
 }
 
+#[cfg(debug_assertions)]
 type Pause = (mpsc::Sender<()>, mpsc::Receiver<()>);
+#[cfg(debug_assertions)]
 static RETIREMENT_PAUSE: Mutex<Option<Pause>> = Mutex::new(None);
 
+#[cfg(debug_assertions)]
 fn pause_retirement(point: crate::FaultPoint) {
     if point == crate::FaultPoint::AfterJournalCommit
         && let Some((entered, release)) = lock(&RETIREMENT_PAUSE).take()
@@ -192,6 +196,8 @@ fn pause_retirement(point: crate::FaultPoint) {
     }
 }
 
+// This interleaving needs AfterJournalCommit, which is a debug-only fault seam.
+#[cfg(debug_assertions)]
 #[test]
 fn maintenance_and_retry_serialize_with_retirement() {
     let f = Fixture::new();
