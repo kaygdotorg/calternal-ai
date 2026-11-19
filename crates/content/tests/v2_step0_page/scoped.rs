@@ -4,9 +4,9 @@ use rusqlite::{Connection, OpenFlags, OptionalExtension, params};
 use std::path::Path;
 use std::time::Instant;
 
-const AUDIENCE: i64 = 1;
-const DYNAMIC: i64 = 1;
-const MANUAL: i64 = 2;
+pub(super) const AUDIENCE: i64 = 1;
+pub(super) const DYNAMIC: i64 = 1;
+pub(super) const MANUAL: i64 = 2;
 
 const SCHEMA: &str = "
     CREATE TABLE scoped_membership(
@@ -16,6 +16,10 @@ const SCHEMA: &str = "
         id TEXT NOT NULL,
         PRIMARY KEY(collection,audience,newest,id)
     ) WITHOUT ROWID, STRICT;
+    CREATE TABLE projection_version(grant INTEGER NOT NULL, result INTEGER NOT NULL);
+    INSERT INTO projection_version VALUES(1,1);";
+
+const RANK_SCHEMA: &str = "
     CREATE TABLE scoped_rank(
         collection INTEGER NOT NULL,
         audience INTEGER NOT NULL,
@@ -24,8 +28,7 @@ const SCHEMA: &str = "
         id TEXT NOT NULL,
         PRIMARY KEY(collection,audience,rank)
     ) WITHOUT ROWID, STRICT;
-    CREATE TABLE projection_version(grant INTEGER NOT NULL, result INTEGER NOT NULL);
-    INSERT INTO projection_version VALUES(1,1);";
+";
 
 // Content's UTC timestamps sort lexically (descending); the fixture stores
 // negative integer timestamps to express the mixed DESC/ASC tuple as one seek.
@@ -50,10 +53,16 @@ fn rerank(conn: &Connection, collection: i64) -> usize {
     .unwrap()
 }
 
-fn seed_projection(conn: &mut Connection, source: &Path) {
+pub(super) fn seed_membership(
+    conn: &mut Connection,
+    source: &Path,
+    additional_schema: &str,
+    complete: impl FnOnce(&Connection),
+) {
     conn.pragma_update(None, "journal_mode", "WAL").unwrap();
     conn.pragma_update(None, "synchronous", "FULL").unwrap();
     conn.execute_batch(SCHEMA).unwrap();
+    conn.execute_batch(additional_schema).unwrap();
     conn.execute("ATTACH DATABASE ?1 AS source", [source.to_str().unwrap()])
         .unwrap();
     let tx = conn.transaction().unwrap();
@@ -76,8 +85,7 @@ fn seed_projection(conn: &mut Connection, source: &Path) {
         params![MANUAL, AUDIENCE],
     )
     .unwrap();
-    assert!(rerank(&tx, DYNAMIC) >= 90_000 + WINDOW);
-    assert!(rerank(&tx, MANUAL) < 10_000);
+    complete(&tx);
     tx.commit().unwrap();
     conn.execute_batch("DETACH DATABASE source; PRAGMA wal_checkpoint(TRUNCATE);")
         .unwrap();
@@ -116,7 +124,7 @@ fn window(conn: &mut Connection, collection: i64, offset: i64) -> (Vec<String>, 
     (rows, visits, version)
 }
 
-fn explain(conn: &Connection, sql: &str, p: impl rusqlite::Params) {
+pub(super) fn explain(conn: &Connection, sql: &str, p: impl rusqlite::Params) {
     let lines = conn
         .prepare(&format!("EXPLAIN QUERY PLAN {sql}"))
         .unwrap()
@@ -178,7 +186,10 @@ fn mutation(
 
 pub(super) fn exercise(source: &Path, projection: &Path) {
     let mut writer = Connection::open(projection).unwrap();
-    seed_projection(&mut writer, source);
+    seed_membership(&mut writer, source, RANK_SCHEMA, |tx| {
+        assert!(rerank(tx, DYNAMIC) >= 90_000 + WINDOW);
+        assert!(rerank(tx, MANUAL) < 10_000);
+    });
     explain(&writer, ANCHOR, params![DYNAMIC, AUDIENCE, 0]);
     explain(
         &writer,

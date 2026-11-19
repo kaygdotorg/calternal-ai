@@ -1,4 +1,6 @@
 //! Disposable measurements of candidate window plans over the real SQLite schemas.
+#[path = "v2_step0_page/covering.rs"]
+mod covering;
 #[path = "v2_step0_page/scoped.rs"]
 mod scoped;
 
@@ -127,6 +129,14 @@ fn fixture(root: &std::path::Path) -> (Content, SpaceId, std::path::PathBuf) {
     let mut writer = Connection::open(&db).unwrap();
     seed(&mut writer);
     (content, space, db)
+}
+
+#[test]
+#[ignore = "disposable perf fixture; see step 0 measurements"]
+fn covering_newest_windows() {
+    let root = tempfile::tempdir().unwrap();
+    let (_content, _space, db) = fixture(root.path());
+    covering::exercise(&db, &root.path().join("covering.db"));
 }
 
 #[test]
