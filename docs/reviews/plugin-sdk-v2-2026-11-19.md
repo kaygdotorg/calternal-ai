@@ -113,7 +113,27 @@ templates, and run the same shape and semantic checks. Keep the fixture suite
 as the default invocation. This would remove the SDK's temporary fixture
 layout and give diagnostics the actual package paths.
 
+## Independent author trial
+
+Haiku 5.5's first Habit Tracker submission failed TypeScript with four
+diagnostics. It supplied indexed-field names as an array, used `type` in
+form field declarations, and assigned separate untyped row actions whose
+`row: "id"` literal widened to `string`. The task also constrained output
+to the plugin declaration and the author omitted the worker. These are
+guide gaps. The SDK types stay the same. Boolean projection metadata
+duplicates the stored field's spelling across two type vocabularies
+because the projection also needs an explicit audience.
+
+The guide build now type-checks and validates two complete examples. The
+small first list comes first, and a gear list shows the indexed kind,
+form, inline swipes, operation, worker, search, and package assembly. The
+second trial asks for a Recipe Box and explicitly requests both author
+files. The kit passed a clean offline install and an artifact-only smoke
+check on dev02. The independent first-attempt gate awaits the coordinator's
+fresh author run.
+
 ## Simplification opportunities
 
 Give the sealed verifier a package input mode so callers can pass artifacts
-directly, including a list of installed dependency manifests. Swift can use the same schema graph when its type generator needs it.
+directly, including a list of installed dependency manifests. Swift can use
+the same schema graph when its type generator needs it.

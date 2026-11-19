@@ -31,6 +31,8 @@ test("scaffolds, checks and explains a plugin and publishes its documentation", 
     assert.match((await invoke("explain", { topic: "network" })).markdown, /content_fetch/);
     const { markdown: walkthrough } = await invoke("explain", { topic: "walkthrough" });
     exactExample(walkthrough, "plugins/calternal-plugin-guide/examples/first-list.ts", "ts");
+    exactExample(walkthrough, "plugins/calternal-plugin-guide/examples/gear-list.ts", "ts");
+    exactExample(walkthrough, "plugins/calternal-plugin-guide/examples/gear-worker.mjs", "js");
     assert.equal((await invoke("publish", {})).item.id, "fixture-document");
   } finally {
     await worker.close();

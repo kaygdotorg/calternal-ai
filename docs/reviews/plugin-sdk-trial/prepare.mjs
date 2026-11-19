@@ -72,15 +72,15 @@ async function prepare(destination) {
   const stage = await mkdtemp(join(tmpdir(), "calternal-trial-pack-"));
   try {
     const archive = await packSdk(stage, destination);
-    const example = await readFile(join(repo, "plugins/calternal-plugin-guide/examples/first-list.ts"), "utf8");
-    const schema = await readJson(join(sdk, "generated/contract/description-v2.schema.json"));
-    const searchInstruction = schema.$defs.BindSource.properties.mode
-      ? 'This contract requires `mode: "terms"` on the search source.'
-      : "The search source uses the default across searchable fields.";
-    const guide = (await readFile(join(trialSources, "GUIDE.md"), "utf8"))
-      .replace("calternal-plugin-sdk-0.1.0.tgz", archive)
-      .replace("The bundled contract specifies whether the source needs an\nexplicit mode. If required, use `mode: \"terms\"`.", searchInstruction);
-    await writeFile(join(destination, "GUIDE.md"), guide + "\n```ts\n" + example.trimEnd() + "\n```\n");
+    let guide = (await readFile(join(trialSources, "GUIDE.md"), "utf8"))
+      .replace("calternal-plugin-sdk-0.1.0.tgz", archive);
+    for (const [filename, language] of [
+      ["first-list.ts", "ts"], ["gear-list.ts", "ts"], ["gear-worker.mjs", "js"],
+    ]) {
+      const example = await readFile(join(repo, "plugins/calternal-plugin-guide/examples", filename), "utf8");
+      guide = guide.replace(`<!-- ${filename} -->`, () => `\`\`\`${language}\n${example.trimEnd()}\n\`\`\``);
+    }
+    await writeFile(join(destination, "GUIDE.md"), guide);
     for (const file of ["TASK.md", "build-and-check.sh", "check.mjs"]) {
       await cp(join(trialSources, file), join(destination, file));
     }

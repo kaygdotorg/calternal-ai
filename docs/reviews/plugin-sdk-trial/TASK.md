@@ -1,20 +1,19 @@
-# Independent author trial
+# Independent author trial 2
 
-Build a Habit Tracker plugin using the installed Calternal Plugin SDK and
-the guide. Start with a new `plugin.ts`. Your output is the emitted
-`dist/` directory.
+Write a Recipe Box plugin using `GUIDE.md`. Produce two author files
+named `plugin.ts` and `worker.mjs`. Use the guide's placeholder worker
+because this is an offline declaration exercise.
 
-- Declare a searchable habit kind. Its metadata includes a title, a
-  cadence as text, and a Boolean `done_today` field.
-- Show the habits in a bound content list with an empty state.
+- Use a searchable recipe kind with a title, ingredients as text, and
+  Boolean metadata `tried`.
+- Show recipes in a bound content list with an empty state.
 - Provide an add form with exactly two required fields. Ask for the
-  title and cadence. Submit both values to an operation that creates the
-  habit kind and declares item save as an allowed effect. Name the
-  operation inputs `title` and `cadence`.
-- Provide a full swipe to mark a habit done today, and a full swipe on the
-  opposite side to clear it. Use the host metadata patch on the swiped row.
-- Connect the app's search control to a search Bind over the same kind.
+  title and ingredients. Send them as operation inputs `title` and
+  `ingredients`. The operation creates the recipe kind and declares
+  item save as an allowed effect.
+- Use a full swipe to mark a recipe tried and the opposite full swipe
+  to clear it. Each uses the host metadata patch on the swiped row.
+- Connect the app's search control to a search Bind over the recipe kind.
 
-This exercise checks descriptions. Any required worker can be a small
-placeholder that exits with failure. Date rollover and actual item creation
-belong to the runtime. See `GUIDE.md` to install, build, and check.
+The trial runner follows the install steps in the guide and runs
+`sh build-and-check.sh`. The checker reads the emitted package files.

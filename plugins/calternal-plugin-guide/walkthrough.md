@@ -69,10 +69,138 @@ The **app** is the entry in the host shell. Its **kind** names a class of items.
 their metadata. A **Bind** names the query that supplies rows. A **list** shows
 those rows. The **sidebar section** refers to the same Bind by ID.
 
-To see a two-field form, search, and a Mark read swipe together, open the
-[Reading List declaration](../calternal-reading-list/src/plugin.ts). Its Add
-form supplies just the values the user entered. The host resolves the target
-of each swipe and commits the metadata patch against the current item. An
-authorized create outcome supplies the new item reference to `then.route`.
-The fixture build validates these declarations offline. Host effects require
-the v2 runtime.
+## Complete gear list
+
+Save this as `src/plugin.ts`. The labeled comments locate the kind and
+indexes, operation, list and swipes, form, search, and package assembly.
+Both swipes patch the current row's item using `{ row: "id" }`. For an
+action that reads a projected value, use `{ row: "field", field: "packed" }`.
+Keep action objects inline in `defineView` so TypeScript preserves their
+literal types. A manifest uses JSON Schema `"boolean"` for the stored
+property and catalogue `"Boolean"` for the indexed projection.
+
+<!-- BEGIN GENERATED gear-list -->
+
+```ts
+import { defineApp, defineChrome, defineKind, defineOperation, definePlugin, defineView } from "@calternal/plugin-sdk";
+
+// Kind and indexed fields
+const kind = defineKind({
+  id: "gear",
+  icon: "book",
+  storage: { hidden: true },
+  claimed_text: true,
+  searchable: true,
+  schema: {
+    type: "object",
+    additionalProperties: false,
+    required: ["title", "location"],
+    properties: {
+      title: { type: "string" },
+      location: { type: "string" },
+      packed: { type: "boolean" },
+    },
+  },
+  indexed_fields: { packed: { type: "Boolean", audience: "member_item" } },
+});
+
+// Operation declaration
+const addGear = defineOperation({
+  id: "gear.add",
+  title: "Add gear",
+  creates: kind.id,
+  methods: ["item_save"],
+  required_capability: "content.write",
+  risk: "reversible",
+  idempotency: "request_id",
+  input_schema: {
+    type: "object",
+    additionalProperties: false,
+    required: ["title", "location"],
+    properties: { title: { type: "string" }, location: { type: "string" } },
+  },
+  output_schema: { type: "object", additionalProperties: false, properties: {} },
+});
+
+// List Bind, empty state and row swipes
+const view = defineView({
+  binds: [{
+    id: "gear",
+    source: { type: "list", kind: kind.id },
+    fields: ["packed"],
+    states: { empty: { title: "No gear yet" } },
+    row: {
+      trailingActions: [{
+        id: "pack",
+        title: "Mark packed",
+        operation: "host.item.patch-metadata",
+        fullSwipe: true,
+        inputs: { item: { row: "id" }, field: { literal: "packed" }, value: { literal: true } },
+      }],
+      leadingActions: [{
+        id: "unpack",
+        title: "Clear packed",
+        operation: "host.item.patch-metadata",
+        fullSwipe: true,
+        inputs: { item: { row: "id" }, field: { literal: "packed" }, value: { literal: false } },
+      }],
+    },
+  }],
+  root: {
+    type: "stack",
+    children: [
+      { type: "list", bind: "gear" },
+      // Form fields and submit Invoke
+      {
+        type: "form",
+        id: "add",
+        fields: [
+          { id: "title", label: "Name", input: "text", required: true },
+          { id: "location", label: "Location", input: "text", required: true },
+        ],
+        submit: {
+          id: "add",
+          title: "Add gear",
+          operation: addGear.id,
+          inputs: { title: { form: "add", field: "title" }, location: { form: "add", field: "location" } },
+          then: { route: { name: "item" } },
+        },
+      },
+    ],
+  },
+});
+
+// Search Bind and footer
+const chrome = defineChrome({
+  binds: [{ id: "gear-search", source: { type: "search", kind: kind.id, mode: "terms" } }],
+  footer: { search: { bind: "gear-search", placeholder: "Search gear" } },
+});
+
+// App and package assembly
+export default definePlugin({
+  api_version: 2,
+  id: "gear-list",
+  name: "Gear List",
+  version: "1.0.0",
+  icon: "book",
+  kinds: [kind],
+  operations: [addGear],
+  apps: [defineApp({ id: "gear", name: "Gear", icon: "book", view, chrome })],
+});
+```
+
+<!-- END GENERATED gear-list -->
+
+Save this as `worker.mjs`. Supply it as the third argument to
+`calternal-build-plugin src/plugin.ts dist worker.mjs`. The SDK adds the
+package-level worker reference and digest. Each form selects its operation
+by ID. The offline placeholder exits with failure if started.
+
+<!-- BEGIN GENERATED gear-worker -->
+
+```js
+// Offline authoring example. Fail closed if launched.
+process.exitCode = 1;
+```
+
+<!-- END GENERATED gear-worker -->
