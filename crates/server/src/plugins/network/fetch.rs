@@ -268,6 +268,14 @@ async fn finish_audit<D: Directory>(
     .await;
 }
 
+/// Build the checked transport on a blocking worker. One interface enumeration
+/// and one TLS client construction per fetch. No socket or DNS work here.
+async fn build_client(ranges: String, fixture: bool) -> io::Result<Client> {
+    crate::blocking::spawn(move || netguard::content_client(&ranges, TIMEOUT, fixture))
+        .await
+        .map_err(io::Error::other)?
+}
+
 async fn retrieve<D: Directory>(
     state: &Shared<D>,
     source: &Arc<Source>,
@@ -279,7 +287,7 @@ async fn retrieve<D: Directory>(
     let fixture = service.fixture.is_some();
     #[cfg(not(all(feature = "test-plugins", debug_assertions)))]
     let fixture = false;
-    let client = netguard::content_client(&service.ranges, TIMEOUT, fixture).ok()?;
+    let client = build_client(service.ranges.clone(), fixture).await.ok()?;
     let own_host = state
         .directory
         .http_auth()
@@ -409,5 +417,16 @@ impl Fixture {
             .build()
             .ok()?;
         Some(Self { origin, client })
+    }
+}
+
+#[cfg(test)]
+mod client_tests {
+    use super::*;
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn background_client_reports_configuration_errors() {
+        assert!(build_client("not-a-cidr".into(), false).await.is_err());
+        assert!(build_client(String::new(), false).await.is_ok());
     }
 }
