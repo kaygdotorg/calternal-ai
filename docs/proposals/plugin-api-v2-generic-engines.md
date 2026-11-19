@@ -2,7 +2,9 @@
 
 Proposal for sequential review. The host owns cold reads, security and
 durability. Official and community packages compose the same engines.
-The changes below require a numbered revision of the sealed contract.
+The first release qualifies Notes and the orchestrator as ordinary packages.
+Photos-scale engines are follow-up design. The changes require a numbered
+revision of the sealed contract.
 [Owner decisions][owners] · [Sealed plan][sealed] · [Step 0 measurements][measurements]
 
 ## A. Execution without a server Turns engine
@@ -22,8 +24,14 @@ the expected live head, reserves quota, and admits by receipt under the same
 lifecycle fence. The cold commit projects Starting immediately, before worker
 prioritization or machine placement. A scoped exclusive key serializes runs
 per thread. Cold Stop fences the intent or the exact admitted attempt.
-An unresolved intent blocks sheet-free archive. Confirmed archive durably
-refuses that intent, including on replay after unarchive.
+An unresolved intent blocks sheet-free archive. Direct Stop, pending-intent
+cancellation and archive-triggered Stop require the current starter's
+authority or live `PluginsManage`, alongside the relevant item right.
+Confirmation pins the exact intent or attempt. Recheck both authorities
+under the lifecycle fence. An attempt replacement requires a new
+confirmation. Confirmed archive durably refuses the pinned pending intent,
+including on replay after unarchive. Generic snooze and Undo are actor-keyed
+and cannot change execution retry timers. [Current Stop check][stop]
 Preserve archive and Undo ordering without a plugin callback. Claim, park,
 checkpoint and cancel reuse generic jobs. Reservations, parked decisions and
 durable timers survive restart and use no worker while parked. Issue fresh
@@ -54,42 +62,53 @@ a route to userdata. [Current Turns access][access]
 Execution leases are separate from sealed 60-second invocation tickets.
 Renew only against the live session or scheduled principal, grants, package
 generation, eligible placement and exact attempt. Recheck authority at broker
-effects and output egress. Revocation fences both immediately and stops
-renewal. At most 5 s after the last authenticated renewal, a machine-local
-deadline freezes the container and all its tool cgroups. Block its network
-at the local boundary, including queued egress, so neither tools nor
-transport can make progress. Kill at the 10-minute recovery deadline or
-immediately on an authenticated host stop order. Thaw only after fresh
-same-execution proof and renewal under current authority. Verify the
-freezer and network fence on every enabled placement. Discard only under the
-exact workspace lease. Retain an explicitly preserved workspace under its
-quota and normal cleanup policy.
+effects and output egress. Revoke fences both immediately and stops renewal.
 
-Pin a provider profile to its authorized account or space and a qualified
-harness digest. Existing personal provider homes stay private to that harness.
-Shared credential-isolated runs use the dedicated harness and separate tool
-sandbox. A workload image gets neither provider-home mounts nor credentials.
-The secret broker redeems opaque handles under current principal, intent,
-attempt and destination. The pinned harness owns any machine-local login,
-provider session or brokered provider connection. Enforce the installed
-network declaration at the container and broker boundaries, including
-`network: "none"`. Provider transport requires an eligible declared route.
-Any package may qualify a harness through the same automated conformance
-suite. Pin the tested digest and allow only the tested profile, sandbox
-and network combinations. A labelled unqualified harness may run only
-on the person's own enrolled machine with a personal profile. It gets
-neither a shared/hosted credential profile nor the qualified host display
-and approval path.
-[Manual turns][turns] · [Provider protocol][provider] ·
+An independent machine supervisor owns the attempt's cgroup subtree and
+credential/network gateway. It can contain all tools and harness processes,
+including descendants that start a new session. At most 5 s after the last
+authenticated renewal, it fences dispatch and queued egress at the gateway,
+freezes the entire subtree and reports its fence when contact resumes.
+Discard unsubmitted requests. Treat requests already dispatched as uncertain
+until reconciled. Kill within 10 minutes of the last authenticated renewal, or immediately
+on an authenticated exact-attempt host Stop. Only this supervisor may thaw, after
+fresh host authority and a safe transport continuation for the exact attempt.
+Direct and any placement without this proof remain disabled, including on
+personal machines. [Current freezer and Direct behavior][podman] · [Direct code][direct]
+
+A frozen attempt holds memory, capacity, workspace and locks. Keep the
+reservations until verified death or continued ownership after thaw. Keep
+live credential-bearing state outside snapshots. Verify that the provider
+transport can continue the same request without replaying an uncertain
+effect. A remote timeout with uncertain effects means interruption and
+reconciliation before explicit Resume. Discard only under the exact
+workspace lease. Retain explicitly preserved workspaces under quota.
+
+Bind provider profiles to their authorized account or space and pinned
+contribution. The supervisor-owned transport redeems an opaque handle
+and mediates the approved destination. Adapter and tool identities get no
+credentials, provider-home mount or readable credential channel. Machine-local
+profiles stay with the trusted transport. Conformance tests containment and
+protocol behavior, and cannot make a credential readable by untrusted code
+safe. Disable any profile/harness pair that requires such access, including
+existing adapters until their path is qualified. Enforce `network: "none"`
+at both sandbox and gateway. A provider call needs a declared route.
+
+Any package may qualify a digest for the same isolation/profile suite.
+A labelled unqualified harness is eligible only on its owner's enrolled
+machine with a personal profile and the same supervisor/credential boundary.
+It receives no qualified host display or approval route. Other combinations
+remain disabled. [Manual turns][turns] · [Provider protocol][provider] ·
 [Claude Code][claude] · [Codex][codex]
 
-`execution_input` sends bounded, receipt-bound steer input to the exact
-live attempt. `execution_spawn_child` checks the same parent attempt,
-actor, remaining budget and target eligibility. Its item refs, operations
-and network rights are subsets of the parent's. The host commits the
-parent edge for every conversation kind under the admission fence.
-Revoke or expiry fences descendant authority. Protected answers use the
-Inbox route.
+`execution_input` binds bounded, receipt-checked steer input to the exact
+live attempt. `execution_spawn_child` atomically reserves process, memory and
+queued-work capacity against the whole tree by receipt before placement.
+Propose depth three and eight total attempts (including pending) for the
+spike. Compute child rights as the intersection of live ancestor grants.
+Check that intersection at every broker effect and renewal. Fence the
+subtree on ancestor revocation and release quota after verified cleanup.
+The host commits the parent edge for any conversation kind under admission.
 
 ### A.3 Canonical conversation files and same-execution reattach
 
@@ -106,46 +125,62 @@ for Resume and provides no live-execution proof. Reconcile an uncertain
 external effect before retry. The package can use durable timers to retry
 a provider failure whose effect is known safe. [Machine output path][output]
 
-The adapter inside the agent container emits the common display envelope
-based on `provider-events-v1`. The host validates it, checks quote and
-attachment refs and scrubs issued credentials across chunks. The host
-writes the sanitized records to a self-contained, generic Markdown
-conversation file (interim, Q3). This file is the canonical message and
-transcript record. Use the content journal to stage the file tail and atomically
-record the committed byte boundary, stable event IDs and the consumed-input
-cursor by receipt. Recover a staged tail once or discard it before retry. The durable file and receipt precede
-public delivery. Pages, event logs and the message search index are
-rebuildable projections with stable IDs from the file. Cursor-only
-checkpoints cover input with no display event. Reclaim spooled frames
-through the committed cursor.
+The adapter in the agent container emits a display envelope based on
+`provider-events-v1`. Allow only inert assistant text and reasoning text
+where the field policy permits it, and bounded tool summary text with
+checked attachment and link refs. The host stamps the role, attribution
+and record IDs. Render escaped text or eligible safe Markdown. No raw
+HTML, description, action, trusted notice or renderer state comes from
+the adapter. Provider question, approval, session, usage and done frames
+are private protocol input. Mint lifecycle transitions and protected
+controls only from supervisor evidence or checked broker/Inbox records.
 
-The orchestrator parks on `execution` wait for phase change, protected
-approval request or terminal state. A durable receipt delivers the
-transition once to a bounded continuation. Tokens, cold pages and
-ordinary progress do not wake a plugin VM. Private provider frames,
-session IDs and checkpoints stay in attempt-scoped custody outside
-display, shared logs, search, exports and ordinary backups. Extensions
-can stay private to adapters. Every provider uses the same qualified
-public envelope. [Provider event schema][provider-events]
+The host scrubs before publication and writes checked display content to
+the canonical Markdown file (interim, Q3). Use the content journal to stage
+the file change and commit a recoverable byte boundary, receipt and
+consumed-input cursor. ACK delivery only after durable publication. Stable
+page IDs derive from the framed record and byte range. Event logs, pages
+and message indexes are rebuildable from the file. Keep the bounded
+parser/scrubber carry in attempt-private durable state with the consumed
+cursor, before reclaiming any prefix, including on cursor-only commits.
+Private frames, carry, native sessions and checkpoints are excluded from
+display, exports, search, shared logs and ordinary backups.
+[Provider event schema][provider-events]
 
-Cold page, follow and resume check the current audience at egress and release
-the reader before waiting on transport. Measure first with a 16 MiB or 4,096
-unconsumed-record cap per attempt and 128 MiB per space. Apply credit backpressure and stop as interrupted after 30 s of stalled input or drain on a live link.
-During restart recovery the separate frozen-attempt deadline applies. Retire
-unconsumed private frames after a 10-minute recovery window. Bound display
-retention independently by age, events and bytes under the item retention
-policy. Reject admission without a finite configured allowance. [Transcript spike][measurements]
+An `execution` wait is bound to the owning job, package and attempt.
+Park atomically against the observed durable transition cursor. In the
+same transaction, deliver by receipt an already committed later
+transition (including terminal state) or install the future wait.
+Only bounded host-owned phase, checked request and terminal transitions
+can signal it. Tokens and ordinary progress never wake the plugin VM.
+
+Cold page, follow and resume recheck authority at egress and release
+the DB reader before waiting. For the spike, cap frames at 64 KiB, the
+unconsumed spool at 16 MiB or 4,096 records per attempt and 128 MiB per
+space. Meter sustained input at 256 KiB/s and 64 frames/s per attempt,
+1 MiB/s and 256 frames/s per space, and coalesce publication to at most
+four FULL commits/s per attempt and eight per space. Reserve foreground
+writer capacity. Apply credits and interrupt after 30 s of stalled drain
+on a live link. Frozen attempts use their separate recovery deadline.
+Bound display retention by item policy. [Transcript spike][measurements]
 
 ### A.4 Protected requests
 
 Use the host Inbox. A live eligible person resolves a checked request bound
 to its actor, current attempt, target, expiry and verified action digest.
-Recheck these at decision and at one-time consumption. A durable broker action
-can wake one parked job via receipt. A native request is tied to the exact
+Recheck these at decision and when the tool gateway consumes the one-use
+grant and dispatches the exact approved operation and canonical arguments
+under the attempt fence. Persist the grant consumption before attempting
+the external effect. If the dispatch outcome is unknown after a crash,
+reconcile before any retry. A native reply or waking the job confers no
+dispatch authority. A durable broker action can wake one parked job by
+receipt. A native request is tied to the exact
 live process and native request ID. Exit, replacement or revocation invalidates
 it. Codex's current `can_approve: false` requests and Claude denial summaries
 allow dismissal only. An actionable approval requires executable material the
-host can verify. Guest Prompt stays disabled pending the sealed proof.
+host and gateway can verify and enforce. Keep native integrations that
+cannot intercept the actual action dismissal-only. Guest Prompt stays
+disabled pending the sealed proof.
 [Provider protocol][provider] · [Sealed §5][sealed]
 
 ### A.5 Ownership and cutover
@@ -156,21 +191,36 @@ host can verify. Guest Prompt stays disabled pending the sealed proof.
 | Turns phases, retry, tool steps, instructions and thread presentation | The orchestrator owns provider/model option policy, title and instruction assembly, tool-step presentation and automation inputs. The host retains the common conversation file format and its cold decoder under Q3. Use declared inputs and committed projections. |
 | Notes tags, links and live saves | Notes declares extractors and owns link-rewrite policy. The host runs the generic extractors and keeps room concurrency, save and lifecycle/Undo commits and checked index publication. |
 | Turns access, redact, verify and readiness | Host keeps principal and effect enforcement, placement verification and confidential custody. Adapters own provider-specific probes, login behavior and readiness interpretation. |
+| `machines/execs.rs` shared adapter choice and thread sign-in notices | Replace hardcoded launch paths with digest-checked entry points and bounded notice labels from contributions. The host stamps the actual verified sign-in outcome and actor/time. Placement eligibility, private login custody and cold decoding require no package callback. |
 
-First walk a minimal independent runner through the declared catalogue,
-then qualify the shared engines with it and both shipped adapters.
-Integrate Notes on generic item and derived-file surfaces. For Threads,
-stop new old-engine admissions and wait until there are zero active
-attempts. Leave saved sessions resumable and preserve their bindings by
-account, provider, conversation, machine and profile. Preserve workspace
-custody, grants, pending intents and receipts. Leave canonical thread files
-untouched. Rebuild projections from those files and diff every thread
-rendered through both paths, including text, order, tool/approval display
-and attachment refs. Switch the single writer only on equality. Verify
-that both releases can read new canonical commits exactly once before
-enabling these writes. Abort a failing cutover before switching. A rollback
-rebuilds projections from the same files and reopens under the existing
-compatibility gate. [Sealed §8][sealed]
+First qualify both adapters and the independent runner. Integrate Notes.
+For Threads, stop new old-engine admissions and wait for zero active
+attempts. Preserve workspace custody, grants, pending intents and receipts.
+Under the fenced writer, parse legacy `provider-session` comments and
+the corresponding metadata into protected session bindings keyed by
+account, provider, conversation, machine and profile. Verify the binding
+before removing its public-file/metadata copy in an idempotent migration.
+Sweep the file, metadata, history and journal for legacy private copies.
+Keep public revision history available after sanitizing its private
+fields. Quarantine unsanitized copies and pre-existing backups under
+protected retention and expiry. Exclude them from ordinary backups,
+exports and restore inputs. Block cutover until a new ordinary backup
+can restore the complete public history without those private copies. Thread
+message bytes, their stable IDs and public rendering must remain equal.
+Raw whole-file hashes can change only for verified removal of private
+records. Saved bindings allow authorized Resume.
+
+Keep the current length-framed Markdown message format: valid role,
+UUID, heading, UTF-8 byte count and existing agent provenance fields.
+Coalesce display deltas into the active record. Store supported tool
+summaries as inert Markdown in that record. New private or control event
+types never enter canonical files. Ship no new frame type in this
+release. Rebuild with all projections deleted and diff every old/new
+render, including text, order and checked attachments. Exercise post-cutover
+writes and rollback against a release that understands this representation
+and protected bindings. Verify it before switching writers, or abort the
+cutover. No fallback restores a pre-switch file over new commits.
+[Current record decoder][records] · [Legacy session encoding][sessions] · [Sealed §8][sealed]
 
 ### A.6 Conversation capability and sealed replacements
 
@@ -180,7 +230,12 @@ gets a durable transcript, the message corpus and an authority-checked
 `active_execution` ref. Inbox decisions project `waiting_on` under
 `viewer_self`. The item lifecycle supplies archived state and actor-scoped
 snooze, plus generic parent edges with scoped child windows. These are
-host engines any qualifying kind can use.
+host engines any qualifying kind can use. Opt-in grants eligibility only.
+Require package `reads`, the owner-declared corpus, exact field policy and
+live viewer authority at transcript, search, quote, count and egress.
+A title-only Bind ref cannot open a message corpus. Derive `waiting_on`
+only from live Inbox requests addressed to and readable by this viewer.
+Another actor's request cannot change the viewer's rows, count or version.
 
 | Sealed surface | Replacement |
 | --- | --- |
@@ -224,14 +279,23 @@ each asset delivery or cache revalidation. Purge, redaction or audience
 loss can remove the stale image immediately. A revoked image never
 returns bytes or a `304`. Guest and public images are session-only.
 
-One declarative, bounded extractor facility runs inside the generic save
-and indexing path. Manifests choose typed frontmatter keys for indexed
-fields or tag sets and first-block selection for summaries. For Notes,
-skip the title block and cap the summary at three blocks and 256 text
-bytes. Compute it from the committed structured body on every writer
-path, including rooms, device, agent and plugin edits. A cold create
-supplies empty values. No worker wake, app-specific host decoder or
-background job is needed for these list fields.
+A single host-run extractor reads only manifest-declared fields or body
+regions of the same committed item. Every output, including filtered
+counts, is visible to at most the intersection of its inputs' audiences.
+Use closed selectors for typed frontmatter keys, first content blocks and
+inline Markdown tags. No regular expressions, callbacks or ref traversal.
+Scan the checked body at most once, within the qualified 2 MiB input cap.
+Propose at most eight selectors, three summary blocks excluding the title,
+and 256 summary text bytes. Use empty declared values on cold create.
+Room, device, agent and plugin saves publish these fields with the body
+commit. No VM wake is needed.
+
+Notes declares the shipped frontmatter and inline tag grammar, including
+hierarchical parent expansion and exclusions for fenced/inline code, links,
+addresses and escapes. Reuse the bounded existing scanner as a generic
+Markdown selector. Notes owns tag rename and link-rewrite policy. It may
+run bounded jobs using ordinary item writes. Require parity against the
+shipped scanner before cutover. [Current tag grammar][tags]
 
 Extend `RowTemplate` and the sealed §2.4 row rule with a bound portrait
 image and second line (date and snippet for Notes). If there is no
@@ -243,160 +307,93 @@ after fresh authorization. Restoring them offline is an owner option in
 §C. Read and miss paths wake zero VMs. [Description contract][description] ·
 [Revision 13.2 member cache][rev132]
 
-### B.2 Original files, bulk reads and derived media
+### B.2 Derived preview custody
 
-Use a generic resumable device upload for original file items on the HDD
-tier, available while the space sleeps. A checked begin reserves space and
-binds a session, item or creation target, expected head, length and digest.
-Idempotent chunk receipts advance only the durable contiguous offset.
-Resume rechecks live authority and the upload identity. Commit verifies
-the digest and head, makes file placement and item publication recoverable,
-and records one receipt. Cancel, expiry or revoke fences later commits.
-For spikes, use 4 MiB chunks, a declared file ceiling of at least 200 MiB,
-four concurrent uploads and at most 1 GiB staged per space. Bound abandoned
-staging with a one-hour expiry and meter actual bytes separately from
-metadata batches.
+Serve a checked derived ref with no runtime wake. Keep pointers, indexes
+and bounded hot previews in SSD appdata. The host-managed HDD media tier
+holds bulk files when that feature qualifies. A one-disk installation can
+use one filesystem. Canonical files keep their existing backup policy.
+Orphan or evicted derived bytes are a miss. Revoke and purge fence delivery
+before cleanup. Reuse the content outbox to coalesce derived work against
+source revision when a later producer needs a post-save job.
 
-An admitted indexer in the heavy VM opens a bounded stream of item refs
-through the broker. Authorize once per file open, pin its revision, and
-carry bounded chunks on the existing credit-controlled space channel.
-Use at most four concurrent file streams and 4 MiB in-flight credit per
-stream for initial qualification. Check the live file/consent fence at
-egress. Revoke, purge or cancel cuts the stream and releases the pin. No
-userdata mount or repeated 64 KiB range RPC is needed. Rate-limit bulk I/O
-ahead of the worker so foreground reads retain their budget.
-The locked perf-01 rusqlite probe completed 30,600 reads with one authority
-lookup per file. Four streams delivered 549–558 MB/s on the 4 MiB and
-200 MiB corpora. That is fixture evidence for the initial stream limit,
-with no deployment throughput guarantee. The Photos spike also measures
-real import, derived work and foreground interference.
-@thread:thr_tth3axchm4#msg=1857 · [Runtime measurements issue][bulk-read]
+For the Notes slot, cap encoded uploads at 512 KiB and decoded images at
+256 × 384. Reserve space and check authority before ingest, with two
+concurrent decodes, 64 pending grants and 8 MiB staging per space. Grant
+and staging expiry is five minutes. Retire expired reservations and delete
+their orphan staging within another 30 s, including a sweep before new
+admission after restart. Recheck the upload session, expiry and item grant
+before accepting bytes and before publishing the pointer. Make bytes
+durable before pointer publication. Eviction withdraws the pointer before
+reclaiming bytes.
 
-Photo thumbnails may provisionally come from the device at import or
-from a plugin job (Q5), using the same derived slot and authority checks.
-Only a current, committed original is eligible to publish a thumbnail.
+### B.3 Private scratch design
 
-The existing change outbox drives a durable subscriber by receipt. Coalesce work to the
-latest desired revision and recheck dependencies and producer rights at
-publication. Save ACK waits for neither job delivery nor asset work.
-Keep pointers, indexes and bounded hot previews in SSD appdata, with bulk
-media under the host-managed HDD tier. Support the decided one-disk
-installation. Back up canonical files and items under their ordinary policy.
-Treat missing staged or evicted derivatives as misses and reclaim in bounded
-batches. Purge and revoke deny delivery before cleanup.
+Owner-approved scratch remains private and disposable. Notes and the
+orchestrator need no mount at first release. Enable the disk with its first
+heavy consumer after qualification. Provision one size-capped appdata
+volume per space and package, attached only to the heavy plugin VM. The
+exclusive lease binds the package and producer generation, source scope
+and attempt to a dedicated OS identity and mount namespace. Share no
+handles or memory with interactive workers. Fence and kill the old worker
+before detach or reuse, including recovery. Exclude the disk and worker
+memory from VM snapshots and backup. Wipe it on uninstall. Guests and
+item shares cannot access it or start scratch work indirectly. No person,
+renderer, other package, agent VM or personal machine can query the disk.
+Visible fields live on ordinary host-authorized items.
 
-For qualification, cap a derived preview at 512 KiB encoded and 256 × 384
-decoded pixels. Allow at most two active decodes, 64 pending grants and 8 MiB
-aggregate staging per space. Reserve before ingest, expire grants and
-abandoned staging within five minutes, and refuse new staging at the cap.
-Other asset types also require finite declared and host-capped resource
-limits. Cross a crash cut only after durable bytes and a fenced pointer
-commit. Eviction switches off the pointer before reclaiming bytes.
+Rebuild from canonical files and items. Treat loss and exhaustion as a job
+failure that leaves canonical writes available. Under the sealed interim
+principal (Q2), a creator's lost authority stops that job. A Manager can
+take over its schedule and start fresh work under their own rights. They
+cannot take over its job or reuse a scratch generation out of scope.
 
-### B.3 Private scratch isolation and custody
+### B.4 Photos-scale follow-up
 
-Provision one size-capped appdata disk per package and space. Declared
-background jobs in the heavy plugin VM alone can use it. Bind the exclusive mount
-lease to space UUID, installed package and producer generation, source scope
-and exact job attempt. Run each lease in a dedicated OS identity and mount
-namespace with no shared memory or handles with interactive workers. On
-job exit or revoke, fence the lease, terminate the old process and detach
-before reuse. After a crash or restore, prove the old attachment fenced.
-Scratch and scratch-job memory stay outside both backup and VM snapshots.
-Agent VMs and personally enrolled machines have no scratch mount. Guests or
-item-share activations cannot invoke or indirectly enqueue scratch work.
+Defer the new file upload and stream routes, bulk metadata and pointer
+transactions, private embeddings and similarity status until Photos or
+another real consumer. Deploy only the qualified Notes preview slot in
+this release. The later design must preserve the following boundaries.
 
-Enforce the size quota at the volume, including auxiliary files. Fence jobs
-and wipe the disk on uninstall. Disk exhaustion stops scratch work without
-blocking canonical writes. Rebuild only from brokered files and committed
-items. Originals, user edits and durable job checkpoints stay in ordinary
-host custody. A package must recover when conformance deletes its disk.
-Reuse scratch only under the same live source scope and rebuild after
-grant shrink. The interim indexer principal is the job creator (Q2), with
-sealed rechecks, stop and Manager takeover. Expensive item-local outputs
-such as embeddings are package-private derived files keyed by item revision,
-producer/model digest and output name. They are outside backups and display
-routes. A scratch rebuild reloads still-authorized current artifacts and
-recomputes misses. Revoke, purge and source changes fence access before
-cleanup. Approved personal-machine jobs can deposit those artifacts
-through the same fenced broker upload and never mount the scratch disk.
-Pin recognition model weights as package assets or retrieve them from an
-approved declared destination by digest. Qualify the heavy-VM CPU path
-without assuming a GPU. Renderers, item shares, guests,
-other packages and agents have no disk, row or query access. They receive
-only ordinary authorized item fields and derived files.
+| Surface | Follow-up requirement |
+| --- | --- |
+| Originals and thumbnails | Resumable, quota-reserved HDD upload while asleep. Check session, live authority, offset and reserved length on every bounded chunk before storage. Exact offset, length and digest can replay, with a cap on chunk admissions and receipts and timed retirement of expired staging. Publish only durable bytes under an exact head and receipt. Qualify the device thumbnail producer in a fixture only until Q5 is approved. The operative photo slot permits job output only. |
+| Broker reads and consent | Bounded whole-file streaming with a revision pin, credits and per-file authorization. Check the live file and creator fence on every delivery, including buffered bytes. Personal-machine assignments require explicit space and machine-owner consent bound to machine, owner, package, purpose and source scope. Recheck both consents at delivery and publication. Cut streams and queued work on withdrawal. Disclose that operators can retain previously delivered originals. |
+| Labels and private derivatives | Default to source-local item fields and checked, source-content revisions that stay stable across output-only pointer patches. Private embeddings keyed by source-content revision and model digest can rebuild scratch after live item and producer rechecks. Erase artifacts and fence scratch reuse on source erasure or uninstall. A real batch transaction must commit expected heads, indexed fields, durable pointers, outbox and replay receipt. Admit bounded index work and backlog per space and coalesce only authorized changes. Seal only after a sustained offered-load test accounts for every eligible change and measures source-to-publication age, including deferred work. |
+| Similarity | Background heavy-VM ML under the requester's authorized candidate set. Interim Q4 uses a bounded, requester-only status result (up to 50 refs, receipt retention). Store it separately from generic job results, checkpoint, progress and live stream. Use one egress projection for poll and replay, checking requester, expiry and current grants and revisions of all inputs to ranking, including outside the top 50. Invalidate on a relevant input change. No cross-space write and no change visible to foreign status viewers. |
 
-### B.4 Publication audiences, machine consent and similarity
+Sandbox package-private artifacts and their model inputs. Pin model weights
+by digest and qualify the heavy-VM CPU path. Declared multi-item outputs
+need checked source refs and destination audiences contained in every input
+audience. The installed-package trust rule still applies to intentional
+copying. These requirements do not enable the deferred routes.
 
-Publish source-local fields by default. A photo's recognized labels go onto
-that photo and are filtered by ordinary Binds. Multi-item outputs require
-host-checked source refs, expected revisions and a destination audience
-contained in every input audience. Apply that check to identifiers, scores,
-order, counts and even the existence of a result. Dependency change or
-revocation fences stale joins, indexes, versions and counts before delivery.
-“Photos like this” runs as a background ML job in the heavy plugin VM.
-Restrict candidates to the requester's authorized source scope before
-ranking. The first-release interim result (Q4) is a requester-bound host
-job status payload of up to 50 refs, with receipt retention (default
-seven days). The host rechecks source and candidate refs, grant and
-revision fences on every delivery. Any changed input invalidates the
-result as a whole. It creates no item and makes no cross-space write. Sealed installed-package trust still
-applies to deliberate copying by a trusted package. Checked provenance
-protects the declared path and cannot prove the origin of arbitrary output.
-[Sealed §5][sealed]
+The locked perf-01 rusqlite probe completed 30,600 reads, with four streams
+delivering 549–558 MB/s in its two corpora. That transfer fixture supports a
+later contract test, independently of product authorization, revocation and
+Photos processing. @thread:thr_tth3axchm4#msg=1857 · [Runtime measurement issue][bulk-read]
 
-The heavy plugin VM is the default for shared originals. A personal
-machine can index them after both the space's explicit decision and the
-machine owner's agreement to the named machine, package, purpose and
-source scope. Consent states that the operator may retain delivered bytes.
-Check both revisions at assignment, on each bounded broker delivery
-and at publication. Withdrawal fences streams and queued work immediately,
-including on an unexpired lease. Enable this placement only after it passes
-the consent-revocation spike.
+### B.5 Notes tag set write budget
 
-### B.5 Bulk item metadata commits
-
-Extend the content engine with a real per-space batch transaction. A loop
-of today's single-item FULL commits cannot meet this contract. Stage files
-if needed using the current durability primitives. Check expected heads,
-source revisions, actor rights, producer generation and declared fields
-at the fence. Coordinate with live rooms and refuse or defer contended
-items. One FULL transaction commits the accepted heads, indexes, counts,
-any derived-file pointers and the bounded outbox range and receipt.
-All referenced derived bytes are durable before this commit. The batch
-fingerprint covers pointer digests. Projection and recovery use the same
-receipt for metadata and pointer updates. The receipt fingerprints normalized
-input and records per-item committed, stale or refused outcomes. An exact
-replay rechecks delivery authority and returns those outcomes without writes.
-Recovery idempotently publishes the committed range, retires the outbox and
-reclaims unreferenced staging. An output-only patch never requeues its
-producer for the same source revision.
-
-Add `TextSet` to `FieldType` and a typed `contains` predicate for
-membership. Use normalized deduplicated elements, at most 16 per field
-per item and 64 UTF-8 bytes each for qualification. Tags and recognized
-labels use this path. Seek an authorized scope and one value in index
-order. Qualify combined predicates before enabling them. Exact counts
-count items once. Charge each element, each affected audience and sort
-entry, and both removals and inserts to covering-index and batch
-budgets. Refuse writes that would exceed those budgets.
-
-Initial spike limits are at most 128 patches and 1 MiB per batch, one in
-flight per job, two batch admissions per second across each space, 8 MiB
-total queued or staged, and 8,192 index keys per batch within sealed scope
-limits. Reserve
-foreground writer capacity and yield between batches. Pause admission at a
-one-second oldest unpublished age or the byte/work cap. Resume as workers
-drain. Feed and search consume by commit cursor, retain the latest pending
-revision per item, and coalesce only authorized changes into one notice
-per affected Bind per 100 ms. Keep targeted revocations immediate. Bound
-each consumer queue and recover it from the committed range.
-[Sealed query and save gates][sealed]
+Qualify `TextSet` with typed `contains` for Notes tags. Use normalized,
+deduplicated elements and a scoped value/order index. Each tag count is
+over distinct authorized rows. Qualify combined predicates separately.
+Preserve the sealed 32-effective-scope cap and two keys per scope for
+the existing scalar-only plan. In the numbered revision, add an explicit
+total budget for every save with extraction: propose 64 tag elements
+per field, 256 UTF-8 bytes per element, and 1,152 total old/new covering,
+membership and count keys per item commit across all fields and scopes.
+Count hierarchical expansions and changes offered by every writer.
+Validate and meter the combined change before writing. Refuse over-budget
+new changes with a typed limit. Never truncate a valid legacy tag set.
+Block Notes cutover if existing items exceed qualified limits or the
+worst-case save misses 40 ms p95. If needed, bring the measured parity
+tradeoff to the owner before changing the contract. [Sealed save gate][sealed]
 
 ## C. Owner questions and qualification
 
-The defaults here are interim. They let the next revision be reviewed
-without settling the questions.
+The defaults are interim. Q2, Q4 and Q5 are for the Photos-scale follow-up.
+They do not block Notes and the orchestrator.
 
 1. **May an agent search or list a space?** A person might ask it to find
    and summarize their Lisbon notes without selecting them first. The
@@ -408,10 +405,10 @@ without settling the questions.
    personal spaces and off by default in shared spaces, with visible
    access records. Interim: refs only everywhere.
 2. **Whose rights may an indexer use?** If the person who started a photo
-   index leaves, the creator-bound job stops. Choose the principal now
-   because it controls admission, eligibility and retained artifacts.
-   Creator rights limit exposure but interrupt work, require takeover
-   and can incur rebuild I/O. Installation rights keep coverage and
+   index leaves, the creator-bound job stops. The follow-up needs a
+   principal before it can define admission and retained artifacts.
+   Creator rights limit exposure but interrupt work and can incur
+   rebuild I/O. A Manager can take over the schedule and start a new job. Installation rights keep coverage and
    throughput stable, with a standing read grant and broader exposure
    if the package errs. Recommend a revocable Owner-approved grant
    shown at install and ending on uninstall. Interim: sealed creator
@@ -443,9 +440,9 @@ without settling the questions.
    plugin-only path has producer-controlled pixels and follows the
    2026-11-19 jobs-only derived-data decision, with more host I/O and
    latency for large imports. Interim and recommendation for
-   qualification: allow both through one slot, with plugin regeneration.
-   The owner must approve that extension before enabling device imports
-   of thumbnails.
+   qualification: model both producers in a fixture with one slot and
+   allow job output in product. The owner must approve the device
+   producer before its path is enabled.
 6. **One Threads list for every runner, or separate lists?** For example,
    should an Aider runner's conversations appear beside Claude Code
    conversations? The answer fixes list ownership and discovery before
@@ -466,41 +463,67 @@ faster, smaller title-only cache reads and defers body previews to fresh
 authority. Interim and recommendation: preserve revision 13.2. Qualify
 any expansion as a separate owner-approved change.
 
-### C.1 Qualification gates
+### C.1 First-release qualification
 
-Use sealed §8's machines, repetitions and instrumentation. New numbers
-are proposed qualification targets. Start with the independent-runner
-paper exercise, then qualify device snapshots and same-execution recovery.
-Run the three Photos arms separately. First-invite parity can qualify
-Threads and Notes before enabling Photos consumers.
+Use sealed §8's machines, repetitions and instrumentation. New quantities
+are proposed limits. Record per-arm authorization reads, commits and actual
+flushes. Start with an independent-runner paper exercise.
 
 | Spike | Pass condition that can falsify the proposal |
 | --- | --- |
-| Independent runner, inbox and cutover | From a package-owned conversation kind, use provider options, Send, stream, ask, steer, spawn child, Stop, archive/Undo and snooze through generic routes. Both shipped adapters and an independent adapter must pass the same digest-pinned conformance. Deny cross-attempt controls, delegated discovery, credential/network access and stale approvals. Run a tool call and a permission-changing composer command across preflight and replay. Cut over with zero active executions. Require exact old/new transcript render equality for every file, unchanged historical hashes, and exactly-once post-cutover rendering across rollback. |
-| Sleeping-space Send | Over the sealed phone link, send an already prepared message to a sleeping space. Require one exchange and p95 ≤500 ms from user intent to the renderer painting durable Starting. Require p95 ≤8 s from intent to the admitted container being ready on a single wake and ≤15 s for the 20-way arm. Report first-token time separately and verify zero duplicate receipts or runs. |
-| Same-execution recovery | Cut before private spool commit, after commit before ACK and after ACK before file commit. Restart with 30 s and 5 min downtime, stall the transcript reader and partition control. Freeze and block all agent/tool/network progress ≤5 s from last renewal. A matching attempt thaws only after fresh proof and renewal and resumes without lost or duplicate events. Invalid proof requires explicit Resume. Beyond the 10-minute recovery window the process is gone. Host Stop kills the exact attempt without waiting for expiry. Check zero effects or egress after revocation, bounded unconsumed spool, no plugin wake on tokens, and the sealed 150 ms first-screen and 500 ms independent-control p95 gates. |
-| Device snapshot | On a sleeping space require save intent to durable ACK p95 ≤40 ms, local paint p95 ≤100 ms from capture availability, and ACK to current painted preview p95 ≤2 s on a second currently authorized viewer. Race a merged room edit and an agent edit with two editors' captures. Keep the previous authorized image marked stale until replacement. Reject out-of-head uploads, copied grants and changed digests. Cut around file durability, pointer commit and eviction. Enforce staging caps, zero revoked bytes or stale-authorization `304`, clean miniature fallback and zero preview-driven wakes. |
-| Scratch delete and rebuild | Delete at rest and mid-job, fill the volume, restart the heavy VM, restore a runtime snapshot and follow warm privileged work with a guest activation. Require at most one live mount, zero leaked data or guest-triggered scratch work, exclusion from backup/snapshot and wipe on uninstall. Rebuild identical published item fields on a static fixture. Reload all still-current embedding artifacts without recomputing them. Inject a source edit and assert only its old artifact is unusable. |
-| Photos originals and thumbnails | Import 10,000 mixed-visibility 4 MiB originals on an otherwise idle 200 Mbit/s fixture link, then repeat while driving taps. Require total import ≤35 min and identical byte digests, zero import wakes before derivative work, and first confirmed thumbnail ≤5 s after first original commit on the device arm and ≤15 s on the heavy-job arm. Resume after a chunk/ACK cut. Revoke an upload and each machine consent mid-stream; assert zero subsequent deliveries or commits under the revoked grant. Keep sealed foreground gates. |
-| Photos labels | On the same corpus, publish checked labels and thumbnail pointers while driving taps, saves and reads. Compare label-filtered windows and exact counts to an independent visibility oracle, including an edit to a hidden item. Hit the write, key and queue caps, cut around batch commit and outbox retirement, and assert exact recovery and no unauthorized results. Require sealed foreground gates, steady-load publication p95 ≤2 s and oldest unpublished age ≤5 s. Record reads, commits, flushes and queue depth. |
-| Photos similarity | On the same corpus run 1,000 qualifying requests against pinned heavy-VM CPU and model fixtures. Compare all ordered IDs and scores to an independent authorized oracle and require p95 ≤5 s on warmed embeddings. Insert or edit a hidden photo and verify identical eligible results. Revoke a source during ranking and before status delivery. Assert no stale or foreign refs, zero cross-space writes and no replay visibility after receipt expiry. |
+| Generic runner, tool and lifecycle authority | Use generic routes from a package-owned conversation with both shipped adapters and an independent one. Exercise Send, request, steer, child, Stop, archive, Undo and snooze. Submit an approved native reply with a changed tool digest and replay a consumed grant. Require zero dispatches for either. Race concurrent child starts at the tree cap, ancestor revoke, and archive against another actor's or a replacement attempt. Assert zero over-reservations, stale execution effects, or unauthorized archive. Forge title-only refs and concealed Inbox activity. Their rows, counts and versions must reveal nothing. |
+| Sleeping-space Send and park | On the sealed link require one prepared exchange and p95 ≤500 ms to painted durable Starting. Require container-ready p95 ≤8 s for one wake and ≤15 s at 20 concurrent wakes. Report first token separately. Commit a terminal/approval transition immediately before and after the park boundary, plus an exact replay. Require one continuation in each arm, zero duplicated starts and zero plugin wakes for tokens. |
+| Transport loss and recovery | Cut the real machine carrier while a provider request is queued and a detached tool session is active. Restart for 30 s and 5 min. Exercise both a surviving provider transport and a remote peer timeout. Freeze all processes, queued dispatch and egress ≤5 s after renewal. Fresh proof and safe transport permit same-attempt thaw. An uncertain dispatched effect requires reconciliation and explicit Resume, with no automatic replay. Kill by 10 min or on authenticated host Stop. Stop broker effects and output at revocation. Retain sealed 150 ms first-screen and 500 ms independent-control p95 limits. |
+| Stream custody and load | Cut before private spool commit, after commit before ACK, and after ACK before file commit. Split an issued credential across frames and cut after checkpoint but before the suffix. Replay ordinary text once and never publish the credential. Saturate admitted frame, spool and commit limits. Require bounded queues and foreground latency. A shape-valid forged action, lifecycle event or notice produces no trusted control. |
+| File cutover and rollback | With no live attempts, extract legacy session state and rebuild with projections deleted. Require exact historical message bytes, IDs and render equality. Canonical file or ordinary backup carries no private session data. Write new records and rebuild on the rollback target with projections again removed. Require identical post-cutover render, no missing or duplicate commits, and no lost protected binding. Refuse switch if the release pair fails. |
+| Notes extractors and tags | Compare every qualified output and tag-filtered count to the current scanner and a mixed-visibility oracle, including frontmatter, inline hierarchy and excluded code/link syntax. Exercise rooms and ordinary save at peak qualified input, scope and total-key limits. Require p95 ≤40 ms, zero wakes, atomic field visibility and no hidden count change. Refuse above-budget plans and writes without effects. Report committed-field and background search publication lag separately. |
+| Notes device previews | Require save intent to durable ACK p95 ≤40 ms, local capture to paint p95 ≤100 ms and ACK to current paint on a second authorized viewer p95 ≤2 s. Race a merged room save and copied grant, then cut around bytes and pointer commits. Show only the last authorized stale image until replacement. Assert zero revoked bytes or stale-authorization `304`, cleanup within the staging deadline and zero preview-driven wakes. |
 
-### C.2 Numbered contract revision
+### C.2 Deferred qualification
+
+With the first heavy consumer, delete scratch during a job and at rest.
+Rebuild identical visible fields using current private artifacts without
+recomputing those artifacts. Reject a revoked or erased artifact and
+prove that normal backups and VM snapshots contain no scratch.
+
+Run distinct Photos spikes for original import/thumbnail, labels and
+similarity. Use the 10,000-photo, 4 MiB corpus under foreground traffic.
+For originals, resume through lost chunk ACK and revoke upload and read
+grants mid-delivery. Check byte digests, time to first authorized thumbnail
+and total import. For similarity, compare ranking to an authorized oracle
+and race revocation of an input outside the result window. Try polling via
+generic status, job stream and checkpoint routes and require zero result
+bytes there.
+
+For labels, drive 300 eligible source changes/s for two minutes, including
+contended writes, with a separate saturation arm. Require 36,000 source
+commits accounted for, every final eligible label and pointer equal to
+the oracle, and each superseded input linked to its visible successor.
+Measure age from source commit to publication or to a published successor,
+including deferred changes. Require steady-state throughput of at least
+300 completed or superseded changes/s, p95 age ≤2 s and oldest eligible
+change age ≤5 s. In
+the saturation arm require bounded backlog, explicit backpressure before
+caps, complete reconciliation after drain and sealed foreground gates.
+Report offered, admitted, completed and superseded rates. This gate
+defines no first-release batch contract.
+
+### C.3 Numbered contract revision
 
 Revise the manifest, description schema, catalogue, verifier and fixtures
-together for the §A.6 replacements, extractor and contribution declarations,
-three runtime roles, common execution/events, generic cold create, scratch,
-resumable uploads and bulk reads, derived slots, image and second-line row
-fields, `TextSet` and checked batch publication. Remove the planned
-first-release table store. Carry forward the default all-field search
-with optional field filter. Qualify every new route against the sealed
-authority matrix before enabling it.
+together for §A.6, common execution/events, protected requests, declarative
+extractors, generic cold create, Notes derived images and row fields, and
+the tag set write budget. Carry forward default all-field search with an
+optional field filter. Remove the planned first-release table store.
+Qualify every new route against the sealed authority matrix. Reserve the
+heavy-job design and Photos contracts for a separate revision.
 [Sealed plan][sealed] · [Combined-search measurement][combined-search]
 
 ## Simplification opportunities
 
-Reuse the protected Inbox, item lifecycle fence and change cursor. Keep
-ordinary labels source-local. Return similarity through existing job status.
+Reuse the Inbox, item lifecycle fence and current transcript framing.
+Keep first-release image publication to the Notes slot and qualify
+heavy-job volume and bulk paths with their first consumer.
 
 ## First review disposition
 
@@ -516,20 +539,20 @@ ordinary labels source-local. Return similarity through existing job status.
 | 8. Cutover custody | §§A.5, C preserved bindings and release pair |
 | 9. Server ownership | §A.5 host and package mapping |
 | 10. Upload identity | §§B.1, C save-session grant and exact replay |
-| 11. Cold miniature and media | §§B.1, C.2 row schema and egress |
-| 12. Scratch isolation | §§B.3, C exclusive, isolated leases |
+| 11. Cold miniature and media | §§B.1, C.3 row schema and egress |
+| 12. Scratch isolation | §§B.3, C.2 exclusive isolated leases |
 | 13. Publication audiences | §§B.4, C source checks and owner question |
-| 14. Batch feasibility and flood | §§B.5, C transaction, caps and cuts |
+| 14. Batch feasibility and flood | §§B.4, C.2 deferred batch and offered-load caps |
 | 15. Machine consent | §§B.4, C per-delivery and publication fences |
 | 16. Bounds and qualification | §§B.2, C resource caps and observable gates |
-| 17. Contract revision | §C.2 coordinated schema and conformance changes |
+| 17. Contract revision | §C.3 coordinated schema and conformance changes |
 
 ## Second review disposition
 
 | Finding | Where addressed |
 | --- | --- |
 | 1. Restart window | §§A.2–A.3, C.1 freeze, fresh thaw and downtime arms |
-| 2. Ordinary conversation kinds | §§A.6, C.2 generic capability and sealed-name replacements |
+| 2. Ordinary conversation kinds | §§A.6, C.3 generic capability and sealed-name replacements |
 | 3. Canonical file | §§A.3, A.5, C (Q3) host file writer and projections |
 | 4. Token path and wait | §§A.3, C.1 adapter output and execution wait |
 | 5. Composer commands | §A.1 declared preflight parsing |
@@ -538,15 +561,36 @@ ordinary labels source-local. Return similarity through existing job status.
 | 8. Harness qualification | §§A.2, C.1 shared suite and personal fallback |
 | 9. Snapshot continuity | §§B.1, C.1 local paint, matching room state and stale image |
 | 10. Declarative extraction | §§A.5, B.1 one cold-save facility |
-| 11. Tags and labels | §§B.5, C.2 `TextSet`, `contains` and fan-out |
-| 12. Original file I/O | §§B.2, B.5, C.1 resumable upload, bulk stream and atomic pointers |
+| 11. Tags and labels | §§B.5, C.3 `TextSet`, `contains` and fan-out |
+| 12. Original file I/O | §§B.4, C.2 deferred upload, stream and pointers |
 | 13. Similarity custody | §§B.4, C (Q4) bounded status result |
-| 14. Indexer authority and rebuild | §§B.3, C (Q2), C.1 creator authority and private artifacts |
-| 15. Scratch placement | §§B.3, C.1 heavy VM only |
+| 14. Indexer authority and rebuild | §§B.3–B.4, C (Q2), C.2 creator authority and private artifacts |
+| 15. Scratch placement | §§B.3, C.2 heavy VM only |
 | 16. Spool caps | §A.3 unconsumed records |
 | 17. Member row cache | §§B.1, C cache option and revision 13.2 restriction |
 | 18. Reversible cutover | §§A.5, C.1 idle cutover and full transcript diff |
-| 19. Spike pass conditions | §C.1 timed Send and distinct Photos arms, scratch and preview checks |
+| 19. Spike pass conditions | §§C.1–C.2 timed Send, Notes and deferred Photos checks |
+
+## Third review disposition
+
+| Finding | Earlier partial findings covered | Where addressed |
+| --- | --- | --- |
+| 1. Full execution freeze | R1.02, R2.01, R2.19 | §§A.2, C.1 independent supervisor and real carrier cuts |
+| 2. Frozen resources and transport | R1.02, R2.01 | §§A.2–A.3, C.1 held reservations and transport timeout |
+| 3. Credentials, display and dispatch | R1.03, R1.04, R1.06, R2.08 | §§A.2–A.4 dedicated transport, allowlist and checked dispatch |
+| 4. Restart-safe scrub and rate caps | R1.06 | §§A.3, C.1 durable carry, credit and load gate |
+| 5. Lost execution wake | R2.04 | §§A.3, C.1 atomic cursor check and park race |
+| 6. Child aggregate reservation | R2.07 | §§A.2, C.1 atomic tree budget and ancestor fences |
+| 7. Conversation eligibility | R2.02 | §§A.6, C.1 package/corpus/field checks and Inbox isolation |
+| 8. Archive-triggered Stop | R1.07 | §§A.1, C.1 exact-attempt checks and snooze isolation |
+| 9. Legacy custody and rollback | R1.08, R2.03, R2.18 | §§A.3, A.5, C.1 protected bindings, old-readable frames and rebuild |
+| 10. Extractor authority, tags and work | R1.09, R2.10, R2.11 | §§B.1, B.5, C.1 closed selectors, tag parity and total key budget |
+| 11. Upload admission and cleanup | R2.12 | §§B.2, B.4, C.2 Notes staging bounds, deferred chunk and stream fences |
+| 12. Private artifacts and job authority | R1.14, R2.14 | §§B.3–B.4, C (Q2) source-content identity and schedule-only takeover |
+| 13. Requester status egress | R2.13 | §§B.4, C (Q4), C.2 deferred separate result and one projection |
+| 14. Photo thumbnail producers | New | §§B.4, C (Q5) fixture-only device arm |
+| 15. Offered-load qualification | R1.14, R1.16, R2.19 | §C.2 deferred offered-source rate, age and reconciliation |
+| 16. Server provider policy | R1.09 | §A.5 checked entry-point and notice contributions |
 
 [owners]: https://git.kayg.org/kayg/calternal-ai/src/commit/85add29af840b225dd9a83cae2e5cd4ce3aecfc9/docs/open-questions.md
 [sealed]: ../plugin-api-v2.md
@@ -563,3 +607,9 @@ ordinary labels source-local. Return similarity through existing job status.
 [provider-events]: ../../contract/provider-events-v1.schema.json
 [rev132]: https://git.kayg.org/kayg/calternal-ai/src/commit/539c10b68f78625c16faad5a8762523b45bfd7b6/docs/plugin-api-v2.md#42-live-work-cache-and-host-components
 [bulk-read]: https://git.kayg.org/kayg/calternal-ai/issues/77
+[stop]: ../../crates/server/src/threads/operations.rs
+[podman]: ../../crates/machine/src/sandbox/podman.rs
+[direct]: ../../crates/machine/src/sandbox/direct.rs
+[records]: ../../crates/server/src/threads/records.rs
+[sessions]: ../../crates/server/src/threads/document.rs
+[tags]: ../../crates/server/src/notes/tags.rs
