@@ -40,6 +40,10 @@ const REVERSE: &str = "SELECT sort_key,item FROM window_rows INDEXED BY window_c
     WHERE (collection,audience)=(?1,?2)
     ORDER BY sort_key DESC,item DESC LIMIT ?3 OFFSET ?4";
 
+const SEEK_REVERSE: &str = "SELECT sort_key,item FROM window_rows INDEXED BY window_cover
+    WHERE (collection,audience)=(?1,?2) AND (sort_key,item)<(?4,?5)
+    ORDER BY sort_key DESC,item DESC LIMIT ?3";
+
 const SEEK: &str = "SELECT sort_key,item FROM window_rows INDEXED BY window_cover
     WHERE (collection,audience)=(?1,?2) AND (sort_key,item)>(?4,?5)
     ORDER BY sort_key,item LIMIT ?3";
@@ -48,12 +52,13 @@ const SEEK: &str = "SELECT sort_key,item FROM window_rows INDEXED BY window_cove
 enum Scan<'a> {
     Forward(u64),
     Reverse(u64),
-    Seek(&'a (Key, String)),
+    Seek(&'a (Key, String), bool),
 }
 
 pub(super) struct Plan<'a> {
     scan: Scan<'a>,
     pub(super) take: u64,
+    reversed: bool,
 }
 
 impl<'a> Plan<'a> {
@@ -64,6 +69,7 @@ impl<'a> Plan<'a> {
         anchor: WindowAnchor,
         exact: bool,
         boundary: Option<&'a (Key, String)>,
+        reversed: bool,
     ) -> std::result::Result<Self, WindowPlanReason> {
         use WindowPlanReason::*;
         let take = width.min(total.saturating_sub(from));
@@ -71,14 +77,14 @@ impl<'a> Plan<'a> {
             return Err(MaterializationLimit);
         }
         let scan = if let Some(boundary) = boundary {
-            Scan::Seek(boundary)
+            Scan::Seek(boundary, reversed)
         } else if exact && take == 0 {
             Scan::Forward(0)
         } else {
             let opposite = total.saturating_sub(from + take);
             let flip = exact && opposite < from;
             let skip = if flip { opposite } else { from };
-            let reverse = (anchor == WindowAnchor::End) != flip;
+            let reverse = (anchor == WindowAnchor::End) ^ flip ^ reversed;
             if skip > limits().live_limits.index_jump_skips_per_window {
                 return Err(SkipLimit);
             }
@@ -88,7 +94,11 @@ impl<'a> Plan<'a> {
                 Scan::Forward(skip)
             }
         };
-        Ok(Self { scan, take })
+        Ok(Self {
+            scan,
+            take,
+            reversed,
+        })
     }
 }
 
@@ -100,7 +110,8 @@ fn statement<'a>(
     let sql = match plan.scan {
         Scan::Forward(_) => FORWARD,
         Scan::Reverse(_) => REVERSE,
-        Scan::Seek(_) => SEEK,
+        Scan::Seek(_, false) => SEEK,
+        Scan::Seek(_, true) => SEEK_REVERSE,
     };
     let mut stmt = conn.prepare_cached(sql)?;
     stmt.raw_bind_parameter(1, &scope.0)?;
@@ -108,7 +119,7 @@ fn statement<'a>(
     stmt.raw_bind_parameter(3, plan.take as i64)?;
     match plan.scan {
         Scan::Forward(skip) | Scan::Reverse(skip) => stmt.raw_bind_parameter(4, skip as i64)?,
-        Scan::Seek((key, id)) => {
+        Scan::Seek((key, id), _) => {
             stmt.raw_bind_parameter(4, key)?;
             stmt.raw_bind_parameter(5, id)?;
         }
@@ -130,7 +141,7 @@ pub(super) fn keys(
     while let Some(row) = rows.next().map_err(internal)? {
         keys.push((row.get(0).map_err(internal)?, row.get(1).map_err(internal)?));
     }
-    if matches!(plan.scan, Scan::Reverse(_)) {
+    if matches!(plan.scan, Scan::Reverse(_) | Scan::Seek(_, true)) != plan.reversed {
         keys.reverse();
     }
     Ok(keys)
@@ -146,7 +157,9 @@ impl Space {
     ) -> Result<Page<Summary>> {
         let boundary = cursor.map(parse_native_cursor).transpose()?;
         let scope = super::WindowScope::SpaceNotes.key();
-        let scan = boundary.as_ref().map_or(Scan::Forward(0), Scan::Seek);
+        let scan = boundary
+            .as_ref()
+            .map_or(Scan::Forward(0), |key| Scan::Seek(key, false));
         let mut stmt = self
             .conn
             .prepare_cached("SELECT metadata,revision,updated_at,path FROM items WHERE id=?1")
@@ -157,6 +170,7 @@ impl Space {
             Plan {
                 scan,
                 take: limit as u64 + 1,
+                reversed: false,
             },
         )?;
         let rows = keys
@@ -248,6 +262,7 @@ mod tests {
                 WindowAnchor::Start,
                 true,
                 Some(&boundary),
+                false,
             )
             .unwrap();
             let mut stmt = statement(&conn, &scope, &plan).unwrap();
@@ -278,7 +293,7 @@ mod tests {
         }
         assert_eq!(steps[0], steps[1]);
         // For random access the planner can take 200 rows from the nearer end.
-        let plan = Plan::new(25_000, 24_800, 200, WindowAnchor::Start, true, None).unwrap();
+        let plan = Plan::new(25_000, 24_800, 200, WindowAnchor::Start, true, None, false).unwrap();
         assert_eq!(plan.scan, Scan::Reverse(0));
         assert_eq!(
             keys(&conn, &scope, plan).unwrap().first().unwrap().1,

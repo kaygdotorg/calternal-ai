@@ -83,11 +83,53 @@ Retain seek boundaries only within the host's current view lease.
   falsely signal the end. Keep the typed refusal and explicitly document its
   use when a full reply exceeds the byte cap.
 
-Nested windows, generic plugin kinds, standalone count scheduling, field
-projections beyond title and the remaining qualified list sorts are pending.
-Search belongs to its own lane. This work runs functional gates on dev-02.
-The product save p95 and cold-page latency gates require the separately
-authorized locked perf run.
+## Registered kinds and parent windows
+
+Schema 10 uses existing kind registrations and the same covering table and
+maintained counts. Claimed-text kinds default to newest. The host can provision
+one scalar sort and title field from a checked kind declaration, such as
+`reading-reminder.due`. Both directions use the same B-tree and reverse the
+complete stable order, including its ID tie-break. A replacement definition
+rebuilds only that kind's window rows in one space commit. Notes Trash has a
+separate exclusive projection in move-time order. An explicit Notes collection
+can be provisioned in newest order for members, or title order for guests.
+A non-matching sort is a typed plan refusal.
+
+A registered parent field adds a covering key under the parent UUID and child
+kind. The host supplies the checked UUID and the issued edge token after
+validating the current view, Bind and entire ancestry. Child moves maintain
+both parent counts in the same item commit. A nested window uses the same
+bounded range and title materialization as a root window, plus one indexed
+definition lookup and two indexed checks that the parent still exists. A
+new read connection also verifies its stored space binding. The normal Notes native read count is unchanged.
+A generic warm save bounds maintenance to the item, its root scope and at most
+one parent scope. It adds no flush. A manual collection window adds one
+configuration probe.
+
+- **Proposal for simultaneous sort orders.** One physical ordering per scope
+  preserves the save bound of two covering keys per changed scope. For example,
+  a Notes collection can serve title order to guests or newest order to
+  members. Publishing both would create two ordered keys over the same visible
+  row set and would need a clarified cap and a locked combined-save proof.
+  Keep the existing scope bound and refuse unpublished alternatives until
+  the contract accounts for both costs. Two-field composite plans also
+  require qualification.
+- **Proposal for declared parent storage.** A view declares the edge but the
+  sealed manifest does not identify a persisted relation for an arbitrary
+  kind. The host can use an existing canonical relation such as
+  `threads.parent_thread`, or register a verified relation from its own
+  loader. For example, a reading reminder can only appear under a reading
+  item after the host knows which stored UUID field establishes that link.
+  Guessing the relation from a field name risks widening authority. Keep
+  explicit registration and add a manifest declaration if arbitrary kinds
+  need portable edges. Per-person section placements also need the
+  host-owned layout store.
+
+Standalone count scheduling, field projections beyond title, layout placement
+windows, generic manual collection membership and search are outside this
+slice. Product qualification requires the locked perf run and the current
+view/lease adapter. The original Notes release binaries and their same-host
+baseline are queued under the perf-01 lock.
 
 ## Simplification opportunities
 

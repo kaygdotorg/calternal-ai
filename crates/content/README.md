@@ -82,8 +82,11 @@ a space ID. Account-profile recovery remains the host's responsibility.
 
 Unfiltered `notes.list` uses the ordered window index with its existing
 timestamp and UUID continuation. The content window API also serves explicit
-Notes collections in title order. Each space stores a covering key per
-effective row set and a maintained count and version per nonempty scope.
+Notes collections in title order or a provisioned member-only newest order.
+Registered claimed-text kinds can publish one scalar order in either
+direction. A registered parent relation gets a separate covering scope for
+each parent. Each space stores a covering key per effective row set and a
+maintained count and version per nonempty scope.
 Item, membership, Trash and restore changes update those rows in the existing
 content commit. Collection grants to people, groups and public links refer
 to the same explicit collection projection and retain their independent live

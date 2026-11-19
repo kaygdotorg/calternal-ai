@@ -1,3 +1,5 @@
+mod kinds;
+
 use super::*;
 use crate::{FaultPoint, FileFormat, Placement, Request, db::SPACE_SCHEMA};
 use calternal_roots::Roots;
@@ -145,7 +147,7 @@ fn randomized_windows_match_independent_scan_of_mixed_visibility() {
         }
         let len = expected.len() as u64;
         let access = WindowAccess {
-            scope,
+            scope: scope.clone(),
             audience,
             count: mode,
             view: Uuid::new_v4(),
@@ -338,12 +340,57 @@ fn scope_33_rolls_back_entire_membership_commit() {
         .with_space(space, |space| {
             let total: i64 = space
                 .conn
-                .query_row("SELECT sum(total) FROM window_scopes", [], |row| row.get(0))
+                .query_row(
+                    "SELECT sum(total) FROM window_scopes WHERE audience IN ('space','explicit')",
+                    [],
+                    |row| row.get(0),
+                )
                 .map_err(internal)?;
             assert_eq!(total as u64, cap);
             Ok(())
         })
         .unwrap();
+    let trashed = content
+        .trash(
+            &item,
+            item.metadata.clone(),
+            &item.bytes,
+            request(actor, "trash-capped"),
+            |_| json!({}),
+            || Ok(()),
+        )
+        .unwrap();
+    let inspect = |scope: WindowScope| {
+        result(
+            content
+                .window(
+                    space,
+                    &WindowRequest::Window {
+                        request: range(0, 1, WindowAnchor::Start),
+                    },
+                    None,
+                    || {
+                        Ok(WindowAccess {
+                            scope: scope.clone(),
+                            audience: WindowAudience::Member,
+                            count: WindowCountMode::Exact,
+                            view: Uuid::nil(),
+                        })
+                    },
+                )
+                .unwrap(),
+        )
+        .count
+        .unwrap()
+        .value
+    };
+    assert_eq!(inspect(WindowScope::SpaceNotes), 0);
+    assert_eq!(inspect(WindowScope::NotesTrash), 1);
+    content
+        .restore(&trashed, request(actor, "restore-capped"), |_| json!({}))
+        .unwrap();
+    assert_eq!(inspect(WindowScope::SpaceNotes), 1);
+    assert_eq!(inspect(WindowScope::NotesTrash), 0);
 }
 
 #[test]
@@ -482,6 +529,7 @@ fn deep_starts_require_a_current_boundary_and_end_offsets_exceed_the_start_ceili
         result_version: result_version(&key, &snapshot, &prior_range, &access),
         window_ref: Uuid::new_v4(),
         offset: max,
+        parent: None,
         rows: vec![WindowRow {
             id: "first".into(),
             fields: json!({"title":"Same"}),
@@ -494,7 +542,7 @@ fn deep_starts_require_a_current_boundary_and_end_offsets_exceed_the_start_ceili
             read::keys(
                 &conn,
                 &key,
-                read::Plan::new(2, 0, 1, WindowAnchor::Start, false, None).unwrap(),
+                read::Plan::new(2, 0, 1, WindowAnchor::Start, false, None, false).unwrap(),
             )
             .unwrap()
             .pop()

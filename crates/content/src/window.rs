@@ -1,6 +1,8 @@
-//! Ordered Notes windows over committed, audience-visible rows.
+//! Ordered windows over committed, audience-visible rows.
 
+mod kinds;
 mod read;
+pub use kinds::{WindowKindOrder, WindowOrder, WindowScope};
 
 use crate::{
     Content, Error, Result, SpaceId,
@@ -69,8 +71,8 @@ pub(crate) fn projection_error(error: rusqlite::Error) -> Error {
     internal(error)
 }
 
-/// The catalogue's root window envelope. Resolve the Bind and audience on the
-/// host before using this request. Nested plans currently get a typed refusal.
+/// The catalogue's window envelope. Resolve the Bind, audience and parent
+/// edge on the host before using this request.
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum WindowRequest {
@@ -114,28 +116,6 @@ pub enum WindowAnchor {
     Start,
     /// Count distance from the last authorized row. Exact count policy required.
     End,
-}
-
-/// The named row set selected by a checked Bind. Raw renderer inputs must
-/// never select this scope or an ordering.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum WindowScope {
-    /// Live Notes, newest first. Requires space-level read authority.
-    SpaceNotes,
-    /// An explicit live Notes collection, ordered by visible title then ID.
-    NotesCollection(Uuid),
-    /// A checked Bind whose source or ordering has no stored projection.
-    Unqualified,
-}
-
-impl WindowScope {
-    fn key(self) -> (String, &'static str) {
-        match self {
-            Self::SpaceNotes => ("notes".into(), "space"),
-            Self::NotesCollection(id) => (id.to_string(), "explicit"),
-            Self::Unqualified => unreachable!("only qualified plans have a scope key"),
-        }
-    }
 }
 
 /// The current viewer classification, assigned by the host from live authority.
@@ -242,6 +222,8 @@ pub struct WindowResult {
     result_version: String,
     window_ref: Uuid,
     offset: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    parent: Option<String>,
     rows: Vec<WindowRow>,
     audience: WindowAudience,
     anchor: WindowAnchor,
@@ -278,7 +260,7 @@ struct WindowCount {
 }
 
 impl Content {
-    /// Read one bounded ordered Notes window. The host resolves and authorizes the
+    /// Read one bounded ordered window. The host resolves and authorizes the
     /// Bind, its sort and title field before any content read; the callback is
     /// checked again before returning rows, count or a plan refusal. A changed
     /// scope snapshot or authorization discards the entire reply. Pass a previous
@@ -307,6 +289,10 @@ impl Content {
         self.window_read(space, |conn| {
             let scope = access.scope.key();
             let Some(conn) = conn else {
+                if access.scope.registered_order().is_some() {
+                    reauthorize()?;
+                    return Ok(WindowPlanReason::UnsupportedPlan.into());
+                }
                 let reply = evaluate(
                     None,
                     &scope,
@@ -321,11 +307,21 @@ impl Content {
             // A single WAL snapshot couples the scope count, covering keys
             // and visible title reads. Commit ends the read transaction only.
             let tx = conn.unchecked_transaction().map_err(internal)?;
+            if let WindowScope::Children { parent, .. } = access.scope
+                && !kinds::parent_live(&tx, parent)?
+            {
+                return Err(missing());
+            }
             let snapshot = read::scope(&tx, &scope)?;
             let reply = evaluate(Some(&tx), &scope, &snapshot, request, &access, previous)?;
             tx.commit().map_err(internal)?;
             reauthorize()?;
             if read::scope(conn, &scope)?.version != snapshot.version {
+                return Err(missing());
+            }
+            if let WindowScope::Children { parent, .. } = access.scope
+                && !kinds::parent_live(conn, parent)?
+            {
                 return Err(missing());
             }
             self.lifecycle.check(space.as_uuid())?;
@@ -349,6 +345,14 @@ impl Content {
             Err(error) => Err(internal(error)),
             Ok(_) => {
                 let conn = crate::pool::open_reader(&path).map_err(internal)?;
+                let bound: String = conn
+                    .query_row("SELECT value FROM binding WHERE id='space'", [], |row| {
+                        row.get(0)
+                    })
+                    .map_err(internal)?;
+                if bound != space.to_string() {
+                    return Err(internal("wrong window space binding"));
+                }
                 query(Some(&conn))
             }
         }
@@ -364,7 +368,7 @@ fn bad_plan(
     let anchor = request.anchor.unwrap_or_default();
     let exact = access.count == WindowCountMode::Exact;
     if access.scope == WindowScope::Unqualified
-        || (access.audience.guest() && access.scope == WindowScope::SpaceNotes)
+        || (access.audience.guest() && !matches!(access.scope, WindowScope::NotesCollection(_)))
     {
         return Some(UnsupportedPlan);
     }
@@ -377,7 +381,11 @@ fn bad_plan(
         && request.to - request.from <= window.max_request_span;
     if (access.audience.guest() && matches!(access.count, WindowCountMode::Estimate { .. }))
         || !valid_range
-        || request.parent.is_some()
+        || request.parent.as_deref() != access.scope.parent_ref()
+        || request
+            .parent
+            .as_ref()
+            .is_some_and(|parent| parent.is_empty() || parent.chars().count() > 128)
         || request.bind.is_empty()
         || request.bind.chars().count() > 64
     {
@@ -399,8 +407,14 @@ fn result_version(
     access: &WindowAccess,
 ) -> String {
     let source = format!(
-        "{}:{}:{}:{}:{}",
-        access.view, scope.0, scope.1, snapshot.version, request.bind
+        "{}:{}:{}:{}:{}:{}:{}",
+        access.view,
+        scope.0,
+        scope.1,
+        snapshot.version,
+        access.scope.reversed(),
+        access.scope.parent_ref().unwrap_or_default(),
+        request.bind
     );
     blake3::hash(source.as_bytes()).to_hex().to_string()
 }
@@ -457,7 +471,35 @@ fn evaluate(
     }
     let exact = count.as_ref().is_some_and(|count| count.mode == "exact")
         && access.count == WindowCountMode::Exact;
-    let plan = match read::Plan::new(snapshot.total, request.from, width, anchor, exact, boundary) {
+    if let (Some(conn), WindowScope::NotesCollection(_) | WindowScope::NotesCollectionNewest(_)) =
+        (conn, &access.scope)
+        && kinds::collection_newest(conn, &scope.0)?
+            != matches!(access.scope, WindowScope::NotesCollectionNewest(_))
+    {
+        return Ok(UnsupportedPlan.into());
+    }
+    let title_field = if let Some((kind, order)) = access.scope.registered_order() {
+        let Some(conn) = conn else {
+            return Ok(UnsupportedPlan.into());
+        };
+        let Some(title) =
+            kinds::registered_title(conn, kind, &order.field, request.parent.is_some())?
+        else {
+            return Ok(UnsupportedPlan.into());
+        };
+        title
+    } else {
+        "title".into()
+    };
+    let plan = match read::Plan::new(
+        snapshot.total,
+        request.from,
+        width,
+        anchor,
+        exact,
+        boundary,
+        access.scope.reversed(),
+    ) {
         Ok(plan) => plan,
         Err(reason) => return Ok(reason.into()),
     };
@@ -474,11 +516,14 @@ fn evaluate(
         rows.reserve(keys.len());
         let mut row_bytes = 0;
         let mut stmt = conn.prepare_cached(
-            "SELECT CASE WHEN json_type(metadata,'$.title')='text' THEN json_extract(metadata,'$.title') ELSE '' END
+            "SELECT CASE WHEN json_type(metadata,?2)='text' THEN json_extract(metadata,?2) ELSE '' END
              FROM items WHERE id=?1"
         ).map_err(internal)?;
+        let title_path = format!("$.{title_field}");
         for (_, id) in &keys {
-            let title: String = stmt.query_row([id], |row| row.get(0)).map_err(internal)?;
+            let title: String = stmt
+                .query_row([id, &title_path], |row| row.get(0))
+                .map_err(internal)?;
             let row = WindowRow {
                 id: blake3::hash(format!("{}:{id}", access.view).as_bytes())
                     .to_hex()
@@ -503,6 +548,7 @@ fn evaluate(
         result_version: version,
         window_ref: Uuid::new_v4(),
         offset: request.from,
+        parent: request.parent.clone(),
         rows,
         audience: access.audience,
         anchor,
