@@ -189,6 +189,13 @@ async fn thread_send_crash_at_both_durability_barriers_preserves_one_admission()
             .join("userdata-ssd/spaces")
             .join(&space)
             .join(relative);
+        tokio::time::timeout(Duration::from_secs(3), async {
+            while !file.is_file() {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("initial thread must be placed before arming the append fault");
         f.stop();
         let armed = f.dir.path().join("content-fault");
         std::fs::write(&armed, point).unwrap();
@@ -227,13 +234,17 @@ async fn thread_send_crash_at_both_durability_barriers_preserves_one_admission()
         f.start().await;
         let first = tokio::time::timeout(Duration::from_secs(8), async {
             loop {
-                let reply = f.op_id(1, "threads.send", input.clone(), "barrier-crash").await;
+                let reply = f
+                    .op_id(1, "threads.send", input.clone(), "barrier-crash")
+                    .await;
                 if reply.body["error"]["details"]["reason"] != "thread_verifying" {
                     break reply;
                 }
                 tokio::time::sleep(Duration::from_millis(20)).await;
             }
-        }).await.expect("the server must recover a pending append after restart");
+        })
+        .await
+        .expect("the server must recover a pending append after restart");
         first.ok();
         let job = &first.body["data"]["job"]["id"];
         if let Some(staged) = staged {

@@ -242,6 +242,7 @@ impl BatchFixture {
                     fingerprint: request,
                 },
                 |_| json!({"id":request}),
+                |_, _| Ok(()),
             )
         };
         let (first, _) = eventually(|| stage(&self.item.revision, "first", FIRST)).unwrap();

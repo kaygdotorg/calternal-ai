@@ -131,6 +131,28 @@ pub(crate) fn database(
         .map_err(internal)?;
     Ok(conn)
 }
+/// Bind every component to the requested space before exposing its rows.
+pub(crate) fn bind_space(conn: &Connection, space: SpaceId) -> Result<()> {
+    let id = space.to_string();
+    let read = || {
+        conn.query_row("SELECT value FROM binding WHERE id='space'", [], |r| {
+            r.get::<_, String>(0)
+        })
+        .optional()
+        .map_err(internal)
+    };
+    let mut existing = read()?;
+    if existing.is_none() {
+        conn.execute("INSERT OR IGNORE INTO binding VALUES('space',?1)", [&id])
+            .map_err(internal)?;
+        existing = read()?;
+    }
+    if existing.as_deref() != Some(id.as_str()) {
+        return Err(internal("wrong space binding"));
+    }
+    Ok(())
+}
+
 impl Space {
     pub(crate) fn open(
         userdata_ssd: &Path,
@@ -138,19 +160,6 @@ impl Space {
         journal: calternal_store::SpaceStore,
         conn: Connection,
     ) -> Result<Self> {
-        conn.execute(
-            "INSERT OR IGNORE INTO binding VALUES('space',?1)",
-            [id.to_string()],
-        )
-        .map_err(internal)?;
-        let bound: String = conn
-            .query_row("SELECT value FROM binding WHERE id='space'", [], |r| {
-                r.get(0)
-            })
-            .map_err(internal)?;
-        if bound != id.to_string() {
-            return Err(internal("wrong space binding"));
-        }
         #[cfg(feature = "perf-timings")]
         let conn = calternal_store::timings::with_sql_profile(conn, "content");
         Ok(Self {
@@ -407,6 +416,16 @@ mod tests {
             (8, crate::rename_job::SCHEMA),
         ],
     );
+
+    #[test]
+    fn shared_content_and_jobs_connection_refuses_another_space() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate_release(&conn, SPACE_SCHEMA, false).unwrap();
+        let first = SpaceId::new();
+        bind_space(&conn, first).unwrap();
+        bind_space(&conn, first).unwrap();
+        assert!(bind_space(&conn, SpaceId::new()).is_err());
+    }
 
     #[test]
     fn baseline_threads_survive_the_snooze_migration_and_rollback_writer() {

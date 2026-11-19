@@ -677,6 +677,7 @@ mod tests {
 /// hold the owner lifecycle across the open and each subsequent I/O step.
 pub fn open_space_database(appdata: &std::path::Path, id: SpaceId) -> Result<rusqlite::Connection> {
     let conn = db::database(&db::space_path(appdata, id), db::SPACE_SCHEMA)?;
+    db::bind_space(&conn, id)?;
     discovery::install(&conn)?;
     Ok(conn)
 }

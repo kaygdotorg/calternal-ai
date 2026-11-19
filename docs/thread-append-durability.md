@@ -1,6 +1,6 @@
 # Two durability barriers for thread appends
 
-The 16 MiB writer uses four barriers for a send: a FULL content WAL commit,
+The first 16 MiB writer used four barriers for a send: a FULL content WAL commit,
 a Markdown sync, a FULL space journal commit, and a FULL job admission
 commit. In the locked night-6 profile, sync syscalls consumed 47.29 ms of
 the 47.80 ms median spent inside those spans. The target is two durable
@@ -32,3 +32,9 @@ migration and restore-point proof. Separate SQLite databases in WAL mode
 cannot supply the proposed atomic transaction through ATTACH. Measure the
 new barriers with the existing locked fixture and cut power at each boundary
 before treating it as a release candidate.
+
+The fresh v2 install uses the shared WAL. The FULL transaction saves the
+publication payload and initial fenced job with the patch. After the Markdown
+sync, a NORMAL projection makes the journal row and job visible together.
+Power loss can discard this projection only while the durable intent still
+exists. A later FULL retirement covers both in WAL order.
