@@ -3,7 +3,7 @@ use std::{collections::BTreeMap, path::Path, sync::Arc};
 
 use base64::{Engine, engine::general_purpose::STANDARD};
 use calternal_fsio::beneath::Folder;
-use calternal_plugin_host::ManifestV2;
+use calternal_plugin_host::{ManifestV2, PackageClaims};
 use rusqlite::{TransactionBehavior, params};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, value::RawValue};
@@ -42,6 +42,17 @@ pub(super) fn archive_version(bytes: &[u8]) -> Result<u32, String> {
         .map_err(|_| "package archive must declare manifest.api_version".into())
 }
 
+pub(super) fn recover_stored_claims(bytes: &[u8], id: &str) -> Option<PackageClaims> {
+    #[derive(Deserialize)]
+    struct StoredManifest<'a> {
+        #[serde(borrow)]
+        manifest: &'a RawValue,
+    }
+
+    let archive = serde_json::from_slice::<StoredManifest<'_>>(bytes).ok()?;
+    PackageClaims::recover(id, archive.manifest.get().as_bytes())
+}
+
 impl InstallPackage {
     /// Read the versioned source directory or archive once. Cost: bounded
     /// file reads, offline validation and hashing. No package code runs.
@@ -54,7 +65,7 @@ impl InstallPackage {
             let version: Version = serde_json::from_slice(&bytes)
                 .map_err(|error| format!("manifest.json: {error}"))?;
             return match version.api_version {
-                1 => Package::read_directory(&base, &bytes).map(Self::V1),
+                1 => Package::read_directory(&source, &bytes).map(Self::V1),
                 2 => {
                     let (archive, manifest) = PackageV2::read_directory(&source, bytes)?;
                     Ok(Self::V2(archive, manifest))

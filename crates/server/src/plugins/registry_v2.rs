@@ -2,10 +2,9 @@
 use std::sync::Arc;
 
 use calternal_plugin_host::ManifestV2;
-use calternal_types::Capability;
 use serde_json::Value;
 
-use super::{Catalog, check_operation};
+use super::{Catalog, check_operation, check_operation_namespace};
 
 impl Catalog {
     /// Installed v2 declaration by package ID. Cost: O(log packages), no I/O.
@@ -54,8 +53,12 @@ impl Catalog {
             let id = operation["id"].as_str().expect("checked operation ID");
             let capability = operation["required_capability"]
                 .as_str()
-                .and_then(Capability::from_name);
+                .expect("checked capability");
             check_operation(id, capability)?;
+        }
+        check_operation_namespace(manifest.id())?;
+        for app in declared(&manifest, "apps") {
+            check_operation_namespace(app["id"].as_str().expect("checked app ID"))?;
         }
         for site in manifest.declaration()["network"]["fixed_sites"]
             .as_array()
@@ -81,6 +84,8 @@ impl Catalog {
                 self.v2.insert(manifest.id().into(), manifest.clone());
             }
         }
+        self.declarations
+            .carry_unavailable(&base.declarations, removed);
         for manifest in self.v2.values() {
             self.check_v2_reads(manifest).map_err(|why| {
                 format!(

@@ -130,6 +130,12 @@ async fn activate(
         .collect::<Vec<_>>();
     let original = base.clone();
     let next = crate::blocking::spawn(move || {
+        original.declarations.check_reserved(
+            &calternal_plugin_host::PackageClaims::v1(
+                &batch.last().expect("draft candidate").manifest,
+            ),
+            true,
+        )?;
         let count = batch.len();
         let mut next = Catalog::from_plugins(batch);
         if next.plugins().len() != count {

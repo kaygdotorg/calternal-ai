@@ -1,14 +1,15 @@
 //! One ownership index for installed package declarations.
-use crate::ManifestV2;
+use crate::{MAX_MANIFEST_BYTES, ManifestV2, registry_v2::strict_json};
 use calternal_core::{ManifestPlacement, ManifestV1};
 use calternal_fsio::names::fold;
+use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 enum Category {
+    Operation,
     Namespace,
     Kind,
-    Operation,
     Folder,
     Provider,
     Collection,
@@ -29,18 +30,160 @@ impl Category {
     }
 }
 
+/// Declaration names reserved by one package, without permission to use them.
+#[derive(Clone, Debug)]
+pub struct PackageClaims {
+    owned: BTreeSet<(Category, String)>,
+    reads: BTreeSet<String>,
+}
+
+impl PackageClaims {
+    fn package(id: &str) -> Self {
+        Self {
+            owned: BTreeSet::from([(Category::Namespace, id.into())]),
+            reads: BTreeSet::new(),
+        }
+    }
+
+    fn operation(&mut self, id: &str) {
+        self.owned.insert((Category::Operation, id.into()));
+        if let Some((prefix, _)) = id.split_once('.') {
+            self.owned.insert((Category::Namespace, prefix.into()));
+        }
+    }
+
+    /// Extract bounded ownership declarations from an already decoded v1 manifest.
+    pub fn v1(manifest: &ManifestV1) -> Self {
+        use Category::*;
+        let mut claims = Self::package(&manifest.id);
+        if manifest.provider.is_some() {
+            claims.owned.insert((Provider, manifest.id.clone()));
+        }
+        for kind in &manifest.kinds {
+            claims.owned.insert((Kind, kind.id.clone()));
+            match &kind.storage {
+                ManifestPlacement::Visible { folder }
+                | ManifestPlacement::VisibleTree { folder, .. } => {
+                    claims.owned.insert((Folder, fold(folder)));
+                }
+                ManifestPlacement::Hidden { .. } => {}
+            }
+        }
+        for operation in &manifest.operations {
+            claims.operation(&operation.id);
+        }
+        for collection in &manifest.collections {
+            claims.owned.insert((Collection, collection.id.clone()));
+        }
+        if let Some(menu) = &manifest.palette {
+            claims.owned.extend(
+                menu.commands
+                    .iter()
+                    .map(|c| &c.id)
+                    .chain(menu.settings_sections.iter().map(|section| &section.id))
+                    .map(|id| (Palette, id.clone())),
+            );
+        }
+        claims
+    }
+
+    /// Extract bounded ownership declarations from an already checked v2 manifest.
+    pub fn v2(manifest: &ManifestV2) -> Self {
+        Self::from_json(manifest.id(), manifest.declaration())
+            .expect("checked v2 ownership declarations")
+    }
+
+    /// Recover claims from a checksum-verified stored manifest even when it
+    /// cannot register against today's rules. None requires operator removal
+    /// before admitting new declarations. This path never grants authority.
+    pub fn recover(package: &str, bytes: &[u8]) -> Option<Self> {
+        if bytes.len() > MAX_MANIFEST_BYTES {
+            return None;
+        }
+        Self::from_json(package, &strict_json(bytes).ok()?)
+    }
+
+    fn from_json(package: &str, manifest: &Value) -> Option<Self> {
+        use Category::*;
+        let version = manifest["api_version"].as_u64()?;
+        if manifest["id"].as_str()? != package || !matches!(version, 1 | 2) {
+            return None;
+        }
+        let required: &[&str] = if version == 2 {
+            &["apps", "kinds", "operations"]
+        } else {
+            &["operations", "collections"]
+        };
+        if required.iter().any(|key| manifest.get(key).is_none()) {
+            return None;
+        }
+        let mut claims = Self::package(package);
+        for (key, category) in [
+            ("apps", Namespace),
+            ("kinds", Kind),
+            ("operations", Operation),
+            ("providers", Provider),
+            ("collections", Collection),
+        ] {
+            for entry in entries(manifest, key)? {
+                let id = entry["id"].as_str()?;
+                if category == Operation {
+                    claims.operation(id);
+                } else {
+                    claims.owned.insert((category, id.into()));
+                }
+                if category == Kind {
+                    let storage = entry["storage"].as_object()?;
+                    if let Some(folder) = storage.get("folder") {
+                        claims.owned.insert((Folder, fold(folder.as_str()?)));
+                    } else if storage.get("hidden") != Some(&Value::Bool(true)) {
+                        return None;
+                    }
+                }
+            }
+        }
+        if version == 1 {
+            if manifest
+                .get("provider")
+                .is_some_and(|provider| !provider.is_null())
+            {
+                claims.owned.insert((Provider, package.into()));
+            }
+            if let Some(palette) = manifest.get("palette").filter(|value| !value.is_null()) {
+                palette.as_object()?;
+                for key in ["commands", "settings_sections"] {
+                    for entry in entries(palette, key)? {
+                        claims.owned.insert((Palette, entry["id"].as_str()?.into()));
+                    }
+                }
+            }
+        } else {
+            for kind in entries(manifest, "reads")? {
+                claims.reads.insert(kind.as_str()?.into());
+            }
+        }
+        Some(claims)
+    }
+}
+
+fn entries<'a>(record: &'a Value, key: &str) -> Option<&'a [Value]> {
+    match record.get(key) {
+        None => Some(&[]),
+        Some(values) => Some(values.as_array()?.as_slice()),
+    }
+}
+
 /// Ownership of unique installed declarations across manifest versions.
+/// Unavailable claims participate in admission and never answer lookups.
 #[derive(Clone, Debug, Default)]
-pub struct DeclarationIndex(BTreeMap<Category, BTreeMap<String, String>>);
+pub struct DeclarationIndex {
+    active: BTreeMap<Category, BTreeMap<String, String>>,
+    unavailable: BTreeMap<String, Option<PackageClaims>>,
+}
 
 impl DeclarationIndex {
-    fn register(
-        &mut self,
-        package: &str,
-        declarations: impl IntoIterator<Item = (Category, String)>,
-    ) -> Result<(), String> {
-        let declarations: BTreeSet<_> = declarations.into_iter().collect();
-        for (category, name) in &declarations {
+    fn register(&mut self, package: &str, claims: PackageClaims) -> Result<(), String> {
+        for (category, name) in &claims.owned {
             if let Some(owner) = self.owner(*category, name) {
                 return Err(format!(
                     "{} {name} is already registered by {owner}",
@@ -48,8 +191,9 @@ impl DeclarationIndex {
                 ));
             }
         }
-        for (category, name) in declarations {
-            self.0
+        self.check_reserved(&claims, false)?;
+        for (category, name) in claims.owned {
+            self.active
                 .entry(category)
                 .or_default()
                 .insert(name, package.into());
@@ -57,95 +201,81 @@ impl DeclarationIndex {
         Ok(())
     }
 
-    /// Register an already validated v1 declaration atomically. Cost: one
-    /// bounded index update per claimed identifier.
-    pub fn register_v1(&mut self, manifest: &ManifestV1) -> Result<(), String> {
-        use Category::*;
-        let folders = manifest
-            .kinds
-            .iter()
-            .filter_map(|kind| match &kind.storage {
-                ManifestPlacement::Visible { folder }
-                | ManifestPlacement::VisibleTree { folder, .. } => Some((Folder, fold(folder))),
-                ManifestPlacement::Hidden { .. } => None,
-            });
-        let commands = manifest.palette.iter().flat_map(|menu| {
-            menu.commands
+    /// Reserve an installed row that cannot supply live declarations.
+    pub fn reserve_unavailable(&mut self, package: String, claims: Option<PackageClaims>) {
+        self.unavailable.insert(package, claims);
+    }
+
+    /// Carry unavailable rows into a rebuilt snapshot, excluding the row being removed.
+    pub fn carry_unavailable(&mut self, prior: &Self, removed: Option<&str>) {
+        self.unavailable.extend(
+            prior
+                .unavailable
                 .iter()
-                .map(|c| &c.id)
-                .chain(menu.settings_sections.iter().map(|section| &section.id))
-                .map(|id| (Palette, id.clone()))
-        });
-        let id = &manifest.id;
-        self.register(
-            id,
-            [(Namespace, id.clone())]
-                .into_iter()
-                .chain(manifest.provider.as_ref().map(|_| (Provider, id.clone())))
-                .chain(manifest.kinds.iter().map(|entry| (Kind, entry.id.clone())))
-                .chain(
-                    manifest
-                        .operations
-                        .iter()
-                        .map(|entry| (Operation, entry.id.clone())),
-                )
-                .chain(
-                    manifest
-                        .collections
-                        .iter()
-                        .map(|entry| (Collection, entry.id.clone())),
-                )
-                .chain(folders)
-                .chain(commands),
-        )
+                .filter(|(id, _)| Some(id.as_str()) != removed)
+                .map(|(id, claims)| (id.clone(), claims.clone())),
+        );
     }
 
-    /// Register a validated v2 declaration atomically. Package and app IDs
-    /// share one operation namespace. Cost: one bounded index update per claim.
+    /// Refuse conflicting new claims or an unreadable ownership record. Startup
+    /// uses known reservations only, so existing unrelated plugins can still load.
+    /// Cost: bounded by the installed package and declaration caps.
+    pub fn check_reserved(&self, claims: &PackageClaims, changing: bool) -> Result<(), String> {
+        for (package, reserved) in &self.unavailable {
+            if let Some(reserved) = reserved {
+                if let Some((category, name)) = claims.owned.intersection(&reserved.owned).next() {
+                    return Err(format!(
+                        "{} {name} is reserved by unavailable package {package}. Remove it with calternal plugin remove {package}.",
+                        category.label()
+                    ));
+                }
+                if changing {
+                    for (_, kind) in claims
+                        .owned
+                        .iter()
+                        .filter(|(category, _)| *category == Category::Kind)
+                    {
+                        if self.kind_owner(kind).is_none() && reserved.reads.contains(kind) {
+                            return Err(format!(
+                                "Kind {kind} has an unresolved read by unavailable package {package}. Remove it with calternal plugin remove {package} before assigning the kind to another owner."
+                            ));
+                        }
+                    }
+                }
+            } else if changing
+                || claims
+                    .owned
+                    .contains(&(Category::Namespace, package.clone()))
+            {
+                return Err(format!(
+                    "Cannot verify ownership for unavailable package {package}. Remove it with calternal plugin remove {package}."
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    /// Register a validated v1 declaration atomically, including operation prefixes.
+    pub fn register_v1(&mut self, manifest: &ManifestV1) -> Result<(), String> {
+        self.register(&manifest.id, PackageClaims::v1(manifest))
+    }
+
+    /// Register a validated v2 declaration atomically, including package and app namespaces.
     pub fn register_v2(&mut self, manifest: &ManifestV2) -> Result<(), String> {
-        use Category::*;
-        let declared = manifest.declaration();
-        let names = |key: &str, category| {
-            declared[key]
-                .as_array()
-                .into_iter()
-                .flatten()
-                .map(move |entry| {
-                    (
-                        category,
-                        entry["id"].as_str().expect("checked identifier").to_owned(),
-                    )
-                })
-        };
-        let folders = declared["kinds"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .filter_map(|kind| kind["storage"]["folder"].as_str())
-            .map(|name| (Folder, fold(name)));
-        self.register(
-            manifest.id(),
-            [(Namespace, manifest.id().into())]
-                .into_iter()
-                .chain(names("apps", Namespace))
-                .chain(names("kinds", Kind))
-                .chain(names("operations", Operation))
-                .chain(names("providers", Provider))
-                .chain(folders),
-        )
+        self.register(manifest.id(), PackageClaims::v2(manifest))
     }
 
-    /// Package that owns a declared kind. Cost: O(log kinds), no allocation.
+    /// Package that owns a live kind. Cost: O(log kinds), no allocation.
     pub fn kind_owner(&self, name: &str) -> Option<&str> {
         self.owner(Category::Kind, name)
     }
 
-    /// Package that owns a declared operation. Cost: O(log operations), no allocation.
+    /// Package that owns a live operation. Cost: O(log operations), no allocation.
     pub fn operation_owner(&self, name: &str) -> Option<&str> {
         self.owner(Category::Operation, name)
     }
 
     fn owner(&self, category: Category, name: &str) -> Option<&str> {
-        self.0.get(&category)?.get(name).map(String::as_str)
+        self.active.get(&category)?.get(name).map(String::as_str)
     }
 }

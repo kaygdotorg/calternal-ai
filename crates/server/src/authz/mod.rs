@@ -202,6 +202,24 @@ pub const POLICIES: &[Policy] = &[
 /// Find an explicit host policy using a bounded, allocation-free scan.
 /// Plugin rows are looked up through [`crate::plugins::Catalog::policy`].
 pub fn policy(operation: &str) -> Option<&'static Policy> {
+    policies().find(|p| p.operation == operation)
+}
+
+/// Whether host bindings reserve this operation prefix. The first call indexes
+/// the same explicit policies used by `policy`. Subsequent calls do one lookup.
+pub(crate) fn owns_namespace(namespace: &str) -> bool {
+    use std::collections::BTreeSet;
+    static NAMESPACES: std::sync::OnceLock<BTreeSet<&str>> = std::sync::OnceLock::new();
+    NAMESPACES
+        .get_or_init(|| {
+            policies()
+                .filter_map(|policy| policy.operation.split_once('.').map(|(prefix, _)| prefix))
+                .collect()
+        })
+        .contains(namespace)
+}
+
+fn policies() -> impl Iterator<Item = &'static Policy> {
     static ACCOUNT: std::sync::OnceLock<Vec<Policy>> = std::sync::OnceLock::new();
     let account = ACCOUNT.get_or_init(|| {
         calternal_core::account_input_operations()
@@ -271,7 +289,6 @@ pub fn policy(operation: &str) -> Option<&'static Policy> {
         .chain(account)
         .chain(agent_policies())
         .chain(people_policies())
-        .find(|p| p.operation == operation)
 }
 
 /// Host rows derived from the shared wire catalogue. The sharing binding

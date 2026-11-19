@@ -284,14 +284,14 @@ fn v2_installer_rejects_registration_collisions_and_dangling_reads() {
     owner["providers"] = json!([provider("owner-provider")]);
     with_op(&mut owner, "owner-app.read");
     catalog_v2.register_v2(v2(owner.clone())).unwrap();
-    refuse(&catalog_v2, owner, "namespace owner-app");
+    refuse(&catalog_v2, owner, "Operation owner-app.read");
     refuse(&catalog_v2, bare("owner-app"), "namespace owner-app");
     let mut candidate = bare("intruder");
     candidate["apps"] = json!([app("owner-package")]);
     refuse(&catalog_v2, candidate.clone(), "namespace owner-package");
     candidate["apps"] = json!([app("owner-app")]);
     with_op(&mut candidate, "owner-app.read");
-    refuse(&catalog_v2, candidate, "namespace owner-app");
+    refuse(&catalog_v2, candidate, "Operation owner-app.read");
     for (entry, value, error) in [
         ("kinds", kind("owner-kind", "New Folder"), "Kind owner-kind"),
         ("kinds", kind("new-kind", "OWNER FOLDER"), "Storage folder"),
@@ -323,7 +323,7 @@ fn v2_installer_rejects_registration_collisions_and_dangling_reads() {
     let mut candidate = bare("intruder");
     with_op(&mut candidate, "intruder.read");
     candidate["operations"][0]["required_capability"] = json!("spaces.list");
-    refuse(&catalog_v2, candidate, "must use a space capability");
+    refuse(&catalog_v2, candidate, "needs a non-space capability");
     let mut dependent = bare("dependent");
     dependent["reads"] = json!(["missing"]);
     refuse(
@@ -401,3 +401,5 @@ fn v2_installer_skips_invalid_or_colliding_stored_rows_on_startup() {
     assert!(restarted.v2_manifest("good-package").is_some());
     assert!(restarted.get("calternal-notes").is_some());
 }
+
+mod reservations;

@@ -1,6 +1,13 @@
 //! Load the installed catalogue, isolating unavailable archive rows.
-use super::super::{Registry, TrustedFile};
+use super::super::{Catalog, Registry, TrustedFile};
 use super::*;
+use std::sync::Arc;
+
+#[derive(Default)]
+struct InstalledDeclarations {
+    v2: Vec<Arc<host::ManifestV2>>,
+    reserved: host::DeclarationIndex,
+}
 
 /// Initialize fresh installations from the distribution catalog and construct a bounded,
 /// immutable plugin snapshot. While the server holds its installation lock,
@@ -24,13 +31,13 @@ pub fn load(
     )?;
     let cache = appdata.join("installed-plugin-workers");
     calternal_fsio::private::directory(&cache).map_err(reason)?;
-    let mut v2 = Vec::new();
+    let mut installed = InstalledDeclarations::default();
     let mut plugins = load_rows(
         &conn,
         &cache,
         "installed_plugins",
         MAX_PACKAGES,
-        Some(&mut v2),
+        Some(&mut installed),
     )?;
     let retained = load_rows(&conn, &cache, "retained_plugins", MAX_RETAINED, None)?;
     worker_cache::remove_stale(
@@ -51,12 +58,18 @@ pub fn load(
             }
         }
     }
-    let registry = Registry::from_plugins(plugins);
-    let mut catalog = (*registry.snapshot()).clone();
-    for manifest in v2 {
+    let registry = Registry::default();
+    let mut catalog = Catalog::from_plugins_with_reservations(
+        plugins.into_iter().map(Arc::new).collect(),
+        installed.reserved,
+    );
+    for manifest in installed.v2 {
         let id = manifest.id().to_owned();
-        if let Err(error) = catalog.register_v2(manifest) {
+        if let Err(error) = catalog.register_v2(manifest.clone()) {
             tracing::warn!(plugin = %id, reason = %error, "installed v2 package unavailable");
+            catalog
+                .declarations
+                .reserve_unavailable(id, Some(host::PackageClaims::v2(&manifest)));
         }
     }
     catalog.retained = retained
@@ -77,7 +90,7 @@ fn load_rows(
     cache: &Path,
     table: &str,
     limit: usize,
-    mut v2: Option<&mut Vec<std::sync::Arc<host::ManifestV2>>>,
+    mut installed: Option<&mut InstalledDeclarations>,
 ) -> Result<Vec<Plugin>, String> {
     let mut query = conn.prepare(&format!(
         "SELECT archive, checksum, default_enabled, revision, approval, id FROM {table} ORDER BY revision"
@@ -93,26 +106,15 @@ fn load_rows(
         let bytes: Vec<u8> = row.get(0).map_err(reason)?;
         let checksum: String = row.get(1).map_err(reason)?;
         let id: String = row.get(5).map_err(reason)?;
-        let package = (|| {
-            verify_archive(&bytes, &checksum)?;
-            match Package::read_archive(&bytes) {
-                Ok(package) => {
-                    if package.manifest.id != id {
-                        return Err("installed package ID does not match its archive".into());
-                    }
-                    return Ok(Some(package));
+        let package = match verify_archive(&bytes, &checksum) {
+            Ok(()) => read_stored_package(&bytes, &id, installed.as_deref_mut()),
+            Err(error) => {
+                if let Some(installed) = installed.as_deref_mut() {
+                    installed.reserved.reserve_unavailable(id.clone(), None);
                 }
-                Err(error) if v2.is_none() => return Err(error),
-                Err(_) => {}
+                Err(error)
             }
-            let entries = v2.as_deref_mut().expect("checked active table");
-            let manifest = validate_v2_archive(&bytes)?;
-            if manifest.id() != id {
-                return Err("installed v2 package ID does not match its archive".into());
-            }
-            entries.push(manifest);
-            Ok(None)
-        })();
+        };
         let package = match package {
             Ok(Some(package)) => package,
             Ok(None) => continue,
@@ -138,6 +140,38 @@ fn load_rows(
         plugins.push(plugin);
     }
     Ok(plugins)
+}
+
+fn read_stored_package(
+    bytes: &[u8],
+    id: &str,
+    installed: Option<&mut InstalledDeclarations>,
+) -> Result<Option<Package>, String> {
+    let legacy_error = match Package::read_archive(bytes) {
+        Ok(package) if package.manifest.id == id => return Ok(Some(package)),
+        Ok(_) => "installed v1 package ID does not match its archive".into(),
+        Err(error) => error,
+    };
+    let Some(installed) = installed else {
+        return Err(legacy_error);
+    };
+    let error = if v2::archive_version(bytes) == Ok(2) {
+        match validate_v2_archive(bytes) {
+            Ok(manifest) if manifest.id() == id => {
+                installed.v2.push(manifest);
+                return Ok(None);
+            }
+            Ok(_) => "installed v2 package ID does not match its archive".into(),
+            Err(error) => error,
+        }
+    } else {
+        legacy_error
+    };
+    // The checksum was checked above. Recover declarations for reservation
+    // only, even when newer validation rejects the package or its assets.
+    let claims = v2::recover_stored_claims(bytes, id);
+    installed.reserved.reserve_unavailable(id.into(), claims);
+    Err(error)
 }
 
 fn distribution_entries(root: &Path, development: bool) -> Result<Vec<TrustedEntry>, String> {
@@ -253,4 +287,38 @@ fn initialize_distribution(
     tx.execute("INSERT INTO plugin_seed VALUES (1)", [])
         .map_err(reason)?;
     tx.commit().map_err(reason)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn invalid_legacy_manifest_keeps_its_original_error_and_claims() {
+        let mut manifest: serde_json::Value = serde_json::from_slice(include_bytes!(
+            "../../../../../plugins/calternal-notes/manifest.json"
+        ))
+        .unwrap();
+        manifest["unknown_v1_field"] = serde_json::json!(true);
+        let bytes =
+            serde_json::to_vec(&serde_json::json!({"manifest": manifest, "worker": null})).unwrap();
+        let mut installed = InstalledDeclarations::default();
+        let error = read_stored_package(&bytes, "calternal-notes", Some(&mut installed))
+            .err()
+            .expect("the legacy manifest is invalid");
+        assert!(error.contains("unknown_v1_field"), "{error}");
+        let mut candidate = host::parse_manifest(include_bytes!(
+            "../../../../../plugins/calternal-notes/manifest.json"
+        ))
+        .unwrap();
+        candidate.id = "other-package".into();
+        let error = installed
+            .reserved
+            .check_reserved(&host::PackageClaims::v1(&candidate), true)
+            .unwrap_err();
+        assert!(
+            error.contains("reserved by unavailable package calternal-notes"),
+            "{error}"
+        );
+    }
 }

@@ -478,16 +478,25 @@ impl Catalog {
     /// operations need an authority that is not space-scoped.
     /// Cost: O(declarations * log registered) plus schema compilation per plugin.
     fn from_plugins(plugins: Vec<Arc<Plugin>>) -> Self {
-        let mut index = host::Registry::default();
+        Self::from_plugins_with_reservations(plugins, host::DeclarationIndex::default())
+    }
+
+    fn from_plugins_with_reservations(
+        plugins: Vec<Arc<Plugin>>,
+        declarations: host::DeclarationIndex,
+    ) -> Self {
+        let mut index = host::Registry::with_declarations(declarations);
         let mut out = Self::default();
         for plugin in plugins {
             let id = plugin.manifest.id.clone();
             if let Err(why) = check_operations(&plugin) {
                 tracing::warn!(plugin = %id, reason = %why, "trusted plugin not loaded");
+                index.reserve_unavailable(&plugin.manifest);
                 continue;
             }
             if index.register(plugin.manifest.clone()).is_err() {
                 tracing::warn!(plugin = %id, "trusted plugin collides with a registered plugin");
+                index.reserve_unavailable(&plugin.manifest);
                 continue;
             }
             match &plugin.unavailable {
@@ -616,21 +625,34 @@ fn check_operations(plugin: &Plugin) -> Result<(), String> {
     for operation in &plugin.manifest.operations {
         check_operation(
             &operation.id,
-            host_capability(operation.required_capability),
+            &capability_name(operation.required_capability),
         )?;
     }
-    Ok(())
+    check_operation_namespace(&plugin.manifest.id)
 }
 
-fn check_operation(id: &str, capability: Option<Capability>) -> Result<(), String> {
+fn check_operation(id: &str, capability: &str) -> Result<(), String> {
     if authz::policy(id).is_some() {
-        return Err(format!("Operation {id} shadows a host operation"));
+        return Err(format!("operation {id} shadows a host operation"));
     }
+    if let Some((prefix, _)) = id.split_once('.') {
+        check_operation_namespace(prefix)?;
+    }
+    let capability = Capability::from_name(capability);
     if matches!(
         capability,
         None | Some(Capability::SpacesList | Capability::SpacesCreate)
     ) {
-        return Err(format!("Operation {id} must use a space capability"));
+        return Err(format!("operation {id} needs a non-space capability"));
+    }
+    Ok(())
+}
+
+fn check_operation_namespace(prefix: &str) -> Result<(), String> {
+    if authz::owns_namespace(prefix) {
+        return Err(format!(
+            "Operation namespace {prefix} is reserved by the host"
+        ));
     }
     Ok(())
 }

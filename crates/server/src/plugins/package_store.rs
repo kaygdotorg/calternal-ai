@@ -40,19 +40,36 @@ impl Package {
     /// Read a bounded manifest plus optional dist/worker.js, or one .calplugin
     /// JSON archive. Reject invalid declarations without executing code.
     pub fn read(path: &Path) -> Result<Self, String> {
-        match InstallPackage::read(path)? {
-            InstallPackage::V1(package) => Ok(package),
-            InstallPackage::V2(..) => Err("This command requires a manifest v1 package.".into()),
+        if path.is_dir() {
+            let source = calternal_fsio::beneath::Folder::open_existing(path).map_err(reason)?;
+            let manifest = read_bounded(
+                source.open_file("manifest.json").map_err(reason)?,
+                MAX_MANIFEST_BYTES,
+            )?;
+            Self::read_directory(&source, &manifest)
+        } else {
+            Self::read_archive(&read_regular(path, MAX_ARCHIVE)?)
         }
     }
 
-    fn read_directory(base: &Path, bytes: &[u8]) -> Result<Self, String> {
+    fn read_directory(
+        base: &calternal_fsio::beneath::Folder,
+        bytes: &[u8],
+    ) -> Result<Self, String> {
         let manifest = serde_json::from_slice(bytes).map_err(|e| format!("manifest.json: {e}"))?;
-        let worker = if base.join("dist/worker.js").exists() {
-            let bytes = safe_member(base, "dist/worker.js", MAX_WORKER)?;
-            Some(String::from_utf8(bytes).map_err(reason)?)
-        } else {
-            None
+        let worker = match base.open_sub("dist", false) {
+            Ok(dist) => match dist.open_file("worker.js") {
+                Ok(file) => {
+                    Some(String::from_utf8(read_bounded(file, MAX_WORKER)?).map_err(reason)?)
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                    dist.check_replacement("worker.js").map_err(reason)?;
+                    None
+                }
+                Err(error) => return Err(reason(error)),
+            },
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+            Err(error) => return Err(reason(error)),
         };
         let package = Self { manifest, worker };
         package.validate()?;
@@ -128,15 +145,6 @@ fn read_bounded(file: fs::File, max: usize) -> Result<Vec<u8>, String> {
     Ok(bytes)
 }
 
-fn safe_member(root: &Path, relative: &str, max: usize) -> Result<Vec<u8>, String> {
-    let path = root.join(relative);
-    let resolved = path.canonicalize().map_err(reason)?;
-    if resolved != path {
-        return Err("package members must be regular files without symbolic links".into());
-    }
-    read_regular(&resolved, max)
-}
-
 const PACKAGE_SCHEMA: &str = "CREATE TABLE IF NOT EXISTS installed_plugins (
             revision INTEGER PRIMARY KEY AUTOINCREMENT CHECK (revision <= 2147483647),
             id TEXT NOT NULL UNIQUE, archive BLOB NOT NULL, checksum TEXT NOT NULL,
@@ -192,18 +200,27 @@ fn validate_registered(conn: &Connection, package: &Package) -> Result<(), Strin
     check_operations(&plugin)?;
     let mut index = host::Registry::default();
     let mut query = conn
-        .prepare("SELECT archive, checksum FROM installed_plugins WHERE id <> ?1")
+        .prepare("SELECT archive, checksum, id FROM installed_plugins WHERE id <> ?1")
         .map_err(reason)?;
     let mut rows = query.query([&package.manifest.id]).map_err(reason)?;
     while let Some(row) = rows.next().map_err(reason)? {
         let bytes: Vec<u8> = row.get(0).map_err(reason)?;
         let checksum: String = row.get(1).map_err(reason)?;
-        verify_archive(&bytes, &checksum)?;
-        if let Some(existing) = read_v1_archive(&bytes)? {
-            index.register(existing.manifest).map_err(reason)?;
+        let id: String = row.get(2).map_err(reason)?;
+        verify_archive(&bytes, &checksum).map_err(|error| unavailable(&id, error))?;
+        if let Some(existing) = read_v1_archive(&bytes).map_err(|error| unavailable(&id, error))? {
+            index
+                .register(existing.manifest)
+                .map_err(|error| unavailable(&id, error))?;
         }
     }
     index.register(package.manifest.clone()).map_err(reason)
+}
+
+fn unavailable(id: &str, error: impl std::fmt::Display) -> String {
+    format!(
+        "Installed package {id} is unavailable: {error}. Remove it with calternal plugin remove {id}."
+    )
 }
 
 fn decode(bytes: Vec<u8>, checksum: String) -> Result<Package, String> {
@@ -248,7 +265,11 @@ pub fn installed_manifest(appdata: &Path, id: &str) -> Result<Option<ManifestV1>
         .optional()
         .map_err(reason)?;
     entry
-        .map(|(archive, checksum)| decode(archive, checksum).map(|package| package.manifest))
+        .map(|(archive, checksum)| {
+            decode(archive, checksum)
+                .map(|package| package.manifest)
+                .map_err(|error| unavailable(id, error))
+        })
         .transpose()
 }
 
@@ -359,7 +380,8 @@ pub(super) fn prepare(
             if approved == previous_checksum {
                 return Ok(None);
             }
-            let old = decode(previous_bytes, previous_checksum)?;
+            let old = decode(previous_bytes, previous_checksum)
+                .map_err(|error| unavailable(id, error))?;
             // Search coverage is a disposable projection. Only changes to the
             // kinds' stored declarations require a migration.
             let mut prior_kinds = old.manifest.kinds.clone();

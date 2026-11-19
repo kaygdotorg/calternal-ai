@@ -306,6 +306,8 @@ fn install_v2(
     approval: &str,
 ) -> Result<Catalog, String> {
     let manifest = package_store::validate_v2_archive(archive)?;
+    base.declarations
+        .check_reserved(&calternal_plugin_host::PackageClaims::v2(&manifest), true)?;
     let mut next = base.clone();
     next.register_v2(manifest.clone())?;
     package_store::commit_v2(appdata, manifest.id(), archive, approval)?;
@@ -381,6 +383,12 @@ fn catalog(
     id: &str,
     replacement: Option<Arc<super::Plugin>>,
 ) -> Result<Catalog, String> {
+    if let Some(plugin) = &replacement {
+        base.declarations.check_reserved(
+            &calternal_plugin_host::PackageClaims::v1(&plugin.manifest),
+            true,
+        )?;
+    }
     let mut entries: Vec<_> = base
         .plugins()
         .iter()

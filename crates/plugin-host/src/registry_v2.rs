@@ -460,7 +460,8 @@ fn declared_type(schema: &Value, expected: &str) -> bool {
 
 // serde_json::Value accepts the last occurrence of a duplicate key. This visitor
 // applies the same unique-key rule at every object in an untrusted declaration.
-fn strict_json(bytes: &[u8]) -> Result<Value, serde_json::Error> {
+/// Decode a manifest or stored claim source without normalizing duplicate keys.
+pub(crate) fn strict_json(bytes: &[u8]) -> Result<Value, serde_json::Error> {
     serde_json::from_slice::<Unique>(bytes).map(|value| value.0)
 }
 

@@ -12,10 +12,13 @@ pub(super) const MAX_ALTERNATIVES: usize = 8;
 // JSON number range. A duplicate member makes the document unsafe to rewrite.
 #[derive(Default, Deserialize, Serialize)]
 #[serde(transparent)]
-struct Records(
-    #[serde(deserialize_with = "calternal_types::unique_json::deserialize_unique_members")]
-    BTreeMap<String, Box<RawValue>>,
-);
+struct Records(#[serde(deserialize_with = "setting_members")] BTreeMap<String, Box<RawValue>>);
+
+fn setting_members<'de, D: serde::Deserializer<'de>>(
+    d: D,
+) -> Result<BTreeMap<String, Box<RawValue>>, D::Error> {
+    calternal_types::unique_json::deserialize_unique_members_with_error(d, "duplicate setting key")
+}
 
 #[derive(Default)]
 pub(super) struct Document {

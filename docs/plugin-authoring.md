@@ -104,6 +104,16 @@ remain available for jobs admitted under those revisions. Up to 128 retained
 revisions are stored across the catalog. Narrowing or removal clears retained
 authority for that package. Preserve appdata when reinstalling the server.
 
+The catalogue reserves each package's operation prefixes. Manifest v2
+also reserves its app IDs for that package. An app or package cannot claim
+a host operation namespace. If a stored package no longer validates, the
+server keeps its recoverable names and folders reserved while its
+operations and kinds are unavailable. A dependent v2 package stays
+unavailable while its read has no owner. Resolve the unavailable rows
+before assigning those names elsewhere. If the server cannot recover the
+declarations from the archive, it names the row to remove before accepting
+new declarations.
+
 A trusted package is one the operator has elected to install at an exact
 checksum. This records provenance within the installation. It grants no
 ambient access. Normal deployment runs workers in the machine sandbox and
