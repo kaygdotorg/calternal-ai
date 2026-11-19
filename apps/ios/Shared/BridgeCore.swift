@@ -31,7 +31,12 @@ enum BridgeScript {
     /// The script text, or nil if the resource is missing.
     static var source: String? {
         guard let js = Bundle.main.url(forResource: "bridge", withExtension: "js").flatMap({ try? String(contentsOf: $0, encoding: .utf8) }) else { return nil }
-        return "window.__calternalChromeVersions = \(ChromeDescription.supportedVersions);\n" + js
+        #if os(macOS)
+        let platform = "macos", capabilities = "[\"window-material\"]"   // the page shows the Mac-only Window material choice only when this is present
+        #else
+        let platform = "ios", capabilities = "[]"
+        #endif
+        return "window.__calternalChromeVersions = \(ChromeDescription.supportedVersions);\nwindow.__calternalPlatform = \"\(platform)\";\nwindow.__calternalCapabilities = \(capabilities);\n" + js
     }
 
     /// The reply to a `chrome` call that cannot be honoured: native chrome stays off, with the reason and the versions that would work.

@@ -37,7 +37,7 @@ public struct ChromeShellView<WebCard: View>: View {
             let input = WallpaperModel.Input(palette: paletteName, dark: dark, blur: look?.blur ?? d.materials.blur, dim: look?.dim ?? d.materials.dim, tint: look?.tint ?? d.materials.tint,
                                              width: Int(size.width), height: Int(size.height), sideWidth: Int(wide ? m.sidebarWidth : 0), rightWidth: Int(wide ? m.rightWidth : 0), inset: Int(m.inset), wide: wide)
             ZStack {
-                Backdrop(model: model, size: size, sideWidth: sideWidth, rightWidth: 0, wide: wide)
+                if store.baseMaterial == .wallpaper { Backdrop(model: model, size: size, sideWidth: sideWidth, rightWidth: 0, wide: wide) }
                 if wide { Desktop(store: store, card: card, model: model, size: size) }
                 else { Phone(store: store, card: card, model: model, size: size, insets: insets) }
             }
@@ -70,7 +70,9 @@ public struct ChromeShellView<WebCard: View>: View {
 
 // MARK: Header
 
-/// The header over the card: the sidebar button, the title pill and the trailing buttons, all glass.
+/// The header over the card, built from system controls only: glass buttons (`.buttonStyle(.glass)`), a `Menu` for items with entries, in a
+/// `GlassEffectContainer`. The title is centred at the top on every platform (a `ZStack` over the leading and trailing groups, so it stays centred whatever
+/// their widths). No custom press or bounce style: the system glass button animates itself (the earlier custom style scaled the title pill oddly).
 private struct ChromeHeader: View {
     @Bindable var store: ChromeStore
     let showsSidebarButton: Bool
@@ -79,27 +81,30 @@ private struct ChromeHeader: View {
     var body: some View {
         let m = d.metrics
         let header = store.description.header
-        HStack(spacing: m.space(3)) {
-            if showsSidebarButton && store.description.sidebar != nil {
-                Pill(label: "Show the sidebar", icon: .sidebar) { store.setOpen(true) }.accessibilityIdentifier("chrome.sidebar.show")
-            }
-            ForEach(header?.leading ?? []) { itemView($0) }
-            Spacer(minLength: 0)
-            if let title = header?.title {
-                Button { store.send(ChromeEvent(type: "header", id: "title")) } label: {
-                    Text(title).textRole(.ui, weight: .strong).foregroundStyle(d.theme.ink).lineLimit(1).padding(.horizontal, m.space(6)).frame(height: m.pillHeight)
-                        .glassSurface(Capsule())
+        GlassEffectContainer(spacing: m.space(3)) {
+            ZStack {
+                HStack(spacing: m.space(3)) {
+                    if showsSidebarButton && store.description.sidebar != nil {
+                        Button { store.setOpen(true) } label: { Image(systemName: IconName.sidebar.symbol) }
+                            .buttonStyle(.glass).buttonBorderShape(.circle).accessibilityLabel("Show the sidebar").accessibilityIdentifier("chrome.sidebar.show")
+                    }
+                    ForEach(header?.leading ?? []) { itemView($0) }
+                    Spacer(minLength: 0)
+                    ForEach(header?.trailing ?? []) { itemView($0) }
                 }
-                .pressable(PressableLook(cornerRadius: m.pillHeight / 2), probe: title).accessibilityAddTraits(.isHeader)
+                if let title = header?.title {
+                    Button { store.send(ChromeEvent(type: "header", id: "title")) } label: { Text(title).lineLimit(1) }
+                        .buttonStyle(.glass).accessibilityAddTraits(.isHeader).frame(maxWidth: .infinity)
+                        .padding(.horizontal, m.pillHeight * 1.6)   // keep clear of the buttons at both ends
+                }
             }
-            Spacer(minLength: 0)
-            ForEach(header?.trailing ?? []) { itemView($0) }
         }
+        .controlSize(Form.current == .touch ? .large : .regular)
         .padding(.horizontal, m.space(5)).frame(height: m.barHeight)
     }
 
     @ViewBuilder private func itemView(_ item: ChromeDescription.Item) -> some View {
-        let icon = item.icon?.name.flatMap(IconName.init(rawValue:)) ?? .more
+        let symbol = item.icon?.name.flatMap(IconName.init(rawValue:))?.symbol ?? item.icon?.symbol ?? IconName.more.symbol
         if let entries = item.menu, !entries.isEmpty {
             Menu {
                 ForEach(entries) { entry in
@@ -107,10 +112,11 @@ private struct ChromeHeader: View {
                         if let name = entry.icon?.name.flatMap(IconName.init(rawValue:)) { Label(entry.title, systemImage: name.symbol) } else { Text(entry.title) }
                     }.disabled(entry.disabled == true)
                 }
-            } label: { Icon(icon).foregroundStyle(d.theme.ink).frame(minWidth: d.metrics.pillHeight, minHeight: d.metrics.pillHeight).glassSurface(Capsule()) }
-                .menuStyle(.button).buttonStyle(.plain).accessibilityLabel(item.title)
+            } label: { Image(systemName: symbol) }
+                .menuStyle(.button).buttonStyle(.glass).buttonBorderShape(.circle).accessibilityLabel(item.title)
         } else {
-            Pill(label: item.title, icon: icon) { store.send(ChromeEvent(type: "header", id: item.id)) }
+            Button { store.send(ChromeEvent(type: "header", id: item.id)) } label: { Image(systemName: symbol) }
+                .buttonStyle(.glass).buttonBorderShape(.circle).accessibilityLabel(item.title)
         }
     }
 }
@@ -130,10 +136,10 @@ private struct Desktop<WebCard: View>: View {
         let open = hasSidebar && store.progress < 0.5 ? true : false   // desktop: progress 1 means the column is hidden
         HStack(spacing: 0) {
             if open {
-                ChromeSidebar(store: store, topInset: m.barHeight, bottomInset: m.pillHeight + m.space(8), phone: false)
-                    .frame(width: m.sidebarWidth).sidebarInk(model.context.side, scheme: d.scheme).transition(.opacity)
+                ChromeSidebar(store: store, topInset: m.barHeight, bottomInset: m.pillHeight + m.space(8), phone: false, safeBottom: 0)
+                    .frame(width: m.sidebarWidth).sidebarInk(store.baseMaterial == .wallpaper ? model.context.side : nil, scheme: d.scheme).transition(.opacity)
             }
-            Card(label: store.description.header?.title ?? "Content", variant: .pane) {
+            ChromeCard(material: store.baseMaterial, label: store.description.header?.title ?? "Content") {
                 ZStack(alignment: .top) {
                     card.frame(maxWidth: .infinity, maxHeight: .infinity)
                     ChromeHeader(store: store, showsSidebarButton: !open)
@@ -167,13 +173,13 @@ private struct Phone<WebCard: View>: View {
         let hasSidebar = store.description.sidebar != nil
         ZStack(alignment: .topLeading) {
             if hasSidebar {
-                ChromeSidebar(store: store, topInset: insets.top + m.barHeight, bottomInset: m.tierCap + m.capOffset + m.space(4) + max(0, insets.bottom - m.capOffset), phone: true)
-                    .sidebarInk(model.context.side, scheme: d.scheme)
+                ChromeSidebar(store: store, topInset: insets.top + m.barHeight, bottomInset: m.pillHeight + m.space(8) + insets.bottom, phone: true, safeBottom: insets.bottom)
+                    .sidebarInk(store.baseMaterial == .wallpaper ? model.context.side : nil, scheme: d.scheme)
                     .padding(.trailing, peek)
                     .frame(width: size.width, height: size.height, alignment: .topLeading)
                     .accessibilityHidden(p < 0.5)
             }
-            Card(label: store.description.header?.title ?? "Content", variant: .pane) {
+            ChromeCard(material: store.baseMaterial, label: store.description.header?.title ?? "Content") {
                 ZStack(alignment: .top) {
                     card.frame(maxWidth: .infinity, maxHeight: .infinity)
                     ChromeHeader(store: store, showsSidebarButton: true).padding(.top, insets.top)
@@ -189,15 +195,34 @@ private struct Phone<WebCard: View>: View {
                         .offset(x: p * (size.width - peek)).accessibilityLabel("Close the sidebar").accessibilityAddTraits(.isButton)
                 }
             }
-            if hasSidebar, let apps = store.description.sidebar?.apps, !apps.isEmpty {
-                BottomTabCapsule(label: "Apps", items: apps.map { CapsuleItem(id: $0.id, label: $0.title, icon: $0.icon.name.flatMap(IconName.init(rawValue:))) },
-                                 selection: Binding(get: { (apps.first { $0.selected == true } ?? apps[0]).id }, set: { store.send(ChromeEvent(type: "app", id: $0)) }))
-                    .padding(.bottom, max(0, insets.bottom - m.capOffset)).frame(width: size.width, height: size.height, alignment: .bottom)
-                    .opacity(1 - Double(p)).allowsHitTesting(p < 0.5)
-            }
         }
         .onAppear { publish(m) }
     }
 
     private func publish(_ m: Metrics) { store.setInsets(ChromeInsets(top: insets.top + m.barHeight, bottom: insets.bottom, leading: 0)) }
+}
+
+// MARK: Card
+
+/// The content card: on the person's wallpaper the design's pane (the wallpaper's blurred copy under the card veil); on frost or glass a translucent paper pane on
+/// the same base layer as the sidebars, so sidebars and card do not read as different colours.
+private struct ChromeCard<Content: View>: View {
+    let material: BaseMaterial
+    let label: String
+    @ViewBuilder let content: Content
+    @Design private var d
+
+    var body: some View {
+        if material == .wallpaper {
+            Card(label: label, variant: .pane) { content }
+        } else {
+            let m = d.metrics, t = d.theme
+            let shape = RoundedRectangle(cornerRadius: m.radiusPane, style: .continuous)
+            content
+                .background(shape.fill(t.paper.opacity(d.materials.dim ? 0.5 : 0.28)))
+                .clipShape(shape)
+                .overlay(shape.strokeBorder(t.line, lineWidth: 1))
+                .accessibilityElement(children: .contain).accessibilityLabel(label)
+        }
+    }
 }

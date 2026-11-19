@@ -8,7 +8,10 @@
   window.calternalNative = Object.freeze({
     /** Bridge version; bump when an op changes meaning. */
     version: 1,
-    platform: 'ios',
+    /** 'ios' or 'macos'. */
+    platform: window.__calternalPlatform || 'ios',
+    /** Optional features of this shell: 'window-material' (Mac: the Appearance setting that chooses wallpaper, frost or glass under the window). */
+    capabilities: window.__calternalCapabilities || [],
     /** Tactile feedback: 'selection' | 'light' | 'medium' | 'heavy' | 'soft' | 'rigid' | 'success' | 'warning' | 'error'. */
     haptic: (style) => send('haptic', { style }),
     /** Tell the shell what the page looks like: { scheme: 'light'|'dark', background: '#rrggbb' }.

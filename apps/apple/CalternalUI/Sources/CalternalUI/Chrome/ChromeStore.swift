@@ -61,8 +61,31 @@ public final class ChromeStore {
         onInsets(new)
     }
 
+    /// The layer under the whole window: the person's wallpaper, or on a Mac the system's frost or Liquid Glass (see `ChromeDescription.Appearance.material`).
+    /// The description wins; `localMaterial` (a Mac-only Settings choice) applies only while the description names none. Always `.wallpaper` off the Mac.
+    public var baseMaterial: BaseMaterial {
+        #if os(macOS)
+        BaseMaterial(rawValue: description.appearance?.material ?? "") ?? localMaterial
+        #else
+        .wallpaper
+        #endif
+    }
+
+    /// The Mac-only fallback choice, set by the app from its own Settings.
+    public var localMaterial: BaseMaterial = .wallpaper
+
     /// The page's accent colour, if it declared one.
     var accentBase: RGBA? { description.accent.flatMap(RGBA.init(hex:)) }
+}
+
+/// The layer under everything in a window.
+public enum BaseMaterial: String, Sendable, CaseIterable {
+    /// The person's own background picture (default; the same as on the web and phone).
+    case wallpaper
+    /// The system's frosted window material over the desktop, across the whole window (opt-in).
+    case frost
+    /// Liquid Glass across the whole window.
+    case glass
 }
 
 /// How much of the web card the native chrome covers, points.

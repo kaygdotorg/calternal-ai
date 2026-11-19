@@ -34,11 +34,12 @@ struct ChromeSidebar: View {
     let topInset: CGFloat
     /// Space the footer covers at the bottom.
     let bottomInset: CGFloat
-    /// True on a phone: the app switcher is the screen's bottom capsule, so the footer has no switcher.
+    /// True on a phone (the sidebar sits behind the sliding card).
     let phone: Bool
+    /// The home indicator's height on a phone, 0 elsewhere.
+    let safeBottom: CGFloat
     @State private var prompt: Prompt?
     @State private var promptText = ""
-    @State private var app = ""
     @State private var height: CGFloat = 800
     @Design private var d
 
@@ -181,18 +182,17 @@ struct ChromeSidebar: View {
                 if !Task.isCancelled { store.send(ChromeEvent(type: "search", text: store.searchText)) }
             }
         } else {
-            HStack(spacing: m.space(3)) {
-                if let account = sidebar?.account { accountButton(account) }
-                Spacer(minLength: 0)
-                if !phone, let apps = sidebar?.apps, !apps.isEmpty {
-                    AppSwitcherMenu(apps: apps.map { CapsuleItem(id: $0.id, label: $0.title, icon: $0.icon.name.flatMap(IconName.init(rawValue:))) },
-                                    selection: Binding(get: { app.isEmpty ? (apps.first { $0.selected == true } ?? apps[0]).id : app },
-                                                       set: { app = $0; store.send(ChromeEvent(type: "app", id: $0)) }))
+            // The decided footer (docs/ui-shell.md, 2026-11-18): account picture at the left, the app capsule (icons only, three wide, scrolling) at the bottom
+            // centre, search at the right, on a desktop and on a phone. The apps' position is part of the contract, not the shell's guess.
+            ZStack {
+                HStack {
+                    if let account = sidebar?.account { accountButton(account) }
                     Spacer(minLength: 0)
+                    if sidebar?.search != nil { Pill(label: "Search", icon: .search) { store.searching = true } }
                 }
-                if sidebar?.search != nil { Pill(label: "Search", icon: .search) { store.searching = true } }
+                if let apps = sidebar?.apps, !apps.isEmpty { AppCapsule(store: store, apps: apps) }
             }
-            .padding(.horizontal, m.space(4)).padding(.bottom, m.space(4)).frame(minHeight: bottomInset, alignment: .bottom)
+            .padding(.horizontal, m.space(4)).padding(.bottom, max(m.space(4), safeBottom)).frame(minHeight: bottomInset, alignment: .bottom)
         }
     }
 
@@ -309,5 +309,35 @@ private struct WindowedRows<Content: View>: View {
                 let last = min(total - 1, firstVisible + Int((viewHeight / h).rounded(.up)))
                 store.send(ChromeEvent(type: "window", id: section.id, from: firstVisible, to: last))
             }
+    }
+}
+
+/// The app switcher: a glass capsule of icon-only buttons, three wide, scrolling sideways past three. The names are the accessible labels.
+private struct AppCapsule: View {
+    let store: ChromeStore
+    let apps: [ChromeDescription.App]
+    @Design private var d
+
+    var body: some View {
+        let m = d.metrics
+        let slot = m.pillHeight + m.space(2)
+        ScrollView(.horizontal) {
+            HStack(spacing: m.space(1)) {
+                ForEach(apps) { app in
+                    let on = app.selected == true
+                    Button { store.send(ChromeEvent(type: "app", id: app.id)) } label: {
+                        ChromeIconView(icon: app.icon, tier: .control).foregroundStyle(on ? d.theme.ink : d.theme.ink2)
+                            .frame(width: slot, height: m.pillHeight).background(on ? d.theme.inkWash(0.11) : .clear, in: Capsule())
+                    }
+                    .pressable(PressableLook(hover: on ? nil : d.theme.hover, pressed: nil, cornerRadius: m.pillHeight / 2, bounces: false), probe: app.title)
+                    .accessibilityLabel(app.title).accessibilityAddTraits(on ? [.isSelected, .isButton] : .isButton)
+                }
+            }
+            .padding(m.space(2))
+        }
+        .scrollIndicators(.hidden)
+        .frame(width: min(CGFloat(apps.count), 3) * (slot + m.space(1)) + m.space(3), height: m.pillHeight + m.space(4))
+        .glassSurface(Capsule())
+        .accessibilityElement(children: .contain).accessibilityLabel("Apps")
     }
 }
