@@ -148,13 +148,13 @@ impl Db {
     ) -> Result<GrantRevision> {
         let grants = self.grants.clone();
         self.read_blocking(move |c| {
-            let space = space.to_string();
+            let space_key = space.to_string();
             let machine = machine.to_string();
             let enrolled_assignment: bool = c
                 .query_row(
                     "SELECT EXISTS(SELECT 1 FROM spaces WHERE id=?1)
                         AND EXISTS(SELECT 1 FROM machines WHERE id=?2 AND revoked_ms IS NULL)",
-                    [&space, &machine],
+                    [&space_key, &machine],
                     |row| row.get(0),
                 )
                 .map_err(sql)?;
@@ -166,6 +166,10 @@ impl Db {
             }
             grants.subscribe(space, machine)
         })
+    }
+
+    pub(crate) fn owns_grant_revision(&self, grants: &GrantRevision) -> bool {
+        self.grants.owns(grants)
     }
 
     /// The job that attaches `sink`: reconcile pending proposals on this database's

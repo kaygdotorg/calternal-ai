@@ -1,5 +1,5 @@
 //! Delivery revisions for hosted space assignments, published by the authority worker.
-use crate::{Error, Result};
+use crate::{Error, Result, SpaceId};
 use rusqlite::{Connection, functions::FunctionFlags};
 use std::{
     collections::HashMap,
@@ -16,14 +16,24 @@ const CLOSED: u64 = u64::MAX;
 /// Keep this with the assignment. A clean revision is meaningful only for this
 /// handle and runtime epoch.
 #[derive(Clone)]
-pub struct GrantRevision(Arc<AtomicU64>);
+pub struct GrantRevision {
+    space: SpaceId,
+    revision: Arc<AtomicU64>,
+    tracker: Weak<Mutex<State>>,
+}
 
 impl GrantRevision {
+    /// Space whose authority may be admitted against this handle.
+    /// Cost: one UUID copy.
+    pub fn space(&self) -> SpaceId {
+        self.space
+    }
+
     /// Return the current clean revision or refuse delivery while a mutation
     /// is open, on assignment replacement or on worker shutdown.
     /// Cost: one atomic load and no locks, storage reads or flushes.
     pub fn current(&self) -> Option<u64> {
-        let revision = self.0.load(Ordering::Acquire);
+        let revision = self.revision.load(Ordering::Acquire);
         (revision & 1 == 0).then_some(revision)
     }
 }
@@ -45,16 +55,26 @@ struct State {
 pub(super) struct Tracker(Arc<Mutex<State>>);
 
 impl Tracker {
-    pub(super) fn subscribe(&self, space: String, machine: String) -> Result<GrantRevision> {
+    pub(super) fn owns(&self, grants: &GrantRevision) -> bool {
+        Weak::as_ptr(&grants.tracker) == Arc::as_ptr(&self.0)
+    }
+
+    pub(super) fn subscribe(&self, space: SpaceId, machine: String) -> Result<GrantRevision> {
+        let key = space.to_string();
+        let handle = |revision| GrantRevision {
+            space,
+            revision,
+            tracker: Arc::downgrade(&self.0),
+        };
         let mut state = self.0.lock().map_err(Error::internal)?;
-        if let Some(existing) = state.assignments.get(&space)
+        if let Some(existing) = state.assignments.get(&key)
             && let Some(revision) = existing.revision.upgrade()
         {
             if existing.machine == machine && revision.load(Ordering::Relaxed) != CLOSED {
-                return Ok(GrantRevision(revision));
+                return Ok(handle(revision));
             }
             revision.store(CLOSED, Ordering::Release);
-            state.assignments.remove(&space);
+            state.assignments.remove(&key);
         }
         if state.assignments.len() == MAX_ASSIGNMENTS {
             state
@@ -66,13 +86,13 @@ impl Tracker {
         }
         let revision = Arc::new(AtomicU64::new(0));
         state.assignments.insert(
-            space,
+            key,
             Assignment {
                 machine,
                 revision: Arc::downgrade(&revision),
             },
         );
-        Ok(GrantRevision(revision))
+        Ok(handle(revision))
     }
 
     fn mark(&self, scope: &str, id: &str) -> rusqlite::Result<()> {

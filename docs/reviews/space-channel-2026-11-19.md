@@ -131,6 +131,22 @@ per-space memory lock. Setup uses existing machine registry and authority
 lookups. The first machine placement attaches one package. The carrier
 can allocate distinct windows for up to eight pinned packages.
 
+5. **Read invocation tickets (§3).** Sample the existing protected rights
+   and sign-in at admission. Require both space read and plugin use. Bind
+   one opaque ticket to the actor, installation, package digest, invocation
+   operation, item and kind, the assignment's retained grant handle and
+   revision, and the channel epoch. The audience is the admitted actor.
+   Lifetime is 60 seconds from mint, shortened to the remaining installation
+   lifetime when needed. Thread delegation and item-only sharing stay outside
+   this first scope. Authorization compares the saved handle revision and
+   expiry on callbacks and delivery. A resumed invocation takes fresh rights
+   and receives a new ticket even when it uses the same durable request ID.
+
+Live admission uses one authority-worker job, one capability query and
+one installation primary-key query for a revocable sign-in. Callback
+authorization uses one atomic grant load, one monotonic time sample and
+local comparisons. It performs zero storage reads or flushes.
+
 ## Verification and remaining work
 
 On `claude@calternal-dev-01-compute02`, the exact `f3633ca9` source
@@ -144,9 +160,9 @@ existing `cargo test --locked -p calternal-server --test plugin_host --
 --test-threads=1` integration suite passed all 18 tests, including
 malformed child output and the current worker broker path.
 
-The grant revision and enrolled duplex transport are implemented. The
+The grant revision, ticket admission and enrolled duplex transport are implemented. The
 bounded carrier is tested independently of the broker. Its ordinary
-operation caller, current-rights tickets, item-head broker, and the
+operation caller, item-head broker, and the
 real-process fault injection gate are still open. The physical mid-frame stall, concurrent callback progress,
 immediate local fence, isolated second space, remote expiry and
 fresh-ticket receipt replay are spike evidence only. None has been

@@ -38,6 +38,7 @@ pub mod session;
 pub(crate) mod settings;
 pub(crate) mod signals;
 mod slots;
+mod space_ticket;
 pub mod worker;
 
 use std::borrow::Cow;
