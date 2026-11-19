@@ -55,6 +55,7 @@ mod request_action;
 mod spaces;
 pub mod wallpapers;
 mod web;
+mod window_views;
 pub use apple_app_site::AppleAppSite;
 pub use dispatch::dispatch;
 pub(crate) use dispatch::fingerprint;
@@ -142,6 +143,7 @@ pub fn router<D: Directory>(state: Shared<D>, web_dir: Option<PathBuf>) -> Route
     let content = state.store.shared_content();
     let api = Router::new()
         .route("/api/v1/describe", get(describe::<D>))
+        .merge(window_views::routes::<D>())
         .route(
             "/api/v1/account/live",
             get(crate::account_input::events::<D>),

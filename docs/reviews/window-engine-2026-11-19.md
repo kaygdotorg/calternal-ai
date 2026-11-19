@@ -53,11 +53,11 @@ Retain seek boundaries only within the host's current view lease.
 
 ## Integration and proposed revisions
 
-- The GenUI v2 host view/lease integration lane will call
-  `Content::window` and issue action contexts, coordinate the lease and
-  partition, and apply the transport delivery check for the Svelte and SwiftUI
-  consumers in #81 and #82. Native Notes exercises the index and planner in
-  product code today. There are no persisted member-cache records in this lane.
+- Native Notes exercises the product planner and the read-only v2 Notes route
+  calls `Content::window`. The installed-view integration for #81 and #82
+  resolves plugin Binds, provisions approved order definitions and issues
+  session-bound action contexts. There are no persisted member-cache records
+  in this lane.
 - **Proposal for effective audience equivalence.** Specify that scopes
   count distinct physical `(collection, projection)` row sets and that grants
   with identical row and field authority reuse an existing projection.
@@ -131,11 +131,56 @@ slice. Product qualification requires the locked perf run and the current
 view/lease adapter. The original Notes release binaries and their same-host
 baseline are queued under the perf-01 lock.
 
+## Product v2 route
+
+The authenticated read-only Notes view is available at
+`GET /api/v2/spaces/{space}/notes-view`. Its response names a host-owned
+`notes` Bind with title projection and a signed view reference. The optional
+`count=none` selects the count-free variant. A sealed `ViewOpenRequest` at
+the same URL opens a 15-second lease. Submit the sealed `WindowRequest` to
+`/window` below that URL with `X-Calternal-View-Lease` and
+`X-Calternal-Cache-Partition`. The success body is the sealed result. Plan
+refusals use HTTP 422 with the sealed reason body. `/renew` rotates the lease
+without retaining renderer rows. Internal continuation keys remain usable
+only at a matching current result boundary.
+
+The route binds the opaque lease and partition to the authenticated actor,
+device session, space, view and current authority epoch. It checks membership
+and session on the blocking request worker before indexed work and again
+before returning any reply. It fences changes just before response release.
+A current exact count is disclosed only inside this authorized space view.
+Count-free views omit the count and refuse End. The content engine also
+accepts an audience-certified estimate when a future trusted Bind supplies
+one. Route admission uses sharded actor and space limits, one in-flight
+window per view and the catalogue's rate and lease limits. There is no
+SQLite write or fsync for open, window or renew. Window storage reads match
+the root path above. The route adds two protected membership reads and two
+session-current checks for installation sessions, plus the existing HTTP
+guard's credential checks. Lease open classifies a personal space with a
+directory point read. The existing directory list runs through its write
+queue and advances the fence even for a read. This route uses the read
+queue for classification to keep active leases valid.
+
+The Step 0 harness issued fixture references, held test rows and included
+fault hooks. A product route needs the installed description and its kind
+declarations checked against the manifest, live source and field permissions,
+and a registry that issues references for each checked Bind and parent edge.
+The private Notes view supplies a fixed server-owned Bind. The generic
+installed-view adapter still needs to resolve policy and input operands,
+authorize complete parent ancestry, issue action contexts and enable
+guest/public links under their existing grant checks. Live invalidation,
+retained renderer rows and action contexts need the GenUI view service
+used by the #81 and #82 renderers. No public guest or generic plugin route
+accepts unvalidated descriptions.
+
 ## Simplification opportunities
 
 - Generalize the existing collection membership relation before qualifying
   plugin kinds and parent edges. It can own the reverse membership lookup and
   the window projection updates for all those callers.
+- Use a space-local authority revision when the installed-view service can
+  identify its complete dependency scope. The current process epoch can
+  retire a view after unrelated authority or session activity.
 - Move the timestamp-to-key conversion into a single shared primitive if
   another native cursor needs this sort. The current formats are locked
   together by the notes cursor contract.
