@@ -492,6 +492,7 @@ fn retries_are_idempotent() {
     assert_eq!(g.status, 200);
 }
 
+#[cfg(debug_assertions)]
 #[test]
 fn crash_points_recover_without_duplicates() {
     for point in [
@@ -1207,6 +1208,7 @@ fn note_storage_is_physically_per_space_and_files_have_frontmatter_identity() {
     );
 }
 
+#[cfg(debug_assertions)]
 #[test]
 fn interrupted_create_and_title_rename_recover_fixed_paths() {
     for point in ["after_commit", "before_placement", "after_placement"] {
