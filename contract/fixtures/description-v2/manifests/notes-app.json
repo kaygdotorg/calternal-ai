@@ -14,7 +14,7 @@
         "id": "app",
         "template": {
           "path": "notes-app.json",
-          "sha256": "2e640f6176916588ba7cf5b560834c1724a29d8518ffea7047b142c3590fed27"
+          "sha256": "2dfb0a1b3cd9d2ad877c698510cf26f3490295143613d716da392f9b40752171"
         }
       }
     }
@@ -50,7 +50,9 @@
           "type": "Boolean",
           "audience": "member_item"
         }
-      }
+      },
+      "searchable": true,
+      "live_room": "yjs-v1"
     }
   ],
   "reads": [

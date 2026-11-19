@@ -243,7 +243,12 @@
                   "id": "create",
                   "title": "New thread",
                   "operation": "turns.create",
-                  "inputs": {}
+                  "inputs": {},
+                  "then": {
+                    "route": {
+                      "name": "thread"
+                    }
+                  }
                 }
               }
             }

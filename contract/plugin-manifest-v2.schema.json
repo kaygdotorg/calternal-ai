@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://calternal.cloud/contract/plugin-manifest-v2.schema.json",
   "title": "Calternal plugin manifest v2",
-  "description": "Revision 7 review draft. Only the exercised subset freezes after the pre-freeze spikes. Validate offline with the versioned contract registry. Uniqueness, references, digest verification and approval are separate host checks.",
+  "description": "Revision 12 review draft. Only the exercised subset freezes after the pre-freeze spikes. Validate offline with the versioned contract registry. Uniqueness, references, digest verification and approval are separate host checks.",
   "type": "object",
   "additionalProperties": false,
   "required": ["api_version", "id", "name", "version", "icon", "apps", "kinds", "operations", "network"],
@@ -129,7 +129,7 @@
         "claimed_text": { "type": "boolean" },
         "extension": { "type": "string", "pattern": "^[a-z0-9]{1,16}$" },
         "schema": { "$ref": "#/definitions/embeddedSchema" },
-        "searchable": { "type": "boolean" },
+        "searchable": { "type": "boolean", "description": "Opt a claimed-text kind into the host background search projection and the claimed-text plans in query.search of the host catalogue. The host checks current scope and field authority at query time. Omission or false leaves the kind out of search." },
         "indexed_fields": {
           "type": "object", "maxProperties": 32,
           "propertyNames": { "$ref": "#/definitions/localId" },
@@ -147,6 +147,8 @@
         { "if": { "properties": { "claimed_text": { "const": false } } }, "then": { "required": ["extension"] },
           "else": { "properties": { "extension": { "const": "md" } } } },
         { "if": { "required": ["live_room"] },
+          "then": { "properties": { "claimed_text": { "const": true } } } },
+        { "if": { "required": ["searchable"], "properties": { "searchable": { "const": true } } },
           "then": { "properties": { "claimed_text": { "const": true } } } }
       ]
     },

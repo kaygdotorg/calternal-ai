@@ -126,6 +126,23 @@
           "title": "No reminders"
         }
       }
+    },
+    {
+      "id": "reading-search",
+      "source": {
+        "type": "search",
+        "kind": "reading-item",
+        "mode": "terms"
+      },
+      "fields": [
+        "title",
+        "read"
+      ],
+      "row": {
+        "title": {
+          "field": "title"
+        }
+      }
     }
   ],
   "chrome": {
@@ -142,6 +159,12 @@
     },
     "header": {
       "title": "Reading list"
+    },
+    "footer": {
+      "search": {
+        "bind": "reading-search",
+        "placeholder": "Search reading list"
+      }
     }
   },
   "view": {
@@ -183,6 +206,11 @@
                 "form": "add",
                 "field": "url"
               }
+            },
+            "then": {
+              "route": {
+                "name": "item"
+              }
             }
           }
         },
@@ -195,7 +223,7 @@
         {
           "type": "form",
           "id": "remind",
-          "title": "Remind me (only I see this)",
+          "title": "Remind me",
           "fields": [
             {
               "id": "when",
@@ -232,7 +260,7 @@
         {
           "type": "list",
           "bind": "reminders",
-          "title": "My reminders"
+          "title": "Reminders"
         }
       ]
     }

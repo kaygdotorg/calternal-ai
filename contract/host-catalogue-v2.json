@@ -734,7 +734,7 @@
     },
     "turns.archive": {
       "engine": "thread archive",
-      "effect": "irreversible",
+      "effect": "reversible",
       "idempotency": "request_id",
       "authority": "Actor with live thread lifecycle authority",
       "surfaces": [
@@ -763,8 +763,10 @@
         "$ref": "#/$defs/ActionOutcome"
       },
       "atomic_undo": false,
-      "atomic_undo_unavailable": "The existing writer commits the archived revision without Undo, then always enters a separate protected authority transaction. To enable idle archive, prove under the commit fence that there is no active turn or saved authority or approval to retire, skip post-commit cleanup on that path and commit the archived revision and unarchive Undo together in the FULL thread content transaction.",
-      "confirmation_when": "Archive with an active turn requires a challenge. Host-written material says: The running turn will be stopped. Archive requiring saved authority or approval cleanup also requires a challenge."
+      "atomic_undo_unavailable": "The current writer commits the archived head without Undo, then enters a separate protected authority transaction. Keep both flags false and the challenge in place until the Step 2 idle-archive writer gate passes.",
+      "confirmation_when": "Before the writer gate passes, require a challenge. After it passes, an eligible idle archive resolves and dispatches in one exchange without a sheet. Active turns and saved authority or pending approval cleanup make archive irreversible and require a challenge. For an active turn the host-written material says: The running turn will be stopped.",
+      "atomic_undo_when": "Idle thread with no active turn, saved authority or pending approval to retire, checked under the commit fence. Commit the archived head and its unarchive Undo in one FULL thread content transaction, with no separate cleanup.",
+      "full_swipe_when": "After the Step 2 idle-archive atomic writer with Undo passes, enable atomic_undo and full_swipe for the first swipe action with effective confirm:none and the idle condition."
     },
     "turns.unarchive": {
       "engine": "thread unarchive",
@@ -842,7 +844,7 @@
         "$ref": "#/$defs/ActionOutcome"
       },
       "atomic_undo": false,
-      "atomic_undo_unavailable": "The current thread writer stores one shared manual deadline and cannot implement this actor-scoped operation. Enable only after the actor-keyed deadline, its index entry and Undo commit together. Subscription retry state is unaffected."
+      "atomic_undo_unavailable": "The current thread writer stores one shared manual deadline and cannot implement this actor-scoped operation. Keep the operation unavailable until the Step 2 actor-keyed snooze writer gate proves that the actor’s deadline, its index entry and Undo commit together. Subscription retry state is unaffected."
     },
     "turns.follow_up": {
       "engine": "turn_follow_up",
@@ -1254,29 +1256,29 @@
       "message": "An item can belong to at most 32 effective scopes."
     },
     "search": {
-      "kinds": {
-        "notes": {
-          "scopes": [
-            "space",
-            "manual_collection"
+      "claimed_text": {
+        "eligibility": "Any plugin kind with claimed_text and searchable both true in its installed manifest. Notes uses this same qualification.",
+        "scopes": [
+          "space",
+          "manual_collection"
+        ],
+        "tokenizer": {
+          "name": "unicode61",
+          "remove_diacritics": 2,
+          "prefix_index_lengths": [
+            2,
+            3
           ],
-          "tokenizer": {
-            "name": "unicode61",
-            "remove_diacritics": 2,
-            "prefix_index_lengths": [
-              2,
-              3
-            ],
-            "qualification": "Compile each full-text literal and token prefix using the published generation’s own qualified FTS5 tokenizer. Apply the token and posting bounds to those tokens and that generation’s term statistics. A tokenizer change requires a rebuilt generation and matching term statistics. Accented Latin and Cyrillic qualify. Refuse Devanagari full text, including token prefixes, with unsupported_query_plan until a rebuilt generation with the mark-aware categories is ready. CJK qualifies only for a whole unspaced run or its leading prefix. Implicit word segmentation and interior substring matching are unsupported_query_plan. Literal folded-title prefixes use the title index and preserve accents and marks.",
-            "categories": "L* N* Co M*"
-          }
-        },
-        "threads": {
-          "scopes": [
-            "space"
-          ],
-          "qualification": "Use the existing message index with the message_terms tokenizer, which splits at non-alphanumeric characters and lowercases Unicode. Terms must match within the same authorized message. For terms and prefix, return distinct threads ordered by the newest matching authorized message timestamp and message UUID. For title_prefix use the folded title and thread UUID order. Meter location and returned ID lookups, block bodies visited and driver descriptors read against the row-work budget. Combined title and message relevance is unqualified."
+          "qualification": "Compile each full-text literal and token prefix using the published generation’s own qualified FTS5 tokenizer. Apply the token and posting bounds to those tokens and that generation’s term statistics. A tokenizer change requires a rebuilt generation and matching term statistics. Accented Latin and Cyrillic qualify. Refuse Devanagari full text, including token prefixes, with unsupported_query_plan until a rebuilt generation with the mark-aware categories is ready. CJK qualifies only for a whole unspaced run or its leading prefix. Implicit word segmentation and interior substring matching are unsupported_query_plan. Literal folded-title prefixes use the title index and preserve accents and marks.",
+          "categories": "L* N* Co M*"
         }
+      },
+      "turns": {
+        "kind": "threads",
+        "scopes": [
+          "space"
+        ],
+        "qualification": "Use the existing message index with the message_terms tokenizer, which splits at non-alphanumeric characters and lowercases Unicode. Terms must match within the same authorized message. For terms and prefix, return distinct threads ordered by the newest matching authorized message timestamp and message UUID. For title_prefix use the folded title and thread UUID order. Meter location and returned ID lookups, block bodies visited and driver descriptors read against the row-work budget. Combined title and message relevance is unqualified."
       },
       "qualified_depth": 200,
       "max_authorized_items_per_scope": 100000,
@@ -1285,7 +1287,7 @@
       "qualification": "For each ready authority-versioned Bind, qualify its supported literal-term and prefix modes for windows up to query.window.max_request_span starting at offsets through qualified_depth. Serve later windows while both query.live_limits budgets for scoped postings and materialized rows hold. Use only the kind’s authorized scopes, order and scope-local statistics. Refuse unqualified shapes, scopes and sorts with unsupported_query_plan. End anchors are unavailable for search. The host returns WindowPlanError with reason end_unavailable and the renderer pages forward for End.",
       "publication": "The existing background search worker maintains the projection and same-generation term statistics independently of save acknowledgement. Check live access to the scope, searchable fields and output fields before evaluation. Readiness and invalidation compare revisions of the viewer’s authorized row-and-field projection, never a space-wide watermark. While that projection is behind or stale after revocation, return loading with no rows, count or activation contexts. A hidden-only edit leaves the visible search state, result version, rows, ranks and counts unchanged during and after publication. Fence cached results on revocation and recheck authority on delivery. Deny access if the scope is no longer authorized.",
       "refinement": "Bound scoped posting work using same-generation term frequencies. When an otherwise qualified query exhausts the scoped-posting or materialized-row budget, return refine_query with only bounded provisional rows from the same authorized query and published generation. A prefix exceeding either the expansion cap or the posting budget returns refine_query without starting expansion and can include only already-issued rows for that query, audience and generation. Omit count, activation contexts and member cache record. Provisional replies have null result_version and window_ref.",
-      "count": "Non-search lists use maintained per-scope counts. Notes exact search counts measure qualified matches in a ready authorized projection under the separate count-work and rate budgets and require exact-count authority. Search defaults to count mode none. Search estimates and exact distinct-thread search counts are unqualified. Refuse an unqualified count request with unsupported_query_plan.",
+      "count": "Non-search lists use maintained per-scope counts. Claimed-text exact search counts measure qualified matches in a ready authorized projection under the separate count-work and rate budgets and require exact-count authority. Search defaults to count mode none. Search estimates and exact distinct-thread search counts are unqualified. Refuse an unqualified count request with unsupported_query_plan.",
       "mode_schema": {
         "$ref": "#/$defs/SearchMode"
       },

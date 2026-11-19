@@ -1,0 +1,18 @@
+{
+  "version": 2,
+  "kind": "app",
+  "revision": 1,
+  "binds": [
+    {
+      "id": "search",
+      "source": {
+        "type": "search",
+        "kind": "reading-item",
+        "mode": "terms"
+      },
+      "fields": [
+        "title"
+      ]
+    }
+  ]
+}

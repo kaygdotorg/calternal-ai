@@ -1,4 +1,4 @@
-# Plugin API v2 · revision 11.9
+# Plugin API v2 · revision 12
 
 The first contract covers host-drawn apps, generic items, durable jobs and
 Turns. Freeze after the §8 spikes. Fixture bounds are test settings. See the
@@ -43,13 +43,20 @@ and without machine-control authority. Provider-only and static packages
 can omit a broker worker. Operations, jobs, schedule eligibility and
 credential routes require one.
 
+A kind with `claimed_text: true` may declare `searchable: true` to opt into
+the host’s background search projection and the claimed-text plans in
+`query.search`. Omission or false leaves the kind out of search. Notes
+uses this same manifest declaration. The host checks the installed kind’s
+declaration, the Bind’s reads and live scope and field authority at query
+time. Turns owns the separate Threads message index.
+
 Reject unknown or inconsistent declarations before launch. Reserve `host.` and `turns.` for the host catalogue. Check unique IDs,
 package operation namespace, references, schema compilation offline, pinned
 assets and digests, indexed field types, and cross-reference constraints.
 Each operation lists its host methods once. Derive the install summary by
 union and constrain each call by that operation’s capability and risk.
-Derive the mutation flag from risk. Reads use `read_only` and cannot mutate
-user data. A job may checkpoint its own run as part of the durable job
+Derive the mutation flag from risk. Read operations declare `risk: "read"`
+and `idempotency: "read_only"` and cannot mutate user data. A job may checkpoint its own run as part of the durable job
 protocol. Receipt-backed mutations retry with the same request ID. Never
 automatically retry a non-idempotent external action.
 
@@ -492,13 +499,13 @@ The first contract qualifies these plan families.
 | Ordered or filtered kind lists, including Inbox, Trash and self-only rows | Ordered indexes scoped to the authorized kind or viewer projection, with the supported filter and sort keys. |
 | Manual collection + mutable ACL + sort, including the main Notes list | The scoped covering membership index, with current ACL applied before windowing and a maintained count per scope. Reading and sorting all members is disallowed even at offset zero. |
 | Child and section windows | Parent-scoped ordered indexes for authorized child rows and personal section placements. |
-| Notes and Threads search | Ready, authority-versioned indexes for the scopes, shapes and depth in the [catalogue’s `query.search`](../contract/host-catalogue-v2.json). |
+| Claimed-text and Turns search | Ready, authority-versioned indexes for the scopes, shapes and depth in the [catalogue’s `query.search`](../contract/host-catalogue-v2.json). |
 | Filtered counts | Non-search lists use a maintained count for the supported authorized scope or an audience-certified member estimate. Search counts qualified matches under `query.search.count`. |
 
 The author declares the Bind’s `SearchMode`. The renderer supplies text,
 and the host applies the mode under the published generation’s tokenizer.
-The catalogue’s `query.search` specifies the Notes tokenizer and the
-Threads message index. Threads AND terms match within one authorized
+The catalogue’s `query.search` specifies the shared claimed-text tokenizer
+and the Turns message index. Threads AND terms match within one authorized
 message, and message results return distinct threads. The shared search
 depth is in `query.search.qualified_depth`. Serve later windows while
 both scoped-posting and row budgets in `query.live_limits` hold.
@@ -549,7 +556,7 @@ per open view, 16 subscriptions per actor and 128 per space. Bound queued
 bytes and query starts at all three levels. Per window cap materialized
 rows at 4,096. Separately cap entries skipped by an index-only jump from
 the nearer end at 250,000. Non-search lists read maintained counts
-for the authorized scope. Notes can count qualified matches with exact-count
+for the authorized scope. Claimed-text search can count qualified matches with exact-count
 authority within the separate count-work budget. Threads search uses count
 mode `none`. See `query.search.count` for qualified counts and
 `query.live_limits` for count work and starts.
@@ -783,9 +790,9 @@ revisions of all affected resources and refuses if any dependency moved.
 | `host.layout.section.create` | The per-person layout revision transaction creates the section and commits Undo that removes it. |
 | `host.layout.section.rename` | The same layout transaction commits the title change and its prior title for Undo. |
 | `host.layout.section.remove` | The same layout transaction commits removal and retains the section, placements and order for Undo. |
-| `turns.archive` | The current writer commits the thread head without Undo, then checks for and cancels a non-final turn, runs a separate protected transaction to cancel pending approvals and remove saved authority, and invalidates affected feeds. An idle full swipe requires proving under the commit fence that there is no active turn or authority or approval to retire, skipping cleanup and committing the archived head and unarchive Undo in one FULL thread content transaction. Until then the shortcut is ineligible. For an active turn the host challenge says “The running turn will be stopped.” Authority or approval cleanup also requires a challenge. |
+| `turns.archive` | After the Step 2 idle-archive writer passes, an idle thread with no active turn, saved authority or pending approval to retire can archive in one full-swipe exchange with no sheet. Check those conditions under the commit fence. The FULL thread content transaction records the archived head and its unarchive Undo together. Today’s writer commits the head without Undo and enters a separate protected authority transaction, so the shortcut stays ineligible. Active turns and authority or approval cleanup keep the challenge. For an active turn the host says “The running turn will be stopped.” |
 | `turns.unarchive` | The FULL thread content transaction records the new head and Undo. A full swipe may unarchive an eligible thread. |
-| `turns.snooze` | Ineligible. Today’s writer stores one shared manual deadline. Expose the actor-scoped operation only once the actor-keyed deadline, its index entry and Undo commit together. Subscription retry state is unaffected. |
+| `turns.snooze` | Ineligible. Today’s writer stores one shared manual deadline. The actor-scoped operation stays unavailable until the Step 2 actor-keyed snooze writer commits the actor’s deadline, its index entry and Undo together. Subscription retry state is unaffected. |
 | `host.item.patch-metadata` | The room-checked FULL content transaction records the changed head and Undo for a single boolean toggle. Full swipe covers this case. |
 
 On success, Invoke `then:{route}` may navigate using a
@@ -847,11 +854,11 @@ policy, general viewer operands except person, index-based row sources,
 sidebar cards, appearance/scheme/accent/title image and manifest commands.
 Use host policy for trusted operations and results.
 
-The first contract qualifies the Notes and Threads search plans in
+The first contract qualifies claimed-text and Turns search plans in
 `query.search`. Combined title and message relevance and exact
 distinct-thread search counts remain unqualified.
 
-**Known limit for Notes CJK search.** The first contract supports whole unspaced
+**Known limit for claimed-text CJK search.** The first contract supports whole unspaced
 runs and their leading prefixes. Implicit word segmentation and interior
 substring matching return `unsupported_query_plan`. A later search
 generation can qualify a segmenting or trigram tokenizer.
@@ -864,6 +871,19 @@ metadata generate a checked manifest, method inventory and immutable
 asset/digest index. `defineChrome` and `defineView` author templates against
 the renderer-owned shared schema when exercised. Typed `ctx` methods derive
 from shared contract models.
+
+For a first list, `defineView` supplies the standard Bind window and count
+defaults and the shell’s empty, loading and error messages. It defaults the
+row title to the generated `title` field and the row icon to `kindIcon`.
+`defineChrome` uses those same Bind and row defaults for sidebar sections.
+The SDK defaults `title_field` to a declared string `title`, adds the
+package’s own kinds to `reads`, and emits `network: "none"` and an empty
+`operations` list when omitted. Window and count defaults follow the
+description schema and catalogue. A first list takes about eight author
+concepts: package, app, kind, placement, item schema, Bind, list and sidebar
+section. Add explicit author choices for actions, fields and presentation as
+the app needs them.
+
 A retry keeps the same request ID and typed target. Authors never pass
 `space_id` to broker methods or see tickets, epochs, leases, seq, callback
 IDs or renderer keys. Host-mediated client operations may still select an
@@ -884,7 +904,7 @@ shared real/fake fixture suite. An undeclared method or kind returns
 Foreign resources keep their opaque response. Authorized package authors
 get bounded development diagnostics with the actual reason and no foreign
 values. Ship a scaffold, check/test diagnostics and public-guide-only
-small-model trial for a bound view, a durable wait and refusal/retry.
+small-model trial for the Reading List paper walk in description §9.1, a durable wait and refusal/retry.
 
 **Gallery submission gate.** The gallery listing requires an icon,
 description, screenshots, age rating, and a plain statement of what the
@@ -893,7 +913,7 @@ repository. Private and agent-authored plugins need none of it. The
 plugin guide skill and SDK must generate the listing from a checked
 package, capture screenshots from fixtures and check completeness.
 Before enabling submissions, a public-guide-only author must produce a
-package and complete listing from the scaffold. The validator must accept
+Reading List trial plugin and complete listing from the scaffold. The validator must accept
 it, reject an omitted required field and flag a stale connection statement
 or missing screenshot. It derives the No network access badge using
 `noNetworkBadge` on the pinned manifest (§3). This preparation and check require no publishing.
@@ -910,8 +930,8 @@ or missing screenshot. It derives the No network access badge using
 
 ### Step 0 — Spikes before freeze
 
-**Entry evidence.** Paper-walk Reading List (list, Add, mark-read and a
-one-date private reminder), Notes (created ref, room edit, Move to collection,
+**Entry evidence.** Paper-walk Reading List (list, two-field Add with
+created/then, Mark read full swipe, search and a one-date reminder), Notes (created ref, room edit, Move to collection,
 bulk Trash and Share), Threads (create, archive, snooze, composer, follow-up,
 protected approval), and Mail (list, sealed body, credentials and new
 arrival). Check Reading List, Notes and Threads executable chrome/content
@@ -926,7 +946,7 @@ run **100 measured repetitions** and report **p95** on
 `calternal-perf-01-backup01` under `/usr/local/bin/perf-lock.sh`, using
 binaries built on a dev VM. Record Chromium version, wall, payload, query
 plans, rows visited, reads, commits and flushes. Use an emulated phone link
-at 150 ms RTT for exchange counts and the keyboard trial. Measure indexed
+at 150 ms RTT for exchange counts, the keyboard trial and cold launches. Measure indexed
 engine latency without the added link delay. Protocol safety deadlines
 and zero-effect assertions must hold on every repetition.
 
@@ -934,14 +954,17 @@ and zero-effect assertions must hold on every repetition.
 | --- | --- |
 | **One enrolled channel** | Two real package processes on one enrolled channel in Space A, plus Space B. Block A’s carrier receiver until its actual writer stalls mid-frame. Hold a slow callback for two seconds. With a writable carrier, control and the other callback complete p95 ≤500 ms. While stalled, local fencing p95 ≤500 ms, close p95 ≤2 s and Space B progress p95 ≤2 s. No old-lease effect after local fencing. Remote stops within 5 s of its last authenticated renewal on every run. Reconnect rejects the old epoch and authorized replay commits once. |
 | **Cold indexed page** | 100,000 mixed-visibility rows. During grant/content churn test manual collection + ACL + sort from offset 0 through its last full authorized range and last visible row (at most 10,000 members, so the last full 200-row range starts at most at offset 9,800). Use a dense dynamic collection for offsets 10,000 and 90,000. Exercise search under the scoped search gate. Offset 0 p95 ≤100 ms, deep windows p95 ≤500 ms. Seed enough authorized rows for every requested range and assert the exact authorized rows in order. Empty or refused replies fail. Meter materialized rows and skipped covering-index entries separately against their bounds. In a larger authorized scope, also request a range whose nearer-end jump exceeds the skip cap. Assert `skip_limit` followed by paging that returns the same authorized rows. Test End on a scope beyond the absolute offset ceiling using `anchor:"end"` and assert the last authorized rows. For stable-ID lookup assert one bounded indexed lookup and scoped authority check for a present, missing and unauthorized ID. For standalone exact counts assert one maintained-count lookup and the exact authorized total after grant churn. Exercise saves at the 32-effective-scope cap and assert at most two covering-index keys touched per scope. Refuse a grant or membership that would create scope 33 with the typed limit error. Measure the existing write and index maintenance together on the save path and require p95 ≤40 ms. The measured two-collection sort change adds about 9 ms p95 in isolation. Reject table scans and full candidate sorts, coalesce fan-out, refuse both counts and rows on revocation and wake no worker. |
-| **Scoped search** | On locked perf-01 exercise each Notes and Threads shape in its qualified scopes through the depth in `query.search`. Beyond that depth, assert ready windows with the exact authorized rows and order while both budgets hold. Exhaust each budget separately and assert a `refine_query` window with bounded provisional rows and no count. For Notes check the qualified Unicode cases, refusal before the mark-aware Devanagari rebuild, and CJK segmentation and substring refusal. Meter postings, materialized-row work and count work separately against `query.live_limits`. A broad prefix must start no expansion. During publication lag and stale authority, assert `loading` with no rows, counts or activation contexts. Race revoke against delivery and assert zero stale results. For a reader with a ready search, edit a hidden row and a hidden field. Check before, during and after publication that the visible state, rows, ranks, count and result version stay unchanged. Measure foreground save and save-to-search lag separately. Keep maintenance out of the save transaction and meet the append gate. |
+| **Scoped search** | On locked perf-01 exercise the claimed-text and Turns shapes in their qualified scopes through the depth in `query.search`. Include a searchable community kind alongside Notes. Beyond that depth, assert ready windows with the exact authorized rows and order while both budgets hold. Exhaust each budget separately and assert a `refine_query` window with bounded provisional rows and no count. For Notes check the qualified Unicode cases, refusal before the mark-aware Devanagari rebuild, and CJK segmentation and substring refusal. Meter postings, materialized-row work and count work separately against `query.live_limits`. A broad prefix must start no expansion. During publication lag and stale authority, assert `loading` with no rows, counts or activation contexts. Race revoke against delivery and assert zero stale results. For a reader with a ready search, edit a hidden row and a hidden field. Check before, during and after publication that the visible state, rows, ranks, count and result version stay unchanged. Measure foreground save and save-to-search lag separately. Keep maintenance out of the save transaction and meet the append gate. |
 | **Atomic large save** | Stage an escape-heavy 2 MiB body and reconstruct it by revision-pinned ranges after the head moves, p95 ≤5 s. The 60 s range pin is invalidated by purge or revoke. Race duplicate begin, lost chunk ACK, conflicting bytes, cancel and orphan cleanup. Race revoke, epoch loss, enrollment removal and run replacement on both sides of commit and inject crashes before publication and before reply. No partial edit or success receipt before commit. After commit recover one revision and receipt. |
 | **Durable transcript** | Stall the reader, cut after commit before ACK and restart. First screenful drawn p95 ≤150 ms on a warm authorized reconnect, with the durable cursor, stable event and receipt sequences unchanged. Revoked reconnect reveals neither rows nor bookmarks. An independent control request completes p95 ≤500 ms with the transcript reader stalled. |
 | **Host + renderer authority** | On Svelte Chromium check both formats, a real protected approval and a live Bind. Forge row/route/Bind/context, untouched prefills, bulk IDs, ChoiceRefs, cached data and built-in surfaces. Inject duplicate and stale activations, revocation and unrelated churn. Zero unauthorized effects or rendered bytes, one commit on replay, and unrelated-churn action p95 ≤2 s from dispatch. Race revocation at egress, job claim/park and approval resolve before freezing those routes. For each §4.4 atomic-Undo case, crash before and after the named commit and during publication: recover neither effect nor Undo before commit, and both after it. Concurrently edit a dependency, then require Undo to refuse without another effect. Exercise ineligible variants and prove the shortcut and full swipe cannot bypass their checks. Delay or spoof lease replies and verify only current, exact retained windows repaint. |
-| **Phone activation exchanges** | In the same Chromium phone link fixture, from action intent to host outcome, an eligible swipe and prepared Send each use one exchange. An ordinary plugin operation without a challenge uses two. Require the bounds on every run and report p95 exchange counts and elapsed time. Alter prepared material, including via parsed final text, or drop the Send reply. Require a fresh preview for changed material and replay the exact final text once. |
-| **Keyboard windowing** | 5,000 rows with 30 keys/sec on the phone fixture. At most four window requests in any second and zero selection/navigation events during repeat on every run. Report p95 request rate. No skeleton while continuous scrolling is steady. Same-version prefetch applies while keys repeat; an activation waits for the context of its drawn target. Delay a context for A until B is drawn and verify the activation cannot use A. |
+| **Phone activation exchanges** | In the same Chromium phone link fixture, from action intent to host outcome, an eligible swipe and prepared Send each use one exchange. An ordinary plugin operation without a challenge uses two. On the Step 2 archive writer, an idle archive full swipe takes one exchange with no sheet and returns unarchive Undo. An active archive shows the challenge and the host-written stop material. Also exercise the cleanup cases. Require the bounds on every run and report p95 exchange counts and elapsed time. Alter prepared material, including via parsed final text, or drop the Send reply. Require a fresh preview for changed material and replay the exact final text once. |
+| **Keyboard windowing** | 5,000 rows with 30 keys/sec on the phone fixture. At most four window requests in any second and zero selection/navigation events during repeat on every run. Report p95 request rate. After the first real rows paint, capture each viewport frame during the repeat burst. Require zero skeleton-row frames during the steady 30 Hz segment on every run. Same-version prefetch applies while keys repeat; an activation waits for the context of its drawn target. Delay a context for A until B is drawn and verify the activation cannot use A. |
+| **Nested rows and user sections** | On real content and Turns engines, expand two parents and page their children independently. Check depth, ancestry, revocation and a forged parent ref. Create, rename and remove personal sections and Move to, Move up and Move down. Undo each committed edit, verify placement and order, refuse stale Undo, and prove a second member’s layout is unaffected. |
+| **Persisted member rows** | Use an authenticated eligible root Bind. Verify device ciphertext and account/space key separation, reject expired or forged records and erase on known revocation, sign-out and account switch. Paint eligible rows on an unlocked launch, then confirm or correct them against the host. Check that unconfirmed rows have no executable actions and that guest and public windows leave no record. |
+| **Phone cold launch** | Restart the client with an authorized account and a cold connection, with and without an eligible member row record. Start at launch intent and time first paint and first confirmed or corrected rows on the phone link. Require confirmed rows p95 ≤600 ms in both cases. The initial frame uses the local template and unconfirmed rows with a record, or the loading state without one. Confirm no action can run before fresh host context. |
 | **Snapshot randomness** | Independently restore the same snapshot twice and sample the guest kernel and each restored process’s crypto RNG, including Node. Require different bytes for both restores at both layers and require fresh kernel and process randomness before any plugin code. Refuse admission if reseed or fresh process reinitialization cannot establish that. Include reseed time in measured wake. |
-| **Interactive pending** | Force work past three plugin seconds, including a cold wake with the separate measured/fixture allowance. Check caller-visible pending p95 ≤3 s from admission, one diagnostic and one status ref. Poll while it finishes and retry after a lost reply. Never launch again or allow effects after ticket expiry. |
+| **Interactive pending** | Force work past three plugin seconds, including a cold wake with the separate measured/fixture allowance. Require caller-visible pending within three seconds after wake and admission on every run, with one diagnostic and one status ref. Poll while it finishes and retry after a lost reply. Never launch again or allow effects after ticket expiry. |
 
 Manual-collection measurements at offsets 10,000 and 90,000 were
 out-of-range controls with zero returned rows. The dense dynamic collection
@@ -973,7 +996,8 @@ Freeze only models and fields exercised by Step 0. Candidate slices are the
 space carrier, the target and item range/save receipt path, the cold page
 query and transcript cursor. Generate matching Rust-backed schemas and TS
 types. Freeze descriptions, Invoke and each built-in only after its real
-host/renderer authorization case passes. Shape fixtures and the author
+host/renderer authorization case passes. The description freeze also
+requires the SwiftUI renderer to draw every valid fixture. Shape fixtures and the author
 trial alone are insufficient. Mark other manifest/engine declarations draft and leave them out of
 the stable SDK. Reuse the container wall and durable jobs for a thin test
 adapter. Existing job/wait contracts remain the regression baseline.
@@ -994,8 +1018,9 @@ guide and scaffold with a fresh small-model author, first with the fake
 broker and then through installed real fixtures. Pass when built-in verifier
 cases all pass, the author uses only public documentation/SDK input, there
 are zero failed commands, and a second verifier run passes unchanged.
-Exercise a bound page, typed parked question with answer and deadline, and
-an intentional refusal/retry with an actionable expected response.
+Exercise the Reading List paper walk with its form, full swipe, search and
+created/then, plus a typed parked question with answer and deadline and an
+intentional refusal/retry with an actionable response.'
 ### Step 2 — Integrate placement and engines
 
 Pass these end-to-end flows on the selected wall before app migration.
@@ -1017,6 +1042,20 @@ Pass these end-to-end flows on the selected wall before app migration.
   write. Complete the remaining §7 cases for surfaces being enabled.
   Snapshot enablement awaits wall measurements and its own recovery proof.
 
+- **Idle-archive atomic writer with Undo.** In one FULL thread content
+  transaction, check the idle condition under the commit fence and record
+  archive and its unarchive Undo together. Crash on both sides of commit
+  and require both effect and Undo or neither. Race a newly active turn,
+  saved authority or pending approval against dispatch and require the
+  protected path if cleanup is needed. Refuse stale Undo. Rerun the Step 0
+  phone activation spike on this writer before enabling idle full swipe.
+- **Actor-keyed snooze writer.** In one FULL thread content transaction,
+  commit the actor-keyed deadline, its index entry and Undo. Crash on both
+  sides and verify all three commit together. Exercise distinct deadlines
+  for two actors on the same thread, changing and clearing each deadline,
+  Undo and stale Undo refusal. Preserve subscription retry state. Enable
+  actor-scoped snooze only after this gate passes.
+
 ### Step 3 — Notes first, then Threads
 
 Replay these against shipped versions and the replacement using identical
@@ -1029,7 +1068,8 @@ fixtures, with final revisions, visible authority and durable outcomes equal.
   linked-user View/Comment and revocation, the host Share sheet and bounded
   bulk Trash/share/collection creation and Choice-from-Bind Move, no worker wake for built-in
   lifecycle actions, and recover a committed save after rollback.
-- **Threads.** After Notes passes, open an indexed thread list, submit a
+- **Threads.** Ship only after Notes and both Step 2 writer gates pass.
+  Open an indexed thread list, submit a
   composer draft with an attachment on the person’s eligible machine,
   reconnect at a committed transcript cursor, queue a follow-up, act on
   a protected approval, archive and unarchive, snooze, and stop. Require exactly one submission per
@@ -1068,6 +1108,18 @@ See the [recorded answers](https://git.kayg.org/kayg/calternal-ai/src/commit/3ab
 - **Q11 Nested child rows and user-made sections — DECIDED.** Both enter the
   first contract. Drag waits, with Move to and Move up/down as the recorded
   parity exception (§§4.1, 4.4).
+
+- **OPEN — Host item creation.** Consider a `host.item.create` built-in.
+  New note currently wakes the space.
+- **OPEN — Move to collection confirmation.** Today every move asks after
+  destination selection. Decide whether to challenge only when the
+  destination widens the audience.
+- **OPEN — Search across title and message.** Decide whether one search
+  field can feed both Binds.
+- **OPEN — Start the row’s leave animation on `ok`.** Decide whether to
+  start leaving before the next window omits the row.
+- **OPEN — Private per-person items.** The Reading List reminder’s viewer
+  filter does not grant item-level privacy.
 
 See the [review dispositions](reviews/plugin-api-v2-review-dispositions.md)
 for the revision 4 through 6 finding maps.

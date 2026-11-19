@@ -1,15 +1,9 @@
 # Description contract (v2)
 
-Status: **revision 5** on `lane/description-contract`, for sign-off by the web renderer lane (leads this document) and the native renderer lane (owns the
-review against SwiftUI). The plugins lane keeps runtime, authority and engines and references this document and
-[`contract/description-v2.schema.json`](../contract/description-v2.schema.json) instead of defining its own description schema. Nothing here is built;
-nothing in it is a promise of an implementation.
+Status: **revision 12**, paired with the [Plugin API v2 specification](plugin-api-v2.md) on `lane/plugin-api-v2-combined`. The [description schema](../contract/description-v2.schema.json) defines the shared renderer shapes.
 
 The schema is checked with `python3 contract/verify-description.py` against the fixtures in `contract/fixtures/description-v2/` (valid ones must pass,
 `invalid-*` ones must fail). The fixtures are the paper exercises of section 9.
-
-Section ownership: **1 to 4, 6, 7, 10** native lane (first draft); **5 (content nodes and host components) and 9** web lane; **8** both. Each side edits its own sections and
-rebases.
 
 ## 0. What a description is
 
@@ -54,8 +48,7 @@ One definition (`$defs/Bind`):
 * `list`: an index window over a kind's items, optionally one **collection** (a collection id from a literal, the route or the selection, so a collection
   UUID works; it is not a static pattern).
 * `item`: exactly one item by reference from the route or the selection. A literal row is never accepted.
-* `search`: a Notes or Threads search whose author declares a `mode` from the catalogue’s `SearchMode`. The footer sends settled text through `EventSearch`.
-  The renderer supplies no search mode. The host applies the mode declared by the addressed Bind in the active view. For Notes search, `source.collection` selects the authorized manual-collection projection.
+* `search`: match text from a claimed-text kind whose manifest declares `searchable: true`, or use the Turns-owned search plan in the catalogue. The author declares a `mode` from `SearchMode`. The footer sends settled text through `EventSearch` and the host applies the addressed Bind’s mode. For claimed-text search, `source.collection` selects the authorized manual-collection projection.
 
 Threads, trashed items and requests are kinds or indexed fields the host (or Turns) declares: `trashed`, `trashed_at`, `waiting_on`, `pending_for` are host-indexed
 fields, so the Notes Trash and the Threads Inbox are ordinary binds.
@@ -92,8 +85,8 @@ Row ids are opaque and stable. No position is an authority reference.
 
 * A window is the half-open range `[from, to)` of at most 200 returned rows. The absolute jump ceiling is 500,000. The host may materialize up to 4,096 rows and,
   separately, skip up to 250,000 entries in an index-only jump from the nearer end of the scoped covering index. Non-search lists use the maintained count for the authorized scope.
-  Notes can count qualified matches with exact-count authority within the separate count-work budget. Threads search uses count mode `none`.
-  See the catalogue’s `query.window` for window sizes and `query.search` for the depth qualified for both kinds. Beyond that depth, the host serves search windows while both work budgets hold.
+  Claimed-text kinds can count qualified matches with exact-count authority within the separate count-work budget. Threads search uses count mode `none`.
+  See the catalogue’s `query.window` for window sizes and `query.search` for the shared search depth. Beyond that depth, the host serves search windows while both work budgets hold.
 * The renderer prefetches ahead of the visible rows and, when a key or a drag walks past the edge of what it holds, asks for the next window at once (no
   settling), coalesced to at most 4 window **requests** a second; the host may answer with a larger range than asked (`offset` and `rows` say what came back).
 * `result_version` identifies the result set. A new version replaces the window wholesale; the renderer skips a replacement equal to what it draws, so a republish that
@@ -299,8 +292,7 @@ the web, SwiftUI natively); no plugin is written twice, and anything the vocabul
   (`{form: id, field: fieldId}`); the form shows what was typed, and by the rule in 3.2 the host still previews every material field (typing is never consent); a form may present that list in place. After an `ok` outcome the fields clear (`clear: onOk`,
   the default); after `error` or an unknown outcome they keep what was typed. Errors appear in a `notice` above the submit, never as loose text.
 * **Lists** are binds. `selectable: true` gives the keyboard model of `docs/native-feel.md` section 20 on every platform: Up/Down/Home/End/Page Up/Page Down move
-  the selection through ALL rows (drawn or not), the selection paints at once, and what the selection opens (a route change) happens when it settles, **about 100 ms after the last key** (or key up); **selection and navigation events wait while a key repeats** (one goes out about 100 ms after the last key), incoming windows are held and applied when the selection settles, and window **requests** for prefetch may still cross, coalesced to at most 4 a second (8.4)
-  (section 8, item 4). The contract's figure is about 100 ms; the web renderer's rest is adaptive: 1.6 times the longest gap between repeats in the burst, at least 45 ms and at most 120 ms, which is the same rule measured on the web; a load
+  the selection through all rows and paints it at once. The route opens when selection settles, about 100 ms after the last key or on key up. Selection and navigation events wait during repeats. Apply prefetch replies for the result version already drawn at once. Hold only version-changing pushes until selection settles. Prefetch requests still cross, up to the normal request cap (section 8, item 4). The contract's figure is about 100 ms; the web renderer's rest is adaptive: 1.6 times the longest gap between repeats in the burst, at least 45 ms and at most 120 ms, which is the same rule measured on the web; a load
   never starts while keys are still repeating, and a new key cancels the previous load.
 * **Home, End and Page Up/Down** over rows that are not loaded are a renderer duty. The host answers windows and the renderer moves selection when the target arrives.
   Home asks for `[0, n)` from the start. On a non-search Bind with exact count authority, End requests `anchor: end` from zero and Page Up/Down may use the end anchor near the tail.
@@ -335,7 +327,7 @@ plugin code). A description can run a named **invoke** on a component's event on
   `request-card`. Its size is the card's (the transcript and editor fill it; the composer is at the bottom; the frame reports its height inside the caps).
 * **Refs are typed.** `thread`, `item` and `request` take a value source that resolves to a reference of that type or the host refuses the description; the host
   authorises the viewer for the ref (a guest's grant included) before anything is read. The description holds no viewer data.
-* **Drafts and options.** The composer's text stays on the device; attachments are handed to the host when attached and held as host-owned `AttachmentRef`s, mentions are account references, a quoted passage is a host-issued quote reference (the catalogue's `Draft`), and the chosen provider, model, reasoning level, permission and machine are opaque option references the host returned (`Interaction.options`). The description names none of them: it says which controls appear. The host checks everything (lengths, counts, that every attachment is the viewer's own, that every option is one it offered for this thread) and composes the send; it never trusts the client. The one-exchange Send treats the final text **solely as message content**: anything the host parses out of it that changes recipients, routing, permissions or other prepared material (a mention, a slash command) needs a fresh preview before it takes effect (3.2). The draft clears only after `ok`; `error` keeps it.
+* **Drafts and options.** The composer's text stays on the device. It reuses the existing host routes for attachment upload and mention lookup. Attachments are held as host-owned `AttachmentRef`s, mentions are account references, a quoted passage is a host-issued quote reference (the catalogue's `Draft`), and the chosen provider, model, reasoning level, permission and machine are opaque option references the host returned (`Interaction.options`). The description names none of them: it says which controls appear. The host checks everything (lengths, counts, that every attachment is the viewer's own, that every option is one it offered for this thread) and composes the send; it never trusts the client. The one-exchange Send treats the final text **solely as message content**: anything the host parses out of it that changes recipients, routing, permissions or other prepared material (a mention, a slash command) needs a fresh preview before it takes effect (3.2). The draft clears only after `ok`; `error` keeps it.
 * **Transcript reads** use the catalogue's `transcript.page` route: a `TranscriptPageRequest` names the thread and an opaque `after` cursor, the `TranscriptPage` returns at most 128 committed events and a `committed_cursor`; every page is reauthorised and bounded (128 KiB); an expired or revoked cursor is refused and the renderer reads again from the end. No description or renderer invents a cursor.
 * **Streaming** is the host's: the transcript's rows grow and change without a description revision; the host caps the update rate, commits a final message at the
   end, and drops an in-flight load when the viewer moves to another thread (the old transcript load is cancelled, not finished).
@@ -393,13 +385,13 @@ plugin code). A description can run a named **invoke** on a component's event on
 What the renderer needs from the contract, and what it costs:
 
 1. **Windows, not pages**: `List` with `ForEach` over thousands of rows drops frames; the native list holds a window plus spacer rows sized from `count` and a
-   measured real row height (the system sets row height). Index windows and a count are therefore required. Measured: a held arrow key through a 5,000-row list
+   measured real row height (the system sets row height). Index windows are required. Use a count for the scroll extent only when the Bind authorizes it. Measured: a held arrow key through a 5,000-row list
    at 33 keys a second has to ask for windows without settling.
 2. **Selection outside the row models**: a row reads "is selected" from the list, not from the description; the description does not carry `selected` flags for
    drawing. (A page may still say which row it selected; the shell treats a later change as a reveal request.)
 3. **Equatable rows**: row values are small and comparable so an unchanged row is skipped when a window is replaced.
 4. **While a key repeats, no selection or row event crosses the bridge**: those go out once after the key settles (about 100 ms after the last key). Window **requests** for
-   prefetch may cross, coalesced to at most 4 a second; replies to prefetch for the result version already drawn are applied at once and only pushes that change the version are held until the selection settles (or applied a few a second),
+   prefetch may cross, coalesced to at most 4 a second; replies to prefetch for the result version already drawn are applied at once and only pushes that change the version are held until the selection settles,
    decoded and compared off the main thread; a held selection is flushed before an activation is sent. A republish that only confirms the selection must not touch the list.
 5. **One line per row**, one icon column per list (the system aligns titles by it), single neutral accent: the accent is passed only to the unread mark and a prominent action.
 6. **Swipe actions** need `title`, `icon`, `tone` and `fullSwipe` on the invoke; they draw with the system's swipe look, tinted by tone, never by the root tint.
@@ -408,97 +400,29 @@ What the renderer needs from the contract, and what it costs:
 9. **The first paint** may come from the cache (section 6) before any host is reachable: the template, and a member's persisted rows marked as not yet confirmed (their actions disabled until a fresh context arrives).
 10. **Nested rows and user sections** map to a `List` with `children` (disclosure) and one `Section` per layout row; windows per parent are requested only for expanded rows.
 
-### 8.1 Review of sections 5 and 9 against SwiftUI (native lane)
+## 9. Paper exercises
 
-Everything in 5.0 and 5.1 is drawable with system controls. Findings, in order of consequence:
+Run `python3 contract/verify-description.py` with the host catalogue. The fixtures in `contract/fixtures/description-v2/` pair each app with its manifest in `manifests/`. The SDK supplies each package’s own reads and the fixtures include the emitted entries. Section 6 governs the optional member rows used by `threads-nested-catalogue-app.json`.
 
-1. **Settling time (resolved).** One rule everywhere: a selection opens its target about 100 ms after the last key (or key up); selection and navigation events wait while a key repeats,
-   window requests and replies for the drawn result version do not (section 8, item 4).
-2. **Home, End and Page keys over rows that are not loaded.** "Through ALL rows (drawn or not)" needs the window protocol: the renderer asks for the target window at once (Home from the start, Page Up/Down around the current index, and End as described in §2.3) and moves the selection when the rows arrive. State this as a renderer duty; the host only has to answer windows.
-3. **A `list` takes the remaining height of its stack and scrolls itself.** Nested scrolling regions are refused: one `list` per scroll region, and a `stack` that
-   holds a list does not scroll. (A SwiftUI `List` inside a `ScrollView` loses its laziness and selection.)
-4. **Forms** map one to one: `text` TextField, `multiline` TextEditor, `url`/`email`/`number` TextField with the keyboard type, `date` DatePicker, `choice` a menu Picker,
-   `toggle` Toggle; labels use text roles (Dynamic Type), the submit is a prominent button disabled while invalid or pending, the notice sits above it. No change needed.
-5. **`Composer.config.enabled` as a Predicate has no row scope.** A predicate names a field of a row; a composer has none. Use a ValueSource or an explicit
-   `{bind, field}` source (`{bind: "thread", field: "state"}`) compared by an `enabledWhen` predicate; otherwise two renderers will read it differently.
-6. **Set-valued selection** (9.2) is cheap natively (`List(selection: Set<ID>)` with edit mode). Add `selectionMode: "multiple"` to the list node and a source
-   `{selection, set: true}` resolved as an ordered array of at most 50 ids; the trusted preview shows the count and the first titles.
-7. **Selector options from a bind** is cheap (a segmented control up to four options, a menu beyond); add `options: {bind}` with at most 12 rows.
-8. **Share sheet:** make it a host-owned sheet shown by the built-in `host.item.share` (SwiftUI `.sheet`), not a sixth component the description places; one decision for
-   every renderer, and the audience is the sheet's own content (a material input shown by the host, not by the description).
-9. **Date prompt:** extend `prompt` with `kind: "text" | "date" | "datetime"` (a DatePicker in the same sheet). A snooze presets menu works today.
-10. **Nested rows** (child threads) are drawable (`List(children:)`) but conflict with index windows (windows per parent). Defer, as listed.
-11. **Inline rename** as a shell prompt on every platform is right natively (an alert with a text field); accept the web's in-row editor as the web's own.
-12. **Transcript stamp.** `data-thread-rendered` is web only; the native equivalent is a typed `rendered` event plus a signpost and the existing measurement line; the 150 ms
-    budget is measured on a device, not with a CPU slowdown.
-13. **Sealed frame** natively is a WKWebView with a non-persistent data store, a content-blocking rule that refuses every network load, content served from a custom
-    scheme handler, fixed navigation (none) and one fixed message handler. Its height caps are enforced by the host; a frame inside a scrolling stack must not capture
-    vertical scroll when it fits.
-14. **Drag to move** exists in SwiftUI (`draggable`/`dropDestination`) and is not in the vocabulary; defer.
+### 9.1 Community Reading List and author trial
 
-### 8.2 Native review of draft 3 (activation, cache, first paint)
+The list binds `reading-item` and shows a title, read mark and empty state. Mark read uses a first full swipe through the host metadata toggle, with one exchange, Undo and no runtime wake. The two-field Add form calls `reading.add` and opens the host-minted `created` ref through `then`. The footer searches the same kind, which declares `searchable: true`, using a `terms` Bind.
 
-1. **Round trips (resolved by the catalogue).** A reversible action with `confirm: none` is one exchange (`dispatch: true`); only a challenged action takes resolve, confirm, dispatch; a chat
-   send is one exchange (`final_text`). The renderer shows the action as pending from the first send.
-2. **Pending and outcome on a row.** A row with an action in flight shows a quiet progress mark and keeps its place; the row leaves the list only when the host's next window
-   no longer contains it (no optimistic removal), so a failed Trash cannot leave a ghost gap. Undo is the outcome's button, shown for its `expiresAt`.
-3. **The confirmation sheet** is a system confirmation dialog (an alert or sheet with the host-written material lines, `Cancel` and the action named with the operation's own verb);
-   it is drawn by the shell, so a plugin cannot restyle or cover it.
-4. **First paint** (section 6) is drawn from the template alone: the shell stores the frame (structure, author-written titles, apps, selectors) and paints skeleton rows with the
-   bind's `loading` state; **no row, card, count, account initial or item title is stored** (implemented in the apps: `ChromeCache.frame(of:)`).
-5. **Selection sets and composer controls** map to `List(selection: Set<ID>)` in edit mode and system menus/pickers; the checked attachment references are produced by the
-   system pickers and uploaded through the host's route, so the draft carries references only.
+The reminder form calls `reading.remind`, saves the reminder with `item_save` and enrolls the declared `reading.reminder-due` operation using `schedule_create` with a one-date calendar and `notify_creator`. The list scopes its reminder Bind by `person eq viewer.person`. That filter supplies a personal view of otherwise member-authorized items. Private per-person items remain open in the API’s owner questions. The SDK defaults for a first list and the required author trial are in the API’s §§7–8.
 
-## 9. Paper exercises (fixtures) (web lane)
+### 9.2 Notes
 
-Fixtures in `contract/fixtures/description-v2/` with one **fixture manifest** per exercise (`manifests/`, a subset of the plugin manifest v2 format: kinds, indexed fields, operations,
-reads), so a fixture is checked against what the plugin would declare, not against nothing: `reading-list-app`, `notes-app`, `threads-app` (and `notes-bulk-and-snooze-app`). Run `python3 contract/verify-description.py`.
-**Reads.** Every bind needs its kind in the manifest's `reads`; the SDK fills a package's own kinds into `reads` automatically, so an author writes `reads` only for another app's kinds (Threads reads `threads` and `layout_sections`, the host's). The verifier still requires the entry in the manifest it checks.
-**Persisted rows (owner decision Q10).** A member's own-space rows may persist on the device (encrypted, painted at once, then confirmed or corrected by the host); a bind opts in with `persist` (**root binds only**: a nested or per-parent bind, such as child threads or the rows of a user section, never persists, and the schema refuses `persist` on a parent bind), a description may opt out with `cache.memberRows: none`, and nothing persists for a guest or a public view (a guest or public reply cannot carry the member record). The conditions are section 6's. The fixture `threads-nested-catalogue-app.json` shows both (`cache.memberRows`, `persist` on the `all` bind).
-This section is a rerun of the three exercises after Opus review 4: what is written, what is not, how many concepts an author meets before the first list, and what
-`defineView` and `defineChrome` will hide.
+The windowed sidebar binds a manual collection with an exact count and shows a Collections section and a Trash Bind. Restore uses a full swipe on an eligible single item. Empty Trash uses the host sheet with a Manager visibility rule, and Share uses its host-owned audience sheet. Rename through Notes’ link-rewriting path resolves and dispatches separately, with Undo fetched through the typed outcome/status route. Bulk Trash resolves the checked `selection_ref`, then confirms and dispatches. Move to collection fetches the scoped choice, resolves it, confirms and dispatches.
 
-### 9.1 Community reading list
+The `item-editor` edits the routed `yjs-v1` item. New note invokes the plugin and follows `created` via `then`. The footer searches the authorized manual collection through `source.collection`. Window, bulk, snooze and search cases are covered by `notes-app.json`, `notes-bulk-and-snooze-app.json` and the search event fixtures.
 
-**Concepts before an empty list appears (about 18):** manifest identity, network tier, app, a chrome description and a content description (one `App`), asset digests, kind,
-storage placement, kind schema, indexed fields, the required `operations` array, description version and revision, bind and source, field projection, window and count, row
-template, sidebar section, view root and list node. Adding the first row adds an operation (risk, idempotency, capability, methods, schemas), a worker and `ctx`.
-**`defineView` / `defineChrome` can hide:** asset digests and paths, the method inventory, tickets, `space_id` and the wire. They **cannot** hide the chrome/content pairing
-(one `App` after this round), placement, the bind and row vocabulary or the four risk fields: those are the contract.
-**Written:** a bound list (title, read mark, a per-row Mark read, an empty state); a two-field add form; a per-person reminder bind with `viewer_self` audience.
-**Not written / open:**
-* **Add opens the item it created** needs `ActionOutcome.created` and `then: {route}` (plugins lane).
-* **Mark read without waking the runtime** needs the host's metadata patch with scalar `field` and `value` and a `full_swipe` flag; today it is a plugin operation, so it
-  wakes the runtime and cannot be a full swipe.
-* **A reminder on one date** has no scheduler shape (`notify_creator` is in no schema and schedules recur); the reminder bind is written, the notification is not.
-* Conditional fields, custom validation messages, edit in place and load more are not in the first vocabulary.
+### 9.3 Threads
 
-### 9.2 Notes: windowed sidebar, collections, Trash, rename with Undo, bulk Trash and Share, Move to collection
+Inbox filters `waiting_on eq viewer.person` with an exact count on that viewer’s projection. All Threads supports per-parent child windows and personal sections repeated over `layout_sections`. Section rows distinguish the placement address from the underlying thread (§2.7). The host supplies Move to, Move up/down and section create, rename and remove. Drag remains the recorded Q11 parity exception.
 
-**Written:** collections as a bound section; notes as a list bound to the route's collection in index windows with an exact count; Trash as a bind (`trashed eq true`); Restore;
-Empty Trash and Share as host sheets reached by a `ShellAction` (the host writes the material); rename with a prompt and a host-owned Undo; the footer search over a Notes Bind in `terms` mode; the editor as an `item-editor` reading the route's item (the fixture's route is `item` on both sides); the header title from an item bind of the open note; bounded
-multi-selection and bulk Trash through `selection_ref`; **Move to collection** as a `choice` prompt over the collections bind (at most 50 options) that sets the note's collection. The search-mode fixtures send text through the same `EventSearch` path for all declared modes.
-**Not written / open:**
-* **New note opens the note it creates** (`created`, `then`); **pin without a runtime wake** (the metadata patch); **Undo and status** have no wire shape yet in the event union
-  (the plugins and native lanes define them); **Empty Trash** names no kind and an Editor should not see it (`showWhen` on roles).
-* **Tag chips**, **sections per collection** and **drag**: the `choice` prompt covers Move to; chips and repeaters are not written.
-* **Notes is a host kind in the catalogue today**, so a community notes app cannot declare the same fields (plugins lane: generic item fields in the catalogue).
+New thread uses `turns.create` and `then`. The composer uses host provider, model, reasoning, permission and machine controls, checked attachments and mentions, and prepared one-exchange Send. The host streams `transcript.page` and live updates and owns the approval card and follow-up. Message search uses `terms` and title search uses `title_prefix`, each in its own Bind. Each footer field addresses one Bind. The API’s Step 2 writer gates control idle archive full swipe with Undo and per-actor snooze. An active archive uses a challenge.
 
-### 9.3 Threads: Inbox of "waiting on me", search, composer, approval card
-
-The Threads footer uses a `terms` Bind over authorized messages. The search window fixtures cover the qualified depth and a later request for both Notes and Threads.
-For the count-free page-boundary scenario, pair `event-catalogue-search-page-boundary-first.json` with `reply-catalogue-search-page-boundary-first.json`
-to show one full page. Pair the `-next.json` request and reply to verify that its zero-row `ready` window ends forward paging and keeps the first page visible without the empty message.
-`invalid-reply-catalogue-search-page-boundary-empty.json` rejects an `empty` reply to that later request.
-
-**Written:** the Inbox as a bind (`waiting_on eq viewer.person`) with its count in the selector; All Threads; provider icons from the open `ProviderId` values; state marks; the
-transcript with the host's Quote and Stop; the composer as a thread and its controls (provider, model, reasoning, permission, machine, attachments, mentions), the host owning the
-send; an approval as a `request-card` over the protected request (`requests`, `thread_ref`); snooze as a `datetime` prompt; **nested child rows** (owner decision Q11: child threads under their parent: the `all` bind's rows declare `children: {bind}`, a bind with `source.parent: true` windowed per parent row, depth at most 3); **user-made sections** (Q11: `Section.repeat {over, rows}`: one section per row of the host's per-person layout, a host virtual kind `layout_sections`, each section's threads a per-parent bind), with **Move to**, **Move up**, **Move down** and section create, rename and remove as host layout operations (`host.layout.*`, entries named by the host-issued `LayoutEntryRef`, which the row id is inside a repeated section). The fixture uses `{context: "item"}` for the underlying thread and `{context: "placement"}` for the placement entry. The accepted operand forms are in §2.7. Move to adds an unplaced thread by `thread` plus the section choice, a placed row moves by `entry`, Archive always takes the thread. The nested window request carries the host-issued parent ref the parent row came with (`WindowRow.parent_refs` to `request.parent`; fixture `event-catalogue-window-parent.json`). Fixture: `threads-nested-catalogue-app.json`. The renderer-side replies are exercised as fixtures: `reply-catalogue-window-ready`, `-loading` and `-plan-error` (the typed refusal `{status: 422, code: unsupported_query_plan}`: the typed refusal carries a `reason` handled by the recovery rule in §2.3). A request may be **end-relative** (`anchor: end`, `[from, to)` counted from the last row, the same envelope, width at most 200): End and near-end jumps use it for non-search Binds with exact count authority, and an end result carries no member cache record (durable keys stay absolute). An end-anchored result carries `count.mode: exact`. An attempt without exact-count authority gets the typed refusal and no end distance, with negatives for a wrong code, a ready reply without a result version and an unknown field. The End without exact count authority is exercised both ways: a **guest** end request is refused (`reply-catalogue-window-plan-error-end-unavailable`, reason `end_unavailable`) and a **member** end request with exact count authority is served (`event-catalogue-window-end` with `reply-catalogue-window-end-result`, exact count), with negatives for an end-anchored result without a count (`invalid-reply-catalogue-window-end-no-count`) and one carrying an estimate (`invalid-reply-catalogue-window-end-estimate`: estimate or none gets `end_unavailable` instead). The member cache record is exercised by `reply-catalogue-window-member-record` (an own-space-member, root, ready reply carrying the record) and the negatives `invalid-reply-catalogue-window-guest-record`, `-public-record` and `-nested-record` (a guest or public reply, or a nested one, carrying the same valid record); they validate once the catalogue has `WindowAudience` (revision 8).
-**Not written / open:**
-* **New thread** (no operation creates a thread: `turns.create`), **archive and unarchive** (distinct from Trash: `turns.archive`, `turns.unarchive`), **snooze** (`turns.snooze` and a
-  `snoozed_until` field so the Inbox can hide snoozed threads), **follow-up** (`turns.follow_up`): plugins lane catalogue additions; the fixture maps them by name until they land.
-* **Drag to reorder** is a recorded **parity exception** (owner decision Q11): on a phone and on the web the person moves a thread with **Move to** (a `choice` prompt over the section rows) and **Move up / Move down**; drag waits.
-* **Bind-backed selectors** (chips) and **conditional fields** can wait.
+The `threads-app.json` and `threads-nested-catalogue-app.json` fixtures exercise the composer, Bind and layout shapes. The paired `search-page-boundary` fixtures show a full first page followed by a zero-row `ready` window, which preserves the rows on screen. Their later-page `empty` variant is refused. The window reply fixtures also cover exact-count End, a guest refusal, refinement and the member cache record.
 
 ### 9.4 What this schema needs from the host (authorisation is the plugins lane's)
 
@@ -514,14 +438,10 @@ send; an approval as a `request-card` over the protected request (`requests`, `t
 
 1. `host.item.patch-metadata` (maps to `item_save`'s metadata arm) and `host.trash.purge` (confirmed, Manager or Owner, as a job) are the plugins lane's, part A.
 2. Reminders notify through `notify_creator` on the existing scheduler (plugins lane, part A).
-3. **Content node types** and the five host components: written in section 5 (web lane), exercised in section 9; the gaps are listed there and are the next vocabulary requests (set-valued selection `{selection, set: true}` of at most 50 ids with `selectionMode: multiple`; selector `options: {bind}` of at most 12 rows; composer typed controls; the share sheet as a host-owned sheet behind `host.item.share`, not a sixth component; `prompt.kind` text/date/datetime; nested rows (windows per parent); drag to move; section repeaters).
-4. **Generic TCP** is outside this contract; the owner's decision is recorded elsewhere and is not a description concern.
-5. **Section repeaters** (one section per row of a bind) and **nested child rows** are in the first contract (owner decision Q11, `Section.repeat`, `RowTemplate.children`); **drag** is a recorded parity exception, with Move to, Move up and Move down standing in.
-6. The **retirement date of v1** is the owner's.
+3. **Generic TCP** is outside this contract; the owner's decision is recorded elsewhere and is not a description concern.
+4. **Section repeaters** (one section per row of a bind) and **nested child rows** are in the first contract (owner decision Q11, `Section.repeat`, `RowTemplate.children`); **drag** is a recorded parity exception, with Move to, Move up and Move down standing in.
+5. The **retirement date of v1** is the owner's.
 
-## 11. Sign-off
+## 11. Review record
 
-* Native renderer lane: signs off at the tip reported with this revision. Sections 1 to 4 and 6 to 8 are mine; sections 5 and 9 were reviewed against SwiftUI (8.1, 8.2). All fixtures pass
-  without a catalogue and against the plugins lane's `contract/host-catalogue-v2.json` (`CALTERNAL_HOST_CATALOGUE=<path> python3 contract/verify-description.py`).
-* Web renderer lane: sections 5 and 9 and the content nodes; its sign-off is its own message.
-* Dispositions of the review rounds are in `docs/reviews/description-contract-reviews-2026-11-19.md` (review notes are not part of the contract).
+The native and web renderer lanes record their sign-offs on the pinned combined revision. Earlier [native-lane notes](reviews/description-contract-native-history-2026-11-19.md) and [review dispositions](reviews/description-contract-reviews-2026-11-19.md) are historical.

@@ -209,7 +209,7 @@
         {
           "type": "form",
           "id": "remind",
-          "title": "Remind me (only I see this)",
+          "title": "Remind me",
           "fields": [
             {
               "id": "when",
@@ -246,7 +246,7 @@
         {
           "type": "list",
           "bind": "reminders",
-          "title": "My reminders"
+          "title": "Reminders"
         }
       ]
     }

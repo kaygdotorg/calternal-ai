@@ -316,7 +316,10 @@
       "source": {
         "type": "search",
         "kind": "notes",
-        "mode": "terms"
+        "mode": "terms",
+        "collection": {
+          "route": "collection"
+        }
       },
       "fields": [
         "title"
@@ -381,6 +384,11 @@
                   "inputs": {
                     "collection": {
                       "route": "collection"
+                    }
+                  },
+                  "then": {
+                    "route": {
+                      "name": "item"
                     }
                   }
                 }

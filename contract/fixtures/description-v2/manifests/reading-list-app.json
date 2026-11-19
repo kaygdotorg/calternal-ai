@@ -14,7 +14,7 @@
         "id": "app",
         "template": {
           "path": "reading-list-app.json",
-          "sha256": "8d0009c6c1c1c87ac3980f807ae9b512887bb8b20cab053906dfc69edd87b98d"
+          "sha256": "915563c5b38af6ae8ba15ea90c86032ae2f992e7b6d746f4917e617068114340"
         }
       }
     }
@@ -63,7 +63,8 @@
           "type": "Boolean",
           "audience": "member_item"
         }
-      }
+      },
+      "searchable": true
     },
     {
       "id": "reading-reminder",
@@ -187,16 +188,57 @@
       "risk": "reversible",
       "idempotency": "request_id",
       "methods": [
-        "schedule_create"
+        "schedule_create",
+        "item_save"
       ],
       "target": {
         "kind": "reading-item",
         "field": "item"
+      },
+      "creates": "reading-reminder"
+    },
+    {
+      "id": "reading.reminder-due",
+      "title": "Deliver reading reminder",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "reminder"
+        ],
+        "properties": {
+          "reminder": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        }
+      },
+      "output_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "required_capability": "space.read",
+      "risk": "read",
+      "idempotency": "read_only",
+      "methods": [
+        "item_head"
+      ],
+      "target": {
+        "kind": "reading-reminder",
+        "field": "reminder"
       }
     }
   ],
   "worker": {
     "path": "dist/fixture.js",
     "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
-  }
+  },
+  "schedule_eligibility": [
+    {
+      "id": "reminder-due",
+      "operation": "reading.reminder-due"
+    }
+  ]
 }

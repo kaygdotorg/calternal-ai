@@ -372,11 +372,14 @@ def semantic(doc, errors, catalogue, manifest):
         kind_id = source.get("kind")
         path = f"$.binds[{index}].source"
         if not isinstance(kind_id, str): continue
-        search_kinds = catalogue.get("query", {}).get("search", {}).get("kinds", {})
-        if source.get("type") == "search" and kind_id not in search_kinds:
-            errors.append(f"{path}: search is unqualified for {kind_id!r}")
-        kind = cat_kinds.get(kind_id) if catalogue is not None else None
-        plugin = man_kinds.get(kind_id) if manifest is not None else None
+        kind = cat_kinds.get(kind_id)
+        plugin = man_kinds.get(kind_id)
+        if source.get("type") == "search":
+            turns_kind = catalogue.get("query", {}).get("search", {}).get("turns", {}).get("kind")
+            turns_search = kind_id == turns_kind and (kind or {}).get("owner") == "turns"
+            claimed_text_search = kind is None and plugin and plugin.get("claimed_text") is True and plugin.get("searchable") is True
+            if not (turns_search or claimed_text_search):
+                errors.append(f"{path}: {kind_id!r} needs claimed_text and searchable in its kind manifest to support search")
         if catalogue is not None and kind is None and plugin is None:
             if manifest is not None or kind_id in ("notes", "threads", "collections", "requests"):
                 errors.append(f"{path}: kind {kind_id!r} is in neither the host catalogue nor the fixture manifest")

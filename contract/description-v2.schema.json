@@ -308,14 +308,14 @@
             "item",
             "search"
           ],
-          "description": "list: an index window over a kind's items (optionally one collection); item: exactly one item by reference; search: Notes or Threads matching text under the author’s required mode and the catalogue’s query.search qualification."
+          "description": "list: an index window over a kind's items (optionally one collection); item: exactly one item by reference; search: match text in a qualified kind under the author’s required mode and the catalogue’s query.search policy."
         },
         "kind": {
           "$ref": "#/$defs/Id"
         },
         "collection": {
           "$ref": "#/$defs/FilterValue",
-          "description": "Selects a collection by ID from a literal, the route or the selection. Restricts a list to that collection. For Notes search, selects the authorized manual-collection projection."
+          "description": "Selects a collection by ID from a literal, the route or the selection. Restricts a list to that collection. For claimed-text search, selects the authorized manual-collection projection."
         },
         "ref": {
           "$ref": "#/$defs/FilterValue",
