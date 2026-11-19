@@ -38,6 +38,9 @@ pub mod session;
 pub(crate) mod settings;
 pub(crate) mod signals;
 mod slots;
+pub(crate) mod space_broker;
+mod space_ticket;
+pub use space_broker::ApprovedItemHead;
 pub mod worker;
 
 use std::borrow::Cow;
@@ -256,6 +259,7 @@ impl Plugin {
 pub struct Registry {
     catalog: arc_swap::ArcSwap<Catalog>,
     changes: tokio::sync::watch::Sender<u64>,
+    space_heads: BTreeMap<SpaceId, BTreeMap<String, Arc<ApprovedItemHead>>>,
     #[cfg(feature = "dev-plugin-drafts")]
     failed_candidates: draft_diagnostics::FailedCandidates,
 }
@@ -328,9 +332,55 @@ impl Registry {
                 plugins.into_iter().map(Arc::new).collect(),
             )),
             changes: Default::default(),
+            space_heads: Default::default(),
             #[cfg(feature = "dev-plugin-drafts")]
             failed_candidates: Default::default(),
         }
+    }
+
+    /// Add the explicitly approved v2 item-head operations at startup. Existing
+    /// host and worker operations keep priority. Costs bounded catalog insertion
+    /// over at most 128 operations and no storage or process I/O.
+    pub fn with_space_item_heads(
+        mut self,
+        approved: Vec<ApprovedItemHead>,
+    ) -> Result<Self, calternal_types::Error> {
+        if !self.space_heads.is_empty() || approved.len() > 128 {
+            return Err(calternal_types::Error::invalid_input(
+                "space item-head catalog is already configured or too large",
+            ));
+        }
+        let catalog = self.snapshot();
+        for mut head in approved {
+            if catalog.policy(&head.operation).is_some()
+                || calternal_core::is_known_operation(&head.operation)
+            {
+                return Err(calternal_types::Error::conflict(
+                    "operation ID is already registered",
+                ));
+            }
+            let operations = self.space_heads.entry(head.space).or_default();
+            if let Some(first) = operations.values().next() {
+                head.share_wake(first)?;
+            }
+            if operations
+                .insert(head.operation.clone(), Arc::new(head))
+                .is_some()
+            {
+                return Err(calternal_types::Error::conflict(
+                    "space operation ID is already registered",
+                ));
+            }
+        }
+        Ok(self)
+    }
+
+    pub(crate) fn space_item_head(
+        &self,
+        space: SpaceId,
+        operation: &str,
+    ) -> Option<Arc<ApprovedItemHead>> {
+        self.space_heads.get(&space)?.get(operation).cloned()
     }
 
     /// Failed development candidates, kept in memory for author inspection.

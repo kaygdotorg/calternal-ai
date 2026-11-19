@@ -2810,6 +2810,10 @@ const MACHINE_ROUTES: &[(&str, &str)] = &[
     ("POST", "/api/v1/machine/session/start"),
     ("POST", "/api/v1/machine/session/finish"),
     ("POST", "/api/v1/machine/sync"),
+    (
+        "GET",
+        "/api/v1/machine/spaces/{space}/channels/{assignment}",
+    ),
     ("POST", "/api/v1/machine/status"),
     ("POST", "/api/v1/machine/output"),
     ("GET", "/api/v1/machines"),
@@ -2827,6 +2831,42 @@ impl Fixture {
     /// Machine-protocol request with an optional machine bearer and no cookie.
     async fn machine(&self, path: &str, bearer: Option<&str>, body: Value) -> Answer {
         self.try_machine(path, bearer, body).await.unwrap()
+    }
+
+    /// Real HTTP/1.1 upgrade request, capturing headers as well as the denial body.
+    async fn machine_channel(&self, space: &str, assignment: &str, bearer: Option<&str>) -> Answer {
+        use calternal_machine::protocol::SPACE_CHANNEL_UPGRADE;
+        let request = self
+            .client
+            .get(format!(
+                "{}/api/v1/machine/spaces/{space}/channels/{assignment}",
+                self.base
+            ))
+            .version(reqwest::Version::HTTP_11)
+            .header("host", "localhost:18080")
+            .header("connection", "Upgrade")
+            .header("upgrade", SPACE_CHANNEL_UPGRADE);
+        let request = match bearer {
+            Some(bearer) => request.bearer_auth(bearer),
+            None => request,
+        };
+        let reply = request.send().await.unwrap();
+        let status = reply.status().as_u16();
+        let headers: BTreeMap<_, _> = reply
+            .headers()
+            .iter()
+            .map(|(name, value)| (name.to_string(), value.to_str().unwrap().to_owned()))
+            .collect();
+        assert!(
+            !headers.contains_key("upgrade"),
+            "rejected request upgraded"
+        );
+        Answer {
+            status,
+            body: reply.json().await.unwrap(),
+            headers,
+            micros: 0,
+        }
     }
 
     async fn try_machine(
@@ -3086,6 +3126,71 @@ async fn machines_and_runs_are_owner_private() {
             "{p}"
         );
     }
+    let code = f
+        .req(
+            "POST",
+            "/api/v1/machines/codes",
+            Some(&f.cookies[2]),
+            json!({}),
+            Some(ORIGIN),
+        )
+        .await;
+    code.ok();
+    let foreign_key = MachineKey::generate().unwrap();
+    let foreign = f
+        .machine(
+            "/api/v1/machine/enroll",
+            None,
+            json!({"code":code.body["code"],"public_key":foreign_key.public_key_b64(),"name":"b","os":"linux","arch":"x86_64","direct":false}),
+        )
+        .await;
+    foreign.ok();
+    let foreign_machine = foreign.body["machine_id"]
+        .as_str()
+        .unwrap()
+        .parse()
+        .unwrap();
+    let challenge = f
+        .machine(
+            "/api/v1/machine/session/start",
+            None,
+            json!({"machine_id":foreign_machine}),
+        )
+        .await;
+    challenge.ok();
+    let challenge = challenge.body["challenge"].as_str().unwrap();
+    let mut proof = finish(
+        foreign_key.sign_session(foreign_machine, challenge),
+        challenge,
+    );
+    proof["machine_id"] = json!(foreign_machine);
+    let foreign_session = f
+        .machine("/api/v1/machine/session/finish", None, proof)
+        .await;
+    foreign_session.ok();
+    let foreign_token = foreign_session.body["token"].as_str().unwrap();
+
+    // Run leases are real but cannot be used as channel assignments. The server
+    // product fixture also probes real live and consumed channel assignments.
+    let foreign_lease = as_editor.body["lease_id"].as_str().unwrap();
+    let denied = f.machine_channel(&missing, &missing, Some(&token)).await;
+    assert_eq!(denied.status, 404);
+    assert_eq!(
+        denied.body["error"]["message"],
+        "space carrier assignment unavailable"
+    );
+    for (space, assignment, bearer) in [
+        (f.spaces[0].as_str(), lease.as_str(), Some(foreign_token)),
+        (&f.spaces[0], &lease, None),
+        (&f.spaces[0], &lease, Some("cm1_unknown")),
+        (&f.spaces[1], &lease, Some(&token)),
+        (&f.spaces[0], foreign_lease, Some(&token)),
+        (&f.spaces[0], &missing, Some(&token)),
+    ] {
+        let reply = f.machine_channel(space, assignment, bearer).await;
+        assert_eq!(reply.signature(), denied.signature());
+    }
+
     // Revocation is immediate: the session dies and A's run ends.
     let revoked = f
         .req(
@@ -3097,6 +3202,8 @@ async fn machines_and_runs_are_owner_private() {
         )
         .await;
     revoked.ok();
+    let revoked_carrier = f.machine_channel(&f.spaces[0], &lease, Some(&token)).await;
+    assert_eq!(revoked_carrier.signature(), denied.signature());
     assert_eq!(
         f.machine("/api/v1/machine/sync", Some(&token), sync)
             .await

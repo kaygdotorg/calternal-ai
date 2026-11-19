@@ -59,6 +59,7 @@ impl FromStr for ConnectAddress {
 /// Connection to one server plus the machine's current session token.
 pub struct Link {
     http: reqwest::Client,
+    space_http: reqwest::Client,
     base: String,
     token: watch::Sender<Option<Arc<str>>>,
 }
@@ -76,11 +77,26 @@ impl Link {
         Self::build(base, address, reqwest::Client::builder())
     }
 
-    fn build(
+    /// Trust a disposable test CA for verified space upgrades in integration fixtures.
+    /// Cost: builds two HTTP clients. The regular origin and binding checks still apply.
+    #[cfg(feature = "test-space-carrier")]
+    #[doc(hidden)]
+    pub fn with_space_test_ca(base: &str, root: reqwest::Certificate) -> Result<Self> {
+        let mut link = Self::new(base)?;
+        link.space_http = Self::configure(base, None, reqwest::Client::builder())?
+            .no_proxy()
+            .add_root_certificate(root)
+            .redirect(reqwest::redirect::Policy::none())
+            .http1_only()
+            .build()?;
+        Ok(link)
+    }
+
+    fn configure(
         base: &str,
         address: Option<&ConnectAddress>,
         mut builder: reqwest::ClientBuilder,
-    ) -> Result<Self> {
+    ) -> Result<reqwest::ClientBuilder> {
         if let Some(address) = address {
             let url = reqwest::Url::parse(base)
                 .map_err(|_| Error::Protocol("Set the server to an HTTP or HTTPS URL.".into()))?;
@@ -100,16 +116,73 @@ impl Link {
                     SocketAddr::new(address.address, address.port),
                 );
         }
-        let http = builder
+        Ok(builder
             .connect_timeout(Duration::from_secs(10))
             .pool_idle_timeout(Duration::from_secs(90))
-            .user_agent(concat!("calternal-machine/", env!("CARGO_PKG_VERSION")))
+            .user_agent(concat!("calternal-machine/", env!("CARGO_PKG_VERSION"))))
+    }
+
+    fn build(
+        base: &str,
+        address: Option<&ConnectAddress>,
+        builder: reqwest::ClientBuilder,
+    ) -> Result<Self> {
+        let http = Self::configure(base, address, builder)?.build()?;
+        let space_http = Self::configure(base, address, reqwest::Client::builder())?
+            .redirect(reqwest::redirect::Policy::none())
+            .http1_only()
             .build()?;
         Ok(Self {
             http,
+            space_http,
             base: base.trim_end_matches('/').to_owned(),
             token: watch::channel(None).0,
         })
+    }
+
+    pub(crate) async fn upgrade_space(
+        &self,
+        channel: &crate::protocol::SpaceChannelAssignment,
+    ) -> Result<(reqwest::Upgraded, watch::Receiver<Option<Arc<str>>>)> {
+        let invalid =
+            || Error::Protocol("space carrier requires a current enrolled TLS origin".into());
+        let url = reqwest::Url::parse(&format!(
+            "{}/api/v1/machine/spaces/{}/channels/{}",
+            self.base, channel.space, channel.assignment,
+        ))
+        .map_err(|_| invalid())?;
+        if url.scheme() != "https" || !url.username().is_empty() || url.password().is_some() {
+            return Err(invalid());
+        }
+        let mut session = self.token.subscribe();
+        let token = session.borrow_and_update().clone().ok_or_else(invalid)?;
+        let protocol = crate::protocol::SPACE_CHANNEL_UPGRADE;
+        let upgrade = async {
+            let response = self
+                .space_http
+                .get(url)
+                .bearer_auth(&*token)
+                .header(reqwest::header::CONNECTION, "Upgrade")
+                .header(reqwest::header::UPGRADE, protocol)
+                .send()
+                .await?;
+            if response.status() != reqwest::StatusCode::SWITCHING_PROTOCOLS
+                || response
+                    .headers()
+                    .get(reqwest::header::UPGRADE)
+                    .is_none_or(|value| value != protocol)
+            {
+                return Err(invalid());
+            }
+            Ok(response.upgrade().await?)
+        };
+        let io = tokio::time::timeout(Duration::from_secs(2), upgrade)
+            .await
+            .map_err(|_| invalid())??;
+        if session.has_changed().unwrap_or(true) {
+            return Err(invalid());
+        }
+        Ok((io, session))
     }
 
     /// Server base URL.

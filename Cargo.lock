@@ -683,6 +683,7 @@ dependencies = [
  "base64 0.23.1",
  "calternal-cli",
  "calternal-fsio",
+ "calternal-plugin-host",
  "calternal-types",
  "clap",
  "futures-util",
@@ -734,6 +735,8 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.21",
+ "tokio",
+ "uuid",
 ]
 
 [[package]]
@@ -810,6 +813,8 @@ dependencies = [
  "getrandom 0.4.3",
  "hex",
  "http-body-util",
+ "hyper",
+ "hyper-util",
  "lettre",
  "libc",
  "openidconnect",

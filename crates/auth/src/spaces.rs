@@ -9,11 +9,13 @@ use calternal_core::PeopleOperation;
 use calternal_types::{Capability, CapabilitySet, GroupId};
 mod development;
 mod erasure;
+mod invocation;
 mod membership;
 mod receipt;
 mod recovery;
 mod search;
 pub use development::DevelopmentIds;
+pub use invocation::{InvocationGrant, InvocationReader};
 use membership::*;
 pub use membership::{GroupMember, MemberPage, MemberTarget};
 pub(crate) use membership::{assignable_role, privileged};
@@ -394,6 +396,19 @@ impl Spaces {
             receipt_retention,
         }
     }
+    /// Retain the delivery revision for a host-validated enrolled space assignment.
+    /// Call on a blocking control-plane thread using the installation's shared
+    /// authority handle. The caller must independently fence and verify placement.
+    /// Costs one worker round trip and two indexed existence probes. The retained
+    /// handle then checks authority changes without database access.
+    pub fn grant_revision(
+        &self,
+        space: SpaceId,
+        machine: uuid::Uuid,
+    ) -> Result<crate::db::GrantRevision> {
+        self.db.grant_revision(space, machine)
+    }
+
     /// Agent authority sharing this handle and recovery barrier. Cost: an Arc clone.
     pub fn agents(&self) -> crate::agents::Agents {
         crate::agents::Agents::new(self.db.clone())

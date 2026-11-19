@@ -8,6 +8,8 @@
 //! bounded by about 256 KiB in the channel plus 256 KiB here.
 
 mod erasure;
+/// Supervision of the isolated v2 package pipe.
+mod space_channel;
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -48,6 +50,8 @@ struct Slot {
     /// Set when the slot left the map; whoever then sees a started sandbox stops it.
     removed: AtomicBool,
     stop: OnceCell<()>,
+    /// A v2 placement is supervised once and the supervisor owns its teardown.
+    channel_started: AtomicBool,
     keep_files: AtomicBool,
     execs: Mutex<HashSet<Uuid>>,
     inputs: Mutex<
@@ -253,6 +257,7 @@ impl Runner {
                         last_use: Mutex::new(Instant::now()),
                         removed: AtomicBool::new(false),
                         stop: OnceCell::new(),
+                        channel_started: AtomicBool::new(false),
                         keep_files: AtomicBool::new(false),
                         execs: Mutex::new(HashSet::new()),
                         inputs: Mutex::new(HashMap::new()),
@@ -273,6 +278,10 @@ impl Runner {
     /// assignment can reuse the same workspace.
     pub async fn handle(self: &Arc<Self>, message: Down) {
         match message {
+            Down::OpenSpaceChannel { channel } => {
+                let runner = self.clone();
+                tokio::spawn(async move { runner.open_space_channel(channel).await });
+            }
             Down::Assign {
                 lease_id,
                 fence,

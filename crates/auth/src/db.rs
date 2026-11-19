@@ -9,11 +9,14 @@
 use crate::{Error, Result};
 use rusqlite::Connection;
 use std::collections::VecDeque;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
+mod grant_revision;
+mod grant_triggers;
 mod role_batch;
+pub use grant_revision::GrantRevision;
 
 const AUTH_CHANGES: &[(i64, &str)] = &[
     (12, include_str!("account_details.sql")),
@@ -45,6 +48,8 @@ pub struct Db {
     worker: tokio::sync::mpsc::Sender<Job>,
     sink: Arc<OnceLock<Sink>>,
     changes: Arc<tokio::sync::watch::Sender<u64>>,
+    grants: grant_revision::Tracker,
+    path: Arc<PathBuf>,
 }
 
 type Sink = Arc<dyn crate::spaces::RecoverySink>;
@@ -80,17 +85,22 @@ impl Db {
     pub fn open(path: &Path) -> Result<Self> {
         let _revision = calternal_types::begin_item_access_change();
         let mut connection = open_conn(path)?;
+        let grants = grant_revision::Tracker::default();
+        grants.install(&connection).map_err(sql)?;
         let (worker, mut inbox) = tokio::sync::mpsc::channel::<Job>(64);
         let db = Self {
             worker,
             sink: Arc::new(OnceLock::new()),
             changes: Arc::new(tokio::sync::watch::channel(0).0),
+            grants: grants.clone(),
+            path: Arc::new(path.to_path_buf()),
         };
         let sink = db.sink.clone();
         let changes = db.changes.clone();
         std::thread::Builder::new()
             .name("auth-db".into())
             .spawn(move || {
+                let grants = grant_revision::Worker(grants);
                 let mut pending = VecDeque::new();
                 while let Some(job) = pending.pop_front().or_else(|| inbox.blocking_recv()) {
                     ACTIVE_SINK.with(|s| *s.borrow_mut() = sink.get().cloned());
@@ -99,6 +109,9 @@ impl Db {
                         Job::Single(job) => {
                             let _revision = calternal_types::begin_item_access_change();
                             job(&mut connection);
+                            if connection.is_autocommit() {
+                                grants.0.finish();
+                            }
                         }
                         Job::Read(read) => read(&connection),
                         Job::Role(first) => {
@@ -116,6 +129,9 @@ impl Db {
                             }
                             let _revision = calternal_types::begin_item_access_change();
                             role_batch::execute(&mut connection, batch);
+                            if connection.is_autocommit() {
+                                grants.0.finish();
+                            }
                         }
                     }
                     if connection.total_changes() != before {
@@ -125,6 +141,50 @@ impl Db {
             })
             .map_err(Error::internal)?;
         Ok(db)
+    }
+
+    /// Open a reader without queueing on the installation's authority worker.
+    /// Call on a blocking worker. Never creates a missing authority database.
+    pub(crate) fn open_admission_reader(&self) -> Result<Connection> {
+        use rusqlite::OpenFlags;
+        let connection = Connection::open_with_flags(
+            self.path.as_path(),
+            OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        )
+        .map_err(sql)?;
+        connection.busy_timeout(Duration::ZERO).map_err(sql)?;
+        Ok(connection)
+    }
+
+    pub(crate) fn grant_revision(
+        &self,
+        space: crate::SpaceId,
+        machine: uuid::Uuid,
+    ) -> Result<GrantRevision> {
+        let grants = self.grants.clone();
+        self.read_blocking(move |c| {
+            let space_key = space.to_string();
+            let machine = machine.to_string();
+            let enrolled_assignment: bool = c
+                .query_row(
+                    "SELECT EXISTS(SELECT 1 FROM spaces WHERE id=?1)
+                        AND EXISTS(SELECT 1 FROM machines WHERE id=?2 AND revoked_ms IS NULL)",
+                    [&space_key, &machine],
+                    |row| row.get(0),
+                )
+                .map_err(sql)?;
+            if !enrolled_assignment {
+                return Err(Error::new(
+                    crate::ErrorCode::NotFound,
+                    "space assignment unavailable",
+                ));
+            }
+            grants.subscribe(space, machine)
+        })
+    }
+
+    pub(crate) fn owns_grant_revision(&self, grants: &GrantRevision) -> bool {
+        self.grants.owns(grants)
     }
 
     /// The job that attaches `sink`: reconcile pending proposals on this database's
@@ -478,3 +538,6 @@ mod role_batch_tests;
 
 #[cfg(test)]
 mod sharing_schema_tests;
+
+#[cfg(test)]
+mod grant_revision_tests;

@@ -62,6 +62,7 @@ mod owners;
 pub mod provider;
 pub(crate) mod readiness;
 mod sessions;
+pub(crate) mod space_channel;
 pub(crate) mod space_execution;
 mod state;
 mod workers;
@@ -299,6 +300,7 @@ impl MachineService {
                 .collect(),
             machines,
             sessions: HashMap::new(),
+            space_channels: HashMap::new(),
             challenges: HashMap::new(),
             leases: HashMap::new(),
             threads: HashMap::new(),
@@ -416,8 +418,9 @@ impl MachineService {
         }
     }
 
-    /// End a run; blocks (one commit). The machine is told to stop the sandbox
-    /// and any later output is refused.
+    /// End a run on a blocking worker (one commit). The registry lock holds
+    /// capacity until the terminal lease is durable and its stop is queued.
+    /// A space carrier uses this only when releasing its placement.
     pub fn stop_run(&self, account: AccountId, lease: Uuid) -> Result<RunView, Error> {
         let mut st = self.lock()?;
         let st = &mut *st;
@@ -607,13 +610,14 @@ impl MachineService {
                 && let Some(live) = m.live.take()
             {
                 st.sessions.remove(&live.session);
-                disconnected.push(m.row.owner);
+                disconnected.push((m.row.id, m.row.owner));
             }
             if silent >= self.settings.lease_ttl {
                 expired.push(m.row.id);
             }
         }
-        for owner in disconnected {
+        for (machine, owner) in disconnected {
+            st.close_machine_channels(machine);
             st.readiness_changed(owner);
         }
         for (owner, account) in expired_checks {
