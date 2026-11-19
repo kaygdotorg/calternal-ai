@@ -7,11 +7,53 @@
   ],
   "audiences": {
     "member_item": "Live item authority and field policy on the member path.",
-    "shared_projection": "Member authority or a host-approved explicit projection for this guest's home root/children. Counts require a separate projection flag.",
+    "shared_projection": "Member authority or a host-approved explicit projection for a guest or public link, within its checked grant. Counts require a separate projection flag.",
     "viewer_self": "The actor may access only their own projected value. AccountRef predicates are limited to eq viewer.person; only counts over that actor’s already authorized projection are allowed. Other typed personal fields use the actor’s index only.",
     "designated_request_actor": "Host-private request addressed to the designated viewer. Covers only the referenced eligible request. No guest list or count. A row id resolves only to a checked RequestRef.",
     "eligible_execution_actor": "The current execution starter or a viewer with live PluginsManage and item authority. An item grant alone confers no execution control.",
     "personal_layout": "Only a live space member may read or mutate their own layout for this space and app. Check membership and actor on every read and write. Layout membership grants no item access."
+  },
+  "window_field_delivery": {
+    "member_item": {
+      "audiences": [
+        "own_space_member",
+        "member"
+      ]
+    },
+    "shared_projection": {
+      "audiences": [
+        "own_space_member",
+        "member",
+        "guest",
+        "public"
+      ]
+    },
+    "viewer_self": {
+      "audiences": [
+        "own_space_member",
+        "member"
+      ]
+    },
+    "designated_request_actor": {
+      "audiences": [
+        "own_space_member",
+        "member"
+      ]
+    },
+    "eligible_execution_actor": {
+      "audiences": [
+        "own_space_member",
+        "member"
+      ],
+      "state": "ready",
+      "description": "Requires live eligibility in either member audience."
+    },
+    "personal_layout": {
+      "audiences": [
+        "own_space_member",
+        "member"
+      ]
+    }
   },
   "kinds": {
     "collections": {
@@ -1144,7 +1186,7 @@
     },
     "body_excerpt": {
       "max_utf8_bytes": 160,
-      "description": "A claimed-text kind may declare an indexed Text field with source body_excerpt. The host index produces the first plain text after the title, collapses whitespace and truncates at a UTF-8 character boundary within max_utf8_bytes. Expose it only to a viewer authorized for the body and the declared field. Writers cannot supply the derived value."
+      "description": "A claimed-text kind may declare an indexed Text field with source body_excerpt. The host index produces the first plain text after the title, collapses whitespace and truncates at a UTF-8 character boundary within max_utf8_bytes. Expose it only to a viewer authorized for the body and the declared field. Writers cannot supply the derived value. Omit the field when normalization yields no text."
     },
     "row_images": {
       "read": "GET /api/v2/row-images/{ref}",
@@ -1259,7 +1301,7 @@
         "TextSet": "Union all grammar-normalized selector values. Use the output's common inline hierarchy separator to expand parents for all values, including frontmatter. Deduplicate exact normalized entries, including parents, and order deterministically. If there is no inline separator, use a flat union. Apply element, set and index-work caps to the resulting set before publishing it.",
         "other_fields": "Allow one selector per output. Multiple inline selectors on the same TextSet output require the same separator."
       },
-      "initialization": "Host create uses the same extractors on the empty source under the content transaction. Empty sets are []; an empty configured text summary is empty text. A missing frontmatter key has no value. Manifest defaults cannot supply any of these outputs, including body_excerpt."
+      "initialization": "Use the same extractors at create and save. A configured TextSet with no entries projects [] when authorized and requested. Omit absent scalar outputs from both the index and row fields. Text that extracts to no characters, including first_blocks and body_excerpt after normalization, is absent. A missing frontmatter scalar is absent. A valid Boolean false or Number zero is present. Never substitute null or an empty string for an absent scalar. A new device image slot has no ref."
     }
   },
   "$defs": {
@@ -1774,7 +1816,7 @@
               }
             ]
           },
-          "description": "Values match the resolved Bind projection and declared field types. Arrays are allowed only for a projected TextSet."
+          "description": "Values match the resolved Bind projection and declared field types. Arrays are allowed only for a projected TextSet. Apply window_field_delivery and the live field and source checks before projecting each value. Omit absent extractor scalars."
         },
         "parent_refs": {
           "type": "object",
@@ -3097,7 +3139,7 @@
           "description": "Current complete per-component Send/Stop ID map. Omission means empty. Every listed ID has an exact context in activation_contexts in the same accepted reply."
         }
       },
-      "description": "Accept only an authenticated host reply matching the outstanding renewal_id, current request_lease_ref and cache_partition. Retain only exact window_ref and result_version pairs authorized and previously issued to that lease. Ignore superseded replies and keep live rows hidden on timeout or refusal. At each renewal use the lease and grant from the latest accepted reply. Replace the composer ID map and contexts together, including on subsequent renewals and when a map is omitted. A changed lease or grant needs fresh composer contexts."
+      "description": "Accept only an authenticated host reply matching the outstanding renewal_id, current request_lease_ref and cache_partition. Retain only exact window_ref and result_version pairs authorized and previously issued to that lease. Ignore superseded replies and keep live rows hidden on timeout or refusal. At each renewal use the lease and grant from the latest accepted reply. Replace the composer ID map and contexts together, including on subsequent renewals and when a map is omitted. A changed lease or grant needs fresh composer contexts. A composer context is immutable for its exact component, purpose and action ID within the issued lease and grant. Reuse is allowed only for the same binding."
     },
     "UndoRequest": {
       "type": "object",
@@ -3852,7 +3894,7 @@
       "additionalProperties": {
         "$ref": "#/$defs/Ref"
       },
-      "description": "At most eight declared route operands. Each Bind must fit its complete set of distinct required source and filter operands in this object. View open uses its chrome and content operands. Windows and single selection may also resolve optional row-action inputs without widening the query scope."
+      "description": "Each request can carry at most eight distinct declared inputs. At install check each Bind source plus both filter groups, and that same union plus each row action’s route inputs, including an optional input when its offered behavior depends on it. For view open combine the required root component operands with each chrome or content action or component’s inputs. Count duplicated names once. Unrelated consumers may use separate requests."
     },
     "ComposerActionIds": {
       "type": "object",
@@ -4715,7 +4757,7 @@
       "output_schema": {
         "$ref": "#/$defs/ComposerOptionPage"
       },
-      "scope": "Checked conversation ItemRef, viewer and installed provider/runtime option source"
+      "scope": "Checked conversation ItemRef, viewer and installed provider/runtime option source Resolve provider, model for that provider, then reasoning using both. Permission and machine are independent requests with preceding choices supplied for eligibility checks. Changing an upstream option invalidates dependent refs and pages."
     },
     "undo": {
       "input_schema": {

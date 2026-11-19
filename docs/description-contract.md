@@ -1,6 +1,6 @@
 # Description contract (v2)
 
-Status: **revision 14.3 draft (based on 13.18)**, paired with the [Plugin API v2 specification](plugin-api-v2.md). The [description schema](../contract/description-v2.schema.json) defines the shared renderer shapes.
+Status: **revision 14.4 draft (based on 13.18)**, paired with the [Plugin API v2 specification](plugin-api-v2.md). The [description schema](../contract/description-v2.schema.json) defines the shared renderer shapes.
 
 The schema is checked with `python3 contract/verify-description.py` against the fixtures in `contract/fixtures/description-v2/` (valid ones must pass,
 `invalid-*` ones must report the reason in their directory’s `expected-errors.json`). The fixtures are the paper exercises of section 9. The verifier uses `replies/origins.json` to resolve each standalone window reply to its description fixture and Bind, then checks every projected value against the kind’s declared field type.
@@ -66,8 +66,7 @@ form or a prompt**: a hidden field of one bind must not steer another bind's que
 field or a composer draft). `{bind, field}` stays legal only in an invoke's inputs and a component's config, where the host reconstructs it. A `contains` predicate takes one nonempty Text element from a literal
 or a checked route resolved as Text. The viewer and parent operands are
 references. A Bind can return a bounded `TextSet` array only for a
-declared and projected field of that type. `sort` is at most two
-indexed fields. The host-issued row reference is the implicit last key, so order is total and stable across windows.
+declared and projected field of that type. `sort` follows the [catalogue’s sort rules](../contract/host-catalogue-v2.json#/query).
 
 ### 2.3 Windows
 
@@ -82,7 +81,7 @@ host  -> shell  { bind: "notes", audience, parent?, window_ref, state: "ready", 
 
 The catalogue defines one `WindowRequest` envelope and one `WindowReply` union of `WindowResult` and `WindowPlanError`. The typed refusal carries status 422, code `unsupported_query_plan`, and a reason.
 
-**End-relative windows.** End and near-end jumps use `anchor:"end"` only on non-search Binds with exact count authority. The range counts backward from the last authorized row, with distance zero at that row. Results keep the Bind’s normal order, echo the end anchor, and carry `count.mode: exact`. The offset is the end distance of the returned row nearest the end.
+**End-relative windows.** End and near-end jumps use `anchor:"end"` only on non-search Binds with exact count authority. Follow the [catalogue’s end-anchor and result ordering rules](../contract/host-catalogue-v2.json#/$defs/WindowResult).
 
 **Forward paging.** The host checks search windows against `EventSearchWindow`, the same window envelope restricted to the start anchor.
 For search Binds or with effective count mode `estimate` or `none`, the host refuses an end anchor with `end_unavailable` and sends no end distance. Search End pages forward. An explicit `anchor:"start"` can cross the 500,000 absolute jump ceiling only at the checked next row of a ready window for the same active view, Bind, parent and result version. Deep start replies omit count and the member cache record. In mode `none` show no scroll extent that implies a total.
@@ -142,7 +141,7 @@ The description only asks. Before any indexed work the host must:
    **search** and every **output field** against the viewer, the space and, for a guest, the item's grant;
 2. reject a field not declared indexed by the kind, and a field outside the audience's projection (a guest entitled to titles must not be able to infer hidden
    metadata from the count of an `eq` filter or from row order: filters, sorts and counts on a field the audience cannot read are refused, not filtered);
-3. produce **host-owned projections** for guests: rows are built by the host from the item's grant, never by plugin code;
+3. apply the [catalogue’s field delivery policy](../contract/host-catalogue-v2.json#/window_field_delivery) for every window audience, in addition to the viewer’s live authority. The host builds shared rows from checked grants;
 4. authorize the **whole dependency graph** of an app (no bind takes an operand from another; a search is pinned to the audience's corpus; a count is taken over the
    already-authorized projection). A guest gets an `exact` count only over an explicit shared root or child projection with count disclosure enabled. Otherwise its mode is `none`, including nested windows. For search Binds or any audience whose mode is `estimate` or `none`, refuse the end anchor with `end_unavailable` and send no end distance.
 5. bound the work: windows of at most 200 rows, 16 predicates, **16 binds per app** (chrome and view together: there is one list), and absolute jumps up to 500,000, with the contiguous paging exception for views without exact count authority in §2.3. Apply per actor and
@@ -349,9 +348,9 @@ plugin code). A description can run a named **invoke** on a component's event on
 * **Refs are typed.** `thread`, `item` and `request` take a value source that resolves to a reference of that type or the host refuses the description; the host
   authorises the viewer for the ref (a guest's grant included) before anything is read. The description holds no viewer data.
 * **Drafts and options.** The composer's text stays on the device. It reuses the existing host routes for attachment upload and mention lookup. Attachments are held as host-owned `AttachmentRef`s, mentions are account references, a quoted passage is a host-issued quote reference (the catalogue's `Draft`), and the chosen provider, model, reasoning level, permission and machine are opaque option references the host returned (`Interaction.options`). The description names none of them: it says which controls appear. The host checks everything (lengths, counts, that every attachment is the viewer's own, that every option is one it offered for this thread) and composes the send; it never trusts the client. The one-exchange Send treats the final text **solely as message content**: anything the host parses out of it that changes recipients, routing, permissions or other prepared material (a mention, a slash command) needs a fresh preview before it takes effect (3.2). The draft clears only after `ok`; `error` keeps it.
-* **Transcript reads** use `transcript.page` with a checked conversation ItemRef. With neither cursor, read the newest page. Use `older_cursor` as `before` when scrolling up, and the committed cursor as `after` when catching up. Supply one cursor at most. Pages are returned oldest to newest, default 60, maximum 128 records and 128 KiB. On reconnect refresh the boundary record and the bounded notice prefix in that reply. Follow through the existing view subscription, replacing records by stable UUID and applying the returned committed cursor. Cancel on selection or authority change. The renderer never invents a cursor.
+* **Transcript reads** use the paging, record order, limits and reconnect rules in the [`transcript.page` catalogue entry](../contract/host-catalogue-v2.json#/component_routes/transcript.page). Follow the existing view subscription, replacing records by stable UUID and applying the returned committed cursor. Cancel on selection or authority change. The renderer never invents a cursor.
 * **Prepared composer Send** uses the action ID and context issued for the active composer in `view.open` as described below. The manifest’s reserved Send operation cannot appear in an authored Invoke. Resolve that action with checked draft/option material, then confirm with `final_text`. The reply is the committed `ActionOutcome`, with a status ref while Starting. Retry the exact activation and text. The host supplies a Stop action ID only with current execution-control authority.
-* **Composer choices** send the current checked option refs in `composer.options`. Resolve provider first, then model, then reasoning. Machine and permission choices are checked against the admitted provider/placement and viewer. A change upstream invalidates downstream refs. `selected` and `default` are nullable option refs, and the renderer sends selected refs under the same keys in `interaction.options`.
+* **Composer choices** follow the control dependencies in the [`composer.options` catalogue entry](../contract/host-catalogue-v2.json#/component_routes/composer.options). Send the selected refs under the same keys in `interaction.options`.
 * **Streaming** is the host's: the transcript's rows grow and change without a description revision; the host caps the update rate, commits a final message at the
   end, and drops an in-flight load when the viewer moves to another thread (the old transcript load is cancelled, not finished).
 * **First screenful stamp.** When the transcript has drawn its first screenful the host sets `data-thread-rendered=<thread id>` (web), dispatches
@@ -368,7 +367,8 @@ operand used by the source and both filter groups together. Reject a Bind
 whose required names exceed the catalogue's eight-property cap, counting
 a repeated name once. Window and settled single-selection requests may
 also carry optional route operands used to issue that Bind’s row action
-contexts. They do not change the query scope. An absent action input
+contexts. At install check each action’s route inputs in union with that
+Bind’s required query operands. They do not change the query scope. An absent action input
 withholds that action’s context. View-open allows operands used by view-level actions
 and components in the header, panel, sidebar (shortcuts and section actions
 and menus), footer and content root. A selector assignment or route target
@@ -376,7 +376,9 @@ alone does not declare an input. Missing optional app operands leave the
 dependent actions or components unavailable. `host.item.create` with an
 omitted optional collection route creates the item without placement.
 A content-only app requires the operands used by its root components and
-must fit those names in the same cap.
+must fit those names in the same cap. Every view action or component must
+fit its inputs together with the required open operands. Count a name once
+within each request. Independent optional consumers can use different requests.
 The shell supplies at most eight declared names and opaque refs. The host
 verifies declaration, kind, space, live viewer authority and the specific
 Bind or component before issuing results. Reject undeclared names or a
@@ -395,7 +397,8 @@ On every renewal send the lease and grant revision from the latest
 accepted reply. Apply its map and contexts atomically and discard retired
 IDs and replaced contexts, including after a grant change or a second
 or later renewal. Ignore a reply for a superseded request. A new lease
-or grant revision requires fresh composer contexts.
+or grant revision requires fresh composer contexts. A token remains bound to
+its original component, purpose and action ID.
 This lets an open composer receive Stop when a cold Send enters Starting.
 The component ID is the lookup
 key. A composer action ID is not author-defined. Send the exact context
@@ -411,10 +414,7 @@ the receipt is known. Change either material or text after a committed
 intent only with a new activation. Stop uses the host's action context and
 the exact pending intent or admitted attempt it resolves.
 
-Ask for `provider` first, then `model` for that provider, then `reasoning`
-for both. `permission` and `machine` are independently requested, with all
-preceding choices supplied in `options` for eligibility checks. Pass the
-opaque refs under the same control names in `Interaction.options`.
+Follow the [`composer.options` catalogue entry](../contract/host-catalogue-v2.json#/component_routes/composer.options) for the checked option requests.
 `selected` is the host's current choice, `default` its suggested choice.
 Either may be null. A changed upstream option discards dependent choices and
 their pages. A cursor stays bound to this actor, conversation, control and

@@ -61,10 +61,37 @@ def view_route_operands(view, errors):
     allowed = route_operands([view.get("chrome", {}), card], errors)
     required = set()
     if "chrome" not in view:
-        for _, node in walk(card, errors):
+        for _, node in walk(card, errors, skip_literals=True):
             if isinstance(node, dict) and node.get("type") in COMPONENT_TYPES:
                 required.update(route_operands(node.get("config", {}), errors))
     return allowed, required
+
+
+def check_route_capacity(view, limit, errors):
+    """Reject consumers that cannot fit their prerequisites in one request."""
+    def verify(path, names):
+        if len(names) > limit:
+            errors.append(f"{path}: needs more than {limit} distinct route operands")
+
+    def consumers(node, path, required):
+        for position, value in walk(node, errors, path, skip_literals=True):
+            if not isinstance(value, dict):
+                continue
+            if "id" in value and ("operation" in value or "shell" in value):
+                inputs = [value.get("inputs", {}), value.get("shell", {})]
+                verify(position, required | route_operands(inputs, errors))
+            if value.get("type") in COMPONENT_TYPES:
+                verify(position, required | route_operands(value["config"], errors))
+
+    _, required = view_route_operands(view, errors)
+    verify("$.view.root", required)
+    consumers(view.get("chrome", {}), "$.chrome", required)
+    consumers(view.get("view", {}).get("root", {}), "$.view.root", required)
+    for index, bind in enumerate(errors.each(view.get("binds", []))):
+        path = f"$.binds[{index}]"
+        required = bind_route_operands(bind, errors)
+        verify(path, required)
+        consumers(bind.get("row", {}), f"{path}.row", required)
 
 
 def check_bind_scope(request, bind, path, errors, *, row_context=False):
@@ -160,7 +187,7 @@ def check_composer_actions(bindings, reply, errors):
                 errors.append(f"$.authority_reply.composer_actions: duplicate action ID {action_id!r}")
             if action_id not in reply["activation_contexts"]:
                 errors.append(f"$.authority_reply.activation_contexts: missing issued context for {action_id!r}")
-            issued[action_id] = purpose
+            issued[action_id] = (component, purpose)
     return issued
 
 
@@ -173,7 +200,7 @@ def check_composer_invoke(event, reply, issued, errors):
     if reply["activation_contexts"].get(action_id) != event["activation_context"]:
         errors.append("$.activation_context: must match the issued composer action context")
     interaction = event.get("interaction", {})
-    if issued[action_id] == "send":
+    if issued[action_id][1] == "send":
         allowed = {"draft", "options"}
         if "dispatch" in event:
             errors.append("$.dispatch: prepared Send requires confirmation")

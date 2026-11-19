@@ -690,7 +690,7 @@
         "id",
         "source"
       ],
-      "description": "ONE definition used by chrome and content: a data-free request for rows, counts or one item. Several binds may be in one view; every reference names its bind id. A description with binds contains no viewer data, so it may be cached and shared. The full set of distinct required route operands across the source and both filter groups must fit the catalogue RouteOperands cap. The verifier checks the combined set before opening subscriptions.",
+      "description": "ONE definition used by chrome and content: a data-free request for rows, counts or one item. Several binds may be in one view; every reference names its bind id. A description with binds contains no viewer data, so it may be cached and shared. The full set of distinct required route operands across the source and both filter groups must fit the catalogue RouteOperands cap. Each row action must fit its route names alongside that full query set. The verifier checks both before opening subscriptions.",
       "allOf": [
         {
           "if": {

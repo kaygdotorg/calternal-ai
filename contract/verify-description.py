@@ -20,7 +20,7 @@ import sys
 
 from description_input import PackageInput, Validation, check_unique_ids, lexical_path, read_bytes, read_json, resolved_path
 
-from description_events import COMPONENT_TYPES, EventBindings, bind_route_operands, check_composer_actions, check_composer_invoke, check_event_binding, validate_component_request, view_route_operands, walk
+from description_events import COMPONENT_TYPES, EventBindings, check_composer_actions, check_composer_invoke, check_event_binding, check_route_capacity, validate_component_request, walk
 import description_verification as verification
 
 from description_verification import (
@@ -443,12 +443,7 @@ def validate_description(doc, manifest, installed, errors):
     view_limits(doc, errors)
     if verification.CATALOGUE is not None:
         limit = verification.CATALOGUE["$defs"]["RouteOperands"]["maxProperties"]
-        _, required = view_route_operands(doc, errors)
-        if len(required) > limit:
-            errors.append(f"$.view.root: needs more than {limit} distinct route operands")
-        for index, bind in enumerate(errors.each(doc.get("binds", []))):
-            if len(bind_route_operands(bind, errors)) > limit:
-                errors.append(f"$.binds[{index}]: needs more than {limit} distinct route operands")
+        check_route_capacity(doc, limit, errors)
     semantic(doc, errors, verification.CATALOGUE, manifest, installed)
 
 
@@ -474,12 +469,26 @@ def validate_composer_capture(capture, bindings, errors):
     origin = bindings()
     if errors:
         return
+    contexts = {}
+
+    def issued_actions(reply, path):
+        issued = check_composer_actions(origin, reply, errors)
+        if errors:
+            return issued
+        lease = reply["lease"]
+        authority = (lease["lease_ref"], lease["grant_revision"])
+        for action, (component, purpose) in errors.each(issued.items()):
+            context = reply["activation_contexts"][action]
+            binding = (authority, component, purpose, action)
+            previous = contexts.setdefault(context, binding)
+            if previous[0] != authority:
+                errors.append(f"{path}.activation_contexts: reused composer context from a different lease or grant")
+            elif previous != binding:
+                errors.append(f"{path}.activation_contexts: composer context was rebound to a different component, purpose or action ID")
+        return issued
+
     reply = capture["view_open"]
-    issued = check_composer_actions(origin, reply, errors)
-    lease = reply["lease"]
-    authority = (lease["lease_ref"], lease["grant_revision"])
-    context_authorities = {reply["activation_contexts"][action]: authority for action in errors.each(issued)
-                           if action in reply["activation_contexts"]}
+    issued = issued_actions(reply, "$.view_open")
     seen = set()
     for index, renewal in enumerate(errors.each(renewals)):
         request, result = renewal["request"], renewal["result"]
@@ -502,14 +511,7 @@ def validate_composer_capture(capture, bindings, errors):
                     or request["result_versions"].get(retained["window_ref"]) != retained["result_version"]):
                 errors.append(f"{path}.result.retained_results: must name a requested exact result under the unchanged grant")
         reply = result
-        issued = check_composer_actions(origin, reply, errors)
-        if errors:
-            return
-        authority = (reply["lease"]["lease_ref"], reply["lease"]["grant_revision"])
-        for action in errors.each(issued):
-            context = reply["activation_contexts"][action]
-            if context_authorities.setdefault(context, authority) != authority:
-                errors.append(f"{path}.result.activation_contexts: reused composer context from a different lease or grant")
+        issued = issued_actions(reply, f"{path}.result")
     if not errors:
         check_composer_invoke(capture["event"], reply, issued, errors)
 

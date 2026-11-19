@@ -2,6 +2,7 @@
 
 import json
 
+from description_events import check_route_capacity
 from description_input import Validation
 from description_verification import CATALOGUE, parse_manifest, validate_reply
 
@@ -73,6 +74,35 @@ class ScopeCases:
                     renewal["result"]["retained_results"].append({"window_ref": "w", "result_version": "result"})
                 self.event(case, reason)
 
+    def test_composer_context_has_one_binding_across_renewals(self):
+        self.stage("threads-app")
+        app = json.loads((self.package / self.template).read_bytes())
+        panel = app["chrome"]["panel"]["components"]
+        panel.append(next(component for component in panel if component["id"] == "panel-composer")
+                     | {"id": "other-composer"})
+        self.replace_template(app)
+        fixture = self.fixtures / "events/threads-app/event-catalogue-composer-starting-stop-after-renewal.json"
+        for component, purpose, action, failure in (
+            ("panel-composer", "send", "composer.17", None),
+            ("other-composer", "send", "composer.17", "rebound"),
+            ("panel-composer", "stop", "composer.17", "rebound"),
+            ("panel-composer", "send", "composer.changed", "rebound"),
+            ("panel-composer", "stop", "composer.changed", "rebound"),
+        ):
+            with self.subTest(component=component, purpose=purpose, action=action):
+                case = json.loads(fixture.read_bytes())
+                result = case["renewals"][0]["result"]
+                result["lease"] = case["view_open"]["lease"]
+                result["composer_actions"] = {component: {purpose: action}}
+                result["activation_contexts"] = {action: "context-send"}
+                case["event"].update(action_id=action, activation_context="context-send")
+                self.event(case, f"composer context was {failure}" if failure else None)
+
+        case = json.loads(fixture.read_bytes())
+        case["view_open"]["composer_actions"]["panel-composer"]["stop"] = "composer.added-stop"
+        case["view_open"]["activation_contexts"]["composer.added-stop"] = "context-send"
+        self.event(case, "composer context was rebound")
+
     def test_open_accepts_each_chrome_and_root_operand(self):
         doc = json.loads((self.package / self.template).read_bytes())
         chrome = doc["chrome"]
@@ -131,6 +161,64 @@ class ScopeCases:
         bind["filter"]["any"][-1] = pred("overflow")
         self.replace_template(doc)
         self.verify(failure="needs more than 8 distinct route operands")
+
+    def test_each_row_action_must_fit_alongside_the_query(self):
+        original = (self.package / self.template).read_bytes()
+        for slot in ("open", "menu", "leadingActions", "trailingActions"):
+            with self.subTest(slot=slot):
+                doc = json.loads(original)
+                index, bind = next((i, b) for i, b in enumerate(doc["binds"]) if b["id"] == "notes")
+                bind["filter"] = {
+                    group: [{"field": "title", "op": "eq", "value": {"route": f"value_{i}"}} for i in items]
+                    for group, items in (("all", range(4)), ("any", range(4, 7)))
+                }
+                action = {"id": "create-related", "title": "New related note", "operation": "host.item.create",
+                          "inputs": {"kind": {"literal": "notes"}, "collection": {"route": "collection"}}}
+                bind["row"][slot] = {"invoke": action} if slot == "open" else [action]
+                self.replace_template(doc)
+                self.verify()
+                action["inputs"]["collection"]["route"] = "destination"
+                self.replace_template(doc)
+                suffix = ".invoke" if slot == "open" else "[0]"
+                self.verify(failure=f"$.binds[{index}].row.{slot}{suffix}: needs more than 8 distinct route operands")
+
+    def test_view_consumer_cap_covers_chrome_root_and_ignores_route_targets(self):
+        def operation(names):
+            return {"id": "act", "operation": "fixture.action", "inputs": {
+                str(i): {"route": name} for i, name in enumerate(names)
+            }, "then": {"route": {"name": "navigation_target"}}}
+        for surface, build in (
+            ("header", lambda action: {"trailing": [action]}),
+            ("sidebar", lambda action: {"sections": [{"menu": [action], "actions": [action],
+                                                       "rows": [{"open": {"invoke": action}}]}]}),
+            ("footer", lambda action: {"account": {"menu": [action]}}),
+            ("panel", lambda action: {"components": [{"type": "composer", "config": action["inputs"]}]}),
+        ):
+            with self.subTest(surface=surface):
+                for count in (8, 9):
+                    errors = Validation()
+                    action = operation([f"value_{i}" for i in range(count)])
+                    check_route_capacity({"chrome": {surface: build(action)}}, 8, errors)
+                    self.assertEqual(bool(errors), count == 9, list(errors))
+                    self.assertTrue(all(f"$.chrome.{surface}" in e and "needs more than 8" in e for e in errors))
+
+        editors = [{"type": "item-editor", "config": {"item": {"route": f"item_{i}"}}} for i in range(8)]
+        for action, reason in (
+            (operation(["item_0"]), None),
+            (operation(["extra"]), "needs more than 8"),
+            ({"id": "share", "shell": {"sheet": "share", "item": {"route": "extra"}}}, "needs more than 8"),
+        ):
+            with self.subTest(action=action):
+                errors = Validation()
+                check_route_capacity({"view": {"root": {"children": [*editors, action]}}}, 8, errors)
+                self.assertEqual(bool(errors), reason is not None, list(errors))
+                if reason:
+                    self.assertTrue(any(reason in e for e in errors), list(errors))
+        errors = Validation()
+        check_route_capacity({"chrome": {"header": {"trailing": [operation([
+            f"value_{i}" for i in range(8)
+        ]), {"id": "other", "shell": {"item": {"route": "separate"}}}]}}}, 8, errors)
+        self.assertFalse(errors, list(errors))
 
     def test_content_only_open_requires_a_wire_representable_union(self):
         def editor(index):
@@ -270,14 +358,75 @@ class ScopeCases:
                 else:
                     self.assertFalse(errors, list(errors))
         reply["rows"][0]["fields"]["active_execution"] = "attempt"
-        for audience in ("guest", "public"):
-            with self.subTest(audience=audience):
-                errors = Validation()
-                validate_reply(reply | {"audience": audience}, origin, errors)
-                self.assertTrue(any("execution actor fields require a ready member reply" in e for e in errors),
-                                list(errors))
         errors = Validation()
         fields = reply["rows"][0]["fields"]
         fields["active_turn"] = fields.pop("active_execution")
         validate_reply(reply, origin, errors)
         self.assertTrue(any("active_turn: field is not declared" in e for e in errors), list(errors))
+
+
+    def test_every_catalogue_window_audience_against_projected_fields(self):
+        fields_by_kind = {
+            "conversation": CATALOGUE["conversation_capability"]["field_projections"],
+            "item": CATALOGUE["generic_item_fields"],
+        } | {name: kind["fields"] for name, kind in CATALOGUE["kinds"].items()}
+        for name in ("notes-tags-app.json", "threads-app.json", "reading-list-manifest-v2-app.json"):
+            manifest = json.loads((self.fixtures / "manifests" / name).read_bytes())
+            for kind in manifest["kinds"]:
+                fields_by_kind[f"{name}/{kind['id']}"] = kind.get("indexed_fields", {})
+        values = {"Timestamp": "2026-11-20T00:00:00Z", "Boolean": False, "Number": 0,
+                  "TextSet": [], "RowImageRef": "fixture-preview-image-ref"}
+        audiences = CATALOGUE["$defs"]["WindowAudience"]["enum"]
+        tested = set()
+        for kind, fields in fields_by_kind.items():
+            for field, meta in fields.items():
+                policy = meta["audience"]
+                tested.add(policy)
+                for audience in audiences:
+                    with self.subTest(kind=kind, field=field, audience=audience):
+                        origin = ({"id": "rows", "source": {"type": "list"}, "fields": [field]},
+                                  {"fields": fields}, {})
+                        reply = {"audience": audience, "bind": "rows", "state": "ready",
+                                 "result_version": "v1", "offset": 0, "window_ref": "window",
+                                 "rows": [{"id": "ref", "fields": {field: values.get(meta["type"], "ref")}}]}
+                        errors = Validation()
+                        validate_reply(reply, origin, errors)
+                        if policy == "shared_projection" or audience in ("member", "own_space_member"):
+                            self.assertFalse(errors, list(errors))
+                        else:
+                            self.assertTrue(any(f"fields.{field}: {policy} is unavailable" in e
+                                                for e in errors), list(errors))
+        self.assertEqual(tested, set(CATALOGUE["$defs"]["FieldAudience"]["enum"]))
+
+    def test_execution_field_needs_a_ready_reply_in_both_member_audiences(self):
+        meta = CATALOGUE["conversation_capability"]["field_projections"]["active_execution"]
+        origin = ({"id": "threads", "source": {"type": "search"}, "fields": ["active_execution"]},
+                  {"fields": {"active_execution": meta}}, {})
+        for audience in ("own_space_member", "member", "guest", "public"):
+            with self.subTest(audience=audience):
+                reply = {"audience": audience, "bind": "threads", "state": "refine_query",
+                         "result_version": None, "offset": 0, "window_ref": None, "settle_generation": 1,
+                         "rows": [{"id": "conversation", "fields": {"active_execution": "ref"}}]}
+                errors = Validation()
+                validate_reply(reply, origin, errors)
+                self.assertTrue(any("active_execution: eligible_execution_actor is unavailable" in e
+                                    for e in errors), list(errors))
+
+    def test_empty_extractor_projections_keep_present_empty_sets_and_omit_absent_scalars(self):
+        types = {"tags": "TextSet", "summary": "Text", "excerpt": "Text", "text": "Text",
+                 "flag": "Boolean", "number": "Number", "date": "Timestamp"}
+        kind = {"fields": {key: {"type": value, "audience": "member_item"} for key, value in types.items()}}
+        origin = ({"id": "notes", "source": {"type": "list"}, "fields": list(types)}, kind, {})
+        values = {"tags": [], "flag": False, "number": 0}
+        reply = {"audience": "own_space_member", "bind": "notes", "state": "ready", "result_version": "v1",
+                 "offset": 0, "window_ref": "window", "rows": [{"id": "row", "fields": values}]}
+        errors = Validation()
+        validate_reply(reply, origin, errors)
+        self.assertFalse(errors, list(errors))
+        for field in types:
+            for bad in (None, ""):
+                with self.subTest(field=field, value=bad):
+                    errors = Validation()
+                    reply["rows"][0]["fields"] = values | {field: bad}
+                    validate_reply(reply, origin, errors)
+                    self.assertTrue(any(f"fields.{field}:" in e for e in errors), list(errors))

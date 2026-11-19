@@ -686,13 +686,19 @@ def check_window_rows(reply, origin, catalogue, errors):
             field_type = meta.get("type")
             if field_type not in declared_types:
                 errors.append(f"{path}: field is not declared with a catalogue type")
-            elif field not in bind.get("fields", []):
+                continue
+            if field not in bind.get("fields", []):
                 errors.append(f"{path}: field is not projected by Bind {bind['id']!r}")
-            elif meta.get("audience") == "eligible_execution_actor" and (
-                reply.get("audience") != "member" or reply.get("state") != "ready"
-            ):
-                errors.append(f"{path}: execution actor fields require a ready member reply")
-            elif value is not None or meta.get("nullable") is not True:
+                continue
+            if reply.get("audience") is not None and meta.get("audience") is not None:
+                audience = meta["audience"]
+                policy = catalogue["window_field_delivery"][audience]
+                if reply.get("audience") not in policy["audiences"] or (
+                    "state" in policy and reply.get("state") != policy["state"]
+                ):
+                    errors.append(f"{path}: {audience} is unavailable for this window audience or state")
+                    continue
+            if value is not None or meta.get("nullable") is not True:
                 check(catalogue["$defs"][field_type], value, path, errors, catalogue)
 
 
