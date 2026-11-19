@@ -19,7 +19,7 @@ final class ShellViewController: UIViewController {
     private var interactionState: Any?
     private var savedPageState: String?
     private var pendingRestore = false
-    private var nativeBar: NativeBar?
+    var nativeBar: NativeBar?
 
     init() {
         let config = WKWebViewConfiguration()
@@ -58,13 +58,13 @@ final class ShellViewController: UIViewController {
         webView.scrollView.alwaysBounceVertical = false
         webView.scrollView.alwaysBounceHorizontal = false
         webView.scrollView.pinchGestureRecognizer?.isEnabled = false
-        if #available(iOS 26, *), !UserDefaults.standard.bool(forKey: "CalternalProbeEdgeEffects") {
+        if !UserDefaults.standard.bool(forKey: "CalternalProbeEdgeEffects") {
             // iOS 26 fades scroll content into the container's colour at the screen edges (a "top
             // band" in the shell's colour over the page's wallpaper). The page draws its own fades.
             let scroll = webView.scrollView
             for edge in [scroll.topEdgeEffect, scroll.bottomEdgeEffect, scroll.leftEdgeEffect, scroll.rightEdgeEffect] { edge.isHidden = true }
         }
-        if #available(iOS 16.4, *) { webView.isInspectable = true }
+        webView.isInspectable = true
         view.addSubview(webView)
         cover.frame = view.bounds
         cover.autoresizingMask = [.flexibleWidth, .flexibleHeight]
@@ -115,7 +115,9 @@ final class ShellViewController: UIViewController {
         if KeyboardStyle.appearance != wanted {
             KeyboardStyle.appearance = wanted
             webView.hideFormAccessoryBar()
-            webView.scrollView.subviews.first { String(describing: type(of: $0)).hasPrefix("WKContent") }?.reloadInputViews()
+            let content = webView.scrollView.subviews.first { String(describing: type(of: $0)).hasPrefix("WKContent") }
+            content?.overrideUserInterfaceStyle = dark ? .dark : .light
+            content?.reloadInputViews()
         }
     }
 
@@ -171,7 +173,7 @@ final class ShellViewController: UIViewController {
     @objc private func appResigned() { captureInteractionState() }
 
     private func captureInteractionState() {
-        if #available(iOS 15, *) { interactionState = webView.interactionState }
+        interactionState = webView.interactionState
     }
 
     /// Sends the saved page state to the page as a `calternal:restore` event.
@@ -206,7 +208,7 @@ extension ShellViewController: WKNavigationDelegate, WKUIDelegate {
         if cover.superview == nil { view.addSubview(cover) }
         cover.alpha = 1
         pendingRestore = true
-        if #available(iOS 15, *), let state = interactionState {
+        if let state = interactionState {
             webView.interactionState = state
         } else {
             webView.load(URLRequest(url: ShellConfig.startURL))

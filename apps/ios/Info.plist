@@ -28,7 +28,7 @@
 			</array>
 		</dict>
 	</array>
-	<!-- Lets the web view open plain-http development addresses (the fixtures build on the VPN). -->
+	<!-- Lets the web view open plain-http development addresses (the fixtures build on the VPN). Weakens transport security for page content: restrict to development builds before release. -->
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsLocalNetworking</key>

@@ -11,7 +11,7 @@ enum KeyboardStyle {
 /// Supplies the getters that `hideFormAccessoryBar` installs on WebKit's content view.
 private final class ContentViewOverrides: NSObject {
     @objc var inputAccessoryView: AnyObject? { nil }
-    @objc var keyboardAppearance: UIKeyboardAppearance { KeyboardStyle.appearance ?? .default }
+    @objc var keyboardAppearance: UIKeyboardAppearance { return KeyboardStyle.appearance ?? .default }
 }
 
 extension WKWebView {

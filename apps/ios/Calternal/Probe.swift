@@ -22,6 +22,10 @@ enum Probe {
             let js = "new MutationObserver((_, o) => { const m = document.querySelector('meta[name=viewport]'); if (m) { o.disconnect(); const n = document.createElement('meta'); n.name = 'viewport'; n.content = m.content.replace(/interactive-widget=[a-z-]+/, 'interactive-widget=\(mode)'); m.remove(); document.head.appendChild(n); } }).observe(document, { childList: true, subtree: true });"
             shell.webView.configuration.userContentController.addUserScript(WKUserScript(source: js, injectionTime: .atDocumentStart, forMainFrameOnly: true))
         }
+        // `-CalternalProbeEval "<js>"` runs a script two seconds after launch (to press the demo page's buttons without a touch driver).
+        if let js = UserDefaults.standard.string(forKey: "CalternalProbeEval") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { shell.webView.evaluateJavaScript(js) }
+        }
         centre.addObserver(forName: Notification.Name("CalternalProbeNow"), object: nil, queue: .main) { _ in run(shell, event: "manual", keyboard: .zero) }
         DispatchQueue.main.asyncAfter(deadline: .now() + 4) { run(shell, event: "launch+4s", keyboard: .zero) }
     }

@@ -39,8 +39,7 @@ final class NativeBridge: NSObject, WKScriptMessageHandlerWithReply {
         case "menu":
             menu(body, reply: replyHandler)
         case "bar":
-            host?.setBar(body["bar"] as? [String: Any])
-            replyHandler(nil, nil)
+            replyHandler(["native": host?.setBar(body["bar"] as? [String: Any]) ?? false], nil)
         default:
             replyHandler(nil, "calternalNative: unknown op '\(op)'")
         }
@@ -90,6 +89,7 @@ final class NativeBridge: NSObject, WKScriptMessageHandlerWithReply {
         presenter.present(title: body["title"] as? String, items: rawItems,
                           anchor: host.rect(from: body["anchor"] as? [String: Any]) ?? .zero) { [weak self] id in
             self?.pendingMenu = nil
+            self?.log.notice("menu resolved: \(id ?? "dismissed", privacy: .public)")
             reply(["id": id as Any? ?? NSNull()], nil)
         }
     }
