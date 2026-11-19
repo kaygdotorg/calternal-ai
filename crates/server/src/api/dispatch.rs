@@ -114,6 +114,24 @@ pub(super) async fn dispatch_scoped_inner<D: Directory>(
         }
         return super::sharing::dispatch(state, p, request_id, op, input).await;
     }
+    if catalog.policy(op).is_none()
+        && let Some(space) = input.get("space_id").and_then(Value::as_str)
+        && let Ok(space) = SpaceId::parse(space)
+        && let Some(approved) = state.registry.space_item_head(space, op)
+    {
+        if agent.is_some() {
+            return Err(Error::forbidden("item head requires a person session"));
+        }
+        return crate::plugins::space_broker::invoke(
+            state,
+            p,
+            session,
+            approved,
+            decode(input)?,
+            machines,
+        )
+        .await;
+    }
     let item_grants = agent.is_none() && crate::resolve::allows_item_grants(op);
     let mut input = input;
     // Capabilities already read for this request (by the resolver), so admission

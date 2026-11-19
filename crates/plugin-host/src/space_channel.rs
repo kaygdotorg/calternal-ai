@@ -1,4 +1,6 @@
 //! Bounded duplex space channels on byte streams supplied by enrolled transport.
+/// Private broker messages exchanged with a single sandboxed package process.
+pub mod child;
 mod flow;
 mod wire;
 
@@ -157,6 +159,29 @@ impl SpaceChannel {
         message: SpaceMessage,
     ) -> Result<(), Error> {
         self.shared.submit(Some(package), Some(ticket), message)
+    }
+
+    /// Queue a frame with a local delivery guard. The writer checks the guard
+    /// again before assigning an ordinal and starting the physical write.
+    /// The guard must be nonblocking and may run after the submitting task ends.
+    pub fn send_checked(
+        &self,
+        package: &PackagePin,
+        ticket: Uuid,
+        message: SpaceMessage,
+        check: impl Fn() -> bool + Send + Sync + 'static,
+    ) -> Result<(), Error> {
+        let guard = Box::new(check);
+        if !guard() || message.control() {
+            return Err(Error::Refused);
+        }
+        self.shared
+            .submit_checked(Some(package), Some(ticket), message, Some(guard))
+    }
+
+    /// Whether this channel has retained local authority. Cost: one space-local watch read.
+    pub fn is_live(&self) -> bool {
+        *self.shared.live.borrow()
     }
 
     /// Queue readiness for one pinned package from the supervisor.
@@ -383,13 +408,18 @@ async fn write_loop(
             }
         };
         let mut pending = pending.ok_or(Error::Invocation)?;
-        seq = seq.checked_add(1).ok_or(Error::Invocation)?;
-        pending.frame.seq = seq;
+        let next = seq.checked_add(1).ok_or(Error::Invocation)?;
+        pending.frame.seq = next;
         let bytes = pending.frame.encode(if pending.control.is_some() {
             CONTROL
         } else {
             MAX_LINE
         })?;
+        if pending.guard.as_ref().is_some_and(|guard| !guard()) {
+            shared.discard(&pending)?;
+            continue;
+        }
+        seq = next;
         if pending.control.is_none() {
             shared.written(&pending, bytes.len())?;
         }

@@ -19,6 +19,7 @@ const MAX_CHANNELS: usize = 1024;
 const OPEN_LIMIT: Duration = Duration::from_secs(5);
 
 pub(crate) struct Connected {
+    pub(crate) space: SpaceId,
     pub(crate) channel: SpaceChannel,
     pub(crate) grants: GrantRevision,
 }
@@ -254,7 +255,13 @@ pub(super) async fn upgrade<D: Directory>(
                 };
                 let mut life = channel.lifetime();
                 let fence = channel.fence_handle();
-                reply.send(Connected { channel, grants }).ok()?;
+                reply
+                    .send(Connected {
+                        space,
+                        channel,
+                        grants,
+                    })
+                    .ok()?;
                 tokio::select! {
                     _ = stopped.wait_for(|closed| *closed) => fence.close(),
                     _ = life.wait_for(|live| !*live) => {}

@@ -53,6 +53,8 @@ mod revision_slice;
 mod rooms;
 use lifecycle::{Cache, Slot, spawn_sweeper, sweep};
 pub use rooms::{LiveEdit, LiveTextEdit, RoomSnapshot};
+mod item_head;
+pub use item_head::{ItemHead, ItemHeadReader};
 mod trash;
 mod trash_job;
 mod types;

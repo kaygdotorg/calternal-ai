@@ -30,10 +30,13 @@ impl Credits {
     }
 }
 
+type Guard = Box<dyn Fn() -> bool + Send + Sync>;
+
 pub(super) struct Pending {
     pub frame: SpaceFrame,
     pub reserved: usize,
     pub control: Option<OwnedSemaphorePermit>,
+    pub guard: Option<Guard>,
 }
 
 pub(super) struct Shared {
@@ -55,6 +58,16 @@ impl Shared {
         package: Option<&PackagePin>,
         ticket: Option<Uuid>,
         message: SpaceMessage,
+    ) -> Result<(), Error> {
+        self.submit_checked(package, ticket, message, None)
+    }
+
+    pub(super) fn submit_checked(
+        &self,
+        package: Option<&PackagePin>,
+        ticket: Option<Uuid>,
+        message: SpaceMessage,
+        guard: Option<Guard>,
     ) -> Result<(), Error> {
         if !*self.live.borrow() {
             return Err(Error::Invocation);
@@ -90,6 +103,7 @@ impl Shared {
                     frame,
                     reserved,
                     control: Some(permit),
+                    guard: None,
                 })
                 .map_err(|_| Error::BackPressure);
         }
@@ -105,6 +119,7 @@ impl Shared {
             frame,
             reserved,
             control: None,
+            guard,
         }) {
             self.with_package(&error.into_inner().frame, |credit| {
                 credit.outstanding -= 1;
@@ -114,6 +129,14 @@ impl Shared {
             return Err(Error::BackPressure);
         }
         Ok(())
+    }
+
+    pub(super) fn discard(&self, pending: &Pending) -> Result<(), Error> {
+        self.with_package(&pending.frame, |credit| {
+            credit.outstanding -= 1;
+            credit.available += pending.reserved;
+            Ok(())
+        })
     }
 
     pub(super) fn written(&self, pending: &Pending, sent: usize) -> Result<(), Error> {

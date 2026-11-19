@@ -147,6 +147,26 @@ one installation primary-key query for a revocable sign-in. Callback
 authorization uses one atomic grant load, one monotonic time sample and
 local comparisons. It performs zero storage reads or flushes.
 
+6. **First item-head operation (§4).** Register a trusted, space-specific
+   operation and verified no-egress worker source through the host's startup
+   registry. The normal operation dispatcher can select it. Existing registry
+   operations keep priority. The first profile admits one package operation
+   per placement, with one item callback and a terminal result which echoes
+   the checked head. Its callback only accepts the ticket's exact kind and
+   item. The machine starts the package with the existing worker sandbox
+   and relays it on a capability-free child pipe. The child sees its own
+   invocation ID and callback ID. The supervisor alone retains the ticket.
+   The host rechecks the grant at the content query, on its return and when
+   dequeuing outbound replies. The normal manifest installer remains on the
+   existing path until it can supply validated v2 approvals.
+
+A warm item-head callback binds to a per-space read pool and performs one
+indexed metadata/revision read, zero catalog or shared authority reads,
+and zero storage flushes. No item body is loaded. A cold callback opens a
+read-only SQLite connection for only that space. Preflight and ticket mint
+are separate authorization snapshots so a revoked actor cannot wake a
+worker or obtain a ticket for a worker that finished starting afterward.
+
 ## Verification and remaining work
 
 On `claude@calternal-dev-01-compute02`, the exact `f3633ca9` source
@@ -160,10 +180,13 @@ existing `cargo test --locked -p calternal-server --test plugin_host --
 --test-threads=1` integration suite passed all 18 tests, including
 malformed child output and the current worker broker path.
 
-The grant revision, ticket admission and enrolled duplex transport are implemented. The
-bounded carrier is tested independently of the broker. Its ordinary
-operation caller, item-head broker, and the
-real-process fault injection gate are still open. The physical mid-frame stall, concurrent callback progress,
+The grant revision, tickets, transport and item-head call path are wired.
+The integration fixture uses the normal operation dispatcher, real
+enrollment, and a real Node process behind the server-side HTTP Upgrade
+hop. The machine's TLS origin and external proxy forwarding still need
+a deployment-shaped run. Durable replay is tested with the existing item
+writer after fresh authorization. The shipped broker surface stays
+read-only. The physical fault-injection gate follows this milestone. The physical mid-frame stall, concurrent callback progress,
 immediate local fence, isolated second space, remote expiry and
 fresh-ticket receipt replay are spike evidence only. None has been
 reproven against product code in this lane. The carrier tests still need to
