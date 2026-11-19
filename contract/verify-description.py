@@ -17,12 +17,15 @@ CATALOGUE = load_catalogue()
 
 def resolve(ref, ctx):
     """A `#/...` reference stays in the document it is read in; `host-catalogue-v2.json#/...` is the plugins lane's catalogue (the shapes of the activation protocol are theirs, cited here, never copied). Without the catalogue a cited shape matches nothing (fixtures named `-catalogue-` are skipped without it)."""
-    if ref.startswith("host-catalogue-v2.json#"):
+    if ref.startswith("host-catalogue-v2.json#") or ref.startswith("https://calternal.cloud/contract/host-catalogue-v2.json#"):
         if CATALOGUE is None: return {"const": "__host_catalogue_missing__"}, schema   # fails to match: fixtures that need the catalogue are skipped without it
         ctx, ref = CATALOGUE, ref.split("#", 1)[1]
     node = ctx
-    for part in ref.removeprefix("#/").removeprefix("/").split("/"):
-        node = node[part]
+    try:
+        for part in ref.removeprefix("#/").removeprefix("/").split("/"):
+            node = node[part]
+    except KeyError:
+        return {"const": "__host_catalogue_def_missing__"}, schema   # a catalogue copy older than this schema: the cited shape is not there yet
     return node, ctx
 
 def check(node, value, path, errors, ctx=None):

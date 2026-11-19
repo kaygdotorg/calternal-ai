@@ -2445,33 +2445,8 @@
       "description": "The selection moved in a bind's list (sent once after it settles, never during a key repeat)."
     },
     "EventSelectionSet": {
-      "type": "object",
-      "properties": {
-        "type": {
-          "const": "selection_set"
-        },
-        "bind": {
-          "$ref": "#/$defs/Id"
-        },
-        "rows": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "maxLength": 64
-          },
-          "maxItems": 50
-        },
-        "sentAt": {
-          "type": "number"
-        }
-      },
-      "additionalProperties": false,
-      "required": [
-        "type",
-        "bind",
-        "rows"
-      ],
-      "description": "The ticked rows of a multiple-selection list. The host validates every id against the bind's snapshot and the viewer and answers with a selection reference (`selection_ref`) for actions to use; the ids are never an action's input."
+      "$ref": "https://calternal.cloud/contract/host-catalogue-v2.json#/$defs/SelectionSetRequest",
+      "description": "The ticked rows of a multiple-selection list: the plugins lane's shared shape (type, bind, rows unique and at most 50, an empty list clears, optional sentAt telemetry). The host validates every id against the bind's snapshot and the viewer and answers with a SelectionSetResult carrying the `selection_ref` that actions use; the ids are never an action's input."
     },
     "EventRoute": {
       "type": "object",

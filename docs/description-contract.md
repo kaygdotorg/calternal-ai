@@ -258,7 +258,7 @@ the web, SwiftUI natively); no plugin is written twice, and anything the vocabul
   (`{form: id, field: fieldId}`); the form shows what was typed, and by the rule in 3.2 the host still previews every material field (typing is never consent); a form may present that list in place. After an `ok` outcome the fields clear (`clear: onOk`,
   the default); after `error` or an unknown outcome they keep what was typed. Errors appear in a `notice` above the submit, never as loose text.
 * **Lists** are binds. `selectable: true` gives the keyboard model of `docs/native-feel.md` section 20 on every platform: Up/Down/Home/End/Page Up/Page Down move
-  the selection through ALL rows (drawn or not), the selection paints at once, and what the selection opens (a route change) happens when it settles, **about 100 ms after the last key** (or key up); nothing crosses the bridge while a key repeats, in either direction
+  the selection through ALL rows (drawn or not), the selection paints at once, and what the selection opens (a route change) happens when it settles, **about 100 ms after the last key** (or key up); **selection and navigation events wait while a key repeats** (one goes out about 100 ms after the last key), incoming windows are held and applied when the selection settles, and window **requests** for prefetch may still cross, coalesced to at most 4 a second (8.4)
   (8.4). The web renderer rests 1.6 times the longest gap between repeats in the burst, at least 45 ms and at most 120 ms, which is the same rule measured on the web; a load
   never starts while keys are still repeating, and a new key cancels the previous load.
 * **Home, End and Page Up/Down** over rows that are not loaded are a renderer duty: it asks the host for the window around the target index (`0`, `count - 1`, the current
@@ -281,6 +281,10 @@ is the host's alone.
 | `composer` | `target`, `placeholder`, `enabled` (a literal or a boolean source), `enabledWhen` (two sources and an operator: a composer has no row, so no row-scoped predicate), `send` (an invoke of `turns.start` only), `attachments`, `mentions`, `controls` (host-owned provider, model, reasoning, permission and machine choices with authorised option sources), `stop` (boolean: the host's Stop control) | `draft` (device only), `send`, `stop`, `attach`, `mention` | The draft is held on the device. A native composer is a text field with the system keyboard; attachments use the system pickers. |
 | `request-card` | `request` (typed request ref), `compact` | `resolve` (host.approval.resolve, from the host's own buttons) | One protected record and resolver for a job, a Turn and a host action; the card shows the material arguments (the trusted preview) and cannot be reordered, relabelled or covered by a plugin layout. |
 | `sealed-html-frame` | `frame` (a frame id), `minHeight`, `maxHeight` | `sealed_frame.open`, `sealed_frame.resize` (inside the caps), `sealed_frame.open_link` (a host link id; the host re-authorises), all catalogue routes | A web view with no network and no top navigation; its message channel and sandbox are fixed by the host. |
+
+**Shared shapes cited, not copied.** Ticked rows of a multiple-selection list travel as the catalogue's `SelectionSetRequest` and are answered with its `SelectionSetResult` (the
+`selection_ref` actions use); the options of a composer control (provider, model, reasoning, permission, machine) are asked for with `ComposerOptionRequest` and returned as a
+`ComposerOptionPage`: the renderer never lists an option the host did not return.
 
 **Rules that hold for all five**
 
