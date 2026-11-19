@@ -1,9 +1,28 @@
 {
-  "description": "Fixture manifest for the nested Threads sidebar: Threads is the host's Turns engine; the layout is the host's per-person layout (host virtual kind layout_sections), so the package declares no kinds or operations and READS the host kinds it binds. The SDK fills a package's own kinds into reads automatically; an author writes reads only for another app's kinds.",
+  "api_version": 2,
+  "id": "fixture-projection",
+  "name": "Projection fixture",
+  "version": "1.0.0",
+  "icon": "folder",
+  "network": "none",
+  "apps": [
+    {
+      "id": "fixture",
+      "name": "Projection fixture",
+      "icon": "folder",
+      "description": {
+        "id": "app",
+        "template": {
+          "path": "invalid-catalogue-move-to-field-as-thread-app.json",
+          "sha256": "c3a29f36f8e8dffbec8825e988186963e7c80f8849e647b85e33181a9a826547"
+        }
+      }
+    }
+  ],
+  "kinds": [],
+  "operations": [],
   "reads": [
     "threads",
     "layout_sections"
-  ],
-  "kinds": {},
-  "operations": {}
+  ]
 }

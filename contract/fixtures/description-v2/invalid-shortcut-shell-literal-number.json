@@ -1,0 +1,35 @@
+{
+  "version": 2,
+  "kind": "app",
+  "revision": 1,
+  "binds": [],
+  "chrome": {
+    "sidebar": {
+      "sections": [
+        {
+          "id": "links",
+          "rows": [
+            {
+              "id": "shortcut",
+              "title": "Open",
+              "open": {
+                "invoke": {
+                  "id": "navigate",
+                  "title": "Open",
+                  "shell": {
+                    "route": {
+                      "name": "destination",
+                      "value": {
+                        "literal": 42
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

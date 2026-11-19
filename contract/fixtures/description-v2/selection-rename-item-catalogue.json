@@ -15,6 +15,9 @@
       "row": {
         "title": {
           "field": "title"
+        },
+        "icon": {
+          "kindIcon": true
         }
       }
     }

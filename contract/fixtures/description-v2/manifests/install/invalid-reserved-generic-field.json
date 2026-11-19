@@ -1,0 +1,82 @@
+{
+  "api_version": 2,
+  "id": "albums",
+  "name": "Albums",
+  "version": "1.0.0",
+  "icon": "folder",
+  "network": "none",
+  "apps": [],
+  "reads": [
+    "albums"
+  ],
+  "kinds": [
+    {
+      "id": "albums",
+      "icon": "folder",
+      "title_field": "title",
+      "storage": {
+        "hidden": true
+      },
+      "claimed_text": true,
+      "schema": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          }
+        }
+      },
+      "indexed_fields": {
+        "updated": {
+          "type": "Text",
+          "audience": "member_item",
+          "source": "body_excerpt"
+        }
+      }
+    }
+  ],
+  "operations": [
+    {
+      "id": "albums.label",
+      "title": "Label",
+      "target": {
+        "kind": "albums",
+        "field": "item"
+      },
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "item"
+        ],
+        "properties": {
+          "item": {
+            "$ref": "host-catalogue-v2.json#/$defs/ItemRef",
+            "description": "The created album."
+          }
+        },
+        "description": "Label the newly created album."
+      },
+      "output_schema": {
+        "type": "object"
+      },
+      "required_capability": "content.write",
+      "risk": "reversible",
+      "idempotency": "request_id",
+      "methods": [
+        "item_save"
+      ]
+    }
+  ],
+  "jobs": [
+    {
+      "id": "label-album",
+      "run_operation": "albums.label",
+      "replayable": true
+    }
+  ],
+  "worker": {
+    "path": "dist/fixture.js",
+    "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+  }
+}

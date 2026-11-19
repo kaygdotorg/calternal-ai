@@ -1,6 +1,0 @@
-{
-  "type": "search",
-  "bind": "terms",
-  "text": "storage",
-  "mode": "prefix"
-}

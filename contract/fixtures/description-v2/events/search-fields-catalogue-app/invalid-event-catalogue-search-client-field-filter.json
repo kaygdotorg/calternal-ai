@@ -1,0 +1,6 @@
+{
+  "type": "search",
+  "bind": "all",
+  "text": "storage",
+  "field_filter": "title"
+}

@@ -28,7 +28,10 @@
             },
             "fullSwipe": true
           }
-        ]
+        ],
+        "icon": {
+          "kindIcon": true
+        }
       }
     }
   ]

@@ -1,7 +1,40 @@
 {
-  "id": "fixture.selection",
+  "api_version": 2,
+  "id": "fixture-selection",
+  "name": "Projection fixture",
+  "version": "1.0.0",
+  "icon": "folder",
+  "network": "none",
+  "apps": [
+    {
+      "id": "fixture",
+      "name": "Projection fixture",
+      "icon": "folder",
+      "description": {
+        "id": "app",
+        "template": {
+          "path": "selection-rename-item-catalogue.json",
+          "sha256": "f82552178d8cc0914ca4d63f49ddd25b6005f79d815ed52644f830235054082a"
+        }
+      }
+    }
+  ],
   "kinds": [
     {
+      "icon": "folder",
+      "title_field": "title",
+      "storage": {
+        "hidden": true
+      },
+      "claimed_text": true,
+      "schema": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          }
+        }
+      },
       "id": "notes",
       "indexed_fields": {}
     }

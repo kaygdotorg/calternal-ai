@@ -131,8 +131,7 @@
       "id": "reading-search",
       "source": {
         "type": "search",
-        "kind": "reading-item",
-        "mode": "terms"
+        "kind": "reading-item"
       },
       "fields": [
         "title",
@@ -173,6 +172,24 @@
       "type": "stack",
       "title": "Reading list",
       "children": [
+        {
+          "type": "button",
+          "invoke": {
+            "id": "create-blank",
+            "title": "New blank item",
+            "operation": "host.item.create",
+            "inputs": {
+              "kind": {
+                "literal": "reading-item"
+              }
+            },
+            "then": {
+              "route": {
+                "name": "item"
+              }
+            }
+          }
+        },
         {
           "type": "form",
           "id": "add",

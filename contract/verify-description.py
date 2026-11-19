@@ -1,196 +1,98 @@
 #!/usr/bin/env python3
-"""Validates description fixtures against contract/description-v2.schema.json.
+"""Verify pinned plugin v2 fixtures or emitted package JSON with the standard library.
 
-Events in events/<description>/ also resolve their Bind in the named description fixture.
+Use --package DIR or --manifest FILE. Use --event DESCRIPTION FILE for events
+and --reply FILE for replies. See README.md for usage and input bounds. Run
+without python -I so Python can import the modules beside this script.
 
-A small validator for the keywords the schema uses (type, properties, required, additionalProperties, enum, const, pattern, minimum, maximum,
-minItems, maxItems, uniqueItems, maxLength, maxProperties, oneOf, $ref), so the contract can be checked with the standard library alone.
-Files named `invalid-*.json` must FAIL validation; every other file must pass. Run from the repository root: python3 contract/verify-description.py
+JSON decoding is bounded by 4 MiB per artifact and 32 nested containers.
+The visit budget meters inspection of decoded object pairs and the decoded tree.
+
+Fixture events in events/<description>/ resolve that app's Bind, and every
+invalid fixture must match the intended reason in its expected-errors.json.
 """
-import json, os, re, sys, pathlib
+import argparse
+import hashlib
+import json
+import pathlib
+import re
+import sys
 
-root = pathlib.Path(__file__).resolve().parent
-schema = json.loads((root / "description-v2.schema.json").read_text())
+from description_input import PackageInput, Validation, check_unique_ids, lexical_path, read_bytes, read_json, resolved_path
 
-def load_catalogue():
-    path = pathlib.Path(os.environ.get("CALTERNAL_HOST_CATALOGUE", root / "host-catalogue-v2.json"))
-    return json.loads(path.read_text()) if path.exists() else None
-CATALOGUE = load_catalogue()
+from description_events import COMPONENT_TYPES, EventBindings, check_event_binding, validate_component_request, walk
+import description_verification as verification
 
-def resolve(ref, ctx):
-    """A `#/...` reference stays in the document it is read in; `host-catalogue-v2.json#/...` is the plugins lane's catalogue (the shapes of the activation protocol are theirs, cited here, never copied). Without the catalogue a cited shape matches nothing (fixtures named `-catalogue-` are skipped without it)."""
-    if ref.startswith("host-catalogue-v2.json#") or ref.startswith("https://calternal.cloud/contract/host-catalogue-v2.json#"):
-        if CATALOGUE is None: return {"const": "__host_catalogue_missing__"}, schema   # fails to match: fixtures that need the catalogue are skipped without it
-        ctx, ref = CATALOGUE, ref.split("#", 1)[1]
-    node = ctx
-    try:
-        for part in ref.removeprefix("#/").removeprefix("/").split("/"):
-            node = node[part]
-    except KeyError:
-        return {"const": "__host_catalogue_def_missing__"}, schema   # a catalogue copy older than this schema: the cited shape is not there yet
-    return node, ctx
+from description_verification import (
+    DuplicateKey,
+    check,
+    field_meta,
+    field_names,
+    is_reply_fixture,
+    load_fixture_manifest,
+    load_reply_origins,
+    load_strict,
+    parse_manifest,
+    root,
+    schema,
+    validate_reply,
+)
 
-def matches(node, value, ctx):
-    sub = []
-    check(node, value, "$", sub, ctx)
-    return not sub
-
-def check(node, value, path, errors, ctx=None):
-    """Validates `value` against `node`: the JSON Schema keywords the contract and the host catalogue use, including boolean schemas, not, if/then/else, allOf,
-    anyOf, oneOf and dependentRequired (the catalogue's ActionOutcome and ActivationResolution rely on them)."""
-    ctx = ctx if ctx is not None else schema
-    if node is True: return
-    if node is False: errors.append(f"{path}: not allowed here"); return
-    if "$ref" in node:
-        target, ctx2 = resolve(node["$ref"], ctx)
-        check(target, value, path, errors, ctx2)
-    for branch in node.get("allOf", []): check(branch, value, path, errors, ctx)
-    if "anyOf" in node and not any(matches(b, value, ctx) for b in node["anyOf"]): errors.append(f"{path}: matches none of the anyOf branches")
-    if "oneOf" in node:
-        results = []
-        for b in node["oneOf"]:
-            sub = []
-            check(b, value, path, sub, ctx)
-            results.append(sub)
-        passing = sum(1 for r in results if not r)
-        if passing != 1:
-            closest = min(results, key=len) if passing == 0 else []
-            errors.append(f"{path}: matches {passing} of the oneOf branches (needs exactly 1)" + (f"; closest branch: {'; '.join(closest[:3])}" if closest else ""))
-    if "not" in node and matches(node["not"], value, ctx): errors.append(f"{path}: matches a forbidden shape")
-    if "if" in node:
-        branch = node.get("then") if matches(node["if"], value, ctx) else node.get("else")
-        if branch is not None: check(branch, value, path, errors, ctx)
-    t = node.get("type")
-    kinds = {"object": dict, "array": list, "string": str, "boolean": bool, "null": type(None)}
-    for one in (t if isinstance(t, list) else [t]) if t else []:
-        pass
-    if t:
-        ok_type = False
-        for one in (t if isinstance(t, list) else [t]):
-            if one == "integer": ok_type |= isinstance(value, int) and not isinstance(value, bool)
-            elif one == "number": ok_type |= isinstance(value, (int, float)) and not isinstance(value, bool)
-            elif one in kinds: ok_type |= isinstance(value, kinds[one]) and (one == "boolean" or not isinstance(value, bool))
-        if not ok_type: errors.append(f"{path}: expected {t}"); return
-    if "const" in node and value != node["const"]: errors.append(f"{path}: must be {node['const']!r}")
-    if "enum" in node and value not in node["enum"]: errors.append(f"{path}: {value!r} not in {node['enum']}")
-    if isinstance(value, str):
-        if "pattern" in node and not re.search(node["pattern"], value): errors.append(f"{path}: {value!r} does not match {node['pattern']}")
-        if "maxLength" in node and len(value.encode()) > node["maxLength"]: errors.append(f"{path}: longer than {node['maxLength']} bytes")
-        if "minLength" in node and len(value) < node["minLength"]: errors.append(f"{path}: shorter than {node['minLength']}")
-    if isinstance(value, (int, float)) and not isinstance(value, bool):
-        if "minimum" in node and value < node["minimum"]: errors.append(f"{path}: below {node['minimum']}")
-        if "maximum" in node and value > node["maximum"]: errors.append(f"{path}: above {node['maximum']}")
-    if isinstance(value, list):
-        if "minItems" in node and len(value) < node["minItems"]: errors.append(f"{path}: fewer than {node['minItems']} items")
-        if "maxItems" in node and len(value) > node["maxItems"]: errors.append(f"{path}: more than {node['maxItems']} items")
-        if node.get("uniqueItems") and len({json.dumps(v, sort_keys=True) for v in value}) != len(value): errors.append(f"{path}: items not unique")
-        if "items" in node:
-            for i, v in enumerate(value): check(node["items"], v, f"{path}[{i}]", errors, ctx)
-    if isinstance(value, dict):
-        for key in node.get("required", []):
-            if key not in value: errors.append(f"{path}: missing {key}")
-        for key, needs in node.get("dependentRequired", {}).items():
-            if key in value:
-                for other in needs:
-                    if other not in value: errors.append(f"{path}: {key} needs {other}")
-        props = node.get("properties", {})
-        extra = node.get("additionalProperties", True)
-        if "maxProperties" in node and len(value) > node["maxProperties"]: errors.append(f"{path}: more than {node['maxProperties']} properties")
-        for key, v in value.items():
-            if key in props: check(props[key], v, f"{path}.{key}", errors, ctx)
-            elif extra is False: errors.append(f"{path}: unknown field {key}")
-            elif isinstance(extra, dict): check(extra, v, f"{path}.{key}", errors, ctx)
 
 def view_limits(doc, errors):
-    """Limits a JSON schema cannot state: a view's content tree is at most 6 deep and 200 nodes (docs/description-contract.md, section 5.0)."""
-    count = 0
-    def walk(node, depth):
-        nonlocal count
-        count += 1
-        if depth > 6: errors.append("$.root: deeper than 6 levels"); return
-        for child in node.get("children", []) if isinstance(node, dict) else []: walk(child, depth + 1)
+    """Enforce the aggregate content node cap across all branches of the tree."""
     root_node = (doc.get("view") or {}).get("root") if isinstance(doc, dict) else None
     if isinstance(root_node, dict):
-        walk(root_node, 1)
-        if count > 200: errors.append(f"$.root: {count} nodes (at most 200)")
+        pending = [root_node]
+        count = 0
+        while pending and not errors.full:
+            errors.visit()
+            node = pending.pop()
+            count += 1
+            if isinstance(node, dict):
+                pending.extend(errors.each(node.get("children", [])))
+        if count > 200:
+            errors.append(f"$.root: {count} nodes (at most 200)")
 
-
-# ---- strict parsing -------------------------------------------------------------------------------------------------------------------------------------
-class DuplicateKey(Exception):
-    pass
-
-def strict_pairs(pairs):
-    keys = [k for k, _ in pairs]
-    dup = {k for k in keys if keys.count(k) > 1}
-    if dup:
-        raise DuplicateKey(f"duplicate key {sorted(dup)[0]!r}")
-    return dict(pairs)
-
-def load_strict(text):
-    """The host's parser must reject duplicate keys (a duplicate would let two readers disagree about a field); so does this one."""
-    return json.loads(text, object_pairs_hook=strict_pairs)
 
 # ---- semantic checks the schema cannot say ----------------------------------------------------------------------------------------------------------------
-def walk(node, path="$"):
-    """Yields (path, node) for every dict and list in the document."""
-    yield path, node
-    if isinstance(node, dict):
-        for k, v in node.items():
-            yield from walk(v, f"{path}.{k}")
-    elif isinstance(node, list):
-        for i, v in enumerate(node):
-            yield from walk(v, f"{path}[{i}]")
-
-def field_names(kind_entry, generic=()):
-    fields = kind_entry.get("fields") or kind_entry.get("indexed_fields") or {}
-    names = set(fields if isinstance(fields, dict) else [f.get("name") if isinstance(f, dict) else f for f in fields])
-    return names | set(generic)
-
-def normalize_manifest(m):
-    """A fixture manifest is either a real plugin manifest v2 (`kinds` and `operations` are ARRAYS with `id`; `indexed_fields` maps a field to {type, audience} or to a bare type;
-    `reads` lists the host kinds the package may bind; an operation's `input_schema` may list `properties` and `required`) or the older small map form (`kinds` and `operations` keyed
-    by id with `fields`). Both are normalized to the keyed form the checks use: `kinds[id].fields`, `operations[id]`, `reads`."""
-    if not isinstance(m, dict): return m
-    out = dict(m)
-    kinds = m.get("kinds", {})
-    if isinstance(kinds, list):
-        out["kinds"] = {k.get("id"): {**{x: y for x, y in k.items() if x not in ("indexed_fields",)},
-                                       "fields": {f: (v if isinstance(v, dict) else {"type": v}) for f, v in (k.get("indexed_fields") or {}).items()}} for k in kinds if isinstance(k, dict)}
-    ops = m.get("operations", {})
-    if isinstance(ops, list):
-        out["operations"] = {o.get("id"): o for o in ops if isinstance(o, dict)}
-    out["_real"] = isinstance(kinds, list) or "api_version" in m
-    return out
-
 def semantic(doc, errors, catalogue, manifest, installed_manifests=()):
     """Unique action ids per document; bind, form, draft and row source scope; fullSwipe placement and catalogue permission; operations, kinds and fields resolved against
     the host catalogue and fixture manifests; only the requester supplies reads and operations; a header title bound to an item bind."""
     if not isinstance(doc, dict): return
-    binds_list = [b for b in doc.get("binds", []) if isinstance(b, dict)]
-    binds = {b.get("id"): b for b in binds_list}
-    forms, composers, action_ids = {}, {}, {}
+    binds_list = doc.get("binds", [])
+    binds = {b.get("id"): b for b in errors.each(binds_list)}
+    forms, composers = {}, {}
     cat_ops = (catalogue or {}).get("operations", {})
     cat_kinds = (catalogue or {}).get("kinds", {})
     man_ops = (manifest or {}).get("operations", {})
-    man_kinds = dict((manifest or {}).get("kinds", {}))
-    for installed in installed_manifests:
-        for kind_id, kind in installed.get("kinds", {}).items():
+    man_kinds = dict(errors.each((manifest or {}).get("kinds", {}).items()))
+    for installed in errors.each(installed_manifests):
+        for kind_id, kind in errors.each(installed.get("kinds", {}).items()):
             if kind_id in man_kinds:
                 errors.append(f"$.binds: multiple installed owners for kind {kind_id!r}")
             else:
                 man_kinds[kind_id] = kind
-    children_edges = {b_id: ((b.get("row") or {}).get("children") or {}).get("bind") for b_id, b in binds.items() if ((b.get("row") or {}).get("children") or {}).get("bind")}
-    repeat_rows = {n_["repeat"]["rows"] for _, n_ in walk(doc) if isinstance(n_, dict) and isinstance(n_.get("repeat"), dict) and "id" in n_ and "rows" in n_["repeat"]}
-    for path, node in walk(doc):
-        if isinstance(node, dict) and node.get("type") == "form" and "id" in node: forms[node["id"]] = path
+    children_edges = {b_id: ((b.get("row") or {}).get("children") or {}).get("bind") for b_id, b in errors.each(binds.items()) if ((b.get("row") or {}).get("children") or {}).get("bind")}
+    repeat_rows = {n_["repeat"]["rows"] for _, n_ in walk(doc, errors) if isinstance(n_, dict) and isinstance(n_.get("repeat"), dict) and "id" in n_ and "rows" in n_["repeat"]}
+    for path, node in walk(doc, errors):
+        if isinstance(node, dict) and node.get("type") == "form" and "id" in node: forms[node["id"]] = (path, {field.get("id") for field in errors.each(node.get("fields", [])) if isinstance(field, dict)})
         if isinstance(node, dict) and node.get("type") == "composer" and "id" in node: composers[node["id"]] = path
-    for path, node in walk(doc):
+    for path, node in walk(doc, errors):
         if not isinstance(node, dict): continue
         if "operation" in node and "id" in node and isinstance(node.get("operation"), str):
-            if node["id"] in action_ids: errors.append(f"{path}: duplicate action id {node['id']!r} (first at {action_ids[node['id']]})")
-            action_ids[node["id"]] = path
             op = node["operation"]
             entry = cat_ops.get(op) if catalogue is not None else None
+            if catalogue is not None:
+                row_input = re.match(r"^\$\.binds\[(\d+)\]\.row\.", path)
+                if row_input:
+                    row_kind = (binds_list[int(row_input.group(1))].get("source") or {}).get("kind")
+                    row_fields = cat_kinds.get(row_kind) or man_kinds.get(row_kind) or {}
+                    generic = catalogue["generic_item_fields"]
+                    for name, operand in errors.each(node.get("inputs", {}).items()):
+                        if isinstance(operand, dict) and operand.get("row") == "field":
+                            if field_meta(row_fields, operand.get("field"), generic).get("type") == "RowImageRef":
+                                errors.append(f"{path}: RowImageRef cannot supply operation input {name!r}")
             if node.get("fullSwipe"):
                 if not re.search(r"(leadingActions|trailingActions)\[0\]$", path):
                     errors.append(f"{path}: fullSwipe is allowed only on the first action of a swipe set")
@@ -211,26 +113,37 @@ def semantic(doc, errors, catalogue, manifest, installed_manifests=()):
                         if branches:
                             # the branch is selected by the inputs given: its required keys must all be present and every given key must be allowed by it
                             fits = []
-                            for branch in branches:
+                            for branch in errors.each(branches):
                                 props = {**base_props, **(branch.get("properties") or {})}
                                 req = base_required + list(branch.get("required", []))
-                                if all(r in given for r in req) and all(k in props for k in given): fits.append((props, req))
+                                if all(r in given for r in errors.each(req)) and all(k in props for k in errors.each(given)): fits.append((props, req))
                             wants_one = "oneOf" in input_schema
                             if (wants_one and len(fits) != 1) or (not wants_one and not fits):
-                                errors.append(f"{path}: {op} inputs {sorted(given)} fit {len(fits)} of the input schema's branches")
+                                errors.append(f"{path}: {op} inputs {sorted(errors.each(given))} fit {len(fits)} of the input schema's branches")
                             if fits: schema_in, required = fits[0]
-                        for name in given:
+                        for name in errors.each(given):
                             if schema_in and name not in schema_in: errors.append(f"{path}: {op} has no input {name!r}")
-                        for name in required:
+                        for name in errors.each(required):
                             if name not in given: errors.append(f"{path}: {op} needs input {name!r}")
                         owner_bind = None
                         m_owner = re.match(r"^\$\.binds\[(\d+)\]", path)
                         if m_owner: owner_bind = binds_list[int(m_owner.group(1))]
                         owner_kind = ((owner_bind or {}).get("source") or {}).get("kind")
                         owner_in_repeat = (owner_bind or {}).get("id") in repeat_rows
-                        for name, source in given.items():
+                        for name, source in errors.each(given.items()):
                             declared_type = ((schema_in.get(name) or {}).get("$ref") or "").rsplit("/", 1)[-1]
-                            ctx_kind = source.get("context") if isinstance(source, dict) and set(source) == {"context"} else None
+                            if op == "host.item.create" and name == "kind":
+                                kind_id = source.get("literal") if isinstance(source, dict) else None
+                                kind = man_kinds.get(kind_id) if isinstance(kind_id, str) else None
+                                if not kind or not isinstance(kind.get("host_create"), dict):
+                                    errors.append(f"{path}: host.item.create needs a literal kind with a host_create declaration")
+                            if op == "host.item.create" and name == "collection":
+                                if isinstance(source, dict) and source.keys() == {"literal"}:
+                                    check(schema_in[name], source["literal"], f"{path}.inputs.collection", errors, catalogue)
+                                elif not isinstance(source, dict) or source.keys() != {"route"}:
+                                    errors.append(f"{path}: host.item.create collection must come from a route or literal")
+                                continue
+                            ctx_kind = source.get("context") if isinstance(source, dict) and source.keys() == {"context"} else None
                             layout_selection = isinstance(source, dict) and "selection" in source and not source.get("set") and source["selection"] in repeat_rows
                             layout_bare = owner_in_repeat and isinstance(source, dict) and source == {"row": "id"}
                             if declared_type == "LayoutEntryRef" and ctx_kind != "placement" and not layout_selection and not layout_bare: errors.append(f"{path}: input {name!r} of {op} is a LayoutEntryRef: it takes {{context: placement}}")
@@ -240,7 +153,7 @@ def semantic(doc, errors, catalogue, manifest, installed_manifests=()):
                                 if ctx_kind == "item" and owner_kind != "threads": errors.append(f"{path}: {{context: item}} fills a ThreadRef only from a row of kind `threads`, not {owner_kind!r}")
                             if ctx_kind == "placement" and declared_type not in ("LayoutEntryRef", ""): errors.append(f"{path}: {{context: placement}} fills a LayoutEntryRef, not {declared_type}")
                             if ctx_kind == "item" and declared_type == "LayoutEntryRef": errors.append(f"{path}: {{context: item}} cannot fill the LayoutEntryRef input {name!r}")
-                            REF_TYPES = {k.get("row_ref") for k in cat_kinds.values() if k.get("row_ref")} | {"ItemRef", "LayoutEntryRef"}   # every ref a row can be or give
+                            REF_TYPES = {k.get("row_ref") for k in errors.each(cat_kinds.values()) if k.get("row_ref")} | {"ItemRef", "LayoutEntryRef"}   # every ref a row can be or give
                             move_to_destination = (op, name) == ("host.layout.move_to", "section")   # a destination choice, checked below
                             row_ref_of_owner = (cat_kinds.get(owner_kind) or {}).get("row_ref") if owner_kind in cat_kinds else ("ItemRef" if owner_kind else None)
                             if declared_type in REF_TYPES and ctx_kind == "item" and declared_type != row_ref_of_owner and not move_to_destination:
@@ -250,7 +163,7 @@ def semantic(doc, errors, catalogue, manifest, installed_manifests=()):
                                 errors.append(f"{path}: the `thread` of host.layout.move_to takes only {{context: item}} or the bare id of a threads row, not {json.dumps(source, sort_keys=True)}")
                             if declared_type in REF_TYPES and ctx_kind is None and not move_to_destination:
                                 bare_id = isinstance(source, dict) and source == {"row": "id"}
-                                from_route = isinstance(source, dict) and set(source) == {"route"}
+                                from_route = isinstance(source, dict) and source.keys() == {"route"}
                                 row_ref = (cat_kinds.get(owner_kind) or {}).get("row_ref") if owner_kind in cat_kinds else ("ItemRef" if owner_kind else None)
                                 prompt = source.get("prompt") if isinstance(source, dict) else None
                                 choice_ok = False
@@ -281,7 +194,7 @@ def semantic(doc, errors, catalogue, manifest, installed_manifests=()):
                             if declared_type == "ThreadRef" and isinstance(source, dict) and source.get("row") == "id" and not owner_in_repeat:
                                 if (cat_kinds.get(owner_kind) or {}).get("row_ref") != "ThreadRef":
                                     errors.append(f"{path}: the bare row id fills a ThreadRef only in a bind whose kind has row_ref ThreadRef (threads), not {owner_kind!r}")
-                        for name in entry.get("target_inputs", []):
+                        for name in errors.each(entry.get("target_inputs", [])):
                             if isinstance(given.get(name), dict) and "literal" in given[name]: errors.append(f"{path}: target input {name!r} of {op} cannot be a literal")
                 elif manifest is not None and op not in man_ops:
                     errors.append(f"{path}: operation {op!r} is in neither the host catalogue nor an installed fixture manifest")
@@ -289,90 +202,94 @@ def semantic(doc, errors, catalogue, manifest, installed_manifests=()):
                     declared = man_ops[op].get("input_schema") if isinstance(man_ops[op], dict) else None
                     if isinstance(declared, dict) and isinstance(declared.get("properties"), dict):
                         given = node.get("inputs", {})
-                        for name in given:
+                        for name in errors.each(given):
                             if name not in declared["properties"]: errors.append(f"{path}: {op} (manifest) has no input {name!r}")
-                        for name in declared.get("required", []):
+                        for name in errors.each(declared.get("required", [])):
                             if name not in given: errors.append(f"{path}: {op} (manifest) needs input {name!r}")
         if "bind" in node and isinstance(node["bind"], str) and node["bind"] not in binds:
             errors.append(f"{path}: bind {node['bind']!r} is not declared in `binds`")
-        if "bind" in node and "field" in node and set(node) == {"bind", "field"} and ".config" not in path and ".header.title" not in path and ".row" not in path:
+        if "bind" in node and "field" in node and node.keys() == {"bind", "field"} and ".config" not in path and ".header.title" not in path and ".row" not in path:
             errors.append(f"{path}: a {{bind, field}} source is legal only in a host component's config (and a header title)")
-        if "row" in node and set(node) <= {"row", "field"} and ".row" not in path:
+        if "row" in node and node.keys() <= {"row", "field"} and ".row" not in path:
             errors.append(f"{path}: a {{row}} source is only valid inside a bind's row template")
-        if "form" in node and set(node) == {"form", "field"}:
+        if "form" in node and node.keys() == {"form", "field"}:
             owner = forms.get(node["form"])
             if owner is None: errors.append(f"{path}: form {node['form']!r} does not exist")
-            elif not path.startswith(owner + ".submit"): errors.append(f"{path}: a {{form}} source is only valid inside that form's own submit")
-        if "draft" in node and set(node) == {"draft"} and isinstance(node["draft"], str):
+            elif not path.startswith(owner[0] + ".submit"): errors.append(f"{path}: a {{form}} source is only valid inside that form's own submit")
+            elif node["field"] not in owner[1]: errors.append(f"{path}: unknown form field {node['field']!r}")
+        if "draft" in node and node.keys() == {"draft"} and isinstance(node["draft"], str):
             owner = composers.get(node["draft"])
             if owner is None: errors.append(f"{path}: composer {node['draft']!r} does not exist")
             elif not path.startswith(owner + ".config"): errors.append(f"{path}: a {{draft}} source is only valid inside that composer's own config")
     if manifest is not None:
-        reads = set(manifest.get("reads", []) or [])
-        for index, bind in enumerate(binds_list):
+        reads = set(errors.each(manifest.get("reads", [])))
+        for index, bind in enumerate(errors.each(binds_list)):
             kind_id = (bind.get("source") or {}).get("kind")
-            if isinstance(kind_id, str) and kind_id not in reads and (manifest.get("_real") or "reads" in manifest):
+            if isinstance(kind_id, str) and kind_id not in reads:
                 errors.append(f"$.binds[{index}].source: kind {kind_id!r} is not in the manifest's `reads` (every bind needs it, including a package's own kinds)")
-    for index, b in enumerate(binds_list):
+    for index, b in enumerate(errors.each(binds_list)):
         if not b.get("persist"): continue
         src = b.get("source") or {}
-        for key in ("ref", "text", "parent"):
+        for key in errors.each(("ref", "text", "parent")):
             if key in src: errors.append(f"$.binds[{index}]: persist needs INVARIANT query inputs: the source has `{key}`")
-        if "collection" in src and not (isinstance(src["collection"], dict) and set(src["collection"]) == {"literal"}):
+        if "collection" in src and not (isinstance(src["collection"], dict) and src["collection"].keys() == {"literal"}):
             errors.append(f"$.binds[{index}]: persist allows only a LITERAL collection restriction, not {json.dumps(src['collection'], sort_keys=True)}")
         if src.get("type") != "list": errors.append(f"$.binds[{index}]: persist needs a `list` source")
-        for g in ("all", "any"):
-            for pr in (b.get("filter") or {}).get(g, []):
+        for g in errors.each(("all", "any")):
+            for pr in errors.each((b.get("filter") or {}).get(g, [])):
                 value = pr.get("value")
-                if value is not None and not (isinstance(value, dict) and (set(value) == {"literal"} or value == {"viewer": "person"})):
+                if value is not None and not (isinstance(value, dict) and (value.keys() == {"literal"} or value == {"viewer": "person"})):
                     errors.append(f"$.binds[{index}]: persist needs INVARIANT query inputs: the filter operand {json.dumps(value, sort_keys=True)} on {pr.get('field')!r} is not a literal or the viewer")
-    parent_binds = {i for i, b in binds.items() if (b.get("source") or {}).get("parent")}
+    parent_binds = {i for i, b in errors.each(binds.items()) if (b.get("source") or {}).get("parent")}
     children_edges = {}
-    for bind_id, b in binds.items():
+    for bind_id, b in errors.each(binds.items()):
         child = ((b.get("row") or {}).get("children") or {}).get("bind")
         if child is not None:
             if child not in parent_binds: errors.append(f"$.binds {bind_id}: children bind {child!r} must declare `source.parent: true`")
             children_edges[bind_id] = child
-    for sec_path, sec in [(p_, n_) for p_, n_ in walk(doc) if isinstance(n_, dict) and "repeat" in n_ and "id" in n_]:
+    for sec_path, sec in errors.each([(p_, n_) for p_, n_ in walk(doc, errors) if isinstance(n_, dict) and "repeat" in n_ and "id" in n_]):
         rep = sec["repeat"]
-        for key in ("over", "rows"):
+        for key in errors.each(("over", "rows")):
             if rep.get(key) not in binds: errors.append(f"{sec_path}: repeat.{key} {rep.get(key)!r} is not a declared bind")
         if rep.get("rows") in binds and rep["rows"] not in parent_binds: errors.append(f"{sec_path}: repeat.rows must be a bind with `source.parent: true`")
         if rep.get("over") in parent_binds: errors.append(f"{sec_path}: repeat.over must be a top-level bind, not a per-parent one")
         if "bind" in sec or sec.get("rows"): errors.append(f"{sec_path}: a repeated section has no `bind` or literal `rows` of its own")
     referenced = set(children_edges.values())
-    for sec_path, sec in [(p_, n_) for p_, n_ in walk(doc) if isinstance(n_, dict) and "repeat" in n_ and "id" in n_]:
+    for sec_path, sec in errors.each([(p_, n_) for p_, n_ in walk(doc, errors) if isinstance(n_, dict) and "repeat" in n_ and "id" in n_]):
         rep = sec["repeat"]
         if rep.get("rows") in binds: referenced.add(rep["rows"])
         over = binds.get(rep.get("over"))
         if over is not None and (over.get("source") or {}).get("kind") != "layout_sections":
             errors.append(f"{sec_path}: repeat.over must be a bind that reads `layout_sections` (the per-person layout the host stores)")
-    for path_, node_ in walk(doc):
+    for path_, node_ in walk(doc, errors):
         if isinstance(node_, dict) and isinstance(node_.get("bind"), str) and node_["bind"] in parent_binds:
             if not path_.endswith(".children"):
                 errors.append(f"{path_}: the per-parent bind {node_['bind']!r} is consumed only through its declared edge (children or repeat.rows), not by an ordinary section, list, count or header")
-    for bind_id in sorted(parent_binds - referenced):
+    for bind_id in errors.each(sorted(parent_binds - referenced)):
         errors.append(f"$.binds {bind_id}: a bind with `source.parent: true` needs a declared edge (a RowTemplate.children or a Section.repeat that references it)")
-    for path, node in walk(doc):
-        if isinstance(node, dict) and node.get("context") == "placement" and set(node) == {"context"}:
+    for path, node in walk(doc, errors):
+        if isinstance(node, dict) and node.get("context") == "placement" and node.keys() == {"context"}:
             m = re.match(r"^\$\.binds\[(\d+)\]", path)
             owner = binds_list[int(m.group(1))].get("id") if m else None
             if owner not in repeat_rows: errors.append(f"{path}: {{context: placement}} is legal only inside the rows of a Section.repeat")
-    for bind_id in sorted(repeat_rows & set(children_edges.values())):
+    for bind_id in errors.each(sorted(repeat_rows & set(children_edges.values()))):
         errors.append(f"$.binds {bind_id}: a bind is a section's rows OR a children target, never both (its row ref would be a placement in one and the kind's own ref in the other)")
     def depth(bind_id, seen=()):
+        if errors.full:
+            return 0
+        errors.visit()
         if bind_id in seen: errors.append(f"$.binds: children cycle through {bind_id!r}"); return 0
         nxt = children_edges.get(bind_id)
         return 1 + depth(nxt, seen + (bind_id,)) if nxt else 1
-    for bind_id in binds:
+    for bind_id in errors.each(binds):
         if depth(bind_id) > 3: errors.append(f"$.binds {bind_id}: nested rows deeper than 3 levels")
-    for index, b in enumerate(binds_list):
-        uses_parent = any(isinstance(pr.get("value"), dict) and "parent" in pr["value"] for g in ("all", "any") for pr in (b.get("filter") or {}).get(g, []))
+    for index, b in enumerate(errors.each(binds_list)):
+        uses_parent = any(isinstance(pr.get("value"), dict) and "parent" in pr["value"] for g in errors.each(("all", "any")) for pr in errors.each((b.get("filter") or {}).get(g, [])))
         if uses_parent and not (b.get("source") or {}).get("parent"): errors.append(f"$.binds[{index}]: {{parent}} is legal only in a bind whose source has `parent: true`")
     header_title = (doc.get("chrome") or {}).get("header", {}).get("title")
     if isinstance(header_title, dict) and header_title.get("bind") in binds and binds[header_title["bind"]].get("source", {}).get("type") != "item":
         errors.append("$.chrome.header.title: a header title takes its text from an `item` bind (the open item), not from a list's first row")
-    for index, bind in enumerate(binds_list):
+    for index, bind in enumerate(errors.each(binds_list)):
         if catalogue is None: break
         source = bind.get("source", {})
         kind_id = source.get("kind")
@@ -386,6 +303,10 @@ def semantic(doc, errors, catalogue, manifest, installed_manifests=()):
             claimed_text_search = kind is None and plugin and plugin.get("claimed_text") is True and plugin.get("searchable") is True
             if not (turns_search or claimed_text_search):
                 errors.append(f"{path}: {kind_id!r} needs claimed_text and searchable in its kind manifest to support search")
+            elif "field_filter" in source:
+                search = catalogue["query"]["search"]
+                profile = search["turns" if turns_search else "claimed_text"]
+                check(profile["field_filter_schema"], source["field_filter"], f"{path}.field_filter", errors, catalogue)
         if catalogue is not None and kind is None and plugin is None:
             if manifest is not None or kind_id in ("notes", "threads", "collections", "requests"):
                 errors.append(f"{path}: kind {kind_id!r} is in neither the host catalogue nor an installed fixture manifest")
@@ -393,92 +314,385 @@ def semantic(doc, errors, catalogue, manifest, installed_manifests=()):
         entry = kind or plugin
         if entry is None: continue
         generic = (catalogue or {}).get("generic_item_fields", {})
-        known = field_names(entry, generic) | {"id"}
-        used = list(bind.get("fields", [])) + [x["field"] for g in ("all", "any") for x in bind.get("filter", {}).get(g, [])] + [x["field"] for x in bind.get("sort", [])]
-        for f in used:
+        known = field_names(entry, errors, generic) | {"id"}
+        predicates = [pred for group in errors.each(("all", "any")) for pred in errors.each(bind.get("filter", {}).get(group, []))]
+        sorts = bind.get("sort", [])
+        used = list(errors.each(bind.get("fields", []))) + [part["field"] for part in errors.each(predicates + sorts)]
+        row = bind.get("row") or {}
+        for part in errors.each(row.get("secondary", [])):
+            field = part["field"]
+            expected_type = "Text" if part["format"] == "text" else "Timestamp"
+            if field not in bind.get("fields", []) or field_meta(entry, field, generic).get("type") != expected_type:
+                errors.append(f"$.binds[{index}].row.secondary: {field!r} must project {expected_type} for {part['format']}")
+        row_icon = row.get("icon")
+        image = row_icon.get("image") if isinstance(row_icon, dict) else None
+        if isinstance(image, dict):
+            field = image.get("field")
+            if isinstance(field, str):
+                if field not in bind.get("fields", []) or field_meta(entry, field).get("type") != "RowImageRef":
+                    errors.append(f"$.binds[{index}].row.icon: {field!r} must project a RowImageRef")
+            fallback = image.get("fallback")
+            if isinstance(fallback, str):
+                meta = field_meta(entry, fallback, generic)
+                if fallback not in bind.get("fields", []) or meta.get("type") != "Text" or meta.get("source") != "body_excerpt":
+                    errors.append(f"$.binds[{index}].row.icon: fallback {fallback!r} must project a body_excerpt Text field")
+        for f in errors.each(used):
             if f not in known: errors.append(f"{path}: field {f!r} is not a field of kind {kind_id!r}")
-        for g in ("all", "any"):
-            for pred in bind.get("filter", {}).get(g, []):
-                meta = (entry.get("fields") or {}).get(pred["field"], {}) if isinstance(entry.get("fields"), dict) else {}
-                if isinstance(meta, dict) and meta.get("audience") == "viewer_self" and not (pred.get("op") == "eq" and pred.get("value") == {"viewer": "person"}):
-                    errors.append(f"{path}: {pred['field']!r} is viewer-only: it accepts only `eq` with {{viewer: person}}")
+        for sort in errors.each(sorts):
+            if field_meta(entry, sort["field"]).get("type") == "RowImageRef":
+                errors.append(f"{path}: RowImageRef cannot be a sort key")
+        for pred in errors.each(predicates):
+            if field_meta(entry, pred["field"]).get("type") == "RowImageRef":
+                errors.append(f"$.binds[{index}].filter: RowImageRef cannot be a predicate operand")
+        for relative_path, desc in walk(bind, errors):
+            if not isinstance(desc, dict):
+                continue
+            for key in errors.each(("when", "disabled")):
+                operand = desc.get(key)
+                if isinstance(operand, dict) and field_meta(entry, operand.get("field")).get("type") == "RowImageRef":
+                    errors.append(f"$.binds[{index}]{relative_path[1:]}.{key}: RowImageRef cannot be a predicate operand")
+        for pred in errors.each(predicates):
+            meta = field_meta(entry, pred["field"])
+            if meta.get("audience") == "viewer_self" and not (pred.get("op") == "eq" and pred.get("value") == {"viewer": "person"}):
+                errors.append(f"{path}: {pred['field']!r} is viewer-only: it accepts only `eq` with {{viewer: person}}")
 
-def check_event_binding(event, view, errors):
-    """Check events that depend on the referenced Bind in the active description."""
-    event_type = event.get("type")
-    if event_type not in ("search", "window"):
-        return
-    if event_type == "search":
-        footer = view.get("chrome", {}).get("footer", {})
-        bind_id = event.get("bind", footer.get("search", {}).get("bind"))
+
+def provider_mark_fixture_symbol(case, icon):
+    """Paper-check the row fallback using publisher and ownership facts from install."""
+    mark = case["claimed_mark"]
+    publisher = case["verified_publisher"]
+    if publisher is not None and case["trusted_mark_owners"].get(mark) == publisher:
+        return mark
+    return icon["name"]
+
+
+def expected_errors(fixtures):
+    """Read each fixture directory's expected errors and require exact coverage."""
+    expected = {}
+    for directory in sorted({file.parent for file in fixtures if file.name.startswith("invalid-")}):
+        for name, fragment in read_json(directory / "expected-errors.json").items():
+            if pathlib.Path(name).name != name or not isinstance(fragment, str) or not fragment.strip():
+                raise ValueError(f"{directory}: invalid expected error for {name!r}")
+            expected[directory / name] = fragment
+    negatives = {file for file in fixtures if file.name.startswith("invalid-")}
+    if missing := negatives - expected.keys():
+        raise ValueError("Missing expected errors: " + ", ".join(str(file) for file in sorted(missing)))
+    if stale := expected.keys() - negatives:
+        raise ValueError("Expected errors without negative fixtures: " + ", ".join(str(file) for file in sorted(stale)))
+    return expected
+
+
+def report_fixture(file, errors, expected):
+    """A negative fixture must fail a named rule, even if other rules also reject it."""
+    fragment = expected.get(file)
+    ok = any(fragment in error for error in errors) if fragment is not None else not errors
+    if ok:
+        print(f"ok   {file.name}")
     else:
-        bind_id = event["request"]["bind"]
-    target = next((b for b in view.get("binds", []) if b["id"] == bind_id), None)
-    if target is None:
-        errors.append(f"$: bind {bind_id!r} is not in the active description")
-    elif target["source"]["type"] == "search":
-        if event_type == "window":
-            check({"$ref": "#/$defs/EventSearchWindow"}, event, "$", errors)
-    elif event_type == "search":
-        errors.append(f"$: bind {bind_id!r} is not a search bind")
+        wanted = f"expected error {fragment!r}. " if fragment is not None else ""
+        print(f"FAIL {file.name}  {wanted}{'; '.join(errors) or 'no errors'}")
+    return ok
 
 
-failed = False
-fixtures_dir = root / "fixtures" / "description-v2"
-manifests_dir = fixtures_dir / "manifests"
-print("host catalogue: " + ("loaded" if CATALOGUE is not None else "not present yet (plugins lane); operation, kind and field names are not resolved"))
-for file in sorted([*fixtures_dir.glob("*.json"), *fixtures_dir.glob("events/*/*.json")]):
-    if CATALOGUE is None and "-catalogue-" in file.name:
-        print(f"skip {file.name}  (needs the host catalogue)")
-        continue
-    errors = []
+def check_description_ids(doc, errors):
+    """Reject list collisions and repeated Invoke or shell-action IDs before binding."""
+    ids = {"action": {}, "form": {}, "component": {}}
+    for path, node in walk(doc, errors):
+        if not isinstance(node, dict) or not isinstance(node.get("id"), str):
+            continue
+        kind = node.get("type")
+        if isinstance(node.get("operation"), str) or isinstance(node.get("shell"), dict):
+            kind = "action"
+        if isinstance(kind, str) and kind in COMPONENT_TYPES:
+            kind = "component"
+        if not isinstance(kind, str) or kind not in ids:
+            continue
+        ident = node["id"]
+        if ident in ids[kind]:
+            errors.append(f"{path}: duplicate {kind} id {ident!r} (first at {ids[kind][ident]})")
+        else:
+            ids[kind][ident] = path
+    check_unique_ids(doc, errors, skip={"literal"})
+
+
+def validate_description(doc, manifest, installed, errors):
+    """Check the entire template structure before indexing IDs or checking relations."""
+    check(schema, doc, "$", errors)
+    if errors:
+        return
+    check_description_ids(doc, errors)
+    if errors:
+        return
+    view_limits(doc, errors)
+    semantic(doc, errors, verification.CATALOGUE, manifest, installed)
+
+
+def validate_event(doc, bindings, errors):
+    """Check event shape and contextual Bind and window range requirements."""
+    check({"$ref": "#/$defs/Event"}, doc, "$", errors)
+    if errors:
+        return
+    if doc["type"] == "component":
+        validate_component_request(doc, errors, verification.CATALOGUE)
+    if verification.CATALOGUE is not None and doc["type"] == "window":
+        request = doc["request"]
+        start, end = request["from"], request["to"]
+        limit = verification.CATALOGUE["query"]["window"]["max_request_span"]
+        if start >= end:
+            errors.append(f"$.request: from ({start}) must be below to ({end})")
+        if end - start > limit:
+            errors.append(f"$.request: the span {end - start} exceeds the catalogue's max_request_span ({limit})")
+    if not errors:
+        checked_origin = bindings() if bindings else None
+        if not errors:
+            check_event_binding(doc, checked_origin, errors, verification.CATALOGUE)
+
+
+def fixture_origins(fixtures, fixtures_dir, manifests_dir):
+    reply_files = {file.name for file in fixtures if is_reply_fixture(file)}
+    if verification.CATALOGUE is None or not reply_files:
+        return {}
+    errors = Validation()
+    origins = read_json(fixtures_dir / "replies" / "origins.json", errors)
+    verification.check_reply_origins_shape(origins, reply_files, errors)
+    sources = {}
+    for file in errors.each(fixtures):
+        if file.parent == fixtures_dir and file.name in origins:
+            app = read_json(file, errors)
+            check(schema, app, "$", errors)
+            if errors:
+                raise ValueError(f"{file}: {'; '.join(errors)}")
+            sources[file.resolve()] = app, *load_fixture_manifest(file, manifests_dir, errors)
+    return load_reply_origins(origins, fixtures_dir, sources, verification.CATALOGUE, reply_files, errors)
+
+
+def fixture_event_origin(file, errors):
+    """Index a fixture origin only after its entire template passes structural checks."""
+    app = read_json(file, errors)
+    check(schema, app, "$", errors)
+    return EventBindings(app, errors) if not errors else None
+
+
+def run_fixtures():
+    """Run the checked-in positive, negative and paper verification cases."""
+    fixtures_dir = root / "fixtures" / "description-v2"
+    manifests_dir = fixtures_dir / "manifests"
+    fixtures = sorted(file for file in [*fixtures_dir.glob("*.json"), *fixtures_dir.glob("events/*/*.json")]
+                      if file.name != "expected-errors.json")
+    install_fixtures = sorted(file for file in (manifests_dir / "install").glob("*.json")
+                              if file.name != "expected-errors.json")
+    expected = expected_errors(fixtures + install_fixtures)
+    origins = fixture_origins(fixtures, fixtures_dir, manifests_dir)
+    print("host catalogue: " + ("loaded" if verification.CATALOGUE is not None else "absent (catalogue cases are skipped)"))
+    failed = False
+    for file in fixtures:
+        manifest_path = manifests_dir / file.name.removeprefix("invalid-")
+        if verification.CATALOGUE is None and ("-catalogue-" in file.name or manifest_path.exists()):
+            print(f"skip {file.name}  (needs the host catalogue)")
+            continue
+        errors = Validation()
+        try:
+            doc = read_json(file, errors)
+            if file.name.startswith(("event-", "invalid-event-")):
+                app = None
+                if file.parent.parent == fixtures_dir / "events":
+                    app = lambda: fixture_event_origin(fixtures_dir / f"{file.parent.name}.json", errors)
+                validate_event(doc, app, errors)
+            elif is_reply_fixture(file):
+                validate_reply(doc, origins.get(file.name), errors)
+            else:
+                if verification.CATALOGUE is None and any(
+                    path.endswith(".source") and isinstance(source, dict) and source.get("type") == "search"
+                    for path, source in walk(doc, errors)
+                ):
+                    print(f"skip {file.name}  (search qualification needs the host catalogue)")
+                    continue
+                manifest, installed = load_fixture_manifest(file, manifests_dir, errors)
+                validate_description(doc, manifest, installed, errors)
+        except (DuplicateKey, ValueError) as error:
+            errors.append(str(error))
+        failed |= not report_fixture(file, errors, expected)
+    for file in install_fixtures:
+        if verification.CATALOGUE is None:
+            print(f"skip {file.name}  (install checks need the host catalogue)")
+            continue
+        errors = Validation()
+        try:
+            parse_manifest(read_bytes(file).decode("utf-8"), errors)
+        except (DuplicateKey, ValueError) as error:
+            errors.append(str(error))
+        failed |= not report_fixture(file, errors, expected)
+    threads = read_json(fixtures_dir / "threads-app.json")
+    for file in sorted((fixtures_dir / "provider-marks").glob("*.json")):
+        errors = Validation()
+        check(schema, threads, "$", errors)
+        if not errors:
+            case = read_json(file, errors)
+            icon = next(bind["row"]["icon"] for bind in errors.each(threads["binds"]) if bind["id"] == case["threads_bind"])
+            actual = provider_mark_fixture_symbol(case, icon)
+            if actual != case["expected_symbol"]:
+                errors.append(f"expected icon {case['expected_symbol']!r}, got {actual!r}")
+        failed |= not report_fixture(file, errors, expected)
+    return int(failed)
+
+
+def load_package_templates(manifest, package_dir, explicit_apps, inputs, errors):
+    """Resolve declared app paths and verify each template's pinned bytes."""
+    templates = {}
+    for app in errors.each(manifest["apps"]):
+        asset = app["description"]["template"]
+        path = package_dir / asset["path"]
+        sha256 = asset["sha256"]
+        if templates.get(path, sha256) != sha256:
+            raise ValueError(f"{path}: conflicting template digests")
+        templates[path] = sha256
+    if explicit_apps:
+        supplied = {inputs.identify(file) for file in errors.each(explicit_apps)}
+        if len(supplied) != len(explicit_apps):
+            raise ValueError("Duplicate --app path")
+    else:
+        supplied = {inputs.identify(path) for path in errors.each(templates)}
+    implicit_root = None if explicit_apps else package_dir
+    assets = {file: inputs.bytes(file, implicit_root=implicit_root)[1] for file in errors.each(sorted(supplied))}
+    digests = {file: hashlib.sha256(data).hexdigest() for file, data in errors.each(assets.items())}
+    used = set()
+    for declared, digest in errors.each(templates.items()):
+        chosen = inputs.identify(declared)
+        if chosen not in assets and explicit_apps:
+            names = [file for file in errors.each(assets) if file.name == declared.name and digests[file] == digest]
+            if not names:
+                names = [file for file in errors.each(assets) if digests[file] == digest]
+            if len(names) == 1:
+                chosen = names[0]
+        if digests.get(chosen) != digest:
+            raise ValueError(f"{declared}: missing app template or SHA-256 mismatch")
+        used.add(chosen)
+        yield declared, chosen, load_strict(assets[chosen].decode("utf-8"), errors)
+    if extra := supplied - used:
+        raise ValueError(f"Undeclared app templates: {', '.join(str(file) for file in errors.each(sorted(extra)))}")
+
+
+def package_manifest(path, inputs, errors):
+    """Read and validate an emitted manifest, including its declared schemas."""
+    _, data = inputs.bytes(path)
+    return parse_manifest(data.decode("utf-8"), errors)
+
+
+def check_package_owners(owners, errors):
+    """Reject duplicate package and kind identities before linking across manifests."""
+    packages = set()
+    kinds = set(verification.CATALOGUE["kinds"])
+    for owner in errors.each(owners):
+        if owner["id"] in packages:
+            errors.append(f"Duplicate installed package ID {owner['id']!r}")
+        packages.add(owner["id"])
+        for kind in errors.each(owner["kinds"]):
+            if kind in kinds:
+                errors.append(f"Duplicate installed kind ID {kind!r}")
+            kinds.add(kind)
+
+
+def run_package(args):
+    """Verify emitted JSON artifacts directly, independent of the fixture tree."""
+    if verification.CATALOGUE is None:
+        raise ValueError("Package verification requires the pinned host catalogue")
+    if len(args.app) > 16 or len(args.installed_manifest) > 32 or len(args.event) > 64 or len(args.reply) > 64:
+        raise ValueError("Package argument caps are 16 apps, 32 installed manifests, 64 events and 64 replies")
+    boundary = lexical_path(args.package) if args.package else None
+    path = boundary / "manifest.json" if boundary is not None else resolved_path(args.manifest)
+    with PackageInput(boundary, Validation()) as inputs:
+        return verify_package(args, path, inputs)
+
+
+def verify_package(args, path, inputs):
+    """Validate package artifacts while the directory descriptor stays open."""
+    package_dir = path.parent
+    errors = inputs.errors
+    explicit_origins = inputs.json(args.origins) if args.origins else None
+    owners = []
+    for file in errors.each((path, *args.installed_manifest)):
+        owner = package_manifest(file, inputs, errors)
+        if errors:
+            report_fixture(file, errors, {})
+            return 1
+        owners.append(owner)
+    manifest, *installed = owners
+    check_package_owners(owners, errors)
+    if not report_fixture(path, errors, {}):
+        return 1
+
+    sources = {}
+    for declared, chosen, doc in load_package_templates(manifest, package_dir, args.app, inputs, errors):
+        validate_description(doc, manifest, installed, errors)
+        if not report_fixture(chosen, errors, {}):
+            return 1
+        sources[inputs.identify(declared)] = sources[chosen] = (doc, manifest, installed)
+
+    event_bindings = {}
+
+    def index_origin(doc):
+        if id(doc) not in event_bindings:
+            event_bindings[id(doc)] = EventBindings(doc, errors)
+        return event_bindings[id(doc)]
+
+    for description_path, file in errors.each(args.event):
+        declared = inputs.identify(package_dir / description_path)
+        source = sources.get(declared)
+        if source is None:
+            raise ValueError(f"{file}: unknown event origin description {description_path}")
+        validate_event(inputs.json(file), lambda: index_origin(source[0]), errors)
+        if not report_fixture(file, errors, {}):
+            return 1
+
+    replies = args.reply
+    if inputs.root is not None and not replies:
+        replies = inputs.reply_files(package_dir / "replies")
+    if not replies:
+        return 0
+    if len(replies) > 64:
+        raise ValueError("Package exceeds 64 reply artifacts")
+
+    if args.origins is None:
+        try:
+            explicit_origins = inputs.json(package_dir / "replies" / "origins.json")
+        except FileNotFoundError as error:
+            raise ValueError("Reply verification requires --origins or replies/origins.json") from error
+    names = {file.name for file in errors.each(replies)}
+    if len(names) != len(replies):
+        raise ValueError("Reply filenames must be unique")
+    origins = load_reply_origins(explicit_origins, package_dir, sources, verification.CATALOGUE, names, errors,
+                                 identify=inputs.identify)
+    for file in errors.each(replies):
+        validate_reply(inputs.json(file), origins[file.name], errors)
+        if not report_fixture(file, errors, {}):
+            return 1
+    return 0
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Verify pinned description fixtures or emitted package artifacts.")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--package", type=pathlib.Path, metavar="DIR", help="read manifest.json, declared templates and optional replies/*.json from DIR")
+    mode.add_argument("--fixture-testing", action="store_true", help="allow CALTERNAL_HOST_CATALOGUE for fixture diagnostics")
+    mode.add_argument("--manifest", type=pathlib.Path, metavar="FILE", help="read a manifest at an explicit path")
+    parser.add_argument("--app", type=pathlib.Path, action="append", default=[], metavar="FILE", help="an explicit declared app template; repeat for each")
+    parser.add_argument("--event", nargs=2, type=pathlib.Path, action="append", default=[], metavar=("DESCRIPTION", "FILE"),
+                        help="verify an event against its declared app template; repeat as needed")
+    parser.add_argument("--reply", type=pathlib.Path, action="append", default=[], metavar="FILE", help="an optional WindowReply artifact; repeat for each")
+    parser.add_argument("--origins", type=pathlib.Path, metavar="FILE", help="reply origins keyed by description path and Bind (default replies/origins.json)")
+    parser.add_argument("--installed-manifest", type=pathlib.Path, action="append", default=[], metavar="FILE",
+                        help="an installed manifest owning a referenced kind; repeat as needed")
+    args = parser.parse_args()
+    if not (args.manifest or args.package) and (args.app or args.event or args.reply or args.origins or args.installed_manifest):
+        parser.error("explicit artifacts require --manifest or --package")
     try:
-        doc = load_strict(file.read_text())
-    except (DuplicateKey, ValueError) as error:
-        errors.append(str(error)); doc = None
-    if CATALOGUE is None and any(
-        path.endswith(".source") and isinstance(source, dict) and source.get("type") == "search"
-        for path, source in walk(doc)
-    ):
-        print(f"skip {file.name}  (search modes need the host catalogue)")
-        continue
-    manifest = None
-    installed_manifests = ()
-    manifest_file = manifests_dir / file.name.replace("invalid-", "")
-    if manifest_file.exists():
-        manifest = normalize_manifest(load_strict(manifest_file.read_text()))
-        if package_id := manifest.get("id"):
-            installed_file = manifests_dir / "installed-for" / f"{package_id}.json"
-            if installed_file.exists():
-                installed_manifests = tuple(
-                    normalize_manifest(load_strict((manifests_dir / owner).read_text()))
-                    for owner in load_strict(installed_file.read_text())
-                )
-    is_event = file.name.startswith(("event-", "invalid-event-"))
-    is_reply = file.name.startswith(("reply-", "invalid-reply-"))
-    if doc is not None:
-        check({"$ref": "#/$defs/Event"} if is_event else {"$ref": "#/$defs/WindowReply"} if is_reply else schema, doc, "$", errors)
-        if is_event and isinstance(doc, dict) and doc.get("type") == "window" and isinstance(doc.get("request"), dict) and CATALOGUE is not None:
-            req = doc["request"]; limit = ((CATALOGUE.get("query") or {}).get("window") or {}).get("max_request_span")
-            if isinstance(req.get("from"), int) and isinstance(req.get("to"), int):
-                if not req["from"] < req["to"]: errors.append(f"$.request: from ({req['from']}) must be below to ({req['to']})")
-                if limit is not None and req["to"] - req["from"] > limit: errors.append(f"$.request: the span {req['to'] - req['from']} exceeds the catalogue's max_request_span ({limit})")
-        if is_reply and not errors and doc.get("state") == "ready":
-            count = doc.get("count")
-            if count and count["mode"] == "exact":
-                offset, rows, total = doc["offset"], doc["rows"], count["value"]
-                if rows and offset + len(rows) > total:
-                    errors.append("$.count.value: exact count does not cover the returned row range")
-                if not rows and offset < total:
-                    errors.append("$.rows: an exact count still has rows at this offset")
-        if is_event and file.parent.parent == fixtures_dir / "events" and not errors:
-            view = load_strict((fixtures_dir / f"{file.parent.name}.json").read_text())
-            check_event_binding(doc, view, errors)
-        if not is_event and not is_reply:
-            view_limits(doc, errors)
-            semantic(doc, errors, CATALOGUE, manifest, installed_manifests)
-    expect_invalid = file.name.startswith("invalid-")
-    ok = bool(errors) if expect_invalid else not errors
-    print(("ok   " if ok else "FAIL ") + file.name + ("" if ok else "  " + "; ".join(errors[:4])))
-    failed |= not ok
-sys.exit(1 if failed else 0)
+        if args.fixture_testing:
+            verification.use_fixture_catalogue()
+        return run_package(args) if args.manifest or args.package else run_fixtures()
+    except (DuplicateKey, ValueError, OSError) as error:
+        print(f"FAIL {error}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

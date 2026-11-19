@@ -1,0 +1,80 @@
+{
+  "api_version": 2,
+  "id": "fixture-projection",
+  "name": "Projection fixture",
+  "version": "1.0.0",
+  "icon": "folder",
+  "network": "none",
+  "apps": [
+    {
+      "id": "fixture",
+      "name": "Projection fixture",
+      "icon": "folder",
+      "description": {
+        "id": "app",
+        "template": {
+          "path": "invalid-catalogue-row-image-ref-sort.json",
+          "sha256": "5dd51154db7f15d0e60572c8f69d19ad22e4c0792ea31d043509e74a844d5079"
+        }
+      }
+    }
+  ],
+  "kinds": [
+    {
+      "icon": "folder",
+      "title_field": "title",
+      "storage": {
+        "hidden": true
+      },
+      "claimed_text": true,
+      "schema": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          }
+        }
+      },
+      "id": "albums",
+      "indexed_fields": {
+        "cover": {
+          "audience": "member_item",
+          "type": "RowImageRef"
+        }
+      }
+    }
+  ],
+  "operations": [
+    {
+      "id": "albums.label",
+      "title": "Label",
+      "output_schema": {
+        "type": "object"
+      },
+      "required_capability": "content.write",
+      "risk": "reversible",
+      "idempotency": "request_id",
+      "methods": [
+        "item_save"
+      ],
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "label"
+        ]
+      }
+    }
+  ],
+  "reads": [
+    "albums"
+  ],
+  "worker": {
+    "path": "dist/fixture.js",
+    "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+  }
+}

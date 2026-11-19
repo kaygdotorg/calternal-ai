@@ -1,0 +1,36 @@
+{
+  "version": 2,
+  "kind": "app",
+  "revision": 1,
+  "binds": [
+    {
+      "id": "albums",
+      "source": {
+        "type": "list",
+        "kind": "albums"
+      },
+      "fields": [
+        "title",
+        "cover"
+      ],
+      "row": {
+        "title": {
+          "field": "title"
+        },
+        "icon": {
+          "image": {
+            "field": "cover"
+          }
+        }
+      },
+      "filter": {
+        "all": [
+          {
+            "field": "cover",
+            "op": "exists"
+          }
+        ]
+      }
+    }
+  ]
+}

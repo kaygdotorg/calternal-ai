@@ -1,0 +1,47 @@
+{
+  "audience": "own_space_member",
+  "bind": "all",
+  "state": "ready",
+  "result_version": "rv-7",
+  "offset": 0,
+  "window_ref": "w-all-0",
+  "rows": [
+    {
+      "id": "t-1",
+      "fields": {
+        "title": "Split store.rs by concern"
+      }
+    },
+    {
+      "id": "t-2",
+      "fields": {
+        "title": "Review the storage change"
+      }
+    }
+  ],
+  "count": {
+    "mode": "exact",
+    "value": 2
+  },
+  "member_cache_record": {
+    "audience": "own_space_member",
+    "account": "acct-1",
+    "space": "space-1",
+    "template_digest": "td-9f3",
+    "bind": "all",
+    "window_ref": "different-window",
+    "offset": 0,
+    "issued_at": "2026-11-19T12:00:00Z",
+    "expires_at": "2026-11-26T12:00:00Z",
+    "rows": [
+      {
+        "title": "Split store.rs by concern",
+        "subtitle": "Claude Code"
+      },
+      {
+        "title": "Review the storage change"
+      }
+    ],
+    "proof": "proof-abc"
+  }
+}

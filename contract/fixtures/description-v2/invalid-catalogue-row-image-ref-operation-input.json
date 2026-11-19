@@ -1,0 +1,41 @@
+{
+  "version": 2,
+  "kind": "app",
+  "revision": 1,
+  "binds": [
+    {
+      "id": "albums",
+      "source": {
+        "type": "list",
+        "kind": "albums"
+      },
+      "fields": [
+        "title",
+        "cover"
+      ],
+      "row": {
+        "title": {
+          "field": "title"
+        },
+        "icon": {
+          "image": {
+            "field": "cover"
+          }
+        },
+        "menu": [
+          {
+            "id": "label-album",
+            "title": "Label",
+            "operation": "albums.label",
+            "inputs": {
+              "label": {
+                "row": "field",
+                "field": "cover"
+              }
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

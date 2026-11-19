@@ -1,0 +1,40 @@
+{
+  "audience": "own_space_member",
+  "bind": "all-own-space-notes",
+  "state": "ready",
+  "result_version": "rv-7",
+  "offset": 0,
+  "window_ref": "w-notes-0",
+  "rows": [
+    {
+      "id": "n-1",
+      "fields": {
+        "title": "Meeting notes",
+        "updated": "2016-12-31T23:59:59.999999999Z",
+        "snippet": "Discuss storage next."
+      }
+    }
+  ],
+  "count": {
+    "mode": "exact",
+    "value": 1
+  },
+  "member_cache_record": {
+    "audience": "own_space_member",
+    "account": "acct-1",
+    "space": "space-1",
+    "template_digest": "td-9f3",
+    "bind": "all-own-space-notes",
+    "window_ref": "w-notes-0",
+    "offset": 0,
+    "issued_at": "2026-11-19T12:00:00Z",
+    "expires_at": "2026-11-26T12:00:00Z",
+    "rows": [
+      {
+        "title": "Meeting notes",
+        "subtitle_timestamp": "2016-12-31T23:59:60Z"
+      }
+    ],
+    "proof": "proof-abc"
+  }
+}

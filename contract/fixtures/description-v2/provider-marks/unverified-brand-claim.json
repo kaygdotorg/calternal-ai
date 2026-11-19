@@ -1,0 +1,7 @@
+{
+  "threads_bind": "waiting",
+  "claimed_mark": "claude",
+  "verified_publisher": null,
+  "trusted_mark_owners": {},
+  "expected_symbol": "threads"
+}

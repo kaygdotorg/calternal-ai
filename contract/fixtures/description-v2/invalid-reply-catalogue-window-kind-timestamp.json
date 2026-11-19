@@ -1,0 +1,27 @@
+{
+  "audience": "own_space_member",
+  "bind": "snoozable-threads",
+  "state": "ready",
+  "result_version": "rv-7",
+  "offset": 0,
+  "window_ref": "w-all-0",
+  "rows": [
+    {
+      "id": "t-1",
+      "fields": {
+        "title": "Split store.rs by concern",
+        "snoozed_until": 1763500000
+      }
+    },
+    {
+      "id": "t-2",
+      "fields": {
+        "title": "Review the storage change"
+      }
+    }
+  ],
+  "count": {
+    "mode": "exact",
+    "value": 2
+  }
+}

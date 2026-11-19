@@ -14,7 +14,7 @@
         "id": "app",
         "template": {
           "path": "reading-list-app.json",
-          "sha256": "915563c5b38af6ae8ba15ea90c86032ae2f992e7b6d746f4917e617068114340"
+          "sha256": "4fbb765dc4fefe14770ce231fb950af189473c1f8d6f65337e45caba35746a7b"
         }
       }
     }
@@ -64,7 +64,12 @@
           "audience": "member_item"
         }
       },
-      "searchable": true
+      "searchable": true,
+      "host_create": {
+        "defaults": {
+          "title": "Untitled"
+        }
+      }
     },
     {
       "id": "reading-reminder",

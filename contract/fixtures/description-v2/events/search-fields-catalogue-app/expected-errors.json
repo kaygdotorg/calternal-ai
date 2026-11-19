@@ -1,0 +1,4 @@
+{
+  "invalid-event-catalogue-search-client-field-filter.json": "$: unknown field field_filter",
+  "invalid-event-catalogue-search-window-end.json": "$.request.anchor: must be 'start'"
+}

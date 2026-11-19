@@ -81,3 +81,43 @@ Default smoke creates its own temporary data directory/server and verifies
 restart persistence before removing only that directory. Running-server mode
 creates disposable notes, never stops that server, and namespaces request IDs
 per run so it can be repeated. It never prints tokens.
+
+## Plugin v2 verifier
+
+Run the pinned verifier alongside its Python modules and JSON Schemas. Use ordinary
+Python so it can import adjacent modules. `python -I` is unsupported.
+
+```sh
+python3 contract/verify-description.py
+python3 contract/test_verify_description.py
+python3 contract/verify-description.py --package "$pkg" --event notes-app.json "$pkg/events/window.json"
+python3 contract/verify-description.py --manifest "$pkg/manifest.json" --app "$pkg/notes-app.json" \
+  --event notes-app.json "$pkg/events/window.json"
+```
+
+Repeat `--event DESCRIPTION FILE` for each event. `DESCRIPTION` identifies an
+app template relative to the package root or by its submitted path. The event
+uses the verified template for its authored identifiers and scopes. Each artifact
+passes structural validation before its IDs are indexed or its semantic checks
+run. Component events also pass the catalogue's route-specific request schema
+before the originating template is indexed. The host
+checks live authority over opaque references such as rows, leases, activations
+and proofs. Directory mode finds replies in
+`replies/`. Use `--reply FILE` to select replies and `--origins FILE` to override
+`replies/origins.json`. The origins map names a verified description and Bind
+for each reply. Events and app templates alone need no origins map. Use
+`--installed-manifest FILE` for additional kind owners.
+
+| Input | Bound or check |
+| --- | --- |
+| Paths and files | Directory mode opens every root component without following symlinks and retains the root descriptor for all artifact lookups and reads. Paths cannot use parent traversal, and root components and artifacts cannot be symlinks. Explicit manifest mode permits operator-selected files outside the manifest directory, while implicit template paths stay inside it. Files must be regular. Paths are capped at 4,096 bytes and 128 components. Templates must match their manifest's SHA-256. |
+| Sizes and counts | 4 MiB per artifact and 32 MiB total per package invocation. Up to 16 apps, 32 additional installed manifests, 64 events and 64 replies. Reply discovery inspects up to 128 directory entries. Origins name only submitted replies, once each. |
+| Encoding and parsing | Strict UTF-8 and JSON, including escaped strings that encode as UTF-8. Object keys are unique and at most 256 UTF-8 bytes. Decoding is bounded by 4 MiB per artifact and 32 nested containers. The verifier checks nesting before decoding and meters visits over decoded object pairs and the decoded tree. |
+| Numbers | Tokens are at most 128 characters. Integer tokens are within ±(2⁵³−1) and decimal or exponent tokens must be finite binary64 values. Schemas enforce smaller ranges where declared. |
+| Embedded schemas and references | The manifest passes the pinned manifest schema before indexing. Embedded schemas are checked against the vendored Draft 7 meta-schema and linked against the pinned offline registry and their own schema positions. There is no network fetch. Schema URIs and embedded patterns are capped at 2,048 UTF-8 bytes. Schema evaluation allows 128 nested evaluations. Each package verification or fixture check shares one 200,000-visit budget and one 32-diagnostic collector across decoded tree inspection, structure, indexing, schema linking, ownership and semantic checks. Collection checks preflight their minimum cost where the size is known, charge each inspected element and stop at the diagnostic cap. A reference must target a schema position, even when the target is a boolean. |
+| IDs and namespaces | Duplicate declaration IDs are rejected before indexing, including manifest setting keys and secret names. Action IDs span Invoke and shell sites. Form and component IDs are checked in their respective view namespaces. Colliding installed package IDs, kind owners and reserved host kind or operation names are rejected. |
+| Catalogue selection | Conformance always uses the checked-in host catalogue. The environment variable `CALTERNAL_HOST_CATALOGUE` is available only in `--fixture-testing`, which cannot be combined with package mode. |
+
+The dev-01 null-array regression submits a full 4 MiB artifact. It requires the
+post-decode visit-limit refusal within 5 seconds and 128 MiB peak RSS for the
+verifier process, including startup and package validation.
