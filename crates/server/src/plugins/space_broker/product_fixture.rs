@@ -265,7 +265,7 @@ impl TlsRelay {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 3)]
 async fn enrolled_runner_multiplexes_maximum_results_and_fences_lost_or_erased_spaces() {
-    exercise_enrolled_runner(None).await;
+    exercise_enrolled_runner(None, false).await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 3)]
@@ -274,10 +274,19 @@ async fn enrolled_runner_executes_item_head_inside_the_small_kvm_guest() {
         eprintln!("SKIP live KVM fixture: CALTERNAL_SMALL_VM_TEST_CONFIG is unset");
         return;
     };
-    exercise_enrolled_runner(Some(path.into())).await;
+    exercise_enrolled_runner(Some(path.into()), false).await;
 }
 
-async fn exercise_enrolled_runner(vm_config: Option<PathBuf>) {
+#[tokio::test(flavor = "multi_thread", worker_threads = 3)]
+async fn idle_small_kvm_guest_publishes_a_complete_snapshot() {
+    let Some(path) = std::env::var_os("CALTERNAL_SMALL_VM_TEST_CONFIG") else {
+        eprintln!("SKIP live KVM fixture: CALTERNAL_SMALL_VM_TEST_CONFIG is unset");
+        return;
+    };
+    exercise_enrolled_runner(Some(path.into()), true).await;
+}
+
+async fn exercise_enrolled_runner(vm_config: Option<PathBuf>, wait_sleep: bool) {
     use crate::{
         api::{AppState, allowed_hosts, dispatch, router},
         auth::StoredDirectory,
@@ -397,6 +406,9 @@ async fn exercise_enrolled_runner(vm_config: Option<PathBuf>) {
             )
             .unwrap();
             approval.container_fixture = vm_config.is_none();
+            if wait_sleep && space == ids.personal {
+                approval.idle_fixture = Some(Duration::from_millis(350));
+            }
             approval
         });
         let registry = Registry::empty()
@@ -542,25 +554,59 @@ async fn exercise_enrolled_runner(vm_config: Option<PathBuf>) {
     if vm_config.is_some() {
         let run = placement_root.join("space-runtime/microvm/run");
         let pid = firecracker_pid(&run).await;
-        state
-            .registry
-            .space_item_head(ids.personal, "fixture.head")
-            .unwrap()
-            .wake
-            .awake
-            .lock()
+        if wait_sleep {
+            let current = placement_root
+                .join("space-runtime/microvm/spaces")
+                .join(ids.personal.to_string())
+                .join("current");
+            let manifest = tokio::time::timeout(Duration::from_secs(20), async {
+                loop {
+                    if !tokio::fs::try_exists(format!("/proc/{pid}")).await.unwrap()
+                        && let Ok(manifest) = tokio::fs::read_to_string(&current).await
+                    {
+                        break manifest;
+                    }
+                    tokio::time::sleep(Duration::from_millis(25)).await;
+                }
+            })
             .await
-            .as_ref()
-            .unwrap()
-            .fence
-            .close();
-        tokio::time::timeout(Duration::from_secs(2), async {
-            while tokio::fs::try_exists(format!("/proc/{pid}")).await.unwrap() {
-                tokio::time::sleep(Duration::from_millis(20)).await;
+            .expect("the idle VMM must save a snapshot and stop");
+            let generation = manifest
+                .lines()
+                .find_map(|line| line.strip_prefix("generation: "))
+                .unwrap();
+            assert!(manifest.contains("storage: full"));
+            for file in ["state", "memory", "disk", "control"] {
+                assert!(manifest.contains(&format!("{file}: {generation} ")));
+                assert!(
+                    tokio::fs::metadata(current.with_file_name(generation).join(file))
+                        .await
+                        .unwrap()
+                        .len()
+                        > 0
+                );
             }
-        })
-        .await
-        .expect("the enrolled fence must stop the VMM");
+        } else {
+            state
+                .registry
+                .space_item_head(ids.personal, "fixture.head")
+                .unwrap()
+                .wake
+                .awake
+                .lock()
+                .await
+                .as_ref()
+                .unwrap()
+                .fence
+                .close();
+            tokio::time::timeout(Duration::from_secs(2), async {
+                while tokio::fs::try_exists(format!("/proc/{pid}")).await.unwrap() {
+                    tokio::time::sleep(Duration::from_millis(20)).await;
+                }
+            })
+            .await
+            .expect("the enrolled fence must stop the VMM");
+        }
         supervisor.abort();
         server.abort();
         let _ = supervisor.await;

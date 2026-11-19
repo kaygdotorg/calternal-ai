@@ -74,6 +74,8 @@ pub enum SpaceMessage {
     },
     /// Host extends the remote space lease by the negotiated interval.
     Renew {},
+    /// Host drains an idle placement and asks its supervisor to save it.
+    Sleep {},
     /// Host fences the entire space assignment.
     Fence {},
 }
@@ -86,6 +88,7 @@ impl SpaceMessage {
                 | Self::Ready {}
                 | Self::Credit { .. }
                 | Self::Renew {}
+                | Self::Sleep {}
                 | Self::Fence {}
         )
     }
@@ -102,7 +105,7 @@ impl SpaceMessage {
             }
             Self::Reply { callback_id, .. } => host && !callback_id.is_nil(),
             Self::Call { callback_id, .. } => !host && !callback_id.is_nil(),
-            Self::Renew {} | Self::Fence {} | Self::Cancel {} => host,
+            Self::Renew {} | Self::Fence {} | Self::Sleep {} | Self::Cancel {} => host,
             Self::Ready {} | Self::Chunk { .. } | Self::Complete { .. } => !host,
         }
     }
@@ -150,7 +153,7 @@ impl SpaceFrame {
         }
         if matches!(
             self.message,
-            SpaceMessage::Renew {} | SpaceMessage::Fence {}
+            SpaceMessage::Renew {} | SpaceMessage::Fence {} | SpaceMessage::Sleep {}
         ) {
             return if self.package.is_none() && self.digest.is_none() && self.ticket.is_none() {
                 Ok(None)

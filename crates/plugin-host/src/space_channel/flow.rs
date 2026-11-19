@@ -42,6 +42,7 @@ pub(super) struct Pending {
 pub(super) struct Shared {
     pub epoch: Uuid,
     pub host: bool,
+    pub sleeping: std::sync::atomic::AtomicBool,
     pub live: watch::Sender<bool>,
     pub data: mpsc::Sender<Pending>,
     pub control: mpsc::Sender<Pending>,

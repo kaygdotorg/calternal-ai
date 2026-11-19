@@ -9,6 +9,8 @@ mod kvm;
 #[cfg(test)]
 mod measure;
 mod network;
+mod snapshot;
+mod snapshot_api;
 mod space;
 pub(super) use space::SmallRuntime;
 mod vmm;

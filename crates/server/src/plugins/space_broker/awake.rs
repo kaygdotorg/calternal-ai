@@ -26,6 +26,7 @@ pub(super) struct Awake {
     admission: Arc<InvocationReader>,
     reader: Arc<ItemHeadReader>,
     tickets: Semaphore,
+    accepting: AtomicBool,
     inboxes: Mutex<HashMap<Uuid, mpsc::Sender<SpaceDelivery>>>,
 }
 
@@ -75,11 +76,14 @@ impl Awake {
             admission: Arc::new(admission),
             reader,
             tickets: Semaphore::new(MAX_ACTIVE_TICKETS),
+            accepting: AtomicBool::new(true),
             inboxes: Mutex::default(),
         });
         let owner = Arc::downgrade(&awake);
         let epoch = awake.epoch;
         tokio::spawn(async move {
+            let mut placement = placement;
+            let mut drain = false;
             loop {
                 let next = tokio::time::timeout(idle, connected.channel.receive()).await;
                 let Some(awake) = owner.upgrade() else { break };
@@ -92,7 +96,11 @@ impl Awake {
                     Err(_) if awake.tickets.available_permits() < MAX_ACTIVE_TICKETS => continue,
                     Err(_) => {
                         // Fence under the same lock that registers new tickets.
-                        awake.fence.close();
+                        if placement.as_ref().is_some_and(|(_, place)| place.sleepable) {
+                            drain = connected.channel.request_remote_sleep().is_ok();
+                        }
+                        // Reject another ticket while the drain frame is queued.
+                        awake.accepting.store(false, Ordering::Release);
                         break;
                     }
                 };
@@ -103,6 +111,15 @@ impl Awake {
                     && inbox.try_send(delivery).is_err()
                 {
                     inboxes.remove(&id);
+                }
+            }
+            if drain {
+                let mut life = connected.channel.lifetime();
+                let _ =
+                    tokio::time::timeout(Duration::from_millis(500), life.wait_for(|live| !*live))
+                        .await;
+                if let Some((_, place)) = &mut placement {
+                    place.sleeping = true;
                 }
             }
             // Close the socket while the placement guard is still held.
@@ -129,7 +146,10 @@ impl Awake {
         let _permit = {
             // Claim admission under the same short lock as the idle fence.
             let _registration = self.inboxes.lock().map_err(|_| unavailable())?;
-            if scope.epoch != self.epoch || !self.sender.is_live() {
+            if scope.epoch != self.epoch
+                || !self.sender.is_live()
+                || !self.accepting.load(Ordering::Acquire)
+            {
                 return Err(unavailable());
             }
             self.tickets.try_acquire().map_err(|_| {

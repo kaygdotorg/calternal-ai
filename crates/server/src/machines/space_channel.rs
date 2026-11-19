@@ -79,6 +79,23 @@ impl State {
 }
 
 impl MachineService {
+    /// End an idle small placement and request a snapshot. Hold the
+    /// scheduler lock through its durable terminal lease transition and
+    /// queueing Stop; capacity stays reserved until machine acknowledgement.
+    pub(crate) fn sleep_space_run(&self, account: AccountId, lease: Uuid) -> Result<(), Error> {
+        let mut st = self.lock()?;
+        st.leases
+            .get(&lease)
+            .filter(|l| {
+                l.row.account == account
+                    && l.row.image.as_deref()
+                        == Some(calternal_machine::sandbox::worker::SPACE_VM_IMAGE)
+            })
+            .ok_or_else(no_assignment)?;
+        st.end_with_files(lease, "small plugin runtime idle", &self.settings, true);
+        Ok(())
+    }
+
     /// Cold wake preflight. One scheduler lock for memory-only reservation
     /// cleanup and capacity checking before placement can start a sandbox.
     pub(crate) fn check_space_channel_available(&self, space: SpaceId) -> Result<(), Error> {

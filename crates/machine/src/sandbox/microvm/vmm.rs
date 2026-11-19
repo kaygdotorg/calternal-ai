@@ -24,6 +24,8 @@ pub(super) struct Guest {
     pub(super) disk: PathBuf,
     pub(super) socket: PathBuf,
     child: Child,
+    pub(super) api_socket: Option<PathBuf>,
+    pub(super) control_disk: Option<PathBuf>,
     pub(super) key: Arc<hmac::Key>,
     _permit: OwnedSemaphorePermit,
     _network: Option<super::network::Lease>,
@@ -71,6 +73,7 @@ impl Guest {
         }
         let definition = socket.with_extension("json");
         let token_drive = socket.with_extension("key");
+        let api_socket = small.then(|| socket.with_extension("api"));
         let mut token = [0; 512];
         let entropy_end = if small { 64 } else { 32 };
         SystemRandom::new()
@@ -104,6 +107,7 @@ impl Guest {
                 .as_str()
                 .expect("boot arguments");
             launch["boot-source"]["boot_args"] = json!(format!("{boot} calternal_small_guest=1"));
+            launch["machine-config"]["track_dirty_pages"] = json!(true);
         }
         if let Some(lease) = &network {
             let tap = lease.tap();
@@ -120,8 +124,12 @@ impl Guest {
             .await
             .map_err(SandboxError::new)?;
         let mut command = Command::new(&config.firecracker);
+        if let Some(api) = &api_socket {
+            command.arg("--api-sock").arg(api);
+        } else {
+            command.arg("--no-api");
+        }
         command
-            .arg("--no-api")
             .arg("--config-file")
             .arg(&definition)
             .stdin(Stdio::null())
@@ -155,6 +163,8 @@ impl Guest {
             disk,
             socket,
             child,
+            api_socket,
+            control_disk: small.then(|| token_drive.clone()),
             key,
             _permit: permit,
             _network: network,
@@ -179,7 +189,9 @@ impl Guest {
         })
         .await;
         let _ = tokio::fs::remove_file(definition).await;
-        let _ = tokio::fs::remove_file(token_drive).await;
+        if !small {
+            let _ = tokio::fs::remove_file(token_drive).await;
+        }
         match ready {
             Ok(Ok(())) => Ok(guest),
             result => {
@@ -226,10 +238,20 @@ impl Guest {
         if self.alive() {
             self.child.kill().await.map_err(SandboxError::new)?;
         }
-        match tokio::fs::remove_file(&self.socket).await {
-            Err(e) if e.kind() != io::ErrorKind::NotFound => Err(SandboxError::new(e)),
-            _ => Ok(()),
+        let paths = [
+            Some(self.socket.as_path()),
+            self.api_socket.as_deref(),
+            self.control_disk.as_deref(),
+        ];
+        for path in paths.into_iter().flatten() {
+            match tokio::fs::remove_file(path).await {
+                Err(error) if error.kind() != io::ErrorKind::NotFound => {
+                    return Err(SandboxError::new(error));
+                }
+                _ => {}
+            }
         }
+        Ok(())
     }
 }
 

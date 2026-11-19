@@ -25,24 +25,25 @@ impl Runner {
         if slot.channel_started.swap(true, Ordering::AcqRel) {
             return;
         }
-        self.supervise_channel(&binding, &slot).await;
+        let sleep = self.supervise_channel(&binding, &slot).await;
         // This reservation belongs to a v2 placement and cannot keep its sandbox
         // after the authenticated channel lease ends.
-        Self::close(&slot, false).await;
+        let small = slot.spec.image.as_deref() == Some(crate::sandbox::worker::SPACE_VM_IMAGE);
+        Self::close(&slot, sleep && small).await;
     }
 
-    async fn supervise_channel(&self, binding: &SpaceChannelAssignment, slot: &Slot) {
+    async fn supervise_channel(&self, binding: &SpaceChannelAssignment, slot: &Slot) -> bool {
         let Ok((io, mut session)) = self.link.upgrade_space(binding).await else {
-            return;
+            return false;
         };
         let Ok(mut channel) = SpaceChannel::runtime(io, binding.space, binding.assignment).await
         else {
-            return;
+            return false;
         };
         if slot.removed.load(Ordering::Acquire)
             || slot.fence.load(Ordering::Acquire) != binding.fence
         {
-            return;
+            return false;
         }
         let mut life = channel.lifetime();
         let fence = channel.fence_handle();
@@ -73,9 +74,15 @@ impl Runner {
             relay_package(&mut channel, &binding.package, exec).await
         };
         tokio::select! {
-            _ = session.changed() => fence.close(),
-            _ = life.wait_for(|live| !*live) => {}
-            _ = run => fence.close(),
+            _ = session.changed() => {
+                fence.close();
+                false
+            }
+            _ = life.wait_for(|live| !*live) => channel.sleep_requested(),
+            _ = run => {
+                fence.close();
+                channel.sleep_requested()
+            }
         }
     }
 }

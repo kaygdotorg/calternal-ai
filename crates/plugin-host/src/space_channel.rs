@@ -132,6 +132,7 @@ impl SpaceChannel {
         let shared = Arc::new(Shared {
             epoch: welcome.epoch,
             host,
+            sleeping: std::sync::atomic::AtomicBool::new(false),
             live,
             data,
             control,
@@ -215,6 +216,20 @@ impl SpaceChannel {
     /// fence when authority ends before the socket can accept that message.
     pub fn request_remote_stop(&self) -> Result<(), Error> {
         self.shared.submit(None, None, SpaceMessage::Fence {})
+    }
+
+    /// Queue an idle drain before closing the carrier. Uses reserved control
+    /// credit. The caller must already have closed invocation admission.
+    pub fn request_remote_sleep(&self) -> Result<(), Error> {
+        self.shared.submit(None, None, SpaceMessage::Sleep {})
+    }
+
+    /// Whether the authenticated peer requested an idle drain before it
+    /// disconnected. Cost: one atomic load; ordinary EOF leaves this false.
+    pub fn sleep_requested(&self) -> bool {
+        self.shared
+            .sleeping
+            .load(std::sync::atomic::Ordering::Acquire)
     }
 
     /// Apply the local fence without waiting for a remote acknowledgement or socket I/O.
@@ -486,6 +501,12 @@ async fn read_loop(
             SpaceMessage::Renew {} => {
                 renew.send_replace(Instant::now());
             }
+            SpaceMessage::Sleep {} => {
+                shared
+                    .sleeping
+                    .store(true, std::sync::atomic::Ordering::Release);
+                return Ok(());
+            }
             SpaceMessage::Fence {} => return Ok(()),
             SpaceMessage::Credit { .. } => {}
             _ => inbound
@@ -550,7 +571,10 @@ async fn write_loop(
         })
         .await
         .map_err(|_| Error::Invocation)??;
-        if matches!(pending.frame.message, SpaceMessage::Fence {}) {
+        if matches!(
+            pending.frame.message,
+            SpaceMessage::Fence {} | SpaceMessage::Sleep {}
+        ) {
             return Ok(());
         }
     }

@@ -34,6 +34,8 @@ pub struct ApprovedItemHead {
     wake: Arc<Wake>,
     #[cfg(test)]
     container_fixture: bool,
+    #[cfg(test)]
+    idle_fixture: Option<Duration>,
 }
 
 impl std::fmt::Debug for ApprovedItemHead {
@@ -89,6 +91,8 @@ impl ApprovedItemHead {
             wake: Arc::default(),
             #[cfg(test)]
             container_fixture: false,
+            #[cfg(test)]
+            idle_fixture: None,
         })
     }
 }
@@ -131,13 +135,23 @@ struct HeldPlacement {
     account: AccountId,
     lease: Uuid,
     runtime: tokio::runtime::Handle,
+    sleepable: bool,
+    sleeping: bool,
 }
 
 impl Drop for HeldPlacement {
     fn drop(&mut self) {
         let (service, account, lease) = (self.service.clone(), self.account, self.lease);
+        let sleeping = self.sleeping;
         self.runtime.spawn(async move {
-            let _ = crate::blocking::spawn(move || service.stop_run(account, lease)).await;
+            let _ = crate::blocking::spawn(move || {
+                if sleeping {
+                    service.sleep_space_run(account, lease)
+                } else {
+                    service.stop_run(account, lease).map(|_| ())
+                }
+            })
+            .await;
         });
     }
 }
@@ -214,6 +228,9 @@ async fn wake_space<D: Directory>(
     let runtime = tokio::runtime::Handle::current();
     let placement = crate::blocking::spawn(move || {
         scheduler.check_space_channel_available(pinned.space)?;
+        let sleepable = true;
+        #[cfg(test)]
+        let sleepable = !pinned.container_fixture;
         let place = MachineService::request_space_vm;
         #[cfg(test)]
         let place = if pinned.container_fixture {
@@ -235,6 +252,8 @@ async fn wake_space<D: Directory>(
             account,
             lease: run.lease_id,
             runtime,
+            sleepable,
+            sleeping: false,
         })
     })
     .await
@@ -252,13 +271,16 @@ async fn wake_space<D: Directory>(
         .protected_spaces()
         .cloned()
         .ok_or_else(unavailable)?;
+    let idle = awake::IDLE;
+    #[cfg(test)]
+    let idle = approval.idle_fixture.unwrap_or(idle);
     Awake::attach(
         connected,
         authority,
         Arc::new(reader),
         &approval.package,
         Some((Arc::downgrade(&approval.wake), placement)),
-        awake::IDLE,
+        idle,
     )
     .await
 }
