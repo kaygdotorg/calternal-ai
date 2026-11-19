@@ -166,6 +166,11 @@ def semantic(doc, errors, catalogue):
                     used = list(bind.get("fields", [])) + [p_["field"] for g in ("all", "any") for p_ in bind.get("filter", {}).get(g, [])] + [x["field"] for x in bind.get("sort", [])]
                     for f in used:
                         if f not in known: errors.append(f"{path}: field {f!r} is not a field of kind {node['kind']!r}")
+                    for g in ("all", "any"):
+                        for pred in bind.get("filter", {}).get(g, []):
+                            meta = kind.get("fields", {}).get(pred["field"], {})
+                            if meta.get("audience") == "viewer_self" and not (pred.get("op") == "eq" and pred.get("value") == {"viewer": "person"}):
+                                errors.append(f"{path}: {pred['field']!r} is viewer-only: it accepts only `eq` with {{viewer: person}}")
 
 def bind_at(doc, path):
     m = re.match(r"^\$\.binds\[(\d+)\]\.source$", path)
@@ -180,6 +185,9 @@ catalogue_path = pathlib.Path(os.environ.get("CALTERNAL_HOST_CATALOGUE", root / 
 catalogue = json.loads(catalogue_path.read_text()) if catalogue_path.exists() else None
 print("host catalogue: " + ("contract/host-catalogue-v2.json" if catalogue is not None else "not present yet (plugins lane); operation and kind names are not resolved"))
 for file in sorted((root / "fixtures" / "description-v2").glob("*.json")):
+    if catalogue is None and "-catalogue-" in file.name:
+        print(f"skip {file.name}  (needs the host catalogue)")
+        continue
     errors = []
     try:
         doc = load_strict(file.read_text())
