@@ -1642,6 +1642,13 @@
           ]
         },
         {
+          "description": "A short-lived condition prevents this attempt. Retry after the advised delay (HTTP 429).",
+          "type": "string",
+          "enum": [
+            "retry_after"
+          ]
+        },
+        {
           "description": "The operation cannot currently be served (HTTP 503).",
           "type": "string",
           "enum": [
