@@ -69,3 +69,110 @@ fn control_frames_require_a_complete_header_and_exact_message_shape() {
     missing.as_object_mut().unwrap().remove("ticket");
     assert!(parse::<SpaceFrame>(format!("{missing}\n").as_bytes()).is_err());
 }
+
+#[tokio::test]
+async fn full_windows_wait_and_deliver_each_maximum_result() {
+    let package = PackagePin {
+        package: "calternal-notes".into(),
+        digest: "a".repeat(64),
+    };
+    let space = SpaceId::new();
+    let assignment = Uuid::new_v4();
+    let (host_io, runtime_io) = duplex(4096);
+    let (host, runtime) = tokio::join!(
+        SpaceChannel::host(host_io, space, assignment, vec![package.clone()]),
+        SpaceChannel::runtime(runtime_io, space, assignment),
+    );
+    let mut host = host.unwrap();
+    let mut runtime = runtime.unwrap();
+    let ticket = Uuid::new_v4();
+    let callback_id = Uuid::new_v4();
+    for _ in 0..PER_PACKAGE {
+        host.send(
+            &package,
+            ticket,
+            SpaceMessage::Invoke {
+                operation: "fixture.head".into(),
+                input: json!({}),
+                deadline_ms: 1_000,
+            },
+        )
+        .unwrap();
+        runtime
+            .send(
+                &package,
+                ticket,
+                SpaceMessage::Call {
+                    callback_id,
+                    method: SpaceMethod::ItemHead,
+                    input: json!({}),
+                },
+            )
+            .unwrap();
+    }
+    let mut retained = Vec::new();
+    for _ in 0..PER_PACKAGE {
+        retained.push(host.receive().await.unwrap());
+        retained.push(runtime.receive().await.unwrap());
+    }
+
+    let result = |ticket, host_side| {
+        let message = |content: String| {
+            if host_side {
+                SpaceMessage::Reply {
+                    callback_id,
+                    result: Ok(json!(content)),
+                }
+            } else {
+                SpaceMessage::Complete {
+                    result: Ok(json!(content)),
+                }
+            }
+        };
+        let empty = SpaceFrame {
+            v: V,
+            epoch: host.epoch(),
+            seq: u64::MAX,
+            package: Some(package.package.clone()),
+            digest: Some(package.digest.clone()),
+            ticket: Some(ticket),
+            message: message(String::new()),
+        };
+        let overhead = empty.encode(MAX_LINE).unwrap().len();
+        message("x".repeat(MAX_TICKET_RESULT_FRAME - overhead))
+    };
+    let mut sends = tokio::task::JoinSet::new();
+    let tickets: Vec<_> = (0..MAX_ACTIVE_TICKETS).map(|_| Uuid::new_v4()).collect();
+    for &ticket in &tickets {
+        let sender = host.sender();
+        let reply = result(ticket, true);
+        let pin = package.clone();
+        sends.spawn(async move { sender.send_checked_wait(&pin, ticket, reply, || true).await });
+        let sender = runtime.sender();
+        let complete = result(ticket, false);
+        let pin = package.clone();
+        sends.spawn(async move { sender.send_wait(&pin, ticket, complete).await });
+    }
+    assert!(
+        timeout(Duration::from_millis(30), sends.join_next())
+            .await
+            .is_err()
+    );
+    drop(retained);
+    timeout(Duration::from_secs(2), async {
+        let mut replies = std::collections::HashSet::new();
+        let mut completions = std::collections::HashSet::new();
+        for _ in 0..MAX_ACTIVE_TICKETS {
+            replies.insert(runtime.receive().await.unwrap().frame().ticket.unwrap());
+            completions.insert(host.receive().await.unwrap().frame().ticket.unwrap());
+        }
+        assert_eq!(replies, tickets.into_iter().collect());
+        assert_eq!(completions, replies);
+        while let Some(sent) = sends.join_next().await {
+            sent.unwrap().unwrap();
+        }
+    })
+    .await
+    .unwrap();
+    assert!(host.is_live() && runtime.is_live());
+}

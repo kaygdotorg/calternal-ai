@@ -30,6 +30,10 @@ const MAX_LINE: usize = MAX_FRAME_BYTES + 1;
 const CONTROL: usize = 4096;
 const DATA: usize = 2 * MAX_LINE;
 const PER_PACKAGE: usize = 8;
+/// Largest number of simultaneous tickets under a package's data credit.
+pub const MAX_ACTIVE_TICKETS: usize = PER_PACKAGE / 2;
+/// Encoded Reply or Complete bound, including its envelope and line ending.
+pub const MAX_TICKET_RESULT_FRAME: usize = DATA / MAX_ACTIVE_TICKETS;
 const MAX_PACKAGES: usize = 8;
 const LEASE_MS: u64 = 4_000;
 const HANDSHAKE_LIMIT: Duration = Duration::from_secs(2);
@@ -133,6 +137,7 @@ impl SpaceChannel {
             control,
             reserved: Arc::new(tokio::sync::Semaphore::new(CONTROL - 512)),
             returns: tokio::sync::Notify::new(),
+            credit_changed: tokio::sync::Notify::new(),
             credits: Mutex::new(credits),
         });
         let connection = shared.clone();
@@ -160,6 +165,7 @@ impl SpaceChannel {
     }
 
     /// Queue a direction-checked invocation frame.
+    #[cfg(test)]
     pub fn send(
         &self,
         package: &PackagePin,
@@ -170,6 +176,7 @@ impl SpaceChannel {
     }
 
     /// Queue a frame which the writer will transmit only while its guard holds.
+    #[cfg(test)]
     pub fn send_checked(
         &self,
         package: &PackagePin,
@@ -254,6 +261,7 @@ impl SpaceSender {
     /// Queue a frame with a local delivery guard. The writer checks the guard
     /// again before assigning an ordinal and before every socket write or flush poll.
     /// The guard must be nonblocking and may run after the submitting task ends.
+    #[cfg(test)]
     pub fn send_checked(
         &self,
         package: &PackagePin,
@@ -267,6 +275,33 @@ impl SpaceSender {
         }
         self.0
             .submit_checked(Some(package), Some(ticket), message, Some(guard))
+    }
+
+    /// Queue one data frame, suspending on package credit or ending on a fence.
+    /// Keeps only this frame while waiting. Reply and Complete have the bounded
+    /// per-ticket result allowance. Control messages use the reserved path.
+    pub async fn send_wait(
+        &self,
+        package: &PackagePin,
+        ticket: Uuid,
+        message: SpaceMessage,
+    ) -> Result<(), Error> {
+        self.0.submit_wait(package, ticket, message, None).await
+    }
+
+    /// Wait for package credit with a live invocation guard. The guard is
+    /// checked before retrying and during the actual guarded socket write.
+    /// The caller's invocation deadline bounds the wait.
+    pub async fn send_checked_wait(
+        &self,
+        package: &PackagePin,
+        ticket: Uuid,
+        message: SpaceMessage,
+        check: impl Fn() -> bool + Send + Sync + 'static,
+    ) -> Result<(), Error> {
+        self.0
+            .submit_wait(package, ticket, message, Some(Box::new(check)))
+            .await
     }
 
     /// Whether this channel has retained local authority. Cost: one space-local watch read.

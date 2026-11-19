@@ -167,8 +167,12 @@ machine registry nor the auth worker.
 A warm item-head callback reuses Content’s per-space visibility pool and performs one
 indexed metadata/revision read, zero catalog or shared authority reads,
 and zero storage flushes. The callback loads metadata and revision only.
-Cold wake pins the recovered space and its cache entry. The first pool
-checkout may open a read-only content connection. Cold preflight uses
+Cold wake prepares the recovered space and keeps a weak reference to its
+cache entry. An evicted slot opens through the normal recovery path. A
+callback holds a lifecycle permit while borrowing the slot. Erasure drains
+those permits and fences the carrier via the existing placement retirement
+before removing the cached SQLite connections. The first pool checkout may
+open a read-only content connection. Cold preflight uses
 the authority worker before placement. The enrolled upgrade uses it once
 more to bind the verified assignment to a grant revision. Ticket mint checks
 authority again after package startup.
@@ -181,12 +185,20 @@ authority again after package startup.
    and refuse a ticket that was valid on the previous epoch.
 
 8. **Awake reuse (§§2–3).** The initial profile places one pinned package per
-   space, holds one enrolled channel and multiplexes up to eight tickets.
+   space, holds one enrolled channel and multiplexes up to four tickets.
+   The scheduler admits up to 32 active or reserved carriers.
    A space-local wake gate coalesces placement and waits up to the existing
    ten-second worker startup limit for Ready. Reclaim the placement after
-   60 seconds without an application frame. This keeps the placement bounded
+   60 seconds without an application frame when no ticket is in flight. This keeps the placement bounded
    and preserves worker and machine capacity. A longer idle period would
    reduce cold starts at the cost of reserving a machine slot longer.
+
+9. **Shared package credit (§3).** Bound multiplexed concurrency to half
+   the package frame window and bound each encoded Reply or Complete to one
+   quarter of the byte window. The host and machine wait for data credit
+   without taking the control path's reserved capacity. The machine stops
+   draining package stdout while it waits. This bounds memory to one pending
+   frame per host ticket and one for the machine relay.
 
 ## Verification and remaining work
 
@@ -212,10 +224,10 @@ The Linux integration fixture uses the normal dispatcher and server router,
 one scheduler and enrollment, the machine runner and TLS Link upgrade,
 and the direct sandbox's process startup and teardown. It uses an isolated
 loopback TLS relay and supplies the absolute Node executable to the direct
-sandbox fixture because worker execution clears PATH. It exercises two
-concurrent tickets on one placement, a second space sharing the same
-components, and reaping the first package after its assignment is re-fenced
-and its carrier stops delivering renewals. The bounds are regression
+sandbox fixture because worker execution clears PATH. It exercises four
+concurrent tickets with the largest admitted Reply on one placement, a
+second space sharing those components, package reaping after loss of
+renewals, and closing the carrier and SQLite handles on space erasure. The bounds are regression
 assertions on development infrastructure.
 
 Open on issue #86 are receipt replay through carrier admission and

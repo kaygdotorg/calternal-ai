@@ -1,6 +1,7 @@
 //! Read-only item heads pinned to one space at broker admission.
 use super::*;
 use crate::types::{internal, missing};
+use std::sync::Weak;
 
 /// Metadata and current opaque version of one live item.
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
@@ -12,41 +13,56 @@ pub struct ItemHead {
     pub revision: String,
 }
 
-/// Read-only connection pool for the selected space. It retains no installation
-/// catalog or shared writer. The caller must fence authority before each use
-/// and again before releasing a result.
+/// A space-specific view of the cached visibility pool. It retains no slot
+/// between callbacks, so ordinary cache eviction and erasure can close SQLite.
 pub struct ItemHeadReader {
     space: SpaceId,
-    slot: Arc<Slot>,
-    lifecycle: calternal_types::OwnerLifecycle,
+    content: Arc<Content>,
+    slot: Mutex<Weak<Slot>>,
 }
 
 impl Content {
-    /// Pin the space's existing visibility pool during carrier wake. Takes one
-    /// cache lookup. If cold, recovers the space on this blocking worker before
-    /// the normal content path publishes the pool.
-    pub fn item_head_reader(&self, space: SpaceId) -> Result<ItemHeadReader> {
+    /// Find or recover the space's visibility pool during carrier wake. Retains
+    /// only a weak slot reference. Closed spaces cannot allocate cache entries.
+    /// Call on a blocking worker.
+    pub fn item_head_reader(self: &Arc<Self>, space: SpaceId) -> Result<ItemHeadReader> {
+        let slot = self.item_head_slot(space)?;
+        Ok(ItemHeadReader {
+            space,
+            content: self.clone(),
+            slot: Mutex::new(Arc::downgrade(&slot)),
+        })
+    }
+
+    fn item_head_slot(&self, space: SpaceId) -> Result<Arc<Slot>> {
+        let _step = self.lifecycle.step(space.as_uuid())?;
         let slot = self.pin_slot(space)?;
         if slot.visibility.get().is_none() {
             self.with_space(space, |_| Ok(()))?;
         }
-        Ok(ItemHeadReader {
-            space,
-            slot,
-            lifecycle: self.lifecycle.clone(),
-        })
+        Ok(slot)
     }
 }
 
 impl ItemHeadReader {
     /// Read one live head in the pinned space. Wrong kind, foreign or absent
     /// item and Trash all give the same not-found. Cost: one primary-key query,
-    /// with no item bytes, catalog lookup, storage writes or flushes.
+    /// with no item bytes, catalog lookup, storage writes or flushes when warm.
+    /// Cache eviction triggers normal cold space recovery. A lifecycle permit
+    /// covers the read and the release of the temporary slot reference.
     /// Call off the asynchronous executor.
     pub fn read(&self, kind: &str, id: Uuid) -> Result<ItemHead> {
-        let _step = self.lifecycle.step(self.space.as_uuid())?;
-        let row = self
-            .slot
+        let _step = self.content.lifecycle.step(self.space.as_uuid())?;
+        let cached = lock(&self.slot).upgrade();
+        let slot = match cached {
+            Some(slot) => slot,
+            None => {
+                let slot = self.content.item_head_slot(self.space)?;
+                *lock(&self.slot) = Arc::downgrade(&slot);
+                slot
+            }
+        };
+        let row = slot
             .visibility
             .get()
             .ok_or_else(missing)?

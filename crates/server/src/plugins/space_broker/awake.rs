@@ -1,7 +1,7 @@
 //! Lifetime of one awake placement and demultiplexing of its bounded tickets.
 use super::*;
 use calternal_auth::spaces::InvocationReader;
-use calternal_plugin_host::space_channel::{SpaceDelivery, SpaceFence};
+use calternal_plugin_host::space_channel::{MAX_ACTIVE_TICKETS, SpaceDelivery, SpaceFence};
 use std::{
     collections::HashMap,
     sync::{
@@ -11,8 +11,7 @@ use std::{
 };
 use tokio::sync::mpsc;
 
-const MAX_TICKETS: usize = 8;
-const IDLE: Duration = Duration::from_secs(60);
+pub(super) const IDLE: Duration = Duration::from_secs(60);
 pub(super) type Inbox = mpsc::Receiver<SpaceDelivery>;
 
 #[derive(Default)]
@@ -42,6 +41,7 @@ impl Awake {
         reader: Arc<ItemHeadReader>,
         pin: &PackagePin,
         placement: Option<(Weak<Wake>, HeldPlacement)>,
+        idle: Duration,
     ) -> Result<Arc<Self>, Error> {
         if connected.grants.space() != connected.space {
             return Err(unavailable());
@@ -78,14 +78,23 @@ impl Awake {
         let owner = Arc::downgrade(&awake);
         let epoch = awake.epoch;
         tokio::spawn(async move {
-            while let Ok(Some(delivery)) =
-                tokio::time::timeout(IDLE, connected.channel.receive()).await
-            {
+            loop {
+                let next = tokio::time::timeout(idle, connected.channel.receive()).await;
                 let Some(awake) = owner.upgrade() else { break };
-                let Some(id) = delivery.frame().ticket else {
+                let Ok(mut inboxes) = awake.inboxes.lock() else {
                     break;
                 };
-                let Ok(mut inboxes) = awake.inboxes.lock() else {
+                let delivery = match next {
+                    Ok(Some(delivery)) => delivery,
+                    Ok(None) => break,
+                    Err(_) if !inboxes.is_empty() => continue,
+                    Err(_) => {
+                        // Fence under the same lock that registers new tickets.
+                        awake.fence.close();
+                        break;
+                    }
+                };
+                let Some(id) = delivery.frame().ticket else {
                     break;
                 };
                 if let Some(inbox) = inboxes.get(&id)
@@ -127,7 +136,7 @@ impl Awake {
         let (send, mut inbox) = mpsc::channel(2);
         {
             let mut inboxes = self.inboxes.lock().map_err(|_| unavailable())?;
-            if inboxes.len() >= MAX_TICKETS {
+            if !self.sender.is_live() || inboxes.len() >= MAX_ACTIVE_TICKETS {
                 return Err(unavailable());
             }
             inboxes.insert(ticket.id(), send);

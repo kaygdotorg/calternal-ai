@@ -47,6 +47,7 @@ pub(super) struct Shared {
     pub control: mpsc::Sender<Pending>,
     pub reserved: Arc<Semaphore>,
     pub returns: tokio::sync::Notify,
+    pub credit_changed: tokio::sync::Notify,
     // One space only. The lock covers credit arithmetic and digest comparison.
     // Queueing, back-pressure waits and socket I/O run after releasing it.
     pub credits: Mutex<HashMap<String, Credits>>,
@@ -69,15 +70,68 @@ impl Shared {
         message: SpaceMessage,
         guard: Option<Guard>,
     ) -> Result<(), Error> {
+        let mut pending = Some(self.prepare(package, ticket, message, guard, false)?);
+        if pending.as_ref().unwrap().control.is_some() {
+            return self
+                .control
+                .try_send(pending.take().unwrap())
+                .map_err(|_| Error::BackPressure);
+        }
+        self.queue_data(&mut pending)
+    }
+
+    pub(super) async fn submit_wait(
+        &self,
+        package: &PackagePin,
+        ticket: Uuid,
+        message: SpaceMessage,
+        guard: Option<Guard>,
+    ) -> Result<(), Error> {
+        if message.control() {
+            return Err(Error::Refused);
+        }
+        let mut life = self.live.subscribe();
+        let mut pending = Some(self.prepare(Some(package), Some(ticket), message, guard, true)?);
+        loop {
+            let changed = self.credit_changed.notified();
+            tokio::pin!(changed);
+            changed.as_mut().enable();
+            match self.queue_data(&mut pending) {
+                Err(Error::BackPressure) => {}
+                result => return result,
+            }
+            tokio::select! {
+                _ = life.wait_for(|live| !*live) => return Err(Error::Invocation),
+                _ = &mut changed => {}
+            }
+        }
+    }
+
+    fn prepare(
+        &self,
+        package: Option<&PackagePin>,
+        ticket: Option<Uuid>,
+        message: SpaceMessage,
+        guard: Option<Guard>,
+        bounded_result: bool,
+    ) -> Result<Pending, Error> {
         if !*self.live.borrow() {
             return Err(Error::Invocation);
         }
-        let control = message.control();
+        if guard.as_ref().is_some_and(|check| !check()) {
+            return Err(Error::Refused);
+        }
+        let limit = match &message {
+            m if m.control() => CONTROL,
+            SpaceMessage::Reply { .. } | SpaceMessage::Complete { .. } if bounded_result => {
+                MAX_TICKET_RESULT_FRAME
+            }
+            _ => MAX_LINE,
+        };
         let frame = SpaceFrame {
             v: V,
             epoch: self.epoch,
-            // Reserve for the widest possible ordinal. The writer assigns the
-            // actual ordinal and refunds the difference before the first byte.
+            // Reserve for the widest ordinal. The writer refunds the difference.
             seq: u64::MAX,
             package: package.map(|pin| pin.package.clone()),
             digest: package.map(|pin| pin.digest.clone()),
@@ -85,48 +139,49 @@ impl Shared {
             message,
         };
         let route = frame.route(self.host)?;
-        let reserved = frame
-            .encode(if control { CONTROL } else { MAX_LINE })?
-            .len();
-        if control {
+        let reserved = frame.encode(limit)?.len();
+        let control = if frame.message.control() {
             if route.is_some() {
                 self.with_package(&frame, |_| Ok(()))?;
             }
-            let permit = self
-                .reserved
-                .clone()
-                .try_acquire_many_owned(reserved as u32)
-                .map_err(|_| Error::BackPressure)?;
-            return self
-                .control
-                .try_send(Pending {
-                    frame,
-                    reserved,
-                    control: Some(permit),
-                    guard: None,
-                })
-                .map_err(|_| Error::BackPressure);
+            Some(
+                self.reserved
+                    .clone()
+                    .try_acquire_many_owned(reserved as u32)
+                    .map_err(|_| Error::BackPressure)?,
+            )
+        } else {
+            None
+        };
+        Ok(Pending {
+            frame,
+            reserved,
+            control,
+            guard,
+        })
+    }
+
+    fn queue_data(&self, pending: &mut Option<Pending>) -> Result<(), Error> {
+        if !*self.live.borrow() {
+            return Err(Error::Invocation);
         }
-        self.with_package(&frame, |credit| {
-            if credit.outstanding == PER_PACKAGE || reserved > credit.available {
+        let item = pending.as_ref().expect("unsubmitted frame");
+        if item.guard.as_ref().is_some_and(|guard| !guard()) {
+            return Err(Error::Refused);
+        }
+        self.with_package(&item.frame, |credit| {
+            if credit.outstanding == PER_PACKAGE || item.reserved > credit.available {
                 return Err(Error::BackPressure);
             }
             credit.outstanding += 1;
-            credit.available -= reserved;
+            credit.available -= item.reserved;
             Ok(())
         })?;
-        if let Err(error) = self.data.try_send(Pending {
-            frame,
-            reserved,
-            control: None,
-            guard,
-        }) {
-            self.with_package(&error.into_inner().frame, |credit| {
-                credit.outstanding -= 1;
-                credit.available += reserved;
-                Ok(())
-            })?;
-            return Err(Error::BackPressure);
+        if let Err(error) = self.data.try_send(pending.take().expect("reserved frame")) {
+            // The sum of the package windows bounds queue occupancy. A send
+            // can still race channel shutdown, in which case refund the debit.
+            self.discard(&error.into_inner())?;
+            return Err(Error::Invocation);
         }
         Ok(())
     }
@@ -136,7 +191,9 @@ impl Shared {
             credit.outstanding -= 1;
             credit.available += pending.reserved;
             Ok(())
-        })
+        })?;
+        self.credit_changed.notify_waiters();
+        Ok(())
     }
 
     pub(super) fn written(&self, pending: &Pending, sent: usize) -> Result<(), Error> {
@@ -145,14 +202,18 @@ impl Shared {
             credit.available += pending.reserved.checked_sub(sent).ok_or(Error::Invalid)?;
             credit.owed += sent;
             Ok(())
-        })
+        })?;
+        if pending.reserved != sent {
+            self.credit_changed.notify_waiters();
+        }
+        Ok(())
     }
 
     pub(super) fn accept(&self, frame: &SpaceFrame, received: usize) -> Result<usize, Error> {
         let Some(_) = frame.route(!self.host)? else {
             return Ok(0);
         };
-        self.with_package(frame, |credit| match frame.message {
+        let accepted = self.with_package(frame, |credit| match frame.message {
             SpaceMessage::Credit { bytes, frames } => {
                 credit.owed = credit.owed.checked_sub(bytes).ok_or(Error::Invalid)?;
                 credit.sent_frames = credit
@@ -172,7 +233,11 @@ impl Shared {
                 credit.receive_available -= received;
                 Ok(received)
             }
-        })
+        })?;
+        if matches!(frame.message, SpaceMessage::Credit { .. }) {
+            self.credit_changed.notify_waiters();
+        }
+        Ok(accepted)
     }
 
     pub(super) fn release(&self, frame: &SpaceFrame, bytes: usize) -> Result<(), Error> {

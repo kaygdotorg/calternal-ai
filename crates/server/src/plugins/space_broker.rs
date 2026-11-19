@@ -246,6 +246,7 @@ async fn wake_space<D: Directory>(
         Arc::new(reader),
         &approval.package,
         Some((Arc::downgrade(&approval.wake), placement)),
+        awake::IDLE,
     )
     .await
 }
@@ -257,7 +258,15 @@ async fn exchange(
     reader: Arc<ItemHeadReader>,
     scope: Scope,
 ) -> Result<Value, Error> {
-    let awake = Awake::attach(connected, authority, reader, &scope.package, None).await?;
+    let awake = Awake::attach(
+        connected,
+        authority,
+        reader,
+        &scope.package,
+        None,
+        awake::IDLE,
+    )
+    .await?;
     let result = awake.invoke(scope).await;
     awake.fence.close();
     result
@@ -274,7 +283,7 @@ async fn run(
     let pending = ticket.clone();
     let canceled = cancel.clone();
     channel
-        .send_checked(
+        .send_checked_wait(
             pin,
             ticket.id(),
             SpaceMessage::Invoke {
@@ -291,6 +300,7 @@ async fn run(
                     && pending.require_live(Instant::now()).is_ok()
             },
         )
+        .await
         .map_err(|_| unavailable())?;
     let mut answered: Option<Value> = None;
     let mut tick = tokio::time::interval(Duration::from_millis(100));
@@ -328,7 +338,7 @@ async fn run(
                 let pending = ticket.clone();
                 let canceled = cancel.clone();
                 channel
-                    .send_checked(
+                    .send_checked_wait(
                         pin,
                         ticket.id(),
                         SpaceMessage::Reply {
@@ -340,6 +350,7 @@ async fn run(
                                 && pending.require_live(Instant::now()).is_ok()
                         },
                     )
+                    .await
                     .map_err(|_| unavailable())?;
             }
             SpaceMessage::Complete { result: Ok(result) } if answered.as_ref() == Some(result) => {

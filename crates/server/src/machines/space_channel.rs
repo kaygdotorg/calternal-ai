@@ -15,7 +15,8 @@ use std::{sync::Arc, time::Duration};
 use tokio::sync::{oneshot, watch};
 use uuid::Uuid;
 
-const MAX_CHANNELS: usize = 1024;
+// Cold reservations count toward this cap, below Content's 64-space cache.
+const MAX_CHANNELS: usize = 32;
 const OPEN_LIMIT: Duration = Duration::from_secs(5);
 
 pub(crate) struct Connected {

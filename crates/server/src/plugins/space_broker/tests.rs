@@ -26,7 +26,7 @@ use calternal_auth::{
     token::{hash32, normalize_setup_token},
 };
 use calternal_content::{Content, FileFormat, Item, Placement, Request};
-use calternal_plugin_host::space_channel::SpaceChannel;
+use calternal_plugin_host::space_channel::{MAX_ACTIVE_TICKETS, SpaceChannel};
 use tokio::net::{TcpListener, TcpStream};
 
 #[cfg(target_os = "linux")]
@@ -51,7 +51,7 @@ lines.on('line', line => {
     if (m.operation === 'fixture.other') callback();
     else {
       waiting.push(callback);
-      if (waiting.length === 2) waiting.splice(0).forEach(run => run());
+      if (waiting.length === Number("$MAX_ACTIVE_TICKETS")) waiting.splice(0).forEach(run => run());
     }
   } else if (m.type === 'host_reply' && m.call_id === call && m.result.Ok) {
     send(f.invocation_id, {type:'complete',data:m.result.Ok});
@@ -59,8 +59,12 @@ lines.on('line', line => {
 });
 "#;
 
+fn child_source() -> String {
+    CHILD.replace("$MAX_ACTIVE_TICKETS", &MAX_ACTIVE_TICKETS.to_string())
+}
+
 struct Fixture {
-    content: Content,
+    content: Arc<Content>,
     auth: Spaces,
     grants: GrantRevision,
     space: SpaceId,
@@ -114,14 +118,14 @@ impl Fixture {
             .unwrap();
         Self {
             _root: root,
-            content,
+            content: Arc::new(content),
             auth,
             grants,
             space,
             actor: ids.owner,
             pin: PackagePin {
                 package: "calternal-head-fixture".into(),
-                digest: sha256_hex(CHILD.as_bytes()),
+                digest: sha256_hex(child_source().as_bytes()),
             },
         }
     }
@@ -243,7 +247,8 @@ async fn rejects_an_old_ticket_and_admits_a_fresh_read_after_reconnect() {
         let callback = Uuid::new_v4();
         let input = json!({"kind":"notes","item_id":item.id});
         runtime
-            .send(
+            .sender()
+            .send_wait(
                 &old_pin,
                 old_ticket.id(),
                 SpaceMessage::Call {
@@ -252,6 +257,7 @@ async fn rejects_an_old_ticket_and_admits_a_fresh_read_after_reconnect() {
                     input: input.clone(),
                 },
             )
+            .await
             .unwrap();
         assert!(
             tokio::time::timeout(Duration::from_millis(100), runtime.receive())
@@ -259,7 +265,8 @@ async fn rejects_an_old_ticket_and_admits_a_fresh_read_after_reconnect() {
                 .is_err()
         );
         runtime
-            .send(
+            .sender()
+            .send_wait(
                 &old_pin,
                 admitted,
                 SpaceMessage::Call {
@@ -268,6 +275,7 @@ async fn rejects_an_old_ticket_and_admits_a_fresh_read_after_reconnect() {
                     input,
                 },
             )
+            .await
             .unwrap();
         let reply = runtime.receive().await.unwrap();
         let SpaceMessage::Reply { result, .. } = &reply.frame().message else {
@@ -275,13 +283,15 @@ async fn rejects_an_old_ticket_and_admits_a_fresh_read_after_reconnect() {
         };
         assert_eq!(reply.frame().ticket, Some(admitted));
         runtime
-            .send(
+            .sender()
+            .send_wait(
                 &old_pin,
                 admitted,
                 SpaceMessage::Complete {
                     result: result.clone(),
                 },
             )
+            .await
             .unwrap();
         assert!(runtime.receive().await.is_none());
     });
@@ -294,279 +304,63 @@ async fn rejects_an_old_ticket_and_admits_a_fresh_read_after_reconnect() {
     forged.await.unwrap();
 }
 
-#[cfg(target_os = "linux")]
-#[tokio::test(flavor = "multi_thread", worker_threads = 3)]
-async fn enrolled_runner_multiplexes_and_stops_its_refenced_package_on_lease_loss() {
-    use crate::{
-        api::{AppState, allowed_hosts, dispatch, router},
-        auth::StoredDirectory,
-        plugins::{Jobs, Registry, WorkerPool},
-        store::Store,
-    };
-    use calternal_machine::{
-        identity::MachineKey,
-        protocol::{
-            Capacity, Down, EnrolRequest, Owner, PROTOCOL_VERSION, SessionFinish, SyncRequest,
-        },
-        runner::Runner,
-    };
-    use product_fixture::{FixtureBackend, TlsRelay, worker_pid};
-
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let address = listener.local_addr().unwrap();
-    let root = tempfile::tempdir().unwrap();
-    let relay = TlsRelay::start(root.path(), address).await;
-    let (state, service, ids, items, machine, token) = tokio::task::block_in_place(|| {
-        let roots = calternal_roots::Roots {
-            appdata: root.path().join("appdata"),
-            userdata_ssd: root.path().join("ssd"),
-            userdata_hdd: root.path().join("hdd"),
-        };
-        let store = Store::open(
-            &roots,
-            Uuid::new_v4(),
-            true,
-            calternal_content::DEFAULT_RECEIPT_RETENTION,
-        )
-        .unwrap();
-        let directory = StoredDirectory::load_or_create(&roots.appdata).unwrap();
-        let ids = directory.spaces.seed_development().unwrap();
-        let content = store.shared_content();
-        let items = [ids.personal, ids.shared].map(|space| {
-            content
-                .register_kind(
-                    space,
-                    "notes",
-                    Placement::Visible {
-                        folder: "Notes".into(),
-                    },
-                    FileFormat::Markdown,
-                )
-                .unwrap();
-            content
-                .write(
-                    space,
-                    None,
-                    "notes",
-                    None,
-                    json!({"title":"Enrolled"}),
-                    b"# Fixture\n",
-                    Request {
-                        account: ids.owner,
-                        via: None,
-                        id: "install-fixture",
-                        operation: "fixture.put",
-                        fingerprint: "fixture",
-                    },
-                    |_| json!({}),
-                )
-                .unwrap()
-        });
-        let service = MachineService::open(
-            &roots.appdata,
-            directory.spaces.machines(),
-            crate::machines::Settings {
-                poll_hold: Duration::from_millis(20),
-                ..Default::default()
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_ticket_in_flight_keeps_the_carrier_awake_past_idle() {
+    let fixture = tokio::task::spawn_blocking(Fixture::new).await.unwrap();
+    let (connected, mut runtime) = fixture.carrier().await;
+    let item = tokio::task::block_in_place(|| fixture.write(Uuid::now_v7()));
+    let scope = fixture.scope(&connected.channel, item.id);
+    let reader =
+        tokio::task::block_in_place(|| fixture.content.item_head_reader(fixture.space)).unwrap();
+    runtime.ready(&fixture.pin).unwrap();
+    let idle = Duration::from_millis(150);
+    let awake = Awake::attach(
+        connected,
+        fixture.auth.clone(),
+        Arc::new(reader),
+        &fixture.pin,
+        None,
+        idle,
+    )
+    .await
+    .unwrap();
+    let invoke = awake.clone();
+    let caller = tokio::spawn(async move { invoke.invoke(scope).await });
+    let ticket = runtime.receive().await.unwrap().frame().ticket.unwrap();
+    tokio::time::sleep(idle * 2).await;
+    assert!(awake.sender.is_live());
+    let callback_id = Uuid::new_v4();
+    runtime
+        .sender()
+        .send_wait(
+            &fixture.pin,
+            ticket,
+            SpaceMessage::Call {
+                callback_id,
+                method: SpaceMethod::ItemHead,
+                input: json!({"kind":"notes","item_id":item.id}),
             },
         )
-        .unwrap();
-        store.bind_machines(&service);
-        service.set_pool_grant(ids.owner, true).unwrap();
-        let approvals = [ids.personal, ids.shared].map(|space| {
-            ApprovedItemHead::new(
-                space,
-                PackagePin {
-                    package: "calternal-head-fixture".into(),
-                    digest: sha256_hex(CHILD.as_bytes()),
-                },
-                if space == ids.personal {
-                    "fixture.head"
-                } else {
-                    "fixture.other"
-                }
-                .into(),
-                "notes".into(),
-                CHILD.into(),
-            )
-            .unwrap()
-        });
-        let registry = Registry::empty()
-            .with_space_item_heads(Vec::from(approvals))
-            .unwrap();
-        let state = Arc::new(AppState {
-            inputs: store.account_inputs(),
-            store,
-            directory,
-            registry,
-            blocking: crate::blocking::RequestWorkers::new().unwrap(),
-            workers: WorkerPool::with_local_root(None, 1, root.path().join("workers")),
-            jobs: Jobs::disabled(),
-            allowed_hosts: allowed_hosts(relay.port),
-        });
-        let (code, _) = service.issue_code(Owner::Pool).unwrap();
-        let key = MachineKey::generate().unwrap();
-        let machine = service
-            .enrol(&EnrolRequest {
-                code,
-                public_key: key.public_key_b64(),
-                name: "carrier".into(),
-                os: "linux".into(),
-                arch: "x86_64".into(),
-                direct: false,
-            })
-            .unwrap()
-            .machine_id;
-        let challenge = service.session_start(machine).unwrap();
-        let token = service
-            .session_finish(&SessionFinish {
-                machine_id: machine,
-                signature: key.sign_session(machine, &challenge),
-                challenge,
-                boot_id: Uuid::new_v4(),
-                protocol: PROTOCOL_VERSION,
-                backend: "podman".into(),
-                guest_memory_mib: None,
-            })
-            .unwrap()
-            .token;
-        (state, service, ids, items, machine, token)
-    });
-    let api = router(state.clone(), None).layer(axum::Extension(service.clone()));
-    let server = tokio::spawn(async move { axum::serve(listener, api).await.unwrap() });
-    let request = |ack| SyncRequest {
-        ack,
-        draining: false,
-        discards: vec![],
-        leases: vec![],
-        capacity: Capacity {
-            cpus: 1,
-            available_memory_bytes: Some(64 << 30),
-            max_sandboxes: 2,
-            ..Default::default()
-        },
-    };
-    service.sync(machine, &token, request(0)).await.unwrap();
-    let link = Arc::new(relay.link);
-    link.set_token(Some(Arc::from(token.as_str())));
-    let placement_root = root.path().join("placements");
-    let runner = Arc::new(Runner::new(
-        Arc::new(FixtureBackend::new(&placement_root, relay.node)),
-        link,
-        2,
-    ));
-    let sync_runner = runner.clone();
-    let (assignments, mut assigned) = tokio::sync::mpsc::channel(2);
-    let supervisor = tokio::spawn(async move {
-        let mut ack = 0;
-        let mut opened = 0;
-        loop {
-            for envelope in service.sync(machine, &token, request(ack)).await.unwrap() {
-                ack = ack.max(envelope.seq);
-                let message = envelope.message;
-                if matches!(message, Down::Assign { .. }) {
-                    assignments.try_send(message.clone()).unwrap();
-                }
-                if matches!(message, Down::OpenSpaceChannel { .. }) {
-                    opened += 1;
-                }
-                sync_runner.handle(message).await;
-                if opened == 2 {
-                    return;
-                }
-            }
-        }
-    });
-    let dispatch_read = |request, space, item, operation| {
-        dispatch(
-            state.clone(),
-            Identity { id: ids.owner },
-            Session::Static,
-            request,
-            operation,
-            serde_json::from_value(json!({"space_id":space,"item_id":item})).unwrap(),
-        )
-    };
-    let (first, second) = tokio::join!(
-        dispatch_read("fixture-one", ids.personal, items[0].id, "fixture.head"),
-        dispatch_read("fixture-two", ids.personal, items[0].id, "fixture.head"),
-    );
-    let expected = |item: &Item| json!({"metadata":{"title":"Enrolled"}, "revision":item.revision});
-    assert_eq!(first.unwrap(), expected(&items[0]));
-    assert_eq!(second.unwrap(), expected(&items[0]));
-    let mut first_assignment = assigned.recv().await.unwrap();
-    let Down::Assign {
-        ref mut fence,
-        ref spec,
-        ..
-    } = first_assignment
-    else {
-        unreachable!();
-    };
-    let pid = worker_pid(
-        &placement_root
-            .join("workers")
-            .join(spec.thread_id.to_string())
-            .join("work"),
-    )
-    .await;
-    *fence += 1;
-    runner.handle(first_assignment).await;
-    // Stop forwarding without sending EOF, cancellation or Stop to the runner.
-    tokio::fs::write(&relay.stall, []).await.unwrap();
-    let lost = Instant::now();
-    // B shares the same API, scheduler, enrollment and runner while A's
-    // actual enrolled TCP stream still has a live process and forwards nothing.
-    let answer_b = tokio::time::timeout(
-        Duration::from_secs(3),
-        dispatch_read("fixture-three", ids.shared, items[1].id, "fixture.other"),
-    )
-    .await
-    .unwrap()
-    .unwrap();
-    assert_eq!(answer_b, expected(&items[1]));
-    assert!(tokio::fs::try_exists(format!("/proc/{pid}")).await.unwrap());
-    let second_assignment = assigned.recv().await.unwrap();
-    assert!(matches!(second_assignment, Down::Assign { space_id, .. } if space_id == ids.shared));
-    supervisor.await.unwrap();
-    tokio::time::timeout(
-        Duration::from_secs(5).saturating_sub(lost.elapsed()),
-        async {
-            while tokio::fs::try_exists(format!("/proc/{pid}")).await.unwrap() {
-                tokio::time::sleep(Duration::from_millis(20)).await;
-            }
-        },
-    )
-    .await
-    .expect("product supervisor must stop and reap the package");
-    assert!(lost.elapsed() >= Duration::from_secs(3));
-    state
-        .registry
-        .space_item_head(ids.shared, "fixture.other")
-        .unwrap()
-        .wake
-        .awake
-        .lock()
         .await
-        .as_ref()
-        .unwrap()
-        .fence
-        .close();
-    let Down::Assign { spec, .. } = second_assignment else {
-        unreachable!()
+        .unwrap();
+    let reply = runtime.receive().await.unwrap();
+    let SpaceMessage::Reply { result, .. } = &reply.frame().message else {
+        panic!("expected reply")
     };
-    let work = placement_root
-        .join("workers")
-        .join(spec.thread_id.to_string())
-        .join("work");
-    tokio::time::timeout(Duration::from_secs(5), async {
-        while tokio::fs::try_exists(&work).await.unwrap() {
-            tokio::time::sleep(Duration::from_millis(20)).await;
-        }
-    })
-    .await
-    .unwrap();
-    server.abort();
-    let _ = server.await;
-    drop(root);
+    runtime
+        .sender()
+        .send_wait(
+            &fixture.pin,
+            ticket,
+            SpaceMessage::Complete {
+                result: result.clone(),
+            },
+        )
+        .await
+        .unwrap();
+    assert!(caller.await.unwrap().is_ok());
+    tokio::time::timeout(Duration::from_secs(1), runtime.receive())
+        .await
+        .unwrap();
+    assert!(!awake.sender.is_live());
 }

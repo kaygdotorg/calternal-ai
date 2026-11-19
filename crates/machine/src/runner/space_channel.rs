@@ -4,7 +4,7 @@ use crate::protocol::SpaceChannelAssignment;
 use calternal_plugin_host::{
     Error as ProtocolError, MAX_FRAME_BYTES,
     space_channel::{
-        PackagePin, SpaceChannel, SpaceMessage,
+        MAX_ACTIVE_TICKETS, PackagePin, SpaceChannel, SpaceMessage,
         child::{ChildFrame, ChildMessage},
     },
 };
@@ -93,6 +93,7 @@ async fn relay_package(
     let mut active = HashMap::<Uuid, Uuid>::new();
     let mut line = Vec::new();
     channel.ready(pin)?;
+    let sender = channel.sender();
     loop {
         tokio::select! {
             item = channel.receive() => {
@@ -104,7 +105,7 @@ async fn relay_package(
                 }
                 let ticket = frame.ticket.ok_or(ProtocolError::Invalid)?;
                 let (alias, message) = match &frame.message {
-                    SpaceMessage::Invoke { operation, input, .. } if active.len() < 8 && !active.contains_key(&ticket) => {
+                    SpaceMessage::Invoke { operation, input, .. } if active.len() < MAX_ACTIVE_TICKETS && !active.contains_key(&ticket) => {
                         let alias = Uuid::new_v4();
                         active.insert(ticket, alias);
                         (alias, ChildMessage::Invoke { operation: operation.clone(), input: input.clone() })
@@ -150,7 +151,17 @@ async fn relay_package(
                             }
                             _ => return Err(ProtocolError::Invalid),
                         };
-                        channel.send(pin, ticket, message)?;
+                        // Stop draining stdout until this frame has credit.
+                        // The channel task still receives credit and renewals.
+                        match sender.send_wait(pin, ticket, message).await {
+                            Err(ProtocolError::TooLarge) => {
+                                active.remove(&ticket);
+                                sender.send_wait(pin, ticket, SpaceMessage::Complete {
+                                    result: Err(calternal_types::ErrorCode::Unavailable),
+                                }).await?;
+                            }
+                            result => result?,
+                        }
                     }
                 }
                 Some(OutputEvent::Data(crate::protocol::Stream::Stderr, _)) => {}

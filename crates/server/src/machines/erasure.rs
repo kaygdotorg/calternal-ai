@@ -24,7 +24,8 @@ pub(super) fn clear_orphan_drains(
 }
 
 impl MachineService {
-    /// Fence cached live machines and replace erased stopping leases with
+    /// Fence cached live machines and space carriers before storage erasure.
+    /// Replace erased stopping leases with
     /// machine-only reservations. Holds the registry lock across the cleanup
     /// transaction so teardown cannot race lease deletion. No remote waits.
     pub(crate) fn retire_owner(&self, owner: ErasedOwner) -> Result<(), Error> {
