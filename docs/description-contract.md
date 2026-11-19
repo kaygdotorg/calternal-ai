@@ -147,6 +147,9 @@ Activation sends the host a typed request (`$defs/Event`, `type: "invoke"`):
   *material inputs* before sending: the resolved item, destination, recipient or audience, in the shell's own sheet (system confirmation dialog natively). The
   description may add material inputs (`preview.material`) or a `confirm`; it cannot remove one the manifest declares. Confirmation binds to the exact resolved
   inputs and the invocation id: a retry with different inputs asks again.
+* **What the person typed needs no second sheet.** An input that comes from a control the person is looking at and edited themselves (a composer's draft, a form
+  field, a prompt) is shown by that control, which is its preview; the sheet covers the material inputs the person did **not** type: the row, the selection, a
+  route reference, a field of a bind, an audience. A chat send therefore never opens a confirmation sheet; a Share with an audience does.
 * **Retry and idempotency.** `retry: "safe"` (idempotent), `"keyed"` (default: the host de-duplicates by `invocation`, so a retry after a dropped connection does not
   repeat the effect) or `"never"` (the interface shows an unknown outcome instead of retrying). `pending: "disable"` (default) greys the action while it is in flight.
 * **Full swipe.** A full swipe performs the first action only when it sets `fullSwipe: true`, and never a confirmation.
@@ -285,6 +288,36 @@ What the renderer needs from the contract, and what it costs:
 8. **Touch targets** are 44 pt; the renderer, not the description, sizes controls.
 9. **The first paint** may come from the cache (section 6) before any host is reachable; therefore binds in the cached description have a defined stale state.
 
+### 8.1 Review of sections 5 and 9 against SwiftUI (native lane)
+
+Everything in 5.0 and 5.1 is drawable with system controls. Findings, in order of consequence:
+
+1. **Settling time.** Section 5.0 says a selection opens its target "about 45 ms after the last key, longer while a key repeats". The native measurement says: nothing crosses
+   the bridge while a key repeats; the target loads when the selection settles, about 100 ms after the last key (or key up). Use that number, and say that outgoing
+   events and incoming windows are both held during a repeat (8.4).
+2. **Home, End and Page keys over rows that are not loaded.** "Through ALL rows (drawn or not)" needs the window protocol: the renderer asks for the window around the target
+   index (`0`, `count - 1`, current plus a page) at once and moves the selection when the rows arrive. State this as a renderer duty; the host only has to answer windows.
+3. **A `list` takes the remaining height of its stack and scrolls itself.** Nested scrolling regions are refused: one `list` per scroll region, and a `stack` that
+   holds a list does not scroll. (A SwiftUI `List` inside a `ScrollView` loses its laziness and selection.)
+4. **Forms** map one to one: `text` TextField, `multiline` TextEditor, `url`/`email`/`number` TextField with the keyboard type, `date` DatePicker, `choice` a menu Picker,
+   `toggle` Toggle; labels use text roles (Dynamic Type), the submit is a prominent button disabled while invalid or pending, the notice sits above it. No change needed.
+5. **`Composer.config.enabled` as a Predicate has no row scope.** A predicate names a field of a row; a composer has none. Use a ValueSource or an explicit
+   `{bind, field}` source (`{bind: "thread", field: "state"}`) compared by an `enabledWhen` predicate; otherwise two renderers will read it differently.
+6. **Set-valued selection** (9.2) is cheap natively (`List(selection: Set<ID>)` with edit mode). Add `selectionMode: "multiple"` to the list node and a source
+   `{selection, set: true}` resolved as an ordered array of at most 50 ids; the trusted preview shows the count and the first titles.
+7. **Selector options from a bind** is cheap (a segmented control up to four options, a menu beyond); add `options: {bind}` with at most 12 rows.
+8. **Share sheet:** make it a host-owned sheet shown by the built-in `host.item.share` (SwiftUI `.sheet`), not a sixth component the description places; one decision for
+   every renderer, and the audience is the sheet's own content (a material input shown by the host, not by the description).
+9. **Date prompt:** extend `prompt` with `kind: "text" | "date" | "datetime"` (a DatePicker in the same sheet). A snooze presets menu works today.
+10. **Nested rows** (child threads) are drawable (`List(children:)`) but conflict with index windows (windows per parent). Defer, as listed.
+11. **Inline rename** as a shell prompt on every platform is right natively (an alert with a text field); accept the web's in-row editor as the web's own.
+12. **Transcript stamp.** `data-thread-rendered` is web only; the native equivalent is a typed `rendered` event plus a signpost and the existing measurement line; the 150 ms
+    budget is measured on a device, not with a CPU slowdown.
+13. **Sealed frame** natively is a WKWebView with a non-persistent data store, a content-blocking rule that refuses every network load, content served from a custom
+    scheme handler, fixed navigation (none) and one fixed message handler. Its height caps are enforced by the host; a frame inside a scrolling stack must not capture
+    vertical scroll when it fits.
+14. **Drag to move** exists in SwiftUI (`draggable`/`dropDestination`) and is not in the vocabulary; defer.
+
 ## 9. Paper exercises (fixtures) (web lane)
 
 Fixtures in `contract/fixtures/description-v2/`: chrome (`reading-list.json`, `notes-sidebar.json`, `threads-sidebar.json`, by the native lane) and views
@@ -353,5 +386,6 @@ while a turn runs; the first screenful stamp.
 
 ## 11. Sign-off
 
-* Native renderer lane: draft 1 written; review of sections 1 to 4, 6 to 8 is mine.
+* Native renderer lane: sections 1 to 4, 6 to 8 written; sections 5 and 9 reviewed against SwiftUI (8.1). **Signs off on condition** that the web lane (a) accepts the
+  rule in 3.2 that what the person typed needs no second sheet, and (b) takes findings 1, 2, 3 and 5 of 8.1 into section 5 (the others may be recorded as next vocabulary).
 * Web renderer lane: sections 5 and 9 written (draft 2); the content vocabulary is closed (`stack text notice button form list detail component`), the five component configs are typed, and the verifier checks view depth (6) and node count (200). Sign-off waits for the native lane's review of 5 and for the plugins lane's answer on the host built-ins in 9.4.
