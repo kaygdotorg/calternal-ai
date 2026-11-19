@@ -27,7 +27,8 @@ async fn mail_prompt_is_account_owned_and_connection_fenced() {
         .unwrap();
         let directory = StoredDirectory::load_or_create(&roots.appdata).unwrap();
         let identity = |role: &str| {
-            let token = std::fs::read(roots.appdata.join(format!("dev-tokens/{role}.token"))).unwrap();
+            let token =
+                std::fs::read(roots.appdata.join(format!("dev-tokens/{role}.token"))).unwrap();
             directory.authenticate(&token).unwrap()
         };
         let owner = identity("owner");
