@@ -23,6 +23,7 @@ function onHomeScreen(): boolean {
   return installed() && typeof CSS !== "undefined" && CSS.supports("-webkit-touch-callout", "none");
 }
 
+import { nativeAppearance } from "./native";
 const root = () => document.documentElement;
 /** Sets (or, with null, removes) a custom property on the root, only if it changes: a write the page does not need would restyle every element. */
 export function setRootVar(name: string, value: string | null): void {
@@ -34,7 +35,8 @@ export function setThemeColor(color: string): void {
   for (const m of document.querySelectorAll('meta[name="theme-color"]')) if (m.getAttribute("content") !== color) m.setAttribute("content", color);
   // iOS 26 and 27 Safari ignore `theme-color` and tint the status bar and toolbar from the page's own background at the edges (checked on the Simulator: a body background reaches under the status bar and the bars take it),
   // so the root's background is the same solved colour: the app runs edge to edge with no separate band.
-  setRootVar("--bars", color); // read by `:root:root { background-color: var(--bars) }` (styles/base.css); the page's own `body` background would otherwise colour the canvas and show as a band
+  setRootVar("--bars", color);
+  nativeAppearance(root().dataset.scheme === "dark" ? "dark" : "light", color); // the native shell (if any) follows the theme: status bar text, keyboard look, the colour behind the page // read by `:root:root { background-color: var(--bars) }` (styles/base.css); the page's own `body` background would otherwise colour the canvas and show as a band
   try { const k = root().dataset.scheme ?? "light", all = JSON.parse(localStorage.getItem("cal.bars") || "{}") as Record<string, string>; if (all[k] !== color) localStorage.setItem("cal.bars", JSON.stringify({ ...all, [k]: color })); } catch { /* storage off */ } // for the next load (public/boot.js)
 }
 

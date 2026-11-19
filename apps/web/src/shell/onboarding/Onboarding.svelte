@@ -2,7 +2,7 @@
   // The first-owner onboarding (and the shorter invited path): one centred card on the app's backdrop with a stepper above it, in the style of infraternal's setup wizard. Numbered steps that turn into ticks; a step that finishes
   // confirms (its tick draws on) and moves on by itself after a short beat; waits count up; nothing is faked. Skipping is offered only where it is safe and says what it costs. Where you got to is kept on this device, so a reload
   // resumes. Keyboard: Tab and Enter do everything; the heading of each step takes focus when it appears and a live line says which step it is. Reduced motion: no slide, no swell, only fades. Motion is the shell's tokens.
-  import { Button, Callout, Card, IconButton, Tick, tokenMs } from "@calternal/ui";
+  import { Button, Callout, Card, haptic, IconButton, Tick, tokenMs } from "@calternal/ui";
   import Backdrop from "../Backdrop.svelte";
   import { after, before, clear, load, NAMES, path, save, skippable, SKIP_NOTE, type StepId, type Who } from "./flow";
   import { fixtureApi, serverApi, type OnboardingApi } from "./api";
@@ -24,8 +24,13 @@
   const saved = load(store);
   // svelte-ignore state_referenced_locally
   const who: Who = saved?.who ?? whoProp;
+  // Fixtures only: `?step=machine` opens that step with the ones before it done (to look at it and test it).
   // svelte-ignore state_referenced_locally
-  let coder = $state(saved?.coder ?? false), step = $state<StepId>(saved?.step ?? "you"), done = $state<StepId[]>(saved?.done ?? []), skipped = $state<StepId[]>(saved?.skipped ?? []), confirming = $state<StepId | null>(null), keyed = $state(false);
+  const jump = demo ? (new URLSearchParams(location.search).get("step") as StepId | null) : null;
+  // svelte-ignore state_referenced_locally
+  const first: StepId = jump && path(false).includes(jump) ? jump : saved?.step ?? "you";
+  // svelte-ignore state_referenced_locally
+  let coder = $state(saved?.coder ?? false), step = $state<StepId>(first), done = $state<StepId[]>(jump ? path(false).slice(0, path(false).indexOf(first)) : saved?.done ?? []), skipped = $state<StepId[]>(saved?.skipped ?? []), confirming = $state<StepId | null>(null), keyed = $state(false);
   // svelte-ignore state_referenced_locally
   const api: OnboardingApi = demo ? fixtureApi(attached) : serverApi;
   const steps = $derived(path(coder));
@@ -43,7 +48,7 @@
   });
   // The card's content moves between steps in two beats: the old content leaves (`out`, `--dur-fast`), the new one is placed at the side the move came from (`pre`, no transition) and then eases in (`in`, `--dur-base`).
   // All of it is CSS transitions, so a move made while another is running turns round from where it is; `dir` is 1 for forward and -1 for back.
-  let dir = $state<1 | -1>(1), shownStep = $state<StepId>(saved?.step ?? "you"), phase = $state<"out" | "pre" | "in">("pre"), swap = 0;
+  let dir = $state<1 | -1>(1), shownStep = $state<StepId>(first), phase = $state<"out" | "pre" | "in">("pre"), swap = 0;
   const settle = () => requestAnimationFrame(() => requestAnimationFrame(() => (phase = "in")));
   $effect(() => { if (shownStep === step) return; phase = "out"; clearTimeout(swap); swap = window.setTimeout(() => { shownStep = step; phase = "pre"; settle(); }, reduced() ? 0 : tokenMs("--dur-fast", 150)); return () => clearTimeout(swap); });
   $effect(() => { settle(); });
@@ -65,6 +70,7 @@
     if (confirming) return;
     if (!done.includes(s)) done = [...done, s];
     confirming = s;
+    haptic("success"); // a step is done (a native tick inside the iPhone shell; nothing in a browser)
     setTimeout(() => { confirming = null; const n = after(coder, s); if (n) { dir = 1; step = n; } }, reduced() ? 0 : 520);
   }
   function skip(s: StepId) { if (s === "passkey2" && !demo) void import("../../server/auth").then((a) => a.dismissPasskeyPrompt()).catch(() => {}); if (!skipped.includes(s)) skipped = [...skipped, s]; const n = after(coder, s); if (n) { dir = 1; step = n; } }
@@ -118,7 +124,6 @@
         {/if}
         {#if shownStep !== "done"}
           <footer>
-            {#if before(coder, step) && step !== "you" && step !== "recovery" && step !== "passkey2"}<Button variant="quiet" text="Back" onclick={back} />{/if}
             {#if skippable[shownStep] && !satisfied}<span class="skip"><Button variant="quiet" text="Skip" onclick={() => skip(shownStep)} /><small>{SKIP_NOTE[shownStep]}</small></span>{/if}
           </footer>
         {/if}
@@ -174,8 +179,9 @@
   @keyframes arrive { from { opacity: 0; translate: 0 var(--s-4); } }
   h1 { font-size: var(--text-heading); font-weight: var(--strong-weight); outline: none; }
   footer { display: flex; align-items: center; gap: var(--s-4); flex-wrap: wrap; }
-  .skip { display: flex; align-items: center; gap: var(--s-4); margin-inline-start: auto; }
-  .skip small { color: var(--ink-3); font-size: var(--text-label); max-width: 16rem; }
+  /* Skip is one quiet action with what it costs written under it, left aligned (not a button and a ragged sentence side by side). */
+  .skip { display: grid; justify-items: start; gap: var(--s-1); }
+  .skip small { color: var(--ink-3); font-size: var(--text-label); }
   .ready { display: flex; align-items: center; gap: var(--s-5); }
   .go { display: flex; gap: var(--s-4); }
   .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }

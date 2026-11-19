@@ -12,6 +12,7 @@
   import { pull } from "../lib/pull";
   import AppSwitcher from "./AppSwitcher.svelte";
   import { spaces } from "./spaces.svelte";
+  import { self, signOutNow } from "./self.svelte";
   import { shell } from "./shell.svelte";
 
   let { app }: { app: AppDef } = $props();
@@ -22,8 +23,20 @@
   let menu = $state(false);
   let trigger = $state<HTMLButtonElement>();
   const search = $derived(spaces.list.length > 5);
-  const items = $derived<MenuItem[]>([...spaces.list.map((s) => ({ id: `space:${s.id}`, label: s.name, checked: s.id === spaces.current.id })), { id: "settings", label: "Settings", icon: "settings" as const }]);
-  function pick(id: string) { if (id === "settings") navigate("/settings/appearance"); else { spaces.switchTo(id.slice(6)); navigate("/threads"); } }
+  $effect(() => { self.load(); });
+  // Who is signed in comes first (it opens Settings, Account), then the spaces, Settings, and Sign out last: a person sees which account this is and can leave it in two taps (the picture, then the row).
+  const items = $derived<MenuItem[]>([
+    { id: "account", label: self.name, sub: self.email ?? `@${self.username}`, icon: "user" as const },
+    ...spaces.list.map((s) => ({ id: `space:${s.id}`, label: s.name, checked: s.id === spaces.current.id })),
+    { id: "settings", label: "Settings", icon: "settings" as const },
+    { id: "signout", label: "Sign out", icon: "signout" as const, danger: true },
+  ]);
+  function pick(id: string) {
+    if (id === "settings") navigate("/settings/appearance");
+    else if (id === "account") navigate("/settings/account");
+    else if (id === "signout") signOutNow();
+    else { spaces.switchTo(id.slice(6)); navigate("/threads"); }
+  }
 </script>
 
 <div class="side">
@@ -38,7 +51,7 @@
   </div>
 
   <footer>
-    <button type="button" class="avatar" bind:this={trigger} aria-label="Account, spaces and settings: Kay" aria-haspopup="menu" aria-expanded={menu} onclick={() => (menu = !menu)}><Avatar name="Kay" size="md" /></button>
+    <button type="button" class="avatar" bind:this={trigger} aria-label="Account, spaces and settings: {self.name}" aria-haspopup="menu" aria-expanded={menu} onclick={() => (menu = !menu)}><Avatar name={self.name} size="md" /></button>
     <Menu open={menu} {items} {search} label="Account" {trigger} onclose={() => (menu = false)} onpick={pick} />
     <span class="switch"><AppSwitcher current={app.kind} /></span>
     <Pill icon="search" label="Search" aria-keyshortcuts={ariaKeys(shortcuts.chordFor("search"))} onclick={() => (shell.searchOpen = true)} />

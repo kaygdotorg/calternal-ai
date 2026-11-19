@@ -77,7 +77,8 @@
       {/if}
     </li>
   {/each}
-  <li><button type="button" class="add" onclick={(ev) => { const r = (ev.currentTarget as HTMLElement).getBoundingClientRect(); ctx = { x: r.left, y: r.bottom, add: true }; }}><Icon inline name="plus" /><span>Add to this list</span></button></li>
+  <!-- The same row as the shortcuts above (icon column, indent, size and weight), so it reads as the last item of the list, not as something else. -->
+  <li><Row title="Add to this list" onclick={(ev) => { const r = (ev.currentTarget as HTMLElement).getBoundingClientRect(); ctx = { x: r.left, y: r.bottom, add: true }; }}>{#snippet leading()}<span class="ic"><Icon inline name="plus" /></span>{/snippet}</Row></li>
 </ul>
 <p class="visually-hidden" role="status" aria-live="polite">{said}</p>
 
@@ -90,6 +91,4 @@
   .ic { flex: none; display: grid; color: var(--ink-2); }
   .acts { position: absolute; right: var(--s-2); top: 50%; translate: 0 -50%; opacity: 0; pointer-events: none; transition: opacity var(--dur-fast) var(--ease-out); }
   @media (hover: hover) and (pointer: fine) { .rw:hover .acts, .rw:focus-within .acts { opacity: 1; pointer-events: auto; } }
-  .add { display: flex; align-items: center; gap: var(--s-3); min-height: var(--row-h); width: 100%; padding: 0 var(--s-4); border-radius: var(--r-select); color: var(--ink-3); font-size: var(--text-label); font-weight: var(--strong-weight); }
-  @media (hover: hover) and (pointer: fine) { .add:hover { background: var(--hover); color: var(--ink); } }
 </style>

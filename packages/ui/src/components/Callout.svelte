@@ -5,6 +5,7 @@
   // the leaving animation. Motion: the shell's tokens (`--dur-base`, `--dur-leave`, `--ease-out`); under reduced motion the durations are 1 ms (tokens), so it changes at once. Interruptible: a message set while it is
   // leaving turns it round from where it is (CSS transitions reverse; there is no timer to wait for except the one that clears the painted copy, which a new message cancels).
   import Icon from "./Icon.svelte";
+  import { haptic } from "../lib/haptics";
   import type { IconName } from "../icons";
   let { message = "", tone = "bad", icon, class: klass }: { message?: string | null; tone?: "bad" | "warn" | "info"; icon?: IconName; class?: string } = $props();
   const glyph = $derived(icon ?? (tone === "info" ? "info" : "warning"));
@@ -13,7 +14,7 @@
   const open = $derived(!!message);
   let timer = 0;
   $effect(() => {
-    if (message) { clearTimeout(timer); shown = message; }
+    if (message) { clearTimeout(timer); if (shown !== message) haptic(tone === "bad" ? "error" : tone === "warn" ? "warning" : "light"); shown = message; }
     else if (shown) { clearTimeout(timer); timer = window.setTimeout(() => { shown = ""; }, 260); }
     return () => clearTimeout(timer);
   });

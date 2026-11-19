@@ -1,6 +1,13 @@
-# Onboarding as a journey: motion and interaction spec (for approval, 2026-11-19)
+# Onboarding as a journey: motion and interaction spec (revised to fit docs/native-feel.md, 2026-11-19)
 
 Owner feedback: "the onboarding could use so much more interaction / animation / motion". This designs onboarding as one sequence that feels alive, not a form in a card. Nothing below the line "Built already" is built until it is approved. Every transition states its order, duration and curve from the motion tokens (`--dur-fast` 150, `--dur-base` 220, `--dur-slow` 300, `--dur-leave` 200, `--dur-morph` 350, `--ease-out`, `--spring`), is a CSS transition or animation of transform and opacity only (no animated blur, no animated backdrop filters), is interruptible, and under reduced motion collapses to the tokens' 1 ms with no loops.
+
+## Revisions after the owner's answers (2026-11-19)
+
+1. It follows `docs/native-feel.md`: every row below uses the tokens that document names; the stepper, the info panel, the buttons and the fields obey its rules 1 to 7; the accent changes only through the Look step and crossfades there (`--accent-base` as a registered `<color>` property over `--dur-slow`).
+2. **No continuous wallpaper drift** unless it measures free on a phone: the "world opens" row keeps only the per-step scale (1.00 to 1.04, a single transform on the backdrop layer, `--dur-slow`, once per step); the 40 s drift loop is dropped. If it is ever proposed again it comes with a measurement on the Simulator and the profiler (no task over 50 ms, no extra layer cost) first.
+3. **One owner for the edge-swipe back: the page.** The page implements it (a left-edge drag of more than 24 px that follows the finger and commits past a third of the width or a fast flick, the same action as the chevron, absent on the first screen, using the shared press helpers); the native shell's own back gesture is turned off. The page tells the shell when it can go back (a message `canGoBack`), so the shell never has to guess.
+4. Haptics are requests to the shell (a `bridge.haptic(kind)` call that does nothing without the shell): `selection` when the traveller moves, `success` when a step completes, `error` when the info panel opens, `impact` on Start. Nothing is faked on the web.
 
 ## The idea
 

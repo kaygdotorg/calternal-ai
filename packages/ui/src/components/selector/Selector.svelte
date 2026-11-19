@@ -1,4 +1,5 @@
 <script lang="ts" generics="V">
+  import { haptic } from "../../lib/haptics";
   // One selector for every single choice (#42). A single capsule sits behind plain options. When
   // the choice changes, the capsule's leading edge stretches toward the new option and its
   // trailing edge catches up; the labels never move or stretch. Click again mid-flight and it
@@ -112,6 +113,7 @@
     if (o.value === value) return;
     nextAnimate = animate;
     value = o.value; // the state changes at once; the capsule follows (see the effect below)
+    haptic("selection"); // a native tick when the choice changes (nothing in a browser)
     onchange?.(o.value);
   }
 

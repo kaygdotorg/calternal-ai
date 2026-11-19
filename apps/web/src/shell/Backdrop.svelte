@@ -28,5 +28,7 @@
   .wash { position: absolute; inset: 0; background: var(--veil-l, linear-gradient(rgb(var(--tint) / 0.5) 0 0)); }
   /* The picture and its veil are painted under the status bar, the notch and the home indicator (the page is `viewport-fit=cover`); the content is what the shell pads. On a home-screen app that is laid out short (shell/chrome.ts) the backdrop is as tall as the screen. */
   :global(html[data-home-screen]) .backdrop { bottom: auto; height: var(--vh, 100%); }
+  /* While a keyboard is up the page is only drawn above it (the shell is sized to the visual viewport, shell/chrome.ts) and what the keyboard's glass shows below is the root's own background: the same picture and veil are painted there, so the wallpaper is behind everything, the keyboard included, not a flat colour. Only then (a second copy of the picture is not painted the rest of the time). */
+  :global(html[data-kb]) { background-image: var(--veil-l, none), var(--wall-side, none); background-size: cover; background-position: center; background-repeat: no-repeat; background-attachment: fixed; }
   .grain { position: absolute; inset: 0; opacity: var(--grain-a, 0); background-size: 256px 256px; pointer-events: none; }
 </style>

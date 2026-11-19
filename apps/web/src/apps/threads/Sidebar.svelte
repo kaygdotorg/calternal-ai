@@ -358,7 +358,6 @@
   .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .chev { display: grid; transition: rotate var(--dur-base) var(--ease-out); }
   .chev.open { rotate: 90deg; }
-  :global(.rename) { width: 100%; min-height: var(--row-h); padding: 0 var(--s-4); border: 0; border-radius: var(--r-select); background: rgb(var(--ink-rgb) / 0.1); color: var(--ink); font-size: var(--text-ui); }
   .new { display: flex; align-items: center; gap: var(--s-3); min-height: var(--row-h); margin-top: var(--s-3); padding: 0 var(--s-4); border-radius: var(--r-select); color: var(--ink-3); font-size: var(--text-label); font-weight: var(--strong-weight); }
   @media (hover: hover) and (pointer: fine) { .tg:hover, .new:hover { background: var(--hover); color: var(--ink); } }
 </style>

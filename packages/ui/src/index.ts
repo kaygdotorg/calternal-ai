@@ -20,6 +20,7 @@ export type { SelectorOption } from "./components/selector/edges";
 export { tip, type Tip } from "./lib/tooltip";
 export { cssPx } from "./lib/css";
 export { cssMs, tokenEase, tokenMs } from "./lib/motion";
+export { haptic, inNativeShell, type HapticKind } from "./lib/haptics";
 export { default as HeaderPill } from "./components/HeaderPill.svelte";
 export { chromeHeader, chromeTrack } from "./header/header.svelte";
 export { trackHeader, type HeaderState } from "./header/track";
