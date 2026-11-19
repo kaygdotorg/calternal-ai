@@ -32,6 +32,7 @@
   .body { padding: 0 var(--s-5); min-width: 0; }
   .body :global(.gen), .body :global(.stack) { grid-template-columns: minmax(0, 1fr); }
   .body :global(.rowl) { flex-wrap: nowrap; min-width: 0; }
-  .body :global(.rowl > button) { min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .body :global(.rowl > button) { justify-content: flex-start; text-align: start; min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .body :global(.rowl > button > *) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .body :global(select) { min-width: 0; }
 </style>
