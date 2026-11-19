@@ -64,9 +64,10 @@
   // ---- renaming in place ----
   /** The thread whose row is hovered, focused or pressed: the only row that draws its buttons. */
   let hot = $state<string | null>(null);
-  let hotTimer = 0;
+  let hotTimer = 0, arrowAt = 0;
+  const arrowKey = (e: KeyboardEvent) => { if (/^(Arrow(Up|Down)|Home|End|Page(Up|Down))$/.test(e.key)) arrowAt = performance.now(); };
   /** A pointer makes a row hot at once; focus only after a rest (a held arrow key moves focus through hundreds of rows: none of them should draw its buttons on the way). */
-  const hotOf = (e: Event) => { const id = (e.target as Element | null)?.closest?.<HTMLElement>("[data-thread]")?.dataset.thread; if (!id || id === hot) return; clearTimeout(hotTimer); if (e.type === "focusin") hotTimer = window.setTimeout(() => (hot = id), 150); else hot = id; };
+  const hotOf = (e: Event) => { const id = (e.target as Element | null)?.closest?.<HTMLElement>("[data-tid]")?.dataset.tid; if (!id || id === hot) return; clearTimeout(hotTimer); if (e.type === "focusin" && performance.now() - arrowAt < 300) hotTimer = window.setTimeout(() => (hot = id), 150); else hot = id; };
   let editing = $state<{ kind: "thread" | "section"; id: string } | null>(null);
   const LOOSE = "__loose__";
   let draft = $state("");
@@ -166,7 +167,7 @@
 {#snippet line(t: ThreadSummary, depth: number, selected: boolean)}
   {@const sw = swipeOf(t)}
   <SwipeRow lead={sw.lead} trail={sw.trail} busy={() => dragId !== null}>
-    <div class="rw">
+    <div class="rw" data-tid={t.id}>
       <Row {depth} title={t.title} href={href(`/threads/${t.id}`)} {selected}>
         {#snippet leading()}<span class="mark" class:pulse={t.state === "running"}><Icon inline name={t.provider} /></span>{/snippet}
         {#snippet trailing()}<span class="tail"><StateMark state={t.state} /></span>{/snippet}
@@ -223,7 +224,7 @@
 {/snippet}
 
 {#if !empty}<TopEntries />{/if}
-<nav aria-label="Threads" onpointerover={hotOf} onfocusin={hotOf} onpointerdown={hotOf} onpointerleave={() => { if (!document.activeElement?.closest("nav[aria-label=Threads]")) hot = null; }} use:swipeRows use:pressRows use:listNav={{ rows: "a.row, button.row" }}>
+<nav aria-label="Threads" onkeydowncapture={arrowKey} onpointerover={hotOf} onfocusin={hotOf} onpointerdown={hotOf} onpointerleave={() => { if (!document.activeElement?.closest("nav[aria-label=Threads]")) hot = null; }} use:swipeRows use:pressRows use:listNav={{ rows: "a.row, button.row" }}>
   {#if empty}
     <div class="empty">
       <h2>No threads yet</h2>

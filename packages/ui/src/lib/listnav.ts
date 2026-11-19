@@ -37,7 +37,7 @@ export function stepIndex(key: string, i: number, count: number, page: number): 
 export function wantsKey(e: Pick<KeyboardEvent, "key" | "altKey" | "ctrlKey" | "metaKey" | "shiftKey" | "target" | "defaultPrevented">): boolean {
   if (!isNavKey(e.key) || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey || e.defaultPrevented) return false;
   const t = e.target as HTMLElement | null;
-  if (t && (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || t.isContentEditable || t.closest?.("[role=menu], [role=listbox][aria-expanded=true]"))) return false;
+  if (t && (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || t.isContentEditable || t.closest?.("[role=menu], [role=listbox][aria-expanded=true], [role=tablist], [role=radiogroup], [role=slider], [role=spinbutton], [role=combobox], [role=tree], [role=grid]"))) return false;
   return true;
 }
 

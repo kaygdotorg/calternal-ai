@@ -31,7 +31,7 @@ await f.fill("hello agent");
 const before = await page.locator(".msg").count();
 await page.keyboard.press("Enter");
 await page.waitForTimeout(600);
-ok("Enter sends to the agent", (await page.locator(".msg").count()) > before && (await f.inputValue()) === "");
+ok("Enter sends to the agent", (await page.locator(".msg").allInnerTexts()).some((t) => t.includes("hello agent")) && (await f.inputValue()) === "");
 await page.keyboard.press("Control+k");
 ok("Cmd-K is still the palette", (await page.getByRole("dialog", { name: "Search and commands" }).count()) === 1);
 await ctx.close(); await b.close(); stop(); process.exit(bad ? 1 : 0);

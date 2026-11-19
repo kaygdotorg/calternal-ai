@@ -6,7 +6,7 @@
   // frame line at its middle (infraternal D177). The right edge and the boundary below it resize between neighbours. Every control has the warm tooltip with its shortcut. Focus follows the press. The window that is not focused is dimmed by a neutral veil and its controls recede; the
   // focused one has no ring (both changes ease on the motion tokens and can be interrupted).
   import { setContext, type Snippet } from "svelte";
-  import { Avatar, Card, Grip, HeaderPill, Icon, InlineEditor, Panel, Pill, tip } from "@calternal/ui";
+  import { Avatar, Card, cssPx, Grip, HeaderPill, Icon, InlineEditor, Panel, Pill, tip } from "@calternal/ui";
   import { shell } from "../shell/shell.svelte";
   import WindowPresence from "../apps/notes/live/WindowPresence.svelte";
   import type { IconName } from "@calternal/ui";
@@ -33,9 +33,9 @@
   let trW = $state(0);
   let draft = $state("");
   $effect(() => { if (renaming) draft = title; });
-  /** The padlock appears just under the title row (the title is centred in that row, and nothing sits under another control): within the 44 px hit area hanging from the row's lower edge, around the window's middle. */
+  /** The padlock appears when the pointer is in the title row or just under it, around the window's middle; it hangs under the row (the title is centred in the row, and nothing sits under another control). */
   let near = $state(false);
-  const nearTop = (e: PointerEvent) => { const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); const bar = parseFloat(getComputedStyle(e.currentTarget as HTMLElement).getPropertyValue("--bar-h")) || 52, dy = e.clientY - r.top; near = dy >= bar - 4 && dy < bar + 40 && Math.abs(e.clientX - (r.left + r.width / 2)) < 90; };
+  const nearTop = (e: PointerEvent) => { const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); const bar = cssPx("--bar-h", 52), dy = e.clientY - r.top; near = dy >= 0 && dy < bar + 40 && Math.abs(e.clientX - (r.left + r.width / 2)) < 90; };
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -80,12 +80,12 @@
   /* Where the app's own header keeps its pills (a bar-high row under the safe area, `--pad-region` from the sides), so the window's controls line up with the title pill the Threads view draws. */
   .tl, .tr { position: absolute; z-index: 5; top: calc(var(--safe-top) + (var(--bar-h) - var(--pill-h)) / 2); display: flex; }
   /* The title is centred in the window at every width (the sidebar button at the left, the actions at the right, the title between): the row is as wide as the window less the pad, with the same reserve at both sides (the wider of the actions and the sidebar button) so the middle is the window's own middle, and a long title ellipsizes in the middle region and never pushes a side control. Its empty parts let pointer events through. */
-  .tl { left: var(--pad-region); right: var(--pad-region); justify-content: center; pointer-events: none; padding-inline: max(var(--reserve, 0px), var(--s-8) + var(--s-3)); }
+  .tl { left: var(--pad-region); right: var(--pad-region); justify-content: center; pointer-events: none; padding-left: max(calc(var(--s-8) + var(--s-3)), min(var(--reserve, 0px), calc(100% - var(--reserve, 0px) - 96px))); padding-right: max(var(--reserve, 0px), calc(var(--s-8) + var(--s-3))); }
   .tl > :global(*) { pointer-events: auto; }
   .tl .sb { position: absolute; left: 0; top: 0; }
   .tl .mid-t { display: flex; gap: var(--s-3); min-width: 0; max-width: 100%; }
   .tr { right: var(--pad-region); }
-  :global(.card.win[data-edge~="l"]) .tl, :global(.card.win[data-edge="lr"]) .tl { padding-inline: max(var(--reserve, 0px), var(--edge-l, 0px)); }
+  
   :global(.card.win[data-edge~="l"]) .tl .sb, :global(.card.win[data-edge="lr"]) .tl .sb { left: var(--edge-l, 0px); }
   :global(.wt) { display: inline-flex; align-items: center; gap: var(--s-3); height: var(--pill-h); max-width: 100%; padding: 0 var(--s-5); font-size: var(--text-ui); font-weight: var(--strong-weight); }
   .tl { min-width: 0; box-sizing: border-box; }

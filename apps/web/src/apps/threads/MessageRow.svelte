@@ -46,10 +46,10 @@
   const lead = $derived(rowFirst ? "lead-row" : message.blocks[0]?.type === "text" && !/^\s*([-*+]\s|\d+[.)]\s|```|~~~|\||>|!\[)/.test(message.blocks[0].text) ? "lead-text" : "lead-own");
   // Message actions are created on first hover or focus (touch has no hover: they are there from the start).
   // An agent message far from the screen is not drawn yet: the row is a box of about its height until it is near the view (one observer per row, released once drawn), so a thread opens by drawing what is on screen, not the Markdown, code and steps of every row the list keeps around it. Without IntersectionObserver (tests) it is drawn at once.
-  let drawn = $state(message.role !== "agent" || typeof IntersectionObserver === "undefined");
+  let drawn = $state(true); // (a message far from the screen was drawn lazily here once; it moved heights under a list pinned to its end, so every message is drawn when its row is)
   const pendingH = $derived(Math.max(48, Math.min(900, message.blocks.reduce((h, b) => h + (b.type === "text" ? 24 * Math.ceil(b.text.length / 85) + 12 : b.type === "steps" ? 40 : b.type === "card" ? 220 : 40), 16))));
   // The heavy parts (code blocks, pictures, the steps) are boxes of about their height for the first frame the message is drawn and are filled in a frame later: the first frame of a thread is its text.
-  let rich = $state(typeof requestAnimationFrame === "undefined");
+  let rich = $state(true); // (the heavy parts were light boxes for a frame once; their height change moved a list pinned to its end, so they are drawn with the message)
   $effect(() => { if (!drawn || rich) return; let b = 0; const a = requestAnimationFrame(() => { b = requestAnimationFrame(() => (rich = true)); }); return () => { cancelAnimationFrame(a); cancelAnimationFrame(b); }; });
   function watch(node: HTMLElement) {
     if (drawn) return;
