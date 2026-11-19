@@ -15,6 +15,8 @@ export class HostError extends Error {
 
 /** Sends one event and resolves with the host's JSON reply. A 422 window refusal is a reply, not an error. */
 export interface Transport {
+  /** Reads a host-authorized row image (`GET row-images/{ref}`); null for 404 (absent, expired, stale or unauthorized). Optional: a transport without it draws the fallback miniature. */
+  image?(ref: string, opts?: { lease?: string }): Promise<Blob | null>;
   post<T>(route: Route, body: unknown, opts?: { lease?: string; signal?: AbortSignal }): Promise<T>;
 }
 
@@ -32,6 +34,18 @@ export interface HttpTransportOptions {
 export class HttpTransport implements Transport {
   readonly #base: string; readonly #bearer?: string; readonly #fetch: typeof fetch;
   constructor(o: HttpTransportOptions) { this.#base = o.base.replace(/\/$/, ""); this.#bearer = o.bearer; this.#fetch = o.fetch ?? ((...a) => fetch(...a)); }
+
+  async image(ref: string, opts: { lease?: string } = {}): Promise<Blob | null> {
+    const headers: Record<string, string> = {};
+    if (this.#bearer) headers.authorization = `Bearer ${this.#bearer}`;
+    if (opts.lease) headers["x-step0-view-lease"] = opts.lease;
+    const res = await this.#fetch(`${this.#base}/row-images/${encodeURIComponent(ref)}`, { headers, redirect: "error", cache: "no-store" });
+    if (!res.ok) return null;
+    const type = res.headers.get("content-type") ?? "";
+    if (!/^image\/(png|jpeg)/.test(type)) return null;
+    const blob = await res.blob();
+    return blob.size <= 65536 ? blob : null; // the catalogue's byte cap
+  }
 
   async post<T>(route: Route, body: unknown, opts: { lease?: string; signal?: AbortSignal } = {}): Promise<T> {
     const headers: Record<string, string> = { "content-type": "application/json" };

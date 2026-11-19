@@ -3,18 +3,21 @@
   // Everything shown comes from the template and the row's fields; nothing is added or dropped here. Selection is read from the list, never from the description.
   import { Icon, Row } from "@calternal/ui";
   import type { RowFields, RowTemplate, WindowRow } from "../model";
-  import { iconOf, marksOf, titleOf } from "./eval";
+  import { iconOf, imageIconOf, marksOf, secondaryOf, titleOf } from "./eval";
+  import RowImage from "./RowImage.svelte";
   import { knownIcon } from "./icons";
   let { template, row, kindIcon, selected = false, depth = 0, onclick }: { template: RowTemplate; row: WindowRow; kindIcon?: string; selected?: boolean; depth?: number; onclick?: (e: MouseEvent) => void } = $props();
   const fields = $derived(row.fields as RowFields);
   const title = $derived(titleOf(template, fields));
   const iconName = $derived(iconOf(template.icon, fields, kindIcon));
   const icon = $derived(knownIcon(iconName));
+  const img = $derived(imageIconOf(template.icon));
+  const sub = $derived(secondaryOf(template.secondary, fields));
   const marks = $derived(marksOf(template.marks, fields));
 </script>
 
-<Row {title} {selected} {depth} {onclick}>
-  {#snippet leading()}{#if iconName !== undefined}<span class="lead">{#if icon}<Icon name={icon} />{:else}<i class="missing" data-icon-missing={iconName}></i>{/if}</span>{/if}{/snippet}
+<Row {title} {sub} {selected} {depth} {onclick}>
+  {#snippet leading()}{#if img}<RowImage ref={typeof fields[img.field] === "string" ? (fields[img.field] as string) : undefined} snippet={img.fallback && typeof fields[img.fallback] === "string" ? (fields[img.fallback] as string) : undefined} />{:else if iconName !== undefined}<span class="lead">{#if icon}<Icon name={icon} />{:else}<i class="missing" data-icon-missing={iconName}></i>{/if}</span>{/if}{/snippet}
   {#snippet trailing()}{#each marks as m, k (k)}
     {#if m.kind === "dot"}<i class="dot {m.tone ?? ''}" data-mark="dot"></i>
     {:else if m.kind === "icon"}<span class="mi {m.tone ?? ''}" data-mark="icon">{#if knownIcon(m.icon)}<Icon name={knownIcon(m.icon)!} inline />{:else}<i class="missing small" data-icon-missing={m.icon}></i>{/if}</span>

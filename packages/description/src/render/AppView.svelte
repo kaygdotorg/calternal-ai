@@ -11,7 +11,8 @@
   import Node from "./Node.svelte";
   import ActionHost from "../invoke/ActionHost.svelte";
   import { ActionUi } from "../invoke/actions.svelte";
-  import { provideActions } from "../invoke/context";
+  import { provideActions, IMAGES_KEY } from "../invoke/context";
+  import { setContext } from "svelte";
   import ActionButton from "./ActionButton.svelte";
 
   // `description` and `session` are fixed for the life of one AppView (a new description or session is a new mount): they are read once.
@@ -32,6 +33,7 @@
   const ui = new ActionUi(session);
   ui.onok = () => { for (const st of stores.values()) st.refresh(); };
   ui.onroute = (name, created) => props.onroute?.(name, created);
+  setContext(IMAGES_KEY, (ref: string) => session.image(ref));
   provideActions({ ui, session, onshell: (a) => props.onshell?.(a) });
   const refusal = refusalOf(description);
   const binds = new Map<string, Bind>((description.binds ?? []).map((b) => [b.id, b]));

@@ -35,3 +35,24 @@ describe("row template evaluation", () => {
     expect(iconOf({ field: "provider", map: { claude: "claude" } }, { provider: "other" }, "threads")).toBe("threads");
   });
 });
+
+import { secondaryOf, relativeDate, imageIconOf } from "../src/render/eval";
+describe("secondary line (revision 13.1)", () => {
+  const now = Date.parse("2026-11-19T12:00:00Z");
+  const parts = [{ field: "updated", format: "relative_date" as const }, { field: "snippet", format: "text" as const }];
+  it("joins present parts with a middle dot, formats relative dates on the device clock, omits an absent part and its separator", () => {
+    expect(secondaryOf(parts, { updated: "2026-11-19T10:00:00Z", snippet: "Hello  world" }, now)).toBe("2 hours ago · Hello world");
+    expect(secondaryOf(parts, { updated: (now - 86400_000) / 1000, snippet: "" }, now)).toBe("yesterday");
+    expect(secondaryOf(parts, { snippet: "only" }, now)).toBe("only");
+    expect(secondaryOf(parts, {}, now)).toBe("");
+  });
+  it("a template without the declaration has one line; short_date formats the day", () => {
+    expect(secondaryOf(undefined, { a: 1 }, now)).toBeUndefined();
+    expect(secondaryOf([{ field: "d", format: "short_date" }], { d: "2026-11-19T10:00:00Z" }, now)).toMatch(/Nov|19/);
+    expect(relativeDate(now - 3 * 86400_000, now)).toMatch(/3 days ago/);
+  });
+  it("reads the image icon declaration", () => {
+    expect(imageIconOf({ image: { field: "thumbnail", fallback: "snippet" } })).toEqual({ field: "thumbnail", fallback: "snippet" });
+    expect(imageIconOf("notes")).toBeNull();
+  });
+});

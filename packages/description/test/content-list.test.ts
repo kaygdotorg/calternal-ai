@@ -84,3 +84,17 @@ describe("ContentList", () => {
     expect(view.container.textContent).toContain("Refine your search.");
   });
 });
+
+describe("row image and secondary line", () => {
+  const notes: Bind = { ...base, row: { title: { field: "title" }, secondary: [{ field: "snippet", format: "text" }], icon: { image: { field: "thumbnail", fallback: "snippet" } } } };
+  it("draws the second line and, with no readable image, a miniature from the snippet, or the empty miniature: never a blank", async () => {
+    const host = new MockHost({ rows: 2, fields: (i) => ({ title: `N${i}`, snippet: i === 0 ? "The quick brown fox" : "", thumbnail: `thumb-ref-${i}-aaaaaaaaaaaaaaaaaaaa` }) });
+    const { view } = await draw(host, notes);
+    await flush();
+    const rows = [...view.container.querySelectorAll<HTMLElement>("[data-i]")];
+    expect(rows[0]!.querySelector(".s")?.textContent).toBe("The quick brown fox");
+    expect(rows[0]!.querySelector("[data-miniature=text]")?.textContent).toContain("The quick brown fox");
+    expect(rows[1]!.querySelector("[data-miniature=blank]")).toBeTruthy();
+    expect(rows.every((r) => r.querySelector("[data-row-image]"))).toBe(true);
+  });
+});

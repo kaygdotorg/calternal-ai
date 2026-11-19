@@ -62,6 +62,12 @@ export class HostSession {
     return this.transport.post<SelectionContextResult>("selection.settled", body, { lease: this.#lease.lease_ref, signal });
   }
 
+  /** A row image by its host-issued ref, under the lease; null when none (the row draws its fallback). */
+  async image(ref: string): Promise<Blob | null> {
+    if (!this.#lease || !this.transport.image) return null;
+    try { return await this.transport.image(ref, { lease: this.#lease.lease_ref }); } catch { return null; }
+  }
+
   /** Any other sealed event under the lease (activation, choice options, status, undo, selection set). */
   exchange<T>(route: Route, body: unknown, signal?: AbortSignal): Promise<T> {
     if (!this.#lease) return Promise.reject(new Error("The view is not open."));

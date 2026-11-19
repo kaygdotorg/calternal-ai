@@ -159,9 +159,14 @@ field: Id
 draft: Id
 })
 /**
- * The description author selects the search mode. The renderer sends text. The host applies the declared mode and does not infer it from the text. Raw Boolean, phrase and fuzzy query syntax and mixtures of terms and prefixes are unqualified.
  */
-export type SearchMode = ("terms" | "prefix" | "title_prefix")
+export type SearchFieldFilter = (ClaimedTextSearchFilter | TurnsSearchFilter)
+/**
+ */
+export type ClaimedTextSearchFilter = ("all" | "title" | "body")
+/**
+ */
+export type TurnsSearchFilter = ("all" | "title" | "messages")
 /**
  * A catalogue icon name, or an object. One icon set; native draws SF Symbols, web its own strokes.
  */
@@ -432,6 +437,10 @@ export type WindowAnchor = ("start" | "end")
  */
 export type Ref1 = string
 /**
+ * Terms combines compiled literal tokens with AND within query.search.max_literal_and_terms. Prefix explicitly requests one literal token prefix within query.search.max_token_prefix_expansions. Punctuation never chooses the match shape. Raw Boolean, phrase and fuzzy syntax and mixtures of terms and prefixes are unqualified.
+ */
+export type SearchMatchShape = ("terms" | "prefix")
+/**
  */
 export type ActivationId = string
 /**
@@ -525,6 +534,10 @@ field: Id
 } | {
 draft: Id
 })
+/**
+ * Host-allowlisted offline display text only. The host checks source provenance and excludes every body-derived part before signing.
+ */
+export type Text1 = string
 /**
  * Host authentication of the complete record excluding this proof, verified against the expected host on disk write and load. Conveys no action or renewal authority.
  */
@@ -625,7 +638,7 @@ export type Ref30 = string
 export type FieldAudience = ("member_item" | "shared_projection" | "viewer_self" | "designated_request_actor" | "eligible_turn_actor" | "personal_layout")
 /**
  */
-export type FieldType = ("Text" | "Number" | "Boolean" | "Timestamp" | "ItemRef" | "CollectionRef" | "ThreadRef" | "TurnRef" | "RequestRef" | "AccountRef" | "ProviderId" | "LayoutSectionRef" | "LayoutEntryRef")
+export type FieldType = ("Text" | "Number" | "Boolean" | "Timestamp" | "ItemRef" | "CollectionRef" | "ThreadRef" | "TurnRef" | "RequestRef" | "AccountRef" | "ProviderId" | "LayoutSectionRef" | "LayoutEntryRef" | "RowImageRef")
 /**
  */
 export type ViewerRole = ("owner" | "manager" | "editor" | "reader")
@@ -664,6 +677,10 @@ export type Ref34 = string
  * Host-issued row reference bound to the declared parent edge, child Bind, full parent ancestry and current authorized view and audience. Validate every request, including counts. Invalid, foreign or stale references confer no scope.
  */
 export type Ref35 = string
+/**
+ * Host-issued opaque display reference carried in a projected field. It has no sort or filter operators and cannot supply an operation operand. Read through query.row_images.
+ */
+export type RowImageRef = string
 
 export interface ContractModel {
 [k: string]: unknown
@@ -700,7 +717,7 @@ any?: Predicate[]
  */
 export interface BindSource {
 /**
- * list: an index window over a kind's items (optionally one collection); item: exactly one item by reference; search: match text in a qualified kind under the author’s required mode and the catalogue’s query.search policy.
+ * list: an index window over a kind's items (optionally one collection); item: exactly one item by reference; search: match text in a qualified kind under the catalogue’s query.search policy, over all searchable fields by default.
  */
 type: ("list" | "item" | "search")
 kind: Id
@@ -711,10 +728,10 @@ text?: TextSource
  * This bind is windowed PER PARENT ROW: it lists the children of one row of another bind (child threads under their parent) or the rows of one user-made section. **The declared edge (a `RowTemplate.children` or a `Section.repeat`) is the mandatory constraint**: every window request on such a bind carries `request.parent`, a host-issued row ref (`WindowParentRef`, taken from the parent row's `parent_refs`) scoped to that edge and its ancestry, which the host checks on every request. `{parent: true}` in a filter is only an optional extra predicate. A parent bind that no edge references is refused.
  */
 parent?: true
-mode?: SearchMode
+field_filter?: SearchFieldFilter
 }
 /**
- * How an item becomes one row: fields map to title, icon and marks; actions name the row through the row scope. Rows have no free-form content, so the host can project them for any audience.
+ * How an item becomes one row: fields map to title, optional secondary line, icon and marks; actions name the row through the row scope. Rows have no free-form content, so the host can project them for any audience.
  */
 export interface RowTemplate {
 /**
@@ -722,13 +739,26 @@ export interface RowTemplate {
  */
 id?: "id"
 /**
- * One line of text from an indexed field. There is no second line (the web has none); a long title truncates.
+ * One ellipsised title line from a declared field.
  */
 title: {
 field: FieldName
 fallback?: string
 }
-icon?: Icon
+/**
+ * Optional ellipsised secondary line under the title, in secondary colour. Parts read projected fields in order; date formats require Timestamp and text requires Text. Join present parts with a space, middle dot and space. Omit an absent part and its separator. Format relative dates at draw time against the local clock, without host pushes. Rows without the declaration have one line.
+ * 
+ * @minItems 1
+ * @maxItems 3
+ */
+secondary?: [{
+field: FieldName
+format: ("relative_date" | "short_date" | "text")
+}, ...({
+field: FieldName
+format: ("relative_date" | "short_date" | "text")
+})[]]
+icon?: (Icon | RowImageIcon)
 marks?: Marks
 selectable?: boolean
 /**
@@ -766,6 +796,18 @@ invoke: Action
 children?: {
 bind: Id
 expanded?: boolean
+}
+}
+/**
+ * The description names a projected field of type RowImageRef. The renderer reads it as specified by query.row_images. Use the optional fallback according to query.row_images.
+ */
+export interface RowImageIcon {
+image: {
+field: string
+/**
+ * Projected body_excerpt Text field. Draw a simple document miniature from the freshly authorized snippet when the image is missing or loading. When no snippet is available, draw the document miniature without text.
+ */
+fallback?: string
 }
 }
 /**
@@ -1271,11 +1313,12 @@ row?: Id
 sentAt?: number
 }
 /**
- * Send the settled text for the named search Bind, or for the active footer search Bind when bind is omitted. The authenticated view supplies the Bind and its author-declared mode. The event carries no mode.
+ * Send the settled text for the named search Bind, or for the active footer search Bind when bind is omitted. The authenticated Bind supplies the optional field filter. The event supplies text and may request a match shape independently.
  */
 export interface EventSearch {
 type: "search"
 bind?: Id
+match?: SearchMatchShape
 text: string
 }
 /**
@@ -1613,7 +1656,7 @@ export interface ListNode {
 type: "list"
 bind: Id2
 /**
- * Arrow keys move a selection through all rows (Up, Down, Home, End, Page Up, Page Down); the selected row's id is the `selection` source for this bind; what the selection opens loads only when it settles.
+ * Up and Down move selection through the rows. Home, End, Page Up and Page Down scroll without changing selection. The selected row's id is the selection source for this Bind. Its route loads when selection settles.
  */
 selectable?: boolean
 title?: string
@@ -1732,7 +1775,7 @@ chrome?: ChromeBody
 view?: ViewBody
 }
 /**
- * The only persistable viewer projection. Issue only on an opted-in, ready or empty start-anchored root window for a live own-space member whose Bind has invariant query inputs. A list may name a literal collection. No reference, search text, route, form, selection or parent operand in its source, filter or sort. Authenticate the account, space, template, Bind, window and offset. Contains only issued display text, never row IDs, contexts, action material or credentials.
+ * The only persistable viewer projection. Issue only on an opted-in, ready or empty start-anchored root window for a live own-space member whose Bind has invariant query inputs. A list may name a literal collection. No reference, search text, route, form, selection or parent operand in its source, filter or sort. Authenticate the account, space, template, Bind, window and offset. The host builds the display record from the authoritative title and host-allowlisted non-body display fields approved for offline use. Exclude body excerpts and any field marked body_derived from every display part, regardless of its template position. Omit the record if any required title is ineligible. Body-derived parts appear only from a fresh authorized window. Never include row IDs, contexts, action material or credentials.
  */
 export interface MemberRowCacheRecord {
 audience: "own_space_member"
@@ -1749,7 +1792,7 @@ expires_at: Timestamp
  */
 rows: {
 title: Text
-subtitle?: Text
+subtitle?: Text1
 }[]
 proof: ProofRef1
 }
