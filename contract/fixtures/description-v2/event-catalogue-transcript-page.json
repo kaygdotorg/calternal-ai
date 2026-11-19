@@ -1,0 +1,8 @@
+{
+  "type": "component",
+  "component": "transcript",
+  "route": "transcript.page",
+  "request": {
+    "thread": "th-1"
+  }
+}

@@ -7,11 +7,11 @@
       "id": "waiting",
       "source": {
         "type": "list",
-        "kind": "request"
+        "kind": "requests"
       },
       "fields": [
         "title",
-        "thread"
+        "thread_ref"
       ],
       "filter": {
         "all": [
@@ -23,7 +23,7 @@
             }
           },
           {
-            "field": "thread",
+            "field": "thread_ref",
             "op": "eq",
             "value": {
               "route": "thread"
@@ -58,16 +58,7 @@
               "route": "thread"
             },
             "follow": "end",
-            "onQuote": {
-              "id": "quote",
-              "title": "Ask in side chat",
-              "operation": "host.panel.ask",
-              "inputs": {
-                "text": {
-                  "selection": "text"
-                }
-              }
-            }
+            "quote": true
           }
         }
       },
@@ -115,16 +106,36 @@
                 ]
               }
             },
-            "stop": {
-              "id": "stop",
-              "title": "Stop",
-              "operation": "host.turn.stop",
-              "inputs": {
-                "thread": {
-                  "route": "thread"
+            "stop": true,
+            "controls": [
+              {
+                "id": "provider",
+                "label": "Agent",
+                "kind": "choice",
+                "options": {
+                  "source": "providers"
+                },
+                "required": true
+              },
+              {
+                "id": "model",
+                "label": "Model",
+                "kind": "choice",
+                "options": {
+                  "source": "models",
+                  "dependsOn": "provider"
+                }
+              },
+              {
+                "id": "reasoning",
+                "label": "Reasoning",
+                "kind": "choice",
+                "options": {
+                  "source": "reasoning",
+                  "dependsOn": "model"
                 }
               }
-            }
+            ]
           }
         }
       }

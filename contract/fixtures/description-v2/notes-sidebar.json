@@ -3,7 +3,7 @@
   "revision": 1,
   "scheme": "dark",
   "cache": {
-    "policy": "account"
+    "templates": "keep"
   },
   "binds": [
     {

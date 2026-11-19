@@ -148,28 +148,45 @@ re-resolve. Sources that live on the device: **row** (the row scope), **selectio
 **draft** (`{draft: composerId}`: the composer's text) and **prompt** (the shell asks for text when the action fires). They reach the host in the activation
 request below, resolved and shown.
 
-### 3.2 Activation request and the trusted preview
+### 3.2 Activation: context, resolve, trusted confirm, dispatch
 
-Activation sends the host a typed request (`$defs/Event`, `type: "invoke"`):
+The shapes are the host catalogue's (`contract/host-catalogue-v2.json`: `ResolveActivation`, `ConfirmActivation`, `DispatchActivation`, `ActivationResolution`, `ActionOutcome`,
+`Interaction`); this document cites them and defines none of its own (`$defs/Event` and `$defs/InvokeOutcome` reference them). An activation is three round trips in a fixed order:
 
 ```
-{ type: "invoke", id: "rename", bind: "notes", row: "n-7f3", invocation: "inv-91c…",
-  renderedRevision: 41, inputs: { item: "n-7f3", title: "Q3 plan" } }
+shell -> host  { type: "invoke", action_id: "rename", activation_id: "a-91c", activation_context: "<opaque>", interaction: { prompt: { title: "Q3 plan" } } }
+host  -> shell { activation_id, resolution_ref, confirmation_challenge?, material?: [ {name, label, value} ] }       // resolve
+shell -> host  { type: "invoke_confirm", activation_id, resolution_ref, confirmation_challenge }                      // only if the host asked, after the person confirmed
+shell -> host  { type: "invoke_dispatch", activation_id, resolution_ref, confirmation_proof? }                       // dispatch
+host  -> shell { activation_id, state: ok | pending | error | stale | refused | unknown, status_ref?, undo?, code?, message? }
 ```
 
-* **Resolved against what was rendered.** The host resolves every input source against the state the person saw (`renderedRevision`, the row, the selection at
-  that moment). If the row left the window, the selection moved, or the revision no longer holds, the outcome is `stale` and nothing runs; the shell re-renders
-  and the person acts again. A button labelled Refresh cannot submit a hidden destination or act on a different item after the selection moved.
-* **Trusted preview.** For an operation the host classifies (from the manifest, not from the description) as **mutating or disclosing**, the shell shows the person the
-  *material inputs* before sending: the resolved item, destination, recipient or audience, in the shell's own sheet (system confirmation dialog natively). The
-  description may add material inputs (`preview.material`) or a `confirm`; it cannot remove one the manifest declares. Confirmation binds to the exact resolved
-  inputs and the invocation id: a retry with different inputs asks again.
-* **What the person typed needs no second sheet.** An input that comes from a control the person is looking at and edited themselves (a composer's draft, a form
-  field, a prompt) is shown by that control, which is its preview; the sheet covers the material inputs the person did **not** type: the row, the selection, a
-  route reference, a field of a bind, an audience. A chat send therefore never opens a confirmation sheet; a Share with an audience does.
-* **Retry and idempotency are the host's.** A description cannot declare an action retry-safe or waive a check: effect class and idempotency come from the host catalogue and
-  the manifest, and the host de-duplicates by the `activation_id`. `pending: "disable"` (default) greys the action while it is in flight.
-* **Full swipe.** A full swipe performs the first action only when it sets `fullSwipe: true`, and never a confirmation.
+* **The event carries a context and ONLY device-held values.** `activation_context` is the host-issued snapshot of what was rendered (viewer, space, template digest, action,
+  route, row, the versions of the binds the action depends on): opaque to the renderer. `interaction` holds only what lives on the device: `form` values, `prompt`
+  answers, the `draft` (text, host-owned attachment references, mentions, a quote reference) and a host-issued `selection_ref`. **The event never carries a resolved row, selection,
+  route, bind value, target item or viewer; if a modified client adds one, the host ignores it** (the schema refuses the field outright). The host reconstructs every server-owned
+  source from the context and so a changed client cannot name another item than the one drawn. There is no single revision number: the context names the versions it
+  depends on, so an unrelated window change neither retargets nor invalidates an action, and a row that left what was rendered is `stale` (nothing ran).
+* **Trusted confirm.** For an operation the host classifies as mutating or disclosing (from the catalogue and the manifest, never from the description) the host answers
+  the resolve with a `confirmation_challenge` and a **material** list it wrote: the item, destination, recipient, audience, permission change or count, resolved from what it
+  reconstructed, **including values the person did not edit** (an untouched prefill, a default, an autofill). The shell shows the material in its own sheet; if the person
+  confirms, `invoke_confirm` returns the challenge and the host returns a `confirmation_proof` bound to the normalized input and the `activation_id` (different input: a new
+  challenge). A description may add material inputs (`preview.material`) but cannot remove or relabel one the host requires, and a destination, recipient, audience or
+  permission is **always** previewed.
+* **Typed input and the preview (narrow).** A value the person **directly edited in a visible trusted control of the same form** (a composer's draft, a form field, a prompt
+  answer) is shown by that control and needs no separate row in the sheet; nothing else qualifies. Not typed: a field with an `initial` value the person did not change; a
+  `choice` whose label hides its value (the host previews the value); a field in another form, offscreen or collapsed; an input from a route, a row, a selection or a bind
+  field. The shell never sends a flag claiming what was typed, and the host never believes one: it decides from the catalogue which inputs are material and previews every one
+  it cannot prove is typed text of a non-destination kind. A chat send therefore needs no sheet (the composer shows the text, the thread is the route the person is on and
+  the catalogue marks `turns.start` as not needing one); a Share with an audience always does.
+* **Retry and idempotency are the host's.** A description cannot declare an action retry-safe or waive a check: effect class and idempotency come from the catalogue and the
+  manifest, and the host de-duplicates by `activation_id` (a retry after a dropped connection repeats no effect).
+* **Full swipe.** A swipe action may set `fullSwipe` only if it is the first action of its set **and** the catalogue marks its operation `full_swipe: true` (a reversible host
+  built-in that returns an Undo and needs no confirmation); a full swipe never opens a confirmation. Today the catalogue marks none, so no description sets it (Restore from Trash
+  included, until the plugins lane marks it).
+* **No generic route to protected operations.** A description cannot name `host.approval.resolve`, `host.undo`, `host.action.status`, `host.panel.ask`, `host.route.set`,
+  `host.session.end`, `host.trash.purge` or `host.item.share` as an invoke, nor `turns.start` or `host.turn.stop` anywhere but the composer (send, stop): they are reached
+  through the request card, an outcome's undo reference, the host's quote control, shell events, the Trash and Share sheets and the composer.
 
 ### 3.3 Identifiers: invocation id, action id, ticket
 
@@ -188,9 +205,10 @@ An activation names the host-issued **activation context** (an opaque snapshot o
 
 ### 3.4 Outcomes
 
-The host answers (`$defs/InvokeOutcome`): `ok`, `pending` (with a host-owned **status** reference), `error` (a code and a plain message **the host writes**), `stale`,
-`refused`, plus an optional **undo** `{ref, label, expiresAt}`. `result.show` says which of toast, pending, error, undo and status the interface may show. Undo is
-a button that invokes `host.undo` with the ref; the status reference is polled through a host built-in. **Worker payload is never carried to an interface.**
+The host answers a resolve with an `ActivationResolution` and a dispatch with an `ActionOutcome` (both the catalogue's): `ok`, `pending` (with a host-owned `status_ref`, polled
+through the host's own status control, not by the description), `error`, `refused`, `stale` and `unknown` (the interface shows an unknown outcome instead of retrying a
+non-idempotent action), and an optional host-owned **undo** `{ref, label, expires_at}` on `ok`. `result.show` says which of toast, pending, error, undo and status the interface may
+show. Error text is written by the host. **Worker payload is never carried to an interface.**
 
 ## 4. Chrome v2
 
@@ -256,10 +274,10 @@ is the host's alone.
 | Component | Config | Events (typed; handled by the host unless an invoke is named) | Native review |
 | --- | --- | --- | --- |
 | `item-editor` | `item` (route or selection, never a literal id), `mode` edit/read, `showTitle`, `onTitleChange` | `title-change` (the host saves through `host.item.rename`), `link-open`, `presence` (live rooms: an attribute of the item's KIND) | A text view over the item's document (a note's Markdown file directly: no second representation between the editor and the file, an owner rule). A metadata-only save must not rewrite the body. |
-| `turn-transcript` | `thread` (typed thread ref from route or selection), `follow` end/none, `window`, `onQuote` | `quote` (a selected passage), `open-item`, `scrolled-away`, `rendered` (see below) | A host-owned windowed list: the screenful at the end is read first and drawn, the rest follows in steps; rows are appended and updated by the host; heavy parts are the host's. |
-| `composer` | `target`, `placeholder`, `enabled` (a literal or a boolean source), `enabledWhen` (two sources and an operator: a composer has no row, so no row-scoped predicate), `send` (an invoke), `attachments`, `mentions`, `stop` | `draft` (device only), `send`, `stop`, `attach`, `mention` | The draft is held on the device. A native composer is a text field with the system keyboard; attachments use the system pickers. |
+| `turn-transcript` | `thread` (typed thread ref from route or selection), `follow` end/none, `window`, `quote` (boolean: the host's Quote control) | `transcript.page` (the host route: `TranscriptPageRequest` -> `TranscriptPage`, catalogue), `quote` (a host-issued quote reference into a draft), `scrolled-away`, `rendered` | A host-owned windowed list: the screenful at the end is read first and drawn, the rest follows in steps; rows are appended and updated by the host; heavy parts are the host's. |
+| `composer` | `target`, `placeholder`, `enabled` (a literal or a boolean source), `enabledWhen` (two sources and an operator: a composer has no row, so no row-scoped predicate), `send` (an invoke of `turns.start` only), `attachments`, `mentions`, `controls` (host-owned provider, model, reasoning, permission and machine choices with authorised option sources), `stop` (boolean: the host's Stop control) | `draft` (device only), `send`, `stop`, `attach`, `mention` | The draft is held on the device. A native composer is a text field with the system keyboard; attachments use the system pickers. |
 | `request-card` | `request` (typed request ref), `compact` | `resolve` (host.approval.resolve, from the host's own buttons) | One protected record and resolver for a job, a Turn and a host action; the card shows the material arguments (the trusted preview) and cannot be reordered, relabelled or covered by a plugin layout. |
-| `sealed-html-frame` | `frame` (a frame id), `minHeight`, `maxHeight` | `resize` (inside the caps), `open-link` (through the host) | A web view with no network and no top navigation; its message channel and sandbox are fixed by the host. |
+| `sealed-html-frame` | `frame` (a frame id), `minHeight`, `maxHeight` | `sealed_frame.open`, `sealed_frame.resize` (inside the caps), `sealed_frame.open_link` (a host link id; the host re-authorises), all catalogue routes | A web view with no network and no top navigation; its message channel and sandbox are fixed by the host. |
 
 **Rules that hold for all five**
 
@@ -267,8 +285,8 @@ is the host's alone.
   `request-card`. Its size is the card's (the transcript and editor fill it; the composer is at the bottom; the frame reports its height inside the caps).
 * **Refs are typed.** `thread`, `item` and `request` take a value source that resolves to a reference of that type or the host refuses the description; the host
   authorises the viewer for the ref (a guest's grant included) before anything is read. The description holds no viewer data.
-* **Drafts.** The composer's text and attachments stay on the device. At activation the host receives a **checked draft payload** (length, attachment count and
-  type, mention targets authorised by the host) and the composer shows it, so the send opens no confirmation sheet (3.2). The draft clears only after `ok`; `error` keeps it.
+* **Drafts.** The composer's text stays on the device; attachments are handed to the host when attached and held as host-owned `AttachmentRef`s, mentions are account references and a quoted passage is a host-issued quote reference (the catalogue's `Draft`). At activation the host receives it inside `interaction.draft` and checks it (lengths, counts, that every attachment is the viewer's own, that every mention and quote is authorised); it never trusts the client. The composer shows the text, so the send opens no confirmation sheet (3.2). The draft clears only after `ok`; `error` keeps it.
+* **Transcript reads** use the catalogue's `transcript.page` route: a `TranscriptPageRequest` names the thread and an opaque `after` cursor, the `TranscriptPage` returns at most 128 committed events and a `committed_cursor`; every page is reauthorised and bounded (128 KiB); an expired or revoked cursor is refused and the renderer reads again from the end. No description or renderer invents a cursor.
 * **Streaming** is the host's: the transcript's rows grow and change without a description revision; the host caps the update rate, commits a final message at the
   end, and drops an in-flight load when the viewer moves to another thread (the old transcript load is cancelled, not finished).
 * **First screenful stamp.** When the transcript has drawn its first screenful the host sets `data-thread-rendered=<thread id>` (web), dispatches
@@ -279,12 +297,20 @@ is the host's alone.
 
 ## 6. What may be cached on the device
 
-`cache.policy` is `account` (default) or `none`; `maxAgeDays` bounds it (1 to 90, default 30).
+`cache.templates` is `keep` (default) or `none`; `maxAgeDays` bounds it (1 to 90, default 30).
 
-* Under `account` the shell may keep the **description** and the **last windows** for the first paint at the next launch, in one file of at most 4 MB, keyed by the
-  signed-in account id. A description with host-filled binds holds a person's titles once rows are filled, so: **sign-out deletes it, switching account deletes
-  it, a different account never reads it, and a policy of `none` keeps nothing.**
-* The first paint from cache is marked stale; the host's first window answer replaces it (a different revision) and a row the host no longer returns disappears.
+* **Only data-free templates persist.** A template is a description with its binds as requests: sections, selectors, titles the author wrote, icons, actions. It holds no row, no
+  title of a person's item, no count and no activation context, so it may be stored (one file of at most 4 MB, keyed by the signed-in account, deleted on sign-out and on account
+  switch). `none` keeps nothing.
+* **Filled rows are session-only.** Rows, counts and anything the host filled stay in memory, **partitioned by session, space and audience** (a member and a guest of the same
+  account never share a partition), are never written to storage, and are cleared on revocation, on closing a guest link, on sign-out, on account switch and when the session
+  ends. A shared or offline device therefore holds no titles after the session.
+* **Nothing protected is painted before the host has authorised the viewer now.** There is no stale-first paint of rows. Activation contexts, resolution references,
+  confirmation challenges and proofs are never stored anywhere.
+* **What the person sees at first paint instead.** The template at once (the sidebar's structure, selectors, section titles the author wrote, the footer, the header), with
+  skeleton rows where a list will be and the bind's `loading` state; the host's first window answer replaces the skeletons (one round trip, no waiting on a full list). Offline
+  or unauthorised, the person sees the template and the state the host or the shell can say truthfully (`offline`, `sign in again`), never a title from a past session. A shell
+  that cannot meet these rules (an older client) gets a host fallback that obeys the same authority rules, or the page's own chrome.
 * The cache is the shell's, not the page's.
 
 ## 7. Version negotiation
@@ -354,44 +380,38 @@ Fixtures in `contract/fixtures/description-v2/`: chrome (`reading-list.json`, `n
 
 ### 9.1 Community reading list (`reading-list.json` chrome, `view-reading-list.json` card)
 
-**Written:** a bound list of reading items (title, read mark, a per-row "Mark read" swipe action with `fullSwipe`, an empty state); a **two-field add form**
-(`form` node: title, address; the address is typed in the form, so the add opens no separate sheet); a **per-person reminder**: a `reading-reminder` bind filtered `person eq viewer.person`
-(only the viewer's reminders are returned, authorised by the host) with a `date` field form whose submit names the selected reading item.
-**Cannot be written:**
-* **Notification when a reminder is due** is not a description feature (the plugins lane maps it to the scheduler's `notify_creator`); the description shows the reminders.
-* **Conditional fields** (show "repeat" only after a date), **custom validation messages** and rules beyond shape (https only), **edit in place** of an existing
-  item, **bulk selection** and **load more** (windows only) have no node.
+**Written:** a bound list of reading items (title, read mark, a per-row "Mark read" swipe action, an empty state); a **two-field add form** (`form` node: title, address; both typed in
+the form, so the add opens no separate sheet); a **per-person reminder**: a `reading-reminder` bind filtered `person eq viewer.person` (only the viewer's reminders are returned,
+authorised by the host) with a `date` form whose submit names the selected reading item (the item is previewed by the host: it was not typed).
+**Cannot be written:** the notification when a reminder is due (the scheduler's `notify_creator`, plugins lane); conditional fields, custom validation messages beyond shape, edit in
+place and load-more (windows only) have no node (recorded below as parity exceptions).
 
-### 9.2 Notes sidebar with thousands of notes, collections, Trash, rename with Undo (`notes-sidebar.json`, `view-note.json`)
+### 9.2 Notes sidebar with thousands of notes, collections, Trash, rename with Undo, bulk Trash and Share (`notes-sidebar.json`, `view-note.json`, `view-notes-bulk-and-snooze.json`)
 
-**Written:** collections as a bound section whose row sets the route; notes as a list bound to the route's collection, `trashed eq false`, newest first, in index windows
-with an exact count (thousands of rows cost a screenful); Trash as a bind with `trashed eq true` and a count in the selector; Restore with full swipe; Empty Trash as a
-confirmed destructive `host.trash.purge`; **rename with a prompt** whose outcome offers a host-owned **Undo**; the footer search; the editor as an `item-editor`
-component with the title renamed through the host. Selection through thousands of rows with the keyboard is `selectable` (section 5.0).
-**Cannot be written:**
-* **Bulk actions on a multi-selection** (the web's select mode: Trash or Share many): the `selection` source is one id; a set-valued source and a selection mode
-  are missing.
-* **Tag filter chips with counts** (options generated from a bind): a selector's options are literal; options from a bind are missing.
-* **Sections per collection** (a repeater over a bind) and **drag to move** a note into a collection: no repeater, no drag affordance.
-* **Share sheet**: `host.item.share` is an operation, but the sheet (people, groups, links, roles) is a host surface that is not one of the five components. It needs a sixth
-  host component or a built-in sheet defined by the host; the contract does not decide which.
-* **Inline rename in the sidebar** (type in place) is drawn as a shell prompt on every platform; the web's in-row editor is not expressible, and that difference should be
-  accepted deliberately.
+**Written:** collections as a bound section whose row sets the route; notes as a list bound to the route's collection (`kind: notes`), `trashed eq false`, newest first, in index
+windows with an exact count (thousands of rows cost a screenful); Trash as a bind with `trashed eq true`; Restore; Empty Trash and Share as **host sheets** reached by a
+`ShellAction` (the host owns the confirmation of the pinned Trash set, and the audience of Share, as material the host writes); **rename with a prompt** whose outcome offers a
+host-owned **Undo**; the footer search; the editor as an `item-editor` with the title renamed through the host; **bounded multi-selection** (`selectionMode: multiple`, at most
+50 rows, the ticked set reaches an action as `{selection, set: true}`, a host-issued `selection_ref`; the host shows the count and first titles); **bulk Trash** as
+`host.item.trash` with `selection_ref`.
+**Cannot be written (parity exceptions, each to be replaced by a host-owned equivalent or accepted by the owner before the Notes plugin replaces the app):**
+* **Tag filter chips with counts** (selector options generated from a bind), **sections per collection** (repeater) and **drag to move** a note into a collection.
+* **Inline rename in the sidebar** is a shell prompt on every platform; the web's in-row editor is the web's own.
+* **Bulk collection creation from a selection** needs a named plugin operation taking `selection_ref`; it is writable once the plugin declares it.
 
-### 9.3 Threads sidebar: Inbox of "waiting on me", a composer that sends, an approval card (`threads-sidebar.json`, `view-thread.json`)
+### 9.3 Threads sidebar: Inbox of "waiting on me", composer with controls, an approval card, snooze (`threads-sidebar.json`, `view-thread.json`, `view-notes-bulk-and-snooze.json`)
 
-**Written:** the Inbox as a bind (`waiting_on eq viewer.person`) with its count in the selector; All Threads; provider icons (a static map over a typed field); state marks;
-archive with Undo; the side chat as `turn-transcript` above a `composer`; a **composer that sends** (`turns.start` with the thread from the route and the text from
-`{draft: composer}`, keyed retry, pending and error shown, the draft cleared only after `ok`); an **approval** as a `request-card` over the protected request record; Stop
-while a turn runs; the first screenful stamp.
-**Cannot be written:**
-* **The composer's controls** (provider, model, reasoning level, permission, runs-on): typed choice controls whose values become operation inputs (`{control: id}`) are missing,
-  and the lists behind them (models per provider, machines) are binds the composer would need to reference.
-* **User-made sections with drag ordering** (the Threads sidebar's own layout) and **child threads nested under a parent row**: a row template has no depth, and ordering is a
-  person's layout stored by the host, with no contract for it.
-* **Snooze** needs a prompt that asks for a **date and time** (the `prompt` source asks for text); a choice of presets (an action sheet of invokes) works, a picker does not.
-* **Token-by-token text in a plain list row** is not needed (only the transcript streams), but a `list` cannot show live progress marks beyond a mark that updates with a new window.
-* The **selection-to-pane** link (selecting a thread opens it) is a route parameter set by the row's `open`; cancelling the previous load is the host's guarantee (5.1).
+**Written:** the Inbox as a bind (`waiting_on eq viewer.person`, the viewer-only field) with its count in the selector; All Threads; provider icons (a static map from the open
+`ProviderId` values `calternal-claude-code` and `calternal-codex` to the `claude` and `codex` icons); state marks; archive with Undo; the side chat as `turn-transcript` above a
+`composer`; **a composer that sends** (`turns.start` with the thread and the text from `{draft: composer}`, the host's `Draft` with attachments and mentions, the draft cleared only
+after `ok`) with **host-owned controls** (provider, model, reasoning, permission, machine: `controls` with authorised option sources, values read as `{control: composer.id}`);
+the host's Stop control (`stop: true`, a turn from `threads.active_turn`); the host's Quote control (`quote: true`); an approval as a `request-card` over the protected request
+(`requests`, with `thread_ref`); **snooze** with a **date-and-time prompt** (`prompt.kind: datetime`) whose answer is previewed as a material input.
+**Cannot be written (parity exceptions):**
+* **User-made sections with drag ordering** (the Threads sidebar's own layout) and **child threads nested under a parent row**: a row template has no depth and windows are per
+  list; ordering is a person's layout stored by the host with no contract for it.
+* **Bind-backed selectors** (options from a bind), **conditional fields** and **section repeaters**: not in the first vocabulary.
+* A `list` cannot show live progress beyond a mark that changes with a new window.
 
 ### 9.4 What this schema needs from the host (authorisation is the plugins lane's)
 
@@ -412,9 +432,38 @@ while a turn runs; the first screenful stamp.
 5. **Section repeaters** (one section per item of a bind) are deferred; navigation sections cover the cases above.
 6. The **retirement date of v1** is the owner's.
 
-## 11. Sign-off
+## 11. Sign-off (draft 3: web lane edits after Sol review 3; the native lane re-signs)
 
 * Native renderer lane: **signed off.** Sections 1 to 4 and 6 to 8 are mine; sections 5 and 9 were reviewed against SwiftUI (8.1) and both conditions were met (the typed-input rule
   in 3.2; settle time, window asks for Home, End and Page, one scroll region per list, a composer `enabled` without a row scope). 17 of 17 fixtures pass
   (`python3 contract/verify-description.py`). Next vocabulary requests are recorded in section 10.
 * Web renderer lane: sections 5 and 9 and the content nodes written; sign-off by that lane is its own message to the coordinator.
+
+## 12. Disposition of the third-round review (Sol, 46 findings)
+
+Part B's own findings are fixed here (`FIXED`); findings about the runtime are the plugins lane's (`A`), the native review and sections 1, 2, 4, 7, 8 are the native lane's (`N`, done in
+71a76140 and d0a7e100); `WAIT` is a recorded parity exception.
+
+| # | Finding (short) | Status |
+| --- | --- | --- |
+| 1 | Event accepts `{type: invoke}` alone | FIXED: `$defs/Event` is a oneOf of variants with required fields; activation events are the catalogue's; `invalid-event-*` fixtures |
+| 2 | Guest rows after grant loss | FIXED: no persisted rows; filled rows session-only and cleared on revocation (6) |
+| 3-7, 9, 11, 12, 14, 17-19, 21, 22, 24-26 | earlier findings reported fixed | no change |
+| 8, 20 | v1 guide examples | A |
+| 10 | Confused deputy: client-resolved values, no host proof | FIXED: context, resolve, trusted confirm, dispatch; the host writes the material (3.2) |
+| 13, 42-44 | Gates and spikes | A |
+| 15 | Duplicate action ids, no required fields | FIXED: unique `action_id` per description (verifier, N); required fields per event variant |
+| 16 | Attachment and mention encoding | FIXED: catalogue `Draft` in `interaction.draft`: host-owned attachment refs, account mentions, quote ref (3.2, 5.1) |
+| 23, 25, 27, 28-32 | Kind and field names, built-in catalogue, effect classes, identities, query model | A (one catalogue); B cites it (kinds `notes threads collections requests`, `thread_ref`, `waiting_on`, `pending_for`, `trashed`, `trashed_at`) |
+| 33 | Transcript cursor, component events, quote encoding, frame sandbox | FIXED: `transcript.page` and `sealed_frame.*` routes cited from the catalogue; `{selection: text}` removed, the host's Quote control with a quote reference |
+| 34 | Verifier shapes only, duplicate keys | FIXED: strict parse, catalogue resolution (N), events and cited shapes checked, fixtures validated against the catalogue |
+| 35 | Resolution of inputs ambiguous | FIXED: the event carries a context and only device-held values; the host reconstructs row, selection, route (3.2) |
+| 36 | Typed-input exemption | FIXED: only a value directly edited in a visible trusted control of the same form; untouched prefills, hidden-value choices, other or offscreen forms are previewed; destinations always (3.2) |
+| 37 | Cross-bind and search leaks | N (FilterValue, TextSource: no bind field feeds another bind); A (authorise the whole graph of allowed edges) |
+| 38 | Aggregate bounds, live fan-out, wakes | N (2.6) and A |
+| 39 | One revision for several binds | FIXED: no client revision; the context names the dependency versions (3.2) |
+| 40 | Approval via generic invoke; Restore full swipe | FIXED: reserved operations never generic; full swipe only where the catalogue says `full_swipe` (today none, Restore included) (3.2) |
+| 41 | Device cache of rows | FIXED: data-free templates persist, rows session-only and partitioned, nothing painted before authorisation, first paint is the template with skeleton rows (6) |
+| 45 | Notes: Share sheet, bounded multi-selection; Threads: composer controls with option sources, checked attachments | FIXED: `selectionMode: multiple` with a host-issued `selection_ref`; Share and Trash as host sheets (`ShellAction`); composer `controls`; catalogue `Draft` |
+| 46 | Snooze date/time picker; bind-backed selectors, nested rows, drag, repeaters, conditional fields | FIXED: `prompt.kind: date \| datetime`; the rest recorded as WAIT parity exceptions in 9.2, 9.3 |
+

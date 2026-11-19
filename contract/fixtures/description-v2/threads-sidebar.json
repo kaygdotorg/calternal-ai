@@ -3,8 +3,8 @@
   "revision": 1,
   "scheme": "dark",
   "cache": {
-    "policy": "account",
-    "maxAgeDays": 14
+    "maxAgeDays": 14,
+    "templates": "keep"
   },
   "binds": [
     {
@@ -47,8 +47,8 @@
         "icon": {
           "field": "provider",
           "map": {
-            "claude": "claude",
-            "codex": "codex"
+            "calternal-claude-code": "claude",
+            "calternal-codex": "codex"
           }
         },
         "marks": [
@@ -138,8 +138,8 @@
         "icon": {
           "field": "provider",
           "map": {
-            "claude": "claude",
-            "codex": "codex"
+            "calternal-claude-code": "claude",
+            "calternal-codex": "codex"
           }
         },
         "marks": [

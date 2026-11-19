@@ -7,7 +7,7 @@
       "id": "note",
       "source": {
         "type": "item",
-        "kind": "note",
+        "kind": "notes",
         "ref": {
           "route": "note"
         }

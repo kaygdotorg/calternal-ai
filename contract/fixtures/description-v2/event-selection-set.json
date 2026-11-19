@@ -1,0 +1,8 @@
+{
+  "type": "selection_set",
+  "bind": "notes",
+  "rows": [
+    "n-1",
+    "n-2"
+  ]
+}
