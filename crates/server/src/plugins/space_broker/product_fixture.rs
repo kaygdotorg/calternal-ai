@@ -1,3 +1,6 @@
+#[path = "product_http.rs"]
+mod product_http;
+
 use super::*;
 use calternal_machine::{
     link::Link,
@@ -252,10 +255,7 @@ async fn enrolled_runner_multiplexes_maximum_results_and_fences_lost_or_erased_s
         store::Store,
     };
     use calternal_machine::{
-        identity::MachineKey,
-        protocol::{
-            Capacity, Down, EnrolRequest, Owner, PROTOCOL_VERSION, SessionFinish, SyncRequest,
-        },
+        protocol::{Capacity, Down, Owner, SyncRequest},
         runner::Runner,
     };
 
@@ -372,32 +372,7 @@ async fn enrolled_runner_multiplexes_maximum_results_and_fences_lost_or_erased_s
             jobs: Jobs::disabled(),
             allowed_hosts: allowed_hosts(relay.port),
         });
-        let (code, _) = service.issue_code(Owner::Pool).unwrap();
-        let key = MachineKey::generate().unwrap();
-        let machine = service
-            .enrol(&EnrolRequest {
-                code,
-                public_key: key.public_key_b64(),
-                name: "carrier".into(),
-                os: "linux".into(),
-                arch: "x86_64".into(),
-                direct: false,
-            })
-            .unwrap()
-            .machine_id;
-        let challenge = service.session_start(machine).unwrap();
-        let token = service
-            .session_finish(&SessionFinish {
-                machine_id: machine,
-                signature: key.sign_session(machine, &challenge),
-                challenge,
-                boot_id: Uuid::new_v4(),
-                protocol: PROTOCOL_VERSION,
-                backend: "podman".into(),
-                guest_memory_mib: None,
-            })
-            .unwrap()
-            .token;
+        let (machine, token) = product_http::enroll(&service, Owner::Pool);
         (state, service, ids, items, machine, token)
     });
     let api = router(state.clone(), None).layer(axum::Extension(service.clone()));
@@ -425,6 +400,18 @@ async fn enrolled_runner_multiplexes_maximum_results_and_fences_lost_or_erased_s
     ));
     let sync_runner = runner.clone();
     let (assignments, mut assigned) = tokio::sync::mpsc::channel(2);
+    let routes = tokio::task::block_in_place(|| {
+        product_http::CarrierIsolation::new(
+            &state.directory,
+            &service,
+            ids.guest,
+            address,
+            relay.port,
+        )
+    });
+    let before_claim = routes.clone();
+    let owner_token = token.clone();
+    let (claimed, mut claim) = tokio::sync::mpsc::channel(1);
     let supervisor = tokio::spawn(async move {
         let mut ack = 0;
         let mut opened = 0;
@@ -435,8 +422,12 @@ async fn enrolled_runner_multiplexes_maximum_results_and_fences_lost_or_erased_s
                 if matches!(message, Down::Assign { .. }) {
                     assignments.try_send(message.clone()).unwrap();
                 }
-                if matches!(message, Down::OpenSpaceChannel { .. }) {
+                if let Down::OpenSpaceChannel { channel } = &message {
                     opened += 1;
+                    if opened == 1 {
+                        let unavailable = before_claim.check(&service, channel, &token).await;
+                        claimed.try_send((channel.clone(), unavailable)).unwrap();
+                    }
                 }
                 sync_runner.handle(message).await;
                 if opened == 2 {
@@ -484,6 +475,13 @@ async fn enrolled_runner_multiplexes_maximum_results_and_fences_lost_or_erased_s
             .unwrap()
             .sender
             .is_live()
+    );
+    let (channel, unavailable) = claim.recv().await.unwrap();
+    assert_eq!(
+        routes
+            .refused(channel.space, channel.assignment, Some(&owner_token))
+            .await,
+        unavailable
     );
     let mut first_assignment = assigned.recv().await.unwrap();
     let Down::Assign {

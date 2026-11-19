@@ -10,7 +10,7 @@ use axum::{
 use calternal_auth::db::GrantRevision;
 use calternal_machine::protocol::{Down, SPACE_CHANNEL_UPGRADE, SpaceChannelAssignment};
 use calternal_plugin_host::space_channel::{PackagePin, SpaceChannel};
-use calternal_types::{AccountId, Error, SpaceId};
+use calternal_types::{AccountId, Error, ErrorCode, SpaceId};
 use std::{sync::Arc, time::Duration};
 use tokio::sync::{oneshot, watch};
 use uuid::Uuid;
@@ -155,7 +155,10 @@ impl MachineService {
         ),
         Error,
     > {
-        let machine = self.authenticate(token)?;
+        let machine = self.authenticate(token).map_err(|error| match error.code {
+            ErrorCode::Unauthorized | ErrorCode::Forbidden | ErrorCode::NotFound => no_assignment(),
+            _ => error,
+        })?;
         let session = calternal_auth::token::hash32(token);
         let mut st = self.lock()?;
         let reservation = st
@@ -228,7 +231,7 @@ pub(super) async fn upgrade<D: Directory>(
                 "space carrier requires an HTTP upgrade",
             ));
         }
-        let token = http::bearer(request.headers())?;
+        let token = http::bearer(request.headers()).map_err(|_| no_assignment())?;
         let service = http::service(svc)?;
         let authority = state
             .directory

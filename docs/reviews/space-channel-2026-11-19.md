@@ -242,6 +242,27 @@ v2 approvals. The first product profile has one package per awake space.
 Distinct package windows have transport coverage. The two-package
 rehearsal behind the TLS proxy remains open.
 
+### HTTP conformance gate
+
+Workspace tests excluded the standalone conformance crate. The channel gate
+now builds the preview server with test plugins and runs that crate after
+building the bundled plugins, using the same development target directory.
+
+```sh
+nix develop -c cargo build --locked -p calternal-server --features test-plugins
+nix develop -c env CALTERNAL_SERVER_BIN="$CARGO_TARGET_DIR/debug/calternal" \
+  ./scripts/check-podman-tests.sh cargo test --locked \
+  --manifest-path tests/conformance/Cargo.toml -- --test-threads=1
+```
+
+The inventory fixture exercises carrier denial through HTTP and compares
+statuses, bodies and headers. The product fixture also tries a live carrier
+assignment before the authenticated runner claims it, then tries the same
+assignment after a successful item read. The channel route answers invalid
+machine credentials and mismatched, absent or consumed assignments with
+the same unavailable-assignment response. Other machine routes retain
+their authentication responses.
+
 ## Simplification opportunities
 
 Keep one bounded JSON parser and two typed envelopes. Use existing sandbox
