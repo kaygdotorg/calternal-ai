@@ -17,7 +17,7 @@ database until checkpointed. SQLite SHM, locks and sockets are runtime state.
 | Appdata `system/auth.db` | Authority | Auth, SQLite 14. Accounts, passkeys, sessions, roles, memberships, invites, approvals, machine identity and grants, erasures, key fingerprints and protected receipts. Versions 12 and 13 add account recovery and provider sign-in. Version 14 adds dormant sharing grants. |
 | Appdata `system/appearance.db` | Mixed | Appearance, new SQLite 1 baseline through the shared runner. Account preferences and original private uploads are authoritative. Shared manifests and eviction pins coordinate with the cache. The production baseline has no appearance database. |
 | Appdata `fonts-cache-v1/` | Derived | Version 1 directories of immutable WOFF2 bytes by family and digest. Startup verifies the published manifest and retires incomplete or orphan fills. |
-| Appdata `system/machines.db` | Authority | Machine placement, SQLite 6 initial schema, advanced to 7 on server startup by the automatic thread-title lease migration. Version 8 adds scoped harness leases. Version 9 adds shared-space execution bindings and the lease sponsor. Leases, fences, drain, work locations, discard and erase delivery, and the durable stop record that keeps an erased worker's machine slot reserved until its stop completes. |
+| Appdata `system/machines.db` | Authority | Machine placement, SQLite 6 initial schema, advanced to 7 on server startup by the automatic thread-title lease migration. Version 8 adds scoped harness leases. Version 9 adds shared-space execution bindings, the lease sponsor, and the isolated-tool opt-in, which defaults to off. Leases, fences, drain, work locations, discard and erase delivery, and the durable stop record that keeps an erased worker's machine slot reserved until its stop completes. |
 | Appdata `spaces/<id>/content.db` | Mixed | Content, SQLite 5. Item identity, revisions, pending placement, trash and tombstones, kinds, plugin controls, thread snooze state and sharing's collection membership. Version 6 adds live-room kinds and document checkpoints, version 7 adds Trash jobs, version 8 adds rename jobs, and version 9 adds thread revision patches. Listing, labels and links are derived. |
 | Appdata `spaces/<id>/index.db`, `secrets/spaces/<id>/head` | Authority | Space journal, SQLite 2 and binary CHW2. Journal, epoch, receipts and independent head witness. Receipts are pruned after the operator's retention (7 days by default) only on content's command, with every receipt of a surviving outbox intent pinned. The fence adds no stored state. |
 | Appdata `spaces/<id>/network.db` | Authority | Plugin network, SQLite 1, introduced after the production baseline. Per-person remote content preferences and bounded outbound audit metadata. Absent databases use the default and are initialized by the shared runner on the first saved preference. |
@@ -160,6 +160,14 @@ The fresh production baseline at `c98705d7` includes dormant sharing authority
 independently derived keys.
 
 ### Thread appends
+
+Treat this update as incompatible once thread writes are enabled. The
+production `c98705d7` reader rejects checkpoint control records and the
+`continues` provenance field even though the file still carries the v1 tag.
+A plain person message can use the old framing, but the old database reader
+cannot compose patch-backed revisions. The first new patch or admission
+receipt retires the corresponding older-writer approval. This branch needs
+owner approval and the incompatible restore-point procedure before deployment.
 
 The space content migration from SQLite 8 to 9 adds
 `thread_revision_patches` to the existing descriptor. It leaves every old

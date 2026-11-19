@@ -44,7 +44,7 @@ const ops = {
       if (signal) return { status: 'done', result: { checkpoint, signal } };
       const source = { kind: input.wait };
       if (input.wait === 'question') {
-        source.form = { genui_version: 2, source: '$text=""\nForm([Input($text,"Which release?")], "Release selection")' };
+        source.form = { genui_version: 2, source: input.question_source ?? '$text=""\nForm([Input($text,"Which release?")], "Release selection")' };
         source.schema_operation = 'jobs-demo.write';
       }
       if (input.wait === 'webhook') {

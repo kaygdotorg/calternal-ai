@@ -32,7 +32,7 @@ use crate::api::Shared;
 use crate::auth::{Directory, Identity};
 use calternal_types::{Error, SpaceId};
 
-/// Concurrent job runs across the server. Kept below the worker pool size so
+/// Concurrent plugin job runs across the server. Kept below the worker pool size so
 /// interactive plugin calls always find a worker.
 pub const MAX_RUNNING: usize = 4;
 /// Deadline of one run invocation; a job that needs longer checkpoints and is resumed.
@@ -233,7 +233,7 @@ async fn execute<D: Directory>(
                 Ok(()) => None,
                 Err(error) => {
                     tracing::warn!(job = %job.id, reason = %error.message, "job wait refused");
-                    Some(RunEnd::WaitRejected(error.message))
+                    Some(RunEnd::WaitRejected(error))
                 }
             }
         }

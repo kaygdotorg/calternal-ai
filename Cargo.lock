@@ -680,11 +680,13 @@ dependencies = [
 name = "calternal-machine"
 version = "0.1.0"
 dependencies = [
+ "axum",
  "base64 0.23.1",
  "calternal-cli",
  "calternal-fsio",
  "calternal-types",
  "clap",
+ "futures-util",
  "reqwest",
  "ring",
  "rustix",

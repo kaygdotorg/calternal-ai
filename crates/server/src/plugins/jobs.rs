@@ -216,7 +216,7 @@ pub enum RunEnd {
     /// Provider exited without a definite outcome.
     OutcomeUnknown,
     /// The wait was rejected before parking, with a caller-safe explanation.
-    WaitRejected(String),
+    WaitRejected(Error),
     /// The run failed, was refused or broke protocol.
     Failed,
 }

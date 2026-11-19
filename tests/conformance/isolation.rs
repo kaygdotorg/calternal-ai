@@ -2933,7 +2933,7 @@ async fn machines_and_runs_are_owner_private() {
     session.ok();
     let token = session.body["token"].as_str().unwrap().to_owned();
     // Sync and output refuse a missing or unknown bearer.
-    let sync = json!({"ack":0,"capacity":{"cpus":1,"memory_bytes":0,"max_sandboxes":2,"running_sandboxes":0},"draining":false,"leases":[]});
+    let sync = json!({"ack":0,"capacity":{"cpus":1,"memory_bytes":0,"available_memory_bytes":68719476736_u64,"max_sandboxes":2,"running_sandboxes":0},"draining":false,"leases":[]});
     for bearer in [None, Some("cm1_unknown")] {
         assert_eq!(
             f.machine("/api/v1/machine/sync", bearer, sync.clone())
@@ -3276,6 +3276,7 @@ async fn shared_space_machine_routes_member_turns_without_granting_management() 
         .await;
     read.ok();
     assert_eq!(read.body["data"]["configured"], true);
+    assert_eq!(read.body["data"]["tools_enabled"], false);
     assert_eq!(read.body["data"]["machine_id"], Value::Null);
     assert!(
         read.body["data"]["notice"]
@@ -3344,4 +3345,54 @@ async fn shared_space_machine_routes_member_turns_without_granting_management() 
     .unwrap();
     assert_eq!(own_assignment["account_id"], f.ids[2]);
     assert!(own_assignment["spec"]["shared_provider_sponsor"].is_null());
+
+    let refused = f
+        .op(
+            2,
+            "space.machine.set",
+            json!({
+                "space_id":managed,"machine_id":id,"tools_enabled":true
+            }),
+        )
+        .await;
+    assert_eq!(refused.status, 403, "{}", refused.body);
+    let approved = f
+        .op(
+            1,
+            "space.machine.set",
+            json!({
+                "space_id":shared,"machine_id":id,"tools_enabled":true
+            }),
+        )
+        .await;
+    approved.ok();
+    assert_eq!(approved.body["data"]["tools_enabled"], true);
+    f.op(
+        2,
+        "agent.run",
+        json!({
+            "space_id":shared, "thread_id":uuid::Uuid::now_v7(), "prompt":"isolated tool",
+            "provider_id":"calternal-claude-code"
+        }),
+    )
+    .await
+    .ok();
+    let tools_assignment = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        loop {
+            let batch = machine.sync(&f, json!([])).await;
+            if let Some(assign) = batch.into_iter().find(|event| event["type"] == "assign") {
+                break assign;
+            }
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(
+        tools_assignment["spec"]["shared_tools"]["provider"],
+        "claude"
+    );
+    assert_eq!(
+        tools_assignment["spec"]["shared_tools"]["workspace_read_only"],
+        true
+    );
 }

@@ -56,7 +56,7 @@ pub(super) async fn run<D: Directory>(
         Ok(()) => {
             blocking(move || {
                 if let Some(shared) = shared {
-                    return svc.request_shared(space, account, Uuid::new_v4(), shared, true);
+                    return svc.request_shared(space, account, Uuid::new_v4(), shared, true, None);
                 }
                 match crate::plugins::package_store::provider_runtime::read_pin(&appdata, &provider)
                     .map_err(|_| failed())?

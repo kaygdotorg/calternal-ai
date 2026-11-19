@@ -60,7 +60,7 @@ def smoke(data_dir, spawn):
             assert result.returncode == 0, 'CLI failed (credentials omitted)'
         return payload
 
-    def account_cli(*command, connection_after=None):
+    def account_cli(*command, connection_after=None, as_json=True):
         env = dict(os.environ)
         env.pop('CALTERNAL_TOKEN', None)
         env.pop('CALTERNAL_TOKEN_FILE', None)
@@ -68,9 +68,13 @@ def smoke(data_dir, spawn):
             '--token-file', str(data_dir/'appdata'/'dev-tokens'/'owner.token')]
         if connection_after is None:
             connection_after = len(command)
-        result = subprocess.run([str(ROOT/'target/debug/calternal'), '--json',
+        output_args = ['--json'] if as_json else []
+        result = subprocess.run([str(ROOT/'target/debug/calternal'), *output_args,
             *command[:connection_after], *connection, *command[connection_after:]],
             capture_output=True, text=True, env=env, timeout=20)
+        if not as_json:
+            assert result.returncode == 0, 'human-readable account CLI failed'
+            return result.stdout
         payload = json.loads(result.stdout)
         assert result.returncode == 0, f'account CLI failed: {payload.get("error", {})}'
         return payload['data']
@@ -107,6 +111,13 @@ def smoke(data_dir, spawn):
         shared = next(space['id'] for space in guest['spaces'] if space['role'] == 'reader')
         private = next(space['id'] for space in owner['spaces'] if space['id'] != shared)
         thread = account_cli('threads', 'create', '--space-id', private, connection_after=1)['thread']
+        assert thread['metadata']['title'] == 'New thread'
+        assert thread['metadata']['title_source'] == 'pending'
+        assert thread['metadata']['mode'] == 'approve_for_me'
+        assert thread['metadata']['provider']
+        human_thread = account_cli('threads', 'create', '--space-id', private,
+            '--title', 'CLI smoke title', connection_after=1, as_json=False)
+        assert 'Title:' in human_thread and 'CLI smoke title' in human_thread
         thread_id = thread['id']
         until = int(time.time() * 1000) + 60000
         assert account_cli('threads', 'snooze', thread_id, '--until-ms', str(until), connection_after=1) == {

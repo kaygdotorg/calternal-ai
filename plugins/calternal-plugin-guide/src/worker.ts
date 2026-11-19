@@ -8,7 +8,14 @@ import starter from "../../../packages/plugin-sdk/templates/manifest.json" with 
 
 const starterJson = JSON.stringify(starter);
 
-const content = new Map([["reference", reference], ["walkthrough", walkthrough], ["skill", skill]]);
+const waitHeading = "### Wait for a signal";
+const jobsHeading = "## Durable jobs and progress";
+const sectionFrom = (heading: string) => reference.slice(reference.indexOf(heading));
+const content = new Map([
+  ["reference", reference], ["walkthrough", walkthrough], ["skill", skill],
+  ["jobs", sectionFrom(jobsHeading)], ["waits", sectionFrom(waitHeading)],
+  ["network", reference.slice(reference.indexOf("## Network permissions"), reference.indexOf("## Interface and addresses"))],
+]);
 
 function field(input: unknown, key: string): unknown {
   return input && typeof input === "object" && Object.hasOwn(input, key)
