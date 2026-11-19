@@ -64,21 +64,6 @@
           }
         }
       ]
-    },
-    "header": {
-      "title": "x",
-      "trailing": [
-        {
-          "id": "up",
-          "title": "Up",
-          "operation": "host.layout.move_up",
-          "inputs": {
-            "entry": {
-              "selection": "rows"
-            }
-          }
-        }
-      ]
     }
   }
 }
