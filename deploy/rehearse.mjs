@@ -20,6 +20,30 @@ const machine = join(root, "machine");
 const sandbox = join(machine, "sandboxes");
 const marker = join(root, "rehearsal-thread.json");
 
+function containerPhases(oldContainer, newContainer, since) {
+  const entries = execFileSync("journalctl", [
+    "--user", "-u", `${unit}.service`, "--since", `@${Math.floor(since / 1000)}`,
+    "--output=json", "--no-pager",
+  ], { encoding: "utf8" }).trim().split("\n").map(line => JSON.parse(line));
+  const at = (event, id) => {
+    const entry = entries.find(row => typeof row.MESSAGE === "string"
+      && row.MESSAGE.includes(`container ${event} ${id} `));
+    assert.ok(entry, `no Podman ${event} event for ${id}`);
+    return Number(entry.__REALTIME_TIMESTAMP) / 1000;
+  };
+  const died = at("died", oldContainer);
+  const removed = at("remove", oldContainer);
+  const created = at("create", newContainer);
+  const started = at("start", newContainer);
+  assert.ok(died <= removed && removed <= created && created <= started, "Podman event order");
+  const ms = (end, start) => Number((end - start).toFixed(1));
+  return {
+    podman_teardown_ms: ms(removed, died),
+    between_containers_ms: ms(created, removed),
+    podman_startup_ms: ms(started, created),
+  };
+}
+
 function systemctl(...args) {
   execFileSync("systemctl", ["--user", ...args], { stdio: "inherit" });
 }
@@ -233,6 +257,11 @@ try {
     // app doesn't visibly display the banner during a short handoff.
     const bannerSeen = banner.waitFor({ state: "visible", timeout: 0 })
       .then(() => true, () => false);
+    const containerId = () => execFileSync("podman", [
+      "container", "inspect", "--format", "{{.Id}}", unit,
+    ], { encoding: "utf8" }).trim();
+    const oldContainer = containerId();
+    const journalSince = Date.now();
     const child = spawn(deploy, [...deployArgs, proof], {
       stdio: "inherit", detached: true,
     });
@@ -275,6 +304,7 @@ try {
     await assertSignedIn();
     console.log(JSON.stringify({
       run, gap_ms: Number((next.at - old.at).toFixed(1)),
+      ...containerPhases(oldContainer, containerId(), journalSince),
       lost_samples: samples.filter(sample => !sample.note).length,
       failure_statuses: [...new Set(samples.filter(sample => !sample.note).map(sample => sample.status))],
       reconnect_banner: await Promise.race([bannerSeen, sleep(600).then(() => false)]),
