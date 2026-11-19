@@ -1,4 +1,4 @@
-# Plugin API v2 · revision 11.8
+# Plugin API v2 · revision 11.9
 
 The first contract covers host-drawn apps, generic items, durable jobs and
 Turns. Freeze after the §8 spikes. Fixture bounds are test settings. See the

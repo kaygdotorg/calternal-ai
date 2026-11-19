@@ -1868,7 +1868,7 @@
               "minimum": 0
             }
           },
-          "description": "Present only for an authorized ready or empty result."
+          "description": "Present only for an authorized ready or empty result. On empty, a supplied count is exact zero. On ready with an exact count, the host checks the returned range against that count before delivery, from either anchor. If rows are returned, offset plus their number is at most the count. A zero-row ready reply starts at or beyond the count."
         },
         "bind": {
           "$ref": "#/$defs/ActionId"
@@ -1983,6 +1983,35 @@
               },
               "activation_contexts": {
                 "maxItems": 0
+              },
+              "count": {
+                "properties": {
+                  "mode": {
+                    "const": "exact"
+                  },
+                  "value": {
+                    "const": 0
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "const": "ready"
+              },
+              "offset": {
+                "const": 0
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "rows": {
+                "minItems": 1
               }
             }
           }
@@ -2053,7 +2082,7 @@
           }
         }
       ],
-      "description": "An authenticated reply for the active view and its audience. Check the session, lease partition and audience before consuming rows or a cache record. Any cache record must match this view and window. Only a non-search Bind in a view with exact count authority receives an end anchor and end-relative offset. Every end-anchored reply carries count.mode exact. Check count policy for the active Bind and scope on each delivery. An absolute offset above max_offset is only returned to a contiguous forward continuation without exact count authority, with anchor:start and no count or persistent cache record."
+      "description": "An authenticated reply for the active view and its audience. At from zero, the host sends empty for a wholly empty result. A ready reply at offset zero contains rows. Check the session, lease partition and audience before consuming rows or a cache record. Any cache record must match this view and window. Only a non-search Bind in a view with exact count authority receives an end anchor and end-relative offset. Every end-anchored reply carries count.mode exact. Check count policy for the active Bind and scope on each delivery. An absolute offset above max_offset is only returned to a contiguous forward continuation without exact count authority, with anchor:start and no count or persistent cache record."
     },
     "ProviderId": {
       "type": "string",

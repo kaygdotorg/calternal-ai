@@ -446,6 +446,14 @@ for file in sorted([*fixtures_dir.glob("*.json"), *fixtures_dir.glob("events/*/*
             if isinstance(req.get("from"), int) and isinstance(req.get("to"), int):
                 if not req["from"] < req["to"]: errors.append(f"$.request: from ({req['from']}) must be below to ({req['to']})")
                 if limit is not None and req["to"] - req["from"] > limit: errors.append(f"$.request: the span {req['to'] - req['from']} exceeds the catalogue's max_request_span ({limit})")
+        if is_reply and not errors and doc.get("state") == "ready":
+            count = doc.get("count")
+            if count and count["mode"] == "exact":
+                offset, rows, total = doc["offset"], doc["rows"], count["value"]
+                if rows and offset + len(rows) > total:
+                    errors.append("$.count.value: exact count does not cover the returned row range")
+                if not rows and offset < total:
+                    errors.append("$.rows: an exact count still has rows at this offset")
         if is_event and file.parent.parent == fixtures_dir / "events" and not errors:
             view = load_strict((fixtures_dir / f"{file.parent.name}.json").read_text())
             check_event_binding(doc, view, errors)
