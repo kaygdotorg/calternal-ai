@@ -509,14 +509,13 @@ async fn completed_tool_turn_is_saved_in_the_thread_and_on_disk() {
     sent.ok();
     let job = sent.body["data"]["job"]["id"].as_str().unwrap();
     let mut feed = Sse::open(&f, &f.cookies[1], job, None).await.unwrap();
-    let end = tokio::time::timeout(Duration::from_secs(30), async {
+    let (end, tool) = tokio::time::timeout(Duration::from_secs(30), async {
         let mut tool = false;
         loop {
             let (kind, _, frame) = feed.next().await.expect("terminal turn event");
             tool |= frame["data"]["event"]["type"] == "tool_started";
             if kind == "end" {
-                assert!(tool, "{frame}");
-                break frame;
+                break (frame, tool);
             }
         }
     })
@@ -538,6 +537,8 @@ async fn completed_tool_turn_is_saved_in_the_thread_and_on_disk() {
         "{markdown}"
     );
 
+    assert_eq!(end["job"]["state"], "done", "{end}");
+    assert!(tool, "the live stream lost the tool step");
     let path = f
         .dir
         .path()
