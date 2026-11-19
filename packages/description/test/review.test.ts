@@ -232,3 +232,21 @@ describe("finding 14: a stated row bound and an id index", () => {
     expect(store.indexOf("r-0")).toBe(store.row(0) ? 0 : -1);
   });
 });
+
+describe("dialogs close when answered", () => {
+  it("answering the open dialog clears it, so its scrim goes", async () => {
+    const ui = new ActionUi({} as never);
+    const p = ui.prompt({ name: "a", title: "A", kind: "text" });
+    expect(ui.dialog).not.toBeNull();
+    ui.dialog!.done("x" as never); expect(await p).toBe("x");
+    expect(ui.dialog).toBeNull();
+    const c = ui.confirm({ action: { id: "x", operation: "o" }, material: [] });
+    ui.dialog!.done(false as never); expect(await c).toBe(false); expect(ui.dialog).toBeNull();
+  });
+  it("a dialog settled by a newer one leaves the newer one open", async () => {
+    const ui = new ActionUi({} as never);
+    const first = ui.prompt({ name: "a", title: "A", kind: "text" });
+    void ui.choose({ name: "b", title: "B", options: [] });
+    expect(await first).toBeNull(); expect(ui.dialog?.kind).toBe("choose");
+  });
+});

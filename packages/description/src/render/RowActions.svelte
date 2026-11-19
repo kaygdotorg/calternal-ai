@@ -62,8 +62,12 @@
 
 <style>
   .ra { position: relative; touch-action: pan-y; }
-  .acts { position: absolute; inset-block: 0; inset-inline-end: var(--s-3); display: none; align-items: center; gap: var(--s-2); }
+  /* Row actions are compact: an icon where the action has one (its title is the accessible name and the tooltip), so the group never covers the row's own label, and only its buttons take pointer events. */
+  .acts { pointer-events: none; position: absolute; inset-block: 0; inset-inline-end: var(--s-3); display: none; align-items: center; gap: var(--s-2); }
   .ra:hover .acts, .ra:focus-within .acts, .ra.sel .acts { display: flex; }
   .disc { position: absolute; inset-inline-start: 0; top: 0; min-width: 20px; min-height: var(--row-h); color: var(--ink-3); }
+  .acts :global(button) { pointer-events: auto; }
+  .acts :global(.btn[data-has-icon]) { padding: 0 var(--s-3); min-width: 44px; justify-content: center; }
+  .acts :global(.btn[data-has-icon] > span:last-child) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   .more { min-width: 44px; min-height: 44px; border-radius: var(--r-select); color: var(--ink-2); }
 </style>

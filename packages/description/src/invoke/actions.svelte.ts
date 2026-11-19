@@ -25,15 +25,16 @@ export class ActionUi implements InvokerHooks {
   constructor(session: HostSession) { this.invoker = new Invoker(session, this); }
 
   /** Opens `d`, first settling the dialog it replaces (cancelled), so no activation is left waiting for ever on a dialog nobody can answer. */
+  #n = 0;
   #open(d: Dialog) { const old = this.dialog; this.dialog = d; if (old) { if (old.kind === "confirm") old.done(false); else old.done(null); } }
 
   /** Asks for a text, date or datetime answer in the prompt sheet; null when cancelled. */
   prompt(spec: { name: string; title: string; placeholder?: string; kind: "text" | "date" | "datetime"; initial?: string }): Promise<string | null> {
-    return new Promise((done) => { const d: Dialog = { kind: "prompt", name: spec.name, title: spec.title, placeholder: spec.placeholder, input: spec.kind, value: spec.initial ?? "", done: (v) => { if (this.dialog === d) this.dialog = null; done(v); } }; this.#open(d); });
+    return new Promise((done) => { const n = ++this.#n; const d: Dialog = { kind: "prompt", name: spec.name, title: spec.title, placeholder: spec.placeholder, input: spec.kind, value: spec.initial ?? "", done: (v) => { if (this.#n === n) this.dialog = null; // (the newest dialog only: an older one settled by a newer one leaves the newer open; identity is not compared, a $state value is a proxy) done(v); } }; this.#open(d); });
   }
   /** Shows the host's option labels and returns the picked ref; null when cancelled. */
   choose(spec: { name: string; title: string; options: ChoiceOptions["options"] }): Promise<string | null> {
-    return new Promise((done) => { const d: Dialog = { kind: "choose", name: spec.name, title: spec.title, options: spec.options, done: (v) => { if (this.dialog === d) this.dialog = null; done(v); } }; this.#open(d); });
+    return new Promise((done) => { const n = ++this.#n; const d: Dialog = { kind: "choose", name: spec.name, title: spec.title, options: spec.options, done: (v) => { if (this.#n === n) this.dialog = null; // (the newest dialog only: an older one settled by a newer one leaves the newer open; identity is not compared, a $state value is a proxy) done(v); } }; this.#open(d); });
   }
   /**
    * The protected confirmation. Its title is the host's, fixed: a plugin's action title is plugin text and must not caption a host confirmation, so only the material (which the host wrote) varies. True only on the
@@ -41,7 +42,7 @@ export class ActionUi implements InvokerHooks {
    */
   confirm(spec: { action: Invoke; material: ConfirmationMaterial[] }): Promise<boolean> {
     void spec.action;
-    return new Promise((done) => { const d: Dialog = { kind: "confirm", title: "Please confirm", material: spec.material, done: (v) => { if (this.dialog === d) this.dialog = null; done(v); } }; this.#open(d); });
+    return new Promise((done) => { const n = ++this.#n; const d: Dialog = { kind: "confirm", title: "Please confirm", material: spec.material, done: (v) => { if (this.#n === n) this.dialog = null; // (the newest dialog only: an older one settled by a newer one leaves the newer open; identity is not compared, a $state value is a proxy) done(v); } }; this.#open(d); });
   }
   /** Shows an outcome: Undo for an ok that has one, the host's message for an error, refusal, stale or unknown, and a plain "still working" for a pending outcome that did not settle. */
   outcome(action: Invoke, o: ActionOutcome): void {

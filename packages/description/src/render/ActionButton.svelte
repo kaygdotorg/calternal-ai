@@ -31,4 +31,4 @@
   }
 </script>
 
-<Button text={title} icon={typeof action.icon === "string" ? knownIcon(action.icon) : undefined} variant={action.role === "destructive" ? "destructive" : style} {busy} aria-disabled={busy || disabled || (!!inv && !context && !selection) || undefined} data-action={action.id} data-tone={"tone" in action ? action.tone : undefined} onclick={activate} />
+<Button text={title} icon={typeof action.icon === "string" ? knownIcon(action.icon) : undefined} variant={action.role === "destructive" ? "destructive" : style} {busy} aria-disabled={busy || disabled || (!!inv && !context && !selection) || undefined} data-action={action.id} data-has-icon={typeof action.icon === "string" && !!knownIcon(action.icon) ? "" : undefined} title={title} data-tone={"tone" in action ? action.tone : undefined} onclick={activate} />
