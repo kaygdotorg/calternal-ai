@@ -128,9 +128,17 @@ async fn release_artifacts_preserve_live_data_in_both_directions() {
     // A store present at cutover takes a different path from a store first
     // opened by the candidate. Exercise both in the same exact image pair.
     f.start().await;
-    f.op(0, "threads.list", json!({"space_id":shape["space"]})).await.ok();
+    f.op(0, "threads.list", json!({"space_id":shape["space"]}))
+        .await
+        .ok();
     f.stop();
-    assert!(f.appdata().join("spaces").join(shape["space"].as_str().unwrap()).join("jobs.db").is_file());
+    assert!(
+        f.appdata()
+            .join("spaces")
+            .join(shape["space"].as_str().unwrap())
+            .join("jobs.db")
+            .is_file()
+    );
 
     let workspace_file = f
         .dir
@@ -207,13 +215,24 @@ async fn release_artifacts_preserve_live_data_in_both_directions() {
     )
     .await
     .ok();
-    let fresh = f.op(0, "spaces.create", json!({"name":"Created after cutover"})).await;
+    let fresh = f
+        .op(0, "spaces.create", json!({"name":"Created after cutover"}))
+        .await;
     fresh.ok();
     let fresh_space = &fresh.body["data"]["space"]["id"];
-    let lazy_jobs = f.appdata().join("spaces").join(fresh_space.as_str().unwrap()).join("jobs.db");
+    let lazy_jobs = f
+        .appdata()
+        .join("spaces")
+        .join(fresh_space.as_str().unwrap())
+        .join("jobs.db");
     assert!(!lazy_jobs.exists(), "the jobs store must still be lazy");
-    f.op(0, "threads.list", json!({"space_id":fresh_space})).await.ok();
-    assert!(lazy_jobs.is_file(), "the candidate never exercised fresh jobs creation");
+    f.op(0, "threads.list", json!({"space_id":fresh_space}))
+        .await
+        .ok();
+    assert!(
+        lazy_jobs.is_file(),
+        "the candidate never exercised fresh jobs creation"
+    );
 
     let new = f.op(0, "notes.create", json!({
         "space_id":shape["space"],"title":"After cutover","markdown":"Candidate acknowledged this.\n"
@@ -293,7 +312,9 @@ async fn release_artifacts_preserve_live_data_in_both_directions() {
     answer(upgrade(&f, &previous, &["verify"], None));
     prove_visible(&mut f, &previous, &shape).await;
     f.start().await;
-    f.op(0, "threads.list", json!({"space_id":fresh_space})).await.ok();
+    f.op(0, "threads.list", json!({"space_id":fresh_space}))
+        .await
+        .ok();
     let restored = f.op(0, "notes.get", json!({"id":id})).await;
     restored.ok();
     assert_eq!(

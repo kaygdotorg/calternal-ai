@@ -428,7 +428,8 @@ pub(crate) fn upgrade_schema() -> calternal_store::migrations::Schema<'static> {
                     "CREATE TABLE upgrade_fixture (id INTEGER PRIMARY KEY) STRICT;",
                 ),
             ],
-        ).with_compatible_creation(8);
+        )
+        .with_compatible_creation(8);
         return FIXTURE;
     }
     CURRENT
