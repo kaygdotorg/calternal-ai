@@ -14,6 +14,7 @@ const sectionFrom = (heading: string) => reference.slice(reference.indexOf(headi
 const content = new Map([
   ["reference", reference], ["walkthrough", walkthrough], ["skill", skill],
   ["jobs", sectionFrom(jobsHeading)], ["waits", sectionFrom(waitHeading)],
+  ["network", reference.slice(reference.indexOf("## Network permissions"), reference.indexOf("## Interface and addresses"))],
 ]);
 
 function field(input: unknown, key: string): unknown {

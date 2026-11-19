@@ -66,7 +66,8 @@ impl Package {
         serde_json::to_vec(self).map_err(reason)
     }
 
-    pub(super) fn validate(&self) -> Result<(), String> {
+    /// Validate the manifest and the bounded worker payload without executing the package.
+    pub fn validate(&self) -> Result<(), String> {
         host::validate_manifest(&self.manifest).map_err(reason)?;
         if self
             .worker
