@@ -11,10 +11,10 @@
     busy = false,
     class: klass,
     ...rest
-  }: { text: string; icon?: IconName; variant?: "primary" | "secondary" | "quiet" | "destructive"; /** Work started by this button is in progress: a ring grows in before the label (the width eases open) and the button stays at full strength, disabled. */ busy?: boolean; class?: string } & Omit<HTMLButtonAttributes, "children"> = $props();
+  }: { text: string; icon?: IconName; variant?: "primary" | "secondary" | "quiet" | "destructive"; /** Work started by this button is in progress: a ring grows in before the label (the width eases open) and the button stays at full strength, `aria-disabled`, and taps are ignored. */ busy?: boolean; class?: string } & Omit<HTMLButtonAttributes, "children"> = $props();
 </script>
 
-<button type="button" class={["btn", variant, klass]} aria-busy={busy || undefined} {...rest} disabled={rest.disabled || busy}>
+<button type="button" class={["btn", variant, klass]} aria-busy={busy || undefined} aria-disabled={busy || undefined} {...rest} onclick={(e) => { if (busy) { e.preventDefault(); return; } rest.onclick?.(e); }}>
   {#if busy}<span class="bz"><Spinner /></span>{:else if icon}<Icon name={icon} />{/if}<span>{text}</span>
 </button>
 
@@ -27,7 +27,8 @@
   }
   .btn:active:not(:disabled) { scale: var(--press-scale); }
   .btn:disabled { opacity: 0.45; }
-  .btn[aria-busy="true"]:disabled { opacity: 1; }
+  /* A pending button is `aria-disabled`, not `disabled` (docs/native-feel.md, 19): it keeps focus, so a keyboard or screen-reader user is not thrown out of the form, and its taps are ignored in code. */
+  .btn[aria-busy="true"] { cursor: progress; }
   /* The ring grows in before the label: width and opacity over `--dur-base`; the gap of the flex row eases in with it. */
   .bz { display: inline-grid; place-items: center; overflow: hidden; animation: bz-in var(--dur-base) var(--ease-out) backwards; }
   @keyframes bz-in { from { width: 0; opacity: 0; margin-inline-end: calc(var(--s-3) * -1); } }
