@@ -46,7 +46,7 @@ impl Awake {
         if connected.grants.space() != connected.space {
             return Err(unavailable());
         }
-        let ready = tokio::time::timeout(Duration::from_secs(3), connected.channel.receive())
+        let ready = tokio::time::timeout(crate::plugins::worker::WORKER_START_TIMEOUT, connected.channel.receive())
             .await
             .map_err(|_| unavailable())?
             .ok_or_else(unavailable)?;
