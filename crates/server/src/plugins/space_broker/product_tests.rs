@@ -2,7 +2,7 @@ use super::*;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 3)]
 async fn enrolled_runner_multiplexes_maximum_results_and_fences_lost_or_erased_spaces() {
-    exercise_enrolled_runner(None, false).await;
+    exercise_enrolled_runner(None, VmEnd::Fence).await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 3)]
@@ -11,7 +11,7 @@ async fn enrolled_runner_executes_item_head_inside_the_small_kvm_guest() {
         eprintln!("SKIP live KVM fixture: CALTERNAL_SMALL_VM_TEST_CONFIG is unset");
         return;
     };
-    exercise_enrolled_runner(Some(path.into()), false).await;
+    exercise_enrolled_runner(Some(path.into()), VmEnd::Fence).await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 3)]
@@ -20,10 +20,27 @@ async fn idle_small_kvm_guest_publishes_a_complete_snapshot() {
         eprintln!("SKIP live KVM fixture: CALTERNAL_SMALL_VM_TEST_CONFIG is unset");
         return;
     };
-    exercise_enrolled_runner(Some(path.into()), true).await;
+    exercise_enrolled_runner(Some(path.into()), VmEnd::Sleep).await;
 }
 
-async fn exercise_enrolled_runner(vm_config: Option<PathBuf>, wait_sleep: bool) {
+#[tokio::test(flavor = "multi_thread", worker_threads = 3)]
+async fn small_kvm_guest_is_reaped_after_carrier_lease_loss() {
+    let Some(path) = std::env::var_os("CALTERNAL_SMALL_VM_TEST_CONFIG") else {
+        eprintln!("SKIP live KVM fixture: CALTERNAL_SMALL_VM_TEST_CONFIG is unset");
+        return;
+    };
+    exercise_enrolled_runner(Some(path.into()), VmEnd::LeaseLoss).await;
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum VmEnd {
+    Fence,
+    Sleep,
+    LeaseLoss,
+}
+
+async fn exercise_enrolled_runner(vm_config: Option<PathBuf>, end: VmEnd) {
+    let wait_sleep = end == VmEnd::Sleep;
     use crate::{
         api::{AppState, allowed_hosts, dispatch, router},
         auth::StoredDirectory,
@@ -293,6 +310,23 @@ async fn exercise_enrolled_runner(vm_config: Option<PathBuf>, wait_sleep: bool) 
     if vm_config.is_some() {
         let run = placement_root.join("space-runtime/microvm/run");
         let pid = firecracker_pid(&run).await;
+        if end == VmEnd::LeaseLoss {
+            tokio::fs::write(&relay.stall, []).await.unwrap();
+            let lost = Instant::now();
+            tokio::time::timeout(Duration::from_secs(5), async {
+                while tokio::fs::try_exists(format!("/proc/{pid}")).await.unwrap() {
+                    tokio::time::sleep(Duration::from_millis(20)).await;
+                }
+            })
+            .await
+            .expect("lease loss must reap Firecracker without TCP EOF");
+            assert!(lost.elapsed() >= Duration::from_secs(3));
+            supervisor.abort();
+            server.abort();
+            let _ = supervisor.await;
+            let _ = server.await;
+            return;
+        }
         if wait_sleep {
             let current = placement_root
                 .join("space-runtime/microvm/spaces")

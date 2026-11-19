@@ -22,7 +22,7 @@ pub(super) enum Storage {
 }
 
 impl Storage {
-    fn label(self) -> &'static str {
+    pub(super) fn label(self) -> &'static str {
         match self {
             Self::Full => "full",
             Self::Reflink => "dirty-merge-reflink",
@@ -42,6 +42,15 @@ pub(super) struct Generation {
 impl Generation {
     pub(super) fn create(root: &Path, disk: &Path, control: &Path) -> io::Result<Self> {
         calternal_fsio::create_dir_all_durable(root)?;
+        let keep = read_manifest(root)?
+            .as_deref()
+            .and_then(|manifest| {
+                manifest
+                    .lines()
+                    .find_map(|line| line.strip_prefix("generation: "))
+            })
+            .and_then(|id| Uuid::parse_str(id).ok());
+        prune_drafts(root, keep)?;
         let id = Uuid::new_v4();
         let path = root.join(id.to_string());
         fs::create_dir(&path)?;
@@ -63,13 +72,9 @@ impl Generation {
     }
 
     pub(super) fn current(root: &Path, image: &str) -> io::Result<Option<Self>> {
-        let manifest = match File::open(root.join(MANIFEST)) {
-            Ok(manifest) => manifest,
-            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
-            Err(error) => return Err(error),
+        let Some(text) = read_manifest(root)? else {
+            return Ok(None);
         };
-        let mut text = String::new();
-        manifest.take(MANIFEST_BYTES).read_to_string(&mut text)?;
         let mut fields = text.lines();
         let mut field = |prefix| {
             fields
@@ -129,6 +134,36 @@ impl Generation {
         calternal_fsio::sync_dir(root)?;
         calternal_fsio::write_atomic_mode(&root.join(MANIFEST), manifest.as_bytes(), 0o600)
     }
+}
+
+fn read_manifest(root: &Path) -> io::Result<Option<String>> {
+    let file = match File::open(root.join(MANIFEST)) {
+        Ok(file) => file,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error),
+    };
+    let mut manifest = String::new();
+    file.take(MANIFEST_BYTES + 1)
+        .read_to_string(&mut manifest)?;
+    if manifest.len() as u64 > MANIFEST_BYTES {
+        return Err(invalid());
+    }
+    Ok(Some(manifest))
+}
+
+/// Prune interrupted generations under the space's placement gate, without
+/// unlinking the generation named by the durable current pointer.
+pub(super) fn prune_drafts(root: &Path, keep: Option<Uuid>) -> io::Result<()> {
+    for candidate in fs::read_dir(root)? {
+        let candidate = candidate?;
+        if let Ok(id) = Uuid::parse_str(&candidate.file_name().to_string_lossy())
+            && Some(id) != keep
+            && candidate.file_type()?.is_dir()
+        {
+            fs::remove_dir_all(candidate.path())?;
+        }
+    }
+    Ok(())
 }
 
 fn device_name(value: &str, extension: &str) -> io::Result<String> {

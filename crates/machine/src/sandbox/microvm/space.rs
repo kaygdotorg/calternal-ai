@@ -316,17 +316,14 @@ async fn save(vm: &Guest, root: &Path, image: &str) -> SandboxResult<()> {
         clone_or_copy(&disk, &generation.path.join("disk"))?;
         clone_or_copy(&control, &generation.path.join("control"))?;
         generation.publish(&root, &image)?;
+        tracing::info!(
+            snapshot_format = generation.storage.label(),
+            generation = %generation.id,
+            "small plugin VM asleep"
+        );
         // Only the newly published generation is needed after commit. An
         // interrupted write leaves its predecessor's pointer usable.
-        for candidate in std::fs::read_dir(&root)? {
-            let candidate = candidate?;
-            if candidate.path() != generation.path
-                && Uuid::parse_str(&candidate.file_name().to_string_lossy()).is_ok()
-                && candidate.file_type()?.is_dir()
-            {
-                std::fs::remove_dir_all(candidate.path())?;
-            }
-        }
+        super::snapshot::prune_drafts(&root, Some(generation.id))?;
         Ok::<(), io::Error>(())
     })
     .await
