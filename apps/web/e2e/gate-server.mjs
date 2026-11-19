@@ -24,6 +24,11 @@ if (!bin) {
   bin = join(process.env.CARGO_TARGET_DIR ?? join(root, "target"), "debug", "calternal");
 }
 if (!existsSync(bin)) { console.error(`no server binary at ${bin}`); process.exit(2); }
+// The suites that run a turn use the Claude Code adapter's launcher, which answers "adapter_not_built" (a permanent failure: the turn "fails after the answer") until the adapter is compiled.
+if (!existsSync(join(root, "plugins", "calternal-claude-code", "dist", "main.js"))) {
+  console.log("building the Claude Code adapter ...");
+  for (const w of ["@calternal/plugin-sdk", "@calternal/claude-code"]) execFileSync("npm", ["run", "build", "--workspace", w], { cwd: root, stdio: "inherit" });
+}
 if (!existsSync(join(here, "..", "dist", "index.html"))) { console.log("building the app ..."); execFileSync("npm", ["run", "build"], { cwd: join(here, ".."), stdio: "inherit" }); }
 
 const only = process.argv.slice(2);
