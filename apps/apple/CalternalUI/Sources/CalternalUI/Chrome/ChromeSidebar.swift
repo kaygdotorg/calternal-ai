@@ -52,16 +52,16 @@ struct ChromeSidebar: View {
         let sidebar = store.description.sidebar
         List(selection: $store.selection) {
             if phone, sidebar?.title != nil || sidebar?.titleImage != nil {
-                Heading(sidebar: sidebar).listRowSeparator(.hidden).selectionDisabled()
+                Heading(sidebar: sidebar).listRowSeparator(.hidden).listRowBackground(Color.clear).selectionDisabled()
             }
             ForEach(sidebar?.cards ?? []) { card in
-                CardView(card: card) { store.send(ChromeEvent(type: "action", id: $0.id, rowId: card.id)) }.listRowSeparator(.hidden).selectionDisabled()
+                CardView(card: card) { store.send(ChromeEvent(type: "action", id: $0.id, rowId: card.id)) }.listRowSeparator(.hidden).listRowBackground(Color.clear).selectionDisabled()
             }
             ForEach(sidebar?.selectors ?? []) { selector in
                 Picker(selector.id, selection: Binding(get: { selector.selected }, set: { store.send(ChromeEvent(type: "selector", id: selector.id, option: $0)) })) {
                     ForEach(selector.options) { option in Text(option.badge.map { option.title + " " + $0 } ?? option.title).tag(option.id) }
                 }
-                .pickerStyle(.segmented).labelsHidden().listRowSeparator(.hidden).selectionDisabled()
+                .pickerStyle(.segmented).labelsHidden().listRowSeparator(.hidden).listRowBackground(Color.clear).selectionDisabled()
             }
             ForEach(sidebar?.sections ?? []) { section in
                 Section(isExpanded: Binding(get: { section.collapsed != true }, set: { _ in store.send(ChromeEvent(type: "section", id: section.id)) })) {
@@ -73,7 +73,11 @@ struct ChromeSidebar: View {
                 } header: { sectionHeader(section) }
             }
         }
+        #if os(macOS)
         .listStyle(.sidebar)
+        #else
+        .listStyle(.plain)   // the decided phone sidebar is flat on the wallpaper, not inset cards
+        #endif
         .scrollContentBackground(.hidden)
         .scrollEdgeEffectStyle(.soft, for: .all)
         .coordinateSpace(name: Self.listSpace)
@@ -106,6 +110,7 @@ struct ChromeSidebar: View {
             }
         } icon: { ChromeIconView(icon: row.icon) }
         .tag(row.id)
+        .listRowBackground(Color.clear)
         .accessibilityHint(row.hint ?? "")
         .accessibilityValue((row.trailing ?? []).compactMap(\.spoken).joined(separator: ", "))
         .swipeActions(edge: .leading, allowsFullSwipe: true) { actions(row.leadingActions, owner: row.id) }

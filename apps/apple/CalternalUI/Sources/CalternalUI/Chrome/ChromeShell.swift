@@ -45,7 +45,7 @@ public struct ChromeShellView<WebCard: View>: View {
             }
             .frame(width: size.width, height: size.height)
             .ignoresSafeArea()
-            .background { if !wide && wallpaper { Backdrop(model: model, size: size, sideWidth: 0, rightWidth: 0, wide: false) } }
+            .background { if !wide && wallpaper { Backdrop(model: model, size: size, sideWidth: 0, rightWidth: 0, wide: false).ignoresSafeArea() } }
             #if os(macOS)
             .containerBackground(for: .window) { WindowBase(store: store, model: model, wide: wide, size: size) }
             .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
