@@ -299,10 +299,9 @@ Rule (owner): use the platform's own primitives; a custom component needs a stat
 
 | Component | System primitive used | Stays custom, and why |
 | --- | --- | --- |
-| Mac window: columns, sidebar toggle | `NavigationSplitView`, `.toolbar`, `.toolbar(removing: .title)`, `.windowToolbarStyle(.unified)` | |
-| Title, centred at the top (Mac) | `ToolbarItem(placement: .principal)` with a `Button` | |
-| Title, centred at the top (phone) | `Button` with `.buttonStyle(.glass)` over a `ZStack` | the arrangement: a navigation bar's principal slot is not available over a sliding card |
-| Header buttons and menus | `Button` / `Menu` with `.buttonStyle(.glass)`, `.buttonBorderShape(.circle)`, `GlassEffectContainer`; Mac: `ToolbarItemGroup(.primaryAction)` | |
+| Mac and iPad window: two columns | none (`containerBackground(for: .window)`, `glassEffect`, `.regularMaterial` for the base layer) | the container: macOS 26's `NavigationSplitView` draws its sidebar as a floating glass panel over the content, the inverse of the owner's structure (base layer under everything, sidebar content directly on it with no panel, the middle card floating with rounded corners and a shadow, as on the web and phone); no configuration found hides that panel while keeping the split view, so the two columns are ours and everything inside them is system |
+| Title, centred at the top (all platforms) | `Button` with `.buttonStyle(.glass)` over a `ZStack`, in the header over the card | the arrangement (a window toolbar would centre the title on the window, not on the card) |
+| Header buttons and menus | `Button` / `Menu` with `.buttonStyle(.glass)`, `.buttonBorderShape(.circle)`, `.menuIndicator(.hidden)` on icon-only menus, `GlassEffectContainer` | |
 | Phone sidebar drawer (card slides aside) | `withAnimation`/springs, system `scrollEdgeEffectStyle` | the slide: `NavigationSplitView` collapses to push navigation on an iPhone, no system container slides a card over a sidebar |
 | Sidebar list, selection, arrow keys, Home/End, type-to-select | `List(selection:)`, `.listStyle(.sidebar)` (Mac) / `.plain` (phone), `Label`, `Section(isExpanded:)` | |
 | Row swipe actions, context menu, refresh | `.swipeActions`, `.contextMenu`, `.refreshable` | |
@@ -311,7 +310,7 @@ Rule (owner): use the platform's own primitives; a custom component needs a stat
 | Attention card | `GroupBox`, `.buttonStyle(.bordered)` / `.borderedProminent` | |
 | App switcher | `Picker` `.segmented` of icon-only `Label`s, in the sidebar footer | |
 | Account | `Menu` with `.buttonStyle(.glass)` | |
-| Search | Mac: `.searchable(placement: .sidebar)`; phone: `TextField` | phone: the drawer is not a navigation context, so `searchable` has nowhere to live |
+| Search | `TextField` in the sidebar footer | `searchable` needs a navigation container; neither the phone drawer nor our two-column window is one |
 | Rename prompt | `.alert` with a `TextField` | |
 | Window base layer (Mac) | `.containerBackground(for: .window)`, `.glassEffect`, `.regularMaterial`, `.toolbarBackgroundVisibility(.hidden, for: .windowToolbar)` | the wallpaper picture and its solved veils: no system material knows the person's wallpaper |
 | Wallpaper pane behind the phone card | none | the design's pane (blurred copy under the veil) |
@@ -344,3 +343,18 @@ frame at the system's fastest repeat) is not met**: the median is about 1.5 fram
 realisation) is not yet traced (an Instruments export failed). A first version that read the selection in the list's body was 22 ms median: the selection is
 now read only by a tiny reporter view. Windowed lists cannot be walked past the window with the keys (spacer rows are not selectable): a sentinel row that
 requests the next window is the open item. The iPhone with a hardware keyboard uses the same list; not measured.
+
+### Colour rules for chrome controls
+
+The accent colour is for **selection** (the selected row, the selected segment) and **primary actions** (an Approve button) only. Header and footer controls are
+neutral glass with primary-colour symbols: the shell sets `.tint(.primary)` on the header and the footer groups, because a system glass button otherwise takes
+the tint (the page's accent, or the system blue when none is published) and the pills read as accented for no reason. A control that is not selected and not a
+primary action must never be tinted.
+
+### The phone's top band, and its test
+
+The band in the top safe area came from the card pane, not the page: `WallpaperBackdrop` finds its place through the named coordinate space `ShellSpace.window`,
+and under the status bar that space starts one safe-area inset below the screen, so the blurred wallpaper copy slid down 62 pt and the unveiled wallpaper showed above it.
+The phone and wide layouts now draw the pane at screen size (`PhonePane`) with no named space. `apps/ios/Tests/top-safe-area.sh` (Simulator, on the Mac, after `./sim.sh build`)
+launches the demo closed and with the sidebar open, takes a screenshot of the Simulator, and fails when the strip above the safe-area line differs from the strip
+below it by more than 14 of 255 at two columns clear of the header buttons: it measured steps of 22 to 60 on the old build and 0 to 1 now.

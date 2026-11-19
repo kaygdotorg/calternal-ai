@@ -2,9 +2,9 @@ import SwiftUI
 
 /// The whole native shell drawn from a `ChromeDescription`.
 ///
-/// * **Mac and iPad-wide** (at least 760 pt): `NavigationSplitView` with the sidebar column and the web card as its detail, the system window toolbar for the
-///   title (principal, centred) and the trailing actions, the system sidebar toggle, system sidebar glass and focus handling. The layer under the window is the
-///   person's wallpaper (`containerBackground(for: .window)`) or, opt-in on a Mac, Liquid Glass with a frost dial over it.
+/// * **Mac and iPad-wide** (at least 760 pt): one base layer under the window (the person's wallpaper via `containerBackground(for: .window)`, or opt-in on a
+///   Mac Liquid Glass with a frost dial), the sidebar list directly on it with no panel of its own, and the web card floating beside it with rounded
+///   corners and a shadow, the header over the card (see `Desktop` for why this is not `NavigationSplitView`).
 /// * **Phone** (under 760 pt): the card slides aside to reveal the sidebar beneath it. No system container does this on an iPhone (`NavigationSplitView`
 ///   collapses to push navigation), so the slide is custom; the header is system glass buttons, the sidebar the same list as on a Mac.
 ///
@@ -41,14 +41,13 @@ public struct ChromeShellView<WebCard: View>: View {
                                              width: Int(size.width), height: Int(size.height), sideWidth: Int(wide ? m.sidebarWidth : 0), rightWidth: Int(wide ? m.rightWidth : 0), inset: Int(m.inset), wide: wide)
             let wallpaper = store.baseMaterial == .wallpaper
             Group {
-                if wide { Desktop(store: store, card: card) } else { Phone(store: store, card: card, model: model, size: size, insets: insets) }
+                if wide { Desktop(store: store, card: card, model: model, size: size) } else { Phone(store: store, card: card, model: model, size: size, insets: insets) }
             }
             .frame(width: size.width, height: size.height)
             .ignoresSafeArea()
             .background { if !wide && wallpaper { Backdrop(model: model, size: size, sideWidth: 0, rightWidth: 0, wide: false).ignoresSafeArea() } }
             #if os(macOS)
             .containerBackground(for: .window) { WindowBase(store: store, model: model, wide: wide, size: size) }
-            .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
             #endif
             .coordinateSpace(name: ShellSpace.window)
             .environment(\.wallpaperContext, model.context)
@@ -83,6 +82,7 @@ private struct WindowBase: View {
     let model: WallpaperModel
     let wide: Bool
     let size: CGSize
+    @Design private var d
 
     var body: some View {
         if store.baseMaterial == .translucent {
@@ -92,7 +92,7 @@ private struct WindowBase: View {
                 Rectangle().fill(.white.opacity(store.frost * 0.08))
             }
         } else {
-            Backdrop(model: model, size: size, sideWidth: 0, rightWidth: 0, wide: wide)
+            Backdrop(model: model, size: size, sideWidth: store.description.sidebar != nil && store.progress < 0.5 ? d.metrics.sidebarWidth : 0, rightWidth: 0, wide: wide)
         }
     }
 }
@@ -100,53 +100,52 @@ private struct WindowBase: View {
 
 // MARK: Desktop
 
-/// The window toolbar content: the title centred (principal) and the trailing actions. System items; the sidebar toggle comes from the split view.
-private struct ChromeToolbar: ToolbarContent {
-    let store: ChromeStore
-
-    var body: some ToolbarContent {
-        let header = store.description.header
-        ToolbarItem(placement: .principal) {
-            if let title = header?.title { Button { store.send(ChromeEvent(type: "header", id: "title")) } label: { Text(title).lineLimit(1) }.accessibilityAddTraits(.isHeader) }
-        }
-        ToolbarItemGroup(placement: .primaryAction) {
-            ForEach(header?.leading ?? []) { item in itemView(item) }
-            ForEach(header?.trailing ?? []) { item in itemView(item) }
-        }
-    }
-
-    @ViewBuilder private func itemView(_ item: ChromeDescription.Item) -> some View {
-        let symbol = item.icon?.name.flatMap(IconName.init(rawValue:))?.symbol ?? item.icon?.symbol ?? IconName.more.symbol
-        if let entries = item.menu, !entries.isEmpty {
-            Menu {
-                ForEach(entries) { entry in
-                    Button(role: entry.role == "destructive" ? .destructive : nil) { store.send(ChromeEvent(type: "header", id: entry.id, rowId: item.id)) } label: {
-                        if let name = entry.icon?.name.flatMap(IconName.init(rawValue:)) { Label(entry.title, systemImage: name.symbol) } else { Text(entry.title) }
-                    }.disabled(entry.disabled == true)
-                }
-            } label: { Label(item.title, systemImage: symbol) }
-            .menuIndicator(.hidden)
-        } else {
-            Button { store.send(ChromeEvent(type: "header", id: item.id)) } label: { Label(item.title, systemImage: symbol) }
-        }
-    }
-}
-
+/// The wide layout: one base layer under the whole window (the person's wallpaper, or on a Mac translucent glass), the sidebar's list sitting directly on it
+/// with no panel of its own, and the content card floating beside it with rounded corners and a shadow. This is the web app's structure and the phone's.
+/// **Why not `NavigationSplitView`:** macOS 26 draws its sidebar as a floating glass panel over the content, the inverse of this structure, and no
+/// configuration hides it while keeping the system split behaviour; so the container is two columns of ours, while everything inside stays system (the
+/// `List` with selection and keys, `Section`, `swipeActions`, glass buttons, `Menu`). The header over the card is the phone's: neutral glass buttons and the title
+/// centred at the top of the card.
 private struct Desktop<WebCard: View>: View {
     @Bindable var store: ChromeStore
     let card: WebCard
-    @State private var visibility: NavigationSplitViewVisibility = .all
+    let model: WallpaperModel
+    let size: CGSize
+    @Design private var d
 
     var body: some View {
-        NavigationSplitView(columnVisibility: $visibility) {
-            ChromeSidebar(store: store, phone: false, topInset: 0).navigationSplitViewColumnWidth(min: 220, ideal: 270, max: 380)
-        } detail: {
-            ZStack { card.ignoresSafeArea() }
-                .onGeometryChange(for: CGFloat.self) { $0.safeAreaInsets.top } action: { store.setInsets(ChromeInsets(top: $0)) }   // what the toolbar covers
-                .toolbar { ChromeToolbar(store: store) }
-                .accessibilityLabel(store.description.header?.title ?? "Content")
+        let m = d.metrics
+        let sidebarShown = store.description.sidebar != nil && store.progress < 0.5   // desktop: progress 1 means the column is hidden
+        let columnWidth = sidebarShown ? m.sidebarWidth : 0
+        let cardOrigin = CGPoint(x: columnWidth + m.inset, y: m.inset)
+        let shape = RoundedRectangle(cornerRadius: m.radiusPane, style: .continuous)
+        HStack(spacing: 0) {
+            if sidebarShown {
+                ChromeSidebar(store: store, phone: false, topInset: 44)   // clears the window's traffic lights
+                    .sidebarInk(store.baseMaterial == .wallpaper ? model.context.side : nil, scheme: d.scheme)
+                    .frame(width: m.sidebarWidth)
+                    .transition(.opacity)
+            }
+            ZStack(alignment: .top) {
+                card.frame(maxWidth: .infinity, maxHeight: .infinity)
+                ChromeHeader(store: store, showsSidebarButton: true)
+            }
+            .background {
+                if store.baseMaterial == .wallpaper {
+                    PhonePane(context: model.context, size: size).offset(x: -cardOrigin.x, y: -cardOrigin.y)
+                } else {
+                    shape.fill(d.theme.paper.opacity(d.materials.dim ? 0.5 : 0.28))
+                }
+            }
+            .clipShape(shape)
+            .overlay(shape.strokeBorder(d.theme.line, lineWidth: 1).allowsHitTesting(false))
+            .shadow(color: .black.opacity(0.18), radius: 18, y: 6)
+            .padding(m.inset)
+            .padding(.leading, sidebarShown ? 0 : 0)
+            .accessibilityElement(children: .contain).accessibilityLabel(store.description.header?.title ?? "Content")
         }
-        .toolbar(removing: .title)
+        .animation(d.motion.sheet(), value: sidebarShown)
+        .onAppear { store.setInsets(ChromeInsets(top: m.barHeight)) }
     }
 }
 
@@ -154,8 +153,9 @@ private struct Desktop<WebCard: View>: View {
 
 /// The phone's header: system glass buttons in a `GlassEffectContainer`, the title centred at the top (a `ZStack` over the leading and trailing groups, so it
 /// stays centred whatever their widths).
-private struct PhoneHeader: View {
+private struct ChromeHeader: View {
     @Bindable var store: ChromeStore
+    let showsSidebarButton: Bool
     @Design private var d
 
     var body: some View {
@@ -164,8 +164,8 @@ private struct PhoneHeader: View {
         GlassEffectContainer(spacing: m.space(3)) {
             ZStack {
                 HStack(spacing: m.space(3)) {
-                    if store.description.sidebar != nil {
-                        Button { store.setOpen(true) } label: { Image(systemName: IconName.sidebar.symbol) }
+                    if showsSidebarButton && store.description.sidebar != nil {
+                        Button { store.toggleSidebar() } label: { Image(systemName: IconName.sidebar.symbol) }
                             .buttonStyle(.glass).buttonBorderShape(.circle).accessibilityLabel("Show the sidebar").accessibilityIdentifier("chrome.sidebar.show")
                     }
                     ForEach(header?.leading ?? []) { itemView($0) }
@@ -178,7 +178,7 @@ private struct PhoneHeader: View {
                 }
             }
         }
-        .controlSize(.large)
+        .controlSize(Form.current == .touch ? .large : .regular)
         .tint(.primary)   // chrome controls are neutral glass with primary-colour symbols; the accent is for selection and primary actions only
         .padding(.horizontal, m.space(5)).frame(height: m.barHeight)
     }
@@ -226,7 +226,7 @@ private struct Phone<WebCard: View>: View {
             // drawn at the full screen size explicitly: sized from its content it stopped below the status bar and left the wallpaper showing there as a band.
             ZStack(alignment: .top) {
                 card.frame(maxWidth: .infinity, maxHeight: .infinity)
-                PhoneHeader(store: store).padding(.top, insets.top)
+                ChromeHeader(store: store, showsSidebarButton: true).padding(.top, insets.top)
             }
             .frame(width: size.width, height: size.height)
             .background(alignment: .topLeading) {

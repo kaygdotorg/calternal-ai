@@ -68,6 +68,9 @@ public final class ChromeStore {
         if report { send(ChromeEvent(type: "sidebar", open: open)) }
     }
 
+    /// Shows or hides the sidebar: the phone slides the card, a desktop hides the column.
+    public func toggleSidebar() { setOpen(progress < 0.5) }
+
     /// Records the chrome's size so the adapter can pass it to the page.
     func setInsets(_ new: ChromeInsets) {
         guard new != insets else { return }

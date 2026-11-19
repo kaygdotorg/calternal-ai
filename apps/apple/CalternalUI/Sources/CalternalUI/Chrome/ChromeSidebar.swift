@@ -80,13 +80,11 @@ struct ChromeSidebar: View {
         #endif
         .scrollContentBackground(.hidden)
         .scrollEdgeEffectStyle(.soft, for: .all)
+        .contentMargins(.top, phone ? 0 : topInset, for: .scrollContent)   // a Mac window's traffic lights sit over the list's top
         .coordinateSpace(name: Self.listSpace)
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height = $0 }
         .safeAreaInset(edge: .bottom, spacing: 0) { footer(sidebar) }
         .refreshable { if sidebar?.refresh == true { store.send(ChromeEvent(type: "refresh")); try? await Task.sleep(for: .milliseconds(700)) } }
-        #if os(macOS)
-        .searchable(text: $store.searchText, placement: .sidebar, prompt: Text(sidebar?.search?.placeholder ?? "Search"))
-        #endif
         .background { SettleReporter(store: store) }   // reads the selection and the search text in its own tiny view, so a selection change re-evaluates nothing in the list
         .alert(prompt?.item.title ?? "", isPresented: Binding(get: { prompt != nil }, set: { if !$0 { prompt = nil } }), presenting: prompt) { request in
             TextField(request.item.input?.placeholder ?? "", text: $promptText)
@@ -163,13 +161,13 @@ struct ChromeSidebar: View {
     @ViewBuilder private func footer(_ sidebar: ChromeDescription.Sidebar?) -> some View {
         // The decided footer (docs/ui-shell.md, 2026-11-18): account at the left, the app switcher (icons only) at the centre, search at the right (a phone;
         // on a Mac search is the system's sidebar search field). The apps' position is part of the contract, not the shell's guess.
-        if phone && store.searching {
+        if store.searching {
             HStack {
                 TextField(sidebar?.search?.placeholder ?? "Search", text: $store.searchText).textFieldStyle(.roundedBorder).submitLabel(.search)
                 Button("Cancel") { store.searching = false; store.searchText = "" }.buttonStyle(.borderless)
             }
             .padding(.horizontal).padding(.vertical, 8).background(.regularMaterial)
-        } else if sidebar?.account != nil || !(sidebar?.apps ?? []).isEmpty || (phone && sidebar?.search != nil) {
+        } else if sidebar?.account != nil || !(sidebar?.apps ?? []).isEmpty || sidebar?.search != nil {
             GlassEffectContainer {
                 HStack {
                     if let account = sidebar?.account { accountButton(account) }
@@ -181,7 +179,7 @@ struct ChromeSidebar: View {
                         .pickerStyle(.segmented).labelsHidden().fixedSize()
                     }
                     Spacer(minLength: 0)
-                    if phone, sidebar?.search != nil {
+                    if sidebar?.search != nil {
                         Button { store.searching = true } label: { Label("Search", systemImage: IconName.search.symbol).labelStyle(.iconOnly) }
                             .buttonStyle(.glass).buttonBorderShape(.circle)
                     }
