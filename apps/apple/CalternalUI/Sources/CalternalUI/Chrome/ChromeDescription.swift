@@ -12,6 +12,10 @@ public struct ChromeDescription: Codable, Equatable, Sendable {
     /// Format version; 1 is the only one.
     public var version: Int
 
+    /// The description versions this renderer draws. The page learns them (`calternalNative.chromeVersions`) and publishes only a version in the list;
+    /// a description with another version is refused (`decode` throws `ChromeError.unsupportedVersion`) and the page keeps drawing its own chrome.
+    public static let supportedVersions = [1]
+
     /// An empty description (nothing drawn).
     public init(version: Int = 1) { self.version = version }
     /// Increases with each publication; echoed in events so the page can ignore stale ones.
@@ -261,7 +265,9 @@ public struct ChromeDescription: Codable, Equatable, Sendable {
     /// Decodes a description from the object the page sent (already parsed from JSON).
     public static func decode(_ object: Any) throws -> ChromeDescription {
         let data = try JSONSerialization.data(withJSONObject: object)
-        return try JSONDecoder().decode(ChromeDescription.self, from: data)
+        let description = try JSONDecoder().decode(ChromeDescription.self, from: data)
+        guard supportedVersions.contains(description.version) else { throw ChromeError.unsupportedVersion(description.version, supported: supportedVersions) }
+        return description
     }
 }
 
@@ -298,5 +304,18 @@ public struct ChromeEvent: Sendable {
         if let revision { dict["revision"] = revision }
         let data = (try? JSONSerialization.data(withJSONObject: dict, options: [.sortedKeys])) ?? Data("{}".utf8)
         return String(data: data, encoding: .utf8) ?? "{}"
+    }
+}
+
+/// Why a description was refused.
+public enum ChromeError: Error, CustomStringConvertible {
+    /// The description's `version` is not one the renderer draws.
+    case unsupportedVersion(Int, supported: [Int])
+
+    /// Plain-language text for the page's console.
+    public var description: String {
+        switch self {
+        case .unsupportedVersion(let v, let supported): "chrome description version \(v) is not supported (supported: \(supported)); native chrome stays off"
+        }
     }
 }

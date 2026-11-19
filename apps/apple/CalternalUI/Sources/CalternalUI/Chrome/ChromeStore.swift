@@ -9,6 +9,8 @@ import Observation
 public final class ChromeStore {
     /// The description currently drawn.
     public var description: ChromeDescription
+    /// The revision of the last description received (events echo it). Kept outside `description` so a republication that changed nothing else redraws nothing.
+    public private(set) var revision: Int?
     /// How open the sidebar is on a phone, 0 (closed) to 1 (open). The card follows it; a platform gesture may set it per frame,
     /// `setOpen` settles it with the design's sheet motion. On a desktop the sidebar is a column and this is not used.
     public var progress: CGFloat = 0
@@ -36,8 +38,12 @@ public final class ChromeStore {
     /// Replaces the description. A change of `sidebar.open` is honoured as the page's wish.
     public func update(_ new: ChromeDescription) {
         let wasOpen = description.sidebar?.open
-        description = new
-        tapped = nil
+        revision = new.revision
+        var same = new
+        same.revision = description.revision
+        // Pages republish on every store change, often with nothing the chrome draws different: that must cost nothing (no SwiftUI invalidation).
+        if same != description { description = new }
+        if tapped != nil { tapped = nil }
         if let open = new.sidebar?.open, open != wasOpen { setOpen(open, report: false) }
     }
 

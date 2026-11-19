@@ -1,3 +1,4 @@
+import CalternalUI
 import Foundation
 import WebKit
 import os
@@ -22,6 +23,22 @@ protocol BridgePlatform: AnyObject {
     func setChrome(_ object: Any?, reply: @escaping @MainActor (Any?, String?) -> Void)
     /// The experimental native bar (iPhone only); true if drawn.
     func setBar(_ spec: [String: Any]?) -> Bool
+}
+
+/// The user script injected into every page: the supported chrome versions, then `Resources/bridge.js`.
+/// One place states the versions (`ChromeDescription.supportedVersions`); the page reads `calternalNative.chromeVersions`.
+enum BridgeScript {
+    /// The script text, or nil if the resource is missing.
+    static var source: String? {
+        guard let js = Bundle.main.url(forResource: "bridge", withExtension: "js").flatMap({ try? String(contentsOf: $0, encoding: .utf8) }) else { return nil }
+        return "window.__calternalChromeVersions = \(ChromeDescription.supportedVersions);\n" + js
+    }
+
+    /// The reply to a `chrome` call that cannot be honoured: native chrome stays off, with the reason and the versions that would work.
+    static func refusal(_ error: Error) -> [String: Any] {
+        if case ChromeError.unsupportedVersion(_, let supported) = error { return ["native": false, "reason": "unsupported-version", "supported": supported] }
+        return ["native": false, "reason": "rejected"]
+    }
 }
 
 /// Receives `window.calternalNative.*` calls (see `Resources/bridge.js`, `docs/ios-shell.md`) and carries them out through the platform.

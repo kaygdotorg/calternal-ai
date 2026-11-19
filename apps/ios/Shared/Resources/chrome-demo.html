@@ -65,7 +65,7 @@
   });
   let native = false;
   async function publish() {
-    if (!N) return;
+    if (!N || !N.chromeVersions.includes(1)) return;   // version negotiation: publish only a version the shell draws, else keep the page's own chrome
     const t0 = performance.now();
     const reply = await N.chrome(describe());
     store.lat.push(performance.now() - t0);
@@ -103,6 +103,7 @@
   if (N) {
     N.appearance({ scheme: 'dark', background: '#16120e' });
     publish().then(async () => {
+      if (location.hash === '#republish') { for (let i = 0; i < 3; i++) { await publish(); await new Promise(r => setTimeout(r, 300)); } for (let i = 0; i < 3; i++) { store.threads[3].unread = !store.threads[3].unread; await publish(); await new Promise(r => setTimeout(r, 300)); } }
       const n = 300, a = performance.now(); for (let i = 0; i < n; i++) await N.ping(); const per = (performance.now() - a) / n;
       N.log('bridge round trip ms (page to shell and back, mean of ' + n + '): ' + per.toFixed(3));
       store.lat.push(per);

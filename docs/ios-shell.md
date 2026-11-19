@@ -250,14 +250,19 @@ periods; signposts (`cloud.calternal.app` / `measure`) are in place for Instrume
 | --- | --- | --- | --- |
 | Sidebar drag: frames over 1.5 periods | at most 1 % and none over 3 periods | 72 frames, 0 hitches, p99 16.7 ms (60 Hz run) | not applicable (columns) |
 | 5,000-row list fling: hitches | at most 1 %, worst under 3 periods | 298 frames, 1 hitch (0.34 %), worst 47.8 ms | 587 frames, 5 hitches (0.85 %), worst 77 ms (over budget) |
-| Description published to first painted frame | at most 50 ms warm | 2.6 ms (second publish) | 81 to 122 ms warm: **over budget**; 230 to 310 ms for the first (wallpaper preparation) |
+| Description published to first painted frame | at most 50 ms warm | 2.6 ms (second publish) | unchanged republish 3 to 7 ms; a real change (a row's unread mark) 25 to 30 ms; first publish 53 ms to 310 ms (wallpaper preparation); the earlier 81 to 122 ms were publishes during the scripted list fling (window events) |
 | Cold launch to the page's first paint | at most 1,000 ms (bundled page; network excluded) | 265 ms | 557 ms |
 | Native process memory with one web card | at most 150 MB phone, 300 MB Mac | 36 MB | 284 MB (the 5K wallpaper copies dominate) |
 | Bridge round trip | at most 2 ms | 0.39 ms (Simulator) | not measured |
 
-What failed or was not measured: the Mac's warm publish (81 to 122 ms) is the open performance bug (suspects: SwiftUI re-diffing the whole sidebar list and
-the card material on every description, wallpaper veils re-solved on resize; needs an Instruments trace), and the Mac fling has one 77 ms stall (a window
-republish). The phone runs the display link at 60 Hz in this build; `CADisableMinimumFrameDurationOnPhone` is now set for the next build. Phone numbers come from
+What failed or was not measured: the first Mac measurement of warm publish (81 to 122 ms, over the 50 ms budget) was taken while the scripted fling was
+republishing windows. An Instruments Time Profiler trace of the Mac app (22 s, 2,163 samples, 1,990 on the main thread) shows the main thread 90 % idle in the
+run loop and the rest dominated by SwiftUI hosting-view layout (`NSHostingView.layout` 391 samples inclusive, 20 % of all samples; app-level frames do not
+show because SwiftUI body evaluation is attributed to the graph update), so the cost is a SwiftUI relayout of a 5K-sized window per description, not our decode
+(0.5 ms) or the bridge. Fix applied: a republished description that changes nothing the chrome draws (only `revision`) no longer invalidates any view
+(`ChromeStore.update`); republished-unchanged now costs 3 to 7 ms and a real change 25 to 30 ms, inside the budget. Still open: the 77 ms stall during the fling and
+the first-publish 53 to 310 ms (wallpaper preparation on a 5K window). The phone runs the display link at 60 Hz in the measured build; `CADisableMinimumFrameDurationOnPhone`
+is set in later builds. Phone numbers come from
 the demo page (14 rows plus a 5,000-note windowed list), not real threads. Web content process memory is separate and was not measured. A first version drew the
 windowed list as a `ForEach` over all 5,000 indexes: 75 % of frames dropped on the Mac; it now holds only the window and two spacer rows, so cost follows the window.
 
@@ -276,3 +281,12 @@ key) and development fails at codesign (the development certificate is in the lo
 `apps/ios/Calternal.xcodeproj` in Xcode on the Mac Studio, choose the scheme `CalternalMacPasskeys` (Release, carries the entitlement) and "My Mac", press Run
 once so automatic signing creates the Mac profile and registers the Mac; afterwards builds can be started the same way. The bundle id is the iPhone's
 (`cloud.calternal.app`), so the server's `apple-app-site-association` entry for the iPhone app also covers the Mac app.
+
+### Version negotiation (chrome description)
+
+The shell states which description versions it draws: `window.calternalNative.chromeVersions` (today `[1]`, from `ChromeDescription.supportedVersions`, the one place).
+The page publishes only a version in that list; with no `calternalNative`, no `chromeVersions` (an older shell) or no common version it draws its own chrome
+and never calls `chrome()`. The shell enforces the other direction: a description with an unsupported `version` is refused with the reply
+`{native: false, reason: "unsupported-version", supported: [1]}` (a malformed one with `reason: "rejected"`), and if native chrome was on it is removed, so the
+page gets its own chrome back on any mismatch. Verified in the Simulator (version 2 refused with `supported: [1]`; a bad sidebar title rejected). Versions are
+additive within a number; a new number means the old one stays supported by the shell for as long as pages in the field publish it.

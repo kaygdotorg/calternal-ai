@@ -31,7 +31,7 @@ final class ShellViewController: UIViewController {
         config.websiteDataStore = .default()
         config.allowsInlineMediaPlayback = true
         config.dataDetectorTypes = []
-        if let source = Bundle.main.url(forResource: "bridge", withExtension: "js").flatMap({ try? String(contentsOf: $0, encoding: .utf8) }) {
+        if let source = BridgeScript.source {
             config.userContentController.addUserScript(WKUserScript(source: source, injectionTime: .atDocumentStart, forMainFrameOnly: false))
         }
         webView = WKWebView(frame: .zero, configuration: config)
@@ -258,7 +258,9 @@ final class ShellViewController: UIViewController {
             }
             reply(["native": true], nil)
         } catch {
-            reply(nil, "chrome description rejected: \(error)")
+            // A version or format the renderer cannot draw: native chrome stays off (and is removed if it was on) and the page keeps its own.
+            if chromeHost != nil { chromeHost?.tearDown(); chromeHost = nil }
+            reply(BridgeScript.refusal(error), nil)
         }
     }
 

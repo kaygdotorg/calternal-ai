@@ -47,7 +47,7 @@ final class MacShell: NSObject, BridgePlatform, WKNavigationDelegate, WKUIDelega
     override init() {
         let config = WKWebViewConfiguration()
         config.websiteDataStore = .default()
-        if let source = Bundle.main.url(forResource: "bridge", withExtension: "js").flatMap({ try? String(contentsOf: $0, encoding: .utf8) }) {
+        if let source = BridgeScript.source {
             config.userContentController.addUserScript(WKUserScript(source: source, injectionTime: .atDocumentStart, forMainFrameOnly: false))
         }
         web = WKWebView(frame: .zero, configuration: config)
@@ -58,7 +58,7 @@ final class MacShell: NSObject, BridgePlatform, WKNavigationDelegate, WKUIDelega
         web.uiDelegate = self
         web.isInspectable = true
         web.setValue(false, forKey: "drawsBackground")   // transparent: the native card material shows through where the page paints nothing
-        store.send = { [weak self] event in self?.dispatch(event: "calternal:chrome", detail: event.json(revision: self?.store.description.revision)) }
+        store.send = { [weak self] event in self?.dispatch(event: "calternal:chrome", detail: event.json(revision: self?.store.revision)) }
         store.onInsets = { [weak self] insets in self?.publish(insets) }
     }
 
@@ -175,7 +175,8 @@ final class MacShell: NSObject, BridgePlatform, WKNavigationDelegate, WKUIDelega
             setAppearance(scheme: description.scheme, background: nil)
             reply(["native": true], nil)
         } catch {
-            reply(nil, "chrome description rejected: \(error)")
+            chromeActive = false
+            reply(BridgeScript.refusal(error), nil)
         }
     }
 

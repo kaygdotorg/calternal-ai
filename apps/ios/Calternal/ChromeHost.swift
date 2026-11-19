@@ -102,7 +102,7 @@ final class ChromeHost: NSObject, UIGestureRecognizerDelegate {
 
     private func send(_ event: ChromeEvent) {
         if ["row", "selector", "app"].contains(event.type) { UISelectionFeedbackGenerator().selectionChanged() }
-        shell.dispatch(event: "calternal:chrome", detail: event.json(revision: store.description.revision))
+        shell.dispatch(event: "calternal:chrome", detail: event.json(revision: store.revision))
     }
 
     /// Tells the page what the chrome covers and that it no longer draws its own.

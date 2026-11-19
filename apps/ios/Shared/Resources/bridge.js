@@ -23,6 +23,8 @@
     menu: (o) => send('menu', o),
     /** Keep unsaved state (a JSON-able object, at most 64 KB) the shell hands back after iOS ends the page's process. */
     saveState: (state) => send('saveState', { state }),
+    /** Chrome description versions this shell draws (from the shell, e.g. [1]). Publish only a version in the list; on no match keep drawing your own chrome. */
+    chromeVersions: window.__calternalChromeVersions || [],
     /** Experimental native chrome: publish the chrome description (docs/ios-shell.md, "Chrome description") or null to withdraw
      *  -> { native: boolean } (false: switch off, keep drawing your own). Native events arrive as 'calternal:chrome'. */
     chrome: (description) => send('chrome', { chrome: description }),
