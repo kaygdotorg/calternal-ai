@@ -1,0 +1,524 @@
+{
+  "version": 2,
+  "kind": "app",
+  "revision": 1,
+  "cache": {
+    "templates": "keep",
+    "memberRows": "keep"
+  },
+  "binds": [
+    {
+      "id": "waiting",
+      "source": {
+        "type": "list",
+        "kind": "threads"
+      },
+      "fields": [
+        "title",
+        "provider",
+        "state",
+        "waiting_on"
+      ],
+      "filter": {
+        "all": [
+          {
+            "field": "waiting_on",
+            "op": "eq",
+            "value": {
+              "viewer": "person"
+            }
+          }
+        ]
+      },
+      "sort": [
+        {
+          "field": "updated",
+          "direction": "desc"
+        }
+      ],
+      "window": {
+        "size": 60,
+        "count": "exact"
+      },
+      "row": {
+        "title": {
+          "field": "title"
+        },
+        "icon": {
+          "field": "provider",
+          "map": {
+            "calternal-claude-code": "claude",
+            "calternal-codex": "codex"
+          }
+        },
+        "marks": [
+          {
+            "kind": "text",
+            "field": "state"
+          }
+        ],
+        "menu": [
+          {
+            "id": "move-to-waiting",
+            "title": "Move to section",
+            "icon": "folder",
+            "operation": "host.layout.move_to",
+            "inputs": {
+              "entry": {
+                "row": "id"
+              },
+              "section": {
+                "prompt": {
+                  "title": "Move to",
+                  "kind": "choice",
+                  "options": {
+                    "bind": "layout"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "id": "archive-waiting",
+            "title": "Archive",
+            "icon": "archive",
+            "operation": "turns.archive",
+            "inputs": {
+              "thread": {
+                "row": "id"
+              }
+            }
+          }
+        ]
+      },
+      "states": {
+        "empty": {
+          "title": "Nothing is waiting on you"
+        }
+      }
+    },
+    {
+      "id": "all",
+      "source": {
+        "type": "list",
+        "kind": "threads"
+      },
+      "fields": [
+        "title",
+        "provider",
+        "state",
+        "updated"
+      ],
+      "sort": [
+        {
+          "field": "updated",
+          "direction": "desc"
+        }
+      ],
+      "window": {
+        "size": 60,
+        "count": "exact"
+      },
+      "persist": true,
+      "row": {
+        "title": {
+          "field": "title"
+        },
+        "icon": {
+          "field": "provider",
+          "map": {
+            "calternal-claude-code": "claude",
+            "calternal-codex": "codex"
+          }
+        },
+        "marks": [
+          {
+            "kind": "text",
+            "field": "state"
+          }
+        ],
+        "menu": [
+          {
+            "id": "move-to-all",
+            "title": "Move to section",
+            "icon": "folder",
+            "operation": "host.layout.move_to",
+            "inputs": {
+              "entry": {
+                "row": "id"
+              },
+              "section": {
+                "prompt": {
+                  "title": "Move to",
+                  "kind": "choice",
+                  "options": {
+                    "bind": "layout"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "id": "archive-all",
+            "title": "Archive",
+            "icon": "archive",
+            "operation": "turns.archive",
+            "inputs": {
+              "thread": {
+                "row": "id"
+              }
+            }
+          }
+        ],
+        "children": {
+          "bind": "children"
+        }
+      }
+    },
+    {
+      "id": "children",
+      "source": {
+        "type": "list",
+        "kind": "threads",
+        "parent": true
+      },
+      "fields": [
+        "title",
+        "provider",
+        "state"
+      ],
+      "sort": [
+        {
+          "field": "updated",
+          "direction": "desc"
+        }
+      ],
+      "window": {
+        "size": 30,
+        "count": "exact"
+      },
+      "row": {
+        "title": {
+          "field": "title"
+        },
+        "icon": {
+          "field": "provider",
+          "map": {
+            "calternal-claude-code": "claude",
+            "calternal-codex": "codex"
+          }
+        },
+        "marks": [
+          {
+            "kind": "text",
+            "field": "state"
+          }
+        ],
+        "menu": [
+          {
+            "id": "move-to-children",
+            "title": "Move to section",
+            "icon": "folder",
+            "operation": "host.layout.move_to",
+            "inputs": {
+              "entry": {
+                "row": "id"
+              },
+              "section": {
+                "prompt": {
+                  "title": "Move to",
+                  "kind": "choice",
+                  "options": {
+                    "bind": "layout"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "id": "archive-children",
+            "title": "Archive",
+            "icon": "archive",
+            "operation": "turns.archive",
+            "inputs": {
+              "thread": {
+                "row": "id"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "layout",
+      "source": {
+        "type": "list",
+        "kind": "layout_sections"
+      },
+      "fields": [
+        "title",
+        "position"
+      ],
+      "sort": [
+        {
+          "field": "position",
+          "direction": "asc"
+        }
+      ],
+      "window": {
+        "size": 30,
+        "count": "exact"
+      },
+      "row": {
+        "title": {
+          "field": "title"
+        },
+        "icon": {
+          "kindIcon": true
+        },
+        "menu": [
+          {
+            "id": "rename-section",
+            "title": "Rename section",
+            "icon": "edit",
+            "operation": "host.layout.section.rename",
+            "inputs": {
+              "entry": {
+                "row": "id"
+              },
+              "title": {
+                "prompt": {
+                  "title": "Section name"
+                }
+              }
+            }
+          },
+          {
+            "id": "remove-section",
+            "title": "Remove section",
+            "icon": "trash",
+            "role": "destructive",
+            "operation": "host.layout.section.remove",
+            "inputs": {
+              "entry": {
+                "row": "id"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "in-section",
+      "source": {
+        "type": "list",
+        "kind": "threads",
+        "parent": true
+      },
+      "fields": [
+        "title",
+        "provider",
+        "state"
+      ],
+      "window": {
+        "size": 60,
+        "count": "exact"
+      },
+      "row": {
+        "title": {
+          "field": "title"
+        },
+        "icon": {
+          "field": "provider",
+          "map": {
+            "calternal-claude-code": "claude",
+            "calternal-codex": "codex"
+          }
+        },
+        "marks": [
+          {
+            "kind": "text",
+            "field": "state"
+          }
+        ],
+        "menu": [
+          {
+            "id": "move-up-in-section",
+            "title": "Move up",
+            "icon": "arrow-up",
+            "operation": "host.layout.move_up",
+            "inputs": {
+              "entry": {
+                "row": "id"
+              }
+            }
+          },
+          {
+            "id": "move-down-in-section",
+            "title": "Move down",
+            "icon": "arrow-down",
+            "operation": "host.layout.move_down",
+            "inputs": {
+              "entry": {
+                "row": "id"
+              }
+            }
+          },
+          {
+            "id": "move-to-in-section",
+            "title": "Move to section",
+            "icon": "folder",
+            "operation": "host.layout.move_to",
+            "inputs": {
+              "entry": {
+                "row": "id"
+              },
+              "section": {
+                "prompt": {
+                  "title": "Move to",
+                  "kind": "choice",
+                  "options": {
+                    "bind": "layout"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "id": "archive-in-section",
+            "title": "Archive",
+            "icon": "archive",
+            "operation": "turns.archive",
+            "inputs": {
+              "thread": {
+                "row": "id"
+              }
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "chrome": {
+    "sidebar": {
+      "open": true,
+      "title": "Calternal",
+      "selectors": [
+        {
+          "id": "filter",
+          "route": "view",
+          "selected": "inbox",
+          "options": [
+            {
+              "id": "inbox",
+              "title": "Inbox",
+              "count": {
+                "bind": "waiting"
+              }
+            },
+            {
+              "id": "all",
+              "title": "All Threads"
+            }
+          ]
+        }
+      ],
+      "sections": [
+        {
+          "id": "shortcuts",
+          "rows": [
+            {
+              "id": "new-thread",
+              "title": "New thread",
+              "icon": "plus",
+              "open": {
+                "invoke": {
+                  "id": "create",
+                  "title": "New thread",
+                  "operation": "turns.create",
+                  "inputs": {}
+                }
+              }
+            }
+          ]
+        },
+        {
+          "id": "inbox",
+          "title": "Waiting on you",
+          "bind": "waiting",
+          "showWhen": {
+            "route": "view",
+            "equals": "inbox"
+          }
+        },
+        {
+          "id": "threads",
+          "title": "Threads",
+          "bind": "all",
+          "showWhen": {
+            "route": "view",
+            "equals": "all"
+          },
+          "actions": [
+            {
+              "id": "new-section",
+              "title": "New section",
+              "icon": "plus",
+              "operation": "host.layout.section.create",
+              "inputs": {
+                "title": {
+                  "prompt": {
+                    "title": "Section name"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "id": "mine",
+          "repeat": {
+            "over": "layout",
+            "rows": "in-section"
+          },
+          "showWhen": {
+            "route": "view",
+            "equals": "all"
+          }
+        }
+      ]
+    },
+    "header": {
+      "title": "Threads"
+    },
+    "footer": {
+      "apps": [
+        {
+          "id": "threads",
+          "title": "Threads",
+          "icon": "threads"
+        },
+        {
+          "id": "notes",
+          "title": "Notes",
+          "icon": "notes"
+        }
+      ]
+    }
+  },
+  "view": {
+    "title": "Thread",
+    "root": {
+      "type": "component",
+      "component": {
+        "type": "turn-transcript",
+        "id": "transcript",
+        "config": {
+          "thread": {
+            "route": "thread"
+          }
+        }
+      }
+    }
+  }
+}

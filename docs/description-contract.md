@@ -313,7 +313,7 @@ plugin code). A description can run a named **invoke** on a component's event on
   `request-card`. Its size is the card's (the transcript and editor fill it; the composer is at the bottom; the frame reports its height inside the caps).
 * **Refs are typed.** `thread`, `item` and `request` take a value source that resolves to a reference of that type or the host refuses the description; the host
   authorises the viewer for the ref (a guest's grant included) before anything is read. The description holds no viewer data.
-* **Drafts and options.** The composer's text stays on the device; attachments are handed to the host when attached and held as host-owned `AttachmentRef`s, mentions are account references, a quoted passage is a host-issued quote reference (the catalogue's `Draft`), and the chosen provider, model, reasoning level, permission and machine are opaque option references the host returned (`Interaction.options`). The description names none of them: it says which controls appear. The host checks everything (lengths, counts, that every attachment is the viewer's own, that every option is one it offered for this thread) and composes the send; it never trusts the client. The draft clears only after `ok`; `error` keeps it.
+* **Drafts and options.** The composer's text stays on the device; attachments are handed to the host when attached and held as host-owned `AttachmentRef`s, mentions are account references, a quoted passage is a host-issued quote reference (the catalogue's `Draft`), and the chosen provider, model, reasoning level, permission and machine are opaque option references the host returned (`Interaction.options`). The description names none of them: it says which controls appear. The host checks everything (lengths, counts, that every attachment is the viewer's own, that every option is one it offered for this thread) and composes the send; it never trusts the client. The one-exchange Send treats the final text **solely as message content**: anything the host parses out of it that changes recipients, routing, permissions or other prepared material (a mention, a slash command) needs a fresh preview before it takes effect (3.2). The draft clears only after `ok`; `error` keeps it.
 * **Transcript reads** use the catalogue's `transcript.page` route: a `TranscriptPageRequest` names the thread and an opaque `after` cursor, the `TranscriptPage` returns at most 128 committed events and a `committed_cursor`; every page is reauthorised and bounded (128 KiB); an expired or revoked cursor is refused and the renderer reads again from the end. No description or renderer invents a cursor.
 * **Streaming** is the host's: the transcript's rows grow and change without a description revision; the host caps the update rate, commits a final message at the
   end, and drops an in-flight load when the viewer moves to another thread (the old transcript load is cancelled, not finished).
@@ -431,6 +431,8 @@ Everything in 5.0 and 5.1 is drawable with system controls. Findings, in order o
 
 Fixtures in `contract/fixtures/description-v2/` with one **fixture manifest** per exercise (`manifests/`, a subset of the plugin manifest v2 format: kinds, indexed fields, operations,
 reads), so a fixture is checked against what the plugin would declare, not against nothing: `reading-list-app`, `notes-app`, `threads-app` (and `notes-bulk-and-snooze-app`). Run `python3 contract/verify-description.py`.
+**Reads.** Every bind needs its kind in the manifest's `reads`; the SDK fills a package's own kinds into `reads` automatically, so an author writes `reads` only for another app's kinds (Threads reads `threads` and `layout_sections`, the host's). The verifier still requires the entry in the manifest it checks.
+**Persisted rows (owner decision Q10).** A member's own-space rows may persist on the device (encrypted, painted at once, then confirmed or corrected by the host); a bind opts in with `persist`, a description may opt out with `cache.memberRows: none`, and nothing persists for a guest or a public view. The conditions are section 6's. The fixture `threads-nested-app.json` shows both (`cache.memberRows`, `persist` on the `all` bind).
 This section is a rerun of the three exercises after Opus review 4: what is written, what is not, how many concepts an author meets before the first list, and what
 `defineView` and `defineChrome` will hide.
 
@@ -465,12 +467,11 @@ multi-selection and bulk Trash through `selection_ref`; **Move to collection** a
 
 **Written:** the Inbox as a bind (`waiting_on eq viewer.person`) with its count in the selector; All Threads; provider icons from the open `ProviderId` values; state marks; the
 transcript with the host's Quote and Stop; the composer as a thread and its controls (provider, model, reasoning, permission, machine, attachments, mentions), the host owning the
-send; an approval as a `request-card` over the protected request (`requests`, `thread_ref`); snooze as a `datetime` prompt.
+send; an approval as a `request-card` over the protected request (`requests`, `thread_ref`); snooze as a `datetime` prompt; **nested child rows** (owner decision Q11: child threads under their parent: the `all` bind's rows declare `children: {bind}`, a bind with `source.parent: true` windowed per parent row, depth at most 3); **user-made sections** (Q11: `Section.repeat {over, rows}`: one section per row of the host's per-person layout, a host virtual kind `layout_sections`, each section's threads a per-parent bind), with **Move to**, **Move up**, **Move down** and section create, rename and remove as host layout operations (`host.layout.*`, entries named by the host-issued `LayoutEntryRef`, which the row id is inside a repeated section). Fixture: `threads-nested-app.json`.
 **Not written / open:**
 * **New thread** (no operation creates a thread: `turns.create`), **archive and unarchive** (distinct from Trash: `turns.archive`, `turns.unarchive`), **snooze** (`turns.snooze` and a
   `snoozed_until` field so the Inbox can hide snoozed threads), **follow-up** (`turns.follow_up`): plugins lane catalogue additions; the fixture maps them by name until they land.
-* **Child threads under their parent** and **user-made sections with drag ordering**: an accepted decision shows child threads under their parent and the sidebar's own layout is a
-  person's; both stay **OPEN for the owner** (they need nested rows and a per-person layout stored by the host, or a cut). They are not parity exceptions to wave through.
+* **Drag to reorder** is a recorded **parity exception** (owner decision Q11): on a phone and on the web the person moves a thread with **Move to** (a `choice` prompt over the section rows) and **Move up / Move down**; drag waits.
 * **Bind-backed selectors** (chips) and **conditional fields** can wait.
 
 ### 9.4 What this schema needs from the host (authorisation is the plugins lane's)
@@ -489,7 +490,7 @@ send; an approval as a `request-card` over the protected request (`requests`, `t
 2. Reminders notify through `notify_creator` on the existing scheduler (plugins lane, part A).
 3. **Content node types** and the five host components: written in section 5 (web lane), exercised in section 9; the gaps are listed there and are the next vocabulary requests (set-valued selection `{selection, set: true}` of at most 50 ids with `selectionMode: multiple`; selector `options: {bind}` of at most 12 rows; composer typed controls; the share sheet as a host-owned sheet behind `host.item.share`, not a sixth component; `prompt.kind` text/date/datetime; nested rows (windows per parent); drag to move; section repeaters).
 4. **Generic TCP** is outside this contract; the owner's decision is recorded elsewhere and is not a description concern.
-5. **Section repeaters** (one section per item of a bind) are deferred; navigation sections cover the cases above.
+5. **Section repeaters** (one section per row of a bind) and **nested child rows** are in the first contract (owner decision Q11, `Section.repeat`, `RowTemplate.children`); **drag** is a recorded parity exception, with Move to, Move up and Move down standing in.
 6. The **retirement date of v1** is the owner's.
 
 ## 11. Sign-off

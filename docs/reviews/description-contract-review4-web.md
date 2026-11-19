@@ -31,3 +31,16 @@ Reviewed text: `/home/kayg/.bb/thread-storage/thr_58j59i9gw3/review4-opus.md` ag
 | 23 | Parity exceptions | W | Prompt kind `choice` from a bind (at most 50 options; the pick is a host-issued `ChoiceRef` in `interaction.choices`) gives Move to collection (`host.collection.move`); **nested child rows and user-made sections with drag stay OPEN for the owner**; conditional fields wait |
 | 24 | Build order, gates, spikes | A | v5 draft |
 | paper | Exercises rerun, concept count, what `defineView` hides | W | FIXED: section 9 (about 18 concepts before an empty list; hidden: asset digests, method inventory, tickets, `space_id`, the wire; not hidden: placement, bind and row vocabulary, the four risk fields) |
+
+## Revision 6 (Sol's five narrow findings and the owner's Q10 and Q11): the web lane's items
+
+| Item | Owner | Status |
+| --- | --- | --- |
+| Sheet-free mutations only for catalogue engines that commit effect and Undo together | N, A | text in 3.2 (N); W: 5.1 and fixtures use only catalogue operations for any no-sheet path |
+| Context must match the drawn selection | N | 3.2 (N) |
+| Final text is message content only; parser-derived changes need a fresh preview | N, W | 3.2 (N); W: mirrored in 5.1 (composer) |
+| LeaseRenewResult correlated and authenticated | N, A | section 6 (N) and the catalogue (A) |
+| One window envelope | N, A | 2.3 (N); the verifier checks `event-catalogue-window` against the catalogue |
+| Q10 persisted member rows | N, W | section 6 (N); W: fixture `threads-nested-app.json` (`cache.memberRows`, `Bind.persist`), section 9 note |
+| Q11 nested child rows, user sections; drag an exception | N, W | schema and 2.7 (N); W: fixture `threads-nested-app.json` (children bind per parent, `Section.repeat` over `layout_sections`, Move to / Move up / Move down / section create, rename, remove), 9.3 and 10 rewritten, drag recorded as a parity exception |
+| SDK fills a package's own kinds into `reads` | W, A | 9 and 2.6: authors write `reads` only for another app's kinds; the verifier still requires the manifest entry |
