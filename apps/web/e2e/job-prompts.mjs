@@ -24,6 +24,11 @@ try {
     ok((await rows.count()) === 1 && (await p.getByRole("dialog", { name: /from a plugin/ }).count()) === 0, `${device}: answering closes the sheet and the row leaves`);
     await ctx.close();
   }
+  // An account with no threads at all still shows a plugin's prompt in the Inbox (and not the empty state): the Inbox is the default tab, because it has something.
+  { const { page: p, ctx } = await open(browser, "desktop", "dark", "/threads?scenario=empty-with-prompt");
+    await p.waitForTimeout(900);
+    ok((await p.locator("[role=tabpanel] ul[aria-label='Waiting for you'] li[data-job]").count()) >= 1 && !/No threads yet/.test(await p.locator("aside.side").innerText()), "no threads yet but a plugin prompt: the sidebar shows the Inbox with it, not its empty state");
+    await ctx.close(); }
 } catch (err) { console.log("FAIL  " + err.message); bad++; }
 finally { await browser.close(); await stop(); }
 process.exit(bad ? 1 : 0);
