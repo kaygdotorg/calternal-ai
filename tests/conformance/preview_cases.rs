@@ -54,7 +54,25 @@ async fn machine_preview_refuses_foreign_spaces_and_revoked_viewers() {
             .iter()
             .any(|e| e["type"] == "assign")
     );
-    machine.sync(&f, json!([])).await; // report that the assigned sandbox is running
+    // The sync handler records the lease report before holding its HTTP
+    // response. Stop waiting once the owner sees it published as running.
+    let running = format!("{url}/{lease}");
+    let reported = async {
+        loop {
+            let run = f
+                .req("GET", &running, Some(&f.cookies[1]), Value::Null, None)
+                .await;
+            run.ok();
+            if run.body["state"] == "running" {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(30)).await;
+        }
+    };
+    tokio::select! {
+        result = tokio::time::timeout(Duration::from_secs(5), reported) => result.unwrap(),
+        result = machine.try_sync(&f, json!([]), 2) => { result.unwrap(); },
+    }
     let publication = format!("{url}/{lease}/previews");
 
     let refused = f
