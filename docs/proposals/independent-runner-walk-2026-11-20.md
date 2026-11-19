@@ -28,13 +28,13 @@ The host owns the item, initial message, transitions, and cold projections.
     "id": "lantern-conversation",
     "icon": "puzzle",
     "title_field": "name",
-    "storage": "ssd",
+    "storage": {"folder": "Lantern"},
     "claimed_text": true,
     "searchable": true,
     "conversation": true,
     "schema": {"type": "object", "required": ["name"], "additionalProperties": false, "properties": {"name": {"type": "string"}}},
     "host_create": {"defaults": {"name": "New conversation"}},
-    "composer": {"send": "lantern.send", "steer_live": true}
+    "composer": {"send": "lantern.send", "job": "run", "steer_live": true}
   }],
   "providers": [{
     "id": "lantern-model",
@@ -49,8 +49,8 @@ The host owns the item, initial message, transitions, and cold projections.
 
 | Worker operation | Declared target and broker methods |
 | --- | --- |
-| `lantern.send` | One `ItemRef` of `lantern-conversation`, plus host-validated message material. Host persists the message and enqueue intent before worker execution. The checked intent starts the replayable `run` job. |
-| `lantern.run` | Same item and admitted intent. `execution_start`, `execution_status`, `checkpoint_job`. This also handles a bounded child request with `execution_spawn_child`; the child kind and default fields come from Lantern's declarations. |
+| `lantern.send` | One `ItemRef` of `lantern-conversation`, plus host-validated message material. Host persists the message and enqueue intent before worker execution. The composer names the replayable `run` job to enqueue with the checked intent. |
+| `lantern.run` | Same item and admitted intent. `execution_start`, `execution_status`, `execution_wait`, `checkpoint_job`. This also handles a bounded child request with `execution_spawn_child`; the child kind and default fields come from Lantern's declarations. |
 
 A list Bind shows title and state. Its row declares `host.item.archive`,
 `host.item.unarchive` and `host.item.snooze` through the normal activation
