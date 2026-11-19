@@ -1,0 +1,39 @@
+{
+  "version": 2,
+  "kind": "app",
+  "revision": 1,
+  "binds": [
+    {
+      "id": "a",
+      "source": {
+        "type": "list",
+        "kind": "threads",
+        "parent": true
+      },
+      "row": {
+        "title": {
+          "field": "title"
+        },
+        "children": {
+          "bind": "b"
+        }
+      }
+    },
+    {
+      "id": "b",
+      "source": {
+        "type": "list",
+        "kind": "threads",
+        "parent": true
+      },
+      "row": {
+        "title": {
+          "field": "title"
+        },
+        "children": {
+          "bind": "a"
+        }
+      }
+    }
+  ]
+}

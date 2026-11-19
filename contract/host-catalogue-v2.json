@@ -11,7 +11,8 @@
     "shared_projection": "Member authority or a host-approved explicit projection for this guest's home root/children. Counts require a separate projection flag.",
     "viewer_self": "The actor may access only their own projected value. AccountRef predicates are limited to eq viewer.person; only counts over that actor’s already authorized projection are allowed. Other typed personal fields use the actor’s index only.",
     "designated_request_actor": "Host-private request addressed to the designated viewer. Covers only the referenced eligible request. No guest list or count. A row id resolves only to a checked RequestRef.",
-    "eligible_turn_actor": "The current turn actor or an actor with live authority to inspect/control that turn under the Turns engine. A thread grant alone does not confer Stop."
+    "eligible_turn_actor": "The current turn actor or an actor with live authority to inspect/control that turn under the Turns engine. A thread grant alone does not confer Stop.",
+    "personal_layout": "Only the actor’s own layout for this space and app; viewer does not gain item access through section membership."
   },
   "kinds": {
     "collections": {
@@ -71,6 +72,13 @@
           "index_owner": "turns",
           "audience": "member_item",
           "nullable": false
+        },
+        "parent": {
+          "type": "ThreadRef",
+          "nullable": true,
+          "index_owner": "turns",
+          "audience": "member_item",
+          "description": "Host-owned parent relation. Authorize both the parent and child before reporting the relation or filling a nested window."
         }
       },
       "search_corpora": [
@@ -114,6 +122,35 @@
       "search_corpora": [],
       "icon": "warning",
       "includes_generic_item_fields": false
+    },
+    "layout_sections": {
+      "owner": "host_layout",
+      "row_ref": "LayoutSectionRef",
+      "audience": "personal_layout",
+      "fields": {
+        "id": {
+          "type": "LayoutSectionRef",
+          "nullable": false,
+          "index_owner": "host_layout",
+          "audience": "personal_layout"
+        },
+        "title": {
+          "type": "Text",
+          "nullable": false,
+          "index_owner": "host_layout",
+          "audience": "personal_layout"
+        },
+        "position": {
+          "type": "Number",
+          "nullable": false,
+          "index_owner": "host_layout",
+          "audience": "personal_layout"
+        }
+      },
+      "search_corpora": [],
+      "includes_generic_item_fields": false,
+      "icon": "folder",
+      "description": "Section repeater source from the viewer’s layout scoped to space and app. Each section row scopes its repeated item window. Within a section, the host issues LayoutEntryRef row ids for placements and reconstructs the underlying item from context."
     }
   },
   "operations": {
@@ -152,7 +189,9 @@
       },
       "outcome_schema": {
         "$ref": "#/$defs/ActionOutcome"
-      }
+      },
+      "atomic_undo": true,
+      "atomic_undo_when": "Single-item rename in the FULL content transaction with its Undo and no deferred inbound-link rewrites."
     },
     "host.item.trash": {
       "engine": "item_trash",
@@ -164,7 +203,7 @@
         "host_item_control"
       ],
       "generic_invoke": true,
-      "full_swipe": false,
+      "full_swipe": true,
       "worker_wake": "never",
       "target_inputs": [
         "item",
@@ -201,7 +240,10 @@
       },
       "outcome_schema": {
         "$ref": "#/$defs/ActionOutcome"
-      }
+      },
+      "atomic_undo": true,
+      "atomic_undo_when": "Single item whose complete lifecycle change is in the FULL content transaction (including replayable placement and Undo). Excludes lifecycle cleanup in another engine.",
+      "full_swipe_when": "First swipe action, effective confirm:none and this operation’s atomic_undo_when condition."
     },
     "host.item.restore": {
       "engine": "item_restore",
@@ -213,7 +255,7 @@
         "host_item_control"
       ],
       "generic_invoke": true,
-      "full_swipe": false,
+      "full_swipe": true,
       "worker_wake": "never",
       "target_inputs": [
         "item",
@@ -237,7 +279,10 @@
       },
       "outcome_schema": {
         "$ref": "#/$defs/ActionOutcome"
-      }
+      },
+      "atomic_undo": true,
+      "atomic_undo_when": "Single-item Trash restore or history restore in the FULL content transaction with its Undo.",
+      "full_swipe_when": "First swipe action restoring one item from Trash, effective confirm:none and this operation’s atomic_undo_when condition."
     },
     "host.undo": {
       "engine": "item_rename_undo / protected eligible inverse",
@@ -267,7 +312,8 @@
       },
       "outcome_schema": {
         "$ref": "#/$defs/ActionOutcome"
-      }
+      },
+      "atomic_undo": false
     },
     "host.trash.purge": {
       "engine": "item_purge / empty_trash",
@@ -297,7 +343,8 @@
       },
       "outcome_schema": {
         "$ref": "#/$defs/ActionOutcome"
-      }
+      },
+      "atomic_undo": false
     },
     "host.approval.resolve": {
       "engine": "protected Inbox resolver",
@@ -361,7 +408,8 @@
       },
       "outcome_schema": {
         "$ref": "#/$defs/ActionOutcome"
-      }
+      },
+      "atomic_undo": false
     },
     "host.panel.ask": {
       "engine": "authorized host panel turn admission",
@@ -401,7 +449,8 @@
       },
       "outcome_schema": {
         "$ref": "#/$defs/ActionOutcome"
-      }
+      },
+      "atomic_undo": false
     },
     "host.turn.stop": {
       "engine": "turn_cancel",
@@ -432,7 +481,8 @@
       },
       "outcome_schema": {
         "$ref": "#/$defs/ActionOutcome"
-      }
+      },
+      "atomic_undo": false
     },
     "host.route.set": {
       "engine": "host shell route state",
@@ -466,7 +516,8 @@
       },
       "outcome_schema": {
         "$ref": "#/$defs/ActionOutcome"
-      }
+      },
+      "atomic_undo": false
     },
     "host.session.end": {
       "engine": "host session revocation",
@@ -488,7 +539,8 @@
       },
       "outcome_schema": {
         "$ref": "#/$defs/ActionOutcome"
-      }
+      },
+      "atomic_undo": false
     },
     "host.item.share": {
       "engine": "host sharing service",
@@ -535,7 +587,8 @@
       },
       "outcome_schema": {
         "$ref": "#/$defs/ActionOutcome"
-      }
+      },
+      "atomic_undo": false
     },
     "host.item.patch-metadata": {
       "engine": "item_save metadata arm",
@@ -575,7 +628,9 @@
       "outcome_schema": {
         "$ref": "#/$defs/ActionOutcome"
       },
-      "full_swipe_when": "Host-validated single-item boolean toggle, confirm:none and durable eligible Undo. Expected revision comes from the activation context."
+      "full_swipe_when": "Host-validated single-item boolean toggle, confirm:none and atomic Undo. Expected revision comes from the activation context.",
+      "atomic_undo": true,
+      "atomic_undo_when": "A checked single boolean toggle with its Undo in the room-checked FULL content transaction."
     },
     "host.action.status": {
       "engine": "protected action / rename / Trash job status",
@@ -605,7 +660,8 @@
       },
       "outcome_schema": {
         "$ref": "#/$defs/ActionOutcome"
-      }
+      },
+      "atomic_undo": false
     },
     "turns.start": {
       "engine": "turn_start",
@@ -644,7 +700,8 @@
       },
       "outcome_schema": {
         "$ref": "#/$defs/ActionOutcome"
-      }
+      },
+      "atomic_undo": false
     },
     "turns.create": {
       "engine": "thread create",
@@ -671,7 +728,8 @@
       },
       "outcome_schema": {
         "$ref": "#/$defs/ActionOutcome"
-      }
+      },
+      "atomic_undo": false
     },
     "turns.archive": {
       "engine": "thread archive",
@@ -702,7 +760,9 @@
       },
       "outcome_schema": {
         "$ref": "#/$defs/ActionOutcome"
-      }
+      },
+      "atomic_undo": false,
+      "atomic_undo_unavailable": "The thread revision commits separately from turn cancellation and saved authority retirement. The complete effect has no atomic inverse."
     },
     "turns.unarchive": {
       "engine": "thread unarchive",
@@ -714,7 +774,7 @@
         "host_thread_control"
       ],
       "generic_invoke": true,
-      "full_swipe": false,
+      "full_swipe": true,
       "worker_wake": "never",
       "target_inputs": [
         "thread"
@@ -733,7 +793,10 @@
       },
       "outcome_schema": {
         "$ref": "#/$defs/ActionOutcome"
-      }
+      },
+      "atomic_undo": true,
+      "atomic_undo_when": "Single-thread unarchive in the FULL content transaction with its Undo. Undo refuses if the thread revision or lifecycle dependencies changed.",
+      "full_swipe_when": "First swipe action, effective confirm:none and this operation’s atomic_undo_when condition."
     },
     "turns.snooze": {
       "engine": "thread snooze",
@@ -775,7 +838,8 @@
       },
       "outcome_schema": {
         "$ref": "#/$defs/ActionOutcome"
-      }
+      },
+      "atomic_undo": false
     },
     "turns.follow_up": {
       "engine": "turn_follow_up",
@@ -810,7 +874,8 @@
       },
       "outcome_schema": {
         "$ref": "#/$defs/ActionOutcome"
-      }
+      },
+      "atomic_undo": false
     },
     "host.collection.move": {
       "engine": "collection_membership",
@@ -874,7 +939,213 @@
       },
       "outcome_schema": {
         "$ref": "#/$defs/ActionOutcome"
-      }
+      },
+      "atomic_undo": true,
+      "atomic_undo_when": "Single-collection membership edit in the FULL content transaction with its Undo. A move across two collections is ineligible until both membership changes commit together."
+    },
+    "host.layout.move_to": {
+      "engine": "personal layout placement with complete effect and Undo committed together",
+      "effect": "reversible",
+      "idempotency": "request_id",
+      "authority": "Current actor’s own space/app layout, with live item/parent access for placements and context-pinned layout revision",
+      "surfaces": [
+        "authorized_template_action",
+        "host_layout_control"
+      ],
+      "generic_invoke": true,
+      "full_swipe": false,
+      "worker_wake": "never",
+      "target_inputs": [
+        "entry",
+        "section"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "entry",
+          "section"
+        ],
+        "properties": {
+          "entry": {
+            "$ref": "#/$defs/LayoutEntryRef"
+          },
+          "section": {
+            "$ref": "#/$defs/LayoutSectionRef",
+            "description": "Destination reconstructed by the host, including from a scoped ChoiceRef. Requires a protected preview."
+          }
+        }
+      },
+      "outcome_schema": {
+        "$ref": "#/$defs/ActionOutcome"
+      },
+      "atomic_undo": true
+    },
+    "host.layout.move_up": {
+      "engine": "personal layout order with complete effect and Undo committed together",
+      "effect": "reversible",
+      "idempotency": "request_id",
+      "authority": "Current actor’s own space/app layout, with live item/parent access for placements and context-pinned layout revision",
+      "surfaces": [
+        "authorized_template_action",
+        "host_layout_control"
+      ],
+      "generic_invoke": true,
+      "full_swipe": false,
+      "worker_wake": "never",
+      "target_inputs": [
+        "entry"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "entry"
+        ],
+        "properties": {
+          "entry": {
+            "$ref": "#/$defs/LayoutEntryRef"
+          }
+        }
+      },
+      "outcome_schema": {
+        "$ref": "#/$defs/ActionOutcome"
+      },
+      "atomic_undo": true
+    },
+    "host.layout.move_down": {
+      "engine": "personal layout order with complete effect and Undo committed together",
+      "effect": "reversible",
+      "idempotency": "request_id",
+      "authority": "Current actor’s own space/app layout, with live item/parent access for placements and context-pinned layout revision",
+      "surfaces": [
+        "authorized_template_action",
+        "host_layout_control"
+      ],
+      "generic_invoke": true,
+      "full_swipe": false,
+      "worker_wake": "never",
+      "target_inputs": [
+        "entry"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "entry"
+        ],
+        "properties": {
+          "entry": {
+            "$ref": "#/$defs/LayoutEntryRef"
+          }
+        }
+      },
+      "outcome_schema": {
+        "$ref": "#/$defs/ActionOutcome"
+      },
+      "atomic_undo": true
+    },
+    "host.layout.section.create": {
+      "engine": "personal layout create section",
+      "effect": "reversible",
+      "idempotency": "request_id",
+      "authority": "Current actor’s own space/app layout, with live item/parent access for placements and context-pinned layout revision",
+      "surfaces": [
+        "authorized_template_action",
+        "host_layout_control"
+      ],
+      "generic_invoke": true,
+      "full_swipe": false,
+      "worker_wake": "never",
+      "target_inputs": [],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "title"
+        ],
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        }
+      },
+      "outcome_schema": {
+        "$ref": "#/$defs/ActionOutcome"
+      },
+      "atomic_undo": false
+    },
+    "host.layout.section.rename": {
+      "engine": "personal layout rename section",
+      "effect": "reversible",
+      "idempotency": "request_id",
+      "authority": "Current actor’s own space/app layout, with live item/parent access for placements and context-pinned layout revision",
+      "surfaces": [
+        "authorized_template_action",
+        "host_layout_control"
+      ],
+      "generic_invoke": true,
+      "full_swipe": false,
+      "worker_wake": "never",
+      "target_inputs": [
+        "entry"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "entry",
+          "title"
+        ],
+        "properties": {
+          "entry": {
+            "$ref": "#/$defs/LayoutSectionRef"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        }
+      },
+      "outcome_schema": {
+        "$ref": "#/$defs/ActionOutcome"
+      },
+      "atomic_undo": false
+    },
+    "host.layout.section.remove": {
+      "engine": "personal layout remove section without changing item content or access",
+      "effect": "reversible",
+      "idempotency": "request_id",
+      "authority": "Current actor’s own space/app layout, with live item/parent access for placements and context-pinned layout revision",
+      "surfaces": [
+        "authorized_template_action",
+        "host_layout_control"
+      ],
+      "generic_invoke": true,
+      "full_swipe": false,
+      "worker_wake": "never",
+      "target_inputs": [
+        "entry"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "entry"
+        ],
+        "properties": {
+          "entry": {
+            "$ref": "#/$defs/LayoutSectionRef"
+          }
+        }
+      },
+      "outcome_schema": {
+        "$ref": "#/$defs/ActionOutcome"
+      },
+      "atomic_undo": false
     }
   },
   "query": {
@@ -915,7 +1186,9 @@
       "max_request_span": 200,
       "row_reference_schema": {
         "$ref": "#/$defs/Ref"
-      }
+      },
+      "description": "A nested window uses the same envelope with the authorized parent row. The host reconstructs the parent in the declared Bind edge and authorizes both the parent and returned rows. The window_ref identifies the Bind, stable parent and issued range within the current lease and partition.",
+      "max_nested_row_depth": 3
     },
     "unsupported_plan": {
       "status": 422,
@@ -1153,7 +1426,7 @@
         },
         "dispatch": {
           "const": true,
-          "description": "Resolve and dispatch once when the host derives confirm:none; otherwise return a challenge and perform no effect."
+          "description": "Resolve and dispatch in one exchange only for an eligible catalogue operation with effective confirm:none. Otherwise return a resolution without running the operation."
         }
       }
     },
@@ -1182,7 +1455,7 @@
         "final_text": {
           "type": "string",
           "maxLength": 65536,
-          "description": "Only a prepared host composer Send accepts final text and confirms and dispatches in this exchange."
+          "description": "Message content for the prepared host composer only. Any parser-derived change to recipients, routing, permissions or other prepared material requires a fresh resolve and preview."
         }
       }
     },
@@ -1232,8 +1505,7 @@
       "additionalProperties": false,
       "required": [
         "activation_id",
-        "resolution_ref",
-        "confirm"
+        "resolution_ref"
       ],
       "properties": {
         "activation_id": {
@@ -1253,7 +1525,8 @@
           }
         },
         "confirm": {
-          "$ref": "#/$defs/ConfirmMode"
+          "$ref": "#/$defs/ConfirmMode",
+          "description": "Omitted for the ordinary separate resolve/dispatch path without an extra challenge. None permits the catalogue shortcut only. Challenge requires protected confirmation."
         },
         "selection_ref": {
           "$ref": "#/$defs/SelectionRef"
@@ -1274,7 +1547,10 @@
               "confirm": {
                 "const": "challenge"
               }
-            }
+            },
+            "required": [
+              "confirm"
+            ]
           },
           "then": {
             "required": [
@@ -1419,23 +1695,15 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "bind",
-        "from",
-        "to"
+        "type",
+        "request"
       ],
       "properties": {
-        "to": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 100200
+        "type": {
+          "const": "window"
         },
-        "from": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 100000
-        },
-        "bind": {
-          "$ref": "#/$defs/ActionId"
+        "request": {
+          "$ref": "#/$defs/WindowRequestPayload"
         }
       }
     },
@@ -1464,7 +1732,8 @@
         "state",
         "result_version",
         "offset",
-        "rows"
+        "rows",
+        "window_ref"
       ],
       "properties": {
         "result_version": {
@@ -1529,6 +1798,20 @@
             "$ref": "#/$defs/RowActivationContexts"
           },
           "description": "Present only for an authorized ready or empty result."
+        },
+        "window_ref": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Ref"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "parent": {
+          "$ref": "#/$defs/Ref",
+          "description": "Host-validated stable parent for this window, omitted at the root."
         }
       },
       "allOf": [
@@ -1547,6 +1830,9 @@
             "properties": {
               "result_version": {
                 "$ref": "#/$defs/Ref"
+              },
+              "window_ref": {
+                "$ref": "#/$defs/Ref"
               }
             }
           },
@@ -1558,6 +1844,9 @@
               "activation_contexts": false,
               "count": false,
               "result_version": {
+                "type": "null"
+              },
+              "window_ref": {
                 "type": "null"
               }
             }
@@ -1851,7 +2140,8 @@
         "shared_projection",
         "viewer_self",
         "designated_request_actor",
-        "eligible_turn_actor"
+        "eligible_turn_actor",
+        "personal_layout"
       ]
     },
     "FieldType": {
@@ -1866,7 +2156,9 @@
         "TurnRef",
         "RequestRef",
         "AccountRef",
-        "ProviderId"
+        "ProviderId",
+        "LayoutSectionRef",
+        "LayoutEntryRef"
       ]
     },
     "ViewerRole": {
@@ -1942,7 +2234,8 @@
       "required": [
         "lease_ref",
         "lease_seconds",
-        "grant_revision"
+        "grant_revision",
+        "cache_partition"
       ],
       "properties": {
         "lease_ref": {
@@ -1953,6 +2246,9 @@
         },
         "grant_revision": {
           "$ref": "#/$defs/Ref"
+        },
+        "cache_partition": {
+          "$ref": "#/$defs/CachePartitionRef"
         }
       }
     },
@@ -1980,7 +2276,9 @@
         "type",
         "lease_ref",
         "grant_revision",
-        "result_versions"
+        "result_versions",
+        "renewal_id",
+        "cache_partition"
       ],
       "properties": {
         "type": {
@@ -1997,7 +2295,18 @@
           "maxProperties": 16,
           "additionalProperties": {
             "$ref": "#/$defs/Ref"
+          },
+          "description": "Exact result versions keyed by current host-issued window_ref, including parent-specific windows.",
+          "propertyNames": {
+            "$ref": "#/$defs/Ref"
           }
+        },
+        "renewal_id": {
+          "$ref": "#/$defs/Ref",
+          "description": "Renderer-generated identifier unique to this renewal attempt. A newer attempt supersedes it."
+        },
+        "cache_partition": {
+          "$ref": "#/$defs/CachePartitionRef"
         }
       }
     },
@@ -2008,7 +2317,10 @@
         "lease",
         "retained_results",
         "activation_contexts",
-        "windows"
+        "windows",
+        "renewal_id",
+        "request_lease_ref",
+        "cache_partition"
       ],
       "properties": {
         "lease": {
@@ -2018,8 +2330,9 @@
           "type": "array",
           "maxItems": 16,
           "items": {
-            "$ref": "#/$defs/ActionId"
-          }
+            "$ref": "#/$defs/RetainedResult"
+          },
+          "uniqueItems": true
         },
         "activation_contexts": {
           "$ref": "#/$defs/ActionContexts"
@@ -2030,8 +2343,18 @@
           "items": {
             "$ref": "#/$defs/WindowResult"
           }
+        },
+        "renewal_id": {
+          "$ref": "#/$defs/Ref"
+        },
+        "request_lease_ref": {
+          "$ref": "#/$defs/Ref"
+        },
+        "cache_partition": {
+          "$ref": "#/$defs/CachePartitionRef"
         }
-      }
+      },
+      "description": "Accept only an authenticated host reply matching the outstanding renewal_id, current request_lease_ref and cache_partition. Retain only exact window_ref and result_version pairs authorized and previously issued to that lease. Ignore superseded replies and keep live rows hidden on timeout or refusal."
     },
     "UndoRequest": {
       "type": "object",
@@ -2350,6 +2673,95 @@
           "minimum": 0
         }
       }
+    },
+    "WindowRequestPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "bind",
+        "from",
+        "to"
+      ],
+      "properties": {
+        "to": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100200
+        },
+        "from": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100000
+        },
+        "bind": {
+          "$ref": "#/$defs/ActionId"
+        },
+        "parent": {
+          "$ref": "#/$defs/Ref",
+          "description": "Stable parent thread or section row from the scoped host Bind. Absent for a root window."
+        }
+      }
+    },
+    "CachePartitionRef": {
+      "$ref": "#/$defs/Ref",
+      "description": "Opaque host partition identifier bound to the account, session, space, audience and view. It grants no authority."
+    },
+    "RetainedResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "window_ref",
+        "result_version"
+      ],
+      "properties": {
+        "window_ref": {
+          "$ref": "#/$defs/Ref"
+        },
+        "result_version": {
+          "$ref": "#/$defs/Ref"
+        }
+      }
+    },
+    "SelectionContextResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "lease_ref",
+        "cache_partition",
+        "bind",
+        "row",
+        "activation_contexts"
+      ],
+      "properties": {
+        "type": {
+          "const": "selection_context"
+        },
+        "lease_ref": {
+          "$ref": "#/$defs/Ref"
+        },
+        "cache_partition": {
+          "$ref": "#/$defs/CachePartitionRef"
+        },
+        "bind": {
+          "$ref": "#/$defs/ActionId"
+        },
+        "row": {
+          "$ref": "#/$defs/Ref"
+        },
+        "activation_contexts": {
+          "$ref": "#/$defs/ActionContexts"
+        }
+      },
+      "description": "Host issues selection contexts for exactly the stable row reported as drawn. Renderer waits if none matches that row and ignores unrelated or superseded contexts."
+    },
+    "LayoutEntryRef": {
+      "$ref": "#/$defs/Ref",
+      "description": "Host-issued ref for a section or placement in the current actor’s personal layout."
+    },
+    "LayoutSectionRef": {
+      "$ref": "#/$defs/Ref",
+      "description": "Host-issued ref for a section in the current actor’s personal layout."
     }
   },
   "activation_limits": {
@@ -2392,9 +2804,16 @@
         "$ref": "#/$defs/SelectionSetRequest"
       },
       "output_schema": {
-        "$ref": "#/$defs/SelectionSetResult"
+        "oneOf": [
+          {
+            "$ref": "#/$defs/SelectionSetResult"
+          },
+          {
+            "$ref": "#/$defs/SelectionContextResult"
+          }
+        ]
       },
-      "scope": "Current authorized Bind, context and depth-limited stable row IDs"
+      "scope": "Current authorized Bind and lease. Issue SelectionContextResult for the settled single row, and SelectionSetResult for multiple-selection lists or a clear."
     },
     "composer.options": {
       "input_schema": {
@@ -2466,7 +2885,7 @@
       "output_schema": {
         "$ref": "#/$defs/LeaseRenewResult"
       },
-      "scope": "Original view session and audience; fresh authority required"
+      "scope": "Original authenticated view session and cache partition, with fresh authority for the requested lease and its issued window versions"
     },
     "choice.options": {
       "output_schema": {
@@ -2514,10 +2933,16 @@
     "schema": {
       "$ref": "#/$defs/ConfirmMode"
     },
-    "none": "An effect-free read, or a reversible effect with host-proven Undo whose only material is the rendered target or the owning submitting form fields.",
-    "challenge": "Irreversible, external, widens_access, bulk sets, declared material_inputs, and any destination, recipient or permission. If the host cannot prove the none conditions, require a challenge."
+    "none": "A host catalogue read, or a host catalogue mutation marked atomic_undo whose engine commits the complete effect and Undo in one recovery-visible transaction and satisfies any atomic_undo_when condition. For mutations the only material may be the drawn target or fields of the submitting form.",
+    "challenge": "Irreversible, external, widens_access, bulk sets, declared material_inputs, any destination, recipient, audience or permission, or unproven material. Never bypassed by atomic_undo.",
+    "ordinary": "Worker operations always use separate resolution and dispatch. A reversible manifest declaration never permits the shortcut. Return a challenge only for required material or effects; otherwise omit confirm."
   },
   "schedule_create_input": {
     "$ref": "#/$defs/ScheduleCreateInput"
+  },
+  "cache_policy": {
+    "member_rows_max_age_seconds": 1209600,
+    "persistent_row_scope": "Previously authorized member list rows for own spaces only. Bind.persist opts in and cache.memberRows may opt out. cache.maxAgeDays may shorten retention.",
+    "persistent_row_authority": "Display on unlocked devices as unconfirmed until the host confirms or corrects the rows. Encrypt with account- and space-bound keys. Never persist guest or public rows, action credentials or contexts. Erase on sign-out, account switch or known revocation. Every action requires a fresh host context."
   }
 }

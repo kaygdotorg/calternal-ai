@@ -75,8 +75,8 @@ The native list and the web list both ask for **index windows**, not cursors, be
 the keyboard at 30 rows a second:
 
 ```
-shell -> host   { type: "window", request: { bind: "notes", from: 120, to: 180 } }                       // the catalogue's WindowRequest
-host  -> shell  { bind: "notes", state: "ready", result_version, count: {mode, value}, offset: 100,
+shell -> host   { type: "window", request: { bind: "notes", from: 120, to: 180, parent?: "<row ref>" } }                 // the catalogue's WindowRequest: the ONE envelope
+host  -> shell  { bind: "notes", parent?, window_ref, state: "ready", result_version, count: {mode, value}, offset: 100,
                   rows: [ { id, fields: {...} }, ... ], activation_contexts: [ { row, contexts: { action_id: token } } ] }   // the catalogue's WindowResult
 ```
 
@@ -111,7 +111,7 @@ output. A renderer shows `loading` until the first window arrives, `empty` when 
 
 The description only asks. Before any indexed work the host must:
 
-1. authorize the **kind** (a package binds its own kinds, the host's, and the ones its manifest `reads`), the **collection**, every **filter field**, every **sort field**, the
+1. authorize the **kind** (a package binds only kinds in its manifest `reads`: the SDK fills a package's own kinds into `reads` automatically, so an author writes `reads` only for another app's kinds), the **collection**, every **filter field**, every **sort field**, the
    **search** and every **output field** against the viewer, the space and, for a guest, the item's grant;
 2. reject a field not declared indexed by the kind, and a field outside the audience's projection (a guest entitled to titles must not be able to infer hidden
    metadata from the count of an `eq` filter or from row order: filters, sorts and counts on a field the audience cannot read are refused, not filtered);
@@ -127,6 +127,16 @@ The description only asks. Before any indexed work the host must:
 
 The renderer never receives a row it was not entitled to; it needs no rule of its own. The host's own duties (authority, engines, projections) are written once, in the
 Plugin API (Part A); this section lists only what the description relies on.
+
+### 2.7 Nested rows and user-made sections
+
+* **Nested child rows.** A row template may declare `children: {bind}`: a bind whose source has `parent: true` and whose filter uses `{parent: true}` (the parent row, reconstructed by the
+  host). The renderer asks for a parent's children with its own windows (`request.parent`), only when the row is expanded; a row with children draws the system's disclosure control (a `List`
+  with `children`/`DisclosureGroup`). Depth is at most 3, counted through the chain; the host checks it and the verifier rejects cycles. Child threads under their parent are this.
+* **User-made sections.** `Section.repeat: {over, rows}` makes one section per row of the bind `over` (the per-person layout the host stores: the host virtual kind `layout_sections` with
+  `id`, `title`, `position`, viewer-only) with each section's rows from the per-parent bind `rows`. The layout is stored and authorized by the host; **Move to, Move up and Move down are host
+  operations** (`host.layout.move_to {entry, section}`, `host.layout.move_up` and `host.layout.move_down {entry}`, and `host.layout.section.create`, `rename`, `remove` for personal sections)
+  that a row or section menu names, with a host-issued `LayoutEntryRef`. **Drag is not in the first contract**: a recorded parity exception, with Move to and Move up/down standing in.
 
 ## 3. Invoke
 
@@ -178,20 +188,26 @@ host  -> shell { activation_id, state: ok | pending | error | stale | refused | 
   and a host-issued `selection_ref`. **The event never carries a resolved row, selection, route, bind value, target item or viewer; if a modified client adds one, the schema
   refuses the field and the host ignores it.** There is no single revision number: the context names the versions it depends on, so a row that merely scrolled out of the window or moved
   because of unrelated changes is **still actionable**; only a change to the target, its scope or a dependency makes the activation `stale` (nothing ran).
-* **Confirmation is derived from the catalogue, never from the description** (`confirm: none | challenge`, from the effect class). `none` for a **reversible** effect whose only material is
-  the rendered target or the submitting form's own fields (a host Undo covers it): the shell sends the resolve with `dispatch: true` and the host answers with the outcome, **one exchange**.
-  `challenge` for an irreversible, external or access-widening effect, a bulk set, any destination, recipient, audience or permission, and any input the manifest declares material: the
-  host answers the resolve with a `confirmation_challenge` and a **material** list **it wrote** (values the person did not edit included: untouched prefills, defaults, autofill), the shell
-  shows it in its own protected sheet, and `invoke_confirm` returns the challenge; the host returns a `confirmation_proof` bound to the normalized input and the `activation_id`
-  (different input: a new challenge). A description cannot add, remove or relabel anything here. **Typing is never consent**: no value counts as confirmed because it was typed; where
-  a challenge is required, the person's confirmation through the protected step is the consent.
-* **Chat send is one exchange.** The composer pre-resolves only when the material changes (provider, model, machine and other options, attachments, mentions, a quote); the proof binds to that
-  material and not to the text, so one `invoke_confirm` carrying `final_text` (the composer-only arm) confirms and dispatches. A description names no send operation.
+* **Confirmation is derived from the catalogue, never from the description** (`confirm: none | challenge`). **A sheet-free, one-exchange mutation (`confirm: none`) exists only for
+  catalogue entries whose engine commits the complete effect and its Undo together** (the catalogue's `atomic_undo: true`, worker-free). **The catalogue's flag decides, not this document or the description:** an operation is sheet-free only where the catalogue sets `atomic_undo`, and Trash, Restore and rename are not until the catalogue establishes complete effect plus Undo at one commit for them. A manifest's
+  `risk` or `reversible` declaration grants **no** eligibility. For these the shell sends the resolve with `dispatch: true` and the host answers with the outcome, **one exchange**.
+  **A plugin (worker-backed) operation always takes the ordinary path:** a resolve, then a separate dispatch: **two exchanges**, and **no sheet** unless the host says material requires a
+  challenge (a destination, recipient, audience or permission, a bulk set, an irreversible, external or access-widening effect, or an input the manifest declares material): then the host
+  answers the resolve with a `confirmation_challenge` and a **material** list **it wrote** (values the person did not edit included: untouched prefills, defaults, autofill), the shell
+  shows it in its own protected sheet, `invoke_confirm` returns the challenge, and the host returns a `confirmation_proof` bound to the normalized input and the `activation_id`
+  (different input: a new challenge); a challenged action is three exchanges. A description cannot add, remove or relabel anything here. **Typing is never consent**: no value counts as
+  confirmed because it was typed; where a challenge is required, the person's confirmation through the protected step is the consent.
+* **Chat send is one exchange, and the final text is message content only.** The composer pre-resolves only when the prepared material changes (provider, model, machine and other options,
+  attachments, mentions, a quote); the proof binds to that material and not to the text, so one `invoke_confirm` carrying `final_text` (the composer-only arm) confirms and dispatches, and the
+  receipt is bound to the final text (a retry cannot send different words). The host treats `final_text` as inert at admission: **any parser-derived change to recipients, routing, permissions or other
+  prepared material** (an @-mention, a slash command, a destination typed in the text) **invalidates the proof and requires a fresh resolve and preview**. A description names no send operation.
 * **Retry and idempotency are the host's.** A description cannot declare an action retry-safe or waive a check: effect class and idempotency come from the catalogue and the manifest, and
   the host de-duplicates by `activation_id` (a retry after a dropped connection repeats no effect).
-* **Full swipe.** A swipe action may set `fullSwipe` only on the first action of its set **and** only if the catalogue marks its operation `full_swipe: true` (a reversible host built-in that
-  returns an Undo and needs no confirmation: pin and mark-read toggles, Restore once marked); the verifier rejects it on any plugin operation. A full swipe never opens a confirmation.
-* **Flush before activating.** A selection held by the settle window is sent before an activation that uses it, so the action runs against the row the person is looking at.
+* **Full swipe.** A swipe action may set `fullSwipe` only on the first action of its set **and** only if the catalogue marks its operation `full_swipe: true` (a catalogue entry that commits its effect and Undo together and needs no confirmation: only the entries the catalogue marks); the verifier rejects it on any plugin operation. A full swipe never opens a confirmation.
+* **The context must match the selection DRAWN.** A selection held by the settle window is sent before an activation that uses it, and the action's `activation_context` must be the one the host
+  issued for the stable row actually drawn as selected when the person activates (the host issues a `SelectionContextResult` after each settled selection event, bound to the lease, cache partition,
+  bind and row). The renderer uses a context only if it matches the currently drawn row; if it is missing, **it waits for the host-issued context** and sends nothing. The host never resolves an
+  activation against whichever selection is current on the server.
 * **No generic route to protected operations** (3.1).
 
 ### 3.3 Identifiers: action, activation, request, ticket
@@ -223,7 +239,7 @@ list only when the host's next window no longer contains it.
 * **`binds`**: every bind of the app, by id (at most 16, chrome and view together); sidebar sections, selector counts, the footer search, the header title and components reference them by
   id, so a reference is never ambiguous and a bind is declared once.
 * **`chrome.sidebar`**: `selectors`, `sections`, `title`, `width`, `refresh`. A **section** has literal `rows` (fixed shortcuts), a `bind`, or both (literal first), `actions` and `menu` in
-  its header, a `collapsed` flag only when it folds, and `showWhen` (a route parameter's value, or `minRole` so Empty Trash is not offered to an Editor). A section without a `title` draws
+  its header, a `collapsed` flag only when it folds, a `repeat` (user-made sections, 2.7) instead of `bind`/`rows`, and `showWhen` (a route parameter's value, or `minRole` so Empty Trash is not offered to an Editor). A section without a `title` draws
   no header and therefore no header actions. There are no cards: a shortcut row or a `ShellAction` row covers what a card did; an approval is the `request-card` component.
 * **`selectors`**: a segmented control whose options set a route parameter; an option's `count` is a bind with `count: "exact"`, so Inbox 4 is a bind.
 * **`chrome.header`**: a literal title or a field of an **item** bind (the open item, never a list's first row), and up to two leading and three trailing actions. The sidebar toggle is the shell's.
@@ -296,7 +312,7 @@ plugin code). A description can run a named **invoke** on a component's event on
   `request-card`. Its size is the card's (the transcript and editor fill it; the composer is at the bottom; the frame reports its height inside the caps).
 * **Refs are typed.** `thread`, `item` and `request` take a value source that resolves to a reference of that type or the host refuses the description; the host
   authorises the viewer for the ref (a guest's grant included) before anything is read. The description holds no viewer data.
-* **Drafts and options.** The composer's text stays on the device; attachments are handed to the host when attached and held as host-owned `AttachmentRef`s, mentions are account references, a quoted passage is a host-issued quote reference (the catalogue's `Draft`), and the chosen provider, model, reasoning level, permission and machine are opaque option references the host returned (`Interaction.options`). The description names none of them: it says which controls appear. The host checks everything (lengths, counts, that every attachment is the viewer's own, that every option is one it offered for this thread) and composes the send; it never trusts the client. The draft clears only after `ok`; `error` keeps it.
+* **Drafts and options.** The composer's text stays on the device; attachments are handed to the host when attached and held as host-owned `AttachmentRef`s, mentions are account references, a quoted passage is a host-issued quote reference (the catalogue's `Draft`), and the chosen provider, model, reasoning level, permission and machine are opaque option references the host returned (`Interaction.options`). The description names none of them: it says which controls appear. The host checks everything (lengths, counts, that every attachment is the viewer's own, that every option is one it offered for this thread) and composes the send; it never trusts the client. The one-exchange Send treats the final text **solely as message content**: anything the host parses out of it that changes recipients, routing, permissions or other prepared material (a mention, a slash command) needs a fresh preview before it takes effect (3.2). The draft clears only after `ok`; `error` keeps it.
 * **Transcript reads** use the catalogue's `transcript.page` route: a `TranscriptPageRequest` names the thread and an opaque `after` cursor, the `TranscriptPage` returns at most 128 committed events and a `committed_cursor`; every page is reauthorised and bounded (128 KiB); an expired or revoked cursor is refused and the renderer reads again from the end. No description or renderer invents a cursor.
 * **Streaming** is the host's: the transcript's rows grow and change without a description revision; the host caps the update rate, commits a final message at the
   end, and drops an in-flight load when the viewer moves to another thread (the old transcript load is cancelled, not finished).
@@ -308,25 +324,35 @@ plugin code). A description can run a named **invoke** on a component's event on
 
 ## 6. What may be cached on the device
 
-`cache.templates` is `keep` (default) or `none`; `maxAgeDays` bounds it (1 to 90, default 30).
+`cache.templates` is `keep` (default) or `none`; `cache.memberRows` is `keep` (default) or `none`; `maxAgeDays` bounds what is kept (1 to 90, default 30; persisted member rows are capped at 14).
 
-* **Only data-free templates persist.** A template is a description with its binds as requests: sections, selectors, titles the author wrote, icons, actions. It holds no row, no
-  title of a person's item, no count and no activation context, so it may be stored (one file of at most 4 MB, keyed by the signed-in account, deleted on sign-out and on account
-  switch). `none` keeps nothing.
-* **Filled rows are session-only.** Rows, counts and anything the host filled stay in memory, **partitioned by session, space and audience** (a member and a guest of the same
-  account never share a partition), are never written to storage, and are cleared on revocation, on closing a guest link, on sign-out, on account switch and when the session
-  ends. A shared or offline device therefore holds no titles after the session.
-* **Nothing protected is painted before the host has authorised the viewer now.** There is no stale-first paint of rows. Activation contexts, resolution references,
-  confirmation challenges and proofs are never stored anywhere.
-* **What the person sees at first paint instead.** The template at once (the sidebar's structure, selectors, section titles the author wrote, the footer, the header), with
-  skeleton rows where a list will be and the bind's `loading` state; the host's first window answer replaces the skeletons (one round trip, no waiting on a full list). Offline
-  or unauthorised, the person sees the template and the state the host or the shell can say truthfully (`offline`, `sign in again`), never a title from a past session. A shell
-  that cannot meet these rules (an older client) gets a host fallback that obeys the same authority rules, or the page's own chrome.
+* **Data-free templates persist.** A template is a description with its binds as requests: sections, selectors, titles the author wrote, icons, actions. It holds no row, no title of a
+  person's item, no count, no account initial and no activation context, so it may be stored (one file of at most 4 MB, keyed by the signed-in account, deleted on sign-out and on account
+  switch). `templates: none` keeps nothing.
+* **Q10 (owner decision, 2026-11-19): a MEMBER's own-space rows persist between launches.** Only the rows of binds that opt in (`persist: true`) in the member's own space; **encrypted, with keys
+  bound to the account and the space, on an unlocked device**, **painted at once at the next launch and then confirmed or corrected by the host's first window answer**; retained for at most
+  14 days (or `maxAgeDays` if shorter); **erased on sign-out, on account switch and on any known revocation** (a lost membership, a role change the device learns of, a revoked device). Persisted
+  rows are **display only**: they carry no activation context, no resolution reference, no confirmation challenge or proof and no credential, and **every action still needs a fresh host context**
+  (the renderer disables actions on a row until the host's window answer has issued one). **Never for a guest or a public view**, whatever the description says; `memberRows: none` keeps nothing.
+  *Sol's recorded objection:* protected rows should be revalidated by the host before they are painted, because a revocation the device has not yet learned of leaves titles visible for the
+  moment before the first answer; the owner accepted that cost knowingly in exchange for an instant first paint. The mitigations are the conditions above (short retention, device lock, key
+  binding, erase on a known revocation).
+* **Everything else filled is session-only.** A guest's or a public view's rows, counts and anything the host filled for them stay in memory, **partitioned by session, space and audience** (a member
+  and a guest of the same account never share a partition), are never written to storage, and are cleared on revocation, on closing a guest link, on sign-out, on account switch and when the
+  session ends. Activation contexts, resolution references, confirmation challenges and proofs are never stored anywhere.
+* **What the person sees at first paint.** The template at once (the sidebar's structure, selectors, section titles the author wrote, the footer, the header), with the member's persisted rows
+  where a bind opted in (marked as not yet confirmed) and otherwise skeleton rows and the bind's `loading` state; the host's first window answer confirms or corrects them (one round trip). Offline
+  or unauthorised, the person sees the template and the state the host or the shell can say truthfully (`offline`, `sign in again`); a guest or public viewer never sees a title from a past session.
+  A shell that cannot meet these rules (an older client) gets a host fallback that obeys the same authority rules, or the page's own chrome.
+* **"Do not paint" is not "discard".** When a lease lapses or the app is in the background, filled rows stay in memory (same session, space and audience partition) but are not drawn as current. The
+  **lease renewal** is correlated and authenticated: the request carries a `renewal_id`, the `lease_ref`, the `cache_partition` and the held `result_versions` keyed by `window_ref`; the reply
+  (`LeaseRenewResult`) echoes `renewal_id`, `request_lease_ref` and `cache_partition` and names the exact `retained_results` (`window_ref`, `result_version`), and is accepted only from the current
+  session. The renderer repaints **only** the windows named as retained, **ignores a superseded reply** (an older `renewal_id`, another lease or partition) and **keeps rows hidden on timeout or
+  refusal**; a changed grant or version refetches. A longer absence therefore costs a renewal, not a skeleton screen. (First window at offset 0 is a performance gate on the perf VM; see the plugin
+  API build order.)
 * The cache is the shell's, not the page's.
-* **"Do not paint" is not "discard".** When a lease lapses or the app is in the background, filled rows stay in memory (same session, space and audience partition) but are not drawn
-  as current. A lease renewal that returns the same grant revision and result versions repaints them with no refetch; a changed grant or version refetches. An app switch longer than the
-  lease therefore costs a renewal, not a skeleton screen. (First window at offset 0 is a performance gate on the perf VM; see the plugin API build order.)
-* **Implementation status:** the apps keep only the frame (`ChromeCache.frame(of:)`: no rows, cards, counts, account initial or item title) of a v1 description until the v2 renderer exists.
+* **Implementation status:** the apps keep only the frame (`ChromeCache.frame(of:)`: no rows, cards, counts, account initial or item title) of a v1 description until the v2 renderer exists; persisting
+  member rows with encryption and erase-on-revocation is part of the v2 renderer.
 
 ## 7. Version negotiation
 
@@ -355,7 +381,8 @@ What the renderer needs from the contract, and what it costs:
 6. **Swipe actions** need `title`, `icon`, `tone` and `fullSwipe` on the invoke; they draw with the system's swipe look, tinted by tone, never by the root tint.
 7. **Haptics and menus** are the shell's: selection feedback on `route` and `selection` events, a system menu for `menu`.
 8. **Touch targets** are 44 pt; the renderer, not the description, sizes controls.
-9. **The first paint** may come from the cache (section 6) before any host is reachable; therefore binds in the cached description have a defined stale state.
+9. **The first paint** may come from the cache (section 6) before any host is reachable: the template, and a member's persisted rows marked as not yet confirmed (their actions disabled until a fresh context arrives).
+10. **Nested rows and user sections** map to a `List` with `children` (disclosure) and one `Section` per layout row; windows per parent are requested only for expanded rows.
 
 ### 8.1 Review of sections 5 and 9 against SwiftUI (native lane)
 
@@ -403,6 +430,8 @@ Everything in 5.0 and 5.1 is drawable with system controls. Findings, in order o
 
 Fixtures in `contract/fixtures/description-v2/` with one **fixture manifest** per exercise (`manifests/`, a subset of the plugin manifest v2 format: kinds, indexed fields, operations,
 reads), so a fixture is checked against what the plugin would declare, not against nothing: `reading-list-app`, `notes-app`, `threads-app` (and `notes-bulk-and-snooze-app`). Run `python3 contract/verify-description.py`.
+**Reads.** Every bind needs its kind in the manifest's `reads`; the SDK fills a package's own kinds into `reads` automatically, so an author writes `reads` only for another app's kinds (Threads reads `threads` and `layout_sections`, the host's). The verifier still requires the entry in the manifest it checks.
+**Persisted rows (owner decision Q10).** A member's own-space rows may persist on the device (encrypted, painted at once, then confirmed or corrected by the host); a bind opts in with `persist`, a description may opt out with `cache.memberRows: none`, and nothing persists for a guest or a public view. The conditions are section 6's. The fixture `threads-nested-app.json` shows both (`cache.memberRows`, `persist` on the `all` bind).
 This section is a rerun of the three exercises after Opus review 4: what is written, what is not, how many concepts an author meets before the first list, and what
 `defineView` and `defineChrome` will hide.
 
@@ -437,12 +466,11 @@ multi-selection and bulk Trash through `selection_ref`; **Move to collection** a
 
 **Written:** the Inbox as a bind (`waiting_on eq viewer.person`) with its count in the selector; All Threads; provider icons from the open `ProviderId` values; state marks; the
 transcript with the host's Quote and Stop; the composer as a thread and its controls (provider, model, reasoning, permission, machine, attachments, mentions), the host owning the
-send; an approval as a `request-card` over the protected request (`requests`, `thread_ref`); snooze as a `datetime` prompt.
+send; an approval as a `request-card` over the protected request (`requests`, `thread_ref`); snooze as a `datetime` prompt; **nested child rows** (owner decision Q11: child threads under their parent: the `all` bind's rows declare `children: {bind}`, a bind with `source.parent: true` windowed per parent row, depth at most 3); **user-made sections** (Q11: `Section.repeat {over, rows}`: one section per row of the host's per-person layout, a host virtual kind `layout_sections`, each section's threads a per-parent bind), with **Move to**, **Move up**, **Move down** and section create, rename and remove as host layout operations (`host.layout.*`, entries named by the host-issued `LayoutEntryRef`, which the row id is inside a repeated section). Fixture: `threads-nested-app.json`.
 **Not written / open:**
 * **New thread** (no operation creates a thread: `turns.create`), **archive and unarchive** (distinct from Trash: `turns.archive`, `turns.unarchive`), **snooze** (`turns.snooze` and a
   `snoozed_until` field so the Inbox can hide snoozed threads), **follow-up** (`turns.follow_up`): plugins lane catalogue additions; the fixture maps them by name until they land.
-* **Child threads under their parent** and **user-made sections with drag ordering**: an accepted decision shows child threads under their parent and the sidebar's own layout is a
-  person's; both stay **OPEN for the owner** (they need nested rows and a per-person layout stored by the host, or a cut). They are not parity exceptions to wave through.
+* **Drag to reorder** is a recorded **parity exception** (owner decision Q11): on a phone and on the web the person moves a thread with **Move to** (a `choice` prompt over the section rows) and **Move up / Move down**; drag waits.
 * **Bind-backed selectors** (chips) and **conditional fields** can wait.
 
 ### 9.4 What this schema needs from the host (authorisation is the plugins lane's)
@@ -461,7 +489,7 @@ send; an approval as a `request-card` over the protected request (`requests`, `t
 2. Reminders notify through `notify_creator` on the existing scheduler (plugins lane, part A).
 3. **Content node types** and the five host components: written in section 5 (web lane), exercised in section 9; the gaps are listed there and are the next vocabulary requests (set-valued selection `{selection, set: true}` of at most 50 ids with `selectionMode: multiple`; selector `options: {bind}` of at most 12 rows; composer typed controls; the share sheet as a host-owned sheet behind `host.item.share`, not a sixth component; `prompt.kind` text/date/datetime; nested rows (windows per parent); drag to move; section repeaters).
 4. **Generic TCP** is outside this contract; the owner's decision is recorded elsewhere and is not a description concern.
-5. **Section repeaters** (one section per item of a bind) are deferred; navigation sections cover the cases above.
+5. **Section repeaters** (one section per row of a bind) and **nested child rows** are in the first contract (owner decision Q11, `Section.repeat`, `RowTemplate.children`); **drag** is a recorded parity exception, with Move to, Move up and Move down standing in.
 6. The **retirement date of v1** is the owner's.
 
 ## 11. Sign-off

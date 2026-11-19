@@ -1,4 +1,4 @@
-# Plugin API v2 · revision 5
+# Plugin API v2 · revision 6
 
 The first contract covers host-drawn apps, generic items, durable jobs and
 Turns. Freeze after the §8 spikes. Fixture bounds are test settings. See the
@@ -88,9 +88,18 @@ Nothing in memory is required to survive sleep. First release proves clean
 boot only. A later snapshot restore must consume one host-side,
 single-use runtime epoch bound to space, wall image, supervisor and package
 digests. Restore cannot reuse inherited tickets, handles, descriptors,
-credits or random state. Reseed from host entropy before processing work.
-Restart a process if retained authority or identifier state cannot be
-fenced. Host/runtime crash invalidates the old epoch. Recover uncertain
+credits or random state. On every wake, before any plugin code runs,
+initialize the guest kernel and in-process random generators from fresh host
+entropy. On snapshot wake explicitly reseed both layers, including every
+restored process’s crypto RNG. Reinitialize a process that cannot reseed or
+fence its retained authority and identifier state. Fail closed if either
+layer is unready. Count all of this inside the wake allowance. The wall
+probe observed the same Node crypto bytes after independent restores even
+with a kernel reseed. With both layers reseeded, its guest stage including
+the sampling draws measured about 180 ms at p50 and 267 ms at p95.
+[Snapshot randomness measurement](https://git.kayg.org/kayg/calternal-ai/src/commit/2562b95e8de9ce6749adeae4afd8cb7dc08353c2/docs/measurements/space-runtime-walls.md#snapshot-randomness).
+
+Host/runtime crash invalidates the old epoch. Recover uncertain
 work by receipt or checkpoint, and return a safe interruption for work
 that cannot be replayed.
 
@@ -397,8 +406,9 @@ Kind declarations name an icon, a string title field and indexed fields
 using the catalogue’s type and audience vocabularies. The host derives
 generic fields from the engine record and its configured title field.
 The manifest’s `reads` names every kind a package’s Bind may access,
-including its own. Check this list before authorizing the viewer and
-field graph. A package or a field declaration cannot confer authority. A scoped row ID
+including its own. The SDK fills the package’s own kinds into the emitted
+list. Authors write `reads` only for another app’s kinds, including host
+kinds. Check the emitted list before authorizing the viewer and field graph. A package or a field declaration cannot confer authority. A scoped row ID
 identifies the kind’s reference. A request row resolves only to an
 authorized `RequestRef`. `waiting_on` and `pending_for` support the
 viewer’s own equality operand only. `threads.active_turn` resolves as a
@@ -433,8 +443,10 @@ Ordering and `prefix` require the field’s declared type and index collation.
 `all` and `any` have a combined 16-predicate cap and no nesting.
 Two sort keys maximum plus stable ID as a tiebreaker. Use half-open
 `[from,to)`. The host may prefetch within the row and byte cap and returns
-one catalogue WindowResult with bind, state, result version, actual offset
-and stable rows. Count is an exact/estimate object or omitted, as allowed
+one catalogue `WindowResult` with bind, state, `window_ref`, result
+version, actual offset and stable rows. Both schemas cite the catalogue’s
+only request envelope, `{type:"window", request: WindowRequestPayload}`.
+The payload’s optional `parent` scopes a window to one stable parent row. Count is an exact/estimate object or omitted, as allowed
 by audience and plan. The chrome/content pair shares one Bind list.
 `viewer_self` permits counts over the actor’s own authorized projection
 only. Turn controls require current turn-specific authority. The host projects
@@ -443,6 +455,14 @@ without waking the runtime. Stable window/rank locators
 belong to the checked query and result version. Missing indexes, unbounded
 ACL intersections, unavailable authorized counts and linear offset scans
 return `422 unsupported_query_plan`. Never silently fall back to a scan.
+
+The first contract includes nested child rows and user-made sections (Q11).
+`children: {bind}` uses a `source.parent: true` Bind windowed per expanded
+parent, with depth at most three and no cycles. The host reauthorizes the
+parent and each returned child, and reconstructs any `{parent: true}` operand.
+`Section.repeat: {over, rows}` repeats over `layout_sections` (`id`, `title`,
+`position`) from the host’s per-person layout scoped to space and app.
+Each section uses a per-parent window. Layout membership grants no item access.
 
 ### 4.2 Live work, cache and host components
 
@@ -458,19 +478,31 @@ safe throttled state on exhaustion and preserve fair space progress.
 Keyboard viewport prefetch is bounded host I/O during repeated keys.
 Apply prefetch replies for the result version already drawn at once.
 Hold pushes that change the version while selection settles. Navigation
-waits for settling, but flush pending selection before an activation
-that depends on it. Prefetch and pushes never wake a worker.
+waits for settling. Selection-dependent activation follows §4.3. Prefetch
+and pushes never wake a worker.
 
-Persist data-free templates only in this draft. Keep filled rows and their
-grant/result versions in bounded memory, partitioned by session, space and
-audience. At lease expiry or transient disconnect stop painting those rows.
-Renewal requires fresh authority. If current grant/result versions match the versions the host actually
-issued to that lease, repaint retained rows without refetch. Client
-version claims alone cannot authorize retention. Otherwise discard
-invalidated rows and fetch only fresh authorized windows. Discard on
-revocation, sign-out, audience switch or guest link closure. No protected
-data paints until authorization is current. Persistence for members’
-own-space rows is **OPEN** (Q10). Guest/public rows stay session-only.
+Keep filled live windows in bounded memory, partitioned by account,
+session, space, audience and view. Hide them on lease expiry or disconnect.
+The host rechecks current authority, grant revision and the exact window
+versions it issued. `LeaseRenewRequest` carries `renewal_id`, `lease_ref`,
+`cache_partition`, `grant_revision` and `result_versions` keyed by
+`window_ref`. Accept `LeaseRenewResult` only from the authenticated host
+session with matching outstanding `renewal_id`, current `request_lease_ref`
+and current `cache_partition`. Repaint only exact `retained_results`
+pairs of `window_ref` and `result_version`. Changed grants or versions
+require fresh authorized windows. Ignore superseded replies and keep rows
+hidden on timeout or refusal. Clear live rows on revocation, sign-out,
+account or audience switch, session end or guest link closure.
+
+Data-free templates may persist. For a member’s own space, previously
+authorized display rows of Binds with `persist: true` may also persist
+between launches unless `cache.memberRows` is `none` (Q10). On an unlocked
+device, paint them at launch as unconfirmed, then confirm or correct them
+with the host’s first window answer. Encrypt with account- and space-bound
+keys. Retain for at most 14 days or `cache.maxAgeDays` if shorter. Never
+persist guest or public rows, action credentials or activation contexts.
+Erase on sign-out, account switch or known revocation. Persisted rows
+are display only. Every action requires a fresh host context.
 
 The catalogue gives typed host component routes. `transcript.page`
 accepts a checked Thread ref, a durable committed cursor
@@ -525,7 +557,11 @@ subscription lease. Renew view and valid window contexts through
 material dependency invalidates affected contexts. Unrelated window churn
 never retargets or stales a still-valid action. Bound context count (256 per
 viewer and 4,096 per space) and encoded WindowResult bytes. Withhold actions
-until their context is available.
+until their context is available. A selection-dependent action must use the
+context for the stable row drawn at activation. Send any pending selection
+first and wait for a matching `SelectionContextResult`, scoped to the lease,
+cache partition, Bind and row. Ignore superseded contexts. The host resolves
+only against the issued context, never its current selection.
 
 1. **Resolve.** Accept action/activation IDs, the context and declared
    typed device interactions only. Reconstruct server-owned route, row,
@@ -536,26 +572,28 @@ until their context is available.
    resolution. A separate `selection.set` call is unnecessary for bulk
    activation. For a Choice prompt, resolve the host-issued ChoiceRef,
    never a client-supplied collection or item value.
-2. **Derive confirmation.** The host combines declared risk and the actual
-   method’s effect with its catalogue policy. `confirm:none` applies to
-   reads or a host-proven reversible effect whose only material is the
-   rendered target or its submitting form’s own fields (including a
-   host prompt scoped to that submission). The engine must commit an eligible Undo in the same receipt boundary
-   as the precise effect. Irreversible, external, widening, bulk, declared material
-   inputs and any destination, recipient or permission require
-   `confirm:challenge`. Validate those inputs even if a label, a default,
-   autofill or a typed field supplied them. The description cannot waive or
-   reclassify them. If reconstruction cannot prove the `none` conditions,
-   require the challenge.
+2. **Derive confirmation.** `confirm:none` permits the shortcut for host
+   catalogue reads and for catalogue mutations with `atomic_undo: true`
+   whose engine commits the complete effect and its Undo in one
+   recovery-visible transaction and satisfies any `atomic_undo_when`
+   condition. The mutation’s only material may be
+   the drawn target or fields of the submitting form. Irreversible,
+   external or access-widening effects, bulk sets, declared material
+   inputs and any destination, recipient, audience or permission require
+   `confirm:challenge`, including untouched prefills, defaults and autofill.
+   The host also challenges unproven material. A plugin operation always
+   uses separate resolve and dispatch. The manifest’s risk declaration
+   grants no shortcut. On that ordinary path the host omits `confirm`
+   when no challenge is required.
 3. **Confirm and dispatch.** For a challenge, the host returns written
    material and a one-use proof only after the authorized protected control
    confirms the exact checked input. Check actor, scope, dependencies and
    fingerprint again at dispatch and consume the proof under the commit
-   fence. For `confirm:none`, `ResolveActivation{dispatch:true}`
-   performs resolution and dispatch in the **same exchange**. Return an
-   ActionOutcome. If effective policy requires challenge, that request
-   returns a resolution without running the operation. The host may return
-   a checked created ref, status ref or Undo ref, with no worker payload.
+   fence. Only the eligible catalogue shortcut
+   `ResolveActivation{dispatch:true}` resolves and dispatches in one
+   exchange. Otherwise return a resolution without running the operation.
+   Dispatch returns an ActionOutcome and may include a checked created ref,
+   status ref or Undo ref.
 
 **One-exchange Send.** The host composer pre-resolves when material changes
 (entered thread, approved provider/model/reasoning/permission/machine,
@@ -563,9 +601,11 @@ attachments, mentions or quote) and when its context needs renewal.
 Preflight contains no final text. The host-bound composer preview presents
 those fields in place. Explicit Send confirms the same material and supplies
 only the final text in one `invoke_confirm` with `final_text`.
-The host checks the exact prepared material, live context and typed text,
-then confirms and dispatches in that one exchange. A material change,
-unknown field or stale reference refuses. The proof’s material fingerprint
+The host accepts `final_text` as message content only. Any parser-derived
+change to recipients, routing, permissions or other prepared material
+(including a mention or slash command) invalidates the proof and requires
+a fresh resolve and preview. Check live context and the exact prepared
+material before confirming and dispatching in that exchange. The proof’s material fingerprint
 excludes text only for this authenticated host Turns Send route. The durable
 receipt fingerprint includes the final text and all other input, so a
 replay cannot change the message or duplicate a submission. The proof
@@ -598,13 +638,36 @@ list or pinned Trash selection/count before the protected confirmation.
 Status polling uses the original action’s
 audience. `showWhen` may use viewer roles for visibility; the host still
 authorizes every operation. Metadata patch takes scalar field/value with
-the rendered head from context. Allow full swipe for a checked, single
-boolean toggle with Undo and `confirm:none`. Bulk and protected actions
-stay on their designated surfaces. Move to collection resolves the chosen
+the rendered head from context. Full swipe requires the first action in
+the swipe set, catalogue `full_swipe: true`, the applicable eligibility
+conditions and effective `confirm:none`. Bulk and protected actions stay
+on their designated surfaces. Move to collection resolves the chosen
 CollectionRef from the option Bind, authorizes every affected item and both
 collections, previews the chosen collection and exact set, and applies one
 bounded membership change. Leave unrelated
-memberships intact. On success, Invoke `then:{route}` may navigate using a
+memberships intact. Personal layout uses `host.layout.move_to`,
+`host.layout.move_up`, `host.layout.move_down` and
+`host.layout.section.create`, `host.layout.section.rename`,
+`host.layout.section.remove`. Resolve the entry and section in the actor’s
+own layout against its context-pinned revision and check live access to any
+item and parent. Move to uses a host-issued ChoiceRef and previews the
+destination. Removing a section changes only the personal layout.
+
+For every eligible case below, commit the complete effect and the protected
+Undo ref with its inverse data in the named transaction. Publish the ref
+only after commit. Undo rechecks live authority and the post-effect
+revisions of all affected resources and refuses if any dependency moved.
+
+| Catalogue operation | Commit boundary and eligibility |
+| --- | --- |
+| `host.item.trash`, `host.item.restore` | The FULL content transaction records the item revision, recoverable placement and Undo. Full swipe covers single-item Trash and restore from Trash. Trash paths with separate lifecycle cleanup are ineligible. |
+| `host.item.rename` | The FULL content transaction records the new head, placement and Undo for a single-item rename without deferred link rewrites. The current Notes job commits inbound-link changes in later transactions, so that path remains ineligible. |
+| `host.collection.move` | A single-collection membership edit and Undo fit in one FULL content transaction. A two-collection move is ineligible because the existing membership writer commits one collection at a time. Destination and bulk previews still apply. |
+| `host.layout.move_to`, `host.layout.move_up`, `host.layout.move_down` | The per-person layout revision transaction records the complete placement or ordering edit and Undo for the actor, space and app. Move to still previews its destination. |
+| `turns.archive`, `turns.unarchive` | For unarchive, the FULL thread content transaction records the new head and Undo. A full swipe may unarchive an eligible thread. Archive stays ineligible: it can cancel an active turn and retire saved authority after the content commit, outside that transaction. |
+| `host.item.patch-metadata` | The room-checked FULL content transaction records the changed head and Undo for a single boolean toggle. Full swipe covers this case. |
+
+On success, Invoke `then:{route}` may navigate using a
 host-minted created ref, reauthorized at open.
 
 ## 5. Sharing and aggregation
@@ -740,9 +803,10 @@ and zero-effect assertions must hold on every repetition.
 | **Cold indexed page** | 100,000 mixed-visibility rows. Test offsets 0, 10,000 and 90,000 for each qualified plan family including collection + ACL + sort, search and filtered counts during grant/content churn. Offset 0 p95 ≤100 ms, deep windows p95 ≤500 ms, work independent of offset, counts separately metered. Reject scans, coalesce fan-out, refuse both counts and rows on revocation and wake no worker. |
 | **Atomic large save** | Stage an escape-heavy 2 MiB body and reconstruct it by revision-pinned ranges after the head moves, p95 ≤5 s. The 60 s range pin is invalidated by purge or revoke. Race duplicate begin, lost chunk ACK, conflicting bytes, cancel and orphan cleanup. Race revoke, epoch loss, enrollment removal and run replacement on both sides of commit and inject crashes before publication and before reply. No partial edit or success receipt before commit. After commit recover one revision and receipt. |
 | **Durable transcript** | Stall the reader, cut after commit before ACK and restart. First screenful drawn p95 ≤150 ms on a warm authorized reconnect, with the durable cursor, stable event and receipt sequences unchanged. Revoked reconnect reveals neither rows nor bookmarks. An independent control request completes p95 ≤500 ms with the transcript reader stalled. |
-| **Host + renderer authority** | On Svelte Chromium check both formats, a real protected approval and a live Bind. Forge row/route/Bind/context, untouched prefills, bulk IDs, ChoiceRefs, cached data and built-in surfaces. Inject duplicate and stale activations, revocation and unrelated churn. Zero unauthorized effects or rendered bytes, one commit on replay, and unrelated-churn action p95 ≤2 s from dispatch. Race revocation at egress, job claim/park and approval resolve before freezing those routes. |
-| **Phone activation exchanges** | In the same Chromium phone link fixture, from action intent to host outcome, swipe uses at most two exchanges and prepared Send at most one. Require the bounds on every run and report p95 exchange counts and elapsed time. Alter prepared material before Send or drop its reply. Refuse stale material and replay the exact final text once. |
-| **Keyboard windowing** | 5,000 rows with 30 keys/sec on the phone fixture. At most four window requests in any second and zero selection/navigation events during repeat on every run. Report p95 request rate. No skeleton while continuous scrolling is steady. Same-version prefetch applies while keys repeat; a selection-dependent action flushes its settled target first. |
+| **Host + renderer authority** | On Svelte Chromium check both formats, a real protected approval and a live Bind. Forge row/route/Bind/context, untouched prefills, bulk IDs, ChoiceRefs, cached data and built-in surfaces. Inject duplicate and stale activations, revocation and unrelated churn. Zero unauthorized effects or rendered bytes, one commit on replay, and unrelated-churn action p95 ≤2 s from dispatch. Race revocation at egress, job claim/park and approval resolve before freezing those routes. For each §4.4 atomic-Undo case, crash before and after the named commit and during publication: recover neither effect nor Undo before commit, and both after it. Concurrently edit a dependency, then require Undo to refuse without another effect. Exercise ineligible variants and prove the shortcut and full swipe cannot bypass their checks. Delay or spoof lease replies and verify only current, exact retained windows repaint. |
+| **Phone activation exchanges** | In the same Chromium phone link fixture, from action intent to host outcome, an eligible swipe and prepared Send each use one exchange. An ordinary plugin operation without a challenge uses two. Require the bounds on every run and report p95 exchange counts and elapsed time. Alter prepared material, including via parsed final text, or drop the Send reply. Require a fresh preview for changed material and replay the exact final text once. |
+| **Keyboard windowing** | 5,000 rows with 30 keys/sec on the phone fixture. At most four window requests in any second and zero selection/navigation events during repeat on every run. Report p95 request rate. No skeleton while continuous scrolling is steady. Same-version prefetch applies while keys repeat; an activation waits for the context of its drawn target. Delay a context for A until B is drawn and verify the activation cannot use A. |
+| **Snapshot randomness** | Independently restore the same snapshot twice and sample the guest kernel and each restored process’s crypto RNG, including Node. Require different bytes for both restores at both layers and require reseed completion before any plugin code. Refuse admission if reseed fails. Include reseed time in measured wake. |
 | **Interactive pending** | Force work past three plugin seconds, including a cold wake with the separate measured/fixture allowance. Check caller-visible pending p95 ≤3 s from admission, one diagnostic and one status ref. Poll while it finishes and retry after a lost reply. Never launch again or allow effects after ticket expiry. |
 
 If a gate misses, record the measured failure and change the mechanism or
@@ -821,9 +885,10 @@ fixtures, with final revisions, visible authority and durable outcomes equal.
   options, checked attachments and snooze presets plus the shipped custom
   date/time picker unless the Owner approves a parity exception.
 
-Run executable catalogue fixtures for both apps. General-purpose selectors,
-repeaters and conditional fields wait for the first primitives. Nested
-child rows and user-made sections/drag await the Owner (Q11). A shipped
+Run executable catalogue fixtures for both apps, including nested child
+rows and user-made sections. Drag is an Owner-approved parity exception
+(Q11), covered by Move to and Move up/down. General-purpose selectors,
+repeaters and conditional fields wait for the first primitives. A shipped
 workflow needs parity or an explicit Owner exception before replacement.
 
 Rollback is a release-pair exercise. Show that a committed change remains
@@ -832,7 +897,7 @@ can discard the change. Mail still waits for a later engine contract.
 
 ## Owner decisions and open questions
 
-See the [recorded answers](https://git.kayg.org/kayg/calternal-ai/src/commit/b8c88b926fa650c0a247c0b74bf5f66a92fc39b4/docs/open-questions.md#recently-decided-2026-11-17-now-in-the-decision-records).
+See the [recorded answers](https://git.kayg.org/kayg/calternal-ai/src/commit/3ab27a6bfdff921e11846e22675f9520d12962ae/docs/open-questions.md#recently-decided-2026-11-17-now-in-the-decision-records).
 
 - **Q1 Interactive deadline — DECIDED.** A tap has three seconds of plugin time after a separate short wake allowance. Slower work is a job with progress.
 - **Q2 Tickets and schedules — DECIDED.** 60 seconds per ticket, fresh at each run under the creator’s current rights. Stop on lost rights or departure, notify Managers, and allow scoped Manager takeover of the schedule (§3).
@@ -841,11 +906,14 @@ See the [recorded answers](https://git.kayg.org/kayg/calternal-ai/src/commit/b8c
 - **Q5 Storage parity — DECIDED.** No plugin database. Host engines serve official and community plugins equally. Build the table engine when needed, expected for Mail (§6).
 - **Q6, Q7, Q9 Network — DECIDED.** Install lines and actor approval follow §3. No network access is explicit. Declared content fetch loads anonymous images through the host, default on per person. No private network in the first release. TCP follows later under “Servers you add”.
 - **Q8 Plan mapping — OPEN pending measurement.** Choose plan ceilings from measured wake, memory and saturation.
-- **Q10 Own-space member row persistence — OPEN.** This draft authorizes only
-  session memory. The Owner is deciding persistent own-space rows.
-- **Q11 Nested child rows and user-made sections/drag — OPEN.** The Owner
-  is deciding whether they enter the first contract. Choice-from-Bind
-  (up to 50 options) is included for Move to collection and tags.
+- **Q10 Own-space member row persistence — DECIDED.** Paint eligible
+  encrypted rows at launch and then confirm or correct them (§4.2). Sol
+  recommended fresh host authorization before paint. The Owner accepted
+  that a removed member may still see cached titles until the device learns
+  of the revocation or the rows expire.
+- **Q11 Nested child rows and user-made sections — DECIDED.** Both enter the
+  first contract. Drag waits, with Move to and Move up/down as the recorded
+  parity exception (§§4.1, 4.4).
 
 See the [review dispositions](reviews/plugin-api-v2-review-dispositions.md)
-for the revision 4 and 5 finding maps.
+for the revision 4 through 6 finding maps.

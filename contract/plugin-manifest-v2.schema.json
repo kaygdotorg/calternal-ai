@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://calternal.cloud/contract/plugin-manifest-v2.schema.json",
   "title": "Calternal plugin manifest v2",
-  "description": "Revision 5 review draft. Only the exercised subset freezes after the pre-freeze spikes. Validate offline with the versioned contract registry. Uniqueness, references, digest verification and approval are separate host checks.",
+  "description": "Revision 6 review draft. Only the exercised subset freezes after the pre-freeze spikes. Validate offline with the versioned contract registry. Uniqueness, references, digest verification and approval are separate host checks.",
   "type": "object",
   "additionalProperties": false,
   "required": ["api_version", "id", "name", "version", "icon", "apps", "kinds", "operations", "network"],
@@ -17,7 +17,7 @@
     "kinds": { "type": "array", "maxItems": 64, "items": { "$ref": "#/definitions/kind" } },
     "operations": { "type": "array", "maxItems": 128, "items": { "$ref": "#/definitions/operation" } },
     "reads": {
-      "description": "Kinds an authored Bind can query. Show at install and intersect with current viewer and field authority.",
+      "description": "Kinds an authored Bind can query. The SDK adds the package’s own kinds to the emitted list. Authors declare only kinds owned by another app or the host. Show the emitted list at install and intersect with current viewer and field authority.",
       "type": "array", "maxItems": 64, "uniqueItems": true,
       "items": { "$ref": "host-catalogue-v2.json#/$defs/KindId" }
     },
@@ -80,6 +80,7 @@
     }
   ],
   "definitions": {
+    "windowRequest": { "$ref": "host-catalogue-v2.json#/$defs/WindowRequest" },
     "localId": { "type": "string", "pattern": "^[a-z][a-z0-9]*(?:[-_][a-z0-9]+)*$", "maxLength": 64 },
     "operationId": { "type": "string", "pattern": "^[a-z][a-z0-9_-]*(?:\\.[a-z][a-z0-9_-]*)+$", "maxLength": 128 },
     "label": { "type": "string", "minLength": 1, "maxLength": 128 },
@@ -176,7 +177,10 @@
         "input_schema": { "$ref": "#/definitions/embeddedSchema" },
         "output_schema": { "$ref": "#/definitions/embeddedSchema" },
         "required_capability": { "$ref": "plugin-manifest-v1.schema.json#/definitions/ManifestCapability" },
-        "risk": { "$ref": "plugin-manifest-v1.schema.json#/definitions/OperationRisk" },
+        "risk": {
+          "description": "A worker risk declaration grants no resolve-and-dispatch shortcut. The host derives any challenge from the validated effects and material.",
+          "allOf": [{ "$ref": "plugin-manifest-v1.schema.json#/definitions/OperationRisk" }]
+        },
         "idempotency": { "$ref": "plugin-manifest-v1.schema.json#/definitions/ManifestIdempotency" },
         "target": {
           "oneOf": [

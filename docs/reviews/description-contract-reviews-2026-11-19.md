@@ -56,3 +56,15 @@ Part B's own findings are fixed here (`FIXED`); findings about the runtime are t
 | 41 | Device cache of rows | FIXED: data-free templates persist, rows session-only and partitioned, nothing painted before authorisation, first paint is the template with skeleton rows (6) |
 | 45 | Notes: Share sheet, bounded multi-selection; Threads: composer controls with option sources, checked attachments | FIXED: `selectionMode: multiple` with a host-issued `selection_ref`; Share and Trash as host sheets (`ShellAction`); composer `controls`; catalogue `Draft` |
 | 46 | Snooze date/time picker; bind-backed selectors, nested rows, drag, repeaters, conditional fields | FIXED: `prompt.kind: date \| datetime`; the rest recorded as WAIT parity exceptions in 9.2, 9.3 |
+
+## Round 5 (Sol, final narrow check of d2ebcbc8) and revision 6
+
+| # | Finding / decision | Status |
+| --- | --- | --- |
+| 1 | Sheet-free mutations only where the engine commits effect and Undo together | FIXED in 3.2: catalogue `atomic_undo`, worker-free; a manifest risk grants none; plugin operations take resolve + dispatch (two exchanges), a sheet only where material requires |
+| 2 | Context must match the DRAWN selection | FIXED in 3.2: SelectionContextResult after each settled selection; wait if missing; the host never resolves against the server's current selection |
+| 3 | Final text is message content only | FIXED in 3.2: parser-derived changes (mention, slash command) invalidate the proof and need a fresh preview; receipt bound to the final text |
+| 4 | LeaseRenewResult correlated and authenticated | FIXED in 6: renewal_id, lease, partition, retained_results by window_ref; superseded ignored; rows hidden on timeout or refusal |
+| 5 | One window envelope | FIXED: the catalogue's WindowRequest `{type:"window", request}` is the only envelope; the schema cites it (with optional `parent`) |
+| Q10 | Member own-space rows persist | RECORDED in 6 with Sol's objection and the conditions (unlocked device, account+space keys, 14-day retention, never guest/public, never contexts or credentials, erase on sign-out/switch/known revocation, display only); `Cache.memberRows`, `Bind.persist` |
+| Q11 | Nested child rows and user-made sections in the first contract; drag an exception | FIXED: `BindSource.parent`, `RowTemplate.children`, `{parent}` operand, `Section.repeat`, host layout operations; drag recorded as a parity exception |

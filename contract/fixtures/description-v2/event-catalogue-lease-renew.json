@@ -1,8 +1,10 @@
 {
   "type": "lease_renew",
+  "renewal_id": "r-3",
   "lease_ref": "l-1",
+  "cache_partition": "cp-7",
   "grant_revision": "g-9",
   "result_versions": {
-    "notes": "rv-41"
+    "w-notes-0": "rv-41"
   }
 }
