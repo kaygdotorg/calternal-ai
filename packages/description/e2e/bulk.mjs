@@ -14,7 +14,14 @@ const replies = []; p.on("response", async (r) => { if (/activation\.(resolve|di
 await p.waitForSelector("[data-node=list] [data-i] input[type=checkbox]", { timeout: 30000 });
 await p.waitForTimeout(800);
 const boxes = p.locator("[data-node=list] [data-i] input[type=checkbox]");
-await boxes.nth(0).check(); await boxes.nth(1).check();
+// The first row is ticked by keyboard alone: arrow into the row (no context-menu key), the box is named by the row title, Space ticks it.
+const first = p.locator("[data-node=list] [data-i]").first(); const firstTitle = (await first.locator(".t").first().innerText()).trim();
+await first.locator("button.row").focus(); await p.keyboard.press("ArrowRight");
+const focused = await p.evaluate(() => ({ type: document.activeElement?.getAttribute("type"), label: document.activeElement?.getAttribute("aria-label") }));
+ok(focused.type === "checkbox" && focused.label === firstTitle, "ArrowRight from a row reaches its tick box, named by the row title (not its id)", JSON.stringify(focused));
+await p.keyboard.press("Space");
+ok(await boxes.nth(0).isChecked(), "Space on the focused tick box ticks the row");
+await boxes.nth(1).check();
 ok(wire.length === 0, "ticking rows sends nothing");
 const ids = await p.evaluate(() => [...document.querySelectorAll("[data-node=list] [data-i]")].slice(0, 2).map((e) => e.querySelector("input[type=checkbox]").getAttribute("aria-label").replace("Select ", "")));
 await p.locator("[data-action=trash-selected]").click();

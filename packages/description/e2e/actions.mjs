@@ -23,6 +23,11 @@ const row = p.locator(LISTSEL).first();
 await row.waitFor({ timeout: 60000 });
 await p.waitForTimeout(800);
 
+// ---- clicking the label of a row that has actions selects it: the action buttons never cover the label (a regression once caught only by an accident of the suite)
+await row.hover();
+await row.locator(".t").first().click({ timeout: 5000 });
+ok((await row.locator("[aria-current]").count()) === 1, "clicking the label of a row with actions selects it (its action buttons do not cover the label)");
+
 // ---- touch full swipe, to the right (leading action: Pin)
 const box = await row.boundingBox();
 const y = box.y + box.height / 2, x0 = box.x + 200; // away from the left edge: an edge swipe is the browser's own back gesture

@@ -28,7 +28,8 @@ describe("N1: the cursor survives two changes before the first reply", () => {
     const { store, selection, view } = await listView(host);
     await fireEvent.click(view.container.querySelector("[data-i] button.row")!); await settle();
     expect(selection.drawn).toBe("r-0");
-    store.refresh(); store.refresh(); // the second finds the selection already cleared by the first
+    store.refresh(); await vi.advanceTimersByTimeAsync(20); // the first change clears the selection; its reply has not arrived yet
+    store.refresh(); // the second finds the selection already cleared by the first
     await vi.advanceTimersByTimeAsync(3000); await settle();
     expect(selection.drawn).toBe("r-0"); // before the fix the cursor was lost for good
   });
