@@ -53,7 +53,7 @@ impl<'a> Schema<'a> {
     /// the current release can subsequently make to that store. Prove both
     /// directions with the exact release pair before shipping it. The
     /// runner writes the original per-file marker in the creation transaction.
-    /// No I/O. An existing file never gains this evidence on ordinary open.
+    /// No I/O. An already versioned store never gains this evidence on ordinary open.
     pub const fn with_compatible_creation(mut self, older: i64) -> Self {
         assert!(
             older >= self.baseline && older < self.version(),

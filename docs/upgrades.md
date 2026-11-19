@@ -224,11 +224,12 @@ their own rebuild rules. The shared reader accepts a newer version only with
 an exact marker for its store name, its own version, and the installed version.
 
 An existing store gets its marker in the locked additive migration. A lazy
-store did not exist when the inventory was scanned and can first be created
-by the candidate, as happened with jobs 2 → 3. For a proven additive change,
+store did not exist when the inventory was scanned. In the failed proof,
+the candidate's first `threads.get` opened the jobs store directly at v3.
+For a proven additive change,
 declare the older writer with `Schema::with_compatible_creation`. The shared
 runner records the same marker atomically when it first creates the file.
-Ordinary open never adds evidence to a pre-existing file. The release-pair
+Ordinary open never adds evidence to an already versioned store. The release-pair
 test opens jobs both before cutover and in a space created after cutover,
 then exercises the old writer on the newer installation.
 
