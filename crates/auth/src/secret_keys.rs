@@ -34,7 +34,7 @@ impl Spaces {
                         params![kind, id.to_string(), erasing]).map_err(Error::internal)?;
                 }
             } else {
-                tx.execute("INSERT INTO owner_secret_keys VALUES(?1,?2,?3,?4)",
+                tx.execute("INSERT INTO owner_secret_keys(kind,owner_id,fingerprint,erasing) VALUES(?1,?2,?3,?4)",
                     params![kind,id.to_string(),&fingerprint[..],erasing]).map_err(Error::internal)?;
             }
             crate::spaces::commit(tx)

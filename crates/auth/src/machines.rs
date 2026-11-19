@@ -253,7 +253,7 @@ impl Machines {
             let count:i64=tx.query_row("SELECT count(*) FROM agent_discards WHERE account=?1 AND thread!=?2",params![account.to_string(),thread.to_string()],|r|r.get(0)).map_err(sql)?;
             if count>=1024{return Err(Error::invalid("too many retained discard authorizations"))}
             let changed=tx.execute("UPDATE agent_discards SET lease=?1,authorized_ms=?2 WHERE account=?3 AND thread=?4",params![lease.to_string(),calternal_types::now_ms(),account.to_string(),thread.to_string()]).map_err(sql)?;
-            if changed==0 {tx.execute("INSERT INTO agent_discards VALUES(?1,?2,?3,?4)",params![account.to_string(),thread.to_string(),lease.to_string(),calternal_types::now_ms()]).map_err(sql)?;}
+            if changed==0 {tx.execute("INSERT INTO agent_discards(account,thread,lease,authorized_ms) VALUES(?1,?2,?3,?4)",params![account.to_string(),thread.to_string(),lease.to_string(),calternal_types::now_ms()]).map_err(sql)?;}
 
             commit(tx)
         })

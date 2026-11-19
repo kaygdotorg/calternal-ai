@@ -518,8 +518,14 @@ impl Coordinator {
         let mut s = self.load_cached(&mut cache)?;
         self.replay_loaded(&committed, &mut s)?;
         let mut delta = BTreeMap::new();
-        for key in state::dirty(c)? {
-            let value = state::capture_record(c, self.installation, &key)?;
+        let dirty = state::dirty(c)?;
+        if dirty.is_empty() {
+            *cache = Some(s);
+            return Ok(String::new());
+        }
+        let inventory = state::Inventory::read(c)?;
+        for key in dirty {
+            let value = state::capture_record(c, self.installation, &key, &inventory)?;
             if s.image.records.get(&key) != value.as_ref() {
                 delta.insert(key, value);
             }

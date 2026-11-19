@@ -45,13 +45,13 @@ impl Spaces {
                     )?;
                     if id == owner {
                         tx.execute(
-                            "INSERT INTO development_directory VALUES('personal',?1)",
+                            "INSERT INTO development_directory(name,id) VALUES('personal',?1)",
                             [personal.to_string()],
                         )
                         .map_err(sql)?;
                     }
                     tx.execute(
-                        "INSERT INTO development_directory VALUES(?1,?2)",
+                        "INSERT INTO development_directory(name,id) VALUES(?1,?2)",
                         params![name, id.to_string()],
                     )
                     .map_err(sql)?;
@@ -59,12 +59,12 @@ impl Spaces {
                 {
                     let s = create(&tx, owner, "shared")?;
                     tx.execute(
-                        "INSERT INTO development_directory VALUES(?1,?2)",
+                        "INSERT INTO development_directory(name,id) VALUES(?1,?2)",
                         params!["shared", s.id.to_string()],
                     )
                     .map_err(sql)?;
                     tx.execute(
-                        "INSERT INTO space_memberships VALUES(?1,?2,'reader')",
+                        "INSERT INTO space_memberships(space_id,account_id,role) VALUES(?1,?2,'reader')",
                         params![s.id.to_string(), guest.to_string()],
                     )
                     .map_err(sql)?;

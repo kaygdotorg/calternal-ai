@@ -3,6 +3,14 @@
 -- ADR 0058-0060), and spaces with their memberships and directory receipts.
 -- Disposable preview data only: an auth.db at any other version is refused.
 
+-- Additive auth migrations declare new protected tables in this registry.
+-- Recovery readers recognize its owner namespaces independently of user_version.
+CREATE TABLE security_recovery_inventory (
+    table_name TEXT PRIMARY KEY,
+    owner_kind TEXT NOT NULL CHECK (owner_kind IN ('0','1','2','3','4','5')),
+    owner_column TEXT NOT NULL CHECK ((owner_kind = '0') = (owner_column = ''))
+) STRICT;
+
 CREATE TABLE users (
     id          TEXT PRIMARY KEY,
     name        TEXT NOT NULL,
@@ -231,12 +239,12 @@ CREATE TABLE owner_erasures(
 CREATE TRIGGER erase_space_secret_key AFTER DELETE ON spaces
 BEGIN
  UPDATE owner_secret_keys SET erasing=1 WHERE kind='space' AND owner_id=OLD.id;
- INSERT INTO owner_erasures VALUES('space',OLD.id,1);
+ INSERT INTO owner_erasures(kind,id,pending) VALUES('space',OLD.id,1);
 END;
 CREATE TRIGGER erase_account_secret_key AFTER DELETE ON users
 BEGIN
  UPDATE owner_secret_keys SET erasing=1 WHERE kind='account' AND owner_id=OLD.id;
- INSERT INTO owner_erasures VALUES('account',OLD.id,1);
+ INSERT INTO owner_erasures(kind,id,pending) VALUES('account',OLD.id,1);
 END;
 CREATE TRIGGER prohibit_erased_space_id BEFORE INSERT ON spaces
 WHEN EXISTS(SELECT 1 FROM owner_erasures WHERE id=NEW.id)

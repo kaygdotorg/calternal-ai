@@ -33,7 +33,7 @@ pub(crate) fn audit(
     now: i64,
 ) -> Result<()> {
     tx.execute(
-        "INSERT INTO account_security_events VALUES(?1,?2,?3,?4,?5,?6)",
+        "INSERT INTO account_security_events(id,user_id,method,action,actor,at) VALUES(?1,?2,?3,?4,?5,?6)",
         params![
             uuid::Uuid::now_v7().to_string(),
             user.to_string(),
@@ -72,7 +72,7 @@ fn grant(
     )
     .map_err(sql)?;
     tx.execute(
-        "INSERT INTO account_recovery_grants VALUES(?1,?2,?3,?4)",
+        "INSERT INTO account_recovery_grants(hash,user_id,method,expires_at) VALUES(?1,?2,?3,?4)",
         params![hash, user.to_string(), method, now + GRANT_TTL],
     )
     .map_err(sql)?;

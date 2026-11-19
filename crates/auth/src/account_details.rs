@@ -51,7 +51,7 @@ pub(crate) fn rotate_codes(
     )
     .map_err(sql)?;
     let mut insert = tx
-        .prepare_cached("INSERT INTO account_recovery_codes VALUES(?1,?2)")
+        .prepare_cached("INSERT INTO account_recovery_codes(hash,user_id) VALUES(?1,?2)")
         .map_err(sql)?;
     (0..10)
         .map(|_| {

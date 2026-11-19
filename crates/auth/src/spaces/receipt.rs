@@ -64,7 +64,7 @@ pub(super) fn apply_receipted<E>(
     if let Some(r) = receipt {
         connection
             .execute(
-                "INSERT INTO space_receipts VALUES(?1,?2,?3,?4,?5,?6,?7)",
+                "INSERT INTO space_receipts(actor,scope,request_id,operation,fingerprint,result,at_ms) VALUES(?1,?2,?3,?4,?5,?6,?7)",
                 params![
                     r.actor,
                     r.scope,

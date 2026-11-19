@@ -183,7 +183,7 @@ impl Spaces {
             }
             Ok(move |c: &rusqlite::Transaction<'_>| {
                 c.execute(
-                    "INSERT OR IGNORE INTO item_share_seen VALUES(?1,?2,?3)",
+                    "INSERT OR IGNORE INTO item_share_seen(account_id,space_id,item_id) VALUES(?1,?2,?3)",
                     params![actor.to_string(),space.to_string(),id.to_string()],
                 ).map_err(sql)?;
                 Ok(json!({"seen":true}))

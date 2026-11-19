@@ -160,7 +160,7 @@ impl Spaces {
             require(c, actor, space, Capability::SpaceSettings.name())?;
             Ok(move |c: &rusqlite::Transaction<'_>| {
                 let sql_text = if enabled {
-                    "INSERT OR IGNORE INTO item_link_policies VALUES(?1)"
+                    "INSERT OR IGNORE INTO item_link_policies(space_id) VALUES(?1)"
                 } else {
                     "DELETE FROM item_link_policies WHERE space_id=?1"
                 };

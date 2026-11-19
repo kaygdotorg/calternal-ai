@@ -216,7 +216,7 @@ fn issue(
         asserted,
     )?;
     tx.execute(
-        "INSERT INTO oidc_sessions VALUES(?1,?2,?3,?4)",
+        "INSERT INTO oidc_sessions(installation_id,provider_id,subject,user_id) VALUES(?1,?2,?3,?4)",
         params![out.0.to_string(), provider, subject, user.to_string()],
     )
     .map_err(sql)?;
@@ -310,7 +310,7 @@ impl Auth {
                     .map_err(sql)?;
                 } else {
                     tx.execute(
-                        "INSERT INTO oidc_providers VALUES(?1,?2,?3,?4,?5,?6,0)",
+                        "INSERT INTO oidc_providers(id,issuer,client_id,config,secret,revision,enabled) VALUES(?1,?2,?3,?4,?5,?6,0)",
                         params![
                             provider.id,
                             provider.issuer,
@@ -538,7 +538,7 @@ impl Auth {
                 if selected.as_deref().is_some_and(|id|id!=user.to_string()) || signup.is_some() {
                     return Err(conflict("this identity is already linked"));
                 }
-                let changed = tx.execute("INSERT INTO oidc_links VALUES(?1,?2,?3) ON CONFLICT DO NOTHING",
+                let changed = tx.execute("INSERT INTO oidc_links(provider_id,subject,user_id) VALUES(?1,?2,?3) ON CONFLICT DO NOTHING",
                     params![provider,subject,user.to_string()]).map_err(sql)?;
                 if changed==0 && selected.is_none() { return Err(conflict("another identity is already linked for this provider")); }
                 account_recovery::audit(&tx,user,"oidc","linked","account",now_ms())?;
@@ -556,7 +556,7 @@ impl Auth {
                 crate::setup::insert_signup(&tx,&signup,"",now)?;
                 let user=signup.user;
                 crate::invites::consume(&tx,grant,user,now)?;
-                tx.execute("INSERT INTO oidc_links VALUES(?1,?2,?3)",params![provider,subject,user.to_string()]).map_err(sql)?;
+                tx.execute("INSERT INTO oidc_links(provider_id,subject,user_id) VALUES(?1,?2,?3)",params![provider,subject,user.to_string()]).map_err(sql)?;
                 let codes=account_details::rotate_codes(&tx,&inner.invite_key,user)?;
                 account_recovery::audit(&tx,user,"oidc","enrolled","account",now)?;
                 (user,codes)

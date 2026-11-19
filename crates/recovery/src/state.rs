@@ -15,9 +15,10 @@ pub(crate) const OWNER_TABLES: &[(char, &str)] = &[
     ('4', "invites"),
     ('5', "owner_erasures"),
 ];
-// A closed inventory of every auth.db table: adding a table requires an explicit
-// owner mapping here, or recovery configuration refuses the database.
+// The shipped owner mappings. Later additive SQL registers extra mappings in
+// the database so even today's binary captures them after a rollback.
 const SPECS: &[(&str, char, &str)] = &[
+    ("security_recovery_inventory", '0', ""),
     ("users", '1', "id"),
     ("oidc_providers", '0', ""),
     ("oidc_links", '1', "user_id"),
@@ -56,6 +57,79 @@ const SPECS: &[(&str, char, &str)] = &[
     ("space_role_capabilities", '0', ""),
     ("development_directory", '0', ""),
 ];
+const INTERNAL: &[&str] = &[
+    "_calternal_schema_compatibility",
+    "security_recovery_commits",
+    "security_recovery_dirty",
+];
+
+/// The extension mappings read once per startup or dirty transaction.
+pub(crate) struct Inventory(Vec<(String, char, String)>);
+
+impl Inventory {
+    /// Read the transaction's protected table declarations.
+    pub(crate) fn read(c: &Connection) -> Result<Self> {
+        let mut stmt = c
+            .prepare("SELECT table_name,owner_kind,owner_column FROM security_recovery_inventory ORDER BY table_name")
+            .map_err(err)?;
+        let specifications = stmt
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                ))
+            })
+            .map_err(err)?;
+        let mut extensions = Vec::new();
+        for specification in specifications {
+            let (table, kind, column) = specification.map_err(err)?;
+            let kind = match kind.as_bytes() {
+                [b'0'] if column.is_empty() => '0',
+                [kind @ b'1'..=b'5'] if !column.is_empty() => *kind as char,
+                _ => return Err(err("invalid auth recovery owner namespace")),
+            };
+            if table.starts_with("sqlite_")
+                || INTERNAL.contains(&table.as_str())
+                || SPECS.iter().any(|&(name, _, _)| name == table)
+            {
+                return Err(err("auth recovery mapping uses a reserved table name"));
+            }
+            extensions.push((table, kind, column));
+        }
+        Ok(Self(extensions))
+    }
+
+    fn check_owner_links(&self, c: &Connection) -> Result<()> {
+        for (table, kind, column) in &self.0 {
+            let Some((_, parent)) = OWNER_TABLES.iter().find(|(key, _)| key == kind) else {
+                continue; // An installation-wide table has no owner foreign key.
+            };
+            let cascade = c
+                .query_row(
+                    r#"SELECT EXISTS(SELECT 1 FROM pragma_foreign_key_list(?1)
+                       WHERE "table"=?2 AND "from"=?3 AND "to"='id' AND on_delete='CASCADE')"#,
+                    (table, parent, column),
+                    |row| row.get::<_, bool>(0),
+                )
+                .map_err(err)?;
+            if !cascade {
+                return Err(err(format!(
+                    "auth recovery table {table} requires an owner deletion cascade"
+                )));
+            }
+        }
+        Ok(())
+    }
+
+    fn tables(&self) -> impl Iterator<Item = (&str, char, &str)> {
+        SPECS.iter().copied().chain(
+            self.0
+                .iter()
+                .map(|(table, kind, column)| (table.as_str(), *kind, column.as_str())),
+        )
+    }
+}
 /// Comparable format-three owner record for delta capture; never exposed to tenants.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub(crate) struct Record {
@@ -91,35 +165,41 @@ pub(crate) fn initialize(c: &Connection) -> Result<()> {
             |r| r.get(0),
         )
         .map_err(err)?;
+    let inventory = Inventory::read(&tx)?;
+    inventory.check_owner_links(&tx)?;
     let names = tx
-        .prepare("SELECT name FROM sqlite_schema WHERE type='table' AND name NOT LIKE 'sqlite_%'")
+        .prepare("SELECT name FROM sqlite_schema WHERE type='table' AND name NOT GLOB 'sqlite_*'")
         .map_err(err)?
         .query_map([], |r| r.get::<_, String>(0))
         .map_err(err)?
         .collect::<std::result::Result<Vec<_>, _>>()
         .map_err(err)?;
     if names.iter().any(|n| {
-        n != "_calternal_schema_compatibility"
-            && !n.starts_with("security_recovery_")
-            && !SPECS.iter().any(|(s, _, _)| s == n)
+        !INTERNAL.contains(&n.as_str()) && !inventory.tables().any(|(table, _, _)| table == n)
     }) {
         return Err(err(
             "unclassified auth table; recovery owner mapping required",
         ));
     }
+    for (table, kind, owner) in inventory.tables() {
+        let (_, columns) = schema(&tx, table)?;
+        if kind != '0' && !columns.iter().any(|column| column == owner) {
+            return Err(err("auth recovery owner column is missing"));
+        }
+    }
     tx.execute_batch("CREATE TABLE IF NOT EXISTS security_recovery_commits(singleton INTEGER PRIMARY KEY CHECK(singleton=1),sequence INTEGER NOT NULL,digest TEXT NOT NULL,proposal_sequence INTEGER NOT NULL,proposal_digest TEXT NOT NULL) STRICT;
         CREATE TABLE IF NOT EXISTS security_recovery_dirty(key TEXT PRIMARY KEY) STRICT;
         CREATE INDEX IF NOT EXISTS security_recovery_setup_user ON setup_tokens(user_id);").map_err(err)?;
-    for (table, kind, owner) in SPECS {
+    for (table, kind, owner) in inventory.tables() {
         for event in ["INSERT", "UPDATE", "DELETE"] {
             let mut exprs = Vec::new();
             if event != "INSERT" {
-                exprs.push(key_expr(*kind, owner, "OLD"));
+                exprs.push(key_expr(kind, owner, "OLD"));
             }
             if event != "DELETE" {
-                exprs.push(key_expr(*kind, owner, "NEW"));
+                exprs.push(key_expr(kind, owner, "NEW"));
             }
-            let when = if event == "UPDATE" && ["passkeys", "installations"].contains(table) {
+            let when = if event == "UPDATE" && ["passkeys", "installations"].contains(&table) {
                 let (_, columns) = schema(&tx, table)?;
                 let stable = columns
                     .iter()
@@ -135,9 +215,10 @@ pub(crate) fn initialize(c: &Connection) -> Result<()> {
             };
             let body = exprs
                 .iter()
-                .map(|e| format!("INSERT OR IGNORE INTO security_recovery_dirty VALUES({e});"))
+                .map(|e| format!("INSERT INTO security_recovery_dirty(key) VALUES({e}) ON CONFLICT(key) DO NOTHING;"))
                 .collect::<String>();
-            tx.execute_batch(&format!("CREATE TRIGGER IF NOT EXISTS security_recovery_{table}_{event} AFTER {event} ON {} {when} BEGIN {body} END;",quote(table))).map_err(err)?;
+            let trigger = quote(&format!("security_recovery_{table}_{event}"));
+            tx.execute_batch(&format!("CREATE TRIGGER IF NOT EXISTS {trigger} AFTER {event} ON {} {when} BEGIN {body} END;",quote(table))).map_err(err)?;
         }
     }
     if !initialized {
@@ -149,10 +230,11 @@ pub(crate) fn initialize(c: &Connection) -> Result<()> {
 pub(crate) fn reset_capture_triggers(conn: &Connection) -> Result<()> {
     let tx = rusqlite::Transaction::new_unchecked(conn, rusqlite::TransactionBehavior::Immediate)
         .map_err(err)?;
-    for (table, _, _) in SPECS {
+    for (table, _, _) in Inventory::read(&tx)?.tables() {
         for event in ["INSERT", "UPDATE", "DELETE"] {
             tx.execute_batch(&format!(
-                "DROP TRIGGER IF EXISTS security_recovery_{table}_{event};"
+                "DROP TRIGGER IF EXISTS {};",
+                quote(&format!("security_recovery_{table}_{event}"))
             ))
             .map_err(err)?;
         }
@@ -190,6 +272,7 @@ pub(crate) fn capture_record(
     c: &Connection,
     installation: Uuid,
     key: &str,
+    inventory: &Inventory,
 ) -> Result<Option<Record>> {
     if !crate::key_ok(key) {
         return Err(invalid());
@@ -215,12 +298,12 @@ pub(crate) fn capture_record(
         return Err(invalid());
     }
     let mut tables = BTreeMap::new();
-    for (name, owner_kind, owner) in SPECS {
-        if kind != '0' && kind != *owner_kind {
+    for (name, owner_kind, owner) in inventory.tables() {
+        if kind != '0' && kind != owner_kind {
             continue;
         }
         let (schema, columns) = schema(c, name)?;
-        let filter = if *owner_kind == '0' {
+        let filter = if owner_kind == '0' {
             if kind == '0' { "1".into() } else { "0".into() }
         } else if kind == '0' {
             // Account-owned rows with no account (unbound setup tokens, pool
@@ -252,12 +335,12 @@ pub(crate) fn capture_record(
                     ValueRef::Blob(v) => Cell::Blob(v.to_vec()),
                 });
             }
-            if *name == "passkeys"
+            if name == "passkeys"
                 && let Some(i) = columns.iter().position(|n| n == "last_used_at")
             {
                 cells[i] = Cell::Null
             }
-            if *name == "installations" {
+            if name == "installations" {
                 let created = columns
                     .iter()
                     .position(|n| n == "created_at")
@@ -398,9 +481,10 @@ pub(crate) fn capture(c: &Connection, installation: Uuid, sequence: u64) -> Resu
             .map_err(err)?,
         );
     }
+    let inventory = Inventory::read(c)?;
     let records = keys
         .iter()
-        .map(|k| capture_record(c, installation, k)?.ok_or_else(invalid))
+        .map(|k| capture_record(c, installation, k, &inventory)?.ok_or_else(invalid))
         .collect::<Result<Vec<_>>>()?;
     assemble(installation, Uuid::now_v7(), sequence, records)
 }

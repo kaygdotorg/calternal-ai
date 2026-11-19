@@ -181,7 +181,7 @@ pub(crate) fn insert_owned(
     )
     .map_err(sql)?;
     c.execute(
-        "INSERT INTO space_memberships VALUES(?1,?2,'manager')",
+        "INSERT INTO space_memberships(space_id,account_id,role) VALUES(?1,?2,'manager')",
         params![id.to_string(), actor.to_string()],
     )
     .map_err(sql)?;
@@ -344,7 +344,7 @@ fn apply(
             // Use separate insert and update statements. The recovery dirty-row
             // triggers rely on their own conflict handling during UPDATE.
             c.execute(
-                "INSERT OR IGNORE INTO space_memberships VALUES(?1,?2,'manager')",
+                "INSERT OR IGNORE INTO space_memberships(space_id,account_id,role) VALUES(?1,?2,'manager')",
                 params![sid, target.to_string()],
             )
             .map_err(sql)?;
