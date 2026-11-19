@@ -2297,7 +2297,7 @@ export type ManifestContentFetch = {
  */
 profile: ContentFetchProfile,
 /**
- * Up to 32 distinct text sources owned by the declaring package.
+ * Up to 32 distinct supported sources owned by the declaring package.
  */
 sources: Array<ContentFetchSource>, };
 /**

@@ -471,7 +471,7 @@
           ]
         },
         "sources": {
-          "description": "Up to 32 distinct text sources owned by the declaring package.",
+          "description": "Up to 32 distinct supported sources owned by the declaring package.",
           "type": "array",
           "items": {
             "$ref": "#/definitions/ContentFetchSource"
