@@ -425,7 +425,7 @@ export type NonSwipeInvoke = (Invoke & NonSwipeFlag)
  * This interface was referenced by `ContractModel`'s JSON-Schema
  * via the `definition` "SwipeActionSet".
  */
-export type SwipeActionSet = NonSwipeAction[]
+export type SwipeActionSet = []|[Action, ...(NonSwipeAction)[]]
 /**
  * Where a value comes from. A description never carries viewer data; it names a SOURCE. Row, route, selection and bind sources are reconstructed by the HOST from the activation context; form, draft and prompt sources are the only values the device sends (`interaction`). Exactly one key.
  * 
