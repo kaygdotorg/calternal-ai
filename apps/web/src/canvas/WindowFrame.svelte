@@ -33,9 +33,9 @@
   let trW = $state(0);
   let draft = $state("");
   $effect(() => { if (renaming) draft = title; });
-  /** The padlock appears near the top edge (the frame's 44 px hit area around its middle). */
+  /** The padlock appears just under the title row (the title is centred in that row, and nothing sits under another control): within the 44 px hit area hanging from the row's lower edge, around the window's middle. */
   let near = $state(false);
-  const nearTop = (e: PointerEvent) => { const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); near = e.clientY - r.top < 44 && Math.abs(e.clientX - (r.left + r.width / 2)) < 90; };
+  const nearTop = (e: PointerEvent) => { const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); const bar = parseFloat(getComputedStyle(e.currentTarget as HTMLElement).getPropertyValue("--bar-h")) || 52, dy = e.clientY - r.top; near = dy >= bar - 4 && dy < bar + 40 && Math.abs(e.clientX - (r.left + r.width / 2)) < 90; };
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -94,8 +94,8 @@
   :global(.wacts) { display: inline-flex; align-items: center; height: var(--pill-h); padding: 0 var(--s-2); gap: 2px; }
   .tr button { display: inline-grid; place-items: center; width: calc(var(--pill-h) - var(--s-2)); height: calc(var(--pill-h) - var(--s-2)); border-radius: 50%; color: var(--ink-2); transition: background-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out); }
   @media (hover: hover) and (pointer: fine) { .tr button:hover { background: var(--hover); color: var(--ink); } }
-  /* The padlock (infraternal D177, packages/ui styles.css .ui-window-lock): centred at the top edge, the shackle above its body; a 44 px hit area, no chip. */
-  .lock { position: absolute; z-index: 6; top: 2px; left: 50%; width: 44px; height: 44px; margin-left: -22px; display: grid; place-items: center; border-radius: var(--r-select); color: var(--ink); opacity: 0; pointer-events: none; transition: opacity var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out); }
+  /* The padlock (infraternal D177, packages/ui styles.css .ui-window-lock): centred under the title row (the title is centred above it, so the two never overlap), the shackle above its body; a 44 px hit area, no chip. */
+  .lock { position: absolute; z-index: 6; top: calc(var(--safe-top) + var(--bar-h) - 4px); left: 50%; width: 44px; height: 44px; margin-left: -22px; display: grid; place-items: center; border-radius: var(--r-select); color: var(--ink); opacity: 0; pointer-events: none; transition: opacity var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out); }
   .lock svg { width: var(--glyph); height: var(--glyph); fill: none; stroke: currentColor; stroke-width: var(--glyph-stroke); stroke-linecap: round; stroke-linejoin: round; overflow: visible; }
   .shackle { transform-origin: 8.5px 11px; transition: transform var(--dur-base) var(--ease-out); transform: translateY(-3px) rotate(-22deg); }
   :global(.win[data-locked]) .shackle { transform: none; }

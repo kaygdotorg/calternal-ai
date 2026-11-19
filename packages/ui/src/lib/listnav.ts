@@ -41,6 +41,17 @@ export function wantsKey(e: Pick<KeyboardEvent, "key" | "altKey" | "ctrlKey" | "
   return true;
 }
 
+/** The one place the settle rule lives (both the `listNav` action and `VirtualList`'s `nav` use it): `rest(fn, ms)` runs `fn` after `ms` without another call, and `cancel()` drops it. */
+export function settler(): { rest(fn: () => void, ms?: number): void; cancel(): void } {
+  let t = 0;
+  const cancel = () => { if (t) { clearTimeout(t); t = 0; } };
+  // A busy page can run the timer before it has read the keys that came in meanwhile (each of them would have moved the timer): when input is waiting, the rest has not begun, so wait again.
+  const pending = (): boolean => { try { return !!(navigator as Navigator & { scheduling?: { isInputPending?: (o?: { includeContinuous?: boolean }) => boolean } }).scheduling?.isInputPending?.({ includeContinuous: true }); } catch { return false; } };
+  return { cancel, rest(fn, ms = SETTLE_MS) { cancel(); const arm = () => { t = window.setTimeout(() => { t = 0; if (pending()) arm(); else fn(); }, ms); }; arm(); } };
+}
+/** Milliseconds without a key before the cursor's row is opened: above the gap between two repeats of a held key, below what a person feels as waiting. */
+export const SETTLE_MS = 50;
+
 /** Options of the `listNav` action. */
 export interface ListNavOptions {
   /** CSS selector of the rows' focusable elements (links or buttons). */
@@ -61,12 +72,13 @@ function mark(prev: HTMLElement | null, next: HTMLElement): void {
 
 /** The Svelte action (see the file's comment). */
 export function listNav(node: HTMLElement, opts: ListNavOptions) {
-  let o = opts, cache: HTMLElement[] | null = null, cursor: HTMLElement | null = null, timer = 0;
+  let o = opts, cache: HTMLElement[] | null = null, cursor: HTMLElement | null = null;
+  const rest = settler();
   const mo = new MutationObserver(() => { cache = null; });
   mo.observe(node, { childList: true, subtree: true });
   const rows = () => (cache ??= [...node.querySelectorAll<HTMLElement>(o.rows)]);
   const scroller = (): HTMLElement | null => { let e = node.parentElement; while (e && e.scrollHeight <= e.clientHeight + 1) e = e.parentElement; return e; };
-  const stop = () => { if (timer) { clearTimeout(timer); timer = 0; } };
+  const stop = () => rest.cancel();
 
   function onKey(e: KeyboardEvent) {
     if (!wantsKey(e) || (e.target as Element | null)?.closest?.("[data-listnav=own]")) return; // a windowed list (VirtualList) moves its own cursor through rows that are not drawn; this handler runs first (Svelte delegates its handlers to the root), so it must leave those keys alone
@@ -85,7 +97,7 @@ export function listNav(node: HTMLElement, opts: ListNavOptions) {
     row.scrollIntoView({ block: "nearest" });
     o.onmove?.(row);
     stop();
-    timer = window.setTimeout(() => { timer = 0; (o.open ?? ((r: HTMLElement) => r.click()))(row); }, o.settle ?? 50);
+    rest.rest(() => (o.open ?? ((r: HTMLElement) => r.click()))(row), o.settle);
   }
   const onOut = (e: FocusEvent) => { if (!node.contains(e.relatedTarget as Node | null)) { stop(); cursor?.removeAttribute("data-cursor"); cursor = null; } };
   node.addEventListener("keydown", onKey);

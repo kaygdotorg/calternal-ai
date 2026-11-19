@@ -14,7 +14,7 @@
   import type { Snippet } from "svelte";
   import { untrack } from "svelte";
   import { Fenwick } from "../lib/fenwick";
-  import { pageSize, stepIndex, wantsKey } from "../lib/listnav";
+  import { pageSize, settler, stepIndex, wantsKey } from "../lib/listnav";
 
   let {
     count,
@@ -64,9 +64,11 @@
   function update() {
     const v = view();
     if (!v) return;
-    const top = Math.max(0, v.scrollTop - origin());
-    const f = tree.find(Math.max(0, top - overscan));
-    const l = Math.min(count - 1, tree.find(top + v.clientHeight + overscan));
+    const rel = v.scrollTop - origin(), top = Math.max(0, rel);
+    // A list that is wholly outside the view (a section far below, one far above) draws no rows: its window is empty, whatever its first rows are.
+    const outside = inside && (rel + v.clientHeight + overscan < 0 || rel - overscan > total);
+    const f = outside ? 0 : tree.find(Math.max(0, top - overscan));
+    const l = outside ? -1 : Math.min(count - 1, tree.find(top + v.clientHeight + overscan));
     if (f !== first || l + 1 !== last) {
       first = f;
       last = l + 1;
@@ -116,7 +118,8 @@
   }
 
   // ---- Keyboard navigation (`nav`): the cursor is an index, so it can be on a row that is not drawn; the selection paints at once (the row's `data-cursor`), the list scrolls just enough, and what the row opens runs after the cursor settles.
-  let cursor = $state(-1), cursorKey: string | null = null, navTimer = 0, navAt = 0;
+  let cursor = $state(-1), cursorKey: string | null = null, navAt = 0;
+  const rest = settler();
   const focusCursor = () => { const row = rows.get(cursor); if (row && !row.contains(document.activeElement)) (row.querySelector<HTMLElement>("a, button") ?? row).focus({ preventScroll: true }); };
   // A list that changes under the cursor (churn): the cursor follows its row, and focus returns to it if the row was redrawn.
   $effect(() => {
@@ -152,10 +155,9 @@
     ensureVisible(next);
     // The row exists once the window has moved to it; focus its link or button then (one frame), so focus stays in the list.
     requestAnimationFrame(focusCursor);
-    clearTimeout(navTimer);
-    navTimer = window.setTimeout(() => { navTimer = 0; const at = cursorKey !== null && nav.indexOf ? nav.indexOf(cursorKey) : next; if (at < 0) return; if (nav.open) nav.open(at); else rows.get(at)?.querySelector<HTMLElement>("a, button")?.click(); }, nav.settle ?? 50);
+    rest.rest(() => { const at = cursorKey !== null && nav.indexOf ? nav.indexOf(cursorKey) : next; if (at < 0) return; if (nav.open) nav.open(at); else rows.get(at)?.querySelector<HTMLElement>("a, button")?.click(); }, nav.settle);
   }
-  function onNavOut(e: FocusEvent) { if (!e.relatedTarget && performance.now() - navAt < 300) return; /* the focused row left the window as the cursor moved away: not the person leaving */ if (!(e.currentTarget as HTMLElement).contains(e.relatedTarget as Node | null)) { clearTimeout(navTimer); cursor = -1; cursorKey = null; } }
+  function onNavOut(e: FocusEvent) { if (!e.relatedTarget && performance.now() - navAt < 300) return; /* the focused row left the window as the cursor moved away: not the person leaving */ if (!(e.currentTarget as HTMLElement).contains(e.relatedTarget as Node | null)) { rest.cancel(); cursor = -1; cursorKey = null; } }
 
   function toBottom() {
     if (scroller && stuck) { driven = performance.now(); scroller.scrollTop = scroller.scrollHeight; drivenTop = scroller.scrollTop; }

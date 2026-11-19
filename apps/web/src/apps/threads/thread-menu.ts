@@ -13,10 +13,16 @@ import { snoozeAsk, snoozeAvailable, snoozeThread } from "./snooze.svelte";
 import { snoozeEnd } from "./inbox";
 
 /** The ids of the current space's threads that stand on their own in the list (children follow their parent), newest first. */
+let topMemo: { threads: unknown; space: string; ids: string[] } | null = null;
+/** The top-level threads of the current space, newest first. Worked out once per change of the list or the space (the sort is the cost: thousands of threads, and the sidebar, the native chrome and every menu ask). */
 export function topLevelIds(): string[] {
-  const shown = store.threads.filter((t) => t.spaceId === spaces.current.id);
+  const threads = store.threads, space = spaces.current.id;
+  if (topMemo && topMemo.threads === threads && topMemo.space === space) return topMemo.ids;
+  const shown = threads.filter((t) => t.spaceId === space);
   const known = new Set(shown.map((t) => t.id));
-  return shown.filter((t) => !t.parentId || !known.has(t.parentId)).sort((a, b) => b.updatedAt - a.updatedAt).map((t) => t.id);
+  const ids = shown.filter((t) => !t.parentId || !known.has(t.parentId)).sort((a, b) => b.updatedAt - a.updatedAt).map((t) => t.id);
+  topMemo = { threads, space, ids };
+  return ids;
 }
 /** The places a thread can be: the unlabelled list (null) and each of the person's sections. */
 export const containersOf = (): Container[] => [null, ...layout.sections.map((s) => s.id)];

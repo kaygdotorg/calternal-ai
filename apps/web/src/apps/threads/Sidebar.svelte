@@ -60,6 +60,11 @@
   const tab = $derived(view.chosen ?? (items.length || store.jobPrompts.length ? "inbox" : "all"));
 
   // ---- renaming in place ----
+  /** The thread whose row is hovered, focused or pressed: the only row that draws its buttons. */
+  let hot = $state<string | null>(null);
+  let hotTimer = 0;
+  /** A pointer makes a row hot at once; focus only after a rest (a held arrow key moves focus through hundreds of rows: none of them should draw its buttons on the way). */
+  const hotOf = (e: Event) => { const id = (e.target as Element | null)?.closest?.<HTMLElement>("[data-thread]")?.dataset.thread; if (!id || id === hot) return; clearTimeout(hotTimer); if (e.type === "focusin") hotTimer = window.setTimeout(() => (hot = id), 150); else hot = id; };
   let editing = $state<{ kind: "thread" | "section"; id: string } | null>(null);
   const LOOSE = "__loose__";
   let draft = $state("");
@@ -164,11 +169,14 @@
         {#snippet leading()}<span class="mark" class:pulse={t.state === "running"}><Icon inline name={t.provider} /></span>{/snippet}
         {#snippet trailing()}<span class="tail"><StateMark state={t.state} /></span>{/snippet}
       </Row>
-      <span class="acts">
-        <IconButton small icon="link" label="Copy link" onclick={() => copyLink(t)} />
-        <IconButton small icon="archive" label="Archive" onclick={() => void archive(t)} />
-        <IconButton small icon="more" label="More actions" aria-haspopup="menu" onclick={(e) => menuFrom(e.currentTarget as HTMLElement, t)} />
-      </span>
+      <!-- The row's buttons exist only while it is hovered, focused or pressed (`hot`): a list of thousands draws one set, not thousands. -->
+      {#if hot === t.id}
+        <span class="acts">
+          <IconButton small icon="link" label="Copy link" onclick={() => copyLink(t)} />
+          <IconButton small icon="archive" label="Archive" onclick={() => void archive(t)} />
+          <IconButton small icon="more" label="More actions" aria-haspopup="menu" onclick={(e) => menuFrom(e.currentTarget as HTMLElement, t)} />
+        </span>
+      {/if}
     </div>
   </SwipeRow>
 {/snippet}
@@ -213,7 +221,7 @@
 {/snippet}
 
 {#if !empty}<TopEntries />{/if}
-<nav aria-label="Threads" use:swipeRows use:pressRows use:listNav={{ rows: "a.row, button.row" }}>
+<nav aria-label="Threads" onpointerover={hotOf} onfocusin={hotOf} onpointerdown={hotOf} onpointerleave={() => { if (!document.activeElement?.closest("nav[aria-label=Threads]")) hot = null; }} use:swipeRows use:pressRows use:listNav={{ rows: "a.row, button.row" }}>
   {#if empty}
     <div class="empty">
       <h2>No threads yet</h2>

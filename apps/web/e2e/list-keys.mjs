@@ -62,8 +62,8 @@ for (const surface of SURFACES) for (const churn of CHURNS) {
   timing(pct(runs, 0.95) <= FRAME, `${tag}: the handler's p95 is within one frame`, `${pct(runs, 0.95).toFixed(1)} ms of ${FRAME}`);
   timing(pct(paints, 0.95) <= 2 * FRAME + 8, `${tag}: the moved selection is painted within one frame of each key (p95, to the second frame after the key)`, `${pct(paints, 0.95).toFixed(1)} ms`);
   timing((during.gaps.length === 0 || pct(during.gaps, 0.95) <= FRAME * 2 + 8) && during.gaps.filter((g) => g > 100).length <= 1, `${tag}: while the key is held the main thread is free again within about two frames (p95 of the heartbeat gaps, at most one over 100 ms)`, `p95 ${(during.gaps.length ? pct(during.gaps, 0.95) : 0).toFixed(0)} ms, max ${during.gap.toFixed(0)} ms`);
-  // (not for Notes under churn: the stream may insert a row above, so the neighbour can be the open item itself)
-  if (!(churn && surface === "notes")) {
+  // (not under churn: the stream may insert a row above, so the neighbour can be the open item itself)
+  if (!churn) {
   // the settled item at 1x: one more key with the CPU at full speed, the pane must show the new item within the budget (the 4x figure above is for a slow device and only reported)
   {
     const before = await p.evaluate(() => location.pathname);

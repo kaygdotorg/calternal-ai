@@ -26,6 +26,8 @@ export interface Turn {
 }
 
 const PAGE = 100;
+/** Rows read with the ones asked for in the first, cheap step of a page. */
+const FIRST_MARGIN = 6;
 
 /**
  * An agent message as this page saw its turn: the saved file may not record how long it worked or what it thought (an older file, or a provider that does not say), but this page measured it.
@@ -66,6 +68,8 @@ export class Conversation {
   /** The rows last asked for, so rows that arrive later (the count grew) are read without waiting for a scroll. */
   private want: [number, number] = [0, 0];
   private off: () => void;
+  /** Set when the thread is closed: pages still being read in steps are dropped. */
+  private dead = false;
 
   constructor(
     private client: ThreadsClient,
@@ -108,16 +112,27 @@ export class Conversation {
     return this.cache.get(i);
   }
 
-  /** Makes sure the pages covering `[from, to)` are read or being read. */
+  /** Makes sure the pages covering `[from, to)` are read or being read. A page of 100 is read in two steps: first the rows asked for with a few around them (a screenful: the thread paints at once), then the rest of the page in a later task, dropped when the thread is closed or the selection has moved on (`dispose`). */
   ensure(from: number, to: number): void {
     this.want = [from, to];
     for (let p = Math.floor(from / PAGE); p <= Math.floor((Math.min(to, this.count) - 1) / PAGE); p++) {
       if (this.loading.has(p)) continue;
       this.loading.add(p);
-      void this.client.messages(this.id, p * PAGE, (p + 1) * PAGE).then((ms) => {
-        ms.forEach((m, k) => this.cache.set(p * PAGE + k, m));
-        noteRecent(this.id, this.count, (i) => this.cache.get(i));
-        this.rev++;
+      const a = p * PAGE, b = (p + 1) * PAGE;
+      const fa = Math.max(a, from - FIRST_MARGIN), fb = Math.min(b, to + FIRST_MARGIN, this.count);
+      const take = (ms: Message[], at: number) => { ms.forEach((m, k) => this.cache.set(at + k, m)); noteRecent(this.id, this.count, (i) => this.cache.get(i)); this.rev++; };
+      if (fb - fa >= PAGE) { void this.client.messages(this.id, a, b).then((ms) => take(ms, a)); continue; }
+      void this.client.messages(this.id, fa, fb).then((ms) => {
+        take(ms, fa);
+        // The rest of the page, once the screenful has been drawn: first the part nearer the end, a few rows at a time so no one task is long.
+        const rest = [[fb, b], [a, fa]].filter(([x, y]) => y > x) as [number, number][];
+        const step = () => {
+          const r = rest.shift();
+          if (!r || this.dead) return;
+          const [x, y] = r;
+          void this.client.messages(this.id, x, Math.min(y, this.count)).then((m2) => { if (!this.dead) { take(m2, x); setTimeout(step, 0); } });
+        };
+        setTimeout(step, 0);
       });
     }
   }
@@ -134,6 +149,7 @@ export class Conversation {
 
   /** Stops watching. */
   dispose(): void {
+    this.dead = true;
     this.off();
   }
 }

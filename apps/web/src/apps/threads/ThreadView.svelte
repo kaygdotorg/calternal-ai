@@ -166,7 +166,7 @@
       </div>
     {:else if conv}
       {#key conv.id}
-        <VirtualList bind:this={list} count={total} estimate={150} label="Messages" topInset={barH} bottomInset={bottomH} onrange={(a, b) => conv?.ensure(a, b)}>
+        <VirtualList bind:this={list} count={total} estimate={150} overscan={300} label="Messages" topInset={barH} bottomInset={bottomH} onrange={(a, b) => conv?.ensure(a, b)}>
           {#snippet row(i)}
             {#if conv && i < conv.count}
               {@const m = conv.get(i)}

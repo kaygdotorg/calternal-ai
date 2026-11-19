@@ -15,8 +15,9 @@ export const client: ThreadsClient = serverMode() ? new ServerThreads(server) : 
 
 /** Threads, requests and providers as runes. */
 class ThreadsStore {
-  threads = $state<ThreadSummary[]>([]);
-  requests = $state<Request[]>([]);
+  /** Replaced whole by every update (never changed in place), so no per-thread signals: a deep `$state` over thousands of threads made every pass over the list a pass through proxies. */
+  threads = $state.raw<ThreadSummary[]>([]);
+  requests = $state.raw<Request[]>([]);
   providers = $state<ProviderOption[]>([]);
   machines = $state<string[]>([]);
   ready = $state(false);

@@ -31,6 +31,8 @@ interface Stored {
 import { floodOf } from "../../lib/flood";
 
 const KEY = "cal.threads.layout";
+/** The set of ids of each `existing` array idsOf has been given (arrays are replaced, never changed, so the array is the key). */
+const haves = new WeakMap<string[], Set<string>>();
 
 function read(): Stored {
   try {
@@ -74,7 +76,8 @@ class Layout {
 
   /** The ordered ids of a container, restricted to `existing` ids (threads gone from the space drop out), with unplaced threads (loose only) appended in the given order. */
   idsOf(c: Container, existing: string[]): string[] {
-    const have = new Set(existing);
+    let have = haves.get(existing);
+    if (!have) haves.set(existing, (have = new Set(existing))); // one Set per list of ids, not one per container (six containers asked of five thousand ids at every change)
     if (c === null) {
       const placed = new Set(this.sections.flatMap((s) => s.threadIds));
       const order = this.loose.filter((i) => have.has(i) && !placed.has(i));
