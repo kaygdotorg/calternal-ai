@@ -40,6 +40,44 @@
 			<key>DefaultValue</key>
 			<false/>
 		</dict>
+		<dict>
+			<key>Type</key>
+			<string>PSGroupSpecifier</string>
+			<key>Title</key>
+			<string>Diagnostics</string>
+			<key>FooterText</key>
+			<string>For finding what paints a band or gap: "Clear page cache" drops the app's cached files (you stay signed in) the next time the app starts; with "Tint shell layers" on, anything the app itself draws (rather than the page) shows magenta.</string>
+		</dict>
+		<dict>
+			<key>Type</key>
+			<string>PSToggleSwitchSpecifier</string>
+			<key>Title</key>
+			<string>Tint shell layers</string>
+			<key>Key</key>
+			<string>CalternalProbeMagenta</string>
+			<key>DefaultValue</key>
+			<false/>
+		</dict>
+		<dict>
+			<key>Type</key>
+			<string>PSToggleSwitchSpecifier</string>
+			<key>Title</key>
+			<string>iOS scroll edge fade</string>
+			<key>Key</key>
+			<string>CalternalProbeEdgeEffects</string>
+			<key>DefaultValue</key>
+			<false/>
+		</dict>
+		<dict>
+			<key>Type</key>
+			<string>PSToggleSwitchSpecifier</string>
+			<key>Title</key>
+			<string>Clear page cache</string>
+			<key>Key</key>
+			<string>CalternalClearCache</string>
+			<key>DefaultValue</key>
+			<false/>
+		</dict>
 	</array>
 </dict>
 </plist>

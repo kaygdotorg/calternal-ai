@@ -75,14 +75,49 @@ final class ShellViewController: UIViewController {
         }
         NotificationCenter.default.addObserver(self, selector: #selector(appResigned),
                                                name: UIApplication.willResignActiveNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(appBecameActive),
+                                               name: UIApplication.didBecomeActiveNotification, object: nil)
+        if UserDefaults.standard.bool(forKey: "CalternalClearCache") {   // Settings > Calternal > Clear page cache
+            UserDefaults.standard.set(false, forKey: "CalternalClearCache")
+            clearPageCache()
+        }
         Probe.attach(to: self)
-        webView.load(URLRequest(url: ShellConfig.startURL))
+        loadDocument(ShellConfig.startURL)
         if ShellConfig.nativeBar { nativeBar = NativeBar(host: self) }
     }
 
-    /// Opens a `calternal://` link inside the page.
+    /// Opens a `calternal://` link inside the page. `calternal://clear-cache` instead drops the
+    /// page's cached files (not cookies or storage) and reloads.
     func open(link: URL) {
-        webView.load(URLRequest(url: ShellConfig.pageURL(forLink: link)))
+        if link.scheme == "calternal", link.host == "clear-cache" { return clearPageCache() }
+        loadDocument(ShellConfig.pageURL(forLink: link))
+    }
+
+    /// Loads a top-level page, revalidating the document with the server every time. Why: a
+    /// server that sends no `Cache-Control` and an old `Last-Modified` lets WebKit reuse an old
+    /// `index.html` by heuristic for a long time, so a new bundle is never fetched. Revalidation
+    /// costs one conditional request (a 304 when unchanged); the hashed assets it names keep their
+    /// normal caching, so a warm launch does not re-download them.
+    func loadDocument(_ url: URL) {
+        webView.load(URLRequest(url: url, cachePolicy: .reloadRevalidatingCacheData))
+    }
+
+    /// Drops the web view's cached files, service workers and offline copies for every site, but
+    /// keeps cookies, local storage and IndexedDB (so the person stays signed in), then reloads.
+    /// Cost: the next load re-downloads the app's files once.
+    func clearPageCache() {
+        let kinds: Set<String> = [WKWebsiteDataTypeDiskCache, WKWebsiteDataTypeMemoryCache,
+                                  WKWebsiteDataTypeFetchCache, WKWebsiteDataTypeServiceWorkerRegistrations]
+        webView.configuration.websiteDataStore.removeData(ofTypes: kinds, modifiedSince: .distantPast) { [weak self] in
+            self?.log.notice("page cache cleared")
+            DispatchQueue.main.async { self?.reloadKeepingState() }
+        }
+    }
+
+    /// Reloads the current page with revalidation and hands the saved page state back afterwards.
+    private func reloadKeepingState() {
+        pendingRestore = true
+        loadDocument(webView.url ?? ShellConfig.startURL)
     }
 
     // MARK: Appearance
@@ -170,7 +205,24 @@ final class ShellViewController: UIViewController {
         if json.utf8.count <= 64 * 1024 { savedPageState = json }
     }
 
-    @objc private func appResigned() { captureInteractionState() }
+    @objc private func appResigned() {
+        captureInteractionState()
+        resignedAt = Date()
+    }
+
+    /// After the app has been away for a while, reload the page with revalidation so a release
+    /// shipped meanwhile is picked up; the saved page state is handed back. Short absences (an
+    /// app switch, a notification) do not reload.
+    @objc private func appBecameActive() {
+        guard let away = resignedAt, Date().timeIntervalSince(away) > Self.staleAfter, webView.url != nil else { return }
+        resignedAt = nil
+        log.notice("returning after \(Int(Date().timeIntervalSince(away)))s: revalidating the page")
+        reloadKeepingState()
+    }
+
+    private var resignedAt: Date?
+    /// Seconds away after which the page is reloaded on return (30 minutes).
+    private static let staleAfter: TimeInterval = 30 * 60
 
     private func captureInteractionState() {
         interactionState = webView.interactionState
@@ -211,7 +263,7 @@ extension ShellViewController: WKNavigationDelegate, WKUIDelegate {
         if let state = interactionState {
             webView.interactionState = state
         } else {
-            webView.load(URLRequest(url: ShellConfig.startURL))
+            loadDocument(ShellConfig.startURL)
         }
     }
 
