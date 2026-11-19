@@ -202,6 +202,8 @@
     "calternal plugin bench": { "cold": "any", "warm": "any", "three_host_calls": "any" },
     "calternal plugin review": { "id": "string", "version": "string", "checksum": "string", "operations": [{"id":"string","risk":"string","capability":"string"}], "host_calls": ["string"], "secrets": ["string"], "complete_manifest": "any", "changes": "any" },
     "calternal plugin pack": { "archive": "string" },
+    "calternal plugin package": { "archive": "string", "format": "string", "id": "string", "version": "string", "package_sha256": "string", "screenshots": "integer" },
+    "calternal plugin verify-package": { "archive": "string", "format": "string", "id": "string", "version": "string", "package_sha256": "string", "screenshots": "integer" },
     "calternal plugin install": { "id": "string", "activation": "string", "status": "string" },
     "calternal plugin update": { "id": "string", "activation": "string", "status": "string" },
     "calternal plugin remove": { "id": "string", "activation": "string", "status": "string" },

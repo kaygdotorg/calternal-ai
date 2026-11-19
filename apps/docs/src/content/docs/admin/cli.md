@@ -301,3 +301,11 @@ seven-day confirmation, examples and operator safety ceilings.
 | `search manifests --space UUID` | Read enabled plugin palette contributions. | Plugin, command and Settings tables. | `manifests` |
 
 Use the normal Calternal connection flags and `--json` for structured results.
+
+
+### Offline plugin submissions
+
+| Arguments | Purpose | Human output | JSON data |
+| --- | --- | --- | --- |
+| `calternal plugin package SOURCE ARCHIVE` | Bundle a checked plugin, gallery listing and screenshots | Archive, plugin, version, package checksum and screenshot count | Submission summary |
+| `calternal plugin verify-package ARCHIVE` | Validate the bounded submission without running the worker or using the network | Submission summary and verification result | Submission summary |

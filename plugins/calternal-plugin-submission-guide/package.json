@@ -1,0 +1,18 @@
+{
+  "name": "@calternal/plugin-submission-guide",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc --noEmit && esbuild src/worker.ts --bundle --platform=node --format=esm --target=node22 --minify --loader:.md=text --outfile=dist/worker.js",
+    "test": "node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "@calternal/plugin-sdk": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.30",
+    "esbuild": "^0.25.5",
+    "typescript": "^5.9.3"
+  }
+}
