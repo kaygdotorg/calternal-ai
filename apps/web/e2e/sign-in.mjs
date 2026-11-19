@@ -122,8 +122,9 @@ try {
   await p4.addInitScript(() => localStorage.setItem("cal.firstrun", "1"));
   await p4.goto(`${url}/?server=1`); await p4.waitForSelector("html[data-ready]");
   await p4.getByRole("button", { name: "Sign in with a passkey" }).click();
-  await p4.getByRole("alert").waitFor({ timeout: 8000 });
-  check(/passkey/.test(await p4.getByRole("alert").innerText()), "no passkey on this device: said in words");
+  // the Callout's live region is always in the page and empty until a sentence is set: wait for the sentence, not for the element
+  const said = await p4.getByRole("alert").filter({ hasText: /passkey/i }).waitFor({ state: "attached", timeout: 8000 }).then(() => true, () => false);
+  check(said, "no passkey on this device: said in words", said ? "" : JSON.stringify(await p4.getByRole("alert").allInnerTexts()));
   await ctx2.close();
   // An ended session returns to the sign-in screen at the same address.
   await go("/settings/account");
