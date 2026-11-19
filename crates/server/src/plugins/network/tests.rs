@@ -9,6 +9,7 @@ use axum::{
     body::Body,
     http::{Request, StatusCode, header},
 };
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 use calternal_core::ContentFetchField;
 use calternal_types::Actor;
 use http_body_util::BodyExt;
@@ -17,6 +18,27 @@ use tower::ServiceExt;
 
 #[test]
 fn sealed_frame_is_per_person_and_dies_when_the_source_head_changes() {
+    check_frame(ContentFetchField::Text);
+}
+
+#[test]
+fn stored_mail_html_uses_signed_media_and_requires_an_explicit_load() {
+    check_frame(ContentFetchField::MailHtml);
+}
+
+fn check_frame(field: ContentFetchField) {
+    const HTML: &str = r#"<p>hello</p><script>alert(1)</script><img src="https://example.com/image.png?key=hidden">"#;
+    let mail = field == ContentFetchField::MailHtml;
+    let snapshot;
+    let text = if mail {
+        snapshot = format!(
+            "X-Calternal-Snapshot: inline-text-only\r\n\r\n--calternal-mail-snapshot\r\nContent-Type: text/html; charset=utf-8\r\nContent-Transfer-Encoding: base64\r\n\r\n{}\r\n--calternal-mail-snapshot--\r\n",
+            STANDARD.encode(HTML)
+        );
+        &snapshot
+    } else {
+        HTML
+    };
     let temp = tempfile::tempdir().unwrap();
     let roots = calternal_roots::Roots {
         appdata: temp.path().join("appdata"),
@@ -42,14 +64,21 @@ fn sealed_frame_is_per_person_and_dies_when_the_source_head_changes() {
         .find(|space| !space.personal)
         .unwrap()
         .id;
-    let manifest = serde_json::from_value(json!({
+    let mut menu = json!({
         "id": "mail-fixture", "name": "Mail fixture", "version": "1", "icon": "mail", "api_version": 1,
         "operations": [], "views": [], "attention": [], "collections": [],
         "settings": [], "schedules": [], "webhooks": [], "secrets": [], "hooks": [], "themes": [],
         "kinds": [{"id": "mail-fixture", "schema": true, "storage": {"hidden": true}, "claimed_text": true}],
         "host_calls": ["content_prepare_v1"],
-        "network": {"content_fetch": {"profile": "images_fonts", "sources": [{"kind": "mail-fixture", "field": "text"}]}}
-    })).unwrap();
+        "network": {"content_fetch": {"profile": "images_fonts", "sources": [{"kind": "mail-fixture", "field": field}]}}
+    });
+    if mail {
+        menu["kinds"][0]["claimed_text"] = json!(false);
+        menu["kinds"][0]["extension"] = json!("eml");
+        menu["host_calls"] = json!(["content_prepare_v1", "mail_v1"]);
+        menu["network"]["mail_connection"] = json!("inbox");
+    }
+    let manifest = serde_json::from_value(menu).unwrap();
     let plugin = Plugin::new(
         TrustedEntry {
             id: "mail-fixture".into(),
@@ -92,8 +121,9 @@ fn sealed_frame_is_per_person_and_dies_when_the_source_head_changes() {
             None,
             PluginItemWrite::Replace {
                 metadata: json!({}),
-                text: r#"<p>hello</p><img src="https://example.com/image.png?key=hidden">"#,
+                text,
             },
+            |_| {},
         )
         .unwrap();
     let id = saved["id"].as_str().unwrap();
@@ -109,7 +139,7 @@ fn sealed_frame_is_per_person_and_dies_when_the_source_head_changes() {
             kind: "mail-fixture".into(),
             item_id: id.into(),
             revision: revision.into(),
-            field: ContentFetchField::Text,
+            field,
         },
     )
     .unwrap();
@@ -158,6 +188,34 @@ fn sealed_frame_is_per_person_and_dies_when_the_source_head_changes() {
         assert!(html.contains("<p>hello</p>"));
         assert!(!html.contains("example.com"));
         assert!(!html.contains("key=hidden"));
+        assert!(!html.contains("<script"));
+        let asset = html
+            .split_once("src=\"")
+            .unwrap()
+            .1
+            .split('"')
+            .next()
+            .unwrap();
+        let frame = state
+            .store
+            .plugin_frames
+            .get(frame.frame_id.parse().unwrap())
+            .unwrap();
+        if mail {
+            assert!(matches!(
+                frame.source.age,
+                eligibility::SourceAge::ExplicitOnly
+            ));
+        }
+        let parts: Vec<_> = asset.rsplit('/').collect();
+        assert!(asset_authorized(
+            &state.store.cursor_key,
+            path.rsplit('/').next().unwrap().parse().unwrap(),
+            parts[2].parse().unwrap(),
+            parts[1].parse().unwrap(),
+            parts[0],
+            asset_now(),
+        ));
     });
 
     state
@@ -174,10 +232,22 @@ fn sealed_frame_is_per_person_and_dies_when_the_source_head_changes() {
                 metadata: json!({}),
                 text: "<p>replacement</p>",
             },
+            |_| {},
         )
         .unwrap();
     assert_eq!(
         runtime.block_on(get(&owner_token)).unwrap().status(),
         StatusCode::NOT_FOUND
     );
+}
+
+#[test]
+fn asset_signature_binds_index_and_expiry() {
+    let key = hmac::Key::new(hmac::HMAC_SHA256, &[7; 32]);
+    let frame = Uuid::new_v4();
+    let token = asset_signature(&key, frame, 0, 100);
+    assert!(asset_authorized(&key, frame, 0, 100, &token, 99));
+    assert!(!asset_authorized(&key, frame, 1, 100, &token, 99));
+    assert!(!asset_authorized(&key, frame, 0, 101, &token, 99));
+    assert!(!asset_authorized(&key, frame, 0, 100, &token, 100));
 }

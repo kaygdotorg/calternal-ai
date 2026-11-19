@@ -53,7 +53,8 @@ connection type. The worker has no SMTP, send or attachment download
 operation.
 
 The manifest requests anonymous remote content for the sealed renderer.
-HTML sanitization and asset reference rewriting are active. The public
-plugin host currently leaves those media references unloaded.
+The signed-in viewer can POST the authenticated frame URL to load media
+through the shared anonymous HTTPS proxy. Mail requires this explicit action
+even in Always mode. Never mode still leaves remote media unloaded.
 
 See [the implementation and authoring report](../../docs/mail-plugin.md).

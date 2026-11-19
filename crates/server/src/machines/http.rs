@@ -53,24 +53,47 @@ use calternal_types::Capability;
 use calternal_types::Error;
 
 /// The service as a request extension; absent when machines are disabled.
-type Svc = Option<Extension<Arc<MachineService>>>;
+pub(super) type Svc = Option<Extension<Arc<MachineService>>>;
 
 /// Every machine route. Handlers answer 404 when no [`MachineService`]
 /// extension is installed (tests that build the router without one).
 pub fn routes<D: Directory>() -> Router<Shared<D>> {
+    let release_path = calternal_machine::release::PATH;
     Router::new()
+        .route("/install", get(super::install::installer))
+        .route(
+            &format!("{release_path}/version"),
+            get(super::install::version),
+        )
+        .route(
+            &format!("{release_path}/{{version}}/{{platform}}/{{asset}}"),
+            get(super::install::asset),
+        )
         .route("/api/v1/machine/enroll", post(enrol))
         .route("/api/v1/machine/session/start", post(session_start))
         .route("/api/v1/machine/session/finish", post(session_finish))
         .route("/api/v1/machine/sync", post(sync))
         .route("/api/v1/machine/status", post(erasure_status))
         .route("/api/v1/machine/output", post(output))
+        .route("/api/v1/machine/preview-output", post(preview_output))
         .route("/api/v1/machines", get(list))
         .route("/api/v1/machines/codes", post(code))
         .route("/api/v1/machines/{id}/revoke", post(revoke))
         .route("/api/v1/machines/{id}/drain", post(drain))
         .route("/api/v1/machines/runs", post(create_run::<D>))
         .route("/api/v1/machines/runs/{lease}", get(get_run::<D>))
+        .route(
+            "/api/v1/machines/runs/{lease}/previews",
+            post(super::preview::publish::<D>),
+        )
+        .route(
+            "/api/v1/machine-previews/{preview}/",
+            get(super::preview::view::<D>),
+        )
+        .route(
+            "/api/v1/machine-previews/{preview}/{*tail}",
+            get(super::preview::view::<D>),
+        )
         .route("/api/v1/machines/runs/{lease}/stop", post(stop_run::<D>))
         .route("/api/v1/machines/runs/{lease}/execs", post(exec::<D>))
         .route(
@@ -79,19 +102,19 @@ pub fn routes<D: Directory>() -> Router<Shared<D>> {
         )
 }
 
-fn reply<T: serde::Serialize>(r: Result<T, Error>) -> Response {
+pub(super) fn reply<T: serde::Serialize>(r: Result<T, Error>) -> Response {
     match r {
         Ok(v) => json_response(StatusCode::OK, &v),
         Err(e) => failure(None, e),
     }
 }
 
-fn service(svc: Svc) -> Result<Arc<MachineService>, Error> {
+pub(super) fn service(svc: Svc) -> Result<Arc<MachineService>, Error> {
     svc.map(|Extension(s)| s)
         .ok_or_else(|| Error::not_found("machines are not enabled"))
 }
 
-fn body<T: DeserializeOwned>(bytes: &Bytes) -> Result<T, Error> {
+pub(super) fn body<T: DeserializeOwned>(bytes: &Bytes) -> Result<T, Error> {
     serde_json::from_slice(bytes)
         .map_err(|_| Error::invalid_input("body does not match the schema"))
 }
@@ -152,7 +175,12 @@ async fn erasure_status(svc: Svc, bytes: Bytes) -> Response {
     )
 }
 
-async fn sync(svc: Svc, headers: HeaderMap, bytes: Bytes) -> Response {
+async fn sync(
+    svc: Svc,
+    shutdown: Option<Extension<crate::shutdown::Shutdown>>,
+    headers: HeaderMap,
+    bytes: Bytes,
+) -> Response {
     reply(
         async {
             let svc = service(svc)?;
@@ -160,7 +188,9 @@ async fn sync(svc: Svc, headers: HeaderMap, bytes: Bytes) -> Response {
             let req: SyncRequest = body(&bytes)?;
             let (s, t) = (svc.clone(), token.clone());
             let machine = blocking(move || s.authenticate(&t)).await?;
-            let messages = svc.sync(machine, &token, req).await?;
+            let messages = svc
+                .sync_until(machine, &token, req, shutdown.as_ref().map(|ext| &ext.0))
+                .await?;
             Ok(SyncResponse { messages })
         }
         .await,
@@ -168,6 +198,14 @@ async fn sync(svc: Svc, headers: HeaderMap, bytes: Bytes) -> Response {
 }
 
 async fn output(svc: Svc, headers: HeaderMap, bytes: Bytes) -> Response {
+    receive_output(svc, headers, bytes, false).await
+}
+
+async fn preview_output(svc: Svc, headers: HeaderMap, bytes: Bytes) -> Response {
+    receive_output(svc, headers, bytes, true).await
+}
+
+async fn receive_output(svc: Svc, headers: HeaderMap, bytes: Bytes, preview: bool) -> Response {
     reply(
         async {
             let svc = service(svc)?;
@@ -175,7 +213,11 @@ async fn output(svc: Svc, headers: HeaderMap, bytes: Bytes) -> Response {
             let post: OutputPost = body(&bytes)?;
             blocking(move || {
                 let machine = svc.authenticate(&token)?;
-                svc.output(machine, post)
+                if preview {
+                    svc.preview_output(machine, post)
+                } else {
+                    svc.output(machine, post)
+                }
             })
             .await
         }
@@ -296,7 +338,7 @@ async fn create_run<D: Directory>(
 }
 
 /// Resolve a lease's space and re-check the caller's authority there.
-async fn authorize_run<D: Directory>(
+pub(super) async fn authorize_run<D: Directory>(
     state: &Shared<D>,
     svc: &Arc<MachineService>,
     who: &Identity,
@@ -402,6 +444,7 @@ async fn read_output<D: Directory>(
     svc: Svc,
     Extension(who): Extension<Identity>,
     Path(exec): Path<Uuid>,
+    shutdown: Option<Extension<crate::shutdown::Shutdown>>,
     uri: Uri,
 ) -> Response {
     reply(
@@ -416,8 +459,12 @@ async fn read_output<D: Directory>(
             authorize(&state, &who, space)
                 .await
                 .map_err(|_| Error::not_found("exec not found"))?;
-            svc.read_output(me, exec, after, Duration::from_millis(wait_ms))
-                .await
+            tokio::select! {
+                result = svc.read_output(me, exec, after, Duration::from_millis(wait_ms)) => result,
+                () = crate::shutdown::wait(shutdown.as_ref().map(|ext| &ext.0)) => {
+                    Err(Error::unavailable("the server is shutting down"))
+                }
+            }
         }
         .await,
     )

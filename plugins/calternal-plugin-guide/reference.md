@@ -96,12 +96,20 @@ then mounts the returned `frame_url` with an empty iframe sandbox. The host
 sanitizes the HTML and checks the viewer, package activation and item revision
 on delivery. Preparing another kind or revision is refused. A named Mail
 package can also declare a non-text `.eml` kind with `field: "mail_html"`
-to prepare the inline HTML from its stored snapshot.
+to prepare the inline HTML from its stored snapshot. Mail media requires an
+explicit authenticated frame load, including in Always mode.
 
-The preview implements sealed frames and records the viewer's remote-content
-preference. The `images_fonts` profile is for anonymous HTTPS media retrieval
-by host-issued asset reference. Outbound asset delivery is pending in this
-preview. The profile does not accept arbitrary page URLs or retrieve page titles.
+The `images_fonts` profile retrieves anonymous HTTPS media in the
+background. The sealed frame displays cached media through signed host
+references after checking the viewer's current remote-content preference.
+The profile serves supported images and fonts and excludes linked page titles.
+
+Content fetch can disclose data through the hostname, path or query that a
+plugin puts in a stored media URL. Always may send that URL at ingest even
+when nobody opens the item. There are no caller cookies, credentials or
+referrer headers. The proxy limits each plugin to 16 distinct hostnames per
+space per minute, including redirects. Managers can see the latest 32
+attempted hostnames in `plugins.diagnostics` through `fetch_hosts`.
 
 ### C. Open internet
 

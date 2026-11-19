@@ -264,3 +264,22 @@ async fn full_intent_replays_both_sides_of_cutover_through_the_pinned_binary() {
     assert!(intent.get("entries").is_none());
     assert_eq!(ok(upgrade(&f, &["status"]))["needs_recovery"], false);
 }
+
+#[tokio::test]
+async fn upgrade_account_count_checks_stopped_auth_without_disclosing_records() {
+    let mut fresh = Fixture::empty();
+    fresh.start().await;
+    assert!(!upgrade(&fresh, &["account-count"]).status.success());
+    fresh.stop();
+    assert_eq!(
+        ok(upgrade(&fresh, &["account-count"])),
+        json!({"accounts":0})
+    );
+
+    let mut enrolled = Fixture::new().await;
+    enrolled.stop();
+    assert_eq!(
+        ok(upgrade(&enrolled, &["account-count"])),
+        json!({"accounts":enrolled.ids.len()})
+    );
+}

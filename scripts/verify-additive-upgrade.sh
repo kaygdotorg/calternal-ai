@@ -39,7 +39,7 @@ extract "$candidate" "$temporary/candidate"
 export CALTERNAL_RELEASE_N_BIN=$temporary/previous/calternal CALTERNAL_RELEASE_NEXT_BIN=$temporary/candidate/calternal
 export CALTERNAL_RELEASE_N_IMAGE=$previous CALTERNAL_RELEASE_NEXT_IMAGE=$candidate
 npm run build:plugins
-scripts/check-podman-tests.sh cargo test --locked -j6 --manifest-path tests/conformance/Cargo.toml --features release-upgrade \
+scripts/check-podman-tests.sh cargo test --locked -j"${CARGO_BUILD_JOBS:-6}" --manifest-path tests/conformance/Cargo.toml --features release-upgrade \
   --test isolation release_artifacts_preserve_live_data_in_both_directions -- --test-threads=1
 
 # Publish evidence only after both actual release executables have served the data.

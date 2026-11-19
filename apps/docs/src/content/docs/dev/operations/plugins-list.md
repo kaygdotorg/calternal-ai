@@ -61,6 +61,13 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
             "text"
           ],
           "type": "string"
+        },
+        {
+          "description": "The inline HTML part of the item's stored RFC 5322/MIME message.",
+          "enum": [
+            "mail_html"
+          ],
+          "type": "string"
         }
       ]
     },
@@ -127,6 +134,13 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
           "description": "Prepare remote asset references from a declared, stored content revision.",
           "enum": [
             "content_prepare_v1"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Use a declared account-owned IMAPS connection through the host.",
+          "enum": [
+            "mail_v1"
           ],
           "type": "string"
         },
@@ -319,7 +333,7 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
           "description": "Host-enforced media and transport policy."
         },
         "sources": {
-          "description": "Up to 32 distinct text sources owned by the declaring package.",
+          "description": "Up to 32 distinct supported sources owned by the declaring package.",
           "items": {
             "$ref": "#/definitions/ContentFetchSource"
           },
@@ -475,6 +489,13 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
             }
           ],
           "description": "Anonymous remote assets from stored content. Omit for no proxy access."
+        },
+        "mail_connection": {
+          "description": "Name of this package's built-in, personal-space IMAPS connection.",
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "type": "object"

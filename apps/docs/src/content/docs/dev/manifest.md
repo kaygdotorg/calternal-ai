@@ -51,6 +51,13 @@ Stored source fields supported by the content proxy.
       "enum": [
         "text"
       ]
+    },
+    {
+      "description": "The inline HTML part of the item's stored RFC 5322/MIME message.",
+      "type": "string",
+      "enum": [
+        "mail_html"
+      ]
     }
   ]
 }
@@ -152,6 +159,13 @@ The only broker methods a worker may request.
       "type": "string",
       "enum": [
         "content_prepare_v1"
+      ]
+    },
+    {
+      "description": "Use a declared account-owned IMAPS connection through the host.",
+      "type": "string",
+      "enum": [
+        "mail_v1"
       ]
     },
     {
@@ -375,7 +389,7 @@ Anonymous content proxy scope shown during trusted installation review.
 | Field | Required | Type / reference | Description |
 | --- | --- | --- | --- |
 | `profile` | yes | #/definitions/ContentFetchProfile | Host-enforced media and transport policy. |
-| `sources` | yes | array | Up to 32 distinct text sources owned by the declaring package. |
+| `sources` | yes | array | Up to 32 distinct supported sources owned by the declaring package. |
 
 ```json
 {
@@ -395,7 +409,7 @@ Anonymous content proxy scope shown during trusted installation review.
       ]
     },
     "sources": {
-      "description": "Up to 32 distinct text sources owned by the declaring package.",
+      "description": "Up to 32 distinct supported sources owned by the declaring package.",
       "type": "array",
       "items": {
         "$ref": "#/definitions/ContentFetchSource"
@@ -594,6 +608,7 @@ Network authority requested by a package. Each declaration has its own approval 
 | Field | Required | Type / reference | Description |
 | --- | --- | --- | --- |
 | `content_fetch` | no | schema | Anonymous remote assets from stored content. Omit for no proxy access. |
+| `mail_connection` | no | string, null | Name of this package's built-in, personal-space IMAPS connection. |
 
 ```json
 {
@@ -609,6 +624,13 @@ Network authority requested by a package. Each declaration has its own approval 
         {
           "type": "null"
         }
+      ]
+    },
+    "mail_connection": {
+      "description": "Name of this package's built-in, personal-space IMAPS connection.",
+      "type": [
+        "string",
+        "null"
       ]
     }
   },

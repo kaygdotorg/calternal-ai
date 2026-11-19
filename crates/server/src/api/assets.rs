@@ -12,6 +12,10 @@ use std::{
 #[derive(Clone)]
 pub(crate) struct CacheResponse;
 
+/// An isolated document whose policy also controls same-origin framing.
+#[derive(Clone)]
+pub(crate) struct SealedFrame(pub(crate) HeaderValue);
+
 pub(super) fn respond(
     bytes: Vec<u8>,
     content_type: &'static str,

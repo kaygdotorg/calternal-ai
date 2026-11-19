@@ -418,8 +418,12 @@ async fn every_registered_operation_has_an_independent_matrix_row() {
         ("threads.unarchive", Capability::ContentWrite),
         ("threads.delete", Capability::ContentWrite),
     ];
-    // The guide's real session and activation matrix is in conformance/plugin_slot_cases.rs.
+    // The plugin guide also has a session and activation matrix in conformance/plugin_slot_cases.rs.
     let guide = [
+        (
+            "calternal-plugin-submission-guide.explain",
+            Capability::SpaceRead,
+        ),
         ("calternal-plugin-guide.explain", Capability::SpaceRead),
         ("calternal-plugin-guide.scaffold", Capability::SpaceRead),
         ("calternal-plugin-guide.check", Capability::SpaceRead),

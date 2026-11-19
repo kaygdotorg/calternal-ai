@@ -189,6 +189,12 @@ impl Machine {
         .await
     }
 
+    pub(super) async fn preview_output(&self, f: &Fixture, exec: &Value, chunks: Value) -> Answer {
+        f.machine("/api/v1/machine/preview-output", Some(&self.token), json!({
+            "lease_id":exec["lease_id"], "fence":exec["fence"], "exec_id":exec["exec_id"], "chunks":chunks,
+        })).await
+    }
+
     pub(super) async fn next_token(&mut self, f: &Fixture) -> String {
         let deadline = Instant::now() + Duration::from_secs(20);
         loop {
