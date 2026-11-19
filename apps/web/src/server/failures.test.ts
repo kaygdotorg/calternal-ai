@@ -12,6 +12,12 @@ const stream = (frames: string[]) => new Response(new ReadableStream({ start(c) 
 beforeEach(() => { link.state = "ok"; link.quiet = false; localStorage.clear(); });
 
 describe("operations", () => {
+  it("a 429 refusal with its envelope (a cooldown) is the server's answer: not retried, code rate_limited, in words", async () => {
+    const calls = vi.fn(async () => new Response(JSON.stringify({ request_id: "r", ok: false, error: { code: "rate_limited", message: "Register this browser or wait a minute before testing again.", details: { retry_after_seconds: 40 } } }), { status: 429, headers: { "content-type": "application/json", "retry-after": "40" } }));
+    const c = client(calls);
+    await expect(c.operate("push.test", {})).rejects.toMatchObject({ code: "rate_limited" });
+    expect(calls).toHaveBeenCalledTimes(1);
+  });
   it("an unreachable server is `unavailable`, in words that name no detail", async () => {
     const c = client(async () => { throw new TypeError("Failed to fetch"); });
     await expect(c.operate("notes.list", {})).rejects.toMatchObject({ code: "unavailable" });

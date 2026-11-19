@@ -256,6 +256,22 @@ function resolveNow(name: string, fallback: RGB): RGB {
 const inkOf = (s: Scheme): Ink => ({ ink: hex(tokens[s].ink), ink2: hex(tokens[s]["ink-2"]), ink3: hex(tokens[s]["ink-3"]), paper: hex(tokens[s].paper) });
 const rgbCss = (c: RGB): string => `${Math.round(c[0])} ${Math.round(c[1])} ${Math.round(c[2])}`;
 
+/** The surfaces' rectangles as the veil's cache key sees them (rounded: a layout that has not moved gives the same text). */
+const rectsKey = (r: object): string => JSON.stringify(r, (_, x) => (typeof x === "number" ? Math.round(x * 1e4) / 1e4 : x));
+/** The rectangles the last solve was made for. */
+let lastRects = "";
+/** How many more times a solve may be repeated because the card's rectangle moved after it (a window opening, a layout settling): see `settleLater`. */
+let settleLeft = 0;
+let settleTimer = 0;
+/**
+ * A veil solved while the card was still arriving (the canvas opens a window with a short grow-in, so its first rectangle is not its last) is for the wrong rectangle, and the first slider step would then solve it
+ * again in the middle of a key press (hundreds of milliseconds at 4x). So after a wallpaper is read the solve is checked again a moment later, at most three times, and repeated only when the rectangles changed.
+ * Moving a window afterwards does not re-solve (it never did): only the first settling does.
+ */
+function settleLater(want: Flags): void {
+  if (settleLeft <= 0 || settleTimer) return;
+  settleTimer = window.setTimeout(() => { settleTimer = 0; settleLeft--; if (rectsKey(rects()) !== lastRects) updateVeil(want); }, 450);
+}
 let copies: { side: HTMLCanvasElement; card: HTMLCanvasElement } | null = null;
 /** Changes whenever the blurred copies are replaced or dropped. */
 let copiesId = 0;
@@ -274,6 +290,7 @@ export function updateVeil(want: Flags): void {
   const T: Ink = { ink: resolved("--ink", inkOf(scheme).ink), ink2: resolved("--ink-2", inkOf(scheme).ink2), ink3: resolved("--ink-3", inkOf(scheme).ink3), paper: resolved("--paper", inkOf(scheme).paper) };
   const other = inkOf(scheme === "light" ? "dark" : "light");
   const r = rects();
+  lastRects = rectsKey(r);
   const flat = (): RGB[] => [resolved("--backdrop", inkOf(scheme).paper)];
   const px = (c: HTMLCanvasElement | undefined, f: Frac): RGB[] => (source && c ? sample(c, f) : flat());
   // ONE veil for everything that is not the card: the wallpaper and a single veil span the whole window and both sidebars are drawn on them (docs/ui-shell.md "The background"), so the veil is solved once, from the
@@ -306,6 +323,7 @@ export function updateVeil(want: Flags): void {
     setThemeColor("#" + c.map((v) => Math.round(v).toString(16).padStart(2, "0")).join(""));
   }
   lastVeilL = out.l;
+  settleLater(want);
   const flip = (v: Veil | undefined) => (v && v.scheme !== scheme ? v.scheme : null);
   surfaces.left = flip(out.l);
   surfaces.right = flip(out.r);
@@ -350,6 +368,7 @@ function clear(): void {
   }
   copies = null; copiesId++;
   setBackdropField(null);
+  settleLeft = 3;
   updateVeil(flagsNow);
   for (const fn of listeners) fn(null);
 }
@@ -376,6 +395,7 @@ async function update(): Promise<void> {
     }
     copies = { side, card }; copiesId++;
     setBackdropField(fieldOf(side));
+    settleLeft = 3;
     updateVeil(flagsNow);
     const c = colours(img);
     for (const fn of listeners) fn(c);

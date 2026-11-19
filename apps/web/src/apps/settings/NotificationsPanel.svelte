@@ -3,6 +3,7 @@
   // place the browser's permission prompt is shown. The list is the person's devices (this one marked), each removable; "Send a test" sends a notification to this device. Where push cannot work the page says why in plain words:
   // on an iPhone or iPad it needs the app installed to the Home Screen. What a notification says is only the thread's title and "needs you" or "finished" (never the message): the payload carries nothing else.
   import { Button } from "@calternal/ui";
+  import { ServerError } from "../../server/client";
   import { say } from "../../server/say";
   import { currentEnv, currentSubscription, pushClient, supportOf, turnOff, turnOn, type PushDevice } from "../../notify/push";
   import "./panel.css";
@@ -14,7 +15,7 @@
   /** Whether this device is on the list: this installation is registered and the browser still holds its subscription (a cleared browser leaves a stale row). */
   const here = $derived(devices.find((d) => d.current));
   async function load() { try { devices = (await client.devices()).devices; error = ""; } catch (e) { error = say(e); } loaded = true; }
-  async function run(f: () => Promise<void>) { busy = true; error = ""; note = ""; try { await f(); } catch (e) { error = e instanceof Error ? e.message : say(e); } permission = typeof Notification === "undefined" ? "default" : Notification.permission; busy = false; }
+  async function run(f: () => Promise<void>) { busy = true; error = ""; note = ""; try { await f(); } catch (e) { error = e instanceof ServerError ? say(e) : e instanceof Error ? e.message : say(e); } permission = typeof Notification === "undefined" ? "default" : Notification.permission; busy = false; }
   const on = () => run(async () => { devices = await turnOn(client); note = "Notifications are on for this device."; });
   const off = (d: PushDevice) => run(async () => { if (d.current) await turnOff(client, d.id); else await client.remove(d.id); await load(); });
   const test = () => run(async () => { await client.test(); note = "A test notification is on its way to this device."; });

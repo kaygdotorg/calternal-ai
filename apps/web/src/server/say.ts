@@ -18,10 +18,14 @@ const BY_CODE: Record<string, string> = {
   internal: "The server had a problem. Try again in a moment; if it keeps happening, tell whoever runs it.",
   // Sign-in (auth routes use their own codes).
   cancelled: "The passkey prompt was closed or timed out. Try again, and choose a passkey when your device asks.",
+  passkey_unavailable: "Passkeys are not available in this app or browser yet. Open Calternal in Safari or Chrome and continue there.",
+  passkey_origin: "This page's address cannot be used for passkeys. Open Calternal at the address your server gave you (https, always the same name), then try again.",
+  passkey_unsupported: "This device or browser does not support passkeys. Use Safari, Chrome or Edge on a recent phone or computer.",
   passkey_failed: "That passkey was not recognised. Use the passkey you made for this server, or ask for a new setup link if this is a new installation.",
   setup_token_invalid: FIRST_OWNER,
   invite_invalid: "That invitation is wrong, expired or already used. Ask whoever invited you for a new link and paste its code.",
   too_many_requests: "Too many tries. Wait a minute and try again.",
+  rate_limited: "Too many tries. Wait a minute and try again.",
   last_passkey: "Keep at least one passkey, or you could not sign in again. Add another first.",
   passkey_reverification_required: "Confirm with your passkey, then try again.",
 };

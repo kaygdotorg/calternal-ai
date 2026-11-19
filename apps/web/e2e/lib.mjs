@@ -1,7 +1,8 @@
-import { cpus, loadavg } from "node:os";
+import { cpus, loadavg, tmpdir } from "node:os";
 // Shared by the e2e scripts: starts `vite preview` of the built app, opens Chromium, and exposes small helpers.
 import { spawn } from "node:child_process";
-import { readdirSync, readFileSync, readlinkSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, readlinkSync, rmSync } from "node:fs";
+import { join } from "node:path";
 import { chromium } from "playwright";
 
 export const PORT = 4174;
@@ -38,6 +39,79 @@ export async function serve() {
     await new Promise((r) => setTimeout(r, 250));
   }
   return () => { try { process.kill(-p.pid); } catch { p.kill(); } };
+}
+
+/** Start a real server with disposable roots. Wait for this server's setup token and stop it before removing the roots. `extra` adds server arguments (and `env` environment variables): the plugin-prompt suite passes `--test-plugin-root` and the direct worker backend. */
+export async function startRealServer(port, extra = { args: [], env: {} }) {
+  const bin = process.env.CAL_BIN ?? `${process.env.HOME}/Developer/lanes/ui-shell/target/debug/calternal`;
+  const data = mkdtempSync(join(tmpdir(), "cal-real-server-"));
+  const appdata = join(data, "appdata");
+  const server = spawn(bin, [
+    "serve", "--create", "--installation-id", crypto.randomUUID(), "--appdata", appdata,
+    "--userdata-ssd", join(data, "ssd"), "--userdata-hdd", join(data, "hdd"),
+    "--port", String(port), "--web-dir", process.env.CAL_DIST ?? "dist",
+    "--plugin-root", process.env.CAL_PLUGINS ?? "../../plugins",
+    ...(extra.args ?? []),
+  ], { stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, ...(extra.env ?? {}) } });
+  const url = `http://localhost:${port}`;
+  let tail = "", exited = false, startupError;
+  for (const stream of [server.stdout, server.stderr]) {
+    stream.on("data", (chunk) => { tail = (tail + chunk).slice(-4096); });
+  }
+  const closed = new Promise((resolve) => {
+    server.once("error", (error) => { startupError = error; });
+    server.once("close", () => { exited = true; resolve(); });
+  });
+  const stop = async () => {
+    if (!exited) server.kill();
+    await closed;
+    rmSync(data, { recursive: true, force: true });
+  };
+  try {
+    for (let attempt = 0; attempt < 80 && !exited; attempt++) {
+      try {
+        const startup = JSON.parse(readFileSync(join(appdata, "startup.json"), "utf8"));
+        if (startup.pid !== server.pid) throw new Error("Unexpected server PID");
+        const token = readFileSync(join(appdata, "setup.token"), "utf8").trim();
+        const ready = await fetch(`${url}/api/v1/auth/status`, { signal: AbortSignal.timeout(500) });
+        if (token && ready.ok && !exited) {
+          return { bin, data, url, token, stop, logTail: () => tail };
+        }
+      } catch { /* Server not ready yet. */ }
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+    throw startupError ?? new Error(`Real server at ${url} did not become ready.
+${tail}`);
+  } catch (error) {
+    await stop();
+    throw error;
+  }
+}
+
+/** Open a real-server test page with a disposable virtual passkey. */
+export async function openRealServerPage(browser, options = {}) {
+  const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, ...options });
+  await context.addInitScript(() => localStorage.setItem("cal.firstrun", "1"));
+  const page = await context.newPage();
+  const cdp = await context.newCDPSession(page);
+  await cdp.send("WebAuthn.enable");
+  await cdp.send("WebAuthn.addVirtualAuthenticator", {
+    options: {
+      protocol: "ctap2", transport: "internal", hasResidentKey: true, hasUserVerification: true,
+      isUserVerified: true, automaticPresenceSimulation: true,
+    },
+  });
+  return page;
+}
+
+/** Complete first-owner signup against the disposable server. */
+export async function signUpRealServerOwner(page, server, name) {
+  await page.goto(`${server.url}/?server=1`);
+  await page.waitForSelector("html[data-ready]");
+  await signUp(page, server.token, name);
+  await page.waitForFunction(() => !document.querySelector("h1")?.textContent?.includes("Set up"), null, { timeout: 15000 });
+  await page.waitForSelector("html[data-ready]");
+  await page.waitForTimeout(1200);
 }
 
 /** The devices the screenshots and checks use. */
@@ -132,3 +206,41 @@ export async function signUp(p, token, name) {
  * headings), so a suite scopes `.composer`, `h1`, the header and the list to this, never to the page. (The composer's field keeps the id `composer-field` in the focused window alone.)
  */
 export const win = (page) => page.locator("[data-win][data-focused], .mid-card:not([data-win])").first();
+
+/** Cumulative [steal, total] jiffies of all CPUs (/proc/stat): steal is the time the host gave to another VM, which the guest's own load average cannot see. Null where /proc/stat has no steal column (not Linux). */
+function stealJiffies() { try { const f = readFileSync("/proc/stat", "utf8").split("\n")[0].trim().split(/\s+/).slice(1).map(Number); return f.length > 7 ? [f[7], f.slice(0, 8).reduce((a, b) => a + b, 0)] : null; } catch { return null; } }
+/** Starts watching steal time; `end()` gives the share of the window (0 to 1) the host spent elsewhere, or 0 when it cannot be read. A sample with more than 1 percent (`STEAL_LIMIT`) is not judged. */
+export function stealWindow() { const a = stealJiffies(); return { end: () => { const b = stealJiffies(); return a && b && b[1] > a[1] ? (b[0] - a[0]) / (b[1] - a[1]) : 0; } }; }
+export const STEAL_LIMIT = 0.01;
+/** The median of a list of numbers (the upper middle for an even count). */
+export const median = (xs) => { const s = [...xs].sort((a, b) => a - b); return s.length ? s[Math.floor(s.length / 2)] : NaN; };
+/**
+ * Judges samples of one timing the statistical way: it passes when the MEDIAN is under `bound` and at most one sample is over `hard`; every sample is printed (a sample marked "not judged", steal time over 1 percent, is
+ * printed and left out). Returns `{ pass, judged, text }`. At least three judged samples are needed, or the result is "not judged" (`pass: null`).
+ */
+export function judgeSamples(label, samples, { bound, hard, unit = "ms" }) {
+  const used = samples.filter((x) => !x.notJudged), m = median(used.map((x) => x.value)), over = used.filter((x) => x.value > hard).length;
+  const list = samples.map((x) => (x.notJudged ? `[${x.value.toFixed(0)}: not judged, steal ${(x.steal * 100).toFixed(1)}%]` : x.value.toFixed(0))).join(" ");
+  const text = `${label}: ${list} ${unit}; median ${Number.isFinite(m) ? m.toFixed(0) : "?"} (bound ${bound}), ${over} over ${hard}`;
+  if (used.length < 3) return { pass: null, judged: used.length, text: `${text}; only ${used.length} judged samples` };
+  return { pass: m < bound && over <= 1, judged: used.length, text };
+}
+/**
+ * An https front for a real server, for what needs a secure public origin (web push: "Web push requires an HTTPS server"): a self-signed certificate made here, a TLS listener on `port` that forwards every request (streams included) to the server's own http address. Start the server with
+ * `--origin https://localhost:<port>` and open pages with `ignoreHTTPSErrors`. Returns `{ url, stop }`.
+ */
+export async function startTlsProxy(targetUrl, port) {
+  const { execFileSync } = await import("node:child_process");
+  const https = await import("node:https"), http = await import("node:http");
+  const dir = mkdtempSync(join(tmpdir(), "cal-tls-"));
+  execFileSync("openssl", ["req", "-x509", "-newkey", "rsa:2048", "-nodes", "-keyout", join(dir, "k.pem"), "-out", join(dir, "c.pem"), "-days", "1", "-subj", "/CN=localhost", "-addext", "subjectAltName=DNS:localhost"], { stdio: "ignore" });
+  const target = new URL(targetUrl);
+  const srv = https.createServer({ key: readFileSync(join(dir, "k.pem")), cert: readFileSync(join(dir, "c.pem")) }, (req, res) => {
+    const up = http.request({ host: target.hostname, port: target.port, method: req.method, path: req.url, headers: req.headers }, (r) => { res.writeHead(r.statusCode ?? 502, r.headers); r.pipe(res); });
+    up.on("error", () => { if (!res.headersSent) res.writeHead(502); res.end(); });
+    res.on("close", () => up.destroy());
+    req.pipe(up);
+  });
+  await new Promise((resolve) => srv.listen(port, "127.0.0.1", resolve));
+  return { url: `https://localhost:${port}`, stop: async () => { srv.closeAllConnections?.(); await new Promise((r) => srv.close(r)); rmSync(dir, { recursive: true, force: true }); } };
+}

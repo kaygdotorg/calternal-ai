@@ -2,6 +2,7 @@ import { mount, unmount } from "svelte";
 import "@calternal/ui/styles";
 import { applySheetRadius, currentScheme, initInputModality, initScheme, loadFonts, registerFonts } from "@calternal/ui";
 import App from "./App.svelte";
+import { nativeReady } from "./shell/native";
 import { interceptLinks } from "./lib/route.svelte";
 import { shell } from "./shell/shell.svelte";
 import { appearance } from "./appearance/prefs.svelte";
@@ -30,7 +31,7 @@ Promise.race([loadFonts(currentScheme()).catch(() => {}), new Promise((r) => set
     const { default: Guest } = await import("./guest/Guest.svelte");
     mount(Guest, { target }); document.documentElement.dataset.ready = ""; return;
   }
-  const ready = () => { document.documentElement.dataset.ready = ""; startChrome(); };
+  const ready = () => { document.documentElement.dataset.ready = ""; startChrome(); requestAnimationFrame(() => requestAnimationFrame(nativeReady)); /* the first frame is painted: the native shell (if any) lifts its launch cover */ };
   const gate = async (b: Exclude<import("./server/boot").Boot, { screen: "app" }>) => {
     // A fresh installation or an invitation is the stepped onboarding (who you are first, then the rest); a returning person signing in is the plain card; a reload part-way resumes the onboarding.
     if (b.screen === "onboarding" || (b.screen === "signin" && (b.needsSetup || b.invite))) {
@@ -47,6 +48,11 @@ Promise.race([loadFonts(currentScheme()).catch(() => {}), new Promise((r) => set
     if (demo === "1" || demo === "invited") {
       const { default: Onboarding } = await import("./shell/onboarding/Onboarding.svelte");
       mount(Onboarding, { target, props: { who: demo === "invited" ? "invited" : "owner", demo: true, attached: new URLSearchParams(location.search).has("attached") } }); ready(); return;
+    }
+    // Fixtures: the sign-in card can be looked at with ?signin=1 (nothing is sent anywhere).
+    if (new URLSearchParams(location.search).get("signin") === "1") {
+      const { default: Gate } = await import("./shell/SignIn.svelte");
+      mount(Gate, { target, props: {} }); ready(); return;
     }
     mount(App, { target }); ready(); return;
   }

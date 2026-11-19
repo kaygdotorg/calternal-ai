@@ -128,7 +128,8 @@ function solveOne(scheme: Scheme, role: Role, flags: Flags, px: RGB[], hue: { c:
   // The dim layer deepens a surface toward its scheme: black over a dark card, white over a light one (the plugin's rule); a sidebar's is the plain paper.
   const dimRgb: RGB = role === "card" ? (scheme === "dark" ? [0, 0, 0] : [255, 255, 255]) : T.paper;
   const composite = (w: RGB, aT: number, aD: number): RGB => over(over(w, tintRgb, aT), dimRgb, aD);
-  const worst = (aT: number, aD: number): number => p01(px.map((w) => ratio(lum(composite(w, aT, aD)), lum(T.ink))));
+  const lumInk = lum(T.ink);
+  const worst = (aT: number, aD: number): number => p01(px.map((w) => ratio(lum(composite(w, aT, aD)), lumInk)));
   let aT: number, aD: number;
   if (!flags.tint && !flags.dim) {
     // Nothing is on: an opaque surface, the one fallback that is always readable.
@@ -147,7 +148,9 @@ function solveOne(scheme: Scheme, role: Role, flags: Flags, px: RGB[], hue: { c:
     }
   }
   const ground = px.map((w) => composite(w, aT, aD));
-  const toward = (tok: RGB, target: number): RGB => mix(tok, T.ink, smallest((t) => p01(ground.map((g) => ratio(lum(g), lum(mix(tok, T.ink, t))))) >= target));
+  // The ground does not change while the ink is searched for: its luminances are read once, and each candidate's once per step (not once per pixel per step: that was most of the cost of a first Clear to tinted step).
+  const lumGround = ground.map((g) => lum(g));
+  const toward = (tok: RGB, target: number): RGB => mix(tok, T.ink, smallest((t) => { const l = lum(mix(tok, T.ink, t)); return p01(lumGround.map((g) => ratio(g, l))) >= target; }));
   return {
     scheme, tint: { a: aT, rgb: tintRgb }, dim: { a: aD, rgb: dimRgb },
     ink2: toward(T.ink2, TARGET.ink2 + HEAD), ink3: toward(T.ink3, TARGET.ink3 + HEAD),

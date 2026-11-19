@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { haptic } from "../lib/haptics";
   // A labelled on/off switch, ported from the squish switch (sveltebits.xyz/r/squish-switch) without its animation dependency: the knob rides a spring and stretches along its direction of travel with
   // its speed (squash across, stretch along), swells a little under a mouse, follows a finger or pointer that drags it (it flips as it crosses the middle, releases on the spring with the speed it
   // had, Escape puts it back), and a tap anywhere on the row toggles it. The label is required (it names the switch); `hint` is a second line. Keyboard: the knob is a button (`role=switch`), Space or Enter toggles,
@@ -58,7 +59,7 @@
     if (!dragging) go(on);
     lastOn = on;
   });
-  const commit = (next: boolean) => { if (next === checked) return; checked = next; onchange?.(next); };
+  const commit = (next: boolean) => { if (next === checked) return; checked = next; haptic("selection"); onchange?.(next); };
   const localX = (cx: number) => { const r = track!.getBoundingClientRect(); return (cx - r.left) / ((r.width / (track!.offsetWidth || r.width)) || 1); };
   function down(e: PointerEvent) {
     if (disabled || grip || e.button !== 0) return;

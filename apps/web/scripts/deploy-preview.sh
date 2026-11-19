@@ -22,6 +22,7 @@ CAL_BASE=/ CAL_OUT=dist-fixtures npm run build >/dev/null
 [ -n "${CAL_BUILD_LABEL:-}" ] && printf "%s\n" "$CAL_BUILD_LABEL" > dist-fixtures/BUILD.txt
 fx=$HOME/fixtures-preview; rm -rf "$fx.new" && cp -r dist-fixtures "$fx.new" && rm -rf "$fx" && mv "$fx.new" "$fx"
 pkill -f "serve-fixtures.mjs $fx" 2>/dev/null || true
-setsid nohup node scripts/serve-fixtures.mjs "$fx" 10.69.69.222 4310 > "$HOME/fixtures-preview.log" 2>&1 < /dev/null &
+# The fixtures server lives on after this script. Descriptors 3 to 9 are closed for it: this script may run under `flock` (the dev-02 lock), and a server that inherited the lock would hold it for ever.
+setsid nohup node scripts/serve-fixtures.mjs "$fx" 10.69.69.222 4310 > "$HOME/fixtures-preview.log" 2>&1 < /dev/null 3>&- 4>&- 5>&- 6>&- 7>&- 8>&- 9>&- &
 sleep 1
 echo "fixtures: http://10.69.69.222:4310/threads/t-run $(curl -s -o /dev/null -w '%{http_code}' http://10.69.69.222:4310/threads/t-run)"

@@ -1,34 +1,20 @@
-import { signUp } from "./lib.mjs";
+import { launch, openRealServerPage, signUpRealServerOwner, startRealServer } from "./lib.mjs";
 // Skills and Automations against a real server: create a skill (hand-held, reviewed), create an automation from words with the server's reviewed schedule, preview, Run now, Pause, Resume, Remove.
 // Records what the server does and fails on what the page gets wrong. Env: CAL_BIN, CAL_DIST, CAL_SK_PORT. Frames go to $CAL_SHOTS (default /tmp/calternal-skills-shots).
-import { spawn } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { chromium } from "playwright";
+import { mkdirSync } from "node:fs";
 
 const PORT = Number(process.env.CAL_SK_PORT ?? 3398);
-const BIN = process.env.CAL_BIN ?? `${process.env.HOME}/Developer/lanes/ui-shell/target/debug/calternal`;
 const SHOTS = process.env.CAL_SHOTS ?? "/tmp/calternal-skills-shots"; mkdirSync(SHOTS, { recursive: true });
-const data = mkdtempSync(join(tmpdir(), "cal-sk-"));
-const dist = process.env.CAL_DIST ?? "dist";
-const srv = spawn(BIN, ["serve", "--create", "--installation-id", crypto.randomUUID(), "--appdata", join(data, "appdata"), "--userdata-ssd", join(data, "ssd"), "--userdata-hdd", join(data, "hdd"), "--port", String(PORT), "--web-dir", dist], { stdio: ["ignore", "pipe", "pipe"] });
-let log = ""; srv.stdout.on("data", (d) => (log += d)); srv.stderr.on("data", (d) => (log += d));
-const url = `http://localhost:${PORT}`;
+let server, browser;
 let bad = 0;
 const ok = (c, m, note = "") => { console.log(`${c ? "PASS" : "FAIL"}  ${m}${note ? "  " + note : ""}`); if (!c) bad++; };
 try {
-  for (let i = 0; i < 80; i++) { try { if ((await fetch(`${url}/api/v1/auth/status`)).ok) break; } catch {} await new Promise((r) => setTimeout(r, 250)); }
-  const token = readFileSync(join(data, "appdata", "setup.token"), "utf8").trim();
-  const b = await chromium.launch();
-  const ctx = await b.newContext({ viewport: { width: 1440, height: 900 } }); await ctx.addInitScript(() => localStorage.setItem("cal.firstrun", "1"));
-  const p = await ctx.newPage(); const cdp = await ctx.newCDPSession(p);
-  await cdp.send("WebAuthn.enable"); await cdp.send("WebAuthn.addVirtualAuthenticator", { options: { protocol: "ctap2", transport: "internal", hasResidentKey: true, hasUserVerification: true, isUserVerified: true, automaticPresenceSimulation: true } });
+  server = await startRealServer(PORT);
+  browser = await launch();
+  const p = await openRealServerPage(browser);
   const calls = []; p.on("response", async (r) => { if (r.url().includes("/api/v1/") && r.request().method() === "POST" && !r.url().includes("/auth/")) calls.push(`${r.status()} ${JSON.parse(r.request().postData() ?? "{}").operation ?? r.url().split("/api/v1/")[1]}${(r.status() >= 400 || /run_now/.test(r.request().postData() ?? "")) ? " " + (await r.text().catch(() => "")).slice(0, 200) : ""}`); });
   p.on("pageerror", (e) => { console.log("   pageerror:", String(e).slice(0, 200)); });
-  await p.goto(`${url}/?server=1`); await p.waitForSelector("html[data-ready]");
-  await signUp(p, token, "Skills Owner");
-  await p.waitForFunction(() => !document.querySelector("h1")?.textContent?.includes("Set up"), null, { timeout: 15000 }); await p.waitForSelector("html[data-ready]"); await p.waitForTimeout(1200);
+  await signUpRealServerOwner(p, server, "Skills Owner");
   const go = async (path) => { await p.evaluate((x) => { history.pushState(null, "", x); dispatchEvent(new PopStateEvent("popstate")); }, path); await p.waitForTimeout(900); };
   const alert = async () => (await p.getByRole("alert").allInnerTexts()).join(" | ");
   const shot = (n) => p.screenshot({ path: `${SHOTS}/${n}.png` });
@@ -77,7 +63,9 @@ try {
   if (await rem.isVisible().catch(() => false)) { p.once("dialog", (d) => d.accept()); await rem.click(); await p.waitForTimeout(1500); ok((await p.getByText("Friday wrap-up").count()) === 0, "Remove takes the automation out of the list", await alert()); }
   else ok(false, "a Remove button on the automation row");
   console.log(calls.join("\n"));
-  await b.close();
 } catch (e) { console.error(e); bad++; }
-srv.kill(); console.log("server log tail:", log.split("\n").slice(-4).join(" | ").slice(0, 300)); rmSync(data, { recursive: true, force: true });
+finally {
+  if (server) console.log("server log tail:", server.logTail().split("\n").slice(-4).join(" | ").slice(0, 300));
+  try { await browser?.close(); } finally { await server?.stop(); }
+}
 process.exit(bad ? 1 : 0);

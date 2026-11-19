@@ -1,10 +1,14 @@
 import { describe, expect, test } from "vitest";
 import { ServerError } from "./client";
 import { say } from "./say";
+import { passkeyFailure } from "./auth";
 
 describe("say: failures in plain words with the next step", () => {
   test("a refusal for lack of a capability says who can help", () => {
     expect(say(new ServerError("forbidden", "x", 403))).toMatch(/owner or a manager/);
+  });
+  test("a cooldown is worded, with no server text", () => {
+    expect(say(new ServerError("rate_limited", "Register this browser or wait a minute before testing again."))).toBe("Too many tries. Wait a minute and try again.");
   });
   test("a network failure says it keeps trying", () => {
     expect(say(new TypeError("Failed to fetch"))).toMatch(/Can't reach the server/);
@@ -24,5 +28,15 @@ describe("say: failures in plain words with the next step", () => {
   });
   test("the server's own message is never shown", () => {
     expect(say(new ServerError("internal", "SECRET DETAIL"))).not.toMatch(/SECRET/);
+  });
+  test("a passkey request the browser refuses at once is said as such, a real cancel as a cancel, with the right next step", () => {
+    expect(passkeyFailure("NotAllowedError", 30).code).toBe("passkey_unavailable");
+    expect(passkeyFailure("NotAllowedError", 6000).code).toBe("cancelled");
+    expect(passkeyFailure("AbortError", 10).code).toBe("cancelled");
+    expect(passkeyFailure("SecurityError", 5).code).toBe("passkey_origin");
+    expect(passkeyFailure("NotSupportedError", 5).code).toBe("passkey_unsupported");
+    expect(passkeyFailure("InvalidStateError", 900).code).toBe("passkey_failed");
+    expect(say(new ServerError("passkey_unavailable", "x"))).toMatch(/not available in this app or browser yet.*Safari or Chrome/);
+    expect(say(new ServerError("cancelled", "x"))).toMatch(/closed or timed out/);
   });
 });

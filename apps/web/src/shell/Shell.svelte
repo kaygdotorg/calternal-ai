@@ -281,12 +281,15 @@
   .narrow[data-sidebar="true"] .mid :global(.mid-card), .narrow[data-right="true"] .mid :global(.mid-card), .narrow:has(.mid.dragging) .mid :global(.mid-card) { box-shadow: var(--shadow-card); }
   .narrow .mid { touch-action: pan-y; }
   .narrow .mid.dragging { transition: none; }
-  .narrow:has(.mid.dragging) .mid :global(.mid-card) { border-radius: var(--r-pane); }
+  /* On a phone the card shown beside the sidebar has the radius of the DISPLAY's corners (`--device-r`: the native shell passes the real value; 55 px is the iPhone Pro size, used until it does), so its corners are the same shape as the screen's, as in bb, ChatGPT and Claude; the same radius for a canvas window on a phone. */
+  .narrow { --card-r: var(--device-r, 55px); }
+  .narrow:has(.mid.dragging) .mid :global(.mid-card) { border-radius: var(--card-r); }
   .narrow .mid { position: fixed; inset: 0 var(--safe-right) 0 var(--safe-left); z-index: 2; padding: 0; transition: transform var(--dur-sheet) var(--ease-sheet), scale var(--dur-sheet) var(--ease-sheet); transform-origin: left center; }
   .narrow[data-sidebar="true"] .mid { transform: translateX(calc(100% - var(--peek))); }
   .narrow[data-right="true"] .mid { transform: translateX(calc(var(--peek) - 100%)); }
   .narrow .mid :global(.mid-card) { border-radius: 0; transition: border-radius var(--dur-sheet) var(--ease-sheet); }
-  .narrow[data-sidebar="true"] .mid :global(.mid-card), .narrow[data-right="true"] .mid :global(.mid-card) { border-radius: var(--r-pane); }
+  .narrow[data-sidebar="true"] .mid :global(.mid-card), .narrow[data-right="true"] .mid :global(.mid-card) { border-radius: var(--card-r); }
+  .narrow :global(.mid-card.win:not(.maximised)) { border-radius: var(--card-r); }
   .peek { position: fixed; z-index: 3; top: 0; bottom: 0; right: 0; width: var(--peek); touch-action: pan-y; }
   .peek.l { right: auto; left: 0; }
   /* The side panel is the list's mirror: underneath the card at the right, uncovered as the card slides left (one finger from the right edge, the button, Back). */
