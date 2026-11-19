@@ -322,6 +322,46 @@ tests and the existing collection membership integration test. The broader
 54 content and 30 HTTP tests, contract verification and documentation gate
 passed on the Reading List predecessor `bdc29d76`.
 
+### Longer first-page run and 8 KiB control
+
+The same release artifacts ran on locked perf-01. The first-page comparison
+used 1,000 samples per arm after 100 warmups, alternating which request ran
+first in each pair. It also ran both queries on one warmed rusqlite
+connection against the same candidate fixture with identical head decoding.
+That second timer excludes HTTP, routing and authority.
+
+| First-page measurement | Baseline p50 / p95 / p99 | Candidate p50 / p95 / p99 |
+| --- | ---: | ---: |
+| HTTP | 1.028 / 1.413 / 1.829 ms | 1.010 / 1.377 / 1.916 ms |
+| Isolated SQLite and head decoding | 0.136 / 0.196 / 0.220 ms | 0.138 / 0.194 / 0.222 ms |
+
+`EXPLAIN QUERY PLAN` selects the baseline's `item_live_list` and the
+candidate's covering range plus item primary-key probes. The isolated
+p99 difference is +2 µs, too small to account for the observed HTTP
+p99 difference of +87 µs. The HTTP p99 delta across ten consecutive
+100-sample blocks ranged from −580 to +359 µs and changed sign. This
+supports an end-to-end tail variation explanation. It does not isolate
+the host scheduling or transport source of that variation. The longer
+HTTP comparison's p95 improved by 36 µs.
+
+The 8 KiB follow-up keeps the original constant body, alternating title,
+zero-second idle threshold, per-width membership growth, warmups and
+post-acknowledgment placement. Both arms ran under the same lock with
+100 recorded saves per width.
+
+| Effective scopes | Baseline p95 | Candidate p95 |
+| --- | ---: | ---: |
+| 1 | 26.707 ms | 42.975 ms |
+| 4 | 31.352 ms | 50.759 ms |
+| 16 | 27.166 ms | 57.130 ms |
+| 32 | 41.628 ms | 57.281 ms |
+
+The baseline breaches 40 ms at 32 scopes. The candidate additionally
+breaches at 1, 4 and 16 scopes, where the baseline passes. This workload
+has a lane regression. The whole-write timer does not identify which
+durability span or SQLite work accounts for the difference. A separate
+stage breakdown is in progress. Keep the branch out of `dev`.
+
 ### Save gate fixture
 
 The inherited 40 ms p95 budget is the editor `sync.save_ack` target.
