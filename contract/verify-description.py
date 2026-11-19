@@ -72,12 +72,123 @@ def view_limits(doc, errors):
         walk(doc["root"], 1)
         if count > 200: errors.append(f"$.root: {count} nodes (at most 200)")
 
+
+# ---- strict parsing -------------------------------------------------------------------------------------------------------------------------------------
+class DuplicateKey(Exception):
+    pass
+
+def strict_pairs(pairs):
+    keys = [k for k, _ in pairs]
+    dup = {k for k in keys if keys.count(k) > 1}
+    if dup:
+        raise DuplicateKey(f"duplicate key {sorted(dup)[0]!r}")
+    return dict(pairs)
+
+def load_strict(text):
+    """The host's parser must reject duplicate keys (a duplicate would let two readers disagree about a field); so does this one."""
+    return json.loads(text, object_pairs_hook=strict_pairs)
+
+# ---- semantic checks the schema cannot say ----------------------------------------------------------------------------------------------------------------
+RESERVED_FOR_COMPONENTS = {"host.approval.resolve", "host.undo", "host.action.status", "host.panel.ask", "host.route.set", "host.session.end"}
+
+def walk(node, path="$"):
+    """Yields (path, node) for every dict and list in the document."""
+    yield path, node
+    if isinstance(node, dict):
+        for k, v in node.items():
+            yield from walk(v, f"{path}.{k}")
+    elif isinstance(node, list):
+        for i, v in enumerate(node):
+            yield from walk(v, f"{path}[{i}]")
+
+def semantic(doc, errors, catalogue):
+    """Unique action ids per document; bind, form, draft and row source scope; fullSwipe placement; operation and field names against the host catalogue."""
+    binds = {b.get("id") for b in doc.get("binds", []) if isinstance(b, dict)}
+    forms, composers, action_ids = {}, {}, {}
+    for path, node in walk(doc):
+        if not isinstance(node, dict):
+            continue
+        if node.get("type") == "form" and "id" in node: forms[node["id"]] = path
+        if node.get("type") == "composer" and "id" in node: composers[node["id"]] = path
+    for path, node in walk(doc):
+        if isinstance(node, dict) and "operation" in node and "id" in node and isinstance(node.get("operation"), str):
+            if node["id"] in action_ids:
+                errors.append(f"{path}: duplicate action id {node['id']!r} (first at {action_ids[node['id']]})")
+            action_ids[node["id"]] = path
+            op = node["operation"]
+            if op in RESERVED_FOR_COMPONENTS and not (op == "host.panel.ask" and ".onQuote" in path):
+                errors.append(f"{path}: {op} cannot be named by a generic invoke")
+            if node.get("fullSwipe") and not re.search(r"(leadingActions|trailingActions)\[0\]$", path):
+                errors.append(f"{path}: fullSwipe is allowed only on the first action of a swipe set")
+            if catalogue is not None:
+                ops = catalogue.get("operations", {})
+                entry = ops.get(op)
+                if op.startswith("host.") or op == "turns.start":
+                    if entry is None:
+                        errors.append(f"{path}: {op} is not in the host catalogue")
+                    else:
+                        in_surface = (op == "host.panel.ask" and ".onQuote" in path) or (op == "turns.start" and ".send" in path)
+                        if not entry.get("generic_invoke", False) and not in_surface:
+                            errors.append(f"{path}: {op} is not a generic invoke in the catalogue (surfaces: {entry.get('surfaces')})")
+                        if node.get("fullSwipe") and not entry.get("full_swipe", False):
+                            errors.append(f"{path}: {op} may not be a full swipe (catalogue full_swipe is false)")
+                        schema_in = (entry.get("input_schema") or {}).get("properties", {})
+                        given = node.get("inputs", {})
+                        for name in given:
+                            if schema_in and name not in schema_in: errors.append(f"{path}: {op} has no input {name!r}")
+                        for name in (entry.get("input_schema") or {}).get("required", []):
+                            if name not in given: errors.append(f"{path}: {op} needs input {name!r}")
+                        for name in entry.get("target_inputs", []):
+                            if isinstance(given.get(name), dict) and "literal" in given[name]:
+                                errors.append(f"{path}: target input {name!r} of {op} cannot be a literal")
+        if isinstance(node, dict):
+            if "bind" in node and isinstance(node["bind"], str) and node["bind"] not in binds:
+                errors.append(f"{path}: bind {node['bind']!r} is not declared in `binds`")
+            if "row" in node and set(node) <= {"row", "field"} and ".row." not in path + "." and ".row" not in path:
+                errors.append(f"{path}: a {{row}} source is only valid inside a bind's row template")
+            if "form" in node and set(node) == {"form", "field"}:
+                owner = forms.get(node["form"])
+                if owner is None: errors.append(f"{path}: form {node['form']!r} does not exist")
+                elif not path.startswith(owner + ".submit"): errors.append(f"{path}: a {{form}} source is only valid inside that form's own submit")
+            if "draft" in node and set(node) == {"draft"} and isinstance(node["draft"], str):
+                owner = composers.get(node["draft"])
+                if owner is None: errors.append(f"{path}: composer {node['draft']!r} does not exist")
+                elif not path.startswith(owner + ".config"): errors.append(f"{path}: a {{draft}} source is only valid inside that composer's own config")
+            if catalogue is not None and node.get("kind") and isinstance(node.get("kind"), str) and path.endswith(".source") and "type" in node:
+                kinds = catalogue.get("kinds", {})
+                kind = kinds.get(node["kind"])
+                bind = bind_at(doc, path)
+                if kind is None:
+                    if node["kind"] in {"notes", "threads", "collections", "requests"} or not plugin_kind(node["kind"]):
+                        errors.append(f"{path}: kind {node['kind']!r} is not in the host catalogue")
+                elif bind is not None:
+                    known = set(kind.get("fields", {})) | {"id"}
+                    used = list(bind.get("fields", [])) + [p_["field"] for g in ("all", "any") for p_ in bind.get("filter", {}).get(g, [])] + [x["field"] for x in bind.get("sort", [])]
+                    for f in used:
+                        if f not in known: errors.append(f"{path}: field {f!r} is not a field of kind {node['kind']!r}")
+
+def bind_at(doc, path):
+    m = re.match(r"^\$\.binds\[(\d+)\]\.source$", path)
+    return doc["binds"][int(m.group(1))] if m else None
+
+def plugin_kind(kind):
+    return "-" in kind or "." in kind   # a plugin's own kind (reading-item); host kinds have no dash and are in the catalogue
+
 failed = False
+import os
+catalogue_path = pathlib.Path(os.environ.get("CALTERNAL_HOST_CATALOGUE", root / "host-catalogue-v2.json"))
+catalogue = json.loads(catalogue_path.read_text()) if catalogue_path.exists() else None
+print("host catalogue: " + ("contract/host-catalogue-v2.json" if catalogue is not None else "not present yet (plugins lane); operation and kind names are not resolved"))
 for file in sorted((root / "fixtures" / "description-v2").glob("*.json")):
     errors = []
-    doc = json.loads(file.read_text())
-    check(schema, doc, "$", errors)
-    view_limits(doc, errors)
+    try:
+        doc = load_strict(file.read_text())
+    except (DuplicateKey, ValueError) as error:
+        errors.append(str(error)); doc = None
+    if doc is not None:
+        check(schema, doc, "$", errors)
+        view_limits(doc, errors)
+        semantic(doc, errors, catalogue)
     expect_invalid = file.name.startswith("invalid-")
     ok = bool(errors) if expect_invalid else not errors
     print(("ok   " if ok else "FAIL ") + file.name + ("" if ok else "  " + "; ".join(errors[:4])))

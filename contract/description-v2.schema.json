@@ -224,7 +224,7 @@
           ]
         },
         "value": {
-          "$ref": "#/$defs/ValueSource"
+          "$ref": "#/$defs/FilterValue"
         }
       },
       "additionalProperties": false,
@@ -293,16 +293,16 @@
           "$ref": "#/$defs/Id"
         },
         "collection": {
-          "description": "Restricts a list to one collection: a collection id from a literal, the route or the selection.",
-          "$ref": "#/$defs/ValueSource"
+          "$ref": "#/$defs/FilterValue",
+          "description": "Restricts a list to one collection: a collection id from a literal, the route or the selection."
         },
         "ref": {
-          "description": "For `item`: the item reference, from the route or the selection (never a literal row).",
-          "$ref": "#/$defs/ValueSource"
+          "$ref": "#/$defs/FilterValue",
+          "description": "For `item`: the item reference, from the route or the selection (never a literal row)."
         },
         "text": {
-          "description": "For `search`: the query text, from a form or draft.",
-          "$ref": "#/$defs/ValueSource"
+          "$ref": "#/$defs/TextSource",
+          "description": "For `search`: the query text, from a form or draft."
         }
       },
       "additionalProperties": false,
@@ -423,7 +423,7 @@
         "leadingActions": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/Invoke"
+            "$ref": "#/$defs/Action"
           },
           "maxItems": 3,
           "description": "Swipe-right actions. Only the first may set fullSwipe."
@@ -431,7 +431,7 @@
         "trailingActions": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/Invoke"
+            "$ref": "#/$defs/Action"
           },
           "maxItems": 3,
           "description": "Swipe-left actions."
@@ -439,7 +439,7 @@
         "menu": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/Invoke"
+            "$ref": "#/$defs/Action"
           },
           "maxItems": 12,
           "description": "Context menu."
@@ -477,7 +477,7 @@
               "type": "object",
               "properties": {
                 "invoke": {
-                  "$ref": "#/$defs/Invoke"
+                  "$ref": "#/$defs/Action"
                 }
               },
               "additionalProperties": false,
@@ -509,7 +509,7 @@
           "$ref": "#/$defs/Icon"
         },
         "action": {
-          "$ref": "#/$defs/Invoke"
+          "$ref": "#/$defs/Action"
         }
       },
       "additionalProperties": false,
@@ -634,7 +634,17 @@
         "operation": {
           "type": "string",
           "pattern": "^[a-z][a-z0-9._-]{0,95}$",
-          "description": "A plugin operation id as the manifest declares it, or a host built-in (`host.item.trash`, `host.item.rename`, `host.item.restore`, `host.undo`, `host.approval.resolve`, `host.route.set`). Built-ins that need no worker are executed by the host without waking the space runtime."
+          "not": {
+            "enum": [
+              "host.approval.resolve",
+              "host.undo",
+              "host.action.status",
+              "host.panel.ask",
+              "host.route.set",
+              "host.session.end"
+            ]
+          },
+          "description": "A plugin operation id as the manifest declares it, or a host built-in listed in the host catalogue (contract/host-catalogue-v2.json): host.item.trash, host.item.rename, host.item.restore, host.item.patch-metadata, host.trash.purge, host.item.share, turns.start, host.turn.stop. A generic Invoke can NOT name the operations that belong to a designated host component or result (host.approval.resolve: the request card; host.undo and host.action.status: an outcome; host.panel.ask: the transcript's onQuote) or a shell-only control (host.route.set, host.session.end: see ShellAction). Retry, effect class and idempotency come from the catalogue and the manifest, never from the description."
         },
         "inputs": {
           "type": "object",
@@ -659,7 +669,7 @@
         },
         "fullSwipe": {
           "type": "boolean",
-          "description": "On the first action of a swipe set: a full swipe performs it. Set only on a safe action; a full swipe never opens a confirmation."
+          "description": "On the FIRST action of a swipe set only, and only for a reversible host built-in that returns an Undo and needs no preview (the catalogue says which); a full swipe never opens a confirmation and never runs an irreversible, disclosing or widening operation."
         },
         "confirm": {
           "type": "object",
@@ -696,15 +706,6 @@
           },
           "additionalProperties": false,
           "description": "Trusted preview. For an operation the host classifies as mutating or disclosing, the shell shows the person the RESOLVED value of every material input, resolved at activation time from what is rendered, before sending; the description can add material inputs but cannot remove one the operation's manifest declares."
-        },
-        "retry": {
-          "enum": [
-            "safe",
-            "keyed",
-            "never"
-          ],
-          "default": "keyed",
-          "description": "safe: idempotent; keyed: the host de-duplicates by the invocation id so a retry after a dropped connection does not repeat the effect; never: the interface must not retry and shows the outcome as unknown."
         },
         "pending": {
           "enum": [
@@ -867,14 +868,14 @@
         "actions": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/Invoke"
+            "$ref": "#/$defs/Action"
           },
           "maxItems": 3
         },
         "menu": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/Invoke"
+            "$ref": "#/$defs/Action"
           },
           "maxItems": 12
         }
@@ -942,10 +943,10 @@
           "maxLength": 240
         },
         "primary": {
-          "$ref": "#/$defs/Invoke"
+          "$ref": "#/$defs/Action"
         },
         "secondary": {
-          "$ref": "#/$defs/Invoke"
+          "$ref": "#/$defs/Action"
         },
         "when": {
           "type": "object",
@@ -1018,14 +1019,14 @@
         "leading": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/Invoke"
+            "$ref": "#/$defs/Action"
           },
           "maxItems": 2
         },
         "trailing": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/Invoke"
+            "$ref": "#/$defs/Action"
           },
           "maxItems": 3
         }
@@ -1053,7 +1054,7 @@
             "menu": {
               "type": "array",
               "items": {
-                "$ref": "#/$defs/Invoke"
+                "$ref": "#/$defs/Action"
               },
               "maxItems": 12
             }
@@ -2112,6 +2113,238 @@
         "root"
       ],
       "description": "The content of the card for one place: data-free like chrome (binds are requests the host fills), drawn with the renderer's own controls. A view uses the same Bind and Invoke as chrome."
+    },
+    "FilterValue": {
+      "description": "Where a filter, collection or item-reference value may come from. ONLY a literal, the viewer, the route or the selection: never a field of another bind, a row, a form or a prompt, so no hidden field of one bind can steer another bind's query (the cross-bind operand leak). `in` takes a homogeneous list of at most 32 literals.",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "literal": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/Literal"
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/Literal"
+                  },
+                  "maxItems": 32
+                }
+              ]
+            }
+          },
+          "required": [
+            "literal"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "viewer": {
+              "enum": [
+                "person",
+                "space",
+                "roles"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "viewer"
+          ],
+          "description": "The signed-in person, the current space or the person's role set in it. Resolved by the host from the session, never from the description."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "route": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]{0,31}$"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "route"
+          ],
+          "description": "A named parameter of the current route (for example the collection or thread in the address). Typed as a reference or string by the field it filters."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "selection": {
+              "$ref": "#/$defs/Id"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "selection"
+          ],
+          "description": "The id of the row selected in the bind with this id (or the item chosen in a selector). Resolved at activation time from what is rendered."
+        }
+      ]
+    },
+    "TextSource": {
+      "description": "The text of a search: a literal, a form field or a composer draft held on the device (what the person typed). Never a field of a bind.",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "literal": {
+              "$ref": "#/$defs/Literal"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "literal"
+          ],
+          "description": "A constant."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "form": {
+              "$ref": "#/$defs/Id"
+            },
+            "field": {
+              "$ref": "#/$defs/Id"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "form",
+            "field"
+          ],
+          "description": "A value of a form held on the device (a text field, a toggle) and submitted only when the action fires."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "draft": {
+              "$ref": "#/$defs/Id"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "draft"
+          ],
+          "description": "The draft text of a composer with this id, held on the device until the action fires."
+        }
+      ]
+    },
+    "ShellAction": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/Id"
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "icon": {
+          "$ref": "#/$defs/Icon"
+        },
+        "shell": {
+          "description": "A control the SHELL performs without an operation, so no generic Invoke can reach it: navigate, reload the view, sign out.",
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "route": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "pattern": "^[a-z][a-z0-9_]{0,31}$"
+                    },
+                    "value": {
+                      "$ref": "#/$defs/ValueSource"
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "value"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "route"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "reload": {
+                  "const": true
+                }
+              },
+              "required": [
+                "reload"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "signOut": {
+                  "const": true
+                }
+              },
+              "required": [
+                "signOut"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "sheet": {
+                  "enum": [
+                    "trash",
+                    "share"
+                  ],
+                  "description": "Open a host-owned protected sheet: the Trash set (confirm and purge, Manager or Owner), or the audience sheet of a share. The sheet, not the description, names the operation and shows the material facts."
+                },
+                "item": {
+                  "$ref": "#/$defs/ValueSource"
+                }
+              },
+              "required": [
+                "sheet"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "role": {
+          "enum": [
+            "destructive"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "shell"
+      ],
+      "additionalProperties": false,
+      "description": "A control the SHELL performs without a generic operation: navigate (host.route.set), reload, sign out (host.session.end), or open a host-owned protected sheet (Trash set / purge, share audience). No generic Invoke can reach them."
+    },
+    "Action": {
+      "description": "An action in chrome: an Invoke (an operation the host dispatches) or a ShellAction (a control the shell performs).",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/Invoke"
+        },
+        {
+          "$ref": "#/$defs/ShellAction"
+        }
+      ]
     }
   }
 }

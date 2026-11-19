@@ -60,8 +60,11 @@ fields, so the Notes Trash and the Threads Inbox are ordinary binds.
 
 ### 2.2 Filter and sort
 
-`filter` is up to 16 predicates in `all` and `any` (no nesting) on **declared indexed fields**: `eq ne in lt lte gt gte exists prefix`. Values are value sources:
-`{viewer: person}` makes "waiting on me" writable (`waiting_on eq viewer.person`); `{route: collection}` and `{literal: ...}` complete the set. `sort` is at most two
+`filter` is up to 16 predicates in `all` and `any` (no nesting) on **declared indexed fields** of the kind in the host catalogue (`contract/host-catalogue-v2.json`):
+`eq ne in lt lte gt gte exists prefix`; `in` takes a homogeneous literal list of at most 32. Values are `FilterValue`s: a literal, `{viewer: person}` (so "waiting on me" is
+`waiting_on eq viewer.person`; `waiting_on` and `pending_for` accept only `self` as an operand), `{route: ...}` or `{selection: ...}`. **Never a field of another bind, a row, a
+form or a prompt**: a hidden field of one bind must not steer another bind's query (the cross-bind operand leak). A search takes a `TextSource` (a literal, a form
+field or a composer draft). `{bind, field}` stays legal only in an invoke's inputs and a component's config, where the host reconstructs it. `sort` is at most two
 indexed fields; the item id is the implicit last key, so order is total and stable across windows.
 
 ### 2.3 Windows
@@ -74,9 +77,11 @@ shell -> host   { type: "window", bind: "notes", from: 120, to: 199 }
 host  -> shell  { bind: "notes", revision: 41, state: "ready", count: 5000, offset: 100, rows: [ { id, fields:{...} }, ... ] }
 ```
 
-* `window.size` (1 to 200, default 60) is the rows the host returns per request; `count` is `exact`, `estimate` or `none`.
+* A window is the half-open range `[from, to)` of at most 200 rows; the highest supported ranked offset is 100,000 and the host never scans linearly to reach an offset
+  (a request past the limit is refused, and the renderer shows the end). `window.size` (1 to 200, default 60) is the rows returned per request; `count` is `exact`,
+  `estimate` or `none`.
 * The renderer prefetches ahead of the visible rows and, when a key or a drag walks past the edge of what it holds, asks for the next window at once (no
-  settling); the host may answer with a larger range than asked (`offset` and `rows` say what came back).
+  settling), coalesced to at most 4 window **requests** a second; the host may answer with a larger range than asked (`offset` and `rows` say what came back).
 * `revision` identifies the result set. A new revision replaces the window wholesale; the renderer skips a replacement equal to what it draws, so a republish that
   only moved the selection costs nothing.
 * **Live:** with `live: true` the host pushes a changed window (new revision) while the view is open. The renderer applies the **latest** only and, while a key
@@ -105,6 +110,14 @@ The description only asks. Before any indexed work the host must:
 3. produce **host-owned projections** for guests: rows are built by the host from the item's grant, never by plugin code;
 4. cap windows (200 rows), predicates (16), binds per view (16), and bound work by offset.
 
+5. authorize the **whole dependency graph** of a view, not each bind alone (no bind takes an operand from another; a search is pinned to the audience's corpus; a
+   count is taken over the already-authorized projection); a guest gets an `exact` count only over an explicit shared root/child projection with count disclosure enabled,
+   otherwise `estimate` or `none`;
+6. bound the aggregate: at most **16 binds per chrome and view together** per open surface, and per actor and per space caps on open subscriptions, window bytes and
+   invalidations a second, coalesced before querying; pushes are **host-only** and **never wake the space runtime**;
+7. issue, with each rendered window, the **activation context** that later actions name (the plugins lane's activation protocol): the host reconstructs row, route and
+   selection from it and never accepts the renderer's value for them.
+
 The renderer never receives a row it was not entitled to; it needs no rule of its own.
 
 ## 3. Invoke
@@ -122,9 +135,13 @@ One definition (`$defs/Invoke`) used as a content node, a row action, a header a
 
 ### 3.1 Operation and inputs
 
-`operation` is a plugin operation id from the manifest, or a **host built-in** (`host.item.trash`, `host.item.rename`, `host.item.restore`, `host.trash.purge`,
-`host.undo`, `host.approval.resolve`, `host.route.set`, `host.session.end`, `host.item.share`). Built-ins that need no worker run in the host without waking the space
-runtime; a swipe on a row must not start a runtime.
+`operation` is a plugin operation id from the manifest, or a **host built-in from the host catalogue** (`contract/host-catalogue-v2.json`, written by the plugins lane:
+exact ids, typed inputs, effect class, authority, whether it may be a generic invoke, whether it may be a full swipe, worker-wake behaviour). Built-ins that need no worker
+run in the host without waking the space runtime; a swipe on a row must not start a runtime. The catalogue, not this document, says which operations a description may name:
+`host.approval.resolve` (the request card), `host.undo` and `host.action.status` (an outcome), `host.panel.ask` (the transcript's `onQuote`), `turns.start` (the composer's
+`send`), `host.trash.purge` and `host.item.share` (protected sheets) are not generic invokes. A description reaches the Trash and share sheets and shell-only controls
+through a `ShellAction` (`shell: {sheet: trash | share}`, `{route}`, `{reload}`, `{signOut}`); `host.route.set` and `host.session.end` are shell controls, not operations.
+Chrome-level action lists take an `Action` (an `Invoke` or a `ShellAction`).
 
 `inputs` maps a name to a value source. There is no literal row and no destination the interface picks at activation: every value is a source the host can
 re-resolve. Sources that live on the device: **row** (the row scope), **selection**, **form** (`{form, field}`: values of a form node held on the device),
@@ -150,19 +167,24 @@ Activation sends the host a typed request (`$defs/Event`, `type: "invoke"`):
 * **What the person typed needs no second sheet.** An input that comes from a control the person is looking at and edited themselves (a composer's draft, a form
   field, a prompt) is shown by that control, which is its preview; the sheet covers the material inputs the person did **not** type: the row, the selection, a
   route reference, a field of a bind, an audience. A chat send therefore never opens a confirmation sheet; a Share with an audience does.
-* **Retry and idempotency.** `retry: "safe"` (idempotent), `"keyed"` (default: the host de-duplicates by `invocation`, so a retry after a dropped connection does not
-  repeat the effect) or `"never"` (the interface shows an unknown outcome instead of retrying). `pending: "disable"` (default) greys the action while it is in flight.
+* **Retry and idempotency are the host's.** A description cannot declare an action retry-safe or waive a check: effect class and idempotency come from the host catalogue and
+  the manifest, and the host de-duplicates by the `activation_id`. `pending: "disable"` (default) greys the action while it is in flight.
 * **Full swipe.** A full swipe performs the first action only when it sets `fullSwipe: true`, and never a confirmation.
 
 ### 3.3 Identifiers: invocation id, action id, ticket
 
 Three different things must not be confused:
 
-* **`invoke.id`**: the *action id*, chosen by the description's author, stable across revisions (`rename`, `trash`); it names the action in events and in pending state.
-* **`invocation`**: a fresh id **the renderer generates for each activation**. It is the host's idempotency key: the host maps it to its own durable *action request id*
-  and de-duplicates retries by it (`retry: keyed`), so it can be a receipt key on the host side. The renderer keeps it only to match the outcome and to retry.
-* **The space-channel ticket**: opaque, held by the host and the runtime, **never durable, never visible to a renderer, never used as a receipt or an idempotency key**.
+Four identities, defined once with the plugins lane's activation protocol:
+
+* **`action_id`** (`invoke.id`): chosen by the description's author, stable across revisions (`rename`, `trash`), unique within a description; names the action in events and
+  pending state.
+* **`activation_id`**: fresh per activation, generated by the renderer; the key the host de-duplicates by.
+* **`request_id`**: the host's durable request id behind an activation; **host-side only**, never in a description, never needed by a renderer.
+* **`ticket`**: the opaque space-channel ticket; **wire only, never durable, never visible to a renderer, never a receipt or an idempotency key.**
   Descriptions, events and outcomes never carry it.
+
+An activation names the host-issued **activation context** (an opaque snapshot of what was rendered, section 2.6) and carries only values held on the device.
 
 ### 3.4 Outcomes
 
@@ -285,8 +307,9 @@ What the renderer needs from the contract, and what it costs:
 2. **Selection outside the row models**: a row reads "is selected" from the list, not from the description; the description does not carry `selected` flags for
    drawing. (A page may still say which row it selected; the shell treats a later change as a reveal request.)
 3. **Equatable rows**: row values are small and comparable so an unchanged row is skipped when a window is replaced.
-4. **While a key repeats, nothing crosses the bridge**: outgoing events (`selection`) go out once after the key settles; incoming windows are held and applied
-   when the selection settles, decoded and compared off the main thread. A republish that only confirms the selection must not touch the list.
+4. **While a key repeats, no selection or row event crosses the bridge**: those go out once after the key settles (about 100 ms after the last key). Window **requests** for
+   prefetch may cross, coalesced to at most 4 a second; incoming windows are held and applied when the selection settles (or at a low rate), decoded and compared off the
+   main thread. A republish that only confirms the selection must not touch the list.
 5. **One line per row**, one icon column per list (the system aligns titles by it), single neutral accent: the accent is passed only to the unread mark and a prominent action.
 6. **Swipe actions** need `title`, `icon`, `tone` and `fullSwipe` on the invoke; they draw with the system's swipe look, tinted by tone, never by the root tint.
 7. **Haptics and menus** are the shell's: selection feedback on `route` and `selection` events, a system menu for `menu`.

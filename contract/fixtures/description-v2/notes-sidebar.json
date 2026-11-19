@@ -10,7 +10,7 @@
       "id": "collections",
       "source": {
         "type": "list",
-        "kind": "collection"
+        "kind": "collections"
       },
       "fields": [
         "title"
@@ -49,7 +49,7 @@
       "id": "notes",
       "source": {
         "type": "list",
-        "kind": "note",
+        "kind": "notes",
         "collection": {
           "route": "collection"
         }
@@ -118,8 +118,7 @@
                 "row": "id"
               }
             },
-            "tone": "warn",
-            "retry": "safe"
+            "tone": "warn"
           }
         ],
         "trailingActions": [
@@ -188,8 +187,9 @@
           "action": {
             "id": "retry",
             "title": "Try again",
-            "operation": "host.route.set",
-            "inputs": {}
+            "shell": {
+              "reload": true
+            }
           }
         }
       }
@@ -198,7 +198,7 @@
       "id": "trash",
       "source": {
         "type": "list",
-        "kind": "note"
+        "kind": "notes"
       },
       "fields": [
         "title",
@@ -245,9 +245,7 @@
                 "row": "id"
               }
             },
-            "tone": "good",
-            "fullSwipe": true,
-            "retry": "safe"
+            "tone": "good"
           }
         ]
       },
@@ -261,7 +259,7 @@
       "id": "trash-count",
       "source": {
         "type": "list",
-        "kind": "note"
+        "kind": "notes"
       },
       "fields": [],
       "filter": {
@@ -321,8 +319,7 @@
                   "collection": {
                     "route": "collection"
                   }
-                },
-                "retry": "keyed"
+                }
               }
             }
           }
@@ -359,19 +356,10 @@
             "id": "empty-trash",
             "title": "Empty Trash",
             "icon": "trash",
-            "operation": "host.trash.purge",
-            "inputs": {
-              "kind": {
-                "literal": "note"
-              }
-            },
             "role": "destructive",
-            "confirm": {
-              "title": "Delete all trashed notes?",
-              "message": "This cannot be undone.",
-              "destructive": true
-            },
-            "retry": "never"
+            "shell": {
+              "sheet": "trash"
+            }
           }
         ]
       }
@@ -387,9 +375,10 @@
         {
           "id": "signout",
           "title": "Sign out",
-          "operation": "host.session.end",
-          "inputs": {},
-          "role": "destructive"
+          "role": "destructive",
+          "shell": {
+            "signOut": true
+          }
         }
       ]
     },
@@ -424,19 +413,12 @@
         "id": "share",
         "title": "Share",
         "icon": "share",
-        "operation": "host.item.share",
-        "inputs": {
+        "shell": {
+          "sheet": "share",
           "item": {
             "route": "item"
           }
-        },
-        "preview": {
-          "material": [
-            "item",
-            "audience"
-          ]
-        },
-        "retry": "never"
+        }
       }
     ]
   }

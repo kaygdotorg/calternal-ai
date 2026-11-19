@@ -1,0 +1,19 @@
+{
+  "version": 2,
+  "revision": 1,
+  "header": {
+    "title": "X",
+    "trailing": [
+      {
+        "id": "a",
+        "title": "Do",
+        "operation": "notes.pin",
+        "inputs": {
+          "item": {
+            "row": "id"
+          }
+        }
+      }
+    ]
+  }
+}
