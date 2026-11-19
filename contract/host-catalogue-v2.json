@@ -1264,13 +1264,23 @@
       "max_token_prefix_expansions": 32,
       "max_window_offset": 2000,
       "shapes": [
-        "One or more literal ASCII terms combined with AND by the host, bounded by max_literal_and_terms. Raw Boolean, phrase and fuzzy query syntax is unqualified.",
-        "One ASCII token prefix, bounded by max_token_prefix_expansions, or one literal folded-title prefix. No mixture of words and prefixes."
+        "Literal tokens combined with AND by the host, bounded by max_literal_and_terms. Raw Boolean, phrase and fuzzy query syntax is unqualified.",
+        "One token prefix bounded by max_token_prefix_expansions, or one literal folded-title prefix. No mixture of words and prefixes."
       ],
       "qualification": "Use only ready authorized space or manual collection projections. Use scope-local order and statistics, never shared-corpus ranking. Refuse unqualified shapes, scopes, sorts or depths with unsupported_query_plan. Apply query.window row and byte caps and query.live_limits materialized-row and search posting caps independently.",
       "publication": "The existing background search worker maintains the projection and same-generation term statistics independently of save acknowledgement. Check live access to the scope, searchable fields and output fields before evaluation. A behind content watermark or stale authority revision returns loading with no rows, count or activation contexts. Fence cached results on revocation and recheck authority on delivery. Deny access if the scope is no longer authorized.",
       "refinement": "Bound scoped posting work using same-generation term frequencies. When an otherwise qualified query exceeds the posting budget, return refine_query with only bounded provisional rows from the same authorized query and published generation. A prefix exceeding either the expansion cap or the posting budget returns refine_query without starting expansion and can include only already-issued rows for that query, audience and generation. Omit count, activation contexts and member cache record. Provisional replies have null result_version and window_ref.",
-      "count": "Default to none. Exact counts require live count authority and a ready scope within the separate count-work and rate budgets. No estimate is qualified."
+      "count": "Default to none. Exact counts require live count authority and a ready scope within the separate count-work and rate budgets. No estimate is qualified.",
+      "tokenizer": {
+        "name": "unicode61",
+        "remove_diacritics": 2,
+        "prefix_index_lengths": [
+          2,
+          3
+        ],
+        "qualification": "Compile each full-text literal and token prefix using the published generation’s own qualified FTS5 tokenizer. Apply the token and posting bounds to those tokens and that generation’s term statistics. A tokenizer change requires a rebuilt generation and matching term statistics. Accented Latin and Cyrillic qualify. Refuse Devanagari full text, including token prefixes, with unsupported_query_plan until a rebuilt generation with the mark-aware categories is ready. CJK qualifies only for a whole unspaced run or its leading prefix. Implicit word segmentation and interior substring matching are unsupported_query_plan. Literal folded-title prefixes use the title index and preserve accents and marks.",
+        "categories": "L* N* Co M*"
+      }
     }
   },
   "$defs": {

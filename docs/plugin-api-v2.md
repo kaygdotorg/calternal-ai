@@ -1,4 +1,4 @@
-# Plugin API v2 · revision 11.3
+# Plugin API v2 · revision 11.4
 
 The first contract covers host-drawn apps, generic items, durable jobs and
 Turns. Freeze after the §8 spikes. Fixture bounds are test settings. See the
@@ -493,9 +493,13 @@ The first contract qualifies these plan families.
 | Notes search | Ready, authority-versioned space or manual-collection index. The [catalogue](../contract/host-catalogue-v2.json) defines qualified terms, prefixes and depth in `query.search`. |
 | Filtered counts | A maintained count for the supported authorized scope, or an audience-certified member estimate. Search uses the separate count policy in `query.search`. |
 
-A ready Notes search Bind admits literal AND terms or one bounded prefix
-as specified by catalogue `query.search`. Apply the scoped input posting
-budget independently of the materialized-row budget in `query.live_limits`.
+A ready authority-versioned Notes search Bind admits literal AND tokens
+or a bounded token prefix compiled with the published generation’s
+qualified FTS5 tokenizer, or a literal folded-title prefix. See
+`query.search` in the catalogue for qualification and the mark-aware
+tokenizer options. Changing the tokenizer requires a rebuilt generation
+with matching term statistics. Apply the scoped input posting budget independently of the materialized-row
+budget in `query.live_limits`.
 If an otherwise qualified query exceeds the posting budget, return a
 `refine_query` window containing only bounded authorized partial rows
 available for the same query and published generation. Omit count and
@@ -834,6 +838,12 @@ policy, general viewer operands except person, index-based row sources,
 sidebar cards, appearance/scheme/accent/title image and manifest commands.
 Use host policy for trusted operations and results.
 
+**Known limit for CJK search.** The first contract supports whole unspaced
+runs and their leading prefixes. Implicit word segmentation and interior
+substring matching return `unsupported_query_plan`. A later search
+generation can qualify a segmenting or trigram tokenizer.
+[Unicode qualification measurements](https://git.kayg.org/kayg/calternal-ai/src/commit/eac3eecf571c85811c1f6724e257ad19fb40aa00/docs/measurements/plugin-api-v2-step0.md#unicode-qualification).
+
 ## 7. Author SDK and conformance
 
 `defineApp`, `defineKind`, `defineOperation` and declarative package
@@ -911,7 +921,7 @@ and zero-effect assertions must hold on every repetition.
 | --- | --- |
 | **One enrolled channel** | Two real package processes on one enrolled channel in Space A, plus Space B. Block A’s carrier receiver until its actual writer stalls mid-frame. Hold a slow callback for two seconds. With a writable carrier, control and the other callback complete p95 ≤500 ms. While stalled, local fencing p95 ≤500 ms, close p95 ≤2 s and Space B progress p95 ≤2 s. No old-lease effect after local fencing. Remote stops within 5 s of its last authenticated renewal on every run. Reconnect rejects the old epoch and authorized replay commits once. |
 | **Cold indexed page** | 100,000 mixed-visibility rows. During grant/content churn test manual collection + ACL + sort from offset 0 through its last full authorized range and last visible row (at most 10,000 members, so the last full 200-row range starts at most at offset 9,800). Use a dense dynamic collection for offsets 10,000 and 90,000. Exercise search under the scoped Notes search gate. Offset 0 p95 ≤100 ms, deep windows p95 ≤500 ms. Seed enough authorized rows for every requested range and assert the exact authorized rows in order. Empty or refused replies fail. Meter materialized rows and skipped covering-index entries separately against their bounds. In a larger authorized scope, also request a range whose nearer-end jump exceeds the skip cap. Assert `skip_limit` followed by paging that returns the same authorized rows. Test End on a scope beyond the absolute offset ceiling using `anchor:"end"` and assert the last authorized rows. For stable-ID lookup assert one bounded indexed lookup and scoped authority check for a present, missing and unauthorized ID. For standalone exact counts assert one maintained-count lookup and the exact authorized total after grant churn. Exercise saves at the 32-effective-scope cap and assert at most two covering-index keys touched per scope. Refuse a grant or membership that would create scope 33 with the typed limit error. Measure the existing write and index maintenance together on the save path and require p95 ≤40 ms. The measured two-collection sort change adds about 9 ms p95 in isolation. Reject table scans and full candidate sorts, coalesce fan-out, refuse both counts and rows on revocation and wake no worker. |
-| **Scoped Notes search** | On locked perf-01 exercise each qualified shape and depth from the catalogue’s `query.search` in both authorized scopes. Separately meter input postings, materialized rows and count work against `query.live_limits`. Assert bounded provisional rows and absent counts for `refine_query`. A broad prefix must start no expansion. During publication lag and stale authority, assert `loading` with no rows, counts or activation contexts. Race revoke against delivery and assert zero stale results. Measure foreground save and save-to-search lag separately. Keep maintenance out of the save transaction and meet the append gate. |
+| **Scoped Notes search** | On locked perf-01 exercise each qualified shape and depth from the catalogue’s `query.search` in both authorized scopes. Check the qualified Unicode cases, refusal before the mark-aware Devanagari rebuild, and CJK segmentation and substring refusal. Separately meter input postings, materialized rows and count work against `query.live_limits`. Assert bounded provisional rows and absent counts for `refine_query`. A broad prefix must start no expansion. During publication lag and stale authority, assert `loading` with no rows, counts or activation contexts. Race revoke against delivery and assert zero stale results. Measure foreground save and save-to-search lag separately. Keep maintenance out of the save transaction and meet the append gate. |
 | **Atomic large save** | Stage an escape-heavy 2 MiB body and reconstruct it by revision-pinned ranges after the head moves, p95 ≤5 s. The 60 s range pin is invalidated by purge or revoke. Race duplicate begin, lost chunk ACK, conflicting bytes, cancel and orphan cleanup. Race revoke, epoch loss, enrollment removal and run replacement on both sides of commit and inject crashes before publication and before reply. No partial edit or success receipt before commit. After commit recover one revision and receipt. |
 | **Durable transcript** | Stall the reader, cut after commit before ACK and restart. First screenful drawn p95 ≤150 ms on a warm authorized reconnect, with the durable cursor, stable event and receipt sequences unchanged. Revoked reconnect reveals neither rows nor bookmarks. An independent control request completes p95 ≤500 ms with the transcript reader stalled. |
 | **Host + renderer authority** | On Svelte Chromium check both formats, a real protected approval and a live Bind. Forge row/route/Bind/context, untouched prefills, bulk IDs, ChoiceRefs, cached data and built-in surfaces. Inject duplicate and stale activations, revocation and unrelated churn. Zero unauthorized effects or rendered bytes, one commit on replay, and unrelated-churn action p95 ≤2 s from dispatch. Race revocation at egress, job claim/park and approval resolve before freezing those routes. For each §4.4 atomic-Undo case, crash before and after the named commit and during publication: recover neither effect nor Undo before commit, and both after it. Concurrently edit a dependency, then require Undo to refuse without another effect. Exercise ineligible variants and prove the shortcut and full swipe cannot bypass their checks. Delay or spoof lease replies and verify only current, exact retained windows repaint. |
@@ -931,6 +941,9 @@ Synchronous FTS maintenance missed the append gate at 66.8 ms p95. With
 the existing background worker feeding the scoped fixture corpora, search
 publication lag measured about 26 ms p95 idle and 54 ms p95 under 516
 competing saves. [Scoped search measurements](https://git.kayg.org/kayg/calternal-ai/src/commit/cb2064607e3a5c6e43b003cb408d619723c59dba/docs/measurements/plugin-api-v2-step0.md#follow-up--bounded-notes-search).
+
+All qualified windows in the Unicode probe measured below 1.9 ms p95.
+[Unicode qualification measurements](https://git.kayg.org/kayg/calternal-ai/src/commit/eac3eecf571c85811c1f6724e257ad19fb40aa00/docs/measurements/plugin-api-v2-step0.md#unicode-qualification).
 
 If a gate misses, record the measured failure and change the mechanism or
 reduce the first surface before freeze. A fixture using separate per-package
