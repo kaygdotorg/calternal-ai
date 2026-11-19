@@ -32,6 +32,16 @@ fn connection(path: &Path, flags: OpenFlags) -> io::Result<Connection> {
     Ok(conn)
 }
 
+pub(super) fn account_count(appdata: &Path) -> io::Result<i64> {
+    let relative = "system/auth.db";
+    if !super::snapshot::check_source(appdata, relative)? {
+        return Err(io::Error::other("the installation has no auth database"));
+    }
+    let db = connection(&appdata.join(relative), OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+    db.query_row("SELECT count(*) FROM users", [], |row| row.get(0))
+        .map_err(sqlite)
+}
+
 type Paths = BTreeSet<(Root, String)>;
 
 pub(super) struct Inventory {
