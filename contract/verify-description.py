@@ -144,6 +144,22 @@ def field_names(kind_entry, generic=()):
     names = set(fields if isinstance(fields, dict) else [f.get("name") if isinstance(f, dict) else f for f in fields])
     return names | set(generic)
 
+def normalize_manifest(m):
+    """A fixture manifest is either a real plugin manifest v2 (`kinds` and `operations` are ARRAYS with `id`; `indexed_fields` maps a field to {type, audience} or to a bare type;
+    `reads` lists the host kinds the package may bind; an operation's `input_schema` may list `properties` and `required`) or the older small map form (`kinds` and `operations` keyed
+    by id with `fields`). Both are normalized to the keyed form the checks use: `kinds[id].fields`, `operations[id]`, `reads`."""
+    if not isinstance(m, dict): return m
+    out = dict(m)
+    kinds = m.get("kinds", {})
+    if isinstance(kinds, list):
+        out["kinds"] = {k.get("id"): {**{x: y for x, y in k.items() if x not in ("indexed_fields",)},
+                                       "fields": {f: (v if isinstance(v, dict) else {"type": v}) for f, v in (k.get("indexed_fields") or {}).items()}} for k in kinds if isinstance(k, dict)}
+    ops = m.get("operations", {})
+    if isinstance(ops, list):
+        out["operations"] = {o.get("id"): o for o in ops if isinstance(o, dict)}
+    out["_real"] = isinstance(kinds, list) or "api_version" in m
+    return out
+
 def semantic(doc, errors, catalogue, manifest):
     """Unique action ids per document; bind, form, draft and row source scope; fullSwipe placement and catalogue permission; operations, kinds and fields resolved against
     the host catalogue and the fixture's own manifest (a plugin's kinds and operations); a header title bound to an item bind."""
@@ -186,6 +202,14 @@ def semantic(doc, errors, catalogue, manifest):
                             if isinstance(given.get(name), dict) and "literal" in given[name]: errors.append(f"{path}: target input {name!r} of {op} cannot be a literal")
                 elif manifest is not None and op not in man_ops:
                     errors.append(f"{path}: operation {op!r} is in neither the host catalogue nor the fixture manifest")
+                elif manifest is not None:
+                    declared = man_ops[op].get("input_schema") if isinstance(man_ops[op], dict) else None
+                    if isinstance(declared, dict) and isinstance(declared.get("properties"), dict):
+                        given = node.get("inputs", {})
+                        for name in given:
+                            if name not in declared["properties"]: errors.append(f"{path}: {op} (manifest) has no input {name!r}")
+                        for name in declared.get("required", []):
+                            if name not in given: errors.append(f"{path}: {op} (manifest) needs input {name!r}")
         if "bind" in node and isinstance(node["bind"], str) and node["bind"] not in binds:
             errors.append(f"{path}: bind {node['bind']!r} is not declared in `binds`")
         if "bind" in node and "field" in node and set(node) == {"bind", "field"} and ".config" not in path and ".header.title" not in path and ".row" not in path:
@@ -200,6 +224,12 @@ def semantic(doc, errors, catalogue, manifest):
             owner = composers.get(node["draft"])
             if owner is None: errors.append(f"{path}: composer {node['draft']!r} does not exist")
             elif not path.startswith(owner + ".config"): errors.append(f"{path}: a {{draft}} source is only valid inside that composer's own config")
+    if manifest is not None:
+        reads = set(manifest.get("reads", []) or [])
+        for index, bind in enumerate(binds_list):
+            kind_id = (bind.get("source") or {}).get("kind")
+            if isinstance(kind_id, str) and kind_id not in man_kinds and kind_id not in reads and (manifest.get("_real") or "reads" in manifest):
+                errors.append(f"$.binds[{index}].source: kind {kind_id!r} is neither declared by the package nor in the manifest's `reads`")
     header_title = (doc.get("chrome") or {}).get("header", {}).get("title")
     if isinstance(header_title, dict) and header_title.get("bind") in binds and binds[header_title["bind"]].get("source", {}).get("type") != "item":
         errors.append("$.chrome.header.title: a header title takes its text from an `item` bind (the open item), not from a list's first row")
@@ -243,7 +273,7 @@ for file in sorted((root / "fixtures" / "description-v2").glob("*.json")):
     manifest = None
     manifest_file = manifests_dir / file.name.replace("invalid-", "")
     if manifest_file.exists():
-        manifest = load_strict(manifest_file.read_text())
+        manifest = normalize_manifest(load_strict(manifest_file.read_text()))
     is_event = file.name.startswith(("event-", "invalid-event-"))
     if doc is not None:
         check({"$ref": "#/$defs/Event"} if is_event else schema, doc, "$", errors)

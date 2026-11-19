@@ -1,0 +1,92 @@
+{
+  "api_version": 2,
+  "id": "reading-list",
+  "name": "Reading list",
+  "version": "1.0.0",
+  "icon": "book",
+  "network": "none",
+  "reads": [],
+  "kinds": [
+    {
+      "id": "reading-item",
+      "icon": "book",
+      "title_field": "title",
+      "indexed_fields": {
+        "title": {
+          "type": "Text",
+          "audience": "member_item"
+        },
+        "added": {
+          "type": "Timestamp",
+          "audience": "member_item"
+        },
+        "read": {
+          "type": "Boolean",
+          "audience": "member_item"
+        }
+      }
+    },
+    {
+      "id": "reading-reminder",
+      "icon": "clock",
+      "title_field": "title",
+      "indexed_fields": {
+        "title": {
+          "type": "Text",
+          "audience": "member_item"
+        },
+        "due": {
+          "type": "Timestamp",
+          "audience": "member_item"
+        },
+        "person": {
+          "type": "AccountRef",
+          "audience": "viewer_self"
+        }
+      }
+    }
+  ],
+  "operations": [
+    {
+      "id": "reading.add",
+      "title": "Add a link",
+      "input_schema": {
+        "properties": {
+          "title": {},
+          "url": {}
+        },
+        "required": [
+          "title",
+          "url"
+        ]
+      }
+    },
+    {
+      "id": "reading.remind",
+      "title": "Set reminder",
+      "input_schema": {
+        "properties": {
+          "item": {},
+          "when": {},
+          "note": {}
+        },
+        "required": [
+          "item",
+          "when"
+        ]
+      }
+    },
+    {
+      "id": "reading.mark-read",
+      "title": "Mark read",
+      "input_schema": {
+        "properties": {
+          "item": {}
+        },
+        "required": [
+          "item"
+        ]
+      }
+    }
+  ]
+}

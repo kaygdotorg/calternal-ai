@@ -11,5 +11,8 @@
   },
   "operations": {
     "notes.create": {}
-  }
+  },
+  "reads": [
+    "collections"
+  ]
 }
