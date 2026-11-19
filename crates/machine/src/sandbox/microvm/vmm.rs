@@ -22,6 +22,8 @@ use super::{Config, SandboxError, SandboxResult};
 
 pub(super) struct Guest {
     pub(super) disk: PathBuf,
+    pub(super) generation: Uuid,
+    pub(super) clock: Option<super::runtime::Clock>,
     pub(super) socket: PathBuf,
     child: Child,
     pub(super) key: Arc<hmac::Key>,
@@ -38,10 +40,8 @@ impl Guest {
         permit: OwnedSemaphorePermit,
         network: Option<super::network::Lease>,
     ) -> SandboxResult<Self> {
-        let socket = run.join(format!(
-            "{}.sock",
-            &Uuid::new_v4().simple().to_string()[..16]
-        ));
+        let generation = Uuid::new_v4();
+        let socket = run.join(format!("{}.sock", &generation.simple().to_string()[..16]));
         if socket.as_os_str().len() >= 100 {
             return Err(SandboxError(
                 "microVM runtime directory path is too long".into(),
@@ -124,6 +124,8 @@ impl Guest {
         };
         let mut guest = Self {
             disk,
+            generation,
+            clock: None,
             socket,
             child,
             key,
@@ -188,9 +190,44 @@ impl Guest {
         .map_err(|_| SandboxError("microVM guest operation timed out".into()))?
     }
 
+    pub(super) async fn observe(
+        &self,
+        account_id: calternal_types::AccountId,
+        resource_owner: Option<calternal_types::ResourceOwner>,
+    ) -> Option<crate::protocol::GuestResources> {
+        let report = async {
+            let mut channel = connect(&self.socket).await.ok()?;
+            wire::prove(channel.get_mut(), &self.key).await.ok()?;
+            wire::send(channel.get_mut(), &Request::Observe)
+                .await
+                .ok()?;
+            match wire::receive(&mut channel).await.ok()? {
+                Response::Resources {
+                    memory_available_bytes,
+                    active_threads,
+                } => Some(crate::protocol::GuestResources {
+                    account_id,
+                    generation: self.generation,
+                    memory_available_bytes,
+                    active_threads,
+                    resource_owner,
+                }),
+                _ => None,
+            }
+        };
+        tokio::time::timeout(Duration::from_secs(1), report)
+            .await
+            .ok()
+            .flatten()
+    }
+
     pub(super) async fn stop(mut self) -> SandboxResult<()> {
-        if self.alive() {
+        let clean = self.alive();
+        if clean {
             self.child.kill().await.map_err(SandboxError::new)?;
+        }
+        if let Some(clock) = self.clock.take() {
+            clock.end(clean).await?;
         }
         match tokio::fs::remove_file(&self.socket).await {
             Err(e) if e.kind() != io::ErrorKind::NotFound => Err(SandboxError::new(e)),

@@ -88,6 +88,16 @@ impl MachineService {
                 .map_err(sql)?;
             }
             ErasedOwner::Space(id) => {
+                tx.execute(
+                    "DELETE FROM space_resource_groups WHERE space=?1",
+                    [id.to_string()],
+                )
+                .map_err(sql)?;
+                tx.execute(
+                    "DELETE FROM resource_hooks WHERE space=?1",
+                    [id.to_string()],
+                )
+                .map_err(sql)?;
                 tx.execute("DELETE FROM workspace_discards WHERE lease IN (SELECT id FROM leases WHERE space=?1)", [id.to_string()]).map_err(sql)?;
                 tx.execute(
                     "DELETE FROM space_execution WHERE space=?1",
@@ -99,6 +109,9 @@ impl MachineService {
             }
         }
         tx.commit().map_err(sql)?;
+        if let ErasedOwner::Space(id) = owner {
+            st.resource_hooks.remove(&id);
+        }
         for machine in machines {
             st.machines.remove(&machine);
         }
@@ -113,6 +126,7 @@ impl MachineService {
             }
         }
         for lease in leases {
+            st.resource_permits.remove(&lease);
             // Remote plugin workers run on the operator pool. The machine
             // reservation stays held, while the account loses its association.
             if let Some(account) = st

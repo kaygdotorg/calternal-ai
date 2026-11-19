@@ -19,9 +19,9 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use calternal_content::{Content, ReceiptPruningIssue};
+use calternal_content::{Content, ReceiptPruningIssue, StorageLimits, StorageUsage};
 use calternal_machine::protocol::Owner;
-use calternal_types::{AccountId, Error, SpaceId};
+use calternal_types::{AccountId, Error, GroupId, SpaceId};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -65,6 +65,51 @@ pub enum Request {
     },
     /// List every enrolled machine, revoked ones included.
     List,
+    /// Replace byte ceilings on one space.
+    StorageLimits {
+        /// Space UUID.
+        space: SpaceId,
+        /// Current-head storage ceilings by kind.
+        limits: StorageLimits,
+    },
+    /// Replace one allocation shared by an accounting group's spaces.
+    GroupStorageLimits {
+        /// Accounting group UUID.
+        group: GroupId,
+        /// Current-head ceilings pooled across its member spaces.
+        limits: StorageLimits,
+    },
+    /// Read a space's current committed body bytes by storage kind.
+    StorageUsage {
+        /// Space UUID.
+        space: SpaceId,
+    },
+    /// Select an operator-approved package hook for this space.
+    ResourceHook {
+        /// Space UUID.
+        space: SpaceId,
+        /// Exact package review binding, or none to clear.
+        binding: Option<super::ResourceHookBinding>,
+    },
+    /// Read confirmed hosted sandbox seconds for an account or group.
+    RuntimeUsage {
+        /// Owner of the measured scope.
+        owner: calternal_types::ResourceOwner,
+    },
+    /// Replace the manually configured hosted limits for one scope.
+    ComputeLimits {
+        /// Account or group whose limits change.
+        owner: calternal_auth::machines::ResourceOwner,
+        /// The new limits. Omitting them clears the override.
+        limits: Option<super::ComputeLimits>,
+    },
+    /// Set the accounting group of a shared space.
+    ResourceGroup {
+        /// Shared space UUID.
+        space: SpaceId,
+        /// Owning group, or none to clear the binding.
+        group: Option<GroupId>,
+    },
     /// Revoke one machine.
     Revoke {
         /// Machine UUID.
@@ -165,6 +210,26 @@ pub enum Response {
     },
     /// The grant now matches the request.
     PoolGrant,
+    /// Current committed body bytes of the requested space.
+    StorageUsage {
+        /// Counts sampled from a single space transaction boundary.
+        usage: StorageUsage,
+        /// Protected resource owner, if configured for this space.
+        owner: Option<calternal_auth::machines::ResourceOwner>,
+    },
+    /// The requested admission hook binding was committed.
+    ResourceHook,
+    /// The requested byte ceilings were committed.
+    StorageLimits,
+    /// Confirmed elapsed time of a scope's hosted guests.
+    RuntimeUsage {
+        /// Retained confirmed duration and unresolved terminal count.
+        usage: super::RuntimeUsage,
+    },
+    /// The requested compute limits were committed.
+    ComputeLimits,
+    /// The requested resource group binding was committed.
+    ResourceGroup,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -184,7 +249,11 @@ struct Reply {
 
 /// Run one request on a machine service. Blocks: at most one protected authority
 /// commit; call on a blocking thread.
-pub fn execute(svc: &MachineService, request: Request) -> Result<Response, Error> {
+pub fn execute(
+    svc: &MachineService,
+    content: &Content,
+    request: Request,
+) -> Result<Response, Error> {
     Ok(match request {
         Request::SetupCode | Request::AccountRecover { .. } => {
             return Err(Error::unavailable(
@@ -222,6 +291,51 @@ pub fn execute(svc: &MachineService, request: Request) -> Result<Response, Error
                 .collect(),
             erasures: svc.pending_erasures()?,
         },
+        Request::StorageLimits { space, limits } => {
+            let authority = svc.lock()?.authority.clone();
+            authority
+                .require_resource_space(space)
+                .map_err(super::compute::authority_error)?;
+            content.set_storage_limits(space, limits)?;
+            Response::StorageLimits
+        }
+        Request::GroupStorageLimits { group, limits } => {
+            let authority = svc.lock()?.authority.clone();
+            authority
+                .require_resource_owner(calternal_types::ResourceOwner::Group(group))
+                .map_err(super::compute::authority_error)?;
+            content
+                .set_group_storage_limits(group, limits, || svc.set_group_storage(group, limits))?;
+            Response::StorageLimits
+        }
+        Request::StorageUsage { space } => Response::StorageUsage {
+            owner: svc.resource_owner(space)?,
+            usage: content.storage_usage(space)?,
+        },
+        Request::ResourceHook { space, binding } => {
+            svc.set_resource_hook(space, binding)?;
+            Response::ResourceHook
+        }
+        Request::RuntimeUsage { owner } => Response::RuntimeUsage {
+            usage: svc.runtime_usage(owner)?,
+        },
+        Request::ComputeLimits { owner, limits } => {
+            svc.set_compute_limits(owner, limits)?;
+            Response::ComputeLimits
+        }
+        Request::ResourceGroup { space, group } => {
+            let authority = svc.lock()?.authority.clone();
+            authority
+                .require_resource_space(space)
+                .map_err(super::compute::authority_error)?;
+            if let Some(group) = group {
+                authority
+                    .require_resource_owner(calternal_types::ResourceOwner::Group(group))
+                    .map_err(super::compute::authority_error)?;
+            }
+            content.bind_group_storage(space, group, || svc.set_resource_group(space, group))?;
+            Response::ResourceGroup
+        }
         Request::Revoke { machine } => Response::Revoke {
             revoked: svc.revoke_any(machine)?,
         },
@@ -276,6 +390,7 @@ pub fn open_offline(
         calternal_content::DEFAULT_RECEIPT_RETENTION,
     )?;
     let svc = service_for(&store)?;
+    svc.restore_group_storage(store.content())?;
     Ok((store, svc))
 }
 
@@ -451,7 +566,7 @@ async fn answer(
             Request::ReceiptStatus { space } => content
                 .receipt_pruning_issue(space)
                 .map(|issue| Response::ReceiptStatus { issue }),
-            request => execute(&svc, request),
+            request => execute(&svc, &content, request),
         })
         .await
         .unwrap_or_else(|_| Err(Error::internal("admin task failed"))),

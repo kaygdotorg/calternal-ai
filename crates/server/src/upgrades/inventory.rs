@@ -9,6 +9,7 @@ use uuid::Uuid;
 use super::{Deployment, Root};
 
 struct Database {
+    root: Root,
     relative: String,
     schema: Schema<'static>,
     version: i64,
@@ -52,13 +53,12 @@ pub(super) struct Inventory {
 
 impl Inventory {
     pub(super) fn plan(deploy: &Deployment, incompatible: bool, live: bool) -> io::Result<Self> {
-        let appdata = &deploy.roots.appdata;
-        let mut databases = databases(appdata)?;
+        let mut databases = databases(deploy)?;
         databases.retain(|database| database.version < database.schema.version());
         let mut paths = Paths::new();
         for database in &databases {
             for ending in ["", "-wal", "-shm", "-journal"] {
-                paths.insert((Root::Appdata, format!("{}{ending}", database.relative)));
+                paths.insert((database.root, format!("{}{ending}", database.relative)));
             }
             if database.relative == "system/auth.db" {
                 disk_files(
@@ -110,7 +110,10 @@ impl Inventory {
             count
         };
         for database in self.databases {
-            let conn = database.open(&deploy.roots.appdata, OpenFlags::SQLITE_OPEN_READ_WRITE)?;
+            let conn = database.open(
+                deploy.root(database.root)?,
+                OpenFlags::SQLITE_OPEN_READ_WRITE,
+            )?;
             conn.execute_batch("PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON;")
                 .map_err(sqlite)?;
             migrate_release(&conn, database.schema, additive).map_err(sqlite)?;
@@ -125,21 +128,32 @@ impl Inventory {
     }
 }
 
-fn databases(appdata: &Path) -> io::Result<Vec<Database>> {
+fn inspect_database(
+    root: Root,
+    directory: &Path,
+    relative: String,
+    schema: Schema<'static>,
+) -> io::Result<Option<Database>> {
+    if !super::snapshot::check_source(directory, &relative)? {
+        return Ok(None);
+    }
+    let path = directory.join(&relative);
+    let conn = connection(&path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+    let version = inspect(&conn, schema).map_err(sqlite)?;
+    Ok(Some(Database {
+        root,
+        relative,
+        schema,
+        version,
+    }))
+}
+
+fn databases(deploy: &Deployment) -> io::Result<Vec<Database>> {
+    let appdata = &deploy.roots.appdata;
     use crate::{account_input, machines, plugins};
     let mut entries = Vec::new();
-    let mut inspect_one = |relative: String, schema: Schema<'static>| -> io::Result<()> {
-        let path = appdata.join(&relative);
-        if !super::snapshot::check_source(appdata, &relative)? {
-            return Ok(());
-        }
-        let conn = connection(&path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
-        let version = inspect(&conn, schema).map_err(sqlite)?;
-        entries.push(Database {
-            relative,
-            schema,
-            version,
-        });
+    let mut inspect_one = |relative, schema| -> io::Result<()> {
+        entries.extend(inspect_database(Root::Appdata, appdata, relative, schema)?);
         Ok(())
     };
     for (relative, schema) in [
@@ -187,6 +201,14 @@ fn databases(appdata: &Path) -> io::Result<Vec<Database>> {
                 inspect_one(format!("{scope}/{id}/{file}"), schema)?;
             }
         }
+    }
+    if let Ok(machine) = deploy.root(Root::Machine) {
+        entries.extend(inspect_database(
+            Root::Machine,
+            machine,
+            "sandboxes/microvm/runtime.db".into(),
+            calternal_machine::sandbox::microvm::RUNTIME_SCHEMA,
+        )?);
     }
     Ok(entries)
 }
@@ -269,7 +291,7 @@ fn check_integrity(conn: &Connection) -> io::Result<()> {
 }
 
 pub(super) fn verify(deploy: &Deployment) -> io::Result<()> {
-    for database in databases(&deploy.roots.appdata)? {
+    for database in databases(deploy)? {
         if database.version < database.schema.version() {
             return Err(io::Error::other(
                 "deployment still has pending schema changes",

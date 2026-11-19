@@ -177,7 +177,7 @@ impl MachineService {
         let mut pool = Vec::new();
         for machine in st.eligible(account, pin) {
             let online = connected(machine, &self.settings);
-            let available = online && st.free_for(machine, account, &self.settings) != 0;
+            let available = online && st.free_for(machine, account) != 0;
             let checks = machine.checks.get(&account);
             let providers = providers
                 .iter()
@@ -288,7 +288,7 @@ impl MachineService {
                 Some(_) => m.row.owner == (Owner::Account { id: account }),
                 None => m.row.owner == Owner::Pool,
             })
-            .filter(|m| connected(m, &self.settings) && st.free_for(m, account, &self.settings) > 0)
+            .filter(|m| connected(m, &self.settings) && st.free_for(m, account) > 0)
             .map(|m| m.row.id)
             .min())
     }

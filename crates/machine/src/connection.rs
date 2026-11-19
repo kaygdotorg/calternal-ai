@@ -73,10 +73,11 @@ pub(crate) async fn run_at(
         tokio::spawn(async move { update::stage(&server, address.as_ref()).await })
     });
     let mut ack = 0;
+    let mut guest_reporting = false;
     let result = tokio::select! {
         biased;
         () = shutdown => None,
-        result = session_loop(&creds, &link, &runner, boot_id, ready, &mut ack, &mut updater) => Some(result),
+        result = session_loop(&creds, &link, &runner, boot_id, ready, &mut ack, &mut guest_reporting, &mut updater) => Some(result),
     };
     if let Some(updater) = updater {
         updater.abort();
@@ -85,13 +86,16 @@ pub(crate) async fn run_at(
     let started = Instant::now();
     let drained = tokio::time::timeout(Duration::from_millis(1750), async {
         if result.is_none() {
-            announce_drain(&link, &runner, ack).await;
+            announce_drain(&link, &runner, ack, false).await;
         }
         let closed = runner.release_all().await;
         let backend_closed = config.backend.shutdown().await;
         if result.is_none() {
             runner.drain_outputs().await;
-            announce_drain(&link, &runner, ack).await;
+        }
+        if result.is_none() || (guest_reporting && matches!(&result, Some(Ok(Some(_))))) {
+            // Teardown records the final guest clocks before shutdown or replacement.
+            announce_drain(&link, &runner, ack, guest_reporting).await;
         }
         if !closed {
             return Err(Error::Protocol(
@@ -125,11 +129,22 @@ pub(crate) async fn run_at(
     Ok(())
 }
 
-async fn announce_drain(link: &Link, runner: &Arc<Runner>, ack: u64) {
+async fn announce_drain(link: &Link, runner: &Arc<Runner>, ack: u64, guest_reporting: bool) {
     // An older or an unreachable server may not answer immediately. Closing
     // local sandboxes must still proceed before the shutdown deadline.
     let Ok(capacity) = capacity(runner).await else {
         return;
+    };
+    let guest_runtime = if guest_reporting {
+        match runner.guest_runtime().await {
+            Ok(reports) => reports,
+            Err(error) => {
+                tracing::warn!(%error, "could not read the guest clock during drain");
+                Vec::new()
+            }
+        }
+    } else {
+        Vec::new()
     };
     let req = SyncRequest {
         ack,
@@ -137,6 +152,8 @@ async fn announce_drain(link: &Link, runner: &Arc<Runner>, ack: u64) {
         draining: true,
         leases: runner.reports(),
         discards: runner.discard_reports(),
+        guest_resources: Vec::new(),
+        guest_runtime,
     };
     if link
         .post::<_, SyncResponse>(
@@ -149,6 +166,9 @@ async fn announce_drain(link: &Link, runner: &Arc<Runner>, ack: u64) {
         .is_ok()
     {
         runner.ack_discards(&req.discards);
+        if let Err(error) = runner.acknowledge_guest_runtime(&req.guest_runtime).await {
+            tracing::warn!(%error, "could not acknowledge the guest clock during drain");
+        }
     }
 }
 
@@ -166,6 +186,7 @@ async fn session_loop(
     boot_id: Uuid,
     ready: &Ready,
     ack: &mut u64,
+    guest_reporting: &mut bool,
     updater: &mut Option<tokio::task::JoinHandle<Result<update::Staged>>>,
 ) -> Result<Option<update::Staged>> {
     let mut staged = None;
@@ -187,6 +208,7 @@ async fn session_loop(
         runner.configure_backend(&granted.backend)?;
         lease_ttl = Duration::from_millis(granted.lease_ttl_ms);
         let hold = Duration::from_millis(granted.poll_hold_ms);
+        *guest_reporting = granted.guest_resources;
         link.set_token(Some(granted.token.into()));
         tracing::info!("session open");
         if let Err(error) = ready.report("Machine session opened") {
@@ -215,7 +237,17 @@ async fn session_loop(
                 capacity,
                 draining: staged.is_some(),
                 leases: runner.reports(),
+                guest_resources: if granted.guest_resources {
+                    runner.guest_resources().await
+                } else {
+                    Vec::new()
+                },
                 discards: runner.discard_reports(),
+                guest_runtime: if granted.guest_resources {
+                    runner.guest_runtime().await?
+                } else {
+                    Vec::new()
+                },
             };
             match link
                 .post::<_, SyncResponse>(
@@ -228,6 +260,7 @@ async fn session_loop(
             {
                 Ok(resp) => {
                     runner.ack_discards(&req.discards);
+                    runner.acknowledge_guest_runtime(&req.guest_runtime).await?;
                     backoff = Backoff::default();
                     last_ok = Instant::now();
                     for env in resp.messages {
@@ -252,6 +285,7 @@ async fn session_loop(
                 Err(Error::Revoked) => return Err(Error::Revoked),
                 Err(e) if e.status() == Some(401) => {
                     tracing::info!("session ended by the server; opening a new one");
+                    *guest_reporting = false;
                     link.set_token(None);
                     break;
                 }

@@ -10,6 +10,8 @@
 //! worker; callers must be on a blocking thread, never an async worker.
 
 mod colocated;
+mod resources;
+pub use calternal_types::ResourceOwner;
 
 use crate::spaces::commit;
 use crate::token::{hash32, new_setup_token, normalize_setup_token};

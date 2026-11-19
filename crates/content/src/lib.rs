@@ -52,6 +52,9 @@ pub use search::{
 mod revision_slice;
 mod rooms;
 use lifecycle::{Cache, Slot, spawn_sweeper, sweep};
+mod group_storage;
+mod plugin_state;
+mod storage_usage;
 pub use rooms::{LiveEdit, LiveTextEdit, RoomSnapshot};
 mod trash;
 mod trash_job;
@@ -61,6 +64,7 @@ use calternal_types::{AccountId, Error, ErrorCode, SpaceId};
 pub use collections::StoredCollection;
 use db::Space;
 use journal::{Journals, lock};
+pub use plugin_state::{PluginStateRecord, PluginStateWrite};
 pub use pool::ReadPool;
 use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::Value;
@@ -69,6 +73,7 @@ use std::{
     sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
+pub use storage_usage::{StorageLimits, StorageUsage};
 pub use types::{
     Collection, CollectionOwner, FaultPoint, FileFormat, Item, Placement, Receipt, Request, Result,
     Summary,
@@ -77,14 +82,16 @@ use uuid::Uuid;
 
 /// Installation content service with bounded per-space connections and idle release.
 /// The host retains root locks; opening two services for the same roots is unsupported.
+/// Dropping the last service handle waits for any active filesystem placement.
 pub struct Content {
-    // Drop the placement worker before the stores and their root guards.
+    // Drop before the caches and journal driver so placement cannot race a reopen.
     sweeper: lifecycle::Sweeper,
     roots: Roots,
     search_readers: search::Readers,
     search_writers: search::Writers,
     search_worker: std::sync::OnceLock<std::sync::mpsc::SyncSender<SpaceId>>,
     lifecycle: calternal_types::OwnerLifecycle,
+    storage_groups: group_storage::Groups,
     index: Mutex<Connection>,
     catalog: ReadPool,
     // Declared before `journals`: open stores drain before the driver stops.
@@ -182,8 +189,8 @@ impl Content {
         let spaces = Arc::new(Mutex::new(std::collections::HashMap::new()));
         let root_guard = Arc::new(Mutex::new(None));
         let lifecycle = calternal_types::OwnerLifecycle::default();
-        let sweeper = spawn_sweeper(&spaces, &root_guard, lifecycle.clone(), idle_after, fault)?;
         let journals = Journals::open(roots.appdata.clone(), secrets, receipt_retention)?;
+        let sweeper = spawn_sweeper(&spaces, &root_guard, lifecycle.clone(), idle_after, fault)?;
         let catalog = ReadPool::new(catalog_path);
         let content = Self {
             search_readers: search::Readers::default(),
@@ -191,6 +198,7 @@ impl Content {
             search_worker: std::sync::OnceLock::new(),
             roots,
             lifecycle,
+            storage_groups: group_storage::Groups::default(),
             index: Mutex::new(index),
             catalog,
             spaces,
@@ -245,6 +253,7 @@ impl Content {
             let journal = self.journals.open_store(id, self.lifecycle.clone())?;
             let mut opened =
                 Space::open(&self.roots.appdata, &self.roots.userdata_ssd, id, journal)?;
+            opened.group_storage = self.storage_groups.for_space(id);
             self.recover_space(&mut opened)?;
             *held = Some(opened);
             slot.visibility
@@ -278,6 +287,7 @@ impl Content {
     /// witness publication. Call from a blocking worker.
     pub fn retire_space(&self, space: SpaceId) {
         self.lifecycle.drain(space.as_uuid());
+        self.storage_groups.retire(space);
         self.search_readers.forget(space);
         self.search_writers.forget(space);
         let slot = lock(&self.spaces).remove(&space);

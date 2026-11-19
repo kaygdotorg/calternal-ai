@@ -97,6 +97,9 @@ async fn kvm_separates_accounts_threads_and_spaces_and_persists_across_crash() {
     let backend = MicrovmBackend::new(dir.path().to_owned(), config.clone());
     backend.initialize().await.unwrap();
     let first = SandboxSpec {
+        resource_owner: None,
+        guest_idle_seconds: None,
+        resource_assignment: None,
         space_id: Some(SpaceId::new()),
         provider_login: false,
         shared_provider_sponsor: None,
@@ -257,6 +260,9 @@ async fn networked_guest_can_use_only_the_declared_egress() {
     backend.initialize().await.unwrap();
     let sandbox = backend
         .start(&SandboxSpec {
+            resource_owner: None,
+            guest_idle_seconds: None,
+            resource_assignment: None,
             space_id: Some(SpaceId::new()),
             provider_login: false,
             shared_provider_sponsor: None,
