@@ -315,6 +315,7 @@ following reason payloads use Unix milliseconds for timestamps.
 | --- | --- |
 | `idle`, `queued`, `completed`, `cancelled` | No turn, pending admission, completed work, or cancelled work |
 | `no_machine`, `waiting_for_capacity` | Placement wait with `queue_position` |
+| `waiting_for_memory` | A connected eligible machine lacks available memory for another reservation. Includes a plain `message` and `queue_position`. |
 | `machine_offline` | Placement wait with `queue_position` and `since_ms` (last contact when known) |
 | `provider_signed_out` | `provider`, the re-authentication `message` and the reported `sign_in_command` |
 | `waiting_on_person` | Private `request_id` visible to the turn account |

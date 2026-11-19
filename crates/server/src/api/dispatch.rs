@@ -471,7 +471,13 @@ pub(super) async fn dispatch_checked<D: Directory>(
             let i: NotesGetInput = decode(input)?;
             let space = space_of(&i.space_id)?;
             let note = blocking(&state, move |s| s.get(space, &i.id)).await?;
-            to_value(NoteResult { note })
+            to_value(NoteResult { note, job_id: None })
+        }
+        "notes.rename.status" | "notes.rename.undo" => {
+            super::notes::rename_job(&state, actor, request_id, op, input).await
+        }
+        "trash.empty.preview" | "trash.empty" | "trash.empty.status" => {
+            super::notes::empty_trash(&state, actor, request_id, op, input).await
         }
         "notes.delete" | "notes.restore" | "trash.purge" | "notes.rename" => {
             super::notes::mutate(&state, actor, request_id, op, input).await
@@ -658,11 +664,12 @@ pub(super) async fn mutate_note<D: Directory>(
             if let Some(v) = replay_receipt(s, principal, space, &rid, &op, &fp)? {
                 return Ok(v);
             }
-            let note = if let Some(i) = create {
-                s.create(actor, &rid, &op, &fp, space, &i.title, &i.markdown)?
+            if let Some(i) = create {
+                let note = s.create(actor, &rid, &op, &fp, space, &i.title, &i.markdown)?;
+                to_value(NoteResult { note, job_id: None })
             } else {
                 let i = update.expect("update input");
-                s.update(
+                to_value(s.update(
                     actor,
                     &rid,
                     &op,
@@ -674,9 +681,8 @@ pub(super) async fn mutate_note<D: Directory>(
                     &i.markdown,
                     allow_link_rewrites,
                     authority.as_ref(),
-                )?
-            };
-            to_value(NoteResult { note })
+                )?)
+            }
         };
         #[cfg(feature = "perf-timings")]
         if let Some((entry, queued)) = timing {

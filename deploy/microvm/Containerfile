@@ -3,9 +3,15 @@ ARG BASE
 FROM ${BASE}
 COPY plugins/calternal-claude-code/dist /opt/calternal-provider/dist
 COPY plugins/calternal-claude-code/bin /opt/calternal-provider/bin
+COPY plugins/calternal-codex/dist /opt/calternal-provider/codex/dist
+COPY plugins/calternal-codex/bin /opt/calternal-provider/codex/bin
+COPY deploy/install-harness.mjs /tmp/install-harness.mjs
 ENV PATH="/home/agent/.local/bin:/opt/calternal-provider/bin:/usr/local/bin:/usr/bin:/bin"
-RUN npm install --global --no-audit --no-fund @anthropic-ai/claude-code@2.1.326 \
-    && claude --version \
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && node /tmp/install-harness.mjs /opt/calternal-provider/dist/runtime.json /opt/calternal-provider/codex/dist/runtime.json \
+    && printf '#!/bin/sh\nexec /opt/calternal-provider/codex/bin/calternal-provider-codex "$@"\n' > /usr/local/bin/calternal-provider-codex \
+    && chmod 0755 /usr/local/bin/calternal-provider-codex \
     && npm cache clean --force
 WORKDIR /work
 CMD ["sleep", "2147483647"]

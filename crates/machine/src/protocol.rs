@@ -28,7 +28,16 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 /// Protocol version spoken by this build; the server refuses other versions.
-pub const PROTOCOL_VERSION: u32 = 5;
+pub const PROTOCOL_VERSION: u32 = 8;
+
+/// First machine protocol that supports a broker and distinct tool sandbox.
+pub const SHARED_TOOLS_PROTOCOL_VERSION: u32 = 8;
+
+/// First machine protocol that supports an isolated shared Claude login directory.
+pub const SHARED_PROVIDER_PROTOCOL_VERSION: u32 = 7;
+
+/// Protocol version that introduced isolated harness assignments.
+pub const HARNESS_PROTOCOL_VERSION: u32 = 6;
 
 /// Path prefix of every machine-facing endpoint. The server's account guard
 /// skips it: these endpoints authenticate the machine themselves.
@@ -107,32 +116,45 @@ pub struct SessionChallenge {
 /// because the machine user cannot create KVM guests.
 pub const PODMAN_KVM_FALLBACK: &str = "podman-no-kvm";
 
-/// Approved account guest sizing and its measured admission ceiling.
+/// Smallest host reservation for a new sandbox. Cost: a constant.
+pub const MIN_SANDBOX_MEMORY_BYTES: u64 = 2 << 30;
+
+/// Supported account guest sizing and its usable memory for turns.
 #[derive(Clone, Copy, Debug)]
 pub struct GuestSize {
     /// Configured RAM, in MiB.
     pub memory_mib: u32,
-    /// Concurrent thread ceiling where a measurement has established one.
-    pub active_threads: Option<usize>,
 }
 
 impl GuestSize {
     /// Resolve a configured RAM value against the supported size profiles.
     pub fn from_mib(memory_mib: u32) -> Option<Self> {
-        const PROFILES: [GuestSize; 2] = [
-            GuestSize {
-                memory_mib: 512,
-                active_threads: Some(2),
-            },
-            GuestSize {
-                memory_mib: 1024,
-                // Three threads were at the latency cutoff on the busy dev host.
-                active_threads: Some(2),
-            },
-        ];
-        PROFILES
-            .into_iter()
-            .find(|size| size.memory_mib == memory_mib)
+        match memory_mib {
+            512 | 1024 | 2048 | 4096 | 8192 => Some(Self { memory_mib }),
+            _ => None,
+        }
+    }
+
+    /// Host admission reservation, in bytes. Cost: one multiplication.
+    pub fn host_memory_bytes(self) -> u64 {
+        (u64::from(self.memory_mib) << 20).max(MIN_SANDBOX_MEMORY_BYTES)
+    }
+
+    /// Usable RAM for managed turns after reserving 256 MiB for the guest.
+    /// Cost: one subtraction and shift.
+    pub fn turn_budget_bytes(self) -> u64 {
+        u64::from(self.memory_mib.saturating_sub(256)) << 20
+    }
+
+    /// Ceiling per managed turn, clamped for previously configured small guests.
+    /// Cost: integer arithmetic only.
+    pub fn turn_memory_bytes(self, limit: u64) -> u64 {
+        let budget = self.turn_budget_bytes();
+        limit.min(if self.memory_mib < 2048 {
+            budget / 2
+        } else {
+            budget
+        })
     }
 }
 
@@ -149,7 +171,7 @@ pub struct SessionFinish {
     /// Random id chosen when the machine role process starts. A new value tells
     /// the server that every exec that was running before is gone.
     pub boot_id: Uuid,
-    /// Must equal [`PROTOCOL_VERSION`].
+    /// Machine protocol version negotiated when opening this session.
     pub protocol: u32,
     /// Requested backend, or auto for the owner's setting; direct requires owner consent.
     pub backend: String,
@@ -173,13 +195,17 @@ pub struct SessionGranted {
 }
 
 /// Machine capacity. Placement accounts for both held machine slots and the
-/// server's active leases. CPU and memory figures are informational.
+/// server's active leases. Available memory is sampled by the machine.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Capacity {
     /// Logical CPUs.
     pub cpus: u32,
     /// Physical memory in bytes; 0 when unknown.
     pub memory_bytes: u64,
+    /// Available physical memory in bytes at this heartbeat. Absent when the
+    /// machine cannot provide a measurement. Admission waits for a sample.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub available_memory_bytes: Option<u64>,
     /// Most provider and worker slots the machine can hold at once.
     pub max_sandboxes: u32,
     /// Slots currently held, including idle leases and pending removals.
@@ -300,6 +326,25 @@ pub struct Limits {
     pub pids: Option<u32>,
 }
 
+/// Fixed provider routes supported by the machine-local inference broker.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SharedToolsProvider {
+    /// Anthropic Messages API.
+    Claude,
+    /// OpenAI Responses API.
+    Codex,
+}
+
+/// Scope of one turn's tool executor. The machine resolves the credential locally.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SharedTools {
+    /// Fixed upstream protocol.
+    pub provider: SharedToolsProvider,
+    /// Keep the member's workspace read-only outside explicitly full access.
+    pub workspace_read_only: bool,
+}
+
 /// What to start for a thread.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SandboxSpec {
@@ -313,6 +358,12 @@ pub struct SandboxSpec {
     /// Start a disposable login home with write access to shared provider login state.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub provider_login: bool,
+    /// The Owner of the isolated space login directory, when using a shared login.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shared_provider_sponsor: Option<AccountId>,
+    /// Opt-in isolated tools for a shared turn.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shared_tools: Option<SharedTools>,
     /// Account owning the persistent shared login; validated UUID from the server.
     pub account_id: Uuid,
     /// The thread; one sandbox per thread, reused across leases.
@@ -323,6 +374,37 @@ pub struct SandboxSpec {
     pub worker: Option<PluginWorker>,
     /// Resource limits.
     pub limits: Limits,
+}
+
+/// Owner of a provider login. Distinct from the person who requested a turn
+/// or who may receive a sign-in notice.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "scope", content = "id", rename_all = "snake_case")]
+pub enum ProviderLoginScope {
+    /// Login authorized only for this person's turns.
+    Account(AccountId),
+    /// Login authorized by the space for its configured provider.
+    Space(SpaceId),
+}
+
+/// Machine-enforced placement and mount policy for an installed harness.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HarnessSandbox {
+    /// Validated plugin ID. Only this provider's account profile is mounted.
+    pub provider_id: String,
+    /// Authorized owner of the login mounted for this assignment.
+    pub login_scope: ProviderLoginScope,
+    /// Whether the backend must mount the thread workspace read-only.
+    pub workspace_read_only: bool,
+    /// Mount a disposable empty profile within the scratch workspace for a smoke test.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub disposable_profile: bool,
+    /// Reuse the migrated bundled provider's established on-disk login layout.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub legacy_profile: bool,
+    /// Pinned guest digest when the runtime has a verified MicroVM build.
+    pub guest_image_digest: Option<String>,
 }
 
 /// A single verified, self-contained JavaScript bundle, never a host path.
@@ -369,6 +451,21 @@ pub enum Down {
         account_id: AccountId,
         /// Sandbox to start.
         spec: SandboxSpec,
+    },
+    /// Run a harness with the provider-specific account profile and constraints.
+    AssignHarness {
+        /// The lease.
+        lease_id: Uuid,
+        /// Fencing token; output with an older fence is refused.
+        fence: u64,
+        /// Space the work belongs to.
+        space_id: SpaceId,
+        /// Account the work runs for.
+        account_id: AccountId,
+        /// Base sandbox with the installed image and resource limits.
+        spec: SandboxSpec,
+        /// Required machine enforcement for this harness.
+        harness: HarnessSandbox,
     },
     /// Run a command in the lease's sandbox and stream its output.
     Exec {

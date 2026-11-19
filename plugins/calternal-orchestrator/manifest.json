@@ -327,6 +327,9 @@
               "full_access"
             ]
           },
+          "personal_machine": {
+            "type": "boolean"
+          },
           "reasoning": {
             "type": "string",
             "minLength": 1,

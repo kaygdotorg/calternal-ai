@@ -28,6 +28,10 @@ together and update the tests when operation IDs or output contracts change.
 
 ## Work from the public contracts
 
+For an Inbox question or deadline, use the reference's **Wait for a signal**
+section. The public guide's `jobs` and `waits` topics include the complete
+question job example.
+
 Read the bundled reference at `../../reference.md` and walkthrough at
 `../../walkthrough.md`, relative to this skill's directory. They cover
 broker calls, GenUI, jobs, settings and the fixture protocol. You can also

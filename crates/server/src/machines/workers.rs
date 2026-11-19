@@ -56,6 +56,8 @@ impl MachineService {
             false,
             false,
             false,
+            None,
+            None,
         )
     }
 
@@ -229,7 +231,7 @@ impl super::state::State {
             enrolled = true;
             if Self::worker_machine(machine, settings) {
                 online = true;
-                if self.free_for(machine, account) > 0 {
+                if self.free_for(machine, account, settings) > 0 {
                     return Ok(());
                 }
             }
@@ -337,17 +339,16 @@ mod tests {
             .unwrap()
             .machine_id;
         connect(service, machine, &key);
-        service
-            .lock()
-            .unwrap()
+        let mut state = service.lock().unwrap();
+        let live = state
             .machines
             .get_mut(&machine)
             .unwrap()
             .live
             .as_mut()
-            .unwrap()
-            .capacity
-            .max_sandboxes = capacity;
+            .unwrap();
+        live.capacity.max_sandboxes = capacity;
+        live.capacity.available_memory_bytes = Some(64 << 30);
         (machine, key)
     }
 

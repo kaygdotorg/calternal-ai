@@ -1,4 +1,23 @@
 import type { GenUiView } from "@calternal/contracts";
+import type { WorkerContextV2 } from "./worker-v2.js";
+
+/** Admit a durable job from a handler. Declare `start_job` in the manifest.
+ * Returns the host-issued job ID after one broker round trip. An invalid
+ * reply rejects the promise instead of returning an unchecked value.
+ */
+export async function startJob(
+  context: WorkerContextV2,
+  input: { operation: string; input: unknown; parent_id?: string },
+): Promise<{
+  /** Host-issued ID for reading, cancelling, or reporting progress on this job. */
+  job_id: string;
+}> {
+  const reply = await context.call("start_job", input);
+  if (!reply || typeof reply !== "object" || !("job_id" in reply) || typeof reply.job_id !== "string") {
+    throw new Error("Invalid start_job reply");
+  }
+  return { job_id: reply.job_id };
+}
 
 /** The single signal a parked job accepts before its deadline. */
 export type JobWaitSource =

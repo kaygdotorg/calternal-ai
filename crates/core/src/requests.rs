@@ -209,6 +209,42 @@ macro_rules! operation {
 /// Static policy rows, ordered by the public operation catalog.
 pub const REQUEST_OPERATIONS: &[RequestOperation] = &[
     operation!(
+        "push.subscribe",
+        "Register this browser for thread notifications",
+        Account,
+        SpaceRead,
+        Reversible,
+        crate::PushSubscribeInput,
+        crate::PushDevices
+    ),
+    operation!(
+        "push.unsubscribe",
+        "Remove one of your push subscriptions",
+        Account,
+        SpaceRead,
+        Reversible,
+        crate::PushUnsubscribeInput,
+        crate::PushRemoved
+    ),
+    operation!(
+        "push.devices",
+        "List your registered push devices and the public VAPID key",
+        Account,
+        SpaceRead,
+        Read,
+        crate::AccountInputList,
+        crate::PushDevices
+    ),
+    operation!(
+        "push.test",
+        "Queue a test push to this browser",
+        Account,
+        SpaceRead,
+        External,
+        crate::AccountInputList,
+        crate::PushQueued
+    ),
+    operation!(
         "plugins.diagnostics",
         "Inspect an installed plugin's readiness and recent worker failures",
         Space,
@@ -279,6 +315,42 @@ pub const REQUEST_OPERATIONS: &[RequestOperation] = &[
         Reversible,
         crate::PluginSettingEdit,
         crate::PluginSettingChange
+    ),
+    operation!(
+        "harnesses.list",
+        "List installed harnesses and their tested updates",
+        Account,
+        ServerSettings,
+        Read,
+        crate::AccountInputList,
+        crate::HarnessList
+    ),
+    operation!(
+        "harnesses.stage",
+        "Smoke-test a candidate harness runtime in a disposable sandbox",
+        Account,
+        ServerSettings,
+        Reversible,
+        crate::HarnessStage,
+        crate::HarnessPin
+    ),
+    operation!(
+        "harnesses.activate",
+        "Select an exact smoke-tested harness runtime for new work",
+        Account,
+        ServerSettings,
+        Reversible,
+        crate::HarnessSelect,
+        crate::HarnessPin
+    ),
+    operation!(
+        "harnesses.rollback",
+        "Restore a previously tested harness runtime",
+        Account,
+        ServerSettings,
+        Reversible,
+        crate::HarnessSelect,
+        crate::HarnessPin
     ),
     operation!(
         "provider.sign_in.start",

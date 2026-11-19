@@ -3,12 +3,16 @@ import type { WorkerContextV2, WorkerHandlerV2 } from "./worker-v2.js";
 
 type JsonSchema = {
   readonly type?: string;
+  readonly const?: unknown;
+  readonly oneOf?: readonly JsonSchema[];
   readonly properties?: Readonly<Record<string, JsonSchema>>;
   readonly required?: readonly string[];
   readonly items?: JsonSchema;
 };
 
 type Input<S> =
+  S extends { readonly const: infer Literal } ? Literal :
+  S extends { readonly oneOf: readonly (infer Variant)[] } ? Input<Variant> :
   S extends { readonly type: "string" } ? string :
   S extends { readonly type: "boolean" } ? boolean :
   S extends { readonly type: "integer" | "number" } ? number :
@@ -26,7 +30,7 @@ type Operation = {
 type Handler<Op extends Operation> = (input: Input<Op["input_schema"]>, context: WorkerContextV2) => Promise<Input<Op["output_schema"]>>;
 
 /** Bind each declared operation to one handler. Literal manifest declarations infer
- * basic input and output properties and require matching handler keys. Runtime validation
+ * basic properties and discriminated unions of object schemas, and require matching handler keys. Runtime validation
  * still comes from the host's compiled schemas. Cost: return the map unchanged.
  */
 export function typedHandlers<const O extends readonly Operation[]>(

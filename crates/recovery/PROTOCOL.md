@@ -39,6 +39,14 @@ rebuilding must enforce wall-clock expiry, preserve revocation and force all
 devices to resync under current authority. Stored schema text is descriptive, never SQL to execute blindly.
 The write audit and regression inventory are in [the dated review](../../docs/reviews/recovery-review-2026-11-17.md).
 
+Protected writers implement insert-or-update with a plain `UPDATE` followed
+by a plain `INSERT` when no row matched, inside one protected transaction.
+The update branch of an outer SQLite UPSERT can override the dirty trigger's
+`INSERT OR IGNORE`. A repeated owner key can then abort the write even though
+the authority row itself is valid. The
+[account recovery test](src/account_tests.rs) exercises this conflict, then
+publishes the plain update and validates it against the database witness.
+
 Publication and proof
 ---------------------
 
