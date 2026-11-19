@@ -5,11 +5,16 @@ async fn empty_trash_requires_confirmation_and_manager_authority() {
     let mut f = Fixture::new().await;
     let space = f.spaces[3].clone();
     let old = f.note(1, &space).await;
+    let original_bytes = committed_text_bytes(&f, &space);
+    assert!(original_bytes > 0);
     f.stop();
     let content = f.appdata().join("spaces").join(&space).join("content.db");
     let db = rusqlite::Connection::open(content).unwrap();
     db.execute_batch(
-        "DROP TABLE notes_trash_targets; DROP TABLE notes_trash_jobs;
+        "DROP TABLE plugin_state_receipts; DROP TABLE plugin_state;
+         DROP TRIGGER storage_usage_revision; DROP TRIGGER storage_usage_purge;
+         DROP TRIGGER storage_usage_rewind; DROP TABLE storage_usage;
+         DROP TABLE notes_trash_targets; DROP TABLE notes_trash_jobs;
          DROP TABLE notes_rename_steps; DROP TABLE notes_rename_jobs;
          PRAGMA user_version=6;",
     )
@@ -40,6 +45,7 @@ async fn empty_trash_requires_confirmation_and_manager_authority() {
     let id = &old["id"];
     let target = json!({"id":id});
     f.op(2, "notes.delete", target.clone()).await.ok();
+    assert_eq!(committed_text_bytes(&f, &space), original_bytes);
     f.op(2, "notes.restore", target.clone()).await.ok();
     f.op(2, "notes.delete", target.clone()).await.ok();
     let scope = json!({"space_id":space});
@@ -102,5 +108,65 @@ async fn empty_trash_requires_confirmation_and_manager_authority() {
     .await
     .unwrap();
     assert_eq!(data(f.op(1, "trash.list", scope).await)["notes"], json!([]));
+    assert_eq!(committed_text_bytes(&f, &space), 0);
     assert_eq!(address(&f, 2, id).await["state"], "deleted");
+}
+
+#[tokio::test]
+async fn empty_trash_releases_only_the_current_body_bytes() {
+    let f = Fixture::new().await;
+    let space = &f.spaces[3];
+    let keep = f.note(1, space).await;
+    let keep_bytes = committed_text_bytes(&f, space);
+    assert!(keep_bytes > 0);
+    let note = data(
+        f.op(
+            1,
+            "notes.create",
+            json!({
+                "space_id":space,"title":"Disposable","markdown":"older body"
+            }),
+        )
+        .await,
+    );
+    f.op(
+        1,
+        "notes.update",
+        json!({
+            "id":note["note"]["id"],"base_revision":note["note"]["revision"],"markdown":"newer body"
+        }),
+    )
+    .await
+    .ok();
+    f.op(1, "notes.delete", json!({"id":note["note"]["id"]}))
+        .await
+        .ok();
+    let scope = json!({"space_id":space});
+    let preview = data(f.op(1, "trash.empty.preview", scope.clone()).await);
+    assert!(committed_text_bytes(&f, space) > keep_bytes);
+    let admitted = data(
+        f.op(
+            1,
+            "trash.empty",
+            json!({
+                "space_id":space,"confirmation":preview["confirmation"]
+            }),
+        )
+        .await,
+    );
+    let job = json!({"space_id":space,"job_id":admitted["job_id"]});
+    tokio::time::timeout(Duration::from_secs(15), async {
+        loop {
+            let status = data(f.op(1, "trash.empty.status", job.clone()).await);
+            if status["state"] == "done" {
+                assert_eq!(status["purged"], 1);
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(40)).await;
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(committed_text_bytes(&f, space), keep_bytes);
+    f.op(1, "notes.get", json!({"id":keep["id"]})).await.ok();
 }

@@ -409,8 +409,20 @@ async fn an_operator_group_allocation_survives_restart_and_covers_both_spaces() 
     assert_eq!(refused.body["error"]["details"]["scope"], "group");
     operator_admin(&f, "resources", &["set-group-storage", group]);
     f.op(1, "notes.create", input).await.ok();
-    let group_usage = data(f.op(1, "composer-settings.usage", owner_usage).await);
+    let group_usage = data(
+        f.op(1, "composer-settings.usage", owner_usage.clone())
+            .await,
+    );
     assert_eq!(group_usage["text_bytes"], "6");
+    f.op(1, "spaces.delete", json!({"space_id":first}))
+        .await
+        .ok();
+    let erased = f.appdata().join("spaces").join(&first).join("content.db");
+    assert!(!erased.exists());
+    f.stop();
+    f.start().await;
+    let group_usage = data(f.op(1, "composer-settings.usage", owner_usage).await);
+    assert_eq!(group_usage["text_bytes"], "2");
 }
 
 #[tokio::test]

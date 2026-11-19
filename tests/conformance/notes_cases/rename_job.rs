@@ -43,11 +43,17 @@ async fn linked_rename_batches_are_undoable_by_job_id() {
         )
         .await;
     assert_eq!(rejected.status, 409);
+    let bytes = committed_text_bytes(&f, space);
     let rename =
         json!({"id":root,"base_revision":restored_revision(&f, &root).await,"title":"Retitled"});
     let job = data(f.op(2, "notes.rename", rename).await);
     let status = json!({"space_id":space,"job_id":job["job_id"]});
     wait(&f, &status, "done").await;
+    let title_growth = ("Retitled".len() - "Target".len()) as u64;
+    assert_eq!(
+        committed_text_bytes(&f, space),
+        bytes + title_growth * (1 + sources.len() as u64)
+    );
     for id in &sources {
         let note = data(f.op(2, "notes.get", json!({"id":id})).await);
         assert_eq!(
@@ -57,6 +63,7 @@ async fn linked_rename_batches_are_undoable_by_job_id() {
     }
     data(f.op(2, "notes.rename.undo", status.clone()).await);
     wait(&f, &status, "undone").await;
+    assert_eq!(committed_text_bytes(&f, space), bytes);
     for id in sources {
         let note = data(f.op(2, "notes.get", json!({"id":id})).await);
         assert_eq!(note["note"]["markdown"], "[authored](<Target.md#^anchor>)");
@@ -111,6 +118,7 @@ async fn late_rename_destination_collision_retires_the_unpublished_plan() {
         .await,
     )["note"]["id"]
         .clone();
+    let before = committed_text_bytes(&f, &space);
     let rename = json!({"id":root["id"],"base_revision":root["revision"],"title":"Competing"});
     let fault = f.dir.path().join("content-fault");
     f.stop();
@@ -151,6 +159,7 @@ async fn late_rename_destination_collision_retires_the_unpublished_plan() {
     .unwrap();
     let unchanged = data(f.op(1, "notes.get", json!({"id":source})).await);
     assert_eq!(unchanged["note"]["markdown"], "[to the note](<Secret.md>)");
+    assert_eq!(committed_text_bytes(&f, &space), before);
     let next = data(f.op(1, "notes.rename", rename).await);
     assert_eq!(next["note"]["title"], "Competing");
     assert!(folder.join("Competing 2.md").is_file());

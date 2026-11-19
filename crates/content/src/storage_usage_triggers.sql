@@ -1,11 +1,20 @@
 -- The writer advances items.seq immediately before inserting its body.
--- Previous revisions remain in history and are never charged a second time.
+-- Charge only committed heads and enforce ceilings only on new growth.
+-- A lower ceiling must not prevent a shrink, purge, or unpublished rollback.
 CREATE TRIGGER storage_usage_revision AFTER INSERT ON versions
 WHEN NEW.seq=(SELECT seq FROM items WHERE id=NEW.item)
 BEGIN
     UPDATE storage_usage
     SET (text_bytes,binary_bytes) = (
-        SELECT text_bytes + CASE WHEN markdown THEN delta ELSE 0 END,
+        SELECT CASE
+                   WHEN delta>0 AND text_bytes+binary_bytes+delta>total_limit
+                       THEN RAISE(ABORT, 'total storage byte limit')
+                   WHEN delta>0 AND markdown AND text_bytes+delta>text_limit
+                       THEN RAISE(ABORT, 'text storage byte limit')
+                   WHEN delta>0 AND NOT markdown AND binary_bytes+delta>binary_limit
+                       THEN RAISE(ABORT, 'binary storage byte limit')
+                   ELSE text_bytes + CASE WHEN markdown THEN delta ELSE 0 END
+               END,
                binary_bytes + CASE WHEN markdown THEN 0 ELSE delta END
         FROM (
             SELECT COALESCE(json_extract(k.definition,'$[1].format')='markdown',0) AS markdown,
@@ -16,6 +25,26 @@ BEGIN
                    ),0) AS delta
             FROM items i LEFT JOIN kinds k ON k.kind=i.kind
             WHERE i.id=NEW.item
+        )
+    )
+    WHERE singleton=1;
+END;
+
+-- A failed rename can rewind the head before deleting the unpublished revision.
+-- Restore the previous contribution in the same transaction, even at a ceiling.
+CREATE TRIGGER storage_usage_rewind AFTER UPDATE OF seq ON items
+WHEN NEW.seq<OLD.seq
+BEGIN
+    UPDATE storage_usage
+    SET (text_bytes,binary_bytes) = (
+        SELECT text_bytes + CASE WHEN markdown THEN delta ELSE 0 END,
+               binary_bytes + CASE WHEN markdown THEN 0 ELSE delta END
+        FROM (
+            SELECT COALESCE(json_extract(k.definition,'$[1].format')='markdown',0) AS markdown,
+                   length(restored.bytes) - length(discarded.bytes) AS delta
+            FROM versions restored JOIN versions discarded ON discarded.item=restored.item
+            LEFT JOIN kinds k ON k.kind=NEW.kind
+            WHERE restored.item=NEW.id AND restored.seq=NEW.seq AND discarded.seq=OLD.seq
         )
     )
     WHERE singleton=1;
@@ -38,16 +67,3 @@ BEGIN
     )
     WHERE singleton=1;
 END;
-
--- Existing data stays readable and deletable after an operator lowers a limit.
--- Only positive deltas beyond the corresponding ceiling are refused.
-CREATE TRIGGER storage_usage_text_limit BEFORE UPDATE OF text_bytes ON storage_usage
-WHEN NEW.text_bytes>OLD.text_bytes AND NEW.text_bytes>OLD.text_limit
-BEGIN SELECT RAISE(ABORT, 'text storage byte limit'); END;
-CREATE TRIGGER storage_usage_binary_limit BEFORE UPDATE OF binary_bytes ON storage_usage
-WHEN NEW.binary_bytes>OLD.binary_bytes AND NEW.binary_bytes>OLD.binary_limit
-BEGIN SELECT RAISE(ABORT, 'binary storage byte limit'); END;
-CREATE TRIGGER storage_usage_total_limit BEFORE UPDATE OF text_bytes,binary_bytes ON storage_usage
-WHEN NEW.text_bytes+NEW.binary_bytes>OLD.text_bytes+OLD.binary_bytes
- AND NEW.text_bytes+NEW.binary_bytes>OLD.total_limit
-BEGIN SELECT RAISE(ABORT, 'total storage byte limit'); END;

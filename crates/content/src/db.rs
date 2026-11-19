@@ -105,7 +105,12 @@ pub(crate) fn database(
         .map_err(internal)?;
     conn.busy_timeout(std::time::Duration::from_secs(5))
         .map_err(internal)?;
-    calternal_store::migrations::migrate(&conn, schema).map_err(internal)?;
+    calternal_store::migrations::migrate(&conn, schema).map_err(|error| {
+        internal(format_args!(
+            "opening content schema v{}: {error}",
+            schema.version()
+        ))
+    })?;
     conn.pragma_update(None, "journal_mode", "WAL")
         .map_err(internal)?;
     Ok(conn)
@@ -293,6 +298,33 @@ mod tests {
         );
         let usage = crate::storage_usage::read(&conn).unwrap();
         assert_eq!((usage.text_bytes, usage.binary_bytes), (1, 2));
+    }
+
+    #[test]
+    fn unpublished_rename_restores_the_head_even_above_the_current_limit() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        migrate_release(&conn, through(9), false).unwrap();
+        conn.execute_batch(r#"
+            INSERT INTO kinds VALUES ('notes','[null,{"format":"markdown"}]');
+            INSERT INTO items VALUES ('a','notes','{}','v1',1,'now','a.md','a.md',NULL,'current',NULL);
+            INSERT INTO versions VALUES ('a',1,'v1','{}',X'414141','now','owner');
+            UPDATE storage_usage SET total_limit=1 WHERE singleton=1;
+            UPDATE items SET seq=2,revision='v2' WHERE id='a';
+            INSERT INTO versions VALUES ('a',2,'v2','{}',X'41','now','owner');
+        "#).unwrap();
+        assert_eq!(crate::storage_usage::read(&conn).unwrap().text_bytes, 1);
+        let rollback = conn.transaction().unwrap();
+        rollback
+            .execute_batch(
+                "UPDATE items SET seq=1,revision='v1' WHERE id='a';
+             DELETE FROM versions WHERE item='a' AND seq=2;",
+            )
+            .unwrap();
+        rollback.commit().unwrap();
+        assert_eq!(crate::storage_usage::read(&conn).unwrap().text_bytes, 3);
+        conn.execute("DELETE FROM versions WHERE item='a'", [])
+            .unwrap();
+        assert_eq!(crate::storage_usage::read(&conn).unwrap().text_bytes, 0);
     }
 
     #[test]

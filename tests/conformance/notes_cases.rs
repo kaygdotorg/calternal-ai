@@ -1,6 +1,20 @@
 //! Notes scope, index, and lifecycle checks through passkey-authenticated HTTP.
 use super::*;
 
+fn committed_text_bytes(f: &Fixture, space: &str) -> u64 {
+    Connection::open_with_flags(
+        f.appdata().join("spaces").join(space).join("content.db"),
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .unwrap()
+    .query_row(
+        "SELECT text_bytes FROM storage_usage WHERE singleton=1",
+        [],
+        |r| r.get(0),
+    )
+    .unwrap()
+}
+
 pub(super) fn foreign_cases(
     space: &str,
     note: &Value,
@@ -248,6 +262,8 @@ async fn notes_moves_recover_after_the_file_move_before_placement_bookkeeping() 
     let mut f = Fixture::new().await;
     let space = f.spaces[0].clone();
     let note = f.note(1, &space).await;
+    let bytes = committed_text_bytes(&f, &space);
+    assert!(bytes > 0);
     let id = note["id"].as_str().unwrap();
     let paths = f.dir.path().join("userdata-ssd/spaces").join(&space);
     let original = paths.join("Notes/Secret.md");
@@ -299,6 +315,7 @@ async fn notes_moves_recover_after_the_file_move_before_placement_bookkeeping() 
         assert_eq!(address(&f, 1, &json!(id)).await["state"], expected);
         data(f.op_id(1, op, json!({"id":id}), rid).await);
         assert!(moved.is_file() && !old.exists());
+        assert_eq!(committed_text_bytes(&f, &space), bytes);
     }
     f.stop();
     let db = Connection::open(f.appdata().join("spaces").join(&space).join("content.db")).unwrap();
@@ -319,6 +336,7 @@ async fn notes_moves_recover_after_the_file_move_before_placement_bookkeeping() 
                 })
                 .unwrap();
             assert_eq!(count, 0);
+            assert_eq!(committed_text_bytes(&f, &space), 0);
             return;
         }
         tokio::time::sleep(Duration::from_millis(20)).await;
