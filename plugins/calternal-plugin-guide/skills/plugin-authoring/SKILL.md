@@ -12,7 +12,16 @@ each block that uses the tools. Check `command -v calternal node npm` in that
 same shell before proceeding. The env file supplies the tool PATH, SDK root
 and server connection. Avoid guessing binary paths or printing credentials.
 Use a quoted here-document into the remote shell for multiline source so
-local quoting does not rewrite the code.
+local quoting does not rewrite the code. Substitute the host and env file
+from the task in this form.
+
+```sh
+ssh HOST_FROM_TASK bash -s <<'REMOTE'
+source /path/from/task/env
+cd "$PROJECT_DIR"
+calternal describe --json
+REMOTE
+```
 
 Outside a prepared environment, install Node.js 22.13 or later and npm,
 put `calternal` on PATH, and use a built Calternal SDK. In a full Calternal
@@ -32,21 +41,28 @@ For an Inbox question or deadline, use the reference's **Wait for a signal**
 section. The public guide's `jobs` and `waits` topics include the complete
 question job example.
 
+For a sealed image preview, see **B. Content fetch** in the reference. It
+shows the exact `network.content_fetch` declaration, the worker and the
+authenticated frame check.
+
 Read the bundled reference at `../../reference.md` and walkthrough at
 `../../walkthrough.md`, relative to this skill's directory. They cover
 broker calls, GenUI, jobs, settings and the fixture protocol. You can also
 invoke the guide in the selected space.
 
 ```sh
-calternal invoke calternal-plugin-guide.explain --input "{\"space_id\":\"$SPACE_ID\",\"topic\":\"reference\"}"
+jq -n --arg space "$SPACE_ID" '{space_id:$space, topic:"reference"}' |
+  calternal invoke calternal-plugin-guide.explain --input-file -
 ```
 
 A space-targeted plugin invocation includes `space_id` in its HTTP or CLI
 input. The host resolves it and removes it before invoking your handler.
 Your handler reads fields declared in the operation schema. Item-targeted
 operations can resolve the space from the item ID. For a job returned as
-`JOB_ID`, use `calternal invoke jobs.get --json --input "{\"job_id\":\"$JOB_ID\"}"`. `calternal describe --json` shows the schemas for
-the host operations.
+`JOB_ID`, see the reference's `jobs.get` example. `calternal describe --json`
+shows the schemas for the host operations. Use `--input-file PATH` for JSON
+from a file or `--input-file -` for a pipe. The examples use `jq` to encode
+shell variables and HTML as JSON.
 
 Declare capabilities and broker calls in the manifest. Durable writes
 need a mutating operation, the matching capability and a risk description.
@@ -61,6 +77,9 @@ exited, read its reported status or signal and stderr. If the worker
 reported a handler failure, check the operation name, input shape and
 callback fixtures. An unhandled host callback is denied. A thrown handler
 error yields a failed invocation.
+
+When renaming a scaffold operation, replace its ID in the README as well
+as in the manifest, worker and fixture test.
 
 With the development env sourced, run `calternal plugin dev . --once`.
 Without env defaults, pass `--appdata PATH --space UUID --account UUID`.

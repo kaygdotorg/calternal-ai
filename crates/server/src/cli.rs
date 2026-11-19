@@ -79,8 +79,12 @@ pub(super) enum Cmd {
         #[command(flatten)]
         connection: calternal_cli::agent::Connection,
         operation: String,
-        #[arg(long, default_value = "{}")]
-        input: String,
+        /// Inline JSON object. Omit both input options to send an empty object.
+        #[arg(long, conflicts_with = "input_file")]
+        input: Option<String>,
+        /// Read a JSON object from a file. Use `-` to read standard input.
+        #[arg(long, value_name = "PATH")]
+        input_file: Option<PathBuf>,
     },
     /// Discover available operations using the current person or thread credential.
     Describe {

@@ -33,6 +33,37 @@ pub mod requests;
 
 pub mod search;
 
+/// Decode up to 2 MiB of JSON from a local file, or from stdin for `-`.
+/// Errors identify the input problem without displaying its contents.
+pub fn read_json_file(path: &std::path::Path) -> Result<serde_json::Value, output::CliError> {
+    use std::io::Read;
+
+    let reader: Box<dyn Read> = if path.as_os_str() == "-" {
+        Box::new(std::io::stdin().lock())
+    } else {
+        Box::new(
+            std::fs::File::open(path)
+                .map_err(|_| output::CliError::usage("Cannot open the JSON input file."))?,
+        )
+    };
+    let mut bytes = Vec::new();
+    reader
+        .take(calternal_core::MAX_BODY_BYTES as u64 + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|_| output::CliError::usage("Cannot read the JSON input."))?;
+    if bytes.len() > calternal_core::MAX_BODY_BYTES {
+        return Err(output::CliError::usage("JSON input exceeds 2 MiB."));
+    }
+    serde_json::from_slice(&bytes).map_err(|error| {
+        output::CliError::usage(format!(
+            "Invalid JSON at line {}, column {}.",
+            error.line(),
+            error.column()
+        ))
+        .hint("Pass one JSON object.")
+    })
+}
+
 /// Validate an opaque page cursor, reading one bounded value from stdin for `-`.
 pub(crate) fn parse_cursor(argument: &str) -> Result<String, String> {
     use std::io::Read;

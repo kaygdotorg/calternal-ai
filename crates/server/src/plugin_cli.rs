@@ -405,8 +405,13 @@ fn check(dir: &Path) -> Result<Reply, CliError> {
         ));
     }
     let manifest: calternal_core::ManifestV1 = serde_json::from_slice(&bytes).map_err(|error| {
-        CliError::new("invalid_input", format!("manifest.json: {error}"))
-            .hint("Use plugins.use to start a job, space.read for a read, and content.write for content edits. See the plugin API reference for all capabilities.")
+        let message = error.to_string();
+        let hint = if message.contains("expected `content_fetch`") {
+            "The only field under network is content_fetch. Put profile and sources under network.content_fetch. Each source takes kind and field."
+        } else {
+            "Use plugins.use to start a job, space.read for a read, and content.write for content edits. See the plugin API reference for all capabilities."
+        };
+        CliError::new("invalid_input", format!("manifest.json: {message}")).hint(hint)
     })?;
     calternal_plugin_host::validate_manifest_detailed(&manifest).map_err(|problem| {
         CliError::new("invalid_input", format!("manifest.json: {problem}"))
@@ -433,6 +438,11 @@ fn check(dir: &Path) -> Result<Reply, CliError> {
         .map(|op| op.id.as_str())
         .collect();
     if !undocumented.is_empty() {
+        let lines = undocumented
+            .iter()
+            .map(|id| format!("- `{id}`"))
+            .collect::<Vec<_>>()
+            .join("\n");
         return Err(CliError::new(
             "invalid_input",
             format!(
@@ -440,7 +450,9 @@ fn check(dir: &Path) -> Result<Reply, CliError> {
                 undocumented.join(", ")
             ),
         )
-        .hint("Document what each listed operation does and include its full ID."));
+        .hint(format!(
+            "Add these lines to README.md and describe what each operation does.\n{lines}"
+        )));
     }
     Ok(
         Reply::new(json!({"id":manifest.id,"version":manifest.version,

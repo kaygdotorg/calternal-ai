@@ -67,32 +67,38 @@ connection manifest field or callable broker method.
 
 ### B. Content fetch
 
-**Example: a stored mail message.** Register a package-owned text kind named
-`mail-message`. Declare `content_prepare_v1` in `host_calls` and add this
-manifest field.
+**Example: a stored mail message.** In `manifest.json`, add the top-level
+`network` object with `network.content_fetch` exactly as shown. Register
+`mail-message` as a package-owned text kind and add both calls to `host_calls`.
 
 ```json
 {
-  "content_fetch": {
-    "profile": "images_fonts",
-    "sources": [{ "kind": "mail-message", "field": "text" }]
-  }
+  "network": {
+    "content_fetch": {
+      "profile": "images_fonts",
+      "sources": [{ "kind": "mail-message", "field": "text" }]
+    }
+  },
+  "host_calls": ["write_item", "content_prepare_v1"]
 }
 ```
 
-This is the value of `network`. On review, explain that the message can
-reference remote images and fonts. A package that declares content fetch
+On review, explain that the message can reference remote images and fonts.
+A package that declares content fetch
 starts disabled, including a development draft once it reports Ready.
 As the space Manager, review the declaration and enable the package.
 
 ```sh
-calternal invoke plugins.enable --input "{\"space_id\":\"$SPACE_ID\",\"plugin_id\":\"mail-preview\"}"
+calternal plugin enable mail-preview --space "$SPACE_ID"
 ```
 
-Declare `write_item` as well. Register a reversible operation with
+Register a reversible operation with
 `required_capability: "content.write"`, `mutates: true` and
 `idempotency: "request_id"`. Its input takes a text kind and the HTML string.
-Its output can be either `{ frame_id }` or `{ error }`.
+Its output can be either `{ frame_id }` or `{ error }`. When renaming the
+scaffold operation, update `manifest.json`, `worker.ts`, `worker.test.mjs`
+and the operation line in `README.md` together. For this example use
+``- `mail-preview.show` previews a saved HTML message.``.
 
 ```ts
 import { prepareContent, serveWorker, typedHandlers } from "@calternal/plugin-sdk";
@@ -124,15 +130,44 @@ serveWorker(manifest, handlers, process.stdin, line =>
 });
 ```
 
-Pass HTML such as `<img src="https://media.example.org/message.png" alt="Message attachment">`.
-The committed write queues eligible assets. The client calls
-`plugins.network.content.get` with the space ID and frame ID, then mounts the
-returned `frame_url` with an empty iframe sandbox. The host rewrites image
-and font references, fetches them anonymously and serves checked media through
-the proxy. A prepared frame belongs to its viewer. A private address or
-unavailable image has no deliverable asset. If the person's remote-content
-preference is Ask, the client first sends an authenticated POST to the
-frame URL and then opens or reloads it. Never leaves placeholders.
+The committed write queues eligible assets. Run the operation, then use the
+same account to resolve and open its frame. Set `image_url` to the supplied
+fixture URL in a trial, or to an allowed HTTPS image in your own space.
+
+```sh
+image_url=${CALTERNAL_TRIAL_IMAGE_URL:-https://media.example.org/message.png}
+FRAME_ID=$(
+  jq -n --arg space "$SPACE_ID" --arg url "$image_url" \
+    '{space_id:$space, kind:"mail-message", text:"<img src=\"\($url|@html)\" alt=\"Message attachment\">"}' |
+    calternal invoke mail-preview.show --input-file - --json |
+    jq -er '.data.frame_id'
+)
+frame_url=$(
+  jq -n --arg space "$SPACE_ID" --arg frame "$FRAME_ID" '{space_id:$space, frame_id:$frame}' |
+    calternal invoke plugins.network.content.get --input-file - --json |
+    jq -er '.data.frame_url'
+)
+printf 'Authorization: Bearer %s\n' "$(cat "$CALTERNAL_TOKEN_FILE")" |
+  curl --fail --silent --show-error --header @- "${CALTERNAL_URL%/}$frame_url" -o frame.html
+```
+
+Inspect the image's `src` in `frame.html`. The host rewrites it to a
+short-lived, same-origin proxy URL. The `links` array lists navigation
+destinations from HTML anchors. Expect an empty array for image-only content.
+Mount the frame in an iframe with an empty sandbox. To check the image from
+the shell, set `ASSET_PATH` to that rewritten `src` and model the sandbox's
+request. It carries no bearer token.
+
+```sh
+curl --fail --silent --show-error --retry 6 --retry-all-errors --retry-delay 1 \
+  --header 'Origin: null' --header 'Sec-Fetch-Site: cross-site' \
+  "${CALTERNAL_URL%/}$ASSET_PATH" -o image.png
+```
+
+The proxy serves checked image and font bytes. Pending, unavailable or private
+assets produce no deliverable image. If the person's remote-content preference
+is Ask, the client sends an authenticated POST to the frame URL before opening
+or reloading it. Never leaves placeholders.
 
 ### C. Open internet
 
@@ -289,7 +324,8 @@ store a final result. `{status: "waiting"}` parks the job.
 Read state and the final result with the ordinary CLI operation.
 
 ```sh
-calternal invoke jobs.get --json --input "{\"job_id\":\"$JOB_ID\"}"
+jq -n --arg job "$JOB_ID" '{job_id:$job}' |
+  calternal invoke jobs.get --json --input-file -
 ```
 Subscribe to `GET /api/v1/jobs/<job_id>/events` using the normal
 authenticated same-origin connection. The SSE `chunk` event includes
@@ -322,7 +358,8 @@ The public `waits` topic prints the complete example files. The `jobs` topic
 includes admission and progress as well.
 
 ```sh
-calternal invoke calternal-plugin-guide.explain --input "{\"space_id\":\"$SPACE_ID\",\"topic\":\"waits\"}"
+jq -n --arg space "$SPACE_ID" '{space_id:$space, topic:"waits"}' |
+  calternal invoke calternal-plugin-guide.explain --input-file -
 ```
 
 The example keeps the form in `question.form.json`. Import this file as the
@@ -534,8 +571,9 @@ With the development environment sourced, load the draft and start a job.
 
 ```sh
 calternal plugin dev . --once
-calternal invoke question-job.start --json --input "{\"space_id\":\"$SPACE_ID\"}"
-calternal invoke requests.list --json --input '{}'
+jq -n --arg space "$SPACE_ID" '{space_id:$space}' |
+  calternal invoke question-job.start --json --input-file -
+calternal invoke requests.list --json
 ```
 
 In the Inbox output, find the row whose `job_id` matches the start reply.
@@ -543,8 +581,10 @@ Use that row's `id` for `REQUEST_ID` below, and use the ID from the start
 reply for `JOB_ID`. Answer before the deadline.
 
 ```sh
-calternal invoke requests.answer --json --input '{"id":"REQUEST_ID","answer":{"text":"Blue"}}'
-calternal invoke jobs.get --json --input '{"job_id":"JOB_ID"}'
+jq -n --arg id "$REQUEST_ID" '{id:$id, answer:{text:"Blue"}}' |
+  calternal invoke requests.answer --json --input-file -
+jq -n --arg job "$JOB_ID" '{job_id:$job}' |
+  calternal invoke jobs.get --json --input-file -
 ```
 
 The job finishes with `{"answer":"Blue"}`. Start a second job, leave it
@@ -578,7 +618,7 @@ receipt-backed calls for durable effects.
 
 To inspect a parked job or cancel it from the CLI, use the job ID from
 the start result. Inbox decisions use the request ID from
-`calternal invoke requests.list --json --input '{}'`. The listing
+`calternal invoke requests.list --json`. The listing
 identifies plugin prompts with `job_id`. Submit the answer with
 `requests.answer` and `{"id":"…","answer":{…}}`, or use
 `requests.deny` with `{"id":"…"}`. `requests.approve` takes

@@ -45,7 +45,12 @@ test("scaffolds, checks and explains a plugin and publishes its documentation", 
       assert.ok(network.includes(`### ${kind}.`));
       assert.ok(network.includes(example));
     }
-    assert.ok(network.includes('"profile": "images_fonts"'));
+    const manifestExample = JSON.parse(network.match(/```json\n([\s\S]+?)\n```/)[1]);
+    assert.deepEqual(manifestExample.network.content_fetch, {
+      profile: "images_fonts", sources: [{ kind: "mail-message", field: "text" }],
+    });
+    assert.match(network, /plugins\.network\.content\.get --input-file -/);
+    assert.match(network, /curl .*--header @-/);
     const { markdown: walkthrough } = await invoke("explain", { topic: "walkthrough" });
     exactExample(walkthrough, "packages/plugin-sdk/templates/manifest.json", "json", "my-plugin");
     exactExample(walkthrough, "crates/server/plugin-template/worker.ts", "ts", "my-plugin");

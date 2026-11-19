@@ -95,6 +95,11 @@ including `plugin remove ID --appdata DIR`. `plugin enable ID --space UUID`
 and `plugin disable ID --space UUID` use the server credential and change
 space activation immediately.
 
+`calternal invoke OPERATION --input-file PATH` reads one JSON object from
+the given file. Use `--input-file -` to read from standard input. The input
+limit is 2 MiB, and `--input-file` and `--input` are mutually exclusive.
+Omit both for an empty object.
+
 The development-only build adds `plugin dev DIR --appdata DIR --space UUID
 --account UUID`, with `--once` for one attempt. Its continuous mode emits one
 JSON record per attempt with `--json`. See the plugin authoring guide.

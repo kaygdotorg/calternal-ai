@@ -116,33 +116,9 @@ impl Pending {
     /// Convert a command, reading at most 2 MiB for a queued envelope. File errors
     /// are caller-safe; JSON is validated by Client before any network effects.
     pub fn operation(self) -> Result<(&'static str, Value), CliError> {
-        fn read(path: PathBuf) -> Result<Value, CliError> {
-            use std::io::Read;
-            let reader: Box<dyn Read> = if path.as_os_str() == "-" {
-                Box::new(std::io::stdin())
-            } else {
-                Box::new(
-                    std::fs::File::open(path)
-                        .map_err(|_| CliError::usage("cannot open pending input file"))?,
-                )
-            };
-            let mut bytes = Vec::new();
-            reader
-                .take(calternal_core::MAX_BODY_BYTES as u64 + 1)
-                .read_to_end(&mut bytes)
-                .map_err(|_| CliError::usage("cannot read pending input"))?;
-            if bytes.len() > calternal_core::MAX_BODY_BYTES {
-                return Err(CliError::usage("pending input exceeds 2 MiB"));
-            }
-            serde_json::from_slice(&bytes).map_err(|_| {
-                CliError::usage(
-                    "pending input must be a JSON object; see calternal pending queue --help",
-                )
-            })
-        }
         Ok(match self {
-            Self::Queue { file } => ("pending.queue", read(file)?),
-            Self::Edit { file } => ("pending.edit", read(file)?),
+            Self::Queue { file } => ("pending.queue", crate::read_json_file(&file)?),
+            Self::Edit { file } => ("pending.edit", crate::read_json_file(&file)?),
             Self::List => ("pending.list", json!({})),
             Self::Cancel { space, id } => ("pending.cancel", json!({"space_id":space,"id":id})),
             Self::Confirm { space, id } => ("pending.confirm", json!({"space_id":space,"id":id})),

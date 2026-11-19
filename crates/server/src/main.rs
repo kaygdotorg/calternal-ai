@@ -58,7 +58,21 @@ fn main() {
             connection,
             operation,
             input,
-        } => calternal_cli::agent::invoke(connection, Some(operation), input, &out),
+            input_file,
+        } => match input_file {
+            Some(path) => match calternal_cli::read_json_file(&path) {
+                Ok(value) => {
+                    calternal_cli::agent::invoke_value(connection, Some(operation), value, &out)
+                }
+                Err(error) => out.finish(Err(error)),
+            },
+            None => calternal_cli::agent::invoke(
+                connection,
+                Some(operation),
+                input.unwrap_or_else(|| "{}".into()),
+                &out,
+            ),
+        },
         Cmd::Describe { connection } => {
             calternal_cli::agent::invoke(connection, None, "{}".into(), &out)
         }

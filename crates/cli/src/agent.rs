@@ -400,6 +400,31 @@ pub fn invoke(
     input: String,
     out: &Output,
 ) -> i32 {
+    let data = serde_json::from_str(&input).map_err(|error| {
+        CliError::new(
+            "invalid_input",
+            format!(
+                "Invalid JSON in --input at line {}, column {}.",
+                error.line(),
+                error.column()
+            ),
+        )
+        .hint("Pass one JSON object, or read it with --input-file.")
+    });
+    match data {
+        Ok(data) => invoke_value(connection, operation, data, out),
+        Err(error) => out.finish(Err(error)),
+    }
+}
+
+/// Invoke an operation with already-decoded data through the shared client and
+/// output. Loads credentials once and applies the regular request retry rules.
+pub fn invoke_value(
+    connection: Connection,
+    operation: Option<String>,
+    input: Value,
+    out: &Output,
+) -> i32 {
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
@@ -410,23 +435,7 @@ pub fn invoke(
             .await
             .map_err(|_| error("Credential loading failed."))??;
         let value = if let Some(op) = &operation {
-            call(
-                &client,
-                op,
-                serde_json::from_str(&input).map_err(|error| {
-                    CliError::new(
-                        "invalid_input",
-                        format!(
-                            "Invalid JSON in --input at line {}, column {}.",
-                            error.line(),
-                            error.column()
-                        ),
-                    )
-                    .hint("Pass a JSON object and quote it as one shell argument.")
-                })?,
-                connection.request_id,
-            )
-            .await?
+            call(&client, op, input, connection.request_id).await?
         } else {
             serde_json::to_value(
                 client
