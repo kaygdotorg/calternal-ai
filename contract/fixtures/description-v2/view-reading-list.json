@@ -162,11 +162,6 @@
               "field": "url"
             }
           },
-          "preview": {
-            "material": [
-              "url"
-            ]
-          },
           "retry": "keyed",
           "result": {
             "show": [
@@ -219,8 +214,7 @@
           },
           "preview": {
             "material": [
-              "item",
-              "when"
+              "item"
             ]
           },
           "retry": "keyed"

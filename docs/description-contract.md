@@ -212,11 +212,16 @@ the web, SwiftUI natively); no plugin is written twice, and anything the vocabul
   Mac and iPhone apps stay one product. Anything beyond the vocabulary is a request to extend it, not a hole to draw through.
 * **Forms** hold their values on the device. A field is checked there (required, length, `url`/`email`/`number`/`date` shape, `choice` among options) and the submit
   is disabled while a required field is empty or invalid and while the action is pending. The values leave the device only inside the submit's resolved inputs
-  (`{form: id, field: fieldId}`), where the trusted preview (section 3.2) shows the person the material ones. After an `ok` outcome the fields clear (`clear: onOk`,
+  (`{form: id, field: fieldId}`); the form shows what was typed, so by the rule in 3.2 it needs no second sheet, and the trusted preview covers only the inputs the person did not type. After an `ok` outcome the fields clear (`clear: onOk`,
   the default); after `error` or an unknown outcome they keep what was typed. Errors appear in a `notice` above the submit, never as loose text.
 * **Lists** are binds. `selectable: true` gives the keyboard model of `docs/native-feel.md` section 20 on every platform: Up/Down/Home/End/Page Up/Page Down move
-  the selection through ALL rows (drawn or not), the selection paints at once, and what the selection opens (a route change) happens when it settles (about 45 ms
-  after the last key, longer while a key repeats), cancelling the previous load. The selected row's id is the `selection` source for that bind.
+  the selection through ALL rows (drawn or not), the selection paints at once, and what the selection opens (a route change) happens when it settles, **about 100 ms after the last key** (or key up); nothing crosses the bridge while a key repeats, in either direction
+  (8.4). The web renderer rests 1.6 times the longest gap between repeats in the burst, at least 45 ms and at most 120 ms, which is the same rule measured on the web; a load
+  never starts while keys are still repeating, and a new key cancels the previous load.
+* **Home, End and Page Up/Down** over rows that are not loaded are a renderer duty: it asks the host for the window around the target index (`0`, `count - 1`, the current
+  index plus a page) at once, moves the selection when the rows arrive, and the host only answers windows.
+* **A `list` takes the remaining height of its stack and scrolls itself.** One `list` per scroll region: a `stack` that holds a list does not scroll, and nested scrolling
+  regions are refused (a long list inside a scrolling column loses laziness, selection and windows on every platform). The selected row's id is the `selection` source for that bind.
 * **Selection is not state in the description.** A renderer reads "selected" from the list; a description never carries `selected`.
 * **Budgets** are the host's and the verifier's: at most 16 binds per view, 24 children per stack, depth 6, 200 nodes, 12 form fields, 4 KB per field value.
 
@@ -230,7 +235,7 @@ is the host's alone.
 | --- | --- | --- | --- |
 | `item-editor` | `item` (route or selection, never a literal id), `mode` edit/read, `showTitle`, `onTitleChange` | `title-change` (the host saves through `host.item.rename`), `link-open`, `presence` (live rooms: an attribute of the item's KIND) | A text view over the item's document (a note's Markdown file directly: no second representation between the editor and the file, an owner rule). A metadata-only save must not rewrite the body. |
 | `turn-transcript` | `thread` (typed thread ref from route or selection), `follow` end/none, `window`, `onQuote` | `quote` (a selected passage), `open-item`, `scrolled-away`, `rendered` (see below) | A host-owned windowed list: the screenful at the end is read first and drawn, the rest follows in steps; rows are appended and updated by the host; heavy parts are the host's. |
-| `composer` | `target`, `placeholder`, `enabled`, `send` (an invoke), `attachments`, `mentions`, `stop` | `draft` (device only), `send`, `stop`, `attach`, `mention` | The draft is held on the device. A native composer is a text field with the system keyboard; attachments use the system pickers. |
+| `composer` | `target`, `placeholder`, `enabled` (a literal or a boolean source), `enabledWhen` (two sources and an operator: a composer has no row, so no row-scoped predicate), `send` (an invoke), `attachments`, `mentions`, `stop` | `draft` (device only), `send`, `stop`, `attach`, `mention` | The draft is held on the device. A native composer is a text field with the system keyboard; attachments use the system pickers. |
 | `request-card` | `request` (typed request ref), `compact` | `resolve` (host.approval.resolve, from the host's own buttons) | One protected record and resolver for a job, a Turn and a host action; the card shows the material arguments (the trusted preview) and cannot be reordered, relabelled or covered by a plugin layout. |
 | `sealed-html-frame` | `frame` (a frame id), `minHeight`, `maxHeight` | `resize` (inside the caps), `open-link` (through the host) | A web view with no network and no top navigation; its message channel and sandbox are fixed by the host. |
 
@@ -241,7 +246,7 @@ is the host's alone.
 * **Refs are typed.** `thread`, `item` and `request` take a value source that resolves to a reference of that type or the host refuses the description; the host
   authorises the viewer for the ref (a guest's grant included) before anything is read. The description holds no viewer data.
 * **Drafts.** The composer's text and attachments stay on the device. At activation the host receives a **checked draft payload** (length, attachment count and
-  type, mention targets authorised by the host) and the person sees it as the material input of the send. The draft clears only after `ok`; `error` keeps it.
+  type, mention targets authorised by the host) and the composer shows it, so the send opens no confirmation sheet (3.2). The draft clears only after `ok`; `error` keeps it.
 * **Streaming** is the host's: the transcript's rows grow and change without a description revision; the host caps the update rate, commits a final message at the
   end, and drops an in-flight load when the viewer moves to another thread (the old transcript load is cancelled, not finished).
 * **First screenful stamp.** When the transcript has drawn its first screenful the host sets `data-thread-rendered=<thread id>` (web), dispatches
@@ -327,7 +332,7 @@ Fixtures in `contract/fixtures/description-v2/`: chrome (`reading-list.json`, `n
 ### 9.1 Community reading list (`reading-list.json` chrome, `view-reading-list.json` card)
 
 **Written:** a bound list of reading items (title, read mark, a per-row "Mark read" swipe action with `fullSwipe`, an empty state); a **two-field add form**
-(`form` node: title, address; the address is a material input of the add); a **per-person reminder**: a `reading-reminder` bind filtered `person eq viewer.person`
+(`form` node: title, address; the address is typed in the form, so the add opens no separate sheet); a **per-person reminder**: a `reading-reminder` bind filtered `person eq viewer.person`
 (only the viewer's reminders are returned, authorised by the host) with a `date` field form whose submit names the selected reading item.
 **Cannot be written:**
 * **Notification when a reminder is due** is not a description feature (the plugins lane maps it to the scheduler's `notify_creator`); the description shows the reminders.
@@ -379,7 +384,7 @@ while a turn runs; the first screenful stamp.
 
 1. `host.item.patch-metadata` (maps to `item_save`'s metadata arm) and `host.trash.purge` (confirmed, Manager or Owner, as a job) are the plugins lane's, part A.
 2. Reminders notify through `notify_creator` on the existing scheduler (plugins lane, part A).
-3. **Content node types** and the five host components: written in section 5 (web lane), exercised in section 9; the gaps are listed there and are the next vocabulary requests (set-valued selection, selector options from a bind, composer controls, a share-sheet component, a date prompt, nested rows).
+3. **Content node types** and the five host components: written in section 5 (web lane), exercised in section 9; the gaps are listed there and are the next vocabulary requests (set-valued selection `{selection, set: true}` of at most 50 ids with `selectionMode: multiple`; selector `options: {bind}` of at most 12 rows; composer typed controls; the share sheet as a host-owned sheet behind `host.item.share`, not a sixth component; `prompt.kind` text/date/datetime; nested rows (windows per parent); drag to move; section repeaters).
 4. **Generic TCP** is outside this contract; the owner's decision is recorded elsewhere and is not a description concern.
 5. **Section repeaters** (one section per item of a bind) are deferred; navigation sections cover the cases above.
 6. The **retirement date of v1** is the owner's.
@@ -388,4 +393,4 @@ while a turn runs; the first screenful stamp.
 
 * Native renderer lane: sections 1 to 4, 6 to 8 written; sections 5 and 9 reviewed against SwiftUI (8.1). **Signs off on condition** that the web lane (a) accepts the
   rule in 3.2 that what the person typed needs no second sheet, and (b) takes findings 1, 2, 3 and 5 of 8.1 into section 5 (the others may be recorded as next vocabulary).
-* Web renderer lane: sections 5 and 9 written (draft 2); the content vocabulary is closed (`stack text notice button form list detail component`), the five component configs are typed, and the verifier checks view depth (6) and node count (200). Sign-off waits for the native lane's review of 5 and for the plugins lane's answer on the host built-ins in 9.4.
+* Web renderer lane: sections 5 and 9 written (draft 2), the native lane's conditions accepted (3.2 rule that typed input needs no second sheet; findings 1, 2, 3, 5 folded into section 5); the content vocabulary is closed (`stack text notice button form list detail component`), the five component configs are typed, and the verifier checks view depth (6) and node count (200). Sign-off waits for the native lane's review of 5 and for the plugins lane's answer on the host built-ins in 9.4.

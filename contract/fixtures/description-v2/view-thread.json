@@ -108,11 +108,6 @@
                   "draft": "composer"
                 }
               },
-              "preview": {
-                "material": [
-                  "thread"
-                ]
-              },
               "retry": "keyed",
               "result": {
                 "show": [

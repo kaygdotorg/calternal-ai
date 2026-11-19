@@ -1577,15 +1577,8 @@
               "maxLength": 120
             },
             "enabled": {
-              "oneOf": [
-                {
-                  "$ref": "#/$defs/ValueSource"
-                },
-                {
-                  "$ref": "#/$defs/Predicate"
-                }
-              ],
-              "description": "A literal or a predicate on a bind; absent means enabled."
+              "$ref": "#/$defs/ValueSource",
+              "description": "A literal or a source that resolves to a boolean (for example {bind, field} of an item bind); absent means enabled. A composer has no row, so a row-scoped predicate is not accepted here (use enabledWhen)."
             },
             "send": {
               "$ref": "#/$defs/Invoke",
@@ -1603,6 +1596,31 @@
             "stop": {
               "$ref": "#/$defs/Invoke",
               "description": "Optional: what the Stop control runs while a turn is in flight (host.turn.stop)."
+            },
+            "enabledWhen": {
+              "type": "object",
+              "properties": {
+                "source": {
+                  "$ref": "#/$defs/ValueSource"
+                },
+                "op": {
+                  "enum": [
+                    "eq",
+                    "ne",
+                    "in",
+                    "exists"
+                  ]
+                },
+                "value": {
+                  "$ref": "#/$defs/ValueSource"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "source",
+                "op"
+              ],
+              "description": "Enabled while the source compares true against the value, for example {source: {bind: thread, field: state}, op: ne, value: {literal: archived}}. Both sides are value sources, so no renderer has to guess a row scope."
             }
           },
           "additionalProperties": false,
