@@ -205,7 +205,7 @@ catch up once that day in the enrollment’s time zone when the machine returns.
 access pauses runs pending fresh authorization. Removal fences admitted
 occurrences as well as future schedules.
 
-A schedule can request a host notification to its creator on outcome. The
+Set `notify_creator` on an enrollment to request a host notification on outcome. The
 scheduler records a receipt-backed event with enrollment label, status and
 an authorized link, then uses the host notification path. At most one per
 occurrence. A Reminder can notify even when the operation returns no payload.
@@ -310,11 +310,13 @@ crash. Committed effects replay by receipt.
 
 ## 4. Host obligations for descriptions
 
-Native and web renderer lanes own the [shared description schema](../contract/plugin-description-v2.schema.json)
-for chrome and content. Their replacement of the revision 2 draft is the
-schema dependency of this revision. The [chrome baseline](https://git.kayg.org/kayg/calternal-ai/src/commit/05aac6a4f173b336eb556fa3e6b7db9d31f4fba1/contract/chrome-v1.schema.json)
-and [catalogue](../packages/genui/src/catalog-data.json) retain their
-respective renderer contracts. This section defines the engine side.
+The native and web renderer lanes own `contract/description-v2.schema.json`
+and `docs/description-contract.md` on `lane/description-contract`. Integrate
+that shared schema before freezing descriptions in either format. Until it
+lands, the manifest’s command-input reference points to the revision 2
+draft for validation only. Retarget that reference at integration. The
+[chrome baseline](https://git.kayg.org/kayg/calternal-ai/src/commit/05aac6a4f173b336eb556fa3e6b7db9d31f4fba1/contract/chrome-v1.schema.json)
+and [catalogue](../packages/genui/src/catalog-data.json) are renderer inputs.
 
 - Pin data-free bundled templates by (package digest, app, description ID).
   Serve them as bounded assets independently of the broker frame cap.
