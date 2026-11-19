@@ -25,6 +25,8 @@ pub enum ErrorCode {
     InvalidInput,
     /// The serialized body or document exceeds its byte budget (HTTP 413).
     TooLarge,
+    /// A short-lived condition prevents this attempt. Retry after the advised delay (HTTP 429).
+    RetryAfter,
     /// The operation cannot currently be served (HTTP 503).
     Unavailable,
     /// An internal failure occurred; expose only safe diagnostics (HTTP 500 in operation errors).
@@ -41,6 +43,7 @@ impl ErrorCode {
             Self::Conflict => 409,
             Self::InvalidInput => 400,
             Self::TooLarge => 413,
+            Self::RetryAfter => 429,
             Self::Unavailable => 503,
             Self::Internal => 500,
         }
