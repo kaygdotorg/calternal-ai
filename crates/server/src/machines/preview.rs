@@ -2,8 +2,8 @@
 use axum::{
     Extension,
     body::Bytes,
-    extract::{OriginalUri, Path, State as HttpState},
-    http::{HeaderValue, StatusCode, header},
+    extract::{Path, State as HttpState},
+    http::{HeaderValue, StatusCode, Uri, header},
     response::{IntoResponse, Response},
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD as B64};
@@ -258,7 +258,7 @@ pub(super) async fn view<D: Directory>(
     svc: Svc,
     Extension(who): Extension<Identity>,
     Path(PreviewPath { preview }): Path<PreviewPath>,
-    OriginalUri(uri): OriginalUri,
+    uri: Uri,
 ) -> Response {
     async {
         let svc = service(svc)?;
