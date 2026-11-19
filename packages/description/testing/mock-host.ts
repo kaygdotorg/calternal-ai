@@ -20,6 +20,8 @@ export interface MockOptions {
   rowsFor?: (bind: string) => number;
   /** Bind ids whose rows carry `parent_refs` for each (a description with child binds or repeated sections). */
   parentBinds?: string[];
+  /** Action ids that get a host-issued context on every row (default: `open` only). */
+  actionIds?: string[];
   /** Called with each window request (a spy). */
   onWindow?: (req: WindowRequestPayload) => void;
   /** Lets a test refuse or replace a window reply; return undefined for the normal answer. */
@@ -48,7 +50,7 @@ export class MockHost implements Transport {
   /** Fields of row `i`. */
   fields(i: number, bind = ""): Record<string, unknown> { return this.opts.fields ? this.opts.fields(i, bind) : { title: `Row ${i}`, updated: 1_700_000_000 - i }; }
   /** The contexts the host would issue for row `i`. */
-  contexts(i: number) { return { row: this.id(i), contexts: { open: `ctx-${this.id(i)}` } }; }
+  contexts(i: number) { return { row: this.id(i), contexts: Object.fromEntries((this.opts.actionIds ?? ["open"]).map((a) => [a, `ctx-${a}-${this.id(i)}`])) }; }
 
   #last: Record<string, number> = {};
   lastEnd(anchor?: string): number { return this.#last[anchor ?? "start"] ?? -1; }

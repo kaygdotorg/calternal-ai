@@ -14,7 +14,7 @@ async function draw(type: "turn-transcript" | "composer" | "request-card", confi
   const session = new HostSession({ transport: src }); await session.open("v");
   const app = { route, storeFor: () => undefined, selectionFor: () => ({ drawn: null }), kindIconFor: () => undefined, setRoute() {}, components: {} } as unknown as AppContext;
   const C = hostComponents[type]!;
-  const view = render(C as never, { props: { config, id: type }, context: new Map<any, any>([[ACTIONS_KEY, { ui: new ActionUi(session), session }], [APP_KEY, app]]) });
+  const view = render(C as unknown as import("svelte").Component<any>, { props: { config, id: type }, context: new Map<any, any>([[ACTIONS_KEY, { ui: new ActionUi(session), session }], [APP_KEY, app]]) });
   return { src, session, view };
 }
 

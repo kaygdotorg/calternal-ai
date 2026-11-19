@@ -1,4 +1,4 @@
-// Sheets, swipe and Undo in a real browser against the step 0 host's Notes view (a development fixture; its data is disposable):
+// Sheets, swipe and Undo in a real browser against the step 0 host's home view (the authority fixture: the Notes and Threads templates issue no row activation contexts, so their actions cannot run) (a development fixture; its data is disposable):
 //  - a touch full swipe on a row runs the first leading action (Pin, catalogue-approved) in ONE exchange with dispatch:true, shows an Undo, and Undo goes through the host's undo route;
 //  - Move to collection: the choice picker shows the host's labels, the resolve carries only the picked ChoiceRef, and when the host challenges, the protected confirmation sheet shows the host's material, Cancel sends nothing
 //    more, Confirm sends invoke_confirm and then the dispatch with the proof;
@@ -17,16 +17,16 @@ const p = await ctx.newPage(); const cdp = await ctx.newCDPSession(p);
 const wire = [];
 p.on("request", (r) => { if (r.method() === "POST" && /activation|choice|undo/.test(r.url())) wire.push({ route: new URL(r.url()).pathname.split("/").pop(), body: r.postDataJSON() }); });
 const replies = []; p.on("response", async (r) => { if (/activation\.resolve/.test(r.url())) replies.push(await r.json().catch(() => ({}))); });
-await p.goto(`${BASE}/?host=${encodeURIComponent(HOST)}&bearer=${encodeURIComponent(bearer)}&viewName=notes`);
-const row = p.locator("[data-section=notes] [data-i]").first();
+await p.goto(`${BASE}/?host=${encodeURIComponent(HOST)}&bearer=${encodeURIComponent(bearer)}&viewName=home`);
+const row = p.locator("[data-node=list] [data-i]").first();
 await row.waitFor({ timeout: 60000 });
 await p.waitForTimeout(800);
 
 // ---- touch full swipe, to the right (leading action: Pin)
 const box = await row.boundingBox();
-const y = box.y + box.height / 2, x0 = box.x + 20;
+const y = box.y + box.height / 2, x0 = box.x + 200; // away from the left edge: an edge swipe is the browser's own back gesture
 await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: x0, y }] });
-for (let i = 1; i <= 8; i++) await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: x0 + (box.width * 0.8 * i) / 8, y }] });
+for (let i = 1; i <= 8; i++) await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: x0 + (box.width * 0.7 * i) / 8, y }] });
 await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
 await p.waitForTimeout(1500);
 const sw = wire.filter((w) => w.route === "activation.resolve");
@@ -81,7 +81,8 @@ if (sheet) {
   ok(routes === "choice.options,activation.resolve,activation.confirm,activation.dispatch", "confirm sends invoke_confirm, then the dispatch with the proof (three exchanges)", routes);
   ok(!!wire.find((w) => w.route === "activation.dispatch")?.body.confirmation_proof, "the dispatch carries the confirmation proof");
 } else {
-  ok(wire.some((w) => w.route === "activation.dispatch"), "without a challenge it resolves then dispatches, with no sheet", wire.map((w) => w.route).join(","));
+  // Move to collection is a catalogue built-in with atomic_undo: the host may take it in ONE exchange (resolve with dispatch:true), which is what the renderer asks for.
+  ok(resolve?.body.dispatch === true && !wire.some((w) => w.route === "activation.dispatch") && !sheet, "a sheet-free catalogue built-in is one exchange (resolve with dispatch:true), no sheet", wire.map((w) => w.route).join(","));
 }
 
 // ---- Rename: the prompt sheet
@@ -93,5 +94,29 @@ if (shot) await p.screenshot({ path: `${shot}-prompt.png` });
 await p.getByRole("button", { name: "OK" }).click(); await p.waitForTimeout(1500);
 const ren = wire.find((w) => w.route === "activation.resolve");
 ok(ren?.body.interaction?.prompt?.title === "Renamed by the demo suite", "the prompt answer goes in interaction.prompt under the input's name", JSON.stringify(ren?.body.interaction));
+
+// ---- the protected confirmation sheet, on the in-page mock host that challenges every activation
+{
+  const c2 = await browser.newContext({ viewport: { width: 1100, height: 800 } }); const q = await c2.newPage();
+  const w2 = []; q.on("request", (r) => { if (r.method() === "POST" && /activation|choice|undo/.test(r.url())) return; });
+  await q.goto(`${BASE}/?mock=5&fixture=notes&challenge=1`);
+  const r2 = q.locator("[data-section=notes] [data-i]").first(); await r2.waitFor({ timeout: 20000 });
+  const log = () => q.evaluate(() => window.__transport.log.filter((l) => /activation|choice|undo/.test(l.route)).map((l) => ({ route: l.route, body: l.body })));
+  await r2.hover(); await r2.locator("button.more").click({ force: true }); await q.getByRole("menuitem", { name: /move to collection/i }).click();
+  await q.waitForSelector("[data-dialog=choose]"); await q.locator("[data-dialog=choose] [role=option]").first().click();
+  await q.waitForSelector("[data-dialog=confirm]", { timeout: 8000 });
+  const mat = await q.locator("[data-material] dt, [data-material] dd").allTextContents();
+  ok(mat.join("|") === "Destination|Archive|Items|1", "the protected sheet shows exactly the material the host wrote", mat.join("|"));
+  if (shot) await q.screenshot({ path: `${shot}-confirm-sheet.png` });
+  await q.getByRole("button", { name: "Cancel" }).click(); await q.waitForTimeout(400);
+  ok(!(await log()).some((l) => l.route === "activation.confirm" || l.route === "activation.dispatch"), "Cancel sends neither confirm nor dispatch");
+  await r2.hover(); await r2.locator("button.more").click({ force: true }); await q.getByRole("menuitem", { name: /move to collection/i }).click();
+  await q.waitForSelector("[data-dialog=choose]"); await q.locator("[data-dialog=choose] [role=option]").first().click();
+  await q.waitForSelector("[data-dialog=confirm]"); await q.getByRole("button", { name: "Confirm" }).click(); await q.waitForTimeout(800);
+  const l = await log(); const confirm = l.find((x) => x.route === "activation.confirm"), dispatch = l.find((x) => x.route === "activation.dispatch");
+  ok(confirm?.body.type === "invoke_confirm" && confirm.body.confirmation_challenge === "chal" && dispatch?.body.confirmation_proof === "proof", "Confirm sends invoke_confirm with the challenge, then the dispatch with the proof");
+  ok(await q.getByRole("button", { name: /undo/i }).first().waitFor({ timeout: 3000 }).then(() => true, () => false), "the outcome offers Undo after a confirmed action");
+  await c2.close();
+}
 await browser.close(); stop();
 process.exit(bad ? 1 : 0);
