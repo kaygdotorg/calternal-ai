@@ -43,11 +43,19 @@ export function wantsKey(e: Pick<KeyboardEvent, "key" | "altKey" | "ctrlKey" | "
 
 /** The one place the settle rule lives (both the `listNav` action and `VirtualList`'s `nav` use it): `rest(fn, ms)` runs `fn` after `ms` without another call, and `cancel()` drops it. */
 export function settler(): { rest(fn: () => void, ms?: number): void; cancel(): void } {
-  let t = 0;
-  const cancel = () => { if (t) { clearTimeout(t); t = 0; } };
+  let t = 0, raf = 0;
+  const cancel = () => { if (t) { clearTimeout(t); t = 0; } if (raf) { cancelAnimationFrame(raf); raf = 0; } };
   // A busy page can run the timer before it has read the keys that came in meanwhile (each of them would have moved the timer): when input is waiting, the rest has not begun, so wait again.
   const pending = (): boolean => { try { return !!(navigator as Navigator & { scheduling?: { isInputPending?: (o?: { includeContinuous?: boolean }) => boolean } }).scheduling?.isInputPending?.({ includeContinuous: true }); } catch { return false; } };
-  return { cancel, rest(fn, ms = SETTLE_MS) { cancel(); const arm = () => { t = window.setTimeout(() => { t = 0; if (pending()) arm(); else fn(); }, ms); }; arm(); } };
+  return {
+    cancel,
+    rest(fn, ms = SETTLE_MS) {
+      cancel();
+      // The rest is over: the selection's last paint commits first (next frame), and only then, in a task of its own, the pane's work starts. A key in between cancels all of it.
+      const arm = () => { t = window.setTimeout(() => { t = 0; if (pending()) { arm(); return; } raf = requestAnimationFrame(() => { raf = 0; t = window.setTimeout(() => { t = 0; fn(); }, 0); }); }, ms); };
+      arm();
+    },
+  };
 }
 /** Milliseconds without a key before the cursor's row is opened: above the gap between two repeats of a held key, below what a person feels as waiting. */
 export const SETTLE_MS = 50;

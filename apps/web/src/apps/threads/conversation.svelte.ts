@@ -26,8 +26,8 @@ export interface Turn {
 }
 
 const PAGE = 100;
-/** Rows read with the ones asked for in the first, cheap step of a page. */
-const FIRST_MARGIN = 2;
+/** The rows read first when a page is wanted (the screenful at the end), and the most rows read in any one step after that. */
+const FIRST_ROWS = 3, STEP = 10;
 
 /**
  * An agent message as this page saw its turn: the saved file may not record how long it worked or what it thought (an older file, or a provider that does not say), but this page measured it.
@@ -112,28 +112,26 @@ export class Conversation {
     return this.cache.get(i);
   }
 
-  /** Makes sure the pages covering `[from, to)` are read or being read. A page of 100 is read in two steps: first the rows asked for with a few around them (a screenful: the thread paints at once), then the rest of the page in a later task, dropped when the thread is closed or the selection has moved on (`dispose`). */
+  /** Makes sure the pages covering `[from, to)` are read or being read. A thread opens with as little work as can be drawn: first the last three rows of what was asked for (the screenful at the end), then the rest of the asked range, then the rest of the page, in steps of at most `STEP` rows, one per task, so no one task is long and each one is dropped when the thread is closed or the selection has moved on (`dispose`). */
   ensure(from: number, to: number): void {
     this.want = [from, to];
     for (let p = Math.floor(from / PAGE); p <= Math.floor((Math.min(to, this.count) - 1) / PAGE); p++) {
       if (this.loading.has(p)) continue;
       this.loading.add(p);
-      const a = p * PAGE, b = (p + 1) * PAGE;
-      const fa = Math.max(a, from - FIRST_MARGIN), fb = Math.min(b, to + FIRST_MARGIN, this.count);
+      const a = p * PAGE, b = Math.min((p + 1) * PAGE, this.count);
+      const lo = Math.max(a, from), hi = Math.min(b, to, this.count);
       const take = (ms: Message[], at: number) => { ms.forEach((m, k) => this.cache.set(at + k, m)); noteRecent(this.id, this.count, (i) => this.cache.get(i)); this.rev++; };
-      if (fb - fa >= PAGE) { void this.client.messages(this.id, a, b).then((ms) => take(ms, a)); continue; }
-      void this.client.messages(this.id, fa, fb).then((ms) => {
-        take(ms, fa);
-        // The rest of the page, once the screenful has been drawn: first the part nearer the end, a few rows at a time so no one task is long.
-        const rest = [[fb, b], [a, fa]].filter(([x, y]) => y > x) as [number, number][];
-        const step = () => {
-          const r = rest.shift();
-          if (!r || this.dead) return;
-          const [x, y] = r;
-          void this.client.messages(this.id, x, Math.min(y, this.count)).then((m2) => { if (!this.dead) { take(m2, x); setTimeout(step, 0); } });
-        };
-        setTimeout(step, 0);
-      });
+      // The order of the pieces: the last rows asked for, the rest of what was asked, then the rest of the page (nearer the end first), each cut to STEP rows.
+      const cut = Math.max(lo, hi - FIRST_ROWS);
+      const pieces: [number, number][] = [];
+      const add = (x: number, y: number) => { for (let s = y; s > x; s -= STEP) pieces.push([Math.max(x, s - STEP), s]); };
+      add(cut, hi); add(lo, cut); add(hi, b); add(a, lo);
+      const step = () => {
+        const r = pieces.shift();
+        if (!r || this.dead) return;
+        void this.client.messages(this.id, r[0], r[1]).then((ms) => { if (this.dead) return; take(ms, r[0]); setTimeout(step, 0); });
+      };
+      step();
     }
   }
 

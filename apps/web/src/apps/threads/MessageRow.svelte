@@ -48,6 +48,9 @@
   // An agent message far from the screen is not drawn yet: the row is a box of about its height until it is near the view (one observer per row, released once drawn), so a thread opens by drawing what is on screen, not the Markdown, code and steps of every row the list keeps around it. Without IntersectionObserver (tests) it is drawn at once.
   let drawn = $state(message.role !== "agent" || typeof IntersectionObserver === "undefined");
   const pendingH = $derived(Math.max(48, Math.min(900, message.blocks.reduce((h, b) => h + (b.type === "text" ? 24 * Math.ceil(b.text.length / 85) + 12 : b.type === "steps" ? 40 : b.type === "card" ? 220 : 40), 16))));
+  // The heavy parts (code blocks, pictures, the steps) are boxes of about their height for the first frame the message is drawn and are filled in a frame later: the first frame of a thread is its text.
+  let rich = $state(typeof requestAnimationFrame === "undefined");
+  $effect(() => { if (!drawn || rich) return; let b = 0; const a = requestAnimationFrame(() => { b = requestAnimationFrame(() => (rich = true)); }); return () => { cancelAnimationFrame(a); cancelAnimationFrame(b); }; });
   function watch(node: HTMLElement) {
     if (drawn) return;
     const io = new IntersectionObserver((es) => { if (es.some((e) => e.isIntersecting)) { drawn = true; io.disconnect(); } }, { rootMargin: "120px" });
@@ -74,11 +77,11 @@
     <div class="agent lead-host {lead}" id={message.id}>
       <div class="lead" class:row={rowFirst}><ProviderMark by={message.by} {provider} {providers} row={rowFirst} /></div>
       {#each message.blocks as b}
-        {#if b.type === "text"}<Md text={clip(b.text)} />
+        {#if b.type === "text"}<Md text={clip(b.text)} light={!rich} />
         {:else if b.type === "thought"}<Thought text={b.text} ms={b.ms} />
         {:else if b.type === "file"}<span class="file"><Icon name={b.kind === "image" ? "image" : "file"} inline />{b.name}</span>
-        {:else if b.type === "steps"}<Steps steps={b.steps} ms={b.ms} />
-        {:else if b.type === "card"}{#if GenUi}<GenUi source={b.source} />{/if}
+        {:else if b.type === "steps"}{#if rich}<Steps steps={b.steps} ms={b.ms} />{:else}<div class="ph" style:height="2.5rem" aria-hidden="true"></div>{/if}
+        {:else if b.type === "card"}{#if GenUi && rich}<GenUi source={b.source} />{:else}<div class="ph" style:height="9rem" aria-hidden="true"></div>{/if}
         {:else}
           {@const t = store.get(b.threadId)}
           {#if t}<a class="child" href={href(`/threads/${t.id}`)}><Icon name="branch" inline /><span>{t.title}</span><small>{t.state}</small></a>{/if}
@@ -91,6 +94,7 @@
 </div>
 
 <style>
+  .ph { border-radius: var(--r-card); background: rgb(var(--ink-rgb) / 0.05); }
   .editor { display: grid; gap: var(--s-3); width: min(100%, 36rem); padding: var(--s-4) var(--s-5); border-radius: var(--r-card); background: rgb(var(--ink-rgb) / 0.06); }
   .eb { display: flex; justify-content: flex-end; gap: var(--s-2); }
   .clipped { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-3); color: var(--ink-3); font-size: var(--text-label); }

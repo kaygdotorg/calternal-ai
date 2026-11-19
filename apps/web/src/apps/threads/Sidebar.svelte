@@ -55,6 +55,8 @@
   });
   const returns = (s: { until: number; auto: boolean }) => (s.auto ? `Back when the limit resets, ${new Date(s.until).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}` : backLabel(s.until, store.now));
   const TABS = [{ value: "inbox" as const, label: "Inbox" }, { value: "all" as const, label: "All Threads" }];
+  // The generated-UI renderer (cards in messages, questions in the request bar) is its own chunk: fetched once the list has been idle for a moment, so the first thread a person opens does not wait for it.
+  $effect(() => { const h = setTimeout(() => void import("../../genui/GenUi.svelte"), 1500); return () => clearTimeout(h); });
   /** A list longer than this is drawn windowed (only the rows near the view exist in the DOM). */
   const WINDOWED = 60;
   const tab = $derived(view.chosen ?? (items.length || store.jobPrompts.length ? "inbox" : "all"));
