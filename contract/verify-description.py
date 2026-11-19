@@ -289,8 +289,10 @@ def semantic(doc, errors, catalogue, manifest):
     for index, b in enumerate(binds_list):
         if not b.get("persist"): continue
         src = b.get("source") or {}
-        for key in ("collection", "ref", "text", "parent"):
+        for key in ("ref", "text", "parent"):
             if key in src: errors.append(f"$.binds[{index}]: persist needs INVARIANT query inputs: the source has `{key}`")
+        if "collection" in src and not (isinstance(src["collection"], dict) and set(src["collection"]) == {"literal"}):
+            errors.append(f"$.binds[{index}]: persist allows only a LITERAL collection restriction, not {json.dumps(src['collection'], sort_keys=True)}")
         if src.get("type") != "list": errors.append(f"$.binds[{index}]: persist needs a `list` source")
         for g in ("all", "any"):
             for pr in (b.get("filter") or {}).get(g, []):
