@@ -1,0 +1,18 @@
+{
+  "version": 2,
+  "kind": "app",
+  "revision": 1,
+  "binds": [
+    {
+      "id": "c",
+      "source": {
+        "type": "list",
+        "kind": "threads",
+        "parent": true
+      },
+      "fields": [
+        "title"
+      ]
+    }
+  ]
+}

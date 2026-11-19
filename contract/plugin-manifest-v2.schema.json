@@ -1,0 +1,317 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://calternal.cloud/contract/plugin-manifest-v2.schema.json",
+  "title": "Calternal plugin manifest v2",
+  "description": "Revision 12 review draft. Only the exercised subset freezes after the pre-freeze spikes. Validate offline with the versioned contract registry. Uniqueness, references, digest verification and approval are separate host checks.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["api_version", "id", "name", "version", "icon", "apps", "kinds", "operations", "network"],
+  "properties": {
+    "api_version": { "const": 2 },
+    "id": { "$ref": "#/definitions/localId" },
+    "name": { "$ref": "#/definitions/label" },
+    "version": { "type": "string", "minLength": 5, "maxLength": 64, "description": "Validated as a semantic version by the host." },
+    "icon": { "$ref": "#/definitions/icon" },
+    "worker": { "$ref": "#/definitions/asset" },
+    "apps": { "type": "array", "maxItems": 16, "items": { "$ref": "#/definitions/app" } },
+    "kinds": { "type": "array", "maxItems": 64, "items": { "$ref": "#/definitions/kind" } },
+    "operations": { "type": "array", "maxItems": 128, "items": { "$ref": "#/definitions/operation" } },
+    "reads": {
+      "description": "Kinds an authored Bind can query. The SDK adds the package’s own kinds to the emitted list. Authors declare only kinds owned by another app or the host. Show the emitted list at install and intersect with current viewer and field authority.",
+      "type": "array", "maxItems": 64, "uniqueItems": true,
+      "items": { "$ref": "host-catalogue-v2.json#/$defs/KindId" }
+    },
+    "providers": { "type": "array", "maxItems": 16, "items": { "$ref": "#/definitions/provider" } },
+    "jobs": { "type": "array", "maxItems": 32, "items": { "$ref": "#/definitions/job" } },
+    "schedule_eligibility": { "type": "array", "maxItems": 32, "items": { "$ref": "#/definitions/schedule" } },
+    "wait_webhooks": { "type": "array", "maxItems": 32, "items": { "$ref": "#/definitions/webhook" } },
+    "settings": { "type": "array", "maxItems": 64, "items": { "$ref": "#/definitions/setting" } },
+    "secrets": { "type": "array", "maxItems": 32, "items": { "$ref": "#/definitions/secret" } },
+    "credential_routes": { "type": "array", "maxItems": 32, "items": { "$ref": "#/definitions/credentialRoute" } },
+    "content_fetch": { "const": true, "description": "Render remote images through the host's anonymous image proxy. Grants no worker network access and excludes the package from noNetworkBadge." },
+    "network": {
+      "oneOf": [
+        { "const": "none", "description": "Deny every worker egress route. Derive badge and filter eligibility using noNetworkBadge." },
+        {
+          "type": "object", "additionalProperties": false, "minProperties": 1, "maxProperties": 3,
+          "properties": {
+            "fixed_sites": {
+              "description": "Exact HTTPS hosts accepted at install by a Manager or Owner.",
+              "type": "array", "minItems": 1, "maxItems": 64, "uniqueItems": true,
+              "items": { "$ref": "#/definitions/hostname" }
+            },
+            "user_servers": { "const": true, "description": "Use public HTTPS servers the acting person has added in account setup." },
+            "any_website": { "const": true, "description": "Use public HTTPS with an Owner-approved install warning." }
+          }
+        }
+      ]
+    }
+  },
+  "if": {
+    "anyOf": [
+      { "properties": { "operations": { "minItems": 1 } } },
+      { "required": ["jobs"], "properties": { "jobs": { "minItems": 1 } } },
+      { "required": ["schedule_eligibility"], "properties": { "schedule_eligibility": { "minItems": 1 } } },
+      { "required": ["wait_webhooks"], "properties": { "wait_webhooks": { "minItems": 1 } } },
+      { "required": ["credential_routes"], "properties": { "credential_routes": { "minItems": 1 } } }
+    ]
+  },
+  "then": { "required": ["worker"] },
+  "allOf": [
+    {
+      "if": { "properties": { "network": { "const": "none" } } },
+      "then": {
+        "properties": {
+          "operations": {
+            "items": { "properties": { "methods": { "not": { "contains": { "enum": ["proxy_request", "credential_call", "request_secret_handle"] } } } } }
+          }
+        }
+      }
+    },
+    {
+      "if": { "required": ["credential_routes"], "properties": { "credential_routes": { "minItems": 1 } } },
+      "then": {
+        "required": ["secrets"],
+        "properties": {
+          "secrets": { "minItems": 1 },
+          "network": { "type": "object", "anyOf": [{ "required": ["fixed_sites"] }, { "required": ["user_servers"] }] }
+        }
+      }
+    }
+  ],
+  "definitions": {
+    "noNetworkBadge": { "$ref": "host-catalogue-v2.json#/$defs/NoNetworkBadgeManifest" },
+    "windowRequest": { "$ref": "host-catalogue-v2.json#/$defs/WindowRequest" },
+    "localId": { "type": "string", "pattern": "^[a-z][a-z0-9]*(?:[-_][a-z0-9]+)*$", "maxLength": 64 },
+    "operationId": { "type": "string", "pattern": "^[a-z][a-z0-9_-]*(?:\\.[a-z][a-z0-9_-]*)+$", "maxLength": 128 },
+    "label": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "path": { "type": "string", "minLength": 1, "maxLength": 256, "pattern": "^(?!.*(?:^|/)\\.{1,2}(?:/|$))[A-Za-z0-9_-][A-Za-z0-9._-]*(?:/[A-Za-z0-9_-][A-Za-z0-9._-]*)*$" },
+    "asset": {
+      "type": "object", "additionalProperties": false, "required": ["path", "sha256"],
+      "properties": { "path": { "$ref": "#/definitions/path" }, "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" } }
+    },
+    "icon": {
+      "oneOf": [
+        { "$ref": "#/definitions/localId" },
+        { "type": "object", "additionalProperties": false, "required": ["image"],
+          "properties": { "image": { "$ref": "#/definitions/asset" } } }
+      ],
+      "description": "A catalogue icon or a checked bundled PNG/JPEG."
+    },
+    "embeddedSchema": {
+      "description": "An inline Draft 7 schema or boolean. Host compiles it offline using only registered references.",
+      "type": ["object", "boolean"]
+    },
+    "description": {
+      "type": "object", "additionalProperties": false, "required": ["id", "template"],
+      "properties": {
+        "id": { "$ref": "#/definitions/localId" },
+        "template": { "$ref": "#/definitions/asset" }
+      }
+    },
+    "app": {
+      "type": "object", "additionalProperties": false, "required": ["id", "name", "icon", "description"],
+      "properties": {
+        "id": { "$ref": "#/definitions/localId" },
+        "name": { "$ref": "#/definitions/label" },
+        "icon": { "$ref": "#/definitions/icon" },
+        "engine": { "const": "turns" },
+        "description": { "$ref": "#/definitions/description" }
+      }
+    },
+    "kind": {
+      "type": "object", "additionalProperties": false, "required": ["id", "icon", "title_field", "storage", "claimed_text", "schema"],
+      "properties": {
+        "id": { "$ref": "host-catalogue-v2.json#/$defs/KindId" },
+        "icon": { "$ref": "#/definitions/icon" },
+        "title_field": { "$ref": "#/definitions/localId", "description": "Declared string field exposed as the generated generic title." },
+        "storage": { "$ref": "plugin-manifest-v1.schema.json#/definitions/ManifestPlacement" },
+        "claimed_text": { "type": "boolean" },
+        "extension": { "type": "string", "pattern": "^[a-z0-9]{1,16}$" },
+        "schema": { "$ref": "#/definitions/embeddedSchema" },
+        "searchable": { "type": "boolean", "description": "Opt a claimed-text kind into the host background search projection and the claimed-text plans in query.search of the host catalogue. The host checks current scope and field authority at query time. Omission or false leaves the kind out of search." },
+        "indexed_fields": {
+          "type": "object", "maxProperties": 32,
+          "propertyNames": { "$ref": "#/definitions/localId" },
+          "additionalProperties": {
+            "type": "object", "additionalProperties": false, "required": ["type", "audience"],
+            "properties": {
+              "type": { "$ref": "host-catalogue-v2.json#/$defs/FieldType" },
+              "audience": { "$ref": "host-catalogue-v2.json#/$defs/FieldAudience" }
+            }
+          }
+        },
+        "live_room": { "enum": ["yjs-v1"] }
+      },
+      "allOf": [
+        { "if": { "properties": { "claimed_text": { "const": false } } }, "then": { "required": ["extension"] },
+          "else": { "properties": { "extension": { "const": "md" } } } },
+        { "if": { "required": ["live_room"] },
+          "then": { "properties": { "claimed_text": { "const": true } } } },
+        { "if": { "required": ["searchable"], "properties": { "searchable": { "const": true } } },
+          "then": { "properties": { "claimed_text": { "const": true } } } }
+      ]
+    },
+    "hostMethod": {
+      "enum": [
+        "item_head", "item_range", "item_history", "item_save", "item_trash", "item_restore", "item_rename",
+        "item_rename_status", "item_rename_undo", "item_purge", "empty_trash",
+        "collection_create", "collection_membership", "items_list", "items_search", "sharing_check",
+        "start_job", "checkpoint_job", "job_status", "cancel_job", "read_setting", "set_setting",
+        "request_secret_handle", "proxy_request", "credential_call", "turn_start", "turn_status", "turn_cancel",
+        "turn_follow_up", "turn_answer", "schedule_create", "schedule_remove"
+      ]
+    },
+    "provider": {
+      "type": "object", "additionalProperties": false, "required": ["id", "name", "engine", "adapter"],
+      "properties": {
+        "id": { "$ref": "#/definitions/localId" },
+        "name": { "$ref": "#/definitions/label" },
+        "engine": { "const": "turns" },
+        "adapter": { "$ref": "#/definitions/asset", "description": "Pinned executable descriptor for the host's existing provider loader and handshake." }
+      }
+    },
+    "operation": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "title", "input_schema", "output_schema", "required_capability", "risk", "idempotency", "methods"],
+      "properties": {
+        "id": { "$ref": "#/definitions/operationId" },
+        "title": { "$ref": "#/definitions/label" },
+        "input_schema": { "$ref": "#/definitions/embeddedSchema" },
+        "output_schema": { "$ref": "#/definitions/embeddedSchema" },
+        "required_capability": { "$ref": "plugin-manifest-v1.schema.json#/definitions/ManifestCapability" },
+        "risk": {
+          "description": "A worker risk declaration grants no resolve-and-dispatch shortcut. The host derives any challenge from the validated effects and material.",
+          "allOf": [{ "$ref": "plugin-manifest-v1.schema.json#/definitions/OperationRisk" }]
+        },
+        "idempotency": { "$ref": "plugin-manifest-v1.schema.json#/definitions/ManifestIdempotency" },
+        "target": {
+          "oneOf": [
+            {
+              "type": "object", "additionalProperties": false, "required": ["kind", "field"],
+              "properties": {
+                "kind": { "$ref": "host-catalogue-v2.json#/$defs/KindId" },
+                "field": { "$ref": "#/definitions/localId" }
+              }
+            },
+            {
+              "type": "object", "additionalProperties": false, "required": ["kind", "selection_field"],
+              "properties": {
+                "kind": { "$ref": "host-catalogue-v2.json#/$defs/KindId" },
+                "selection_field": { "$ref": "#/definitions/localId" }
+              }
+            }
+          ]
+        },
+        "creates": { "$ref": "host-catalogue-v2.json#/$defs/KindId" },
+        "material_inputs": {
+          "description": "Labels by input key for extra required material. The host enforces its own required preview fields.",
+          "type": "object", "maxProperties": 32,
+          "propertyNames": { "$ref": "#/definitions/localId" },
+          "additionalProperties": { "$ref": "#/definitions/label" }
+        },
+        "methods": { "type": "array", "maxItems": 64, "uniqueItems": true, "items": { "$ref": "#/definitions/hostMethod" } },
+        "credential_routes": { "type": "array", "maxItems": 32, "uniqueItems": true, "items": { "$ref": "#/definitions/localId" } }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "risk": { "const": "read" } } },
+          "then": { "properties": { "idempotency": { "const": "read_only" } } },
+          "else": { "properties": { "idempotency": { "enum": ["request_id", "never"] } } }
+        },
+        {
+          "if": { "properties": { "methods": { "contains": { "enum": ["request_secret_handle", "credential_call"] } } } },
+          "then": { "required": ["credential_routes"], "properties": { "credential_routes": { "minItems": 1 } } },
+          "else": { "properties": { "credential_routes": { "maxItems": 0 } } }
+        }
+      ]
+    },
+    "wait": {
+      "type": "object", "additionalProperties": false, "required": ["kind"],
+      "properties": {
+        "kind": { "enum": ["question", "approval", "webhook", "deadline"] },
+        "schema_operation": { "$ref": "#/definitions/operationId" },
+        "route": { "$ref": "#/definitions/localId" }
+      },
+      "allOf": [
+        { "if": { "properties": { "kind": { "const": "question" } } }, "then": { "required": ["schema_operation"] },
+          "else": { "not": { "required": ["schema_operation"] } } },
+        { "if": { "properties": { "kind": { "const": "webhook" } } }, "then": { "required": ["route"] },
+          "else": { "not": { "required": ["route"] } } }
+      ]
+    },
+    "job": {
+      "type": "object", "additionalProperties": false, "required": ["id", "run_operation", "replayable"],
+      "properties": {
+        "id": { "$ref": "#/definitions/localId" },
+        "run_operation": { "$ref": "#/definitions/operationId" },
+        "replayable": { "type": "boolean" },
+        "waits": { "type": "array", "maxItems": 32, "uniqueItems": true, "items": { "$ref": "#/definitions/wait" } }
+      },
+      "if": { "properties": { "replayable": { "const": false } } },
+      "then": { "properties": { "waits": { "maxItems": 0 } } }
+    },
+    "schedule": {
+      "type": "object", "additionalProperties": false, "required": ["id", "operation"],
+      "properties": {
+        "id": { "$ref": "#/definitions/localId" },
+        "operation": { "$ref": "#/definitions/operationId" },
+        "description": { "$ref": "#/definitions/label" }
+      }
+    },
+    "webhook": {
+      "type": "object", "additionalProperties": false, "required": ["id", "schema_operation", "signing_secret"],
+      "properties": {
+        "id": { "$ref": "#/definitions/localId" },
+        "schema_operation": { "$ref": "#/definitions/operationId" },
+        "signing_secret": { "$ref": "#/definitions/localId" }
+      }
+    },
+    "setting": {
+      "type": "object", "additionalProperties": false, "required": ["key", "scope", "value_schema", "default"],
+      "properties": {
+        "key": { "$ref": "#/definitions/localId" },
+        "scope": { "enum": ["personal", "space"] },
+        "value_schema": { "$ref": "#/definitions/embeddedSchema" },
+        "default": {},
+        "label": { "$ref": "#/definitions/label" }
+      }
+    },
+    "secret": {
+      "type": "object", "additionalProperties": false, "required": ["name", "label", "purpose", "scope", "required"],
+      "properties": {
+        "name": { "$ref": "#/definitions/localId" }, "label": { "$ref": "#/definitions/label" },
+        "purpose": { "type": "string", "minLength": 1, "maxLength": 1024 },
+        "scope": { "enum": ["personal", "space"] }, "required": { "type": "boolean" }
+      }
+    },
+    "credentialRoute": {
+      "description": "Typed account-server or fixed-site credential route. The host checks the associated permission line, endpoint and profile.",
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "connection", "profile", "secret", "input_schema", "output_schema"],
+      "properties": {
+        "id": { "$ref": "#/definitions/localId" },
+        "connection": {
+          "oneOf": [
+            {
+              "type": "object", "additionalProperties": false, "required": ["fixed_site"],
+              "properties": { "fixed_site": { "$ref": "#/definitions/hostname" } }
+            },
+            {
+              "type": "object", "additionalProperties": false, "required": ["user_server"],
+              "properties": { "user_server": { "$ref": "#/definitions/localId" } }
+            }
+          ]
+        },
+        "profile": { "$ref": "#/definitions/localId" },
+        "secret": { "$ref": "#/definitions/localId" },
+        "input_schema": { "$ref": "#/definitions/embeddedSchema" },
+        "output_schema": { "$ref": "#/definitions/embeddedSchema" }
+      }
+    },
+    "hostname": {
+      "type": "string", "minLength": 1, "maxLength": 253, "pattern": "^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$",
+      "description": "Exact DNS name, checked and normalized by netguard."
+    }
+  }
+}

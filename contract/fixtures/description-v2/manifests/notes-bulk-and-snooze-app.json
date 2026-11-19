@@ -1,0 +1,104 @@
+{
+  "api_version": 2,
+  "id": "notes",
+  "name": "Notes",
+  "version": "1.0.0",
+  "icon": "notes",
+  "network": "none",
+  "apps": [
+    {
+      "id": "notes",
+      "name": "Notes",
+      "icon": "notes",
+      "description": {
+        "id": "app",
+        "template": {
+          "path": "notes-bulk-and-snooze-app.json",
+          "sha256": "42872c3ada60c765e9fec8c8052901eba0e8e3127e653a690f500c495bb22fe2"
+        }
+      }
+    }
+  ],
+  "kinds": [
+    {
+      "id": "notes",
+      "icon": "notes",
+      "title_field": "title",
+      "storage": {
+        "hidden": true
+      },
+      "claimed_text": true,
+      "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "title"
+        ],
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "pinned": {
+            "type": "boolean"
+          }
+        }
+      },
+      "indexed_fields": {
+        "pinned": {
+          "type": "Boolean",
+          "audience": "member_item"
+        }
+      }
+    }
+  ],
+  "reads": [
+    "notes"
+  ],
+  "operations": [
+    {
+      "id": "notes.remind",
+      "title": "Remind me about this note",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "item",
+          "when"
+        ],
+        "properties": {
+          "item": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "when": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "output_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [],
+        "properties": {}
+      },
+      "required_capability": "content.write",
+      "risk": "reversible",
+      "idempotency": "request_id",
+      "methods": [
+        "schedule_create"
+      ],
+      "target": {
+        "kind": "notes",
+        "field": "item"
+      }
+    }
+  ],
+  "worker": {
+    "path": "dist/fixture.js",
+    "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+  }
+}

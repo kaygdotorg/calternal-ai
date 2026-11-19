@@ -1,0 +1,17 @@
+{
+  "version": 2,
+  "kind": "app",
+  "revision": 1,
+  "binds": [
+    {
+      "id": "b",
+      "source": {
+        "type": "list",
+        "kind": "note"
+      },
+      "window": {
+        "size": 5000
+      }
+    }
+  ]
+}

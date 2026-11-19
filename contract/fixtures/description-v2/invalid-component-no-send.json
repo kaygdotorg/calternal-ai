@@ -1,0 +1,17 @@
+{
+  "version": 2,
+  "kind": "app",
+  "revision": 1,
+  "view": {
+    "root": {
+      "type": "component",
+      "component": {
+        "type": "composer",
+        "id": "c",
+        "config": {
+          "placeholder": "x"
+        }
+      }
+    }
+  }
+}

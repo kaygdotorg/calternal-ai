@@ -1,0 +1,105 @@
+{
+  "version": 2,
+  "kind": "app",
+  "revision": 1,
+  "binds": [
+    {
+      "id": "notes",
+      "source": {
+        "type": "list",
+        "kind": "notes"
+      },
+      "fields": [
+        "title",
+        "updated"
+      ],
+      "filter": {
+        "all": [
+          {
+            "field": "trashed",
+            "op": "eq",
+            "value": {
+              "literal": false
+            }
+          }
+        ]
+      },
+      "sort": [
+        {
+          "field": "updated",
+          "direction": "desc"
+        }
+      ],
+      "window": {
+        "size": 60,
+        "count": "exact"
+      },
+      "row": {
+        "title": {
+          "field": "title"
+        }
+      },
+      "states": {
+        "empty": {
+          "title": "No notes"
+        }
+      }
+    }
+  ],
+  "view": {
+    "title": "Notes (select mode)",
+    "root": {
+      "type": "stack",
+      "children": [
+        {
+          "type": "list",
+          "bind": "notes",
+          "selectable": true,
+          "selectionMode": "multiple",
+          "title": "Notes"
+        },
+        {
+          "type": "stack",
+          "axis": "horizontal",
+          "children": [
+            {
+              "type": "button",
+              "invoke": {
+                "id": "trash-selected",
+                "title": "Move to Trash",
+                "icon": "trash",
+                "operation": "host.item.trash",
+                "inputs": {
+                  "selection_ref": {
+                    "selection": "notes",
+                    "set": true
+                  }
+                },
+                "role": "destructive"
+              }
+            },
+            {
+              "type": "button",
+              "invoke": {
+                "id": "snooze",
+                "title": "Remind me",
+                "operation": "notes.remind",
+                "inputs": {
+                  "item": {
+                    "selection": "notes"
+                  },
+                  "when": {
+                    "prompt": {
+                      "title": "Remind me when",
+                      "kind": "datetime"
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

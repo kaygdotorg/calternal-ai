@@ -1,0 +1,25 @@
+{
+  "version": 2,
+  "kind": "app",
+  "revision": 1,
+  "binds": [
+    {
+      "id": "b",
+      "source": {
+        "type": "list",
+        "kind": "threads"
+      },
+      "filter": {
+        "all": [
+          {
+            "field": "thread_parent",
+            "op": "eq",
+            "value": {
+              "parent": true
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

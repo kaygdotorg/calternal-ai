@@ -1,0 +1,22 @@
+{
+  "version": 2,
+  "kind": "app",
+  "revision": 1,
+  "binds": [
+    {
+      "id": "b",
+      "source": {
+        "type": "search",
+        "kind": "notes",
+        "text": {
+          "literal": "storage"
+        },
+        "mode": "terms"
+      },
+      "fields": [
+        "title"
+      ],
+      "persist": true
+    }
+  ]
+}

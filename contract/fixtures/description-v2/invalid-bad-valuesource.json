@@ -1,0 +1,26 @@
+{
+  "version": 2,
+  "kind": "app",
+  "revision": 1,
+  "binds": [
+    {
+      "id": "b",
+      "source": {
+        "type": "list",
+        "kind": "note"
+      },
+      "filter": {
+        "all": [
+          {
+            "field": "owner",
+            "op": "eq",
+            "value": {
+              "viewer": "person",
+              "literal": "x"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

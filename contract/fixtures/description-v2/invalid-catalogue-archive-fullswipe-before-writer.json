@@ -1,0 +1,36 @@
+{
+  "version": 2,
+  "kind": "app",
+  "revision": 1,
+  "binds": [
+    {
+      "id": "threads",
+      "source": {
+        "type": "list",
+        "kind": "threads"
+      },
+      "fields": [
+        "title"
+      ],
+      "row": {
+        "title": {
+          "field": "title"
+        },
+        "trailingActions": [
+          {
+            "id": "archive",
+            "title": "Archive",
+            "operation": "turns.archive",
+            "inputs": {
+              "thread": {
+                "row": "id"
+              }
+            },
+            "role": "destructive",
+            "fullSwipe": true
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,42 @@
+{
+  "version": 2,
+  "kind": "app",
+  "revision": 1,
+  "binds": [
+    {
+      "id": "b",
+      "source": {
+        "type": "list",
+        "kind": "notes"
+      },
+      "row": {
+        "title": {
+          "field": "title"
+        },
+        "trailingActions": [
+          {
+            "id": "one",
+            "title": "One",
+            "operation": "host.item.trash",
+            "inputs": {
+              "item": {
+                "row": "id"
+              }
+            }
+          },
+          {
+            "id": "two",
+            "title": "Two",
+            "operation": "host.item.restore",
+            "inputs": {
+              "item": {
+                "row": "id"
+              }
+            },
+            "fullSwipe": true
+          }
+        ]
+      }
+    }
+  ]
+}

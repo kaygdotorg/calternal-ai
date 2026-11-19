@@ -1,0 +1,13 @@
+{
+  "audience": "member",
+  "bind": "notes",
+  "state": "empty",
+  "result_version": "rv-thread-search",
+  "offset": 0,
+  "window_ref": "w-notes-empty",
+  "rows": [],
+  "count": {
+    "mode": "estimate",
+    "value": 0
+  }
+}

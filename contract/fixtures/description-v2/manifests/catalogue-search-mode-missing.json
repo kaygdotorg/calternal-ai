@@ -1,0 +1,12 @@
+{
+  "reads": [
+    "notes"
+  ],
+  "kinds": {
+    "notes": {
+      "fields": {},
+      "claimed_text": true,
+      "searchable": true
+    }
+  }
+}

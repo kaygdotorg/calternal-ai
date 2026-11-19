@@ -1,0 +1,8 @@
+{
+  "version": 2,
+  "kind": "app",
+  "revision": 1,
+  "cache": {
+    "memberRows": "always"
+  }
+}

@@ -1,0 +1,51 @@
+{
+  "version": 2,
+  "kind": "app",
+  "revision": 1,
+  "view": {
+    "root": {
+      "type": "stack",
+      "children": [
+        {
+          "type": "stack",
+          "children": [
+            {
+              "type": "stack",
+              "children": [
+                {
+                  "type": "stack",
+                  "children": [
+                    {
+                      "type": "stack",
+                      "children": [
+                        {
+                          "type": "stack",
+                          "children": [
+                            {
+                              "type": "stack",
+                              "children": [
+                                {
+                                  "type": "stack",
+                                  "children": [
+                                    {
+                                      "type": "text",
+                                      "text": "deep"
+                                    }
+                                  ]
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

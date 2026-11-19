@@ -1,0 +1,22 @@
+{
+  "version": 2,
+  "kind": "app",
+  "revision": 1,
+  "view": {
+    "root": {
+      "type": "component",
+      "component": {
+        "type": "composer",
+        "id": "c",
+        "config": {
+          "send": {
+            "id": "s",
+            "title": "Send",
+            "operation": "a.b"
+          },
+          "html": "<b>hi</b>"
+        }
+      }
+    }
+  }
+}

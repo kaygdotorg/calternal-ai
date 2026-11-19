@@ -1,0 +1,44 @@
+{
+  "version": 2,
+  "kind": "app",
+  "revision": 1,
+  "binds": [
+    {
+      "id": "threads",
+      "source": {
+        "type": "list",
+        "kind": "threads"
+      },
+      "fields": [
+        "title"
+      ],
+      "row": {
+        "title": {
+          "field": "title"
+        }
+      }
+    }
+  ],
+  "chrome": {
+    "header": {
+      "title": "x",
+      "trailing": [
+        {
+          "id": "rn",
+          "title": "Rename",
+          "operation": "host.item.rename",
+          "inputs": {
+            "item": {
+              "selection": "threads"
+            },
+            "title": {
+              "prompt": {
+                "title": "Rename"
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

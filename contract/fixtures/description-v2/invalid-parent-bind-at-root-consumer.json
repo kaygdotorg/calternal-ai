@@ -1,0 +1,47 @@
+{
+  "version": 2,
+  "kind": "app",
+  "revision": 1,
+  "binds": [
+    {
+      "id": "top",
+      "source": {
+        "type": "list",
+        "kind": "threads"
+      },
+      "fields": [
+        "title"
+      ],
+      "row": {
+        "title": {
+          "field": "title"
+        },
+        "children": {
+          "bind": "kids"
+        }
+      }
+    },
+    {
+      "id": "kids",
+      "source": {
+        "type": "list",
+        "kind": "threads",
+        "parent": true
+      },
+      "fields": [
+        "title"
+      ]
+    }
+  ],
+  "chrome": {
+    "sidebar": {
+      "sections": [
+        {
+          "id": "s",
+          "title": "S",
+          "bind": "kids"
+        }
+      ]
+    }
+  }
+}

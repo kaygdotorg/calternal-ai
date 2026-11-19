@@ -1,0 +1,202 @@
+{
+  "api_version": 2,
+  "id": "reading",
+  "name": "Reading List",
+  "version": "1.0.0",
+  "icon": "book",
+  "network": "none",
+  "apps": [
+    {
+      "id": "reading",
+      "name": "Reading List",
+      "icon": "book",
+      "description": {
+        "id": "app",
+        "template": {
+          "path": "invalid-catalogue-manifest-unknown-input-app.json",
+          "sha256": "adccbd4804952ac5ae5705a028056b97c9fa1c5e0bbe260af04ec86627fdebd6"
+        }
+      }
+    }
+  ],
+  "kinds": [
+    {
+      "id": "reading-item",
+      "icon": "book",
+      "title_field": "title",
+      "storage": {
+        "hidden": true
+      },
+      "claimed_text": true,
+      "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "title"
+        ],
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "added": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "read": {
+            "type": "boolean"
+          },
+          "url": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          }
+        }
+      },
+      "indexed_fields": {
+        "added": {
+          "type": "Timestamp",
+          "audience": "member_item"
+        },
+        "read": {
+          "type": "Boolean",
+          "audience": "member_item"
+        }
+      }
+    },
+    {
+      "id": "reading-reminder",
+      "icon": "clock",
+      "title_field": "title",
+      "storage": {
+        "hidden": true
+      },
+      "claimed_text": true,
+      "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "title"
+        ],
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "due": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "person": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        }
+      },
+      "indexed_fields": {
+        "due": {
+          "type": "Timestamp",
+          "audience": "member_item"
+        },
+        "person": {
+          "type": "AccountRef",
+          "audience": "viewer_self"
+        }
+      }
+    }
+  ],
+  "reads": [
+    "reading-item",
+    "reading-reminder"
+  ],
+  "operations": [
+    {
+      "id": "reading.add",
+      "title": "Add to Reading List",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "title",
+          "url"
+        ],
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "url": {
+            "type": "string",
+            "format": "uri",
+            "maxLength": 4096
+          }
+        }
+      },
+      "output_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [],
+        "properties": {}
+      },
+      "required_capability": "content.write",
+      "risk": "reversible",
+      "idempotency": "request_id",
+      "methods": [
+        "item_save"
+      ],
+      "creates": "reading-item"
+    },
+    {
+      "id": "reading.remind",
+      "title": "Remind me",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "item",
+          "when"
+        ],
+        "properties": {
+          "item": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "when": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "note": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          }
+        }
+      },
+      "output_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [],
+        "properties": {}
+      },
+      "required_capability": "content.write",
+      "risk": "reversible",
+      "idempotency": "request_id",
+      "methods": [
+        "schedule_create"
+      ],
+      "target": {
+        "kind": "reading-item",
+        "field": "item"
+      }
+    }
+  ],
+  "worker": {
+    "path": "dist/fixture.js",
+    "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+  }
+}

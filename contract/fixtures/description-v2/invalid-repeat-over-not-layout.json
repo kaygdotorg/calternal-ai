@@ -1,0 +1,41 @@
+{
+  "version": 2,
+  "kind": "app",
+  "revision": 1,
+  "binds": [
+    {
+      "id": "o",
+      "source": {
+        "type": "list",
+        "kind": "threads"
+      },
+      "fields": [
+        "title"
+      ]
+    },
+    {
+      "id": "r",
+      "source": {
+        "type": "list",
+        "kind": "threads",
+        "parent": true
+      },
+      "fields": [
+        "title"
+      ]
+    }
+  ],
+  "chrome": {
+    "sidebar": {
+      "sections": [
+        {
+          "id": "mine",
+          "repeat": {
+            "over": "o",
+            "rows": "r"
+          }
+        }
+      ]
+    }
+  }
+}

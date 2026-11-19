@@ -1,0 +1,9 @@
+{
+  "audience": "member",
+  "bind": "thread-search",
+  "state": "empty",
+  "result_version": "rv-thread-search",
+  "offset": 0,
+  "window_ref": "w-thread-search-0",
+  "rows": []
+}

@@ -1,0 +1,11 @@
+{
+  "reads": [
+    "reading-item"
+  ],
+  "kinds": {
+    "reading-item": {
+      "claimed_text": true,
+      "fields": {}
+    }
+  }
+}

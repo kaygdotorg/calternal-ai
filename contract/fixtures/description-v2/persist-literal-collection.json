@@ -1,0 +1,21 @@
+{
+  "version": 2,
+  "kind": "app",
+  "revision": 1,
+  "binds": [
+    {
+      "id": "b",
+      "source": {
+        "type": "list",
+        "kind": "threads",
+        "collection": {
+          "literal": "col-1"
+        }
+      },
+      "fields": [
+        "title"
+      ],
+      "persist": true
+    }
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "api_version": 2,
+  "id": "threads",
+  "name": "Threads",
+  "version": "1.0.0",
+  "icon": "threads",
+  "network": "none",
+  "apps": [
+    {
+      "id": "threads",
+      "name": "Threads",
+      "icon": "threads",
+      "engine": "turns",
+      "description": {
+        "id": "app",
+        "template": {
+          "path": "threads-app.json",
+          "sha256": "c34ce50a8f613229bc55ba5147f4a5f74b593e87cac3503ba662eb2826a28468"
+        }
+      }
+    }
+  ],
+  "kinds": [],
+  "reads": [
+    "requests",
+    "threads"
+  ],
+  "operations": []
+}

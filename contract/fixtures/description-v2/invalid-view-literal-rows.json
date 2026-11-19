@@ -1,0 +1,16 @@
+{
+  "version": 2,
+  "kind": "app",
+  "revision": 1,
+  "view": {
+    "root": {
+      "type": "list",
+      "bind": "items",
+      "rows": [
+        {
+          "title": "typed by the plugin"
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "type": "window",
+  "request": {
+    "from": 0,
+    "to": 60
+  }
+}

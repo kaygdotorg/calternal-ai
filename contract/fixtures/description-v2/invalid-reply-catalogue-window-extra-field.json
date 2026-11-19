@@ -1,0 +1,10 @@
+{
+  "audience": "member",
+  "bind": "notes",
+  "state": "ready",
+  "result_version": "rv-1",
+  "offset": 0,
+  "window_ref": "w",
+  "rows": [],
+  "colour": "red"
+}

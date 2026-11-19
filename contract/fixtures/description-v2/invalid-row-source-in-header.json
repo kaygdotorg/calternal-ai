@@ -1,0 +1,22 @@
+{
+  "version": 2,
+  "kind": "app",
+  "revision": 1,
+  "chrome": {
+    "header": {
+      "title": "X",
+      "trailing": [
+        {
+          "id": "a",
+          "title": "Do",
+          "operation": "notes.pin",
+          "inputs": {
+            "item": {
+              "row": "id"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

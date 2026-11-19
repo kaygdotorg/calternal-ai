@@ -1,0 +1,13 @@
+{
+  "id": "fixture.selection",
+  "kinds": [
+    {
+      "id": "notes",
+      "indexed_fields": {}
+    }
+  ],
+  "operations": [],
+  "reads": [
+    "notes"
+  ]
+}
