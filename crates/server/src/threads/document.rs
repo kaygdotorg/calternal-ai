@@ -3,7 +3,7 @@ use calternal_content::Item;
 use calternal_types::Error;
 use serde_json::{Value, json};
 
-const FORMAT: &str = "calternal-thread/v1";
+const FORMAT: &str = "calternal-thread/v2";
 
 pub(super) fn validate_metadata(metadata: &Value) -> Result<(), Error> {
     for (key, max) in [("title", 256), ("provider", 80)] {
@@ -138,8 +138,10 @@ pub(super) fn public_metadata(mut metadata: Value) -> Value {
             super::delta::METADATA_KEY,
             super::provider_session::KEY,
             "output",
+            "output_links",
             "pending",
             "title_attempts",
+            super::records::ACTIVE,
             super::provider_notice::KEY,
         ] {
             fields.remove(key);
@@ -152,6 +154,7 @@ pub(super) fn public_metadata(mut metadata: Value) -> Value {
 /// The view holds no provider session state or machine membership references.
 pub(super) fn checked_view(item: &Item) -> Result<Value, Error> {
     let body = body(item)?;
+    super::records::active_version(body)?;
     let messages = super::records::view(body)?;
     let mut metadata = public_metadata(item.metadata.clone());
     metadata["message_count"] = json!(messages.len());
@@ -227,7 +230,7 @@ mod tests {
         assert!(checked_view(&item).is_ok());
         item.bytes = String::from_utf8(item.bytes)
             .unwrap()
-            .replace("calternal-thread/v1", "calternal-thread/v2")
+            .replace("calternal-thread/v2", "calternal-thread/v3")
             .into_bytes();
         let error = checked_view(&item).unwrap_err();
         assert_eq!(error.details.unwrap()["reason"], "unsupported_version");

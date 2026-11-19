@@ -2,9 +2,31 @@
 use super::headings;
 use calternal_types::Error;
 use serde::{Deserialize, Serialize};
-use std::{collections::HashSet, fmt::Write as _};
+use serde_json::{Value, json};
+use std::{collections::{HashMap, HashSet}, fmt::Write as _};
 use uuid::Uuid;
 
+pub(super) const ACTIVE: &str = "active_version";
+
+/// Stable IDs and the ancestry of one message version. Continuation frames
+/// repeat the same links and keep their distinct physical record IDs.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub(super) struct Links {
+    message: Uuid,
+    version: Uuid,
+    parent: Option<Uuid>,
+}
+
+impl Links {
+    pub(super) fn next(metadata: &mut Value, id: Uuid) -> Self {
+        let parent = metadata[ACTIVE].as_str().and_then(|id| Uuid::parse_str(id).ok());
+        let links = Self { message: id, version: id, parent };
+        metadata[ACTIVE] = json!(id);
+        links
+    }
+}
+
+const SELECT: &str = "<!-- calternal-select:";
 const BETWEEN: &str = "\n\n";
 
 /// A file record carrying checkpoint progress without visible message text.
@@ -14,6 +36,8 @@ pub(super) const CONTROL: &str = "<!-- calternal-checkpoint -->";
 #[derive(Debug, Serialize)]
 pub(super) struct Record<'a> {
     pub(super) id: Uuid,
+    #[serde(skip)]
+    pub(super) links: Links,
     pub(super) role: &'a str,
     pub(super) heading: &'a str,
     pub(super) at: String,
@@ -49,6 +73,7 @@ fn invalid() -> Error {
 pub(super) fn append(
     out: &mut String,
     id: Uuid,
+    links: Links,
     role: &str,
     heading: &str,
     text: &str,
@@ -58,10 +83,11 @@ pub(super) fn append(
         out.push_str(BETWEEN);
     }
     let offset = out.len();
+    let parent = links.parent.map_or_else(|| "none".into(), |id| id.to_string());
     write!(
         out,
-        "## {heading}\n<!-- id:{id} role:{role} bytes:{}",
-        text.len()
+        "## {heading}\n<!-- id:{id} role:{role} bytes:{} message:{} version:{} parent:{parent}",
+        text.len(), links.message, links.version
     )
     .expect("write to String");
     if let Some((turn, provenance)) = agent {
@@ -84,6 +110,8 @@ pub(super) fn read(mut input: &str) -> Result<Vec<Record<'_>>, Error> {
     let mut records = Vec::new();
     while !input.is_empty() {
         let tail = if let Some(tail) = input.strip_prefix(CONTROL) {
+            tail
+        } else if let Some((_, tail)) = selection(input)? {
             tail
         } else {
             let (record, tail) = first(input)?;
@@ -114,7 +142,7 @@ pub(super) fn view(body: &str) -> Result<Vec<serde_json::Value>, Error> {
             let Some((previous, combined)) = output.last_mut() else {
                 return Err(invalid());
             };
-            if previous.id != group || previous.turn != part.turn || part.role != "agent" {
+            if previous.id != group || previous.links != part.links || previous.turn != part.turn || part.role != "agent" {
                 return Err(invalid());
             }
             combined
@@ -150,6 +178,53 @@ pub(super) fn tail(body: &str, start: usize, id: Uuid) -> Result<Record<'_>, Err
     Ok(record)
 }
 
+fn selection(input: &str) -> Result<Option<(Uuid, &str)>, Error> {
+    input.strip_prefix(SELECT).map(|rest| {
+        let (version, tail) = rest.split_once(" -->").ok_or_else(invalid)?;
+        Ok((Uuid::parse_str(version).map_err(|_| invalid())?, tail))
+    }).transpose()
+}
+
+/// Replay the authoritative tip and check links against earlier records.
+/// Standalone fragment reads validate framing without walking its ancestry.
+pub(super) fn active_version(mut body: &str) -> Result<Option<Uuid>, Error> {
+    body = body.strip_prefix(BETWEEN).unwrap_or(body);
+    let mut versions: HashMap<Uuid, (Links, Uuid)> = HashMap::new();
+    let mut active = None;
+    while !body.is_empty() {
+        let tail = if let Some(tail) = body.strip_prefix(CONTROL) {
+            tail
+        } else if let Some((version, tail)) = selection(body)? {
+            if !versions.contains_key(&version) {
+                return Err(invalid());
+            }
+            active = Some(version);
+            tail
+        } else {
+            let (record, tail) = first(body)?;
+            let links = record.links;
+            if let Some(group) = record.provenance.as_ref().and_then(|p| p.continues) {
+                if versions.get(&links.version) != Some(&(links, group)) {
+                    return Err(invalid());
+                }
+            } else {
+                if links.parent.is_some_and(|id| !versions.contains_key(&id))
+                    || versions.insert(links.version, (links, record.id)).is_some()
+                {
+                    return Err(invalid());
+                }
+                active = Some(links.version);
+            }
+            tail
+        };
+        if tail.is_empty() {
+            break;
+        }
+        body = tail.strip_prefix(BETWEEN).filter(|tail| !tail.is_empty()).ok_or_else(invalid)?;
+    }
+    Ok(active)
+}
+
 fn first(input: &str) -> Result<(Record<'_>, &str), Error> {
     let (line, rest) = input
         .strip_prefix("## ")
@@ -159,7 +234,7 @@ fn first(input: &str) -> Result<(Record<'_>, &str), Error> {
         .strip_prefix("<!-- id:")
         .and_then(|text| text.split_once(" -->\n\n"))
         .ok_or_else(invalid)?;
-    let mut fields = marker.splitn(5, ' ');
+    let mut fields = marker.splitn(8, ' ');
     let id = fields
         .next()
         .and_then(|value| Uuid::parse_str(value).ok())
@@ -172,6 +247,13 @@ fn first(input: &str) -> Result<(Record<'_>, &str), Error> {
         .next()
         .and_then(|value| value.strip_prefix("bytes:")?.parse::<usize>().ok())
         .ok_or_else(invalid)?;
+    let read_id = |value: &str| Uuid::parse_str(value).map_err(|_| invalid());
+    let message = read_id(fields.next().and_then(|s| s.strip_prefix("message:")).ok_or_else(invalid)?)?;
+    let version = read_id(fields.next().and_then(|s| s.strip_prefix("version:")).ok_or_else(invalid)?)?;
+    let parent = match fields.next().and_then(|s| s.strip_prefix("parent:")).ok_or_else(invalid)? {
+        "none" => None,
+        id => Some(read_id(id)?),
+    };
     let turn = fields
         .next()
         .map(|field| {
@@ -205,6 +287,7 @@ fn first(input: &str) -> Result<(Record<'_>, &str), Error> {
     Ok((
         Record {
             id,
+            links: Links { message, version, parent },
             role,
             heading: line,
             at,
@@ -241,8 +324,10 @@ mod tests {
         let heading = "Maya · 2026-11-18 19:30:06 +05:30";
         let authored = format!("\r\n## {heading}\n<!-- id:{id} role:person bytes:0 -->\n\n🌏");
         let mut body = String::new();
-        append(&mut body, id, "person", heading, &authored, None);
-        append(&mut body, Uuid::now_v7(), "person", heading, "", None);
+        let mut metadata = json!({});
+        append(&mut body, id, Links::next(&mut metadata, id), "person", heading, &authored, None);
+        let second = Uuid::now_v7();
+        append(&mut body, second, Links::next(&mut metadata, second), "person", heading, "", None);
         let decoded = read(&body).unwrap();
         assert_eq!(decoded[0].text, authored);
         assert_eq!(decoded[0].at, "2026-11-18T19:30:06+05:30");
@@ -250,13 +335,35 @@ mod tests {
     }
 
     #[test]
+    fn selection_and_reused_message_identity_survive_a_fork() {
+        let mut body = String::new();
+        let mut meta = json!({});
+        let root = Uuid::now_v7();
+        let other = Uuid::now_v7();
+        let edit = Uuid::now_v7();
+        let heading = "Maya · 2026-11-18 19:30:06 +05:30";
+        append(&mut body, root, Links::next(&mut meta, root), "person", heading, "original", None);
+        append(&mut body, other, Links::next(&mut meta, other), "person", heading, "old reply", None);
+        append(&mut body, edit, Links { message: root, version: edit, parent: None },
+            "person", heading, "edited", None);
+        assert_eq!(active_version(&body).unwrap(), Some(edit));
+        write!(body, "{BETWEEN}{SELECT}{other} -->").unwrap();
+        assert_eq!(active_version(&body).unwrap(), Some(other));
+        assert_eq!(read(&body).unwrap().len(), 3);
+        write!(body, "{BETWEEN}{SELECT}{} -->", Uuid::now_v7()).unwrap();
+        assert!(active_version(&body).is_err());
+    }
+
+    #[test]
     fn rejects_duplicate_ids_and_truncated_utf8_bodies() {
         let id = Uuid::now_v7();
         let heading = "Maya · 2026-11-18 19:30:06 +05:30";
         let mut body = String::new();
-        append(&mut body, id, "person", heading, "🌏", None);
+        let mut metadata = json!({});
+        let links = Links::next(&mut metadata, id);
+        append(&mut body, id, links, "person", heading, "🌏", None);
         assert!(read(&body.replace("bytes:4", "bytes:3")).is_err());
-        append(&mut body, id, "person", heading, "other", None);
+        append(&mut body, id, links, "person", heading, "other", None);
         assert!(read(&body).is_err());
     }
 }

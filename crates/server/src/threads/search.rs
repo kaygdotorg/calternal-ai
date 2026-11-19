@@ -9,6 +9,7 @@ pub(crate) fn fixture(first: usize, count: usize) -> (Value, String) {
     const SAVED: &str = "2026-11-18T12:00:00+00:00";
     const DIGITS: &[u8] = b"0123456789abcdefghijklmnopqrstuvwxyz";
     let mut body = String::new();
+    let mut lineage = json!({});
     for i in first..first + count {
         let common = if i % 2 == 0 { "canvas" } else { "forest" };
         let rare = if i % 8191 == 0 { "rarest" } else { "common" };
@@ -28,6 +29,7 @@ pub(crate) fn fixture(first: usize, count: usize) -> (Value, String) {
         super::records::append(
             &mut body,
             id,
+            super::records::Links::next(&mut lineage, id),
             "person",
             "Person · 2026-11-18 12:00:00 +00:00",
             &text,
@@ -36,7 +38,7 @@ pub(crate) fn fixture(first: usize, count: usize) -> (Value, String) {
     }
     let metadata = json!({"title":format!("Corpus {first:09}"),"provider":"calternal-claude-code",
         "created_at":SAVED,"updated_at":SAVED,"last_activity_at":SAVED,"message_count":count,
-        "deleted":false,"archived":false});
+        "deleted":false,"archived":false,(super::records::ACTIVE):lineage[super::records::ACTIVE]});
     let bytes = super::document::encode(&metadata, &body);
     (metadata, bytes)
 }
@@ -52,6 +54,9 @@ pub(crate) fn decode(bytes: &[u8], fragment: bool) -> Result<Vec<MessageRecord>,
     } else {
         super::document::body_bytes(bytes)?
     };
+    if !fragment {
+        super::records::active_version(body)?;
+    }
     let base = bytes.as_ptr() as usize;
     Ok(super::records::read(body)?
         .into_iter()

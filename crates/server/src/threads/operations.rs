@@ -400,9 +400,12 @@ pub(super) fn apply<D: Directory>(
         #[cfg(target_os = "linux")]
         {
             let mut record = String::new();
+            let message = Uuid::now_v7();
+            let links = super::records::Links::next(&mut item.metadata, message);
             super::records::append(
                 &mut record,
-                Uuid::now_v7(),
+                message,
+                links,
                 role,
                 &heading,
                 saved_prompt,
@@ -438,9 +441,12 @@ pub(super) fn apply<D: Directory>(
         #[cfg(not(target_os = "linux"))]
         {
             let mut body = document::body(&item)?.to_owned();
+            let message = Uuid::now_v7();
+            let links = super::records::Links::next(&mut item.metadata, message);
             super::records::append(
                 &mut body,
-                Uuid::now_v7(),
+                message,
+                links,
                 role,
                 &heading,
                 saved_prompt,

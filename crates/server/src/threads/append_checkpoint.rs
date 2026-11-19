@@ -95,6 +95,7 @@ fn append(
         data["record_at"] = json!(at);
         if let Some(group) = &group {
             data["segment_of"] = json!(group);
+            data["version_links"] = metadata["output_links"].clone();
             data["message_id"] = json!(Uuid::now_v7());
         }
         let mut record = String::new();

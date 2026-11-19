@@ -292,6 +292,7 @@ pub(super) fn append_output(
         super::records::append(
             &mut replacement,
             id,
+            current.links,
             "agent",
             &heading,
             &combined,
@@ -302,9 +303,16 @@ pub(super) fn append_output(
         (start, None)
     } else {
         let offset = body.len();
+        let links = match checkpoint.get("version_links") {
+            Some(value) => serde_json::from_value(value.clone())
+                .map_err(|_| Error::internal("saved thread lineage invalid"))?,
+            None => super::records::Links::next(metadata, id),
+        };
+        metadata["output_links"] = json!(links);
         let start = super::records::append(
             body,
             id,
+            links,
             "agent",
             &rendered(checkpoint["record_at"].as_str().unwrap_or(&now))?,
             text,

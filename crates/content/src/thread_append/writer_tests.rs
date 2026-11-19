@@ -67,7 +67,7 @@ fn reopening_repairs_each_durable_torn_suffix_before_reading() {
                 FileFormat::Markdown,
             )
             .unwrap();
-        let original = b"---\nformat: calternal-thread/v1\n---\n\n# Talk\n\nOld bytes.\n";
+        let original = b"---\nformat: calternal-thread/v2\n---\n\n# Talk\n\nOld bytes.\n";
         let item = content
             .write(
                 space,
@@ -183,7 +183,7 @@ impl BatchFixture {
                 "threads",
                 None,
                 json!({"title":"Talk"}),
-                b"---\nformat: calternal-thread/v1\n---\n\n# Talk\n\nOld bytes.\n",
+                b"---\nformat: calternal-thread/v2\n---\n\n# Talk\n\nOld bytes.\n",
                 Request {
                     account,
                     via: None,

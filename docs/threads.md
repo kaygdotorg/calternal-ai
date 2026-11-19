@@ -591,6 +591,17 @@ observed. The thread shows no error. Menu regeneration remains pending.
 A plan's compute entitlement is a sandbox size in CPUs and RAM plus hours
 per month.
 
+### Message versions
+
+The v2 file records a physical frame UUID, a stable message UUID, a version UUID,
+and a parent version UUID (`none` at the root). Each new version selects itself.
+A continuation repeats the same message, version and parent without selecting
+again. An empty file has no selection. The control frame
+`<!-- calternal-select:VERSION-UUID -->` selects an earlier version without
+rewriting any prior frame. Fork operations can reuse the message UUID, assign a
+new version UUID, and point to the selected ancestor. Linear sends use this
+same representation today.
+
 ### Five example threads
 
 #### 1. Claude Code with its own subscription
@@ -598,7 +609,7 @@ per month.
 ```markdown
 ---
 calternal-id: 019a8c00-0000-7000-8000-000000000011
-format: calternal-thread/v1
+format: calternal-thread/v2
 title: "Release checklist"
 date: 2026-11-18T19:30:00+05:30
 last edited: 2026-11-18T19:30:18+05:30
@@ -609,12 +620,12 @@ last edited: 2026-11-18T19:30:18+05:30
 > Sign-in was done for Anthropic at 2026-11-18 19:30:04 +05:30.
 
 ## Maya Chen · 2026-11-18 19:30:00 +05:30
-<!-- id:019a8c00-0000-7000-8000-000000000100 role:person bytes:36 -->
+<!-- id:019a8c00-0000-7000-8000-000000000100 role:person bytes:36 message:019a8c00-0000-7000-8000-000000000100 version:019a8c00-0000-7000-8000-000000000100 parent:none -->
 
 Which release checks are still open?
 
 ## Claude Code via Anthropic (subscription) · Claude Sonnet 5.5 · High · 2026-11-18 19:30:06 +05:30 · 12 s · Thought for 4.0 s
-<!-- id:019a8c00-0000-7000-8000-000000000101 role:agent bytes:161 turn:019a8c00-0000-7000-8000-000000000110 meta:{"provider_id":"calternal-claude-code","model_id":"claude-sonnet-5-5","reasoning_level":"high","machine_id":null,"duration_ms":12000,"reasoning_ms":4000} -->
+<!-- id:019a8c00-0000-7000-8000-000000000101 role:agent bytes:161 message:019a8c00-0000-7000-8000-000000000101 version:019a8c00-0000-7000-8000-000000000101 parent:019a8c00-0000-7000-8000-000000000100 turn:019a8c00-0000-7000-8000-000000000110 meta:{"provider_id":"calternal-claude-code","model_id":"claude-sonnet-5-5","reasoning_level":"high","machine_id":null,"duration_ms":12000,"reasoning_ms":4000} -->
 
 The accessibility review is the only open check.
 
@@ -628,7 +639,7 @@ The accessibility review is the only open check.
 ```markdown
 ---
 calternal-id: 019a8c00-0000-7000-8000-000000000012
-format: calternal-thread/v1
+format: calternal-thread/v2
 title: "Launch note"
 date: 2026-11-18T19:40:00+05:30
 last edited: 2026-11-18T19:42:09+05:30
@@ -637,17 +648,17 @@ last edited: 2026-11-18T19:42:09+05:30
 # Launch note
 
 ## Mira Patel · 2026-11-18 19:40:00 +05:30
-<!-- id:019a8c00-0000-7000-8000-000000000120 role:person bytes:37 -->
+<!-- id:019a8c00-0000-7000-8000-000000000120 role:person bytes:37 message:019a8c00-0000-7000-8000-000000000120 version:019a8c00-0000-7000-8000-000000000120 parent:none -->
 
 Draft a sentence for the launch note.
 
 ## fx via Vercel AI Gateway (API) · Claude Sonnet 5.5 · Medium · 2026-11-18 19:40:01 +05:30 · 8 s
-<!-- id:019a8c00-0000-7000-8000-000000000121 role:agent bytes:58 turn:019a8c00-0000-7000-8000-000000000131 meta:{"provider_id":"calternal-fx","model_id":"claude-sonnet-5-5","reasoning_level":"medium","machine_id":null,"duration_ms":8000,"reasoning_ms":null} -->
+<!-- id:019a8c00-0000-7000-8000-000000000121 role:agent bytes:58 message:019a8c00-0000-7000-8000-000000000121 version:019a8c00-0000-7000-8000-000000000121 parent:019a8c00-0000-7000-8000-000000000120 turn:019a8c00-0000-7000-8000-000000000131 meta:{"provider_id":"calternal-fx","model_id":"claude-sonnet-5-5","reasoning_level":"medium","machine_id":null,"duration_ms":8000,"reasoning_ms":null} -->
 
 The release makes shared project updates easier to follow.
 
 ## Jules Rivera · 2026-11-18 09:12:00 -05:00
-<!-- id:019a8c00-0000-7000-8000-000000000122 role:person bytes:65 -->
+<!-- id:019a8c00-0000-7000-8000-000000000122 role:person bytes:65 message:019a8c00-0000-7000-8000-000000000122 version:019a8c00-0000-7000-8000-000000000122 parent:019a8c00-0000-7000-8000-000000000121 -->
 
 Use this structure for the draft:
 
@@ -656,7 +667,7 @@ Use this structure for the draft:
 - A short summary.
 
 ## Codex via OpenAI · GPT-5.5 · High · 2026-11-18 09:12:01 -05:00 · 8 s
-<!-- id:019a8c00-0000-7000-8000-000000000123 role:agent bytes:49 turn:019a8c00-0000-7000-8000-000000000133 meta:{"provider_id":"calternal-codex","model_id":"gpt-5.5","reasoning_level":"high","machine_id":null,"duration_ms":8000,"reasoning_ms":null} -->
+<!-- id:019a8c00-0000-7000-8000-000000000123 role:agent bytes:49 message:019a8c00-0000-7000-8000-000000000123 version:019a8c00-0000-7000-8000-000000000123 parent:019a8c00-0000-7000-8000-000000000122 turn:019a8c00-0000-7000-8000-000000000133 meta:{"provider_id":"calternal-codex","model_id":"gpt-5.5","reasoning_level":"high","machine_id":null,"duration_ms":8000,"reasoning_ms":null} -->
 
 Shared projects now show recent updates together.
 ```
@@ -668,7 +679,7 @@ The `## Changes` line belongs to Jules’s body. Its bytes are unchanged.
 ```markdown
 ---
 calternal-id: 019a8c00-0000-7000-8000-000000000013
-format: calternal-thread/v1
+format: calternal-thread/v2
 title: "Compare onboarding notes"
 date: 2026-11-18T19:50:00+05:30
 last edited: 2026-11-18T19:50:21+05:30
@@ -677,12 +688,12 @@ last edited: 2026-11-18T19:50:21+05:30
 # Compare onboarding notes
 
 ## Maya Chen · 2026-11-18 19:50:00 +05:30
-<!-- id:019a8c00-0000-7000-8000-000000000140 role:person bytes:49 -->
+<!-- id:019a8c00-0000-7000-8000-000000000140 role:person bytes:49 message:019a8c00-0000-7000-8000-000000000140 version:019a8c00-0000-7000-8000-000000000140 parent:none -->
 
 Compare the setup steps with the short reference.
 
 ## Claude Code via Anthropic (subscription) · Claude Opus 5.5 · High · 2026-11-18 19:50:01 +05:30 · 20 s
-<!-- id:019a8c00-0000-7000-8000-000000000141 role:agent bytes:114 turn:019a8c00-0000-7000-8000-000000000150 meta:{"provider_id":"calternal-claude-code","model_id":"claude-opus-5-5","reasoning_level":"high","machine_id":null,"duration_ms":20000,"reasoning_ms":null} -->
+<!-- id:019a8c00-0000-7000-8000-000000000141 role:agent bytes:114 message:019a8c00-0000-7000-8000-000000000141 version:019a8c00-0000-7000-8000-000000000141 parent:019a8c00-0000-7000-8000-000000000140 turn:019a8c00-0000-7000-8000-000000000150 meta:{"provider_id":"calternal-claude-code","model_id":"claude-opus-5-5","reasoning_level":"high","machine_id":null,"duration_ms":20000,"reasoning_ms":null} -->
 
 The reference is missing the account setup step. See [Reference review](<Reference review.md>) for the comparison.
 ```
@@ -692,7 +703,7 @@ The reference is missing the account setup step. See [Reference review](<Referen
 ```markdown
 ---
 calternal-id: 019a8c00-0000-7000-8000-000000000014
-format: calternal-thread/v1
+format: calternal-thread/v2
 title: "Reference review"
 date: 2026-11-18T19:50:02+05:30
 last edited: 2026-11-18T19:50:19+05:30
@@ -702,12 +713,12 @@ archived: true
 # Reference review
 
 ## fx via Vercel AI Gateway (API) · Claude Haiku 5.5 · Low · 2026-11-18 19:50:02 +05:30 · 5 s · Interrupted
-<!-- id:019a8c00-0000-7000-8000-000000000160 role:agent bytes:53 turn:019a8c00-0000-7000-8000-000000000170 meta:{"provider_id":"calternal-fx","model_id":"claude-haiku-5-5","reasoning_level":"low","machine_id":null,"duration_ms":5000,"reasoning_ms":null} -->
+<!-- id:019a8c00-0000-7000-8000-000000000160 role:agent bytes:53 message:019a8c00-0000-7000-8000-000000000160 version:019a8c00-0000-7000-8000-000000000160 parent:none turn:019a8c00-0000-7000-8000-000000000170 meta:{"provider_id":"calternal-fx","model_id":"claude-haiku-5-5","reasoning_level":"low","machine_id":null,"duration_ms":5000,"reasoning_ms":null} -->
 
 I found the reference and saved the first comparison.
 
 ## fx via Vercel AI Gateway (API) · Claude Haiku 5.5 · Low · 2026-11-18 19:50:12 +05:30 · 7 s · Resumed
-<!-- id:019a8c00-0000-7000-8000-000000000161 role:agent bytes:77 turn:019a8c00-0000-7000-8000-000000000170 meta:{"provider_id":"calternal-fx","model_id":"claude-haiku-5-5","reasoning_level":"low","machine_id":null,"duration_ms":7000,"reasoning_ms":null} -->
+<!-- id:019a8c00-0000-7000-8000-000000000161 role:agent bytes:77 message:019a8c00-0000-7000-8000-000000000161 version:019a8c00-0000-7000-8000-000000000161 parent:019a8c00-0000-7000-8000-000000000160 turn:019a8c00-0000-7000-8000-000000000170 meta:{"provider_id":"calternal-fx","model_id":"claude-haiku-5-5","reasoning_level":"low","machine_id":null,"duration_ms":7000,"reasoning_ms":null} -->
 
 The setup note includes account setup. The reference starts at project setup.
 ```
@@ -719,7 +730,7 @@ The two attempts share a turn UUID. The placements are kept private.
 ```markdown
 ---
 calternal-id: 019a8c00-0000-7000-8000-000000000015
-format: calternal-thread/v1
+format: calternal-thread/v2
 title: "Weekly release review"
 date: 2026-11-18T20:30:00+05:30
 last edited: 2026-11-18T20:30:41+05:30
@@ -728,17 +739,17 @@ last edited: 2026-11-18T20:30:41+05:30
 # Weekly release review
 
 ## Automation Weekly release review · 2026-11-18 20:30:00 +05:30
-<!-- id:019a8c00-0000-7000-8000-000000000180 role:automation bytes:43 -->
+<!-- id:019a8c00-0000-7000-8000-000000000180 role:automation bytes:43 message:019a8c00-0000-7000-8000-000000000180 version:019a8c00-0000-7000-8000-000000000180 parent:none -->
 
 Summarize the release checks due this week.
 
 ## Claude Code via Anthropic (subscription) · Claude Sonnet 5.5 · Provider default · 2026-11-18 20:30:01 +05:30 · 2 s · Failed
-<!-- id:019a8c00-0000-7000-8000-000000000181 role:agent bytes:38 turn:019a8c00-0000-7000-8000-000000000190 meta:{"provider_id":"calternal-claude-code","model_id":"claude-sonnet-5-5","reasoning_level":null,"machine_id":null,"duration_ms":2000,"reasoning_ms":null} -->
+<!-- id:019a8c00-0000-7000-8000-000000000181 role:agent bytes:38 message:019a8c00-0000-7000-8000-000000000181 version:019a8c00-0000-7000-8000-000000000181 parent:019a8c00-0000-7000-8000-000000000180 turn:019a8c00-0000-7000-8000-000000000190 meta:{"provider_id":"calternal-claude-code","model_id":"claude-sonnet-5-5","reasoning_level":null,"machine_id":null,"duration_ms":2000,"reasoning_ms":null} -->
 
 Anthropic was temporarily unavailable.
 
 ## Claude Code via Anthropic (subscription) · Claude Sonnet 5.5 · Provider default · 2026-11-18 20:30:33 +05:30 · 8 s · Retry 2
-<!-- id:019a8c00-0000-7000-8000-000000000182 role:agent bytes:29 turn:019a8c00-0000-7000-8000-000000000190 meta:{"provider_id":"calternal-claude-code","model_id":"claude-sonnet-5-5","reasoning_level":null,"machine_id":null,"duration_ms":8000,"reasoning_ms":null} -->
+<!-- id:019a8c00-0000-7000-8000-000000000182 role:agent bytes:29 message:019a8c00-0000-7000-8000-000000000182 version:019a8c00-0000-7000-8000-000000000182 parent:019a8c00-0000-7000-8000-000000000181 turn:019a8c00-0000-7000-8000-000000000190 meta:{"provider_id":"calternal-claude-code","model_id":"claude-sonnet-5-5","reasoning_level":null,"machine_id":null,"duration_ms":8000,"reasoning_ms":null} -->
 
 Two checks are due on Friday.
 ```
