@@ -3,12 +3,12 @@
  * its sidebar, the pull and peek handles, the card's corner pills, the header line and each app's own header (`data-chrome-header`) are not drawn; the shell's insets replace the safe areas and the bar height, so everything that pads itself by "safe area plus bar" lands
  * below the native header and above the home indicator without a change in each screen; the card is transparent (the shell paints the wallpaper and the frame).
  */
-html[data-native-chrome] { --safe-top: var(--chrome-top, env(safe-area-inset-top, 0px)); --safe-bottom: var(--chrome-bottom, env(safe-area-inset-bottom, 0px)); --bar-h: 0px; }
-html[data-native-chrome] .shell .side, html[data-native-chrome] .shell .peek, html[data-native-chrome] .shell .edge, html[data-native-chrome] .shell .hdr { display: none !important; }
+html:is([data-native-chrome], [data-native-chrome-page], [data-native-chrome-pending]) { --safe-top: var(--chrome-top, env(safe-area-inset-top, 0px)); --safe-bottom: var(--chrome-bottom, env(safe-area-inset-bottom, 0px)); --bar-h: 0px; }
+html:is([data-native-chrome], [data-native-chrome-page], [data-native-chrome-pending]) .shell .side, html:is([data-native-chrome], [data-native-chrome-page], [data-native-chrome-pending]) .shell .peek, html:is([data-native-chrome], [data-native-chrome-page], [data-native-chrome-pending]) .shell .edge, html:is([data-native-chrome], [data-native-chrome-page], [data-native-chrome-pending]) .shell .hdr { display: none !important; }
 /* The shell paints the wallpaper, the sidebar and the card's frame natively; the web view is a transparent content card inside it: the page's own backdrop, root colour and card background are not drawn (no card transform: the shell moves the card). */
-html[data-native-chrome], html[data-native-chrome] body { background: transparent !important; }
-html[data-native-chrome] .backdrop { display: none !important; }
-html[data-native-chrome] .shell.narrow .mid { transform: none !important; transition: none !important; }
-html[data-native-chrome] .shell .mid-card { background: transparent !important; box-shadow: none !important; backdrop-filter: none !important; border-radius: 0 !important; }
+html:is([data-native-chrome], [data-native-chrome-page], [data-native-chrome-pending]), html:is([data-native-chrome], [data-native-chrome-page], [data-native-chrome-pending]) body { background: transparent !important; }
+html:is([data-native-chrome], [data-native-chrome-page], [data-native-chrome-pending]) .backdrop { display: none !important; }
+html:is([data-native-chrome], [data-native-chrome-page], [data-native-chrome-pending]) .shell.narrow .mid { transform: none !important; transition: none !important; }
+html:is([data-native-chrome], [data-native-chrome-page], [data-native-chrome-pending]) .shell .mid-card { background: transparent !important; box-shadow: none !important; backdrop-filter: none !important; border-radius: 0 !important; }
 /* An app's own header line (the pills at the top of a thread, a note, a page) is the shell's header now. */
-html[data-native-chrome] [data-chrome-header] { display: none !important; }
+html:is([data-native-chrome], [data-native-chrome-page], [data-native-chrome-pending]) [data-chrome-header] { display: none !important; }

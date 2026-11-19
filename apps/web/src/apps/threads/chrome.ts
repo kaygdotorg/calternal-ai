@@ -50,8 +50,9 @@ export const threadsChrome: ChromeProvider = {
     const inbox = store.inbox.filter((i) => i.thread.spaceId === here);
     const tab = view.chosen ?? (inbox.length || store.jobPrompts.length ? "inbox" : "all");
     const shortcuts: ChromeSection = {
-      id: "top", title: null, actions: [{ id: "add", title: "Add to this list", icon: "plus" }],
-      rows: top.entries.map((e) => ({ id: `top:${e.id}`, title: e.label, icon: iconOf(e.target), selected: path(e) !== null && `/${segments().join("/")}` === path(e) })),
+      id: "top", title: null,
+      // "Add to this list" is the last row of the shortcuts, as on the web: an untitled section has no header to hang an action on (it was drawn as an orphan plus under the selector).
+      rows: [...top.entries.map((e) => ({ id: `top:${e.id}`, title: e.label, icon: iconOf(e.target), selected: path(e) !== null && `/${segments().join("/")}` === path(e) })), { id: "top-add", title: "Add to this list", icon: "plus" as const }],
     };
     const sections: ChromeSection[] = [shortcuts];
     if (tab === "inbox") {
@@ -79,7 +80,8 @@ export const threadsChrome: ChromeProvider = {
           if (!e) return true;
           if (e.target === "new-thread") void startThread().then((t) => navigate(`/threads/${t.id}`), (err: Error) => toast(`Could not start a thread: ${err.message}`));
           else { const p = path(e); if (p) navigate(p); }
-        } else if (store.get(ev.id)) navigate(`/threads/${ev.id}`);
+        } else if (ev.id === "top-add") toast("Add shortcuts from the sidebar on this device.");
+        else if (store.get(ev.id)) navigate(`/threads/${ev.id}`);
         return true;
       }
       case "action": {

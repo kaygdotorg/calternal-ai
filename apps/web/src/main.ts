@@ -4,7 +4,7 @@ import { applySheetRadius, currentScheme, initInputModality, initScheme, loadFon
 import App from "./App.svelte";
 import { nativeReady } from "./shell/native";
 import "./shell/chrome/native.css";
-import { startNativeChrome, registerChrome } from "./shell/chrome/native-chrome.svelte";
+import { earlyNativeChrome, startNativeChrome, registerChrome } from "./shell/chrome/native-chrome.svelte";
 import { threadsChrome } from "./apps/threads/chrome";
 import { notesChrome } from "./apps/notes/chrome";
 import { settingsChrome } from "./apps/settings/chrome";
@@ -16,6 +16,9 @@ import { appearance } from "./appearance/prefs.svelte";
 import { serverMode } from "./server/client";
 import { startChrome } from "./shell/chrome";
 import "./canvas/area"; // the canvas is the shell's window area (shell/window-area.ts)
+
+// Before anything is drawn: from the bridge's presence (not from a reply) the page is provisionally in native chrome, so it never draws its own beside the shell's (shell/chrome/native-chrome.svelte.ts).
+earlyNativeChrome();
 
 registerFonts(import.meta.env.BASE_URL);
 initInputModality();
