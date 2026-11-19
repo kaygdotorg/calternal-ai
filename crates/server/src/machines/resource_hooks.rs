@@ -12,8 +12,6 @@ use uuid::Uuid;
 
 use super::{Lease, LeaseState, MachineService, State, compute, db, runtime, sql};
 
-pub(super) const MIGRATION: &str = include_str!("resource_hooks.sql");
-
 /// Exact installed worker identity granted access to one space's admission seam.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -158,7 +156,7 @@ impl MachineService {
                         "generation": report.generation,
                         "memory_available_bytes": report.memory_available_bytes.to_string(),
                         "active_threads": report.active_threads,
-                        "profile_mib": live.guest_memory_mib
+                        "profile_mib": live.guest_size.map(|size| size.memory_mib)
                     })
                 })
             })
@@ -256,7 +254,12 @@ impl State {
                     && permit.reason.is_none()
                     && permit.renew_after > Instant::now()
                     && permit.memory_mib.is_none_or(|mib| {
-                        machine.live.as_ref().and_then(|live| live.guest_memory_mib) == Some(mib)
+                        machine
+                            .live
+                            .as_ref()
+                            .and_then(|live| live.guest_size)
+                            .map(|size| size.memory_mib)
+                            == Some(mib)
                     })
             })
     }
@@ -349,72 +352,6 @@ impl MachineService {
             runtime::usage_at(&state.db, owner, since_ms, through, until_ms.is_some())?;
         Ok(
             json!({"running_ns":used.to_string(),"unresolved":unresolved,"since_ms":since_ms,"through_ms":through,"owner":owner,"entitlement_groups":groups}),
-        )
-    }
-
-    /// Read one scoped page of cumulative guest clock observations. The
-    /// operator binding and exact package review are checked across the
-    /// authority lookup. Up to 64 retained entries, without machine IDs.
-    pub(crate) fn resource_observation_page(
-        &self,
-        space: SpaceId,
-        binding: &ResourceHookBinding,
-        after: i64,
-    ) -> Result<Value, Error> {
-        if self.lock()?.resource_hooks.get(&space) != Some(binding) {
-            return Err(Error::forbidden("no resource observation grant"));
-        }
-        let owner = self
-            .resource_owner(space)?
-            .ok_or_else(|| Error::not_found("resource scope is not assigned"))?;
-        let state = self.lock()?;
-        if state.resource_hooks.get(&space) != Some(binding) {
-            return Err(Error::forbidden("no resource observation grant"));
-        }
-        let floor: i64 = state
-            .db
-            .query_row(
-                "SELECT cursor FROM resource_observation_floor WHERE singleton=1",
-                [],
-                |row| row.get(0),
-            )
-            .map_err(sql)?;
-        if after > 0 && after < floor {
-            return Ok(json!({"reset_required":true,"observations":[],"cursor":"0","more":false}));
-        }
-        let (kind, id) = compute::encode(owner);
-        let mut query = state
-            .db
-            .prepare_cached(
-                "SELECT o.cursor,r.generation,r.started_ms,r.running_ns,r.state
-             FROM resource_observations o JOIN guest_runtime r USING(machine,generation)
-             WHERE o.scope_kind=?1 AND o.scope_id=?2 AND o.cursor>?3 ORDER BY o.cursor LIMIT 65",
-            )
-            .map_err(sql)?;
-        let mut rows = query.query(params![kind, id, after]).map_err(sql)?;
-        let mut cursor = after;
-        let mut observations = Vec::new();
-        let mut more = false;
-        while let Some(row) = rows.next().map_err(sql)? {
-            if observations.len() == 64 {
-                more = true;
-                break;
-            }
-            cursor = row.get::<_, i64>(0).map_err(sql)?;
-            let state = match row.get::<_, i64>(4).map_err(sql)? {
-                0 => "running",
-                1 => "stopped",
-                _ => "unknown",
-            };
-            observations.push(json!({
-                "generation": row.get::<_, String>(1).map_err(sql)?,
-                "started_at_ms": row.get::<_, i64>(2).map_err(sql)?,
-                "running_ns": row.get::<_, i64>(3).map_err(sql)?.to_string(),
-                "state": state,
-            }));
-        }
-        Ok(
-            json!({"reset_required":false,"observations":observations,"cursor":cursor.to_string(),"more":more}),
         )
     }
 }

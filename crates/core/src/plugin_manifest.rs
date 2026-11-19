@@ -61,9 +61,6 @@ pub enum HostCallKind {
     /// Read the authorized space's committed text and binary bytes.
     #[serde(rename = "read_space_usage_v1")]
     ReadSpaceUsageV1,
-    /// Read a bounded scope of cumulative guest runtime observations under an operator grant.
-    #[serde(rename = "read_runtime_observations_v1")]
-    ReadRuntimeObservationsV1,
     /// Read confirmed runtime in a retained window within the granted scope.
     #[serde(rename = "read_runtime_window_v1")]
     ReadRuntimeWindowV1,

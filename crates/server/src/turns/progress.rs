@@ -17,7 +17,6 @@ use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
-use tokio::sync::OwnedSemaphorePermit;
 use uuid::Uuid;
 
 /// Save scrubbed output through content and the existing jobs checkpoint.
@@ -98,7 +97,7 @@ pub(super) async fn finish_full<D: Directory>(
 }
 
 pub(super) enum Placement {
-    Ready(Uuid, bool, OwnedSemaphorePermit),
+    Ready(Uuid, bool),
     Ended(RunEnd),
 }
 
@@ -121,8 +120,6 @@ pub(super) async fn place<D: Directory>(
             Duration::from_secs(600)
         };
     let mut placement = Value::Null;
-    let acquire = state.jobs.permits().acquire_owned();
-    tokio::pin!(acquire);
     loop {
         if !live.is_current(job.runs) || !super::session_live(state, job).await? {
             return Ok(Placement::Ended(RunEnd::Failed));
@@ -149,30 +146,29 @@ pub(super) async fn place<D: Directory>(
         if view.state == LeaseState::Ended {
             return Ok(Placement::Ended(RunEnd::OutcomeUnknown));
         }
-        if Instant::now() >= placement_deadline {
+        if let Some(machine) = view.machine_id {
+            return Ok(Placement::Ready(machine, view.personal_machine));
+        }
+        let memory_wait = view.reason.as_deref() == Some(crate::machines::MEMORY_WAIT);
+        if !memory_wait && Instant::now() >= placement_deadline {
             checkpoint["interruption"] = json!({"why":"placement_timeout"});
             save_placement(state, job, live, checkpoint).await?;
             return Ok(Placement::Ended(RunEnd::Interrupted));
-        }
-        if let Some(machine) = view.machine_id {
-            tokio::select! {
-                permit=&mut acquire=>return Ok(Placement::Ready(machine,view.personal_machine,permit.map_err(|_|Error::unavailable("turn execution stopped"))?)),
-                _=tokio::time::sleep(Duration::from_secs(1))=>continue,
-            }
         }
         let (m, pin, position) = (
             machines.clone(),
             super::readiness::pin(&checkpoint, &job.input),
             view.queue_position,
         );
-        let reason = blocking(move || m.placement_reason(account, pin, position)).await?;
+        let reason =
+            blocking(move || m.placement_reason(account, pin, position, memory_wait)).await?;
         if placement != reason {
             placement = reason;
             checkpoint["placement"] = placement.clone();
             save_placement(state, job, live, checkpoint).await?;
             live.publish(
                 job.runs,
-                &json!({"type":"placement","queue_position":position}),
+                &json!({"type":"placement","queue_position":position,"reason":placement}),
             );
         }
         tokio::time::sleep(Duration::from_secs(1)).await;

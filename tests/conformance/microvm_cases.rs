@@ -434,7 +434,10 @@ async fn assert_pool_guest_places_using_memory(memory_mib: u32) {
     view.ok();
     assert_eq!(view.body["state"], "waiting");
     assert_eq!(view.body["queue_position"], 1);
-    assert_eq!(view.body["reason"], "Waiting for sandbox memory");
+    assert_eq!(
+        view.body["reason"],
+        "Waiting for enough available memory on a machine."
+    );
 
     let foreign = run(&f, 2, 3).await;
     let outside = f
@@ -474,4 +477,81 @@ async fn assert_pool_guest_places_using_memory(memory_mib: u32) {
             .iter()
             .any(|r| r["type"] == "assign" && r["lease_id"] == later)
     );
+}
+
+#[tokio::test]
+async fn memory_admission_matches_the_four_and_eight_gib_guest_sizes() {
+    let f = Fixture::new().await;
+    machine_admin(&f, &["pool-grant", &f.ids[1]]);
+    let code = machine_admin(&f, &["code", "--pool"]);
+    let mut pool =
+        requests_cases::Machine::enroll_with_code(&f, code["code"].as_str().unwrap()).await;
+    for gib in [4_u64, 8] {
+        pool.connect_sized(&f, "microvm", Some((gib * 1024) as u32))
+            .await;
+        let required = gib << 30;
+        let lease = run(&f, 1, 0).await;
+        let wait_for_reason = async {
+            let deadline = Instant::now() + Duration::from_secs(10);
+            loop {
+                let view = f
+                    .req(
+                        "GET",
+                        &format!("/api/v1/machines/runs/{lease}"),
+                        Some(&f.cookies[1]),
+                        json!({}),
+                        Some(ORIGIN),
+                    )
+                    .await;
+                view.ok();
+                assert_eq!(view.body["state"], "waiting");
+                if view.body["reason"]
+                    .as_str()
+                    .is_some_and(|reason| reason.contains("memory"))
+                {
+                    break;
+                }
+                assert!(
+                    Instant::now() < deadline,
+                    "low-memory report was not processed"
+                );
+                tokio::time::sleep(Duration::from_millis(25)).await;
+            }
+        };
+        // Cancel the long poll once we have proof the low-memory report was
+        // processed, rather than waiting for the server's empty-poll deadline.
+        tokio::select! {
+            report = pool.try_sync_with_memory(&f, json!([]), 10, Some(required - 1)) => {
+                assert!(!report.unwrap().iter().any(|frame| frame["type"] == "assign"));
+            }
+            () = wait_for_reason => {}
+        }
+        let report = pool
+            .try_sync_with_memory(&f, json!([]), 10, Some(required))
+            .await
+            .unwrap();
+        assert!(
+            report
+                .iter()
+                .any(|frame| frame["type"] == "assign" && frame["lease_id"] == lease)
+        );
+        f.req(
+            "POST",
+            &format!("/api/v1/machines/runs/{lease}/stop"),
+            Some(&f.cookies[1]),
+            json!({}),
+            Some(ORIGIN),
+        )
+        .await
+        .ok();
+        let report = pool
+            .try_sync_with_memory(&f, json!([]), 10, Some(required))
+            .await
+            .unwrap();
+        assert!(
+            report
+                .iter()
+                .any(|frame| frame["type"] == "stop" && frame["lease_id"] == lease)
+        );
+    }
 }

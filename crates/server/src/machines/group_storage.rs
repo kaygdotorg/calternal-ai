@@ -5,8 +5,6 @@ use rusqlite::params;
 
 use super::{MachineService, sql};
 
-pub(super) const MIGRATION: &str = include_str!("group_storage.sql");
-
 impl MachineService {
     /// Restore the durable storage rules before accepting content mutations.
     /// Reads the machine policy tables once, then releases their database lock.

@@ -80,9 +80,11 @@ const SPACE_EXECUTION: &str = "
 CREATE TABLE space_execution (
     space TEXT PRIMARY KEY,
     sponsor TEXT NOT NULL,
-    machine TEXT NOT NULL
+    machine TEXT NOT NULL,
+    tools_enabled INTEGER NOT NULL DEFAULT 0 CHECK (tools_enabled IN (0, 1))
 ) STRICT, WITHOUT ROWID;
 ALTER TABLE leases ADD COLUMN shared_sponsor TEXT;
+ALTER TABLE leases ADD COLUMN shared_tools TEXT CHECK (shared_tools IS NULL OR json_valid(shared_tools));
 ";
 
 pub(crate) use calternal_types::now_ms;
@@ -206,6 +208,8 @@ pub struct LeaseRow {
     pub resource_owner: Option<ResourceOwner>,
     /// Space Owner sponsoring a shared lease. The actor remains in account.
     pub shared_sponsor: Option<AccountId>,
+    /// Fenced tool scope for an opted-in shared lease.
+    pub shared_tools: Option<calternal_machine::protocol::SharedTools>,
     /// Thread.
     pub thread: Uuid,
     /// Ephemeral plugin worker; ended on server restart rather than adopted as an agent.
@@ -243,8 +247,8 @@ pub fn put_lease(c: &Connection, l: &LeaseRow) -> rusqlite::Result<()> {
         .transpose()
         .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
     c.execute(
-        "INSERT INTO leases (id, space, account, thread, image, machine, last_machine, fence, state, reason, created_ms, updated_ms, worker, pinned_machine, harness, shared_sponsor)
-         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16)
+        "INSERT INTO leases (id, space, account, thread, image, machine, last_machine, fence, state, reason, created_ms, updated_ms, worker, pinned_machine, harness, shared_sponsor, shared_tools)
+         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17)
          ON CONFLICT(id) DO UPDATE SET machine=excluded.machine, last_machine=excluded.last_machine,
            fence=excluded.fence, state=excluded.state, reason=excluded.reason, updated_ms=excluded.updated_ms",
         params![
@@ -265,6 +269,8 @@ pub fn put_lease(c: &Connection, l: &LeaseRow) -> rusqlite::Result<()> {
             l.pinned_machine.map(|machine| machine.to_string()),
             harness,
             l.shared_sponsor.map(|sponsor| sponsor.to_string()),
+            l.shared_tools.map(|tools| serde_json::to_string(&tools)).transpose()
+                .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?,
         ],
     )?;
     Ok(())
@@ -379,12 +385,23 @@ fn lease_from(r: &rusqlite::Row<'_>) -> rusqlite::Result<LeaseRow> {
             .get::<_, Option<String>>(17)?
             .map(|id| typed(17, id))
             .transpose()?,
+        shared_tools: r
+            .get::<_, Option<String>>(18)?
+            .map(|value| serde_json::from_str(&value))
+            .transpose()
+            .map_err(|error| {
+                rusqlite::Error::FromSqlConversionFailure(
+                    18,
+                    rusqlite::types::Type::Text,
+                    Box::new(error),
+                )
+            })?,
     })
 }
 
 const LEASE_COLUMNS: &str = "id, space, account, thread, image, machine, last_machine, fence, state, reason, created_ms, worker, pinned_machine, EXISTS(SELECT 1 FROM title_leases WHERE lease=leases.id),
  (SELECT scope_kind FROM lease_resource_owners WHERE lease=leases.id),
- (SELECT scope_id FROM lease_resource_owners WHERE lease=leases.id), harness, shared_sponsor";
+ (SELECT scope_id FROM lease_resource_owners WHERE lease=leases.id), harness, shared_sponsor, shared_tools";
 
 /// Leases that have not ended, oldest first.
 pub fn active_leases(c: &Connection) -> rusqlite::Result<Vec<LeaseRow>> {
@@ -463,10 +480,15 @@ const MACHINE_CHANGES: &[(i64, &str)] = &[
     (7, TITLE_LEASES),
     (8, ADD_HARNESS),
     (9, SPACE_EXECUTION),
-    (10, super::compute::MIGRATION),
+    (
+        10,
+        concat!(
+            include_str!("compute_limits.sql"),
+            include_str!("group_storage.sql"),
+            include_str!("resource_hooks.sql"),
+        ),
+    ),
     (11, super::runtime::MIGRATION),
-    (12, super::resource_hooks::MIGRATION),
-    (13, super::group_storage::MIGRATION),
 ];
 
 /// Return the machine registry schema shared by normal startup and upgrade admission.
@@ -483,10 +505,8 @@ pub(crate) fn upgrade_schema() -> calternal_store::migrations::Schema<'static> {
             MACHINE_CHANGES[2],
             MACHINE_CHANGES[3],
             MACHINE_CHANGES[4],
-            MACHINE_CHANGES[5],
-            MACHINE_CHANGES[6],
             (
-                14,
+                12,
                 "CREATE TABLE upgrade_fixture (id INTEGER PRIMARY KEY) STRICT;",
             ),
         ];
@@ -515,6 +535,7 @@ mod tests {
             account: AccountId::new(),
             resource_owner: None,
             shared_sponsor: None,
+            shared_tools: None,
             thread: Uuid::new_v4(),
             worker: false,
             background_title: false,
@@ -543,6 +564,16 @@ mod tests {
             params![existing.space.to_string(), uuid::Uuid::now_v7().to_string()],
         )
         .unwrap();
+        conn.execute(
+            "INSERT INTO group_storage_limits VALUES('group',10,20,NULL)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO resource_hooks VALUES(?1,'community.fixture',?2,NULL)",
+            params![existing.space.to_string(), "a".repeat(64)],
+        )
+        .unwrap();
     }
 
     #[test]
@@ -569,61 +600,6 @@ mod tests {
             .unwrap();
         assert_eq!(group, "group");
         assert_eq!(clocks, 0);
-    }
-
-    #[test]
-    fn observation_migration_replays_the_latest_clock_and_assigns_later_cursors() {
-        let conn = Connection::open_in_memory().unwrap();
-        migrate_release(&conn, through(11), false).unwrap();
-        conn.execute("INSERT INTO guest_runtime VALUES('machine','guest','account','group','owner','lease',1,1,500,0,1)", []).unwrap();
-        migrate_release(&conn, through(12), true).unwrap();
-        assert_eq!(
-            calternal_store::migrations::inspect(&conn, through(11)).unwrap(),
-            12
-        );
-        let read_cursor = || {
-            conn.query_row("SELECT cursor FROM resource_observations WHERE scope_id='owner' AND generation='guest'", [], |row| row.get::<_, i64>(0)).unwrap()
-        };
-        let before = read_cursor();
-        conn.execute("UPDATE guest_runtime SET running_ns=1500", [])
-            .unwrap();
-        assert!(before > 0 && read_cursor() > before);
-    }
-
-    #[test]
-    fn group_storage_allocation_migration_preserves_existing_bindings() {
-        let conn = Connection::open_in_memory().unwrap();
-        migrate_release(&conn, through(12), false).unwrap();
-        conn.execute(
-            "INSERT INTO space_resource_groups VALUES('first','group'),('second','group')",
-            [],
-        )
-        .unwrap();
-        migrate_release(&conn, through(13), true).unwrap();
-        assert_eq!(
-            calternal_store::migrations::inspect(&conn, through(12)).unwrap(),
-            13
-        );
-        let members: i64 = conn
-            .query_row(
-                "SELECT count(*) FROM space_resource_groups WHERE group_id='group'",
-                [],
-                |row| row.get(0),
-            )
-            .unwrap();
-        assert_eq!(members, 2);
-        conn.execute(
-            "INSERT INTO group_storage_limits VALUES('group',10,20,NULL)",
-            [],
-        )
-        .unwrap();
-        assert!(
-            conn.execute(
-                "INSERT INTO group_storage_limits VALUES('group',10,20,NULL)",
-                []
-            )
-            .is_err()
-        );
     }
 
     #[test]
@@ -727,6 +703,7 @@ mod tests {
             account: AccountId::new(),
             resource_owner: None,
             shared_sponsor: None,
+            shared_tools: None,
             thread: Uuid::new_v4(),
             worker: false,
             background_title: false,

@@ -9,7 +9,7 @@ const id = /^[a-z0-9][a-z0-9._-]{0,79}$/;
 const capabilities = new Set(["space.read", "content.write", "plugins.use", "plugins.manage", "members.invite", "members.manage", "managers.manage", "space.settings", "space.transfer", "space.delete", "spaces.list", "spaces.create"]);
 /** Closed broker method vocabulary; declaration never grants permission. */
 export type { HostCallKind } from "@calternal/contracts";
-const hostCalls = new Set<HostCallKind>(["read_item", "list_items_v1", "read_setting_v1", "read_space_usage_v1", "read_runtime_observations_v1", "read_runtime_window_v1", "read_plugin_state_v1", "cas_plugin_state_v1", "content_prepare_v1", "write_item", "list_collection", "emit_event", "start_job", "checkpoint_job", "request_secret_handle"]);
+const hostCalls = new Set<HostCallKind>(["read_item", "list_items_v1", "read_setting_v1", "read_space_usage_v1", "read_runtime_window_v1", "read_plugin_state_v1", "cas_plugin_state_v1", "content_prepare_v1", "write_item", "list_collection", "emit_event", "start_job", "checkpoint_job", "request_secret_handle"]);
 
 /** Check a manifest or frame's method against the same closed vocabulary. No I/O. */
 export function isHostCallKind(value: unknown): value is HostCallKind {

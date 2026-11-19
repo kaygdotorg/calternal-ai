@@ -20,12 +20,15 @@ pub(super) fn authorize(owner: Owner) -> Result<(), Error> {
     }
 }
 
-/// Validate the advertised guest memory using the same rule as the machine.
-pub(super) fn guest_memory(backend: &str, memory_mib: Option<u32>) -> Result<Option<u32>, Error> {
+/// Validate the account guest profile reported by the machine session.
+pub(super) fn guest_size(
+    backend: &str,
+    memory_mib: Option<u32>,
+) -> Result<Option<GuestSize>, Error> {
     if is_requested(backend) {
         return memory_mib
             .and_then(GuestSize::from_mib)
-            .map(|size| Some(size.memory_mib))
+            .map(Some)
             .ok_or_else(|| {
                 Error::invalid_input("microVM sessions require a supported guest size")
             });

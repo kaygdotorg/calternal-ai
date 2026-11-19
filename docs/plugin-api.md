@@ -163,15 +163,14 @@ hosted request queued. Existing running work retains its lease.
 The package may declare `read_space_usage_v1` for one authorized space.
 With `scope: "owner"` and an exact operator binding, the same call reads the
 combined bytes of spaces bound to the current owner group. A personal space
-still returns its own bytes. Runtime calls `read_runtime_window_v1` and
-`read_runtime_observations_v1` also require the exact operator binding. Decimal strings preserve exact bytes and
+still returns its own bytes. The `read_runtime_window_v1` call also requires the
+exact operator binding. Decimal strings preserve exact bytes and
 nanoseconds on JavaScript clients. An optional `until_ms` closes a runtime
 window at a retained timestamp. The unresolved count then includes generations
 that started before the bound and still lack enough clock evidence to seal it.
-Clock observations are cumulative by
-generation. The cursor returns later observations from the same bounded
-scope. A retention reset requires a fresh read and reconciliation. An
-unknown end retains its last proved duration.
+The runtime window is cumulative. An unknown end retains its last proved duration.
+
+## Durable plugin state
 
 An ordinary enabled package with `space.settings` may declare
 `read_plugin_state_v1` and `cas_plugin_state_v1`. State keys are private
@@ -179,10 +178,14 @@ to its package and space. A CAS requires a mutating outer operation and
 a valid host acknowledgment of the form `{"revision":"…"}`. Validate
 the package's positive format version before interpreting JSON. A state
 replacement and its retry receipt commit together. One key replacement
-per request is supported. Receipts follow the configured retention with
-a bounded capacity. A package can have up to 128 keys in a space and
-each value can hold up to 64 KiB. An optional operator-controlled state
-space supplies a read-only, scope-keyed record to an admission hook.
+per request is supported. Each package in a space can have up to 128 keys
+with 64 KiB per JSON value and up to 16,384 receipts. State has no time-based
+expiry. Receipts expire after the installation's configured retention
+(`CALTERNAL_RECEIPT_RETENTION_DAYS`, default 7 days) and are pruned on writes.
+Once a receipt expires, its request ID can start a new request. An optional
+operator-controlled state
+space supplies a read-only, scope-keyed record to an admission hook. See the
+[public counter example](../plugins/calternal-plugin-guide/reference.md#durable-plugin-state).
 
 ## Durable job waits
 
@@ -273,6 +276,13 @@ inputs or outputs in the error history. Worker stderr is private to the
 space's managers. Authors should keep secrets and personal data out of it.
 
 ## Author diagnostics
+
+Use `calternal plugin new NAME --template question` for a complete job that
+asks one Inbox question and has a deadline. The static form in
+`question.form.json` uses the same checker as live requests.
+`calternal plugin test` also validates parked question forms returned by
+SDK fixture invocations. The guide worker exposes `jobs` and `waits`
+topics with the example manifest, question form and worker.
 
 `calternal plugin new` creates a directory under the current directory and
 prints the root worker, fixture test and next commands. Source the local

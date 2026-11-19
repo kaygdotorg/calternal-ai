@@ -1,0 +1,91 @@
+{
+  "id": "__PLUGIN__",
+  "name": "__PLUGIN__",
+  "icon": "puzzle",
+  "version": "0.1.0",
+  "api_version": 1,
+  "kinds": [],
+  "collections": [],
+  "views": [],
+  "attention": [],
+  "settings": [],
+  "schedules": [],
+  "webhooks": [],
+  "secrets": [],
+  "hooks": [],
+  "themes": [],
+  "host_calls": ["start_job"],
+  "operations": [
+    {
+      "id": "__PLUGIN__.start",
+      "input_schema": { "type": "object", "additionalProperties": false },
+      "output_schema": {
+        "type": "object",
+        "properties": { "job_id": { "type": "string" } },
+        "required": ["job_id"]
+      },
+      "required_capability": "plugins.use",
+      "mutates": true,
+      "idempotency": "request_id",
+      "risk": "reversible"
+    },
+    {
+      "id": "__PLUGIN__.run",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "job_id": { "type": "string" },
+          "input": { "type": "object" },
+          "checkpoint": {},
+          "children": { "type": "array" },
+          "signal": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "kind": { "const": "answer" },
+                  "value": {
+                    "type": "object",
+                    "properties": { "text": { "type": "string" } },
+                    "required": ["text"]
+                  }
+                },
+                "required": ["kind", "value"]
+              },
+              {
+                "type": "object",
+                "properties": { "kind": { "const": "deadline" } },
+                "required": ["kind"]
+              }
+            ]
+          }
+        },
+        "required": ["job_id", "input", "checkpoint", "children"],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": { "status": { "type": "string", "enum": ["parked", "done"] } },
+        "required": ["status"]
+      },
+      "required_capability": "plugins.use",
+      "mutates": false,
+      "idempotency": "read_only",
+      "risk": "read"
+    },
+    {
+      "id": "__PLUGIN__.answer",
+      "input_schema": {
+        "type": "object",
+        "properties": { "text": { "type": "string" } },
+        "required": ["text"],
+        "additionalProperties": false
+      },
+      "output_schema": { "type": "object" },
+      "required_capability": "plugins.use",
+      "mutates": false,
+      "idempotency": "read_only",
+      "risk": "read"
+    }
+  ]
+}

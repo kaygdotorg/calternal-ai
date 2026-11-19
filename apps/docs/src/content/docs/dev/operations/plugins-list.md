@@ -131,13 +131,6 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
           "type": "string"
         },
         {
-          "description": "Read a bounded scope of cumulative guest runtime observations under an operator grant.",
-          "enum": [
-            "read_runtime_observations_v1"
-          ],
-          "type": "string"
-        },
-        {
           "description": "Read confirmed runtime in a retained window within the granted scope.",
           "enum": [
             "read_runtime_window_v1"

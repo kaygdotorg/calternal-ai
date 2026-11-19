@@ -1,6 +1,6 @@
 //! Machine and account capacity accounting under the existing registry lock.
 
-use calternal_machine::protocol::Owner;
+use calternal_machine::protocol::{MIN_SANDBOX_MEMORY_BYTES, Owner};
 use calternal_types::AccountId;
 use uuid::Uuid;
 
@@ -8,6 +8,9 @@ use super::{Lease, LeaseState, Machine, Settings, State};
 
 // Minimum headroom per tentative start, separate from the process memory cap.
 const START_HEADROOM_BYTES: u64 = 64 * 1024 * 1024;
+
+/// User-facing reason shared by the run view and the thread projection.
+pub(crate) const MEMORY_WAIT: &str = "Waiting for enough available memory on a machine.";
 
 impl State {
     /// Read the number of leases reserved on this machine from the registry.
@@ -19,6 +22,9 @@ impl State {
     pub(super) fn take_slot(&mut self, machine: Option<Uuid>, account: Option<AccountId>) {
         if let Some(m) = machine.and_then(|id| self.machines.get_mut(&id)) {
             m.assigned += 1;
+            if let Some(live) = &mut m.live {
+                live.memory_reservations += 1;
+            }
             let owner = m.row.owner;
             if owner == Owner::Pool
                 && let Some(account) = account
@@ -53,7 +59,8 @@ impl State {
         }
     }
 
-    pub(super) fn free(&self, m: &Machine) -> usize {
+    /// Number of placements possible under the explicit operator ceiling.
+    pub(super) fn free_slots(&self, m: &Machine) -> usize {
         match &m.live {
             Some(live) if !live.draining && !m.row.draining && !m.row.revoked => {
                 (live.capacity.max_sandboxes as usize)
@@ -61,6 +68,31 @@ impl State {
             }
             _ => 0,
         }
+    }
+
+    /// Available reservations in the latest report. Charge already admitted
+    /// work conservatively even when some of its RSS is reflected in the sample.
+    /// No reads outside the in-memory machine record.
+    pub(super) fn memory_slots(&self, m: &Machine) -> usize {
+        m.live.as_ref().map_or(0, |live| {
+            let required = live
+                .guest_size
+                .map_or(MIN_SANDBOX_MEMORY_BYTES, |size| size.host_memory_bytes());
+            let bytes = live.capacity.available_memory_bytes.unwrap_or(0);
+            let bytes = if live.capacity.memory_bytes == 0 {
+                bytes
+            } else {
+                bytes.min(live.capacity.memory_bytes)
+            };
+            usize::try_from(bytes / required)
+                .unwrap_or(usize::MAX)
+                .saturating_sub(live.memory_reservations)
+        })
+    }
+
+    /// Available placements after the operator ceiling and host reservations.
+    pub(super) fn free(&self, m: &Machine) -> usize {
+        self.free_slots(m).min(self.memory_slots(m))
     }
 
     /// Compute a lease's placement capacity after machine authorization and
@@ -71,38 +103,34 @@ impl State {
         machine: &Machine,
         lease: &Lease,
         settings: &Settings,
-    ) -> usize {
-        if lease
-            .row
-            .pinned_machine
-            .is_some_and(|id| id != machine.row.id)
+    ) -> Option<usize> {
+        if !super::readiness::connected(machine, settings)
+            || lease
+                .row
+                .pinned_machine
+                .is_some_and(|id| id != machine.row.id)
             || (lease.row.worker && !Self::worker_machine(machine, settings))
             || (lease.row.harness.is_some() && !Self::harness_machine(machine))
         {
-            return 0;
+            return None;
         }
         let sponsor = lease.row.shared_sponsor.unwrap_or(lease.row.account);
         if lease.row.shared_sponsor.is_some()
             && (!self.may_use(machine, sponsor)
-                || !machine
-                    .live
-                    .as_ref()
-                    .is_some_and(|live| live.shared_provider))
+                || !machine.live.as_ref().is_some_and(|live| {
+                    live.shared_provider && (lease.row.shared_tools.is_none() || live.shared_tools)
+                }))
         {
-            return 0;
+            return None;
         }
         let mut free = self.free_for(machine, lease.row.account);
         if machine.row.owner != Owner::Pool {
-            return if self.may_use(machine, sponsor) {
-                free
-            } else {
-                0
-            };
+            return self.may_use(machine, sponsor).then_some(free);
         }
         if machine
             .live
             .as_ref()
-            .is_some_and(|live| live.guest_memory_mib.is_some())
+            .is_some_and(|live| live.guest_size.is_some())
             && (self.leases.values().any(|active| {
                 active.row.account == lease.row.account
                     && active.assigned_machine() == Some(machine.row.id)
@@ -115,41 +143,42 @@ impl State {
                     guest.active_threads > 0 && guest.resource_owner != lease.row.resource_owner
                 }))
         {
-            return 0;
+            return None;
         }
         if !self.resource_hook_allows(lease, machine) {
-            return 0;
+            return None;
         }
         let policy = lease
             .row
             .resource_owner
             .and_then(|owner| self.compute_limits.get(&owner));
         let Some(limits) = policy else {
-            return if lease.pool_diagnostic || self.may_use(machine, sponsor) {
-                free
-            } else {
-                0
-            };
+            return (lease.pool_diagnostic || self.may_use(machine, sponsor)).then_some(free);
         };
         if limits.runtime_seconds.is_some()
             && (machine
                 .live
                 .as_ref()
-                .is_none_or(|live| live.guest_memory_mib.is_none())
+                .is_none_or(|live| live.guest_size.is_none())
                 || !lease
                     .row
                     .resource_owner
                     .and_then(|owner| self.runtime_windows.get(&owner))
                     .is_some_and(|window| window.allowed))
         {
-            return 0;
+            return None;
         }
         if !limits.hosted
             || limits.memory_mib.is_some_and(|mib| {
-                machine.live.as_ref().and_then(|live| live.guest_memory_mib) != Some(mib)
+                machine
+                    .live
+                    .as_ref()
+                    .and_then(|live| live.guest_size)
+                    .map(|size| size.memory_mib)
+                    != Some(mib)
             })
         {
-            return 0;
+            return None;
         }
         if let Some(cap) = limits.active_threads {
             let held = self
@@ -162,7 +191,7 @@ impl State {
                 .count();
             free = free.min((cap as usize).saturating_sub(held));
         }
-        free
+        Some(free)
     }
 
     /// Limit guest placement to observed headroom after reserving in-flight
@@ -170,11 +199,7 @@ impl State {
     /// before using its capacity. Cost: lease scan bounded by machine slots.
     pub(super) fn free_for(&self, m: &Machine, account: AccountId) -> usize {
         let free = self.free(m);
-        let Some(live) = m
-            .live
-            .as_ref()
-            .filter(|live| live.guest_memory_mib.is_some())
-        else {
+        let Some(live) = m.live.as_ref().filter(|live| live.guest_size.is_some()) else {
             return free;
         };
         if free == 0 {

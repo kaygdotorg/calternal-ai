@@ -269,6 +269,7 @@ mod tests {
             space_id: Some(calternal_types::SpaceId::new()),
             provider_login: false,
             shared_provider_sponsor: None,
+            shared_tools: None,
             code_directory: None,
             worker: None,
             account_id: Uuid::new_v4(),

@@ -131,12 +131,6 @@ Re-exports [readPluginState](/docs/dev/typescript/plugin-sdk/worker-v2/functions
 
 ***
 
-### readRuntimeObservations
-
-Re-exports [readRuntimeObservations](/docs/dev/typescript/plugin-sdk/worker-v2/functions/readruntimeobservations/)
-
-***
-
 ### readRuntimeWindow
 
 Re-exports [readRuntimeWindow](/docs/dev/typescript/plugin-sdk/worker-v2/functions/readruntimewindow/)
@@ -173,18 +167,6 @@ Re-exports [ResourceOwner](/docs/dev/typescript/plugin-sdk/worker-v2/interfaces/
 
 ***
 
-### RuntimeObservation
-
-Re-exports [RuntimeObservation](/docs/dev/typescript/plugin-sdk/worker-v2/interfaces/runtimeobservation/)
-
-***
-
-### RuntimeObservationPage
-
-Re-exports [RuntimeObservationPage](/docs/dev/typescript/plugin-sdk/worker-v2/interfaces/runtimeobservationpage/)
-
-***
-
 ### RuntimeWindow
 
 Re-exports [RuntimeWindow](/docs/dev/typescript/plugin-sdk/worker-v2/interfaces/runtimewindow/)
@@ -200,6 +182,12 @@ Re-exports [serveWorker](/docs/dev/typescript/plugin-sdk/stdio-worker/functions/
 ### SpaceUsage
 
 Re-exports [SpaceUsage](/docs/dev/typescript/plugin-sdk/worker-v2/interfaces/spaceusage/)
+
+***
+
+### startJob
+
+Re-exports [startJob](/docs/dev/typescript/plugin-sdk/job-waits/functions/startjob/)
 
 ***
 

@@ -590,34 +590,6 @@ impl<D: Directory> InvocationHost for SpaceHost<D> {
                     .resource_runtime_window(self.space, &binding, since, until)
                     .map_err(|_| Error::Refused)
             }
-            HostCallKind::ReadRuntimeObservationsV1 => {
-                let object = exact(input, &["after"])?;
-                let cursor = str_field(object, "after")?.unwrap_or("0");
-                let after = cursor
-                    .parse::<i64>()
-                    .ok()
-                    .filter(|n| *n >= 0 && n.to_string() == cursor)
-                    .ok_or(Error::Invalid)?;
-                if !self.authorize(ManifestCapability::SpaceSettings) {
-                    return Err(Error::Refused);
-                }
-                let checksum = self
-                    .plugin
-                    .review_checksum
-                    .as_deref()
-                    .ok_or(Error::Refused)?;
-                let machines = self.state.store.machines().ok_or(Error::Refused)?;
-                let binding = machines
-                    .resource_binding(self.space, &self.plugin.manifest.id, checksum)
-                    .map_err(|_| Error::Refused)?;
-                let page = machines
-                    .resource_observation_page(self.space, &binding, after)
-                    .map_err(|_| Error::Refused)?;
-                if !self.authorize(ManifestCapability::SpaceSettings) {
-                    return Err(Error::Refused);
-                }
-                Ok(page)
-            }
             HostCallKind::ReadPluginStateV1 => {
                 let object = exact(input, &["key"])?;
                 let key = str_field(object, "key")?.ok_or(Error::Invalid)?;

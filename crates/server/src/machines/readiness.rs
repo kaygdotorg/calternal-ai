@@ -349,7 +349,7 @@ impl MachineService {
             .is_some_and(|live| {
                 live.harness_protocol
                     && !live.direct
-                    && (live.guest_memory_mib.is_some() && !live.kvm_fallback) == guest
+                    && (live.guest_size.is_some() && !live.kvm_fallback) == guest
             });
         if !matches {
             return Err(Error::unavailable(
@@ -446,7 +446,13 @@ impl MachineService {
         account: AccountId,
         pin: Option<Uuid>,
         position: Option<usize>,
+        memory_wait: bool,
     ) -> Result<Value, Error> {
+        if memory_wait {
+            return Ok(
+                json!({"code":"waiting_for_memory","message":super::MEMORY_WAIT,"queue_position":position}),
+            );
+        }
         let st = self.lock()?;
         let mut enrolled = false;
         let mut online = false;

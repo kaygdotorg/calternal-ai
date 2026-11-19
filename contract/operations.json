@@ -1054,13 +1054,6 @@
               "type": "string"
             },
             {
-              "description": "Read a bounded scope of cumulative guest runtime observations under an operator grant.",
-              "enum": [
-                "read_runtime_observations_v1"
-              ],
-              "type": "string"
-            },
-            {
               "description": "Read confirmed runtime in a retained window within the granted scope.",
               "enum": [
                 "read_runtime_window_v1"
@@ -2670,13 +2663,6 @@
               "type": "string"
             },
             {
-              "description": "Read a bounded scope of cumulative guest runtime observations under an operator grant.",
-              "enum": [
-                "read_runtime_observations_v1"
-              ],
-              "type": "string"
-            },
-            {
               "description": "Read confirmed runtime in a retained window within the granted scope.",
               "enum": [
                 "read_runtime_window_v1"
@@ -4203,13 +4189,6 @@
               "description": "Read the authorized space's committed text and binary bytes.",
               "enum": [
                 "read_space_usage_v1"
-              ],
-              "type": "string"
-            },
-            {
-              "description": "Read a bounded scope of cumulative guest runtime observations under an operator grant.",
-              "enum": [
-                "read_runtime_observations_v1"
               ],
               "type": "string"
             },
@@ -18045,11 +18024,16 @@
         "notice": {
           "description": "Notice for the person configuring the provider account.",
           "type": "string"
+        },
+        "tools_enabled": {
+          "description": "Whether the Owner enabled isolated tools for this binding.",
+          "type": "boolean"
         }
       },
       "required": [
         "configured",
-        "notice"
+        "notice",
+        "tools_enabled"
       ],
       "title": "SpaceMachineResult",
       "type": "object"
@@ -18075,6 +18059,14 @@
         "space_id": {
           "description": "Shared space UUID.",
           "type": "string"
+        },
+        "tools_enabled": {
+          "default": null,
+          "description": "Enable isolated tools on this machine. Only the space Owner may enable them.",
+          "type": [
+            "boolean",
+            "null"
+          ]
         }
       },
       "required": [
@@ -18102,11 +18094,16 @@
         "notice": {
           "description": "Notice for the person configuring the provider account.",
           "type": "string"
+        },
+        "tools_enabled": {
+          "description": "Whether the Owner enabled isolated tools for this binding.",
+          "type": "boolean"
         }
       },
       "required": [
         "configured",
-        "notice"
+        "notice",
+        "tools_enabled"
       ],
       "title": "SpaceMachineResult",
       "type": "object"

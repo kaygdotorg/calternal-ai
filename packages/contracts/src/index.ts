@@ -327,6 +327,10 @@ space_id: string, };
 
 export type SpaceMachineSet = {
 /**
+ * Enable isolated tools on this machine. Only the space Owner may enable them.
+ */
+tools_enabled: boolean | null,
+/**
  * Shared space UUID.
  */
 space_id: string,
@@ -339,6 +343,10 @@ machine_id: string | null, };
  */
 
 export type SpaceMachineResult = {
+/**
+ * Whether the Owner enabled isolated tools for this binding.
+ */
+tools_enabled: boolean,
 /**
  * Whether a shared machine is configured.
  */
@@ -820,7 +828,7 @@ export type ManifestCapability = "space.read" | "content.write" | "plugins.use" 
  * The only broker methods a worker may request.
  */
 
-export type HostCallKind = "read_item" | "list_items_v1" | "read_setting_v1" | "read_space_usage_v1" | "read_runtime_observations_v1" | "read_runtime_window_v1" | "read_plugin_state_v1" | "cas_plugin_state_v1" | "content_prepare_v1" | "write_item" | "list_collection" | "emit_event" | "start_job" | "checkpoint_job" | "request_secret_handle";
+export type HostCallKind = "read_item" | "list_items_v1" | "read_setting_v1" | "read_space_usage_v1" | "read_runtime_window_v1" | "read_plugin_state_v1" | "cas_plugin_state_v1" | "content_prepare_v1" | "write_item" | "list_collection" | "emit_event" | "start_job" | "checkpoint_job" | "request_secret_handle";
 /**
  * Version-one worker request for an indexed page of its own kind.
  */

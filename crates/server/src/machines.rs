@@ -52,6 +52,7 @@ mod group_storage;
 pub(crate) mod resource_hooks;
 pub use resource_hooks::ResourceHookBinding;
 mod runtime;
+pub(crate) use capacity::MEMORY_WAIT;
 pub use compute::ComputeLimits;
 pub use runtime::RuntimeUsage;
 /// Local deployment enrollment and the first-owner onboarding operation.

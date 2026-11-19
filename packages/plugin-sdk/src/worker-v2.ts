@@ -200,40 +200,6 @@ export async function readSpaceUsage(
   return { text_bytes: value.text_bytes, binary_bytes: value.binary_bytes };
 }
 
-/** One cumulative clock observation. An unknown end has no terminal timestamp. */
-export interface RuntimeObservation {
-  /** Fenced guest generation. */
-  generation: string;
-  /** UTC anchor in Unix milliseconds. */
-  started_at_ms: number;
-  /** Exact decimal nanoseconds to date. */
-  running_ns: string;
-  /** State of the source observation. */
-  state: "running" | "stopped" | "unknown";
-}
-
-/** A bounded page of latest cumulative observations in the granted scope. */
-export interface RuntimeObservationPage {
-  /** Replay cursor. Persist it with the accepted observations. */
-  cursor: string;
-  /** Rows ordered by the host's durable observation sequence. */
-  observations: RuntimeObservation[];
-  /** Read another page while true. */
-  more: boolean;
-  /** This cursor is outside retention. Restart from zero and reconcile. */
-  reset_required: boolean;
-}
-
-/** Read up to 64 observations. The manifest declares `read_runtime_observations_v1`
- * and the exact installed package needs the operator's resource binding.
- * Cost is one bounded broker round trip. Replays carry cumulative time.
- */
-export async function readRuntimeObservations(
-  context: WorkerContextV2, after = "0",
-): Promise<RuntimeObservationPage> {
-  return await context.call("read_runtime_observations_v1", { after }) as RuntimeObservationPage;
-}
-
 /** Principal to which the host attributes a scoped resource. */
 export interface ResourceOwner {
   /** The two possible principal types. */

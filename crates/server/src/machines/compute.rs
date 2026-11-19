@@ -238,5 +238,3 @@ pub(super) fn authority_error(error: calternal_auth::Error) -> Error {
         _ => Error::unavailable("resource authority is unavailable"),
     }
 }
-
-pub(super) const MIGRATION: &str = include_str!("compute_limits.sql");

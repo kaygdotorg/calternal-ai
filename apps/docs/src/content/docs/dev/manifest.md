@@ -155,13 +155,6 @@ The only broker methods a worker may request.
       ]
     },
     {
-      "description": "Read a bounded scope of cumulative guest runtime observations under an operator grant.",
-      "type": "string",
-      "enum": [
-        "read_runtime_observations_v1"
-      ]
-    },
-    {
       "description": "Read confirmed runtime in a retained window within the granted scope.",
       "type": "string",
       "enum": [

@@ -96,6 +96,7 @@ async fn sync(svc: &Arc<MachineService>, m: &M, leases: Vec<LeaseReport>) -> Vec
         capacity: Capacity {
             cpus: 1,
             memory_bytes: 0,
+            available_memory_bytes: Some(64 << 30),
             max_sandboxes: 2,
             running_sandboxes: 0,
         },

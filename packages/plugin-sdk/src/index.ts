@@ -294,7 +294,7 @@ export { readSpaceUsage, type SpaceUsage } from "./worker-v2.js";
 /** Read and replace private versioned package state with durable retry receipts. */
 export { readPluginState, compareAndSetPluginState, type PluginState } from "./worker-v2.js";
 /** Read bounded, scoped and replayable guest clock observations. */
-export { readRuntimeObservations, readRuntimeWindow, type RuntimeObservation, type RuntimeObservationPage, type RuntimeWindow, type ResourceOwner, type ResourceAdmissionInput, type ResourceAdmissionDecision } from "./worker-v2.js";
+export { readRuntimeWindow, type RuntimeWindow, type ResourceOwner, type ResourceAdmissionInput, type ResourceAdmissionDecision } from "./worker-v2.js";
 
 /** Worker v2: WorkerHandlerV2; bounded transport and host-authorized effects. */
 export { WorkerHandlerV2 } from "./worker-v2.js";
@@ -314,6 +314,6 @@ export { serveWorker } from "./stdio-worker.js";
 export { typedHandlers } from "./typed-handlers.js";
 
 /** Durably park a replayable job on a typed signal or deadline. */
-export { parkJob } from "./job-waits.js";
+export { parkJob, startJob } from "./job-waits.js";
 /** Signal and checkpoint contracts used by durable job handlers. */
 export type { JobPark, JobSignal, JobWaitSource, ParkedJob } from "./job-waits.js";

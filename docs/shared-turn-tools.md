@@ -52,3 +52,11 @@ or reach the broker. A synthetic file and environment positive control was
 detected. The broker opened the reduced login file without reading its bytes
 and injected a generated canary into both authenticated mock upstream calls.
 This tests the boundary and the gateway protocol against a mock upstream.
+
+**Implementation.** The current Owner can enable the space's brokered route
+with `space.machine.set` and `tools_enabled: true`. The machine uses the fixed
+Claude Messages or Codex Responses route and allows one workspace MCP tool.
+The Podman executor gets separate PID, mount, and network namespaces and
+the workspace mount under a non-root container UID. Only Full access mounts
+the workspace writable. The Codex adapter pre-approves this one MCP tool so
+it can run with interactive approval disabled. [Codex tool approval configuration](https://developers.openai.com/plugins/build/plugins#configure-installed-server-policy)
