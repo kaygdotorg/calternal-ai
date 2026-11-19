@@ -9,6 +9,8 @@ mod kvm;
 #[cfg(test)]
 mod measure;
 mod network;
+mod space;
+pub(super) use space::SmallRuntime;
 mod vmm;
 mod wire;
 
@@ -82,6 +84,10 @@ impl Config {
     /// Read and validate the small operator configuration on a blocking task.
     /// Disk and VM resources are untouched until backend initialization.
     pub async fn load(path: &Path) -> SandboxResult<Self> {
+        Self::load_profile(path, false).await
+    }
+
+    async fn load_profile(path: &Path, small: bool) -> SandboxResult<Self> {
         let file = tokio::fs::read(path).await.map_err(SandboxError::new)?;
         let config: Self = serde_json::from_slice(&file).map_err(SandboxError::new)?;
         if !config.firecracker.is_absolute()
@@ -92,7 +98,14 @@ impl Config {
                 .as_ref()
                 .is_some_and(|path| !path.is_absolute())
             || !(1..=32).contains(&config.vcpus)
-            || GuestSize::from_mib(config.memory_mib).is_none()
+            || if small {
+                config.memory_mib != 256
+                    || config.vcpus != 2
+                    || config.network_policy.is_some()
+                    || config.warm_guests != 0
+            } else {
+                GuestSize::from_mib(config.memory_mib).is_none()
+            }
             || !(1024..=65536).contains(&config.disk_mib)
             || !(1..=64).contains(&config.max_guests)
             || config.warm_guests > 2

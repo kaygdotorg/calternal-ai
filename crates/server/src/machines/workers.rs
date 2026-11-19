@@ -45,6 +45,28 @@ impl MachineService {
         thread: Uuid,
         source: PluginWorker,
     ) -> Result<RunView, Error> {
+        self.request_plugin_placement(account, thread, source, worker::IMAGE)
+    }
+
+    /// Reserve an offline small-VM placement before publishing its v2 carrier.
+    /// Shares the worker lease capacity and teardown acknowledgement, with the
+    /// same two durable commits on the existing placement scheduler.
+    pub(crate) fn request_space_vm(
+        &self,
+        account: AccountId,
+        thread: Uuid,
+        source: PluginWorker,
+    ) -> Result<RunView, Error> {
+        self.request_plugin_placement(account, thread, source, worker::SPACE_VM_IMAGE)
+    }
+
+    fn request_plugin_placement(
+        &self,
+        account: AccountId,
+        thread: Uuid,
+        source: PluginWorker,
+        image: &str,
+    ) -> Result<RunView, Error> {
         if source.source.len() > worker::MAX_SOURCE_BYTES {
             return Err(Error::invalid_input("plugin bundle exceeds 1 MiB"));
         }
@@ -52,7 +74,7 @@ impl MachineService {
             source.space_id,
             account,
             thread,
-            Some(worker::IMAGE.into()),
+            Some(image.into()),
             Some(source),
             None,
             false,
@@ -222,6 +244,7 @@ impl super::state::State {
         &self,
         account: AccountId,
         settings: &Settings,
+        small_vm: bool,
     ) -> Result<(), Error> {
         let mut enrolled = false;
         let mut online = false;
@@ -231,7 +254,7 @@ impl super::state::State {
                 && self.may_use(machine, account)
         }) {
             enrolled = true;
-            if Self::worker_machine(machine, settings) {
+            if Self::worker_machine(machine, settings, small_vm) {
                 online = true;
                 if self.free_for(machine, account, settings) > 0 {
                     return Ok(());
@@ -241,6 +264,8 @@ impl super::state::State {
         Err(if online {
             Error::unavailable("Plugin workers are busy. Retry shortly.")
                 .with_details(serde_json::json!({"reason":"worker_capacity"}))
+        } else if small_vm {
+            Error::unavailable("No eligible pool machine has an available small plugin VM.")
         } else if enrolled {
             Error::unavailable("No pool machine is ready to run containers. Ask an operator to reconnect one or enroll another with Podman.")
                 .with_details(serde_json::json!({"reason":"worker_machine_offline"}))
@@ -252,13 +277,14 @@ impl super::state::State {
 
     /// Whether the authenticated pool session reported an initialized container
     /// runner with a positive sandbox ceiling. Pure in-memory check.
-    pub(super) fn worker_machine(machine: &Machine, settings: &Settings) -> bool {
+    pub(super) fn worker_machine(machine: &Machine, settings: &Settings, small_vm: bool) -> bool {
         machine.row.owner == Owner::Pool
             && super::readiness::connected(machine, settings)
-            && machine
-                .live
-                .as_ref()
-                .is_some_and(|live| !live.direct && live.capacity.max_sandboxes > 0)
+            && machine.live.as_ref().is_some_and(|live| {
+                !live.direct
+                    && live.capacity.max_sandboxes > 0
+                    && (!small_vm || live.capacity.small_plugin_vm)
+            })
     }
 
     /// Persist teardown proof before releasing an admission reservation. One

@@ -19,6 +19,8 @@ pub struct ConfiguredBackend {
     direct: DirectBackend,
     podman: PodmanBackend,
     selected: AtomicU8,
+    #[cfg(target_os = "linux")]
+    small_vm: Option<super::microvm::SmallRuntime>,
 }
 impl ConfiguredBackend {
     /// Build both cheap backend configurations; no process starts or file I/O.
@@ -28,6 +30,26 @@ impl ConfiguredBackend {
             direct: DirectBackend::new(root.clone()),
             podman: PodmanBackend::new(podman, root, image),
             selected: AtomicU8::new(0),
+            #[cfg(target_os = "linux")]
+            small_vm: None,
+        }
+    }
+
+    /// Configure the separate offline plugin guest wall. Reads the operator
+    /// file. Initialization verifies KVM and immutable images before admission.
+    pub async fn with_small_vm(self, root: PathBuf, path: &std::path::Path) -> SandboxResult<Self> {
+        #[cfg(target_os = "linux")]
+        {
+            let mut configured = self;
+            configured.small_vm = Some(super::microvm::SmallRuntime::load(root, path).await?);
+            Ok(configured)
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            let _ = (self, root, path);
+            Err(SandboxError(
+                "Small plugin VMs require Linux and KVM".into(),
+            ))
         }
     }
 
@@ -41,6 +63,10 @@ impl ConfiguredBackend {
 impl Backend for ConfiguredBackend {
     fn initialize(&self) -> BoxFuture<'_, SandboxResult<()>> {
         Box::pin(async move {
+            #[cfg(target_os = "linux")]
+            if let Some(vm) = &self.small_vm {
+                vm.initialize().await?;
+            }
             if self.podman.engine_available().await {
                 self.podman.initialize().await
             } else {
@@ -95,6 +121,30 @@ impl Backend for ConfiguredBackend {
                     "Podman is unavailable for owner erasure".into(),
                 ))
             }
+        })
+    }
+    fn supports_small_plugin_vm(&self) -> bool {
+        #[cfg(target_os = "linux")]
+        return self.name() == "podman" && self.small_vm.is_some();
+        #[cfg(not(target_os = "linux"))]
+        false
+    }
+
+    fn start_space<'a>(
+        &'a self,
+        spec: &'a SandboxSpec,
+    ) -> BoxFuture<'a, SandboxResult<Arc<dyn Sandbox>>> {
+        Box::pin(async move {
+            #[cfg(target_os = "linux")]
+            if self.name() == "podman"
+                && let Some(vm) = &self.small_vm
+            {
+                return vm.start(spec).await;
+            }
+            let _ = spec;
+            Err(SandboxError(
+                "Small plugin VM is unavailable on this machine".into(),
+            ))
         })
     }
     fn start_harness<'a>(

@@ -9,6 +9,9 @@ pub const MAX_SOURCE_BYTES: usize = 1024 * 1024;
 pub const STDERR_TAIL_BYTES: usize = 4096;
 /// Worker container image; operators must provision it on enrolled machines.
 pub const IMAGE: &str = "docker.io/library/node:24-alpine";
+/// Internal placement image selector for an offline small plugin microVM.
+/// Used only on v2 space leases. It is never passed to a container engine.
+pub const SPACE_VM_IMAGE: &str = "calternal:small-plugin-vm";
 /// Fixed worker resource ceiling: 256 MiB, one CPU and 64 processes.
 pub const LIMITS: Limits = Limits {
     memory_bytes: Some(256 * 1024 * 1024),

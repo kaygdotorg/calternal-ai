@@ -32,6 +32,8 @@ pub struct ApprovedItemHead {
     kind: String,
     worker_source: String,
     wake: Arc<Wake>,
+    #[cfg(test)]
+    container_fixture: bool,
 }
 
 impl std::fmt::Debug for ApprovedItemHead {
@@ -85,6 +87,8 @@ impl ApprovedItemHead {
             kind,
             worker_source,
             wake: Arc::default(),
+            #[cfg(test)]
+            container_fixture: false,
         })
     }
 }
@@ -210,7 +214,15 @@ async fn wake_space<D: Directory>(
     let runtime = tokio::runtime::Handle::current();
     let placement = crate::blocking::spawn(move || {
         scheduler.check_space_channel_available(pinned.space)?;
-        let run = scheduler.request_worker(
+        let place = MachineService::request_space_vm;
+        #[cfg(test)]
+        let place = if pinned.container_fixture {
+            MachineService::request_worker
+        } else {
+            place
+        };
+        let run = place(
+            &scheduler,
             account,
             Uuid::new_v4(),
             PluginWorker {

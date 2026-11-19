@@ -160,6 +160,25 @@ pub trait Backend: Send + Sync + 'static {
     fn start<'a>(&'a self, spec: &'a SandboxSpec)
     -> BoxFuture<'a, SandboxResult<Arc<dyn Sandbox>>>;
 
+    /// Whether the initialized backend accepts offline plugin VM placements.
+    /// Cost: one field check, with no I/O or guest start.
+    fn supports_small_plugin_vm(&self) -> bool {
+        false
+    }
+
+    /// Start an offline plugin-space placement. Called only after the enrolled
+    /// carrier opens. Backends without the configured wall refuse before I/O.
+    fn start_space<'a>(
+        &'a self,
+        _spec: &'a SandboxSpec,
+    ) -> BoxFuture<'a, SandboxResult<Arc<dyn Sandbox>>> {
+        Box::pin(async {
+            Err(SandboxError(
+                "Small plugin VM is unavailable on this machine".into(),
+            ))
+        })
+    }
+
     /// Start a harness under the requested provider isolation. Unsupported
     /// backends fail before mounting any profile or starting its adapter.
     fn start_harness<'a>(

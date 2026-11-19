@@ -525,7 +525,15 @@ impl State {
                 .machines
                 .values()
                 // Shared-space workers use initialized operator containers.
-                .filter(|m| !l.row.worker || Self::worker_machine(m, settings))
+                .filter(|m| {
+                    !l.row.worker
+                        || Self::worker_machine(
+                            m,
+                            settings,
+                            l.row.image.as_deref()
+                                == Some(calternal_machine::sandbox::worker::SPACE_VM_IMAGE),
+                        )
+                })
                 .filter(|m| l.row.harness.is_none() || Self::harness_machine(m))
                 .filter(|m| l.row.pinned_machine.is_none_or(|id| id == m.row.id))
                 .filter(|m| {

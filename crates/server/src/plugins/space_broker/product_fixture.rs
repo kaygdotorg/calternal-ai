@@ -107,6 +107,23 @@ async fn worker_pid(work: &Path) -> String {
     panic!("package must be running before removing its lease renewals");
 }
 
+async fn firecracker_pid(run: &Path) -> String {
+    let mut entries = tokio::fs::read_dir("/proc").await.unwrap();
+    let run = run.as_os_str().as_encoded_bytes();
+    while let Some(entry) = entries.next_entry().await.unwrap() {
+        if let Ok(args) = tokio::fs::read(entry.path().join("cmdline")).await
+            && args.windows(run.len()).any(|window| window == run)
+            && args
+                .split(|b| *b == 0)
+                .next()
+                .is_some_and(|cmd| cmd.ends_with(b"/firecracker"))
+        {
+            return entry.file_name().into_string().unwrap();
+        }
+    }
+    panic!("live plugin VMM is absent");
+}
+
 // TLS termination stays outside the product router, as in deployment. Dropping
 // bytes in both directions still leaves both real TCP sockets open.
 const RELAY: &str = r#"
@@ -248,6 +265,19 @@ impl TlsRelay {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 3)]
 async fn enrolled_runner_multiplexes_maximum_results_and_fences_lost_or_erased_spaces() {
+    exercise_enrolled_runner(None).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 3)]
+async fn enrolled_runner_executes_item_head_inside_the_small_kvm_guest() {
+    let Some(path) = std::env::var_os("CALTERNAL_SMALL_VM_TEST_CONFIG") else {
+        eprintln!("SKIP live KVM fixture: CALTERNAL_SMALL_VM_TEST_CONFIG is unset");
+        return;
+    };
+    exercise_enrolled_runner(Some(path.into())).await;
+}
+
+async fn exercise_enrolled_runner(vm_config: Option<PathBuf>) {
     use crate::{
         api::{AppState, allowed_hosts, dispatch, router},
         auth::StoredDirectory,
@@ -261,7 +291,15 @@ async fn enrolled_runner_multiplexes_maximum_results_and_fences_lost_or_erased_s
 
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
-    let root = tempfile::tempdir().unwrap();
+    let root = if let Some(config) = &vm_config {
+        tempfile::Builder::new()
+            .prefix("vm")
+            .rand_bytes(5)
+            .tempdir_in(config.parent().unwrap())
+            .unwrap()
+    } else {
+        tempfile::tempdir().unwrap()
+    };
     let relay = TlsRelay::start(root.path(), address).await;
     let (state, service, ids, items, machine, token) = tokio::task::block_in_place(|| {
         let roots = calternal_roots::Roots {
@@ -342,7 +380,7 @@ async fn enrolled_runner_multiplexes_maximum_results_and_fences_lost_or_erased_s
         store.bind_machines(&service);
         service.set_pool_grant(ids.owner, true).unwrap();
         let approvals = [ids.personal, ids.shared].map(|space| {
-            ApprovedItemHead::new(
+            let mut approval = ApprovedItemHead::new(
                 space,
                 PackagePin {
                     package: "calternal-head-fixture".into(),
@@ -357,7 +395,9 @@ async fn enrolled_runner_multiplexes_maximum_results_and_fences_lost_or_erased_s
                 "notes".into(),
                 child_source(),
             )
-            .unwrap()
+            .unwrap();
+            approval.container_fixture = vm_config.is_none();
+            approval
         });
         let registry = Registry::empty()
             .with_space_item_heads(Vec::from(approvals))
@@ -377,13 +417,15 @@ async fn enrolled_runner_multiplexes_maximum_results_and_fences_lost_or_erased_s
     });
     let api = router(state.clone(), None).layer(axum::Extension(service.clone()));
     let server = tokio::spawn(async move { axum::serve(listener, api).await.unwrap() });
-    let request = |ack| SyncRequest {
+    let small_vm = vm_config.is_some();
+    let request = move |ack| SyncRequest {
         ack,
         draining: false,
         discards: vec![],
         leases: vec![],
         capacity: Capacity {
             cpus: 1,
+            small_plugin_vm: small_vm,
             available_memory_bytes: Some(64 << 30),
             max_sandboxes: 2,
             ..Default::default()
@@ -392,12 +434,26 @@ async fn enrolled_runner_multiplexes_maximum_results_and_fences_lost_or_erased_s
     service.sync(machine, &token, request(0)).await.unwrap();
     let link = Arc::new(relay.link);
     link.set_token(Some(Arc::from(token.as_str())));
-    let placement_root = root.path().join("placements");
-    let runner = Arc::new(Runner::new(
-        Arc::new(FixtureBackend::new(&placement_root, relay.node)),
-        link,
-        2,
-    ));
+    let placement_root = if vm_config.is_some() {
+        root.path().to_path_buf()
+    } else {
+        root.path().join("placements")
+    };
+    let backend: Arc<dyn Backend> = if let Some(path) = &vm_config {
+        let configured = calternal_machine::sandbox::configured::ConfiguredBackend::new(
+            placement_root.clone(),
+            "podman".into(),
+            "unused".into(),
+        )
+        .with_small_vm(placement_root.clone(), path)
+        .await
+        .unwrap();
+        configured.initialize().await.unwrap();
+        Arc::new(configured)
+    } else {
+        Arc::new(FixtureBackend::new(&placement_root, relay.node))
+    };
+    let runner = Arc::new(Runner::new(backend, link, 2));
     let sync_runner = runner.clone();
     let (assignments, mut assigned) = tokio::sync::mpsc::channel(2);
     let routes = tokio::task::block_in_place(|| {
@@ -483,6 +539,34 @@ async fn enrolled_runner_multiplexes_maximum_results_and_fences_lost_or_erased_s
             .await,
         unavailable
     );
+    if vm_config.is_some() {
+        let run = placement_root.join("space-runtime/microvm/run");
+        let pid = firecracker_pid(&run).await;
+        state
+            .registry
+            .space_item_head(ids.personal, "fixture.head")
+            .unwrap()
+            .wake
+            .awake
+            .lock()
+            .await
+            .as_ref()
+            .unwrap()
+            .fence
+            .close();
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while tokio::fs::try_exists(format!("/proc/{pid}")).await.unwrap() {
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        })
+        .await
+        .expect("the enrolled fence must stop the VMM");
+        supervisor.abort();
+        server.abort();
+        let _ = supervisor.await;
+        let _ = server.await;
+        return;
+    }
     let mut first_assignment = assigned.recv().await.unwrap();
     let Down::Assign {
         ref mut fence,

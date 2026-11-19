@@ -98,6 +98,14 @@ impl Agent {
     async fn control(&self, request: Request) -> SandboxResult<()> {
         match request {
             Request::Ready => Ok(()),
+            Request::SmallReady
+                if tokio::fs::try_exists("/run/calternal-small-ready")
+                    .await
+                    .map_err(SandboxError::new)? =>
+            {
+                Ok(())
+            }
+            Request::SmallReady => Err(SandboxError("small plugin kernel was not reseeded".into())),
             Request::Start(space, mut spec) => {
                 spec.space_id = Some(space);
                 let sandbox = self.backend.start(&spec).await?;

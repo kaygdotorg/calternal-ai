@@ -21,6 +21,10 @@ chmod 400 /dev/vdc
 ip link set lo up
 for arg in $(cat /proc/cmdline); do
   case "$arg" in
+    calternal_small_guest=1)
+      /opt/calternal-microvm-agent --reseed-small-boot
+      touch /run/calternal-small-ready
+      ;;
     calternal_net=*)
       settings=${arg#calternal_net=}
       address=${settings%%,*}

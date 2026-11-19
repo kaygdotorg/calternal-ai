@@ -206,6 +206,9 @@ pub struct Capacity {
     /// machine cannot provide a measurement. Admission waits for a sample.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub available_memory_bytes: Option<u64>,
+    /// Whether this machine has initialized the offline small plugin wall.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub small_plugin_vm: bool,
     /// Most provider and worker slots the machine can hold at once.
     pub max_sandboxes: u32,
     /// Slots currently held, including idle leases and pending removals.

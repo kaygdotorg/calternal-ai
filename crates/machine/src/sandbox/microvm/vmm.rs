@@ -38,6 +38,28 @@ impl Guest {
         permit: OwnedSemaphorePermit,
         network: Option<super::network::Lease>,
     ) -> SandboxResult<Self> {
+        Self::boot_profile(config, run, disk, owned, permit, network, false).await
+    }
+
+    pub(super) async fn boot_small(
+        config: &Config,
+        run: &Path,
+        disk: PathBuf,
+        owned: Arc<File>,
+        permit: OwnedSemaphorePermit,
+    ) -> SandboxResult<Self> {
+        Self::boot_profile(config, run, disk, owned, permit, None, true).await
+    }
+
+    async fn boot_profile(
+        config: &Config,
+        run: &Path,
+        disk: PathBuf,
+        owned: Arc<File>,
+        permit: OwnedSemaphorePermit,
+        network: Option<super::network::Lease>,
+        small: bool,
+    ) -> SandboxResult<Self> {
         let socket = run.join(format!(
             "{}.sock",
             &Uuid::new_v4().simple().to_string()[..16]
@@ -50,8 +72,9 @@ impl Guest {
         let definition = socket.with_extension("json");
         let token_drive = socket.with_extension("key");
         let mut token = [0; 512];
+        let entropy_end = if small { 64 } else { 32 };
         SystemRandom::new()
-            .fill(&mut token[..32])
+            .fill(&mut token[..entropy_end])
             .map_err(|_| SandboxError("cannot generate guest control capability".into()))?;
         let key = Arc::new(hmac::Key::new(hmac::HMAC_SHA256, &token[..32]));
         let mut drive = tokio::fs::OpenOptions::new()
@@ -76,6 +99,12 @@ impl Guest {
             "machine-config":{"vcpu_count":config.vcpus,"mem_size_mib":config.memory_mib,"smt":false},
             "vsock":{"guest_cid":3,"uds_path":socket}
         });
+        if small {
+            let boot = launch["boot-source"]["boot_args"]
+                .as_str()
+                .expect("boot arguments");
+            launch["boot-source"]["boot_args"] = json!(format!("{boot} calternal_small_guest=1"));
+        }
         if let Some(lease) = &network {
             let tap = lease.tap();
             let boot = launch["boot-source"]["boot_args"]
@@ -130,6 +159,11 @@ impl Guest {
             _permit: permit,
             _network: network,
         };
+        let probe = if small {
+            Request::SmallReady
+        } else {
+            Request::Ready
+        };
         let ready = tokio::time::timeout(Duration::from_secs(60), async {
             loop {
                 if !guest.alive() {
@@ -137,7 +171,7 @@ impl Guest {
                         "Firecracker exited before the guest was ready".into(),
                     ));
                 }
-                if matches!(guest.control(&Request::Ready).await, Ok(())) {
+                if matches!(guest.control(&probe).await, Ok(())) {
                     break Ok(());
                 }
                 tokio::time::sleep(Duration::from_millis(100)).await;

@@ -157,6 +157,7 @@ impl Runner {
             cpus: std::thread::available_parallelism().map_or(1, |n| n.get() as u32),
             memory_bytes,
             available_memory_bytes,
+            small_plugin_vm: self.backend.supports_small_plugin_vm(),
             max_sandboxes: self.max_sandboxes,
             running_sandboxes: self.slots.lock().expect("slots").len() as u32,
         }
@@ -266,6 +267,11 @@ impl Runner {
                 .clone()
         };
         slot.fence.fetch_max(fence, Ordering::AcqRel);
+        if slot.spec.image.as_deref() == Some(crate::sandbox::worker::SPACE_VM_IMAGE) {
+            // An assignment alone is insufficient to start the plugin wall.
+            // The enrolled carrier validates the binding before wake.
+            return;
+        }
         let me = self.clone();
         tokio::spawn(async move {
             let sandbox = slot.sandbox.read().await;
@@ -468,6 +474,12 @@ impl Runner {
                 }
                 let started = match &slot.harness {
                     Some(harness) => self.backend.start_harness(&slot.spec, harness).await,
+                    None if slot.spec.image.as_deref() == Some(crate::sandbox::worker::SPACE_VM_IMAGE) => {
+                        if !slot.channel_started.load(Ordering::Acquire) {
+                            return Err("small plugin VM requires a space carrier".into());
+                        }
+                        self.backend.start_space(&slot.spec).await
+                    }
                     None => self.backend.start(&slot.spec).await,
                 };
                 let result = started.map_err(|e| {
