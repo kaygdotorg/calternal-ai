@@ -37,3 +37,13 @@ Collisions to settle in the contract: `code` vs `codex` (same SF Symbol) so `cod
 - **Composer context key.** Revision 13.15 puts composer contexts in view-open and renew replies but does not say under which key. The renderer's stand-in reads `viewContexts[<component id>]` and uses the component id as `action_id`; both are assumptions, kept in `src/components/Composer.svelte` and `testing/synthetic-source.ts`.
 - **Request card content.** `RequestCardResolve` is defined (`card_context`, `request_ref`, `decision`, `lifetime` required for approvals) but nothing reads a card's title and trusted material. The stand-in invents a `request.card` route; the real one is revision 14's.
 - **Transcript, composer options, Send:** synthetic stand-ins stay until the host serves them.
+
+## Hot path counts, bounds and review decisions (code review of 6e989eab)
+
+**Reads and flushes.** A window reply is applied once: O(rows in the reply) work, one reactive flush (`tick`) per reply, at most 4 requests a second and 4 in flight per store. A key press in a list is O(1): the id-to-index map answers `indexOf`, nothing is sent while a key repeats, one settled-selection request follows the rest. A held key drawing 5,000 rows costs two window requests (the prefetch). Rows held per store are bounded by `MAX_ROWS` (2,000); beyond it the rows farthest from the view are dropped and asked for again on scroll back.
+
+**Contract points the review raised.**
+- *Open on cursor settle.* The contract says the route opens when the selection settles (section 5.0) and says nothing about an `open.invoke` running then. Conservative choice: a route opens on settle; an `open.invoke` runs only on click or Enter. Gap for revision 14: state whether `open.invoke` may be a plugin operation and whether a settled cursor counts as an activation.
+- *Title of a confirmation sheet.* The contract says the material is the host's and the description cannot relabel it (section 3.2), but does not title the sheet. Conservative choice: a fixed host title, "Please confirm". Gap for revision 14: say who titles the sheet.
+- *Shell actions.* Section 3.1 lets a description reach the sheets and shell controls through a `ShellAction`; the schema enumerates them. The renderer passes to the shell only a well-formed one of `route`, `reload`, `signOut`, `sheet: trash | share`. Gap for revision 14: whether a plugin description may request `signOut` or an app switch at all, and a rule that host chrome (account menu, app switcher) carries a host-owned marker so a description cannot imitate it.
+- *Reduced motion.* Only the skeleton pulse animates in this package; panes and toasts come from `packages/ui`.

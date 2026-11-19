@@ -15,18 +15,19 @@
   "svelte": "./src/index.ts",
   "scripts": {
     "types": "node scripts/generate-types.mjs",
-    "check": "node scripts/generate-types.mjs --check && svelte-check --tsconfig ./tsconfig.json",
+    "check": "node scripts/generate-types.mjs --check && node scripts/check-docs.mjs && svelte-check --tsconfig ./tsconfig.json",
     "test": "vitest run",
     "harness:build": "npm run tokens -w @calternal/ui && mkdir -p harness/public/wallpapers && cp -f ../../apps/web/public/wallpapers/EX_STserBZM.jpg harness/public/wallpapers/ 2>/dev/null; vite build -c vite.harness.config.ts",
     "harness": "vite preview -c vite.harness.config.ts",
     "e2e:perf": "node e2e/perf.mjs",
     "e2e:keys": "node e2e/keys.mjs",
     "e2e:fixtures": "node e2e/fixtures.mjs",
-    "e2e": "npm run e2e:keys && npm run e2e:fixtures && npm run e2e:components && npm run e2e:perf",
+    "e2e": "node scripts/run-e2e.mjs",
     "demo": "node demo/server.mjs",
     "e2e:actions": "node e2e/actions.mjs",
     "e2e:components": "node e2e/components.mjs",
-    "e2e:bulk": "node e2e/bulk.mjs"
+    "e2e:bulk": "node e2e/bulk.mjs",
+    "check:docs": "node scripts/check-docs.mjs"
   },
   "peerDependencies": {
     "svelte": "^5.57.1"

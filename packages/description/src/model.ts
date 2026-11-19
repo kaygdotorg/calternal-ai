@@ -11,6 +11,7 @@ export type WindowReply = WindowResult | WindowPlanError;
 export type RowFields = Record<string, unknown>;
 /** A row of a window: the host-issued id, its fields and the parent refs of its child binds. (The schema bounds `fields` without naming them, so they are typed here as the kind's own values.) */
 export type WindowRow = Omit<GeneratedWindowRow, "fields"> & { fields: RowFields };
+/** The activation contexts the host issued for one row or view: action id to opaque context. */
 export type { ActionContexts };
 
 /** Whether a reply is the typed plan refusal (HTTP 422, code `unsupported_query_plan`). */
