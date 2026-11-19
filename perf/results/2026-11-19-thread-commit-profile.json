@@ -1,0 +1,987 @@
+{
+  "tested_commit": "dec6234a010b29239fcc7afd90724f674c5e469c",
+  "stack": "a4feed8f",
+  "build_host": "calternal-dev-01-compute02",
+  "perf_host": "calternal-perf-01-backup01",
+  "perf_lock": "/usr/local/bin/perf-lock.sh",
+  "append_p95_budget_ms": 40,
+  "method": [
+    "Control uses in-process monotonic markers with no syscall wrapper.",
+    "The interposed arm uses a dev-built libc wrapper for fsync, fdatasync and pwrite, emitted to a separate log. Every interval is paired with its own request on the same monotonic clock.",
+    "The statement arm adds SQLite trace_v2 timers with unexpanded SQL. Background statements in a request window may run on different threads. The three writer commit intervals are correlated separately."
+  ],
+  "http_control": {
+    "commit": "dec6234a",
+    "physical_bytes_before_append": 16727978,
+    "measurements": [
+      {
+        "metric": "threads.16mib.append",
+        "p50": 51.411995000000005,
+        "p95": 55.120059999999995,
+        "p99": 55.25363,
+        "max": 55.25363,
+        "samples": 30,
+        "breached": true
+      },
+      {
+        "metric": "threads.16mib.tail",
+        "p50": 4.235803,
+        "p95": 4.644589,
+        "p99": 5.280663,
+        "max": 5.280663,
+        "samples": 30,
+        "breached": false
+      },
+      {
+        "metric": "threads.16mib.exact",
+        "p50": 3.587167,
+        "p95": 4.044996,
+        "p99": 4.425168,
+        "max": 4.425168,
+        "samples": 30,
+        "breached": false
+      },
+      {
+        "metric": "threads.16mib.message_index_rebuild",
+        "p50": 919.242526,
+        "p95": 919.242526,
+        "p99": 919.242526,
+        "max": 919.242526,
+        "samples": 1,
+        "breached": false
+      }
+    ],
+    "append_ms": [
+      51.169782,
+      52.445252999999994,
+      55.25363,
+      51.015041999999994,
+      51.067309,
+      51.113065,
+      52.51855,
+      53.320043999999996,
+      43.132459999999995,
+      51.716698,
+      51.325022,
+      55.120059999999995,
+      51.411995000000005,
+      52.868925999999995,
+      51.695056,
+      51.412155,
+      51.625775999999995,
+      40.21963,
+      51.418867999999996,
+      49.538160999999995,
+      51.504179,
+      49.946177,
+      49.667124,
+      50.992278,
+      52.063417,
+      49.708082,
+      52.013203000000004,
+      50.301542999999995,
+      52.09211,
+      50.137766
+    ],
+    "breached": true
+  },
+  "http_interposed": {
+    "commit": "dec6234a",
+    "physical_bytes_before_append": 16727978,
+    "measurements": [
+      {
+        "metric": "threads.16mib.append",
+        "p50": 51.970352,
+        "p95": 68.722124,
+        "p99": 70.313097,
+        "max": 70.313097,
+        "samples": 30,
+        "breached": true
+      },
+      {
+        "metric": "threads.16mib.tail",
+        "p50": 4.099867,
+        "p95": 4.723307,
+        "p99": 5.229908,
+        "max": 5.229908,
+        "samples": 30,
+        "breached": false
+      },
+      {
+        "metric": "threads.16mib.exact",
+        "p50": 3.409974,
+        "p95": 3.924108,
+        "p99": 3.9897120000000004,
+        "max": 3.9897120000000004,
+        "samples": 30,
+        "breached": false
+      },
+      {
+        "metric": "threads.16mib.message_index_rebuild",
+        "p50": 988.674025,
+        "p95": 988.674025,
+        "p99": 988.674025,
+        "max": 988.674025,
+        "samples": 1,
+        "breached": false
+      }
+    ],
+    "append_ms": [
+      51.662626,
+      54.768821,
+      51.680809,
+      68.722124,
+      57.048745,
+      51.204206,
+      51.970352,
+      57.067532,
+      51.517293,
+      55.268938,
+      51.131660000000004,
+      53.803991,
+      51.144343,
+      53.820491999999994,
+      51.688735,
+      51.740021,
+      51.474872999999995,
+      52.224099,
+      52.117326999999996,
+      51.915369000000005,
+      52.843218,
+      60.589234,
+      70.313097,
+      52.977762,
+      52.250297,
+      31.140773,
+      50.706213,
+      53.516090000000005,
+      51.359196000000004,
+      51.624383
+    ],
+    "breached": true
+  },
+  "http_sql_profile": {
+    "commit": "dec6234a",
+    "physical_bytes_before_append": 16727978,
+    "measurements": [
+      {
+        "metric": "threads.16mib.append",
+        "p50": 52.048439,
+        "p95": 68.042921,
+        "p99": 71.002952,
+        "max": 71.002952,
+        "samples": 20,
+        "breached": true
+      },
+      {
+        "metric": "threads.16mib.tail",
+        "p50": 4.1242730000000005,
+        "p95": 5.053235,
+        "p99": 5.2676870000000005,
+        "max": 5.2676870000000005,
+        "samples": 20,
+        "breached": false
+      },
+      {
+        "metric": "threads.16mib.exact",
+        "p50": 3.4458599999999997,
+        "p95": 3.756294,
+        "p99": 3.8401009999999998,
+        "max": 3.8401009999999998,
+        "samples": 20,
+        "breached": false
+      },
+      {
+        "metric": "threads.16mib.message_index_rebuild",
+        "p50": 981.987501,
+        "p95": 981.987501,
+        "p99": 981.987501,
+        "max": 981.987501,
+        "samples": 1,
+        "breached": false
+      }
+    ],
+    "append_ms": [
+      53.817836,
+      40.19405999999999,
+      56.941494,
+      52.319627,
+      53.229744000000004,
+      41.185138,
+      53.335061,
+      52.734294,
+      46.963162000000004,
+      68.042921,
+      40.8397,
+      71.002952,
+      52.048439,
+      53.528833999999996,
+      51.765226999999996,
+      44.14627,
+      52.847487,
+      51.993385,
+      51.811835,
+      40.459077
+    ],
+    "breached": true
+  },
+  "control_phase_marks": {
+    "measure": "control",
+    "response_bytes": {
+      "n": 30,
+      "p50": 1100,
+      "p95": 1100,
+      "max": 1100
+    },
+    "ms": {
+      "http_io_outside_server": {
+        "n": 30,
+        "p50": 0.290243,
+        "p95": 0.529853,
+        "max": 0.6505099999999926
+      },
+      "session_authentication": {
+        "n": 30,
+        "p50": 0.011101,
+        "p95": 0.020479,
+        "max": 0.026911
+      },
+      "request_body_parse": {
+        "n": 30,
+        "p50": 0.04253,
+        "p95": 0.073287,
+        "max": 0.088426
+      },
+      "route_and_authority": {
+        "n": 30,
+        "p50": 0.254297,
+        "p95": 8.294353,
+        "max": 10.754657
+      },
+      "thread_schema_and_activation": {
+        "n": 30,
+        "p50": 0.093816,
+        "p95": 0.119444,
+        "max": 0.126717
+      },
+      "save_worker_handoff": {
+        "n": 30,
+        "p50": 0.086141,
+        "p95": 0.108203,
+        "max": 0.111088
+      },
+      "content_slot_wait": {
+        "n": 30,
+        "p50": 0.00018,
+        "p95": 0.000261,
+        "max": 0.000521
+      },
+      "content_preparation_and_receipt_reads": {
+        "n": 30,
+        "p50": 1.794485,
+        "p95": 2.167205,
+        "max": 2.187611
+      },
+      "record_guard_and_write": {
+        "n": 30,
+        "p50": 0.016811,
+        "p95": 0.035978,
+        "max": 0.135754
+      },
+      "content_commit_span": {
+        "n": 30,
+        "p50": 17.546322,
+        "p95": 19.344284,
+        "max": 19.436917
+      },
+      "markdown_sync": {
+        "n": 30,
+        "p50": 15.804125,
+        "p95": 17.221212,
+        "max": 17.92364
+      },
+      "journal_commit_span": {
+        "n": 30,
+        "p50": 6.745339,
+        "p95": 8.113393,
+        "max": 9.536111
+      },
+      "journal_read_queue_publish": {
+        "n": 30,
+        "p50": 0.311224,
+        "p95": 0.390112,
+        "max": 0.475312
+      },
+      "job_commit_span": {
+        "n": 30,
+        "p50": 6.898514,
+        "p95": 8.057068,
+        "max": 8.284805
+      },
+      "job_settings_and_worker_handoff": {
+        "n": 30,
+        "p50": 0.230733,
+        "p95": 0.32505,
+        "max": 0.382227
+      },
+      "job_admission_without_commit": {
+        "n": 30,
+        "p50": 0.457639,
+        "p95": 0.67197,
+        "max": 0.706966
+      },
+      "job_load_and_reply_handoff": {
+        "n": 30,
+        "p50": 0.159829,
+        "p95": 0.255359,
+        "max": 0.264356
+      },
+      "journal_commit_to_callback_done": {
+        "n": 30,
+        "p50": 0.322415,
+        "p95": 0.458419,
+        "max": 0.530734
+      },
+      "response_construction_and_wake": {
+        "n": 30,
+        "p50": 0.211487,
+        "p95": 0.252915,
+        "max": 0.253907
+      },
+      "json_response_serialization": {
+        "n": 30,
+        "p50": 0.027101,
+        "p95": 0.043572,
+        "max": 0.051587
+      },
+      "delivery_session_recheck": {
+        "n": 30,
+        "p50": 0.032691,
+        "p95": 0.040876,
+        "max": 0.041568
+      },
+      "all_commit_spans": {
+        "n": 30,
+        "p50": 47.271078,
+        "p95": 50.566219,
+        "max": 50.734416
+      },
+      "outside_commit_spans": {
+        "n": 30,
+        "p50": 4.091491,
+        "p95": 11.978475,
+        "max": 15.473515999999993
+      },
+      "non_commit_auth_route_parse_and_schema": {
+        "n": 30,
+        "p50": 0.415168,
+        "p95": 8.462269,
+        "max": 10.922061
+      },
+      "non_commit_content_worker_and_record": {
+        "n": 30,
+        "p50": 1.920012,
+        "p95": 2.274956,
+        "max": 2.290495
+      },
+      "non_commit_journal_receipt_queue_and_publish": {
+        "n": 30,
+        "p50": 0.311224,
+        "p95": 0.390112,
+        "max": 0.475312
+      },
+      "non_commit_job": {
+        "n": 30,
+        "p50": 0.854964,
+        "p95": 1.21565,
+        "max": 1.292244
+      },
+      "non_commit_http_wake_serialization_delivery_and_io": {
+        "n": 30,
+        "p50": 0.556352,
+        "p95": 0.832821,
+        "max": 0.9065399999999926
+      }
+    }
+  },
+  "matched_commit_io": {
+    "arm": "interposed",
+    "malformed": {},
+    "observed_files": {
+      "index.db": 11,
+      "index.db-wal": 1497,
+      "content.db": 42,
+      "content.db-wal": 1079,
+      "jobs.db": 27,
+      "Long thread.md": 31,
+      "jobs.db-wal": 1811
+    },
+    "samples": [
+      {
+        "sample": 1,
+        "http_ms": 51.662626,
+        "commit_and_sync_span_ms": 47.76242,
+        "sync_syscalls_ms": 47.286189
+      },
+      {
+        "sample": 2,
+        "http_ms": 54.768821,
+        "commit_and_sync_span_ms": 50.496148,
+        "sync_syscalls_ms": 49.943681
+      },
+      {
+        "sample": 3,
+        "http_ms": 51.680809,
+        "commit_and_sync_span_ms": 47.647316,
+        "sync_syscalls_ms": 47.092427
+      },
+      {
+        "sample": 4,
+        "http_ms": 68.722124,
+        "commit_and_sync_span_ms": 64.527909,
+        "sync_syscalls_ms": 63.959845
+      },
+      {
+        "sample": 5,
+        "http_ms": 57.048745,
+        "commit_and_sync_span_ms": 52.686674,
+        "sync_syscalls_ms": 52.099424
+      },
+      {
+        "sample": 6,
+        "http_ms": 51.204206,
+        "commit_and_sync_span_ms": 47.475924,
+        "sync_syscalls_ms": 47.009478
+      },
+      {
+        "sample": 7,
+        "http_ms": 51.970352,
+        "commit_and_sync_span_ms": 47.543158,
+        "sync_syscalls_ms": 46.965144
+      },
+      {
+        "sample": 8,
+        "http_ms": 57.067532,
+        "commit_and_sync_span_ms": 53.132722,
+        "sync_syscalls_ms": 52.663863
+      },
+      {
+        "sample": 9,
+        "http_ms": 51.517293,
+        "commit_and_sync_span_ms": 47.690547,
+        "sync_syscalls_ms": 47.177534
+      },
+      {
+        "sample": 10,
+        "http_ms": 55.268938,
+        "commit_and_sync_span_ms": 51.196651,
+        "sync_syscalls_ms": 50.704869
+      },
+      {
+        "sample": 11,
+        "http_ms": 51.131660000000004,
+        "commit_and_sync_span_ms": 47.26538,
+        "sync_syscalls_ms": 46.740185
+      },
+      {
+        "sample": 12,
+        "http_ms": 53.803991,
+        "commit_and_sync_span_ms": 49.828337,
+        "sync_syscalls_ms": 49.348007
+      },
+      {
+        "sample": 13,
+        "http_ms": 51.144343,
+        "commit_and_sync_span_ms": 47.302488,
+        "sync_syscalls_ms": 46.83885
+      },
+      {
+        "sample": 14,
+        "http_ms": 53.820491999999994,
+        "commit_and_sync_span_ms": 48.281785,
+        "sync_syscalls_ms": 47.779915
+      },
+      {
+        "sample": 15,
+        "http_ms": 51.688735,
+        "commit_and_sync_span_ms": 47.829145,
+        "sync_syscalls_ms": 47.315122
+      },
+      {
+        "sample": 16,
+        "http_ms": 51.740021,
+        "commit_and_sync_span_ms": 47.702568,
+        "sync_syscalls_ms": 47.168688
+      },
+      {
+        "sample": 17,
+        "http_ms": 51.474872999999995,
+        "commit_and_sync_span_ms": 47.722767,
+        "sync_syscalls_ms": 47.285126
+      },
+      {
+        "sample": 18,
+        "http_ms": 52.224099,
+        "commit_and_sync_span_ms": 48.327513,
+        "sync_syscalls_ms": 47.754967
+      },
+      {
+        "sample": 19,
+        "http_ms": 52.117326999999996,
+        "commit_and_sync_span_ms": 48.256387,
+        "sync_syscalls_ms": 47.773504
+      },
+      {
+        "sample": 20,
+        "http_ms": 51.915369000000005,
+        "commit_and_sync_span_ms": 48.067893,
+        "sync_syscalls_ms": 47.635594
+      },
+      {
+        "sample": 21,
+        "http_ms": 52.843218,
+        "commit_and_sync_span_ms": 47.746282,
+        "sync_syscalls_ms": 47.231829
+      },
+      {
+        "sample": 22,
+        "http_ms": 60.589234,
+        "commit_and_sync_span_ms": 56.269234,
+        "sync_syscalls_ms": 55.703201
+      },
+      {
+        "sample": 23,
+        "http_ms": 70.313097,
+        "commit_and_sync_span_ms": 56.192109,
+        "sync_syscalls_ms": 55.624123
+      },
+      {
+        "sample": 24,
+        "http_ms": 52.977762,
+        "commit_and_sync_span_ms": 48.442196,
+        "sync_syscalls_ms": 47.885353
+      },
+      {
+        "sample": 25,
+        "http_ms": 52.250297,
+        "commit_and_sync_span_ms": 47.800454,
+        "sync_syscalls_ms": 47.22833
+      },
+      {
+        "sample": 26,
+        "http_ms": 31.140773,
+        "commit_and_sync_span_ms": 27.087312,
+        "sync_syscalls_ms": 26.645835
+      },
+      {
+        "sample": 27,
+        "http_ms": 50.706213,
+        "commit_and_sync_span_ms": 46.685053,
+        "sync_syscalls_ms": 46.170908
+      },
+      {
+        "sample": 28,
+        "http_ms": 53.516090000000005,
+        "commit_and_sync_span_ms": 49.632858,
+        "sync_syscalls_ms": 49.215094
+      },
+      {
+        "sample": 29,
+        "http_ms": 51.359196000000004,
+        "commit_and_sync_span_ms": 47.119979,
+        "sync_syscalls_ms": 46.632454
+      },
+      {
+        "sample": 30,
+        "http_ms": 51.624383,
+        "commit_and_sync_span_ms": 47.715064,
+        "sync_syscalls_ms": 39.426261
+      }
+    ],
+    "phases": {
+      "content_commit_ms": {
+        "n": 30,
+        "p50": 17.914562,
+        "p95": 23.56568,
+        "max": 25.283852
+      },
+      "content_sync_ms": {
+        "n": 30,
+        "p50": 17.655277,
+        "p95": 20.561245,
+        "max": 23.316262
+      },
+      "content_commit_excluding_sync_ms": {
+        "n": 30,
+        "p50": 0.256541,
+        "p95": 0.335268,
+        "max": 8.05243
+      },
+      "content_sqlite_excluding_writes_and_sync_ms": {
+        "n": 30,
+        "p50": 0.215503,
+        "p95": 0.293686,
+        "max": 8.007493
+      },
+      "content_wal_sync_count": {
+        "n": 30,
+        "p50": 1,
+        "p95": 1,
+        "max": 1
+      },
+      "content_wal_write_ms": {
+        "n": 30,
+        "p50": 0.039862,
+        "p95": 0.056528,
+        "max": 0.059952
+      },
+      "content_wal_write_bytes": {
+        "n": 30,
+        "p50": 53560,
+        "p95": 65920,
+        "max": 65920
+      },
+      "content_wal_frame_pages": {
+        "n": 30,
+        "p50": 13,
+        "p95": 16,
+        "max": 16
+      },
+      "content_main_db_io_count": {
+        "n": 30,
+        "p50": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "journal_commit_ms": {
+        "n": 30,
+        "p50": 6.92732,
+        "p95": 10.488307,
+        "max": 11.100496
+      },
+      "journal_sync_ms": {
+        "n": 30,
+        "p50": 6.830188,
+        "p95": 10.357121,
+        "max": 11.021177
+      },
+      "journal_commit_excluding_sync_ms": {
+        "n": 30,
+        "p50": 0.09082,
+        "p95": 0.127679,
+        "max": 0.131186
+      },
+      "journal_sqlite_excluding_writes_and_sync_ms": {
+        "n": 30,
+        "p50": 0.064812,
+        "p95": 0.095279,
+        "max": 0.100758
+      },
+      "journal_wal_sync_count": {
+        "n": 30,
+        "p50": 1,
+        "p95": 1,
+        "max": 1
+      },
+      "journal_wal_write_ms": {
+        "n": 30,
+        "p50": 0.025176,
+        "p95": 0.029698,
+        "max": 0.035907
+      },
+      "journal_wal_write_bytes": {
+        "n": 30,
+        "p50": 28840,
+        "p95": 32960,
+        "max": 37080
+      },
+      "journal_wal_frame_pages": {
+        "n": 30,
+        "p50": 7,
+        "p95": 8,
+        "max": 9
+      },
+      "journal_main_db_io_count": {
+        "n": 30,
+        "p50": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "jobs_commit_ms": {
+        "n": 30,
+        "p50": 7.00717,
+        "p95": 9.15629,
+        "max": 11.548495
+      },
+      "jobs_sync_ms": {
+        "n": 30,
+        "p50": 6.873308,
+        "p95": 9.018612,
+        "max": 11.36474
+      },
+      "jobs_commit_excluding_sync_ms": {
+        "n": 30,
+        "p50": 0.140093,
+        "p95": 0.172573,
+        "max": 0.183755
+      },
+      "jobs_sqlite_excluding_writes_and_sync_ms": {
+        "n": 30,
+        "p50": 0.098524,
+        "p95": 0.129624,
+        "max": 0.147158
+      },
+      "jobs_wal_sync_count": {
+        "n": 30,
+        "p50": 1,
+        "p95": 1,
+        "max": 1
+      },
+      "jobs_wal_write_ms": {
+        "n": 30,
+        "p50": 0.039154,
+        "p95": 0.05355,
+        "max": 0.055506
+      },
+      "jobs_wal_write_bytes": {
+        "n": 30,
+        "p50": 49440,
+        "p95": 57680,
+        "max": 61800
+      },
+      "jobs_wal_frame_pages": {
+        "n": 30,
+        "p50": 12,
+        "p95": 14,
+        "max": 15
+      },
+      "jobs_main_db_io_count": {
+        "n": 30,
+        "p50": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "markdown_sync_count": {
+        "n": 30,
+        "p50": 1,
+        "p95": 1,
+        "max": 1
+      },
+      "markdown_syscall_ms": {
+        "n": 30,
+        "p50": 15.920192,
+        "p95": 18.888208,
+        "max": 21.556552
+      },
+      "markdown_span_ms": {
+        "n": 30,
+        "p50": 15.931774,
+        "p95": 18.905491,
+        "max": 21.586127
+      },
+      "inside_span_without_sync_ms": {
+        "n": 30,
+        "p50": 0.514023,
+        "p95": 0.58725,
+        "max": 8.288803
+      },
+      "inside_durability_spans_ms": {
+        "n": 30,
+        "p50": 47.800454,
+        "p95": 56.269234,
+        "max": 64.527909
+      },
+      "inside_sync_syscalls_ms": {
+        "n": 30,
+        "p50": 47.286189,
+        "p95": 55.703201,
+        "max": 63.959845
+      },
+      "outside_durability_spans_ms": {
+        "n": 30,
+        "p50": 4.021159999999995,
+        "p95": 5.538706999999995,
+        "max": 14.120987999999997
+      }
+    },
+    "top_statements": []
+  },
+  "statement_profile": {
+    "top_statements": [
+      {
+        "store": "jobs",
+        "sql": "DELETE FROM saved_turn_events WHERE seq <= ?1",
+        "n": 14,
+        "p50": 19.325169,
+        "p95": 31.20772,
+        "max": 31.20772
+      },
+      {
+        "store": "content",
+        "sql": "COMMIT",
+        "n": 20,
+        "p50": 17.4704,
+        "p95": 19.555188,
+        "max": 23.974976
+      },
+      {
+        "store": "jobs",
+        "sql": "COMMIT",
+        "n": 20,
+        "p50": 6.989466,
+        "p95": 7.12999,
+        "max": 8.591952
+      },
+      {
+        "store": "journal",
+        "sql": "COMMIT",
+        "n": 20,
+        "p50": 6.856327,
+        "p95": 7.207976,
+        "max": 8.620876
+      },
+      {
+        "store": "content",
+        "sql": "INSERT INTO items(id,kind,metadata,revision,seq,updated_at,path,folded_path,old_path,mat_state,file_hash) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,'pending',?10) ON CONFLICT(id) DO UPDATE SET metadata=excluded.metadata,revision=excluded.revision, seq=excluded.seq,updated_at=excluded.updated_at,path=excluded.path, folded_path=excluded.folded_path,old_path=excluded.old_path,mat_state='pending',file_hash=excluded.file_hash",
+        "n": 20,
+        "p50": 0.048311,
+        "p95": 0.075832,
+        "max": 0.106189
+      },
+      {
+        "store": "content",
+        "sql": "UPDATE items SET mat_state='materialized',file_hash=?1,old_path=NULL WHERE id=?2 AND seq=?3",
+        "n": 20,
+        "p50": 0.044925,
+        "p95": 0.073007,
+        "max": 0.075652
+      },
+      {
+        "store": "jobs",
+        "sql": "SELECT EXISTS(SELECT 1 FROM jobs WHERE operation='agent.turn' AND json_extract(input,'$.request.thread_id')=?1 AND json_extract(input,'$.check') IS NOT 1 AND state IN ('admitted','placing','running','waiting','signal_waiting','interrupted','retry_waiting'))",
+        "n": 20,
+        "p50": 0.034084,
+        "p95": 0.065853,
+        "max": 0.088656
+      },
+      {
+        "store": "jobs",
+        "sql": "INSERT INTO jobs VALUES(?1,?2,?3,?4,?5,?6,?7,'admitted','null',0,0,'null',0,?8,?9,NULL)",
+        "n": 20,
+        "p50": 0.025709,
+        "p95": 0.029365,
+        "max": 0.03735
+      },
+      {
+        "store": "jobs",
+        "sql": "SELECT id,plugin,account,session,operation,input,parent,state,checkpoint,checkpoint_seq,checkpoints,result,runs,generation, CASE WHEN state='signal_waiting' THEN (SELECT json_object('reason',json_extract(detail,'$.reason'),'deadline_ms',deadline_ms) FROM plugin_waits WHERE job=jobs.id AND outcome IS NULL) END FROM jobs WHERE operation='agent.turn' AND json_extract(input,'$.request.thread_id')=?1 AND json_extract(input,'$.check') IS NOT 1 ORDER BY rowid DESC LIMIT 1",
+        "n": 20,
+        "p50": 0.021941,
+        "p95": 0.036519,
+        "max": 0.03686
+      },
+      {
+        "store": "content",
+        "sql": "SELECT i.path,i.metadata,i.revision,i.updated_at,coalesce(p.offset,0)+length(v.bytes) FROM items i JOIN versions v ON v.item=i.id AND v.seq=i.seq LEFT JOIN thread_revision_patches p ON p.item=v.item AND p.seq=v.seq WHERE i.id=?1 AND i.kind='threads' AND i.mat_state NOT IN ('purged','purging')",
+        "n": 20,
+        "p50": 0.008155,
+        "p95": 0.01115,
+        "max": 0.011602
+      },
+      {
+        "store": "content",
+        "sql": "SELECT EXISTS(SELECT 1 FROM sqlite_schema WHERE name=?1 AND type='table')",
+        "n": 20,
+        "p50": 0.007695,
+        "p95": 0.009027,
+        "max": 0.011111
+      },
+      {
+        "store": "jobs",
+        "sql": "SELECT seq,event_id,thread,job,account,state,reason_checkpoint FROM saved_turn_events ORDER BY seq LIMIT 64",
+        "n": 15,
+        "p50": 0.007594,
+        "p95": 0.011772,
+        "max": 0.011772
+      },
+      {
+        "store": "journal",
+        "sql": "INSERT INTO journal (at_ms, kind, item, data, installation, request_id, author) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        "n": 20,
+        "p50": 0.007454,
+        "p95": 0.009578,
+        "max": 0.011001
+      },
+      {
+        "store": "content",
+        "sql": "SELECT EXISTS(SELECT 1 FROM outbox WHERE rowid>?1)",
+        "n": 1,
+        "p50": 0.007344,
+        "p95": 0.007344,
+        "max": 0.007344
+      },
+      {
+        "store": "content",
+        "sql": "DELETE FROM outbox WHERE rowid<=?1",
+        "n": 20,
+        "p50": 0.007143,
+        "p95": 0.008606,
+        "max": 0.010159
+      },
+      {
+        "store": "jobs",
+        "sql": "DELETE FROM thread_send_receipts WHERE request_key IN (SELECT request_key FROM thread_send_receipts WHERE expires_ms<=?1 ORDER BY expires_ms LIMIT 128)",
+        "n": 20,
+        "p50": 0.006612,
+        "p95": 0.009377,
+        "max": 0.010099
+      },
+      {
+        "store": "content",
+        "sql": "SELECT p.item FROM outbox_placement p JOIN outbox o USING(account,request) WHERE p.account=?1 AND p.request=?2 ORDER BY p.item<>o.item,p.item",
+        "n": 20,
+        "p50": 0.006102,
+        "p95": 0.006973,
+        "max": 0.009007
+      },
+      {
+        "store": "journal",
+        "sql": "INSERT INTO idempotency (key, action, payload_hash, result, seq, at_ms) VALUES (?1, ?2, ?3, ?4, ?5, ?6) ON CONFLICT (key) DO NOTHING",
+        "n": 20,
+        "p50": 0.005421,
+        "p95": 0.007454,
+        "max": 0.017042
+      },
+      {
+        "store": "jobs",
+        "sql": "SELECT count(*) FROM jobs WHERE state IN ('admitted','placing','running','waiting','signal_waiting','interrupted','retry_waiting')",
+        "n": 20,
+        "p50": 0.004989,
+        "p95": 0.008586,
+        "max": 0.020078
+      },
+      {
+        "store": "content",
+        "sql": "SELECT o.account,o.request,o.operation,o.fingerprint,o.item,o.revision,o.result,i.kind,i.mat_state, EXISTS(SELECT 1 FROM outbox_placement p WHERE p.account=o.account AND p.request=o.request), o.rowid,EXISTS(SELECT 1 FROM versions v JOIN thread_revision_patches p USING(item,seq) WHERE v.revision=o.revision AND p.item=o.item) FROM outbox o LEFT JOIN items i ON i.id=o.item WHERE o.rowid>?1 ORDER BY o.rowid LIMIT 1",
+        "n": 100,
+        "p50": 0.004879,
+        "p95": 0.016922,
+        "max": 0.058179
+      }
+    ],
+    "inside_span_without_sync_ms": {
+      "n": 20,
+      "p50": 0.530937,
+      "p95": 0.778562,
+      "max": 7.583679
+    }
+  },
+  "night_6_focused_checks": {
+    "content": 38,
+    "jobs": 5,
+    "threads": 8,
+    "thread_conformance": 15,
+    "crash_filter": 6,
+    "operation_inventories": 3
+  }
+}
