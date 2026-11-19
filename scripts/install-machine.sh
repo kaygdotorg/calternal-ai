@@ -142,7 +142,7 @@ root=$server/api/v1/machine/release
 download 81 "$work/version" "$root/version" || die 'No machine release is available from this server.'
 IFS= read -r version < "$work/version" || die 'Invalid machine release version.'
 case $version in ''|[!a-zA-Z0-9]*|*[!a-zA-Z0-9._-]*) die 'Invalid machine release version.' ;; esac
-[ "${#version}" -le 80 ] && [ "$(wc -c < "$work/version")" -eq "$(("${#version}" + 1))" ] \
+[ "${#version}" -le 80 ] && [ "$(wc -c < "$work/version")" -eq "$((${#version} + 1))" ] \
   || die 'Invalid machine release version.'
 prefix=$root/$version/$platform
 download 512 "$work/manifest" "$prefix/manifest"
@@ -159,7 +159,7 @@ ssh-keygen -Y verify -f "$work/allowed_signers" -I calternal-release -n calterna
   [ "$signed_platform" = "$platform" ] &&
   [ "$(wc -l < "$work/manifest")" -eq 5 ] || die 'The signed release has the wrong version or platform.'
 # Require canonical framing and decimal size, matching the release preparation script.
-[ "$(wc -c < "$work/manifest")" -eq $(("${#format}" + "${#signed_version}" + "${#signed_platform}" + "${#size}" + "${#digest}" + 5)) ] \
+[ "$(wc -c < "$work/manifest")" -eq $((${#format} + ${#signed_version} + ${#signed_platform} + ${#size} + ${#digest} + 5)) ] \
   || die 'Invalid machine release manifest.'
 case $size in ''|0*|*[!0-9]*) die 'Invalid machine program size.' ;; esac
 [ "${#size}" -le 9 ] && [ "$size" -le 268435456 ] || die 'Invalid machine program size.'
