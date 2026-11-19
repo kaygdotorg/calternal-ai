@@ -10,15 +10,11 @@ use uuid::Uuid;
 
 use super::{asset_signature, current_frame, frame_path, missing};
 use crate::{
-    api::Shared,
+    api::{Shared, assets::SealedFrame},
     auth::{Directory, Identity},
 };
 
 pub(crate) const FRAME_ROUTE: &str = "/api/v1/plugin-content/{frame}";
-
-/// Typed response extension inspected by the general header guard.
-#[derive(Clone)]
-pub(crate) struct SealedFrame(pub(crate) HeaderValue);
 
 /// Render sanitized markup only for its authorized viewer. Reads current
 /// activation and revision before returning bytes. Performs no outbound fetch.

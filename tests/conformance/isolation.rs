@@ -27,6 +27,7 @@ mod people_cases;
 
 mod harness_admin_cases;
 mod provider_sign_in_cases;
+mod preview_cases;
 mod requests_cases;
 mod requests_review_cases;
 mod threads_cases;

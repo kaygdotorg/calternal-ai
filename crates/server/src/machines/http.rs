@@ -53,7 +53,7 @@ use calternal_types::Capability;
 use calternal_types::Error;
 
 /// The service as a request extension; absent when machines are disabled.
-type Svc = Option<Extension<Arc<MachineService>>>;
+pub(super) type Svc = Option<Extension<Arc<MachineService>>>;
 
 /// Every machine route. Handlers answer 404 when no [`MachineService`]
 /// extension is installed (tests that build the router without one).
@@ -65,12 +65,16 @@ pub fn routes<D: Directory>() -> Router<Shared<D>> {
         .route("/api/v1/machine/sync", post(sync))
         .route("/api/v1/machine/status", post(erasure_status))
         .route("/api/v1/machine/output", post(output))
+        .route("/api/v1/machine/preview-output", post(preview_output))
         .route("/api/v1/machines", get(list))
         .route("/api/v1/machines/codes", post(code))
         .route("/api/v1/machines/{id}/revoke", post(revoke))
         .route("/api/v1/machines/{id}/drain", post(drain))
         .route("/api/v1/machines/runs", post(create_run::<D>))
         .route("/api/v1/machines/runs/{lease}", get(get_run::<D>))
+        .route("/api/v1/machines/runs/{lease}/previews", post(super::preview::publish::<D>))
+        .route("/api/v1/machine-previews/{preview}/", get(super::preview::view::<D>))
+        .route("/api/v1/machine-previews/{preview}/{*tail}", get(super::preview::view::<D>))
         .route("/api/v1/machines/runs/{lease}/stop", post(stop_run::<D>))
         .route("/api/v1/machines/runs/{lease}/execs", post(exec::<D>))
         .route(
@@ -79,19 +83,19 @@ pub fn routes<D: Directory>() -> Router<Shared<D>> {
         )
 }
 
-fn reply<T: serde::Serialize>(r: Result<T, Error>) -> Response {
+pub(super) fn reply<T: serde::Serialize>(r: Result<T, Error>) -> Response {
     match r {
         Ok(v) => json_response(StatusCode::OK, &v),
         Err(e) => failure(None, e),
     }
 }
 
-fn service(svc: Svc) -> Result<Arc<MachineService>, Error> {
+pub(super) fn service(svc: Svc) -> Result<Arc<MachineService>, Error> {
     svc.map(|Extension(s)| s)
         .ok_or_else(|| Error::not_found("machines are not enabled"))
 }
 
-fn body<T: DeserializeOwned>(bytes: &Bytes) -> Result<T, Error> {
+pub(super) fn body<T: DeserializeOwned>(bytes: &Bytes) -> Result<T, Error> {
     serde_json::from_slice(bytes)
         .map_err(|_| Error::invalid_input("body does not match the schema"))
 }
@@ -168,6 +172,14 @@ async fn sync(svc: Svc, headers: HeaderMap, bytes: Bytes) -> Response {
 }
 
 async fn output(svc: Svc, headers: HeaderMap, bytes: Bytes) -> Response {
+    receive_output(svc, headers, bytes, false).await
+}
+
+async fn preview_output(svc: Svc, headers: HeaderMap, bytes: Bytes) -> Response {
+    receive_output(svc, headers, bytes, true).await
+}
+
+async fn receive_output(svc: Svc, headers: HeaderMap, bytes: Bytes, preview: bool) -> Response {
     reply(
         async {
             let svc = service(svc)?;
@@ -175,7 +187,7 @@ async fn output(svc: Svc, headers: HeaderMap, bytes: Bytes) -> Response {
             let post: OutputPost = body(&bytes)?;
             blocking(move || {
                 let machine = svc.authenticate(&token)?;
-                svc.output(machine, post)
+                if preview { svc.preview_output(machine, post) } else { svc.output(machine, post) }
             })
             .await
         }
@@ -296,7 +308,7 @@ async fn create_run<D: Directory>(
 }
 
 /// Resolve a lease's space and re-check the caller's authority there.
-async fn authorize_run<D: Directory>(
+pub(super) async fn authorize_run<D: Directory>(
     state: &Shared<D>,
     svc: &Arc<MachineService>,
     who: &Identity,

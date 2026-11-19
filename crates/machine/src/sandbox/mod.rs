@@ -185,6 +185,11 @@ pub trait Sandbox: Send + Sync {
 
     /// Run a command in the work directory and stream its output.
     fn exec(&self, request: ExecRequest) -> BoxFuture<'_, SandboxResult<Exec>>;
+    /// Read from a preview in the sandbox's private loopback namespace.
+    /// Backends must refuse when a loopback connection could reach the host.
+    fn preview(&self, _request: crate::protocol::PreviewRequest) -> BoxFuture<'_, SandboxResult<Exec>> {
+        Box::pin(async { Err(SandboxError("sandbox does not support HTTP previews".into())) })
+    }
     /// Pause every process; memory stays resident.
     fn freeze(&self) -> BoxFuture<'_, SandboxResult<()>>;
     /// Continue after [`Sandbox::freeze`].

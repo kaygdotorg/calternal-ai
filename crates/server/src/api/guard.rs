@@ -244,7 +244,7 @@ pub(super) async fn guard<D: Directory>(
         .is_some();
     let sealed = resp
         .extensions()
-        .get::<crate::plugins::network::http::SealedFrame>()
+        .get::<super::assets::SealedFrame>()
         .map(|frame| frame.0.clone());
     let is_sealed = sealed.is_some();
     let h = resp.headers_mut();

@@ -266,6 +266,59 @@ impl Runner {
         });
     }
 
+    fn start_exec(
+        self: &Arc<Self>,
+        lease_id: Uuid,
+        fence: u64,
+        exec_id: Uuid,
+        mut action: Result<ExecRequest, crate::protocol::PreviewRequest>,
+    ) {
+        let preview = action.is_err();
+        let (ready, input) = tokio::sync::watch::channel(None);
+        if let Ok(request) = &mut action {
+            request.env.retain(|(key, _)| key != "CALTERNAL_URL");
+            request.env.push(("CALTERNAL_URL".into(), self.link.base().to_owned()));
+            if request.interactive && let Some(slot) = self.slot(lease_id) {
+                slot.inputs.lock().expect("inputs").entry(exec_id).or_insert(input);
+            }
+        }
+        let me = self.clone();
+        tokio::spawn(async move {
+            let slot = me.slot(lease_id).filter(|s| s.fence.load(Ordering::Acquire) == fence);
+            let guard = match &slot {
+                Some(slot) => Some(slot.sandbox.read().await),
+                None => None,
+            };
+            let exec = match (&slot, &guard) {
+                (Some(s), Some(sandbox)) => {
+                    // Preview messages are queued once and deduplicated by the
+                    // session sequence. Only ordinary execs can get a new seq.
+                    if action.is_ok() && !s.execs.lock().expect("execs").insert(exec_id) {
+                        return;
+                    }
+                    match me.sandbox(s, sandbox).await {
+                        Err(reason) => failed_exec(reason),
+                        Ok(sb) => {
+                            match action {
+                                Ok(request) => sb.exec(request).await,
+                                Err(request) => sb.preview(request).await,
+                            }.unwrap_or_else(|e| failed_exec(e.0))
+                        }
+                    }
+                }
+                _ => failed_exec("lease not held by this machine"),
+            };
+            let _ = ready.send(exec.input.clone());
+            let batch = slot.as_ref().is_none_or(|slot| slot.spec.worker.is_none());
+            me.upload(lease_id, fence, exec_id, exec, batch, preview).await;
+            if let Some(slot) = &slot {
+                *slot.last_use.lock().expect("sandbox last use") = Instant::now();
+                slot.inputs.lock().expect("inputs").remove(&exec_id);
+            }
+            drop(guard);
+        });
+    }
+
     /// Apply one message. Starting sandboxes and execs run on their own tasks, so
     /// assignments and execs return at once. Stop awaits cleanup before a later
     /// assignment can reuse the same workspace.
@@ -286,63 +339,11 @@ impl Runner {
                 harness,
                 ..
             } => self.assign(lease_id, fence, space_id, spec, Some(harness)),
-            Down::Exec {
-                interactive,
-                lease_id,
-                fence,
-                exec_id,
-                argv,
-                stdin,
-                mut env,
-            } => {
-                env.retain(|(key, _)| key != "CALTERNAL_URL");
-                env.push(("CALTERNAL_URL".into(), self.link.base().to_owned()));
-                let (ready, input) = tokio::sync::watch::channel(None);
-                if interactive && let Some(slot) = self.slot(lease_id) {
-                    slot.inputs
-                        .lock()
-                        .expect("inputs")
-                        .entry(exec_id)
-                        .or_insert(input);
-                }
-                let me = self.clone();
-                tokio::spawn(async move {
-                    let slot = me
-                        .slot(lease_id)
-                        .filter(|s| s.fence.load(Ordering::Acquire) == fence);
-                    let guard = match &slot {
-                        Some(slot) => Some(slot.sandbox.read().await),
-                        None => None,
-                    };
-                    let exec = match (&slot, &guard) {
-                        (Some(s), Some(sandbox)) => {
-                            if !s.execs.lock().expect("execs").insert(exec_id) {
-                                return; // delivered twice; already running
-                            }
-                            match me.sandbox(s, sandbox).await {
-                                Err(reason) => failed_exec(reason),
-                                Ok(sb) => sb
-                                    .exec(ExecRequest {
-                                        argv,
-                                        stdin,
-                                        env,
-                                        interactive,
-                                    })
-                                    .await
-                                    .unwrap_or_else(|e| failed_exec(e.0)),
-                            }
-                        }
-                        _ => failed_exec("lease not held by this machine"),
-                    };
-                    let _ = ready.send(exec.input.clone());
-                    let batch = slot.as_ref().is_none_or(|slot| slot.spec.worker.is_none());
-                    me.upload(lease_id, fence, exec_id, exec, batch).await;
-                    if let Some(slot) = &slot {
-                        *slot.last_use.lock().expect("sandbox last use") = Instant::now();
-                        slot.inputs.lock().expect("inputs").remove(&exec_id);
-                    }
-                    drop(guard);
-                });
+            Down::Exec { interactive, lease_id, fence, exec_id, argv, stdin, env } => {
+                self.start_exec(lease_id, fence, exec_id, Ok(ExecRequest { argv, stdin, env, interactive }));
+            }
+            Down::Preview { lease_id, fence, exec_id, request } => {
+                self.start_exec(lease_id, fence, exec_id, Err(request));
             }
             Down::Input {
                 lease_id,
@@ -544,7 +545,8 @@ impl Runner {
     /// Number the exec's events and upload them until the exit is acknowledged,
     /// the lease is fenced or the machine is revoked. Worker replies can
     /// unblock a broker round trip, so only ordinary exec output waits to batch.
-    async fn upload(&self, lease_id: Uuid, fence: u64, exec_id: Uuid, mut exec: Exec, batch: bool) {
+    async fn upload(&self, lease_id: Uuid, fence: u64, exec_id: Uuid, mut exec: Exec, batch: bool, preview: bool) {
+        let output_path = if preview { "/api/v1/machine/preview-output" } else { "/api/v1/machine/output" };
         let mut pending: VecDeque<(Chunk, usize)> = VecDeque::new();
         let (mut seq, mut bytes, mut ended, mut backoff) =
             (0u64, 0usize, false, Duration::from_millis(200));
@@ -608,7 +610,7 @@ impl Runner {
             match self
                 .link
                 .post::<_, OutputAck>(
-                    "/api/v1/machine/output",
+                    output_path,
                     &post,
                     true,
                     Duration::from_secs(30),

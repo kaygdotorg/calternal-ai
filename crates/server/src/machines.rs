@@ -59,6 +59,7 @@ pub mod http;
 pub(crate) mod install;
 mod microvm;
 mod owners;
+mod preview;
 pub mod provider;
 pub(crate) mod readiness;
 mod sessions;
@@ -223,6 +224,7 @@ pub struct MachineService {
     state: Mutex<State>,
     settings: Settings,
     worker_changes: tokio::sync::Notify,
+    preview_slots: Arc<tokio::sync::Semaphore>,
     /// Bounded opportunistic title tasks, independent of foreground execution.
     pub(crate) title_slots: Arc<tokio::sync::Semaphore>,
     pub(super) lifecycle: Arc<std::sync::OnceLock<calternal_types::OwnerLifecycle>>,
@@ -303,6 +305,7 @@ impl MachineService {
             leases: HashMap::new(),
             threads: HashMap::new(),
             execs: HashMap::new(),
+            previews: HashMap::new(),
             workers: HashMap::new(),
             worker_stops: HashMap::new(),
             next_order: 0,
@@ -380,6 +383,7 @@ impl MachineService {
             state: Mutex::new(st),
             settings,
             worker_changes: tokio::sync::Notify::new(),
+            preview_slots: Arc::new(tokio::sync::Semaphore::new(preview::MAX_FETCHES)),
             title_slots: Arc::new(tokio::sync::Semaphore::new(8)),
             lifecycle,
         }))
