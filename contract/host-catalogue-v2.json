@@ -1243,7 +1243,8 @@
       "subscriber_session_lease_seconds": 15,
       "materialized_rows_per_window": 4096,
       "index_jump_skips_per_window": 250000,
-      "effective_scopes_per_item": 32
+      "effective_scopes_per_item": 32,
+      "search_input_postings_per_window": 160000
     },
     "cross_bind_operands": "Forbidden in the first query slice. Action and component references to upstream fields still require one authorized projected row and a checked dependency edge.",
     "scope_limit_refusal": {
@@ -1251,6 +1252,25 @@
       "code": "effective_scope_limit_exceeded",
       "description": "Check projected scope fan-out before committing a grant or other scope-expanding change. Count distinct effective (collection, audience) scopes per item after resolving direct and inherited ACL paths. Refuse the whole change if any item would exceed the cap. A save touches at most two index keys per effective scope.",
       "message": "An item can belong to at most 32 effective scopes."
+    },
+    "search": {
+      "kind": "notes",
+      "scopes": [
+        "space",
+        "manual_collection"
+      ],
+      "max_authorized_items_per_scope": 100000,
+      "max_literal_and_terms": 3,
+      "max_token_prefix_expansions": 32,
+      "max_window_offset": 2000,
+      "shapes": [
+        "One or more literal ASCII terms combined with AND by the host, bounded by max_literal_and_terms. Raw Boolean, phrase and fuzzy query syntax is unqualified.",
+        "One ASCII token prefix, bounded by max_token_prefix_expansions, or one literal folded-title prefix. No mixture of words and prefixes."
+      ],
+      "qualification": "Use only ready authorized space or manual collection projections. Use scope-local order and statistics, never shared-corpus ranking. Refuse unqualified shapes, scopes, sorts or depths with unsupported_query_plan. Apply query.window row and byte caps and query.live_limits materialized-row and search posting caps independently.",
+      "publication": "The existing background search worker maintains the projection and same-generation term statistics independently of save acknowledgement. Check live access to the scope, searchable fields and output fields before evaluation. A behind content watermark or stale authority revision returns loading with no rows, count or activation contexts. Fence cached results on revocation and recheck authority on delivery. Deny access if the scope is no longer authorized.",
+      "refinement": "Bound scoped posting work using same-generation term frequencies. When an otherwise qualified query exceeds the posting budget, return refine_query with only bounded provisional rows from the same authorized query and published generation. A prefix exceeding either the expansion cap or the posting budget returns refine_query without starting expansion and can include only already-issued rows for that query, audience and generation. Omit count, activation contexts and member cache record. Provisional replies have null result_version and window_ref.",
+      "count": "Default to none. Exact counts require live count authority and a ready scope within the separate count-work and rate budgets. No estimate is qualified."
     }
   },
   "$defs": {
@@ -1838,8 +1858,10 @@
             "ready",
             "empty",
             "error",
-            "throttled"
-          ]
+            "throttled",
+            "refine_query"
+          ],
+          "description": "refine_query asks the viewer to narrow a qualified search. Its rows are provisional and display only."
         },
         "activation_contexts": {
           "type": "array",
@@ -1896,9 +1918,6 @@
           },
           "else": {
             "properties": {
-              "rows": {
-                "maxItems": 0
-              },
               "activation_contexts": false,
               "count": false,
               "result_version": {
@@ -1908,6 +1927,20 @@
                 "type": "null"
               },
               "member_cache_record": false
+            },
+            "if": {
+              "properties": {
+                "state": {
+                  "const": "refine_query"
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "rows": {
+                  "maxItems": 0
+                }
+              }
             }
           }
         },

@@ -110,8 +110,13 @@ Use the host-issued row reference for row identity in selection, events and scop
 
 ### 2.5 States
 
-`states.empty`, `loading` and `error` are small messages (`title`, `detail`, `icon`, an optional action). The description or host provides their text.
+`states.empty`, `loading`, `error` and `refine_query` are small messages (`title`, `detail`, `icon`, an optional action). The description or host provides their text.
 Show `loading` until the first window arrives, `empty` when `count` is 0, and `error` on `state: "error"` or a `WindowPlanError` without an available paging recovery (§2.3).
+
+**`refine_query`.** A qualified search over its posting budget returns the catalogue’s `WindowResult` in this state. See `query.search` and `query.live_limits` for limits.
+Show the provisional rows with the Bind’s message or “Refine your search.” Treat the rows as display only and show no total-implying scroll extent or End.
+A broad prefix starts no expansion and may reuse only an already-issued window for the same authorized query and generation. A changed query starts a new search.
+While the projection is behind or stale after revocation, show `loading` with no rows, count or activation contexts.
 
 ### 2.6 What the schema needs from the host (authorization is the host's job)
 
@@ -296,6 +301,7 @@ the web, SwiftUI natively); no plugin is written twice, and anything the vocabul
   Home asks for `[0, n)` from the start. With exact count authority, End requests `anchor: end` from zero. Page Up/Down request a window around the current index
   and may use the end anchor near the tail only with exact count authority. Without it, End pages forward from the last loaded row. Follow the recovery rule in §2.3
   and retain the target during jump recovery. A view with count mode `none` shows no scroll extent implying a total.
+* **Search refinement** uses the `refine_query` Bind state in §2.5.
 * **A `list` takes the remaining height of its stack and scrolls itself.** One `list` per scroll region: a `stack` that holds a list does not scroll, and nested scrolling
   regions are refused (a long list inside a scrolling column loses laziness, selection and windows on every platform). The selected row's id is the `selection` source for that bind.
 * **Selection is not state in the description.** A renderer reads "selected" from the list; a description never carries `selected`.
