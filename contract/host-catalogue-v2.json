@@ -3055,7 +3055,7 @@
             "materialization_limit",
             "end_unavailable"
           ],
-          "description": "skip_limit means an otherwise qualified index-only jump would skip too many entries. end_unavailable means the effective count mode for the requested end anchor is estimate or none. unsupported_plan means no qualified plan for the scope, filters, sort, search or count. materialization_limit means a qualified plan would materialize too many rows. After skip_limit the renderer pages from the nearer known end. After end_unavailable it pages forward from the last loaded row. Forward paging ends on a short ready window or an empty reply. Every other reason shows the Bind error state."
+          "description": "skip_limit means an otherwise qualified index-only jump would skip too many entries. end_unavailable means the effective count mode for the requested end anchor is estimate or none. unsupported_plan means no qualified plan for the scope, filters, sort, search or count. materialization_limit means a qualified plan would materialize too many rows. After skip_limit the renderer pages from the nearer permitted end (start when the view lacks exact-count authority), keeping the original jump target as its goal. After end_unavailable it pages forward from the last loaded row. Forward paging ends on a short ready window or an empty reply. Every other reason shows the Bind error state."
         }
       },
       "description": "Typed response to the corresponding window request when no qualified bounded plan is available."

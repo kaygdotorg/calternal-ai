@@ -1,4 +1,4 @@
-# Plugin API v2 · revision 11
+# Plugin API v2 · revision 11.1
 
 The first contract covers host-drawn apps, generic items, durable jobs and
 Turns. Freeze after the §8 spikes. Fixture bounds are test settings. See the
@@ -494,12 +494,10 @@ The first contract qualifies these plan families.
 
 Return `422 unsupported_query_plan` if the plan or index cannot satisfy
 the requested scope, filters, sort, window or count within the work
-budget. The typed `WindowPlanError` gives the reason. After `skip_limit`
-the renderer pages from the nearer known end. After `end_unavailable`
-it pages forward from the last loaded row. Forward paging ends on a short
-`ready` window or an `empty` reply. Every other reason shows the Bind
-error state. Never serve the request with a table scan or a sort of the
-full candidate set.
+budget. The typed `WindowPlanError` gives the reason. Never serve the
+request with a table scan or a sort of the full candidate set.
+
+After skip_limit the renderer pages from the nearer permitted end (start when the view lacks exact-count authority), keeping the original jump target as its goal. After end_unavailable it pages forward from the last loaded row. Forward paging ends on a short ready window or an empty reply. Every other reason shows the Bind error state.
 
 The first contract includes nested child rows and user-made sections (Q11).
 `children: {bind}` uses a `source.parent: true` Bind windowed per expanded
