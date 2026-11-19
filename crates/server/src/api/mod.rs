@@ -504,7 +504,8 @@ async fn operations<D: Directory>(State(state): State<Shared<D>>, req: Request) 
                 json_response(StatusCode::OK, &OperationResponse::success(rid, data));
             #[cfg(feature = "perf-timings")]
             if let Some(timing) = thread_timing {
-                thread_timing::mark(&timing.0, "http_serialized");
+                use axum::body::HttpBody;
+                thread_timing::serialized(&timing.0, response.body().size_hint().exact());
                 response.extensions_mut().insert(timing);
             }
             if request.operation == "requests.ask" || request.operation == "access.request" {

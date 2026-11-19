@@ -69,7 +69,7 @@ pub(crate) fn run(a: &Args) -> Result<i32> {
     }
     if a.small_thread || a.legacy_thread_limit {
         let metric = if a.small_thread { SMALL_APPEND } else { "threads.2mib.append" };
-        return report(a, size, &[stats::summarize(metric, appends, &budgets)]);
+        return report(a, size, &[stats::summarize(metric, appends.clone(), &budgets)], &appends);
     }
     let message = indexed(&mut http, space)?;
     let mut tails = Vec::new();
@@ -90,17 +90,17 @@ pub(crate) fn run(a: &Args) -> Result<i32> {
         exact.push(ms);
     }
     let measurements = [
-        stats::summarize(APPEND, appends, &budgets),
+        stats::summarize(APPEND, appends.clone(), &budgets),
         stats::summarize(TAIL, tails, &budgets),
         stats::summarize(EXACT, exact, &budgets),
         stats::summarize(REBUILD, vec![rebuild], &budgets),
     ];
-    report(a, size, &measurements)
+    report(a, size, &measurements, &appends)
 }
 
-fn report(a: &Args, size: usize, measurements: &[stats::Summary]) -> Result<i32> {
+fn report(a: &Args, size: usize, measurements: &[stats::Summary], append_ms: &[f64]) -> Result<i32> {
     let breached = measurements.iter().any(|m| m.breached);
-    let report = json!({"commit":a.commit,"physical_bytes_before_append":size,"measurements":measurements,"breached":breached});
+    let report = json!({"commit":a.commit,"physical_bytes_before_append":size,"measurements":measurements,"append_ms":append_ms,"breached":breached});
     let out = a.work.join("long-thread.json");
     std::fs::write(&out, serde_json::to_vec_pretty(&report)?)?;
     crate::report::print(a, &report, &out);

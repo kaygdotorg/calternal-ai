@@ -16,3 +16,14 @@ pub(crate) fn at(id: &str, name: &'static str, at_ns: u64) {
         serde_json::json!({"stage":name,"request_id":id,"at_ns":at_ns})
     );
 }
+
+/// Record serialization completion and the wire body length.
+pub(crate) fn serialized(id: &str, bytes: Option<u64>) {
+    let at_ns = calternal_types::perf_monotonic_ns();
+    eprintln!(
+        "CALTERNAL_STAGE {}",
+        serde_json::json!({
+            "stage":"http_serialized","request_id":id,"at_ns":at_ns,"bytes":bytes
+        })
+    );
+}
