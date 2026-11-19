@@ -404,6 +404,33 @@ The inherited HTTP gate miss predates the projection, and the harness
 exited 1 for the reproduced breach. The separate 8 KiB/zero-idle engine
 regression at 1, 4 and 16 scopes remains open.
 
+### Isolating the 8 KiB save regression
+
+A disposable build of `c32a5982` used the existing save spans plus a
+span around the head and projection SQL. Two AB/BA pairs used the 8 KiB
+zero-idle fixture at one and four effective scopes, with 100 measured
+saves per arm and width under the perf-01 lock. Both arms kept the
+window schema, fixture setup, and the same binary. The control removed
+only `window_note_edit` before the save sequence. It leaves projection
+keys stale and is valid solely as a diagnostic.
+
+| Pair | Scopes | Save p95, trigger off → on | Content commit p95, off → on | Head SQL p95, off → on |
+| --- | ---: | ---: | ---: | ---: |
+| A | 1 | 24.931 → 59.966 ms | 8.717 → 29.755 ms | 1.422 → 1.878 ms |
+| A | 4 | 33.387 → 64.445 ms | 12.575 → 33.994 ms | 1.521 → 1.850 ms |
+| B | 1 | 28.427 → 42.087 ms | 8.571 → 16.822 ms | 1.516 → 1.821 ms |
+| B | 4 | 29.575 → 48.906 ms | 8.980 → 22.187 ms | 1.475 → 1.821 ms |
+
+All trigger-off arms were below 40 ms. All trigger-on arms breached.
+The edit projection's writes increase the cost of the existing FULL
+content commit. The SQL execution difference was below 0.5 ms p95 in
+every comparison. The journal and retirement spans also varied, and stage
+percentiles cannot be added. The path has the same three FULL transaction
+boundaries. The probe does not distinguish changes in WAL pages written,
+auto-checkpoint work, or block-device sync latency within the content
+commit. Isolate those costs before changing the durable projection layout.
+Both authority and count updates still need to share the item transaction.
+
 ## Review gate
 
 The series was replayed onto `origin/dev` at `f41c3429`. The replay had
