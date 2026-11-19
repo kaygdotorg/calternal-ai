@@ -201,3 +201,78 @@ win where they disagree (said below); no install command from them was run. Page
 Anti-patterns of the first skill found in what was built, and changed: `ObservableObject` where `@Observable`
 fits; index identity in `ForEach`; a tuple behind a boolean for the prompt; per-keystroke event with no
 debounce. Not found: giant views, `AnyView`, live calls in `body`, multiple booleans for exclusive sheets.
+
+## One codebase for iPhone and Mac (2026-11-19)
+
+The native chrome is drawn by **CalternalUI** (`apps/apple/CalternalUI`, the native design system that already existed): `Chrome/ChromeShell.swift` is the
+phone and desktop layout, `Chrome/ChromeSidebar.swift` the sidebar, both built from CalternalUI's surfaces (`Row`, `Pill`, `SegmentedCapsule`,
+`BottomTabCapsule`, `ActionButton`, `Card`, glass) and its generated tokens, wallpaper veils and motion. The description types and the store are in the same
+folder. The apps are thin adapters (`apps/ios`):
+
+| Part | Shared | iPhone | Mac |
+| --- | --- | --- | --- |
+| Chrome renderer, tokens, wallpaper, motion | CalternalUI | | |
+| Description, store, events | CalternalUI `Chrome/` | | |
+| Bridge protocol and dispatch, `bridge.js`, demo pages, start address, measurement | `apps/ios/Shared` | | |
+| Web card, drag, haptics, share, menus, status bar | | `ChromeHost`, `ShellViewController+Platform`, `MenuPresenter` | `MacShell` |
+| Entry, windows, menu bar, Settings | | `AppDelegate`, `SceneDelegate` | `CalternalMacApp`, `MacCommands`, `MacSettings` |
+
+On a Mac the description draws as columns (sidebar, card with the header over it); below 760 pt wide it is the phone layout (the card slides). The Mac app
+opens one window per `MacShell`; a window shows the plain web view until the page publishes a description.
+
+### Tokens and consistency
+
+There is one tokens source, `packages/ui/tokens/tokens.json`; the web emits CSS from it and CalternalUI generates `Tokens.generated.swift` from it
+(`apps/apple/CalternalUI/scripts/tokens.sh`, `--check` fails when stale). Nothing visual is hard-coded in the chrome code: sizes, spacing, radii, controls,
+durations, curves and colours are `@Design` metrics and theme values (one spot: a 20 pt box for page-supplied PNG icons, to be replaced by a glyph token).
+**Cannot be shared:** the icon strokes (the web draws its own set; native draws SF Symbols behind the same names, `IconName`), the typeface rendering and
+Dynamic Type (native follows the system), glass and blur (the web's `backdrop-filter` imitation against the system's Liquid Glass), the veil solver (a Swift
+port of `veil.ts`, kept in step by tests; the page can also send its solved veils), hover and press physics, and window chrome.
+
+### The component catalogue definition (proposal)
+
+The chrome is a catalogue of components (header, sidebar, selector, section, row, mark, card, app, account, search, item, icon, menu) with their events.
+Proposed format: **one JSON Schema document, `contract/chrome-v1.schema.json`** (written; the draft is in the repository), as the single definition. From
+it generate (a) TypeScript types for the page and the plugin SDK and (b) Swift `Codable` types for CalternalUI (today hand-written to match), and keep a set
+of shared fixtures (`contract/chrome-fixtures/`) that both sides' tests load, like the existing contract fixtures. The Rust host models follow when plugins
+publish descriptions through the server (`crates/core/src/models.rs` stays the source for wire types and exports the schema, as `contract/README.md`
+describes; chrome would join that pipeline). Rules: the format is versioned (`version`), additive within a version, readers ignore unknown fields, no
+Calternal-specific fields (icons and apps are names, rows are rows), and every field that a platform may not honour says so.
+
+### Performance budgets and measurements
+
+Budgets are a hard gate. Method: `-CalternalMeasure YES` (Settings > Calternal > "Measure performance at start" on the phone) runs the scripted drag, a fling
+of the 5,000-row list at 6,000 pt/s and the memory read, and prints `MEASURE {json}`; the display-link `FrameMeter` counts a hitch as a frame over 1.5 refresh
+periods; signposts (`cloud.calternal.app` / `measure`) are in place for Instruments. Release builds. On the phone the output is read with
+`xcrun devicectl device process launch --console ... -- -CalternalMeasure YES ...`.
+
+| Metric | Budget | iPhone 16 Pro Max, iOS 27.2.1 | Mac Studio (M5 Ultra, 5K at 120 Hz) |
+| --- | --- | --- | --- |
+| Sidebar drag: frames over 1.5 periods | at most 1 % and none over 3 periods | 72 frames, 0 hitches, p99 16.7 ms (60 Hz run) | not applicable (columns) |
+| 5,000-row list fling: hitches | at most 1 %, worst under 3 periods | 298 frames, 1 hitch (0.34 %), worst 47.8 ms | 587 frames, 5 hitches (0.85 %), worst 77 ms (over budget) |
+| Description published to first painted frame | at most 50 ms warm | 2.6 ms (second publish) | 81 to 122 ms warm: **over budget**; 230 to 310 ms for the first (wallpaper preparation) |
+| Cold launch to the page's first paint | at most 1,000 ms (bundled page; network excluded) | 265 ms | 557 ms |
+| Native process memory with one web card | at most 150 MB phone, 300 MB Mac | 36 MB | 284 MB (the 5K wallpaper copies dominate) |
+| Bridge round trip | at most 2 ms | 0.39 ms (Simulator) | not measured |
+
+What failed or was not measured: the Mac's warm publish (81 to 122 ms) is the open performance bug (suspects: SwiftUI re-diffing the whole sidebar list and
+the card material on every description, wallpaper veils re-solved on resize; needs an Instruments trace), and the Mac fling has one 77 ms stall (a window
+republish). The phone runs the display link at 60 Hz in this build; `CADisableMinimumFrameDurationOnPhone` is now set for the next build. Phone numbers come from
+the demo page (14 rows plus a 5,000-note windowed list), not real threads. Web content process memory is separate and was not measured. A first version drew the
+windowed list as a `ForEach` over all 5,000 indexes: 75 % of frames dropped on the Mac; it now holds only the window and two spacer rows, so cost follows the window.
+
+### The Mac app
+
+Open `~/Applications/Calternal.app` on the Mac Studio (built by `apps/ios` scheme `CalternalMac`; copy of `build-mac/Build/Products/Release`). It starts on the
+bundled `chrome-demo` page; Settings (Cmd-,) sets the start address (for example the fixtures build `http://10.69.69.222:4310/` or `https://calternal.cloud/`).
+Menu: View > Toggle Sidebar (Ctrl-Cmd-S), Reload (Cmd-R), Clear Page Cache and Reload (Shift-Cmd-R), File > New Window (Cmd-N, one shell per window).
+
+**Signing and passkeys.** This copy is ad hoc signed (linker), with the sandbox and network only. Passkey sign-in in the web card needs the
+`webcredentials:calternal.cloud` associated-domains entitlement (the iPhone has it; Apple's guide "Connecting to a service with passkeys" requires the
+Associated Domains capability for the domain), which on macOS is a restricted entitlement that needs a provisioning profile, so this local build cannot
+sign in with a passkey (expected from Apple's documentation, not tested; use the fixtures or demo addresses meanwhile). I tried both cloud-signing routes
+over SSH (`install-mac.sh`): Developer ID fails with "You haven't been given access to cloud-managed distribution certificates" (the API key is not an Admin
+key) and development fails at codesign (the development certificate is in the locked login keychain). **What the owner does once:** open
+`apps/ios/Calternal.xcodeproj` in Xcode on the Mac Studio, choose the scheme `CalternalMacPasskeys` (Release, carries the entitlement) and "My Mac", press Run
+once so automatic signing creates the Mac profile and registers the Mac; afterwards builds can be started the same way. The bundle id is the iPhone's
+(`cloud.calternal.app`), so the server's `apple-app-site-association` entry for the iPhone app also covers the Mac app.

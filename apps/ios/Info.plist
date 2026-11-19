@@ -2,6 +2,9 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<!-- Lets Core Animation and display links run at the full ProMotion rate (120 Hz) instead of 60. -->
+	<key>CADisableMinimumFrameDurationOnPhone</key>
+	<true/>
 	<!-- One scene, no storyboard; AppDelegate names the delegate class. -->
 	<key>UIApplicationSceneManifest</key>
 	<dict>
