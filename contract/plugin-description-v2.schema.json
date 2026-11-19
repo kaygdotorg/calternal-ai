@@ -1,0 +1,264 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://calternal.com/contract/plugin-description-v2.schema.json",
+  "title": "Plugin description v2 shared extensions",
+  "description": "Review schema for additions embedded by chrome v2 and the versioned GenUI catalogue. This is a schema for extension nodes and events; each renderer still validates the surrounding description.",
+  "oneOf": [
+    { "$ref": "#/definitions/bind" },
+    { "$ref": "#/definitions/invoke" },
+    { "$ref": "#/definitions/component" },
+    { "$ref": "#/definitions/windowRequest" },
+    { "$ref": "#/definitions/windowResult" },
+    { "$ref": "#/definitions/componentEvent" },
+    { "$ref": "#/definitions/invokeEvent" },
+    { "$ref": "#/definitions/invokeResult" }
+  ],
+  "definitions": {
+    "id": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "scalar": { "type": ["string", "number", "boolean", "null"] },
+    "field": { "type": "string", "maxLength": 64, "pattern": "^[a-z][a-z0-9_-]*$" },
+    "input": {
+      "description": "Input expressions use the existing GenUI language and evaluation budget. Each value is a literal or one bounded expression.",
+      "type": "object", "maxProperties": 32,
+      "additionalProperties": {
+        "oneOf": [
+          {
+            "type": "object", "additionalProperties": false, "required": ["literal"],
+            "properties": { "literal": {} }
+          },
+          {
+            "type": "object", "additionalProperties": false, "required": ["expression"],
+            "properties": { "expression": { "type": "string", "minLength": 1, "maxLength": 4096 } }
+          }
+        ]
+      }
+    },
+    "operation": { "type": "string", "maxLength": 128, "pattern": "^[a-z][a-z0-9_-]*(?:\\.[a-z][a-z0-9_-]*)+$" },
+    "bind": {
+      "type": "object", "additionalProperties": false, "required": ["type", "id", "view", "kind", "fields"],
+      "properties": {
+        "type": { "const": "bind" },
+        "id": { "$ref": "#/definitions/id" },
+        "view": { "enum": ["item", "list", "search"] },
+        "kind": { "$ref": "#/definitions/field" },
+        "collection": { "$ref": "#/definitions/field" },
+        "item": { "enum": ["route.item", "selection.item"] },
+        "query": { "enum": ["route.query", "interaction.query"] },
+        "fields": { "type": "array", "minItems": 1, "maxItems": 32, "uniqueItems": true, "items": { "$ref": "#/definitions/field" } },
+        "filter": {
+          "type": "array", "maxItems": 8, "description": "Conjunction of comparisons against declared indexed fields.",
+          "items": {
+            "type": "object", "additionalProperties": false, "required": ["field", "op", "value"],
+            "properties": {
+              "field": { "$ref": "#/definitions/field" },
+              "op": { "enum": ["eq", "lt", "lte", "gt", "gte"] },
+              "value": { "$ref": "#/definitions/scalar" }
+            }
+          }
+        },
+        "sort": {
+          "type": "array", "maxItems": 4,
+          "items": {
+            "type": "object", "additionalProperties": false, "required": ["field", "direction"],
+            "properties": { "field": { "$ref": "#/definitions/field" }, "direction": { "enum": ["asc", "desc"] } }
+          }
+        },
+        "page_size": { "type": "integer", "minimum": 1, "maximum": 80 },
+        "slots": {
+          "description": "References to static child templates in the enclosing format. Omitted states use host defaults.",
+          "type": "object", "additionalProperties": false,
+          "properties": {
+            "empty": { "$ref": "#/definitions/id" },
+            "error": { "$ref": "#/definitions/id" },
+            "loading": { "$ref": "#/definitions/id" }
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "view": { "const": "item" } } },
+          "then": { "required": ["item"], "properties": { "query": false, "page_size": false, "sort": false, "filter": false, "collection": false } },
+          "else": { "properties": { "item": false } }
+        },
+        {
+          "if": { "properties": { "view": { "const": "search" } } },
+          "then": { "required": ["query"] },
+          "else": { "properties": { "query": false } }
+        }
+      ]
+    },
+    "invoke": {
+      "type": "object", "additionalProperties": false, "required": ["type", "operation", "input"],
+      "properties": {
+        "type": { "const": "invoke" },
+        "operation": { "$ref": "#/definitions/operation" },
+        "input": { "$ref": "#/definitions/input" }
+      }
+    },
+    "component": {
+      "type": "object", "required": ["type", "id", "config"], "additionalProperties": false,
+      "properties": {
+        "type": { "enum": ["item_editor", "transcript", "composer", "request_card", "sealed_html"] },
+        "id": { "$ref": "#/definitions/id" },
+        "config": { "type": "object" }
+      },
+      "allOf": [
+        { "if": { "properties": { "type": { "const": "item_editor" } } }, "then": { "properties": { "config": { "$ref": "#/definitions/itemEditor" } } } },
+        { "if": { "properties": { "type": { "const": "transcript" } } }, "then": { "properties": { "config": { "$ref": "#/definitions/transcript" } } } },
+        { "if": { "properties": { "type": { "const": "composer" } } }, "then": { "properties": { "config": { "$ref": "#/definitions/composer" } } } },
+        { "if": { "properties": { "type": { "const": "request_card" } } }, "then": { "properties": { "config": { "$ref": "#/definitions/requestCard" } } } },
+        { "if": { "properties": { "type": { "const": "sealed_html" } } }, "then": { "properties": { "config": { "$ref": "#/definitions/sealedHtml" } } } }
+      ]
+    },
+    "itemEditor": {
+      "type": "object", "additionalProperties": false, "required": ["item"],
+      "properties": { "item": { "enum": ["route.item", "selection.item", "binding.item"] } }
+    },
+    "transcript": {
+      "type": "object", "additionalProperties": false, "required": ["turn"],
+      "properties": { "turn": { "enum": ["route.turn", "selection.turn", "binding.turn"] } }
+    },
+    "composer": {
+      "type": "object", "additionalProperties": false, "required": ["target", "operation", "input"],
+      "properties": {
+        "target": { "enum": ["route.item", "selection.item", "binding.item", "route.turn", "selection.turn", "binding.turn"] },
+        "operation": { "$ref": "#/definitions/operation" },
+        "input": { "$ref": "#/definitions/input" }
+      }
+    },
+    "requestCard": {
+      "type": "object", "additionalProperties": false, "required": ["request"],
+      "properties": { "request": { "enum": ["route.request", "binding.request"] } }
+    },
+    "sealedHtml": {
+      "type": "object", "additionalProperties": false, "required": ["frame_id"],
+      "properties": { "frame_id": { "enum": ["route.frame", "binding.frame"] } }
+    },
+    "windowRequest": {
+      "type": "object", "additionalProperties": false, "required": ["type", "id", "from", "to"],
+      "properties": {
+        "type": { "const": "window" },
+        "id": { "$ref": "#/definitions/id" },
+        "from": { "type": "integer", "minimum": 0 },
+        "to": { "type": "integer", "minimum": 0, "description": "Exclusive; host validates from ≤ to and caps the span." }
+      }
+    },
+    "windowResult": {
+      "type": "object", "additionalProperties": false, "required": ["type", "id", "revision", "count", "offset", "rows"],
+      "properties": {
+        "type": { "const": "window_result" },
+        "id": { "$ref": "#/definitions/id" },
+        "revision": { "$ref": "#/definitions/id" },
+        "count": { "type": "integer", "minimum": 0 },
+        "offset": { "type": "integer", "minimum": 0 },
+        "rows": {
+          "type": "array", "maxItems": 80,
+          "items": {
+            "type": "object", "additionalProperties": false, "required": ["id", "fields"],
+            "properties": {
+              "id": { "$ref": "#/definitions/id" },
+              "fields": { "type": "object", "maxProperties": 32, "description": "Host projects authorized declared fields and validates them against the owning kind and renderer." }
+            }
+          }
+        }
+      }
+    },
+    "componentEvent": {
+      "description": "Host component events. IDs and revisions are issued by the renderer/host; payload never goes to plugin code.",
+      "type": "object", "additionalProperties": false, "required": ["type", "id", "revision", "event", "name", "data"],
+      "properties": {
+        "type": { "const": "component_event" },
+        "id": { "$ref": "#/definitions/id" },
+        "revision": { "$ref": "#/definitions/id" },
+        "event": { "$ref": "#/definitions/id" },
+        "name": { "type": "string" },
+        "data": { "type": "object" }
+      },
+      "oneOf": [
+        {
+          "properties": { "name": { "enum": ["editor.load", "editor.room_open", "composer.stop", "sealed.load_remote"] }, "data": { "maxProperties": 0 } }
+        },
+        {
+          "properties": {
+            "name": { "const": "editor.save" },
+            "data": {
+              "additionalProperties": false, "required": ["expected_revision", "draft"],
+              "properties": { "expected_revision": { "$ref": "#/definitions/id" }, "draft": { "$ref": "#/definitions/id", "description": "Host draft reference; content uses the bounded item-save route." } }
+            }
+          }
+        },
+        {
+          "properties": {
+            "name": { "enum": ["transcript.load", "transcript.rendered", "transcript.committed"] },
+            "data": {
+              "additionalProperties": false, "required": ["cursor"],
+              "properties": { "cursor": { "oneOf": [{ "$ref": "#/definitions/id" }, { "type": "null" }] } }
+            }
+          }
+        },
+        {
+          "properties": {
+            "name": { "enum": ["composer.send", "composer.attach", "composer.mention"] },
+            "data": {
+              "additionalProperties": false, "required": ["ref"],
+              "properties": { "ref": { "$ref": "#/definitions/id", "description": "Host-resolved draft, attachment or mention reference for the event." } }
+            }
+          }
+        },
+        {
+          "properties": {
+            "name": { "const": "request.answer" },
+            "data": {
+              "additionalProperties": false, "required": ["answer"],
+              "properties": { "answer": { "description": "Validated against the host request's admitted answer schema." } }
+            }
+          }
+        },
+        {
+          "properties": {
+            "name": { "enum": ["request.approve", "request.deny"] },
+            "data": { "maxProperties": 0 }
+          }
+        },
+        {
+          "properties": {
+            "name": { "const": "sealed.resize" },
+            "data": {
+              "additionalProperties": false, "required": ["height"],
+              "properties": { "height": { "type": "integer", "minimum": 0, "maximum": 4096 } }
+            }
+          }
+        }
+      ]
+    },
+    "invokeEvent": {
+      "description": "A renderer requests the action from its current template. The host resolves the action and issues a request ID.",
+      "type": "object", "additionalProperties": false, "required": ["type", "id", "event", "revision"],
+      "properties": {
+        "type": { "const": "invoke_event" },
+        "id": { "$ref": "#/definitions/id", "description": "Stable action ID in the rendered template." },
+        "event": { "$ref": "#/definitions/id" },
+        "revision": { "$ref": "#/definitions/id" },
+        "interaction": {
+          "type": "object", "additionalProperties": false,
+          "properties": { "text": { "type": "string", "maxLength": 4096 } }
+        }
+      }
+    },
+    "invokeResult": {
+      "description": "Host-only result for the invoking control. Success exposes no worker payload to the template.",
+      "type": "object", "additionalProperties": false, "required": ["type", "event", "revision", "state"],
+      "properties": {
+        "type": { "const": "invoke_result" },
+        "event": { "$ref": "#/definitions/id" },
+        "revision": { "$ref": "#/definitions/id" },
+        "state": { "enum": ["pending", "ok", "error"] },
+        "code": { "type": "string", "maxLength": 64 },
+        "message": { "type": "string", "maxLength": 512 }
+      },
+      "if": { "properties": { "state": { "const": "error" } } },
+      "then": { "required": ["code", "message"] },
+      "else": { "properties": { "code": false, "message": false } }
+    }
+  }
+}

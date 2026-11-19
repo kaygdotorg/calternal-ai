@@ -2,17 +2,16 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://calternal.com/contract/plugin-manifest-v2.schema.json",
   "title": "Calternal plugin manifest v2",
-  "description": "Review draft for Q1, Q2, Q4, Q6, Q8 and Q9 of docs/plugin-api-v2.md. Validate locally with the versioned contract registry. Uniqueness, references, byte limits, content safety and approval are separate host checks.",
+  "description": "Revision 2 review draft for the first contract. Validate offline with the versioned contract registry. Uniqueness, references, digest verification and approval are separate host checks.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["api_version", "id", "name", "version", "icon", "age_rating", "apps", "kinds", "operations", "host_methods"],
+  "required": ["api_version", "id", "name", "version", "icon", "apps", "kinds", "operations", "host_methods"],
   "properties": {
     "api_version": { "const": 2 },
     "id": { "$ref": "#/definitions/localId" },
     "name": { "$ref": "#/definitions/label" },
     "version": { "type": "string", "minLength": 5, "maxLength": 64, "description": "Validated as a semantic version by the host." },
     "icon": { "$ref": "#/definitions/icon" },
-    "age_rating": { "enum": ["all", "13+", "16+", "18+", "unrated"] },
     "worker": { "$ref": "#/definitions/asset" },
     "apps": { "type": "array", "maxItems": 16, "items": { "$ref": "#/definitions/app" } },
     "kinds": { "type": "array", "maxItems": 64, "items": { "$ref": "#/definitions/kind" } },
@@ -20,27 +19,13 @@
     "host_methods": {
       "description": "The host also checks each requested method against the approved scope and operation.",
       "type": "array", "uniqueItems": true, "maxItems": 64,
-      "items": { "enum": [
-        "read_item", "write_item", "list_items_v1", "list_collection", "search_items",
-        "room_head", "room_hook", "sharing_check", "start_job", "checkpoint_job", "park_job", "job_status",
-        "cancel_job", "read_setting_v1", "set_setting", "request_secret_handle", "content_prepare_v1",
-        "proxy_request", "start_turn", "read_turn", "publish_description", "publish_feed", "storage_get", "storage_apply"
-      ] }
+      "items": { "$ref": "#/definitions/hostMethod" }
     },
-    "room_hooks": {
-      "type": "array", "maxItems": 32,
-      "items": {
-        "type": "object", "additionalProperties": false, "required": ["kind", "phase", "operation"],
-        "properties": {
-          "kind": { "$ref": "#/definitions/localId" },
-          "phase": { "const": "post_commit" },
-          "operation": { "$ref": "#/definitions/operationId" }
-        }
-      }
-    },
+    "commands": { "type": "array", "maxItems": 64, "items": { "$ref": "#/definitions/command" } },
+    "providers": { "type": "array", "maxItems": 16, "items": { "$ref": "#/definitions/provider" } },
     "jobs": { "type": "array", "maxItems": 32, "items": { "$ref": "#/definitions/job" } },
-    "schedules": { "type": "array", "maxItems": 32, "items": { "$ref": "#/definitions/schedule" } },
-    "webhooks": { "type": "array", "maxItems": 32, "items": { "$ref": "#/definitions/webhook" } },
+    "schedule_eligibility": { "type": "array", "maxItems": 32, "items": { "$ref": "#/definitions/schedule" } },
+    "wait_webhooks": { "type": "array", "maxItems": 32, "items": { "$ref": "#/definitions/webhook" } },
     "settings": { "type": "array", "maxItems": 64, "items": { "$ref": "#/definitions/setting" } },
     "secrets": { "type": "array", "maxItems": 32, "items": { "$ref": "#/definitions/secret" } },
     "network": {
@@ -49,23 +34,23 @@
         "destinations": {
           "type": "array", "maxItems": 64,
           "items": { "oneOf": [
-            { "$ref": "#/definitions/named" }, { "$ref": "#/definitions/media" },
-            { "$ref": "#/definitions/public" }, { "$ref": "#/definitions/private" }
+            { "$ref": "#/definitions/named" }, { "$ref": "#/definitions/media" }
           ] }
         }
       }
-    },
-    "storage": {
-      "type": "object", "additionalProperties": false, "required": ["format", "schema_version", "quota_bytes"],
-      "properties": {
-        "format": { "const": "records-v1" },
-        "schema_version": { "type": "integer", "minimum": 1, "maximum": 2147483647 },
-        "quota_bytes": { "type": "integer", "minimum": 1, "maximum": 16777216 },
-        "max_ttl_seconds": { "type": "integer", "minimum": 1, "maximum": 2592000, "description": "Omit for records without per-record expiry." }
-      }
-    },
-    "gallery": { "$ref": "#/definitions/gallery" }
+    }
   },
+  "if": {
+    "anyOf": [
+      { "properties": { "operations": { "minItems": 1 } } },
+      { "required": ["host_methods"], "properties": { "host_methods": { "minItems": 1 } } },
+      { "required": ["jobs"], "properties": { "jobs": { "minItems": 1 } } },
+      { "required": ["commands"], "properties": { "commands": { "minItems": 1 } } },
+      { "required": ["schedule_eligibility"], "properties": { "schedule_eligibility": { "minItems": 1 } } },
+      { "required": ["wait_webhooks"], "properties": { "wait_webhooks": { "minItems": 1 } } }
+    ]
+  },
+  "then": { "required": ["worker"] },
   "definitions": {
     "localId": { "type": "string", "pattern": "^[a-z][a-z0-9]*(?:[-_][a-z0-9]+)*$", "maxLength": 64 },
     "operationId": { "type": "string", "pattern": "^[a-z][a-z0-9_-]*(?:\\.[a-z][a-z0-9_-]*)+$", "maxLength": 128 },
@@ -88,11 +73,11 @@
       "type": ["object", "boolean"]
     },
     "description": {
-      "type": "object", "additionalProperties": false, "required": ["id", "version", "baseline"],
+      "type": "object", "additionalProperties": false, "required": ["id", "version", "template"],
       "properties": {
         "id": { "$ref": "#/definitions/localId" },
-        "version": { "type": "integer", "minimum": 1, "maximum": 65535 },
-        "baseline": { "$ref": "#/definitions/asset" }
+        "version": { "const": 2 },
+        "template": { "$ref": "#/definitions/asset" }
       }
     },
     "app": {
@@ -101,6 +86,7 @@
         "id": { "$ref": "#/definitions/localId" },
         "name": { "$ref": "#/definitions/label" },
         "icon": { "$ref": "#/definitions/icon" },
+        "engine": { "const": "turns" },
         "chrome": { "$ref": "#/definitions/description" },
         "content": { "$ref": "#/definitions/description" }
       }
@@ -114,18 +100,51 @@
         "extension": { "type": "string", "pattern": "^[a-z0-9]{1,16}$" },
         "schema": { "$ref": "#/definitions/embeddedSchema" },
         "searchable": { "type": "boolean" },
-        "live_editing": { "type": "boolean" }
+        "indexed_fields": {
+          "type": "object", "maxProperties": 32,
+          "propertyNames": { "$ref": "#/definitions/localId" },
+          "additionalProperties": { "enum": ["string", "number", "boolean", "timestamp"] }
+        },
+        "live_room": { "enum": ["yjs-v1"] }
       },
       "allOf": [
         { "if": { "properties": { "claimed_text": { "const": false } } }, "then": { "required": ["extension"] },
           "else": { "properties": { "extension": { "const": "md" } } } },
-        { "if": { "required": ["live_editing"], "properties": { "live_editing": { "const": true } } },
+        { "if": { "required": ["live_room"] },
           "then": { "properties": { "claimed_text": { "const": true } } } }
       ]
     },
+    "hostMethod": {
+      "enum": [
+        "item_head", "item_range", "item_history", "item_save", "item_trash", "item_restore", "item_rename",
+        "collection_create", "collection_membership", "items_list", "items_search", "sharing_check",
+        "start_job", "checkpoint_job", "job_status", "cancel_job", "read_setting", "set_setting",
+        "request_secret_handle", "content_prepare", "proxy_request", "turn_start", "turn_status", "turn_cancel",
+        "turn_follow_up", "turn_answer", "turn_select_machine", "schedule_create", "schedule_remove"
+      ]
+    },
+    "command": {
+      "type": "object", "additionalProperties": false, "required": ["id", "label", "operation", "input"],
+      "properties": {
+        "id": { "$ref": "#/definitions/localId" },
+        "label": { "$ref": "#/definitions/label" },
+        "operation": { "$ref": "#/definitions/operationId" },
+        "input": { "$ref": "plugin-description-v2.schema.json#/definitions/input" }
+      }
+    },
+    "provider": {
+      "type": "object", "additionalProperties": false, "required": ["id", "name", "engine", "adapter", "protocol_version"],
+      "properties": {
+        "id": { "$ref": "#/definitions/localId" },
+        "name": { "$ref": "#/definitions/label" },
+        "engine": { "const": "turns" },
+        "adapter": { "$ref": "#/definitions/asset", "description": "Pinned executable descriptor for the host's existing provider loader." },
+        "protocol_version": { "const": 1 }
+      }
+    },
     "operation": {
       "type": "object", "additionalProperties": false,
-      "required": ["id", "input_schema", "output_schema", "required_capability", "risk", "mutates", "idempotency"],
+      "required": ["id", "input_schema", "output_schema", "required_capability", "risk", "mutates", "idempotency", "methods"],
       "properties": {
         "id": { "$ref": "#/definitions/operationId" },
         "input_schema": { "$ref": "#/definitions/embeddedSchema" },
@@ -134,7 +153,8 @@
         "risk": { "$ref": "plugin-manifest-v1.schema.json#/definitions/OperationRisk" },
         "mutates": { "type": "boolean" },
         "idempotency": { "$ref": "plugin-manifest-v1.schema.json#/definitions/ManifestIdempotency" },
-        "target_kind": { "$ref": "#/definitions/localId", "description": "Optional kind for an item-targeted operation; the host resolves its address." }
+        "target": { "$ref": "plugin-manifest-v1.schema.json#/definitions/ManifestTarget" },
+        "methods": { "type": "array", "maxItems": 64, "uniqueItems": true, "items": { "$ref": "#/definitions/hostMethod" } }
       },
       "if": { "properties": { "risk": { "const": "read" } } },
       "then": { "properties": { "mutates": { "const": false }, "idempotency": { "const": "read_only" } } },
@@ -170,7 +190,6 @@
       "properties": {
         "id": { "$ref": "#/definitions/localId" },
         "operation": { "$ref": "#/definitions/operationId" },
-        "default_calendar": { "type": "string", "minLength": 1, "maxLength": 256 },
         "description": { "$ref": "#/definitions/label" }
       }
     },
@@ -179,8 +198,7 @@
       "properties": {
         "id": { "$ref": "#/definitions/localId" },
         "schema_operation": { "$ref": "#/definitions/operationId" },
-        "signing_secret": { "$ref": "#/definitions/localId" },
-        "dispatch_operation": { "$ref": "#/definitions/operationId", "description": "Omit for wait-delivery-only routes." }
+        "signing_secret": { "$ref": "#/definitions/localId" }
       }
     },
     "setting": {
@@ -203,7 +221,7 @@
     },
     "hosts": {
       "type": "array", "minItems": 1, "maxItems": 64, "uniqueItems": true,
-      "items": { "type": "string", "minLength": 1, "maxLength": 253, "description": "Checked and normalized by netguard." }
+      "items": { "type": "string", "minLength": 1, "maxLength": 253, "pattern": "^[a-z0-9][a-z0-9.-]*[a-z0-9]$", "description": "Exact DNS name, checked and normalized by netguard." }
     },
     "ports": {
       "type": "array", "minItems": 1, "maxItems": 32, "uniqueItems": true,
@@ -214,64 +232,20 @@
       "properties": {
         "kind": { "const": "named_connection" },
         "id": { "$ref": "#/definitions/localId" }, "hosts": { "$ref": "#/definitions/hosts" },
-        "ports": { "$ref": "#/definitions/ports" }, "protocol": { "enum": ["https", "imap", "jmap", "smtp", "tcp"] },
+        "ports": { "$ref": "#/definitions/ports" }, "protocol": { "const": "https" },
         "secret": { "$ref": "#/definitions/localId" }
       }
     },
     "media": {
-      "type": "object", "additionalProperties": false, "required": ["kind", "id", "profile", "sources"],
+      "type": "object", "additionalProperties": false, "required": ["kind", "id", "profile", "sources", "hosts"],
       "properties": {
         "kind": { "const": "content_fetch" }, "id": { "$ref": "#/definitions/localId" },
         "profile": { "const": "images_fonts" }, "hosts": { "$ref": "#/definitions/hosts" },
-        "any_public": { "const": true },
         "sources": {
           "type": "array", "minItems": 1, "maxItems": 32, "uniqueItems": true,
           "items": {
             "type": "object", "additionalProperties": false, "required": ["kind", "field"],
             "properties": { "kind": { "$ref": "#/definitions/localId" }, "field": { "const": "text" } }
-          }
-        }
-      },
-      "oneOf": [{ "required": ["hosts"] }, { "required": ["any_public"] }]
-    },
-    "public": {
-      "type": "object", "additionalProperties": false, "required": ["kind", "id", "ports"],
-      "properties": {
-        "kind": { "const": "open_internet" }, "id": { "$ref": "#/definitions/localId" },
-        "hosts": { "$ref": "#/definitions/hosts" }, "any_public": { "const": true },
-        "ports": { "$ref": "#/definitions/ports" }
-      },
-      "oneOf": [{ "required": ["hosts"] }, { "required": ["any_public"] }]
-    },
-    "private": {
-      "type": "object", "additionalProperties": false, "required": ["kind", "id", "origin", "ports"],
-      "properties": {
-        "kind": { "const": "private_network" }, "id": { "$ref": "#/definitions/localId" },
-        "origin": { "enum": ["approved_server_route", "approved_space_machine"] },
-        "ports": { "$ref": "#/definitions/ports" }, "hosts": { "$ref": "#/definitions/hosts" },
-        "ranges": { "type": "array", "minItems": 1, "maxItems": 32, "uniqueItems": true,
-          "items": { "type": "string", "maxLength": 49, "pattern": "^[0-9A-Fa-f:.]+/[0-9]{1,3}$" } }
-      },
-      "anyOf": [{ "required": ["hosts"] }, { "required": ["ranges"] }]
-    },
-    "gallery": {
-      "type": "object", "additionalProperties": false,
-      "required": ["author", "summary", "description", "source", "license", "permissions", "screenshots"],
-      "properties": {
-        "author": { "$ref": "#/definitions/label" },
-        "summary": { "type": "string", "minLength": 1, "maxLength": 160 },
-        "description": { "type": "string", "minLength": 1, "maxLength": 8192 },
-        "source": { "type": "string", "maxLength": 1024, "pattern": "^https://[^?#]+$" },
-        "license": { "$ref": "#/definitions/label" },
-        "permissions": { "type": "string", "minLength": 1, "maxLength": 8192 },
-        "screenshots": {
-          "type": "array", "minItems": 1, "maxItems": 3,
-          "items": {
-            "type": "object", "additionalProperties": false, "required": ["file", "caption"],
-            "properties": {
-              "file": { "type": "string", "pattern": "^[A-Za-z0-9_-]{1,64}\\.png$" },
-              "caption": { "type": "string", "minLength": 1, "maxLength": 256 }
-            }
           }
         }
       }
