@@ -45,7 +45,7 @@ for (const surface of SURFACES) for (const churn of CHURNS) {
   const want = await p.evaluate(() => { const a = document.activeElement?.closest("a"); return { href: a?.getAttribute("href") ?? "", title: (a?.textContent ?? "").trim() }; });
   let shown = NaN; // the pane has the item the selection settled on: the address left where the hold began and the page's heading is the row's title (under churn the row's item may have moved on, so the address is not compared)
   for (let k = 0; k < 400 && Number.isNaN(shown); k++) {
-    const there = await p.evaluate((p0) => location.pathname !== p0 && !!document.querySelector(".thread header, .note, [data-chrome-title], main h1, h1"), startPath);
+    const there = await p.evaluate(([p0, threads]) => location.pathname !== p0 && (threads ? document.documentElement.dataset.threadRendered === location.pathname.split("/").pop() : !!document.querySelector(".note, main h1, h1")), [startPath, surface === "threads"]); // threads: the thread's own stamp (calternal:thread-rendered), the same one the native shell reads
     if (there) shown = Date.now() - tLast; else await p.waitForTimeout(10);
   }
   await p.waitForTimeout(400);
@@ -58,6 +58,7 @@ for (const surface of SURFACES) for (const churn of CHURNS) {
   ok(/Threads|Notes/.test(String(r.focus)), `${tag}: focus stayed in the list`, String(r.focus));
   ok(during.routes <= 1, `${tag}: the main pane was not asked to load while the key was held (only when the selection settled)`, `${during.routes} loads during the hold`);
   ok(!Number.isNaN(shown), `${tag}: the main pane shows the settled item`, `${startPath} -> ${await p.evaluate(() => location.pathname)}`);
+  if (surface === "threads") { const openMs = await p.evaluate(() => performance.getEntriesByName("calternal:thread:open").at(-1)?.duration ?? NaN); console.log(`   the thread's own stamp (calternal:thread:open, view made to first screenful drawn): ${openMs.toFixed(0)} ms at 4x`); timing(openMs <= SHOW_BUDGET, `${tag}: the settled thread is drawn within ${SHOW_BUDGET} ms of its view being made (the shell's stamp, 4x CPU; the 50 ms rest comes before it)`, `${openMs.toFixed(0)} ms`); }
   timing(shown <= SHOW_BUDGET, `${tag}: the main pane shows the settled item within ${SHOW_BUDGET} ms of the last key`, `${shown} ms`);
   timing(pct(runs, 0.95) <= FRAME, `${tag}: the handler's p95 is within one frame`, `${pct(runs, 0.95).toFixed(1)} ms of ${FRAME}`);
   timing(pct(paints, 0.95) <= 2 * FRAME + 8, `${tag}: the moved selection is painted within one frame of each key (p95, to the second frame after the key)`, `${pct(paints, 0.95).toFixed(1)} ms`);

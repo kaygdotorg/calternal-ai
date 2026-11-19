@@ -45,11 +45,20 @@
   // What the message starts with decides where the mark goes (lead-mark.css): inline in the first paragraph, inside a first row, or on a line of its own before a list, code, picture or card.
   const lead = $derived(rowFirst ? "lead-row" : message.blocks[0]?.type === "text" && !/^\s*([-*+]\s|\d+[.)]\s|```|~~~|\||>|!\[)/.test(message.blocks[0].text) ? "lead-text" : "lead-own");
   // Message actions are created on first hover or focus (touch has no hover: they are there from the start).
+  // An agent message far from the screen is not drawn yet: the row is a box of about its height until it is near the view (one observer per row, released once drawn), so a thread opens by drawing what is on screen, not the Markdown, code and steps of every row the list keeps around it. Without IntersectionObserver (tests) it is drawn at once.
+  let drawn = $state(message.role !== "agent" || typeof IntersectionObserver === "undefined");
+  const pendingH = $derived(Math.max(48, Math.min(900, message.blocks.reduce((h, b) => h + (b.type === "text" ? 24 * Math.ceil(b.text.length / 85) + 12 : b.type === "steps" ? 40 : b.type === "card" ? 220 : 40), 16))));
+  function watch(node: HTMLElement) {
+    if (drawn) return;
+    const io = new IntersectionObserver((es) => { if (es.some((e) => e.isIntersecting)) { drawn = true; io.disconnect(); } }, { rootMargin: "120px" });
+    io.observe(node);
+    return { destroy: () => io.disconnect() };
+  }
   let armed = $state(typeof matchMedia === "function" && matchMedia("(hover: none)").matches);
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<div class="msg {message.role}" class:agent-row={message.role === "agent"} data-hit={hit ? "" : undefined} onpointerenter={() => (armed = true)} onfocusin={() => (armed = true)} onkeydown={vkey}>
+<div class="msg {message.role}" class:agent-row={message.role === "agent"} data-hit={hit ? "" : undefined} onpointerenter={() => (armed = true)} onfocusin={() => (armed = true)} onkeydown={vkey} use:watch>
   {#if message.role === "user"}
     <div class="col end">
       {#if editing}
@@ -59,6 +68,8 @@
       {/if}
       <MessageActions {message} {armed} onedit={canEdit && !editing ? edit : undefined} onversion={version} />
     </div>
+  {:else if !drawn}
+    <div class="pending" style:height="{pendingH}px" aria-hidden="true"></div>
   {:else}
     <div class="agent lead-host {lead}" id={message.id}>
       <div class="lead" class:row={rowFirst}><ProviderMark by={message.by} {provider} {providers} row={rowFirst} /></div>

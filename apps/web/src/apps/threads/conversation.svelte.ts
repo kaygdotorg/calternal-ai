@@ -27,7 +27,7 @@ export interface Turn {
 
 const PAGE = 100;
 /** Rows read with the ones asked for in the first, cheap step of a page. */
-const FIRST_MARGIN = 6;
+const FIRST_MARGIN = 2;
 
 /**
  * An agent message as this page saw its turn: the saved file may not record how long it worked or what it thought (an older file, or a provider that does not say), but this page measured it.

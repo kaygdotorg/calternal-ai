@@ -24,6 +24,28 @@
 
   let { id }: { id: string } = $props();
   let conv = $state<Conversation>();
+  // What floats at the bottom (the notices, the request bar, the composer) is drawn after the first frame of a thread: the messages come first, and the box keeps the height it had (`bottomH`), so nothing moves when it arrives.
+  let late = $state(false);
+  $effect(() => { void id; late = false; let r2 = 0; const r1 = requestAnimationFrame(() => { r2 = requestAnimationFrame(() => (late = true)); }); return () => { cancelAnimationFrame(r1); cancelAnimationFrame(r2); }; });
+  // The thread's open is stamped for the native shell and the timing suite: `calternal:thread:open` is a performance measure from the view being made to the first screenful being drawn (read it with `performance.getEntriesByName`), the same moment is the `calternal:thread-rendered` event on `window` and `data-thread-rendered` on the root (the thread's id).
+  $effect(() => {
+    const t = id;
+    performance.mark("calternal:thread:start", { detail: { id: t } });
+    delete document.documentElement.dataset.threadRendered;
+    return () => { delete document.documentElement.dataset.threadRendered; };
+  });
+  $effect(() => {
+    const c = conv; void c?.rev;
+    if (!c || c.count === 0 || c.id !== id || document.documentElement.dataset.threadRendered === id) return;
+    if (!c.get(c.count - 1)) return; // the screenful at the end has not been read yet
+    const t = id;
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      if (id !== t || document.documentElement.dataset.threadRendered === t) return;
+      document.documentElement.dataset.threadRendered = t;
+      try { performance.measure("calternal:thread:open", { start: "calternal:thread:start", detail: { id: t } }); } catch { /* no start mark */ }
+      window.dispatchEvent(new CustomEvent("calternal:thread-rendered", { detail: { id: t, ms: performance.getEntriesByName("calternal:thread:open").at(-1)?.duration ?? null } }));
+    }));
+  });
   let list = $state<ReturnType<typeof VirtualList>>();
   let listEl = $state<HTMLElement>();
   let bottomEl = $state<HTMLElement>();
@@ -185,10 +207,12 @@
 
   {#if summary}
     <div class="bottom" bind:this={bottomEl}>
-      <div class="inner">
+      <div class="inner" style:min-height={late ? undefined : `${Math.max(0, bottomH - 32)}px`}>
+        {#if late}
         <ThreadNotices thread={summary} onnew={() => void startThread().then((t) => navigate(`/threads/${t.id}`), (e: Error) => toast(`Could not start a thread: ${e.message}`))} onresume={() => client.resume(id).catch((e: Error) => toast(`Could not resume: ${e.message}`))} oncheck={() => client.check(id).then(() => toast("Checked"), (e: Error) => toast(`Could not check: ${e.message}`))} />
         <RequestBar requests={reqs} onanswer={(rid, a) => client.answer(rid, a).catch((e: Error) => toast(`Not sent: ${e.message}`))} />
         <Composer thread={summary} providers={store.providers} machines={store.machines} onpermission={(p) => client.setPermission(id, p)} onrunson={(r) => client.setRunsOn(id, r)} onreasoning={(l) => client.setReasoning(id, l)} ontype={() => void client.signInTyping?.(id)} onattach={(f, progress) => client.upload(id, f, progress)} onsend={(t, files) => { const undo = conv?.begin(); return client.send(id, t, crypto.randomUUID(), files).catch((e: Error) => { undo?.(); toast(`Not sent: ${e.message}`); throw e; }); }} onstop={() => client.stop(id).catch((e: Error) => toast(`Could not stop: ${e.message}`))} onprovider={(p, m) => client.setProvider(id, p, m)} />
+        {/if}
       </div>
     </div>
   {/if}
