@@ -6,7 +6,7 @@ import { launch, open, pct, serve } from "./lib.mjs";
 const HOST = process.env.HOST ?? "http://127.0.0.1:43125/step0/v2";
 const bearer = readFileSync(process.env.HOST_BEARER_FILE ?? `${process.env.HOME}/Developer/calternal-ai-lanes/.owner.token`, "utf8").trim();
 const view = process.argv[2] ?? "notes", SECS = Number(process.argv[3] ?? 5), RATE = 30;
-const LIST = view === "notes" ? "[data-section=notes]" : "[data-sidebar]";
+const LIST = view === "notes" ? "[data-section=notes]" : "[data-section=threads]"; // threads: the All Threads filter (the Inbox is a short list)
 const stop = await serve(); const browser = await launch();
 let bad = 0;
 const ok = (c, m, note = "") => { console.log(`${c ? "PASS" : "FAIL"}  ${m}${note ? "  " + note : ""}`); if (!c) bad++; };
@@ -15,6 +15,7 @@ for (const cpu of [1, 4]) {
   await cdp.send("Emulation.setCPUThrottlingRate", { rate: cpu });
   const reqs = []; p.on("request", (r) => { if (r.url().endsWith("/window")) reqs.push(Date.now()); });
   const versions = new Set(); p.on("response", async (r) => { if (r.url().endsWith("/window")) { try { const j = await r.json(); if (j.result_version) versions.add(j.result_version); } catch { /* not json */ } } });
+  if (view === "threads") await p.getByRole("tab", { name: "All Threads" }).click();
   await p.waitForSelector(`${LIST} [data-i] button`, { timeout: 60000 });
   await p.waitForFunction((sel) => document.querySelectorAll(`${sel} [data-i] .t`).length > 5, LIST, { timeout: 60000 });
   const painted = await p.evaluate(() => window.__painted);
