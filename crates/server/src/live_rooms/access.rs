@@ -225,10 +225,11 @@ impl<D: Directory> Connection<D> {
 
 async fn wait_for_revision(deadline: Instant) -> Result<(), Error> {
     if Instant::now() >= deadline {
-        return Err(
-            Error::new(ErrorCode::RetryAfter, "Room authority is changing. Retry shortly.")
-                .with_details(json!({"retry_after_ms":250})),
-        );
+        return Err(Error::new(
+            ErrorCode::RetryAfter,
+            "Room authority is changing. Retry shortly.",
+        )
+        .with_details(json!({"retry_after_ms":250})));
     }
     tokio::time::sleep(RETRY).await;
     Ok(())
