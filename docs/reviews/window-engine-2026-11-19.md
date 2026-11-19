@@ -272,10 +272,55 @@ At wider scopes the fixture moves one additional newest-first scope on
 each save and verifies its two counts. The fixture enrolls 257 background
 audiences with the same population distribution as Step 0.
 
-The list follow-up fuses the ordered scope range and its item head lookups
-into one prepared statement. The range still visits one page independently
-of the cursor offset, fetches up to 101 metadata heads, and adds zero flushes.
-The revised perf gate remains open pending the locked comparison.
+### Matched perf-01 comparison
+
+The same-lock comparison ran checksum-verified release binaries for
+`85add29a` and `c32a5982` with 100 measured samples per arm. All four
+harness invocations completed. The list fixture used 100,000 Notes heads and
+100-row pages over HTTP.
+
+| Notes list offset | Baseline p95 | Candidate p95 | Change |
+| --- | ---: | ---: | ---: |
+| First page | 1.092 ms | 1.110 ms | +0.018 ms |
+| 10,000 | 1.064 ms | 1.055 ms | −0.009 ms |
+| 90,000 | 1.232 ms | 1.098 ms | −0.134 ms |
+
+The fused query uses one prepared statement for the ordered covering range
+and up to 101 primary-key head probes, with zero flushes. This removes the
+per-head statement calls from the first candidate. The original list
+regression at 10,000 is gone in the matched run. First-page p50 improved
+from 1.000 to 0.922 ms while p99 rose from 1.115 to 1.257 ms. The candidate
+still traverses the scoped index and the item primary-key index, where the
+baseline uses the live-items index to reach item heads. The HTTP run did
+not time those traversals separately, and a single pair of arms cannot
+isolate the cause of the tail difference. The first-page p95 misses the
+strict no-regression gate by 18 microseconds. Keep the lane out of
+`dev` pending coordinator acceptance or another verified candidate.
+
+| Effective scopes | Step 0 control p95 | Product p95 | Change |
+| --- | ---: | ---: | ---: |
+| 0 | 26.794 ms | — | — |
+| 1 | 27.005 ms | 25.137 ms | −1.868 ms |
+| 4 | 25.819 ms | 29.825 ms | +4.006 ms |
+| 16 | 28.340 ms | 37.538 ms | +9.198 ms |
+| 32 | 34.597 ms | 33.717 ms | −0.880 ms |
+
+All four product arms passed 40 ms. The tightest margin was 2.462 ms at
+16 scopes. The product maintains a version for each affected scope in the
+content transaction. The spike updated one shared result-version row
+alongside its key and count changes. That is a difference in SQLite work.
+The p95 deltas are non-monotonic and the matched run did not time internal
+statements or syncs separately. The 16-scope observed maximum was 75.842 ms.
+The measured save still uses three FULL boundaries: content revision and
+outbox, journal publication, and outbox retirement. The projection adds no
+transaction or flush. The controlled run qualifies the matched warm,
+short-body workload. The earlier 8 KiB run used a different cache policy
+and membership pattern and remains unqualified.
+
+On the measured candidate, dev-01 passed formatting, all nine release window
+tests and the existing collection membership integration test. The broader
+54 content and 30 HTTP tests, contract verification and documentation gate
+passed on the Reading List predecessor `bdc29d76`.
 
 ## Simplification opportunities
 
