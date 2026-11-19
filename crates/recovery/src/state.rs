@@ -445,10 +445,7 @@ pub(crate) fn validate(snapshot: &Snapshot, installation: Uuid) -> Result<()> {
     Ok(())
 }
 /// Captures all records for startup comparison, never on the mutation path.
-pub(crate) fn records(
-    c: &Connection,
-    installation: Uuid,
-) -> Result<BTreeMap<String, Record>> {
+pub(crate) fn records(c: &Connection, installation: Uuid) -> Result<BTreeMap<String, Record>> {
     let mut keys = vec![GLOBAL.into()];
     for &(kind, table) in OWNER_TABLES {
         keys.extend(
@@ -474,7 +471,10 @@ pub(crate) fn records(
 pub(crate) fn capture(c: &Connection, installation: Uuid, sequence: u64) -> Result<Snapshot> {
     let records = records(c, installation)?.into_values().collect();
     let mut snapshot = assemble(installation, Uuid::now_v7(), sequence, records)?;
-    let table = snapshot.tables.get_mut("space_receipts").ok_or_else(invalid)?;
+    let table = snapshot
+        .tables
+        .get_mut("space_receipts")
+        .ok_or_else(invalid)?;
     for (key, receipt) in crate::receipts::capture(c)?.0 {
         table.rows.push(crate::receipts::cells(&key, &receipt));
     }

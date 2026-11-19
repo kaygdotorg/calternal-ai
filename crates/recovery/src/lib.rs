@@ -114,7 +114,7 @@ impl Coordinator {
             this.store.create(&segment)?;
             this.store.snapshot(&encode(&Image {
                 version: CURRENT,
-                    head: Checkpoint {
+                head: Checkpoint {
                     installation,
                     sequence: 0,
                     digest: ZERO.into(),
@@ -211,10 +211,10 @@ impl Coordinator {
                     && !transaction.is_nil()
                     && (!delta.is_empty() || receipts.is_some()) =>
                 {
-                    if receipts.as_ref().is_some_and(|r| {
-                        r.rows.is_empty()
-                            || !crate::receipts::ordered(&r.rows)
-                    }) {
+                    if receipts
+                        .as_ref()
+                        .is_some_and(|r| r.rows.is_empty() || !crate::receipts::ordered(&r.rows))
+                    {
                         return Err(invalid());
                     }
                     for (key, value) in delta {
@@ -254,9 +254,9 @@ impl Coordinator {
             || record.installation != self.installation
             || record.version != CURRENT
             || record
-                    .tables
-                    .get("space_receipts")
-                    .is_some_and(|table| key != state::GLOBAL || !table.rows.is_empty())
+                .tables
+                .get("space_receipts")
+                .is_some_and(|table| key != state::GLOBAL || !table.rows.is_empty())
         {
             return Err(invalid());
         }
