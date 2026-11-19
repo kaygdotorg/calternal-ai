@@ -7,17 +7,9 @@ schemas. The type generator follows registered references across the
 description schema, host catalogue, and manifest v1 placement and capability
 definitions. It uses the same schema-to-TypeScript compiler as the web
 renderer. Structural types catch authoring mistakes in TypeScript. The
-package build checks conditions and bounds against the manifest schema and runs
-the original description verifier against each emitted template and its
-manifest.
-
-The build pins the serialized template and worker bytes. It publishes the
-manifest after validation and after its referenced assets exist. Each template
-is serialized and hashed once. An optional worker asset is read and hashed
-once. The verifier reads each staged template and corresponding manifest
-and loads its schema and catalogue once per build. Build outputs receive
-ordinary writes and renames with zero explicit durability flushes. There is no
-runtime path, database access, or runtime read or flush count.
+package build validates the emitted files through the pinned verifier.
+It publishes the manifest after validation and after the referenced
+assets exist.
 
 ## Eight concepts before a first list
 
@@ -40,11 +32,9 @@ The guide builds the same example it publishes as Markdown.
   match the sealed fixtures on `dev`.
 - The package declares a two-field Add operation and uses the host's created
   reference for navigation. Mark read declares a first full swipe through the
-  host metadata patch. The current sealed catalogue and manifest schema lack
-  generic blank-item creation. Proposed revision 13 adds `host_create`
-  defaults and `host.item.create`, so the package can add that action after
-  the revision lands. Add still needs the worker because it takes title and URL
-  values from the form.
+  host metadata patch. The kind declares `host_create` defaults and the
+  blank-item button uses `host.item.create` and `then.route`. Add uses a worker
+  operation declaration because it takes title and URL from the form.
 - The reminder is an own-space example. Its operation and due schedule are
   declarations, and the viewer filter shapes the list. The bundled executable
   exits with failure before making any effect. Runtime work must enforce
@@ -59,8 +49,8 @@ with `inputs: { kind: { literal: item } }` and
 `then: { route: { name: "item" } }`. Remove the search Bind's `mode`
 so it uses the new default across all authorized searchable fields. The
 generated types, manifest and description validators, and two fixture parity
-tests passed on dev02. The checked-in package uses the sealed contract on
-`dev` while revision 13.2 is still under review.
+tests passed on dev02. The lane reapplied those changes when revision
+13.18 was sealed on `dev`.
 
 ## Proposed revision 14 for the morning
 
@@ -100,18 +90,20 @@ The web renderer's replacement calls `generateDescriptionTypes` with the
 contract directory URL. It keeps its output file and generated drift check.
 The renderer lane owns that adoption.
 
-The SDK checks the emitted files before publishing a manifest. The wrapper
-reads the staged manifest, every app template, and the optional worker once.
-Each asset is hashed when named and again after staging. The wrapper
-presents the description bytes and manifest to the sealed verifier in its
-fixture layout. Python reads each paired template and manifest once. The build
-has zero explicit durability flushes and no runtime path.
+The SDK calls the pinned verifier with `--package` on the emitted directory
+before publishing its manifest. Package mode checks the manifest schema,
+embedded schema declarations, templates, and template pins. It replaced the
+former fixture-staging adapter. The SDK also checks host-create default
+values against kind metadata schemas and verifies the optional worker pin.
+The shared generator translates 2020-12 `prefixItems` into the compiler's
+Draft 7 tuple representation so only the first swipe action can enable
+full swipe.
 
-To give the verifier a native package mode in a future numbered revision,
-accept a manifest path and the package root, resolve the manifest's selected
-templates, and run the same shape and semantic checks. Keep the fixture suite
-as the default invocation. This would remove the SDK's temporary fixture
-layout and give diagnostics the actual package paths.
+The native verifier reads the manifest and each app template once. The
+SDK reads the manifest and each pinned template again to return the
+checked authored data, and reads the worker once for its pin. A build also
+reads the original worker once when emitting it. There are zero explicit
+durability flushes and no runtime path.
 
 ## Independent author trials
 
@@ -162,6 +154,6 @@ uncertainties alongside the first-attempt outcome.
 
 ## Simplification opportunities
 
-Give the sealed verifier a package input mode so callers can pass artifacts
-directly, including a list of installed dependency manifests. Swift can use
-the same schema graph when its type generator needs it.
+A future verifier could return its checked JSON projection so authoring
+checks can reuse its parsed manifest and template data. Swift can share the
+same schema graph if its generator needs it.

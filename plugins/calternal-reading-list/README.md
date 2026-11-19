@@ -7,9 +7,9 @@ The resulting manifest and template are in `dist/`.
 
 The two-field Add form declares a worker operation because it uses supplied
 title and URL values. Mark read uses the host metadata patch with a first
-full swipe. The footer uses a terms search over the same searchable kind.
-The generic blank-item control is pending its manifest opt-in and operation
-in the sealed contract.
+full swipe. The footer searches the same searchable kind. New blank item uses
+generic host creation with the kind's declared `Untitled` default and
+opens the host's created reference.
 
 The reminder example is for the person's own space. Its selected item is a
 host-resolved target. The declared due operation is eligible for a one-date

@@ -172,7 +172,7 @@ const view = defineView({
 
 // Search Bind and footer
 const chrome = defineChrome({
-  binds: [{ id: "gear-search", source: { type: "search", kind: kind.id, mode: "terms" } }],
+  binds: [{ id: "gear-search", source: { type: "search", kind: kind.id } }],
   footer: { search: { bind: "gear-search", placeholder: "Search gear" } },
 });
 

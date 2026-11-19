@@ -13,6 +13,10 @@ await Promise.all([
   writeFile(new URL("author-types.d.ts", generated), text),
   ...[
     "verify-description.py",
+    "description_verification.py",
+    "description_input.py",
+    "description_events.py",
+    "json-schema-draft-07.json",
     "description-v2.schema.json",
     "host-catalogue-v2.json",
     "plugin-manifest-v1.schema.json",

@@ -56,7 +56,13 @@ function bundle(documents) {
       output.allOf = output.allOf.filter(clause => typeof clause === "boolean" || !("if" in clause));
       if (output.allOf.length === 0) delete output.allOf;
     }
-    for (const key of ["oneOf", "anyOf", "allOf", "prefixItems"]) {
+    // json-schema-to-typescript consumes Draft 7 tuple syntax.
+    if (output.prefixItems) {
+      output.additionalItems = output.items ?? true;
+      output.items = output.prefixItems;
+      delete output.prefixItems;
+    }
+    for (const key of ["oneOf", "anyOf", "allOf"]) {
       if (output[key]) output[key] = output[key].map(value => structural(value, document));
     }
     for (const key of ["additionalProperties", "propertyNames", "items", "contains", "additionalItems",

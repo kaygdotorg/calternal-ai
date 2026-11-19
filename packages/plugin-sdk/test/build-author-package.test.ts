@@ -51,7 +51,7 @@ it("verifies the emitted template with the generated manifest and pins its bytes
   const result = run(firstList);
   expect(result.stderr).toBe("");
   expect(result.status).toBe(0);
-  expect(result.stdout).toMatch(/ok\s+app-0\.json/);
+  expect(result.stdout).toMatch(/ok\s+app-0-[a-f0-9]{64}\.json/);
 
   const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
   expect(manifest).toMatchObject({ api_version: 2, reads: ["link"], network: "none", operations: [] });
@@ -72,7 +72,7 @@ it("reports manifest schema failures and refuses a Bind that the manifest never 
 
   const invalidBind = run(firstList.replace('type: "list", kind: "link"', 'type: "list", kind: "missing"'));
   expect(invalidBind.status).toBe(1);
-  expect(invalidBind.stdout).toMatch(/missing.*not in.*reads/);
+  expect(invalidBind.stderr).toMatch(/missing.*not in.*reads/);
   expect(readFileSync(manifestPath, "utf8")).toBe(previous);
 });
 
@@ -82,5 +82,12 @@ it("rejects an emitted template whose bytes no longer match its pin", async () =
   const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
   const asset = join(output, manifest.apps[0].description.template.path);
   writeFileSync(asset, readFileSync(asset, "utf8") + " ");
-  await expect(verifyPackage(output)).rejects.toThrow(/SHA-256 pin/);
+  await expect(verifyPackage(output)).rejects.toThrow(/SHA-256 mismatch/);
+});
+
+it("refuses host-create defaults that do not satisfy the kind metadata schema", () => {
+  const { run } = setup();
+  const result = run(firstList.replace("claimed_text: true,", "claimed_text: true, host_create: { defaults: { title: 42 } },"));
+  expect(result.status).toBe(1);
+  expect(result.stderr).toMatch(/host_create\/defaults.*must be string/);
 });

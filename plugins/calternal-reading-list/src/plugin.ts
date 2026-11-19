@@ -21,6 +21,7 @@ export default definePlugin({
       storage: { hidden: true },
       claimed_text: true,
       searchable: true,
+      host_create: { defaults: { title: "Untitled" } },
       schema: {
         type: "object",
         additionalProperties: false,
@@ -159,6 +160,16 @@ export default definePlugin({
         title: "Reading list",
         children: [
           {
+            type: "button",
+            invoke: {
+              id: "create-blank",
+              title: "New blank item",
+              operation: "host.item.create",
+              inputs: { kind: { literal: item } },
+              then: { route: { name: "item" } },
+            },
+          },
+          {
             type: "form",
             id: "add",
             title: "Add a link",
@@ -197,7 +208,7 @@ export default definePlugin({
     chrome: defineChrome({
       binds: [{
         id: "reading-search",
-        source: { type: "search", kind: item, mode: "terms" },
+        source: { type: "search", kind: item },
         fields: ["read"],
         row: { icon: false },
       }],
