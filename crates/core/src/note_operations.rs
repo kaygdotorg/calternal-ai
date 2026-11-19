@@ -222,6 +222,69 @@ pub struct NoteRenameJob {
     pub state: String,
 }
 
+/// One block or consecutive selection in an exact saved Markdown revision.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(deny_unknown_fields)]
+pub struct NoteBlockRange {
+    /// Zero-based first line, including any frontmatter lines in the count.
+    pub line: u32,
+    /// Optional zero-based inclusive end of an explicit selection.
+    pub to_line: Option<u32>,
+}
+
+/// Space-bound extraction into a newly created note.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(deny_unknown_fields)]
+pub struct NoteMakeInput {
+    /// Owning space UUID.
+    pub space_id: String,
+    /// Source note UUID.
+    pub id: String,
+    /// Exact Markdown revision from which the range was selected.
+    pub base_revision: String,
+    /// Block or selection in that revision.
+    pub range: NoteBlockRange,
+    /// Override the title derived from the selected block.
+    pub title: Option<String>,
+}
+
+/// Space-bound append of a selection into an existing note.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(deny_unknown_fields)]
+pub struct NoteBlockMoveInput {
+    /// Owning space UUID.
+    pub space_id: String,
+    /// Source note UUID.
+    pub id: String,
+    /// Exact Markdown revision from which the range was selected.
+    pub base_revision: String,
+    /// Block or selection in that revision.
+    pub range: NoteBlockRange,
+    /// Destination note UUID in the same space.
+    pub target: String,
+    /// Exact destination revision expected by the caller.
+    pub target_revision: String,
+}
+
+/// The durable identity and result of one undoable multi-note edit.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS)]
+pub struct NoteBlockJob {
+    /// Job UUID accepted by the undo operation.
+    pub job_id: String,
+    /// Source note UUID.
+    pub source_id: String,
+    /// Destination note UUID.
+    pub target_id: String,
+    /// Destination's relative Markdown path.
+    pub target_path: String,
+    /// Destination's display title.
+    pub title: String,
+    /// Number of notes whose heads the job changed.
+    pub changed: u32,
+    /// Whether the inverse has committed.
+    pub undone: bool,
+}
+
 /// Authority and wire metadata shared by Notes admission and discovery.
 pub struct NoteOperation {
     /// Stable operation name.
@@ -333,6 +396,34 @@ fn rename(input: &JsonObject) -> Result<(), Error> {
     Ok(())
 }
 
+fn block_range(range: &NoteBlockRange, base: &str) -> Result<(), Error> {
+    if base.is_empty() || base.len() > 256 || range.to_line.is_some_and(|end| end < range.line) {
+        return Err(Error::invalid_input("invalid block range or base revision"));
+    }
+    Ok(())
+}
+
+fn make_note(input: &JsonObject) -> Result<(), Error> {
+    let i: NoteMakeInput = crate::validation::decode(input)?;
+    scope(&i.space_id)?;
+    validate_resource_id(&i.id)?;
+    if let Some(title) = i.title.as_deref() {
+        validate_title(title)?;
+    }
+    block_range(&i.range, &i.base_revision)
+}
+
+fn move_block(input: &JsonObject) -> Result<(), Error> {
+    let i: NoteBlockMoveInput = crate::validation::decode(input)?;
+    scope(&i.space_id)?;
+    validate_resource_id(&i.id)?;
+    validate_resource_id(&i.target)?;
+    if i.id == i.target || i.target_revision.is_empty() || i.target_revision.len() > 256 {
+        return Err(Error::invalid_input("invalid destination or destination revision"));
+    }
+    block_range(&i.range, &i.base_revision)
+}
+
 // Permanent removal administers the space and uses the existing Manager/Owner capability.
 const TRASH_ADMINISTRATION: Capability = Capability::SpaceSettings;
 
@@ -430,6 +521,36 @@ pub static NOTE_OPERATIONS: &[NoteOperation] = &[
         false,
         NoteJobInput,
         TrashJob,
+        note_job
+    ),
+    operation!(
+        "notes.make-note",
+        "Turn a block or selection into a note and leave a link in its place",
+        ContentWrite,
+        Reversible,
+        false,
+        NoteMakeInput,
+        NoteBlockJob,
+        make_note
+    ),
+    operation!(
+        "notes.move-block",
+        "Append a block or selection to another note",
+        ContentWrite,
+        Reversible,
+        false,
+        NoteBlockMoveInput,
+        NoteBlockJob,
+        move_block
+    ),
+    operation!(
+        "notes.block.undo",
+        "Undo a block move or extraction as one edit",
+        ContentWrite,
+        Reversible,
+        false,
+        NoteJobInput,
+        NoteBlockJob,
         note_job
     ),
     operation!(
