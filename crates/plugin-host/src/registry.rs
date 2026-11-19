@@ -188,6 +188,12 @@ pub fn validate_manifest_detailed(m: &ManifestV1) -> Result<(), String> {
     if m.host_calls.iter().collect::<BTreeSet<_>>().len() != m.host_calls.len() {
         return invalid("/host_calls", "host calls must be unique");
     }
+    let mail = m.network.as_ref().and_then(|network| network.mail_connection.as_deref());
+    if m.host_calls.contains(&HostCallKind::MailV1) != mail.is_some()
+        || mail.is_some_and(|name| !identifier(name))
+    {
+        return invalid("/network/mail_connection", "expected one valid connection name paired with mail_v1");
+    }
     let content_fetch = m
         .network
         .as_ref()
@@ -205,12 +211,16 @@ pub fn validate_manifest_detailed(m: &ManifestV1) -> Result<(), String> {
             || fetch.sources.iter().any(|source| {
                 !m.kinds
                     .iter()
-                    .any(|kind| kind.id == source.kind && kind.claimed_text)
+                    .any(|kind| kind.id == source.kind && match source.field {
+                        calternal_core::ContentFetchField::Text => kind.claimed_text,
+                        calternal_core::ContentFetchField::MailHtml =>
+                            !kind.claimed_text && kind.extension.as_deref() == Some("eml") && mail.is_some(),
+                    })
             }))
     {
         return invalid(
             "/network/content_fetch/sources",
-            "expected 1 to 32 distinct text kinds declared by this package",
+            "expected 1 to 32 distinct supported kinds declared by this package",
         );
     }
     if m.provider.as_ref().is_some_and(|p| {

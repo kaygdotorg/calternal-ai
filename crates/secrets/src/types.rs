@@ -114,6 +114,13 @@ impl HandleToken {
 /// The one place a released value may go.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Consumer {
+    /// Host login to an account's exact configured IMAPS destination.
+    MailLogin {
+        /// Verified TLS name, as configured by the person.
+        host: String,
+        /// Configured IMAPS port.
+        port: u16,
+    },
     /// Host verification of one manifest-declared incoming webhook.
     WebhookSignature {
         /// Package declaring the space-local route.
@@ -141,6 +148,8 @@ impl Consumer {
     /// Check the consumer's shape so audit rows stay small and unambiguous.
     pub(crate) fn validate(&self) -> Result<()> {
         let ok = match self {
+            Self::MailLogin { host, port } => *port != 0 && !host.is_empty() && host.len() <= 253
+                && host.bytes().all(|b| b.is_ascii_alphanumeric() || b".-".contains(&b)),
             Self::WebhookSignature { package, route } => {
                 SecretName::for_plugin(package, route).is_ok()
             }
@@ -170,6 +179,7 @@ impl Consumer {
     }
     pub(crate) fn describe(&self) -> String {
         match self {
+            Self::MailLogin { host, port } => format!("IMAPS login to {host}:{port}"),
             Self::WebhookSignature { package, route } => {
                 format!("verify webhook {package}/{route}")
             }

@@ -1,0 +1,339 @@
+{
+  "id": "calternal-mail",
+  "name": "Calternal Mail",
+  "version": "0.1.0",
+  "icon": "mail",
+  "api_version": 1,
+  "network": {
+    "mail_connection": "inbox",
+    "content_fetch": {
+      "profile": "images_fonts",
+      "sources": [
+        {
+          "kind": "mail-message",
+          "field": "mail_html"
+        }
+      ]
+    }
+  },
+  "kinds": [
+    {
+      "id": "mail-account",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 253
+          },
+          "labels": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 80
+            }
+          },
+          "host": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 253
+          },
+          "port": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 65535
+          },
+          "username": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 320
+          }
+        },
+        "required": [
+          "title",
+          "labels",
+          "host",
+          "port",
+          "username"
+        ],
+        "additionalProperties": false
+      },
+      "storage": {
+        "folder": "Mail Accounts"
+      },
+      "claimed_text": true,
+      "searchable": false
+    },
+    {
+      "id": "mail-message",
+      "schema": {
+        "type": "object"
+      },
+      "storage": {
+        "folder": "Mail Messages"
+      },
+      "extension": "eml",
+      "claimed_text": false,
+      "searchable": false
+    }
+  ],
+  "operations": [
+    {
+      "id": "calternal-mail.add-account",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "host": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 253
+          },
+          "port": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 65535
+          },
+          "username": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 320
+          }
+        },
+        "required": [
+          "host",
+          "port",
+          "username"
+        ],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object"
+      },
+      "required_capability": "content.write",
+      "mutates": true,
+      "idempotency": "request_id",
+      "risk": "external"
+    },
+    {
+      "id": "calternal-mail.list-accounts",
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object"
+      },
+      "required_capability": "space.read",
+      "mutates": false,
+      "idempotency": "read_only",
+      "risk": "read"
+    },
+    {
+      "id": "calternal-mail.list-folders",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "account_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 36,
+            "pattern": "^[0-9a-f-]{36}$"
+          }
+        },
+        "required": [
+          "account_id"
+        ],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object"
+      },
+      "required_capability": "space.read",
+      "mutates": false,
+      "idempotency": "read_only",
+      "risk": "read"
+    },
+    {
+      "id": "calternal-mail.list-headers",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "account_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 36,
+            "pattern": "^[0-9a-f-]{36}$"
+          },
+          "folder": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 320
+          },
+          "cursor": {
+            "type": "object",
+            "properties": {
+              "before": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 4294967295
+              },
+              "uid_validity": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 4294967295
+              }
+            },
+            "required": [
+              "before",
+              "uid_validity"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "account_id",
+          "folder"
+        ],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object"
+      },
+      "required_capability": "space.read",
+      "mutates": false,
+      "idempotency": "read_only",
+      "risk": "read"
+    },
+    {
+      "id": "calternal-mail.read-message",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "account_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 36,
+            "pattern": "^[0-9a-f-]{36}$"
+          },
+          "folder": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 320
+          },
+          "uid_validity": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 4294967295
+          },
+          "uid": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 4294967295
+          }
+        },
+        "required": [
+          "account_id",
+          "folder",
+          "uid_validity",
+          "uid"
+        ],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object"
+      },
+      "required_capability": "content.write",
+      "mutates": true,
+      "idempotency": "request_id",
+      "risk": "reversible"
+    },
+    {
+      "id": "calternal-mail.mark-read",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "account_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 36,
+            "pattern": "^[0-9a-f-]{36}$"
+          },
+          "folder": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 320
+          },
+          "uid_validity": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 4294967295
+          },
+          "uid": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 4294967295
+          }
+        },
+        "required": [
+          "account_id",
+          "folder",
+          "uid_validity",
+          "uid"
+        ],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object"
+      },
+      "required_capability": "content.write",
+      "mutates": true,
+      "idempotency": "request_id",
+      "risk": "external"
+    },
+    {
+      "id": "calternal-mail.open-snapshot",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 36,
+            "pattern": "^[0-9a-f-]{36}$"
+          }
+        },
+        "required": [
+          "item_id"
+        ],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object"
+      },
+      "required_capability": "space.read",
+      "mutates": false,
+      "idempotency": "read_only",
+      "risk": "read"
+    }
+  ],
+  "collections": [],
+  "views": [],
+  "attention": [],
+  "settings": [],
+  "schedules": [],
+  "webhooks": [],
+  "secrets": [],
+  "hooks": [],
+  "themes": [],
+  "host_calls": [
+    "mail_v1",
+    "content_prepare_v1",
+    "read_item",
+    "list_items_v1",
+    "write_item"
+  ]
+}

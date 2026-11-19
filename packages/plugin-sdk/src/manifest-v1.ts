@@ -9,7 +9,7 @@ const id = /^[a-z0-9][a-z0-9._-]{0,79}$/;
 const capabilities = new Set(["space.read", "content.write", "plugins.use", "plugins.manage", "members.invite", "members.manage", "managers.manage", "space.settings", "space.transfer", "space.delete", "spaces.list", "spaces.create"]);
 /** Closed broker method vocabulary; declaration never grants permission. */
 export type { HostCallKind } from "@calternal/contracts";
-const hostCalls = new Set<HostCallKind>(["read_item", "list_items_v1", "read_setting_v1", "content_prepare_v1", "write_item", "list_collection", "emit_event", "start_job", "checkpoint_job", "request_secret_handle"]);
+const hostCalls = new Set<HostCallKind>(["read_item", "list_items_v1", "read_setting_v1", "content_prepare_v1", "mail_v1", "write_item", "list_collection", "emit_event", "start_job", "checkpoint_job", "request_secret_handle"]);
 
 /** Check a manifest or frame's method against the same closed vocabulary. No I/O. */
 export function isHostCallKind(value: unknown): value is HostCallKind {
@@ -129,20 +129,26 @@ export function validateManifestV1(value: unknown): ManifestV1 {
       }
     } else { record(placement, ["hidden"]); if (placement.hidden !== true) fail(); }
   }, ["extension", "searchable"]);
-  const content = m.network === undefined
-    ? undefined
-    : record(m.network, [], ["content_fetch"]).content_fetch;
+  const network = m.network === undefined ? {} : record(m.network, [], ["content_fetch", "mail_connection"]);
+  const content = network.content_fetch;
+  const mail = network.mail_connection;
+  if (mail !== undefined) identifier(mail);
+  if (!Array.isArray(m.host_calls) || m.host_calls.includes("mail_v1") !== (mail !== undefined)) fail();
   if (content !== undefined) {
     const fetch = record(content, ["profile", "sources"]);
     if (fetch.profile !== "images_fonts" || !Array.isArray(fetch.sources)
         || fetch.sources.length === 0 || fetch.sources.length > 32) fail();
-    const kinds = new Set(
-      (m.kinds as { id: string; claimed_text: boolean }[] | undefined)
-        ?.filter(kind => kind.claimed_text).map(kind => kind.id),
+    const kinds = new Map(
+      (m.kinds as { id: string; claimed_text: boolean; extension?: string }[] | undefined)
+        ?.map(kind => [kind.id, kind]),
     );
     for (const value of fetch.sources) {
       const source = record(value, ["kind", "field"]);
-      if (source.field !== "text" || !kinds.delete(identifier(source.kind))) fail();
+      const id = identifier(source.kind);
+      const kind = kinds.get(id);
+      if (!kind || !(source.field === "text" && kind.claimed_text
+        || source.field === "mail_html" && mail !== undefined && !kind.claimed_text && kind.extension === "eml")) fail();
+      kinds.delete(id);
     }
   }
   if (!Array.isArray(m.host_calls)

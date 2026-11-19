@@ -168,7 +168,11 @@ pub(super) async fn invoke_plugin<D: Directory>(
                 input: plugin_input,
                 account: p.id,
                 host: Arc::new(host),
-                timeout: crate::plugins::WORKER_TIMEOUT,
+                timeout: if plugin.manifest.network.as_ref().is_some_and(|network| network.mail_connection.is_some()) {
+                    std::time::Duration::from_secs(15)
+                } else {
+                    crate::plugins::WORKER_TIMEOUT
+                },
                 cancel: None,
                 job: None,
             },

@@ -6,7 +6,7 @@ mod fetch;
 pub(crate) use fetch::{checked_url, get_with_redirects, read_bounded};
 
 use reqwest::dns::{Name, Resolve, Resolving};
-use std::{io, sync::Arc, time::Duration};
+use std::{io, net::SocketAddr, sync::Arc, time::Duration};
 
 /// Creates an HTTPS-only client with no proxy, redirects or automatic retries.
 /// DNS answers are rejected as a set if any address is disallowed. Reqwest
@@ -50,16 +50,21 @@ impl Resolve for PublicDns {
             if hosts.is_some_and(|hosts| !hosts.contains(&name.as_str())) {
                 return Err(refused().into());
             }
-            // A trailing dot makes the OS query the exact DNS name without
-            // trying local search suffixes. Only the DNS query uses that dot.
-            let fqdn = format!("{}.", name.as_str());
-            let addresses: Vec<_> = tokio::net::lookup_host((fqdn.as_str(), 0)).await?.collect();
-            if addresses.is_empty() || addresses.iter().any(|a| deny::is_denied(a.ip())) {
-                return Err(refused().into());
-            }
+            let addresses = public_addresses(name.as_str(), 0).await?;
             Ok(Box::new(addresses.into_iter()) as reqwest::dns::Addrs)
         })
     }
+}
+
+/// Resolve an exact DNS name, refusing the entire set if any answer is private.
+/// Dial the returned addresses without resolving the hostname again.
+pub(crate) async fn public_addresses(host: &str, port: u16) -> io::Result<Vec<SocketAddr>> {
+    let fqdn = format!("{host}.");
+    let addresses: Vec<_> = tokio::net::lookup_host((fqdn.as_str(), port)).await?.collect();
+    if addresses.is_empty() || addresses.iter().any(|address| deny::is_denied(address.ip())) {
+        return Err(refused());
+    }
+    Ok(addresses)
 }
 
 fn refused() -> io::Error {

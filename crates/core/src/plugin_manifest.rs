@@ -61,6 +61,9 @@ pub enum HostCallKind {
     /// Prepare remote asset references from a declared, stored content revision.
     #[serde(rename = "content_prepare_v1")]
     ContentPrepareV1,
+    /// Use a declared account-owned IMAPS connection through the host.
+    #[serde(rename = "mail_v1")]
+    MailV1,
     /// Write an authorized item.
     #[serde(rename = "write_item")]
     WriteItem,
@@ -487,6 +490,10 @@ pub struct ManifestNetwork {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub content_fetch: Option<ManifestContentFetch>,
+    /// Name of this package's built-in, personal-space IMAPS connection.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub mail_connection: Option<String>,
 }
 
 /// Anonymous content proxy scope shown during trusted installation review.
@@ -601,6 +608,8 @@ pub struct ContentFetchPreferenceEdit {
 pub enum ContentFetchField {
     /// The item's UTF-8 text body.
     Text,
+    /// The inline HTML part of the item's stored RFC 5322/MIME message.
+    MailHtml,
 }
 
 /// Plugin menu read without running plugin code. Only documented optional

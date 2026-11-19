@@ -76,7 +76,14 @@ pub(super) fn prepare(
     }
     let id = Uuid::new_v4();
     let assets = format!("{}/{}", frame_path(id), asset_signature(store, id));
-    let html = std::str::from_utf8(&item.bytes).map_err(|_| missing())?;
+    let decoded;
+    let html = match request.field {
+        calternal_core::ContentFetchField::Text => std::str::from_utf8(&item.bytes).map_err(|_| missing())?,
+        calternal_core::ContentFetchField::MailHtml => {
+            decoded = super::broker::mail::snapshot_html(&item.bytes).ok_or_else(missing)?;
+            &decoded
+        }
+    };
     let content = sanitize::clean(html, &assets).ok_or_else(missing)?;
     store.plugin_frames.insert(
         id,

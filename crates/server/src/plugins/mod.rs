@@ -595,7 +595,7 @@ pub fn default_row(plugin: &Plugin) -> PluginRow {
                 .manifest
                 .network
                 .as_ref()
-                .is_none_or(|network| network.content_fetch.is_none()),
+                .is_none_or(|network| network.content_fetch.is_none() && network.mail_connection.is_none()),
         generation: 1,
         approval: plugin.activation_approval,
     }

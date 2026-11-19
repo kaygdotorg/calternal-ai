@@ -35,6 +35,7 @@ use crate::store::sha256_hex;
 use calternal_types::{Capability, SpaceId};
 
 mod item_pages;
+pub(super) mod mail;
 
 /// Fixed fixture text served to previews. Never user data.
 pub const PREVIEW_FIXTURE: &str = "# Preview fixture\n\nThis is fixed sample text used to preview a plugin.\nIt is not one of your notes.\n";
@@ -507,6 +508,7 @@ impl<D: Directory> InvocationHost for SpaceHost<D> {
                 Ok(super::settings::effective(setting, record).effective)
             }
             HostCallKind::ContentPrepareV1 => self.prepare_content(input),
+            HostCallKind::MailV1 => self.mail(input),
             HostCallKind::WriteItem => self.write_item(input),
             HostCallKind::StartJob => self.start_job(input),
             HostCallKind::CheckpointJob => self.checkpoint_job(input),
