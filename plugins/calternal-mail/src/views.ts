@@ -111,8 +111,9 @@ export function listView(s: ListScreen, now = Date.now()): string {
     const subject = h.subject?.trim() || "(no subject)";
     const sender = h.from[0] ?? "Unknown sender";
     const date = dateText(h.date, now);
-    const head = [`Button(${lit(subject)}, Set($go, ${lit("open:" + h.uid)}), ${s.selected === h.uid ? '"primary"' : '"secondary"'})`];
-    if (!h.read) head.push(`Badge("Unread", "info")`);
+    const head = [`Button(${lit(subject)}, Set($go, ${lit("open:" + h.uid)}), "secondary")`];
+    if (s.selected === h.uid) head.push(`Badge("Open", "neutral")`);
+    else if (!h.read) head.push(`Badge("Unread", "info")`);
     parts.push(`Stack([Row([${head.join(", ")}]), Text(${lit(plain([sender, date].filter(Boolean).join(" · ")))})])`);
   }
   if (s.loading) parts.push(`Text("Loading…")`);
@@ -130,7 +131,7 @@ export function setupView(draft: SetupDraft, state: { error?: string | null; wai
   const body: string[] = [];
   if (state.error) body.push(`Callout(${lit(state.error)}, "bad", "Could not add the account")`);
   if (state.waiting) body.push(`Callout("The account is saved. Calternal asks for its password in a protected prompt that no app or agent can read; the account lists mail once the prompt is answered.", "info", "Waiting for the password")`);
-  body.push(`Form([Input($host, "Mail server", "imap.example.com"), Input($port, "Port", "993"), Input($username, "Username", "you@example.com"), Button("Add account", Set($go, "add"), "primary")], "Add a mail account")`);
+  body.push(`Form([Input($host, "Mail server", "imap.example.com"), Input($port, "Port", "993"), Input($username, "Username", "you@example.com"), Button("Add account", Set($go, "add"), "primary")], "Account details")`);
   body.push(`Text("Mail connects over IMAPS with a password. The password is never typed into this form.")`);
   if (state.back) body.push(`Button("Back to mail", Set($go, "back"))`);
   return `$go=""\n$host=${lit(draft.host)}\n$port=${lit(draft.port)}\n$username=${lit(draft.username)}\nStack([${body.join(", ")}])`;
@@ -143,7 +144,7 @@ export function messageView(m: MailMessage, now = Date.now()): string {
   if (h.bytes !== null) pairs.push(`"Size": ${lit(sizeText(h.bytes))}`);
   const parts = [`KeyValue({${pairs.join(", ")}})`];
   if (m.has_html) {
-    parts.push(`Callout("This message also has an HTML version. This view shows the plain text. Remote images are never loaded on their own; loading them is an explicit request made from the sealed frame, which this view cannot draw yet.", "info")`);
+    parts.push(`Callout("This message has an HTML version; this view shows its plain text. Remote images load only on request, from the sealed frame, which this view cannot draw yet.", "info")`);
   }
   parts.push(m.text ? `Code(${lit(m.text)})` : `Callout("This message has no plain-text part.", "neutral")`);
   if (m.attachments.length) {

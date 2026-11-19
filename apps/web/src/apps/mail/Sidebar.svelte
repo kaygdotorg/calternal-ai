@@ -22,10 +22,16 @@
 
 <nav aria-label="Mail">
   <p class="section-heading first">Mail</p>
-  {#key `${epoch}\0${source}`}<GenUi {source} bind:values />{/key}
+  <div class="body">{#key `${epoch}\0${source}`}<GenUi {source} bind:values />{/key}</div>
 </nav>
 
 <style>
-  nav { display: grid; gap: var(--s-2); padding: 0 var(--s-3); }
+  nav { display: grid; gap: var(--s-2); }
   .section-heading { margin-bottom: calc(var(--section-below) - var(--s-2)); }
+  /* The description sits in the sidebar's own gutter (the heading's), and nothing in it may be wider than the sidebar: grids take the column's width, a long subject is cut with an ellipsis instead of widening the list. */
+  .body { padding: 0 var(--s-5); min-width: 0; }
+  .body :global(.gen), .body :global(.stack) { grid-template-columns: minmax(0, 1fr); }
+  .body :global(.rowl) { flex-wrap: nowrap; min-width: 0; }
+  .body :global(.rowl > button) { min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .body :global(select) { min-width: 0; }
 </style>

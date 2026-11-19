@@ -43,7 +43,7 @@ nothing was added to the shell to work around it.
 | 1 | An action that invokes an operation (and passes its result back) | `Set` of a `$go` command that the client reads: the state is the interface |
 | 2 | A sealed frame (`frame_id`, the empty-sandbox iframe the plugin guide describes) and its "Load remote images" action (authenticated POST to the frame URL) | `Code` with the plain text, and a note |
 | 3 | A protected secret prompt, bound to a plugin's pending request | A note; the prompt itself is outside GenUI by design |
-| 4 | A list row: leading mark, title, sub line, trailing date, long-press menu, swipe, selected state, `Row` link semantics | `Stack` of `Button` (selected is `primary`), `Badge`, `Text`; no long-press |
+| 4 | A list row: leading mark, title, sub line, trailing date, long-press menu, swipe, selected state, `Row` link semantics | `Stack` of `Button` (selected is an "Open" `Badge`), `Badge`, `Text`; no long-press |
 | 5 | A page title for the header pill (`data-chrome-title`) and a sticky header | The app draws the heading around the description |
 | 6 | Paging a long list (reach-to-load, virtual rows) | An "Older messages" `Button`; every header stays in the page |
 | 7 | Wrapped plain text with preserved line breaks | `Code` (monospace, scrolls sideways). `Text` is Markdown and would reflow, link and fetch images |
