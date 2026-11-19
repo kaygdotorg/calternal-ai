@@ -447,9 +447,11 @@ Traefik and the existing provider sandbox image in place.
    hdd=/mnt/hdd/calternal-ai/userdata-hdd
    mountpoint -q /mnt/hdd
    ops=$(mktemp -d "$HOME/calternal-ai-cutover.XXXXXXXX")
-   extraction=$(podman create --network none "$candidate_id")
-   podman cp "$extraction:/usr/local/bin/calternal" "$ops/calternal"
-   podman rm "$extraction" >/dev/null
+   (
+     extraction=$(podman create --network none "$candidate_id")
+     trap 'podman rm --ignore "$extraction" >/dev/null' EXIT
+     podman cp "$extraction:/usr/local/bin/calternal" "$ops/calternal"
+   )
    chmod 0700 "$ops/calternal"
    installation=$(sed -n 's/^CALTERNAL_INSTALLATION_ID=//p' "$root/server.env")
    up=("$ops/calternal" --json upgrade --appdata "$root/appdata"
