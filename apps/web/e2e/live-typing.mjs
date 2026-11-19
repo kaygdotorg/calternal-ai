@@ -27,10 +27,10 @@ async function measure(query) {
 if (process.env.CAL_SELF) {
   // The measurement judged by itself: "off" against "off", interleaved, ten times. Until it passes its own gate every time the suite cannot judge a difference.
   const a = [], c = [];
-  for (let i = 0; i < 10; i++) { const x = await measure("live=0"), y = await measure("live=0"); a.push(x); c.push(y); }
+  for (let i = 0; i < Number(process.env.CAL_PAIRS ?? 10); i++) { const x = await measure("live=0"), y = await measure("live=0"); a.push(x); c.push(y); }
   const spread = (xs) => +(Math.max(...xs) - Math.min(...xs)).toFixed(2);
   const pass = a.filter((x, i) => c[i].median <= Math.max(x.median * 1.25, x.median + 3) && c[i].p95 <= Math.max(x.p95 * 1.3, x.p95 + 6)).length;
-  console.log(JSON.stringify({ off_medians: a.concat(c).map((x) => +x.median.toFixed(1)), off_median_spread_ms: spread(a.concat(c).map((x) => x.median)), pair_diff_max_ms: +Math.max(...a.map((x, i) => Math.abs(x.median - c[i].median))).toFixed(2), off_vs_off_pairs_passing_gate: `${pass}/10` }));
+  console.log(JSON.stringify({ off_medians: a.concat(c).map((x) => +x.median.toFixed(1)), off_median_spread_ms: spread(a.concat(c).map((x) => x.median)), pair_diff_max_ms: +Math.max(...a.map((x, i) => Math.abs(x.median - c[i].median))).toFixed(2), off_vs_off_pairs_passing_gate: `${pass}/${a.length}` }));
   await b.close(); stop(); process.exit(0);
 }
 try {
