@@ -262,6 +262,18 @@ async fn release_artifacts_preserve_live_data_in_both_directions() {
         .await;
     automation.ok();
     let automation = &automation.body["data"]["automation"];
+
+    // Opening the seeded thread alone would miss revisions stored only by
+    // the candidate. The previous release must read an acknowledged append.
+    let message = "Candidate appended this before rollback.";
+    f.op(
+        0,
+        "threads.send",
+        json!({"id":shape["thread"],"message":message}),
+    )
+    .await
+    .ok();
+
     f.stop();
     let before_rollback = lineage(head);
     let store = f.appdata().join("system/automations.db");
@@ -276,6 +288,11 @@ async fn release_artifacts_preserve_live_data_in_both_directions() {
     answer(upgrade(&f, &previous, &["verify"], None));
     prove_visible(&mut f, &previous, &shape).await;
     f.start().await;
+    let thread = f.op(0, "threads.get", json!({"id":shape["thread"]})).await;
+    thread.ok();
+    assert!(thread.body["data"]["thread"]["markdown"]
+        .as_str()
+        .is_some_and(|markdown| markdown.contains(message)));
     let restored = f.op(0, "notes.get", json!({"id":id})).await;
     restored.ok();
     assert_eq!(
