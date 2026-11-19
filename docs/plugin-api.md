@@ -305,11 +305,12 @@ Each asset allows 10 MB, three redirects, 5 seconds to connect and 10
 seconds total for outbound work. Only checked PNG, JPEG, GIF, WebP, AVIF,
 WOFF, WOFF2, TrueType and OpenType are served. SVG, HTML and unrecognized
 or conflicting types are refused. A read can wait for work already queued.
-Unavailable assets return a generic 404. The installation admits 128 queued or running assets, 16
-running assets and two concurrent hops per host. The rolling limits are 60
-hops per plugin per minute across spaces, 120 per space per minute, four
-active hops per space and 64 MiB per space per hour. Redirects count as
-separate hops. Space budgets include reservations for outstanding reads
+Unavailable assets return a generic 404. Dropped work returns HTTP 503 with the reason `content_fetch_capacity`. The installation admits 128 queued or running assets, 16
+running assets and two concurrent hops per checked IP. Each plugin may hold up to 16
+queue slots across spaces, with at most eight in any one space. The rolling
+limits are 60 source fetches per plugin and space per minute, 120 hops per
+space per minute, four active hops per space and 64 MiB per space per hour.
+Redirects spend the space hop budget and reuse the plugin's source slot. Space budgets include reservations for outstanding reads
 and conservatively charge failed reads of unknown size.
 
 The viewer-scoped memory cache has 16 shards of up to 32 MiB and 256

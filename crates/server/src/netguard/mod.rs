@@ -31,23 +31,68 @@ pub(crate) fn client_for(
     build(hosts, timeout, Arc::new(local::Local::default()), false, None)
 }
 
-/// Direct anonymous HTTPS with attached and operator-configured networks
-/// denied by the resolver. Refreshes attached addresses for each client build.
-pub(crate) fn content_client(
-    ranges: &str,
-    nat64: Option<&str>,
-    timeout: Duration,
-    fixture: bool,
+/// Checked Class B dialing policy. Build with an interface enumeration on a
+/// blocking worker, then resolve once per hop and check every DNS answer.
+pub(crate) struct ContentPolicy {
+    local: local::Local,
     own: OriginAddresses,
-) -> io::Result<reqwest::Client> {
-    build(
-        None,
-        timeout,
-        Arc::new(local::Local::load(ranges, nat64)?),
-        fixture,
-        Some(own),
-    )
-    .map_err(io::Error::other)
+    fixture: bool,
+}
+
+impl ContentPolicy {
+    /// Read attached interfaces and parse operator ranges. One blocking call.
+    pub(crate) fn load(ranges: &str, nat64: Option<&str>, fixture: bool, own: OriginAddresses) -> io::Result<Self> {
+        Ok(Self { local: local::Local::load(ranges, nat64)?, own, fixture })
+    }
+
+    /// Resolve an admitted hostname and select its first checked address.
+    /// The Class B caller must use this address for both quota and connection.
+    pub(crate) async fn resolve(&self, host: &str) -> io::Result<std::net::SocketAddr> {
+        #[cfg(all(feature = "test-plugins", debug_assertions))]
+        if self.fixture && host == "content-fetch.test" {
+            return Ok(([127, 0, 0, 1], 443).into());
+        }
+        let answers = lookup(host, self.fixture).await?;
+        if answers.is_empty() || answers.iter().any(|a| {
+            deny::is_denied(a.ip()) || self.local.denies(a.ip()) || own_denies(Some(&self.own), a.ip())
+        }) {
+            return Err(refused());
+        }
+        Ok(std::net::SocketAddr::new(answers[0].ip(), 443))
+    }
+}
+
+/// Build one TLS client on a blocking worker. Only the checked host override
+/// can resolve, so the connector uses the quota's IP while preserving SNI.
+pub(crate) fn content_client(host: &str, checked: std::net::SocketAddr, timeout: Duration) -> Result<reqwest::Client, reqwest::Error> {
+    struct NoDns;
+    impl Resolve for NoDns {
+        fn resolve(&self, _: Name) -> Resolving {
+            Box::pin(async { Err(refused().into()) })
+        }
+    }
+    builder(timeout)
+        .dns_resolver(Arc::new(NoDns))
+        .resolve(host, checked)
+        .http1_only()
+        .pool_max_idle_per_host(0)
+        .build()
+}
+
+async fn lookup(host: &str, fixture: bool) -> io::Result<Vec<std::net::SocketAddr>> {
+    if let Some(answers) = fixture_answers(fixture, host) {
+        return Ok(answers);
+    }
+    // Exact FQDN, with no local search suffixes.
+    let name = format!("{host}.");
+    Ok(tokio::net::lookup_host((name.as_str(), 0)).await?.collect())
+}
+
+fn builder(timeout: Duration) -> reqwest::ClientBuilder {
+    reqwest::Client::builder()
+        .https_only(true).no_proxy()
+        .redirect(reqwest::redirect::Policy::none()).retry(reqwest::retry::never())
+        .connect_timeout(Duration::from_secs(5)).timeout(timeout).user_agent("calternal")
 }
 
 fn build(
@@ -57,20 +102,9 @@ fn build(
     fixture: bool,
     own: Option<OriginAddresses>,
 ) -> Result<reqwest::Client, reqwest::Error> {
-    let mut builder = reqwest::Client::builder()
-        .https_only(true)
-        .no_proxy()
-        .redirect(reqwest::redirect::Policy::none())
-        .retry(reqwest::retry::never())
-        .dns_resolver(Arc::new(PublicDns {
-            hosts,
-            local,
-            fixture,
-            own,
-        }))
-        .connect_timeout(Duration::from_secs(5))
-        .timeout(timeout)
-        .user_agent("calternal");
+    let mut builder = builder(timeout).dns_resolver(Arc::new(PublicDns {
+        hosts, local, fixture, own,
+    }));
     if hosts.is_none() {
         builder = builder.http1_only().pool_max_idle_per_host(0);
     }
@@ -94,14 +128,7 @@ impl Resolve for PublicDns {
             if hosts.is_some_and(|hosts| !hosts.contains(&name.as_str())) {
                 return Err(refused().into());
             }
-            // A trailing dot makes the OS query the exact DNS name without
-            // trying local search suffixes. Only the DNS query uses that dot.
-            let fqdn = format!("{}.", name.as_str());
-            let addresses = if let Some(answers) = fixture_answers(fixture, name.as_str()) {
-                answers
-            } else {
-                tokio::net::lookup_host((fqdn.as_str(), 0)).await?.collect()
-            };
+            let addresses = lookup(name.as_str(), fixture).await?;
             if addresses.is_empty()
                 || addresses
                     .iter()

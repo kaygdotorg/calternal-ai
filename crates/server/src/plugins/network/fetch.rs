@@ -5,15 +5,14 @@ use super::{
     audit, cache, check_source, db,
     eligibility::{self, Trigger},
     frames::Source,
-    media,
+    media, quota::Quota,
 };
 use crate::{api::Shared, auth::Directory, netguard};
 use calternal_types::Owner;
 use reqwest::{Client, Url};
 use std::{
-    collections::{HashMap, VecDeque},
     io,
-    sync::{Arc, Mutex},
+    sync::Arc,
     time::{Duration, Instant},
 };
 use tokio::{runtime::Handle, sync::Semaphore};
@@ -22,23 +21,12 @@ const CAP: usize = 10_000_000;
 const TIMEOUT: Duration = Duration::from_secs(10);
 const QUEUE_TIME: Duration = Duration::from_secs(15);
 const CONCURRENT: usize = 16;
-const QUEUE: usize = 128;
-const PER_PLUGIN: usize = 60;
-const TRACKED_PLUGINS: usize = 512;
-const PER_HOST: usize = 2;
-
-struct Limits {
-    plugins: HashMap<String, VecDeque<Instant>>,
-    hosts: HashMap<String, usize>,
-}
-
 /// Process-local work limits, sharded owner cache and shared space budgets.
 pub(crate) struct Service {
     cache: cache::Cache,
     admission: Arc<Admission>,
-    queue: Arc<Semaphore>,
+    quota: Arc<Quota>,
     running: Semaphore,
-    limits: Mutex<Limits>,
     own: netguard::OriginAddresses,
     ranges: std::ffi::OsString,
     nat64: Option<std::ffi::OsString>,
@@ -51,12 +39,8 @@ impl Default for Service {
         Self {
             cache: cache::Cache::default(),
             admission: Arc::new(Admission::default()),
-            queue: Arc::new(Semaphore::new(QUEUE)),
+            quota: Arc::new(Quota::default()),
             running: Semaphore::new(CONCURRENT),
-            limits: Mutex::new(Limits {
-                plugins: HashMap::new(),
-                hosts: HashMap::new(),
-            }),
             own: Arc::new(arc_swap::ArcSwapOption::from_pointee(Vec::new())),
             ranges: std::env::var_os("CALTERNAL_CONTENT_FETCH_DENY_CIDRS").unwrap_or_default(),
             nat64: std::env::var_os("CALTERNAL_CONTENT_FETCH_NAT64_PREFIX"),
@@ -113,68 +97,6 @@ impl Service {
         self.cache.get(key(source, url))
     }
 
-    fn plugin_slot(&self, plugin: &str) -> io::Result<()> {
-        let mut limits = self
-            .limits
-            .lock()
-            .unwrap_or_else(|error| error.into_inner());
-        let now = Instant::now();
-        limits.plugins.retain(|_, starts| {
-            while starts
-                .front()
-                .is_some_and(|at| now.duration_since(*at) >= Duration::from_secs(60))
-            {
-                starts.pop_front();
-            }
-            !starts.is_empty()
-        });
-        if limits.plugins.len() >= TRACKED_PLUGINS && !limits.plugins.contains_key(plugin) {
-            return Err(refused());
-        }
-        let starts = limits.plugins.entry(plugin.into()).or_default();
-        if starts.len() >= PER_PLUGIN {
-            return Err(refused());
-        }
-        starts.push_back(now);
-        Ok(())
-    }
-
-    fn host_slot(&self, host: &str) -> io::Result<HostSlot<'_>> {
-        let mut limits = self
-            .limits
-            .lock()
-            .unwrap_or_else(|error| error.into_inner());
-        let active = limits.hosts.entry(host.into()).or_default();
-        if *active >= PER_HOST {
-            return Err(refused());
-        }
-        *active += 1;
-        Ok(HostSlot {
-            service: self,
-            host: host.into(),
-        })
-    }
-}
-
-struct HostSlot<'a> {
-    service: &'a Service,
-    host: String,
-}
-
-impl Drop for HostSlot<'_> {
-    fn drop(&mut self) {
-        let mut limits = self
-            .service
-            .limits
-            .lock()
-            .unwrap_or_else(|error| error.into_inner());
-        if let Some(active) = limits.hosts.get_mut(&self.host) {
-            *active -= 1;
-            if *active == 0 {
-                limits.hosts.remove(&self.host);
-            }
-        }
-    }
 }
 
 fn key(source: &Source, url: &Url) -> cache::Key {
@@ -203,11 +125,10 @@ pub(super) fn enqueue<D: Directory>(
 ) {
     let service = &state.store.plugin_fetch;
     for url in urls {
-        let Ok(slot) = service.queue.clone().try_acquire_owned() else {
-            break;
-        };
         let key = key(&source, url);
-        let Some(entry) = service.cache.start(key) else {
+        let Some(entry) = service.cache.start(key) else { continue; };
+        let Some(slot) = service.quota.enqueue(&source.plugin, source.space) else {
+            service.cache.finish(key, &entry, Err(cache::Failure::Capacity));
             continue;
         };
         let (st, source, url) = (state.clone(), source.clone(), url.clone());
@@ -216,7 +137,7 @@ pub(super) fn enqueue<D: Directory>(
             let service = &st.store.plugin_fetch;
             let asset = match tokio::time::timeout(QUEUE_TIME, service.running.acquire()).await {
                 Ok(Ok(_permit)) => retrieve(&st, &source, url, trigger).await,
-                _ => None,
+                _ => Err(cache::Failure::Capacity),
             };
             service.cache.finish(key, &entry, asset);
         });
@@ -309,13 +230,13 @@ async fn finish_audit<D: Directory>(
     .await;
 }
 
-/// Build the checked transport on a blocking worker. One interface enumeration
-/// and one TLS client construction per fetch. No socket or DNS work here.
-async fn build_client(ranges: std::ffi::OsString, nat64: Option<std::ffi::OsString>, fixture: bool, own: netguard::OriginAddresses) -> io::Result<Client> {
+/// Read local interfaces on a blocking worker once per source fetch.
+/// Each dial builds its pinned TLS client on a blocking worker as well.
+async fn build_policy(ranges: std::ffi::OsString, nat64: Option<std::ffi::OsString>, fixture: bool, own: netguard::OriginAddresses) -> io::Result<netguard::ContentPolicy> {
     crate::blocking::spawn(move || {
         let ranges = ranges.to_str().ok_or_else(refused)?;
         let nat64 = nat64.as_ref().map(|value| value.to_str().ok_or_else(refused)).transpose()?;
-        netguard::content_client(ranges, nat64, TIMEOUT, fixture, own)
+        netguard::ContentPolicy::load(ranges, nat64, fixture, own)
     })
         .await
         .map_err(io::Error::other)?
@@ -326,19 +247,20 @@ async fn retrieve<D: Directory>(
     source: &Arc<Source>,
     url: Url,
     trigger: Trigger,
-) -> Option<cache::Asset> {
+) -> Result<cache::Asset, cache::Failure> {
     let service = &state.store.plugin_fetch;
     #[cfg(all(feature = "test-plugins", debug_assertions))]
     let fixture = service.fixture.is_some();
     #[cfg(not(all(feature = "test-plugins", debug_assertions)))]
     let fixture = false;
-    let client = build_client(service.ranges.clone(), service.nat64.clone(), fixture, service.own.clone()).await.ok()?;
+    let policy = build_policy(service.ranges.clone(), service.nat64.clone(), fixture, service.own.clone()).await.map_err(|_| cache::Failure::Unavailable)?;
     let own_host = state
         .directory
         .http_auth()
         .and_then(|http| Url::parse(&http.config.origin_header()).ok());
     let mut hop = None;
     let mut host_slot = None;
+    let mut failure = cache::Failure::Unavailable;
     let mut media_bytes = 0;
     let mut outcome = audit::Outcome::UpstreamFailure;
     let mut reservation = None;
@@ -352,16 +274,21 @@ async fn retrieve<D: Directory>(
                 return Err(refused());
             }
             authorized(state, source, trigger).await?;
-            service.plugin_slot(&source.plugin)?;
             reservation = Some(
                 service
                     .admission
                     .try_start(source.space, CAP as u64)
                     .map_err(|_| refused())?,
             );
-            host_slot = Some(service.host_slot(host)?);
             hop = Some((begin_audit(state, source, host).await?, Instant::now()));
-            let response = request(service, &client, url.clone())
+            let checked = policy.resolve(host).await?;
+            let Some(dial) = service.quota.dial(checked.ip()) else {
+                failure = cache::Failure::Capacity;
+                return Err(refused());
+            };
+            host_slot = Some(dial);
+            let response = request(service, url.clone(), checked)
+                .await?
                 .send()
                 .await
                 .map_err(io::Error::other)?;
@@ -412,10 +339,10 @@ async fn retrieve<D: Directory>(
             last.finish(media_bytes);
         }
     }
-    result.ok()?.ok()
+    result.ok().and_then(Result::ok).ok_or(failure)
 }
 
-fn request(_service: &Service, client: &Client, url: Url) -> reqwest::RequestBuilder {
+async fn request(_service: &Service, url: Url, checked: std::net::SocketAddr) -> io::Result<reqwest::RequestBuilder> {
     #[cfg(all(feature = "test-plugins", debug_assertions))]
     if let Some(fixture) = &_service.fixture
         && url.domain() == Some("content-fetch.test")
@@ -423,9 +350,12 @@ fn request(_service: &Service, client: &Client, url: Url) -> reqwest::RequestBui
         let mut target = fixture.origin.clone();
         target.set_path(url.path());
         target.set_query(url.query());
-        return fixture.client.get(target);
+        return Ok(fixture.client.get(target));
     }
-    client.get(url)
+    let host = url.domain().ok_or_else(refused)?.to_owned();
+    let client = crate::blocking::spawn(move || netguard::content_client(&host, checked, TIMEOUT))
+        .await.map_err(io::Error::other)?.map_err(io::Error::other)?;
+    Ok(client.get(url))
 }
 
 #[cfg(all(feature = "test-plugins", debug_assertions))]
@@ -471,7 +401,7 @@ mod client_tests {
 
     #[tokio::test(flavor = "current_thread")]
     async fn background_client_reports_configuration_errors() {
-        assert!(build_client("not-a-cidr".into(), None, false, Default::default()).await.is_err());
-        assert!(build_client(Default::default(), None, false, Default::default()).await.is_ok());
+        assert!(build_policy("not-a-cidr".into(), None, false, Default::default()).await.is_err());
+        assert!(build_policy(Default::default(), None, false, Default::default()).await.is_ok());
     }
 }

@@ -9,6 +9,7 @@ pub(crate) mod fetch;
 pub(crate) mod frames;
 pub(crate) mod http;
 mod media;
+mod quota;
 mod sanitize;
 #[cfg(test)]
 mod tests;

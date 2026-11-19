@@ -141,11 +141,16 @@ pub(crate) async fn asset<D: Directory>(
             return Err(missing());
         }
         let (current, entry) = ready_entry(&state, frame, index).await?;
-        let asset = entry.read().await.ok_or_else(missing)?;
+        let asset = entry.read().await;
         let (after, _) = ready_entry(&state, frame, index).await?;
         if expiry <= asset_now() || !std::sync::Arc::ptr_eq(&current, &after) {
             return Err(missing());
         }
+        let asset = asset.map_err(|failure| match failure {
+            super::cache::Failure::Unavailable => missing(),
+            super::cache::Failure::Capacity => calternal_types::Error::unavailable("Remote media capacity exhausted")
+                .with_details(serde_json::json!({"reason":"content_fetch_capacity"})),
+        })?;
         Ok::<_, calternal_types::Error>(
             (
                 [

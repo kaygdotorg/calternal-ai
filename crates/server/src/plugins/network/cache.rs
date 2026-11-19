@@ -28,17 +28,23 @@ pub(super) struct Asset {
     pub(super) bytes: axum::body::Bytes,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum Failure {
+    Unavailable,
+    Capacity,
+}
+
 pub(super) struct Entry {
     started: Instant,
-    ready: OnceLock<(Instant, Option<Asset>)>,
+    ready: OnceLock<(Instant, Result<Asset, Failure>)>,
     changed: Notify,
 }
 
 impl Entry {
     fn expired(&self, now: Instant) -> bool {
         let (at, ttl) = match self.ready.get() {
-            Some((at, Some(_))) => (*at, READY_TTL),
-            Some((at, None)) => (*at, FAILED_TTL),
+            Some((at, Ok(_))) => (*at, READY_TTL),
+            Some((at, Err(_))) => (*at, FAILED_TTL),
             None => (self.started, PENDING_TTL),
         };
         now.saturating_duration_since(at) >= ttl
@@ -47,18 +53,18 @@ impl Entry {
     fn bytes(&self) -> usize {
         self.ready
             .get()
-            .and_then(|(_, asset)| asset.as_ref())
+            .and_then(|(_, asset)| asset.as_ref().ok())
             .map_or(0, |asset| asset.bytes.len())
     }
 
-    pub(super) async fn read(&self) -> Option<Asset> {
+    pub(super) async fn read(&self) -> Result<Asset, Failure> {
         let changed = self.changed.notified();
         if self.ready.get().is_none() {
             tokio::time::timeout_at((self.started + PENDING_TTL).into(), changed)
                 .await
-                .ok()?;
+                .map_err(|_| Failure::Capacity)?;
         }
-        self.ready.get()?.1.clone()
+        self.ready.get().ok_or(Failure::Unavailable)?.1.clone()
     }
 }
 
@@ -105,10 +111,10 @@ impl Cache {
         Some(entry)
     }
 
-    pub(super) fn finish(&self, key: Key, entry: &Arc<Entry>, mut asset: Option<Asset>) {
+    pub(super) fn finish(&self, key: Key, entry: &Arc<Entry>, mut asset: Result<Asset, Failure>) {
         let mut entries = self.bucket(key);
         if !entries.iter().any(|(_, live)| Arc::ptr_eq(live, entry)) {
-            asset = None;
+            asset = Err(Failure::Unavailable);
         }
         let _ = entry.ready.set((Instant::now(), asset));
         let mut bytes: usize = entries.iter().map(|(_, entry)| entry.bytes()).sum();
@@ -134,5 +140,18 @@ impl Cache {
                     Owner::Space(space) => key.space != space,
                 });
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[tokio::test]
+    async fn rejected_admission_remains_visible_to_the_reader() {
+        let cache = Cache::default();
+        let key = Key { account: AccountId::new(), space: SpaceId::new(), target: [0; 32] };
+        let entry = cache.start(key).unwrap();
+        cache.finish(key, &entry, Err(Failure::Capacity));
+        assert!(matches!(cache.get(key).unwrap().read().await, Err(Failure::Capacity)));
     }
 }
