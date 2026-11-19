@@ -125,7 +125,7 @@
         "id": { "$ref": "#/definitions/localId" },
         "label": { "$ref": "#/definitions/label" },
         "operation": { "$ref": "#/definitions/operationId" },
-        "input": { "$ref": "plugin-description-v2.schema.json#/definitions/input" }
+        "input": { "$ref": "https://calternal.cloud/contract/description-v2.schema.json#/$defs/Invoke/properties/inputs" }
       }
     },
     "provider": {

@@ -1,4 +1,4 @@
-# Plugin API v2 · revision 3
+# Plugin API v2 · revision 4
 
 The first contract covers host-drawn apps, generic items, durable jobs and
 Turns. Freeze after the §8 spikes. Fixture bounds are test settings. See the
@@ -38,7 +38,7 @@ and without machine-control authority. Provider-only and static packages
 can omit a broker worker. Operations, jobs, schedule eligibility and
 credential routes require one.
 
-Reject unknown or inconsistent declarations before launch. Check unique IDs,
+Reject unknown or inconsistent declarations before launch. Reserve `host.` and `turns.` for the host catalogue. Check unique IDs,
 package operation namespace, references, schema compilation offline, pinned
 assets and digests, indexed field types, and cross-reference constraints.
 Each operation lists its host methods once. Derive the install summary by
@@ -117,7 +117,7 @@ containers, unknown fields and wrong-direction messages. A malformed child
 frame fences that process. Outer corruption or disconnect closes the channel.
 Check raw bytes before a parser that collapses keys.
 
-The outer header is `{v:1, epoch, seq, package, digest, invocation, message}`.
+The outer header is `{v:1, epoch, seq, package, digest, ticket, message}`.
 `invoke` carries operation, checked input and deadline. `call` carries
 method, input and callback ID. `reply` correlates by callback ID and returns
 typed data or a safe error. `chunk` is bounded ephemeral job progress.
@@ -141,8 +141,7 @@ permitted. Wire and author payload limits are independent.
 
 The two authority counters are **runtime epoch** for the lease and **grant
 revision** for permissions, access and policy. Digests identify packages.
-Wire and page ordinals only order data. The ticket is the invocation
-reference. Receipts use the request ID within actor/space. Subeffect keys
+Wire and page ordinals only order data. The `ticket` is the ephemeral invocation reference (see §4.3). Receipts use the request ID within actor/space. Subeffect keys
 derive from that request and its step or checkpoint position.
 
 ### Every call and delivery
@@ -269,9 +268,8 @@ its receipt, with long work as a durable job.
 
 The Turns engine owns the `threads` kind, with indexed status. The item
 engine exposes an indexed, host-maintained `trashed` boolean for lifecycle
-views. Plugins cannot set it as metadata or claim host-owned kinds. An
-authorized built-in lifecycle action (Trash, Rename, Restore or Undo) runs
-directly against the host operation catalogue and keeps the runtime asleep.
+views. Plugins cannot set it as metadata or claim host-owned kinds. The [host catalogue](../contract/host-catalogue-v2.json) registers typed
+direct engine dispatch. Its built-ins never start a plugin worker.
 `host.item.patch-metadata` uses the same room-checked save path.
 Rename status and protected Undo are host-owned. A renderer gets only authorized status and a
 host-minted Undo action reference.
@@ -308,48 +306,183 @@ losers have no effect. Park uses no worker once the run ends. Retain existing
 wait bounds and state visibility. Repeated runner execution can occur after a
 crash. Committed effects replay by receipt.
 
-## 4. Host obligations for descriptions
+## 4. Host catalogue, queries and activation
 
-The native and web renderer lanes own `contract/description-v2.schema.json`
-and `docs/description-contract.md` on `lane/description-contract`. Integrate
-that shared schema before freezing either format. Retarget the manifest’s
-draft command-input reference at integration. See the renderer lanes’
-[shared schema draft](https://git.kayg.org/kayg/calternal-ai/src/commit/fb65ecdd549c533f9b6497fe44891edc42a47670/contract/description-v2.schema.json)
-and [design notes](https://git.kayg.org/kayg/calternal-ai/src/commit/fb65ecdd549c533f9b6497fe44891edc42a47670/docs/description-contract.md).
-The [chrome baseline](https://git.kayg.org/kayg/calternal-ai/src/commit/05aac6a4f173b336eb556fa3e6b7db9d31f4fba1/contract/chrome-v1.schema.json)
-and [catalogue](../packages/genui/src/catalog-data.json) are renderer inputs.
+The [description contract](description-contract.md) and its
+[shared schema](../contract/description-v2.schema.json) are reviewed in
+this same tree. Both use the [host catalogue](../contract/host-catalogue-v2.json)
+as the source for kinds, fields, built-ins and shared wire shapes. Validate
+positive and negative fixtures with the same strict JSON parser and semantic
+loader as the host before freeze. The paper verifier is only a draft check. No
+template supplies trusted authority or operation semantics.
 
-- Pin data-free bundled templates by (package digest, app, description ID).
-  Serve them as bounded assets independently of the broker frame cap.
-  Render from host cache and engines with zero wakes, including cache miss
-  and public reads. Keep filled results scoped to the viewer and discard
-  them on session change or revocation.
-- Before querying, authorize package/template, audience, kind, collection,
-  predicate fields and operands, sort, search corpus and output fields.
-  Apply row authorization before computing count, rank or page order.
-  Deny the query as a unit if a field or operation is outside that
-  projection. Use host-owned projections for guests, including counts,
-  eligible fields, statuses and safe errors. Only explicitly shared engine
-  data can populate them. Guest-visible writes require a host sharing or
-  disclosure check. Bind cursors to checked query and audience.
-- Resolve actions against the authorized rendered template, action, row
-  and target. Ignore client-supplied operation names or mutable selection
-  changes after confirmation. For mutations or disclosures require the
-  host’s trusted preview of material arguments, including target, fields
-  disclosing data and destination. Bind confirmation and request ID to
-  the exact normalized input. The renderer event ID keys the receipt within
-  actor/space and is distinct from the ephemeral channel ticket. Compute
-  the preview requirement from declared risk and the host’s effect
-  classification, including outbound disclosure by an otherwise read-only
-  action. Include checked manifest `material_inputs` and host-required
-  values. An interface cannot remove either. Reauthorize at execution.
-  Built-in item actions stay on the host and share the engine fences.
-- Resolve protected component routes and check their refs under the same
-  audience and action policy. Transcript delivery is client-to-host.
-  Use byte-bounded durable pages and committed cursors instead of the
-  ephemeral job ring. Batch append, rate-limit delivery, reauthorize each
-  page and cancel the old load when selection changes. A slow reader
-  resumes from an authorized cursor or receives a safe reload.
+### 4.1 Catalogue and qualified queries
+
+`notes`, `threads` and `collections` are existing kind IDs. `requests` is a
+host-private projection. The catalogue registers canonical field types,
+the index owner (or no index) and the audience rule. A scoped row ID
+identifies the kind’s reference. A request row resolves only to an
+authorized `RequestRef`. `waiting_on` and `pending_for` support the
+viewer’s own equality operand only. `threads.active_turn` resolves as a
+Turn ref, never as the parent Thread ref.
+
+Compile one dependency graph per view, including chrome and content.
+Check unique in-scope IDs, declared kinds and types, and all binding edges
+before opening subscriptions. Reject cycles, ambiguous multi-row operands,
+out-of-scope action inputs and references to undeclared binds or actions.
+At query execution and delivery authorize the package and viewer, kind,
+collection, each field of every input or output, each filter/sort,
+corpus and any upstream Bind field. A cross-bind query operand is unsupported initially. Action or component
+dependencies may name one current, authorized projected row under the same
+audience. The viewer
+cannot turn an unreadable field into a predicate, sort key, string prefix,
+search term, order, count or error observable. Do not evaluate a disallowed
+plan. Search in the explicitly authorized member or shared corpus **before**
+rank or pagination. Never search a private body for a guest with title-only
+access. Count only the authorized projection. For guests, count defaults
+to `none`. `exact` requires an explicit count-enabled shared root/child
+projection. Guest estimates are refused.
+
+The catalogue defines typed predicates, count modes and window ceilings.
+Equality operands use the field’s scalar type without coercion.
+`in` accepts a checked homogeneous list (1–32 scalars), including a literal
+list or a typed route/selection list if its source is authorized.
+`exists` takes a boolean and tests indexed non-null presence.
+Ordering and `prefix` require the field’s declared type and index collation.
+`all` and `any` have a combined 16-predicate cap and no nesting.
+Two sort keys maximum plus stable ID as a tiebreaker. Use half-open
+`[from,to)`. The host may prefetch within the row and byte cap and returns
+the actual offset, rows and result version. Count is exact, estimate or
+omitted, as allowed by audience and plan. Stable window/rank locators
+belong to the checked query and result version. Missing indexes, unbounded
+ACL intersections, unavailable authorized counts and linear offset scans
+return `422 unsupported_query_plan`. Never silently fall back to a scan.
+
+### 4.2 Live work, cache and host components
+
+Set aggregate limits across the chrome/content pair and all tabs.
+The catalogue sets 16 binds, 8 live subscriptions and 2 pending windows
+per open view, 16 subscriptions per actor and 128 per space. Bound queued
+bytes and query starts at all three levels. The first fixture caps index
+visits (4,096/window or 100,000/count) and count starts (four/sec/space).
+It emits up to four coalesced pushes/sec per bind. Authorize before spending work,
+coalesce invalidations before evaluating and share a plan only within an
+identical audience/authority scope. Supersede obsolete requests, return a
+safe throttled state on exhaustion and preserve fair space progress.
+Keyboard viewport prefetch is bounded host I/O during repeated keys;
+only selection/navigation waits for settling. No query, push or refill
+wakes a worker.
+
+Persist data-free templates only. Partition filled rows in memory by
+session, space and audience. Discard on revocation, disconnect, sign-out,
+audience switch or guest link closure. Keep a 15-second renewable
+subscription lease in the fixture. On expiry clear rows before repaint. Require current host authorization
+before repaint or resume. `stale` and unsupported-renderer fallback contain
+no protected data without a fresh grant check. Draw skeletons without
+authorized session data.
+
+Transcript routes accept a checked Thread ref, a durable committed cursor
+and a bounded page budget (fixture at most 128 events and 128 KiB encoded).
+The cursor identifies the thread and committed position and is checked
+against the current audience. The host publishes ephemeral progress
+separately from committed events, batches durable append, rate limits
+delivery and ends with the committed cursor. Resume returns the next
+committed page without gaps or duplicate stable event IDs. Expired bookmarks
+require an authorized reload. Check before sending each page and on resume.
+Changing selection cancels the old delivery. Composer input carries typed
+text and host-checked attachment/mention refs. A quote is a thread and
+opaque transcript passage ref, minted for an authorized durable range;
+a selection or arbitrary source string cannot serve as a quote.
+
+A sealed frame ref names a committed content revision and belongs to a
+space and audience. Verify it on first use and each asset request. Expire
+fixture refs after five minutes or earlier on grant/session loss or frame
+removal. Serve HTML on a sandboxed host route with no scripts, forms,
+popups, same-origin privileges, top navigation or direct network.
+The existing anonymous media proxy can serve approved opaque assets.
+Only the trusted wrapper reports bounded resize and checked link IDs.
+The host re-resolves links, authorizes internal routes and uses its own
+safe external link affordance after checking scheme and disclosure.
+Never accept a URL/navigation target or data sent by the frame as authority.
+
+### 4.3 Activation protocol
+
+| Identity | Issuer and lifetime |
+| --- | --- |
+| `action_id` | Author’s action name, unique within the template activation scope. Stable across equivalent template revisions. |
+| `activation_id` | Renderer-generated per deliberate activation, retained for retries of that activation only. It grants nothing. |
+| `request_id` | Host-owned durable action receipt identity, mapped from the activation in the actor/space namespace. Uses configured receipt retention (default seven days). |
+| `ticket` | Host-issued ephemeral channel authority for one worker invocation. Ends on terminal, cancellation, fencing or expiry. Never reaches the device or persists. |
+
+The host supplies `activation_context` after authorizing what was
+rendered. The opaque bounded context names the live viewer/session and
+audience, space, package/template digest, action scope and ID, route,
+stable row/target, and versions of **that action’s** actual dependencies.
+These can include source fields, grant state, selection and the expected
+item or room head. Fixture lifetime is 30 seconds. Limit contexts to 256
+per viewer and 4,096 per space. Renew visible contexts before they expire.
+A change to another row or window version leaves a valid context usable.
+A changed target or material dependency returns `stale` without a new
+target. Recheck only relevant versions and live grants at dispatch,
+including a relevant source update during confirmation.
+
+1. **Resolve.** `ResolveActivation` carries action ID, activation ID, the
+   context, and only declared typed `interaction` slots (form, prompt,
+   draft, or a scoped selection ref). Reconstruct server-owned row,
+   route, selection membership, bind values, viewer and operation from
+   host state and the checked context. Reject client substitutes and
+   undeclared device inputs. A selection ref must have been issued for the
+   eligible rows/context. Validate form provenance and draft references
+   against their owning component, check normalized operation input,
+   and return `resolution_ref`. Where required, return a
+   `confirmation_challenge` and host-written preview of the material data.
+2. **Confirm.** `ConfirmActivation` submits the challenge via the
+   protected host control. The host checks actor, scope, normalized
+   input fingerprint and required confirmation (fresh verification where
+   policy requires it). It issues a single-use `confirmation_proof`
+   bound to that resolution and activation. A generic template cannot
+   confirm, an echo of the challenge is insufficient, and a client
+   “typed” flag does not establish consent. In the first contract preview
+   all required material inputs, including defaults, autofill, restored
+   drafts and hidden/offscreen values. Never exempt destinations,
+   recipients, permission changes or destructive effects.
+3. **Dispatch.** `DispatchActivation` supplies the resolution and proof
+   when required. Verify dependency versions and current authority,
+   then consume confirmation at effect admission and resolve through
+   the engine fence. The host result is status/error, optionally with a
+   status or Undo ref. No worker payload. Hold resolution and proof only
+   under the live context lifetime. Keep only a fingerprint binding for
+   replay at receipt retention, with no stored ticket or proof. Reuse the durable receipt after an
+   ACK loss: replay checks actor, space, package digest, action,
+   activation and normalized input fingerprint, plus current disclosure
+   rights. Changed input conflicts. A committed retry does not need the
+   old proof again. Once the receipt has expired an old activation cannot
+   recreate the effect.
+
+The host computes required preview/confirmation from the catalogue’s
+effect class or the manifest risk, checked method effects and declared
+`material_inputs`. An interface can add safety prompts. It cannot waive
+the host minimum or set retry mode. Reads can be retried, mutations replay
+only with the same receipt if declared `request_id`, and `never`
+returns outcome unknown after an uncertain dispatch. If plugin logic
+computes a new destination, recipient or data to disclose, check the
+actual material at broker dispatch. Require new protected approval for
+anything outside the already confirmed disclosure. The commit/egress
+fence remains the last authority check.
+
+### 4.4 Protected built-ins
+
+Use exact catalogue names and input/outcome definitions. Only the
+designated host request card and live approver can resolve an approval.
+Only the authorized holder of an eligible host-issued Undo ref can Undo,
+with the original target and current revision checked again. Share uses
+a host-owned audience sheet. Purge or Empty Trash uses a trusted preview,
+Manager/Owner confirmation of a host-pinned set and per-batch authority.
+Status polling uses the originating action’s audience. Panel, composer,
+route and session controls use only their catalogue-designated surfaces.
+The host supplies trusted operation titles and material facts. Enable
+full swipe only for a catalogue-permitted reversible host action with
+Undo and no outstanding preview or confirmation requirement.
 
 ## 5. Sharing and aggregation
 
@@ -446,10 +579,11 @@ Run timings that claim a performance result on the designated perf VM.
 
 | Spike | Injections and pass condition |
 | --- | --- |
-| **One enrolled channel** | Run two real package processes multiplexed over **one** enrolled channel for Space A and a channel for Space B. Stall A's real write path mid-frame by blocking the carrier receiver until buffers fill. Also run a deliberately slow callback. With a writable carrier, a control frame and the other package’s callback finish within 500 ms while the slow callback is held for 2 s. With the carrier physically stalled, the host fences cancel/revocation within 500 ms and closes the channel within 2 s. Space B makes progress within 2 s throughout. On reconnect reject prior epoch frames/tickets and accept an authorized receipt replay once. Verify the remote stops by lease expiry with no delivered cancel. |
-| **Cold indexed page** | Seed 100,000 rows with mixed visibility. Request the same 80-row window at offsets 0, 10,000 and 90,000 under a stable sort. Record query plans and rows visited for both window and count. Page work grows with the page and index lookup, never with the offset. Any indexed count cost is reported separately and cannot repeat on adjacent windows at the same authority revision. Each window completes within 500 ms and wakes nothing. Revoke between query and delivery and assert no count/rows leak. Replay the same admitted action once. |
-| **Atomic large save** | Write an escape-heavy 2 MiB body through bounded stages. Reconstruct byte-for-byte with revision-pinned range reads, even after the live head advances. Race two begins, lose a chunk ACK, replace a chunk with different bytes, cancel mid-stage and crash with an orphan. One reservation per receipt and no partial edit. Race each of revocation, cancellation, epoch loss, enrollment removal and run replacement immediately before and after the recovery-visible commit. Inject crash after content commit before journal publication and after publication before reply. Before commit yields no revision or success receipt. After commit recovers one revision, one journal event and a correctly scoped replay. Save plus reconstruction completes within 5 s on the fixture, and restart reclaims orphan reservations before serving. No worker/hook blocks the commit path. |
-| **Durable transcript** | Append batches from a real turn, stall the reader, cut the stream after commit before its ACK, then reconnect from the last committed cursor. Backfill starts within 2 s and yields contiguous committed events without duplicating the submission. Revoke before delivering a page and assert no subsequent bytes or bookmark are disclosed. Slow delivery cannot monopolize the writer. |
+| **One enrolled channel** | Run two real package processes multiplexed over **one** enrolled channel for Space A and a channel for Space B. Stall A's real write path mid-frame by blocking the carrier receiver until buffers fill. Also run a deliberately slow callback. With a writable carrier, a control frame and the other package’s callback finish within 500 ms while the slow callback is held for 2 s. With the carrier physically stalled, the host fences cancel/revocation within 500 ms and closes the channel within 2 s. Space B makes progress within 2 s throughout. On reconnect reject prior epoch frames/tickets and accept an authorized receipt replay once. Expire the remote lease within 5 s of its last authenticated renewal with no delivered cancel. Assert zero old-lease effects after local fencing. |
+| **Cold indexed page** | Seed 100,000 mixed-visibility rows. At offsets 0, 10,000 and 90,000 test every qualified plan family, including collection + ACL + sort, search audience/rank and indexed filter/count under grant and content churn. Use deepest supported index windows. Record plans and rows visited. Keep window work bounded independent of offset and meter counts separately under matching authority/result versions. Reject unbounded plans. Each window finishes within 500 ms with zero wakes. Invalidate counts and fan out pushes under aggregate caps, with no leak on mid-query revoke. |
+| **Atomic large save** | Write an escape-heavy 2 MiB body through bounded stages. Reconstruct byte-for-byte with revision-pinned range reads, after the live head advances with a 60 s fixture revision pin. Recheck authority per range. Purge and revocation invalidate the pin and refuse later ranges. Race two begins, lose a chunk ACK, replace a chunk with different bytes, cancel mid-stage and crash with an orphan. One reservation per receipt and no partial edit. Race each of revocation, cancellation, epoch loss, enrollment removal and run replacement immediately before and after the recovery-visible commit. Inject crash after content commit before journal publication and after publication before reply. Before commit yields no revision or success receipt. After commit recovers one revision, one journal event and a correctly scoped replay. Save plus reconstruction completes within 5 s on the fixture, and restart reclaims orphan reservations before serving. No worker/hook blocks the commit path. |
+| **Durable transcript** | Append batches from a real turn, stall the reader, cut the stream after commit before its ACK, then reconnect from the last committed cursor. Restart the server. Backfill starts within 2 s and matches the durable cursor, stable event sequence and submission receipt without duplicates. A revoked reconnect reveals neither data nor bookmark. Revoke before delivering a page and assert no subsequent bytes or bookmark are disclosed. Slow delivery cannot monopolize the writer. |
+| **Host + renderer authority** | Real renderer and host against both chrome and content. Resolve a real approval and live Bind with an independent member, guest, foreign and revoked matrix. Inject forged row/route/bind values and activation contexts, untouched prefills/draft defaults, built-in and approval-card spoofing, duplicate request IDs, relevant stale dependencies and cache-reopen revocation. Require zero unauthorized effects or rendered bytes, one commit for authorized replay and one valid action completing within 2 s of dispatch during unrelated window churn. Enforce the catalogue query/queue caps. Also race revocation with egress dispatch, job claim/park and protected approval resolution before freezing any of those routes. |
 
 If a gate misses, record the measured failure and change the mechanism or
 reduce the first surface before freeze. A fixture using separate per-package
@@ -460,8 +594,9 @@ transport or an in-memory broker is not evidence for the carrier spike.
 Freeze only models and fields exercised by Step 0. Candidate slices are the
 space carrier, the target and item range/save receipt path, the cold page
 query and transcript cursor. Generate matching Rust-backed schemas and TS
-types. Exercise a renderer-owned description fixture before freezing those
-nodes. Mark other manifest/engine declarations draft and leave them out of
+types. Freeze descriptions, Invoke and each built-in only after its real
+host/renderer authorization case passes. Shape fixtures and the author
+trial alone are insufficient. Mark other manifest/engine declarations draft and leave them out of
 the stable SDK. Reuse the container wall and durable jobs for a thin test
 adapter. Existing job/wait contracts remain the regression baseline.
 
@@ -475,7 +610,8 @@ for those same slices and the reused jobs/waits path, including one winning
 signal and zero repeated effects after restart. Extra §7 cases gate their
 own later surfaces.
 
-Deliver the versioned guide rewrite and compile each example. Run the public
+The [current checked-in guide](../plugins/calternal-plugin-guide/reference.md) is v1 and is excluded from v2 fixtures and
+trials. Deliver the versioned v2 rewrite and compile each example. Run the public
 guide and scaffold with a fresh small-model author, first with the fake
 broker and then through installed real fixtures. Pass when built-in verifier
 cases all pass, the author uses only public documentation/SDK input, there
@@ -516,14 +652,23 @@ fixtures, with final revisions, visible authority and durable outcomes equal.
   update metadata while a second client edits through Yjs. Reconnect an
   offline draft, retain body and history, rename and Undo, Trash, restore
   from Trash and history, and confirm Empty Trash as a Manager. Verify
-  linked-user View/Comment and revocation, no worker wake for built-in
+  linked-user View/Comment and revocation, the host Share sheet and bounded
+  bulk Trash/share/collection creation, no worker wake for built-in
   lifecycle actions, and recover a committed save after rollback.
 - **Threads.** After Notes passes, open an indexed thread list, submit a
   composer draft with an attachment on the person’s eligible machine,
   reconnect at a committed transcript cursor, queue a follow-up, act on
   a protected approval, and stop. Require exactly one submission per
   receipt, correct machine/login attribution, no lost committed transcript,
-  and equivalent rollback/reopen behavior.
+  and equivalent rollback/reopen behavior. Exercise host-owned
+  provider/model/reasoning/permission/machine controls and authorized
+  options, checked attachments and snooze presets plus the shipped custom
+  date/time picker unless the Owner approves a parity exception.
+
+Run executable catalogue fixtures for both apps. Generic selectors, nested
+rows, drag, repeaters and conditional fields can wait for primitives.
+A shipped workflow still needs a host equivalent or an approved parity
+exception before replacement.
 
 Rollback is a release-pair exercise. Show that a committed change remains
 readable exactly once after rollback or refuse the downgrade before it
@@ -545,40 +690,57 @@ can discard the change. Mail still waits for a later engine contract.
   later dedicated broker profile with a pinned endpoint, byte and time limits,
   and revocation proof. Direct runtime sockets remain forbidden.
 
-## Second-round review responses
+## Third-round review responses
 
-The [revision 2 response table](https://git.kayg.org/kayg/calternal-ai/src/commit/29028acf25b2efc99b98194b777187c23bd8fa90/docs/plugin-api-v2.md#review-responses)
-records the first round. **Renderer dependency** marks work assigned to the
-native and web lanes. Part A specifies the host obligations in §4.
+See the [second-round response table](https://git.kayg.org/kayg/calternal-ai/src/commit/cca3d12db6cb2f9b5f08252df2b7d8e3672d19be/docs/plugin-api-v2.md#second-round-review-responses)
+for earlier decisions. Part B refers to the renderer specification in this
+same tree. Test gates in §8 are requirements for later implementation.
 
-| Review item | Response and section |
+| # | Resolution |
 | --- | --- |
-| Sol #1/#4 · Bind/Invoke placement, row action and ID | Renderer dependency. §4 requires action resolution against the rendered template and row. |
-| Sol #3 · Guest fields, statuses and errors | §4 defines host-owned projections and supported disclosures without worker results/errors. |
-| Sol #7 · Rename status | §3 adds the scoped status read and host-owned Undo. |
-| Sol #12 · Cancellation, epoch loss, schedule removal, run replacement | §3 orders every invalidation against durable commit. §8 races both sides. |
-| Sol #14 · Descendant registration and rights | §5 assigns edge creation to engines, intersects effects at each hop and denies guest jobs. |
-| Sol #17 · Typed credential redemption | §§1, 3 and manifest add operation-declared routes with endpoint and host profile. |
-| Sol #24/#26 · Actual stalled writer and interrupted saves | §8 uses one shared enrolled channel and stalls its physical writer. Reconstruction, interrupted staging and a second space are tested. |
-| Sol #30 · Inner discriminator and misleading examples | §7 names the exact inner discriminator and gates a rewritten v2 guide. |
-| Sol new · Query side channels | §4 authorizes predicate, sort, search and output before work including count or rank. §8 tests unauthorized disclosure. |
-| Sol new · Confused deputy | §4 ties invocation to rendered target and requires a host preview and confirmation bound to normalized input. Renderer dependency for presentation. |
-| Sol new · Recovery-visible commit | §3 locates the authoritative transaction and specifies both outcomes. §§3, 5 fence descendants. |
-| Sol new · Concurrent staging | §3 uses the receipt namespace, checked input, live invocation and bounded cleanup. |
-| Sol gates · Steps 0–3 | §8 adds fault injections, time limits and offset work, limits freeze to exercised schemas, and defines wall, recovery, author and app passes. |
-| Opus #1 · Row template, collection ID, chrome placement | Renderer dependency. §4 authorizes resolved collections and rows. |
-| Opus #4 · Forms, row scope and action IDs | Renderer dependency. §4 binds the resolved action and checked input at admission. |
-| Opus #5 · Composer input and transcript refs | §3 specifies checked host drafts and separate thread/turn refs. Component events are a renderer dependency. |
-| Opus #7 · Purge, restore and Undo | §3 adds confirmed purge/Empty Trash, separates restore modes and gives the interface authorized status and Undo. |
-| Opus #9 · Calendar, missed runs and notifications | §3 reuses canonical calendar syntax, creator authority, same-day catch-up and receipt-backed notifications. |
-| Opus #29 · Template SDK | §7 adds `defineView` and `defineChrome` against the exercised shared schema. |
-| Opus #30 · Version labels and guide | §§1, 7 and manifest collapse author versioning. §8 checks rewritten examples. |
-| Opus new · TCP decision | Q9 records the Owner’s decision and proposes a later brokered profile. |
-| Opus new · Viewer/route filter sources | Renderer dependency. §4 requires authorization of resolved operands. |
-| Opus new · Threads and Trash queries | §3 uses Turns-owned `threads` and host-indexed `trashed`. |
-| Opus new · Room-compatible metadata save | §3 checks the room-backed head and preserves body/checkpoint. §8 tests concurrent editing. |
-| Opus new · Built-ins keep the worker asleep | §§3–4 specify host-catalogue dispatch. §8 verifies no wake. |
-| Opus new · Approval models | §3 reuses the protected Inbox approval record, action and receipt for jobs, Turns and host confirmations. |
-| Opus new · Duplicate method declarations | §1 and manifest use only operation-level methods. Install unions them. |
-| Opus new · Ambiguous Bind scope | Renderer dependency for binding ID and row scope. §4 requires host resolution. |
-| Opus paper exercise · Apps, cold open, Hello World and Mail | §§1, 4, 7–8 hide digests/protocol labels, simplify risk and versions, require cold reads and list/form/reminder/Notes/Threads/Mail walkthroughs. Shared Bind/Invoke schema is a renderer dependency. |
+| 1 | Part B defines strict variant shapes and action uniqueness. §§4.1, 8 require the same checks at host activation. |
+| 2 | §4.2 and Part B cache rules keep authorized rows in session memory and require fresh authority to paint them. |
+| 3 | §3 and catalogue retain rename status and protected Undo. |
+| 4 | §3 retains one recovery-visible fence for commit and invalidation. |
+| 5 | §5 retains narrow guest descendants and denies guest jobs pending proof. |
+| 6 | §3 and manifest retain typed credential redemption. |
+| 7 | §8 retains the real shared writer stall and range/staging checks. |
+| 8 | §8 labels the checked-in guide v1, excludes it from v2 trials and requires the rewritten examples. |
+| 9 | §4.1 authorizes all dependency edges, rejecting cross-bind query operands in the first slice. |
+| 10 | §4.3 requires independent resolution, host confirmation and fenced dispatch. |
+| 11 | §3 retains the authoritative content/outbox transaction and recovery ordering. |
+| 12 | §3 retains one staging reservation per checked receipt and bounded cleanup. |
+| 13 | §§4, 8 add a real combined activation, approval and live-bind gate before freezing those surfaces. |
+| 14 | Part B retains shared Bind, row template and placement. |
+| 15 | §4.3, catalogue and Part B require activation identifiers, context and typed source scope. |
+| 16 | §4.2 and catalogue specify typed draft, attachment, mention and quote refs. Component variants are in Part B. |
+| 17 | §4.4 and catalogue specify status polling and protected purge inputs. |
+| 18 | §3 retains hosted calendar, missed-run and notification semantics. |
+| 19 | §7 retains `defineView` and `defineChrome` for exercised schemas. |
+| 20 | §8 gates the rewritten v2 guide and compiled examples. No runtime or guide implementation in this revision. |
+| 21 | Q9 retains the earlier TCP decision and asks about sequencing. |
+| 22 | §4.1, catalogue and Part B retain authorized viewer/route operands. |
+| 23 | §§3, 4.1 and catalogue register canonical kinds and Trash/inbox fields. |
+| 24 | §3 retains metadata save against the live room head. |
+| 25 | §4.4 and catalogue map lifecycle/Turns actions to host dispatch without waking a plugin worker. §8 tests wake counts. |
+| 26 | §§1, 3, 4.1 retain one method list, one approval resolver and scoped Bind references. |
+| 27 | §8 requires executable Notes/Threads catalogue fixtures, cold read and a Mail paper walk before their gates. |
+| 28 | §4.1 and catalogue define kinds, typed fields, owners, audience and the private Request ref. |
+| 29 | §4.4 and catalogue give exact built-ins, routes, authority, arguments, outcomes and wake behavior. |
+| 30 | §§3, 4.3 derive preview/confirmation/retry from host effects and checked idempotency, including material at egress dispatch. |
+| 31 | §4.3 defines four identities, retention and replay fingerprint. |
+| 32 | §4.1 and catalogue define predicate operands, count modes, half-open bounded windows and unsupported-plan errors. |
+| 33 | §4.2 and catalogue define transcript, draft/quote and sealed frame scopes, retention, paging and sandbox/navigation. |
+| 34 | Combined tip pins both parts. Manifest uses the shared schema and §8 gates host-loader parity with strict paper fixtures. |
+| 35 | §4.3 requires the host context and server-side reconstruction. Only declared typed interactions leave the device. |
+| 36 | §4.3 and Part B include untouched defaults, autofill and offscreen material and disallow client typing flags as proof. |
+| 37 | §4.1 rejects cycles, pins search to the approved corpus and limits guest counts to count-enabled shared projections. |
+| 38 | §4.2 and catalogue cap aggregate subscriptions, bytes, pending windows and work. Host prefetch/push never wakes plugins. |
+| 39 | §4.3 uses stable target IDs and per-action dependency versions. §8 requires success during unrelated churn. |
+| 40 | §4.4 and catalogue limit approval/Undo/share/purge to their protected surfaces and derive swipe eligibility. |
+| 41 | §4.2 and Part B keep filled rows session-only, clear on invalidation and require authority for fallback. |
+| 42 | §8 sets a five-second lease expiry bound and range pin behavior, and races invalidation across real commits and egress. |
+| 43 | §8 tests deepest qualified plans, count churn/fan-out and committed transcript replay after restart. |
+| 44 | §8 adds real host/renderer fault injections and keeps schema-only/author evidence insufficient for Invoke freeze. |
+| 45 | §8 and Part B gate app migration on Share, bulk Notes, Turns provider/composer controls and executable fixtures. |
+| 46 | §8 and Part B preserve custom snooze and require shipped workflow parity or Owner-approved exceptions. |
