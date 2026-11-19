@@ -347,7 +347,7 @@ The catalogue defines typed predicates, count modes and window ceilings.
 Equality operands use the field’s scalar type without coercion.
 `in` accepts a checked homogeneous list (1–32 scalars), including a literal
 list or a typed route/selection list if its source is authorized.
-`exists` takes a boolean and tests indexed non-null presence.
+`exists` takes no operand and tests indexed non-null presence.
 Ordering and `prefix` require the field’s declared type and index collation.
 `all` and `any` have a combined 16-predicate cap and no nesting.
 Two sort keys maximum plus stable ID as a tiebreaker. Use half-open

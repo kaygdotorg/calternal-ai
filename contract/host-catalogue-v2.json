@@ -962,7 +962,7 @@
       "lte": "Same as lt.",
       "gt": "Same as lt.",
       "gte": "Same as lt.",
-      "exists": "Boolean operand; true means an indexed non-null value exists.",
+      "exists": "No operand. Tests indexed non-null presence; use equality with null on nullable fields for absence.",
       "prefix": "Nonempty text normalized with the field's indexed collation; up to 128 UTF-8 bytes."
     },
     "filter_groups": [
