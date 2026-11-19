@@ -1,0 +1,37 @@
+{
+  "id": "content-fetch-demo",
+  "name": "Content fetch fixture",
+  "version": "0.1.0",
+  "icon": "flask",
+  "api_version": 1,
+  "kinds": [
+    {"id": "fixture-html", "storage": {"hidden": true}, "claimed_text": true, "schema": {"type": "object"}}
+  ],
+  "operations": [
+    {
+      "id": "content-fetch-demo.write",
+      "input_schema": {
+        "type": "object",
+        "properties": {"text": {"type": "string", "maxLength": 4096}},
+        "required": ["text"],
+        "additionalProperties": false
+      },
+      "output_schema": {"type": "object", "properties": {"frame_id": {"type": "string"}}, "required": ["frame_id"]},
+      "required_capability": "content.write",
+      "mutates": true,
+      "idempotency": "request_id",
+      "risk": "reversible"
+    }
+  ],
+  "collections": [],
+  "views": [],
+  "attention": [],
+  "settings": [],
+  "schedules": [],
+  "webhooks": [],
+  "secrets": [],
+  "hooks": [],
+  "themes": [],
+  "host_calls": ["write_item", "content_prepare_v1"],
+  "network": {"content_fetch": {"profile": "images_fonts", "sources": [{"kind": "fixture-html", "field": "text"}]}}
+}

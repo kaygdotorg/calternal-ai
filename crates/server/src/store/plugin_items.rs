@@ -53,6 +53,7 @@ impl Store {
     /// Creates (no `id`) or updates (against `base`) one plugin-kind item, or appends/patches its live text, with a
     /// per-account receipt, so a retry returns the original ID and revision.
     /// The kind must already be registered in the space (plugin enable does that).
+    /// Call the observer only after a new commit, never for a replay.
     /// Cost: one generic content write: journal and FULL SQL commits, file and
     /// directory fsync.
     #[allow(clippy::too_many_arguments)]
@@ -66,6 +67,7 @@ impl Store {
         id: Option<Uuid>,
         base: Option<&str>,
         body: PluginItemWrite<'_>,
+        committed: impl FnOnce(Item),
     ) -> Result<serde_json::Value, Error> {
         let actor = actor.into();
         if let Some(id) = id {
@@ -101,7 +103,11 @@ impl Store {
             ),
         };
         match write {
-            Ok(item) => Ok(encode(&item)),
+            Ok(item) => {
+                let result = encode(&item);
+                committed(item);
+                Ok(result)
+            }
             Err(error) => {
                 let Some(saved) = self.receipt(actor.account, space_id, request_id)? else {
                     return Err(error);

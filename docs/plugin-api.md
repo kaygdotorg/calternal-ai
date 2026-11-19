@@ -256,6 +256,73 @@ The SDK fixture captures a subprocess's exit status or signal and up to
 4 KiB of its stderr. Fixture diagnostics are local to the author. The live
 worker protocol still treats a failed handler as a failed invocation.
 
+## Sealed plugin content
+
+For the image and font proxy, declare `network.content_fetch` and
+`content_prepare_v1`. The declaration names the `images_fonts` profile and at
+most 32 of the package's text kinds through `sources`, for example
+`{"kind":"mail-message","field":"text"}`. Prepare an exact, live stored item
+revision through `prepareContent(context, {kind, item_id, revision, field})`.
+The host takes the person and space from the invocation. It returns only an
+opaque frame ID. Caller-supplied URLs have no direct fetch operation.
+
+Read frame metadata with `plugins.network.content.get`, passing the space
+and frame IDs. The host rechecks the viewer, source revision and plugin
+activation. Mount the returned frame URL with a sandbox that enables no
+features. External navigation goes through the host's explicit action using
+the returned links. Frame references expire after five minutes or on eviction.
+
+Use `plugins.network.content.preference.get` and
+`plugins.network.content.preference.set` with the space UUID to read or edit
+the signed-in person's choice. Defaults are Always, with Ask for explicit
+loads and Never for placeholders. Committed broker writes queue eligible media before the frame is opened.
+Opening a frame for an item last committed more than 90 days ago can queue
+the older-content fallback. Items marked as junk never fetch. For Ask mode,
+the host can explicitly POST the authenticated frame URL with the normal
+same-origin session. HTTP 202 acknowledges the action. Open or reload the
+frame to display any queued media. Recent opens alone cause no upstream
+requests. The media URL is a short-lived signed reference scoped to the
+viewer and the frame. It rechecks live session, permission, source revision,
+plugin activation, and the current preference before serving.
+
+The server fetches image and font bytes off the request path. HTTPS GET on
+443 uses a generic `calternal` User-Agent without cookies, credentials,
+referrers, retries, or environment proxies. The guard checks every DNS
+answer, connects using those results, and repeats its checks on redirects.
+It refuses IP literals, nonpublic addresses, attached interface networks
+and the configured public origin hostname. Set
+`CALTERNAL_CONTENT_FETCH_DENY_CIDRS` to comma-separated CIDRs for additional
+internal or hairpin public ranges. An invalid configured CIDR disables
+outbound media. See the [OWASP SSRF prevention guidance](https://cheatsheetseries.owasp.org/cheatsheets/Server_Side_Request_Forgery_Prevention_Cheat_Sheet.html).
+
+Each asset allows 10 MB, three redirects, 5 seconds to connect and 10
+seconds total for outbound work. Only checked PNG, JPEG, GIF, WebP, AVIF,
+WOFF, WOFF2, TrueType and OpenType are served. SVG, HTML and unrecognized
+or conflicting types are refused. A read can wait for work already queued.
+Unavailable assets return a generic 404. The installation admits 128 queued or running assets, 16
+running assets and two concurrent hops per host. The rolling limits are 60
+hops per plugin per minute across spaces, 120 per space per minute, four
+active hops per space and 64 MiB per space per hour. Redirects count as
+separate hops. Space budgets include reservations for outstanding reads
+and conservatively charge failed reads of unknown size.
+
+The viewer-scoped memory cache has 16 shards of up to 32 MiB and 256
+entries each, for at most 512 MiB and 4,096 entries installation-wide.
+Successful entries are reusable for 24 hours and refusals for one minute.
+Expiry is enforced on lookup and expired entries are removed on shard
+access. Restart clears the cache. Audit keeps up to 10,000 records per
+space for seven days, with host, outcome and byte counts. URLs, payloads
+and credentials do not enter audit. These operational limits are
+provisional. Review them with observed mail-ingest burst sizes, asset
+hit rates, refusal and timeout counts, and VM memory pressure.
+
+In debug servers built with `test-plugins`, set
+`CALTERNAL_TEST_CONTENT_FETCH_ORIGIN=http://127.0.0.1:<port>` for a local
+upstream fixture. Stored HTTPS references to `content-fetch.test` use
+that exact listener. The normal URL, redirect, type, size and time rules
+still apply. The fixture can return a small PNG for the trial kit. The
+service accepts no loopback transport override in a production build.
+
 ## Open
 
 - Composer and chat experience (mentions, commands): needs its own design round.
@@ -447,25 +514,3 @@ with a `base_revision`. A patch accepts at most 256 non-overlapping changes.
 Positions and lengths are UTF-16 units on grapheme boundaries in the base.
 Both operations preserve the current metadata and use the normal write receipt.
 See [Live editing service](live-rooms.md) for wire and authority details.
-
-## Sealed plugin content
-
-For the image and font proxy, declare `network.content_fetch` and
-`content_prepare_v1`. The declaration names the `images_fonts` profile and at
-most 32 of the package's text kinds through `sources`, for example
-`{"kind":"mail-message","field":"text"}`. Prepare an exact, live stored item
-revision through `prepareContent(context, {kind, item_id, revision, field})`.
-The host takes the person and space from the invocation. It returns only an
-opaque frame ID. Caller-supplied URLs have no direct fetch operation.
-
-Read frame metadata with `plugins.network.content.get`, passing the space
-and frame IDs. The host rechecks the viewer, source revision and plugin
-activation. Mount the returned frame URL with a sandbox that enables no
-features. External navigation goes through the host's explicit action using
-the returned links. Frame references expire after five minutes or on eviction.
-
-Use `plugins.network.content.preference.get` and
-`plugins.network.content.preference.set` with the space UUID to read or edit
-the signed-in person's choice. Defaults are Always, with Ask for explicit
-loads and Never for placeholders. Fetch timing for the completed proxy is
-defined in the [content profile](plugin-interface-proposal.md#b-content-fetch).

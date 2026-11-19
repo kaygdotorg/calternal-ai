@@ -3,7 +3,8 @@
 
 mod deny;
 mod fetch;
-pub(crate) use fetch::{checked_url, get_with_redirects, read_bounded};
+mod local;
+pub(crate) use fetch::{check_url, checked_url, get_with_redirects, read_bounded, redirect_target};
 
 use reqwest::dns::{Name, Resolve, Resolving};
 use std::{io, sync::Arc, time::Duration};
@@ -24,12 +25,41 @@ pub(crate) fn client_for(
     hosts: Option<&'static [&'static str]>,
     timeout: Duration,
 ) -> Result<reqwest::Client, reqwest::Error> {
+    build(hosts, timeout, Arc::new(local::Local::default()), false)
+}
+
+/// Direct anonymous HTTPS with attached and operator-configured networks
+/// denied by the resolver. Refreshes attached addresses for each client build.
+pub(crate) fn content_client(
+    ranges: &str,
+    timeout: Duration,
+    fixture: bool,
+) -> io::Result<reqwest::Client> {
+    build(
+        None,
+        timeout,
+        Arc::new(local::Local::load(ranges)?),
+        fixture,
+    )
+    .map_err(io::Error::other)
+}
+
+fn build(
+    hosts: Option<&'static [&'static str]>,
+    timeout: Duration,
+    local: Arc<local::Local>,
+    fixture: bool,
+) -> Result<reqwest::Client, reqwest::Error> {
     let mut builder = reqwest::Client::builder()
         .https_only(true)
         .no_proxy()
         .redirect(reqwest::redirect::Policy::none())
         .retry(reqwest::retry::never())
-        .dns_resolver(Arc::new(PublicDns { hosts }))
+        .dns_resolver(Arc::new(PublicDns {
+            hosts,
+            local,
+            fixture,
+        }))
         .connect_timeout(Duration::from_secs(5))
         .timeout(timeout)
         .user_agent("calternal");
@@ -40,12 +70,16 @@ pub(crate) fn client_for(
 }
 
 struct PublicDns {
+    fixture: bool,
+    local: Arc<local::Local>,
     hosts: Option<&'static [&'static str]>,
 }
 
 impl Resolve for PublicDns {
     fn resolve(&self, name: Name) -> Resolving {
         let hosts = self.hosts;
+        let local = self.local.clone();
+        let fixture = self.fixture;
         Box::pin(async move {
             if hosts.is_some_and(|hosts| !hosts.contains(&name.as_str())) {
                 return Err(refused().into());
@@ -53,8 +87,16 @@ impl Resolve for PublicDns {
             // A trailing dot makes the OS query the exact DNS name without
             // trying local search suffixes. Only the DNS query uses that dot.
             let fqdn = format!("{}.", name.as_str());
-            let addresses: Vec<_> = tokio::net::lookup_host((fqdn.as_str(), 0)).await?.collect();
-            if addresses.is_empty() || addresses.iter().any(|a| deny::is_denied(a.ip())) {
+            let addresses = if let Some(answers) = fixture_answers(fixture, name.as_str()) {
+                answers
+            } else {
+                tokio::net::lookup_host((fqdn.as_str(), 0)).await?.collect()
+            };
+            if addresses.is_empty()
+                || addresses
+                    .iter()
+                    .any(|a| deny::is_denied(a.ip()) || local.denies(a.ip()))
+            {
                 return Err(refused().into());
             }
             Ok(Box::new(addresses.into_iter()) as reqwest::dns::Addrs)
@@ -67,4 +109,26 @@ fn refused() -> io::Error {
         io::ErrorKind::PermissionDenied,
         "outbound destination refused",
     )
+}
+
+fn fixture_answers(_fixture: bool, _name: &str) -> Option<Vec<std::net::SocketAddr>> {
+    #[cfg(all(feature = "test-plugins", debug_assertions))]
+    if _fixture {
+        let answers: &[&str] = match _name {
+            "private.content-fetch.test" => &["10.2.3.4:0"],
+            "loopback.content-fetch.test" => &["127.0.0.1:0"],
+            "link-local.content-fetch.test" => &["169.254.1.2:0"],
+            "local-v6.content-fetch.test" => &["[fe80::1]:0"],
+            "mixed.content-fetch.test" => &["93.184.215.17:0", "127.0.0.1:0"],
+            "server-range.content-fetch.test" => &["93.184.215.18:0"],
+            _ => return None,
+        };
+        return Some(
+            answers
+                .iter()
+                .map(|value| value.parse().expect("fixture address"))
+                .collect(),
+        );
+    }
+    None
 }
