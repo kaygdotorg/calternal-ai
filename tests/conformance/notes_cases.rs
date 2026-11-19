@@ -1,7 +1,7 @@
 //! Notes scope, index, and lifecycle checks through passkey-authenticated HTTP.
 use super::*;
 
-fn committed_text_bytes(f: &Fixture, space: &str) -> u64 {
+fn committed_text_bytes(f: &Fixture, space: &str) -> i64 {
     Connection::open_with_flags(
         f.appdata().join("spaces").join(space).join("content.db"),
         rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,

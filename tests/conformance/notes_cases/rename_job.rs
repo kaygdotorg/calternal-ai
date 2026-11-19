@@ -49,10 +49,10 @@ async fn linked_rename_batches_are_undoable_by_job_id() {
     let job = data(f.op(2, "notes.rename", rename).await);
     let status = json!({"space_id":space,"job_id":job["job_id"]});
     wait(&f, &status, "done").await;
-    let title_growth = ("Retitled".len() - "Target".len()) as u64;
+    let title_growth = ("Retitled".len() - "Target".len()) as i64;
     assert_eq!(
         committed_text_bytes(&f, space),
-        bytes + title_growth * (1 + sources.len() as u64)
+        bytes + title_growth * (1 + sources.len() as i64)
     );
     for id in &sources {
         let note = data(f.op(2, "notes.get", json!({"id":id})).await);
