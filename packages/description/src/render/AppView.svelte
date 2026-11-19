@@ -32,9 +32,8 @@
 
   const route = $state<Record<string, string>>({});
   for (const s of description.chrome?.sidebar?.selectors ?? []) route[s.route ?? s.id] = s.selected ?? s.options[0]!.id;
-  const setRoute = (name: string, value: string) => { if (route[name] === value) return; route[name] = value; session.route = { ...route }; props.onroute?.(name, value); };
-  session.route = { ...route };
 
+  const setRoute = (name: string, value: string) => { if (route[name] === value) return; route[name] = value; sync(); props.onroute?.(name, value); };
   const ui = new ActionUi(session);
   ui.onok = () => { for (const st of stores.values()) st.refresh(); };
   ui.onroute = (name, created) => setRoute(name, created);
@@ -46,6 +45,10 @@
   const deps = new Map<string, string[]>();
   /** The route parameters a bind's query reads: when one changes the bind starts over. */
   const routeDeps = (b: Bind): string[] => [...JSON.stringify([b.source, b.filter]).matchAll(/"route":"([a-z0-9_]+)"/g)].map((m) => m[1]!);
+  // Only the parameters some bind reads go to the host with its windows (a selector or an open item no bind reads is the shell's own state).
+  const read = new Set([...binds.values()].flatMap(routeDeps));
+  const sync = () => { session.route = Object.fromEntries(Object.entries(route).filter(([k]) => read.has(k))); };
+  sync();
   /** The store of a bind (per parent ref for a child bind), made on first use. */
   function storeFor(id: string, parent?: string): WindowStore | undefined {
     const b = binds.get(id);
