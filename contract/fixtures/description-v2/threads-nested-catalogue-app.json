@@ -64,8 +64,8 @@
             "icon": "folder",
             "operation": "host.layout.move_to",
             "inputs": {
-              "entry": {
-                "row": "id"
+              "thread": {
+                "context": "item"
               },
               "section": {
                 "prompt": {
@@ -85,7 +85,7 @@
             "operation": "turns.archive",
             "inputs": {
               "thread": {
-                "row": "id"
+                "context": "item"
               }
             }
           }
@@ -144,8 +144,8 @@
             "icon": "folder",
             "operation": "host.layout.move_to",
             "inputs": {
-              "entry": {
-                "row": "id"
+              "thread": {
+                "context": "item"
               },
               "section": {
                 "prompt": {
@@ -165,7 +165,7 @@
             "operation": "turns.archive",
             "inputs": {
               "thread": {
-                "row": "id"
+                "context": "item"
               }
             }
           }
@@ -221,8 +221,8 @@
             "icon": "folder",
             "operation": "host.layout.move_to",
             "inputs": {
-              "entry": {
-                "row": "id"
+              "thread": {
+                "context": "item"
               },
               "section": {
                 "prompt": {
@@ -242,7 +242,7 @@
             "operation": "turns.archive",
             "inputs": {
               "thread": {
-                "row": "id"
+                "context": "item"
               }
             }
           }
@@ -349,7 +349,7 @@
             "operation": "host.layout.move_up",
             "inputs": {
               "entry": {
-                "row": "id"
+                "context": "placement"
               }
             }
           },
@@ -360,7 +360,7 @@
             "operation": "host.layout.move_down",
             "inputs": {
               "entry": {
-                "row": "id"
+                "context": "placement"
               }
             }
           },
@@ -371,7 +371,7 @@
             "operation": "host.layout.move_to",
             "inputs": {
               "entry": {
-                "row": "id"
+                "context": "placement"
               },
               "section": {
                 "prompt": {
@@ -391,7 +391,7 @@
             "operation": "turns.archive",
             "inputs": {
               "thread": {
-                "row": "id"
+                "context": "item"
               }
             }
           }

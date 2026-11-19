@@ -41,6 +41,6 @@ Reviewed text: `/home/kayg/.bb/thread-storage/thr_58j59i9gw3/review4-opus.md` ag
 | Final text is message content only; parser-derived changes need a fresh preview | N, W | 3.2 (N); W: mirrored in 5.1 (composer) |
 | LeaseRenewResult correlated and authenticated | N, A | section 6 (N) and the catalogue (A) |
 | One window envelope | N, A | 2.3 (N); the verifier checks `event-catalogue-window` against the catalogue |
-| Q10 persisted member rows | N, W | section 6 (N); W: fixture `threads-nested-app.json` (`cache.memberRows`, `Bind.persist`), section 9 note |
-| Q11 nested child rows, user sections; drag an exception | N, W | schema and 2.7 (N); W: fixture `threads-nested-app.json` (children bind per parent, `Section.repeat` over `layout_sections`, Move to / Move up / Move down / section create, rename, remove), 9.3 and 10 rewritten, drag recorded as a parity exception |
+| Q10 persisted member rows | N, W | section 6 (N); W: fixture `threads-nested-catalogue-app.json` (`cache.memberRows`, `Bind.persist`), section 9 note |
+| Q11 nested child rows, user sections; drag an exception | N, W | schema and 2.7 (N); W: fixture `threads-nested-catalogue-app.json` (children bind per parent, `Section.repeat` over `layout_sections`, Move to / Move up / Move down / section create, rename, remove), 9.3 and 10 rewritten, drag recorded as a parity exception |
 | SDK fills a package's own kinds into `reads` | W, A | 9 and 2.6: authors write `reads` only for another app's kinds; the verifier still requires the manifest entry |
