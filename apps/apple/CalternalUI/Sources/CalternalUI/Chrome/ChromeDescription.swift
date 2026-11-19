@@ -89,6 +89,8 @@ public struct ChromeDescription: Codable, Equatable, Sendable {
     public struct Appearance: Codable, Equatable, Sendable {
         /// `"auto"` (Dune in light, Aurora in dark), a built-in name (`dune`, `aurora`, `ember`) or null for none.
         public var wallpaper: String?
+        /// A one-time `data:image/jpeg;base64,...` of the wallpaper (library or custom pictures the shell cannot fetch itself); drawn when present.
+        public var image: String?
         /// The Blur, Dim and Tint settings.
         public var blur: Bool?, dim: Bool?, tint: Bool?
         /// UI size multiplier (`--ui-scale`), 1 by default.

@@ -36,13 +36,13 @@ final class WallpaperModel {
         var wide: Bool
     }
 
-    func refresh(_ input: Input, palette: WallpaperFixtures.Palette) async {
+    func refresh(_ input: Input, palette: WallpaperFixtures.Palette, picture: CGImage? = nil) async {
         let size = CGSize(width: input.width, height: input.height)
         guard size.width > 0, size.height > 0 else { return }
         let aspect = (Double(input.width) / Double(input.height) * 20).rounded() / 20
         let key = "\(input.palette)@\(aspect)"
         if wallpaperKey != key || wallpaper == nil {
-            let made = await Task.detached(priority: .userInitiated) { Wallpaper(id: key, image: WallpaperFixtures.image(palette), aspect: aspect) }.value
+            let made = await Task.detached(priority: .userInitiated) { Wallpaper(id: key, image: picture ?? WallpaperFixtures.image(palette), aspect: aspect) }.value
             guard !Task.isCancelled else { return }   // a newer input (a resize, a scheme change) superseded this one; never let a stale result overwrite it
             wallpaper = made
             wallpaperKey = key

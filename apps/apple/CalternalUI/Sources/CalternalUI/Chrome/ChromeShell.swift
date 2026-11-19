@@ -10,6 +10,8 @@ public struct ChromeShellView<WebCard: View>: View {
     private let store: ChromeStore
     private let card: WebCard
     @State private var model = WallpaperModel()
+    /// The decoded one-time wallpaper picture and a key for it (decoded off the main thread when the description's `appearance.image` changes).
+    @State private var picture: (key: String, image: CGImage)?
     @Design private var d
 
     /// - Parameters:
@@ -29,9 +31,10 @@ public struct ChromeShellView<WebCard: View>: View {
             let look = store.description.appearance
             let dark = store.description.scheme.map { $0 == "dark" } ?? (d.scheme == .dark)
             let chosen = Self.palette(look?.wallpaper, dark: dark)
+            let paletteName = picture.map { "image-\($0.key)" } ?? chosen.name
             let sideWidth = wide && store.description.sidebar != nil ? m.sidebarWidth : 0
             // The solver needs a non-empty region for every surface it solves (side, card, right), so a wide window always gives both columns a width here; only the left one is drawn.
-            let input = WallpaperModel.Input(palette: chosen.name, dark: dark, blur: look?.blur ?? d.materials.blur, dim: look?.dim ?? d.materials.dim, tint: look?.tint ?? d.materials.tint,
+            let input = WallpaperModel.Input(palette: paletteName, dark: dark, blur: look?.blur ?? d.materials.blur, dim: look?.dim ?? d.materials.dim, tint: look?.tint ?? d.materials.tint,
                                              width: Int(size.width), height: Int(size.height), sideWidth: Int(wide ? m.sidebarWidth : 0), rightWidth: Int(wide ? m.rightWidth : 0), inset: Int(m.inset), wide: wide)
             ZStack {
                 Backdrop(model: model, size: size, sideWidth: sideWidth, rightWidth: 0, wide: wide)
@@ -45,7 +48,15 @@ public struct ChromeShellView<WebCard: View>: View {
             .environment(\.accentBase, store.accentBase ?? model.accent ?? Tokens.accentBase)
             .environment(\.uiSize, look?.uiSize ?? 1)
             .preferredColorScheme(store.description.scheme.map { $0 == "dark" ? .dark : .light })
-            .task(id: input) { await model.refresh(input, palette: chosen) }
+            .task(id: look?.image?.count ?? 0) {
+                guard let url = look?.image, let comma = url.firstIndex(of: ",") else { picture = nil; return }
+                let text = String(url[url.index(after: comma)...])
+                picture = await Task.detached(priority: .userInitiated) { () -> (String, CGImage)? in
+                    guard let data = Data(base64Encoded: text), let image = ChromeImage.make(data) else { return nil }
+                    return (String(text.count) + "-" + String(text.prefix(24).hashValue), image)
+                }.value.map { (key: $0.0, image: $0.1) }
+            }
+            .task(id: input) { await model.refresh(input, palette: chosen, picture: picture?.image) }
             .onAppear { store.settle = d.motion.sheet() }
             .onChange(of: d.motion) { _, _ in store.settle = d.motion.sheet() }
         }
