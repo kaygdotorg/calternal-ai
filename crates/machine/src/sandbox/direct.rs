@@ -274,6 +274,9 @@ mod tests {
 
     fn spec() -> SandboxSpec {
         SandboxSpec {
+            resource_owner: None,
+            guest_idle_seconds: None,
+            resource_assignment: None,
             space_id: Some(calternal_types::SpaceId::new()),
             provider_login: false,
             shared_provider_sponsor: None,

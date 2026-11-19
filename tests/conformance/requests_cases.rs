@@ -124,9 +124,33 @@ impl Machine {
         slots: u32,
         memory: Option<u64>,
     ) -> Result<Vec<Value>, reqwest::Error> {
+        self.try_sync_with_guest_resources(f, discards, slots, memory, json!([]))
+            .await
+    }
+
+    pub(super) async fn sync_with_guest_resources(
+        &mut self,
+        f: &Fixture,
+        discards: Value,
+        slots: u32,
+        resources: Value,
+    ) -> Vec<Value> {
+        self.try_sync_with_guest_resources(f, discards, slots, Some(64 << 30), resources)
+            .await
+            .unwrap()
+    }
+
+    async fn try_sync_with_guest_resources(
+        &mut self,
+        f: &Fixture,
+        discards: Value,
+        slots: u32,
+        memory: Option<u64>,
+        resources: Value,
+    ) -> Result<Vec<Value>, reqwest::Error> {
         let r = f.try_machine("/api/v1/machine/sync",Some(&self.token),json!({
             "ack":self.ack,"capacity":{"cpus":1,"memory_bytes":0,"available_memory_bytes":memory,"max_sandboxes":slots,"running_sandboxes":self.leases.len()},
-            "draining":false,"leases":self.leases,"discards":discards,
+            "draining":false,"leases":self.leases,"discards":discards,"guest_resources":resources,
         })).await?;
         r.ok();
         let mut messages = Vec::new();

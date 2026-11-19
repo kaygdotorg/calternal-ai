@@ -22,6 +22,84 @@
       "mutates": false,
       "idempotency": "read_only",
       "risk": "read"
+    },
+    {
+      "id": "composer-settings.usage",
+      "input_schema": {
+        "type": "object",
+        "properties": { "scope": { "const": "owner" } },
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "text_bytes": { "type": "string" },
+          "binary_bytes": { "type": "string" }
+        },
+        "required": ["text_bytes", "binary_bytes"],
+        "additionalProperties": false
+      },
+      "required_capability": "space.settings",
+      "mutates": false,
+      "idempotency": "read_only",
+      "risk": "read"
+    },
+    {
+      "id": "composer-settings.admit",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "machine_class": { "const": "hosted" },
+          "storage": {
+            "type": "object",
+            "properties": { "text_bytes": { "type": "string" } },
+            "required": ["text_bytes"]
+          }
+        },
+        "required": ["machine_class", "storage"]
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "decision": { "enum": ["allow", "queue", "refuse"] },
+          "reason": { "type": "string" },
+          "retry_after_ms": { "type": "integer" }
+        },
+        "required": ["decision"],
+        "additionalProperties": false
+      },
+      "required_capability": "plugins.use",
+      "mutates": false,
+      "idempotency": "read_only",
+      "risk": "read"
+    },
+    {
+      "id": "composer-settings.remember",
+      "input_schema": {
+        "type": "object",
+        "properties": { "value": { "type": "string" } },
+        "required": ["value"],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": { "revision": { "type": "string" } },
+        "required": ["revision"],
+        "additionalProperties": false
+      },
+      "required_capability": "space.settings",
+      "mutates": true,
+      "idempotency": "request_id",
+      "risk": "reversible"
+    },
+    {
+      "id": "composer-settings.saved",
+      "input_schema": { "type": "object", "additionalProperties": false },
+      "output_schema": { "type": "object" },
+      "required_capability": "space.settings",
+      "mutates": false,
+      "idempotency": "read_only",
+      "risk": "read"
     }
   ],
   "collections": [],
@@ -42,7 +120,7 @@
   "schedules": [],
   "webhooks": [],
   "secrets": [],
-  "hooks": [],
+  "hooks": [{"id": "admit", "mode": "block", "patterns": ["resources.admit"], "operation": "composer-settings.admit"}],
   "themes": [],
-  "host_calls": ["read_setting_v1"]
+  "host_calls": ["read_setting_v1", "read_space_usage_v1", "read_plugin_state_v1", "cas_plugin_state_v1"]
 }

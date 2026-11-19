@@ -41,6 +41,41 @@ pub(super) fn guest_size(
     Ok(None)
 }
 
+/// Validate resource reports against the negotiated guest profile. Duplicate
+/// account observations and samples from other backends are refused.
+pub(super) fn resources(
+    memory_mib: Option<u32>,
+    reports: &[calternal_machine::protocol::GuestResources],
+) -> Result<
+    std::collections::HashMap<
+        calternal_types::AccountId,
+        calternal_machine::protocol::GuestResources,
+    >,
+    Error,
+> {
+    let Some(memory_mib) = memory_mib else {
+        if reports.is_empty() {
+            return Ok(Default::default());
+        }
+        return Err(Error::invalid_input(
+            "only a microVM session can report guest resources",
+        ));
+    };
+    if reports.len() > calternal_machine::protocol::MAX_GUEST_RESOURCES {
+        return Err(Error::invalid_input("too many guest resource observations"));
+    }
+    let mut samples = std::collections::HashMap::with_capacity(reports.len());
+    for report in reports {
+        if report.generation.is_nil()
+            || report.memory_available_bytes > u64::from(memory_mib) * 1024 * 1024
+            || samples.insert(report.account_id, *report).is_some()
+        {
+            return Err(Error::invalid_input("invalid guest resource observation"));
+        }
+    }
+    Ok(samples)
+}
+
 pub(super) fn lost(
     state: &mut State,
     machine: Uuid,

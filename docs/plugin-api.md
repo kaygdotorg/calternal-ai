@@ -142,6 +142,51 @@ Input: `docs/reviews/plugin-and-client-map-sol.md`.
   instructions and starred prompts are the same files in their personal space.
 
 
+## Hosted resource admission
+
+An operator uses `calternal resources set-hook` to bind one installed package
+and its complete review checksum to a space. The package declares one
+read-only `block` hook for `resources.admit` and remains enabled through the
+ordinary plugin registry. The host passes the sender, authorized space and
+resource owner, committed text and binary bytes, and the bounded memory and
+active-thread observations available for that sender. Resource data inside
+the hook comes from the host. A plug-in cannot select a different owner or
+change the caller, execution machine or rate.
+
+The hook returns `allow`, `queue` with a reason and retry delay, or
+`refuse` with a reason. An allow can declare an eligible memory profile.
+The existing scheduler still checks machine authorization, manual safety
+ceilings and available guest capacity. An allow is consumed by the same
+placement attempt that received it. A failed or revoked hook keeps its
+hosted request queued. Existing running work retains its lease.
+
+The package may declare `read_space_usage_v1` for one authorized space.
+With `scope: "owner"` and an exact operator binding, the same call reads the
+combined bytes of spaces bound to the current owner group. A personal space
+still returns its own bytes. The `read_runtime_window_v1` call also requires the
+exact operator binding. Decimal strings preserve exact bytes and
+nanoseconds on JavaScript clients. An optional `until_ms` closes a runtime
+window at a retained timestamp. The unresolved count then includes generations
+that started before the bound and still lack enough clock evidence to seal it.
+The runtime window is cumulative. An unknown end retains its last proved duration.
+
+## Durable plugin state
+
+An ordinary enabled package with `space.settings` may declare
+`read_plugin_state_v1` and `cas_plugin_state_v1`. State keys are private
+to its package and space. A CAS requires a mutating outer operation and
+a valid host acknowledgment of the form `{"revision":"…"}`. Validate
+the package's positive format version before interpreting JSON. A state
+replacement and its retry receipt commit together. One key replacement
+per request is supported. Each package in a space can have up to 128 keys
+with 64 KiB per JSON value and up to 16,384 receipts. State has no time-based
+expiry. Receipts expire after the installation's configured retention
+(`CALTERNAL_RECEIPT_RETENTION_DAYS`, default 7 days) and are pruned on writes.
+Once a receipt expires, its request ID can start a new request. An optional
+operator-controlled state
+space supplies a read-only, scope-keyed record to an admission hook. See the
+[public counter example](../plugins/calternal-plugin-guide/reference.md#durable-plugin-state).
+
 ## Durable job waits
 
 The [author reference](../plugins/calternal-plugin-guide/reference.md)

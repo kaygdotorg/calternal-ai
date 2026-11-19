@@ -98,3 +98,76 @@ fn placement_keeps_retrying_when_the_slot_is_busy_after_a_failed_mark() {
     assert_eq!(state(), (item.revision, "materialized".into(), 0));
     assert_eq!(std::fs::read(file).unwrap(), bytes);
 }
+
+#[test]
+fn dropping_content_waits_for_background_placement() {
+    use std::sync::{Barrier, mpsc};
+
+    static ENTERED: Barrier = Barrier::new(2);
+    static RELEASE: Barrier = Barrier::new(2);
+
+    fn pause_placement(point: crate::FaultPoint) {
+        if point == crate::FaultPoint::BeforePlacement {
+            ENTERED.wait();
+            RELEASE.wait();
+        }
+    }
+
+    let dir = tempfile::tempdir().unwrap();
+    let roots = calternal_roots::Roots {
+        appdata: dir.path().join("appdata"),
+        userdata_ssd: dir.path().join("ssd"),
+        userdata_hdd: dir.path().join("hdd"),
+    };
+    let content = Content::open(
+        roots,
+        dir.path().join("secrets"),
+        Duration::from_secs(60),
+        crate::DEFAULT_RECEIPT_RETENTION,
+        pause_placement,
+    )
+    .unwrap();
+    let space = SpaceId::new();
+    content
+        .register_kind(
+            space,
+            "notes",
+            Placement::Visible {
+                folder: "Notes".into(),
+            },
+            FileFormat::Markdown,
+        )
+        .unwrap();
+    content
+        .write(
+            space,
+            None,
+            "notes",
+            None,
+            json!({"title": "Drain"}),
+            b"pending placement",
+            Request {
+                account: AccountId::new(),
+                via: None,
+                id: "save",
+                operation: "notes.create",
+                fingerprint: "save",
+            },
+            |_| json!({}),
+        )
+        .unwrap();
+
+    ENTERED.wait();
+    let (started, starting) = mpsc::channel();
+    let (finished, finishing) = mpsc::channel();
+    let shutdown = std::thread::spawn(move || {
+        started.send(()).unwrap();
+        drop(content);
+        finished.send(()).unwrap();
+    });
+    starting.recv().unwrap();
+    let returned = finishing.recv_timeout(Duration::from_millis(250));
+    RELEASE.wait();
+    shutdown.join().unwrap();
+    assert_eq!(returned, Err(mpsc::RecvTimeoutError::Timeout));
+}

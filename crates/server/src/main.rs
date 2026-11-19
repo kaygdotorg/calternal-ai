@@ -135,6 +135,7 @@ fn main() {
         Cmd::PluginDigest { plugin_root } => out.success(&admin_cli::plugin_digest(&plugin_root)),
         Cmd::Machine { cmd } => calternal_machine::cli::main(cmd, &out),
         Cmd::Machines { cmd } => out.finish(admin_cli::machines(cmd, &out)),
+        Cmd::Resources { cmd } => out.finish(admin_cli::resources(cmd)),
         Cmd::Upgrade { command } => out.finish(upgrade_cli::run(command)),
         Cmd::SetupCode {
             appdata,
@@ -447,8 +448,11 @@ async fn serve(
     let machines = {
         let dir = data_dir.clone();
         let authority = directory.spaces.machines();
+        let content = store.shared_content();
         match tokio::task::spawn_blocking(move || {
-            MachineService::open(&dir, authority, machine_settings)
+            let machines = MachineService::open(&dir, authority, machine_settings)?;
+            machines.restore_group_storage(&content)?;
+            Ok::<_, calternal_types::Error>(machines)
         })
         .await
         {

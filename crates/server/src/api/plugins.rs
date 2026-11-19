@@ -1,7 +1,7 @@
 //! Manifest-declared plugin operations on their (plugin, space) worker, and previews.
 use super::*;
 mod receipts;
-use receipts::committed_write;
+use receipts::committed_effect;
 
 pub(super) fn plugin_state(
     s: &Store,
@@ -129,7 +129,7 @@ pub(super) async fn invoke_plugin<D: Directory>(
             if let Some(v) = replay_receipt(s, account, space, &rid, &operation, &fp2)? {
                 return Ok(Err(v));
             }
-            if let Some(result) = committed_write(s, account, space, &rid, &fp2)? {
+            if let Some(result) = committed_effect(s, &plugin2, account, space, &rid, &fp2)? {
                 let value =
                     s.record_plugin_receipt(receipt_actor, &rid, &operation, &fp2, space, result)?;
                 return Ok(Err(value));
@@ -152,7 +152,7 @@ pub(super) async fn invoke_plugin<D: Directory>(
         request_id.to_owned(),
     );
     let host = if mutates {
-        host.for_request(fp.clone())
+        host.for_request(fp.clone(), op.to_owned())
     } else {
         host
     };
@@ -210,7 +210,9 @@ pub(super) async fn invoke_plugin<D: Directory>(
     blocking(&state, move |s| {
         let result = match value {
             Ok(value) => value,
-            Err(error) => committed_write(s, actor.account, space, &rid, &fp)?.ok_or(error)?,
+            Err(error) => {
+                committed_effect(s, &plugin, actor.account, space, &rid, &fp)?.ok_or(error)?
+            }
         };
         s.record_plugin_receipt(actor, &rid, &op, &fp, space, result)
     })

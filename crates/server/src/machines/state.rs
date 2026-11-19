@@ -29,6 +29,7 @@ pub(super) struct Live {
     /// Reservations against the current memory sample, including releases
     /// whose memory has not yet been observed as free in another heartbeat.
     pub memory_reservations: usize,
+    pub guest_resources: HashMap<AccountId, calternal_machine::protocol::GuestResources>,
     pub outbox: VecDeque<Envelope>,
     pub next_seq: u64,
     pub polls: u32,
@@ -170,6 +171,11 @@ pub(super) struct State {
     pub pool_grants: HashSet<AccountId>,
     /// In-flight pool leases per account, including placement reservations.
     pub pool_load: HashMap<AccountId, usize>,
+    pub compute_limits: HashMap<calternal_auth::machines::ResourceOwner, super::ComputeLimits>,
+    pub runtime_windows: HashMap<calternal_auth::machines::ResourceOwner, super::runtime::Window>,
+    pub next_runtime_retirement_ms: i64,
+    pub resource_hooks: HashMap<calternal_types::SpaceId, super::ResourceHookBinding>,
+    pub resource_permits: HashMap<Uuid, super::resource_hooks::Permit>,
     pub leases: HashMap<Uuid, Lease>,
     pub threads: HashMap<Uuid, Uuid>,
     pub execs: HashMap<Uuid, Exec>,
@@ -242,6 +248,14 @@ impl State {
         {
             return;
         }
+        let hosted = self
+            .machines
+            .get(&machine)
+            .is_some_and(|machine| machine.row.owner == Owner::Pool);
+        let resource_owner = l.row.resource_owner.filter(|_| hosted);
+        let guest_idle_seconds = resource_owner
+            .and_then(|owner| self.compute_limits.get(&owner))
+            .and_then(|limits| limits.idle_seconds);
         let lease_id = l.row.id;
         let fence = l.row.fence;
         let space_id = l.row.space;
@@ -267,6 +281,9 @@ impl State {
             thread_id: l.row.thread,
             image: l.row.image.clone(),
             limits,
+            resource_owner,
+            guest_idle_seconds,
+            resource_assignment: None,
         };
         let msg = match &l.row.harness {
             Some(harness) => {
@@ -397,6 +414,7 @@ impl State {
         let thread = l.row.thread;
         self.threads.remove(&thread);
         self.workers.remove(&lease);
+        self.resource_permits.remove(&lease);
         let account = l.row.account;
         if !stopping {
             self.release_slot(assigned, Some(account));
@@ -476,7 +494,7 @@ impl State {
         }
     }
 
-    fn harness_machine(machine: &Machine) -> bool {
+    pub(super) fn harness_machine(machine: &Machine) -> bool {
         machine
             .live
             .as_ref()
@@ -498,7 +516,6 @@ impl State {
         waiting.sort_unstable();
         for (_, _, lease) in waiting {
             let l = &self.leases[&lease];
-            let sponsor = l.row.shared_sponsor.unwrap_or(l.row.account);
             let shared =
                 l.row
                     .shared_sponsor
@@ -520,18 +537,10 @@ impl State {
             let best = self
                 .machines
                 .values()
-                // Shared-space workers use initialized operator containers.
-                .filter(|m| !l.row.worker || Self::worker_machine(m, settings))
-                .filter(|m| l.row.harness.is_none() || Self::harness_machine(m))
-                .filter(|m| l.row.pinned_machine.is_none_or(|id| id == m.row.id))
-                .filter(|m| {
-                    self.may_use(m, sponsor) || (l.pool_diagnostic && m.row.owner == Owner::Pool)
-                })
-                .filter(|m| super::readiness::connected(m, settings))
-                .map(|m| {
-                    let free = self.free_for(m, sponsor, settings);
+                .filter_map(|m| {
+                    let free = self.available_for_lease(m, l, settings)?;
                     memory_blocked |= free == 0 && self.free_slots(m) > 0;
-                    (m, free)
+                    Some((m, free))
                 })
                 .filter(|(_, free)| *free > 0)
                 .max_by_key(|(m, free)| {
@@ -556,10 +565,11 @@ impl State {
         let Some(l) = self.leases.get(&lease) else {
             return;
         };
-        let sponsor = l.row.shared_sponsor.unwrap_or(l.row.account);
-        if self.machines.get(&machine).is_none_or(|m| {
-            !super::readiness::connected(m, settings) || self.free_for(m, sponsor, settings) == 0
-        }) {
+        if self
+            .machines
+            .get(&machine)
+            .is_none_or(|m| self.available_for_lease(m, l, settings).unwrap_or(0) == 0)
+        {
             return;
         }
         let Ok(_steps) = self.lease_steps(&l.row) else {
@@ -571,7 +581,11 @@ impl State {
         row.last_machine = Some(machine);
         row.reason = None;
         row.state = LeaseState::Assigned.as_str().into();
-        if let Err(error) = db::put_assignment(&mut self.db, &row) {
+        let hosted = self
+            .machines
+            .get(&machine)
+            .is_some_and(|machine| machine.row.owner == Owner::Pool);
+        if let Err(error) = db::put_assignment(&mut self.db, &row, hosted) {
             tracing::error!(%lease, %error, "cannot persist machine assignment");
             return;
         }
@@ -581,6 +595,7 @@ impl State {
             .expect("existing lease under registry lock");
         l.row = row;
         l.state = LeaseState::Assigned;
+        self.resource_permits.remove(&lease);
         let account = l.row.account;
         self.take_slot(Some(machine), Some(account));
         self.send_assign(lease, settings);
@@ -645,7 +660,7 @@ impl State {
                 && self
                     .machines
                     .get(&machine)
-                    .is_some_and(|m| self.free_for(m, sponsor, settings) > 0)
+                    .is_some_and(|m| self.free_for(m, sponsor) > 0)
             {
                 self.assign(r.lease_id, machine, settings);
             } else {
@@ -681,7 +696,11 @@ impl State {
                 .machine
                 .and_then(|id| self.machines.get(&id))
                 .is_some_and(|machine| machine.row.owner == Owner::Account { id: l.row.account }),
-            reason: l.row.reason.clone(),
+            reason: l.row.reason.clone().or_else(|| {
+                self.resource_permits
+                    .get(&lease)
+                    .and_then(|permit| permit.reason.clone())
+            }),
             queue_position,
         }
     }

@@ -231,7 +231,7 @@ impl super::state::State {
             enrolled = true;
             if Self::worker_machine(machine, settings) {
                 online = true;
-                if self.free_for(machine, account, settings) > 0 {
+                if self.free_for(machine, account) > 0 {
                     return Ok(());
                 }
             }
@@ -498,6 +498,8 @@ mod tests {
             "worker_capacity"
         );
         let mut report = SyncRequest {
+            guest_resources: Vec::new(),
+            guest_runtime: Vec::new(),
             ack: 4,
             discards: vec![],
             capacity: Default::default(),

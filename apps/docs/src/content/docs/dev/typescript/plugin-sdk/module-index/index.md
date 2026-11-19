@@ -47,6 +47,12 @@ title: "plugin-sdk: index/README"
 
 ## References
 
+### compareAndSetPluginState
+
+Re-exports [compareAndSetPluginState](/docs/dev/typescript/plugin-sdk/worker-v2/functions/compareandsetpluginstate/)
+
+***
+
 ### encodeWorkerFrameV2
 
 Re-exports [encodeWorkerFrameV2](/docs/dev/typescript/plugin-sdk/worker-v2/functions/encodeworkerframev2/)
@@ -113,9 +119,27 @@ Re-exports [parseWorkerFrameV2](/docs/dev/typescript/plugin-sdk/worker-v2/functi
 
 ***
 
+### PluginState
+
+Re-exports [PluginState](/docs/dev/typescript/plugin-sdk/worker-v2/interfaces/pluginstate/)
+
+***
+
 ### prepareContent
 
 Re-exports [prepareContent](/docs/dev/typescript/plugin-sdk/worker-v2/functions/preparecontent/)
+
+***
+
+### readPluginState
+
+Re-exports [readPluginState](/docs/dev/typescript/plugin-sdk/worker-v2/functions/readpluginstate/)
+
+***
+
+### readRuntimeWindow
+
+Re-exports [readRuntimeWindow](/docs/dev/typescript/plugin-sdk/worker-v2/functions/readruntimewindow/)
 
 ***
 
@@ -125,9 +149,45 @@ Re-exports [readSetting](/docs/dev/typescript/plugin-sdk/worker-v2/functions/rea
 
 ***
 
+### readSpaceUsage
+
+Re-exports [readSpaceUsage](/docs/dev/typescript/plugin-sdk/worker-v2/functions/readspaceusage/)
+
+***
+
+### ResourceAdmissionDecision
+
+Re-exports [ResourceAdmissionDecision](/docs/dev/typescript/plugin-sdk/worker-v2/type-aliases/resourceadmissiondecision/)
+
+***
+
+### ResourceAdmissionInput
+
+Re-exports [ResourceAdmissionInput](/docs/dev/typescript/plugin-sdk/worker-v2/interfaces/resourceadmissioninput/)
+
+***
+
+### ResourceOwner
+
+Re-exports [ResourceOwner](/docs/dev/typescript/plugin-sdk/worker-v2/interfaces/resourceowner/)
+
+***
+
+### RuntimeWindow
+
+Re-exports [RuntimeWindow](/docs/dev/typescript/plugin-sdk/worker-v2/interfaces/runtimewindow/)
+
+***
+
 ### serveWorker
 
 Re-exports [serveWorker](/docs/dev/typescript/plugin-sdk/stdio-worker/functions/serveworker/)
+
+***
+
+### SpaceUsage
+
+Re-exports [SpaceUsage](/docs/dev/typescript/plugin-sdk/worker-v2/interfaces/spaceusage/)
 
 ***
 

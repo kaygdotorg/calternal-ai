@@ -57,6 +57,8 @@ use crate::store::{PluginRow, Store, sha256_hex};
 use calternal_types::Error;
 use calternal_types::{Capability, SpaceId};
 
+pub(crate) mod resource_admission;
+
 pub use broker::{InvocationHost, PREVIEW_FIXTURE, PREVIEW_ITEM_ID, PreviewHost};
 pub use jobs::Jobs;
 pub use session::Session;
@@ -107,6 +109,7 @@ pub struct Plugin {
     /// Operation schemas compiled once, shared by every (plugin, space) worker.
     pub schemas: Arc<host::CompiledSchemas>,
     revision: u32,
+    review_checksum: Option<String>,
     activation_approval: u32,
     /// In-memory readiness and worker failures, scoped per space.
     pub(crate) installed_diagnostics: installed_diagnostics::RuntimeDiagnostics,
@@ -167,6 +170,7 @@ impl Plugin {
             unavailable: None,
             schemas,
             revision: 0,
+            review_checksum: None,
             installed_diagnostics: Default::default(),
             activation_approval: 0,
             #[cfg(feature = "dev-plugin-drafts")]

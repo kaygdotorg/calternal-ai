@@ -58,6 +58,18 @@ pub enum HostCallKind {
     /// Read the effective value of a setting declared by the calling package.
     #[serde(rename = "read_setting_v1")]
     ReadSettingV1,
+    /// Read the authorized space's committed text and binary bytes.
+    #[serde(rename = "read_space_usage_v1")]
+    ReadSpaceUsageV1,
+    /// Read confirmed runtime in a retained window within the granted scope.
+    #[serde(rename = "read_runtime_window_v1")]
+    ReadRuntimeWindowV1,
+    /// Read a private versioned state key owned by the invoking package.
+    #[serde(rename = "read_plugin_state_v1")]
+    ReadPluginStateV1,
+    /// Replace a private state key with a durable compare-and-set receipt.
+    #[serde(rename = "cas_plugin_state_v1")]
+    CasPluginStateV1,
     /// Prepare remote asset references from a declared, stored content revision.
     #[serde(rename = "content_prepare_v1")]
     ContentPrepareV1,

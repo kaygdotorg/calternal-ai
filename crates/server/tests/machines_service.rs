@@ -42,11 +42,11 @@ struct M {
 }
 
 fn enrol(svc: &MachineService, owner: AccountId) -> (Uuid, MachineKey) {
-    tokio::task::block_in_place(|| enrol_blocking(svc, owner))
+    tokio::task::block_in_place(|| enrol_blocking(svc, Owner::Account { id: owner }))
 }
 
-fn enrol_blocking(svc: &MachineService, owner: AccountId) -> (Uuid, MachineKey) {
-    let (code, _) = svc.issue_code(Owner::Account { id: owner }).unwrap();
+fn enrol_blocking(svc: &MachineService, owner: Owner) -> (Uuid, MachineKey) {
+    let (code, _) = svc.issue_code(owner).unwrap();
     let key = MachineKey::generate().unwrap();
     let req = EnrolRequest {
         code,
@@ -89,6 +89,8 @@ fn connect(svc: &MachineService, id: Uuid, key: MachineKey, boot: Uuid) -> M {
 
 async fn sync(svc: &Arc<MachineService>, m: &M, leases: Vec<LeaseReport>) -> Vec<Down> {
     let req = SyncRequest {
+        guest_resources: Vec::new(),
+        guest_runtime: Vec::new(),
         discards: vec![],
         ack: 0,
         capacity: Capacity {
@@ -107,6 +109,15 @@ async fn sync(svc: &Arc<MachineService>, m: &M, leases: Vec<LeaseReport>) -> Vec
         .into_iter()
         .map(|e| e.message)
         .collect()
+}
+
+fn request_run(
+    svc: &MachineService,
+    space: SpaceId,
+    account: AccountId,
+    thread: Uuid,
+) -> Result<calternal_server::machines::RunView, calternal_types::Error> {
+    tokio::task::block_in_place(|| svc.request_run(space, account, thread, None))
 }
 
 fn data(seq: u64, n: usize) -> Chunk {
@@ -158,9 +169,7 @@ async fn stale_fence_and_wrong_machine_are_refused() {
     let (b_id, b_key) = enrol(&svc, owner);
     let a = connect(&svc, a_id, a_key, Uuid::new_v4());
     sync(&svc, &a, vec![]).await;
-    let run = svc
-        .request_run(SpaceId::new(), owner, Uuid::new_v4(), None)
-        .unwrap();
+    let run = request_run(&svc, SpaceId::new(), owner, Uuid::new_v4()).unwrap();
     let exec = svc
         .exec(owner, run.lease_id, vec!["true".into()], vec![])
         .unwrap();
@@ -343,9 +352,7 @@ async fn automatic_backend_selection_follows_owner_consent_and_pool_cannot_be_di
         token: grant.token,
     };
     sync(&svc, &machine, Vec::new()).await;
-    let run = svc
-        .request_run(SpaceId::new(), owner, Uuid::new_v4(), None)
-        .unwrap();
+    let run = request_run(&svc, SpaceId::new(), owner, Uuid::new_v4()).unwrap();
     let exec = svc
         .exec(owner, run.lease_id, vec!["true".into()], vec![])
         .unwrap();
@@ -400,9 +407,7 @@ async fn workspace_discard_is_durable_and_only_its_machine_can_acknowledge() {
     let (id, key) = enrol(&svc, account);
     let machine = connect(&svc, id, key, Uuid::new_v4());
     sync(&svc, &machine, vec![]).await;
-    let run = svc
-        .request_run(SpaceId::new(), account, Uuid::new_v4(), None)
-        .unwrap();
+    let run = request_run(&svc, SpaceId::new(), account, Uuid::new_v4()).unwrap();
     svc.release_run(account, run.lease_id).unwrap();
     drop(svc);
     let (svc, _) = service(dir.path()); // Offline requests must survive restart.
@@ -433,6 +438,8 @@ async fn workspace_discard_is_durable_and_only_its_machine_can_acknowledge() {
     let (other_id, key) = enrol(&svc, account);
     let other = connect(&svc, other_id, key, Uuid::new_v4());
     let report = |id, success| SyncRequest {
+        guest_resources: Vec::new(),
+        guest_runtime: Vec::new(),
         ack: 1000,
         capacity: Capacity::default(),
         draining: false,
@@ -493,13 +500,13 @@ async fn pending_discard_never_replays_over_a_replacement_turn() {
     sync(&svc, &machine, vec![]).await;
     let space = SpaceId::new();
     let thread = Uuid::new_v4();
-    let old = svc.request_run(space, account, thread, None).unwrap();
+    let old = request_run(&svc, space, account, thread).unwrap();
     svc.release_run(account, old.lease_id).unwrap();
     assert_eq!(
         tokio::task::block_in_place(|| svc.discard_run(account, old.lease_id, false)).unwrap(),
         "pending"
     );
-    let replacement = svc.request_run(space, account, thread, None).unwrap();
+    let replacement = request_run(&svc, space, account, thread).unwrap();
     let machine = connect(&svc, machine.id, machine.key, Uuid::new_v4());
     let messages = sync(&svc, &machine, vec![]).await;
     assert!(
@@ -535,7 +542,7 @@ async fn waiting_lease_is_not_assigned_after_its_space_closes() {
     svc.bind_lifecycle(lifecycle.clone());
     let (id, key) = enrol(&svc, owner);
     let space = SpaceId::new();
-    let run = svc.request_run(space, owner, Uuid::new_v4(), None).unwrap();
+    let run = request_run(&svc, space, owner, Uuid::new_v4()).unwrap();
     lifecycle.close(space.as_uuid());
     let m = connect(&svc, id, key, Uuid::new_v4());
     let msgs = sync(&svc, &m, vec![]).await;
@@ -561,7 +568,7 @@ async fn exec_is_refused_after_its_space_closes() {
     let m = connect(&svc, id, key, Uuid::new_v4());
     sync(&svc, &m, vec![]).await;
     let space = SpaceId::new();
-    let run = svc.request_run(space, owner, Uuid::new_v4(), None).unwrap();
+    let run = request_run(&svc, space, owner, Uuid::new_v4()).unwrap();
     let msgs = sync(&svc, &m, vec![]).await;
     assert!(
         matches!(msgs.first(), Some(Down::Assign { .. })),
@@ -570,4 +577,102 @@ async fn exec_is_refused_after_its_space_closes() {
     lifecycle.close(space.as_uuid());
     let queued = svc.exec(owner, run.lease_id, vec!["true".into()], vec![]);
     assert!(queued.is_err(), "exec admitted for a closed space");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn manual_queue_bound_applies_to_the_persisted_owner_scope() {
+    use calternal_server::machines::{ComputeLimits, LeaseState};
+    use calternal_types::ResourceOwner;
+
+    let dir = tempfile::tempdir().unwrap();
+    tokio::task::block_in_place(|| {
+        let (svc, account) = service(dir.path());
+        let spaces =
+            calternal_auth::spaces::Spaces::open(&dir.path().join("system/auth.db")).unwrap();
+        let ids = spaces.seed_development().unwrap();
+        let owner = ResourceOwner::Account(account);
+        let first = svc
+            .request_run(ids.personal, account, Uuid::new_v4(), None)
+            .unwrap();
+        assert_eq!(first.state, LeaseState::Waiting);
+        svc.set_compute_limits(
+            owner,
+            Some(ComputeLimits {
+                hosted: false,
+                memory_mib: None,
+                active_threads: None,
+                queue_bound: Some(1),
+                idle_seconds: None,
+                runtime_seconds: None,
+                reset_seconds: None,
+            }),
+        )
+        .unwrap();
+        assert_eq!(
+            svc.request_run(ids.personal, account, Uuid::new_v4(), None)
+                .unwrap_err()
+                .code,
+            ErrorCode::Unavailable
+        );
+        assert_eq!(
+            svc.request_run(ids.shared, account, Uuid::new_v4(), None)
+                .unwrap()
+                .state,
+            LeaseState::Waiting
+        );
+        drop(svc);
+        let (svc, _) = service(dir.path());
+        assert_eq!(
+            svc.request_run(ids.personal, account, Uuid::new_v4(), None)
+                .unwrap_err()
+                .code,
+            ErrorCode::Unavailable
+        );
+        svc.set_compute_limits(owner, None).unwrap();
+        assert_eq!(
+            svc.request_run(ids.personal, account, Uuid::new_v4(), None)
+                .unwrap()
+                .state,
+            LeaseState::Waiting
+        );
+    });
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn hosted_runtime_budget_requires_a_metered_sandbox() {
+    use calternal_server::machines::{ComputeLimits, LeaseState};
+    use calternal_types::ResourceOwner;
+
+    let dir = tempfile::tempdir().unwrap();
+    let (svc, account) = service(dir.path());
+    let (id, key, personal) = tokio::task::block_in_place(|| {
+        let (id, key) = enrol_blocking(&svc, Owner::Pool);
+        svc.set_pool_grant(account, true).unwrap();
+        svc.set_compute_limits(
+            ResourceOwner::Account(account),
+            Some(ComputeLimits {
+                hosted: true,
+                memory_mib: None,
+                active_threads: None,
+                queue_bound: None,
+                idle_seconds: None,
+                runtime_seconds: Some(120),
+                reset_seconds: Some(3_600),
+            }),
+        )
+        .unwrap();
+        let spaces =
+            calternal_auth::spaces::Spaces::open(&dir.path().join("system/auth.db")).unwrap();
+        (id, key, spaces.seed_development().unwrap().personal)
+    });
+    let machine = connect(&svc, id, key, Uuid::new_v4());
+    sync(&svc, &machine, vec![]).await;
+    let run = request_run(&svc, personal, account, Uuid::new_v4()).unwrap();
+    assert_eq!(run.state, LeaseState::Waiting);
+    tokio::task::block_in_place(|| svc.set_compute_limits(ResourceOwner::Account(account), None))
+        .unwrap();
+    assert_eq!(
+        svc.run(account, run.lease_id).unwrap().state,
+        LeaseState::Assigned
+    );
 }

@@ -168,6 +168,7 @@ struct Fixture {
     remote_workers: bool,
     bind_ip: Option<&'static str>,
     release_binary: Option<PathBuf>,
+    machine_poll_hold_ms: Option<u64>,
 }
 impl Drop for Fixture {
     fn drop(&mut self) {
@@ -246,6 +247,9 @@ impl Fixture {
         }
         if self.development {
             command.arg("--development");
+        }
+        if let Some(hold) = self.machine_poll_hold_ms {
+            command.arg("--machine-poll-hold-ms").arg(hold.to_string());
         }
         if explicit {
             command.arg("--plugin-root").arg(plugins).current_dir(&repo);
@@ -489,10 +493,16 @@ impl Fixture {
             remote_workers: false,
             bind_ip: None,
             release_binary: None,
+            machine_poll_hold_ms: None,
         }
     }
     async fn new() -> Self {
+        Self::new_with_machine_poll_hold(None).await
+    }
+
+    async fn new_with_machine_poll_hold(hold_ms: Option<u64>) -> Self {
         let mut f = Self::empty();
+        f.machine_poll_hold_ms = hold_ms;
         f.start().await;
         let token = std::fs::read_to_string(f.appdata().join("setup.token")).unwrap();
         f.enroll(&token).await;

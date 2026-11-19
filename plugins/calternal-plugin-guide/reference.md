@@ -623,3 +623,36 @@ identifies plugin prompts with `job_id`. Submit the answer with
 `requests.answer` and `{"id":"…","answer":{…}}`, or use
 `requests.deny` with `{"id":"…"}`. `requests.approve` takes
 `{"id":"…","lifetime":"once"}` and requires a fresh passkey session.
+
+
+## Durable plugin state
+
+This counter keeps one value for the package in the current space. Declare
+`read_plugin_state_v1` and `cas_plugin_state_v1` in the worker's host calls.
+Give the increment operation `space.settings`, set `mutates: true`, and
+declare `idempotency: "request_id"`. Pass a stable request ID for retries.
+
+```ts
+import { compareAndSetPluginState, readPluginState, type WorkerContextV2 } from "@calternal/plugin-sdk";
+
+async function incrementCounter(context: WorkerContextV2) {
+  const current = await readPluginState(context, "counter");
+  if (current && (current.schema !== 1 || typeof current.value !== "number" ||
+      !Number.isSafeInteger(current.value))) {
+    throw new Error("Unsupported counter state");
+  }
+  const next = (typeof current?.value === "number" ? current.value : 0) + 1;
+  if (!Number.isSafeInteger(next)) throw new Error("Counter is full");
+  const revision = await compareAndSetPluginState(
+    context, "counter", current?.revision ?? null, 1, next,
+  );
+  return { revision };
+}
+```
+
+Concurrent changes can make the revision stale. The host refuses the stale
+write, and an identical retry of a committed request returns its stored
+revision. State has no time-based expiry. One package can store up to 128 keys
+per space, each with a 64 KiB JSON value. Each package in a space can retain
+up to 16,384 receipts over the installation's receipt window, which defaults
+to seven days.

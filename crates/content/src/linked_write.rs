@@ -55,7 +55,7 @@ impl Staged {
                 account
             ],
         )
-        .map_err(internal)?;
+        .map_err(crate::storage_usage::write_error)?;
         if let Some(room) = &self.room {
             room.write(tx, item.id, self.seq)?;
         }

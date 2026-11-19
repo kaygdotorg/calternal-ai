@@ -297,12 +297,12 @@ calternal machine run --backend microvm --dir "$MACHINE_DIR" \
   --microvm-config "$MICROVM_CONFIG"
 ```
 
-The 512 MiB and 1,024 MiB profiles each have two active thread slots across
-the person's pool work. A third turn shows **Waiting for capacity** with its queue position.
-The person can cancel while waiting. Placement retries when an active slot
-is released. Three threads at 1,024 MiB were at the median-latency cutoff
-on the busy development host. Both profiles stay within the machine-wide
-sandbox ceiling.
+A bound guest reports its kernel's available memory and live thread count through
+the authenticated control channel. Placement reserves 64 MiB of observed headroom
+per pending thread start, within the machine-wide sandbox ceiling. A new guest can
+start one thread before its first sample. Work waits when the guest reports low
+headroom. A fresh sample can release queued work, and the person can cancel at any
+time. Use a guest image built with the matching guest agent for memory observations.
 
 The role verifies the kernel and system disk once at startup. It keeps up to
 two prebooted guests with blank account data, within the configured VMM cap.

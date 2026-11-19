@@ -148,6 +148,34 @@ The only broker methods a worker may request.
       ]
     },
     {
+      "description": "Read the authorized space's committed text and binary bytes.",
+      "type": "string",
+      "enum": [
+        "read_space_usage_v1"
+      ]
+    },
+    {
+      "description": "Read confirmed runtime in a retained window within the granted scope.",
+      "type": "string",
+      "enum": [
+        "read_runtime_window_v1"
+      ]
+    },
+    {
+      "description": "Read a private versioned state key owned by the invoking package.",
+      "type": "string",
+      "enum": [
+        "read_plugin_state_v1"
+      ]
+    },
+    {
+      "description": "Replace a private state key with a durable compare-and-set receipt.",
+      "type": "string",
+      "enum": [
+        "cas_plugin_state_v1"
+      ]
+    },
+    {
       "description": "Prepare remote asset references from a declared, stored content revision.",
       "type": "string",
       "enum": [

@@ -481,7 +481,6 @@ fn a_slow_write_in_one_space_does_not_delay_other_spaces() {
 fn a_request_id_is_new_again_after_receipt_retention() {
     let dir = tempfile::tempdir().unwrap();
     let (space, actor) = (SpaceId::new(), AccountId::new());
-    let retention = Duration::from_millis(50);
     let write = |content: &Content, text: &[u8]| {
         content.write(
             space,
@@ -500,7 +499,7 @@ fn a_request_id_is_new_again_after_receipt_retention() {
             |_| json!({}),
         )
     };
-    let content = open_retaining(dir.path(), |_| {}, retention);
+    let content = open(dir.path(), |_| {});
     content
         .register_kind(
             space,
@@ -517,8 +516,17 @@ fn a_request_id_is_new_again_after_receipt_retention() {
         ErrorCode::Conflict
     );
     drop(content);
-    std::thread::sleep(retention * 4);
-    let content = open_retaining(dir.path(), |_| {}, retention);
+    // Age the single completed receipt after closing the writer. Scheduling
+    // delays should not determine whether the fresh request conflicts.
+    let journal = dir.path().join(format!("appdata/spaces/{space}/index.db"));
+    assert_eq!(
+        rusqlite::Connection::open(journal)
+            .unwrap()
+            .execute("UPDATE idempotency SET at_ms=0", [])
+            .unwrap(),
+        1
+    );
+    let content = open(dir.path(), |_| {});
     write(&content, b"second\n").expect("a pruned receipt makes the ID new again");
 }
 
@@ -625,6 +633,243 @@ fn dormant_outbox_recovery_preserves_the_original_checkpoint_event() {
     let events = recovered.journal(space).unwrap();
     assert_eq!(events.len(), 1);
     assert_eq!(events[0].data["append"], reply["append"]);
+}
+
+#[test]
+fn committed_usage_counts_current_bodies_through_trash_and_reopen() {
+    use calternal_content::{StorageLimits, StorageUsage};
+    let dir = tempfile::tempdir().unwrap();
+    let content = open(dir.path(), |_| {});
+    let space = SpaceId::new();
+    let account = AccountId::new();
+    assert_eq!(
+        content.storage_usage(space).unwrap(),
+        StorageUsage::default()
+    );
+    assert!(
+        !dir.path()
+            .join("appdata/spaces")
+            .join(space.to_string())
+            .exists()
+    );
+    for (kind, format) in [
+        ("notes", FileFormat::Markdown),
+        (
+            "files",
+            FileFormat::Opaque {
+                extension: "bin".into(),
+            },
+        ),
+    ] {
+        content
+            .register_kind(
+                space,
+                kind,
+                Placement::Visible {
+                    folder: kind.into(),
+                },
+                format,
+            )
+            .unwrap();
+    }
+    let note = content
+        .write(
+            space,
+            None,
+            "notes",
+            None,
+            json!({"title":"Note"}),
+            "hé".as_bytes(),
+            request(account, "note"),
+            |_| json!({}),
+        )
+        .unwrap();
+    content
+        .write(
+            space,
+            None,
+            "files",
+            None,
+            json!({"title":"File"}),
+            &[0, 1, 2, 3],
+            request(account, "file"),
+            |_| json!({}),
+        )
+        .unwrap();
+    assert_eq!(
+        content.storage_usage(space).unwrap(),
+        StorageUsage {
+            text_bytes: 3,
+            binary_bytes: 4
+        }
+    );
+    content
+        .set_storage_limits(
+            space,
+            StorageLimits {
+                text_bytes: Some(5),
+                binary_bytes: Some(7),
+                total_bytes: Some(9),
+            },
+        )
+        .unwrap();
+    let refused = content
+        .write(
+            space,
+            Some(note.id),
+            "notes",
+            Some(&note.revision),
+            note.metadata.clone(),
+            b"longer",
+            request(account, "update"),
+            |_| json!({}),
+        )
+        .unwrap_err();
+    assert_eq!(refused.code, ErrorCode::Conflict);
+    assert_eq!(content.get(space, note.id).unwrap().revision, note.revision);
+    let refused = content
+        .write(
+            space,
+            None,
+            "files",
+            None,
+            json!({"title":"Crosses the combined ceiling"}),
+            &[0, 1, 2],
+            request(account, "combined"),
+            |_| json!({}),
+        )
+        .unwrap_err();
+    assert_eq!(refused.message, "total storage byte limit reached");
+    let latest = content
+        .write(
+            space,
+            Some(note.id),
+            "notes",
+            Some(&note.revision),
+            note.metadata,
+            b"short",
+            request(account, "update"),
+            |_| json!({}),
+        )
+        .unwrap();
+    content
+        .trash(
+            &latest,
+            latest.metadata.clone(),
+            &latest.bytes,
+            request(account, "trash"),
+            |_| json!({}),
+            || Ok(()),
+        )
+        .unwrap();
+    drop(content);
+    let content = open(dir.path(), |_| {});
+    assert_eq!(
+        content.storage_usage(space).unwrap(),
+        StorageUsage {
+            text_bytes: 5,
+            binary_bytes: 4
+        }
+    );
+    content
+        .purge(space, "notes", note.id, request(account, "purge"))
+        .unwrap();
+    assert_eq!(
+        content.storage_usage(space).unwrap(),
+        StorageUsage {
+            text_bytes: 0,
+            binary_bytes: 4
+        }
+    );
+}
+
+#[test]
+fn competing_spaces_can_only_consume_one_group_allocation() {
+    use calternal_content::StorageLimits;
+    use calternal_types::GroupId;
+
+    let dir = tempfile::tempdir().unwrap();
+    let content = open(dir.path(), |_| {});
+    let account = AccountId::new();
+    let group = GroupId::new();
+    let spaces = [SpaceId::new(), SpaceId::new()];
+    let limits = StorageLimits {
+        text_bytes: Some(4),
+        ..StorageLimits::default()
+    };
+    content
+        .set_group_storage_limits(group, limits, || Ok(()))
+        .unwrap();
+    for space in spaces {
+        content
+            .bind_group_storage(space, Some(group), || Ok(()))
+            .unwrap();
+        content
+            .register_kind(
+                space,
+                "notes",
+                Placement::Visible {
+                    folder: "Notes".into(),
+                },
+                FileFormat::Markdown,
+            )
+            .unwrap();
+    }
+    let start = std::sync::Barrier::new(2);
+    let outcomes = std::thread::scope(|scope| {
+        let write = |space| {
+            start.wait();
+            content.write(
+                space,
+                None,
+                "notes",
+                None,
+                json!({"title":"One"}),
+                b"abc",
+                request(account, "write"),
+                |_| json!({}),
+            )
+        };
+        let first = scope.spawn(move || write(spaces[0]));
+        let second = scope.spawn(move || write(spaces[1]));
+        [first.join().unwrap(), second.join().unwrap()]
+    });
+    let [first, second] = outcomes;
+    let (committed, refused, remaining) = match (first, second) {
+        (Ok(item), Err(error)) => (item, error, spaces[1]),
+        (Err(error), Ok(item)) => (item, error, spaces[0]),
+        _ => panic!("one transaction must observe the other space's committed bytes"),
+    };
+    assert_eq!(refused.message, "group text storage byte limit reached");
+    drop(content);
+    let content = open(dir.path(), |_| {});
+    content.restore_group_storage(spaces.map(|space| (space, group)), [(group, limits)]);
+    assert_eq!(content.storage_usage(remaining).unwrap().text_bytes, 0);
+    let reduced = content
+        .write(
+            committed.space,
+            Some(committed.id),
+            "notes",
+            Some(&committed.revision),
+            json!({"title":"One"}),
+            b"a",
+            request(account, "shrink"),
+            |_| json!({}),
+        )
+        .unwrap();
+    assert_eq!(reduced.bytes, b"a");
+    content
+        .write(
+            remaining,
+            None,
+            "notes",
+            None,
+            json!({"title":"Two"}),
+            b"xyz",
+            request(account, "retry"),
+            |_| json!({}),
+        )
+        .unwrap();
 }
 
 #[test]

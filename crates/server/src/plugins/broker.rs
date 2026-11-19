@@ -15,7 +15,7 @@
 //! refused until its host service exists.
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use calternal_core::{HostCallKind, ManifestCapability};
 use calternal_plugin_host::Error;
@@ -75,6 +75,8 @@ pub struct SpaceHost<D: Directory> {
     request_id: String,
     writes: AtomicU32,
     request_fingerprint: Option<String>,
+    request_operation: Option<String>,
+    state_committed: AtomicBool,
     starts: AtomicU32,
     run: Option<Run>,
 }
@@ -121,6 +123,8 @@ impl<D: Directory> SpaceHost<D> {
             request_id,
             writes: AtomicU32::new(0),
             request_fingerprint: None,
+            request_operation: None,
+            state_committed: AtomicBool::new(false),
             starts: AtomicU32::new(0),
             run: None,
         }
@@ -129,8 +133,9 @@ impl<D: Directory> SpaceHost<D> {
     /// Bind an interactive mutation to its outer request digest. Its first
     /// durable content write can then acknowledge that request even if no
     /// worker result survives. Cost: moves the precomputed digest.
-    pub(crate) fn for_request(mut self, fingerprint: String) -> Self {
+    pub(crate) fn for_request(mut self, fingerprint: String, operation: String) -> Self {
         self.request_fingerprint = Some(fingerprint);
+        self.request_operation = Some(operation);
         self
     }
 
@@ -328,6 +333,10 @@ impl<D: Directory> SpaceHost<D> {
     }
 
     fn write_item(&self, input: &Value) -> Result<Value, Error> {
+        if self.state_committed.load(Ordering::Acquire) {
+            return Err(Error::Refused);
+        }
+
         let object = exact(
             input,
             &[
@@ -519,6 +528,153 @@ impl<D: Directory> InvocationHost for SpaceHost<D> {
                     };
                 Ok(super::settings::effective(setting, record).effective)
             }
+            HostCallKind::ReadSpaceUsageV1 => {
+                let object = exact(input, &["scope"])?;
+                let use_owner = match str_field(object, "scope")? {
+                    None => false,
+                    Some("owner") => true,
+                    Some(_) => return Err(Error::Invalid),
+                };
+                if !self.authorize(ManifestCapability::SpaceSettings) {
+                    return Err(Error::Refused);
+                }
+                let content = self.state.store.content();
+                let usage = if use_owner {
+                    let checksum = self
+                        .plugin
+                        .review_checksum
+                        .as_deref()
+                        .ok_or(Error::Refused)?;
+                    let machines = self.state.store.machines().ok_or(Error::Refused)?;
+                    let package = &self.plugin.manifest.id;
+                    let binding = machines
+                        .resource_binding(self.space, package, checksum)
+                        .map_err(|_| Error::Refused)?;
+                    let owner = machines
+                        .resource_owner(self.space)
+                        .map_err(|_| Error::Refused)?;
+                    let usage = match owner {
+                        Some(calternal_types::ResourceOwner::Group(group)) => {
+                            content.group_storage_usage(group)
+                        }
+                        _ => content.storage_usage(self.space),
+                    }
+                    .map_err(|_| Error::Refused)?;
+                    if machines
+                        .resource_owner(self.space)
+                        .map_err(|_| Error::Refused)?
+                        != owner
+                        || machines
+                            .resource_binding(self.space, package, checksum)
+                            .map_err(|_| Error::Refused)?
+                            != binding
+                    {
+                        return Err(Error::Refused);
+                    }
+                    usage
+                } else {
+                    content
+                        .storage_usage(self.space)
+                        .map_err(|_| Error::Refused)?
+                };
+                if !self.authorize(ManifestCapability::SpaceSettings) {
+                    return Err(Error::Refused);
+                }
+                Ok(json!({
+                    "text_bytes": usage.text_bytes.to_string(),
+                    "binary_bytes": usage.binary_bytes.to_string(),
+                }))
+            }
+            HostCallKind::ReadRuntimeWindowV1 => {
+                let (since, until) = runtime_window_bounds(input)?;
+                if !self.authorize(ManifestCapability::SpaceSettings) {
+                    return Err(Error::Refused);
+                }
+                let checksum = self
+                    .plugin
+                    .review_checksum
+                    .as_deref()
+                    .ok_or(Error::Refused)?;
+                let machines = self.state.store.machines().ok_or(Error::Refused)?;
+                let binding = machines
+                    .resource_binding(self.space, &self.plugin.manifest.id, checksum)
+                    .map_err(|_| Error::Refused)?;
+                machines
+                    .resource_runtime_window(self.space, &binding, since, until)
+                    .map_err(|_| Error::Refused)
+            }
+            HostCallKind::ReadPluginStateV1 => {
+                let object = exact(input, &["key"])?;
+                let key = str_field(object, "key")?.ok_or(Error::Invalid)?;
+                if !self.authorize(ManifestCapability::SpaceSettings) {
+                    return Err(Error::Refused);
+                }
+                let state = self
+                    .state
+                    .store
+                    .content()
+                    .plugin_state(self.space, &self.plugin.manifest.id, key)
+                    .map_err(|_| Error::Refused)?;
+                Ok(json!({"state":state}))
+            }
+            HostCallKind::CasPluginStateV1 => {
+                let object = exact(input, &["key", "base", "schema", "value"])?;
+                let key = str_field(object, "key")?.ok_or(Error::Invalid)?;
+                let base = match object.get("base") {
+                    Some(Value::String(value)) => {
+                        let n = value
+                            .parse::<i64>()
+                            .ok()
+                            .filter(|n| *n > 0 && n.to_string() == *value)
+                            .ok_or(Error::Invalid)?;
+                        Some(n)
+                    }
+                    Some(Value::Null) => None,
+                    _ => return Err(Error::Invalid),
+                };
+                let schema = object
+                    .get("schema")
+                    .and_then(Value::as_u64)
+                    .and_then(|n| u32::try_from(n).ok())
+                    .filter(|n| *n > 0)
+                    .ok_or(Error::Invalid)?;
+                let value = object.get("value").ok_or(Error::Invalid)?;
+                if self.writes.load(Ordering::Acquire) > 0
+                    || (self.request_fingerprint.is_none() && self.run.is_none())
+                    || !self.authorize(ManifestCapability::SpaceSettings)
+                {
+                    return Err(Error::Refused);
+                }
+                let fingerprint =
+                    sha256_hex(&serde_json::to_vec(input).map_err(|_| Error::Invalid)?);
+                let request = state_receipt_key(self.identity.id, &self.scope());
+                if let Some(operation) = &self.request_operation {
+                    let revision = base.unwrap_or(0).checked_add(1).ok_or(Error::Invalid)?;
+                    self.plugin
+                        .schemas
+                        .validate_output(operation, &json!({"revision":revision.to_string()}))?;
+                }
+                let revision = self
+                    .state
+                    .store
+                    .content()
+                    .write_plugin_state(
+                        self.space,
+                        calternal_content::PluginStateWrite {
+                            package: &self.plugin.manifest.id,
+                            key,
+                            base,
+                            schema,
+                            value,
+                            request: &request,
+                            fingerprint: &fingerprint,
+                            outer_fingerprint: self.request_fingerprint.as_deref(),
+                        },
+                    )
+                    .map_err(|_| Error::Refused)?;
+                self.state_committed.store(true, Ordering::Release);
+                Ok(json!({"revision":revision}))
+            }
             HostCallKind::ContentPrepareV1 => self.prepare_content(input),
             HostCallKind::WriteItem => self.write_item(input),
             HostCallKind::StartJob => self.start_job(input),
@@ -584,6 +740,20 @@ fn item_json(item: &calternal_content::Item) -> Value {
     })
 }
 
+/// Parse the common bounded runtime request without resolving any authority.
+pub(super) fn runtime_window_bounds(input: &Value) -> Result<(i64, Option<i64>), Error> {
+    let object = exact(input, &["since_ms", "until_ms"])?;
+    let since = object
+        .get("since_ms")
+        .and_then(Value::as_i64)
+        .ok_or(Error::Invalid)?;
+    let until = object
+        .get("until_ms")
+        .map(|value| value.as_i64().ok_or(Error::Invalid))
+        .transpose()?;
+    Ok((since, until))
+}
+
 fn exact<'a>(input: &'a Value, allowed: &[&str]) -> Result<&'a Map<String, Value>, Error> {
     let object = input.as_object().ok_or(Error::Invalid)?;
     if object.keys().any(|k| !allowed.contains(&k.as_str())) {
@@ -605,4 +775,8 @@ fn item_target<'a>(input: &'a Value, keys: &[&str]) -> Result<(&'a str, &'a str)
     let kind = str_field(object, "kind")?.ok_or(Error::Invalid)?;
     let id = str_field(object, "item_id")?.ok_or(Error::Invalid)?;
     Ok((kind, id))
+}
+
+pub(crate) fn state_receipt_key(account: calternal_types::AccountId, request: &str) -> String {
+    format!("{account}/cas/{request}")
 }

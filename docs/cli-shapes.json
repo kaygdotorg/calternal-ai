@@ -6,6 +6,13 @@
     "request_id?": "string"
   },
   "commands": {
+    "calternal resources set-hook": { "space_id": "string", "binding": "any" },
+    "calternal resources set-compute": { "owner": { "kind": "string", "id": "string" }, "limits": "any" },
+    "calternal resources runtime-usage": { "owner": { "kind": "string", "id": "string" }, "usage": { "running_seconds": "integer", "unresolved": "integer", "since_ms": "integer" } },
+    "calternal resources set-group-storage": { "group_id": "string", "limits": "any" },
+    "calternal resources set-storage": { "space_id": "string", "limits": "any" },
+    "calternal resources storage-usage": { "space_id": "string", "owner": "any", "text_bytes": "integer", "binary_bytes": "integer" },
+    "calternal resources set-group": { "space_id": "string", "group_id": "string?" },
     "calternal onboarding state": { "finished": "bool" },
     "calternal onboarding finish": { "finished": "bool" },
     "calternal search query": {

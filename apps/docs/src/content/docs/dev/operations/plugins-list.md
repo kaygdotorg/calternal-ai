@@ -124,6 +124,34 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
           "type": "string"
         },
         {
+          "description": "Read the authorized space's committed text and binary bytes.",
+          "enum": [
+            "read_space_usage_v1"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Read confirmed runtime in a retained window within the granted scope.",
+          "enum": [
+            "read_runtime_window_v1"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Read a private versioned state key owned by the invoking package.",
+          "enum": [
+            "read_plugin_state_v1"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Replace a private state key with a durable compare-and-set receipt.",
+          "enum": [
+            "cas_plugin_state_v1"
+          ],
+          "type": "string"
+        },
+        {
           "description": "Prepare remote asset references from a declared, stored content revision.",
           "enum": [
             "content_prepare_v1"
