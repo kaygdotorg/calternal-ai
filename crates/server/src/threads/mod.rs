@@ -88,13 +88,24 @@ pub(crate) async fn dispatch<D: Directory>(
         let caller = who.clone();
         let message_actor = actor.clone();
         blocking(move || {
-            let apply = || operations::apply(
-                &st, &caller, space, &operation, &request_id, &data, id, &message_actor,
-            );
+            let apply = || {
+                operations::apply(
+                    &st,
+                    &caller,
+                    space,
+                    &operation,
+                    &request_id,
+                    &data,
+                    id,
+                    &message_actor,
+                )
+            };
             #[cfg(feature = "perf-timings")]
             if operation == "threads.send" {
                 return calternal_store::timings::observe_thread_storage(
-                    &request_id, "thread_save", apply,
+                    &request_id,
+                    "thread_save",
+                    apply,
                 );
             }
             apply()

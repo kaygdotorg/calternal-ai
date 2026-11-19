@@ -35,59 +35,61 @@ pub(crate) async fn admit<D: Directory>(
         .to_owned();
     let id = blocking(move || {
         let admit = || {
-        let thread = Uuid::parse_str(&input.thread_id)
-            .map_err(|_| Error::internal("invalid saved thread"))?;
-        let space_id =
-            SpaceId::parse(&space).map_err(|_| Error::internal("invalid saved space"))?;
-        let request = calternal_content::Request {
-            account: who.id,
-            via: actor.via.as_ref(),
-            id: &request_id,
-            operation: "threads.send",
-            fingerprint: &fp,
-        };
-        st.store
-            .content()
-            .admit_summary(space_id, thread, request, |current, legacy| {
-                if current.kind != "threads" || current.metadata["deleted"] == true {
-                    return Err(Error::not_found("item not found"));
-                }
-                if let Some(saved) = legacy {
-                    return saved["job_id"]
-                        .as_str()
-                        .map(str::to_owned)
-                        .ok_or_else(|| Error::internal("invalid saved job"));
-                }
-                if let Some(id) = st.jobs.thread_admission(&space, &request_key)? {
-                    return Ok(id);
-                }
-                if current.metadata["pending"] != intent {
-                    return Err(Error::conflict("the pending send has been superseded"));
-                }
-                let resume = ProviderSession::owned(&current.metadata, who.id);
-                let id = st.jobs.admit_thread(Admission {
-                    space,
-                    plugin: "calternal-orchestrator".into(),
-                    account: who.id,
-                    session,
-                    operation: "agent.turn".into(),
-                    input: json!({
-                        "request":input, "check":false, "retry_settings":settings,
-                        "thread_request":intent, "check_target":input.machine_id, (KEY):resume,
-                    }),
-                    parent: None,
-                    generation,
-                    request_key,
-                })?;
-                if intent["automation_run"].is_object() {
-                    crate::fault::hit(crate::fault::FaultPoint::AutomationAfterJob);
-                }
-                Ok(id)
-            })
+            let thread = Uuid::parse_str(&input.thread_id)
+                .map_err(|_| Error::internal("invalid saved thread"))?;
+            let space_id =
+                SpaceId::parse(&space).map_err(|_| Error::internal("invalid saved space"))?;
+            let request = calternal_content::Request {
+                account: who.id,
+                via: actor.via.as_ref(),
+                id: &request_id,
+                operation: "threads.send",
+                fingerprint: &fp,
+            };
+            st.store
+                .content()
+                .admit_summary(space_id, thread, request, |current, legacy| {
+                    if current.kind != "threads" || current.metadata["deleted"] == true {
+                        return Err(Error::not_found("item not found"));
+                    }
+                    if let Some(saved) = legacy {
+                        return saved["job_id"]
+                            .as_str()
+                            .map(str::to_owned)
+                            .ok_or_else(|| Error::internal("invalid saved job"));
+                    }
+                    if let Some(id) = st.jobs.thread_admission(&space, &request_key)? {
+                        return Ok(id);
+                    }
+                    if current.metadata["pending"] != intent {
+                        return Err(Error::conflict("the pending send has been superseded"));
+                    }
+                    let resume = ProviderSession::owned(&current.metadata, who.id);
+                    let id = st.jobs.admit_thread(Admission {
+                        space,
+                        plugin: "calternal-orchestrator".into(),
+                        account: who.id,
+                        session,
+                        operation: "agent.turn".into(),
+                        input: json!({
+                            "request":input, "check":false, "retry_settings":settings,
+                            "thread_request":intent, "check_target":input.machine_id, (KEY):resume,
+                        }),
+                        parent: None,
+                        generation,
+                        request_key,
+                    })?;
+                    if intent["automation_run"].is_object() {
+                        crate::fault::hit(crate::fault::FaultPoint::AutomationAfterJob);
+                    }
+                    Ok(id)
+                })
         };
         #[cfg(feature = "perf-timings")]
         return calternal_store::timings::observe_thread_storage(
-            request_id.trim_start_matches("thread-admit/"), "thread_job", admit,
+            request_id.trim_start_matches("thread-admit/"),
+            "thread_job",
+            admit,
         );
         #[cfg(not(feature = "perf-timings"))]
         admit()

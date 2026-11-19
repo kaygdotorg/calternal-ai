@@ -68,8 +68,17 @@ pub(crate) fn run(a: &Args) -> Result<i32> {
         }
     }
     if a.small_thread || a.legacy_thread_limit {
-        let metric = if a.small_thread { SMALL_APPEND } else { "threads.2mib.append" };
-        return report(a, size, &[stats::summarize(metric, appends.clone(), &budgets)], &appends);
+        let metric = if a.small_thread {
+            SMALL_APPEND
+        } else {
+            "threads.2mib.append"
+        };
+        return report(
+            a,
+            size,
+            &[stats::summarize(metric, appends.clone(), &budgets)],
+            &appends,
+        );
     }
     let message = indexed(&mut http, space)?;
     let mut tails = Vec::new();
@@ -98,7 +107,12 @@ pub(crate) fn run(a: &Args) -> Result<i32> {
     report(a, size, &measurements, &appends)
 }
 
-fn report(a: &Args, size: usize, measurements: &[stats::Summary], append_ms: &[f64]) -> Result<i32> {
+fn report(
+    a: &Args,
+    size: usize,
+    measurements: &[stats::Summary],
+    append_ms: &[f64],
+) -> Result<i32> {
     let breached = measurements.iter().any(|m| m.breached);
     let report = json!({"commit":a.commit,"physical_bytes_before_append":size,"measurements":measurements,"append_ms":append_ms,"breached":breached});
     let out = a.work.join("long-thread.json");

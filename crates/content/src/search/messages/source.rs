@@ -136,11 +136,7 @@ pub(super) struct Fragments {
 /// A steady append or a backlogged append chain advances the projection by
 /// at most 64 patches per transaction. A replaced base or missing prior
 /// revision needs the ordinary rebuild of that thread.
-pub(super) fn fragments(
-    db: &Connection,
-    head: &Head,
-    prior: &str,
-) -> Result<Option<Fragments>> {
+pub(super) fn fragments(db: &Connection, head: &Head, prior: &str) -> Result<Option<Fragments>> {
     const MAX_FRAGMENTS: i64 = 64;
     if !head.patched {
         return Ok(None);
@@ -162,11 +158,16 @@ pub(super) fn fragments(
         "SELECT p.offset,v.bytes,v.revision FROM thread_revision_patches p JOIN versions v USING(item,seq)
          WHERE p.item=?1 AND p.base_seq=?2 AND p.seq>?3 AND p.seq<=?4 ORDER BY p.seq",
     ).map_err(internal)?;
-    let mut query = statement.query(params![head.id, current.base_seq, old, through]).map_err(internal)?;
+    let mut query = statement
+        .query(params![head.id, current.base_seq, old, through])
+        .map_err(internal)?;
     let mut rows = Vec::new();
     let mut revision = String::new();
     while let Some(row) = query.next().map_err(internal)? {
-        rows.push((row.get::<_, u32>(0).map_err(internal)? as usize, row.get(1).map_err(internal)?));
+        rows.push((
+            row.get::<_, u32>(0).map_err(internal)? as usize,
+            row.get(1).map_err(internal)?,
+        ));
         revision = row.get(2).map_err(internal)?;
     }
     if rows.len() as i64 != through - old {

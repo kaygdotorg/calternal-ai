@@ -133,7 +133,11 @@ pub fn observe_note_save<T>(
 
 /// Measure one foreground thread callback using the existing per-worker spans.
 /// Callers emit once outside the content or jobs lock.
-pub fn observe_thread_storage<T>(request_id: &str, stage: &'static str, run: impl FnOnce() -> T) -> T {
+pub fn observe_thread_storage<T>(
+    request_id: &str,
+    stage: &'static str,
+    run: impl FnOnce() -> T,
+) -> T {
     let start_ns = now();
     let scoped = Scope(TIMING.with(|t| t.replace(Some(Durations::default()))));
     let value = run();
@@ -149,7 +153,13 @@ pub fn observe_thread_storage<T>(request_id: &str, stage: &'static str, run: imp
         #[serde(flatten)]
         durations: Durations,
     }
-    if let Ok(json) = serde_json::to_string(&Record{stage,request_id,start_ns,end_ns,durations}) {
+    if let Ok(json) = serde_json::to_string(&Record {
+        stage,
+        request_id,
+        start_ns,
+        end_ns,
+        durations,
+    }) {
         eprintln!("CALTERNAL_STAGE {json}");
     }
     value

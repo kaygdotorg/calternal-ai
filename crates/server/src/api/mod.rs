@@ -44,11 +44,11 @@ pub(crate) mod people;
 mod plugin_slots;
 mod plugins;
 mod request;
-#[cfg(feature = "perf-timings")]
-pub(crate) mod thread_timing;
 mod search;
 pub(crate) mod search_skills;
 mod sharing;
+#[cfg(feature = "perf-timings")]
+pub(crate) mod thread_timing;
 
 pub(crate) mod appearance;
 pub(crate) mod assets;

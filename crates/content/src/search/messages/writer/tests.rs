@@ -91,26 +91,38 @@ fn append_backlog_advances_in_batches_without_rebuilding_the_thread() {
     let head = source::get(&primary, "t").unwrap().unwrap();
     let mut db = Connection::open_in_memory().unwrap();
     db.execute_batch(SCHEMA).unwrap();
-    db.execute("INSERT INTO threads VALUES(?1,'t','v1')", [head.slot]).unwrap();
+    db.execute("INSERT INTO threads VALUES(?1,'t','v1')", [head.slot])
+        .unwrap();
     let tx = db.transaction().unwrap();
     let mut state = State {
-        generation: GENERATION.to_owned(), epoch: "fixture".into(), watermark: 0,
-        after: None, ready: true, next_block: 0,
+        generation: GENERATION.to_owned(),
+        epoch: "fixture".into(),
+        watermark: 0,
+        after: None,
+        ready: true,
+        next_block: 0,
     };
     let decode = |bytes: &[u8], fragment: bool| {
         assert!(fragment, "a backlog must never parse the base snapshot");
         let id = std::str::from_utf8(bytes).unwrap().parse::<u128>().unwrap();
         Ok(vec![MessageRecord {
-            id: Uuid::from_u128(id), stamp: id as i64, offset_seconds: 0,
-            record: 0..bytes.len(), body: 0..bytes.len(),
+            id: Uuid::from_u128(id),
+            stamp: id as i64,
+            offset_seconds: 0,
+            record: 0..bytes.len(),
+            body: 0..bytes.len(),
         }])
     };
-    assert!(!replace(&primary,&tx,&mut state,"t",Some(&head),decode).unwrap());
-    let status = || tx.query_row(
-        "SELECT revision,(SELECT count(*) FROM locations) FROM threads WHERE id='t'",
-        [], |r| Ok((r.get::<_, String>(0)?, r.get::<_, usize>(1)?)),
-    ).unwrap();
-    assert_eq!(status(), ("v65".into(),64));
-    assert!(replace(&primary,&tx,&mut state,"t",Some(&head),decode).unwrap());
-    assert_eq!(status(), ("v66".into(),65));
+    assert!(!replace(&primary, &tx, &mut state, "t", Some(&head), decode).unwrap());
+    let status = || {
+        tx.query_row(
+            "SELECT revision,(SELECT count(*) FROM locations) FROM threads WHERE id='t'",
+            [],
+            |r| Ok((r.get::<_, String>(0)?, r.get::<_, usize>(1)?)),
+        )
+        .unwrap()
+    };
+    assert_eq!(status(), ("v65".into(), 64));
+    assert!(replace(&primary, &tx, &mut state, "t", Some(&head), decode).unwrap());
+    assert_eq!(status(), ("v66".into(), 65));
 }
