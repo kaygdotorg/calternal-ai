@@ -354,34 +354,297 @@ startup. A deployment retry, rollback, or the server unit's recovery hook can
 restore the staged bytes before either release starts. After the cutover marker,
 rollback keeps live data and the older build must pass its version check.
 
-### Update after a refused release-pair proof
+### Supervised update from production revision `4735733eeb09`
 
-The proof from production image revision `4735733eeb09` to `86306143`
-refused rollback on `jobs.db` version 3. This pair requires an incompatible
-handoff even if nobody has created an account. Use an approved candidate
-that contains the v2 restore point and its matching deployment scripts.
-Revision `86306143` itself only has the v1 restore point.
+The release-pair proof to `86306143` refused rollback on `jobs.db` version
+3. Take the supervised path below for an update from `4735733eeb09`.
+The selected candidate must be a gated `dev` commit with the v2 restore
+point and its matching deployment scripts. `86306143` itself has v1.
 
-Confirm the actual running image ID and make a coordinated backup of
-appdata, SSD, HDD and the machine root. Record both image IDs. With the
-owner's explicit approval, use the clean-checkout and revision setup from
-step 2 below. Under the release-build lock, run its
-`nix develop .#deploy -c deploy/build-image.sh "$candidate"` command.
-Preview and run the incompatible deploy during the maintenance window.
+Approve and run each numbered step before proceeding. Use a private Bash
+session on dev-01 for steps 1–3 and 6, and a separate private Bash session
+as `calternal` on the target for steps 4–5. Use the same shells for checks
+and recovery. Keep shell tracing disabled. Before starting, identify an
+already-mounted encrypted backup directory on separate storage. Keep
+Traefik and the existing provider sandbox image in place.
 
-```bash
-deploy/deploy.sh --target deploy/cloud.conf --image "$revision" \
-  --allow-incompatible --dry-run
-deploy/deploy.sh --target deploy/cloud.conf --image "$revision" \
-  --allow-incompatible
-```
+1. **Pin the gated candidate.** Start in its clean dev-01 checkout.
+   Enter the full commit from the coordinator's latest passing gate.
+   Check that this commit contains both the restore-point implementation
+   and the read-only account-count command used below.
 
-Check the installed image ID, both units, HTTP and machine readiness as
-in step 4 below. An install without an owner should still report
-`setup: true`. Before commit, the pinned recovery executable can restore
-the staged bytes. After commit, the previous binary may refuse the live
-stores. A return to the old release at that point requires the separately
-verified backup and an owner decision about writes accepted after cutover.
+   ```bash
+   set -euo pipefail
+   umask 077
+   read -r -p 'Full gated dev commit: ' gated
+   [[ $gated =~ ^[a-f0-9]{40}$ ]]
+   git fetch origin dev
+   git merge-base --is-ancestor "$gated" origin/dev
+   test "$(git rev-parse HEAD)" = "$gated"
+   test -z "$(git status --porcelain)"
+   git grep -q -F calternal-upgrade-intent/v2 "$gated" -- crates/server/src/upgrades
+   git grep -q -w AccountCount "$gated" -- crates/server/src/upgrade_cli.rs
+   export CALTERNAL_DEPLOY_HOST=calternal@calternal-cloud
+   export RELEASE_REVISION=$gated
+   export SOURCE_DATE_EPOCH=$(git show -s --format=%ct "$gated")
+   revision=$(git rev-parse --short=12 "$gated")
+   candidate=localhost/calternal-ai:$revision
+   ```
+
+2. **Confirm the outgoing release.** Require the running container and
+   its current image tag to agree, then check the full revision.
+
+   ```bash
+   previous=$(ssh -o BatchMode=yes "$CALTERNAL_DEPLOY_HOST" \
+     podman container inspect --format '{{.Image}}' calternal-ai)
+   current=$(ssh -o BatchMode=yes "$CALTERNAL_DEPLOY_HOST" \
+     podman image inspect --format '{{.Id}}' localhost/calternal-ai:current)
+   previous=${previous#sha256:}
+   [[ $previous =~ ^[a-f0-9]{64}$ ]]
+   test "$previous" = "${current#sha256:}"
+   observed=$(ssh -o BatchMode=yes "$CALTERNAL_DEPLOY_HOST" \
+     "podman image inspect --format '{{ index .Labels \"org.opencontainers.image.revision\" }}' $previous")
+   test "$observed" = 4735733eeb09f084aeac8ac28cb9bd668ed4b760
+   ```
+
+3. **Build, stage and preview.** Check free space and memory before starting
+   the release build on dev-01. Stop below 15 GB disk or 8 GB available
+   memory. Copy both printed image IDs to the target shell in step 4.
+
+   ```bash
+   df -h ~
+   free -h
+   release_target=$(mktemp -d)
+   flock -o -w 14400 /tmp/calternal-gate-2.lock bash -c '
+     set -euo pipefail
+     export CARGO_TARGET_DIR="$2"
+     trap "find \"\$CARGO_TARGET_DIR\" -depth -delete" EXIT
+     nix develop .#deploy -c deploy/build-image.sh "$1"
+   ' -- "$candidate" "$release_target"
+   candidate_id=$(podman image inspect --format '{{.Id}}' "$candidate")
+   candidate_id=${candidate_id#sha256:}
+   test "$candidate_id" != "$previous"
+   podman save "$candidate" | ssh -o BatchMode=yes "$CALTERNAL_DEPLOY_HOST" podman load --quiet
+   deploy/deploy.sh --target deploy/cloud.conf --image "$revision" --allow-incompatible --dry-run
+   printf 'Previous image: %s\nCandidate image: %s\n' "$previous" "$candidate_id"
+   ```
+
+4. **Preflight before stopping.** On the target, extract the executable
+   from the exact staged image. This probe checks the live footprint and
+   does not change the data. Retain the private work directory through
+   activation and recovery.
+
+   ```bash
+   set -euo pipefail
+   umask 077
+   read -r -p 'Previous image ID: ' previous
+   read -r -p 'Candidate image ID: ' candidate_id
+   [[ $previous =~ ^[a-f0-9]{64}$ && $candidate_id =~ ^[a-f0-9]{64}$ ]]
+   observed=$(podman container inspect --format '{{.Image}}' calternal-ai)
+   test "${observed#sha256:}" = "$previous"
+   podman image exists "$candidate_id"
+   root=/srv/calternal-ai
+   hdd=/mnt/hdd/calternal-ai/userdata-hdd
+   mountpoint -q /mnt/hdd
+   ops=$(mktemp -d "$HOME/calternal-ai-cutover.XXXXXXXX")
+   extraction=$(podman create --network none "$candidate_id")
+   podman cp "$extraction:/usr/local/bin/calternal" "$ops/calternal"
+   podman rm "$extraction" >/dev/null
+   chmod 0700 "$ops/calternal"
+   installation=$(sed -n 's/^CALTERNAL_INSTALLATION_ID=//p' "$root/server.env")
+   up=("$ops/calternal" --json upgrade --appdata "$root/appdata"
+       --userdata-ssd "$root/userdata-ssd" --userdata-hdd "$hdd"
+       --installation-id "$installation" --machine-dir "$root/machine")
+   "${up[@]}" preflight --previous "$previous" --candidate "$candidate_id" --incompatible
+   ```
+
+5. **Stop, back up and verify.** Stop both roles for the coordinated
+   backup. Keep them stopped until the chosen deployment command.
+   Enter the already-mounted private encrypted backup directory. The
+   backup holds credentials. Treat its archive and verification log as
+   private. This step serves both deployment paths.
+
+   ```bash
+   systemctl --user stop calternal-ai-machine.service calternal-ai.service
+   stopped=0
+   podman container exists calternal-ai || stopped=$?
+   test "$stopped" -eq 1
+   read -r -p 'Mounted encrypted backup directory: ' backup_dir
+   [[ $backup_dir = /* && -d $backup_dir && -w $backup_dir ]]
+   mountpoint -q -- "$backup_dir"
+   backup=$(mktemp "$backup_dir/calternal-ai-state.XXXXXXXX.tar")
+   previous_oci=$(mktemp "$backup_dir/calternal-ai-image.XXXXXXXX.oci")
+   members=(srv/calternal-ai mnt/hdd/calternal-ai/userdata-hdd
+     "${HOME#/}/.config/containers/systemd/calternal-ai.container"
+     "${HOME#/}/.config/systemd/user/calternal-ai-machine.service"
+     "${HOME#/}/calternal-secrets.env")
+   tar --acls --xattrs --numeric-owner -C / -cpf "$backup" "${members[@]}" 2>"$ops/backup.log"
+   tar -tf "$backup" >/dev/null
+   tar --acls --xattrs --numeric-owner -C / --compare -f "$backup" >>"$ops/backup.log" 2>&1
+   podman save --format oci-archive "$previous" >"$previous_oci"
+   tar -tf "$previous_oci" >/dev/null
+   sha256sum -- "$backup" "$previous_oci" >"$ops/sha256"
+   sha256sum -c --status "$ops/sha256"
+   printf 'Verified backup: %s\nImage archive: %s\nVerification record: %s\n' "$backup" "$previous_oci" "$ops/sha256"
+   ```
+
+6. **Authorize and launch the incompatible handoff.** Confirm the backup
+   result and record the owner's approval for these image IDs. Run this
+   command on dev-01. The driver rereads the preflight under the locks,
+   takes the full restore point, probes the candidate privately, and commits
+   before accepting public writes.
+
+   ```bash
+   deploy/deploy.sh --target deploy/cloud.conf --image "$revision" --allow-incompatible
+   ```
+
+7. **Check the promoted release.** On dev-01, check the actual image and
+   both services. Run the HTTP checks from a network that reaches Traefik.
+   For an accountless installation expect `setup: true` and
+   the machine waiting for the owner handoff. For an enrolled installation,
+   sign in, write and reload a test note, and run a disposable turn.
+
+   ```bash
+   deployed=$(ssh -o BatchMode=yes "$CALTERNAL_DEPLOY_HOST" \
+     podman container inspect --format '{{.Image}}' calternal-ai)
+   test "${deployed#sha256:}" = "$candidate_id"
+   ssh -o BatchMode=yes "$CALTERNAL_DEPLOY_HOST" \
+     systemctl --user is-active calternal-ai.service calternal-ai-machine.service
+   ssh -o BatchMode=yes "$CALTERNAL_DEPLOY_HOST" podman healthcheck run calternal-ai
+   curl -fsS -o /dev/null https://calternal.cloud/
+   curl -fsS https://calternal.cloud/api/v1/auth/status | jq '{setup}'
+   ```
+
+8. **Recover if a step refuses.** On the target inspect the journal and
+   cutover status. If the driver explicitly reports restoring the previous
+   service, confirm the actual image is `$previous` and repeat step 7 with
+   that ID. If an intent is pending, retry step 6 with the same image to
+   finish the recorded decision. If recovery fails, keep both roles stopped.
+   After commit, the owner must separately approve restoring the coordinated
+   backup and losing any writes accepted since it. Restore the stopped roots
+   into clean destinations at their original paths, restore both unit files
+   and verify the saved image before allowing writes again.
+
+   ```bash
+   "${up[@]}" status
+   systemctl --user show calternal-ai.service calternal-ai-machine.service \
+     --property=ActiveState,Result
+   podman image inspect --format '{{.Id}}' "$previous"
+   sha256sum -c --status "$ops/sha256"
+   ```
+
+9. **Restore the backup after commit only with separate owner approval.**
+   In the target shell, verify the archives first. This command retains the
+   stopped candidate data beside the original paths. The administrator
+   extracts the archive with the stored ownership. It then reselects and
+   checks the old image before starting the units.
+
+   ```bash
+   sha256sum -c --status "$ops/sha256"
+   systemctl --user stop calternal-ai-machine.service calternal-ai.service
+   stopped=0
+   podman container exists calternal-ai || stopped=$?
+   test "$stopped" -eq 1
+   held_root=$(mktemp -d "$root/postcutover.XXXXXXXX")
+   held_hdd=$(mktemp -d "${hdd%/*}/postcutover.XXXXXXXX")
+   for member in appdata userdata-ssd machine machine-handoff releases server.env; do
+     if [[ -e $root/$member || -L $root/$member ]]; then
+       mv -- "$root/$member" "$held_root/$member"
+     fi
+   done
+   mv -- "$hdd" "$held_hdd/userdata-hdd"
+   sudo tar --same-owner --acls --xattrs --numeric-owner -C / -xpf "$backup"
+   podman load --quiet <"$previous_oci"
+   podman image exists "$previous"
+   podman tag "$previous" localhost/calternal-ai:current
+   systemctl --user daemon-reload
+   systemctl --user enable calternal-ai-machine.service
+   systemctl --user start calternal-ai.service calternal-ai-machine.service
+   observed=$(podman container inspect --format '{{.Image}}' calternal-ai)
+   test "${observed#sha256:}" = "$previous"
+   podman healthcheck run calternal-ai
+   ```
+
+#### Fresh installation when the stopped account count is zero
+
+Use steps 1–5 above through the verified backup. For step 4, end after
+defining the `up` command array. The public `setup` flag
+measures sign-in credentials and cannot establish whether the installation
+has any accounts. This alternative preserves the old roots and starts a
+new installation UUID on the same public origin.
+
+1. **Prove zero accounts under the stopped data locks.** In the same target
+   shell as step 5 run the command below. It returns only a count. Continue
+   only if the equality check passes.
+
+   ```bash
+   count=$("${up[@]}" account-count)
+   printf '%s\n' "$count"
+   grep -Eq '"accounts"[[:space:]]*:[[:space:]]*0[[:space:]]*[},]' <<<"$count"
+   ```
+
+2. **Create unused roots with a fresh installation ID.** Enter the same
+   12-character candidate tag shown on dev-01. Retain the original public
+   origin, trusted proxy setting and secret file. The installed units
+   will point at these new roots. Keep the old roots and backup intact.
+
+   ```bash
+   read -r -p '12-character candidate tag: ' revision
+   [[ $revision =~ ^[a-f0-9]{12}$ ]]
+   fresh_root=$root/fresh-$revision
+   fresh_hdd_parent=${hdd%/*}/fresh-$revision
+   mkdir -m 0700 -- "$fresh_root" "$fresh_hdd_parent"
+   new_installation=$(cat /proc/sys/kernel/random/uuid)
+   {
+     sed '/^CALTERNAL_INSTALLATION_ID=/d' "$root/server.env"
+     printf 'CALTERNAL_INSTALLATION_ID=%s\n' "$new_installation"
+   } >"$fresh_root/server.env"
+   ```
+
+3. **Authorize the fresh activation.** On dev-01 create a private target
+   file with the same unit name and public listener. The override keeps
+   `MACHINE_CONNECT` and the provider tag from the approved configuration.
+   After the owner approves, run the preview, then initialize and use
+   step 7 to verify health. Expect `setup: true`. Request any setup code
+   later in the owner's private terminal.
+
+   ```bash
+   fresh_conf=$(mktemp)
+   cat deploy/cloud.conf >"$fresh_conf"
+   printf '\nROOT=/srv/calternal-ai/fresh-%s\nHDD_ROOT=/mnt/hdd/calternal-ai/fresh-%s/userdata-hdd\n' \
+     "$revision" "$revision" >>"$fresh_conf"
+   deploy/deploy.sh --target "$fresh_conf" --image "$revision" --initialize --dry-run
+   deploy/deploy.sh --target "$fresh_conf" --image "$revision" --initialize
+   ```
+
+4. **Switch back only with owner approval.** If the fresh activation
+   fails or the owner elects to switch back, stop both roles first. Keep
+   the fresh roots for inspection, especially if anyone has registered.
+   Restore the old tag and the exact old release's units. Confirm that
+   the old image and both services are up.
+
+   ```bash
+   for unit in calternal-ai-machine.service calternal-ai.service; do
+     state=$(systemctl --user show "$unit" --property=LoadState --value)
+     if [[ $state != not-found ]]; then systemctl --user stop "$unit"; fi
+   done
+   stopped=0
+   podman container exists calternal-ai || stopped=$?
+   test "$stopped" -eq 1
+   old=$(realpath -e -- "$root/releases/current")
+   [[ $old = "$root"/releases/release.* ]]
+   test "$(<"$old/image.id")" = "$previous"
+   podman tag "$previous" localhost/calternal-ai:current
+   install -m 0644 "$old/server.container" "$HOME/.config/containers/systemd/calternal-ai.container"
+   install -m 0644 "$old/machine.service" "$HOME/.config/systemd/user/calternal-ai-machine.service"
+   systemctl --user daemon-reload
+   systemctl --user enable calternal-ai-machine.service
+   systemctl --user start calternal-ai.service calternal-ai-machine.service
+   observed=$(podman container inspect --format '{{.Image}}' calternal-ai)
+   test "${observed#sha256:}" = "$previous"
+   systemctl --user is-active calternal-ai.service calternal-ai-machine.service
+   podman healthcheck run calternal-ai
+   ```
 
 ### First ordinary update from the production baseline
 
