@@ -27,6 +27,7 @@ fn ticket_is_refused_after_grant_revision_moves_or_epoch_changes() {
         .unwrap()
         .unwrap();
     let grants = spaces.grant_revision(ids.shared, machine.id).unwrap();
+    let reader = spaces.invocation_reader(&grants).unwrap();
     let epoch = Uuid::new_v4();
     let pin = PackagePin {
         package: "calternal-fixture".into(),
@@ -41,11 +42,11 @@ fn ticket_is_refused_after_grant_revision_moves_or_epoch_changes() {
         kind: "notes".into(),
         item: Uuid::new_v4(),
     };
-    assert!(Ticket::mint(&spaces, &grants, scope.clone()).is_err());
+    assert!(Ticket::mint(&reader, scope.clone()).is_err());
     spaces
         .set_role(ids.owner, ids.shared, ids.guest, "editor")
         .unwrap();
-    let ticket = Ticket::mint(&spaces, &grants, scope.clone()).unwrap();
+    let ticket = Ticket::mint(&reader, scope.clone()).unwrap();
     let mut frame = SpaceFrame {
         v: 1,
         epoch,
@@ -72,5 +73,5 @@ fn ticket_is_refused_after_grant_revision_moves_or_epoch_changes() {
         .set_role(ids.owner, ids.shared, ids.guest, "reader")
         .unwrap();
     assert!(ticket.authorize_at(&frame, Instant::now()).is_err());
-    assert!(Ticket::mint(&spaces, &grants, scope).is_err());
+    assert!(Ticket::mint(&reader, scope).is_err());
 }

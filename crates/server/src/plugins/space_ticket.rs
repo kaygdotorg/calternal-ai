@@ -1,5 +1,5 @@
 //! Host-minted authority for a single invocation on an enrolled space stream.
-use calternal_auth::{db::GrantRevision, spaces::Spaces};
+use calternal_auth::{db::GrantRevision, spaces::InvocationReader};
 use calternal_plugin_host::space_channel::{PackagePin, SpaceFrame};
 use calternal_types::{AccountId, Error, InstallationId};
 use std::time::{Duration, Instant};
@@ -27,15 +27,12 @@ pub(super) struct Ticket {
 }
 
 impl Ticket {
-    /// Issue a short-lived ticket from the existing auth writer and retain its
-    /// assigned-space revision. Call only on a blocking admission thread.
-    pub(super) fn mint(
-        spaces: &Spaces,
-        grants: &GrantRevision,
-        scope: Scope,
-    ) -> Result<Self, Error> {
-        let snapshot = spaces
-            .admit_plugin_read(grants, scope.actor, scope.installation)
+    /// Issue a short-lived ticket from this space's retained admission reader.
+    /// Call only on a blocking admission worker.
+    pub(super) fn mint(reader: &InvocationReader, scope: Scope) -> Result<Self, Error> {
+        let grants = reader.grants();
+        let snapshot = reader
+            .admit(scope.actor, scope.installation)
             .map_err(|_| denied())?
             .ok_or_else(denied)?;
         let now = Instant::now();

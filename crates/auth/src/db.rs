@@ -9,7 +9,7 @@
 use crate::{Error, Result};
 use rusqlite::Connection;
 use std::collections::VecDeque;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
@@ -49,6 +49,7 @@ pub struct Db {
     sink: Arc<OnceLock<Sink>>,
     changes: Arc<tokio::sync::watch::Sender<u64>>,
     grants: grant_revision::Tracker,
+    path: Arc<PathBuf>,
 }
 
 type Sink = Arc<dyn crate::spaces::RecoverySink>;
@@ -92,6 +93,7 @@ impl Db {
             sink: Arc::new(OnceLock::new()),
             changes: Arc::new(tokio::sync::watch::channel(0).0),
             grants: grants.clone(),
+            path: Arc::new(path.to_path_buf()),
         };
         let sink = db.sink.clone();
         let changes = db.changes.clone();
@@ -139,6 +141,19 @@ impl Db {
             })
             .map_err(Error::internal)?;
         Ok(db)
+    }
+
+    /// Open a reader without queueing on the installation's authority worker.
+    /// Call on a blocking worker. Never creates a missing authority database.
+    pub(crate) fn open_admission_reader(&self) -> Result<Connection> {
+        use rusqlite::OpenFlags;
+        let connection = Connection::open_with_flags(
+            self.path.as_path(),
+            OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        )
+        .map_err(sql)?;
+        connection.busy_timeout(Duration::ZERO).map_err(sql)?;
+        Ok(connection)
     }
 
     pub(crate) fn grant_revision(

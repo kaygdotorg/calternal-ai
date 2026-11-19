@@ -1,6 +1,6 @@
 //! Lifetime of one awake placement and demultiplexing of its bounded tickets.
 use super::*;
-use calternal_auth::db::GrantRevision;
+use calternal_auth::spaces::InvocationReader;
 use calternal_plugin_host::space_channel::{SpaceDelivery, SpaceFence};
 use std::{
     collections::HashMap,
@@ -24,7 +24,7 @@ pub(super) struct Awake {
     pub(super) sender: SpaceSender,
     pub(super) fence: SpaceFence,
     pub(super) epoch: Uuid,
-    grants: GrantRevision,
+    admission: Arc<InvocationReader>,
     reader: Arc<ItemHeadReader>,
     inboxes: Mutex<HashMap<Uuid, mpsc::Sender<SpaceDelivery>>>,
 }
@@ -38,6 +38,7 @@ impl Drop for Awake {
 impl Awake {
     pub(super) async fn attach(
         mut connected: Connected,
+        authority: Spaces,
         reader: Arc<ItemHeadReader>,
         pin: &PackagePin,
         placement: Option<HeldPlacement>,
@@ -58,11 +59,16 @@ impl Awake {
         }
         drop(ready);
 
+        let grants = connected.grants;
+        let admission = crate::blocking::spawn(move || authority.invocation_reader(&grants))
+            .await
+            .map_err(|_| unavailable())?
+            .map_err(|_| unavailable())?;
         let awake = Arc::new(Self {
             sender: connected.channel.sender(),
             fence: connected.channel.fence_handle(),
             epoch: connected.channel.epoch(),
-            grants: connected.grants,
+            admission: Arc::new(admission),
             reader,
             inboxes: Mutex::default(),
         });
@@ -91,13 +97,13 @@ impl Awake {
         Ok(awake)
     }
 
-    pub(super) async fn invoke(&self, authority: Spaces, scope: Scope) -> Result<Value, Error> {
+    pub(super) async fn invoke(&self, scope: Scope) -> Result<Value, Error> {
         if scope.epoch != self.epoch || !self.sender.is_live() {
             return Err(unavailable());
         }
-        let grants = self.grants.clone();
+        let admission = self.admission.clone();
         let ticket = Arc::new(
-            crate::blocking::spawn(move || Ticket::mint(&authority, &grants, scope))
+            crate::blocking::spawn(move || Ticket::mint(&admission, scope))
                 .await
                 .map_err(|_| unavailable())??,
         );

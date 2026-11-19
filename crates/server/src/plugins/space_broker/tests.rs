@@ -184,7 +184,8 @@ async fn rejects_an_old_ticket_and_admits_a_fresh_read_after_reconnect() {
     let target = Uuid::now_v7();
     let old_scope = fixture.scope(&old.channel, target);
     let (old_ticket, item) = tokio::task::block_in_place(|| {
-        let ticket = Ticket::mint(&fixture.auth, &old.grants, old_scope).unwrap();
+        let admission = fixture.auth.invocation_reader(&old.grants).unwrap();
+        let ticket = Ticket::mint(&admission, old_scope).unwrap();
         let rights = fixture
             .auth
             .capabilities(fixture.actor, fixture.space)

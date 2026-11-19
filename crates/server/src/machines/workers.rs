@@ -35,8 +35,10 @@ impl WorkerStop {
 impl MachineService {
     /// Admit one ephemeral plugin sandbox on the operator pool. Refuses cold
     /// starts without a free, eligible slot before writing a lease. Admission
-    /// and assignment use the existing registry lock and two commits. The
-    /// bundle stays in memory and restarting fences the lease.
+    /// and assignment hold the registry lock across two commits so no competing
+    /// placement can spend the reserved machine capacity before the lease and
+    /// its assignment are durable. The bundle stays in memory. This is a cold
+    /// placement operation for a v2 carrier.
     pub(crate) fn request_worker(
         &self,
         account: AccountId,

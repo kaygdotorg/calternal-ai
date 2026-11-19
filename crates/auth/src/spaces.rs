@@ -15,7 +15,7 @@ mod receipt;
 mod recovery;
 mod search;
 pub use development::DevelopmentIds;
-pub use invocation::InvocationGrant;
+pub use invocation::{InvocationGrant, InvocationReader};
 use membership::*;
 pub use membership::{GroupMember, MemberPage, MemberTarget};
 pub(crate) use membership::{assignable_role, privileged};

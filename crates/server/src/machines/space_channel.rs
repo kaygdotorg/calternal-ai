@@ -127,6 +127,9 @@ impl MachineService {
             .map_err(|_| no_assignment())
     }
 
+    /// Consume the one-time reservation on cold connect. The scheduler lock
+    /// binds the authenticated machine to the current lease and assignment
+    /// before taking the waiter. It does not cover network I/O or frame traffic.
     pub(super) fn claim_channel(
         &self,
         token: &str,

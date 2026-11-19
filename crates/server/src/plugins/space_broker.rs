@@ -157,11 +157,8 @@ pub(crate) async fn invoke<D: Directory>(
         } if *account == actor.id => Some(*installation),
         _ => return Err(Error::forbidden("item head requires a person session")),
     };
-    let authority = state
-        .directory
-        .protected_spaces()
-        .cloned()
-        .ok_or_else(unavailable)?;
+    // Only cold wake enters the authority worker for preflight or the machine
+    // registry for placement. Warm invocations use the pinned space reader.
     let mut wake = approval.wake.awake.lock().await;
     let awake = match wake.as_ref().filter(|awake| awake.sender.is_live()) {
         Some(awake) => awake.clone(),
@@ -186,22 +183,22 @@ pub(crate) async fn invoke<D: Directory>(
     };
     drop(wake);
     awake
-        .invoke(
-            authority,
-            Scope {
-                actor: actor.id,
-                installation,
-                package: approval.package.clone(),
-                epoch: awake.epoch,
-                operation: approval.operation.clone(),
-                kind: approval.kind.clone(),
-                item: input.item_id,
-            },
-        )
+        .invoke(Scope {
+            actor: actor.id,
+            installation,
+            package: approval.package.clone(),
+            epoch: awake.epoch,
+            operation: approval.operation.clone(),
+            kind: approval.kind.clone(),
+            item: input.item_id,
+        })
         .await
 }
 
-// Cold control plane only. Serialize placement via this space's wake gate.
+/// Cold control plane. The caller holds this space's wake gate until the
+/// reservation and package are ready so concurrent calls share the placement.
+/// The authority worker verifies enrollment once when binding the new carrier.
+/// The shared scheduler is used for placement and teardown only.
 async fn wake_space<D: Directory>(
     state: &Shared<D>,
     approval: &Arc<ApprovedItemHead>,
@@ -238,7 +235,19 @@ async fn wake_space<D: Directory>(
             .shared_content()
             .item_head_reader(approval.space),
     );
-    Awake::attach(connected, reader, &approval.package, Some(placement)).await
+    let authority = state
+        .directory
+        .protected_spaces()
+        .cloned()
+        .ok_or_else(unavailable)?;
+    Awake::attach(
+        connected,
+        authority,
+        reader,
+        &approval.package,
+        Some(placement),
+    )
+    .await
 }
 
 #[cfg(test)]
@@ -248,8 +257,8 @@ async fn exchange(
     reader: Arc<ItemHeadReader>,
     scope: Scope,
 ) -> Result<Value, Error> {
-    let awake = Awake::attach(connected, reader, &scope.package, None).await?;
-    let result = awake.invoke(authority, scope).await;
+    let awake = Awake::attach(connected, authority, reader, &scope.package, None).await?;
+    let result = awake.invoke(scope).await;
     awake.fence.close();
     result
 }
