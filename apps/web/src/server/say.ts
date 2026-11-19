@@ -33,6 +33,8 @@ const BY_CODE: Record<string, string> = {
 /** What to tell the person about a failed `doing`. While setup is pending (`firstOwner`) any answer that says the code is not valid, whichever of the server's two codes it is (`setup_token_invalid`, or `invite_invalid` for a well-formed code it does not know), gets the first owner's message: nobody can send a link yet. */
 export function say(e: unknown, doing = "do that", opts: { firstOwner?: boolean } = {}): string {
   const code = e instanceof ServerError ? e.code : e instanceof TypeError ? "unavailable" : "";
+  // `unavailable` from the server itself (a busy queue, a cooldown: "wait a minute before testing again") is an answer, not an outage: the server's own sentence, which says what to do. Only a failure to reach it says "can't reach".
+  if (e instanceof ServerError && code === "unavailable" && e.answered && e.message) return e.message;
   if (opts.firstOwner && (code === "invite_invalid" || code === "setup_token_invalid")) return FIRST_OWNER;
   return BY_CODE[code] ?? `Could not ${doing}. Try again.`;
 }

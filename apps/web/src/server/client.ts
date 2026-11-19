@@ -23,7 +23,7 @@ export const isRead = (operation: string): boolean => READ_OPS.has(operation);
 /** A failure the server reported (`code` is its stable category) or a transport failure (`code` is "unavailable"). */
 export class ServerError extends Error {
   /** The server's stable category (`ApiError["code"]`), or one of the account routes' own (`passkey_failed`, `setup_token_invalid`, …) or this page's (`unavailable`, `cancelled`); say.ts words each. */
-  constructor(public code: ApiError["code"] | (string & {}), message: string, public status = 0) { super(message); }
+  constructor(public code: ApiError["code"] | (string & {}), message: string, public status = 0, /** True when the server itself answered with this code (its envelope), so `message` is the server's own words; false for a transport failure or a gateway's page, where nothing was reached. */ public answered = false) { super(message); }
 }
 
 /** The failure category of a response that carried no error body of its own. */
@@ -79,7 +79,7 @@ export class ServerClient {
     const res = await this.send(path, { method, headers: o.body === undefined ? {} : { "content-type": "application/json" }, body: o.body === undefined ? undefined : JSON.stringify(o.body) }, o.link === false, method === "POST");
     if (res.status === 204) return {} as T;
     const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
-    if (!res.ok) { const e = (data.error ?? {}) as { code?: string; message?: string }; throw new ServerError(e.code ?? codeOfStatus(res.status), e.message ?? "", res.status); }
+    if (!res.ok) { const e = (data.error ?? {}) as { code?: string; message?: string }; throw new ServerError(e.code ?? codeOfStatus(res.status), e.message ?? "", res.status, !!e.code); }
     return data as T;
   }
   /** Every call goes through here: the session's headers, the link-state reporting (unless `plain`), and a transport failure as `ServerError("unavailable")`. */
@@ -122,7 +122,7 @@ export class ServerClient {
     }
     let body: OperationResponse<T>;
     try { body = (await res.json()) as OperationResponse<T>; } catch { throw new ServerError("internal", `unreadable answer (${res.status})`, res.status); }
-    if (!body.ok) throw new ServerError(body.error.code, body.error.message, res.status);
+    if (!body.ok) throw new ServerError(body.error.code, body.error.message, res.status, true);
     return body.data;
   }
   /** What the server offers and who is asking (`GET /api/v1/describe`). */
@@ -130,7 +130,7 @@ export class ServerClient {
     const res = await this.send("/api/v1/describe");
     // Unlike an operation, discovery answers with the description itself (no envelope); a failure still arrives as a failure envelope.
     const body = (await res.json()) as DescribeResult | OperationResponse<never>;
-    if ("ok" in body && body.ok === false) throw new ServerError(body.error.code, body.error.message, res.status);
+    if ("ok" in body && body.ok === false) throw new ServerError(body.error.code, body.error.message, res.status, true);
     return body as DescribeResult;
   }
   /** A plain JSON POST to a route that is not an operation (the trusted secret endpoint). The body is sent and dropped; a failure is thrown as `ServerError` with the server's words. */
