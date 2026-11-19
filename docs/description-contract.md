@@ -188,9 +188,7 @@ host  -> shell { activation_id, state: ok | pending | error | stale | refused | 
   `host.session.end`, `host.trash.purge` or `host.item.share` as an invoke, nor `turns.start` or `host.turn.stop` anywhere but the composer (send, stop): they are reached
   through the request card, an outcome's undo reference, the host's quote control, shell events, the Trash and Share sheets and the composer.
 
-### 3.3 Identifiers: invocation id, action id, ticket
-
-Three different things must not be confused:
+### 3.3 Identifiers: action, activation, request, ticket
 
 Four identities, defined once with the plugins lane's activation protocol:
 
@@ -372,6 +370,20 @@ Everything in 5.0 and 5.1 is drawable with system controls. Findings, in order o
     vertical scroll when it fits.
 14. **Drag to move** exists in SwiftUI (`draggable`/`dropDestination`) and is not in the vocabulary; defer.
 
+### 8.2 Native review of draft 3 (activation, cache, first paint)
+
+1. **Round trips.** An activation is resolve, (confirm,) dispatch. The renderer shows the action as pending from the first send and treats a `resolve` answer with no
+   `confirmation_challenge` as permission to send `invoke_dispatch` at once; on a phone over a mobile link two round trips for a swipe are acceptable, three are not. The plugins
+   lane should allow a host to answer a resolve that needs no confirmation with the outcome itself (resolve-and-dispatch in one round trip); until then the renderer pipelines.
+2. **Pending and outcome on a row.** A row with an action in flight shows a quiet progress mark and keeps its place; the row leaves the list only when the host's next window
+   no longer contains it (no optimistic removal), so a failed Trash cannot leave a ghost gap. Undo is the outcome's button, shown for its `expiresAt`.
+3. **The confirmation sheet** is a system confirmation dialog (an alert or sheet with the host-written material lines, `Cancel` and the action named with the operation's own verb);
+   it is drawn by the shell, so a plugin cannot restyle or cover it.
+4. **First paint** (section 6) is drawn from the template alone: the shell stores the frame (structure, author-written titles, apps, selectors) and paints skeleton rows with the
+   bind's `loading` state; **no row, card, count, account initial or item title is stored** (implemented in the apps: `ChromeCache.frame(of:)`).
+5. **Selection sets and composer controls** map to `List(selection: Set<ID>)` in edit mode and system menus/pickers; the checked attachment references are produced by the
+   system pickers and uploaded through the host's route, so the draft carries references only.
+
 ## 9. Paper exercises (fixtures) (web lane)
 
 Fixtures in `contract/fixtures/description-v2/`: chrome (`reading-list.json`, `notes-sidebar.json`, `threads-sidebar.json`, by the native lane) and views
@@ -432,12 +444,12 @@ the host's Stop control (`stop: true`, a turn from `threads.active_turn`); the h
 5. **Section repeaters** (one section per item of a bind) are deferred; navigation sections cover the cases above.
 6. The **retirement date of v1** is the owner's.
 
-## 11. Sign-off (draft 3: web lane edits after Sol review 3; the native lane re-signs)
+## 11. Sign-off
 
-* Native renderer lane: **signed off.** Sections 1 to 4 and 6 to 8 are mine; sections 5 and 9 were reviewed against SwiftUI (8.1) and both conditions were met (the typed-input rule
-  in 3.2; settle time, window asks for Home, End and Page, one scroll region per list, a composer `enabled` without a row scope). 17 of 17 fixtures pass
-  (`python3 contract/verify-description.py`). Next vocabulary requests are recorded in section 10.
-* Web renderer lane: sections 5 and 9 and the content nodes written; sign-off by that lane is its own message to the coordinator.
+* Native renderer lane: **signed off again at the tip below.** Sections 1 to 4 and 6 to 8 (and the new 8.2) are mine or reviewed; draft 3 of sections 3.2, 5, 6, 9 and 12 was reviewed
+  against SwiftUI and the apps (the frame-only cache is implemented; activation events are the catalogue's). All fixtures pass without a catalogue and against the plugins
+  lane's `contract/host-catalogue-v2.json` (`CALTERNAL_HOST_CATALOGUE=<path> python3 contract/verify-description.py`).
+* Web renderer lane: wrote sections 5, 9, 12 and the draft-3 changes to 3.2, 3.4 and 6; its sign-off is its own message to the coordinator.
 
 ## 12. Disposition of the third-round review (Sol, 46 findings)
 
